@@ -1,0 +1,115 @@
+import { useEffect, useRef, useState } from "react";
+
+type AnimatedTextProps = {
+  value: string;
+  className?: string;
+};
+
+type TextLayer = {
+  id: number;
+  text: string;
+  phase: "enter" | "idle" | "exit";
+};
+
+export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
+  const nextIdRef = useRef(1);
+
+  const [layers, setLayers] = useState<TextLayer[]>([
+    {
+      id: 0,
+      text: value,
+      phase: "idle",
+    },
+  ]);
+
+  useEffect(() => {
+    const currentLayer = layers[layers.length - 1];
+
+    if (currentLayer?.text === value) {
+      return undefined;
+    }
+
+    const newLayerId = nextIdRef.current++;
+
+    setLayers((current) => [
+      ...current.map((layer) => ({
+        ...layer,
+        phase: "exit" as const,
+      })),
+      {
+        id: newLayerId,
+        text: value,
+        phase: "enter",
+      },
+    ]);
+
+    const enterFrame = window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        setLayers((current) =>
+          current.map((layer) =>
+            layer.id === newLayerId
+              ? {
+                  ...layer,
+                  phase: "idle",
+                }
+              : layer,
+          ),
+        );
+      });
+    });
+
+    const cleanupTimeout = window.setTimeout(() => {
+      setLayers((current) => current.filter((layer) => layer.id === newLayerId));
+    }, 520);
+
+    return () => {
+      window.cancelAnimationFrame(enterFrame);
+      window.clearTimeout(cleanupTimeout);
+    };
+    // Only react to incoming text changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value]);
+
+  return (
+    <span
+      className={`relative inline-grid overflow-hidden whitespace-nowrap align-middle ${className}`}
+      aria-label={value}
+    >
+      {layers.map((layer) => (
+        <span
+          key={layer.id}
+          aria-hidden="true"
+          className="col-start-1 row-start-1 inline-flex whitespace-nowrap"
+        >
+          {splitText(layer.text).map((letter, index) => {
+            const isSpace = letter === " ";
+
+            return (
+              <span
+                key={`${layer.id}-${index}-${letter}`}
+                className="inline-block transition-[opacity,transform] duration-300 ease-out"
+                style={{
+                  transitionDelay: `${index * 22}ms`,
+                  transform:
+                    layer.phase === "enter"
+                      ? "translateY(-0.75em)"
+                      : layer.phase === "exit"
+                        ? "translateY(0.75em)"
+                        : "translateY(0)",
+                  opacity: layer.phase === "idle" ? 1 : 0,
+                  width: isSpace ? "0.35em" : undefined,
+                }}
+              >
+                {isSpace ? "\u00A0" : letter}
+              </span>
+            );
+          })}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function splitText(text: string) {
+  return Array.from(text);
+}
