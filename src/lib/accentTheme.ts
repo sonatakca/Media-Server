@@ -44,16 +44,33 @@ const ACCENT_THEMES: AccentTheme[] = [
   },
 ];
 
-function getRandomTheme(): AccentTheme {
-  return ACCENT_THEMES[Math.floor(Math.random() * ACCENT_THEMES.length)];
-}
-
-export function applyRandomAccentTheme(): void {
-  const theme = getRandomTheme();
+function applyAccentTheme(theme: AccentTheme): void {
   const root = document.documentElement;
 
   root.style.setProperty("--accent", theme.accent);
   root.style.setProperty("--accent-hover", theme.accentHover);
   root.style.setProperty("--accent-soft", theme.accentSoft);
   root.dataset.accentTheme = theme.name;
+}
+
+function getRandomThemeIndex(): number {
+  return Math.floor(Math.random() * ACCENT_THEMES.length);
+}
+
+export function applyRandomAccentTheme(): void {
+  const finalThemeIndex = getRandomThemeIndex();
+
+  const fullLapCount = 2;
+  const fullLaps = Array.from({ length: fullLapCount }, () => ACCENT_THEMES).flat();
+  const finalLap = ACCENT_THEMES.slice(0, finalThemeIndex + 1);
+  const animationSequence = [...fullLaps, ...finalLap];
+
+  const stepDurationMs = 100;
+  const initialDelayMs = 80;
+
+  animationSequence.forEach((theme, index) => {
+    window.setTimeout(() => {
+      applyAccentTheme(theme);
+    }, initialDelayMs + index * stepDurationMs);
+  });
 }

@@ -2,6 +2,24 @@
 @tailwind components;
 @tailwind utilities;
 
+@property --accent {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #467a6c;
+}
+
+@property --accent-hover {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #75a27b;
+}
+
+@property --accent-soft {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(70, 122, 108, 0.18);
+}
+
 :root {
   color-scheme: dark;
   --background: #050607;
@@ -18,6 +36,11 @@
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+
+  /* transition:
+    --accent 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    --accent-hover 260ms cubic-bezier(0.22, 1, 0.36, 1),
+    --accent-soft 260ms cubic-bezier(0.22, 1, 0.36, 1); */
 }
 
 * {
