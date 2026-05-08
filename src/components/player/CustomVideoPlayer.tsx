@@ -25,6 +25,9 @@ import { PlayerErrorOverlay } from "./PlayerErrorOverlay";
 import { PlayerOverlay } from "./PlayerOverlay";
 import { PlaybackInfoButton } from "./PlaybackInfoButton";
 import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
+import { PartyWatchControls } from "../../features/partyWatch/PartyWatchControls";
+import { PartyWatchOverlay } from "../../features/partyWatch/PartyWatchOverlay";
+import { usePartyWatchController } from "../../features/partyWatch/usePartyWatchController";
 
 interface CustomVideoPlayerProps {
   item: JellyfinItem;
@@ -163,11 +166,21 @@ export function CustomVideoPlayer({
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
+  const title = getDisplayTitle(item);
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
   const { areControlsVisible, showControls } = useAutoHideControls({
     isPlaying: progress.isPlaying,
     disabled: Boolean(error),
+  });
+  const partyWatch = usePartyWatchController({
+    videoRef,
+    itemId: item.Id,
+    title,
+    currentTime: progress.currentTime,
+    isPlaying: progress.isPlaying,
+    refreshProgress,
+    showControls,
   });
 
   const [activeSource, setActiveSource] = useState<PlaybackSourceCandidate>(source);
@@ -231,8 +244,8 @@ export function CustomVideoPlayer({
 
   useKeyboardShortcuts({
     enabled: true,
-    onTogglePlay: progress.togglePlay,
-    onSeekBy: progress.seekBy,
+    onTogglePlay: partyWatch.togglePlay,
+    onSeekBy: partyWatch.seekBy,
     onToggleMute: progress.toggleMute,
     onToggleFullscreen: toggleFullscreen,
   });
@@ -443,7 +456,7 @@ export function CustomVideoPlayer({
       video.addEventListener("loadedmetadata", restorePlayback);
       video.addEventListener("canplay", restorePlayback);
       video.load();
-      if (!pendingRestore) {
+      if (!pendingRestore && !partyWatch.shouldDeferAutoplay) {
         void video.play().catch((playError: unknown) => {
           console.info("[Seyirlik Playback] Autoplay was blocked or deferred", playError);
         });
@@ -457,7 +470,7 @@ export function CustomVideoPlayer({
       video.removeEventListener("canplay", restorePlayback);
       attachment?.destroy();
     };
-  }, [activeSource.id, activeSource.mimeType, activeSource.url, onVideoFailure, refreshProgress]);
+  }, [activeSource.id, activeSource.mimeType, activeSource.url, onVideoFailure, partyWatch.shouldDeferAutoplay, refreshProgress]);
 
   useEffect(() => {
     return () => {
@@ -585,7 +598,7 @@ export function CustomVideoPlayer({
     }
 
     const isLeftSide = clientX - bounds.left < bounds.width / 2;
-    progress.seekBy(isLeftSide ? -10 : 10);
+    partyWatch.seekBy(isLeftSide ? -10 : 10);
     showControls();
   };
 
@@ -814,7 +827,6 @@ export function CustomVideoPlayer({
     lastTapRef.current = null;
   };
 
-  const title = getDisplayTitle(item);
   const subtitle = getItemSubtitle(item);
   const titleLogoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900) : "";
   const isSubtitleBeingEdited = isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
@@ -947,8 +959,10 @@ export function CustomVideoPlayer({
         visible={areControlsVisible || !progress.isPlaying}
         isPlaying={progress.isPlaying}
         notice={notice}
-        onTogglePlay={progress.togglePlay}
+        onTogglePlay={partyWatch.togglePlay}
       />
+
+      <PartyWatchOverlay controller={partyWatch} />
 
       <PlayerControls
         visible={areControlsVisible || !progress.isPlaying}
@@ -958,9 +972,9 @@ export function CustomVideoPlayer({
         bufferedEnd={progress.bufferedEnd}
         volume={progress.volume}
         muted={progress.muted}
-        onTogglePlay={progress.togglePlay}
-        onSeek={progress.seekTo}
-        onSeekBy={progress.seekBy}
+        onTogglePlay={partyWatch.togglePlay}
+        onSeek={partyWatch.seekTo}
+        onSeekBy={partyWatch.seekBy}
         onToggleMute={progress.toggleMute}
         onVolumeChange={progress.setVolume}
         onToggleFullscreen={toggleFullscreen}
@@ -980,7 +994,8 @@ export function CustomVideoPlayer({
       />
 
       {areControlsVisible || !progress.isPlaying ? (
-        <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40">
+        <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex flex-col items-end gap-3">
+          <PartyWatchControls controller={partyWatch} visible={areControlsVisible || !progress.isPlaying} />
           <PlaybackInfoButton source={activeSource} onClick={() => setIsPlaybackInfoOpen(true)} />
         </div>
       ) : null}

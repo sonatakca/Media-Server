@@ -32,6 +32,12 @@ export function normalizeServerUrl(rawServerUrl: string): string {
   return parsed.toString().replace(/\/+$/, "");
 }
 
+export function saveNormalizedServerUrl(normalizedServerUrl: string): string {
+  const safeServerUrl = normalizeServerUrl(normalizedServerUrl);
+  localStorage.setItem(SERVER_URL_KEY, safeServerUrl);
+  return safeServerUrl;
+}
+
 export function getServerUrl(): string | null {
   return localStorage.getItem(SERVER_URL_KEY);
 }

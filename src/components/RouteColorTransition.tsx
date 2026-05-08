@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   ACCENT_THEMES,
@@ -100,6 +100,8 @@ export function RouteColorTransition() {
   const timeoutsRef = useRef<number[]>([]);
   const selectedThemeRef = useRef<AccentTheme | null>(null);
   const transitionAudioRef = useRef<HTMLAudioElement | null>(null);
+  const hasMountedRef = useRef(false);
+  const previousPathnameRef = useRef(location.pathname);
 
   const [isVisible, setIsVisible] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
@@ -274,13 +276,25 @@ export function RouteColorTransition() {
     applyStoredThemeIfAvailable();
   }, [applyStoredThemeIfAvailable]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!hasMountedRef.current) {
+      hasMountedRef.current = true;
+      previousPathnameRef.current = location.pathname;
+      applyStoredThemeIfAvailable();
+      return;
+    }
+
+    if (previousPathnameRef.current === location.pathname) {
+      return;
+    }
+
+    previousPathnameRef.current = location.pathname;
     playTransition(false);
 
     return () => {
       clearTransitionTimers();
     };
-  }, [location.pathname, playTransition, clearTransitionTimers]);
+  }, [location.pathname, playTransition, clearTransitionTimers, applyStoredThemeIfAvailable]);
 
   useEffect(() => {
     const handleForcedThemeChange = () => {

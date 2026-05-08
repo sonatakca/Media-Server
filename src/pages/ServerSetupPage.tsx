@@ -18,7 +18,9 @@ const examples = [
 export function ServerSetupPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const defaultServerUrl = import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined;
+  const defaultServerUrl =
+    (import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined)?.trim() ||
+    "https://izle.sonatakca.com";
   const [serverUrlInput, setServerUrlInput] = useState(getServerUrl() ?? defaultServerUrl ?? "");
   const [error, setError] = useState<string | null>(null);
   const [connectionInfo, setConnectionInfo] = useState<{ serverName: string; version: string } | null>(null);
