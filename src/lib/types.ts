@@ -129,6 +129,8 @@ export interface JellyfinItem {
   ParentLogoItemId?: string;
   ParentLogoImageTag?: string;
   SeriesId?: string;
+  SeasonId?: string;
+  ParentId?: string;
 }
 
 export interface JellyfinLibrary extends JellyfinItem {

@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Clock, Film, Play, Star } from "lucide-react";
 import { ButtonLink } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { DetailsSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
-import { getBackdropImageUrl, getItem, getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getItem, getLogoImageUrl, getPrimaryImageUrl, getSeasonEpisodes, getSeriesSeasons } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
+import { MediaCard } from "../components/MediaCard";
 
 function getBackdrop(item: JellyfinItem): string {
   if (item.BackdropImageTags?.[0]) {
@@ -24,10 +25,12 @@ function getBackdrop(item: JellyfinItem): string {
 }
 
 export function ItemDetailsPage() {
+  const navigate = useNavigate();
   const { itemId } = useParams<{ itemId: string }>();
   const { t } = useLanguage();
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [children, setChildren] = useState<JellyfinItem[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -40,11 +43,33 @@ export function ItemDetailsPage() {
 
       setError(null);
       setItem(null);
+      setChildren([]);
 
       try {
         const itemDetails = await getItem(itemId);
+        let childItems: JellyfinItem[] = [];
+
+        if (itemDetails.Type === "Series") {
+          childItems = await getSeriesSeasons(itemDetails.Id);
+        } else if (itemDetails.Type === "Season" && itemDetails.SeriesId) {
+          childItems = await getSeasonEpisodes(itemDetails.SeriesId, itemDetails.Id);
+        }
+
+        const sortedChildItems = [...childItems].sort((left, right) => {
+          if (left.Type === "Season" && right.Type === "Season") {
+            return (left.IndexNumber ?? 9999) - (right.IndexNumber ?? 9999);
+          }
+
+          if (left.Type === "Episode" && right.Type === "Episode") {
+            return (left.IndexNumber ?? 9999) - (right.IndexNumber ?? 9999);
+          }
+
+          return left.Name.localeCompare(right.Name);
+        });
+
         if (isMounted) {
           setItem(itemDetails);
+          setChildren(sortedChildItems);
         }
       } catch (itemError) {
         if (isMounted) {
@@ -81,6 +106,7 @@ export function ItemDetailsPage() {
     item.OfficialRating ? { label: item.OfficialRating, icon: Star } : null,
     item.CommunityRating ? { label: item.CommunityRating.toFixed(1), icon: Star } : null,
   ].filter(Boolean) as Array<{ label: string; icon: typeof Film }>;
+  const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
 
   return (
     <article className="relative -mx-4 -mt-6 min-h-[calc(100vh-4rem)] overflow-hidden px-4 pb-16 pt-6 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -91,15 +117,16 @@ export function ItemDetailsPage() {
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.34] to-black/40" />
 
       <div className="relative mx-auto max-w-[1500px]">
-        <Link
-          to="/home"
+        <button
+          type="button"
+          onClick={() => navigate(-1)}
           className="mb-10 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-4 text-sm font-semibold text-zinc-200 backdrop-blur transition hover:bg-white/[0.14] hover:text-white"
         >
-            <ArrowLeft size={17} className="shrink-0" />
-            <AnimatedWidth value={t("common.home")}>
-              <AnimatedText value={t("common.home")} />
-            </AnimatedWidth>
-        </Link>
+          <ArrowLeft size={17} className="shrink-0" />
+          <AnimatedWidth value={t("common.back")}>
+            <AnimatedText value={t("common.back")} />
+          </AnimatedWidth>
+        </button>
 
         <div className="grid gap-8 md:grid-cols-[minmax(16rem,22rem)_1fr] md:items-end lg:gap-12">
           <div className="overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-[0_30px_120px_rgba(0,0,0,0.64)]">
@@ -152,14 +179,16 @@ export function ItemDetailsPage() {
                 ))}
               </div>
             ) : null}
-            <div className="mt-8 flex flex-wrap gap-3">
-              <ButtonLink to={`/watch/${item.Id}`} className="min-h-12 rounded-full px-7 text-base shadow-2xl">
-                <Play size={20} fill="currentColor" className="shrink-0" />
+            {canPlay ? (
+              <div className="mt-8 flex flex-wrap gap-3">
+                <ButtonLink to={`/watch/${item.Id}`} className="min-h-12 rounded-full px-7 text-base shadow-2xl">
+                  <Play size={20} fill="currentColor" className="shrink-0" />
                   <AnimatedWidth value={t("common.play")}>
                     <AnimatedText value={t("common.play")} />
                   </AnimatedWidth>
-              </ButtonLink>
-            </div>
+                </ButtonLink>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -234,6 +263,25 @@ export function ItemDetailsPage() {
             </dl>
           </section>
         </div>
+        {children.length > 0 ? (
+          <section className="mt-10 rounded-2xl border border-white/10 bg-white/[0.045] p-5 backdrop-blur-xl sm:p-6">
+            <h2 className="text-2xl font-black text-white">
+              {item.Type === "Series" ? "Seasons" : "Episodes"}
+            </h2>
+
+            <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+              {children.map((child) => (
+                <MediaCard
+                  key={child.Id}
+                  item={child}
+                  to={child.Type === "Episode" ? `/item/${child.Id}` : `/item/${child.Id}`}
+                  layout="grid"
+                  variant={child.Type === "Episode" ? "landscape" : "poster"}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
       </div>
     </article>
   );

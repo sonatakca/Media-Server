@@ -45,6 +45,11 @@ const DEFAULT_ITEM_FIELDS = [
   "BackdropImageTags",
   "ParentLogoItemId",
   "ParentLogoImageTag",
+  "ParentId",
+  "SeriesId",
+  "SeasonId",
+  "SeriesName",
+  "SeasonName",
 ].join(",");
 
 const MAX_STREAMING_BITRATE = 120_000_000;
@@ -268,18 +273,83 @@ export async function getItemsForLibrary(libraryId: string): Promise<JellyfinIte
   return response.Items ?? [];
 }
 
-export async function getItem(itemId: string): Promise<JellyfinItem> {
+export async function getTopLevelItemsForLibrary(libraryId: string, collectionType?: string): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  return requestJson<JellyfinItem>(`/Items/${encodeURIComponent(itemId)}`, {
+  const includeItemTypes =
+    collectionType === "tvshows"
+      ? "Series"
+      : collectionType === "movies"
+        ? "Movie"
+        : undefined;
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
     params: {
       userId: session.userId,
+      parentId: libraryId,
+      recursive: false,
+      includeItemTypes,
+      sortBy: "SortName",
+      sortOrder: "Ascending",
       fields: DEFAULT_ITEM_FIELDS,
       enableImages: true,
       imageTypeLimit: 1,
       enableImageTypes: "Primary,Backdrop,Logo",
     },
   });
+
+  return response.Items ?? [];
+}
+
+export async function getSeriesSeasons(seriesId: string): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Shows/Seasons", {
+    params: {
+      userId: session.userId,
+      seriesId,
+      fields: DEFAULT_ITEM_FIELDS,
+      enableImages: true,
+      imageTypeLimit: 1,
+      enableImageTypes: "Primary,Backdrop,Logo",
+    },
+  });
+
+  return response.Items ?? [];
+}
+
+export async function getSeasonEpisodes(seriesId: string, seasonId: string): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Shows/Episodes", {
+    params: {
+      userId: session.userId,
+      seriesId,
+      seasonId,
+      fields: DEFAULT_ITEM_FIELDS,
+      enableImages: true,
+      imageTypeLimit: 1,
+      enableImageTypes: "Primary,Backdrop,Logo",
+    },
+  });
+
+  return response.Items ?? [];
+}
+
+export async function getItem(itemId: string): Promise<JellyfinItem> {
+  const session = requireAuthSession();
+
+  return requestJson<JellyfinItem>(
+    `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`,
+    {
+      params: {
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
+    },
+  );
 }
 
 export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {

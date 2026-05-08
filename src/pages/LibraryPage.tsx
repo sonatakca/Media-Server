@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { MediaCard } from "../components/MediaCard";
 import { DetailsSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
-import { getBackdropImageUrl, getItem, getItemsForLibrary } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getItem, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 
 interface LibraryData {
@@ -13,7 +13,49 @@ interface LibraryData {
   items: JellyfinItem[];
 }
 
+function getSortNumber(item: JellyfinItem): number {
+  if (item.Type === "Season") {
+    return item.IndexNumber ?? item.ProductionYear ?? 9999;
+  }
+
+  if (item.Type === "Episode") {
+    return item.IndexNumber ?? 9999;
+  }
+
+  return 9999;
+}
+
+function sortJellyfinItems(left: JellyfinItem, right: JellyfinItem, sortBy: "name" | "year" | "latest"): number {
+  if (left.Type === "Season" && right.Type === "Season") {
+    return getSortNumber(left) - getSortNumber(right);
+  }
+
+  if (left.Type === "Episode" && right.Type === "Episode") {
+    const seasonCompare = (left.ParentIndexNumber ?? 0) - (right.ParentIndexNumber ?? 0);
+
+    if (seasonCompare !== 0) {
+      return seasonCompare;
+    }
+
+    return getSortNumber(left) - getSortNumber(right);
+  }
+
+  if (sortBy === "year") {
+    return (right.ProductionYear ?? 0) - (left.ProductionYear ?? 0);
+  }
+
+  if (sortBy === "latest") {
+    return (
+      Date.parse(right.DateCreated ?? right.PremiereDate ?? "1970-01-01") -
+      Date.parse(left.DateCreated ?? left.PremiereDate ?? "1970-01-01")
+    );
+  }
+
+  return left.Name.localeCompare(right.Name);
+}
+
 export function LibraryPage() {
+  const navigate = useNavigate();
   const { libraryId } = useParams<{ libraryId: string }>();
   const { t } = useLanguage();
   const [data, setData] = useState<LibraryData | null>(null);
@@ -34,10 +76,8 @@ export function LibraryPage() {
       setData(null);
 
       try {
-        const [libraryResult, items] = await Promise.all([
-          getItem(libraryId).catch(() => undefined),
-          getItemsForLibrary(libraryId),
-        ]);
+        const libraryResult = await getItem(libraryId).catch(() => undefined);
+        const items = await getTopLevelItemsForLibrary(libraryId, libraryResult?.CollectionType);
 
         if (isMounted) {
           setData({ library: libraryResult, items });
@@ -66,20 +106,7 @@ export function LibraryPage() {
       ? data.items.filter((item) => item.Name.toLowerCase().includes(normalizedSearch))
       : data.items;
 
-    return [...items].sort((left, right) => {
-      if (sortBy === "year") {
-        return (right.ProductionYear ?? 0) - (left.ProductionYear ?? 0);
-      }
-
-      if (sortBy === "latest") {
-        return (
-          Date.parse(right.DateCreated ?? right.PremiereDate ?? "1970-01-01") -
-          Date.parse(left.DateCreated ?? left.PremiereDate ?? "1970-01-01")
-        );
-      }
-
-      return left.Name.localeCompare(right.Name);
-    });
+    return [...items].sort((left, right) => sortJellyfinItems(left, right, sortBy));
   }, [data, searchTerm, sortBy]);
 
   if (error) {
@@ -105,13 +132,14 @@ export function LibraryPage() {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.62] to-black/30" />
         <div className="relative mx-auto max-w-[1600px]">
-          <Link
-            to="/home"
+          <button
+            type="button"
+            onClick={() => navigate(-1)}
             className="mb-14 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-4 text-sm font-semibold text-zinc-200 backdrop-blur transition hover:bg-white/[0.14] hover:text-white"
           >
             <ArrowLeft size={17} />
-            {t("common.home")}
-          </Link>
+            {t("common.back")}
+          </button>
 
           <div className="max-w-4xl">
             <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">{t("library.library")}</p>
@@ -153,7 +181,7 @@ export function LibraryPage() {
       {filteredItems.length > 0 ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
           {filteredItems.map((item) => (
-            <MediaCard key={item.Id} item={item} to={`/item/${item.Id}`} layout="grid" />
+            <MediaCard key={item.Id} item={item} to={`/library/${item.Id}`} layout="grid" />
           ))}
         </div>
       ) : (

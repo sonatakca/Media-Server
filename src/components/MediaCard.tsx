@@ -26,6 +26,14 @@ function getProgressPercent(item: JellyfinItem): number | null {
   return null;
 }
 
+function getCardMainLabel(item: JellyfinItem): string {
+  if (item.Type === "Season") {
+    return item.Name;
+  }
+
+  return getDisplayTitle(item);
+}
+
 function getEpisodeLabel(item: JellyfinItem): string | null {
   if (item.Type !== "Episode") {
     return null;
@@ -41,7 +49,7 @@ function getEpisodeLabel(item: JellyfinItem): string | null {
 export function MediaCard({ item, to, variant = "poster", layout = "row" }: MediaCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const title = getDisplayTitle(item);
+  const title = getCardMainLabel(item);
   const subtitle = getItemSubtitle(item);
   const episodeLabel = getEpisodeLabel(item);
   const progressPercent = getProgressPercent(item);
@@ -96,7 +104,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
         ) : null}
       </div>
       <div className="min-h-[5.9rem] p-3.5">
-        {logoUrl ? (
+        {logoUrl && item.Type !== "Season" ? (
           <img
             src={logoUrl}
             alt={title}
@@ -108,11 +116,11 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
 
         <h3
           className={`mt-2 h-5 truncate text-sm font-bold leading-5 ${
-            episodeLabel || !logoUrl ? "text-white" : "text-transparent"
+            episodeLabel || item.Type === "Season" || !logoUrl ? "text-white" : "text-transparent"
           }`}
           aria-hidden={Boolean(!episodeLabel && logoUrl)}
         >
-          {episodeLabel || (!logoUrl ? title : "Reserved")}
+          {episodeLabel || (item.Type === "Season" ? item.SeriesName ?? "" : !logoUrl ? title : "Reserved")}
         </h3>
 
         {subtitle ? (

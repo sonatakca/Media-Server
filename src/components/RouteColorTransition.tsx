@@ -94,7 +94,6 @@ export function RouteColorTransition() {
 
     const shouldSkipAnimation =
       !force &&
-      !import.meta.env.DEV &&
       hasSeenBefore &&
       (!isPastCooldown || !passedRandomChance);
 
