@@ -6,7 +6,7 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { DetailsSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
-import { getBackdropImageUrl, getItem, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getItem, getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
@@ -71,6 +71,7 @@ export function ItemDetailsPage() {
   const title = getDisplayTitle(item);
   const runtime = formatRuntime(item.RunTimeTicks);
   const posterUrl = item.ImageTags?.Primary ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760) : "";
+  const logoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
   const backdropUrl = getBackdrop(item);
   const videoStream = item.MediaSources?.[0]?.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "video");
   const audioStream = item.MediaSources?.[0]?.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "audio");
@@ -117,7 +118,17 @@ export function ItemDetailsPage() {
                 <AnimatedText value={item.Type === "Movie" ? t("common.movie") : item.Type === "BoxSet" ? t("common.boxsets") : item.Type ?? t("details.media")} />
               </AnimatedWidth>
             </p>
-            <h1 className="mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">{title}</h1>
+            {logoUrl ? (
+              <img
+                src={logoUrl}
+                alt={title}
+                className="mt-3 max-h-36 max-w-[min(42rem,92vw)] object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+              />
+            ) : (
+              <h1 className="mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">
+                {title}
+              </h1>
+            )}
             <div className="mt-5 flex flex-wrap gap-2">
               {chips.map(({ label, icon: Icon }) => (
                 <span

@@ -5,6 +5,7 @@ import type { PlaybackMode } from "../../lib/types";
 
 interface PlayerOverlayProps {
   title: string;
+  titleLogoUrl?: string;
   subtitle?: string | null;
   backTo: string;
   visible: boolean;
@@ -16,6 +17,7 @@ interface PlayerOverlayProps {
 
 export function PlayerOverlay({
   title,
+  titleLogoUrl,
   subtitle,
   backTo,
   visible,
@@ -42,8 +44,17 @@ export function PlayerOverlay({
             <ArrowLeft size={23} />
           </Link>
           <div className="min-w-0 flex-1">
-            <p className="truncate text-base font-bold text-white sm:text-lg">{title}</p>
-            {subtitle ? <p className="mt-0.5 truncate text-sm text-white/[0.62]">{subtitle}</p> : null}
+            {titleLogoUrl ? (
+              <img
+                src={titleLogoUrl}
+                alt={title}
+                className="max-h-10 max-w-[min(20rem,52vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12"
+              />
+            ) : (
+              <p className="truncate text-base font-bold text-white sm:text-lg">{title}</p>
+            )}
+
+            {subtitle ? <p className="mt-1 truncate text-sm text-white/[0.62]">{subtitle}</p> : null}
           </div>
           {playbackMode ? (
             <span className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 backdrop-blur sm:inline-flex">

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Home, LogOut, Server, UserRound } from "lucide-react";
+import { Home, LogOut, Palette, Server, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import logoOnSide from "../assets/Seyirlik-Logo-OnSide-cropped.png";
@@ -8,6 +8,7 @@ import { clearAuthSession, getAuthSession } from "../lib/authStorage";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { LanguageSwitch } from "./LanguageSwitch";
+import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "./RouteColorTransition";
 
 export function Navbar() {
   const navigate = useNavigate();
@@ -19,6 +20,10 @@ export function Navbar() {
   const handleLogout = () => {
     clearAuthSession();
     navigate("/login", { replace: true });
+  };
+
+  const handleThemeChange = () => {
+    window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
   };
 
   return (
@@ -78,6 +83,21 @@ export function Navbar() {
             <Server size={17} className="shrink-0" />
             <AnimatedWidth value={t("nav.server")} className="hidden sm:inline-block">
               <AnimatedText value={t("nav.server")} />
+            </AnimatedWidth>
+          </NavLink>
+          <NavLink
+            to="/home"
+            onClick={(event) => {
+              event.preventDefault();
+              handleThemeChange();
+            }}
+            className={() =>
+              "inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-semibold text-zinc-300 transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:w-auto sm:px-3"
+            }
+          >
+            <Palette size={17} className="shrink-0" />
+            <AnimatedWidth value={t("nav.changeTheme")} className="hidden sm:inline-block">
+              <AnimatedText value={t("nav.changeTheme")} />
             </AnimatedWidth>
           </NavLink>
           <LanguageSwitch />

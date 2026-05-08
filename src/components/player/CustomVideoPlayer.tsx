@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
 import { Loader2 } from "lucide-react";
+import { getLogoImageUrl } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
@@ -204,6 +205,7 @@ export function CustomVideoPlayer({
 
   const title = getDisplayTitle(item);
   const subtitle = getItemSubtitle(item);
+  const titleLogoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900) : "";
 
   return (
     <div
@@ -241,6 +243,7 @@ export function CustomVideoPlayer({
 
       <PlayerOverlay
         title={title}
+        titleLogoUrl={titleLogoUrl}
         subtitle={subtitle}
         backTo={`/item/${item.Id}`}
         visible={areControlsVisible || !progress.isPlaying}

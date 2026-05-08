@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Info, Play, Sparkles } from "lucide-react";
 import { ButtonLink } from "./Button";
 import appIcon from "../assets/AppIcon2.png";
-import { getBackdropImageUrl, getPrimaryImageUrl, redactPlaybackUrl } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getLogoImageUrl, getPrimaryImageUrl, redactPlaybackUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
@@ -57,6 +57,7 @@ export function HeroSection({ item }: HeroSectionProps) {
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const selectedImage = imageCandidates.find((candidate) => !failedImageUrls.includes(candidate.url));
   const primaryPosterUrl = imageCandidates.find((candidate) => candidate.type === "primary")?.url ?? "";
+  const logoUrl = item?.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
   const showSidePoster = Boolean(primaryPosterUrl && selectedImage?.type === "primary");
   const title = item ? getDisplayTitle(item) : "Seyirlik Web";
   const runtime = item ? formatRuntime(item.RunTimeTicks) : null;
@@ -125,9 +126,17 @@ export function HeroSection({ item }: HeroSectionProps) {
               </AnimatedWidth>
             </span>
           </div>
-          <h1 className="max-w-3xl text-5xl font-black leading-[0.95] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl">
-            {title}
-          </h1>
+          {logoUrl ? (
+            <img
+              src={logoUrl}
+              alt={title}
+              className="max-h-36 max-w-[min(42rem,92vw)] object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+            />
+          ) : (
+            <h1 className="max-w-3xl text-5xl font-black leading-[0.95] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl">
+              {title}
+            </h1>
+          )}
           {subtitle ? <p className="mt-4 text-lg font-semibold text-white/[0.78]">{subtitle}</p> : null}
           {metadata.length > 0 ? (
             <div className="mt-5 flex flex-wrap gap-2">

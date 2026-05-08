@@ -39,6 +39,10 @@ const DEFAULT_ITEM_FIELDS = [
   "ProductionYear",
   "MediaSources",
   "UserData",
+  "ImageTags",
+  "BackdropImageTags",
+  "ParentLogoItemId",
+  "ParentLogoImageTag",
 ].join(",");
 
 const MAX_STREAMING_BITRATE = 120_000_000;
@@ -255,7 +259,7 @@ export async function getItemsForLibrary(libraryId: string): Promise<JellyfinIte
       fields: DEFAULT_ITEM_FIELDS,
       enableImages: true,
       imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop",
+      enableImageTypes: "Primary,Backdrop,Logo",
     },
   });
 
@@ -268,6 +272,10 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
   return requestJson<JellyfinItem>(`/Items/${encodeURIComponent(itemId)}`, {
     params: {
       userId: session.userId,
+      fields: DEFAULT_ITEM_FIELDS,
+      enableImages: true,
+      imageTypeLimit: 1,
+      enableImageTypes: "Primary,Backdrop,Logo",
     },
   });
 }
@@ -283,7 +291,7 @@ export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
       fields: DEFAULT_ITEM_FIELDS,
       enableImages: true,
       imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop",
+      enableImageTypes: "Primary,Backdrop,Logo",
       enableUserData: true,
       excludeActiveSessions: false,
     },
@@ -303,7 +311,7 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
       includeItemTypes: "Movie,Series,Episode",
       enableImages: true,
       imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop",
+      enableImageTypes: "Primary,Backdrop,Logo",
       enableUserData: true,
       groupItems: false,
     },
@@ -655,6 +663,21 @@ export function getPrimaryImageUrl(itemId: string, tag?: string, maxWidth = 500)
   return buildJellyfinUrl(serverUrl, `/Items/${encodeURIComponent(itemId)}/Images/Primary`, {
     maxWidth,
     quality: 90,
+    tag,
+    api_key: getTokenForUrl(),
+  });
+}
+
+export function getLogoImageUrl(itemId: string, tag?: string, maxWidth = 900): string {
+  const serverUrl = getServerUrl();
+
+  if (!serverUrl) {
+    return "";
+  }
+
+  return buildJellyfinUrl(serverUrl, `/Items/${encodeURIComponent(itemId)}/Images/Logo`, {
+    maxWidth,
+    quality: 95,
     tag,
     api_key: getTokenForUrl(),
   });

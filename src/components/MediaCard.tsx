@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Play } from "lucide-react";
-import { getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
 
@@ -26,16 +26,33 @@ function getProgressPercent(item: JellyfinItem): number | null {
   return null;
 }
 
+function getEpisodeLabel(item: JellyfinItem): string | null {
+  if (item.Type !== "Episode") {
+    return null;
+  }
+
+  const seasonNumber = item.ParentIndexNumber ? `S${item.ParentIndexNumber}` : "";
+  const episodeNumber = item.IndexNumber ? `E${item.IndexNumber}` : "";
+  const code = `${seasonNumber}${episodeNumber}`;
+
+  return code && item.Name ? `${code} · ${item.Name}` : code || item.Name || null;
+}
+
 export function MediaCard({ item, to, variant = "poster", layout = "row" }: MediaCardProps) {
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const title = getDisplayTitle(item);
   const subtitle = getItemSubtitle(item);
+  const episodeLabel = getEpisodeLabel(item);
   const progressPercent = getProgressPercent(item);
   const imageUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, variant === "poster" ? 720 : 1100)
     : "";
-  const isLandscape = variant === "landscape";
+  const logoUrl = item.ImageTags?.Logo
+    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
+    : item.ParentLogoItemId && item.ParentLogoImageTag
+      ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
+      : "";  const isLandscape = variant === "landscape";
   const sizeClass = layout === "grid" ? "w-full" : isLandscape ? "w-72 sm:w-80 lg:w-96" : "w-44 sm:w-52 lg:w-60";
 
   return (
@@ -65,13 +82,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-65 transition group-hover:opacity-90 group-focus:opacity-90" />
         <div className="absolute inset-x-0 bottom-0 translate-y-2 p-3 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus:translate-y-0 group-focus:opacity-100">
-          <div className="flex items-end justify-between gap-3">
-            <div className="min-w-0">
-              <h3 className="line-clamp-2 text-sm font-black leading-tight text-white drop-shadow-lg sm:text-base">
-                {title}
-              </h3>
-              {subtitle ? <p className="mt-1 truncate text-xs font-medium text-white/[0.68]">{subtitle}</p> : null}
-            </div>
+          <div className="flex items-end justify-end">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 shadow-xl">
               <Play size={18} fill="currentColor" />
             </span>
@@ -83,10 +94,61 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
           </div>
         ) : null}
       </div>
-      <div className="min-h-[5.25rem] p-3.5">
-        <h3 className="truncate text-sm font-bold text-white">{title}</h3>
-        {subtitle ? <p className="mt-1 truncate text-xs font-medium text-white/50">{subtitle}</p> : null}
-      </div>
+      <div className="min-h-[5.9rem] p-3.5">
+
+  {logoUrl ? (
+
+    <img
+
+      src={logoUrl}
+
+      alt={title}
+
+      className="h-8 max-w-full object-contain object-left"
+
+    />
+
+  ) : (
+
+    <h3 className="h-8 truncate text-sm font-bold leading-8 text-white">{title}</h3>
+
+  )}
+
+  <h3
+
+    className={`mt-2 h-5 truncate text-sm font-bold leading-5 ${
+
+      episodeLabel || !logoUrl ? "text-white" : "text-transparent"
+
+    }`}
+
+    aria-hidden={!episodeLabel && logoUrl}
+
+  >
+
+    {episodeLabel || (!logoUrl ? title : "Reserved")}
+
+  </h3>
+
+  {subtitle ? (
+
+    <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
+
+      {subtitle}
+
+    </p>
+
+  ) : (
+
+    <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden="true">
+
+      Reserved
+
+    </p>
+
+  )}
+
+</div>
     </Link>
   );
 }
