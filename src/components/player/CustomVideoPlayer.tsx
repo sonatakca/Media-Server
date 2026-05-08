@@ -510,12 +510,12 @@ export function CustomVideoPlayer({
         ? Array.from({ length: activeCues.length }, (_, index) => activeCues[index])
         : [];
 
-      const cueText =
-        cues
-          .map(getCueText)
-          .map(decodeCueText)
-          .filter(Boolean)
-          .at(-1) ?? "";
+      const decodedCueTexts = cues
+        .map(getCueText)
+        .map(decodeCueText)
+        .filter(Boolean);
+
+      const cueText = decodedCueTexts[decodedCueTexts.length - 1] ?? "";
 
       setActiveSubtitleText(cueText);
     };
@@ -947,7 +947,6 @@ export function CustomVideoPlayer({
         visible={areControlsVisible || !progress.isPlaying}
         isPlaying={progress.isPlaying}
         notice={notice}
-        playbackMode={activeSource.mode}
         onTogglePlay={progress.togglePlay}
       />
 
@@ -981,7 +980,7 @@ export function CustomVideoPlayer({
       />
 
       {areControlsVisible || !progress.isPlaying ? (
-        <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[calc(max(1rem,env(safe-area-inset-top))+4.5rem)] z-40">
+        <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40">
           <PlaybackInfoButton source={activeSource} onClick={() => setIsPlaybackInfoOpen(true)} />
         </div>
       ) : null}

@@ -1,7 +1,6 @@
 import { ArrowLeft, Pause, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
-import type { PlaybackMode } from "../../lib/types";
 
 interface PlayerOverlayProps {
   title: string;
@@ -11,7 +10,6 @@ interface PlayerOverlayProps {
   visible: boolean;
   isPlaying: boolean;
   notice?: string | null;
-  playbackMode?: PlaybackMode;
   onTogglePlay: () => void;
 }
 
@@ -23,7 +21,6 @@ export function PlayerOverlay({
   visible,
   isPlaying,
   notice,
-  playbackMode,
   onTogglePlay,
 }: PlayerOverlayProps) {
   const { t } = useLanguage();
@@ -43,6 +40,7 @@ export function PlayerOverlay({
           >
             <ArrowLeft size={23} />
           </Link>
+
           <div className="min-w-0 flex-1">
             {titleLogoUrl ? (
               <img
@@ -56,11 +54,6 @@ export function PlayerOverlay({
 
             {subtitle ? <p className="mt-1 truncate text-sm text-white/[0.62]">{subtitle}</p> : null}
           </div>
-          {playbackMode ? (
-            <span className="hidden rounded-full border border-white/15 bg-white/10 px-3 py-1.5 text-xs font-semibold text-white/85 backdrop-blur sm:inline-flex">
-              {playbackMode}
-            </span>
-          ) : null}
         </div>
       </div>
 
