@@ -5,6 +5,8 @@ export type AccentTheme = {
   accentSoft: string;
 };
 
+export const ACCENT_THEME_STORAGE_KEY = "seyirlik.routeColorTransition.selectedTheme";
+
 export const ACCENT_THEMES: AccentTheme[] = [
   {
     name: "Warm Red",
@@ -55,4 +57,33 @@ export function applyAccentTheme(theme: AccentTheme): void {
   root.style.setProperty("--accent-hover", theme.accentHover);
   root.style.setProperty("--accent-soft", theme.accentSoft);
   root.dataset.accentTheme = theme.name;
+}
+
+export function getStoredAccentTheme(): AccentTheme | null {
+  const storedThemeName = localStorage.getItem(ACCENT_THEME_STORAGE_KEY);
+
+  if (!storedThemeName) {
+    return null;
+  }
+
+  return ACCENT_THEMES.find((theme) => theme.name === storedThemeName) ?? null;
+}
+
+export function saveAccentTheme(theme: AccentTheme): void {
+  localStorage.setItem(ACCENT_THEME_STORAGE_KEY, theme.name);
+}
+
+export function saveAndApplyAccentTheme(theme: AccentTheme): void {
+  saveAccentTheme(theme);
+  applyAccentTheme(theme);
+}
+
+export function applyStoredAccentTheme(): void {
+  const storedTheme = getStoredAccentTheme();
+
+  if (!storedTheme) {
+    return;
+  }
+
+  applyAccentTheme(storedTheme);
 }

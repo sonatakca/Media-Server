@@ -21,6 +21,8 @@ const SELECTED_EXIT_MS = 120;
 const FINAL_BLACK_HOLD_MS = 60;
 const OVERLAY_FADE_OUT_MS = 420;
 
+const ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY = "seyirlik.routeColorTransition.selectedTheme";
+
 type ColourBarState = {
   theme: AccentTheme;
   isVisible: boolean;
@@ -65,6 +67,21 @@ function getNextAccentThemeWithoutRepeatingCycle() {
   return selectedTheme;
 }
 
+function getStoredAccentTheme(): AccentTheme | null {
+  const storedThemeName = localStorage.getItem(ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY);
+
+  if (!storedThemeName) {
+    return null;
+  }
+
+  return ACCENT_THEMES.find((theme) => theme.name === storedThemeName) ?? null;
+}
+
+function saveAndApplyAccentTheme(theme: AccentTheme): void {
+  localStorage.setItem(ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY, theme.name);
+  applyAccentTheme(theme);
+}
+
 function getInitialBars(): ColourBarState[] {
   return ACCENT_THEMES.map((theme) => ({
     theme,
@@ -98,6 +115,13 @@ export function RouteColorTransition() {
       (!isPastCooldown || !passedRandomChance);
 
     if (shouldSkipAnimation) {
+      const storedTheme = getStoredAccentTheme();
+
+      if (storedTheme) {
+        selectedThemeRef.current = storedTheme;
+        applyAccentTheme(storedTheme);
+      }
+
       return;
     }
 
@@ -106,14 +130,16 @@ export function RouteColorTransition() {
     timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     timeoutsRef.current = [];
 
-    const finalTheme = force ? getNextAccentThemeWithoutRepeatingCycle() : selectedThemeRef.current ?? getNextAccentThemeWithoutRepeatingCycle();
+    const finalTheme = force
+      ? getNextAccentThemeWithoutRepeatingCycle()
+      : selectedThemeRef.current ?? getStoredAccentTheme() ?? getNextAccentThemeWithoutRepeatingCycle();
 
     selectedThemeRef.current = finalTheme;
 
     const selectedIndex = ACCENT_THEMES.findIndex((theme) => theme.name === finalTheme.name);
     const safeSelectedIndex = selectedIndex >= 0 ? selectedIndex : ACCENT_THEMES.length - 1;
 
-    applyAccentTheme(finalTheme);
+    saveAndApplyAccentTheme(finalTheme);
 
     setIsVisible(true);
     setIsLeaving(false);
@@ -203,6 +229,15 @@ export function RouteColorTransition() {
       leaveTimeoutId,
       hideTimeoutId,
     );
+  }, []);
+
+  useEffect(() => {
+    const storedTheme = getStoredAccentTheme();
+
+    if (storedTheme) {
+      selectedThemeRef.current = storedTheme;
+      applyAccentTheme(storedTheme);
+    }
   }, []);
 
   useEffect(() => {
