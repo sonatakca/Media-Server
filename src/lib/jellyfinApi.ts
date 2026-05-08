@@ -599,6 +599,7 @@ export function buildPlaybackCandidates(
           browserCanPlay ? 35 + sourceIndex : 5 + sourceIndex,
           "Jellyfin returned a transcoding URL from PlaybackInfo.",
           isHlsUrl(transcodingUrl, mediaSource) ? "application/vnd.apple.mpegurl" : undefined,
+          playbackInfo,
         ),
       );
     } else if (mediaSource.SupportsTranscoding && mediaSource.Id) {
@@ -612,6 +613,7 @@ export function buildPlaybackCandidates(
           browserCanPlay ? 40 + sourceIndex : 8 + sourceIndex,
           "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
           "application/vnd.apple.mpegurl",
+          playbackInfo,
         ),
       );
     }
@@ -630,6 +632,7 @@ export function buildPlaybackCandidates(
             ? "Container and codecs look browser-compatible."
             : "Direct URL kept as a last resort because this container or codec is risky in browsers.",
           mimeType,
+          playbackInfo,
         ),
       );
     }

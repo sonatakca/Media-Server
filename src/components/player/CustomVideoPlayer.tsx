@@ -13,7 +13,6 @@ import { PlayerErrorOverlay } from "./PlayerErrorOverlay";
 import { PlayerOverlay } from "./PlayerOverlay";
 import { PlaybackInfoButton } from "./PlaybackInfoButton";
 import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
-import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
 
 interface CustomVideoPlayerProps {
   item: JellyfinItem;
