@@ -92,8 +92,8 @@ img {
 }
 
 .seyirlik-video::cue {
-  color: rgba(255, 255, 255, 0.96);
-  background-color: rgba(0, 0, 0, 0.16);
+  color: transparent;
+  background: transparent;
   font-family:
     Inter,
     ui-sans-serif,
@@ -105,10 +105,7 @@ img {
   font-size: clamp(1.05rem, 2.15vw, 1.65rem);
   font-weight: 650;
   line-height: 1.35;
-  text-shadow:
-    0 2px 4px rgba(0, 0, 0, 0.95),
-    0 0 10px rgba(0, 0, 0, 0.78),
-    0 0 2px rgba(0, 0, 0, 1);
+  text-shadow: none;
 }
 
 .seyirlik-video::cue(b) {
@@ -146,6 +143,73 @@ img {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+
+.seyirlik-subtitle-overlay--placeholder {
+  color: rgba(255, 214, 10, 0.98);
+  opacity: 0.92;
+}
+
+.seyirlik-subtitle-overlay--placeholder .seyirlik-subtitle-line {
+  background: rgba(0, 0, 0, 0.32);
+  outline: 1px dashed rgba(255, 214, 10, 0.42);
+}
+
+.seyirlik-subtitle-overlay--editing {
+  border: 1px solid rgba(255, 255, 255, 0.34);
+  border-radius: 0.9rem;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.025)),
+    rgba(0, 0, 0, 0.12);
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.45),
+    0 18px 70px rgba(0, 0, 0, 0.45);
+}
+
+.seyirlik-subtitle-resize-handle {
+  position: absolute;
+  width: 0.82rem;
+  height: 0.82rem;
+  border: 2px solid rgba(0, 0, 0, 0.72);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.28),
+    0 8px 22px rgba(0, 0, 0, 0.52);
+  touch-action: none;
+  cursor: nwse-resize;
+}
+
+.seyirlik-subtitle-resize-handle:hover {
+  background: var(--accent);
+}
+
+.seyirlik-subtitle-resize-handle--tl {
+  left: -0.45rem;
+  top: -0.45rem;
+  cursor: nwse-resize;
+}
+
+.seyirlik-subtitle-resize-handle--tr {
+  right: -0.45rem;
+  top: -0.45rem;
+  cursor: nesw-resize;
+}
+
+.seyirlik-subtitle-resize-handle--bl {
+  left: -0.45rem;
+  bottom: -0.45rem;
+  cursor: nesw-resize;
+}
+
+.seyirlik-subtitle-resize-handle--br {
+  right: -0.45rem;
+  bottom: -0.45rem;
+  cursor: nwse-resize;
+}
+
+.seyirlik-subtitle-overlay:not(.seyirlik-subtitle-overlay--editing) {
+  cursor: default;
 }
 
 .seyirlik-subtitle-line-wrap {

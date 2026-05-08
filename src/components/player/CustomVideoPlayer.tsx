@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
 import { Loader2 } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
@@ -58,7 +58,24 @@ interface SubtitleDragState {
   offsetY: number;
 }
 
+interface SubtitleSize {
+  scale: number;
+}
+
+interface SubtitleResizeState {
+  pointerId: number;
+  startClientX: number;
+  startClientY: number;
+  startScale: number;
+  directionX: -1 | 1;
+  directionY: -1 | 1;
+}
+
 const AUTO_QUALITY_ID = "auto";
+const SUBTITLE_EDIT_PLACEHOLDER = "Example subtitle to edit.";
+const DEFAULT_SUBTITLE_SCALE = 1;
+const MIN_SUBTITLE_SCALE = 0.7;
+const MAX_SUBTITLE_SCALE = 2.4;
 
 function getStreamsOfType(source: PlaybackSourceCandidate, type: "Audio" | "Subtitle"): JellyfinMediaStream[] {
   return source.mediaSource.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === type.toLowerCase()) ?? [];
@@ -144,6 +161,7 @@ export function CustomVideoPlayer({
   const pendingSourceRestoreRef = useRef<PendingSourceRestore | null>(null);
   const subtitleOverlayRef = useRef<HTMLDivElement | null>(null);
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
+  const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
@@ -165,7 +183,10 @@ export function CustomVideoPlayer({
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition | null>(null);
+  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({ scale: DEFAULT_SUBTITLE_SCALE });
   const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false);
+  const [isResizingSubtitle, setIsResizingSubtitle] = useState(false);
+  const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
   const availablePlaybackCandidates = playbackCandidates.length > 0 ? playbackCandidates : [source];
   const qualityOptions = useMemo(() => getManualQualityOptions(activeSource.mediaSource), [activeSource.mediaSource]);
   const canSwitchAudio = Boolean(
@@ -185,8 +206,12 @@ export function CustomVideoPlayer({
   useEffect(() => {
     setActiveSubtitleText("");
     setSubtitlePosition(null);
+    setSubtitleSize({ scale: DEFAULT_SUBTITLE_SCALE });
     setIsDraggingSubtitle(false);
+    setIsResizingSubtitle(false);
+    setIsSubtitleEditMode(false);
     subtitleDragStateRef.current = null;
+    subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
   }, [item.Id]);
 
@@ -233,6 +258,36 @@ export function CustomVideoPlayer({
       document.removeEventListener("pointerdown", handlePointerDownOutside);
     };
   }, [isSettingsOpen]);
+
+  useEffect(() => {
+    if (!isSubtitleEditMode) {
+      return undefined;
+    }
+
+    const handlePointerDownOutsideSubtitle = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (
+        target?.closest("[data-subtitle-editor-root]") ||
+        target?.closest("[data-player-settings-root]")
+      ) {
+        return;
+      }
+
+      setIsSubtitleEditMode(false);
+      setIsDraggingSubtitle(false);
+      setIsResizingSubtitle(false);
+      subtitleDragStateRef.current = null;
+      subtitleResizeStateRef.current = null;
+      suppressPlayerTapUntilRef.current = Date.now() + 350;
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutsideSubtitle);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutsideSubtitle);
+    };
+  }, [isSubtitleEditMode]);
 
   const switchPlayerSource = useCallback(
     (nextSource: PlaybackSourceCandidate) => {
@@ -441,8 +496,12 @@ export function CustomVideoPlayer({
     trackElement.kind = "subtitles";
     trackElement.label = getSubtitleTrackLabel(subtitleStream);
     trackElement.srclang = subtitleStream.Language || "und";
-    trackElement.src = buildSubtitleStreamUrl(activeSource.itemId, activeSource.mediaSourceId, selectedSubtitleStreamIndex);
-    trackElement.default = true;
+    trackElement.src = buildSubtitleStreamUrl(
+      activeSource.itemId,
+      activeSource.mediaSourceId,
+      selectedSubtitleStreamIndex,
+    );
+    trackElement.default = false;
     trackElement.dataset.seyirlikSubtitle = "true";
 
     const updateActiveSubtitleText = () => {
@@ -450,11 +509,13 @@ export function CustomVideoPlayer({
       const cues = activeCues
         ? Array.from({ length: activeCues.length }, (_, index) => activeCues[index])
         : [];
-      const cueText = cues
-        .map(getCueText)
-        .map(decodeCueText)
-        .filter(Boolean)
-        .join("\n");
+
+      const cueText =
+        cues
+          .map(getCueText)
+          .map(decodeCueText)
+          .filter(Boolean)
+          .at(-1) ?? "";
 
       setActiveSubtitleText(cueText);
     };
@@ -529,7 +590,7 @@ export function CustomVideoPlayer({
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (isDraggingSubtitle || Date.now() < suppressPlayerTapUntilRef.current) {
+    if (isDraggingSubtitle || isResizingSubtitle || Date.now() < suppressPlayerTapUntilRef.current) {
       return;
     }
 
@@ -564,7 +625,109 @@ export function CustomVideoPlayer({
     };
   }, []);
 
+  const handleSubtitleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const bounds = containerRef.current?.getBoundingClientRect();
+    const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
+
+    if (bounds && overlayBounds) {
+      const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
+      const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
+
+      setSubtitlePosition((currentPosition) => currentPosition ?? {
+        x: clamp(((overlayCenterX - bounds.left) / bounds.width) * 100, 8, 92),
+        y: clamp(((overlayCenterY - bounds.top) / bounds.height) * 100, 10, 90),
+      });
+    }
+
+    setIsSubtitleEditMode(true);
+    showControls();
+  };
+
+  const handleSubtitleResizePointerDown = (
+    event: PointerEvent<HTMLButtonElement>,
+    directionX: -1 | 1,
+    directionY: -1 | 1,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    subtitleResizeStateRef.current = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startScale: subtitleSize.scale,
+      directionX,
+      directionY,
+    };
+
+    setIsSubtitleEditMode(true);
+    setIsResizingSubtitle(true);
+    setIsDraggingSubtitle(false);
+    subtitleDragStateRef.current = null;
+    lastTapRef.current = null;
+    showControls();
+  };
+
+  const handleSubtitleResizePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+    const resizeState = subtitleResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const deltaX = (event.clientX - resizeState.startClientX) * resizeState.directionX;
+    const deltaY = (event.clientY - resizeState.startClientY) * resizeState.directionY;
+    const strongestDelta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+    const nextScale = clamp(resizeState.startScale + strongestDelta / 220, MIN_SUBTITLE_SCALE, MAX_SUBTITLE_SCALE);
+
+    setSubtitleSize({ scale: nextScale });
+  };
+
+  const finishSubtitleResize = (event: PointerEvent<HTMLButtonElement>) => {
+    const resizeState = subtitleResizeStateRef.current;
+
+    if (!resizeState || resizeState.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    subtitleResizeStateRef.current = null;
+    setIsResizingSubtitle(false);
+    suppressPlayerTapUntilRef.current = Date.now() + 450;
+    lastTapRef.current = null;
+  };
+
+  const handleSubtitleResizePointerCancel = (event: PointerEvent<HTMLButtonElement>) => {
+    if (subtitleResizeStateRef.current?.pointerId !== event.pointerId) {
+      return;
+    }
+
+    event.stopPropagation();
+    subtitleResizeStateRef.current = null;
+    setIsResizingSubtitle(false);
+    suppressPlayerTapUntilRef.current = Date.now() + 450;
+    lastTapRef.current = null;
+  };
+
   const handleSubtitlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (!isSubtitleEditMode) {
+      return;
+    }
+
     const bounds = containerRef.current?.getBoundingClientRect();
     const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
 
@@ -590,6 +753,8 @@ export function CustomVideoPlayer({
       y: clamp(((overlayCenterY - bounds.top) / bounds.height) * 100, 10, 90),
     });
     setIsDraggingSubtitle(true);
+    setIsResizingSubtitle(false);
+    subtitleResizeStateRef.current = null;
     lastTapRef.current = null;
     showControls();
   };
@@ -645,20 +810,29 @@ export function CustomVideoPlayer({
     subtitleDragStateRef.current = null;
     suppressPlayerTapUntilRef.current = Date.now() + 450;
     setIsDraggingSubtitle(false);
+    setIsResizingSubtitle(false);
     lastTapRef.current = null;
   };
 
   const title = getDisplayTitle(item);
   const subtitle = getItemSubtitle(item);
   const titleLogoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900) : "";
-  const subtitleLines = activeSubtitleText.split("\n").map((line) => line.trim()).filter(Boolean);
+  const isSubtitleBeingEdited = isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
+  const isShowingSubtitlePlaceholder = isSubtitleBeingEdited && activeSubtitleText.trim().length === 0;
+
+  const subtitleLines = (isShowingSubtitlePlaceholder ? SUBTITLE_EDIT_PLACEHOLDER : activeSubtitleText)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
   const subtitleOverlayStyle = subtitlePosition
     ? {
         left: `${subtitlePosition.x}%`,
         top: `${subtitlePosition.y}%`,
-        transform: "translate(-50%, -50%)",
+        transform: `translate(-50%, -50%) scale(${subtitleSize.scale})`,
       }
-    : undefined;
+    : {
+        transform: `translateX(-50%) scale(${subtitleSize.scale})`,
+      };
 
   return (
     <div
@@ -689,16 +863,19 @@ export function CustomVideoPlayer({
       {subtitleLines.length > 0 ? (
         <div
           ref={subtitleOverlayRef}
+          data-subtitle-editor-root
           className={`seyirlik-subtitle-overlay absolute z-[24] ${
-            subtitlePosition ? "" : "bottom-[12%] left-1/2 -translate-x-1/2"
-          } ${isDraggingSubtitle ? "cursor-grabbing" : "cursor-grab"}`}
+            subtitlePosition ? "" : "bottom-[12%] left-1/2"
+          } ${isSubtitleEditMode ? (isDraggingSubtitle ? "cursor-grabbing" : "cursor-grab") : "cursor-default"} ${
+            isShowingSubtitlePlaceholder ? "seyirlik-subtitle-overlay--placeholder" : ""
+          } ${isSubtitleEditMode ? "seyirlik-subtitle-overlay--editing" : ""}`}
           style={subtitleOverlayStyle}
           onPointerDown={handleSubtitlePointerDown}
           onPointerMove={handleSubtitlePointerMove}
           onPointerUp={finishSubtitleDrag}
           onPointerCancel={handleSubtitlePointerCancel}
           onLostPointerCapture={handleSubtitlePointerCancel}
-          onDoubleClick={(event) => event.stopPropagation()}
+          onDoubleClick={handleSubtitleDoubleClick}
           aria-label="Drag subtitles"
         >
           {subtitleLines.map((line, index) => (
@@ -706,6 +883,51 @@ export function CustomVideoPlayer({
               <span className="seyirlik-subtitle-line">{line}</span>
             </div>
           ))}
+
+          {isSubtitleEditMode ? (
+            <>
+              <button
+                type="button"
+                className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tl"
+                aria-label="Resize subtitles from top left"
+                onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, -1)}
+                onPointerMove={handleSubtitleResizePointerMove}
+                onPointerUp={finishSubtitleResize}
+                onPointerCancel={handleSubtitleResizePointerCancel}
+                onLostPointerCapture={handleSubtitleResizePointerCancel}
+              />
+              <button
+                type="button"
+                className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tr"
+                aria-label="Resize subtitles from top right"
+                onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, -1)}
+                onPointerMove={handleSubtitleResizePointerMove}
+                onPointerUp={finishSubtitleResize}
+                onPointerCancel={handleSubtitleResizePointerCancel}
+                onLostPointerCapture={handleSubtitleResizePointerCancel}
+              />
+              <button
+                type="button"
+                className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--bl"
+                aria-label="Resize subtitles from bottom left"
+                onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, 1)}
+                onPointerMove={handleSubtitleResizePointerMove}
+                onPointerUp={finishSubtitleResize}
+                onPointerCancel={handleSubtitleResizePointerCancel}
+                onLostPointerCapture={handleSubtitleResizePointerCancel}
+              />
+              <button
+                type="button"
+                className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--br"
+                aria-label="Resize subtitles from bottom right"
+                onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, 1)}
+                onPointerMove={handleSubtitleResizePointerMove}
+                onPointerUp={finishSubtitleResize}
+                onPointerCancel={handleSubtitleResizePointerCancel}
+                onLostPointerCapture={handleSubtitleResizePointerCancel}
+              />
+            </>
+          ) : null}
         </div>
       ) : null}
 
