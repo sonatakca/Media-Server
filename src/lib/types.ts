@@ -58,7 +58,9 @@ export interface JellyfinMediaStream {
   IsDefault?: boolean;
   IsForced?: boolean;
   IsExternal?: boolean;
+  IsTextSubtitleStream?: boolean;
   DeliveryMethod?: string;
+  Title?: string;
   Channels?: number;
   BitRate?: number;
   Width?: number;
@@ -155,6 +157,22 @@ export interface JellyfinPlaybackInfoResponse {
 }
 
 export type PlaybackMode = "DirectPlay" | "DirectStream" | "Transcoding" | "Unknown";
+
+export interface PlaybackQualityOption {
+  id: string;
+  label: string;
+  subtitle: string;
+  maxHeight?: number;
+  maxWidth?: number;
+  maxStreamingBitrate: number;
+}
+
+export interface PlaybackSourceSettings {
+  audioStreamIndex?: number;
+  maxHeight?: number;
+  maxWidth?: number;
+  maxStreamingBitrate?: number;
+}
 
 export interface PlaybackSourceCandidate {
   id: string;

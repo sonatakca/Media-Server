@@ -3,7 +3,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
-import type { PlaybackMode, PlaybackSourceCandidate } from "../../lib/types";
+import type { PlaybackQualityOption, PlaybackSourceCandidate } from "../../lib/types";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -13,8 +13,13 @@ interface PlayerControlsProps {
   bufferedEnd: number;
   volume: number;
   muted: boolean;
-  playbackMode?: PlaybackMode;
   source: PlaybackSourceCandidate;
+  qualityOptions: PlaybackQualityOption[];
+  selectedQualityId: string;
+  selectedAudioStreamIndex?: number;
+  selectedSubtitleStreamIndex: number;
+  canSwitchAudio: boolean;
+  canSwitchSubtitles: boolean;
   settingsOpen: boolean;
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
@@ -23,6 +28,10 @@ interface PlayerControlsProps {
   onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
   onOpenSettings: () => void;
+  onSelectAutoQuality: () => void;
+  onSelectQuality: (quality: PlaybackQualityOption) => void;
+  onSelectAudioStream: (streamIndex: number) => void;
+  onSelectSubtitleStream: (streamIndex: number) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -50,8 +59,13 @@ export function PlayerControls({
   bufferedEnd,
   volume,
   muted,
-  playbackMode,
   source,
+  qualityOptions,
+  selectedQualityId,
+  selectedAudioStreamIndex,
+  selectedSubtitleStreamIndex,
+  canSwitchAudio,
+  canSwitchSubtitles,
   settingsOpen,
   onTogglePlay,
   onSeek,
@@ -60,6 +74,10 @@ export function PlayerControls({
   onVolumeChange,
   onToggleFullscreen,
   onOpenSettings,
+  onSelectAutoQuality,
+  onSelectQuality,
+  onSelectAudioStream,
+  onSelectSubtitleStream,
 }: PlayerControlsProps) {
   const { t } = useLanguage();
 
@@ -110,7 +128,21 @@ export function PlayerControls({
 
           <div className="flex items-center gap-1 sm:gap-2">
             <div className="relative" data-player-settings-root>
-              {settingsOpen ? <PlayerSettingsPanel source={source} /> : null}
+              {settingsOpen ? (
+                <PlayerSettingsPanel
+                  source={source}
+                  qualityOptions={qualityOptions}
+                  selectedQualityId={selectedQualityId}
+                  selectedAudioStreamIndex={selectedAudioStreamIndex}
+                  selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
+                  canSwitchAudio={canSwitchAudio}
+                  canSwitchSubtitles={canSwitchSubtitles}
+                  onSelectAutoQuality={onSelectAutoQuality}
+                  onSelectQuality={onSelectQuality}
+                  onSelectAudioStream={onSelectAudioStream}
+                  onSelectSubtitleStream={onSelectSubtitleStream}
+                />
+              ) : null}
 
               <button
                 type="button"

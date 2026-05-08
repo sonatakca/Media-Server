@@ -14,8 +14,10 @@ import type {
   JellyfinMediaStream,
   JellyfinPlaybackInfoResponse,
   JellyfinPublicSystemInfo,
+  PlaybackQualityOption,
   PlaybackMode,
   PlaybackSourceCandidate,
+  PlaybackSourceSettings,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined | Array<string | number | boolean>;
@@ -512,6 +514,7 @@ function buildMasterHlsUrl(
   itemId: string,
   mediaSource: JellyfinMediaSource,
   playSessionId: string | undefined,
+  settings: PlaybackSourceSettings = {},
 ): string {
   const session = requireAuthSession();
 
@@ -519,9 +522,12 @@ function buildMasterHlsUrl(
     mediaSourceId: mediaSource.Id,
     playSessionId,
     deviceId: session.deviceId,
+    audioStreamIndex: settings.audioStreamIndex,
     videoCodec: "h264",
     audioCodec: "aac",
-    maxStreamingBitrate: MAX_STREAMING_BITRATE,
+    maxStreamingBitrate: settings.maxStreamingBitrate ?? MAX_STREAMING_BITRATE,
+    maxWidth: settings.maxWidth,
+    maxHeight: settings.maxHeight,
     transcodingMaxAudioChannels: 6,
     segmentContainer: "ts",
     minSegments: 1,
@@ -532,6 +538,116 @@ function buildMasterHlsUrl(
     enableAdaptiveBitrateStreaming: true,
     api_key: session.accessToken,
   });
+}
+
+export function buildConfiguredHlsPlaybackSource(
+  source: PlaybackSourceCandidate,
+  settings: PlaybackSourceSettings,
+  label = "Custom HLS",
+  reason = "Built a Jellyfin HLS URL for the selected player setting.",
+): PlaybackSourceCandidate {
+  if (!source.mediaSource.Id) {
+    throw new Error("This media source does not have a Jellyfin mediaSourceId.");
+  }
+
+  if (!source.mediaSource.SupportsTranscoding && source.mode !== "Transcoding") {
+    throw new Error("This Jellyfin media source does not report transcoding support.");
+  }
+
+  const url = buildMasterHlsUrl(source.itemId, source.mediaSource, source.playSessionId, settings);
+  const idParts = [
+    "SettingsHls",
+    source.mediaSource.Id,
+    settings.audioStreamIndex !== undefined ? `a${settings.audioStreamIndex}` : "a-auto",
+    settings.maxHeight !== undefined ? `h${settings.maxHeight}` : "h-auto",
+    settings.maxStreamingBitrate !== undefined ? `b${settings.maxStreamingBitrate}` : "b-auto",
+  ];
+
+  return {
+    ...source,
+    id: idParts.join("-"),
+    mode: "Transcoding",
+    url,
+    mimeType: "application/vnd.apple.mpegurl",
+    isHls: true,
+    usingHlsJs: undefined,
+    label,
+    reason,
+    priority: Math.min(source.priority, 9),
+  };
+}
+
+export function buildSubtitleStreamUrl(itemId: string, mediaSourceId: string, subtitleStreamIndex: number): string {
+  const session = requireAuthSession();
+
+  return buildJellyfinUrl(
+    session.serverUrl,
+    `/Videos/${encodeURIComponent(itemId)}/${encodeURIComponent(mediaSourceId)}/Subtitles/${subtitleStreamIndex}/Stream.vtt`,
+    {
+      api_key: session.accessToken,
+    },
+  );
+}
+
+export function getManualQualityOptions(mediaSource: JellyfinMediaSource): PlaybackQualityOption[] {
+  if (!mediaSource.SupportsTranscoding) {
+    return [];
+  }
+
+  const videoStream = mediaSource.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "video");
+  const sourceHeight = videoStream?.Height;
+  const sourceWidth = videoStream?.Width;
+
+  if (!sourceHeight || sourceHeight < 480) {
+    return [];
+  }
+
+  const qualityPresets: Array<Omit<PlaybackQualityOption, "id">> = [
+    {
+      label: "4K",
+      subtitle: "HLS · up to 80 Mbps",
+      maxHeight: 2160,
+      maxWidth: 3840,
+      maxStreamingBitrate: 80_000_000,
+    },
+    {
+      label: "1080p",
+      subtitle: "HLS · up to 20 Mbps",
+      maxHeight: 1080,
+      maxWidth: 1920,
+      maxStreamingBitrate: 20_000_000,
+    },
+    {
+      label: "720p",
+      subtitle: "HLS · up to 8 Mbps",
+      maxHeight: 720,
+      maxWidth: 1280,
+      maxStreamingBitrate: 8_000_000,
+    },
+    {
+      label: "480p",
+      subtitle: "HLS · up to 4 Mbps",
+      maxHeight: 480,
+      maxWidth: 854,
+      maxStreamingBitrate: 4_000_000,
+    },
+  ];
+
+  return qualityPresets
+    .filter((option) => option.maxHeight !== undefined && option.maxHeight <= sourceHeight)
+    .map((option) => {
+      const maxHeight = option.maxHeight;
+      const maxWidth =
+        option.maxWidth && sourceWidth && sourceHeight
+          ? Math.min(option.maxWidth, Math.round((sourceWidth / sourceHeight) * (maxHeight ?? sourceHeight)))
+          : option.maxWidth;
+
+      return {
+        ...option,
+        id: `hls-${maxHeight ?? "auto"}-${option.maxStreamingBitrate}`,
+        maxWidth,
+      };
+    });
 }
 
 function resolveTranscodingUrl(mediaSource: JellyfinMediaSource): string | null {

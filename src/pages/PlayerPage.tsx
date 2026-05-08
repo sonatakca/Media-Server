@@ -135,6 +135,7 @@ export function PlayerPage() {
     <CustomVideoPlayer
       item={item}
       source={playback.activeSource}
+      playbackCandidates={playback.candidates}
       notice={playback.notice}
       error={playback.error}
       hasTranscodingFallback={playback.hasTranscodingFallback}
