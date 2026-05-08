@@ -52,7 +52,8 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
     : item.ParentLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
-      : "";  const isLandscape = variant === "landscape";
+      : "";  
+  const isLandscape = variant === "landscape";
   const sizeClass = layout === "grid" ? "w-full" : isLandscape ? "w-72 sm:w-80 lg:w-96" : "w-44 sm:w-52 lg:w-60";
 
   return (
@@ -95,60 +96,35 @@ export function MediaCard({ item, to, variant = "poster", layout = "row" }: Medi
         ) : null}
       </div>
       <div className="min-h-[5.9rem] p-3.5">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={title}
+            className="h-8 max-w-full object-contain object-left"
+          />
+        ) : (
+          <h3 className="h-8 truncate text-sm font-bold leading-8 text-white">{title}</h3>
+        )}
 
-  {logoUrl ? (
+        <h3
+          className={`mt-2 h-5 truncate text-sm font-bold leading-5 ${
+            episodeLabel || !logoUrl ? "text-white" : "text-transparent"
+          }`}
+          aria-hidden={Boolean(!episodeLabel && logoUrl)}
+        >
+          {episodeLabel || (!logoUrl ? title : "Reserved")}
+        </h3>
 
-    <img
-
-      src={logoUrl}
-
-      alt={title}
-
-      className="h-8 max-w-full object-contain object-left"
-
-    />
-
-  ) : (
-
-    <h3 className="h-8 truncate text-sm font-bold leading-8 text-white">{title}</h3>
-
-  )}
-
-  <h3
-
-    className={`mt-2 h-5 truncate text-sm font-bold leading-5 ${
-
-      episodeLabel || !logoUrl ? "text-white" : "text-transparent"
-
-    }`}
-
-    aria-hidden={!episodeLabel && logoUrl}
-
-  >
-
-    {episodeLabel || (!logoUrl ? title : "Reserved")}
-
-  </h3>
-
-  {subtitle ? (
-
-    <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
-
-      {subtitle}
-
-    </p>
-
-  ) : (
-
-    <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden="true">
-
-      Reserved
-
-    </p>
-
-  )}
-
-</div>
+        {subtitle ? (
+          <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
+            {subtitle}
+          </p>
+        ) : (
+          <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden={true}>
+            Reserved
+          </p>
+        )}
+      </div>
     </Link>
   );
 }
