@@ -1,11 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Search, SlidersHorizontal } from "lucide-react";
+import { motion, useReducedMotion } from "framer-motion";
+import { Navigate, useParams } from "react-router-dom";
+import { Search, SlidersHorizontal } from "lucide-react";
+import { BackButton } from "../components/BackButton";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { MediaCard } from "../components/MediaCard";
+import { MotionReveal } from "../components/MotionReveal";
 import { DetailsSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
-import { getBackdropImageUrl, getItem, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getItem, getItemsForLibrary, getSeasonEpisodes, getSeriesSeasons, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
+import { getDisplayTitle } from "../lib/format";
+import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 
 interface LibraryData {
@@ -25,9 +30,20 @@ function getSortNumber(item: JellyfinItem): number {
   return 9999;
 }
 
+function compareNames(left: JellyfinItem, right: JellyfinItem): number {
+  return (left.SortName ?? left.Name).localeCompare(right.SortName ?? right.Name, undefined, { numeric: true });
+}
+
+function compareDates(leftDate?: string, rightDate?: string): number {
+  const leftTime = Date.parse(leftDate ?? "9999-12-31");
+  const rightTime = Date.parse(rightDate ?? "9999-12-31");
+  return leftTime - rightTime;
+}
+
 function sortJellyfinItems(left: JellyfinItem, right: JellyfinItem, sortBy: "name" | "year" | "latest"): number {
   if (left.Type === "Season" && right.Type === "Season") {
-    return getSortNumber(left) - getSortNumber(right);
+    const seasonCompare = getSortNumber(left) - getSortNumber(right);
+    return seasonCompare !== 0 ? seasonCompare : compareNames(left, right);
   }
 
   if (left.Type === "Episode" && right.Type === "Episode") {
@@ -37,7 +53,14 @@ function sortJellyfinItems(left: JellyfinItem, right: JellyfinItem, sortBy: "nam
       return seasonCompare;
     }
 
-    return getSortNumber(left) - getSortNumber(right);
+    const episodeCompare = getSortNumber(left) - getSortNumber(right);
+
+    if (episodeCompare !== 0) {
+      return episodeCompare;
+    }
+
+    const dateCompare = compareDates(left.PremiereDate, right.PremiereDate);
+    return dateCompare !== 0 ? dateCompare : compareNames(left, right);
   }
 
   if (sortBy === "year") {
@@ -51,13 +74,87 @@ function sortJellyfinItems(left: JellyfinItem, right: JellyfinItem, sortBy: "nam
     );
   }
 
-  return left.Name.localeCompare(right.Name);
+  return compareNames(left, right);
 }
 
-export function LibraryPage() {
-  const navigate = useNavigate();
-  const { libraryId } = useParams<{ libraryId: string }>();
+async function loadLibraryItems(
+  id: string,
+  mode: "library" | "series" | "season",
+  library?: JellyfinItem,
+  seriesIdFromRoute?: string,
+): Promise<JellyfinItem[]> {
+  if (mode === "library") {
+    if (library?.CollectionType === "tvshows" || library?.CollectionType === "movies") {
+      return getTopLevelItemsForLibrary(id, library.CollectionType);
+    }
+
+    return getItemsForLibrary(id);
+  }
+
+  if (mode === "series") {
+    const seasons = await getSeriesSeasons(id);
+
+    if (seasons.length > 0) {
+      const seasonsWithEpisodeCounts = await Promise.all(
+        seasons.map(async (season) => {
+          const existingCount =
+            typeof season.ChildCount === "number" && season.ChildCount > 0
+              ? season.ChildCount
+              : typeof season.RecursiveItemCount === "number" && season.RecursiveItemCount > 0
+                ? season.RecursiveItemCount
+                : null;
+
+          if (existingCount !== null) {
+            return season;
+          }
+
+          const episodes = await getSeasonEpisodes(id, season.Id).catch(() => []);
+
+          return {
+            ...season,
+            ChildCount: episodes.length,
+            RecursiveItemCount: episodes.length,
+          };
+        }),
+      );
+
+      return seasonsWithEpisodeCounts;
+    }
+
+    return getItemsForLibrary(id);
+  }
+
+  if (mode === "season") {
+    const resolvedSeriesId = seriesIdFromRoute ?? library?.SeriesId ?? library?.ParentId;
+
+    if (resolvedSeriesId) {
+      const episodes = await getSeasonEpisodes(resolvedSeriesId, id);
+
+      if (episodes.length > 0) {
+        return episodes;
+      }
+    }
+
+    return getItemsForLibrary(id);
+  }
+
+  return getItemsForLibrary(id);
+}
+
+interface LibraryPageProps {
+  mode?: "library" | "series" | "season";
+}
+
+export function LibraryPage({ mode = "library" }: LibraryPageProps) {
+  const { libraryId, seriesId, seasonId } = useParams<{
+    libraryId?: string;
+    seriesId?: string;
+    seasonId?: string;
+  }>();
+
+  const activeId = libraryId ?? seriesId ?? seasonId;
   const { t } = useLanguage();
+  const shouldReduceMotion = useReducedMotion();
   const [data, setData] = useState<LibraryData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -67,7 +164,7 @@ export function LibraryPage() {
     let isMounted = true;
 
     async function loadLibrary() {
-      if (!libraryId) {
+      if (!activeId) {
         setError("Missing library id.");
         return;
       }
@@ -76,15 +173,36 @@ export function LibraryPage() {
       setData(null);
 
       try {
-        const libraryResult = await getItem(libraryId).catch(() => undefined);
-        const items = await getTopLevelItemsForLibrary(libraryId, libraryResult?.CollectionType);
+        const libraryResult = await getItem(activeId).catch(() => undefined);
+        const items = await loadLibraryItems(activeId, mode, libraryResult, seriesId);
+
+        const fallbackLibrary =
+          libraryResult ??
+          (mode === "series"
+            ? {
+                Id: activeId,
+                Name: items[0]?.SeriesName ?? "Series",
+                Type: "Series",
+              }
+            : mode === "season"
+              ? {
+                  Id: activeId,
+                  Name: items[0]?.SeasonName ?? "Season",
+                  Type: "Season",
+                  SeriesId: seriesId,
+                }
+              : undefined);
 
         if (isMounted) {
-          setData({ library: libraryResult, items });
+          setData({ library: fallbackLibrary, items });
         }
       } catch (libraryError) {
         if (isMounted) {
-          setError(libraryError instanceof Error ? libraryError.message : "Could not load this library.");
+          setError(
+            libraryError instanceof Error
+              ? `${mode} id: ${activeId}\n${libraryError.message}`
+              : `${mode} id: ${activeId}\nCould not load this view.`,
+          );
         }
       }
     }
@@ -94,7 +212,7 @@ export function LibraryPage() {
     return () => {
       isMounted = false;
     };
-  }, [libraryId]);
+  }, [activeId, mode, seriesId]);
 
   const filteredItems = useMemo(() => {
     if (!data) {
@@ -126,34 +244,34 @@ export function LibraryPage() {
     <div>
       <section className="relative -mx-4 -mt-6 mb-8 overflow-hidden rounded-b-3xl px-4 pb-8 pt-8 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
         {libraryBackdrop ? (
-          <img src={libraryBackdrop} alt="" className="absolute inset-0 h-full w-full object-cover opacity-35" />
+          <motion.img
+            src={libraryBackdrop}
+            alt=""
+            className="absolute inset-0 h-full w-full object-cover opacity-35"
+            initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 0.35, scale: 1 }}
+            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+          />
         ) : (
           <div className="absolute inset-0 bg-[linear-gradient(145deg,#18181b,#050506)]" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.62] to-black/30" />
         <div className="relative mx-auto max-w-[1600px]">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="mb-14 inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.08] px-4 text-sm font-semibold text-zinc-200 backdrop-blur transition hover:bg-white/[0.14] hover:text-white"
-          >
-            <ArrowLeft size={17} />
-            {t("common.back")}
-          </button>
+          <BackButton className="mb-14" />
 
-          <div className="max-w-4xl">
+          <MotionReveal className="max-w-4xl" direction="up">
             <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">{t("library.library")}</p>
             <h1 className="mt-2 text-5xl font-black leading-none text-white sm:text-6xl">
-              {data.library?.Name ?? t("library.library")}
+              {data.library ? getDisplayTitle(data.library) : t("library.library")}
             </h1>
             <p className="mt-4 text-base font-medium text-white/[0.62]">
               {data.items.length} {t("library.itemsAvailable")}
             </p>
-          </div>
+          </MotionReveal>
         </div>
       </section>
 
-      <div className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between">
+      <MotionReveal className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between" delay={0.04}>
         <label className="relative flex-1">
           <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/[0.42]" size={19} />
           <input
@@ -176,12 +294,20 @@ export function LibraryPage() {
             <option value="year">{t("library.year")}</option>
           </select>
         </label>
-      </div>
+      </MotionReveal>
 
       {filteredItems.length > 0 ? (
         <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
-          {filteredItems.map((item) => (
-            <MediaCard key={item.Id} item={item} to={`/library/${item.Id}`} layout="grid" />
+          {filteredItems.map((item, index) => (
+            <MediaCard
+              key={item.Id}
+              item={item}
+              to={getRouteForItem(item)}
+              layout="grid"
+              variant={item.Type === "Episode" ? "landscape" : "poster"}
+              index={index}
+              animateIn
+            />
           ))}
         </div>
       ) : (

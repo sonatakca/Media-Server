@@ -3,9 +3,11 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { HeroSection } from "../components/HeroSection";
 import { LibraryTile } from "../components/LibraryTile";
 import { MediaRow } from "../components/MediaRow";
+import { MotionReveal } from "../components/MotionReveal";
 import { HomeSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getContinueWatchingItems, getLatestMediaItems, getUserViews } from "../lib/jellyfinApi";
+import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
@@ -127,15 +129,15 @@ export function HomePage() {
           <MediaRow
             title={t("home.continueWatching")}
             items={data.continueWatching}
-            getItemTo={(item) => `/item/${item.Id}`}
+            getItemTo={getRouteForItem}
             emptyMessage={t("home.nothingInProgress")}
           />
         </div>
       ) : null}
 
-      <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={(item) => `/item/${item.Id}`} />
+      <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={getRouteForItem} />
 
-      <section className="group/row relative py-6">
+      <MotionReveal className="group/row relative py-6" direction="up">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
             <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
@@ -164,7 +166,7 @@ export function HomePage() {
             </AnimatedWidth>
           </p>
         )}
-      </section>
+      </MotionReveal>
     </div>
   );
 }

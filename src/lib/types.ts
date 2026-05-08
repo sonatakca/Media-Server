@@ -104,10 +104,13 @@ export interface JellyfinMediaSource {
 export interface JellyfinItem {
   Id: string;
   Name: string;
+  SortName?: string;
   Type?: string;
   MediaType?: string;
   CollectionType?: string;
   ProductionYear?: number;
+  ChildCount?: number;
+  RecursiveItemCount?: number;
   PremiereDate?: string;
   DateCreated?: string;
   Overview?: string;

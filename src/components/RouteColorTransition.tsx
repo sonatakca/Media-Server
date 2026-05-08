@@ -1,13 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { ACCENT_THEMES, applyAccentTheme, type AccentTheme } from "../lib/accentTheme";
+import {
+  ACCENT_THEMES,
+  applyStoredAccentTheme,
+  getStoredAccentTheme,
+  saveAndApplyAccentTheme,
+  type AccentTheme,
+} from "../lib/accentTheme";
 import logoOnSide from "../assets/Seyirlik-OnSide-noNeon.png";
+import themeChangeSound from "../assets/themeChange.m4a";
 
 export const ROUTE_COLOR_TRANSITION_FORCE_EVENT = "seyirlik:force-theme-transition";
 
 const ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY = "seyirlik.routeColorTransition.lastSeen";
 const ROUTE_COLOR_TRANSITION_USED_THEMES_KEY = "seyirlik.routeColorTransition.usedThemes";
-const ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY = "seyirlik.routeColorTransition.selectedTheme";
 
 // Production:
 const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 60 * 30;
@@ -35,21 +41,6 @@ type ColourBarState = {
   isSelectedExiting: boolean;
   isSelectedCentering: boolean;
 };
-
-function getStoredAccentTheme(): AccentTheme | null {
-  const storedThemeName = localStorage.getItem(ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY);
-
-  if (!storedThemeName) {
-    return null;
-  }
-
-  return ACCENT_THEMES.find((theme) => theme.name === storedThemeName) ?? null;
-}
-
-function saveAndApplyAccentTheme(theme: AccentTheme): void {
-  localStorage.setItem(ROUTE_COLOR_TRANSITION_SELECTED_THEME_KEY, theme.name);
-  applyAccentTheme(theme);
-}
 
 function getNextAccentThemeWithoutRepeatingCycle(): AccentTheme {
   const storedUsedThemes = localStorage.getItem(ROUTE_COLOR_TRANSITION_USED_THEMES_KEY);
@@ -108,6 +99,7 @@ export function RouteColorTransition() {
   const location = useLocation();
   const timeoutsRef = useRef<number[]>([]);
   const selectedThemeRef = useRef<AccentTheme | null>(null);
+  const transitionAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const [isVisible, setIsVisible] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
@@ -119,13 +111,36 @@ export function RouteColorTransition() {
 
     if (storedTheme) {
       selectedThemeRef.current = storedTheme;
-      applyAccentTheme(storedTheme);
+      applyStoredAccentTheme();
     }
   }, []);
 
   const clearTransitionTimers = useCallback(() => {
     timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     timeoutsRef.current = [];
+  }, []);
+
+  const playThemeChangeSound = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    try {
+      if (!transitionAudioRef.current) {
+        transitionAudioRef.current = new Audio(themeChangeSound);
+        transitionAudioRef.current.preload = "auto";
+        transitionAudioRef.current.volume = 0.55;
+      }
+
+      transitionAudioRef.current.pause();
+      transitionAudioRef.current.currentTime = 0;
+
+      void transitionAudioRef.current.play().catch(() => {
+        // Browser may block sound until the user clicks/taps the page once.
+      });
+    } catch {
+      // Never let audio break the transition animation.
+    }
   }, []);
 
   const playTransition = useCallback(
@@ -166,6 +181,7 @@ export function RouteColorTransition() {
       setIsLeaving(false);
       setIsLogoVisible(false);
       setBars(getInitialBars());
+      playThemeChangeSound();
 
       ACCENT_THEMES.forEach((_theme, index) => {
         const timeoutId = window.setTimeout(() => {
@@ -251,7 +267,7 @@ export function RouteColorTransition() {
         hideTimeoutId,
       );
     },
-    [applyStoredThemeIfAvailable, clearTransitionTimers],
+    [applyStoredThemeIfAvailable, clearTransitionTimers, playThemeChangeSound],
   );
 
   useEffect(() => {

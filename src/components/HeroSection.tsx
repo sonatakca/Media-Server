@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion, useReducedMotion } from "framer-motion";
 import { Info, Play, Sparkles } from "lucide-react";
 import { ButtonLink } from "./Button";
 import appIcon from "../assets/AppIcon2.png";
 import { getBackdropImageUrl, getLogoImageUrl, getPrimaryImageUrl, redactPlaybackUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
+import { getRouteForItem } from "../lib/routes";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
@@ -53,6 +55,7 @@ function getHeroImageCandidates(item?: JellyfinItem): HeroImageCandidate[] {
 
 export function HeroSection({ item }: HeroSectionProps) {
   const { t } = useLanguage();
+  const shouldReduceMotion = useReducedMotion();
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const selectedImage = imageCandidates.find((candidate) => !failedImageUrls.includes(candidate.url));
@@ -63,6 +66,8 @@ export function HeroSection({ item }: HeroSectionProps) {
   const runtime = item ? formatRuntime(item.RunTimeTicks) : null;
   const metadata = [item?.ProductionYear, runtime, item?.Type].filter(Boolean);
   const subtitle = item ? getItemSubtitle(item) : null;
+  const canPlay = item?.Type === "Movie" || item?.Type === "Episode" || item?.MediaType === "Video";
+  const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
   useEffect(() => {
     setFailedImageUrls([]);
@@ -90,12 +95,15 @@ export function HeroSection({ item }: HeroSectionProps) {
   return (
     <section className="relative -mx-4 -mt-6 mb-0 min-h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:min-h-[68svh] lg:-mx-8 lg:min-h-[72svh]">
       {selectedImage ? (
-        <img
+        <motion.img
           src={selectedImage.url}
           alt=""
           className={`absolute inset-0 z-0 h-full w-full object-cover ${
-            selectedImage.type === "primary" ? "scale-110 blur-2xl opacity-[0.52]" : "scale-105 opacity-[0.78]"
+            selectedImage.type === "primary" ? "blur-2xl opacity-[0.52]" : "opacity-[0.78]"
           }`}
+          initial={shouldReduceMotion ? false : { scale: selectedImage.type === "primary" ? 1.13 : 1.04, opacity: 0.45 }}
+          animate={shouldReduceMotion ? undefined : { scale: selectedImage.type === "primary" ? 1.1 : 1, opacity: selectedImage.type === "primary" ? 0.52 : 0.78 }}
+          transition={{ duration: 0.62, ease: easeOut }}
           onError={() => handleImageError(selectedImage.url)}
         />
       ) : (
@@ -107,16 +115,26 @@ export function HeroSection({ item }: HeroSectionProps) {
 
       <div className="relative z-20 mx-auto flex min-h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:min-h-[68svh] sm:px-6 md:pb-20 lg:min-h-[72svh] lg:px-8">
         {showSidePoster ? (
-          <div className="pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-[0_30px_130px_rgba(0,0,0,0.65)] lg:block">
+          <motion.div
+            className="pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-[0_30px_130px_rgba(0,0,0,0.65)] lg:block"
+            initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
+            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+            transition={{ duration: 0.36, delay: 0.08, ease: easeOut }}
+          >
             <img
               src={primaryPosterUrl}
               alt=""
               className="aspect-[2/3] w-full object-cover"
               onError={() => handleImageError(primaryPosterUrl)}
             />
-          </div>
+          </motion.div>
         ) : null}
-        <div className="max-w-3xl">
+        <motion.div
+          className="max-w-3xl"
+          initial={shouldReduceMotion ? false : { opacity: 0, y: 18 }}
+          animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+          transition={{ duration: 0.38, delay: 0.04, ease: easeOut }}
+        >
           <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-white/[0.12] bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-teal-100 backdrop-blur">
             <img src={appIcon} alt="" className="h-6 w-6 rounded-md object-cover" />
             <span className="inline-flex items-center gap-2">
@@ -170,13 +188,15 @@ export function HeroSection({ item }: HeroSectionProps) {
           <div className="mt-7 flex flex-wrap gap-3">
             {item ? (
               <>
-                <ButtonLink to={`/watch/${item.Id}`} className="min-h-12 rounded-full px-6 text-base shadow-2xl">
-                  <Play size={20} fill="currentColor" />
-                  <AnimatedWidth value={t("common.play")}>
-                    <AnimatedText value={t("common.play")} />
-                  </AnimatedWidth>
-                </ButtonLink>
-                <ButtonLink to={`/item/${item.Id}`} variant="secondary" className="min-h-12 rounded-full px-6 text-base backdrop-blur">
+                {canPlay ? (
+                  <ButtonLink to={`/watch/${item.Id}`} className="min-h-12 rounded-full px-6 text-base shadow-2xl">
+                    <Play size={20} fill="currentColor" />
+                    <AnimatedWidth value={t("common.play")}>
+                      <AnimatedText value={t("common.play")} />
+                    </AnimatedWidth>
+                  </ButtonLink>
+                ) : null}
+                <ButtonLink to={getRouteForItem(item)} variant="secondary" className="min-h-12 rounded-full px-6 text-base backdrop-blur">
                   <Info size={20} />
                   <AnimatedWidth value={t("common.details")}>
                     <AnimatedText value={t("common.details")} />
@@ -185,7 +205,7 @@ export function HeroSection({ item }: HeroSectionProps) {
               </>
             ) : null}
           </div>
-        </div>
+        </motion.div>
       </div>
     </section>
   );

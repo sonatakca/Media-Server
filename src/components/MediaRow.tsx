@@ -6,6 +6,7 @@ import type { JellyfinItem } from "../lib/types";
 import { MediaCard } from "./MediaCard";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
+import { MotionReveal } from "./MotionReveal";
 
 interface MediaRowProps {
   title: string;
@@ -76,7 +77,7 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
   };
 
   return (
-    <section className="py-6">
+    <MotionReveal className="py-6" direction="up">
       <div className="mb-0 flex items-end justify-between gap-4">
         <h2 className="text-xl font-black text-white sm:text-2xl">
           <AnimatedWidth value={title}>
@@ -98,9 +99,9 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
             onScroll={updateScrollState}
             className="media-scroll flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6"
           >
-            {items.map((item) => (
+            {items.map((item, index) => (
               <div key={item.Id} className="snap-start">
-                <MediaCard item={item} to={getItemTo(item)} variant={variant} />
+                <MediaCard item={item} to={getItemTo(item)} variant={variant} index={index} animateIn />
               </div>
             ))}
           </div>
@@ -144,6 +145,6 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
           ) : null}
         </p>
       )}
-    </section>
+    </MotionReveal>
   );
 }

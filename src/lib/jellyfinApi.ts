@@ -35,10 +35,13 @@ interface RequestOptions {
 
 const DEFAULT_ITEM_FIELDS = [
   "PrimaryImageAspectRatio",
+  "SortName",
   "Overview",
   "Genres",
   "RunTimeTicks",
   "ProductionYear",
+  "ChildCount",
+  "RecursiveItemCount",
   "MediaSources",
   "UserData",
   "ImageTags",
@@ -260,7 +263,7 @@ export async function getItemsForLibrary(libraryId: string): Promise<JellyfinIte
     params: {
       userId: session.userId,
       parentId: libraryId,
-      recursive: true,
+      recursive: false,
       sortBy: "SortName",
       sortOrder: "Ascending",
       fields: DEFAULT_ITEM_FIELDS,
@@ -339,17 +342,27 @@ export async function getSeasonEpisodes(seriesId: string, seasonId: string): Pro
 export async function getItem(itemId: string): Promise<JellyfinItem> {
   const session = requireAuthSession();
 
-  return requestJson<JellyfinItem>(
-    `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`,
-    {
-      params: {
-        fields: DEFAULT_ITEM_FIELDS,
-        enableImages: true,
-        imageTypeLimit: 1,
-        enableImageTypes: "Primary,Backdrop,Logo",
-      },
-    },
-  );
+  const params = {
+    userId: session.userId,
+    fields: DEFAULT_ITEM_FIELDS,
+    enableImages: true,
+    imageTypeLimit: 1,
+    enableImageTypes: "Primary,Backdrop,Logo",
+  };
+
+  try {
+    return await requestJson<JellyfinItem>(`/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`, {
+      params,
+    });
+  } catch (userScopedError) {
+    try {
+      return await requestJson<JellyfinItem>(`/Items/${encodeURIComponent(itemId)}`, {
+        params,
+      });
+    } catch {
+      throw userScopedError;
+    }
+  }
 }
 
 export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
@@ -380,7 +393,7 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
       userId: session.userId,
       limit: 24,
       fields: DEFAULT_ITEM_FIELDS,
-      includeItemTypes: "Movie,Series,Episode",
+      includeItemTypes: "Movie,Series",
       enableImages: true,
       imageTypeLimit: 1,
       enableImageTypes: "Primary,Backdrop,Logo",

@@ -1,6 +1,6 @@
 import { Link, type LinkProps } from "react-router-dom";
 
-const baseClasses = "inline-flex min-h-10 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition duration-200 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black disabled:cursor-not-allowed disabled:opacity-60";
+const baseClasses = "inline-flex min-h-10 transform-gpu items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition-[background-color,border-color,color,box-shadow,transform] duration-200 ease-out hover:-translate-y-px focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:hover:translate-y-0 motion-reduce:active:scale-100";
 
 const variants = {
   primary: "bg-[var(--accent)] text-zinc-950 hover:bg-[var(--accent-hover)]",
