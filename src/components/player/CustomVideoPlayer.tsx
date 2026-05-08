@@ -13,6 +13,7 @@ import { PlayerErrorOverlay } from "./PlayerErrorOverlay";
 import { PlayerOverlay } from "./PlayerOverlay";
 import { PlaybackInfoButton } from "./PlaybackInfoButton";
 import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
+import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
 
 interface CustomVideoPlayerProps {
   item: JellyfinItem;
@@ -26,6 +27,7 @@ interface CustomVideoPlayerProps {
   onPlaybackStarted?: (positionSeconds: number) => void;
   onPlaybackProgress?: (positionSeconds: number, isPaused: boolean) => void;
   onPlaybackStopped?: (positionSeconds: number) => void;
+  
 }
 
 export function CustomVideoPlayer({
@@ -53,6 +55,7 @@ export function CustomVideoPlayer({
   });
 
   const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
 
   const toggleFullscreen = useCallback(() => {
@@ -76,6 +79,28 @@ export function CustomVideoPlayer({
     onToggleMute: progress.toggleMute,
     onToggleFullscreen: toggleFullscreen,
   });
+
+  useEffect(() => {
+    if (!isSettingsOpen) {
+      return undefined;
+    }
+
+    const handlePointerDownOutside = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (target?.closest("[data-player-settings-root]")) {
+        return;
+      }
+
+      setIsSettingsOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutside);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutside);
+    };
+  }, [isSettingsOpen]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -241,6 +266,9 @@ export function CustomVideoPlayer({
         onToggleMute={progress.toggleMute}
         onVolumeChange={progress.setVolume}
         onToggleFullscreen={toggleFullscreen}
+        onOpenSettings={() => setIsSettingsOpen((current) => !current)}
+        source={source}
+        settingsOpen={isSettingsOpen}
       />
 
       {areControlsVisible || !progress.isPlaying ? (

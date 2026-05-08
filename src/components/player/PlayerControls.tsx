@@ -2,7 +2,8 @@ import { Maximize, Pause, Play, RotateCcw, RotateCw, Settings } from "lucide-rea
 import { useLanguage } from "../../i18n/LanguageContext";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
-import type { PlaybackMode } from "../../lib/types";
+import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
+import type { PlaybackMode, PlaybackSourceCandidate } from "../../lib/types";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -13,12 +14,15 @@ interface PlayerControlsProps {
   volume: number;
   muted: boolean;
   playbackMode?: PlaybackMode;
+  source: PlaybackSourceCandidate;
+  settingsOpen: boolean;
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
   onSeekBy: (seconds: number) => void;
   onToggleMute: () => void;
   onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
+  onOpenSettings: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -47,12 +51,15 @@ export function PlayerControls({
   volume,
   muted,
   playbackMode,
+  source,
+  settingsOpen,
   onTogglePlay,
   onSeek,
   onSeekBy,
   onToggleMute,
   onVolumeChange,
   onToggleFullscreen,
+  onOpenSettings,
 }: PlayerControlsProps) {
   const { t } = useLanguage();
 
@@ -102,14 +109,19 @@ export function PlayerControls({
           </div>
 
           <div className="flex items-center gap-1 sm:gap-2">
-            <button
-              type="button"
-              className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              aria-label={t("player.settingsLabel")}
-              title={t("player.settingsTitle")}
-            >
-              <Settings size={21} />
-            </button>
+            <div className="relative" data-player-settings-root>
+              {settingsOpen ? <PlayerSettingsPanel source={source} /> : null}
+
+              <button
+                type="button"
+                onClick={onOpenSettings}
+                className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                aria-label={t("player.settingsLabel")}
+                title={t("player.settingsTitle")}
+              >
+                <Settings size={21} />
+              </button>
+            </div>
             <button
               type="button"
               onClick={onToggleFullscreen}

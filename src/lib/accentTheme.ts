@@ -1,76 +1,58 @@
-type AccentTheme = {
+export type AccentTheme = {
   name: string;
   accent: string;
   accentHover: string;
   accentSoft: string;
 };
 
-const ACCENT_THEMES: AccentTheme[] = [
+export const ACCENT_THEMES: AccentTheme[] = [
   {
     name: "Warm Red",
-    accent: "#ae4832",
-    accentHover: "#ed9f40",
-    accentSoft: "rgba(174, 72, 50, 0.18)",
+    accent: "#bd3f28",
+    accentHover: "#fa9b1d",
+    accentSoft: "rgba(189, 63, 40, 0.18)",
   },
   {
     name: "Amber",
-    accent: "#ed9f40",
-    accentHover: "#d1ca4a",
-    accentSoft: "rgba(237, 159, 64, 0.18)",
+    accent: "#fa9b1d",
+    accentHover: "#d3ca22",
+    accentSoft: "rgba(250, 155, 29, 0.18)",
   },
   {
     name: "Gold",
-    accent: "#d1ca4a",
-    accentHover: "#bdca86",
-    accentSoft: "rgba(209, 202, 74, 0.18)",
+    accent: "#d3ca22",
+    accentHover: "#bacb7d",
+    accentSoft: "rgba(211, 202, 34, 0.18)",
   },
   {
     name: "Olive",
-    accent: "#bdca86",
-    accentHover: "#75a27b",
-    accentSoft: "rgba(189, 202, 134, 0.18)",
+    accent: "#bacb7d",
+    accentHover: "#67a478",
+    accentSoft: "rgba(186, 203, 125, 0.18)",
   },
   {
     name: "Green",
-    accent: "#75a27b",
-    accentHover: "#467a6c",
-    accentSoft: "rgba(117, 162, 123, 0.18)",
+    accent: "#67a478",
+    accentHover: "#337b6c",
+    accentSoft: "rgba(103, 164, 120, 0.18)",
   },
   {
     name: "Teal",
-    accent: "#467a6c",
-    accentHover: "#75a27b",
-    accentSoft: "rgba(70, 122, 108, 0.18)",
+    accent: "#337b6c",
+    accentHover: "#67a478",
+    accentSoft: "rgba(51, 123, 108, 0.18)",
   },
 ];
 
-function applyAccentTheme(theme: AccentTheme): void {
+export function getRandomAccentTheme(): AccentTheme {
+  return ACCENT_THEMES[Math.floor(Math.random() * ACCENT_THEMES.length)];
+}
+
+export function applyAccentTheme(theme: AccentTheme): void {
   const root = document.documentElement;
 
   root.style.setProperty("--accent", theme.accent);
   root.style.setProperty("--accent-hover", theme.accentHover);
   root.style.setProperty("--accent-soft", theme.accentSoft);
   root.dataset.accentTheme = theme.name;
-}
-
-function getRandomThemeIndex(): number {
-  return Math.floor(Math.random() * ACCENT_THEMES.length);
-}
-
-export function applyRandomAccentTheme(): void {
-  const finalThemeIndex = getRandomThemeIndex();
-
-  const fullLapCount = 2;
-  const fullLaps = Array.from({ length: fullLapCount }, () => ACCENT_THEMES).flat();
-  const finalLap = ACCENT_THEMES.slice(0, finalThemeIndex + 1);
-  const animationSequence = [...fullLaps, ...finalLap];
-
-  const stepDurationMs = 100;
-  const initialDelayMs = 80;
-
-  animationSequence.forEach((theme, index) => {
-    window.setTimeout(() => {
-      applyAccentTheme(theme);
-    }, initialDelayMs + index * stepDurationMs);
-  });
 }

@@ -55,7 +55,7 @@ export function Navbar() {
             to="/home"
             className={({ isActive }) =>
               `inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-[width,min-width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out ${
-                isActive ? "bg-white text-black" : "text-zinc-300 hover:bg-white/10 hover:text-white"
+                isActive ? "bg-[var(--accent)] text-black shadow-[0_10px_30px_var(--accent-soft)] hover:bg-[var(--accent-hover)]" : "text-zinc-300 hover:bg-white/10 hover:text-white"
               }`
             }
           >

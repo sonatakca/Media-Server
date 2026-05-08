@@ -77,7 +77,7 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
 
   return (
     <section className="py-6">
-      <div className="mb-4 flex items-end justify-between gap-4">
+      <div className="mb-0 flex items-end justify-between gap-4">
         <h2 className="text-xl font-black text-white sm:text-2xl">
           <AnimatedWidth value={title}>
             <AnimatedText value={title} />
@@ -96,7 +96,7 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
           <div
             ref={scrollerRef}
             onScroll={updateScrollState}
-            className="media-scroll flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-6 pt-2"
+            className="media-scroll flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6"
           >
             {items.map((item) => (
               <div key={item.Id} className="snap-start">
