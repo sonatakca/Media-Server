@@ -140,7 +140,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
               src={imageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.08] group-focus:scale-[1.08] ${
+              className={`h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.08] group-focus:scale-[1.08] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
               onLoad={() => setImageLoaded(true)}
@@ -165,16 +165,22 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
             </div>
           ) : null}
         </div>
-        <div className="min-h-[5.9rem] p-3.5">
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={title}
-              className="h-8 max-w-full object-contain object-left"
-            />
-          ) : (
-            <h3 className="h-8 truncate text-sm font-bold leading-8 text-white">{title}</h3>
-          )}
+        <div className="h-[5.9rem] overflow-hidden p-3.5">
+          <div className="flex h-9 w-full items-center overflow-hidden">
+            {logoUrl ? (
+              <div className="flex h-9 w-full items-center">
+                <img
+                  src={logoUrl}
+                  alt={title}
+                  className="h-full w-[78%] object-contain object-left"
+                />
+              </div>
+            ) : (
+              <h3 className="truncate text-sm font-bold leading-9 text-white">
+                {title}
+              </h3>
+            )}
+          </div>
 
           {countLabel ? (
             <p className="mt-2 h-5 truncate text-sm font-bold leading-5 text-white">
