@@ -128,6 +128,27 @@ function copyTextWithTextarea(text: string): boolean {
   }
 }
 
+function getParticipantName(participant: unknown, fallbackIndex: number): string {
+  if (typeof participant === "string" && participant.trim()) {
+    return participant.trim();
+  }
+
+  if (!isRecord(participant)) {
+    return `Katılımcı ${fallbackIndex + 1}`;
+  }
+
+  const possibleName =
+    participant.UserName ??
+    participant.Username ??
+    participant.Name ??
+    participant.DeviceName ??
+    participant.UserId;
+
+  return typeof possibleName === "string" && possibleName.trim()
+    ? possibleName.trim()
+    : `Katılımcı ${fallbackIndex + 1}`;
+}
+
 async function copyText(text: string): Promise<boolean> {
   if (navigator.clipboard?.writeText && window.isSecureContext) {
     try {
@@ -211,6 +232,15 @@ export function usePartyWatchController({
   const lastRemotePlayCommandRef = useRef<JellyfinSyncPlaySendCommand | null>(null);
   const pingEstimateMsRef = useRef(150);
   const copyStatusTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const previousParticipantNamesRef = useRef<string[]>([]);
+  const partyEventTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const playPauseAnimationIdRef = useRef(0);
+  const activePlayPauseAnimationRef = useRef<{
+    id: number;
+    target: "playing" | "paused";
+    startedAt: number;
+  } | null>(null);
+  const remotePlayPauseApplyTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 
   const [groupInfo, setGroupInfo] = useState<JellyfinSyncPlayGroupInfo | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
@@ -220,9 +250,13 @@ export function usePartyWatchController({
   const [isLoading, setIsLoading] = useState(false);
   const [isApplyingRemoteCommand, setIsApplyingRemoteCommand] = useState(false);
   const [socketStatus, setSocketStatus] = useState<JellyfinSyncPlaySocketStatus>("disconnected");
+  const [isPlayPausePending, setIsPlayPausePending] = useState(false);
+  const [isResumePending, setIsResumePending] = useState(false);
+  const [pendingPlayPauseTarget, setPendingPlayPauseTarget] = useState<"playing" | "paused" | null>(null);
   const [statusKey, setStatusKey] = useState<TranslationKey | null>(null);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
   const [copyStatusKey, setCopyStatusKey] = useState<TranslationKey | null>(null);
+  const [partyEventMessage, setPartyEventMessage] = useState<string | null>(null);
 
   const isAvailable = useMemo(() => typeof WebSocket !== "undefined", []);
   const isInGroup = Boolean(groupId);
@@ -237,6 +271,7 @@ export function usePartyWatchController({
   }, [groupId, itemId]);
 
   const participantCount = groupInfo?.Participants?.length ?? null;
+  const participantNames = groupInfo?.Participants?.map(getParticipantName) ?? [];
   const groupName = groupInfo?.GroupName ?? (groupId ? `SyncPlay ${groupId.slice(0, 8)}` : null);
   const groupState = groupInfo?.State ?? groupStateRef.current;
 
@@ -247,6 +282,27 @@ export function usePartyWatchController({
   useEffect(() => {
     isPlayingRef.current = isPlaying;
   }, [isPlaying]);
+
+  useEffect(() => {
+    const active = activePlayPauseAnimationRef.current;
+
+    if (!active || !pendingPlayPauseTarget) {
+      return;
+    }
+
+    const reachedTarget =
+      (active.target === "playing" && isPlaying) ||
+      (active.target === "paused" && !isPlaying);
+
+    if (!reachedTarget) {
+      return;
+    }
+
+    activePlayPauseAnimationRef.current = null;
+    setPendingPlayPauseTarget(null);
+    setIsResumePending(false);
+    setIsPlayPausePending(false);
+  }, [isPlaying, pendingPlayPauseTarget]);
 
   useEffect(() => {
     groupIdRef.current = groupId;
@@ -260,7 +316,35 @@ export function usePartyWatchController({
     canControlRef.current = canControl;
   }, [canControl]);
 
+  const showPartyEventMessage = useCallback((message: string) => {
+    setPartyEventMessage(message);
+
+    if (partyEventTimeoutRef.current !== null) {
+      window.clearTimeout(partyEventTimeoutRef.current);
+    }
+
+    partyEventTimeoutRef.current = window.setTimeout(() => {
+      setPartyEventMessage(null);
+      partyEventTimeoutRef.current = null;
+    }, 3200);
+  }, []);
+
   const applyGroupInfo = useCallback((nextGroupInfo: JellyfinSyncPlayGroupInfo) => {
+    const nextParticipantNames = nextGroupInfo.Participants?.map(getParticipantName) ?? [];
+    const previousParticipantNames = previousParticipantNamesRef.current;
+
+    if (previousParticipantNames.length > 0 && nextParticipantNames.length !== previousParticipantNames.length) {
+      const joinedNames = nextParticipantNames.filter((name) => !previousParticipantNames.includes(name));
+      const leftNames = previousParticipantNames.filter((name) => !nextParticipantNames.includes(name));
+
+      if (joinedNames.length > 0) {
+        showPartyEventMessage(`${joinedNames[0]} katıldı`);
+      } else if (leftNames.length > 0) {
+        showPartyEventMessage(`${leftNames[0]} ayrıldı`);
+      }
+    }
+
+    previousParticipantNamesRef.current = nextParticipantNames;
     setGroupInfo(nextGroupInfo);
 
     if (nextGroupInfo.GroupId) {
@@ -271,18 +355,21 @@ export function usePartyWatchController({
     if (nextGroupInfo.State) {
       groupStateRef.current = nextGroupInfo.State;
     }
-  }, []);
+  }, [showPartyEventMessage]);
 
   const clearGroupState = useCallback(() => {
     groupIdRef.current = null;
     groupStateRef.current = null;
     lastRemotePlayCommandRef.current = null;
     playlistItemIdRef.current = itemId;
+    previousParticipantNamesRef.current = [];
+
     setGroupId(null);
     setGroupInfo(null);
     setRole(null);
     setCanControl(true);
     setErrorKey(null);
+    setPartyEventMessage(null);
   }, [itemId]);
 
   const refreshGroupInfo = useCallback(
@@ -371,6 +458,33 @@ export function usePartyWatchController({
     refreshProgress();
   }, [refreshProgress, videoRef]);
 
+  const beginPlayPauseAnimation = useCallback((target: "playing" | "paused") => {
+    const now = Date.now();
+    const active = activePlayPauseAnimationRef.current;
+
+    if (active && active.target === target && now - active.startedAt < 2500) {
+      return active.id;
+    }
+
+    playPauseAnimationIdRef.current += 1;
+
+    const nextAnimation = {
+      id: playPauseAnimationIdRef.current,
+      target,
+      startedAt: now,
+    };
+
+    activePlayPauseAnimationRef.current = nextAnimation;
+    setPendingPlayPauseTarget(target);
+    setIsPlayPausePending(true);
+
+    if (target === "playing") {
+      setIsResumePending(true);
+    }
+
+    return nextAnimation.id;
+  }, []);
+
   const applyRemoteCommand = useCallback(
     (command: JellyfinSyncPlaySendCommand) => {
       const activeGroupId = groupIdRef.current;
@@ -400,15 +514,46 @@ export function usePartyWatchController({
         }
 
         if (command.Command === "Pause" || command.Command === "Stop") {
-          pauseVideoLocally();
-          lastRemotePlayCommandRef.current = null;
+          const animationId = beginPlayPauseAnimation("paused");
+
+          if (remotePlayPauseApplyTimeoutRef.current !== null) {
+            window.clearTimeout(remotePlayPauseApplyTimeoutRef.current);
+          }
+
+          remotePlayPauseApplyTimeoutRef.current = window.setTimeout(() => {
+            const active = activePlayPauseAnimationRef.current;
+
+            if (!active || active.id !== animationId || active.target !== "paused") {
+              return;
+            }
+
+            pauseVideoLocally();
+            lastRemotePlayCommandRef.current = null;
+            remotePlayPauseApplyTimeoutRef.current = null;
+          }, 180);
         } else if (command.Command === "Unpause") {
+          const animationId = beginPlayPauseAnimation("playing");
+
           lastRemotePlayCommandRef.current = {
             ...command,
             When: command.When ?? new Date().toISOString(),
             PositionTicks: command.PositionTicks ?? ticksFromSeconds(video.currentTime),
           };
-          playVideoLocally();
+
+          if (remotePlayPauseApplyTimeoutRef.current !== null) {
+            window.clearTimeout(remotePlayPauseApplyTimeoutRef.current);
+          }
+
+          remotePlayPauseApplyTimeoutRef.current = window.setTimeout(() => {
+            const active = activePlayPauseAnimationRef.current;
+
+            if (!active || active.id !== animationId || active.target !== "playing") {
+              return;
+            }
+
+            playVideoLocally();
+            remotePlayPauseApplyTimeoutRef.current = null;
+          }, 180);
         } else if (command.Command === "Seek") {
           if (groupStateRef.current === "Playing" || !video.paused) {
             lastRemotePlayCommandRef.current = {
@@ -427,6 +572,7 @@ export function usePartyWatchController({
       remoteCommandTimersRef.current.push(timer);
     },
     [
+      beginPlayPauseAnimation,
       markApplyingRemoteCommand,
       pauseVideoLocally,
       playVideoLocally,
@@ -697,25 +843,52 @@ export function usePartyWatchController({
     }, 2500);
   }, [inviteUrl]);
 
-  const runSyncPlayControl = useCallback(async (control: () => Promise<void>) => {
-    if (!canControlRef.current) {
-      setErrorKey("party.syncPlayHostOnly");
-      return;
-    }
-
-    try {
-      setErrorKey(null);
-      await control();
-      setStatusKey("party.syncingWithJellyfinSyncPlay");
-    } catch (error) {
-      const nextErrorKey = getControlErrorKey(error);
-      setErrorKey(nextErrorKey);
-
-      if (nextErrorKey === "party.syncPlayHostOnly") {
-        setCanControl(false);
+  const runSyncPlayControl = useCallback(
+    async (
+      control: () => Promise<void>,
+      options?: {
+        resumePending?: boolean;
+        playPausePending?: boolean;
+      },
+    ) => {
+      if (!canControlRef.current) {
+        setErrorKey("party.syncPlayHostOnly");
+        return;
       }
-    }
-  }, []);
+
+      if (options?.resumePending) {
+        setIsResumePending(true);
+      }
+
+      if (options?.playPausePending) {
+        setIsPlayPausePending(true);
+      }
+
+      try {
+        setErrorKey(null);
+        await control();
+        setStatusKey("party.syncingWithJellyfinSyncPlay");
+      } catch (error) {
+        const nextErrorKey = getControlErrorKey(error);
+        setErrorKey(nextErrorKey);
+
+        if (nextErrorKey === "party.syncPlayHostOnly") {
+          setCanControl(false);
+        }
+
+        if (options?.resumePending) {
+          setIsResumePending(false);
+        }
+
+        if (options?.playPausePending) {
+          setIsPlayPausePending(false);
+        }
+
+        setPendingPlayPauseTarget(null);
+      }
+    },
+    [],
+  );
 
   const togglePlay = useCallback(() => {
     if (isApplyingRemoteCommandRef.current) {
@@ -734,17 +907,28 @@ export function usePartyWatchController({
       return;
     }
 
-    void runSyncPlayControl(async () => {
-      const status = readPlayerStatus();
-      await sendReadyStatus().catch(() => undefined);
+    const status = readPlayerStatus();
+    const nextTarget = status.isPlaying ? "paused" : "playing";
+    const isResumeAction = nextTarget === "playing";
 
-      if (status.isPlaying) {
-        await sendSyncPlayPauseCommand();
-      } else {
-        await sendSyncPlayPlayCommand();
-      }
-    });
-  }, [pauseVideoLocally, playVideoLocally, readPlayerStatus, runSyncPlayControl, sendReadyStatus, videoRef]);
+    beginPlayPauseAnimation(nextTarget);
+
+    void runSyncPlayControl(
+      async () => {
+        await sendReadyStatus().catch(() => undefined);
+
+        if (status.isPlaying) {
+          await sendSyncPlayPauseCommand();
+        } else {
+          await sendSyncPlayPlayCommand();
+        }
+      },
+      {
+        resumePending: isResumeAction,
+        playPausePending: true,
+      },
+    );
+  }, [beginPlayPauseAnimation, pauseVideoLocally, playVideoLocally, readPlayerStatus, runSyncPlayControl, sendReadyStatus, videoRef]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -893,6 +1077,14 @@ export function usePartyWatchController({
         window.clearTimeout(copyStatusTimeoutRef.current);
       }
 
+      if (partyEventTimeoutRef.current !== null) {
+        window.clearTimeout(partyEventTimeoutRef.current);
+      }
+
+      if (remotePlayPauseApplyTimeoutRef.current !== null) {
+        window.clearTimeout(remotePlayPauseApplyTimeoutRef.current);
+      }
+
       remoteCommandTimersRef.current.forEach((timer) => window.clearTimeout(timer));
       remoteCommandTimersRef.current = [];
     };
@@ -903,6 +1095,8 @@ export function usePartyWatchController({
     isLoading,
     isInGroup,
     isApplyingRemoteCommand,
+    isResumePending,
+    isPlayPausePending,
     shouldDeferAutoplay,
     groupId,
     groupName,
@@ -910,6 +1104,8 @@ export function usePartyWatchController({
     joinInput,
     inviteUrl,
     participantCount,
+    participantNames,
+    partyEventMessage,
     role,
     canControl,
     socketStatus,

@@ -25,7 +25,7 @@ export function PartyWatchOverlay({ controller }: PartyWatchOverlayProps) {
   return (
     <div className="pointer-events-none absolute left-1/2 top-[max(5.25rem,calc(env(safe-area-inset-top)+4.75rem))] z-40 w-[min(32rem,calc(100vw-2rem))] -translate-x-1/2">
       <div
-        className={`mx-auto flex w-fit max-w-full items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold shadow-[0_18px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl ${
+        className={`mx-auto flex w-fit max-w-full items-center gap-2 rounded-2xl px-3 py-2 text-sm font-semibold shadow-[0_18px_80px_rgba(0,0,0,0.45)] backdrop-blur-xl ${
           controller.errorKey
             ? "border-rose-300/25 bg-rose-950/68 text-rose-100"
             : "border-white/12 bg-black/66 text-white"

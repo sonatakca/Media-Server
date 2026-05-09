@@ -1,4 +1,5 @@
-import { ArrowLeft, Pause, Play } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { ArrowLeft, LoaderCircle, Pause, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 
@@ -9,6 +10,7 @@ interface PlayerOverlayProps {
   backTo: string;
   visible: boolean;
   isPlaying: boolean;
+  isPlayPausePending?: boolean;
   notice?: string | null;
   onTogglePlay: () => void;
 }
@@ -20,10 +22,42 @@ export function PlayerOverlay({
   backTo,
   visible,
   isPlaying,
+  isPlayPausePending = false,
   notice,
   onTogglePlay,
 }: PlayerOverlayProps) {
-  const { t } = useLanguage();
+  const { t } = useLanguage()
+  
+  const wasPlayPausePendingRef = useRef(isPlayPausePending);
+  const waveTimeoutRef = useRef<number | null>(null);
+  const [showPlayPauseWave, setShowPlayPauseWave] = useState(false);
+
+  useEffect(() => {
+    const wasPending = wasPlayPausePendingRef.current;
+
+    if (wasPending && !isPlayPausePending) {
+      setShowPlayPauseWave(true);
+
+      if (waveTimeoutRef.current !== null) {
+        window.clearTimeout(waveTimeoutRef.current);
+      }
+
+      waveTimeoutRef.current = window.setTimeout(() => {
+        setShowPlayPauseWave(false);
+        waveTimeoutRef.current = null;
+      }, 520);
+    }
+
+    wasPlayPausePendingRef.current = isPlayPausePending;
+  }, [isPlayPausePending]);
+
+  useEffect(() => {
+    return () => {
+      if (waveTimeoutRef.current !== null) {
+        window.clearTimeout(waveTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <>
@@ -67,11 +101,29 @@ export function PlayerOverlay({
         type="button"
         onClick={onTogglePlay}
         className={`absolute left-1/2 top-1/2 z-20 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.16] text-white shadow-[0_22px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.24] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
-          visible || !isPlaying ? "opacity-100" : "pointer-events-none opacity-0"
+          visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-label={isPlaying ? t("common.pause") : t("common.play")}
       >
-        {isPlaying ? <Pause size={42} fill="currentColor" /> : <Play className="ml-1" size={44} fill="currentColor" />}
+        <span className="relative flex items-center justify-center">
+          {showPlayPauseWave ? (
+            <span className="seyirlik-play-pause-wave" />
+          ) : null}
+
+          {isPlaying ? (
+            <Pause size={42} fill="currentColor" />
+          ) : (
+            <Play className="ml-1" size={44} fill="currentColor" />
+          )}
+
+          {isPlayPausePending ? (
+            <LoaderCircle
+              size={122}
+              strokeWidth={1}
+              className="absolute z-[-1] animate-[spin_1.8s_linear_infinite] text-[var(--accent)] drop-shadow-[0_0_10px_rgba(255,153,31,0.35)]"
+            />
+          ) : null}
+        </span>
       </button>
     </>
   );

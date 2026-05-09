@@ -20,11 +20,19 @@ export type JellyfinSyncPlaySocketStatus = "connecting" | "connected" | "disconn
 
 export type PartyWatchRole = "host" | "member";
 
+export interface JellyfinSyncPlayParticipant {
+  UserId?: string;
+  UserName?: string;
+  Username?: string;
+  Name?: string;
+  DeviceName?: string;
+}
+
 export interface JellyfinSyncPlayGroupInfo {
   GroupId?: string;
   GroupName?: string;
   State?: JellyfinSyncPlayGroupState;
-  Participants?: unknown[];
+  Participants?: Array<JellyfinSyncPlayParticipant | string>;
   LastUpdatedAt?: string;
 }
 
@@ -80,6 +88,8 @@ export interface PartyWatchController {
   isLoading: boolean;
   isInGroup: boolean;
   isApplyingRemoteCommand: boolean;
+  isResumePending: boolean;
+  isPlayPausePending: boolean;
   shouldDeferAutoplay: boolean;
   groupId: string | null;
   groupName: string | null;
@@ -87,6 +97,8 @@ export interface PartyWatchController {
   joinInput: string;
   inviteUrl: string | null;
   participantCount: number | null;
+  participantNames: string[];
+  partyEventMessage: string | null;
   role: PartyWatchRole | null;
   canControl: boolean;
   socketStatus: JellyfinSyncPlaySocketStatus;

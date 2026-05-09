@@ -27,21 +27,24 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
   }
 
   const isBusy = controller.isLoading || controller.isApplyingRemoteCommand;
+
   const roleLabel =
     controller.role === "host"
       ? t("party.roleHost")
       : controller.role === "member"
         ? t("party.roleMember")
         : null;
+
   const participantLabel =
     controller.participantCount !== null
       ? `${controller.participantCount} ${t("party.participants")}`
       : null;
+
   const socketLabel = getSocketLabel(controller.socketStatus, t);
 
   return (
     <section
-      className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-white/12 bg-black/[0.72] p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
+      className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg bg-gray p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
         visible || controller.isInGroup ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
       }`}
       aria-label={t("party.title")}
@@ -51,6 +54,7 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 text-[var(--accent)]">
             <Users size={17} />
           </span>
+
           <div className="min-w-0">
             <p className="truncate text-sm font-bold">{t("party.title")}</p>
             <p className="truncate text-[0.72rem] font-medium text-white/55">
@@ -79,6 +83,26 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
             </span>
           </div>
 
+          {controller.participantNames.length > 0 ? (
+            <div className="rounded-md border border-white/10 bg-white/[0.045] px-2.5 py-2">
+              <p className="mb-1.5 text-[0.68rem] font-black uppercase tracking-[0.14em] text-white/38">
+                Katılımcılar
+              </p>
+
+              <div className="flex flex-wrap gap-1.5">
+                {controller.participantNames.map((name, index) => (
+                  <span
+                    key={`${name}-${index}`}
+                    className="inline-flex max-w-full items-center rounded-full border border-white/10 bg-black/32 px-2 py-1 text-xs font-semibold text-white/75"
+                    title={name}
+                  >
+                    <span className="max-w-[9rem] truncate">{name}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
           <div className="grid grid-cols-[1fr_auto] gap-2">
             <button
               type="button"
@@ -89,11 +113,12 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               <Copy size={16} />
               {t("party.copyInvite")}
             </button>
+
             <button
               type="button"
               onClick={controller.leaveGroup}
               disabled={isBusy}
-              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/12 text-white/82 transition hover:bg-white/12 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="flex h-10 w-10 items-center justify-center rounded-md  border-white/12 text-white/82 transition hover:bg-white/12 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
               aria-label={t("party.leave")}
               title={t("party.leave")}
             >
@@ -121,6 +146,7 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               disabled={!controller.isAvailable || isBusy}
               className="h-10 min-w-0 rounded-md border border-white/12 bg-white/[0.07] px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/36 focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             />
+
             <button
               type="button"
               onClick={() => void controller.joinGroup()}
@@ -134,15 +160,7 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
         </div>
       )}
 
-      {controller.copyStatusKey || controller.errorKey || controller.statusKey ? (
-        <p
-          className={`mt-2 text-xs font-semibold ${
-            controller.errorKey ? "text-rose-200" : controller.copyStatusKey ? "text-[var(--accent-hover)]" : "text-white/62"
-          }`}
-        >
-          {t(controller.errorKey ?? controller.copyStatusKey ?? controller.statusKey ?? "party.syncingWithJellyfinSyncPlay")}
-        </p>
-      ) : null}
+      
     </section>
   );
 }

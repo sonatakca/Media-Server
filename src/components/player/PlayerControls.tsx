@@ -1,4 +1,4 @@
-import { Maximize, Pause, Play, RotateCcw, RotateCw, Settings } from "lucide-react";
+import { Loader2, Maximize, Pause, Play, RotateCcw, RotateCw, Settings } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
@@ -8,6 +8,7 @@ import type { PlaybackQualityOption, PlaybackSourceCandidate } from "../../lib/t
 interface PlayerControlsProps {
   visible: boolean;
   isPlaying: boolean;
+  playWaiting: boolean;
   currentTime: number;
   duration: number;
   bufferedEnd: number;
@@ -54,6 +55,7 @@ function formatTime(seconds: number): string {
 export function PlayerControls({
   visible,
   isPlaying,
+  playWaiting,
   currentTime,
   duration,
   bufferedEnd,
@@ -94,10 +96,21 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onTogglePlay}
-              className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-14 sm:w-14"
-              aria-label={isPlaying ? t("common.pause") : t("common.play")}
+              disabled={playWaiting}
+              className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
+              aria-label={playWaiting ? "Waiting for SyncPlay" : isPlaying ? t("common.pause") : t("common.play")}
+              title={playWaiting ? "Waiting for SyncPlay" : undefined}
             >
-              {isPlaying ? <Pause size={24} fill="currentColor" /> : <Play size={24} fill="currentColor" />}
+              {playWaiting ? (
+                <>
+                  <Loader2 className="absolute h-8 w-8 animate-spin text-black/70 sm:h-9 sm:w-9" />
+                  <Play className="ml-0.5 h-3.5 w-3.5 text-black sm:h-4 sm:w-4" fill="currentColor" />
+                </>
+              ) : isPlaying ? (
+                <Pause size={24} fill="currentColor" />
+              ) : (
+                <Play size={24} fill="currentColor" />
+              )}
             </button>
             <button
               type="button"

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Loader2 } from "lucide-react";
+import { Loader2, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
@@ -167,12 +167,26 @@ export function CustomVideoPlayer({
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
   const title = getDisplayTitle(item);
+
+  const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPartyWatchOpen, setIsPartyWatchOpen] = useState(false);
+  const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
+
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
+
+  const controlsShouldStayVisible =
+    isSettingsOpen ||
+    isPlaybackInfoOpen ||
+    isPartyWatchOpen ||
+    isSubtitleEditMode;
+
   const { areControlsVisible, showControls } = useAutoHideControls({
     isPlaying: progress.isPlaying,
-    disabled: Boolean(error),
+    disabled: Boolean(error) || controlsShouldStayVisible,
   });
+
   const partyWatch = usePartyWatchController({
     videoRef,
     itemId: item.Id,
@@ -183,6 +197,32 @@ export function CustomVideoPlayer({
     showControls,
   });
 
+  const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<string | null>(null);
+  const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
+
+  useEffect(() => {
+    if (partyWatch.partyEventMessage) {
+      setDisplayedPartyEventMessage(partyWatch.partyEventMessage);
+      setIsPartyEventToastLeaving(false);
+      return undefined;
+    }
+
+    if (!displayedPartyEventMessage) {
+      return undefined;
+    }
+
+    setIsPartyEventToastLeaving(true);
+
+    const timer = window.setTimeout(() => {
+      setDisplayedPartyEventMessage(null);
+      setIsPartyEventToastLeaving(false);
+    }, 260);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [partyWatch.partyEventMessage, displayedPartyEventMessage]);
+
   const [activeSource, setActiveSource] = useState<PlaybackSourceCandidate>(source);
   const [selectedQualityId, setSelectedQualityId] = useState(AUTO_QUALITY_ID);
   const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<number | undefined>(() =>
@@ -191,21 +231,19 @@ export function CustomVideoPlayer({
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] = useState<number>(() =>
     getDefaultSubtitleStreamIndex(source),
   );
-  const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition | null>(null);
   const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({ scale: DEFAULT_SUBTITLE_SCALE });
   const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false);
   const [isResizingSubtitle, setIsResizingSubtitle] = useState(false);
-  const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
   const availablePlaybackCandidates = playbackCandidates.length > 0 ? playbackCandidates : [source];
   const qualityOptions = useMemo(() => getManualQualityOptions(activeSource.mediaSource), [activeSource.mediaSource]);
   const canSwitchAudio = Boolean(
     activeSource.mediaSource.Id && (activeSource.mediaSource.SupportsTranscoding || activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
+  
 
   useEffect(() => {
     pendingSourceRestoreRef.current = null;
@@ -271,6 +309,28 @@ export function CustomVideoPlayer({
       document.removeEventListener("pointerdown", handlePointerDownOutside);
     };
   }, [isSettingsOpen]);
+
+  useEffect(() => {
+    if (!isPartyWatchOpen) {
+      return undefined;
+    }
+
+    const handlePointerDownOutsidePartyWatch = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (target?.closest("[data-party-watch-root]")) {
+        return;
+      }
+
+      setIsPartyWatchOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutsidePartyWatch);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutsidePartyWatch);
+    };
+  }, [isPartyWatchOpen]);
 
   useEffect(() => {
     if (!isSubtitleEditMode) {
@@ -853,7 +913,6 @@ export function CustomVideoPlayer({
       onMouseMove={showControls}
       onPointerDown={showControls}
       onPointerUp={handlePointerUp}
-      onDoubleClick={(event) => handleDoubleSeek(event.clientX)}
     >
       <video
         ref={videoRef}
@@ -956,17 +1015,19 @@ export function CustomVideoPlayer({
         titleLogoUrl={titleLogoUrl}
         subtitle={subtitle}
         backTo={`/item/${item.Id}`}
-        visible={areControlsVisible || !progress.isPlaying}
+        visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
         isPlaying={progress.isPlaying}
+        isPlayPausePending={partyWatch.isInGroup && partyWatch.isPlayPausePending}
         notice={notice}
         onTogglePlay={partyWatch.togglePlay}
       />
 
-      <PartyWatchOverlay controller={partyWatch} />
+      {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}
 
       <PlayerControls
-        visible={areControlsVisible || !progress.isPlaying}
+        visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
         isPlaying={progress.isPlaying}
+        playWaiting={false}
         currentTime={progress.currentTime}
         duration={progress.duration}
         bufferedEnd={progress.bufferedEnd}
@@ -978,7 +1039,11 @@ export function CustomVideoPlayer({
         onToggleMute={progress.toggleMute}
         onVolumeChange={progress.setVolume}
         onToggleFullscreen={toggleFullscreen}
-        onOpenSettings={() => setIsSettingsOpen((current) => !current)}
+        onOpenSettings={() => {
+          setIsSettingsOpen((current) => !current);
+          setIsPartyWatchOpen(false);
+          showControls();
+        }}
         source={activeSource}
         qualityOptions={qualityOptions}
         selectedQualityId={selectedQualityId}
@@ -993,10 +1058,61 @@ export function CustomVideoPlayer({
         onSelectSubtitleStream={handleSelectSubtitleStream}
       />
 
-      {areControlsVisible || !progress.isPlaying ? (
+      {displayedPartyEventMessage ? (
+        <div className="pointer-events-none absolute bottom-[calc(max(1rem,env(safe-area-inset-bottom))+5.8rem)] left-[max(1rem,env(safe-area-inset-left))] z-40">
+          <div
+            className={`rounded-full border-[var(--accent)]/35 bg-black/72 px-3 py-1.5 text-xs font-bold text-white/88 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl will-change-transform ${
+              isPartyEventToastLeaving
+                ? "animate-[partyToastExit_420ms_cubic-bezier(0.4,0,0.2,1)_forwards]"
+                : "animate-[partyToastEnter_520ms_cubic-bezier(0.16,1,0.3,1)_forwards]"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)]/18 text-[var(--accent)]">
+                <span className="absolute h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]" />
+              </span>
+
+              <span>{displayedPartyEventMessage}</span>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {areControlsVisible || !progress.isPlaying || controlsShouldStayVisible ? (
         <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex flex-col items-end gap-3">
-          <PartyWatchControls controller={partyWatch} visible={areControlsVisible || !progress.isPlaying} />
-          <PlaybackInfoButton source={activeSource} onClick={() => setIsPlaybackInfoOpen(true)} />
+          <div className="flex items-center gap-2" data-party-watch-root>
+            <button
+              type="button"
+              onClick={() => {
+                setIsPartyWatchOpen((current) => !current);
+                setIsSettingsOpen(false);
+                showControls();
+              }}
+              className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              aria-label="SyncPlay"
+              title="SyncPlay"
+            >
+              <Users size={18} />
+
+              <span className="absolute right-[0.35rem] top-[0.50rem] flex h-2.5 w-2.5 items-center justify-center rounded-full bg-black">
+                <span
+                  className={`h-1.5 w-1.5 rounded-full border ${
+                    partyWatch.isInGroup
+                      ? "border-white/85 hover:border-white bg-white/85 hover:bg-white shadow-[0_0_12px_var(--accent)]"
+                      : "border-white/85 hover:border-white bg-transparent"
+                  }`}
+                />
+              </span>
+            </button>
+
+            <PlaybackInfoButton source={activeSource} onClick={() => setIsPlaybackInfoOpen(true)} />
+          </div>
+
+          {isPartyWatchOpen ? (
+            <div data-party-watch-root>
+              <PartyWatchControls controller={partyWatch} visible />
+            </div>
+          ) : null}
         </div>
       ) : null}
 
