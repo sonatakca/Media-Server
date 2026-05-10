@@ -168,6 +168,38 @@ export interface JellyfinPlaybackInfoResponse {
   ErrorCode?: string;
 }
 
+export interface JellyfinTranscodingInfo {
+  AudioCodec?: string;
+  VideoCodec?: string;
+  Container?: string;
+  IsVideoDirect?: boolean;
+  IsAudioDirect?: boolean;
+  Bitrate?: number;
+  Framerate?: number;
+  CompletionPercentage?: number;
+  Width?: number;
+  Height?: number;
+  AudioChannels?: number;
+  TranscodeReasons?: string[];
+  TranscodingReasons?: string[];
+  ReasonForTranscoding?: string;
+  PlaySessionId?: string;
+}
+
+export interface JellyfinSessionInfo {
+  Id?: string;
+  PlayState?: {
+    PlaySessionId?: string;
+    PositionTicks?: number;
+    IsPaused?: boolean;
+  };
+  NowPlayingItem?: {
+    Id?: string;
+    Name?: string;
+  };
+  TranscodingInfo?: JellyfinTranscodingInfo;
+}
+
 export type PlaybackMode = "DirectPlay" | "DirectStream" | "Transcoding" | "Unknown";
 
 export interface PlaybackQualityOption {

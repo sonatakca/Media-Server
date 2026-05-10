@@ -14,6 +14,7 @@ import {
   ticksFromSeconds,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
+import { setDefaultPageTitle, setLoadingPageTitle, setPageTitle } from "../lib/pageTitle";
 
 export function PlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -57,6 +58,31 @@ export function PlayerPage() {
       isMounted = false;
     };
   }, [itemId, t]);
+
+  useEffect(() => {
+    const isPageLoading = !item || playback.isLoading;
+
+    if (isPageLoading) {
+      const loadingTitle =
+        item?.SeriesName && item?.IndexNumber
+          ? `${item.SeriesName} - ${item.Name}`
+          : item?.Name;
+
+      setLoadingPageTitle(loadingTitle);
+      return;
+    }
+
+    const title =
+      item.SeriesName && item.IndexNumber
+        ? `${item.SeriesName} - ${item.Name}`
+        : item.Name;
+
+    setPageTitle(title);
+
+    return () => {
+      setDefaultPageTitle(false);
+    };
+  }, [item, playback.isLoading]);
 
   const handlePlaybackStarted = useCallback(
     (positionSeconds: number) => {

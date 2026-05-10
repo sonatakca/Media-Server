@@ -15,6 +15,7 @@ import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
+import { setDefaultPageTitle } from "./lib/pageTitle";
 
 const DEFAULT_SERVER_URL =
   (import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined)?.trim() ||
@@ -24,18 +25,19 @@ const DEFAULT_SERVER_CHECK_TIMEOUT_MS = 6000;
 
 type DefaultServerState = "checking" | "ready" | "failed";
 
+
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
       reject(new Error(`Default server check timed out after ${timeoutMs}ms.`));
     }, timeoutMs);
-
+    
     promise
-      .then(resolve)
-      .catch(reject)
-      .finally(() => {
-        window.clearTimeout(timeoutId);
-      });
+    .then(resolve)
+    .catch(reject)
+    .finally(() => {
+      window.clearTimeout(timeoutId);
+    });
   });
 }
 
@@ -44,39 +46,39 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DefaultServerState>(() => {
     return getServerUrl() ? "ready" : "checking";
   });
-
+  
   useEffect(() => {
     let isMounted = true;
-
+    
     async function prepareDefaultServer() {
       if (getServerUrl()) {
         setState("ready");
         return;
       }
-
+      
       try {
         await withTimeout(testServerConnection(DEFAULT_SERVER_URL), DEFAULT_SERVER_CHECK_TIMEOUT_MS);
         setServerUrl(DEFAULT_SERVER_URL);
-
+        
         if (isMounted) {
           setState("ready");
         }
       } catch (error) {
         console.warn("[Seyirlik] Default server connection failed", error);
-
+        
         if (isMounted) {
           setState("failed");
         }
       }
     }
-
+    
     void prepareDefaultServer();
-
+    
     return () => {
       isMounted = false;
     };
   }, []);
-
+  
   if (state === "checking") {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 text-white">
@@ -87,11 +89,11 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
       </main>
     );
   }
-
+  
   if (state === "failed" && !getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-
+  
   return <>{children}</>;
 }
 
@@ -99,11 +101,11 @@ function RootRedirect() {
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-
+  
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
-
+  
   return <Navigate to="/home" replace />;
 }
 
@@ -111,15 +113,18 @@ function RequireAuth() {
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-
+  
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
-
+  
   return <Outlet />;
 }
 
 export default function App() {
+  useEffect(() => {
+    setDefaultPageTitle(false);
+  }, []);
   return (
     <>
       <ScrollToTop />

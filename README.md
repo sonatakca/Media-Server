@@ -1,6 +1,6 @@
-# Seyirlik Web
+# Seyirlik
 
-Seyirlik Web is a custom frontend/client for an existing Jellyfin server.
+Seyirlik is a custom frontend/client for an existing Jellyfin server.
 
 Jellyfin remains the backend. This project does not rebuild Jellyfin, does not add a custom backend, and does not modify Jellyfin server files. The browser talks directly to Jellyfin through Jellyfin's HTTP API.
 
@@ -36,7 +36,7 @@ npm run build
 
 ## Jellyfin Server URL
 
-On first launch, Seyirlik Web asks for your Jellyfin server URL and saves the normalized URL in browser `localStorage`. Trailing slashes are removed.
+On first launch, Seyirlik asks for your Jellyfin server URL and saves the normalized URL in browser `localStorage`. Trailing slashes are removed.
 
 Supported examples:
 
@@ -47,7 +47,7 @@ Supported examples:
 
 ### Testing from Mac when Jellyfin is on Windows
 
-`localhost` means the current machine. If you run Seyirlik Web on your Mac, `http://localhost:8096` means Jellyfin running on your Mac.
+`localhost` means the current machine. If you run Seyirlik on your Mac, `http://localhost:8096` means Jellyfin running on your Mac.
 
 If Jellyfin is running on your Windows PC and you are testing from your Mac, enter the Windows PC local IP address:
 
@@ -63,7 +63,7 @@ http://192.168.1.50:8096
 
 ### Testing from Windows when Jellyfin is on Windows
 
-If you run Seyirlik Web directly on the same Windows PC where Jellyfin is installed, this may work:
+If you run Seyirlik directly on the same Windows PC where Jellyfin is installed, this may work:
 
 ```text
 http://localhost:8096
@@ -111,7 +111,7 @@ Then test a difficult file:
 MKV container, H.265/HEVC video, OPUS or other non-AAC audio
 ```
 
-Open the browser console while testing `/watch/:itemId`. Seyirlik Web logs the selected Jellyfin media source, whether it is using `DirectPlay`, `DirectStream`, or `Transcoding`, and a redacted playback URL.
+Open the browser console while testing `/watch/:itemId`. Seyirlik logs the selected Jellyfin media source, whether it is using `DirectPlay`, `DirectStream`, or `Transcoding`, and a redacted playback URL.
 
 If playback still fails, check Jellyfin:
 

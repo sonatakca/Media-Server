@@ -11,6 +11,7 @@ import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
+import { setPageTitle } from "../lib/pageTitle";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -46,6 +47,10 @@ export function HomePage() {
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
+
+  useEffect(() => {
+    setPageTitle("Seyirlik");
+  }, []);
 
   useEffect(() => {
     let isMounted = true;

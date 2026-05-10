@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { getActiveTranscodingReasons } from "../../lib/jellyfinApi";
 import { X } from "lucide-react";
 import type { PlaybackSourceCandidate } from "../../lib/types";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -7,6 +9,8 @@ import {
   getDirectPlayRecommendation,
   getPlaybackModeLabel,
   getPlaybackReasons,
+  getPrimaryTranscodeReasons,
+  getReadableTranscodeReason,
   getSanitizedDebugPayload,
   getStreamOfType,
   getSubtitleStreams,
@@ -42,6 +46,43 @@ export function PlaybackInfoPanel({ source, videoError, onClose }: PlaybackInfoP
   const audio = getStreamOfType(mediaSource, "Audio");
   const subtitles = getSubtitleStreams(mediaSource);
   const reasons = getPlaybackReasons(source, t);
+  const [activeTranscodingReasons, setActiveTranscodingReasons] = useState<string[]>([]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadActiveTranscodingReasons() {
+      try {
+        const reasons = await getActiveTranscodingReasons(source.itemId, source.playSessionId);
+
+        if (!isCancelled) {
+          setActiveTranscodingReasons(reasons);
+          console.info("[Seyirlik Playback] Active Jellyfin transcoding reasons", reasons);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          setActiveTranscodingReasons([]);
+          console.warn("[Seyirlik Playback] Could not load active Jellyfin transcoding reasons", error);
+        }
+      }
+    }
+
+    void loadActiveTranscodingReasons();
+
+    const intervalId = window.setInterval(() => {
+      void loadActiveTranscodingReasons();
+    }, 5000);
+
+    return () => {
+      isCancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [source.itemId, source.playSessionId]);
+
+  const primaryTranscodeReasons =
+    activeTranscodingReasons.length > 0
+      ? activeTranscodingReasons.map((reason) => getReadableTranscodeReason(reason, t))
+      : getPrimaryTranscodeReasons(source, t);
   const recommendations = getDirectPlayRecommendation(source, t);
   const debugPayload = getSanitizedDebugPayload(source, videoError);
   const unknownLabel = t("common.unknown");
@@ -77,15 +118,51 @@ export function PlaybackInfoPanel({ source, videoError, onClose }: PlaybackInfoP
             </dl>
           </section>
 
+          {primaryTranscodeReasons.length > 0 ? (
+            <section className="mt-6">
+              <div className="rounded-3xl border border-amber-300/25 bg-amber-300/[0.085] p-4 shadow-[0_18px_70px_rgba(245,158,11,0.10)]">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-amber-200/80">
+                      {t("playback.transcodingReason")}
+                    </p>
+                    <h3 className="mt-1 text-lg font-black text-amber-50">
+                      {t("playback.transcodingReasonTitle")}
+                    </h3>
+                  </div>
+
+                  <span className="shrink-0 rounded-full border border-amber-200/25 bg-amber-200/10 px-2.5 py-1 text-xs font-black text-amber-100">
+                    {primaryTranscodeReasons.length}
+                  </span>
+                </div>
+
+                <ul className="mt-4 space-y-2">
+                  {primaryTranscodeReasons.map((reason) => (
+                    <li
+                      key={reason}
+                      className="rounded-2xl border border-amber-200/15 bg-black/24 px-4 py-3 text-sm font-bold leading-6 text-amber-50"
+                    >
+                      {reason}
+                    </li>
+                  ))}
+                </ul>
+
+                <p className="mt-3 text-xs leading-5 text-amber-100/58">
+                  {t("playback.transcodingReasonNote")}
+                </p>
+              </div>
+            </section>
+          ) : null}
+
           <section className="mt-6">
-            <h3 className="text-sm font-black uppercase tracking-[0.18em] text-white/58">{t("playback.section.whyMode")}</h3>
-            <ul className="mt-3 space-y-2">
-              {reasons.map((reason) => (
-                <li key={reason} className="rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm leading-6 text-white/76">
-                  {reason}
-                </li>
-              ))}
-            </ul>
+
+            {mediaSource.TranscodingReasons?.length ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {mediaSource.TranscodingReasons.map((reason) => (
+                  <Chip key={reason}>{reason}</Chip>
+                ))}
+              </div>
+            ) : null}
           </section>
 
           <section className="mt-6">
@@ -131,17 +208,6 @@ export function PlaybackInfoPanel({ source, videoError, onClose }: PlaybackInfoP
             <p className="mt-2 text-xs leading-5 text-white/42">
               {t("playback.speedNote")}
             </p>
-          </section>
-
-          <section className="mt-6">
-            <h3 className="text-sm font-black uppercase tracking-[0.18em] text-white/58">{t("playback.section.avoidTranscoding")}</h3>
-            <ul className="mt-3 space-y-2">
-              {recommendations.map((recommendation) => (
-                <li key={recommendation} className="rounded-xl border border-white/10 bg-white/[0.045] px-4 py-3 text-sm leading-6 text-white/76">
-                  {recommendation}
-                </li>
-              ))}
-            </ul>
           </section>
 
           <details className="mt-6 rounded-2xl border border-white/10 bg-black/40 p-4">

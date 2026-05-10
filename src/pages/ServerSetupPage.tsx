@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { useEffect, FormEvent, useState } from "react";
 import { CheckCircle2, Server, Wifi } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
@@ -9,6 +9,7 @@ import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
 import { clearAuthSession, getServerUrl, normalizeServerUrl, setServerUrl } from "../lib/authStorage";
 import { testServerConnection } from "../lib/jellyfinApi";
+import { setPageTitle } from "../lib/pageTitle";
 
 const examples = [
   "http://localhost:8096",
@@ -18,6 +19,9 @@ const examples = [
 ];
 
 export function ServerSetupPage() {
+  useEffect(() => {
+    setPageTitle(`${t("nav.server")} · Seyirlik`);
+  }, []);
   const navigate = useNavigate();
   const { t } = useLanguage();
   const defaultServerUrl =
@@ -73,7 +77,7 @@ export function ServerSetupPage() {
         <div className="mb-8 flex items-center gap-3">
           <img src={appIcon} alt="" className="h-12 w-12 rounded-2xl object-cover shadow-2xl" />
           <div>
-            <p className="text-sm font-semibold text-[var(--accent)]">Seyirlik Web</p>
+            <p className="text-sm font-semibold text-[var(--accent)]">Seyirlik</p>
             <h1 className="text-3xl font-black sm:text-4xl">{t("server.connectJellyfin")}</h1>
           </div>
         </div>

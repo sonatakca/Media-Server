@@ -1,4 +1,4 @@
-import { FormEvent, useState } from "react";
+import { useEffect, FormEvent, useState } from "react";
 import { Lock, Server, User } from "lucide-react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
@@ -10,8 +10,12 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { getOrCreateDeviceId } from "../lib/device";
 import { authenticateByName } from "../lib/jellyfinApi";
 import { getServerUrl, isAuthenticated, setAuthSession } from "../lib/authStorage";
+import { setPageTitle } from "../lib/pageTitle";
 
 export function LoginPage() {
+  useEffect(() => {
+    setPageTitle(`${t("auth.login")} · Seyirlik`);
+  }, []);
   const navigate = useNavigate();
   const { t } = useLanguage();
   const serverUrl = getServerUrl();
@@ -56,7 +60,7 @@ export function LoginPage() {
       <section className="w-full max-w-md">
         <div className="mb-8 text-center">
           <img src={appIcon} alt="" className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl" />
-          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">Seyirlik Web</p>
+          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">Seyirlik</p>
           <h1 className="text-3xl font-black">{t("auth.signInToJellyfin")}</h1>
           <p className="mt-3 break-all text-sm text-zinc-400">{serverUrl}</p>
         </div>
@@ -73,7 +77,7 @@ export function LoginPage() {
               required
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
+              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
             />
           </div>
 
@@ -89,7 +93,7 @@ export function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.target.value)}
               placeholder={t("auth.noPasswordPlaceholder")}
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
+              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
             />
           </div>
 
@@ -101,7 +105,9 @@ export function LoginPage() {
 
           <Button type="submit" className="mt-6 w-full" disabled={isSubmitting}>
             <AnimatedWidth value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}>
-              <AnimatedText value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")} />
+              <span className="inline-flex py-1 leading-normal">
+                <AnimatedText value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")} />
+              </span>
             </AnimatedWidth>
           </Button>
 
@@ -111,7 +117,9 @@ export function LoginPage() {
           >
             <Server size={17} />
             <AnimatedWidth value={t("auth.changeServerUrl")}>
-              <AnimatedText value={t("auth.changeServerUrl")} />
+              <span className="inline-flex py-1 leading-normal">
+                <AnimatedText value={t("auth.changeServerUrl")} />
+              </span>
             </AnimatedWidth>
           </Link>
         </form>

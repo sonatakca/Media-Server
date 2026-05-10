@@ -23,7 +23,7 @@ export function getOrCreateDeviceId(): string {
 }
 
 export function getDeviceName(): string {
-  return "Seyirlik Web Browser";
+  return "Seyirlik Browser";
 }
 
 export interface ViewportCapabilities {

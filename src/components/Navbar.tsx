@@ -47,7 +47,7 @@ export function Navbar() {
               <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-xl">
                 S
               </span>
-              <span className="text-base font-black tracking-wide text-white sm:text-lg">Seyirlik Web</span>
+              <span className="text-base font-black tracking-wide text-white sm:text-lg">Seyirlik</span>
             </span>
           )}
           {iconFailed && !desktopLogoFailed ? (

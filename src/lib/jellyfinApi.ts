@@ -14,6 +14,8 @@ import type {
   JellyfinMediaStream,
   JellyfinPlaybackInfoResponse,
   JellyfinPublicSystemInfo,
+  JellyfinSessionInfo,
+  JellyfinTranscodingInfo,
   PlaybackQualityOption,
   PlaybackMode,
   PlaybackSourceCandidate,
@@ -492,6 +494,49 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
       AutoOpenLiveStream: true,
     },
   });
+}
+
+export async function getActiveTranscodingInfo(
+  itemId: string,
+  playSessionId?: string,
+): Promise<JellyfinTranscodingInfo | null> {
+  const sessions = await requestJson<JellyfinSessionInfo[]>("/Sessions", {
+    params: {
+      activeWithinSeconds: 30,
+    },
+  });
+
+  const matchingSession = sessions.find((session) => {
+    const sessionPlaySessionId = session.PlayState?.PlaySessionId ?? session.TranscodingInfo?.PlaySessionId;
+    const nowPlayingItemId = session.NowPlayingItem?.Id;
+
+    if (playSessionId && sessionPlaySessionId === playSessionId) {
+      return true;
+    }
+
+    return nowPlayingItemId === itemId;
+  });
+
+  return matchingSession?.TranscodingInfo ?? null;
+}
+
+export async function getActiveTranscodingReasons(
+  itemId: string,
+  playSessionId?: string,
+): Promise<string[]> {
+  const transcodingInfo = await getActiveTranscodingInfo(itemId, playSessionId);
+
+  if (!transcodingInfo) {
+    return [];
+  }
+
+  const reasons = [
+    ...(transcodingInfo.TranscodeReasons ?? []),
+    ...(transcodingInfo.TranscodingReasons ?? []),
+    ...(transcodingInfo.ReasonForTranscoding ? [transcodingInfo.ReasonForTranscoding] : []),
+  ];
+
+  return Array.from(new Set(reasons.filter(Boolean)));
 }
 
 function getMediaStream(mediaSource: JellyfinMediaSource, type: "Video" | "Audio"): JellyfinMediaStream | undefined {

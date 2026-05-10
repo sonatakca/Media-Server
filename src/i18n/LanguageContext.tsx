@@ -18,7 +18,7 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 function readStoredLanguage(): Language {
   const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return SUPPORTED_LANGUAGES.includes(storedLanguage as Language) ? (storedLanguage as Language) : "en";
+  return SUPPORTED_LANGUAGES.includes(storedLanguage as Language) ? (storedLanguage as Language) : "tr";
 }
 
 interface LanguageProviderProps {

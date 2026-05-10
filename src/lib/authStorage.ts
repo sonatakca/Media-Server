@@ -4,7 +4,7 @@ import type { AuthSession } from "./types";
 const SERVER_URL_KEY = "seyirlik.serverUrl";
 const AUTH_SESSION_KEY = "seyirlik.authSession";
 
-export const JELLYFIN_CLIENT_NAME = "Seyirlik Web";
+export const JELLYFIN_CLIENT_NAME = "Seyirlik";
 export const JELLYFIN_CLIENT_VERSION = "0.1.0";
 
 export function normalizeServerUrl(rawServerUrl: string): string {

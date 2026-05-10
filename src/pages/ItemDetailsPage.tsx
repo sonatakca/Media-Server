@@ -13,6 +13,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
 import { getBackdropImageUrl, getItem, getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
+import { setDefaultPageTitle, setPageTitle } from "../lib/pageTitle";
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -29,6 +30,9 @@ function getBackdrop(item: JellyfinItem): string {
 }
 
 export function ItemDetailsPage() {
+  useEffect(() => {
+    setPageTitle("Seyirlik");
+  }, []);
   const { itemId } = useParams<{ itemId: string }>();
   const { t } = useLanguage();
   const mediaFormatLabels = useMemo(
