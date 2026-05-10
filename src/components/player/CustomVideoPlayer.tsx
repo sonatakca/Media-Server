@@ -69,6 +69,19 @@ interface SubtitleSize {
   scale: number;
 }
 
+type SeekFeedbackDirection = "backward" | "forward";
+
+interface SeekFeedbackItem {
+  amount: number;
+  visible: boolean;
+  rotation: number;
+}
+
+interface SeekFeedbackState {
+  backward: SeekFeedbackItem;
+  forward: SeekFeedbackItem;
+}
+
 interface SubtitleResizeState {
   pointerId: number;
   startClientX: number;
@@ -90,6 +103,25 @@ const TRICKPLAY_ROWS = 10;
 const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
 const TRICKPLAY_TILE_WIDTH = 320;
 const TRICKPLAY_TILE_HEIGHT = 132;
+
+const SEEK_FEEDBACK_OPPOSITE_HIDE_MS = 100;
+
+const SEEK_FEEDBACK_HIDE_MS = 950;
+
+const SEEK_FEEDBACK_FADE_RESET_MS = 260;
+
+const initialSeekFeedback: SeekFeedbackState = {
+  backward: {
+    amount: 0,
+    visible: false,
+    rotation: 0,
+  },
+  forward: {
+    amount: 0,
+    visible: false,
+    rotation: 0,
+  },
+};
 
 function getStreamsOfType(source: PlaybackSourceCandidate, type: "Audio" | "Subtitle"): JellyfinMediaStream[] {
   return source.mediaSource.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === type.toLowerCase()) ?? [];
@@ -186,6 +218,10 @@ export function CustomVideoPlayer({
     targetSeconds: number;
   } | null>(null);
   const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
+  const seekFeedbackHideTimersRef = useRef<Record<SeekFeedbackDirection, number | null>>({
+    backward: null,
+    forward: null,
+  });
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -210,9 +246,16 @@ export function CustomVideoPlayer({
     isPartyWatchOpen ||
     isSubtitleEditMode;
 
-  const { areControlsVisible, showControls } = useAutoHideControls({
+  const {
+    areControlsVisible,
+    showControls,
+    keepControlsVisible,
+    releaseControlsHover,
+  } = useAutoHideControls({
     isPlaying: progress.isPlaying,
     disabled: Boolean(error) || controlsShouldStayVisible,
+    playStartDelayMs: 900,
+    interactionDelayMs: 2400,
   });
 
   const partyWatch = usePartyWatchController({
@@ -228,6 +271,7 @@ export function CustomVideoPlayer({
   const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<string | null>(null);
   const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
   const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] = useState<number | null>(null);
+  const [seekFeedback, setSeekFeedback] = useState<SeekFeedbackState>(initialSeekFeedback);
 
   useEffect(() => {
     if (partyWatch.partyEventMessage) {
@@ -371,10 +415,116 @@ export function CustomVideoPlayer({
     }
   }, []);
 
+  const clearSeekFeedbackTimers = useCallback(() => {
+    (["backward", "forward"] as const).forEach((direction) => {
+      if (seekFeedbackHideTimersRef.current[direction] !== null) {
+        window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
+        seekFeedbackHideTimersRef.current[direction] = null;
+      }
+    });
+  }, []);
+
+  const triggerSeekFeedback = useCallback((seconds: number) => {
+    if (seconds === 0) {
+      return;
+    }
+
+    const direction: SeekFeedbackDirection = seconds < 0 ? "backward" : "forward";
+    const oppositeDirection: SeekFeedbackDirection = direction === "backward" ? "forward" : "backward";
+    const amount = Math.abs(seconds);
+
+    if (seekFeedbackHideTimersRef.current[oppositeDirection] !== null) {
+      window.clearTimeout(seekFeedbackHideTimersRef.current[oppositeDirection]!);
+    }
+
+    seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(() => {
+      setSeekFeedback((current) => ({
+        ...current,
+        [oppositeDirection]: {
+          ...current[oppositeDirection],
+          visible: false,
+        },
+      }));
+
+      window.setTimeout(() => {
+        setSeekFeedback((current) => {
+          if (current[oppositeDirection].visible) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [oppositeDirection]: {
+              ...current[oppositeDirection],
+              amount: 0,
+            },
+          };
+        });
+      }, SEEK_FEEDBACK_FADE_RESET_MS);
+
+      seekFeedbackHideTimersRef.current[oppositeDirection] = null;
+    }, SEEK_FEEDBACK_OPPOSITE_HIDE_MS);
+
+    setSeekFeedback((current) => {
+      const currentDirection = current[direction];
+
+      return {
+        ...current,
+        [direction]: {
+          ...currentDirection,
+          amount: currentDirection.amount + amount,
+          visible: true,
+          rotation: currentDirection.rotation + (direction === "forward" ? 360 : -360),
+        },
+      };
+    });
+
+    if (seekFeedbackHideTimersRef.current[direction] !== null) {
+      window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
+    }
+
+    seekFeedbackHideTimersRef.current[direction] = window.setTimeout(() => {
+      setSeekFeedback((current) => ({
+        ...current,
+        [direction]: {
+          ...current[direction],
+          visible: false,
+        },
+      }));
+
+      window.setTimeout(() => {
+        setSeekFeedback((current) => {
+          if (current[direction].visible) {
+            return current;
+          }
+
+          return {
+            ...current,
+            [direction]: {
+              ...current[direction],
+              amount: 0,
+            },
+          };
+        });
+      }, SEEK_FEEDBACK_FADE_RESET_MS);
+
+      seekFeedbackHideTimersRef.current[direction] = null;
+    }, SEEK_FEEDBACK_HIDE_MS);
+  }, []);
+
+  const handleSeekBy = useCallback(
+    (seconds: number) => {
+      partyWatch.seekBy(seconds);
+      triggerSeekFeedback(seconds);
+      showControls();
+    },
+    [partyWatch, showControls, triggerSeekFeedback],
+  );
+
   useKeyboardShortcuts({
     enabled: true,
     onTogglePlay: partyWatch.togglePlay,
-    onSeekBy: partyWatch.seekBy,
+    onSeekBy: handleSeekBy,
     onToggleMute: progress.toggleMute,
     onToggleFullscreen: toggleFullscreen,
   });
@@ -810,12 +960,13 @@ export function CustomVideoPlayer({
   useEffect(() => {
     return () => {
       clearFullscreenSeekPreviewFallbackTimer();
+      clearSeekFeedbackTimers();
 
       if (hasStartedRef.current) {
         onPlaybackStopped?.(videoRef.current?.currentTime ?? 0);
       }
     };
-  }, [clearFullscreenSeekPreviewFallbackTimer, onPlaybackStopped]);
+  }, [clearFullscreenSeekPreviewFallbackTimer, clearSeekFeedbackTimers, onPlaybackStopped]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -935,8 +1086,7 @@ export function CustomVideoPlayer({
     }
 
     const isLeftSide = clientX - bounds.left < bounds.width / 2;
-    partyWatch.seekBy(isLeftSide ? -10 : 10);
-    showControls();
+    handleSeekBy(isLeftSide ? -10 : 10);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -1349,6 +1499,9 @@ export function CustomVideoPlayer({
         isPlayPausePending={partyWatch.isInGroup && partyWatch.isPlayPausePending}
         notice={notice}
         onTogglePlay={partyWatch.togglePlay}
+        onControlsHoverStart={keepControlsVisible}
+        onControlsHoverEnd={releaseControlsHover}
+        seekFeedback={seekFeedback}
       />
 
       {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}
@@ -1357,6 +1510,8 @@ export function CustomVideoPlayer({
         visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
         isPlaying={progress.isPlaying}
         playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
+        onControlsHoverStart={keepControlsVisible}
+        onControlsHoverEnd={releaseControlsHover}
         seekPreviewLoading={fullscreenSeekPreview !== null}
         currentTime={progress.currentTime}
         duration={progress.duration}
@@ -1368,7 +1523,7 @@ export function CustomVideoPlayer({
         onTogglePlay={partyWatch.togglePlay}
         onSeek={partyWatch.seekTo}
         onSeekPreview={handleSeekPreview}
-        onSeekBy={partyWatch.seekBy}
+        onSeekBy={handleSeekBy}
         onToggleMute={progress.toggleMute}
         onVolumeChange={progress.setVolume}
         onToggleFullscreen={toggleFullscreen}

@@ -99,6 +99,71 @@ img {
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14);
 }
 
+.seyirlik-seek-feedback {
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  z-index: 24;
+  opacity: 0;
+  transform: translateY(-50%) scale(0.88);
+  transition:
+    opacity 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+
+.seyirlik-seek-feedback--visible {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+.seyirlik-seek-feedback--backward {
+  left: clamp(2.2rem, 18vw, 17rem);
+}
+
+.seyirlik-seek-feedback--forward {
+  right: clamp(2.2rem, 18vw, 17rem);
+}
+
+.seyirlik-seek-feedback__bubble {
+  position: relative;
+  display: flex;
+  height: clamp(5.5rem, 10vw, 7.8rem);
+  width: clamp(5.5rem, 10vw, 7.8rem);
+  align-items: center;
+  justify-content: center;
+}
+
+.seyirlik-seek-feedback__icon {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  display: flex;
+  color: rgba(255, 255, 255, 0.92);
+  filter:
+    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.92))
+    drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 42%, transparent));
+  transform: translate(-50%, -50%) rotate(0deg);
+  transform-origin: center;
+  transition: transform 520ms cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: transform;
+}
+
+.seyirlik-seek-feedback__number {
+  position: relative;
+  z-index: 2;
+  min-width: 2.4ch;
+  color: white;
+  font-size: clamp(0.85rem, 1.6vw, 1.15rem);
+  font-weight: 950;
+  letter-spacing: -0.08em;
+  line-height: 1;
+  text-align: center;
+  text-shadow:
+    0 2px 8px rgba(0, 0, 0, 0.95),
+    0 0 14px rgba(0, 0, 0, 0.88),
+    0 0 18px color-mix(in srgb, var(--accent) 34%, transparent);
+}
+
 .seyirlik-player-shell {
   height: 100vh;
   height: 100dvh;
@@ -390,6 +455,16 @@ img {
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(3);
+  }
+}
+
+@media (max-width: 640px) {
+  .seyirlik-seek-feedback--backward {
+    left: clamp(1.4rem, 15vw, 5.5rem);
+  }
+
+  .seyirlik-seek-feedback--forward {
+    right: clamp(1.4rem, 15vw, 5.5rem);
   }
 }
 

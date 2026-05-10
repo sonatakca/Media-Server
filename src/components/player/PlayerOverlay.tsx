@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, LoaderCircle, Pause, Play } from "lucide-react";
+import { ArrowLeft, LoaderCircle, Pause, Play, RotateCcw, RotateCw } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
+
+interface SeekFeedbackItem {
+  amount: number;
+  visible: boolean;
+  rotation: number;
+}
 
 interface PlayerOverlayProps {
   title: string;
@@ -13,6 +19,12 @@ interface PlayerOverlayProps {
   isPlayPausePending?: boolean;
   notice?: string | null;
   onTogglePlay: () => void;
+  onControlsHoverStart?: () => void;
+  onControlsHoverEnd?: () => void;
+  seekFeedback?: {
+    backward: SeekFeedbackItem;
+    forward: SeekFeedbackItem;
+  };
 }
 
 export function PlayerOverlay({
@@ -25,7 +37,10 @@ export function PlayerOverlay({
   isPlayPausePending = false,
   notice,
   onTogglePlay,
-}: PlayerOverlayProps) {
+  onControlsHoverStart,
+  onControlsHoverEnd,
+  seekFeedback,
+  }: PlayerOverlayProps) {
   const { t } = useLanguage()
   
   const wasPlayPausePendingRef = useRef(isPlayPausePending);
@@ -59,6 +74,9 @@ export function PlayerOverlay({
     };
   }, []);
 
+  const backwardFeedback = seekFeedback?.backward;
+  const forwardFeedback = seekFeedback?.forward;
+
   return (
     <>
       <div
@@ -66,7 +84,13 @@ export function PlayerOverlay({
           visible ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         }`}
       >
-        <div className="pointer-events-auto mx-auto flex max-w-[1500px] items-center justify-between gap-4">
+        <div
+          className="pointer-events-auto mx-auto flex max-w-[1500px] items-center justify-between gap-4"
+          onMouseEnter={onControlsHoverStart}
+          onMouseLeave={onControlsHoverEnd}
+          onPointerEnter={onControlsHoverStart}
+          onPointerLeave={onControlsHoverEnd}
+        >
           <Link
             to={backTo}
             className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
@@ -97,9 +121,55 @@ export function PlayerOverlay({
         </div>
       ) : null}
 
+      {backwardFeedback ? (
+        <div
+          className={`seyirlik-seek-feedback seyirlik-seek-feedback--backward ${
+            backwardFeedback.visible ? "seyirlik-seek-feedback--visible" : ""
+          }`}
+          aria-hidden="true"
+        >
+          <div className="seyirlik-seek-feedback__bubble">
+            <span
+              className="seyirlik-seek-feedback__icon"
+              style={{
+                transform: `translate(-50%, -50%) rotate(${backwardFeedback.rotation}deg)`,
+              }}
+            >
+              <RotateCcw size={60} strokeWidth={1.5} />
+            </span>
+            <span className="seyirlik-seek-feedback__number">{backwardFeedback.amount}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {forwardFeedback ? (
+        <div
+          className={`seyirlik-seek-feedback seyirlik-seek-feedback--forward ${
+            forwardFeedback.visible ? "seyirlik-seek-feedback--visible" : ""
+          }`}
+          aria-hidden="true"
+        >
+          <div className="seyirlik-seek-feedback__bubble">
+            <span
+              className="seyirlik-seek-feedback__icon"
+              style={{
+                transform: `translate(-50%, -50%) rotate(${forwardFeedback.rotation}deg)`,
+              }}
+            >
+              <RotateCw size={60} strokeWidth={1.5} />
+            </span>
+            <span className="seyirlik-seek-feedback__number">{forwardFeedback.amount}</span>
+          </div>
+        </div>
+      ) : null}
+
       <button
         type="button"
         onClick={onTogglePlay}
+        onMouseEnter={onControlsHoverStart}
+        onMouseLeave={onControlsHoverEnd}
+        onPointerEnter={onControlsHoverStart}
+        onPointerLeave={onControlsHoverEnd}
         className={`absolute left-1/2 top-1/2 z-20 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.16] text-white shadow-[0_22px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.24] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
           visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
         }`}

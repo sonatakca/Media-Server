@@ -26,6 +26,8 @@ interface PlayerControlsProps {
   mediaSourceId?: string;
   seekPreviewLoading?: boolean;
   onTogglePlay: () => void;
+  onControlsHoverStart?: () => void;
+  onControlsHoverEnd?: () => void;
   onSeek: (seconds: number) => void;
   onSeekBy: (seconds: number) => void;
   onToggleMute: () => void;
@@ -77,6 +79,8 @@ export function PlayerControls({
   mediaSourceId,
   seekPreviewLoading = false,
   onTogglePlay,
+  onControlsHoverStart,
+  onControlsHoverEnd,
   onSeek,
   onSeekBy,
   onToggleMute,
@@ -97,7 +101,13 @@ export function PlayerControls({
         visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >
-      <div className="pointer-events-auto mx-auto w-full max-w-[1500px]">
+      <div
+        className="pointer-events-auto mx-auto w-full max-w-[1500px]"
+        onMouseEnter={onControlsHoverStart}
+        onMouseLeave={onControlsHoverEnd}
+        onPointerEnter={onControlsHoverStart}
+        onPointerLeave={onControlsHoverEnd}
+      >
         <div className="relative">
           <SeekBar
             currentTime={currentTime}
