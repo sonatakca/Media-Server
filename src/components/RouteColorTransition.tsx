@@ -8,7 +8,6 @@ import {
   type AccentTheme,
 } from "../lib/accentTheme";
 import logoOnSide from "../assets/Seyirlik-OnSide-noNeon.png";
-import themeChangeSound from "../assets/themeChange.m4a";
 
 export const ROUTE_COLOR_TRANSITION_FORCE_EVENT = "seyirlik:force-theme-transition";
 
@@ -99,7 +98,6 @@ export function RouteColorTransition() {
   const location = useLocation();
   const timeoutsRef = useRef<number[]>([]);
   const selectedThemeRef = useRef<AccentTheme | null>(null);
-  const transitionAudioRef = useRef<HTMLAudioElement | null>(null);
   const hasMountedRef = useRef(false);
   const previousPathnameRef = useRef(location.pathname);
 
@@ -120,29 +118,6 @@ export function RouteColorTransition() {
   const clearTransitionTimers = useCallback(() => {
     timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     timeoutsRef.current = [];
-  }, []);
-
-  const playThemeChangeSound = useCallback(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    try {
-      if (!transitionAudioRef.current) {
-        transitionAudioRef.current = new Audio(themeChangeSound);
-        transitionAudioRef.current.preload = "auto";
-        transitionAudioRef.current.volume = 0.55;
-      }
-
-      transitionAudioRef.current.pause();
-      transitionAudioRef.current.currentTime = 0;
-
-      void transitionAudioRef.current.play().catch(() => {
-        // Browser may block sound until the user clicks/taps the page once.
-      });
-    } catch {
-      // Never let audio break the transition animation.
-    }
   }, []);
 
   const playTransition = useCallback(
@@ -183,7 +158,6 @@ export function RouteColorTransition() {
       setIsLeaving(false);
       setIsLogoVisible(false);
       setBars(getInitialBars());
-      playThemeChangeSound();
 
       ACCENT_THEMES.forEach((_theme, index) => {
         const timeoutId = window.setTimeout(() => {
@@ -269,7 +243,7 @@ export function RouteColorTransition() {
         hideTimeoutId,
       );
     },
-    [applyStoredThemeIfAvailable, clearTransitionTimers, playThemeChangeSound],
+    [applyStoredThemeIfAvailable, clearTransitionTimers],
   );
 
   useEffect(() => {
