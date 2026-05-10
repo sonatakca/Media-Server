@@ -131,7 +131,7 @@ export function PlayerControls({
             >
               {playWaiting ? (
                 <>
-                  <Loader2 className="absolute h-8 w-8 animate-spin text-black/70 sm:h-9 sm:w-9" />
+                  <Loader2 className="absolute h-16 w-16 animate-spin text-black/70 sm:h-14 sm:w-14" />
                   <Play className="ml-0.5 h-3.5 w-3.5 text-black sm:h-4 sm:w-4" fill="currentColor" />
                 </>
               ) : isPlaying ? (
