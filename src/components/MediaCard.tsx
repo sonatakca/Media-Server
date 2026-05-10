@@ -122,6 +122,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
       : "";
   const secondaryLabel = episodeLabel ?? (item.Type === "Season" ? null : !logoUrl ? title : null);
+  const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
   const isLandscape = variant === "landscape";
   const sizeClass = layout === "grid" ? "w-full" : isLandscape ? "w-72 sm:w-80 lg:w-96" : "w-44 sm:w-52 lg:w-60";
   const entranceDelay = Math.min(index * 0.025, 0.18);
@@ -147,11 +148,13 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
       whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       {...motionProps}
     >
-      <Link
-        to={to}
-        aria-label={title}
-        className="group flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-[0_22px_80px_rgba(0,0,0,0.52)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100"
-      >
+      <div className="group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-[0_22px_80px_rgba(0,0,0,0.52)] motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
+        <Link
+          to={to}
+          aria-label={title}
+          className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+        />
+
         <div className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}>
           {!imageLoaded && imageUrl && !imageFailed ? <div className="shimmer absolute inset-0" /> : null}
           {imageUrl && !imageFailed ? (
@@ -159,7 +162,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
               src={imageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.08] group-focus:scale-[1.08] ${
+              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.08] group-focus-within:scale-[1.08] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
               onLoad={() => setImageLoaded(true)}
@@ -170,27 +173,32 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
               {title}
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-65 transition group-hover:opacity-90 group-focus:opacity-90" />
-          <div className="absolute inset-x-0 bottom-0 translate-y-2 p-3 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus:translate-y-0 group-focus:opacity-100">
-            <div className="flex items-end justify-end">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 shadow-xl">
-                <Play size={18} fill="currentColor" />
-              </span>
-            </div>
-          </div>
+          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-65 transition group-hover:opacity-90 group-focus-within:opacity-90" />
+
+          {canPlay ? (
+            <Link
+              to={`/watch/${item.Id}`}
+              aria-label={`${t("common.play")} ${title}`}
+              className="absolute bottom-3 right-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+            >
+              <Play size={18} fill="currentColor" />
+            </Link>
+          ) : null}
+
           {progressPercent !== null ? (
             <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/[0.18]">
               <div className="h-full bg-[var(--accent)]" style={{ width: `${progressPercent}%` }} />
             </div>
           ) : null}
         </div>
+
         <div className="flex min-h-[5.9rem] flex-1 flex-col p-3.5">
           <div className="flex flex-1 items-center">
             {logoUrl ? (
               <img
                 src={logoUrl}
                 alt={title}
-                className="h-auto max-h-28 w-auto object-contain object-left mx-auto"
+                className="mx-auto h-auto max-h-28 w-auto object-contain object-left"
               />
             ) : (
               <h3 className="h-8 w-full truncate text-sm font-bold leading-8 text-white">{title}</h3>
@@ -222,7 +230,7 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
             )}
           </div>
         </div>
-      </Link>
+      </div>
     </motion.div>
   );
 }
