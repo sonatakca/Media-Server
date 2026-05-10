@@ -12,6 +12,8 @@ import { getBackdropImageUrl, getItem, getItemsForLibrary, getSeasonEpisodes, ge
 import { getDisplayTitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
+import { AnimatedText } from "../components/AnimatedText";
+import { AnimatedWidth } from "../components/AnimatedWidth";
 
 interface LibraryData {
   library?: JellyfinItem;
@@ -154,6 +156,14 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
   const activeId = libraryId ?? seriesId ?? seasonId;
   const { t } = useLanguage();
+  const mediaFormatLabels = useMemo(
+    () => ({
+      season: t("media.seasonNumber"),
+      hourShort: t("format.hourShort"),
+      minuteShort: t("format.minuteShort"),
+    }),
+    [t],
+  );
   const shouldReduceMotion = useReducedMotion();
   const [data, setData] = useState<LibraryData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +175,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
     async function loadLibrary() {
       if (!activeId) {
-        setError("Missing library id.");
+        setError(t("library.missingId"));
         return;
       }
 
@@ -181,13 +191,13 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           (mode === "series"
             ? {
                 Id: activeId,
-                Name: items[0]?.SeriesName ?? "Series",
+                Name: items[0]?.SeriesName ?? t("common.series"),
                 Type: "Series",
               }
             : mode === "season"
               ? {
                   Id: activeId,
-                  Name: items[0]?.SeasonName ?? "Season",
+                  Name: items[0]?.SeasonName ?? t("format.season"),
                   Type: "Season",
                   SeriesId: seriesId,
                 }
@@ -201,7 +211,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           setError(
             libraryError instanceof Error
               ? `${mode} id: ${activeId}\n${libraryError.message}`
-              : `${mode} id: ${activeId}\nCould not load this view.`,
+              : `${mode} id: ${activeId}\n${t("library.couldNotLoadView")}`,
           );
         }
       }
@@ -212,7 +222,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [activeId, mode, seriesId]);
+  }, [activeId, mode, seriesId, t]);
 
   const filteredItems = useMemo(() => {
     if (!data) {
@@ -262,7 +272,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           <MotionReveal className="max-w-4xl" direction="up">
             <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">{t("library.library")}</p>
             <h1 className="mt-2 text-5xl font-black leading-none text-white sm:text-6xl">
-              {data.library ? getDisplayTitle(data.library) : t("library.library")}
+              {data.library ? getDisplayTitle(data.library, mediaFormatLabels) : t("library.library")}
             </h1>
             <p className="mt-4 text-base font-medium text-white/[0.62]">
               {data.items.length} {t("library.itemsAvailable")}
@@ -279,6 +289,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
             value={searchTerm}
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder={t("library.searchPlaceholder")}
+            aria-label={t("library.searchLabel")}
             className="min-h-12 w-full rounded-xl border border-white/10 bg-black/[0.35] py-3 pl-11 pr-4 text-white outline-none transition placeholder:text-white/35 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
           />
         </label>
@@ -287,6 +298,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           <select
             value={sortBy}
             onChange={(event) => setSortBy(event.target.value as "name" | "year" | "latest")}
+            aria-label={t("library.sortBy")}
             className="bg-transparent text-white outline-none"
           >
             <option value="name">{t("library.name")}</option>
@@ -312,7 +324,9 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
         </div>
       ) : (
         <p className="rounded-xl border border-white/10 bg-[var(--surface)] p-5 text-sm text-white/[0.62]">
-          {t("library.noMatches")}
+          <AnimatedWidth value={t("library.noMatches")}>
+            <AnimatedText value={t("library.noMatches")} />
+          </AnimatedWidth>
         </p>
       )}
     </div>

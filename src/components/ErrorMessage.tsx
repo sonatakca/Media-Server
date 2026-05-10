@@ -18,7 +18,7 @@ export function ErrorMessage({ title, message, details, onRetry }: ErrorMessageP
         <button
           type="button"
           onClick={onRetry}
-          className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/[0.16] focus:outline-none focus:ring-2 focus:ring-teal-300"
+          className="mt-4 inline-flex min-h-10 items-center justify-center rounded-lg border border-white/15 bg-white/10 px-4 text-sm font-bold text-white transition hover:bg-white/[0.16] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         >
           {t("common.retry")}
         </button>

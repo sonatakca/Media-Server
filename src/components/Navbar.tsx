@@ -29,7 +29,7 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl">
       <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label="Seyirlik Web home">
+        <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label={t("nav.brandHome")}>
           {!iconFailed ? (
             <img src={appIcon} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-xl md:hidden" onError={() => setIconFailed(true)} />
           ) : null}
@@ -91,6 +91,8 @@ export function Navbar() {
               event.preventDefault();
               handleThemeChange();
             }}
+            aria-label={t("nav.changeTheme")}
+            title={t("nav.changeTheme")}
             className={() =>
               "inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-semibold text-zinc-300 transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:w-auto sm:px-3"
             }

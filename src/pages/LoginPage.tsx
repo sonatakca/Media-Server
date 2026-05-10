@@ -4,6 +4,8 @@ import { Link, Navigate, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
+import { AnimatedText } from "../components/AnimatedText";
+import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getOrCreateDeviceId } from "../lib/device";
 import { authenticateByName } from "../lib/jellyfinApi";
@@ -42,7 +44,7 @@ export function LoginPage() {
       });
       navigate("/home", { replace: true });
     } catch (loginError) {
-      const message = loginError instanceof Error ? loginError.message : "Login failed.";
+      const message = loginError instanceof Error ? loginError.message : t("auth.loginFailed");
       setError(`${t("auth.failedMessagePrefix")} ${message}`);
     } finally {
       setIsSubmitting(false);
@@ -54,7 +56,7 @@ export function LoginPage() {
       <section className="w-full max-w-md">
         <div className="mb-8 text-center">
           <img src={appIcon} alt="" className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl" />
-          <p className="mt-4 text-sm font-semibold text-teal-200">Seyirlik Web</p>
+          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">Seyirlik Web</p>
           <h1 className="text-3xl font-black">{t("auth.signInToJellyfin")}</h1>
           <p className="mt-3 break-all text-sm text-zinc-400">{serverUrl}</p>
         </div>
@@ -71,7 +73,7 @@ export function LoginPage() {
               required
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-teal-300 focus:ring-2 focus:ring-teal-300/30"
+              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
             />
           </div>
 
@@ -86,8 +88,8 @@ export function LoginPage() {
               autoComplete="current-password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              placeholder="Leave blank if this Jellyfin user has no password"
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-teal-300 focus:ring-2 focus:ring-teal-300/30"
+              placeholder={t("auth.noPasswordPlaceholder")}
+              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
             />
           </div>
 
@@ -98,7 +100,9 @@ export function LoginPage() {
           ) : null}
 
           <Button type="submit" className="mt-6 w-full" disabled={isSubmitting}>
-            {isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+            <AnimatedWidth value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}>
+              <AnimatedText value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")} />
+            </AnimatedWidth>
           </Button>
 
           <Link
@@ -106,7 +110,9 @@ export function LoginPage() {
             className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
           >
             <Server size={17} />
-            {t("auth.changeServerUrl")}
+            <AnimatedWidth value={t("auth.changeServerUrl")}>
+              <AnimatedText value={t("auth.changeServerUrl")} />
+            </AnimatedWidth>
           </Link>
         </form>
       </section>

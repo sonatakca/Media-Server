@@ -2,7 +2,22 @@ import type { JellyfinItem } from "./types";
 
 const TICKS_PER_MINUTE = 600_000_000;
 
-export function formatRuntime(runTimeTicks?: number): string | null {
+export interface MediaFormatLabels {
+  season: string;
+  hourShort: string;
+  minuteShort: string;
+}
+
+const DEFAULT_MEDIA_FORMAT_LABELS: MediaFormatLabels = {
+  season: "Season",
+  hourShort: "h",
+  minuteShort: "m",
+};
+
+export function formatRuntime(
+  runTimeTicks?: number,
+  labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
+): string | null {
   if (!runTimeTicks) {
     return null;
   }
@@ -12,17 +27,23 @@ export function formatRuntime(runTimeTicks?: number): string | null {
   const minutes = totalMinutes % 60;
 
   if (hours <= 0) {
-    return `${minutes}m`;
+    return `${minutes}${labels.minuteShort}`;
   }
 
-  return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return minutes > 0
+    ? `${hours}${labels.hourShort} ${minutes}${labels.minuteShort}`
+    : `${hours}${labels.hourShort}`;
 }
 
-export function getDisplayTitle(item: JellyfinItem): string {
-  
+export function getDisplayTitle(
+  item: JellyfinItem,
+  labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
+): string {
   if (item.Type === "Season") {
     if (typeof item.IndexNumber === "number" && item.IndexNumber > 0) {
-      return `${item.IndexNumber}. Sezon`;
+      return labels.season.includes("{number}")
+        ? labels.season.replace("{number}", String(item.IndexNumber))
+        : `${labels.season} ${item.IndexNumber}`;
     }
     return item.Name;
   }
@@ -37,7 +58,10 @@ export function getDisplayTitle(item: JellyfinItem): string {
   return item.Name;
 }
 
-export function getItemSubtitle(item: JellyfinItem): string | null {
+export function getItemSubtitle(
+  item: JellyfinItem,
+  labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
+): string | null {
   if (item.Type === "Season") {
     const parts = [item.SeriesName, item.ProductionYear?.toString()].filter(Boolean);
     return parts.length > 0 ? parts.join(" / ") : null;
@@ -46,7 +70,7 @@ export function getItemSubtitle(item: JellyfinItem): string | null {
   const parts = [
     item.ProductionYear?.toString(),
     item.Type === "Episode" ? item.Name : undefined,
-    formatRuntime(item.RunTimeTicks) ?? undefined,
+    formatRuntime(item.RunTimeTicks, labels) ?? undefined,
   ].filter(Boolean);
 
   return parts.length > 0 ? parts.join(" / ") : null;

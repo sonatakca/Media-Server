@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
   createSyncPlayGroup,
@@ -128,13 +129,20 @@ function copyTextWithTextarea(text: string): boolean {
   }
 }
 
-function getParticipantName(participant: unknown, fallbackIndex: number): string {
+function formatTemplate(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
+function getParticipantName(participant: unknown, fallbackIndex: number, fallbackTemplate: string): string {
   if (typeof participant === "string" && participant.trim()) {
     return participant.trim();
   }
 
   if (!isRecord(participant)) {
-    return `Katılımcı ${fallbackIndex + 1}`;
+    return formatTemplate(fallbackTemplate, { number: fallbackIndex + 1 });
   }
 
   const possibleName =
@@ -146,7 +154,7 @@ function getParticipantName(participant: unknown, fallbackIndex: number): string
 
   return typeof possibleName === "string" && possibleName.trim()
     ? possibleName.trim()
-    : `Katılımcı ${fallbackIndex + 1}`;
+    : formatTemplate(fallbackTemplate, { number: fallbackIndex + 1 });
 }
 
 async function copyText(text: string): Promise<boolean> {
@@ -218,6 +226,7 @@ export function usePartyWatchController({
   refreshProgress,
   showControls,
 }: UsePartyWatchControllerOptions): PartyWatchController {
+  const { t } = useLanguage();
   const initialInviteGroupIdRef = useRef(getInviteGroupIdFromLocation());
   const autoJoinAttemptedRef = useRef(false);
   const groupIdRef = useRef<string | null>(null);
@@ -271,7 +280,10 @@ export function usePartyWatchController({
   }, [groupId, itemId]);
 
   const participantCount = groupInfo?.Participants?.length ?? null;
-  const participantNames = groupInfo?.Participants?.map(getParticipantName) ?? [];
+  const participantNames =
+    groupInfo?.Participants?.map((participant, index) =>
+      getParticipantName(participant, index, t("party.participantFallback")),
+    ) ?? [];
   const groupName = groupInfo?.GroupName ?? (groupId ? `SyncPlay ${groupId.slice(0, 8)}` : null);
   const groupState = groupInfo?.State ?? groupStateRef.current;
 
@@ -330,7 +342,10 @@ export function usePartyWatchController({
   }, []);
 
   const applyGroupInfo = useCallback((nextGroupInfo: JellyfinSyncPlayGroupInfo) => {
-    const nextParticipantNames = nextGroupInfo.Participants?.map(getParticipantName) ?? [];
+    const nextParticipantNames =
+      nextGroupInfo.Participants?.map((participant, index) =>
+        getParticipantName(participant, index, t("party.participantFallback")),
+      ) ?? [];
     const previousParticipantNames = previousParticipantNamesRef.current;
 
     if (previousParticipantNames.length > 0 && nextParticipantNames.length !== previousParticipantNames.length) {
@@ -338,9 +353,9 @@ export function usePartyWatchController({
       const leftNames = previousParticipantNames.filter((name) => !nextParticipantNames.includes(name));
 
       if (joinedNames.length > 0) {
-        showPartyEventMessage(`${joinedNames[0]} katıldı`);
+        showPartyEventMessage(formatTemplate(t("party.participantJoined"), { name: joinedNames[0] }));
       } else if (leftNames.length > 0) {
-        showPartyEventMessage(`${leftNames[0]} ayrıldı`);
+        showPartyEventMessage(formatTemplate(t("party.participantLeft"), { name: leftNames[0] }));
       }
     }
 
@@ -355,7 +370,7 @@ export function usePartyWatchController({
     if (nextGroupInfo.State) {
       groupStateRef.current = nextGroupInfo.State;
     }
-  }, [showPartyEventMessage]);
+  }, [showPartyEventMessage, t]);
 
   const clearGroupState = useCallback(() => {
     groupIdRef.current = null;

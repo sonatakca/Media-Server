@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useParams } from "react-router-dom";
 import { Clock, Film, Play, Star } from "lucide-react";
@@ -31,6 +31,14 @@ function getBackdrop(item: JellyfinItem): string {
 export function ItemDetailsPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const { t } = useLanguage();
+  const mediaFormatLabels = useMemo(
+    () => ({
+      season: t("media.seasonNumber"),
+      hourShort: t("format.hourShort"),
+      minuteShort: t("format.minuteShort"),
+    }),
+    [t],
+  );
   const shouldReduceMotion = useReducedMotion();
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -40,7 +48,7 @@ export function ItemDetailsPage() {
 
     async function loadItem() {
       if (!itemId) {
-        setError("Missing item id.");
+        setError(t("details.missingItemId"));
         return;
       }
 
@@ -55,7 +63,7 @@ export function ItemDetailsPage() {
         }
       } catch (itemError) {
         if (isMounted) {
-          setError(itemError instanceof Error ? itemError.message : "Could not load item details.");
+          setError(itemError instanceof Error ? itemError.message : t("details.couldNotLoad"));
         }
       }
     }
@@ -65,7 +73,7 @@ export function ItemDetailsPage() {
     return () => {
       isMounted = false;
     };
-  }, [itemId]);
+  }, [itemId, t]);
 
   if (error) {
     return <ErrorMessage title={t("details.itemUnavailable")} message={error} />;
@@ -75,8 +83,8 @@ export function ItemDetailsPage() {
     return <DetailsSkeleton />;
   }
 
-  const title = getDisplayTitle(item);
-  const runtime = formatRuntime(item.RunTimeTicks);
+  const title = getDisplayTitle(item, mediaFormatLabels);
+  const runtime = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
   const posterUrl = item.ImageTags?.Primary ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760) : "";
   const logoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
   const backdropUrl = getBackdrop(item);
@@ -88,7 +96,14 @@ export function ItemDetailsPage() {
     item.OfficialRating ? { label: item.OfficialRating, icon: Star } : null,
     item.CommunityRating ? { label: item.CommunityRating.toFixed(1), icon: Star } : null,
   ].filter(Boolean) as Array<{ label: string; icon: typeof Film }>;
-  const mediaLabel = item.Type === "Movie" ? t("common.movie") : item.Type === "BoxSet" ? t("common.boxsets") : item.Type ?? t("details.media");
+  const mediaLabel =
+    item.Type === "Movie"
+      ? t("common.movie")
+      : item.Type === "Series"
+        ? t("common.series")
+        : item.Type === "BoxSet"
+          ? t("common.boxsets")
+          : item.Type ?? t("details.media");
   const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
 
   return (
@@ -245,7 +260,7 @@ export function ItemDetailsPage() {
                   </AnimatedWidth>
                 </dt>
                 <dd className="text-right font-semibold text-white/[0.78]">
-                  {[audioStream?.Codec, audioStream?.Channels ? `${audioStream.Channels} ch` : undefined]
+                  {[audioStream?.Codec, audioStream?.Channels ? t("details.audioChannelsShort").replace("{count}", String(audioStream.Channels)) : undefined]
                     .filter(Boolean)
                     .join(" / ") || (
                     <AnimatedWidth value={t("details.unknown")}>

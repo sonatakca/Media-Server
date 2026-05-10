@@ -17,6 +17,13 @@ interface MediaRowProps {
   viewAllTo?: string;
 }
 
+function formatTemplate(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
 export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMessage, viewAllTo }: MediaRowProps) {
   const { t } = useLanguage();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -120,7 +127,7 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
               type="button"
               onClick={() => scrollByCards("left")}
               className="absolute left-3 top-[calc(50%-0.75rem)] z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/[0.58] text-white opacity-0 shadow-2xl backdrop-blur-xl transition hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
-              aria-label={`Scroll ${title} left`}
+              aria-label={formatTemplate(t("common.scrollLeft"), { title })}
             >
               <ChevronLeft size={22} />
             </button>
@@ -130,7 +137,7 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
               type="button"
               onClick={() => scrollByCards("right")}
               className="absolute right-3 top-[calc(50%-0.75rem)] z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/[0.58] text-white opacity-0 shadow-2xl backdrop-blur-xl transition hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
-              aria-label={`Scroll ${title} right`}
+              aria-label={formatTemplate(t("common.scrollRight"), { title })}
             >
               <ChevronRight size={22} />
             </button>

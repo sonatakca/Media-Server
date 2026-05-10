@@ -25,8 +25,8 @@ interface RowWarning {
   message: string;
 }
 
-function getErrorMessage(result: PromiseRejectedResult): string {
-  return result.reason instanceof Error ? result.reason.message : "Could not load this row.";
+function getErrorMessage(result: PromiseRejectedResult, fallback: string): string {
+  return result.reason instanceof Error ? result.reason.message : fallback;
 }
 
 function hasBackdrop(item: JellyfinItem): boolean {
@@ -65,7 +65,7 @@ export function HomePage() {
       }
 
       if (librariesResult.status === "rejected") {
-        setError(getErrorMessage(librariesResult));
+        setError(getErrorMessage(librariesResult, t("home.couldNotLoad")));
         setData(null);
         return;
       }
@@ -73,11 +73,11 @@ export function HomePage() {
       const warnings: RowWarning[] = [];
 
       if (continueResult.status === "rejected") {
-        warnings.push({ labelKey: "home.continueWatching", message: getErrorMessage(continueResult) });
+        warnings.push({ labelKey: "home.continueWatching", message: getErrorMessage(continueResult, t("home.someDataFailed")) });
       }
 
       if (latestResult.status === "rejected") {
-        warnings.push({ labelKey: "home.latestMedia", message: getErrorMessage(latestResult) });
+        warnings.push({ labelKey: "home.latestMedia", message: getErrorMessage(latestResult, t("home.someDataFailed")) });
       }
 
       setRowWarnings(warnings);
@@ -93,7 +93,7 @@ export function HomePage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [t]);
 
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;

@@ -25,3 +25,41 @@ export function getOrCreateDeviceId(): string {
 export function getDeviceName(): string {
   return "Seyirlik Web Browser";
 }
+
+export interface ViewportCapabilities {
+  width: number;
+  height: number;
+  isPortrait: boolean;
+  isLandscape: boolean;
+  hasCoarsePointer: boolean;
+  isPhoneViewport: boolean;
+}
+
+export function readViewportCapabilities(): ViewportCapabilities {
+  if (typeof window === "undefined") {
+    return {
+      width: 1024,
+      height: 768,
+      isPortrait: false,
+      isLandscape: true,
+      hasCoarsePointer: false,
+      isPhoneViewport: false,
+    };
+  }
+
+  const width = Math.round(window.visualViewport?.width ?? window.innerWidth);
+  const height = Math.round(window.visualViewport?.height ?? window.innerHeight);
+  const shortSide = Math.min(width, height);
+  const longSide = Math.max(width, height);
+  const isPortrait = height >= width;
+  const hasCoarsePointer = window.matchMedia("(pointer: coarse)").matches;
+
+  return {
+    width,
+    height,
+    isPortrait,
+    isLandscape: !isPortrait,
+    hasCoarsePointer,
+    isPhoneViewport: hasCoarsePointer && shortSide <= 520 && longSide <= 980,
+  };
+}

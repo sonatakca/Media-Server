@@ -58,14 +58,30 @@ export function HeroSection({ item }: HeroSectionProps) {
   const shouldReduceMotion = useReducedMotion();
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
+  const mediaFormatLabels = useMemo(
+    () => ({
+      season: t("media.seasonNumber"),
+      hourShort: t("format.hourShort"),
+      minuteShort: t("format.minuteShort"),
+    }),
+    [t],
+  );
   const selectedImage = imageCandidates.find((candidate) => !failedImageUrls.includes(candidate.url));
   const primaryPosterUrl = imageCandidates.find((candidate) => candidate.type === "primary")?.url ?? "";
   const logoUrl = item?.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
   const showSidePoster = Boolean(primaryPosterUrl && selectedImage?.type === "primary");
-  const title = item ? getDisplayTitle(item) : "Seyirlik Web";
-  const runtime = item ? formatRuntime(item.RunTimeTicks) : null;
-  const metadata = [item?.ProductionYear, runtime, item?.Type].filter(Boolean);
-  const subtitle = item ? getItemSubtitle(item) : null;
+  const title = item ? getDisplayTitle(item, mediaFormatLabels) : "Seyirlik Web";
+  const runtime = item ? formatRuntime(item.RunTimeTicks, mediaFormatLabels) : null;
+  const mediaTypeLabel =
+    item?.Type === "Movie"
+      ? t("common.movie")
+      : item?.Type === "Series"
+        ? t("common.series")
+        : item?.Type === "BoxSet"
+          ? t("common.boxsets")
+          : item?.Type;
+  const metadata = [item?.ProductionYear, runtime, mediaTypeLabel].filter(Boolean);
+  const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
   const canPlay = item?.Type === "Movie" || item?.Type === "Episode" || item?.MediaType === "Video";
   const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -135,7 +151,7 @@ export function HeroSection({ item }: HeroSectionProps) {
           animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
           transition={{ duration: 0.38, delay: 0.04, ease: easeOut }}
         >
-          <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-white/[0.12] bg-white/10 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-teal-100 backdrop-blur">
+          <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-[var(--accent-strong)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white backdrop-blur">
             <img src={appIcon} alt="" className="h-6 w-6 rounded-md object-cover" />
             <span className="inline-flex items-center gap-2">
               <Sparkles size={14} />
@@ -182,7 +198,7 @@ export function HeroSection({ item }: HeroSectionProps) {
             </p>
           ) : (
             <p className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg">
-              A focused, frontend-only way to browse and watch your existing Jellyfin library.
+              {t("hero.fallbackDescription")}
             </p>
           )}
           <div className="mt-7 flex flex-wrap gap-3">

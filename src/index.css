@@ -20,6 +20,12 @@
   initial-value: rgba(70, 122, 108, 0.18);
 }
 
+@property --accent-strong {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(70, 122, 108, 0.36);
+}
+
 :root {
   color-scheme: dark;
   --background: #050607;
@@ -30,6 +36,7 @@
   --accent: #467a6c;
   --accent-hover: #75a27b;
   --accent-soft: rgba(70, 122, 108, 0.18);
+  --accent-strong: rgba(70, 122, 108, 0.36);
   --border: rgba(255, 255, 255, 0.12);
   background: #050505;
   font-synthesis: none;
@@ -53,6 +60,7 @@ body {
   margin: 0;
   background: linear-gradient(180deg, #050506 0%, #070708 48%, #050506 100%);
   color: #f8fafc;
+  overscroll-behavior-x: none;
 }
 
 button,
@@ -74,8 +82,8 @@ img {
 }
 
 .seyir-slider::-webkit-slider-thumb {
-  width: 1rem;
-  height: 1rem;
+  width: 1.05rem;
+  height: 1.05rem;
   appearance: none;
   border-radius: 999px;
   background: var(--accent);
@@ -83,12 +91,23 @@ img {
 }
 
 .seyir-slider::-moz-range-thumb {
-  width: 1rem;
-  height: 1rem;
+  width: 1.05rem;
+  height: 1.05rem;
   border: 0;
   border-radius: 999px;
   background: var(--accent);
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.14);
+}
+
+.seyirlik-player-shell {
+  height: 100vh;
+  height: 100dvh;
+  overscroll-behavior: none;
+  touch-action: manipulation;
+}
+
+.seyirlik-player-shell video {
+  max-height: 100dvh;
 }
 
 .seyirlik-video::cue {
@@ -227,7 +246,7 @@ img {
 .shimmer {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.055));
+  background: linear-gradient(110deg, rgba(255, 255, 255, 0.055), var(--accent-soft), rgba(255, 255, 255, 0.055));
   background-size: 220% 100%;
   animation: shimmer 1.35s linear infinite;
 }
@@ -303,6 +322,29 @@ img {
   transform: translate(-50%, -50%) scale(1);
   will-change: transform, opacity;
   animation: playPauseWave 1200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (pointer: coarse) {
+  .seyir-slider::-webkit-slider-thumb {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .seyir-slider::-moz-range-thumb {
+    width: 1.35rem;
+    height: 1.35rem;
+  }
+
+  .seyirlik-subtitle-resize-handle {
+    width: 1.05rem;
+    height: 1.05rem;
+  }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 560px) {
+  .seyirlik-subtitle-overlay {
+    font-size: clamp(0.95rem, 3.2vh, 1.35rem);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

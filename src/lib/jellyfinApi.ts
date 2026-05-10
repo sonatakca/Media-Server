@@ -954,3 +954,19 @@ export async function reportPlaybackStopped(itemId: string, positionTicks: numbe
     },
   });
 }
+
+export async function stopActiveTranscodeSession(playSessionId?: string): Promise<void> {
+  const session = requireAuthSession();
+
+  if (!playSessionId) {
+    return;
+  }
+
+  await requestJson<void>("/Videos/ActiveEncodings", {
+    method: "DELETE",
+    params: {
+      deviceId: session.deviceId,
+      playSessionId,
+    },
+  });
+}

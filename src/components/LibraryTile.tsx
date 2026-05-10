@@ -29,6 +29,8 @@ export function LibraryTile({ library }: LibraryTileProps) {
   const collectionLabel =
     library.CollectionType === "movies"
       ? t("common.movies")
+      : library.CollectionType === "tvshows"
+        ? t("common.series")
       : library.CollectionType === "boxsets"
         ? t("common.boxsets")
         : library.CollectionType || t("library.library");

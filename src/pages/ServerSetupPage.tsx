@@ -4,6 +4,8 @@ import { useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
+import { AnimatedText } from "../components/AnimatedText";
+import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
 import { clearAuthSession, getServerUrl, normalizeServerUrl, setServerUrl } from "../lib/authStorage";
 import { testServerConnection } from "../lib/jellyfinApi";
@@ -39,7 +41,7 @@ export function ServerSetupPage() {
         state: { serverUrl: normalizedServerUrl },
       });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : "Could not save this server URL.");
+      setError(submitError instanceof Error ? submitError.message : t("server.saveFailed"));
     }
   };
 
@@ -58,7 +60,7 @@ export function ServerSetupPage() {
       setError(
         testError instanceof Error
           ? testError.message
-          : "Could not connect. Check the URL and Jellyfin network settings.",
+          : t("server.couldNotConnect"),
       );
     } finally {
       setIsTesting(false);
@@ -71,7 +73,7 @@ export function ServerSetupPage() {
         <div className="mb-8 flex items-center gap-3">
           <img src={appIcon} alt="" className="h-12 w-12 rounded-2xl object-cover shadow-2xl" />
           <div>
-            <p className="text-sm font-semibold text-teal-200">Seyirlik Web</p>
+            <p className="text-sm font-semibold text-[var(--accent)]">Seyirlik Web</p>
             <h1 className="text-3xl font-black sm:text-4xl">{t("server.connectJellyfin")}</h1>
           </div>
         </div>
@@ -88,11 +90,13 @@ export function ServerSetupPage() {
               value={serverUrlInput}
               onChange={(event) => setServerUrlInput(event.target.value)}
               placeholder="http://192.168.1.50:8096"
-              className="min-h-12 flex-1 rounded-lg border border-white/10 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-zinc-500 focus:border-teal-300 focus:ring-2 focus:ring-teal-300/30"
+              className="min-h-12 flex-1 rounded-lg border border-white/10 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
             />
             <Button type="button" variant="secondary" onClick={handleTestConnection} disabled={isTesting}>
               <Wifi size={18} />
-              {isTesting ? t("server.testing") : t("server.test")}
+              <AnimatedWidth value={isTesting ? t("server.testing") : t("server.test")}>
+                <AnimatedText value={isTesting ? t("server.testing") : t("server.test")} />
+              </AnimatedWidth>
             </Button>
           </div>
 
@@ -106,7 +110,7 @@ export function ServerSetupPage() {
                   key={example}
                   type="button"
                   onClick={() => setServerUrlInput(example)}
-                  className="min-h-10 rounded-lg border border-white/10 bg-black/30 px-3 text-left text-xs text-zinc-200 transition hover:border-teal-300/50 hover:bg-white/10"
+                  className="min-h-10 rounded-lg border border-white/10 bg-black/30 px-3 text-left text-xs text-zinc-200 transition hover:border-[var(--accent)]/50 hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]/30"
                 >
                   {example}
                 </button>
@@ -130,7 +134,9 @@ export function ServerSetupPage() {
 
           <Button type="submit" className="mt-5 w-full">
             <Server size={18} />
-            {t("server.continueToLogin")}
+            <AnimatedWidth value={t("server.continueToLogin")}>
+              <AnimatedText value={t("server.continueToLogin")} />
+            </AnimatedWidth>
           </Button>
         </form>
       </section>

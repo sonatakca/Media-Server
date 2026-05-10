@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { AnimatedText } from "./AnimatedText";
+import { AnimatedWidth } from "./AnimatedWidth";
 
 export function LanguageSwitch() {
   const { language, toggleLanguage, t } = useLanguage();
@@ -40,7 +41,9 @@ export function LanguageSwitch() {
         />
 
         <span className="flex w-6 justify-center overflow-hidden">
-          <AnimatedText value={isEnglish ? "EN" : "TR"} />
+          <AnimatedWidth value={isEnglish ? "EN" : "TR"} safetyPx={0}>
+            <AnimatedText value={isEnglish ? "EN" : "TR"} />
+          </AnimatedWidth>
         </span>
       </span>
     </button>

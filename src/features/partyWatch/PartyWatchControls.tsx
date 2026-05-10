@@ -1,6 +1,8 @@
 import { Copy, Link2, Loader2, LogOut, Plus, Users, Wifi, WifiOff } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { PartyWatchController } from "./partyWatchTypes";
+import { AnimatedText } from "../../components/AnimatedText";
+import { AnimatedWidth } from "../../components/AnimatedWidth";
 
 interface PartyWatchControlsProps {
   controller: PartyWatchController;
@@ -44,7 +46,7 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
 
   return (
     <section
-      className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg bg-gray p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
+      className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[rgba(12,13,15,0.82)] p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
         visible || controller.isInGroup ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
       }`}
       aria-label={t("party.title")}
@@ -86,7 +88,7 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
           {controller.participantNames.length > 0 ? (
             <div className="rounded-md border border-white/10 bg-white/[0.045] px-2.5 py-2">
               <p className="mb-1.5 text-[0.68rem] font-black uppercase tracking-[0.14em] text-white/38">
-                Katılımcılar
+                {t("party.participantsTitle")}
               </p>
 
               <div className="flex flex-wrap gap-1.5">
@@ -111,14 +113,16 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               className="inline-flex min-h-10 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-black transition hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             >
               <Copy size={16} />
-              {t("party.copyInvite")}
+              <AnimatedWidth value={t("party.copyInvite")}>
+                <AnimatedText value={t("party.copyInvite")} />
+              </AnimatedWidth>
             </button>
 
             <button
               type="button"
               onClick={controller.leaveGroup}
               disabled={isBusy}
-              className="flex h-10 w-10 items-center justify-center rounded-md  border-white/12 text-white/82 transition hover:bg-white/12 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="flex h-10 w-10 items-center justify-center rounded-md border border-white/12 text-white/82 transition hover:bg-white/12 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
               aria-label={t("party.leave")}
               title={t("party.leave")}
             >
@@ -135,7 +139,9 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
             className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-black transition hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
           >
             {controller.isLoading ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-            {t("party.createRoom")}
+            <AnimatedWidth value={t("party.createRoom")}>
+              <AnimatedText value={t("party.createRoom")} />
+            </AnimatedWidth>
           </button>
 
           <div className="grid grid-cols-[1fr_auto] gap-2">
@@ -154,13 +160,27 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/12 px-3 text-sm font-bold text-white transition hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             >
               <Link2 size={15} />
-              {t("party.joinRoom")}
+              <AnimatedWidth value={t("party.joinRoom")}>
+                <AnimatedText value={t("party.joinRoom")} />
+              </AnimatedWidth>
             </button>
           </div>
         </div>
       )}
 
-      
+      {controller.copyStatusKey || controller.errorKey || controller.statusKey ? (
+        <p
+          className={`mt-2 text-xs font-semibold ${
+            controller.errorKey
+              ? "text-rose-200"
+              : controller.copyStatusKey
+                ? "text-[var(--accent-hover)]"
+                : "text-white/62"
+          }`}
+        >
+          {t(controller.errorKey ?? controller.copyStatusKey ?? controller.statusKey ?? "party.syncingWithJellyfinSyncPlay")}
+        </p>
+      ) : null}
     </section>
   );
 }

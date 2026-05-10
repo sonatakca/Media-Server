@@ -5,6 +5,8 @@ import { Play } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 interface MediaCardProps {
   item: JellyfinItem;
@@ -45,16 +47,27 @@ function getEpisodeLabel(item: JellyfinItem): string | null {
   return code && item.Name ? `${code} · ${item.Name}` : code || item.Name || null;
 }
 
-function getCountLabel(item: JellyfinItem): string | null {
+function formatTemplate(template: string, values: Record<string, string | number>): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
+function countLabel(count: number, singularKey: TranslationKey, pluralKey: TranslationKey, t: (key: TranslationKey) => string): string {
+  return count === 1 ? t(singularKey) : formatTemplate(t(pluralKey), { count });
+}
+
+function getCountLabel(item: JellyfinItem, t: (key: TranslationKey) => string): string | null {
   if (item.Type === "Series") {
     const parts: string[] = [];
 
     if (typeof item.ChildCount === "number" && item.ChildCount > 0) {
-      parts.push(item.ChildCount === 1 ? "1 Sezon" : `${item.ChildCount} Sezon`);
+      parts.push(countLabel(item.ChildCount, "media.seasonSingular", "media.seasonPlural", t));
     }
 
     if (typeof item.RecursiveItemCount === "number" && item.RecursiveItemCount > 0) {
-      parts.push(item.RecursiveItemCount === 1 ? "1 Bölüm" : `${item.RecursiveItemCount} Bölüm`);
+      parts.push(countLabel(item.RecursiveItemCount, "media.episodeSingular", "media.episodePlural", t));
     }
 
     return parts.length > 0 ? parts.join(" · ") : null;
@@ -63,7 +76,7 @@ function getCountLabel(item: JellyfinItem): string | null {
   if (item.Type === "Season") {
     const seasonLabel =
       typeof item.IndexNumber === "number" && item.IndexNumber > 0
-        ? `${item.IndexNumber}. Sezon`
+        ? formatTemplate(t("media.seasonNumber"), { number: item.IndexNumber })
         : item.Name;
 
     const episodeCount =
@@ -77,7 +90,7 @@ function getCountLabel(item: JellyfinItem): string | null {
       return seasonLabel;
     }
 
-    const episodeLabel = episodeCount === 1 ? "1 Bölüm" : `${episodeCount} Bölüm`;
+    const episodeLabel = countLabel(episodeCount, "media.episodeSingular", "media.episodePlural", t);
 
     return `${seasonLabel} · ${episodeLabel}`;
   }
@@ -86,12 +99,18 @@ function getCountLabel(item: JellyfinItem): string | null {
 }
 
 export function MediaCard({ item, to, variant = "poster", layout = "row", index = 0, animateIn = false }: MediaCardProps) {
+  const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
+  const mediaFormatLabels = {
+    season: t("media.seasonNumber"),
+    hourShort: t("format.hourShort"),
+    minuteShort: t("format.minuteShort"),
+  };
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
-  const title = getCardMainLabel(item);
-  const subtitle = getItemSubtitle(item);
-  const countLabel = getCountLabel(item);
+  const title = getDisplayTitle(item, mediaFormatLabels);
+  const subtitle = getItemSubtitle(item, mediaFormatLabels);
+  const countLabel = getCountLabel(item, t);
   const episodeLabel = getEpisodeLabel(item);
   const progressPercent = getProgressPercent(item);
   const imageUrl = item.ImageTags?.Primary
@@ -124,23 +143,23 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
 
   return (
     <motion.div
-      className={`min-w-0 shrink-0 ${sizeClass}`}
+      className={`h-full min-w-0 shrink-0 ${sizeClass}`}
       whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       {...motionProps}
     >
       <Link
         to={to}
         aria-label={title}
-        className="group block h-full w-full min-w-0 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-[0_22px_80px_rgba(0,0,0,0.52)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100"
+        className="group flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-[0_22px_80px_rgba(0,0,0,0.52)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100"
       >
-        <div className={`relative overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}>
+        <div className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}>
           {!imageLoaded && imageUrl && !imageFailed ? <div className="shimmer absolute inset-0" /> : null}
           {imageUrl && !imageFailed ? (
             <img
               src={imageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover object-center transition duration-500 group-hover:scale-[1.08] group-focus:scale-[1.08] ${
+              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.08] group-focus:scale-[1.08] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
               onLoad={() => setImageLoaded(true)}
@@ -165,47 +184,43 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
             </div>
           ) : null}
         </div>
-        <div className="h-[5.9rem] overflow-hidden p-3.5">
-          <div className="flex h-9 w-full items-center overflow-hidden">
+        <div className="flex min-h-[5.9rem] flex-1 flex-col p-3.5">
+          <div className="flex flex-1 items-center">
             {logoUrl ? (
-              <div className="flex h-9 w-full items-center">
-                <img
-                  src={logoUrl}
-                  alt={title}
-                  className="h-full w-[78%] object-contain object-left"
-                />
-              </div>
+              <img
+                src={logoUrl}
+                alt={title}
+                className="h-auto max-h-28 w-auto object-contain object-left mx-auto"
+              />
             ) : (
-              <h3 className="truncate text-sm font-bold leading-9 text-white">
-                {title}
-              </h3>
+              <h3 className="h-8 w-full truncate text-sm font-bold leading-8 text-white">{title}</h3>
             )}
           </div>
 
-          {countLabel ? (
-            <p className="mt-2 h-5 truncate text-sm font-bold leading-5 text-white">
-              {countLabel}
-            </p>
-          ) : (
-            <h3
-              className={`mt-2 h-5 truncate text-sm font-bold leading-5 ${
-                secondaryLabel ? "text-white" : "text-transparent"
-              }`}
-              aria-hidden={!secondaryLabel}
-            >
-              {secondaryLabel ?? "Reserved"}
-            </h3>
-          )}
+          <div className="mt-auto pt-3">
+            {countLabel ? (
+              <p className="h-5 truncate text-sm font-bold leading-5 text-white">
+                {countLabel}
+              </p>
+            ) : (
+              <h3
+                className={`h-5 truncate text-sm font-bold leading-5 ${
+                  secondaryLabel ? "text-white" : "text-transparent"
+                }`}
+                aria-hidden={!secondaryLabel}
+              >
+                {secondaryLabel ?? ""}
+              </h3>
+            )}
 
-          {subtitle ? (
-            <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
-              {subtitle}
-            </p>
-          ) : (
-            <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden={true}>
-              Reserved
-            </p>
-          )}
+            {subtitle ? (
+              <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
+                {subtitle}
+              </p>
+            ) : (
+              <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden={true} />
+            )}
+          </div>
         </div>
       </Link>
     </motion.div>

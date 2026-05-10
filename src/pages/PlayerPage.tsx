@@ -27,7 +27,7 @@ export function PlayerPage() {
 
     async function loadItem() {
       if (!itemId) {
-        setItemError("Missing item id.");
+        setItemError(t("player.missingItemId"));
         return;
       }
 
@@ -41,7 +41,7 @@ export function PlayerPage() {
         }
       } catch (error) {
         if (isMounted) {
-          setItemError(error instanceof Error ? error.message : "Could not load item for playback.");
+          setItemError(error instanceof Error ? error.message : t("player.couldNotLoadItem"));
         }
       }
     }
@@ -51,7 +51,7 @@ export function PlayerPage() {
     return () => {
       isMounted = false;
     };
-  }, [itemId]);
+  }, [itemId, t]);
 
   const handlePlaybackStarted = useCallback(
     (positionSeconds: number) => {

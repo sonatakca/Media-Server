@@ -1,11 +1,14 @@
 import { redactPlaybackUrl } from "./jellyfinApi";
+import type { TranslationKey } from "../i18n/translations";
 import type { JellyfinMediaSource, JellyfinMediaStream, PlaybackSourceCandidate } from "./types";
 
-export function getPlaybackModeLabel(mode?: string): string {
-  if (mode === "DirectPlay") return "Direct Play";
-  if (mode === "DirectStream") return "Direct Stream";
-  if (mode === "Transcoding") return "Transcoding";
-  return "Unknown";
+type Translate = (key: TranslationKey) => string;
+
+export function getPlaybackModeLabel(mode?: string, t?: Translate): string {
+  if (mode === "DirectPlay") return t ? t("playback.mode.directPlay") : "Direct Play";
+  if (mode === "DirectStream") return t ? t("playback.mode.directStream") : "Direct Stream";
+  if (mode === "Transcoding") return t ? t("playback.mode.transcoding") : "Transcoding";
+  return t ? t("playback.mode.unknown") : "Unknown";
 }
 
 export function getPlaybackModeTone(mode?: string): string {
@@ -32,8 +35,8 @@ export function getSubtitleStreams(mediaSource: JellyfinMediaSource | undefined)
   return mediaSource?.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === "subtitle") ?? [];
 }
 
-export function formatBytes(bytes?: number): string {
-  if (!bytes || bytes <= 0) return "Unknown";
+export function formatBytes(bytes?: number, unknownLabel = "Unknown"): string {
+  if (!bytes || bytes <= 0) return unknownLabel;
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let value = bytes;
@@ -47,8 +50,8 @@ export function formatBytes(bytes?: number): string {
   return `${value.toFixed(value >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
-export function formatBitrate(bits?: number): string {
-  if (!bits || bits <= 0) return "Unknown";
+export function formatBitrate(bits?: number, unknownLabel = "Unknown"): string {
+  if (!bits || bits <= 0) return unknownLabel;
 
   if (bits >= 1_000_000) {
     return `${(bits / 1_000_000).toFixed(1)} Mbps`;
@@ -61,23 +64,42 @@ export function formatBitrate(bits?: number): string {
   return `${bits} bps`;
 }
 
-export function getReadableTranscodeReason(reason: string): string {
+function getReadableTranscodeReasonKey(reason: string): TranslationKey | null {
   const normalized = reason.toLowerCase();
 
-  if (normalized.includes("container")) return "Container not supported by the browser or selected client profile.";
-  if (normalized.includes("videocodec") || normalized.includes("video codec")) return "Video codec not supported.";
-  if (normalized.includes("audiocodec") || normalized.includes("audio codec")) return "Audio codec not supported.";
-  if (normalized.includes("subtitle")) return "Subtitle format or burn-in requirement may require transcoding.";
-  if (normalized.includes("bitrate")) return "Bitrate limit requires transcoding.";
-  if (normalized.includes("resolution")) return "Resolution limit requires transcoding.";
-  if (normalized.includes("audiochannels") || normalized.includes("channels")) return "Audio channel limit requires transcoding.";
+  if (normalized.includes("container")) return "playback.reason.container";
+  if (normalized.includes("videocodec") || normalized.includes("video codec")) return "playback.reason.videoCodec";
+  if (normalized.includes("audiocodec") || normalized.includes("audio codec")) return "playback.reason.audioCodec";
+  if (normalized.includes("subtitle")) return "playback.reason.subtitle";
+  if (normalized.includes("bitrate")) return "playback.reason.bitrate";
+  if (normalized.includes("resolution")) return "playback.reason.resolution";
+  if (normalized.includes("audiochannels") || normalized.includes("channels")) return "playback.reason.audioChannels";
 
-  return reason;
+  return null;
 }
 
-export function getPlaybackReasons(source: PlaybackSourceCandidate): string[] {
+function getSourceReasonKey(reason: string): TranslationKey | null {
+  const normalized = reason.toLowerCase();
+
+  if (normalized.includes("transcoding url from playbackinfo")) return "playback.reason.jellyfinTranscodingUrl";
+  if (normalized.includes("hls fallback url")) return "playback.reason.hlsFallback";
+  if (normalized.includes("browser-compatible")) return "playback.reason.browserCompatible";
+  if (normalized.includes("last resort")) return "playback.reason.directRisky";
+  if (normalized.includes("selected player setting") || normalized.includes("selected audio track")) {
+    return "playback.reason.selectedSetting";
+  }
+
+  return null;
+}
+
+export function getReadableTranscodeReason(reason: string, t?: Translate): string {
+  const reasonKey = getReadableTranscodeReasonKey(reason);
+  return reasonKey && t ? t(reasonKey) : reason;
+}
+
+export function getPlaybackReasons(source: PlaybackSourceCandidate, t?: Translate): string[] {
   const reasons = source.transcodeReasons?.length
-    ? source.transcodeReasons.map(getReadableTranscodeReason)
+    ? source.transcodeReasons.map((reason) => getReadableTranscodeReason(reason, t))
     : [];
 
   if (source.directPlayError) {
@@ -85,24 +107,25 @@ export function getPlaybackReasons(source: PlaybackSourceCandidate): string[] {
   }
 
   if (source.reason) {
-    reasons.push(source.reason);
+    const sourceReasonKey = getSourceReasonKey(source.reason);
+    reasons.push(sourceReasonKey && t ? t(sourceReasonKey) : source.reason);
   }
 
   if (reasons.length === 0) {
-    reasons.push("Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.");
+    reasons.push(t ? t("playback.reason.jellyfinSpecific") : "Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.");
   }
 
   return Array.from(new Set(reasons));
 }
 
-export function getDirectPlayRecommendation(source: PlaybackSourceCandidate): string[] {
+export function getDirectPlayRecommendation(source: PlaybackSourceCandidate, t?: Translate): string[] {
   const mediaSource = source.mediaSource;
   const video = getStreamOfType(mediaSource, "Video");
   const audio = getStreamOfType(mediaSource, "Audio");
   const subtitles = getSubtitleStreams(mediaSource);
 
   const recommendations: string[] = [
-    "For maximum browser compatibility, use MP4 container with H.264 video and AAC audio.",
+    t ? t("playback.recommendation.browserTarget") : "For maximum browser compatibility, use MP4 container with H.264 video and AAC audio.",
   ];
 
   const container = mediaSource.Container?.toLowerCase() ?? "";
@@ -114,30 +137,30 @@ export function getDirectPlayRecommendation(source: PlaybackSourceCandidate): st
     video?.VideoRangeType?.toLowerCase().includes("dolby");
 
   if (container.includes("mkv") || container.includes("matroska")) {
-    recommendations.push("Current container looks like MKV/Matroska. Browser playback is safer with MP4.");
+    recommendations.push(t ? t("playback.recommendation.mkv") : "Current container looks like MKV/Matroska. Browser playback is safer with MP4.");
   }
 
   if (videoCodec.includes("hevc") || videoCodec.includes("h265")) {
-    recommendations.push("Current video appears to be HEVC/H.265. Support varies by browser and device; H.264 is safer.");
+    recommendations.push(t ? t("playback.recommendation.hevc") : "Current video appears to be HEVC/H.265. Support varies by browser and device; H.264 is safer.");
   }
 
   if (videoCodec.includes("av1")) {
-    recommendations.push("AV1 support is improving, but H.264 is still the safest choice for older devices.");
+    recommendations.push(t ? t("playback.recommendation.av1") : "AV1 support is improving, but H.264 is still the safest choice for older devices.");
   }
 
   if (["opus", "flac", "dts", "truehd"].some((codec) => audioCodec.includes(codec))) {
-    recommendations.push("Current audio codec may trigger audio transcoding. AAC stereo or AAC 5.1 is safer.");
+    recommendations.push(t ? t("playback.recommendation.audio") : "Current audio codec may trigger audio transcoding. AAC stereo or AAC 5.1 is safer.");
   }
 
   if (subtitles.some((subtitle) => ["ass", "ssa", "pgs", "vobsub"].includes((subtitle.Codec ?? "").toLowerCase()))) {
-    recommendations.push("ASS/SSA/PGS/VobSub subtitles may require burn-in. External SRT/WebVTT subtitles are safer.");
+    recommendations.push(t ? t("playback.recommendation.subtitles") : "ASS/SSA/PGS/VobSub subtitles may require burn-in. External SRT/WebVTT subtitles are safer.");
   }
 
   if (hasHdr) {
-    recommendations.push("HDR or Dolby Vision may require tone mapping on unsupported clients. SDR H.264 is safer for maximum compatibility.");
+    recommendations.push(t ? t("playback.recommendation.hdr") : "HDR or Dolby Vision may require tone mapping on unsupported clients. SDR H.264 is safer for maximum compatibility.");
   }
 
-  recommendations.push("Best target: SDR H.264 + AAC in MP4, with external SRT subtitles.");
+  recommendations.push(t ? t("playback.recommendation.bestTarget") : "Best target: SDR H.264 + AAC in MP4, with external SRT subtitles.");
 
   return recommendations;
 }

@@ -85,21 +85,21 @@ export function PlayerControls({
 
   return (
     <div
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/70 to-transparent px-[max(1rem,env(safe-area-inset-left))] pb-[max(1rem,env(safe-area-inset-bottom))] pt-14 transition duration-300 ${
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/70 to-transparent px-[max(0.75rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-10 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-14 ${
         visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >
       <div className="pointer-events-auto mx-auto w-full max-w-[1500px]">
         <SeekBar currentTime={currentTime} duration={duration} bufferedEnd={bufferedEnd} onSeek={onSeek} />
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-1 sm:gap-2">
+        <div className="mt-2 flex items-center justify-between gap-2 sm:mt-3 sm:gap-3">
+          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={onTogglePlay}
               disabled={playWaiting}
-              className="relative flex h-12 w-12 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
-              aria-label={playWaiting ? "Waiting for SyncPlay" : isPlaying ? t("common.pause") : t("common.play")}
-              title={playWaiting ? "Waiting for SyncPlay" : undefined}
+              className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
+              aria-label={playWaiting ? t("player.waitingForSyncPlay") : isPlaying ? t("common.pause") : t("common.play")}
+              title={playWaiting ? t("player.waitingForSyncPlay") : undefined}
             >
               {playWaiting ? (
                 <>
@@ -134,12 +134,12 @@ export function PlayerControls({
               onToggleMute={onToggleMute}
               onVolumeChange={onVolumeChange}
             />
-            <span className="ml-1 min-w-[7.5rem] text-sm font-medium text-white/[0.82]">
+            <span className="ml-1 min-w-[5.6rem] whitespace-nowrap text-xs font-medium text-white/[0.82] sm:min-w-[7.5rem] sm:text-sm">
               {formatTime(currentTime)} / {formatTime(duration)}
             </span>
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <div className="relative" data-player-settings-root>
               {settingsOpen ? (
                 <PlayerSettingsPanel

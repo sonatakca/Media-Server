@@ -13,6 +13,7 @@ type TextLayer = {
 
 export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
   const nextIdRef = useRef(1);
+  const prefersReducedMotion = usePrefersReducedMotion();
 
   const [layers, setLayers] = useState<TextLayer[]>([
     {
@@ -23,6 +24,11 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
   ]);
 
   useEffect(() => {
+    if (prefersReducedMotion) {
+      setLayers([{ id: nextIdRef.current++, text: value, phase: "idle" }]);
+      return undefined;
+    }
+
     const currentLayer = layers[layers.length - 1];
 
     if (currentLayer?.text === value) {
@@ -68,7 +74,11 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
     };
     // Only react to incoming text changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [value]);
+  }, [prefersReducedMotion, value]);
+
+  if (prefersReducedMotion) {
+    return <span className={className}>{value}</span>;
+  }
 
   return (
     <span
@@ -112,4 +122,22 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
 
 function splitText(text: string) {
   return Array.from(text);
+}
+
+function usePrefersReducedMotion(): boolean {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const updatePreference = () => setPrefersReducedMotion(mediaQuery.matches);
+
+    updatePreference();
+    mediaQuery.addEventListener("change", updatePreference);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updatePreference);
+    };
+  }, []);
+
+  return prefersReducedMotion;
 }

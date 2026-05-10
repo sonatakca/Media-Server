@@ -5,6 +5,7 @@ import { LoadingSpinner } from "./components/LoadingSpinner";
 import { RouteColorTransition } from "./components/RouteColorTransition";
 import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { ScrollToTop } from "./components/ScrollToTop";
+import { useLanguage } from "./i18n/LanguageContext";
 import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
 import { testServerConnection } from "./lib/jellyfinApi";
 import { HomePage } from "./pages/HomePage";
@@ -38,6 +39,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 }
 
 function DefaultServerGate({ children }: { children: React.ReactNode }) {
+  const { t } = useLanguage();
   const [state, setState] = useState<DefaultServerState>(() => {
     return getServerUrl() ? "ready" : "checking";
   });
@@ -79,7 +81,7 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
       <main className="flex min-h-screen items-center justify-center px-4 text-white">
         <div className="text-center">
           <LoadingSpinner />
-          <p className="mt-4 text-sm text-zinc-400">Connecting to Seyirlik server...</p>
+          <p className="mt-4 text-sm text-white/58">{t("app.connectingDefaultServer")}</p>
         </div>
       </main>
     );

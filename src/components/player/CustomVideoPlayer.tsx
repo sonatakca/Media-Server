@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Loader2, Users } from "lucide-react";
+import { Loader2, RotateCcw, Smartphone, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
   getLogoImageUrl,
   getManualQualityOptions,
+  stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
@@ -13,6 +14,8 @@ import { getVideoErrorDetails, type PlaybackTechnicalDetails } from "../../hooks
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { usePlayerProgress } from "../../hooks/usePlayerProgress";
+import { useViewportCapabilities } from "../../hooks/useViewportCapabilities";
+import { useLanguage } from "../../i18n/LanguageContext";
 import type {
   JellyfinItem,
   JellyfinMediaStream,
@@ -75,7 +78,6 @@ interface SubtitleResizeState {
 }
 
 const AUTO_QUALITY_ID = "auto";
-const SUBTITLE_EDIT_PLACEHOLDER = "Example subtitle to edit.";
 const DEFAULT_SUBTITLE_SCALE = 1;
 const MIN_SUBTITLE_SCALE = 0.7;
 const MAX_SUBTITLE_SCALE = 2.4;
@@ -155,8 +157,11 @@ export function CustomVideoPlayer({
   onPlaybackProgress,
   onPlaybackStopped,
 }: CustomVideoPlayerProps) {
+  const { t } = useLanguage();
+  const viewport = useViewportCapabilities();
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const lastProgressReportRef = useRef(0);
   const hasStartedRef = useRef(false);
@@ -166,7 +171,15 @@ export function CustomVideoPlayer({
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
-  const title = getDisplayTitle(item);
+  const mediaFormatLabels = useMemo(
+    () => ({
+      season: t("media.seasonNumber"),
+      hourShort: t("format.hourShort"),
+      minuteShort: t("format.minuteShort"),
+    }),
+    [t],
+  );
+  const title = getDisplayTitle(item, mediaFormatLabels);
 
   const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -362,8 +375,41 @@ export function CustomVideoPlayer({
     };
   }, [isSubtitleEditMode]);
 
+  const stopCurrentPlaybackForSourceSwitch = useCallback(async (currentSource: PlaybackSourceCandidate) => {
+    const video = videoRef.current;
+
+    try {
+      video?.pause();
+    } catch {
+      // Ignore pause errors during source switching.
+    }
+
+    try {
+      activeAttachmentRef.current?.destroy();
+    } catch (destroyError) {
+      console.warn("[Seyirlik Playback] Could not destroy current video attachment before source switch", destroyError);
+    } finally {
+      activeAttachmentRef.current = null;
+    }
+
+    try {
+      video?.removeAttribute("src");
+      video?.load();
+    } catch {
+      // Ignore media reset errors during source switching.
+    }
+
+    if (currentSource.mode === "Transcoding" || currentSource.isHls) {
+      try {
+        await stopActiveTranscodeSession(currentSource.playSessionId);
+      } catch (stopError) {
+        console.warn("[Seyirlik Playback] Could not stop active Jellyfin transcode session", stopError);
+      }
+    }
+  }, []);
+
   const switchPlayerSource = useCallback(
-    (nextSource: PlaybackSourceCandidate) => {
+    async (nextSource: PlaybackSourceCandidate) => {
       const video = videoRef.current;
 
       if (nextSource.id === activeSource.id && nextSource.url === activeSource.url) {
@@ -371,17 +417,43 @@ export function CustomVideoPlayer({
       }
 
       sourceSwitchTokenRef.current += 1;
-      const pendingRestore = pendingSourceRestoreRef.current;
+
+      const currentTime = video?.currentTime ?? progress.currentTime;
+      const wasPlaying = video ? !video.paused && !video.ended : progress.isPlaying;
+
       pendingSourceRestoreRef.current = {
         token: sourceSwitchTokenRef.current,
-        currentTime: pendingRestore?.currentTime ?? video?.currentTime ?? progress.currentTime,
-        wasPlaying: pendingRestore?.wasPlaying ?? (video ? !video.paused && !video.ended : progress.isPlaying),
+        currentTime,
+        wasPlaying,
       };
+
       setLastVideoError(null);
-      setActiveSource(nextSource);
       showControls();
+
+      await stopCurrentPlaybackForSourceSwitch(activeSource);
+
+      const cacheBustedUrl = (() => {
+        try {
+          const url = new URL(nextSource.url);
+          url.searchParams.set("seyirlikRestart", `${Date.now()}-${sourceSwitchTokenRef.current}`);
+          return url.toString();
+        } catch {
+          return nextSource.url;
+        }
+      })();
+
+      setActiveSource({
+        ...nextSource,
+        url: cacheBustedUrl,
+      });
     },
-    [activeSource.id, activeSource.url, progress.currentTime, progress.isPlaying, showControls],
+    [
+      activeSource,
+      progress.currentTime,
+      progress.isPlaying,
+      showControls,
+      stopCurrentPlaybackForSourceSwitch,
+    ],
   );
 
   const buildConfiguredSource = useCallback(
@@ -411,26 +483,31 @@ export function CustomVideoPlayer({
 
     setSelectedQualityId(AUTO_QUALITY_ID);
 
-    try {
-      switchPlayerSource(
-        shouldKeepAudioOverride ? buildConfiguredSource(bestSource, undefined, selectedAudioStreamIndex) : bestSource,
-      );
-    } catch (switchError) {
+    void switchPlayerSource(
+      shouldKeepAudioOverride ? buildConfiguredSource(bestSource, undefined, selectedAudioStreamIndex) : bestSource,
+    ).catch((switchError: unknown) => {
       console.warn("[Seyirlik Playback] Could not keep selected audio while returning to Auto quality", switchError);
       setSelectedAudioStreamIndex(defaultAudioIndex);
-      switchPlayerSource(bestSource);
-    }
+      void switchPlayerSource(bestSource);
+    });
   }, [availablePlaybackCandidates, buildConfiguredSource, selectedAudioStreamIndex, source, switchPlayerSource]);
 
   const handleSelectQuality = useCallback(
     (quality: PlaybackQualityOption) => {
+      let nextSource: PlaybackSourceCandidate;
+
       try {
-        const nextSource = buildConfiguredSource(activeSource, quality);
-        setSelectedQualityId(quality.id);
-        switchPlayerSource(nextSource);
+        nextSource = buildConfiguredSource(activeSource, quality);
       } catch (switchError) {
-        console.warn("[Seyirlik Playback] Could not switch quality", switchError);
+        console.warn("[Seyirlik Playback] Could not build quality source", switchError);
+        return;
       }
+
+      setSelectedQualityId(quality.id);
+
+      void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+        console.warn("[Seyirlik Playback] Could not switch quality", switchError);
+      });
     },
     [activeSource, buildConfiguredSource, switchPlayerSource],
   );
@@ -442,14 +519,20 @@ export function CustomVideoPlayer({
       }
 
       const selectedQuality = qualityOptions.find((quality) => quality.id === selectedQualityId);
+      let nextSource: PlaybackSourceCandidate;
 
       try {
-        const nextSource = buildConfiguredSource(activeSource, selectedQuality, streamIndex);
-        setSelectedAudioStreamIndex(streamIndex);
-        switchPlayerSource(nextSource);
+        nextSource = buildConfiguredSource(activeSource, selectedQuality, streamIndex);
       } catch (switchError) {
-        console.warn("[Seyirlik Playback] Could not switch audio stream", switchError);
+        console.warn("[Seyirlik Playback] Could not build audio stream source", switchError);
+        return;
       }
+
+      setSelectedAudioStreamIndex(streamIndex);
+
+      void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+        console.warn("[Seyirlik Playback] Could not switch audio stream", switchError);
+      });
     },
     [activeSource, buildConfiguredSource, canSwitchAudio, qualityOptions, selectedQualityId, switchPlayerSource],
   );
@@ -508,6 +591,8 @@ export function CustomVideoPlayer({
 
     try {
       attachment = attachSourceToVideo(video, sourceToAttach.url, sourceToAttach.mimeType);
+      activeAttachmentRef.current = attachment;
+
       setActiveSource((currentSource) =>
         currentSource.id === sourceToAttach.id && currentSource.url === sourceToAttach.url
           ? { ...currentSource, usingHlsJs: attachment?.usingHlsJs }
@@ -528,7 +613,16 @@ export function CustomVideoPlayer({
     return () => {
       video.removeEventListener("loadedmetadata", restorePlayback);
       video.removeEventListener("canplay", restorePlayback);
-      attachment?.destroy();
+
+      if (activeAttachmentRef.current === attachment) {
+        activeAttachmentRef.current = null;
+      }
+
+      try {
+        attachment?.destroy();
+      } catch (destroyError) {
+        console.warn("[Seyirlik Playback] Could not destroy video attachment during cleanup", destroyError);
+      }
     };
   }, [activeSource.id, activeSource.mimeType, activeSource.url, onVideoFailure, partyWatch.shouldDeferAutoplay, refreshProgress]);
 
@@ -887,12 +981,12 @@ export function CustomVideoPlayer({
     lastTapRef.current = null;
   };
 
-  const subtitle = getItemSubtitle(item);
+  const subtitle = getItemSubtitle(item, mediaFormatLabels);
   const titleLogoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900) : "";
   const isSubtitleBeingEdited = isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
   const isShowingSubtitlePlaceholder = isSubtitleBeingEdited && activeSubtitleText.trim().length === 0;
 
-  const subtitleLines = (isShowingSubtitlePlaceholder ? SUBTITLE_EDIT_PLACEHOLDER : activeSubtitleText)
+  const subtitleLines = (isShowingSubtitlePlaceholder ? t("player.subtitleEditPlaceholder") : activeSubtitleText)
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
@@ -909,7 +1003,7 @@ export function CustomVideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="relative h-[100svh] min-h-[32rem] overflow-hidden bg-black text-white"
+      className="seyirlik-player-shell relative h-[100svh] min-h-0 overflow-hidden bg-black text-white sm:min-h-[32rem]"
       onMouseMove={showControls}
       onPointerDown={showControls}
       onPointerUp={handlePointerUp}
@@ -931,6 +1025,22 @@ export function CustomVideoPlayer({
         }}
       />
 
+      {viewport.isPhoneViewport && viewport.isPortrait ? (
+        <div className="pointer-events-none absolute inset-0 z-[65] flex items-center justify-center bg-[rgba(5,6,7,0.82)] px-6 text-center backdrop-blur-xl">
+          <div className="max-w-sm rounded-2xl border border-white/10 bg-[var(--surface)] p-5 shadow-[0_24px_110px_rgba(0,0,0,0.62)]">
+            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]">
+              <div className="relative">
+                <Smartphone size={30} />
+                <RotateCcw className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none" size={19} />
+              </div>
+            </div>
+            <h2 className="mt-4 text-xl font-black text-white">{t("player.rotateTitle")}</h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/72">{t("player.rotateMessage")}</p>
+            <p className="mt-3 text-xs font-medium text-white/45">{t("player.rotateHint")}</p>
+          </div>
+        </div>
+      ) : null}
+
       {subtitleLines.length > 0 ? (
         <div
           ref={subtitleOverlayRef}
@@ -947,7 +1057,7 @@ export function CustomVideoPlayer({
           onPointerCancel={handleSubtitlePointerCancel}
           onLostPointerCapture={handleSubtitlePointerCancel}
           onDoubleClick={handleSubtitleDoubleClick}
-          aria-label="Drag subtitles"
+          aria-label={t("player.dragSubtitles")}
         >
           {subtitleLines.map((line, index) => (
             <div key={`${line}-${index}`} className="seyirlik-subtitle-line-wrap">
@@ -960,7 +1070,7 @@ export function CustomVideoPlayer({
               <button
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tl"
-                aria-label="Resize subtitles from top left"
+                aria-label={t("player.resizeSubtitlesTopLeft")}
                 onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, -1)}
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
@@ -970,7 +1080,7 @@ export function CustomVideoPlayer({
               <button
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tr"
-                aria-label="Resize subtitles from top right"
+                aria-label={t("player.resizeSubtitlesTopRight")}
                 onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, -1)}
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
@@ -980,7 +1090,7 @@ export function CustomVideoPlayer({
               <button
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--bl"
-                aria-label="Resize subtitles from bottom left"
+                aria-label={t("player.resizeSubtitlesBottomLeft")}
                 onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, 1)}
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
@@ -990,7 +1100,7 @@ export function CustomVideoPlayer({
               <button
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--br"
-                aria-label="Resize subtitles from bottom right"
+                aria-label={t("player.resizeSubtitlesBottomRight")}
                 onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, 1)}
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
@@ -1027,7 +1137,7 @@ export function CustomVideoPlayer({
       <PlayerControls
         visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
         isPlaying={progress.isPlaying}
-        playWaiting={false}
+        playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
         currentTime={progress.currentTime}
         duration={progress.duration}
         bufferedEnd={progress.bufferedEnd}
@@ -1089,8 +1199,8 @@ export function CustomVideoPlayer({
                 showControls();
               }}
               className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              aria-label="SyncPlay"
-              title="SyncPlay"
+              aria-label={t("party.title")}
+              title={t("party.title")}
             >
               <Users size={18} />
 
