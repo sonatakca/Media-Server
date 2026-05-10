@@ -70,7 +70,7 @@ export function HeroSection({ item }: HeroSectionProps) {
   const primaryPosterUrl = imageCandidates.find((candidate) => candidate.type === "primary")?.url ?? "";
   const logoUrl = item?.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
   const showSidePoster = Boolean(primaryPosterUrl && selectedImage?.type === "primary");
-  const title = item ? getDisplayTitle(item, mediaFormatLabels) : "Seyirlik Web";
+  const title = item ? getDisplayTitle(item, mediaFormatLabels) : "Seyirlik";
   const runtime = item ? formatRuntime(item.RunTimeTicks, mediaFormatLabels) : null;
   const mediaTypeLabel =
     item?.Type === "Movie"

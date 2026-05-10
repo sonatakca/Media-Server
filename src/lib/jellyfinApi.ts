@@ -408,7 +408,7 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
 
 function getBrowserDeviceProfile(): Record<string, unknown> {
   return {
-    Name: "Seyirlik Web HTML5",
+    Name: "Seyirlik HTML5",
     MaxStreamingBitrate: MAX_STREAMING_BITRATE,
     MaxStaticBitrate: MAX_STREAMING_BITRATE,
     MusicStreamingTranscodingBitrate: 384_000,
