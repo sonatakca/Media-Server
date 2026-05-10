@@ -10,7 +10,7 @@ export function RouteTransitionOutlet({ variant = "default" }: RouteTransitionOu
   const location = useLocation();
 
   return (
-    <AnimatePresence mode="wait" initial={false}>
+    <AnimatePresence mode="wait" initial>
       <PageTransition key={location.pathname} variant={variant}>
         <Outlet />
       </PageTransition>

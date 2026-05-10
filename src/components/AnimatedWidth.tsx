@@ -36,30 +36,12 @@ export function AnimatedWidth({ children, value, className = "", safetyPx = 4 }:
       <span
         ref={measureRef}
         aria-hidden="true"
-        className="pointer-events-none invisible absolute left-0 top-0 inline-flex whitespace-nowrap"
+        className="pointer-events-none invisible absolute left-0 top-0 inline-block whitespace-nowrap"
       >
-        {splitText(value).map((letter, index) => {
-          const isSpace = letter === " ";
-
-          return (
-            <span
-              key={`${index}-${letter}`}
-              className="inline-block"
-              style={{
-                width: isSpace ? "0.35em" : undefined,
-              }}
-            >
-              {isSpace ? "\u00A0" : letter}
-            </span>
-          );
-        })}
+        {value}
       </span>
     </span>
   );
-}
-
-function splitText(text: string) {
-  return Array.from(text);
 }
 
 function usePrefersReducedMotion(): boolean {

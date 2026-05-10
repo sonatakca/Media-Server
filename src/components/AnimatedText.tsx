@@ -80,6 +80,12 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
     return <span className={className}>{value}</span>;
   }
 
+  const shouldAnimateLetters = layers.length > 1 || layers[0]?.phase !== "idle";
+
+  if (!shouldAnimateLetters) {
+    return <span className={`inline-block whitespace-nowrap align-middle ${className}`}>{value}</span>;
+  }
+
   return (
     <span
       className={`relative inline-grid overflow-hidden whitespace-nowrap align-middle ${className}`}
@@ -91,29 +97,24 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
           aria-hidden="true"
           className="col-start-1 row-start-1 inline-flex whitespace-nowrap"
         >
-          {splitText(layer.text).map((letter, index) => {
-            const isSpace = letter === " ";
-
-            return (
-              <span
-                key={`${layer.id}-${index}-${letter}`}
-                className="inline-block transition-[opacity,transform] duration-300 ease-out"
-                style={{
-                  transitionDelay: `${index * 22}ms`,
-                  transform:
-                    layer.phase === "enter"
-                      ? "translateY(-0.75em)"
-                      : layer.phase === "exit"
-                        ? "translateY(0.75em)"
-                        : "translateY(0)",
-                  opacity: layer.phase === "idle" ? 1 : 0,
-                  width: isSpace ? "0.35em" : undefined,
-                }}
-              >
-                {isSpace ? "\u00A0" : letter}
-              </span>
-            );
-          })}
+          {splitText(layer.text).map((letter, index) => (
+            <span
+              key={`${layer.id}-${index}-${letter}`}
+              className="inline-block transition-[opacity,transform] duration-300 ease-out"
+              style={{
+                transitionDelay: `${index * 22}ms`,
+                transform:
+                  layer.phase === "enter"
+                    ? "translateY(-0.75em)"
+                    : layer.phase === "exit"
+                      ? "translateY(0.75em)"
+                      : "translateY(0)",
+                opacity: layer.phase === "idle" ? 1 : 0,
+              }}
+            >
+              {letter === " " ? "\u00A0" : letter}
+            </span>
+          ))}
         </span>
       ))}
     </span>

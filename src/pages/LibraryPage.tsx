@@ -8,6 +8,7 @@ import { MediaCard } from "../components/MediaCard";
 import { MotionReveal } from "../components/MotionReveal";
 import { LibrarySkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 import { getBackdropImageUrl, getItem, getItemsForLibrary, getSeasonEpisodes, getSeriesSeasons, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
 import { getDisplayTitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
@@ -15,8 +16,11 @@ import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 
+type LibraryFallbackTitleKey = "common.series" | "format.season" | "library.library";
+
 interface LibraryData {
   library?: JellyfinItem;
+  fallbackTitleKey?: LibraryFallbackTitleKey;
   items: JellyfinItem[];
 }
 
@@ -191,20 +195,26 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           (mode === "series"
             ? {
                 Id: activeId,
-                Name: items[0]?.SeriesName ?? t("common.series"),
+                Name: items[0]?.SeriesName ?? "",
                 Type: "Series",
               }
             : mode === "season"
               ? {
                   Id: activeId,
-                  Name: items[0]?.SeasonName ?? t("format.season"),
+                  Name: items[0]?.SeasonName ?? "",
                   Type: "Season",
                   SeriesId: seriesId,
                 }
               : undefined);
+        const fallbackTitleKey: LibraryFallbackTitleKey | undefined =
+          mode === "series"
+            ? "common.series"
+            : mode === "season"
+              ? "format.season"
+              : "library.library";
 
         if (isMounted) {
-          setData({ library: fallbackLibrary, items });
+          setData({ library: fallbackLibrary, fallbackTitleKey, items });
         }
       } catch (libraryError) {
         if (isMounted) {
@@ -222,7 +232,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
     return () => {
       isMounted = false;
     };
-  }, [activeId, mode, seriesId, t]);
+  }, [activeId, mode, seriesId]);
 
   const filteredItems = useMemo(() => {
     if (!data) {
@@ -250,6 +260,10 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
       ? getBackdropImageUrl(data.library.Id, data.library.BackdropImageTags[0], 1600)
       : "";
 
+  const libraryTitle =
+    data.library?.Name ||
+    (data.fallbackTitleKey ? t(data.fallbackTitleKey as TranslationKey) : t("library.library"));
+
   return (
     <div>
       <section className="relative -mx-4 -mt-6 mb-8 overflow-hidden rounded-b-3xl px-4 pb-8 pt-8 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -272,7 +286,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           <MotionReveal className="max-w-4xl" direction="up">
             <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">{t("library.library")}</p>
             <h1 className="mt-2 text-5xl font-black leading-none text-white sm:text-6xl">
-              {data.library ? getDisplayTitle(data.library, mediaFormatLabels) : t("library.library")}
+              {data.library?.Name ? getDisplayTitle(data.library, mediaFormatLabels) : libraryTitle}
             </h1>
             <p className="mt-4 text-base font-medium text-white/[0.62]">
               {data.items.length} {t("library.itemsAvailable")}

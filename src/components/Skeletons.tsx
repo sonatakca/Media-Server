@@ -1,4 +1,6 @@
 import { useLanguage } from "../i18n/LanguageContext";
+import { AnimatedText } from "./AnimatedText";
+import { AnimatedWidth } from "./AnimatedWidth";
 
 export function BackButtonSkeleton({ className = "" }: { className?: string }) {
   return <div className={`shimmer h-10 w-[5.25rem] rounded-full ${className}`} />;
@@ -29,7 +31,11 @@ export function MediaRowSkeleton({ title }: { title: string }) {
   return (
     <section className="py-6">
       <div className="mb-0 flex items-end justify-between gap-4">
-        <h2 className="text-xl font-black text-white sm:text-2xl">{title}</h2>
+        <h2 className="text-xl font-black text-white sm:text-2xl">
+          <AnimatedWidth value={title}>
+            <AnimatedText value={title} />
+          </AnimatedWidth>
+        </h2>
       </div>
 
       <div className="media-scroll flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6">
