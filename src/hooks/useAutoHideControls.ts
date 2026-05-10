@@ -17,7 +17,17 @@ export function useAutoHideControls({
   const [isHoveringControls, setIsHoveringControls] = useState(false);
 
   const hideTimerRef = useRef<number | null>(null);
+  const isPlayingRef = useRef(isPlaying);
+  const disabledRef = useRef(disabled);
+  const isHoveringControlsRef = useRef(false);
   const wasPlayingRef = useRef(isPlaying);
+  const playStartDelayMsRef = useRef(playStartDelayMs);
+  const interactionDelayMsRef = useRef(interactionDelayMs);
+
+  isPlayingRef.current = isPlaying;
+  disabledRef.current = disabled;
+  playStartDelayMsRef.current = playStartDelayMs;
+  interactionDelayMsRef.current = interactionDelayMs;
 
   const clearHideTimer = useCallback(() => {
     if (hideTimerRef.current !== null) {
@@ -30,39 +40,45 @@ export function useAutoHideControls({
     (delayMs: number) => {
       clearHideTimer();
 
-      if (disabled || !isPlaying || isHoveringControls) {
+      if (disabledRef.current || !isPlayingRef.current || isHoveringControlsRef.current) {
         setAreControlsVisible(true);
         return;
       }
 
       hideTimerRef.current = window.setTimeout(() => {
-        if (!isHoveringControls) {
+        if (!isHoveringControlsRef.current) {
           setAreControlsVisible(false);
         }
 
         hideTimerRef.current = null;
       }, delayMs);
     },
-    [clearHideTimer, disabled, isHoveringControls, isPlaying],
+    [clearHideTimer],
   );
 
   const showControls = useCallback(() => {
     setAreControlsVisible(true);
 
-    if (!disabled && isPlaying && !isHoveringControls) {
-      scheduleHide(interactionDelayMs);
+    if (!disabledRef.current && isPlayingRef.current && !isHoveringControlsRef.current) {
+      scheduleHide(interactionDelayMsRef.current);
     }
-  }, [disabled, interactionDelayMs, isHoveringControls, isPlaying, scheduleHide]);
+  }, [scheduleHide]);
 
   const keepControlsVisible = useCallback(() => {
     clearHideTimer();
+    isHoveringControlsRef.current = true;
     setIsHoveringControls(true);
     setAreControlsVisible(true);
   }, [clearHideTimer]);
 
   const releaseControlsHover = useCallback(() => {
+    isHoveringControlsRef.current = false;
     setIsHoveringControls(false);
-  }, []);
+
+    if (!disabledRef.current && isPlayingRef.current) {
+      scheduleHide(interactionDelayMsRef.current);
+    }
+  }, [scheduleHide]);
 
   useEffect(() => {
     if (disabled || !isPlaying) {
