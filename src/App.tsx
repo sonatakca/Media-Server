@@ -4,6 +4,7 @@ import { Layout } from "./components/Layout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { RouteColorTransition } from "./components/RouteColorTransition";
 import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
+import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { useLanguage } from "./i18n/LanguageContext";
 import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
@@ -122,7 +123,8 @@ export default function App() {
   return (
     <>
       <ScrollToTop />
-
+      <NonPlayerHistoryTracker />
+      
       <DefaultServerGate>
         <RouteColorTransition />
         <Routes>
