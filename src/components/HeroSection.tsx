@@ -109,7 +109,7 @@ export function HeroSection({ item }: HeroSectionProps) {
   };
 
   return (
-    <section className="relative -mx-4 -mt-6 mb-0 min-h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:min-h-[68svh] lg:-mx-8 lg:min-h-[72svh]">
+    <section className="relative -mx-4 -mt-6 mb-0 h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:h-[68svh] lg:-mx-8 lg:h-[72svh]">
       {selectedImage ? (
         <motion.img
           src={selectedImage.url}
@@ -129,7 +129,7 @@ export function HeroSection({ item }: HeroSectionProps) {
       <div className="absolute inset-0 z-10 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
       <div className="absolute bottom-0 left-0 right-0 z-10 h-40 bg-gradient-to-t from-[var(--background)] to-transparent" />
 
-      <div className="relative z-20 mx-auto flex min-h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:min-h-[68svh] sm:px-6 md:pb-20 lg:min-h-[72svh] lg:px-8">
+      <div className="relative z-20 mx-auto flex h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:h-[68svh] sm:px-6 md:pb-20 lg:h-[72svh] lg:px-8">
         {showSidePoster ? (
           <motion.div
             className="pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-[0_30px_130px_rgba(0,0,0,0.65)] lg:block"

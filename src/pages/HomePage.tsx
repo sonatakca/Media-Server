@@ -125,7 +125,7 @@ export function HomePage() {
       ) : null}
 
       {showContinueWatchingRow ? (
-        <div className="relative z-10 -mt-14 sm:-mt-20">
+        <div className="relative z-10 -mt-14 animate-home-content-settle sm:-mt-20">
           <MediaRow
             title={t("home.continueWatching")}
             items={data.continueWatching}
@@ -135,7 +135,9 @@ export function HomePage() {
         </div>
       ) : null}
 
-      <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={getRouteForItem} />
+      <div className="animate-home-content-settle">
+        <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={getRouteForItem} />
+      </div>
 
       <MotionReveal className="group/row relative py-6" direction="up">
         <div className="mb-4 flex items-end justify-between gap-4">

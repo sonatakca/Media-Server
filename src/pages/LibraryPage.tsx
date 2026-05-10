@@ -6,7 +6,7 @@ import { BackButton } from "../components/BackButton";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { MediaCard } from "../components/MediaCard";
 import { MotionReveal } from "../components/MotionReveal";
-import { DetailsSkeleton } from "../components/Skeletons";
+import { LibrarySkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getBackdropImageUrl, getItem, getItemsForLibrary, getSeasonEpisodes, getSeriesSeasons, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
 import { getDisplayTitle } from "../lib/format";
@@ -242,7 +242,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
   }
 
   if (!data) {
-    return <DetailsSkeleton />;
+    return <LibrarySkeleton />;
   }
 
   const libraryBackdrop =
