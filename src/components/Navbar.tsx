@@ -34,11 +34,11 @@ export function Navbar() {
             <img src={appIcon} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-xl md:hidden" onError={() => setIconFailed(true)} />
           ) : null}
           {!desktopLogoFailed ? (
-            <span className="hidden h-12 shrink-0 items-center md:flex">
+            <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex">
               <img
                 src={logoOnSide}
                 alt="Seyirlik"
-                className="h-10 w-auto object-contain"
+                className="h-11 w-full object-contain object-left"
                 onError={() => setDesktopLogoFailed(true)}
               />
             </span>

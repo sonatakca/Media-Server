@@ -98,7 +98,7 @@ export function PlaybackInfoPanel({ source, videoError, onClose }: PlaybackInfoP
           <button
             type="button"
             onClick={onClose}
-            className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white transition hover:bg-white/15 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="flex h-10 w-10 min-h-10 min-w-10 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full bg-white/10 p-0 text-white transition hover:bg-white/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
             aria-label={t("playback.closeDetails")}
           >
             <X size={20} />
