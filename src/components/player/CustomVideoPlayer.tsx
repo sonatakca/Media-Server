@@ -5,6 +5,7 @@ import {
   buildSubtitleStreamUrl,
   getLogoImageUrl,
   getManualQualityOptions,
+  getTrickplayImageUrl,
   stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
@@ -81,6 +82,14 @@ const AUTO_QUALITY_ID = "auto";
 const DEFAULT_SUBTITLE_SCALE = 1;
 const MIN_SUBTITLE_SCALE = 0.7;
 const MAX_SUBTITLE_SCALE = 2.4;
+
+const TRICKPLAY_RESOLUTION = 320;
+const TRICKPLAY_INTERVAL_SECONDS = 10;
+const TRICKPLAY_COLUMNS = 10;
+const TRICKPLAY_ROWS = 10;
+const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
+const TRICKPLAY_TILE_WIDTH = 320;
+const TRICKPLAY_TILE_HEIGHT = 132;
 
 function getStreamsOfType(source: PlaybackSourceCandidate, type: "Audio" | "Subtitle"): JellyfinMediaStream[] {
   return source.mediaSource.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === type.toLowerCase()) ?? [];
@@ -171,6 +180,12 @@ export function CustomVideoPlayer({
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
+  const fullscreenSeekPreviewTokenRef = useRef(0);
+  const pendingFullscreenSeekPreviewRef = useRef<{
+    token: number;
+    targetSeconds: number;
+  } | null>(null);
+  const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -212,6 +227,7 @@ export function CustomVideoPlayer({
 
   const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<string | null>(null);
   const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
+  const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] = useState<number | null>(null);
 
   useEffect(() => {
     if (partyWatch.partyEventMessage) {
@@ -256,6 +272,68 @@ export function CustomVideoPlayer({
     activeSource.mediaSource.Id && (activeSource.mediaSource.SupportsTranscoding || activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
+  
+  const fullscreenSeekPreview = useMemo(() => {
+    if (fullscreenSeekPreviewSeconds === null || !activeSource.mediaSourceId || progress.duration <= 0) {
+      return null;
+    }
+
+    const globalTileIndex = Math.max(0, Math.floor(fullscreenSeekPreviewSeconds / TRICKPLAY_INTERVAL_SECONDS));
+    const sheetIndex = Math.floor(globalTileIndex / TRICKPLAY_IMAGES_PER_SHEET);
+    const tileIndexOnSheet = globalTileIndex % TRICKPLAY_IMAGES_PER_SHEET;
+    const column = tileIndexOnSheet % TRICKPLAY_COLUMNS;
+    const row = Math.floor(tileIndexOnSheet / TRICKPLAY_COLUMNS);
+
+    return {
+      imageUrl: getTrickplayImageUrl(
+        activeSource.itemId,
+        activeSource.mediaSourceId,
+        TRICKPLAY_RESOLUTION,
+        sheetIndex,
+      ),
+      column,
+      row,
+    };
+  }, [activeSource.itemId, activeSource.mediaSourceId, fullscreenSeekPreviewSeconds, progress.duration]);
+
+  const fullscreenSeekPreviewRect = useMemo(() => {
+  const video = videoRef.current;
+  const container = containerRef.current;
+
+  if (!video || !container) {
+    return null;
+  }
+
+  const containerBounds = container.getBoundingClientRect();
+  const videoAspect =
+    video.videoWidth > 0 && video.videoHeight > 0
+      ? video.videoWidth / video.videoHeight
+      : TRICKPLAY_TILE_WIDTH / TRICKPLAY_TILE_HEIGHT;
+
+  const containerAspect = containerBounds.width / containerBounds.height;
+
+  let width = containerBounds.width;
+  let height = containerBounds.height;
+  let left = 0;
+  let top = 0;
+
+  if (containerAspect > videoAspect) {
+    height = containerBounds.height;
+    width = height * videoAspect;
+    left = (containerBounds.width - width) / 2;
+  } else {
+    width = containerBounds.width;
+    height = width / videoAspect;
+    top = (containerBounds.height - height) / 2;
+  }
+
+  return {
+    left,
+    top,
+    width,
+    height,
+  };
+}, [fullscreenSeekPreviewSeconds, progress.duration]);
   
 
   useEffect(() => {
@@ -537,6 +615,109 @@ export function CustomVideoPlayer({
     [activeSource, buildConfiguredSource, canSwitchAudio, qualityOptions, selectedQualityId, switchPlayerSource],
   );
 
+  const clearFullscreenSeekPreviewFallbackTimer = useCallback(() => {
+    if (fullscreenSeekPreviewFallbackTimerRef.current !== null) {
+      window.clearTimeout(fullscreenSeekPreviewFallbackTimerRef.current);
+      fullscreenSeekPreviewFallbackTimerRef.current = null;
+    }
+  }, []);
+
+  const hideFullscreenSeekPreviewAfterPaint = useCallback(
+    (token: number) => {
+      const video = videoRef.current;
+
+      const finish = () => {
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            const pendingPreview = pendingFullscreenSeekPreviewRef.current;
+
+            if (!pendingPreview || pendingPreview.token !== token) {
+              return;
+            }
+
+            pendingFullscreenSeekPreviewRef.current = null;
+            clearFullscreenSeekPreviewFallbackTimer();
+            setFullscreenSeekPreviewSeconds(null);
+          });
+        });
+      };
+
+      const videoWithFrameCallback = video as HTMLVideoElement & {
+        requestVideoFrameCallback?: (callback: () => void) => number;
+      };
+
+      if (videoWithFrameCallback?.requestVideoFrameCallback) {
+        videoWithFrameCallback.requestVideoFrameCallback(finish);
+        return;
+      }
+
+      finish();
+    },
+    [clearFullscreenSeekPreviewFallbackTimer],
+  );
+
+  const handleSeekPreview = useCallback(
+    (seconds: number) => {
+      fullscreenSeekPreviewTokenRef.current += 1;
+      const token = fullscreenSeekPreviewTokenRef.current;
+
+      pendingFullscreenSeekPreviewRef.current = {
+        token,
+        targetSeconds: seconds,
+      };
+
+      clearFullscreenSeekPreviewFallbackTimer();
+      fullscreenSeekPreviewFallbackTimerRef.current = window.setTimeout(() => {
+        const pendingPreview = pendingFullscreenSeekPreviewRef.current;
+
+        if (!pendingPreview || pendingPreview.token !== token) {
+          return;
+        }
+
+        pendingFullscreenSeekPreviewRef.current = null;
+        setFullscreenSeekPreviewSeconds(null);
+      }, 3500);
+
+      setFullscreenSeekPreviewSeconds(seconds);
+      showControls();
+    },
+    [clearFullscreenSeekPreviewFallbackTimer, showControls],
+  );
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return undefined;
+    }
+
+    const handleSeekFrameReady = () => {
+      const pendingPreview = pendingFullscreenSeekPreviewRef.current;
+
+      if (!pendingPreview) {
+        return;
+      }
+
+      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+
+      if (!video.ended && Math.abs(currentTime - pendingPreview.targetSeconds) > 1.5) {
+        return;
+      }
+
+      hideFullscreenSeekPreviewAfterPaint(pendingPreview.token);
+    };
+
+    video.addEventListener("seeked", handleSeekFrameReady);
+    video.addEventListener("canplay", handleSeekFrameReady);
+    video.addEventListener("playing", handleSeekFrameReady);
+
+    return () => {
+      video.removeEventListener("seeked", handleSeekFrameReady);
+      video.removeEventListener("canplay", handleSeekFrameReady);
+      video.removeEventListener("playing", handleSeekFrameReady);
+    };
+  }, [hideFullscreenSeekPreviewAfterPaint]);
+
   const handleSelectSubtitleStream = useCallback((streamIndex: number) => {
     setActiveSubtitleText("");
     setSelectedSubtitleStreamIndex(streamIndex);
@@ -628,11 +809,13 @@ export function CustomVideoPlayer({
 
   useEffect(() => {
     return () => {
+      clearFullscreenSeekPreviewFallbackTimer();
+
       if (hasStartedRef.current) {
         onPlaybackStopped?.(videoRef.current?.currentTime ?? 0);
       }
     };
-  }, [onPlaybackStopped]);
+  }, [clearFullscreenSeekPreviewFallbackTimer, onPlaybackStopped]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1025,6 +1208,42 @@ export function CustomVideoPlayer({
         }}
       />
 
+      {fullscreenSeekPreview && fullscreenSeekPreviewRect ? (
+        <div className="pointer-events-none absolute inset-0 z-[9] overflow-hidden">
+          <div
+            className="absolute overflow-hidden bg-black"
+            style={{
+              left: `${fullscreenSeekPreviewRect.left}px`,
+              top: `${fullscreenSeekPreviewRect.top}px`,
+              width: `${fullscreenSeekPreviewRect.width}px`,
+              height: `${fullscreenSeekPreviewRect.height}px`,
+            }}
+          >
+            <div
+              className="origin-top-left opacity-95"
+              style={{
+                width: `${TRICKPLAY_TILE_WIDTH}px`,
+                height: `${TRICKPLAY_TILE_HEIGHT}px`,
+                transform: `scale(${fullscreenSeekPreviewRect.width / TRICKPLAY_TILE_WIDTH}, ${
+                  fullscreenSeekPreviewRect.height / TRICKPLAY_TILE_HEIGHT
+                })`,
+                backgroundImage: `url("${fullscreenSeekPreview.imageUrl}")`,
+                backgroundSize: `${TRICKPLAY_TILE_WIDTH * TRICKPLAY_COLUMNS}px ${
+                  TRICKPLAY_TILE_HEIGHT * TRICKPLAY_ROWS
+                }px`,
+                backgroundPosition: `-${fullscreenSeekPreview.column * TRICKPLAY_TILE_WIDTH}px -${
+                  fullscreenSeekPreview.row * TRICKPLAY_TILE_HEIGHT
+                }px`,
+                backgroundRepeat: "no-repeat",
+              }}
+            />
+
+            <div className="absolute inset-0 bg-black/22" />
+
+          </div>
+        </div>
+      ) : null}
+
       {viewport.isPhoneViewport && viewport.isPortrait ? (
         <div className="pointer-events-none absolute inset-0 z-[65] flex items-center justify-center bg-[rgba(5,6,7,0.82)] px-6 text-center backdrop-blur-xl">
           <div className="max-w-sm rounded-2xl border border-white/10 bg-[var(--surface)] p-5 shadow-[0_24px_110px_rgba(0,0,0,0.62)]">
@@ -1138,13 +1357,17 @@ export function CustomVideoPlayer({
         visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
         isPlaying={progress.isPlaying}
         playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
+        seekPreviewLoading={fullscreenSeekPreview !== null}
         currentTime={progress.currentTime}
         duration={progress.duration}
         bufferedEnd={progress.bufferedEnd}
         volume={progress.volume}
         muted={progress.muted}
+        itemId={item.Id}
+        mediaSourceId={activeSource.mediaSourceId}
         onTogglePlay={partyWatch.togglePlay}
         onSeek={partyWatch.seekTo}
+        onSeekPreview={handleSeekPreview}
         onSeekBy={partyWatch.seekBy}
         onToggleMute={progress.toggleMute}
         onVolumeChange={progress.setVolume}

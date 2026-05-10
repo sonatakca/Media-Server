@@ -22,6 +22,9 @@ interface PlayerControlsProps {
   canSwitchAudio: boolean;
   canSwitchSubtitles: boolean;
   settingsOpen: boolean;
+  itemId: string;
+  mediaSourceId?: string;
+  seekPreviewLoading?: boolean;
   onTogglePlay: () => void;
   onSeek: (seconds: number) => void;
   onSeekBy: (seconds: number) => void;
@@ -33,6 +36,7 @@ interface PlayerControlsProps {
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
   onSelectSubtitleStream: (streamIndex: number) => void;
+  onSeekPreview?: (seconds: number) => void;
 }
 
 function formatTime(seconds: number): string {
@@ -69,6 +73,9 @@ export function PlayerControls({
   canSwitchAudio,
   canSwitchSubtitles,
   settingsOpen,
+  itemId,
+  mediaSourceId,
+  seekPreviewLoading = false,
   onTogglePlay,
   onSeek,
   onSeekBy,
@@ -80,6 +87,7 @@ export function PlayerControls({
   onSelectQuality,
   onSelectAudioStream,
   onSelectSubtitleStream,
+  onSeekPreview,
 }: PlayerControlsProps) {
   const { t } = useLanguage();
 
@@ -90,7 +98,17 @@ export function PlayerControls({
       }`}
     >
       <div className="pointer-events-auto mx-auto w-full max-w-[1500px]">
-        <SeekBar currentTime={currentTime} duration={duration} bufferedEnd={bufferedEnd} onSeek={onSeek} />
+        <div className="relative">
+          <SeekBar
+            currentTime={currentTime}
+            duration={duration}
+            bufferedEnd={bufferedEnd}
+            itemId={itemId}
+            mediaSourceId={mediaSourceId}
+            onSeek={onSeek}
+            onSeekPreview={onSeekPreview}
+          />
+        </div>
         <div className="mt-2 flex items-center justify-between gap-2 sm:mt-3 sm:gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <button
@@ -134,9 +152,18 @@ export function PlayerControls({
               onToggleMute={onToggleMute}
               onVolumeChange={onVolumeChange}
             />
-            <span className="ml-1 min-w-[5.6rem] whitespace-nowrap text-xs font-medium text-white/[0.82] sm:min-w-[7.5rem] sm:text-sm">
-              {formatTime(currentTime)} / {formatTime(duration)}
-            </span>
+            <div className="ml-1 flex min-w-[5.6rem] items-center gap-2 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:min-w-[7.5rem] sm:text-sm">
+              <span>
+                {formatTime(currentTime)} / {formatTime(duration)}
+              </span>
+
+              {seekPreviewLoading ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-white/70">
+                  <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)]" />
+                  <span className="hidden sm:inline">{t("player.seeking")}</span>
+                </span>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">

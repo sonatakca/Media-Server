@@ -106,7 +106,7 @@ export function HomePage() {
   const featuredPool =
     data.continueWatching.length === 1 ? data.continueWatching : [...data.continueWatching, ...data.latestMedia];
   const heroItem = pickFeaturedItem(featuredPool);
-  const showContinueWatchingRow = data.continueWatching.length > 1;
+  const showContinueWatchingRow = data.continueWatching.length > 0;
 
   return (
     <div>

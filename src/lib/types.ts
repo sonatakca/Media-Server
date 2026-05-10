@@ -101,6 +101,12 @@ export interface JellyfinMediaSource {
   MediaStreams?: JellyfinMediaStream[];
 }
 
+export interface JellyfinChapter {
+  StartPositionTicks?: number;
+  Name?: string;
+  ImageTag?: string;
+}
+
 export interface JellyfinItem {
   Id: string;
   Name: string;
@@ -119,6 +125,7 @@ export interface JellyfinItem {
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;
+  Chapters?: JellyfinChapter[];
   ImageTags?: JellyfinImageTags;
   BackdropImageTags?: string[];
   ParentBackdropItemId?: string;

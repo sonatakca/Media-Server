@@ -37,6 +37,7 @@ const DEFAULT_ITEM_FIELDS = [
   "PrimaryImageAspectRatio",
   "SortName",
   "Overview",
+  "Chapters",
   "Genres",
   "RunTimeTicks",
   "ProductionYear",
@@ -621,6 +622,29 @@ function buildMasterHlsUrl(
     enableAdaptiveBitrateStreaming: true,
     api_key: session.accessToken,
   });
+}
+
+export function getTrickplayImageUrl(
+  itemId: string,
+  mediaSourceId: string,
+  resolution: number,
+  imageIndex: number,
+): string {
+  const serverUrl = getServerUrl();
+  const token = getTokenForUrl();
+
+  if (!serverUrl || !token) {
+    return "";
+  }
+
+  return buildJellyfinUrl(
+    serverUrl,
+    `/Videos/${encodeURIComponent(itemId)}/Trickplay/${resolution}/${imageIndex}.jpg`,
+    {
+      ApiKey: token,
+      MediaSourceId: mediaSourceId,
+    },
+  );
 }
 
 export function buildConfiguredHlsPlaybackSource(

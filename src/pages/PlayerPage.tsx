@@ -36,6 +36,11 @@ export function PlayerPage() {
 
       try {
         const itemDetails = await getItem(itemId);
+
+        console.info("[Seyirlik Item] Full item details", itemDetails);
+        console.info("[Seyirlik Item] Chapters", (itemDetails as any).Chapters);
+        console.info("[Seyirlik Item] MediaSources", itemDetails.MediaSources);
+
         if (isMounted) {
           setItem(itemDetails);
         }
