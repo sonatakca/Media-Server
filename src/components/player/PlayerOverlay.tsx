@@ -7,6 +7,7 @@ interface SeekFeedbackItem {
   amount: number;
   visible: boolean;
   rotation: number;
+  pulse: number;
 }
 
 interface PlayerOverlayProps {
@@ -128,7 +129,19 @@ export function PlayerOverlay({
           }`}
           aria-hidden="true"
         >
-          <div className="seyirlik-seek-feedback__bubble">
+          <div
+            className="seyirlik-seek-feedback__bubble"
+            style={{
+              animation:
+                backwardFeedback.pulse > 0
+                  ? `${
+                      backwardFeedback.pulse % 2 === 0
+                        ? "seekFeedbackButtonPressA"
+                        : "seekFeedbackButtonPressB"
+                    } 620ms cubic-bezier(0.16, 1, 0.3, 1) both`
+                  : undefined,
+            }}
+          >
             <span
               className="seyirlik-seek-feedback__icon"
               style={{
@@ -149,7 +162,19 @@ export function PlayerOverlay({
           }`}
           aria-hidden="true"
         >
-          <div className="seyirlik-seek-feedback__bubble">
+          <div
+            className="seyirlik-seek-feedback__bubble"
+            style={{
+              animation:
+                forwardFeedback.pulse > 0
+                  ? `${
+                      forwardFeedback.pulse % 2 === 0
+                        ? "seekFeedbackButtonPressA"
+                        : "seekFeedbackButtonPressB"
+                    } 620ms cubic-bezier(0.16, 1, 0.3, 1) both`
+                  : undefined,
+            }}
+          >
             <span
               className="seyirlik-seek-feedback__icon"
               style={{
@@ -170,7 +195,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex h-20 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.16] text-white shadow-[0_22px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.24] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
+        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 h-11 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.16] text-white shadow-[0_22px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.24] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
           visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-label={isPlaying ? t("common.pause") : t("common.play")}

@@ -163,6 +163,8 @@ img {
   width: clamp(5.5rem, 10vw, 7.8rem);
   align-items: center;
   justify-content: center;
+  transform-origin: center;
+  will-change: transform, filter;
 }
 
 .seyirlik-seek-feedback__icon {
@@ -486,6 +488,56 @@ img {
   100% {
     opacity: 0;
     transform: translate(-50%, -50%) scale(3);
+  }
+}
+
+@keyframes seekFeedbackButtonPressA {
+  0% {
+    transform: perspective(700px) translateZ(-70px) scale(0.78);
+    filter: blur(4px);
+  }
+
+  38% {
+    transform: perspective(700px) translateZ(85px) scale(1.24);
+    filter: blur(0);
+  }
+
+  62% {
+    transform: perspective(700px) translateZ(-16px) scale(0.95);
+  }
+
+  82% {
+    transform: perspective(700px) translateZ(12px) scale(1.035);
+  }
+
+  100% {
+    transform: perspective(700px) translateZ(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes seekFeedbackButtonPressB {
+  0% {
+    transform: perspective(700px) translateZ(-70px) scale(0.78);
+    filter: blur(4px);
+  }
+
+  38% {
+    transform: perspective(700px) translateZ(85px) scale(1.24);
+    filter: blur(0);
+  }
+
+  62% {
+    transform: perspective(700px) translateZ(-16px) scale(0.95);
+  }
+
+  82% {
+    transform: perspective(700px) translateZ(12px) scale(1.035);
+  }
+
+  100% {
+    transform: perspective(700px) translateZ(0) scale(1);
+    filter: blur(0);
   }
 }
 

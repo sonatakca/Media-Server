@@ -75,6 +75,7 @@ interface SeekFeedbackItem {
   amount: number;
   visible: boolean;
   rotation: number;
+  pulse: number;
 }
 
 interface SeekFeedbackState {
@@ -115,11 +116,13 @@ const initialSeekFeedback: SeekFeedbackState = {
     amount: 0,
     visible: false,
     rotation: 0,
+    pulse: 0,
   },
   forward: {
     amount: 0,
     visible: false,
     rotation: 0,
+    pulse: 0,
   },
 };
 
@@ -475,6 +478,7 @@ export function CustomVideoPlayer({
           amount: currentDirection.amount + amount,
           visible: true,
           rotation: currentDirection.rotation + (direction === "forward" ? 360 : -360),
+          pulse: currentDirection.pulse + 1,
         },
       };
     });

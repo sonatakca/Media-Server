@@ -16,7 +16,10 @@ interface HoverPreviewState {
   isVisible: boolean;
   percent: number;
   seconds: number;
+  displaySeconds: number;
 }
+
+
 
 const TRICKPLAY_RESOLUTION = 320;
 const TRICKPLAY_INTERVAL_SECONDS = 10;
@@ -27,6 +30,8 @@ const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
 
 const TRICKPLAY_TILE_WIDTH = 320;
 const TRICKPLAY_TILE_HEIGHT = 132;
+const SEEK_DRAG_THRESHOLD_PX = 6;
+const SEEK_SNAP_INTERVAL_SECONDS = 3;
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -51,6 +56,25 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function getDisplaySeekPoint(seconds: number, duration: number): number {
+  if (!Number.isFinite(seconds) || duration <= 0) {
+    return 0;
+  }
+
+  const safeSeconds = clamp(seconds, 0, duration);
+  const snappedSeconds = Math.floor((safeSeconds + 0.01) / SEEK_SNAP_INTERVAL_SECONDS) * SEEK_SNAP_INTERVAL_SECONDS;
+
+  return clamp(snappedSeconds, 0, duration);
+}
+
+function getSafeSeekTargetSeconds(displaySeconds: number, duration: number): number {
+  if (!Number.isFinite(displaySeconds) || duration <= 0) {
+    return 0;
+  }
+
+  return clamp(displaySeconds, 0, duration);
+}
+
 export function SeekBar({
   currentTime,
   duration,
@@ -63,6 +87,11 @@ export function SeekBar({
   const { t } = useLanguage();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pointerDownSeekStateRef = useRef<HoverPreviewState | null>(null);
+  const pointerStartRef = useRef<{
+    pointerId: number;
+    clientX: number;
+    didPassDragThreshold: boolean;
+  } | null>(null);
 
   const [isSeeking, setIsSeeking] = useState(false);
   const [isTrickplayImageBroken, setIsTrickplayImageBroken] = useState(false);
@@ -71,11 +100,13 @@ export function SeekBar({
     isVisible: false,
     percent: 0,
     seconds: 0,
+    displaySeconds: 0,
   });
 
-  const previewSeconds = isSeeking ? hoverPreview.seconds : currentTime;
+  const previewSeconds = isSeeking ? hoverPreview.displaySeconds : currentTime;
   const progressPercent = duration > 0 ? (previewSeconds / duration) * 100 : 0;
   const bufferedPercent = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
+
 
   const getPointerSeekState = (clientX: number): HoverPreviewState | null => {
     const bounds = rootRef.current?.getBoundingClientRect();
@@ -85,13 +116,16 @@ export function SeekBar({
     }
 
     const rawPercent = ((clientX - bounds.left) / bounds.width) * 100;
-    const percent = clamp(rawPercent, 0, 100);
-    const seconds = (percent / 100) * duration;
+    const rawSeconds = (clamp(rawPercent, 0, 100) / 100) * duration;
+    const displaySeconds = getDisplaySeekPoint(rawSeconds, duration);
+    const seconds = getSafeSeekTargetSeconds(displaySeconds, duration);
+    const percent = duration > 0 ? (displaySeconds / duration) * 100 : 0;
 
     return {
       isVisible: true,
       percent,
       seconds,
+      displaySeconds,
     };
   };
 
@@ -102,7 +136,7 @@ export function SeekBar({
 
     const globalTileIndex = Math.max(
       0,
-      Math.floor(hoverPreview.seconds / TRICKPLAY_INTERVAL_SECONDS),
+      Math.floor(hoverPreview.displaySeconds / TRICKPLAY_INTERVAL_SECONDS),
     );
 
     const sheetIndex = Math.floor(globalTileIndex / TRICKPLAY_IMAGES_PER_SHEET);
@@ -121,7 +155,7 @@ export function SeekBar({
       column,
       row,
     };
-  }, [duration, hoverPreview.isVisible, hoverPreview.seconds, itemId, mediaSourceId]);
+  }, [duration, hoverPreview.displaySeconds, hoverPreview.isVisible, itemId, mediaSourceId]);
 
   const updateHoverPreview = (event: MouseEvent<HTMLDivElement>) => {
     const nextHoverPreview = getPointerSeekState(event.clientX);
@@ -145,13 +179,17 @@ export function SeekBar({
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
 
+    pointerStartRef.current = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      didPassDragThreshold: false,
+    };
     pointerDownSeekStateRef.current = nextSeekState;
 
     setIsSeeking(true);
     setIsTrickplayImageBroken(false);
     setHoverPreview(nextSeekState);
-
-    onSeekPreview?.(nextSeekState.seconds);
+    onSeekPreview?.(nextSeekState.displaySeconds);
   };
 
   const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -169,7 +207,22 @@ export function SeekBar({
     event.stopPropagation();
 
     setHoverPreview(nextSeekState);
-    onSeekPreview?.(nextSeekState.seconds);
+
+    const pointerStart = pointerStartRef.current;
+
+    if (!pointerStart || pointerStart.pointerId !== event.pointerId) {
+      return;
+    }
+
+    const movedDistance = Math.abs(event.clientX - pointerStart.clientX);
+
+    if (!pointerStart.didPassDragThreshold && movedDistance < SEEK_DRAG_THRESHOLD_PX) {
+      return;
+    }
+
+    pointerStart.didPassDragThreshold = true;
+    pointerDownSeekStateRef.current = nextSeekState;
+    onSeekPreview?.(nextSeekState.displaySeconds);
   };
 
   const finishPointerSeek = (event: PointerEvent<HTMLDivElement>) => {
@@ -180,11 +233,15 @@ export function SeekBar({
     event.preventDefault();
     event.stopPropagation();
 
-    const nextSeekState = getPointerSeekState(event.clientX) ?? pointerDownSeekStateRef.current;
+    const pointerStart = pointerStartRef.current;
+    const nextSeekState =
+      pointerStart?.didPassDragThreshold
+        ? getPointerSeekState(event.clientX) ?? pointerDownSeekStateRef.current
+        : pointerDownSeekStateRef.current;
 
     if (nextSeekState) {
       setHoverPreview(nextSeekState);
-      onSeekPreview?.(nextSeekState.seconds);
+      onSeekPreview?.(nextSeekState.displaySeconds);
       onSeek(nextSeekState.seconds);
     }
 
@@ -192,6 +249,17 @@ export function SeekBar({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
+    pointerStartRef.current = null;
+    pointerDownSeekStateRef.current = null;
+    setIsSeeking(false);
+  };
+
+  const cancelPointerSeek = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    pointerStartRef.current = null;
     pointerDownSeekStateRef.current = null;
     setIsSeeking(false);
   };
@@ -219,7 +287,7 @@ export function SeekBar({
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={finishPointerSeek}
-      onPointerCancel={finishPointerSeek}
+      onPointerCancel={cancelPointerSeek}
       role="slider"
       tabIndex={0}
       aria-label={t("player.seek")}
@@ -233,12 +301,14 @@ export function SeekBar({
 
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          onSeek(clamp(currentTime - 10, 0, duration));
+          const displaySeconds = getDisplaySeekPoint(currentTime - 10, duration);
+          onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
 
         if (event.key === "ArrowRight") {
           event.preventDefault();
-          onSeek(clamp(currentTime + 10, 0, duration));
+          const displaySeconds = getDisplaySeekPoint(currentTime + 10, duration);
+          onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
       }}
     >
@@ -273,13 +343,13 @@ export function SeekBar({
               </div>
             ) : (
               <div className="seyirlik-trickplay-preview__fallback">
-                {formatTime(hoverPreview.seconds)}
+                {formatTime(hoverPreview.displaySeconds)}
               </div>
             )}
           </div>
 
           <div className="seyirlik-trickplay-preview__time">
-            {formatTime(hoverPreview.seconds)}
+            {formatTime(hoverPreview.displaySeconds)}
           </div>
 
           <span className="seyirlik-trickplay-preview__pointer" />
