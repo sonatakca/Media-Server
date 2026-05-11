@@ -280,7 +280,7 @@ export function SeekBar({
   return (
     <div
       ref={rootRef}
-      className="relative h-7 w-full cursor-pointer touch-none"
+      className="relative h-5 w-full cursor-pointer touch-none sm:h-7"
       onMouseMove={updateHoverPreview}
       onMouseEnter={updateHoverPreview}
       onMouseLeave={hideHoverPreview}
@@ -356,18 +356,18 @@ export function SeekBar({
         </div>
       ) : null}
 
-      <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
+      <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/20 sm:h-1">
         <div className="h-full bg-white/30" style={{ width: `${bufferedPercent}%` }} />
       </div>
 
       <div
-        className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[var(--accent)]"
+        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)] sm:h-1"
         style={{ width: `${progressPercent}%` }}
       />
 
       {hoverPreview.isVisible && duration > 0 ? (
         <div
-          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--accent)] shadow-[0_0_18px_var(--accent)]"
+          className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--accent)] shadow-[0_0_18px_var(--accent)] sm:h-3 sm:w-3"
           style={{ left: `${hoverPreview.percent}%` }}
         />
       ) : null}

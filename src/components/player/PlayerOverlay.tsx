@@ -81,7 +81,7 @@ export function PlayerOverlay({
   return (
     <>
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black via-black/[0.62] to-transparent px-[max(1rem,env(safe-area-inset-left))] pb-16 pt-[max(1rem,env(safe-area-inset-top))] transition duration-300 ${
+        className={`pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black via-black/[0.52] to-transparent px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
           visible ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         }`}
       >
@@ -94,10 +94,10 @@ export function PlayerOverlay({
         >
           <Link
             to={backTo}
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-12 sm:w-12"
             aria-label={t("player.backToDetails")}
           >
-            <ArrowLeft size={23} />
+            <ArrowLeft className="h-5 w-5 sm:h-[23px] sm:w-[23px]" />
           </Link>
 
           <div className="min-w-0 flex-1">
@@ -195,7 +195,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 h-11 w-20 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.16] text-white shadow-[0_22px_90px_rgba(0,0,0,0.62)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.24] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
+        className={`absolute left-1/2 top-1/2 z-20 flex h-10 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.13] text-white shadow-[0_18px_70px_rgba(0,0,0,0.52)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.22] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
           visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-label={isPlaying ? t("common.pause") : t("common.play")}
@@ -206,16 +206,15 @@ export function PlayerOverlay({
           ) : null}
 
           {isPlaying ? (
-            <Pause size={42} fill="currentColor" />
+            <Pause className="h-7 w-7 sm:h-[42px] sm:w-[42px]" fill="currentColor" />
           ) : (
-            <Play className="ml-1" size={44} fill="currentColor" />
+            <Play className="ml-0.5 h-7 w-7 sm:ml-1 sm:h-[44px] sm:w-[44px]" fill="currentColor" />
           )}
 
           {isPlayPausePending ? (
             <LoaderCircle
-              size={122}
               strokeWidth={1}
-              className="absolute z-[-1] animate-[spin_1.8s_linear_infinite] text-[var(--accent)] drop-shadow-[0_0_10px_rgba(255,153,31,0.35)]"
+              className="absolute z-[-1] h-16 w-16 animate-[spin_1.8s_linear_infinite] text-[var(--accent)] drop-shadow-[0_0_10px_rgba(255,153,31,0.35)] sm:h-[122px] sm:w-[122px]"
             />
           ) : null}
         </span>

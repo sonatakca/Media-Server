@@ -54,13 +54,23 @@
   box-sizing: border-box;
 }
 
-body {
+html,
+body,
+#root {
   min-width: 320px;
-  min-height: 100vh;
+  min-height: 100%;
   margin: 0;
+}
+
+body {
   background: linear-gradient(180deg, #050506 0%, #070708 48%, #050506 100%);
   color: #f8fafc;
   overscroll-behavior-x: none;
+}
+
+body:has(.seyirlik-player-shell) {
+  height: 100dvh;
+  overflow: hidden;
 }
 
 button,
@@ -199,7 +209,10 @@ img {
 
 .seyirlik-player-shell {
   height: 100vh;
+  height: 100svh;
   height: 100dvh;
+  max-height: 100dvh;
+  overflow: hidden;
   overscroll-behavior: none;
   touch-action: manipulation;
 }
@@ -584,8 +597,14 @@ img {
 }
 
 @media (pointer: coarse) and (orientation: landscape) and (max-height: 560px) {
-  .seyirlik-subtitle-overlay {
-    font-size: clamp(0.95rem, 3.2vh, 1.35rem);
+  .seyirlik-player-shell .seyirlik-video {
+    height: 100%;
+    max-height: 100dvh;
+  }
+
+  .seyirlik-player-shell [data-mobile-tight-controls] {
+    padding-top: 1.75rem;
+    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
   }
 }
 

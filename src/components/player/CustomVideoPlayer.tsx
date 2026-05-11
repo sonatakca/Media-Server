@@ -215,6 +215,7 @@ export function CustomVideoPlayer({
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
+  const singleTapTimerRef = useRef<number | null>(null);
   const fullscreenSeekPreviewTokenRef = useRef(0);
   const pendingFullscreenSeekPreviewRef = useRef<{
     token: number;
@@ -966,6 +967,11 @@ export function CustomVideoPlayer({
       clearFullscreenSeekPreviewFallbackTimer();
       clearSeekFeedbackTimers();
 
+      if (singleTapTimerRef.current !== null) {
+        window.clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+
       if (hasStartedRef.current) {
         onPlaybackStopped?.(videoRef.current?.currentTime ?? 0);
       }
@@ -1098,6 +1104,16 @@ export function CustomVideoPlayer({
       return;
     }
 
+    const target = event.target as HTMLElement | null;
+
+    const tappedInteractiveElement = target?.closest(
+      "button, a, input, [role='slider'], [data-player-settings-root], [data-party-watch-root], [data-subtitle-editor-root]",
+    );
+
+    if (tappedInteractiveElement) {
+      return;
+    }
+
     if (event.pointerType !== "touch") {
       return;
     }
@@ -1106,13 +1122,27 @@ export function CustomVideoPlayer({
     const previousTap = lastTapRef.current;
 
     if (previousTap && now - previousTap.time < 320 && Math.abs(previousTap.x - event.clientX) < 70) {
+      if (singleTapTimerRef.current !== null) {
+        window.clearTimeout(singleTapTimerRef.current);
+        singleTapTimerRef.current = null;
+      }
+
       handleDoubleSeek(event.clientX);
       lastTapRef.current = null;
       return;
     }
 
     lastTapRef.current = { time: now, x: event.clientX };
-    showControls();
+
+    singleTapTimerRef.current = window.setTimeout(() => {
+      if (areControlsVisible || controlsShouldStayVisible || !progress.isPlaying) {
+        releaseControlsHover();
+      } else {
+        showControls();
+      }
+
+      singleTapTimerRef.current = null;
+    }, 180);
   };
 
   const getSubtitlePositionFromPoint = useCallback((clientX: number, clientY: number): SubtitlePosition | null => {
@@ -1340,7 +1370,7 @@ export function CustomVideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="seyirlik-player-shell relative h-[100svh] min-h-0 overflow-hidden bg-black text-white sm:min-h-[32rem]"
+      className="seyirlik-player-shell relative h-[100svh] min-h-0 overflow-hidden bg-black text-white lg:min-h-[32rem]"
       onMouseMove={showControls}
       onPointerDown={showControls}
       onPointerUp={handlePointerUp}

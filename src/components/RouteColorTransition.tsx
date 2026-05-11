@@ -324,7 +324,11 @@ export function RouteColorTransition() {
           isLogoVisible ? "scale-100 opacity-100" : "scale-90 opacity-0"
         }`}
       >
-        <img src={logoOnSide} alt="" className="h-64 w-auto" />
+        <img
+          src={logoOnSide}
+          alt=""
+          className="h-auto w-auto max-w-[78vw] md:h-60 md:max-w-none"
+        />
       </div>
     </div>
   );

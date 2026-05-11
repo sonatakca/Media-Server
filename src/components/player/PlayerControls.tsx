@@ -97,7 +97,8 @@ export function PlayerControls({
 
   return (
     <div
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/70 to-transparent px-[max(0.75rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-10 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+      data-mobile-tight-controls
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/55 to-transparent px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-14 ${
         visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >
@@ -119,13 +120,13 @@ export function PlayerControls({
             onSeekPreview={onSeekPreview}
           />
         </div>
-        <div className="mt-2 flex items-center justify-between gap-2 sm:mt-3 sm:gap-3">
+        <div className="mt-1 flex items-center justify-between gap-1 sm:mt-3 sm:gap-3">
           <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
             <button
               type="button"
               onClick={onTogglePlay}
               disabled={playWaiting}
-              className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
+              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
               aria-label={playWaiting ? t("player.waitingForSyncPlay") : isPlaying ? t("common.pause") : t("common.play")}
               title={playWaiting ? t("player.waitingForSyncPlay") : undefined}
             >
@@ -135,9 +136,9 @@ export function PlayerControls({
                   <Play className="ml-0.5 h-3.5 w-3.5 text-black sm:h-4 sm:w-4" fill="currentColor" />
                 </>
               ) : isPlaying ? (
-                <Pause size={24} fill="currentColor" />
+                <Pause className="h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" />
               ) : (
-                <Play size={24} fill="currentColor" />
+                <Play className="h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" />
               )}
             </button>
             <button
@@ -162,7 +163,7 @@ export function PlayerControls({
               onToggleMute={onToggleMute}
               onVolumeChange={onVolumeChange}
             />
-            <div className="ml-1 flex min-w-[5.6rem] items-center gap-2 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:min-w-[7.5rem] sm:text-sm">
+            <div className="ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-[0.68rem] font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
               <span>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
@@ -197,20 +198,20 @@ export function PlayerControls({
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-11 sm:w-11"
                 aria-label={t("player.settingsLabel")}
                 title={t("player.settingsTitle")}
               >
-                <Settings size={21} />
+                <Settings className="h-5 w-5 sm:h-[21px] sm:w-[21px]" />
               </button>
             </div>
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="flex h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-11 sm:w-11"
               aria-label={t("player.fullscreen")}
             >
-              <Maximize size={21} />
+              <Maximize className="h-5 w-5 sm:h-[21px] sm:w-[21px]" />
             </button>
           </div>
         </div>
