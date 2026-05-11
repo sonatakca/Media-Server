@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Loader2, RotateCcw, Smartphone, Users } from "lucide-react";
+import { Loader2, RotateCw, Smartphone, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
@@ -1434,7 +1434,7 @@ export function CustomVideoPlayer({
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]">
               <div className="relative">
                 <Smartphone size={30} />
-                <RotateCcw className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none" size={19} />
+                <RotateCw className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none" size={19} />
               </div>
             </div>
             <h2 className="mt-4 text-xl font-black text-white">{t("player.rotateTitle")}</h2>
