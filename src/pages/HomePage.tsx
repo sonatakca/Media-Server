@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { HeroSection } from "../components/HeroSection";
 import { LibraryTile } from "../components/LibraryTile";
@@ -15,6 +15,9 @@ import { setPageTitle } from "../lib/pageTitle";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
+
+const HERO_ROTATION_INTERVAL_MS = 12000;
+const HERO_POOL_LIMIT = 8;
 
 interface HomeData {
   libraries: JellyfinLibrary[];
@@ -39,8 +42,53 @@ function hasPrimaryImage(item: JellyfinItem): boolean {
   return Boolean(item.ImageTags?.Primary);
 }
 
-function pickFeaturedItem(items: JellyfinItem[]): JellyfinItem | undefined {
-  return items.find(hasBackdrop) ?? items.find(hasPrimaryImage) ?? items[0];
+function removeDuplicateItems(items: JellyfinItem[]): JellyfinItem[] {
+  const seenItemIds = new Set<string>();
+
+  return items.filter((item) => {
+    if (seenItemIds.has(item.Id)) {
+      return false;
+    }
+
+    seenItemIds.add(item.Id);
+    return true;
+  });
+}
+
+function scoreFeaturedItem(item: JellyfinItem): number {
+  let score = 0;
+
+  if (hasBackdrop(item)) {
+    score += 100;
+  } else if (hasPrimaryImage(item)) {
+    score += 50;
+  }
+
+  if (item.ImageTags?.Logo) {
+    score += 20;
+  }
+
+  if (item.Overview?.trim()) {
+    score += 15;
+  }
+
+  if (item.Type === "Movie" || item.Type === "Series") {
+    score += 10;
+  }
+
+  return score;
+}
+
+function buildFeaturedPool(items: JellyfinItem[]): JellyfinItem[] {
+  return removeDuplicateItems(items)
+    .map((item, index) => ({
+      item,
+      index,
+      score: scoreFeaturedItem(item),
+    }))
+    .sort((firstItem, secondItem) => secondItem.score - firstItem.score || firstItem.index - secondItem.index)
+    .slice(0, HERO_POOL_LIMIT)
+    .map(({ item }) => item);
 }
 
 export function HomePage() {
@@ -48,6 +96,13 @@ export function HomePage() {
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const featuredPool = useMemo(
+    () => buildFeaturedPool([...(data?.continueWatching ?? []), ...(data?.latestMedia ?? [])]),
+    [data?.continueWatching, data?.latestMedia],
+  );
+  const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
+  const heroItem = featuredPool[selectedHeroIndex];
 
   useEffect(() => {
     setPageTitle("Seyirlik");
@@ -101,6 +156,24 @@ export function HomePage() {
     };
   }, [t]);
 
+  useEffect(() => {
+    setHeroIndex(0);
+  }, [featuredPool]);
+
+  useEffect(() => {
+    if (featuredPool.length <= 1) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
+    }, HERO_ROTATION_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [featuredPool.length]);
+
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
   }
@@ -109,15 +182,17 @@ export function HomePage() {
     return <HomeSkeleton />;
   }
 
-  const featuredPool =
-    data.continueWatching.length === 1 ? data.continueWatching : [...data.continueWatching, ...data.latestMedia];
-  const heroItem = pickFeaturedItem(featuredPool);
   const showContinueWatchingRow = data.continueWatching.length > 0;
 
   return (
     <div>
       <ConfettiAnimation startDelay={0} pieceCount={200}/>
-      <HeroSection item={heroItem} />
+      <HeroSection
+        item={heroItem}
+        currentIndex={selectedHeroIndex}
+        totalItems={featuredPool.length}
+        onSelectIndex={setHeroIndex}
+      />
 
       {rowWarnings.length > 0 ? (
         <div className="mb-4 space-y-3">
