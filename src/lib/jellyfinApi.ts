@@ -406,6 +406,44 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
   });
 }
 
+export async function getAllVideoItems(): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+  const allItems: JellyfinItem[] = [];
+  const limit = 200;
+  let startIndex = 0;
+  let totalRecordCount = Number.POSITIVE_INFINITY;
+
+  while (startIndex < totalRecordCount) {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
+      params: {
+        userId: session.userId,
+        recursive: true,
+        includeItemTypes: "Movie,Episode",
+        mediaTypes: "Video",
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: false,
+        startIndex,
+        limit,
+      },
+    });
+
+    const items = response.Items ?? [];
+    allItems.push(...items);
+
+    totalRecordCount = response.TotalRecordCount ?? allItems.length;
+
+    if (items.length === 0) {
+      break;
+    }
+
+    startIndex += items.length;
+  }
+
+  return allItems;
+}
+
 function getBrowserDeviceProfile(): Record<string, unknown> {
   return {
     Name: "Seyirlik HTML5",
@@ -1020,6 +1058,47 @@ export async function reportPlaybackStopped(itemId: string, positionTicks: numbe
     body: {
       ItemId: itemId,
       PositionTicks: positionTicks,
+    },
+  });
+}
+
+export async function reportAuditPlaybackStart(source: PlaybackSourceCandidate): Promise<void> {
+  await requestJson<void>("/Sessions/Playing", {
+    method: "POST",
+    body: {
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
+      PositionTicks: 0,
+      CanSeek: true,
+      PlayMethod: source.mode === "Transcoding" ? "Transcode" : source.mode,
+    },
+  });
+}
+
+export async function reportAuditPlaybackProgress(source: PlaybackSourceCandidate): Promise<void> {
+  await requestJson<void>("/Sessions/Playing/Progress", {
+    method: "POST",
+    body: {
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
+      PositionTicks: 0,
+      IsPaused: false,
+      CanSeek: true,
+      PlayMethod: source.mode === "Transcoding" ? "Transcode" : source.mode,
+    },
+  });
+}
+
+export async function reportAuditPlaybackStopped(source: PlaybackSourceCandidate): Promise<void> {
+  await requestJson<void>("/Sessions/Playing/Stopped", {
+    method: "POST",
+    body: {
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
+      PositionTicks: 0,
     },
   });
 }

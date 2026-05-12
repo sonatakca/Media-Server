@@ -14,6 +14,8 @@ import { ItemDetailsPage } from "./pages/ItemDetailsPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
+import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
+import { DevToolsPage } from "./pages/DevToolsPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { setDefaultPageTitle } from "./lib/pageTitle";
 
@@ -142,6 +144,8 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/home" element={<HomePage />} />
+              <Route path="/dev" element={<DevToolsPage />} />
+              <Route path="/dev/playback-audit" element={<PlaybackAuditPage />} />
               <Route path="/library/:libraryId" element={<LibraryPage mode="library" />} />
               <Route path="/series/:seriesId" element={<LibraryPage mode="series" />} />
               <Route path="/series/:seriesId/season/:seasonId" element={<LibraryPage mode="season" />} />

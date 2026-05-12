@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { animate } from "animejs";
 import { useLocation } from "react-router-dom";
 import {
   ACCENT_THEMES,
@@ -7,23 +8,18 @@ import {
   saveAndApplyAccentTheme,
   type AccentTheme,
 } from "../lib/accentTheme";
-import logoOnSide from "../assets/Seyirlik-OnSide-noNeon.png";
+import AppIcon from "../assets/AppIcon.png";
 
 export const ROUTE_COLOR_TRANSITION_FORCE_EVENT = "seyirlik:force-theme-transition";
 
 const ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY = "seyirlik.routeColorTransition.lastSeen";
 const ROUTE_COLOR_TRANSITION_USED_THEMES_KEY = "seyirlik.routeColorTransition.usedThemes";
+const ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY = "seyirlik.routeColorTransition.usedAnims";
 
-// Production:
 const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 60 * 30;
 const ROUTE_COLOR_TRANSITION_REPEAT_CHANCE = 0.50;
 
-// // Testing:
-// const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 10;
-// const ROUTE_COLOR_TRANSITION_REPEAT_CHANCE = 1;
-
 const INITIAL_BLACK_HOLD_MS = 200;
-
 const STEP_MS = 120;
 const NON_SELECTED_BLACK_DELAY_MS = 120;
 const SELECTED_CENTER_SLIDE_MS = 420;
@@ -32,6 +28,17 @@ const SELECTED_HOLD_MS = 420;
 const SELECTED_EXIT_MS = 120;
 const FINAL_BLACK_HOLD_MS = 60;
 const OVERLAY_FADE_OUT_MS = 420;
+
+const ANIMATION_TYPES = [
+  "left-down",
+  "right-down",
+  "center-down",
+  "left-up",
+  "right-up",
+  "center-up",
+] as const;
+
+type AnimationType = typeof ANIMATION_TYPES[number];
 
 type ColourBarState = {
   theme: AccentTheme;
@@ -43,12 +50,10 @@ type ColourBarState = {
 
 function getNextAccentThemeWithoutRepeatingCycle(): AccentTheme {
   const storedUsedThemes = localStorage.getItem(ROUTE_COLOR_TRANSITION_USED_THEMES_KEY);
-
   let usedThemeNames: string[] = [];
 
   try {
     const parsedUsedThemes = storedUsedThemes ? JSON.parse(storedUsedThemes) : [];
-
     if (Array.isArray(parsedUsedThemes)) {
       usedThemeNames = parsedUsedThemes.filter((themeName) => typeof themeName === "string");
     }
@@ -84,6 +89,34 @@ function getNextAccentThemeWithoutRepeatingCycle(): AccentTheme {
   return selectedTheme;
 }
 
+function getNextAnimationTypeWithoutRepeatingCycle(): AnimationType {
+  const storedUsedAnims = localStorage.getItem(ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY);
+  let usedAnimNames: string[] = [];
+
+  try {
+    const parsedUsedAnims = storedUsedAnims ? JSON.parse(storedUsedAnims) : [];
+    if (Array.isArray(parsedUsedAnims)) {
+      usedAnimNames = parsedUsedAnims.filter((animName) => typeof animName === "string");
+    }
+  } catch {
+    usedAnimNames = [];
+  }
+
+  let availableAnims = ANIMATION_TYPES.filter((anim) => !usedAnimNames.includes(anim));
+
+  if (availableAnims.length === 0) {
+    availableAnims = [...ANIMATION_TYPES];
+    usedAnimNames = [];
+  }
+
+  const selectedAnim = availableAnims[Math.floor(Math.random() * availableAnims.length)];
+  const nextUsedAnimNames = [...usedAnimNames, selectedAnim];
+
+  localStorage.setItem(ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY, JSON.stringify(nextUsedAnimNames));
+
+  return selectedAnim;
+}
+
 function getInitialBars(): ColourBarState[] {
   return ACCENT_THEMES.map((theme) => ({
     theme,
@@ -100,10 +133,14 @@ export function RouteColorTransition() {
   const selectedThemeRef = useRef<AccentTheme | null>(null);
   const hasMountedRef = useRef(false);
   const previousPathnameRef = useRef(location.pathname);
+  const overlayRef = useRef<HTMLDivElement | null>(null);
+  const logoRef = useRef<HTMLDivElement | null>(null);
+  const barRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const [isVisible, setIsVisible] = useState(false);
   const [isLeaving, setIsLeaving] = useState(false);
   const [isLogoVisible, setIsLogoVisible] = useState(false);
+  const [animType, setAnimType] = useState<AnimationType>("left-down");
   const [bars, setBars] = useState<ColourBarState[]>(getInitialBars);
 
   const applyStoredThemeIfAvailable = useCallback(() => {
@@ -118,6 +155,10 @@ export function RouteColorTransition() {
   const clearTransitionTimers = useCallback(() => {
     timeoutsRef.current.forEach((timeoutId) => window.clearTimeout(timeoutId));
     timeoutsRef.current = [];
+  }, []);
+
+  const setBarRef = useCallback((element: HTMLDivElement | null, index: number) => {
+    barRefs.current[index] = element;
   }, []);
 
   const playTransition = useCallback(
@@ -139,15 +180,13 @@ export function RouteColorTransition() {
       }
 
       localStorage.setItem(ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY, String(now));
-
       clearTransitionTimers();
 
-      // IMPORTANT:
-      // If the animation is playing, always pick a NEW theme.
-      // Do not reuse selectedThemeRef.current here.
       const finalTheme = getNextAccentThemeWithoutRepeatingCycle();
-
+      const nextAnim = getNextAnimationTypeWithoutRepeatingCycle();
+      
       selectedThemeRef.current = finalTheme;
+      setAnimType(nextAnim);
 
       const selectedIndex = ACCENT_THEMES.findIndex((theme) => theme.name === finalTheme.name);
       const safeSelectedIndex = selectedIndex >= 0 ? selectedIndex : ACCENT_THEMES.length - 1;
@@ -159,7 +198,11 @@ export function RouteColorTransition() {
       setIsLogoVisible(false);
       setBars(getInitialBars());
 
+      const isUp = nextAnim.endsWith("-up");
+
       ACCENT_THEMES.forEach((_theme, index) => {
+        const delayIndex = isUp ? ACCENT_THEMES.length - 1 - index : index;
+
         const timeoutId = window.setTimeout(() => {
           setBars((currentBars) =>
             currentBars.map((bar, barIndex) =>
@@ -172,7 +215,7 @@ export function RouteColorTransition() {
                 : bar,
             ),
           );
-        }, INITIAL_BLACK_HOLD_MS + index * STEP_MS);
+        }, INITIAL_BLACK_HOLD_MS + delayIndex * STEP_MS);
 
         timeoutsRef.current.push(timeoutId);
       });
@@ -282,37 +325,95 @@ export function RouteColorTransition() {
     };
   }, [playTransition]);
 
+  useEffect(() => {
+    const overlay = overlayRef.current;
+
+    if (!overlay) {
+      return;
+    }
+
+    animate(overlay, {
+      opacity: isLeaving ? 0 : 1,
+      duration: isLeaving ? OVERLAY_FADE_OUT_MS : 160,
+      ease: isLeaving ? "inOut(2)" : "out(2)",
+    });
+  }, [isLeaving, isVisible]);
+
+  useEffect(() => {
+    const logo = logoRef.current;
+
+    if (!logo) {
+      return;
+    }
+
+    animate(logo, {
+      opacity: isLogoVisible ? 1 : 0,
+      scale: isLogoVisible ? 1 : 0.88,
+      duration: isLogoVisible ? 650 : 180,
+      ease: isLogoVisible ? "out(4)" : "in(2)",
+    });
+  }, [isLogoVisible]);
+
+  useEffect(() => {
+    const sizePct = 100 / ACCENT_THEMES.length;
+    const selectedSize = 32;
+
+    bars.forEach((bar, index) => {
+      const element = barRefs.current[index];
+
+      if (!element) {
+        return;
+      }
+
+      const normalPos = index * sizePct;
+      const selectedPos = 50 - selectedSize / 2;
+      const isSelected = bar.isSelectedCentering || bar.isSelectedExiting;
+
+      animate(element, {
+        top: `${isSelected ? selectedPos : normalPos}%`,
+        height: `${isSelected ? selectedSize : sizePct}%`,
+        scaleX: bar.isVisible ? 1 : 0,
+        backgroundColor: bar.isVisible && !bar.isBlack ? bar.theme.accent : "#000000",
+        duration: isSelected ? SELECTED_CENTER_SLIDE_MS : STEP_MS + 160,
+        ease: isSelected ? "out(4)" : "out(3)",
+      });
+    });
+  }, [bars]);
+
   if (!isVisible) {
     return null;
   }
 
-  const barHeight = 100 / ACCENT_THEMES.length;
-  const selectedHeight = 32;
+  const sizePct = 100 / ACCENT_THEMES.length;
+  
+  const transformOrigin = 
+    animType.startsWith("left") ? "left center" :
+    animType.startsWith("right") ? "right center" :
+    "center center";
 
   return (
     <div
-      className={`fixed inset-0 z-[9999] overflow-hidden bg-black transition-opacity duration-[420ms] ${
-        isLeaving ? "pointer-events-none opacity-0" : "opacity-100"
-      }`}
+      ref={overlayRef}
+      className="fixed inset-0 z-[9999] overflow-hidden bg-black opacity-0"
+      style={{ pointerEvents: isLeaving ? "none" : "auto" }}
       aria-hidden="true"
     >
       {bars.map((bar, index) => {
-        const normalTop = index * barHeight;
-        const selectedTop = 50 - selectedHeight / 2;
+        const normalPos = index * sizePct;
 
         return (
           <div
             key={bar.theme.name}
-            className={`absolute left-0 right-0 ${
-              bar.isSelectedCentering || bar.isSelectedExiting
-                ? "transition-[top,height,background-color] duration-[520ms] ease-[cubic-bezier(0.22,1,0.36,1)]"
-                : "transition-none"
-            }`}
+            ref={(element) => setBarRef(element, index)}
+            className="absolute"
             style={{
-              top: bar.isSelectedCentering ? `${selectedTop}%` : `${normalTop}%`,
-              height: bar.isSelectedCentering ? `${selectedHeight}%` : `${barHeight}%`,
-              backgroundColor: bar.isVisible && !bar.isBlack ? bar.theme.accent : "#000000",
-              transformOrigin: "center center",
+              top: `${normalPos}%`,
+              height: `${sizePct}%`,
+              left: "0%",
+              width: "100%",
+              backgroundColor: "#000000",
+              transformOrigin,
+              transform: "scaleX(0)",
               zIndex: bar.isSelectedCentering || bar.isSelectedExiting ? 5 : 1,
             }}
           />
@@ -320,15 +421,21 @@ export function RouteColorTransition() {
       })}
 
       <div
-        className={`absolute inset-0 z-10 flex items-center justify-center transition-[opacity,transform] duration-[650ms] ease-[cubic-bezier(0.22,1,0.36,1)] ${
-          isLogoVisible ? "scale-100 opacity-100" : "scale-90 opacity-0"
-        }`}
+        ref={logoRef}
+        className="absolute inset-0 z-10 flex items-center justify-center opacity-0"
+        style={{ transform: "scale(0.88)" }}
       >
-        <img
-          src={logoOnSide}
-          alt=""
-          className="h-auto w-auto max-w-[78vw] md:h-60 md:max-w-none"
-        />
+        <div className="relative flex h-32 w-32 items-center justify-center md:h-64 md:w-64">
+          <div className="absolute inset-0 rounded-[2rem] bg-white/20 blur-2xl" />
+
+          <div className="absolute inset-5 rounded-[2rem] bg-black/50" />
+
+          <img
+            src={AppIcon}
+            alt=""
+            className="relative z-10 h-24 w-24 rounded-[1.5rem] object-cover shadow-2xl md:h-48 md:w-48"
+          />
+        </div>
       </div>
     </div>
   );

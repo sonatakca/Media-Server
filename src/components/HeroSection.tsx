@@ -57,6 +57,7 @@ export function HeroSection({ item }: HeroSectionProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
+  const [heroImageLoaded, setHeroImageLoaded] = useState(false);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const mediaFormatLabels = useMemo(
     () => ({
@@ -84,10 +85,15 @@ export function HeroSection({ item }: HeroSectionProps) {
   const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
   const canPlay = item?.Type === "Movie" || item?.Type === "Episode" || item?.MediaType === "Video";
   const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
+  const heroContentVisible = !selectedImage || heroImageLoaded;
 
   useEffect(() => {
     setFailedImageUrls([]);
   }, [item?.Id]);
+
+  useEffect(() => {
+    setHeroImageLoaded(false);
+  }, [selectedImage?.url]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !item) {
@@ -112,14 +118,25 @@ export function HeroSection({ item }: HeroSectionProps) {
     <section className="relative -mx-4 -mt-6 mb-0 h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:h-[68svh] lg:-mx-8 lg:h-[72svh]">
       {selectedImage ? (
         <motion.img
+          key={selectedImage.url}
           src={selectedImage.url}
           alt=""
           className={`absolute inset-0 z-0 h-full w-full object-cover ${
-            selectedImage.type === "primary" ? "blur-2xl opacity-[0.52]" : "opacity-[0.78]"
+            selectedImage.type === "primary" ? "blur-2xl" : ""
           }`}
-          initial={shouldReduceMotion ? false : { scale: selectedImage.type === "primary" ? 1.13 : 1.04, opacity: 0.45 }}
-          animate={shouldReduceMotion ? undefined : { scale: selectedImage.type === "primary" ? 1.1 : 1, opacity: selectedImage.type === "primary" ? 0.52 : 0.78 }}
-          transition={{ duration: 0.62, ease: easeOut }}
+          initial={false}
+          animate={{
+            opacity: heroImageLoaded ? (selectedImage.type === "primary" ? 0.52 : 0.78) : 0,
+            scale: heroImageLoaded
+              ? selectedImage.type === "primary"
+                ? 1.1
+                : 1
+              : selectedImage.type === "primary"
+                ? 1.13
+                : 1.04,
+          }}
+          transition={{ duration: shouldReduceMotion ? 0 : 1.15, ease: easeOut }}
+          onLoad={() => setHeroImageLoaded(true)}
           onError={() => handleImageError(selectedImage.url)}
         />
       ) : (
@@ -133,9 +150,13 @@ export function HeroSection({ item }: HeroSectionProps) {
         {showSidePoster ? (
           <motion.div
             className="pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-[0_30px_130px_rgba(0,0,0,0.65)] lg:block"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
-            transition={{ duration: 0.36, delay: 0.08, ease: easeOut }}
+            initial={false}
+            animate={{
+              opacity: heroContentVisible ? 1 : 0,
+              y: heroContentVisible ? 0 : 18,
+              scale: heroContentVisible ? 1 : 0.985,
+            }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.55, delay: shouldReduceMotion ? 0 : 0.12, ease: easeOut }}
           >
             <img
               src={primaryPosterUrl}
@@ -147,11 +168,16 @@ export function HeroSection({ item }: HeroSectionProps) {
         ) : null}
         <motion.div
           className="max-w-3xl"
-          initial={shouldReduceMotion ? false : { opacity: 0, y: 18 }}
-          animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
-          transition={{ duration: 0.38, delay: 0.04, ease: easeOut }}
+          initial={false}
+          animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 18 }}
+          transition={{ duration: shouldReduceMotion ? 0 : 0.62, delay: shouldReduceMotion ? 0 : 0.12, ease: easeOut }}
         >
-          <div className="mb-4 inline-flex items-center gap-3 rounded-full border border-[var(--accent-strong)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white backdrop-blur">
+          <motion.div
+            className="mb-4 inline-flex items-center gap-3 rounded-full border border-[var(--accent-strong)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-bold uppercase tracking-[0.2em] text-white backdrop-blur"
+            initial={false}
+            animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.48, delay: shouldReduceMotion ? 0 : 0.16, ease: easeOut }}
+          >
             <img src={appIcon} alt="" className="h-6 w-6 rounded-md object-cover" />
             <span className="inline-flex items-center gap-2">
               <Sparkles size={14} />
@@ -159,21 +185,44 @@ export function HeroSection({ item }: HeroSectionProps) {
                 <AnimatedText value={item ? t("hero.nowStreaming") : t("hero.featured")} />
               </AnimatedWidth>
             </span>
-          </div>
+          </motion.div>
           {logoUrl ? (
-            <img
+            <motion.img
               src={logoUrl}
               alt={title}
-              className="max-h-36 max-w-[min(42rem,92vw)] object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+              draggable={false}
+              className="max-h-36 max-w-[min(42rem,92vw)] select-none object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 14, scale: heroContentVisible ? 1 : 0.985 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.58, delay: shouldReduceMotion ? 0 : 0.22, ease: easeOut }}
             />
           ) : (
-            <h1 className="max-w-3xl text-5xl font-black leading-[0.95] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl">
+            <motion.h1
+              className="max-w-3xl text-5xl font-black leading-[0.95] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 14, scale: heroContentVisible ? 1 : 0.985 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.58, delay: shouldReduceMotion ? 0 : 0.22, ease: easeOut }}
+            >
               {title}
-            </h1>
+            </motion.h1>
           )}
-          {subtitle ? <p className="mt-4 text-lg font-semibold text-white/[0.78]">{subtitle}</p> : null}
+          {subtitle ? (
+            <motion.p
+              className="mt-4 text-lg font-semibold text-white/[0.78]"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.28, ease: easeOut }}
+            >
+              {subtitle}
+            </motion.p>
+          ) : null}
           {metadata.length > 0 ? (
-            <div className="mt-5 flex flex-wrap gap-2">
+            <motion.div
+              className="mt-5 flex flex-wrap gap-2"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.34, ease: easeOut }}
+            >
               {metadata.map((value) => (
                 <span
                   key={String(value)}
@@ -190,18 +239,33 @@ export function HeroSection({ item }: HeroSectionProps) {
                   {genre}
                 </span>
               ))}
-            </div>
+            </motion.div>
           ) : null}
           {item?.Overview ? (
-            <p className="mt-5 line-clamp-3 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg">
+            <motion.p
+              className="mt-5 line-clamp-3 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.4, ease: easeOut }}
+            >
               {item.Overview}
-            </p>
+            </motion.p>
           ) : (
-            <p className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg">
+            <motion.p
+              className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+              initial={false}
+              animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.4, ease: easeOut }}
+            >
               {t("hero.fallbackDescription")}
-            </p>
+            </motion.p>
           )}
-          <div className="mt-7 flex flex-wrap gap-3">
+          <motion.div
+            className="mt-7 flex flex-wrap gap-3"
+            initial={false}
+            animate={{ opacity: heroContentVisible ? 1 : 0, y: heroContentVisible ? 0 : 10 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.46, ease: easeOut }}
+          >
             {item ? (
               <>
                 {canPlay ? (
@@ -220,7 +284,7 @@ export function HeroSection({ item }: HeroSectionProps) {
                 </ButtonLink>
               </>
             ) : null}
-          </div>
+          </motion.div>
         </motion.div>
       </div>
     </section>

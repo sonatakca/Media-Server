@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { Home, LogOut, Palette, Server, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
@@ -16,6 +16,8 @@ export function Navbar() {
   const { t } = useLanguage();
   const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
+  const devClickCountRef = useRef(0);
+  const devClickTimerRef = useRef<number | null>(null);
 
   const handleLogout = () => {
     clearAuthSession();
@@ -26,18 +28,43 @@ export function Navbar() {
     window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
   };
 
+  const handleBrandEasterEggClick = () => {
+    devClickCountRef.current += 1;
+
+    if (devClickTimerRef.current !== null) {
+      window.clearTimeout(devClickTimerRef.current);
+    }
+
+    devClickTimerRef.current = window.setTimeout(() => {
+      devClickCountRef.current = 0;
+      devClickTimerRef.current = null;
+    }, 1400);
+
+    if (devClickCountRef.current >= 5) {
+      devClickCountRef.current = 0;
+
+      if (devClickTimerRef.current !== null) {
+        window.clearTimeout(devClickTimerRef.current);
+        devClickTimerRef.current = null;
+      }
+
+      navigate("/dev");
+    }
+  };
+
   return (
-    <header className="sticky top-0 z-40 border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl">
+    <header className="sticky top-0 z-40 select-none border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl [-webkit-tap-highlight-color:transparent]">
       <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label={t("nav.brandHome")}>
           {!iconFailed ? (
-            <img src={appIcon} alt="" className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-xl md:hidden" onError={() => setIconFailed(true)} />
+            <img src={appIcon} alt="" draggable={false} className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-xl md:hidden" onError={() => setIconFailed(true)} />
           ) : null}
           {!desktopLogoFailed ? (
             <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex">
               <img
                 src={logoOnSide}
                 alt="Seyirlik"
+                draggable={false}
                 className="h-11 w-full object-contain object-left"
                 onError={() => setDesktopLogoFailed(true)}
               />
@@ -105,7 +132,7 @@ export function Navbar() {
           <LanguageSwitch />
           {session ? (
             <>
-              <div className="hidden min-w-32 items-center gap-2 rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white/[0.82] lg:flex">
+              <div onClick={handleBrandEasterEggClick} className="hidden min-w-32 cursor-default select-none items-center gap-2 rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white/[0.82] lg:flex [-webkit-tap-highlight-color:transparent]">
                 <UserRound size={16} className="shrink-0" />
                 <span className="max-w-36 truncate">{session.username}</span>
               </div>
