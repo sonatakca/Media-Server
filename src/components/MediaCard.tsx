@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Play } from "lucide-react";
+import { Play, RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
@@ -15,6 +15,7 @@ interface MediaCardProps {
   layout?: "row" | "grid";
   index?: number;
   animateIn?: boolean;
+  showPlayFromBeginning?: boolean;
 }
 
 function getProgressPercent(item: JellyfinItem): number | null {
@@ -98,7 +99,15 @@ function getCountLabel(item: JellyfinItem, t: (key: TranslationKey) => string): 
   return null;
 }
 
-export function MediaCard({ item, to, variant = "poster", layout = "row", index = 0, animateIn = false }: MediaCardProps) {
+export function MediaCard({
+  item,
+  to,
+  variant = "poster",
+  layout = "row",
+  index = 0,
+  animateIn = false,
+  showPlayFromBeginning = false,
+}: MediaCardProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const mediaFormatLabels = {
@@ -176,13 +185,26 @@ export function MediaCard({ item, to, variant = "poster", layout = "row", index 
           <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-65 transition group-hover:opacity-90 group-focus-within:opacity-90" />
 
           {canPlay ? (
-            <Link
-              to={`/watch/${item.Id}`}
-              aria-label={`${t("common.play")} ${title}`}
-              className="absolute bottom-3 right-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
-            >
-              <Play size={18} fill="currentColor" />
-            </Link>
+            <>
+              <Link
+                to={`/watch/${item.Id}`}
+                aria-label={`${t("common.play")} ${title}`}
+                className="absolute bottom-3 right-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+              >
+                <Play size={18} fill="currentColor" />
+              </Link>
+
+              {showPlayFromBeginning && progressPercent !== null ? (
+                <Link
+                  to={`/watch/${item.Id}?start=0`}
+                  aria-label={`Play ${title} from beginning`}
+                  title="Play from beginning"
+                  className="absolute bottom-3 left-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-xl backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/14 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                >
+                  <RotateCcw size={17} />
+                </Link>
+              ) : null}
+            </>
           ) : null}
 
           {progressPercent !== null ? (

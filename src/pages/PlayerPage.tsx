@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { CustomVideoPlayer } from "../components/player/CustomVideoPlayer";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -11,6 +11,7 @@ import {
   reportPlaybackProgress,
   reportPlaybackStart,
   reportPlaybackStopped,
+  reportPlaybackStoppedBeforeUnload,
   ticksFromSeconds,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
@@ -21,6 +22,7 @@ import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 
 export function PlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
+  const [searchParams] = useSearchParams();
   const { t } = useLanguage();
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
@@ -89,35 +91,60 @@ export function PlayerPage() {
 
   const handlePlaybackStarted = useCallback(
     (positionSeconds: number) => {
-      if (!itemId) {
+      const source = playback.activeSource;
+
+      if (!source) {
         return;
       }
 
-      void reportPlaybackStart(itemId, ticksFromSeconds(positionSeconds)).catch(() => undefined);
+      void reportPlaybackStart(source, ticksFromSeconds(positionSeconds)).catch((error) => {
+        console.warn("[Seyirlik Playback] Could not report playback start", error);
+      });
     },
-    [itemId],
+    [playback.activeSource],
   );
 
   const handlePlaybackProgress = useCallback(
     (positionSeconds: number, isPaused: boolean) => {
-      if (!itemId) {
+      const source = playback.activeSource;
+
+      if (!source) {
         return;
       }
 
-      void reportPlaybackProgress(itemId, ticksFromSeconds(positionSeconds), isPaused).catch(() => undefined);
+      void reportPlaybackProgress(source, ticksFromSeconds(positionSeconds), isPaused).catch((error) => {
+        console.warn("[Seyirlik Playback] Could not report playback progress", error);
+      });
     },
-    [itemId],
+    [playback.activeSource],
   );
 
   const handlePlaybackStopped = useCallback(
     (positionSeconds: number) => {
-      if (!itemId) {
+      const source = playback.activeSource;
+
+      if (!source) {
         return;
       }
 
-      void reportPlaybackStopped(itemId, ticksFromSeconds(positionSeconds)).catch(() => undefined);
+      void reportPlaybackStopped(source, ticksFromSeconds(positionSeconds)).catch((error) => {
+        console.warn("[Seyirlik Playback] Could not report playback stopped", error);
+      });
     },
-    [itemId],
+    [playback.activeSource],
+  );
+
+  const handlePlaybackBeforeUnload = useCallback(
+    (positionSeconds: number) => {
+      const source = playback.activeSource;
+
+      if (!source) {
+        return;
+      }
+
+      reportPlaybackStoppedBeforeUnload(source, ticksFromSeconds(positionSeconds));
+    },
+    [playback.activeSource],
   );
 
   if (itemError) {
@@ -165,6 +192,14 @@ export function PlayerPage() {
     );
   }
 
+  const shouldStartFromBeginning = searchParams.get("start") === "0";
+  const savedPlaybackSeconds =
+    typeof item.UserData?.PlaybackPositionTicks === "number"
+      ? item.UserData.PlaybackPositionTicks / 10_000_000
+      : 0;
+
+  const initialStartSeconds = shouldStartFromBeginning ? 0 : savedPlaybackSeconds;
+
   return (
     <>
     <RainbowAnimation startDelay={1} fadeInDuration={2} height="min(30rem, 45vh)" glowTop="10"/>
@@ -178,10 +213,12 @@ export function PlayerPage() {
       onVideoFailure={playback.handleVideoFailure}
       onTryTranscodedPlayback={playback.tryTranscodedPlayback}
       onRetryPlayback={playback.retry}
+      initialStartSeconds={initialStartSeconds}
       onPlaybackStarted={handlePlaybackStarted}
       onPlaybackProgress={handlePlaybackProgress}
       onPlaybackStopped={handlePlaybackStopped}
-      />
+      onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
+    />
       </>
   );
 }

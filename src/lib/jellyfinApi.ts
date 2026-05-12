@@ -12,6 +12,7 @@ import type {
   JellyfinLibrary,
   JellyfinMediaSource,
   JellyfinMediaStream,
+  JellyfinMetadataRefreshOptions,
   JellyfinPlaybackInfoResponse,
   JellyfinPublicSystemInfo,
   JellyfinSessionInfo,
@@ -33,6 +34,7 @@ interface RequestOptions {
   auth?: boolean;
   deviceAuth?: boolean;
   serverUrlOverride?: string;
+  keepalive?: boolean;
 }
 
 const DEFAULT_ITEM_FIELDS = [
@@ -173,6 +175,7 @@ async function requestJson<TResponse>(
     auth = true,
     deviceAuth = false,
     serverUrlOverride,
+    keepalive = false,
   }: RequestOptions = {},
 ): Promise<TResponse> {
   const serverUrl = serverUrlOverride ? normalizeServerUrl(serverUrlOverride) : getServerUrl();
@@ -208,6 +211,7 @@ async function requestJson<TResponse>(
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
+    keepalive,
   });
 
   if (!response.ok) {
@@ -442,6 +446,48 @@ export async function getAllVideoItems(): Promise<JellyfinItem[]> {
   }
 
   return allItems;
+}
+
+export async function scanAllLibraries(): Promise<void> {
+  await requestJson<void>("/Library/Refresh", {
+    method: "POST",
+  });
+}
+
+export async function refreshLibraryMetadata(libraryId: string): Promise<void> {
+  await requestJson<void>(`/Items/${encodeURIComponent(libraryId)}/Refresh`, {
+    method: "POST",
+    params: {
+      recursive: true,
+      metadataRefreshMode: "Default",
+      imageRefreshMode: "Default",
+      replaceAllMetadata: false,
+      replaceAllImages: false,
+    },
+  });
+}
+
+export async function refreshItemMetadata(
+  itemId: string,
+  options: JellyfinMetadataRefreshOptions = {},
+): Promise<void> {
+  await requestJson<void>(`/Items/${encodeURIComponent(itemId)}/Refresh`, {
+    method: "POST",
+    params: {
+      recursive: true,
+      metadataRefreshMode: options.metadataRefreshMode ?? "Default",
+      imageRefreshMode: options.imageRefreshMode ?? "Default",
+      replaceAllMetadata: options.replaceAllMetadata ?? false,
+      replaceAllImages: options.replaceAllImages ?? false,
+    },
+  });
+}
+
+export async function updateItemMetadata(itemId: string, item: JellyfinItem): Promise<void> {
+  await requestJson<void>(`/Items/${encodeURIComponent(itemId)}`, {
+    method: "POST",
+    body: item,
+  });
 }
 
 function getBrowserDeviceProfile(): Record<string, unknown> {
@@ -685,24 +731,51 @@ function buildMasterHlsUrl(
 ): string {
   const session = requireAuthSession();
 
-  return buildJellyfinUrl(session.serverUrl, `/Videos/${encodeURIComponent(itemId)}/master.m3u8`, {
-    mediaSourceId: mediaSource.Id,
-    playSessionId,
-    deviceId: session.deviceId,
-    audioStreamIndex: settings.audioStreamIndex,
-    videoCodec: "h264",
-    audioCodec: "aac",
-    maxStreamingBitrate: settings.maxStreamingBitrate ?? MAX_STREAMING_BITRATE,
-    maxWidth: settings.maxWidth,
-    maxHeight: settings.maxHeight,
-    transcodingMaxAudioChannels: 6,
-    segmentContainer: "ts",
-    minSegments: 1,
-    segmentLength: 6,
-    enableAutoStreamCopy: false,
-    allowVideoStreamCopy: false,
-    allowAudioStreamCopy: false,
-    enableAdaptiveBitrateStreaming: true,
+  const isManualQuality =
+    settings.maxHeight !== undefined ||
+    settings.maxWidth !== undefined ||
+    settings.maxStreamingBitrate !== undefined;
+
+  const audioBitrate = 640_000;
+  const totalBitrate = settings.maxStreamingBitrate ?? MAX_STREAMING_BITRATE;
+  const videoBitrate = Math.max(1_000_000, totalBitrate - audioBitrate);
+
+  const path = isManualQuality
+    ? `/Videos/${encodeURIComponent(itemId)}/main.m3u8`
+    : `/Videos/${encodeURIComponent(itemId)}/master.m3u8`;
+
+  return buildJellyfinUrl(session.serverUrl, path, {
+    MediaSourceId: mediaSource.Id,
+    PlaySessionId: playSessionId,
+    DeviceId: session.deviceId,
+
+    AudioStreamIndex: settings.audioStreamIndex,
+
+    VideoCodec: "h264",
+    AudioCodec: "aac",
+
+    MaxStreamingBitrate: totalBitrate,
+    VideoBitrate: isManualQuality ? videoBitrate : undefined,
+    AudioBitrate: isManualQuality ? audioBitrate : undefined,
+
+    MaxWidth: settings.maxWidth,
+    MaxHeight: settings.maxHeight,
+
+    TranscodingMaxAudioChannels: 6,
+    SegmentContainer: "ts",
+    MinSegments: 1,
+    SegmentLength: 6,
+    BreakOnNonKeyFrames: true,
+
+    EnableAutoStreamCopy: false,
+    AllowVideoStreamCopy: false,
+    AllowAudioStreamCopy: false,
+
+    // Auto uses the master playlist. Manual quality uses main.m3u8 so Jellyfin
+    // receives one explicit height/bitrate target instead of an adaptive ladder
+    // that can silently stay on a low level.
+    EnableAdaptiveBitrateStreaming: !isManualQuality,
+
     api_key: session.accessToken,
   });
 }
@@ -795,17 +868,17 @@ export function getManualQualityOptions(mediaSource: JellyfinMediaSource): Playb
   const qualityPresets: Array<Omit<PlaybackQualityOption, "id">> = [
     {
       label: "4K",
-      subtitle: "HLS · up to 80 Mbps",
+      subtitle: "HLS · up to 120 Mbps",
       maxHeight: 2160,
       maxWidth: 3840,
-      maxStreamingBitrate: 80_000_000,
+      maxStreamingBitrate: MAX_STREAMING_BITRATE,
     },
     {
       label: "1080p",
-      subtitle: "HLS · up to 20 Mbps",
+      subtitle: "HLS · up to 35 Mbps",
       maxHeight: 1080,
       maxWidth: 1920,
-      maxStreamingBitrate: 20_000_000,
+      maxStreamingBitrate: 35_000_000,
     },
     {
       label: "720p",
@@ -1021,45 +1094,100 @@ export function ticksFromSeconds(seconds: number): number {
   return Math.max(0, Math.floor(seconds * 10_000_000));
 }
 
-export async function reportPlaybackStart(itemId: string, positionTicks = 0): Promise<void> {
-  // Basic progress reporting only. TODO: pair this with PlaybackInfo play sessions later.
+function getPlayMethod(source: PlaybackSourceCandidate): PlaybackMode | "Transcode" {
+  return source.mode === "Transcoding" ? "Transcode" : source.mode;
+}
+
+export async function reportPlaybackStart(
+  source: PlaybackSourceCandidate,
+  positionTicks = 0,
+): Promise<void> {
   await requestJson<void>("/Sessions/Playing", {
     method: "POST",
     body: {
-      ItemId: itemId,
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
       PositionTicks: positionTicks,
       CanSeek: true,
-      PlayMethod: "DirectStream",
+      PlayMethod: getPlayMethod(source),
     },
   });
 }
 
 export async function reportPlaybackProgress(
-  itemId: string,
+  source: PlaybackSourceCandidate,
   positionTicks: number,
   isPaused: boolean,
 ): Promise<void> {
-  // Basic progress reporting only. TODO: include media source and play session ids later.
   await requestJson<void>("/Sessions/Playing/Progress", {
     method: "POST",
     body: {
-      ItemId: itemId,
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
       PositionTicks: positionTicks,
       IsPaused: isPaused,
       CanSeek: true,
-      PlayMethod: "DirectStream",
+      PlayMethod: getPlayMethod(source),
     },
   });
 }
 
-export async function reportPlaybackStopped(itemId: string, positionTicks: number): Promise<void> {
+export async function reportPlaybackStopped(
+  source: PlaybackSourceCandidate,
+  positionTicks: number,
+): Promise<void> {
   await requestJson<void>("/Sessions/Playing/Stopped", {
     method: "POST",
     body: {
-      ItemId: itemId,
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
       PositionTicks: positionTicks,
     },
   });
+}
+
+export function reportPlaybackStoppedBeforeUnload(
+  source: PlaybackSourceCandidate,
+  positionTicks: number,
+): void {
+  try {
+    const serverUrl = getServerUrl();
+
+    if (!serverUrl) {
+      return;
+    }
+
+    const authHeaders = getAuthHeaders();
+
+    if (!authHeaders["X-Emby-Token"]) {
+      return;
+    }
+
+    const url = buildJellyfinUrl(serverUrl, "/Sessions/Playing/Stopped");
+
+    const body = JSON.stringify({
+      ItemId: source.itemId,
+      MediaSourceId: source.mediaSourceId,
+      PlaySessionId: source.playSessionId,
+      PositionTicks: positionTicks,
+    });
+
+    void fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        ...authHeaders,
+      },
+      body,
+      keepalive: true,
+    }).catch(() => undefined);
+  } catch {
+    // Browser is closing/navigating away. There is no safe recovery here.
+  }
 }
 
 export async function reportAuditPlaybackStart(source: PlaybackSourceCandidate): Promise<void> {

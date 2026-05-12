@@ -40,12 +40,14 @@ interface CustomVideoPlayerProps {
   notice?: string | null;
   error?: PlaybackTechnicalDetails | null;
   hasTranscodingFallback: boolean;
+  initialStartSeconds?: number;
   onVideoFailure: (details: string) => void;
   onTryTranscodedPlayback: () => void;
   onRetryPlayback: () => void;
   onPlaybackStarted?: (positionSeconds: number) => void;
   onPlaybackProgress?: (positionSeconds: number, isPaused: boolean) => void;
   onPlaybackStopped?: (positionSeconds: number) => void;
+  onPlaybackBeforeUnload?: (positionSeconds: number) => void;
 }
 
 interface PendingSourceRestore {
@@ -187,6 +189,19 @@ function decodeCueText(rawText: string): string {
   return textarea.value.trim();
 }
 
+function disableNativeVideoTextTracks(video: HTMLVideoElement): void {
+  for (let index = 0; index < video.textTracks.length; index += 1) {
+    const track = video.textTracks[index];
+
+    // Only our custom injected track is allowed to stay hidden for reading cues.
+    // Everything else must be disabled so Safari/Chrome cannot render embedded subtitles.
+    const isSeyirlikTrack = Array.from(video.querySelectorAll<HTMLTrackElement>("track[data-seyirlik-subtitle]"))
+      .some((trackElement) => trackElement.track === track);
+
+    track.mode = isSeyirlikTrack ? "hidden" : "disabled";
+  }
+}
+
 export function CustomVideoPlayer({
   item,
   source,
@@ -194,12 +209,14 @@ export function CustomVideoPlayer({
   notice,
   error,
   hasTranscodingFallback,
+  initialStartSeconds = 0,
   onVideoFailure,
   onTryTranscodedPlayback,
   onRetryPlayback,
   onPlaybackStarted,
   onPlaybackProgress,
   onPlaybackStopped,
+  onPlaybackBeforeUnload,
 }: CustomVideoPlayerProps) {
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -208,7 +225,10 @@ export function CustomVideoPlayer({
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
   const lastTapRef = useRef<{ time: number; x: number } | null>(null);
   const lastProgressReportRef = useRef(0);
+  const latestPlaybackPositionRef = useRef(0);
   const hasStartedRef = useRef(false);
+  const hasReportedStoppedRef = useRef(false);
+  const hasAppliedInitialStartRef = useRef(false);
   const sourceSwitchTokenRef = useRef(0);
   const pendingSourceRestoreRef = useRef<PendingSourceRestore | null>(null);
   const subtitleOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -276,6 +296,36 @@ export function CustomVideoPlayer({
   const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
   const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] = useState<number | null>(null);
   const [seekFeedback, setSeekFeedback] = useState<SeekFeedbackState>(initialSeekFeedback);
+
+  const updateLatestPlaybackPosition = useCallback(() => {
+    const currentTime = videoRef.current?.currentTime ?? latestPlaybackPositionRef.current;
+
+    if (Number.isFinite(currentTime)) {
+      latestPlaybackPositionRef.current = currentTime;
+    }
+
+    return latestPlaybackPositionRef.current;
+  }, []);
+
+  const reportStoppedOnce = useCallback(
+    (useUnloadSafeReport = false) => {
+      const positionSeconds = updateLatestPlaybackPosition();
+
+      if (!hasStartedRef.current || hasReportedStoppedRef.current) {
+        return;
+      }
+
+      hasReportedStoppedRef.current = true;
+
+      if (useUnloadSafeReport) {
+        onPlaybackBeforeUnload?.(positionSeconds);
+        return;
+      }
+
+      onPlaybackStopped?.(positionSeconds);
+    },
+    [onPlaybackBeforeUnload, onPlaybackStopped, updateLatestPlaybackPosition],
+  );
 
   useEffect(() => {
     if (partyWatch.partyEventMessage) {
@@ -382,10 +432,48 @@ export function CustomVideoPlayer({
     height,
   };
 }, [fullscreenSeekPreviewSeconds, progress.duration]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return undefined;
+    }
+
+    const disableTracks = () => {
+      disableNativeVideoTextTracks(video);
+    };
+
+    disableTracks();
+
+    video.addEventListener("loadedmetadata", disableTracks);
+    video.addEventListener("loadeddata", disableTracks);
+    video.addEventListener("canplay", disableTracks);
+    video.addEventListener("play", disableTracks);
+
+    video.textTracks.addEventListener?.("addtrack", disableTracks);
+    video.textTracks.addEventListener?.("change", disableTracks);
+
+    const interval = window.setInterval(disableTracks, 500);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", disableTracks);
+      video.removeEventListener("loadeddata", disableTracks);
+      video.removeEventListener("canplay", disableTracks);
+      video.removeEventListener("play", disableTracks);
+
+      video.textTracks.removeEventListener?.("addtrack", disableTracks);
+      video.textTracks.removeEventListener?.("change", disableTracks);
+
+      window.clearInterval(interval);
+    };
+  }, [activeSource.id, activeSource.url]);
   
 
   useEffect(() => {
     pendingSourceRestoreRef.current = null;
+    latestPlaybackPositionRef.current = 0;
+    hasReportedStoppedRef.current = false;
     setActiveSource(source);
     setSelectedQualityId(AUTO_QUALITY_ID);
     setSelectedAudioStreamIndex(getDefaultAudioStreamIndex(source));
@@ -394,6 +482,9 @@ export function CustomVideoPlayer({
   }, [source.id, source.mediaSourceId, source.url]);
 
   useEffect(() => {
+    latestPlaybackPositionRef.current = 0;
+    hasReportedStoppedRef.current = false;
+    hasAppliedInitialStartRef.current = false;
     setActiveSubtitleText("");
     setSubtitlePosition(null);
     setSubtitleSize({ scale: DEFAULT_SUBTITLE_SCALE });
@@ -894,6 +985,36 @@ export function CustomVideoPlayer({
     let didRestore = false;
     const pendingRestore = pendingSourceRestoreRef.current;
 
+    const applyInitialStartPosition = () => {
+      if (pendingRestore || hasAppliedInitialStartRef.current) {
+        return;
+      }
+
+      hasAppliedInitialStartRef.current = true;
+
+      const safeStartSeconds = Number.isFinite(initialStartSeconds)
+        ? Math.max(0, initialStartSeconds)
+        : 0;
+
+      if (safeStartSeconds <= 0) {
+        latestPlaybackPositionRef.current = 0;
+        return;
+      }
+
+      try {
+        const maxTime =
+          Number.isFinite(video.duration) && video.duration > 0
+            ? Math.max(0, video.duration - 0.25)
+            : safeStartSeconds;
+
+        const nextTime = Math.min(safeStartSeconds, maxTime);
+        video.currentTime = nextTime;
+        latestPlaybackPositionRef.current = nextTime;
+      } catch (seekError) {
+        console.warn("[Seyirlik Playback] Could not apply saved playback position", seekError);
+      }
+    };
+
     const restorePlayback = () => {
       if (!pendingRestore || didRestore || pendingRestore.token !== sourceSwitchTokenRef.current) {
         return;
@@ -934,6 +1055,8 @@ export function CustomVideoPlayer({
           ? { ...currentSource, usingHlsJs: attachment?.usingHlsJs }
           : currentSource,
       );
+      video.addEventListener("loadedmetadata", applyInitialStartPosition);
+      video.addEventListener("canplay", applyInitialStartPosition);
       video.addEventListener("loadedmetadata", restorePlayback);
       video.addEventListener("canplay", restorePlayback);
       video.load();
@@ -947,6 +1070,8 @@ export function CustomVideoPlayer({
     }
 
     return () => {
+      video.removeEventListener("loadedmetadata", applyInitialStartPosition);
+      video.removeEventListener("canplay", applyInitialStartPosition);
       video.removeEventListener("loadedmetadata", restorePlayback);
       video.removeEventListener("canplay", restorePlayback);
 
@@ -960,7 +1085,15 @@ export function CustomVideoPlayer({
         console.warn("[Seyirlik Playback] Could not destroy video attachment during cleanup", destroyError);
       }
     };
-  }, [activeSource.id, activeSource.mimeType, activeSource.url, onVideoFailure, partyWatch.shouldDeferAutoplay, refreshProgress]);
+  }, [
+  activeSource.id,
+  activeSource.mimeType,
+  activeSource.url,
+  initialStartSeconds,
+  onVideoFailure,
+  partyWatch.shouldDeferAutoplay,
+  refreshProgress,
+]);
 
   useEffect(() => {
     return () => {
@@ -972,11 +1105,23 @@ export function CustomVideoPlayer({
         singleTapTimerRef.current = null;
       }
 
-      if (hasStartedRef.current) {
-        onPlaybackStopped?.(videoRef.current?.currentTime ?? 0);
-      }
+      reportStoppedOnce(false);
     };
-  }, [clearFullscreenSeekPreviewFallbackTimer, clearSeekFeedbackTimers, onPlaybackStopped]);
+  }, [clearFullscreenSeekPreviewFallbackTimer, clearSeekFeedbackTimers, reportStoppedOnce]);
+
+  useEffect(() => {
+    const handlePageExit = () => {
+      reportStoppedOnce(true);
+    };
+
+    window.addEventListener("pagehide", handlePageExit);
+    window.addEventListener("beforeunload", handlePageExit);
+
+    return () => {
+      window.removeEventListener("pagehide", handlePageExit);
+      window.removeEventListener("beforeunload", handlePageExit);
+    };
+  }, [reportStoppedOnce]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -987,9 +1132,7 @@ export function CustomVideoPlayer({
 
     video.querySelectorAll<HTMLTrackElement>("track[data-seyirlik-subtitle]").forEach((track) => track.remove());
 
-    for (let index = 0; index < video.textTracks.length; index += 1) {
-      video.textTracks[index].mode = "disabled";
-    }
+    disableNativeVideoTextTracks(video);
 
     setActiveSubtitleText("");
 
@@ -1032,12 +1175,14 @@ export function CustomVideoPlayer({
     };
 
     const handleTrackLoad = () => {
+      disableNativeVideoTextTracks(video);
       trackElement.track.mode = "hidden";
       updateActiveSubtitleText();
     };
 
     trackElement.addEventListener("load", handleTrackLoad);
     video.appendChild(trackElement);
+    disableNativeVideoTextTracks(video);
     trackElement.track.mode = "hidden";
     trackElement.track.addEventListener("cuechange", updateActiveSubtitleText);
     updateActiveSubtitleText();
@@ -1057,10 +1202,16 @@ export function CustomVideoPlayer({
   };
 
   const handleVideoPause = () => {
-    onPlaybackProgress?.(videoRef.current?.currentTime ?? 0, true);
+    const positionSeconds = updateLatestPlaybackPosition();
+    onPlaybackProgress?.(positionSeconds, true);
+  };
+
+  const handleVideoSeeked = () => {
+    updateLatestPlaybackPosition();
   };
 
   const handleTimeUpdate = () => {
+    const positionSeconds = updateLatestPlaybackPosition();
     const now = Date.now();
 
     if (now - lastProgressReportRef.current < 15_000) {
@@ -1068,7 +1219,7 @@ export function CustomVideoPlayer({
     }
 
     lastProgressReportRef.current = now;
-    onPlaybackProgress?.(videoRef.current?.currentTime ?? 0, false);
+    onPlaybackProgress?.(positionSeconds, false);
   };
 
   const handleVideoError = () => {
@@ -1384,11 +1535,13 @@ export function CustomVideoPlayer({
         onPlay={handleVideoPlay}
         onPause={handleVideoPause}
         onTimeUpdate={handleTimeUpdate}
+        onSeeked={handleVideoSeeked}
         onWaiting={showControls}
         onError={handleVideoError}
         onEnded={() => {
-          onPlaybackProgress?.(videoRef.current?.currentTime ?? 0, true);
-          onPlaybackStopped?.(videoRef.current?.currentTime ?? 0);
+          const positionSeconds = updateLatestPlaybackPosition();
+          onPlaybackProgress?.(positionSeconds, true);
+          reportStoppedOnce(false);
         }}
       />
 

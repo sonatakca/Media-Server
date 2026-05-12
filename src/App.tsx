@@ -16,8 +16,11 @@ import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
+import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
+import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { setDefaultPageTitle } from "./lib/pageTitle";
+
 
 const DEFAULT_SERVER_URL =
   (import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined)?.trim() ||
@@ -146,6 +149,9 @@ export default function App() {
               <Route path="/home" element={<HomePage />} />
               <Route path="/dev" element={<DevToolsPage />} />
               <Route path="/dev/playback-audit" element={<PlaybackAuditPage />} />
+              <Route path="/dev/library-maintenance" element={<LibraryMaintenancePage />} />
+              <Route path="/dev/known-bugs" element={<DevToolsBoardPage type="bugs" />} />
+              <Route path="/dev/wanted-features" element={<DevToolsBoardPage type="features" />} />
               <Route path="/library/:libraryId" element={<LibraryPage mode="library" />} />
               <Route path="/series/:seriesId" element={<LibraryPage mode="series" />} />
               <Route path="/series/:seriesId/season/:seasonId" element={<LibraryPage mode="season" />} />

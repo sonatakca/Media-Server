@@ -333,6 +333,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
               variant={item.Type === "Episode" ? "landscape" : "poster"}
               index={index}
               animateIn
+              showPlayFromBeginning
             />
           ))}
         </div>

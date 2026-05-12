@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { useParams } from "react-router-dom";
-import { Clock, Film, Play, Star } from "lucide-react";
+import { Clock, Film, Play, RotateCcw, Star } from "lucide-react";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { BackButton } from "../components/BackButton";
@@ -27,6 +27,17 @@ function getBackdrop(item: JellyfinItem): string {
   }
 
   return "";
+}
+
+function getRemainingRuntime(item: JellyfinItem, labels: Parameters<typeof formatRuntime>[1]): string | null {
+  const positionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
+  const runtimeTicks = item.RunTimeTicks ?? 0;
+
+  if (positionTicks <= 0 || runtimeTicks <= 0 || positionTicks >= runtimeTicks) {
+    return null;
+  }
+
+  return formatRuntime(runtimeTicks - positionTicks, labels);
 }
 
 export function ItemDetailsPage() {
@@ -109,6 +120,11 @@ export function ItemDetailsPage() {
           ? t("common.boxsets")
           : item.Type ?? t("details.media");
   const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
+  const playbackPositionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
+  const hasStarted = playbackPositionTicks > 0 && !item.UserData?.Played;
+  const remainingRuntime = getRemainingRuntime(item, mediaFormatLabels);
+  const continueHref = `/watch/${item.Id}`;
+  const restartHref = `/watch/${item.Id}?restart=1`;
 
   return (
     <article className="relative -mx-4 -mt-6 min-h-[calc(100vh-4rem)] overflow-hidden px-4 pb-16 pt-6 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
@@ -193,15 +209,52 @@ export function ItemDetailsPage() {
               </div>
             ) : null}
             {canPlay ? (
-              <div className="mt-8 flex flex-wrap gap-3">
-                <ButtonLink to={`/watch/${item.Id}`} className="min-h-12 rounded-full px-7 text-base shadow-2xl">
+              <div className="mt-8 flex flex-wrap items-start gap-3">
+                <ButtonLink
+                  to={continueHref}
+                  className="min-h-12 rounded-full px-7 text-base shadow-2xl"
+                >
                   <Play size={20} fill="currentColor" className="shrink-0" />
-                  <AnimatedWidth value={t("common.play")}>
-                    <AnimatedText value={t("common.play")} />
+                  <AnimatedWidth value={hasStarted ? "Devam Et" : t("common.play")}>
+                    <AnimatedText value={hasStarted ? "Devam Et" : t("common.play")} />
                   </AnimatedWidth>
                 </ButtonLink>
+
+                {hasStarted ? (
+                  <motion.div
+                    className="-mt-1 flex w-16 flex-col items-center gap-1.5"
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+                    animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+                    transition={{ duration: 0.26, delay: 0.18, ease: easeOut }}
+                  >
+                   <ButtonLink
+                    to={restartHref}
+                    aria-label="Baştan İzle"
+                    title="Baştan İzle"
+                    className="!flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
+                  >
+                    <RotateCcw size={23} strokeWidth={2} className="shrink-0 text-white/70" group-hover:text-white />
+                  </ButtonLink>
+                  </motion.div>
+                ) : null}
+
+                {hasStarted && remainingRuntime ? (
+                  <motion.div
+                    className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-black/[0.32] px-4 text-sm font-black text-white/[0.78] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur"
+                    initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
+                    animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+                    transition={{ duration: 0.26, delay: 0.18, ease: easeOut }}
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)]/15 text-[var(--accent)]">
+                      <Clock size={15} />
+                    </span>
+                    <span className="text-white/48">Kalan süre</span>
+                    <span className="text-white">{remainingRuntime}</span>
+                  </motion.div>
+                ) : null}
               </div>
             ) : null}
+
           </motion.div>
         </div>
 

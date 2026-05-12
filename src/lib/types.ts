@@ -200,6 +200,15 @@ export interface JellyfinSessionInfo {
   TranscodingInfo?: JellyfinTranscodingInfo;
 }
 
+export type JellyfinMetadataRefreshMode = "Default" | "FullRefresh" | "None";
+
+export interface JellyfinMetadataRefreshOptions {
+  metadataRefreshMode?: JellyfinMetadataRefreshMode;
+  imageRefreshMode?: JellyfinMetadataRefreshMode;
+  replaceAllMetadata?: boolean;
+  replaceAllImages?: boolean;
+}
+
 export type PlaybackMode = "DirectPlay" | "DirectStream" | "Transcoding" | "Unknown";
 
 export interface PlaybackQualityOption {
