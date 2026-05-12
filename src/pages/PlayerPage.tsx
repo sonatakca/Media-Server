@@ -15,6 +15,9 @@ import {
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import { setDefaultPageTitle, setLoadingPageTitle, setPageTitle } from "../lib/pageTitle";
+import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
+import { RainbowAnimation } from "../components/animations/RainbowAnimation";
+import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 
 export function PlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -163,6 +166,8 @@ export function PlayerPage() {
   }
 
   return (
+    <>
+    <RainbowAnimation startDelay={1} fadeInDuration={2} height="min(30rem, 45vh)" glowTop="10"/>
     <CustomVideoPlayer
       item={item}
       source={playback.activeSource}
@@ -176,6 +181,7 @@ export function PlayerPage() {
       onPlaybackStarted={handlePlaybackStarted}
       onPlaybackProgress={handlePlaybackProgress}
       onPlaybackStopped={handlePlaybackStopped}
-    />
+      />
+      </>
   );
 }

@@ -1370,7 +1370,7 @@ export function CustomVideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="seyirlik-player-shell relative h-[100svh] min-h-0 overflow-hidden bg-black text-white lg:min-h-[32rem]"
+      className="seyirlik-player-shell fixed inset-0 z-50 min-h-0 overflow-hidden bg-black text-white"
       onMouseMove={showControls}
       onPointerDown={showControls}
       onPointerUp={handlePointerUp}

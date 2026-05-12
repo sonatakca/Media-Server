@@ -414,6 +414,8 @@ export function RouteColorTransition() {
               backgroundColor: "#000000",
               transformOrigin,
               transform: "scaleX(0)",
+              borderRadius: "10px",
+              overflow: "hidden",
               zIndex: bar.isSelectedCentering || bar.isSelectedExiting ? 5 : 1,
             }}
           />
@@ -426,7 +428,7 @@ export function RouteColorTransition() {
         style={{ transform: "scale(0.88)" }}
       >
         <div className="relative flex h-32 w-32 items-center justify-center md:h-64 md:w-64">
-          <div className="absolute inset-0 rounded-[2rem] bg-white/20 blur-2xl" />
+          <div className="absolute inset-0 rounded-[2rem] bg-black/40 blur-2xl" />
 
           <div className="absolute inset-5 rounded-[2rem] bg-black/50" />
 

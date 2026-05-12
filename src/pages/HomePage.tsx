@@ -12,6 +12,7 @@ import type { JellyfinItem, JellyfinLibrary } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { setPageTitle } from "../lib/pageTitle";
+import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -115,6 +116,7 @@ export function HomePage() {
 
   return (
     <div>
+      <ConfettiAnimation startDelay={0} pieceCount={200}/>
       <HeroSection item={heroItem} />
 
       {rowWarnings.length > 0 ? (

@@ -98,7 +98,7 @@ export function PlayerControls({
   return (
     <div
       data-mobile-tight-controls
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/55 to-transparent px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/55 to-transparent px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
         visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >
@@ -109,7 +109,7 @@ export function PlayerControls({
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
       >
-        <div className="relative">
+        <div className="seyirlik-seekbar-position relative">
           <SeekBar
             currentTime={currentTime}
             duration={duration}
@@ -132,13 +132,32 @@ export function PlayerControls({
             >
               {playWaiting ? (
                 <>
-                  <Loader2 className="absolute h-16 w-16 animate-spin text-black/70 sm:h-14 sm:w-14" />
-                  <Play className="ml-0.5 h-3.5 w-3.5 text-black sm:h-4 sm:w-4" fill="currentColor" />
+                  <Loader2
+                    size={38}
+                    className="absolute animate-spin text-black/70 sm:size-12"
+                    strokeWidth={2}
+                  />
+                  <Play
+                    size={18}
+                    className="ml-0.5 text-black"
+                    fill="currentColor"
+                    strokeWidth={2.4}
+                  />
                 </>
               ) : isPlaying ? (
-                <Pause className="h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" />
+                <Pause
+                  size={25}
+                  className="text-black sm:size-7"
+                  fill="currentColor"
+                  strokeWidth={2.4}
+                />
               ) : (
-                <Play className="h-5 w-5 sm:h-6 sm:w-6" fill="currentColor" />
+                <Play
+                  size={25}
+                  className="ml-0.5 text-black sm:size-7"
+                  fill="currentColor"
+                  strokeWidth={2.4}
+                />
               )}
             </button>
             <button
@@ -202,7 +221,7 @@ export function PlayerControls({
                 aria-label={t("player.settingsLabel")}
                 title={t("player.settingsTitle")}
               >
-                <Settings className="h-5 w-5 sm:h-[21px] sm:w-[21px]" />
+                <Settings size={22} strokeWidth={2.2} />
               </button>
             </div>
             <button
@@ -211,7 +230,7 @@ export function PlayerControls({
               className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-11 sm:w-11"
               aria-label={t("player.fullscreen")}
             >
-              <Maximize className="h-5 w-5 sm:h-[21px] sm:w-[21px]" />
+              <Maximize size={22} strokeWidth={2.2} />
             </button>
           </div>
         </div>

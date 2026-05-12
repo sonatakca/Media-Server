@@ -97,7 +97,7 @@ export function PlayerOverlay({
             className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-12 sm:w-12"
             aria-label={t("player.backToDetails")}
           >
-            <ArrowLeft className="h-5 w-5 sm:h-[23px] sm:w-[23px]" />
+            <ArrowLeft size={22} strokeWidth={2.2} />
           </Link>
 
           <div className="min-w-0 flex-1">
@@ -195,7 +195,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex h-10 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.13] text-white shadow-[0_18px_70px_rgba(0,0,0,0.52)] backdrop-blur-xl transition duration-300 hover:scale-105 hover:bg-white/[0.22] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 ${
+        className={`absolute left-1/2 top-1/2 z-20 flex h-10 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/[0.75] text-white shadow-none backdrop-blur-lg transition duration-300 hover:scale-105 hover:bg-black/[0.6] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 cursor-pointer ${
           visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
         }`}
         aria-label={isPlaying ? t("common.pause") : t("common.play")}
@@ -206,9 +206,17 @@ export function PlayerOverlay({
           ) : null}
 
           {isPlaying ? (
-            <Pause className="h-7 w-7 sm:h-[42px] sm:w-[42px]" fill="currentColor" />
+            <Pause
+              className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
+              fill="currentColor"
+              strokeWidth={2.2}
+            />
           ) : (
-            <Play className="ml-0.5 h-7 w-7 sm:ml-1 sm:h-[44px] sm:w-[44px]" fill="currentColor" />
+            <Play
+              className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
+              fill="currentColor"
+              strokeWidth={2.2}
+            />
           )}
 
           {isPlayPausePending ? (

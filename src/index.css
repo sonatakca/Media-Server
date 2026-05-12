@@ -207,9 +207,22 @@ img {
     0 0 18px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
+.browser-chrome .seyirlik-seekbar-position {
+  bottom: 1.6rem;
+}
+
+.SyncPlay-idInput {
+  min-height: 40px;
+  min-width: 240px;
+}
+
+.browser-chrome .SyncPlay-joinButton {
+  margin-top: 18px;
+}
+
 .seyirlik-player-shell {
+  width: 100vw;
   height: 100vh;
-  height: 100svh;
   height: 100dvh;
   max-height: 100dvh;
   overflow: hidden;
@@ -218,7 +231,9 @@ img {
 }
 
 .seyirlik-player-shell video {
-  max-height: 100dvh;
+  width: 100%;
+  height: 100%;
+  max-height: none;
 }
 
 .seyirlik-video::cue {

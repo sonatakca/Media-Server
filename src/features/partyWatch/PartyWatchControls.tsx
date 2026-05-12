@@ -150,14 +150,14 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               onChange={(event) => controller.setJoinInput(event.target.value)}
               placeholder={t("party.joinPlaceholder")}
               disabled={!controller.isAvailable || isBusy}
-              className="h-10 min-w-0 rounded-md border border-white/12 bg-white/[0.07] px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/36 focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="SyncPlay-idInput h-10 min-w-0 rounded-md border border-white/12 bg-white/[0.07] px-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/36 focus:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             />
 
             <button
               type="button"
               onClick={() => void controller.joinGroup()}
               disabled={!controller.isAvailable || isBusy || controller.joinInput.trim().length === 0}
-              className="inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/12 px-3 text-sm font-bold text-white transition hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
+              className="SyncPlay-joinButton inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/12 px-3 text-sm font-bold text-white transition hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             >
               <Link2 size={15} />
               <AnimatedWidth value={t("party.joinRoom")}>
