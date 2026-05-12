@@ -6,6 +6,7 @@ import {
   getLogoImageUrl,
   getManualQualityOptions,
   getTrickplayImageUrl,
+  getActiveTranscodingReasons,
   stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
@@ -69,6 +70,12 @@ interface SubtitleDragState {
 
 interface SubtitleSize {
   scale: number;
+}
+
+interface SubtitleCue {
+  start: number;
+  end: number;
+  text: string;
 }
 
 type SeekFeedbackDirection = "backward" | "forward";
@@ -148,14 +155,6 @@ function getStreamByIndex(
   return getStreamsOfType(source, type).find((stream) => stream.Index === streamIndex);
 }
 
-function getSubtitleTrackLabel(stream: JellyfinMediaStream): string {
-  return (
-    [stream.DisplayTitle, stream.Title, stream.Language?.toUpperCase(), stream.Codec?.toUpperCase()]
-      .filter(Boolean)
-      .join(" · ") || `Subtitle ${stream.Index ?? ""}`.trim()
-  );
-}
-
 function getQualitySettings(quality?: PlaybackQualityOption): PlaybackSourceSettings {
   if (!quality) {
     return {};
@@ -172,11 +171,6 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getCueText(cue: TextTrackCue): string {
-  const maybeTextCue = cue as TextTrackCue & { text?: unknown };
-  return typeof maybeTextCue.text === "string" ? maybeTextCue.text : "";
-}
-
 function decodeCueText(rawText: string): string {
   const textWithLineBreaks = rawText
     .replace(/<br\s*\/?>/gi, "\n")
@@ -189,16 +183,81 @@ function decodeCueText(rawText: string): string {
   return textarea.value.trim();
 }
 
+function parseSubtitleTimestamp(rawTimestamp: string): number | null {
+  const timestamp = rawTimestamp.trim().replace(",", ".");
+  const parts = timestamp.split(":");
+
+  if (parts.length < 2 || parts.length > 3) {
+    return null;
+  }
+
+  const seconds = Number(parts.pop());
+  const minutes = Number(parts.pop());
+  const hours = parts.length > 0 ? Number(parts.pop()) : 0;
+
+  if (![hours, minutes, seconds].every(Number.isFinite)) {
+    return null;
+  }
+
+  if (minutes < 0 || minutes > 59 || seconds < 0) {
+    return null;
+  }
+
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function parseSubtitleCues(rawText: string): SubtitleCue[] {
+  const normalizedText = rawText.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const blocks = normalizedText.split(/\n{2,}/);
+  const cues: SubtitleCue[] = [];
+
+  blocks.forEach((block) => {
+    const lines = block
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .filter((line, index) => index > 0 || line.trim() !== "WEBVTT");
+
+    const firstLine = lines[0]?.trim().toUpperCase() ?? "";
+
+    if (!firstLine || firstLine === "WEBVTT" || firstLine.startsWith("NOTE") || firstLine === "STYLE" || firstLine === "REGION") {
+      return;
+    }
+
+    const timingLineIndex = lines.findIndex((line) => line.includes("-->"));
+    const timingLine = timingLineIndex >= 0 ? lines[timingLineIndex] : "";
+    const timingMatch = timingLine.match(/^(.+?)\s*-->\s*(\S+)/);
+
+    if (!timingMatch) {
+      return;
+    }
+
+    const start = parseSubtitleTimestamp(timingMatch[1]);
+    const end = parseSubtitleTimestamp(timingMatch[2]);
+    const text = lines.slice(timingLineIndex + 1).join("\n").trim();
+
+    if (start === null || end === null || end <= start || !text) {
+      return;
+    }
+
+    cues.push({ start, end, text });
+  });
+
+  return cues.sort((left, right) => left.start - right.start);
+}
+
+function getActiveSubtitleTextForTime(cues: SubtitleCue[], currentTime: number): string {
+  const activeTexts = cues
+    .filter((cue) => cue.start <= currentTime && cue.end >= currentTime)
+    .map((cue) => decodeCueText(cue.text))
+    .filter(Boolean);
+
+  return activeTexts.join("\n");
+}
+
 function disableNativeVideoTextTracks(video: HTMLVideoElement): void {
   for (let index = 0; index < video.textTracks.length; index += 1) {
     const track = video.textTracks[index];
-
-    // Only our custom injected track is allowed to stay hidden for reading cues.
-    // Everything else must be disabled so Safari/Chrome cannot render embedded subtitles.
-    const isSeyirlikTrack = Array.from(video.querySelectorAll<HTMLTrackElement>("track[data-seyirlik-subtitle]"))
-      .some((trackElement) => trackElement.track === track);
-
-    track.mode = isSeyirlikTrack ? "hidden" : "disabled";
+    track.mode = "disabled";
   }
 }
 
@@ -359,7 +418,9 @@ export function CustomVideoPlayer({
     getDefaultSubtitleStreamIndex(source),
   );
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
+  const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<string[]>([]);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
+  const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition | null>(null);
   const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({ scale: DEFAULT_SUBTITLE_SCALE });
   const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false);
@@ -370,6 +431,29 @@ export function CustomVideoPlayer({
     activeSource.mediaSource.Id && (activeSource.mediaSource.SupportsTranscoding || activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
+
+  const sourceWithLiveTranscodingReasons = useMemo<PlaybackSourceCandidate>(() => {
+    if (liveTranscodingReasons.length === 0) {
+      return activeSource;
+    }
+
+    const mergedTranscodeReasons = Array.from(
+      new Set([
+        ...(activeSource.transcodeReasons ?? []),
+        ...(activeSource.mediaSource.TranscodingReasons ?? []),
+        ...liveTranscodingReasons,
+      ].filter(Boolean)),
+    );
+
+    return {
+      ...activeSource,
+      transcodeReasons: mergedTranscodeReasons,
+      mediaSource: {
+        ...activeSource.mediaSource,
+        TranscodingReasons: mergedTranscodeReasons,
+      },
+    };
+  }, [activeSource, liveTranscodingReasons]);
   
   const fullscreenSeekPreview = useMemo(() => {
     if (fullscreenSeekPreviewSeconds === null || !activeSource.mediaSourceId || progress.duration <= 0) {
@@ -479,7 +563,57 @@ export function CustomVideoPlayer({
     setSelectedAudioStreamIndex(getDefaultAudioStreamIndex(source));
     setSelectedSubtitleStreamIndex(getDefaultSubtitleStreamIndex(source));
     setLastVideoError(null);
+    setLiveTranscodingReasons([]);
   }, [source.id, source.mediaSourceId, source.url]);
+  useEffect(() => {
+    let isCancelled = false;
+    let intervalId: number | null = null;
+
+    const shouldFetchLiveReasons = activeSource.mode === "Transcoding" || activeSource.isHls;
+
+    if (!shouldFetchLiveReasons) {
+      setLiveTranscodingReasons([]);
+      return undefined;
+    }
+
+    const fetchLiveReasons = async () => {
+      try {
+        const reasons = await getActiveTranscodingReasons(activeSource.itemId, activeSource.playSessionId);
+
+        if (isCancelled) {
+          return;
+        }
+
+        setLiveTranscodingReasons((currentReasons) => {
+          const nextReasons = Array.from(new Set(reasons.filter(Boolean)));
+
+          if (
+            currentReasons.length === nextReasons.length &&
+            currentReasons.every((reason, index) => reason === nextReasons[index])
+          ) {
+            return currentReasons;
+          }
+
+          return nextReasons;
+        });
+      } catch (reasonError) {
+        if (!isCancelled) {
+          console.warn("[Seyirlik Playback] Could not fetch live transcoding reasons", reasonError);
+        }
+      }
+    };
+
+    void fetchLiveReasons();
+    intervalId = window.setInterval(fetchLiveReasons, 3500);
+
+    return () => {
+      isCancelled = true;
+
+      if (intervalId !== null) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, [activeSource.itemId, activeSource.playSessionId, activeSource.mode, activeSource.isHls]);
 
   useEffect(() => {
     latestPlaybackPositionRef.current = 0;
@@ -1124,17 +1258,8 @@ export function CustomVideoPlayer({
   }, [reportStoppedOnce]);
 
   useEffect(() => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return undefined;
-    }
-
-    video.querySelectorAll<HTMLTrackElement>("track[data-seyirlik-subtitle]").forEach((track) => track.remove());
-
-    disableNativeVideoTextTracks(video);
-
     setActiveSubtitleText("");
+    setSubtitleCues([]);
 
     if (selectedSubtitleStreamIndex < 0 || !activeSource.mediaSourceId) {
       return undefined;
@@ -1146,53 +1271,76 @@ export function CustomVideoPlayer({
       return undefined;
     }
 
-    const trackElement = document.createElement("track");
-    trackElement.kind = "subtitles";
-    trackElement.label = getSubtitleTrackLabel(subtitleStream);
-    trackElement.srclang = subtitleStream.Language || "und";
-    trackElement.src = buildSubtitleStreamUrl(
+    const abortController = new AbortController();
+    const subtitleUrl = buildSubtitleStreamUrl(
       activeSource.itemId,
       activeSource.mediaSourceId,
       selectedSubtitleStreamIndex,
     );
-    trackElement.default = false;
-    trackElement.dataset.seyirlikSubtitle = "true";
 
-    const updateActiveSubtitleText = () => {
-      const activeCues = trackElement.track.activeCues;
-      const cues = activeCues
-        ? Array.from({ length: activeCues.length }, (_, index) => activeCues[index])
-        : [];
+    const loadSubtitleCues = async () => {
+      try {
+        const response = await fetch(subtitleUrl, { signal: abortController.signal });
 
-      const decodedCueTexts = cues
-        .map(getCueText)
-        .map(decodeCueText)
-        .filter(Boolean);
+        if (!response.ok) {
+          throw new Error(`Subtitle request failed with ${response.status}`);
+        }
 
-      const cueText = decodedCueTexts[decodedCueTexts.length - 1] ?? "";
+        const subtitleText = await response.text();
 
-      setActiveSubtitleText(cueText);
+        if (!abortController.signal.aborted) {
+          setSubtitleCues(parseSubtitleCues(subtitleText));
+        }
+      } catch (subtitleError) {
+        if (!abortController.signal.aborted) {
+          console.warn("[Seyirlik Subtitles] Could not load subtitle stream", subtitleError);
+        }
+      }
     };
 
-    const handleTrackLoad = () => {
-      disableNativeVideoTextTracks(video);
-      trackElement.track.mode = "hidden";
-      updateActiveSubtitleText();
-    };
-
-    trackElement.addEventListener("load", handleTrackLoad);
-    video.appendChild(trackElement);
-    disableNativeVideoTextTracks(video);
-    trackElement.track.mode = "hidden";
-    trackElement.track.addEventListener("cuechange", updateActiveSubtitleText);
-    updateActiveSubtitleText();
+    void loadSubtitleCues();
 
     return () => {
-      trackElement.removeEventListener("load", handleTrackLoad);
-      trackElement.track.removeEventListener("cuechange", updateActiveSubtitleText);
-      trackElement.remove();
+      abortController.abort();
     };
-  }, [activeSource, selectedSubtitleStreamIndex]);
+  }, [activeSource.itemId, activeSource.mediaSource, activeSource.mediaSourceId, selectedSubtitleStreamIndex]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video || subtitleCues.length === 0) {
+      setActiveSubtitleText("");
+      return undefined;
+    }
+
+    const syncSubtitleText = () => {
+      const nextSubtitleText = getActiveSubtitleTextForTime(subtitleCues, video.currentTime);
+      setActiveSubtitleText((currentSubtitleText) =>
+        currentSubtitleText === nextSubtitleText ? currentSubtitleText : nextSubtitleText,
+      );
+    };
+
+    syncSubtitleText();
+
+    video.addEventListener("loadedmetadata", syncSubtitleText);
+    video.addEventListener("play", syncSubtitleText);
+    video.addEventListener("pause", syncSubtitleText);
+    video.addEventListener("seeking", syncSubtitleText);
+    video.addEventListener("seeked", syncSubtitleText);
+    video.addEventListener("timeupdate", syncSubtitleText);
+
+    const intervalId = window.setInterval(syncSubtitleText, 120);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", syncSubtitleText);
+      video.removeEventListener("play", syncSubtitleText);
+      video.removeEventListener("pause", syncSubtitleText);
+      video.removeEventListener("seeking", syncSubtitleText);
+      video.removeEventListener("seeked", syncSubtitleText);
+      video.removeEventListener("timeupdate", syncSubtitleText);
+      window.clearInterval(intervalId);
+    };
+  }, [subtitleCues]);
 
   const handleVideoPlay = () => {
     if (!hasStartedRef.current) {
@@ -1719,7 +1867,7 @@ export function CustomVideoPlayer({
           setIsPartyWatchOpen(false);
           showControls();
         }}
-        source={activeSource}
+        source={sourceWithLiveTranscodingReasons}
         qualityOptions={qualityOptions}
         selectedQualityId={selectedQualityId}
         selectedAudioStreamIndex={selectedAudioStreamIndex}
@@ -1780,7 +1928,7 @@ export function CustomVideoPlayer({
               </span>
             </button>
 
-            <PlaybackInfoButton source={activeSource} onClick={() => setIsPlaybackInfoOpen(true)} />
+            <PlaybackInfoButton source={sourceWithLiveTranscodingReasons} onClick={() => setIsPlaybackInfoOpen(true)} />
           </div>
 
           {isPartyWatchOpen ? (
@@ -1793,7 +1941,7 @@ export function CustomVideoPlayer({
 
       {isPlaybackInfoOpen ? (
         <PlaybackInfoPanel
-          source={activeSource}
+          source={sourceWithLiveTranscodingReasons}
           videoError={lastVideoError}
           onClose={() => setIsPlaybackInfoOpen(false)}
         />

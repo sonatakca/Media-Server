@@ -192,7 +192,8 @@ export function PlayerPage() {
     );
   }
 
-  const shouldStartFromBeginning = searchParams.get("start") === "0";
+  const shouldStartFromBeginning =
+    searchParams.get("start") === "0" || searchParams.get("restart") === "1";
   const savedPlaybackSeconds =
     typeof item.UserData?.PlaybackPositionTicks === "number"
       ? item.UserData.PlaybackPositionTicks / 10_000_000

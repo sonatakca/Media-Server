@@ -702,7 +702,7 @@ function canBrowserPlayMediaSource(mediaSource: JellyfinMediaSource): boolean {
   const video = document.createElement("video");
   const support = video.canPlayType(mimeType);
 
-  return support === "probably" || support === "maybe";
+  return support === "probably";
 }
 
 function buildDirectStreamUrl(
