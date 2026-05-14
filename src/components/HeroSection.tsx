@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion, type Transition } from "framer-motion";
-import { Info, Play, Sparkles } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Info, Play } from "lucide-react";
 import { ButtonLink } from "./Button";
-import appIcon from "../assets/AppIcon2.png";
 import { getBackdropImageUrl, getLogoImageUrl, getPrimaryImageUrl, redactPlaybackUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
@@ -10,13 +9,14 @@ import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
-
-const HERO_CAROUSEL_PROGRESS_DURATION_SECONDS = 12;
+import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 
 interface HeroSectionProps {
   item?: JellyfinItem;
   currentIndex?: number;
   totalItems?: number;
+  durationMs?: number;
+  progressResetKey?: string | number;
   onSelectIndex?: (index: number) => void;
 }
 
@@ -58,7 +58,14 @@ function getHeroImageCandidates(item?: JellyfinItem): HeroImageCandidate[] {
   return candidates;
 }
 
-export function HeroSection({ item, currentIndex = 0, totalItems = 0, onSelectIndex }: HeroSectionProps) {
+export function HeroSection({
+  item,
+  currentIndex = 0,
+  totalItems = 0,
+  durationMs = 12000,
+  progressResetKey,
+  onSelectIndex,
+}: HeroSectionProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
@@ -91,9 +98,6 @@ export function HeroSection({ item, currentIndex = 0, totalItems = 0, onSelectIn
   const canPlay = item?.Type === "Movie" || item?.Type === "Episode" || item?.MediaType === "Video";
   const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
   const softEase: [number, number, number, number] = [0.25, 1, 0.5, 1];
-  const carouselTransition: Transition = shouldReduceMotion
-    ? { duration: 0 }
-    : { type: "spring", stiffness: 420, damping: 32, mass: 0.72 };
   const heroImageLoaded = Boolean(selectedImage && loadedImageUrl === selectedImage.url);
   const heroContentVisible = !selectedImage || heroImageLoaded;
   const contentKey = item?.Id ?? "hero-fallback";
@@ -317,52 +321,34 @@ export function HeroSection({ item, currentIndex = 0, totalItems = 0, onSelectIn
         {showCarouselDots ? (
           <motion.div
             layout
-            role="group"
-            aria-label="Featured carousel"
-            className="mt-6 flex w-fit items-center gap-3 rounded-full border border-white/[0.12] bg-black/[0.3] p-2.5 shadow-[0_18px_70px_rgba(0,0,0,0.34)] backdrop-blur-2xl"
-            initial={{ opacity: 0, y: shouldReduceMotion ? 0 : 14, scale: shouldReduceMotion ? 1 : 0.96 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={carouselTransition}
+            className="mt-6 w-fit max-w-full"
+            initial={{
+              opacity: 0,
+              y: shouldReduceMotion ? 0 : 10,
+              scale: shouldReduceMotion ? 1 : 0.97,
+              filter: shouldReduceMotion ? "none" : "blur(8px)",
+            }}
+            animate={{
+              opacity: heroContentVisible ? 1 : 0,
+              y: heroContentVisible ? 0 : 10,
+              scale: heroContentVisible ? 1 : 0.97,
+              filter: heroContentVisible || shouldReduceMotion ? "none" : "blur(8px)",
+            }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.62,
+              delay: shouldReduceMotion ? 0 : 0.66,
+              ease: softEase,
+            }}
           >
-            {Array.from({ length: carouselItemCount }, (_, index) => {
-              const isActive = index === activeCarouselIndex;
-
-              return (
-                <motion.button
-                  key={index}
-                  layout
-                  type="button"
-                  aria-label={`Show featured item ${index + 1}`}
-                  aria-current={isActive ? "true" : undefined}
-                  className="relative h-3 overflow-hidden rounded-full outline-none ring-white/70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-                  animate={{
-                    width: isActive ? 48 : 12,
-                    opacity: isActive ? 1 : 0.72,
-                    scale: isActive ? 1 : 0.94,
-                  }}
-                  transition={carouselTransition}
-                  onClick={() => onSelectIndex?.(index)}
-                >
-                  <span className="absolute inset-0 rounded-full bg-white/35" />
-                  {isActive ? (
-                    <>
-                      <motion.span
-                        layoutId="hero-carousel-droplet"
-                        className="absolute inset-0 rounded-full bg-white/25 shadow-[0_0_22px_rgba(255,255,255,0.4)]"
-                        transition={carouselTransition}
-                      />
-                      <motion.span
-                        key={`hero-carousel-progress-${activeCarouselIndex}`}
-                        className="absolute inset-y-0 left-0 rounded-full bg-white/90"
-                        initial={{ width: shouldReduceMotion ? "100%" : "22%" }}
-                        animate={{ width: "100%" }}
-                        transition={{ duration: shouldReduceMotion ? 0 : HERO_CAROUSEL_PROGRESS_DURATION_SECONDS, ease: "linear" }}
-                      />
-                    </>
-                  ) : null}
-                </motion.button>
-              );
-            })}
+            <TimedCarouselIndicators
+              count={carouselItemCount}
+              activeIndex={activeCarouselIndex}
+              durationMs={durationMs}
+              onSelect={(index) => onSelectIndex?.(index)}
+              progressResetKey={progressResetKey}
+              ariaLabel="Featured carousel"
+              className="bg-black/[0.3]"
+            />
           </motion.div>
         ) : null}
       </div>

@@ -9,6 +9,7 @@ import type { JellyfinItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
+import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 
 interface TimedMediaGalleryProps {
   title: string;
@@ -72,6 +73,7 @@ export function TimedMediaGallery({
   const [isPlaying, setIsPlaying] = useState(true);
   const [hasFinished, setHasFinished] = useState(false);
   const [revealKey, setRevealKey] = useState(0);
+  const [indicatorResetKey, setIndicatorResetKey] = useState(0);
   const timerRef = useRef<number | null>(null);
 
   const activeItem = galleryItems[activeIndex];
@@ -98,6 +100,7 @@ export function TimedMediaGallery({
     setIsPlaying(true);
     setHasFinished(false);
     setRevealKey((current) => current + 1);
+    setIndicatorResetKey((current) => current + 1);
   }, [galleryItems.length]);
 
   useEffect(() => {
@@ -126,14 +129,18 @@ export function TimedMediaGallery({
         window.clearTimeout(timerRef.current);
       }
     };
-  }, [activeIndex, durationMs, galleryItems.length, hasFinished, isPlaying, shouldReduceMotion]);
+  }, [activeIndex, durationMs, galleryItems.length, hasFinished, indicatorResetKey, isPlaying, shouldReduceMotion]);
 
   if (galleryItems.length === 0 || !activeItem) {
     return null;
   }
 
   const selectIndex = (index: number) => {
+    setIndicatorResetKey((current) => current + 1);
+
     if (index === activeIndex) {
+      setHasFinished(false);
+      setIsPlaying(true);
       return;
     }
 
@@ -152,6 +159,7 @@ export function TimedMediaGallery({
       setHasFinished(false);
       setIsPlaying(true);
       setRevealKey((current) => current + 1);
+      setIndicatorResetKey((current) => current + 1);
       return;
     }
 
@@ -462,68 +470,6 @@ export function TimedMediaGallery({
           backdrop-filter: blur(24px) saturate(1.4);
         }
 
-        .apple-gallery__dotnav {
-          display: inline-flex;
-          min-height: var(--apple-gallery-control-height);
-          align-items: center;
-          gap: 0.58rem;
-          border-radius: 999px;
-          padding: 0 0.82rem;
-          box-shadow:
-            0 20px 55px rgba(0, 0, 0, 0.32),
-            inset 0 1px 0 rgba(255, 255, 255, 0.14);
-          background:
-            linear-gradient(180deg, rgba(255, 255, 255, 0.20), rgba(255, 255, 255, 0.07)),
-            rgba(28, 28, 30, 0.58);
-          backdrop-filter: blur(24px) saturate(1.4);
-        }
-
-        .apple-gallery__dot {
-          position: relative;
-          height: 0.55rem;
-          width: 0.55rem;
-          overflow: hidden;
-          border-radius: 999px;
-          opacity: 0.74;
-          transform: translateZ(0);
-          transition:
-            width 470ms cubic-bezier(0.16, 1, 0.3, 1),
-            opacity 240ms ease,
-            transform 240ms ease;
-        }
-
-        .apple-gallery__dot:hover {
-          opacity: 1;
-          transform: scale(1.12);
-        }
-
-        .apple-gallery__dot--active {
-          width: 2.65rem;
-          opacity: 1;
-          transform: scale(1);
-        }
-
-        .apple-gallery__dot:focus-visible {
-          outline: none;
-          box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.72);
-        }
-
-        .apple-gallery__dot-track {
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          background: rgba(255, 255, 255, 0.34);
-        }
-
-        .apple-gallery__dot-progress {
-          position: absolute;
-          inset: 0;
-          border-radius: inherit;
-          background: rgba(255, 255, 255, 0.96);
-          box-shadow: 0 0 18px rgba(255, 255, 255, 0.42);
-          transform-origin: left center;
-        }
-
         @media (min-width: 1024px) {
           .apple-gallery__poster {
             display: block;
@@ -557,15 +503,6 @@ export function TimedMediaGallery({
           .apple-gallery__controls {
             width: calc(100% - 2rem);
             justify-content: center;
-          }
-
-          .apple-gallery__dotnav {
-            max-width: calc(100vw - 6.5rem);
-            overflow: hidden;
-          }
-
-          .apple-gallery__dot--active {
-            width: 2.1rem;
           }
 
           .apple-gallery__overview {
@@ -744,34 +681,16 @@ export function TimedMediaGallery({
                 </span>
               </button>
 
-              <div role="tablist" aria-label={`${title} tablist`} className="apple-gallery__dotnav">
-                {galleryItems.map((item, index) => {
-                  const isActive = index === activeIndex;
-
-                  return (
-                    <button
-                      key={item.Id}
-                      type="button"
-                      role="tab"
-                      aria-selected={isActive}
-                      aria-label={getDisplayTitle(item)}
-                      className={`apple-gallery__dot ${isActive ? "apple-gallery__dot--active" : ""}`}
-                      onClick={() => selectIndex(index)}
-                    >
-                      <span className="apple-gallery__dot-track" />
-                      {isActive && isPlaying && !hasFinished && !shouldReduceMotion ? (
-                        <motion.span
-                          key={`${item.Id}-${activeIndex}-${revealKey}`}
-                          className="apple-gallery__dot-progress"
-                          initial={{ scaleX: 0 }}
-                          animate={{ scaleX: 1 }}
-                          transition={{ duration: durationMs / 1000, ease: "linear" }}
-                        />
-                      ) : null}
-                    </button>
-                  );
-                })}
-              </div>
+              <TimedCarouselIndicators
+                count={galleryItems.length}
+                activeIndex={activeIndex}
+                durationMs={durationMs}
+                onSelect={selectIndex}
+                isPaused={!isPlaying || hasFinished}
+                progressResetKey={indicatorResetKey}
+                ariaLabel={`${title} carousel navigation`}
+                className="min-h-[var(--apple-gallery-control-height)]"
+              />
             </motion.div>
           </div>
         </div>

@@ -13,7 +13,6 @@ import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { setPageTitle } from "../lib/pageTitle";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
-import { TimedMediaGallery } from "../components/TimedMediaGallery";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -98,6 +97,7 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
   const featuredPool = useMemo(
     () => buildFeaturedPool([...(data?.continueWatching ?? []), ...(data?.latestMedia ?? [])]),
     [data?.continueWatching, data?.latestMedia],
@@ -159,6 +159,7 @@ export function HomePage() {
 
   useEffect(() => {
     setHeroIndex(0);
+    setHeroProgressResetKey((current) => current + 1);
   }, [featuredPool]);
 
   useEffect(() => {
@@ -166,14 +167,19 @@ export function HomePage() {
       return;
     }
 
-    const intervalId = window.setInterval(() => {
+    const timeoutId = window.setTimeout(() => {
       setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
     }, HERO_ROTATION_INTERVAL_MS);
 
     return () => {
-      window.clearInterval(intervalId);
+      window.clearTimeout(timeoutId);
     };
-  }, [featuredPool.length]);
+  }, [featuredPool.length, heroProgressResetKey, selectedHeroIndex]);
+
+  const handleSelectHeroIndex = (index: number) => {
+    setHeroIndex(index);
+    setHeroProgressResetKey((current) => current + 1);
+  };
 
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
@@ -192,7 +198,9 @@ export function HomePage() {
         item={heroItem}
         currentIndex={selectedHeroIndex}
         totalItems={featuredPool.length}
-        onSelectIndex={setHeroIndex}
+        durationMs={HERO_ROTATION_INTERVAL_MS}
+        progressResetKey={heroProgressResetKey}
+        onSelectIndex={handleSelectHeroIndex}
       />
 
       {rowWarnings.length > 0 ? (
