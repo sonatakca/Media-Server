@@ -19,6 +19,7 @@ import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
+import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { setDefaultPageTitle } from "./lib/pageTitle";
 
 
@@ -150,6 +151,7 @@ export default function App() {
               <Route path="/dev" element={<DevToolsPage />} />
               <Route path="/dev/playback-audit" element={<PlaybackAuditPage />} />
               <Route path="/dev/library-maintenance" element={<LibraryMaintenancePage />} />
+              <Route path="/dev/content" element={<ContentExplorerPage />} />
               <Route path="/dev/known-bugs" element={<DevToolsBoardPage type="bugs" />} />
               <Route path="/dev/wanted-features" element={<DevToolsBoardPage type="features" />} />
               <Route path="/library/:libraryId" element={<LibraryPage mode="library" />} />

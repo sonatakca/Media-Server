@@ -15,7 +15,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
-  getAllVideoItems,
+  getVideoItemsForLibrary,
   getItem,
   getUserViews,
   refreshItemMetadata,
@@ -47,6 +47,7 @@ interface MetadataDraft {
   communityRating: string;
   genres: string;
 }
+
 
 function createEmptyResult(): ActionResult {
   return {
@@ -147,6 +148,7 @@ function getDetailValue(value: unknown): string {
   return String(value);
 }
 
+
 function DetailRow({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-3">
@@ -160,15 +162,42 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
   );
 }
 
+// Helper to add a timeout to a library load
+async function withLibraryLoadTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} took too long to load.`));
+    }, 15000);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutId !== undefined) {
+      window.clearTimeout(timeoutId);
+    }
+  }
+}
+
 export function LibraryMaintenancePage() {
   const [libraries, setLibraries] = useState<JellyfinLibrary[]>([]);
   const [items, setItems] = useState<JellyfinItem[]>([]);
+  const [itemLibraryById, setItemLibraryById] = useState<Map<string, string>>(
+    () => new Map(),
+  );
   const [selectedItem, setSelectedItem] = useState<JellyfinItem | null>(null);
   const [draft, setDraft] = useState<MetadataDraft | null>(null);
   const [trickplayStatus, setTrickplayStatus] = useState<"unknown" | "loading" | "available" | "missing">("unknown");
 
   const [libraryId, setLibraryId] = useState("all");
   const [search, setSearch] = useState("");
+  const selectedEpisodeLibraryId = libraryId.startsWith("episodes:")
+    ? libraryId.slice("episodes:".length)
+    : null;
+
+  const selectedLibraryId = selectedEpisodeLibraryId ?? libraryId;
   const [metadataRefreshMode, setMetadataRefreshMode] =
     useState<JellyfinMetadataRefreshMode>("Default");
   const [replaceAllMetadata, setReplaceAllMetadata] = useState(false);
@@ -195,18 +224,57 @@ export function LibraryMaintenancePage() {
       });
 
       try {
-        const [nextLibraries, nextItems] = await Promise.all([
-          getUserViews(),
-          getAllVideoItems(),
-        ]);
+        const nextLibraries = await getUserViews();
 
         if (!isMounted) return;
 
         setLibraries(nextLibraries);
-        setItems(nextItems);
+
+        const libraryItemResults = await Promise.allSettled(
+          nextLibraries.map(async (library) => {
+            const libraryItems = await withLibraryLoadTimeout(
+              getVideoItemsForLibrary(library.Id),
+              library.Name ?? library.Id,
+            );
+
+            return {
+              library,
+              items: libraryItems,
+            };
+          }),
+        );
+
+        if (!isMounted) return;
+
+        const nextItemLibraryById = new Map<string, string>();
+        const uniqueItemsById = new Map<string, JellyfinItem>();
+        const failedLibraries: string[] = [];
+
+        for (const result of libraryItemResults) {
+          if (result.status === "rejected") {
+            failedLibraries.push(
+              result.reason instanceof Error ? result.reason.message : "A library failed to load.",
+            );
+            continue;
+          }
+
+          for (const item of result.value.items) {
+            uniqueItemsById.set(item.Id, item);
+            nextItemLibraryById.set(item.Id, result.value.library.Id);
+          }
+        }
+
+        const nextVideoItems = Array.from(uniqueItemsById.values());
+
+        setItems(nextVideoItems);
+        setItemLibraryById(nextItemLibraryById);
+
         setLoadState({
-          state: "success",
-          message: `Loaded ${nextItems.length} video item${nextItems.length === 1 ? "" : "s"}.`,
+          state: failedLibraries.length > 0 ? "error" : "success",
+          message:
+            failedLibraries.length > 0
+              ? `Loaded ${nextVideoItems.length} video item${nextVideoItems.length === 1 ? "" : "s"}, but ${failedLibraries.length} librar${failedLibraries.length === 1 ? "y" : "ies"} failed: ${failedLibraries.join(" | ")}`
+              : `Loaded ${nextVideoItems.length} video item${nextVideoItems.length === 1 ? "" : "s"}.`,
         });
       } catch (error) {
         if (!isMounted) return;
@@ -225,12 +293,21 @@ export function LibraryMaintenancePage() {
     };
   }, []);
 
+
   const visibleItems = useMemo(() => {
     const trimmedSearch = search.trim().toLowerCase();
 
     return items
       .filter((item) => {
-        if (libraryId !== "all" && item.ParentId !== libraryId) {
+        if (selectedLibraryId !== "all" && itemLibraryById.get(item.Id) !== selectedLibraryId) {
+          return false;
+        }
+
+        if (selectedEpisodeLibraryId && item.Type !== "Episode") {
+          return false;
+        }
+
+        if (!selectedEpisodeLibraryId && selectedLibraryId !== "all" && item.Type === "Episode") {
           return false;
         }
 
@@ -254,7 +331,27 @@ export function LibraryMaintenancePage() {
         return searchable.includes(trimmedSearch);
       })
       .sort((a, b) => getDisplayTitle(a).localeCompare(getDisplayTitle(b)));
-  }, [items, libraryId, search]);
+  }, [items, selectedLibraryId, selectedEpisodeLibraryId, search, itemLibraryById]);
+
+  const libraryOptions = useMemo(() => {
+    const options: Array<{ id: string; label: string }> = [{ id: "all", label: "All libraries" }];
+
+    for (const library of libraries) {
+      options.push({
+        id: library.Id,
+        label: library.Name ?? "Unnamed library",
+      });
+
+      if ((library.Name ?? "").toLocaleLowerCase("tr-TR").includes("dizi")) {
+        options.push({
+          id: `episodes:${library.Id}`,
+          label: "Bölümler",
+        });
+      }
+    }
+
+    return options;
+  }, [libraries]);
 
   const selectItem = async (item: JellyfinItem) => {
     setSelectedItem(item);
@@ -315,7 +412,7 @@ export function LibraryMaintenancePage() {
     });
 
     try {
-      await refreshLibraryMetadata(libraryId);
+      await refreshLibraryMetadata(selectedLibraryId);
       setScanState({
         state: "success",
         message: "Selected library scan started.",
@@ -509,24 +606,30 @@ export function LibraryMaintenancePage() {
             </button>
           </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-[0.85fr_1fr]">
-            <label className="block">
+          <div className="mt-5 grid gap-4">
+            <div className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                 Library
               </span>
-              <select
-                value={libraryId}
-                onChange={(event) => setLibraryId(event.target.value)}
-                className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"
-              >
-                <option value="all">All libraries</option>
-                {libraries.map((library) => (
-                  <option key={library.Id} value={library.Id}>
-                    {library.Name}
-                  </option>
+
+              <div className="mt-2 flex flex-wrap gap-2">
+                {libraryOptions.map((option) => (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setLibraryId(option.id)}
+                    className={`rounded-full border px-3 py-2 text-xs font-black uppercase tracking-[0.1em] transition ${
+                      libraryId === option.id
+                        ? "border-[var(--accent)]/45 bg-[var(--accent)] text-black"
+                        : "border-white/10 bg-white/[0.055] text-white/50 hover:border-white/20 hover:text-white"
+                    }`}
+                  >
+                    {option.label}
+                  </button>
                 ))}
-              </select>
-            </label>
+              </div>
+            </div>
+
 
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">

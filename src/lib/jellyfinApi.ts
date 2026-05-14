@@ -10,6 +10,7 @@ import type {
   JellyfinItem,
   JellyfinItemsResponse,
   JellyfinLibrary,
+  JellyfinMediaSegment,
   JellyfinMediaSource,
   JellyfinMediaStream,
   JellyfinMetadataRefreshOptions,
@@ -17,10 +18,12 @@ import type {
   JellyfinPublicSystemInfo,
   JellyfinSessionInfo,
   JellyfinTranscodingInfo,
+  NormalizedMediaSegment,
   PlaybackQualityOption,
   PlaybackMode,
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
+  SegmentKind,
 } from "./types";
 
 type QueryValue = string | number | boolean | null | undefined | Array<string | number | boolean>;
@@ -35,6 +38,18 @@ interface RequestOptions {
   deviceAuth?: boolean;
   serverUrlOverride?: string;
   keepalive?: boolean;
+}
+
+class JellyfinRequestError extends Error {
+  status: number;
+  statusText: string;
+
+  constructor(status: number, statusText: string, message: string) {
+    super(message);
+    this.name = "JellyfinRequestError";
+    this.status = status;
+    this.statusText = statusText;
+  }
 }
 
 const DEFAULT_ITEM_FIELDS = [
@@ -216,7 +231,7 @@ async function requestJson<TResponse>(
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
-    throw new Error(message);
+    throw new JellyfinRequestError(response.status, response.statusText, message);
   }
 
   if (response.status === 204) {
@@ -410,6 +425,7 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
   });
 }
 
+
 export async function getAllVideoItems(): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
   const allItems: JellyfinItem[] = [];
@@ -428,6 +444,84 @@ export async function getAllVideoItems(): Promise<JellyfinItem[]> {
         sortOrder: "Ascending",
         fields: DEFAULT_ITEM_FIELDS,
         enableImages: false,
+        startIndex,
+        limit,
+      },
+    });
+
+    const items = response.Items ?? [];
+    allItems.push(...items);
+
+    totalRecordCount = response.TotalRecordCount ?? allItems.length;
+
+    if (items.length === 0) {
+      break;
+    }
+
+    startIndex += items.length;
+  }
+
+  return allItems;
+}
+
+export async function getVideoItemsForLibrary(libraryId: string): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+  const allItems: JellyfinItem[] = [];
+  const limit = 200;
+  let startIndex = 0;
+  let totalRecordCount = Number.POSITIVE_INFINITY;
+
+  while (startIndex < totalRecordCount) {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
+      params: {
+        userId: session.userId,
+        parentId: libraryId,
+        recursive: true,
+        includeItemTypes: "Movie,Series,Episode,Video",
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+        startIndex,
+        limit,
+      },
+    });
+
+    const items = response.Items ?? [];
+    allItems.push(...items);
+
+    totalRecordCount = response.TotalRecordCount ?? allItems.length;
+
+    if (items.length === 0) {
+      break;
+    }
+
+    startIndex += items.length;
+  }
+
+  return allItems;
+}
+
+export async function getAllContentItems(): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+  const allItems: JellyfinItem[] = [];
+  const limit = 200;
+  let startIndex = 0;
+  let totalRecordCount = Number.POSITIVE_INFINITY;
+
+  while (startIndex < totalRecordCount) {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
+      params: {
+        userId: session.userId,
+        recursive: true,
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
         startIndex,
         limit,
       },
@@ -578,6 +672,152 @@ export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackI
       AutoOpenLiveStream: true,
     },
   });
+}
+
+const TICKS_PER_SECOND = 10_000_000;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getFiniteNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function getStringValue(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function getFirstValue(record: Record<string, unknown>, keys: string[]): unknown {
+  for (const key of keys) {
+    if (record[key] !== undefined) {
+      return record[key];
+    }
+  }
+
+  return undefined;
+}
+
+function secondsFromTicks(value: unknown): number | null {
+  const ticks = getFiniteNumber(value);
+  return ticks === null ? null : ticks / TICKS_PER_SECOND;
+}
+
+function secondsFromSecondsOrTicks(value: unknown): number | null {
+  const timestamp = getFiniteNumber(value);
+
+  if (timestamp === null) {
+    return null;
+  }
+
+  return Math.abs(timestamp) > TICKS_PER_SECOND ? timestamp / TICKS_PER_SECOND : timestamp;
+}
+
+function getMediaSegmentEntries(response: unknown): unknown[] {
+  if (Array.isArray(response)) {
+    return response;
+  }
+
+  if (!isRecord(response)) {
+    return [];
+  }
+
+  const candidateKeys = ["Items", "Segments", "MediaSegments", "items", "segments", "mediaSegments"];
+
+  for (const key of candidateKeys) {
+    const value = response[key];
+
+    if (Array.isArray(value)) {
+      return value;
+    }
+  }
+
+  return [];
+}
+
+function normalizeMediaSegment(rawSegment: unknown, index: number): NormalizedMediaSegment | null {
+  if (!isRecord(rawSegment)) {
+    return null;
+  }
+
+  const type = getStringValue(rawSegment.Type ?? rawSegment.type) as SegmentKind | null;
+
+  if (!type) {
+    return null;
+  }
+
+  const startTicks = getFirstValue(rawSegment, ["StartTicks", "BeginTicks", "StartPositionTicks", "startTicks", "beginTicks"]);
+  const endTicks = getFirstValue(rawSegment, ["EndTicks", "EndPositionTicks", "endTicks"]);
+  const startSeconds = startTicks !== undefined
+    ? secondsFromTicks(startTicks)
+    : secondsFromSecondsOrTicks(rawSegment.Start ?? rawSegment.start);
+  const endSeconds = endTicks !== undefined
+    ? secondsFromTicks(endTicks)
+    : secondsFromSecondsOrTicks(rawSegment.End ?? rawSegment.end);
+
+  if (
+    startSeconds === null ||
+    endSeconds === null ||
+    startSeconds < 0 ||
+    endSeconds <= startSeconds
+  ) {
+    return null;
+  }
+
+  const explicitId = getStringValue(rawSegment.Id ?? rawSegment.id);
+  const id = explicitId ?? `${type}-${startSeconds.toFixed(3)}-${endSeconds.toFixed(3)}-${index}`;
+
+  return {
+    id,
+    type,
+    startSeconds,
+    endSeconds,
+  };
+}
+
+export async function getMediaSegments(itemId: string): Promise<NormalizedMediaSegment[]> {
+  try {
+    const response = await requestJson<JellyfinMediaSegment[] | Record<string, unknown>>(
+      `/MediaSegments/${encodeURIComponent(itemId)}`,
+    );
+
+    return getMediaSegmentEntries(response)
+      .map((segment, index) => normalizeMediaSegment(segment, index))
+      .filter((segment): segment is NormalizedMediaSegment => segment !== null)
+      .sort((left, right) => left.startSeconds - right.startSeconds);
+  } catch (error) {
+    if (error instanceof JellyfinRequestError) {
+      if (error.status === 401 || error.status === 403) {
+        throw error;
+      }
+
+      const logPayload = {
+        itemId,
+        status: error.status,
+        statusText: error.statusText,
+        message: error.message,
+      };
+
+      if (error.status === 404 || error.status === 405 || error.status === 501) {
+        console.debug("[Seyirlik Playback] Jellyfin media segments endpoint unavailable", logPayload);
+      } else {
+        console.warn("[Seyirlik Playback] Could not load Jellyfin media segments", logPayload);
+      }
+
+      return [];
+    }
+
+    throw error;
+  }
 }
 
 export async function getActiveTranscodingInfo(

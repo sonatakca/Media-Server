@@ -13,6 +13,7 @@ import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { setPageTitle } from "../lib/pageTitle";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
+import { TimedMediaGallery } from "../components/TimedMediaGallery";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -206,18 +207,23 @@ export function HomePage() {
         </div>
       ) : null}
 
-      {showContinueWatchingRow ? (
-        <div className="relative z-10 -mt-14 sm:-mt-20">
-          <MediaRow
-            title={t("home.continueWatching")}
-            items={data.continueWatching}
-            getItemTo={getRouteForItem}
-            emptyMessage={t("home.nothingInProgress")}
-          />
-        </div>
-      ) : null}
+           {showContinueWatchingRow ? (
+            <div className="relative z-10 -mt-14 sm:-mt-20">
+              <MediaRow
+                title={t("home.continueWatching")}
+                items={data.continueWatching}
+                getItemTo={getRouteForItem}
+                emptyMessage={t("home.nothingInProgress")}
+              />
+            </div>
+          ) : null}
 
-      <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={getRouteForItem} />
+          <TimedMediaGallery
+            title={t("home.latestMedia")}
+            items={data.latestMedia}
+            durationMs={7000}
+            maxItems={7}
+          />
 
       <MotionReveal className="group/row relative py-6" direction="up">
         <div className="mb-4 flex items-end justify-between gap-4">

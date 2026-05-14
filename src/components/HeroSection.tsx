@@ -211,7 +211,7 @@ export function HeroSection({ item, currentIndex = 0, totalItems = 0, onSelectIn
               scale: shouldReduceMotion ? 1 : 0.992,
               filter: shouldReduceMotion ? "none" : "blur(10px)",
             }}
-            transition={{ duration: shouldReduceMotion ? 0 : 0.78, delay: shouldReduceMotion ? 0 : 0.18, ease: softEase }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.5, delay: shouldReduceMotion ? 0 : 0.18, ease: softEase }}
           >
             {logoUrl ? (
               <motion.img

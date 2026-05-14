@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
-import { Loader2, RotateCw, Smartphone, Users } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ChevronsRight, Loader2, RotateCw, Smartphone, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
@@ -15,16 +16,19 @@ import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
 import { getVideoErrorDetails, type PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
+import { useMediaSegments } from "../../hooks/useMediaSegments";
 import { usePlayerProgress } from "../../hooks/usePlayerProgress";
 import { useViewportCapabilities } from "../../hooks/useViewportCapabilities";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type {
   JellyfinItem,
   JellyfinMediaStream,
+  NormalizedMediaSegment,
   PlaybackQualityOption,
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
 } from "../../lib/types";
+import type { TranslationKey } from "../../i18n/translations";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerErrorOverlay } from "./PlayerErrorOverlay";
 import { PlayerOverlay } from "./PlayerOverlay";
@@ -120,6 +124,8 @@ const SEEK_FEEDBACK_HIDE_MS = 950;
 
 const SEEK_FEEDBACK_FADE_RESET_MS = 260;
 
+const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
+
 const initialSeekFeedback: SeekFeedbackState = {
   backward: {
     amount: 0,
@@ -169,6 +175,77 @@ function getQualitySettings(quality?: PlaybackQualityOption): PlaybackSourceSett
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function isSkippableSegmentType(type: string): boolean {
+  return SKIPPABLE_SEGMENT_TYPES.has(type.toLowerCase());
+}
+
+function getSkipSegmentLabelKey(type: string): TranslationKey {
+  switch (type.toLowerCase()) {
+    case "intro":
+      return "player.skipIntro";
+    case "recap":
+      return "player.skipRecap";
+    case "outro":
+      return "player.skipOutro";
+    default:
+      return "player.skipSegment";
+  }
+}
+
+interface SkipSegmentButtonProps {
+  segment: NormalizedMediaSegment | null;
+  label: string;
+  shouldReduceMotion: boolean;
+  onSkip: (segment: NormalizedMediaSegment) => void;
+  onControlsHoverStart?: () => void;
+  onControlsHoverEnd?: () => void;
+}
+
+function SkipSegmentButton({
+  segment,
+  label,
+  shouldReduceMotion,
+  onSkip,
+  onControlsHoverStart,
+  onControlsHoverEnd,
+}: SkipSegmentButtonProps) {
+  return (
+    <AnimatePresence initial={false}>
+      {segment ? (
+        <motion.div
+          key={segment.id}
+          className="pointer-events-auto absolute bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.6rem)] right-[max(0.85rem,env(safe-area-inset-right))] z-[38] sm:bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+7.2rem)] sm:right-[max(1.25rem,env(safe-area-inset-right))]"
+          initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
+          animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
+          exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+          transition={
+            shouldReduceMotion
+              ? { duration: 0.01 }
+              : { duration: 0.22, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }
+          }
+        >
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onSkip(segment);
+            }}
+            onMouseEnter={onControlsHoverStart}
+            onMouseLeave={onControlsHoverEnd}
+            onPointerEnter={onControlsHoverStart}
+            onPointerLeave={onControlsHoverEnd}
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-sm font-black text-white shadow-[0_18px_70px_rgba(0,0,0,0.58)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)]/70 hover:bg-[var(--accent)] hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black active:scale-[0.98] motion-reduce:hover:translate-y-0 sm:min-h-12 sm:px-5 sm:text-base"
+            aria-label={label}
+          >
+            <ChevronsRight className="h-5 w-5 shrink-0" strokeWidth={2.5} />
+            <span className="whitespace-nowrap">{label}</span>
+          </button>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
 }
 
 function decodeCueText(rawText: string): string {
@@ -279,6 +356,7 @@ export function CustomVideoPlayer({
 }: CustomVideoPlayerProps) {
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
@@ -322,6 +400,7 @@ export function CustomVideoPlayer({
 
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
+  const { segments: mediaSegments, activeSegment } = useMediaSegments(item.Id, progress.currentTime);
 
   const controlsShouldStayVisible =
     isSettingsOpen ||
@@ -355,6 +434,7 @@ export function CustomVideoPlayer({
   const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
   const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] = useState<number | null>(null);
   const [seekFeedback, setSeekFeedback] = useState<SeekFeedbackState>(initialSeekFeedback);
+  const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<string | null>(null);
 
   const updateLatestPlaybackPosition = useCallback(() => {
     const currentTime = videoRef.current?.currentTime ?? latestPlaybackPositionRef.current;
@@ -385,6 +465,12 @@ export function CustomVideoPlayer({
     },
     [onPlaybackBeforeUnload, onPlaybackStopped, updateLatestPlaybackPosition],
   );
+
+  useEffect(() => {
+    if (dismissedSkipSegmentId && activeSegment?.id !== dismissedSkipSegmentId) {
+      setDismissedSkipSegmentId(null);
+    }
+  }, [activeSegment?.id, dismissedSkipSegmentId]);
 
   useEffect(() => {
     if (partyWatch.partyEventMessage) {
@@ -454,6 +540,46 @@ export function CustomVideoPlayer({
       },
     };
   }, [activeSource, liveTranscodingReasons]);
+
+  const skippableActiveSegment = useMemo(() => {
+    if (
+      Boolean(error) ||
+      isSettingsOpen ||
+      isPlaybackInfoOpen ||
+      isPartyWatchOpen ||
+      isSubtitleEditMode ||
+      (partyWatch.isInGroup && !partyWatch.canControl) ||
+      !Number.isFinite(progress.currentTime)
+    ) {
+      return null;
+    }
+
+    return (
+      mediaSegments.find(
+        (segment) =>
+          segment.id !== dismissedSkipSegmentId &&
+          isSkippableSegmentType(segment.type) &&
+          progress.currentTime >= segment.startSeconds &&
+          progress.currentTime < segment.endSeconds &&
+          segment.endSeconds - progress.currentTime > 1,
+      ) ?? null
+    );
+  }, [
+    dismissedSkipSegmentId,
+    error,
+    isPartyWatchOpen,
+    isPlaybackInfoOpen,
+    isSettingsOpen,
+    isSubtitleEditMode,
+    mediaSegments,
+    partyWatch.canControl,
+    partyWatch.isInGroup,
+    progress.currentTime,
+  ]);
+
+  const skipSegmentLabel = skippableActiveSegment
+    ? t(getSkipSegmentLabelKey(skippableActiveSegment.type))
+    : t("player.skipSegment");
   
   const fullscreenSeekPreview = useMemo(() => {
     if (fullscreenSeekPreviewSeconds === null || !activeSource.mediaSourceId || progress.duration <= 0) {
@@ -749,6 +875,26 @@ export function CustomVideoPlayer({
       showControls();
     },
     [partyWatch, showControls, triggerSeekFeedback],
+  );
+
+  const handleSkipSegment = useCallback(
+    (segment: NormalizedMediaSegment) => {
+      const video = videoRef.current;
+      const videoDuration = video?.duration;
+      const duration =
+        typeof videoDuration === "number" && Number.isFinite(videoDuration) && videoDuration > 0
+          ? videoDuration
+          : progress.duration;
+      const rawTarget = segment.endSeconds + 0.15;
+      const target = Number.isFinite(duration) && duration > 0
+        ? clamp(rawTarget, 0, Math.max(0, duration - 0.25))
+        : Math.max(0, rawTarget);
+
+      setDismissedSkipSegmentId(segment.id);
+      partyWatch.seekTo(target);
+      showControls();
+    },
+    [partyWatch, progress.duration, showControls],
   );
 
   useKeyboardShortcuts({
@@ -1837,6 +1983,15 @@ export function CustomVideoPlayer({
         onControlsHoverStart={keepControlsVisible}
         onControlsHoverEnd={releaseControlsHover}
         seekFeedback={seekFeedback}
+      />
+
+      <SkipSegmentButton
+        segment={skippableActiveSegment}
+        label={skipSegmentLabel}
+        shouldReduceMotion={shouldReduceMotion}
+        onSkip={handleSkipSegment}
+        onControlsHoverStart={keepControlsVisible}
+        onControlsHoverEnd={releaseControlsHover}
       />
 
       {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}

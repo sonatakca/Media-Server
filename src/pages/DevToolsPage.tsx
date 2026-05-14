@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { Activity, ArrowRight, Bug, DatabaseZap, Lightbulb, ShieldCheck } from "lucide-react";
+import { Activity, ArrowRight, Bug, Database, DatabaseZap, Lightbulb, ShieldCheck } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
 import { useEffect } from "react";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
@@ -26,6 +26,14 @@ export function DevToolsPage() {
         to: "/dev/library-maintenance",
         icon: DatabaseZap,
         tag: "Maintenance",
+      },
+      {
+        title: "Content Explorer",
+        description:
+          "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
+        to: "/dev/content",
+        icon: Database,
+        tag: "Inventory",
       },
       {
         title: "Known Bugs",

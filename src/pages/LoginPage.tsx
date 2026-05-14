@@ -12,12 +12,8 @@ import { authenticateByName } from "../lib/jellyfinApi";
 import { getServerUrl, isAuthenticated, setAuthSession } from "../lib/authStorage";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
-import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 
 export function LoginPage() {
-  useEffect(() => {
-    setPageTitle(`${t("auth.login")} · Seyirlik`);
-  }, []);
   const navigate = useNavigate();
   const { t } = useLanguage();
   const serverUrl = getServerUrl();
@@ -25,6 +21,10 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setPageTitle(`${t("auth.login")} · Seyirlik`);
+  }, [t]);
 
   if (!serverUrl) {
     return <Navigate to="/server" replace />;
@@ -56,8 +56,6 @@ export function LoginPage() {
       setIsSubmitting(false);
     }
   };
-
-  const sparkleCount = Math.max(1, Math.round(window.innerWidth / 100));
 
   return (
     <main className="flex min-h-screen items-center justify-center px-4 py-10 text-white">
@@ -194,12 +192,6 @@ export function LoginPage() {
         side="right"
       />
 
-        {/* <SparkleAnimation
-            startDelay={3}
-            sparkleDuration={6}
-            sparkleCount={sparkleCount}
-            topMax={40}
-        /> */}
       <section className="w-full max-w-md">
         <div className="mb-8 text-center">
           <img src={appIcon} alt="" className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl" />

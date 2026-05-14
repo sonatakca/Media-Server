@@ -107,6 +107,27 @@ export interface JellyfinChapter {
   ImageTag?: string;
 }
 
+export type SegmentKind = "Intro" | "Outro" | "Recap" | "Preview" | "Commercial" | string;
+
+export interface JellyfinMediaSegment {
+  Id?: string;
+  ItemId?: string;
+  Type?: SegmentKind;
+  StartTicks?: number | string;
+  EndTicks?: number | string;
+  BeginTicks?: number | string;
+  Start?: number | string;
+  End?: number | string;
+  [key: string]: unknown;
+}
+
+export interface NormalizedMediaSegment {
+  id: string;
+  type: SegmentKind;
+  startSeconds: number;
+  endSeconds: number;
+}
+
 export interface JellyfinItem {
   Id: string;
   Name: string;
