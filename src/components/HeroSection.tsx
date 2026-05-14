@@ -17,6 +17,9 @@ interface HeroSectionProps {
   totalItems?: number;
   durationMs?: number;
   progressResetKey?: string | number;
+  isPaused?: boolean;
+  onTogglePaused?: () => void;
+  showPauseButton?: boolean;
   onSelectIndex?: (index: number) => void;
 }
 
@@ -64,6 +67,9 @@ export function HeroSection({
   totalItems = 0,
   durationMs = 12000,
   progressResetKey,
+  isPaused = false,
+  onTogglePaused,
+  showPauseButton = false,
   onSelectIndex,
 }: HeroSectionProps) {
   const { t } = useLanguage();
@@ -336,7 +342,7 @@ export function HeroSection({
             }}
             transition={{
               duration: shouldReduceMotion ? 0 : 0.62,
-              delay: shouldReduceMotion ? 0 : 0.66,
+              delay: shouldReduceMotion ? 0 : 0.72,
               ease: softEase,
             }}
           >
@@ -345,9 +351,11 @@ export function HeroSection({
               activeIndex={activeCarouselIndex}
               durationMs={durationMs}
               onSelect={(index) => onSelectIndex?.(index)}
+              isPaused={isPaused}
               progressResetKey={progressResetKey}
+              onTogglePaused={onTogglePaused}
+              showPauseButton={showPauseButton}
               ariaLabel="Featured carousel"
-              className="bg-black/[0.3]"
             />
           </motion.div>
         ) : null}

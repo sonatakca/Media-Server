@@ -97,6 +97,7 @@ export function HomePage() {
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
   const [heroIndex, setHeroIndex] = useState(0);
+  const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
   const featuredPool = useMemo(
     () => buildFeaturedPool([...(data?.continueWatching ?? []), ...(data?.latestMedia ?? [])]),
@@ -159,11 +160,12 @@ export function HomePage() {
 
   useEffect(() => {
     setHeroIndex(0);
+    setIsHeroPaused(false);
     setHeroProgressResetKey((current) => current + 1);
   }, [featuredPool]);
 
   useEffect(() => {
-    if (featuredPool.length <= 1) {
+    if (featuredPool.length <= 1 || isHeroPaused) {
       return;
     }
 
@@ -174,11 +176,15 @@ export function HomePage() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [featuredPool.length, heroProgressResetKey, selectedHeroIndex]);
+  }, [featuredPool.length, heroProgressResetKey, isHeroPaused, selectedHeroIndex]);
 
   const handleSelectHeroIndex = (index: number) => {
     setHeroIndex(index);
     setHeroProgressResetKey((current) => current + 1);
+  };
+
+  const handleToggleHeroPaused = () => {
+    setIsHeroPaused((current) => !current);
   };
 
   if (error) {
@@ -200,6 +206,9 @@ export function HomePage() {
         totalItems={featuredPool.length}
         durationMs={HERO_ROTATION_INTERVAL_MS}
         progressResetKey={heroProgressResetKey}
+        isPaused={isHeroPaused}
+        onTogglePaused={handleToggleHeroPaused}
+        showPauseButton
         onSelectIndex={handleSelectHeroIndex}
       />
 
