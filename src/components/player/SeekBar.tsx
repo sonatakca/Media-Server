@@ -1,4 +1,10 @@
-import { useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getTrickplayImageUrl } from "../../lib/jellyfinApi";
 
@@ -18,8 +24,6 @@ interface HoverPreviewState {
   seconds: number;
   displaySeconds: number;
 }
-
-
 
 const TRICKPLAY_RESOLUTION = 320;
 const TRICKPLAY_INTERVAL_SECONDS = 10;
@@ -62,12 +66,17 @@ function getDisplaySeekPoint(seconds: number, duration: number): number {
   }
 
   const safeSeconds = clamp(seconds, 0, duration);
-  const snappedSeconds = Math.floor((safeSeconds + 0.01) / SEEK_SNAP_INTERVAL_SECONDS) * SEEK_SNAP_INTERVAL_SECONDS;
+  const snappedSeconds =
+    Math.floor((safeSeconds + 0.01) / SEEK_SNAP_INTERVAL_SECONDS) *
+    SEEK_SNAP_INTERVAL_SECONDS;
 
   return clamp(snappedSeconds, 0, duration);
 }
 
-function getSafeSeekTargetSeconds(displaySeconds: number, duration: number): number {
+function getSafeSeekTargetSeconds(
+  displaySeconds: number,
+  duration: number,
+): number {
   if (!Number.isFinite(displaySeconds) || duration <= 0) {
     return 0;
   }
@@ -106,7 +115,6 @@ export function SeekBar({
   const previewSeconds = isSeeking ? hoverPreview.displaySeconds : currentTime;
   const progressPercent = duration > 0 ? (previewSeconds / duration) * 100 : 0;
   const bufferedPercent = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
-
 
   const getPointerSeekState = (clientX: number): HoverPreviewState | null => {
     const bounds = rootRef.current?.getBoundingClientRect();
@@ -155,7 +163,13 @@ export function SeekBar({
       column,
       row,
     };
-  }, [duration, hoverPreview.displaySeconds, hoverPreview.isVisible, itemId, mediaSourceId]);
+  }, [
+    duration,
+    hoverPreview.displaySeconds,
+    hoverPreview.isVisible,
+    itemId,
+    mediaSourceId,
+  ]);
 
   const updateHoverPreview = (event: MouseEvent<HTMLDivElement>) => {
     const nextHoverPreview = getPointerSeekState(event.clientX);
@@ -216,7 +230,10 @@ export function SeekBar({
 
     const movedDistance = Math.abs(event.clientX - pointerStart.clientX);
 
-    if (!pointerStart.didPassDragThreshold && movedDistance < SEEK_DRAG_THRESHOLD_PX) {
+    if (
+      !pointerStart.didPassDragThreshold &&
+      movedDistance < SEEK_DRAG_THRESHOLD_PX
+    ) {
       return;
     }
 
@@ -234,10 +251,9 @@ export function SeekBar({
     event.stopPropagation();
 
     const pointerStart = pointerStartRef.current;
-    const nextSeekState =
-      pointerStart?.didPassDragThreshold
-        ? getPointerSeekState(event.clientX) ?? pointerDownSeekStateRef.current
-        : pointerDownSeekStateRef.current;
+    const nextSeekState = pointerStart?.didPassDragThreshold
+      ? (getPointerSeekState(event.clientX) ?? pointerDownSeekStateRef.current)
+      : pointerDownSeekStateRef.current;
 
     if (nextSeekState) {
       setHoverPreview(nextSeekState);
@@ -301,13 +317,19 @@ export function SeekBar({
 
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          const displaySeconds = getDisplaySeekPoint(currentTime - 10, duration);
+          const displaySeconds = getDisplaySeekPoint(
+            currentTime - 10,
+            duration,
+          );
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
 
         if (event.key === "ArrowRight") {
           event.preventDefault();
-          const displaySeconds = getDisplaySeekPoint(currentTime + 10, duration);
+          const displaySeconds = getDisplaySeekPoint(
+            currentTime + 10,
+            duration,
+          );
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
       }}
@@ -357,7 +379,10 @@ export function SeekBar({
       ) : null}
 
       <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/20 sm:h-1">
-        <div className="h-full bg-white/30" style={{ width: `${bufferedPercent}%` }} />
+        <div
+          className="h-full bg-white/30"
+          style={{ width: `${bufferedPercent}%` }}
+        />
       </div>
 
       <div

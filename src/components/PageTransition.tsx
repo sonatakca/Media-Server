@@ -8,12 +8,20 @@ interface PageTransitionProps {
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
-export function PageTransition({ children, variant = "default" }: PageTransitionProps) {
+export function PageTransition({
+  children,
+  variant = "default",
+}: PageTransitionProps) {
   const shouldReduceMotion = useReducedMotion();
 
   if (shouldReduceMotion) {
     return (
-      <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.01 }}>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.01 }}
+      >
         {children}
       </motion.div>
     );

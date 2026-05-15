@@ -19,7 +19,11 @@ import {
   getSubtitleStreams,
 } from "../lib/playbackDiagnostics";
 import { useLanguage } from "../i18n/LanguageContext";
-import type { JellyfinItem, PlaybackMode, PlaybackSourceCandidate } from "../lib/types";
+import type {
+  JellyfinItem,
+  PlaybackMode,
+  PlaybackSourceCandidate,
+} from "../lib/types";
 import { setPageTitle } from "../lib/pageTitle";
 
 interface PlaybackAuditRow {
@@ -64,7 +68,9 @@ function readStoredPlaybackAuditHistory(): StoredPlaybackAuditHistory | null {
       return null;
     }
 
-    const parsed = JSON.parse(rawHistory) as Partial<StoredPlaybackAuditHistory>;
+    const parsed = JSON.parse(
+      rawHistory,
+    ) as Partial<StoredPlaybackAuditHistory>;
 
     if (!Array.isArray(parsed.rows)) {
       return null;
@@ -72,9 +78,18 @@ function readStoredPlaybackAuditHistory(): StoredPlaybackAuditHistory | null {
 
     return {
       rows: parsed.rows as PlaybackAuditRow[],
-      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : new Date().toISOString(),
-      totalItems: typeof parsed.totalItems === "number" ? parsed.totalItems : parsed.rows.length,
-      processedItems: typeof parsed.processedItems === "number" ? parsed.processedItems : parsed.rows.length,
+      savedAt:
+        typeof parsed.savedAt === "string"
+          ? parsed.savedAt
+          : new Date().toISOString(),
+      totalItems:
+        typeof parsed.totalItems === "number"
+          ? parsed.totalItems
+          : parsed.rows.length,
+      processedItems:
+        typeof parsed.processedItems === "number"
+          ? parsed.processedItems
+          : parsed.rows.length,
     };
   } catch (error) {
     console.warn("[Playback Audit] Could not read stored audit history", error);
@@ -82,7 +97,11 @@ function readStoredPlaybackAuditHistory(): StoredPlaybackAuditHistory | null {
   }
 }
 
-function savePlaybackAuditHistory(rows: PlaybackAuditRow[], totalItems: number, processedItems: number): void {
+function savePlaybackAuditHistory(
+  rows: PlaybackAuditRow[],
+  totalItems: number,
+  processedItems: number,
+): void {
   try {
     const payload: StoredPlaybackAuditHistory = {
       rows,
@@ -156,11 +175,17 @@ function getBestSource(
     ? [
         ...(source.transcodeReasons ?? []),
         ...(source.mediaSource.TranscodingReasons ?? []),
-        ]
+      ]
     : [];
 
-    const finalRawReasons = isTranscoding
-    ? Array.from(new Set([...(transcodingReasons ?? []), ...fallbackTranscodingReasons].filter(Boolean)))
+  const finalRawReasons = isTranscoding
+    ? Array.from(
+        new Set(
+          [...(transcodingReasons ?? []), ...fallbackTranscodingReasons].filter(
+            Boolean,
+          ),
+        ),
+      )
     : [];
 
   return {
@@ -172,7 +197,10 @@ function getBestSource(
     videoCodec: video?.Codec || "Unknown",
     audioCodec: audio?.Codec || "Unknown",
     audioChannels: audio?.Channels ? `${audio.Channels} ch` : "Unknown",
-    resolution: video?.Width && video?.Height ? `${video.Width}x${video.Height}` : "Unknown",
+    resolution:
+      video?.Width && video?.Height
+        ? `${video.Width}x${video.Height}`
+        : "Unknown",
     range: video?.VideoRange || video?.VideoRangeType || "Unknown",
     bitrate: formatBitrate(mediaSource.Bitrate),
     size: formatBytes(mediaSource.Size),
@@ -180,19 +208,28 @@ function getBestSource(
       subtitles.length > 0
         ? subtitles
             .map((subtitle) =>
-              [subtitle.Codec, subtitle.Language, subtitle.IsExternal ? "External" : undefined]
+              [
+                subtitle.Codec,
+                subtitle.Language,
+                subtitle.IsExternal ? "External" : undefined,
+              ]
                 .filter(Boolean)
                 .join(" · "),
             )
             .join(" | ")
         : "None",
-    reasons: finalRawReasons.map((reason) => getReadableTranscodeReason(reason)),
+    reasons: finalRawReasons.map((reason) =>
+      getReadableTranscodeReason(reason),
+    ),
     rawTranscodingReasons: finalRawReasons,
     sourceReason: isTranscoding ? source.reason : "",
   };
 }
 
-function enrichRowWithItem(row: PlaybackAuditRow, item: JellyfinItem): PlaybackAuditRow {
+function enrichRowWithItem(
+  row: PlaybackAuditRow,
+  item: JellyfinItem,
+): PlaybackAuditRow {
   return {
     ...row,
     name:
@@ -256,7 +293,9 @@ function rowsToCsv(rows: PlaybackAuditRow[]): string {
 
   return [
     headers.join(","),
-    ...rows.map((row) => headers.map((header) => escapeCsvCell(row[header])).join(",")),
+    ...rows.map((row) =>
+      headers.map((header) => escapeCsvCell(row[header])).join(","),
+    ),
   ].join("\n");
 }
 
@@ -334,7 +373,10 @@ async function waitForTranscodingReasons(
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < timeoutMs) {
-    const reasons = await getActiveTranscodingReasons(itemId, playSessionId).catch(() => []);
+    const reasons = await getActiveTranscodingReasons(
+      itemId,
+      playSessionId,
+    ).catch(() => []);
 
     if (reasons.length > 0) {
       return Array.from(new Set(reasons.filter(Boolean)));
@@ -346,7 +388,9 @@ async function waitForTranscodingReasons(
   return [];
 }
 
-async function probeTranscodingReasons(source: PlaybackSourceCandidate): Promise<string[]> {
+async function probeTranscodingReasons(
+  source: PlaybackSourceCandidate,
+): Promise<string[]> {
   if (source.mode !== "Transcoding") {
     return [];
   }
@@ -370,10 +414,18 @@ async function probeTranscodingReasons(source: PlaybackSourceCandidate): Promise
     await sleep(500);
 
     await reportAuditPlaybackProgress(source).catch((error) => {
-      console.warn("[Playback Audit] reportAuditPlaybackProgress failed", error);
+      console.warn(
+        "[Playback Audit] reportAuditPlaybackProgress failed",
+        error,
+      );
     });
 
-    const reasons = await waitForTranscodingReasons(source.itemId, source.playSessionId, 12_000, 750);
+    const reasons = await waitForTranscodingReasons(
+      source.itemId,
+      source.playSessionId,
+      12_000,
+      750,
+    );
 
     console.info("[Playback Audit] active transcoding reasons result", {
       itemId: source.itemId,
@@ -385,18 +437,30 @@ async function probeTranscodingReasons(source: PlaybackSourceCandidate): Promise
     return reasons;
   } finally {
     await reportAuditPlaybackStopped(source).catch(() => undefined);
-    await stopActiveTranscodeSession(source.playSessionId).catch(() => undefined);
+    await stopActiveTranscodeSession(source.playSessionId).catch(
+      () => undefined,
+    );
   }
 }
 
 export function PlaybackAuditPage() {
   const { t } = useLanguage();
   const storedHistory = useMemo(readStoredPlaybackAuditHistory, []);
-  const [status, setStatus] = useState<AuditStatus>(storedHistory ? "done" : "idle");
-  const [rows, setRows] = useState<PlaybackAuditRow[]>(() => storedHistory?.rows ?? []);
-  const [totalItems, setTotalItems] = useState(() => storedHistory?.totalItems ?? 0);
-  const [processedItems, setProcessedItems] = useState(() => storedHistory?.processedItems ?? 0);
-  const [savedAt, setSavedAt] = useState<string | null>(() => storedHistory?.savedAt ?? null);
+  const [status, setStatus] = useState<AuditStatus>(
+    storedHistory ? "done" : "idle",
+  );
+  const [rows, setRows] = useState<PlaybackAuditRow[]>(
+    () => storedHistory?.rows ?? [],
+  );
+  const [totalItems, setTotalItems] = useState(
+    () => storedHistory?.totalItems ?? 0,
+  );
+  const [processedItems, setProcessedItems] = useState(
+    () => storedHistory?.processedItems ?? 0,
+  );
+  const [savedAt, setSavedAt] = useState<string | null>(
+    () => storedHistory?.savedAt ?? null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [modeFilter, setModeFilter] = useState<"all" | PlaybackMode>("all");
@@ -447,7 +511,8 @@ export function PlaybackAuditPage() {
         row.audioCodec.toLowerCase().includes(normalizedQuery) ||
         row.reasons.join(" ").toLowerCase().includes(normalizedQuery);
 
-      const matchesMode = modeFilter === "all" || row.selectedMode === modeFilter;
+      const matchesMode =
+        modeFilter === "all" || row.selectedMode === modeFilter;
 
       return matchesQuery && matchesMode;
     });
@@ -471,18 +536,21 @@ export function PlaybackAuditPage() {
 
       for (const item of items) {
         try {
-            const playbackInfo = await getPlaybackInfo(item.Id);
-            const candidates = buildPlaybackCandidates(item.Id, playbackInfo);
-            const selectedSource = candidates[0] ?? null;
+          const playbackInfo = await getPlaybackInfo(item.Id);
+          const candidates = buildPlaybackCandidates(item.Id, playbackInfo);
+          const selectedSource = candidates[0] ?? null;
 
-            const activeReasons =
-                selectedSource?.mode === "Transcoding"
-                    ? await probeTranscodingReasons(selectedSource)
-                    : [];
+          const activeReasons =
+            selectedSource?.mode === "Transcoding"
+              ? await probeTranscodingReasons(selectedSource)
+              : [];
 
-            const row = enrichRowWithItem(getBestSource(item.Id, selectedSource, activeReasons), item);
+          const row = enrichRowWithItem(
+            getBestSource(item.Id, selectedSource, activeReasons),
+            item,
+          );
 
-            nextRows.push(row);
+          nextRows.push(row);
         } catch (auditError) {
           nextRows.push({
             itemId: item.Id,
@@ -504,7 +572,10 @@ export function PlaybackAuditPage() {
             reasons: [],
             rawTranscodingReasons: [],
             sourceReason: "PlaybackInfo request failed.",
-            error: auditError instanceof Error ? auditError.message : String(auditError),
+            error:
+              auditError instanceof Error
+                ? auditError.message
+                : String(auditError),
           });
         }
 
@@ -518,7 +589,9 @@ export function PlaybackAuditPage() {
       setStatus("done");
     } catch (auditError) {
       setStatus("failed");
-      setError(auditError instanceof Error ? auditError.message : String(auditError));
+      setError(
+        auditError instanceof Error ? auditError.message : String(auditError),
+      );
     }
   };
 
@@ -548,8 +621,9 @@ export function PlaybackAuditPage() {
               Playback Audit
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-white/62">
-              Scans Jellyfin video items with PlaybackInfo and documents the selected mode,
-              source media, and transcoding reasons without opening every video manually.
+              Scans Jellyfin video items with PlaybackInfo and documents the
+              selected mode, source media, and transcoding reasons without
+              opening every video manually.
             </p>
             {savedAtLabel ? (
               <p className="mt-2 text-xs font-semibold text-white/42">
@@ -565,8 +639,16 @@ export function PlaybackAuditPage() {
               disabled={isRunning}
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full bg-[var(--accent)] px-5 text-sm font-black text-black shadow-2xl transition hover:scale-[1.02] disabled:cursor-not-allowed disabled:opacity-55"
             >
-              {isRunning ? <RefreshCw className="animate-spin" size={17} /> : <Play size={17} fill="currentColor" />}
-              {isRunning ? "Auditing..." : rows.length > 0 ? "Run again" : "Start audit"}
+              {isRunning ? (
+                <RefreshCw className="animate-spin" size={17} />
+              ) : (
+                <Play size={17} fill="currentColor" />
+              )}
+              {isRunning
+                ? "Auditing..."
+                : rows.length > 0
+                  ? "Run again"
+                  : "Start audit"}
             </button>
 
             {rows.length > 0 && !isRunning ? (
@@ -583,28 +665,52 @@ export function PlaybackAuditPage() {
 
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">Total</p>
-            <p className="mt-1 text-2xl font-black text-white">{summary.total}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">
+              Total
+            </p>
+            <p className="mt-1 text-2xl font-black text-white">
+              {summary.total}
+            </p>
           </div>
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-100/62">Direct Play</p>
-            <p className="mt-1 text-2xl font-black text-emerald-50">{summary.directPlay}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-100/62">
+              Direct Play
+            </p>
+            <p className="mt-1 text-2xl font-black text-emerald-50">
+              {summary.directPlay}
+            </p>
           </div>
           <div className="rounded-2xl border border-sky-300/20 bg-sky-300/10 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-100/62">Direct Stream</p>
-            <p className="mt-1 text-2xl font-black text-sky-50">{summary.directStream}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-100/62">
+              Direct Stream
+            </p>
+            <p className="mt-1 text-2xl font-black text-sky-50">
+              {summary.directStream}
+            </p>
           </div>
           <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-100/62">Transcoding</p>
-            <p className="mt-1 text-2xl font-black text-amber-50">{summary.transcoding}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-100/62">
+              Transcoding
+            </p>
+            <p className="mt-1 text-2xl font-black text-amber-50">
+              {summary.transcoding}
+            </p>
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">Unknown</p>
-            <p className="mt-1 text-2xl font-black text-white">{summary.unknown}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">
+              Unknown
+            </p>
+            <p className="mt-1 text-2xl font-black text-white">
+              {summary.unknown}
+            </p>
           </div>
           <div className="rounded-2xl border border-red-300/20 bg-red-300/10 p-4">
-            <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-100/62">Errors</p>
-            <p className="mt-1 text-2xl font-black text-red-50">{summary.errors}</p>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-100/62">
+              Errors
+            </p>
+            <p className="mt-1 text-2xl font-black text-red-50">
+              {summary.errors}
+            </p>
           </div>
         </div>
 
@@ -616,13 +722,20 @@ export function PlaybackAuditPage() {
                   ? "Loading video items..."
                   : `Processed ${processedItems} / ${totalItems}`}
               </span>
-              <span>{totalItems > 0 ? `${Math.round((processedItems / totalItems) * 100)}%` : "0%"}</span>
+              <span>
+                {totalItems > 0
+                  ? `${Math.round((processedItems / totalItems) * 100)}%`
+                  : "0%"}
+              </span>
             </div>
             <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
               <div
                 className="h-full rounded-full bg-[var(--accent)] transition-all"
                 style={{
-                  width: totalItems > 0 ? `${(processedItems / totalItems) * 100}%` : "0%",
+                  width:
+                    totalItems > 0
+                      ? `${(processedItems / totalItems) * 100}%`
+                      : "0%",
                 }}
               />
             </div>
@@ -641,7 +754,10 @@ export function PlaybackAuditPage() {
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-1 flex-col gap-3 sm:flex-row">
               <label className="relative flex-1">
-                <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/40" size={18} />
+                <Search
+                  className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/40"
+                  size={18}
+                />
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
@@ -652,7 +768,9 @@ export function PlaybackAuditPage() {
 
               <select
                 value={modeFilter}
-                onChange={(event) => setModeFilter(event.target.value as "all" | PlaybackMode)}
+                onChange={(event) =>
+                  setModeFilter(event.target.value as "all" | PlaybackMode)
+                }
                 className="min-h-11 rounded-2xl border border-white/10 bg-black/35 px-4 text-sm font-bold text-white outline-none focus:border-[var(--accent)]"
               >
                 <option value="all">All modes</option>
@@ -713,11 +831,16 @@ export function PlaybackAuditPage() {
                 </thead>
                 <tbody>
                   {filteredRows.map((row) => (
-                    <tr key={row.itemId} className="border-t border-white/[0.07] bg-black/20 align-top">
+                    <tr
+                      key={row.itemId}
+                      className="border-t border-white/[0.07] bg-black/20 align-top"
+                    >
                       <td className="max-w-sm px-4 py-3">
                         <p className="font-black text-white">{row.name}</p>
                         <p className="mt-1 text-xs text-white/42">
-                          {[row.type, row.year, row.seriesName].filter(Boolean).join(" · ")}
+                          {[row.type, row.year, row.seriesName]
+                            .filter(Boolean)
+                            .join(" · ")}
                         </p>
                         {row.error ? (
                           <p className="mt-2 rounded-xl border border-red-300/20 bg-red-300/10 px-3 py-2 text-xs font-semibold text-red-50">
@@ -743,32 +866,43 @@ export function PlaybackAuditPage() {
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 font-semibold text-white/78">{row.container}</td>
+                      <td className="px-4 py-3 font-semibold text-white/78">
+                        {row.container}
+                      </td>
                       <td className="px-4 py-3 text-white/72">
                         <p className="font-bold">{row.videoCodec}</p>
-                        <p className="mt-1 text-xs text-white/42">{row.bitrate}</p>
+                        <p className="mt-1 text-xs text-white/42">
+                          {row.bitrate}
+                        </p>
                       </td>
                       <td className="px-4 py-3 text-white/72">
                         <p className="font-bold">{row.audioCodec}</p>
-                        <p className="mt-1 text-xs text-white/42">{row.audioChannels}</p>
+                        <p className="mt-1 text-xs text-white/42">
+                          {row.audioChannels}
+                        </p>
                       </td>
-                      <td className="px-4 py-3 font-semibold text-white/72">{row.resolution}</td>
-                      <td className="px-4 py-3 font-semibold text-white/72">{row.range}</td>
+                      <td className="px-4 py-3 font-semibold text-white/72">
+                        {row.resolution}
+                      </td>
+                      <td className="px-4 py-3 font-semibold text-white/72">
+                        {row.range}
+                      </td>
                       <td className="max-w-md px-4 py-3">
-                        {row.selectedMode === "Transcoding" && row.reasons.length > 0 ? (
-                            <div className="space-y-2">
-                                {row.reasons.map((reason) => (
-                                <p
-                                    key={reason}
-                                    className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-50"
-                                >
-                                    {reason}
-                                </p>
-                                ))}
-                            </div>
-                            ) : (
-                            <span className="text-xs text-white/25">—</span>
-                            )}
+                        {row.selectedMode === "Transcoding" &&
+                        row.reasons.length > 0 ? (
+                          <div className="space-y-2">
+                            {row.reasons.map((reason) => (
+                              <p
+                                key={reason}
+                                className="rounded-xl border border-amber-300/20 bg-amber-300/10 px-3 py-2 text-xs font-semibold leading-5 text-amber-50"
+                              >
+                                {reason}
+                              </p>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-xs text-white/25">—</span>
+                        )}
                       </td>
                     </tr>
                   ))}

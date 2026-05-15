@@ -15,7 +15,11 @@ import {
   ticksFromSeconds,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
-import { setDefaultPageTitle, setLoadingPageTitle, setPageTitle } from "../lib/pageTitle";
+import {
+  setDefaultPageTitle,
+  setLoadingPageTitle,
+  setPageTitle,
+} from "../lib/pageTitle";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
@@ -52,7 +56,11 @@ export function PlayerPage() {
         }
       } catch (error) {
         if (isMounted) {
-          setItemError(error instanceof Error ? error.message : t("player.couldNotLoadItem"));
+          setItemError(
+            error instanceof Error
+              ? error.message
+              : t("player.couldNotLoadItem"),
+          );
         }
       }
     }
@@ -97,9 +105,14 @@ export function PlayerPage() {
         return;
       }
 
-      void reportPlaybackStart(source, ticksFromSeconds(positionSeconds)).catch((error) => {
-        console.warn("[Seyirlik Playback] Could not report playback start", error);
-      });
+      void reportPlaybackStart(source, ticksFromSeconds(positionSeconds)).catch(
+        (error) => {
+          console.warn(
+            "[Seyirlik Playback] Could not report playback start",
+            error,
+          );
+        },
+      );
     },
     [playback.activeSource],
   );
@@ -112,8 +125,15 @@ export function PlayerPage() {
         return;
       }
 
-      void reportPlaybackProgress(source, ticksFromSeconds(positionSeconds), isPaused).catch((error) => {
-        console.warn("[Seyirlik Playback] Could not report playback progress", error);
+      void reportPlaybackProgress(
+        source,
+        ticksFromSeconds(positionSeconds),
+        isPaused,
+      ).catch((error) => {
+        console.warn(
+          "[Seyirlik Playback] Could not report playback progress",
+          error,
+        );
       });
     },
     [playback.activeSource],
@@ -127,8 +147,14 @@ export function PlayerPage() {
         return;
       }
 
-      void reportPlaybackStopped(source, ticksFromSeconds(positionSeconds)).catch((error) => {
-        console.warn("[Seyirlik Playback] Could not report playback stopped", error);
+      void reportPlaybackStopped(
+        source,
+        ticksFromSeconds(positionSeconds),
+      ).catch((error) => {
+        console.warn(
+          "[Seyirlik Playback] Could not report playback stopped",
+          error,
+        );
       });
     },
     [playback.activeSource],
@@ -142,7 +168,10 @@ export function PlayerPage() {
         return;
       }
 
-      reportPlaybackStoppedBeforeUnload(source, ticksFromSeconds(positionSeconds));
+      reportPlaybackStoppedBeforeUnload(
+        source,
+        ticksFromSeconds(positionSeconds),
+      );
     },
     [playback.activeSource],
   );
@@ -157,7 +186,10 @@ export function PlayerPage() {
           <ArrowLeft size={17} />
           {t("common.home")}
         </Link>
-        <ErrorMessage title={t("player.playbackUnavailable")} message={itemError} />
+        <ErrorMessage
+          title={t("player.playbackUnavailable")}
+          message={itemError}
+        />
       </main>
     );
   }
@@ -199,27 +231,34 @@ export function PlayerPage() {
       ? item.UserData.PlaybackPositionTicks / 10_000_000
       : 0;
 
-  const initialStartSeconds = shouldStartFromBeginning ? 0 : savedPlaybackSeconds;
+  const initialStartSeconds = shouldStartFromBeginning
+    ? 0
+    : savedPlaybackSeconds;
 
   return (
     <>
-    <RainbowAnimation startDelay={1} fadeInDuration={2} height="min(30rem, 45vh)" glowTop="10"/>
-    <CustomVideoPlayer
-      item={item}
-      source={playback.activeSource}
-      playbackCandidates={playback.candidates}
-      notice={playback.notice}
-      error={playback.error}
-      hasTranscodingFallback={playback.hasTranscodingFallback}
-      onVideoFailure={playback.handleVideoFailure}
-      onTryTranscodedPlayback={playback.tryTranscodedPlayback}
-      onRetryPlayback={playback.retry}
-      initialStartSeconds={initialStartSeconds}
-      onPlaybackStarted={handlePlaybackStarted}
-      onPlaybackProgress={handlePlaybackProgress}
-      onPlaybackStopped={handlePlaybackStopped}
-      onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
-    />
-      </>
+      <RainbowAnimation
+        startDelay={1}
+        fadeInDuration={2}
+        height="min(30rem, 45vh)"
+        glowTop="10"
+      />
+      <CustomVideoPlayer
+        item={item}
+        source={playback.activeSource}
+        playbackCandidates={playback.candidates}
+        notice={playback.notice}
+        error={playback.error}
+        hasTranscodingFallback={playback.hasTranscodingFallback}
+        onVideoFailure={playback.handleVideoFailure}
+        onTryTranscodedPlayback={playback.tryTranscodedPlayback}
+        onRetryPlayback={playback.retry}
+        initialStartSeconds={initialStartSeconds}
+        onPlaybackStarted={handlePlaybackStarted}
+        onPlaybackProgress={handlePlaybackProgress}
+        onPlaybackStopped={handlePlaybackStopped}
+        onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
+      />
+    </>
   );
 }

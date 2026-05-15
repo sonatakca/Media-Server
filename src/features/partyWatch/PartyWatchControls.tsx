@@ -1,4 +1,13 @@
-import { Copy, Link2, Loader2, LogOut, Plus, Users, Wifi, WifiOff } from "lucide-react";
+import {
+  Copy,
+  Link2,
+  Loader2,
+  LogOut,
+  Plus,
+  Users,
+  Wifi,
+  WifiOff,
+} from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { PartyWatchController } from "./partyWatchTypes";
 import { AnimatedText } from "../../components/AnimatedText";
@@ -9,7 +18,10 @@ interface PartyWatchControlsProps {
   visible: boolean;
 }
 
-function getSocketLabel(status: PartyWatchController["socketStatus"], t: ReturnType<typeof useLanguage>["t"]): string {
+function getSocketLabel(
+  status: PartyWatchController["socketStatus"],
+  t: ReturnType<typeof useLanguage>["t"],
+): string {
   if (status === "connected") {
     return t("party.socketConnected");
   }
@@ -21,7 +33,10 @@ function getSocketLabel(status: PartyWatchController["socketStatus"], t: ReturnT
   return t("party.socketDisconnected");
 }
 
-export function PartyWatchControls({ controller, visible }: PartyWatchControlsProps) {
+export function PartyWatchControls({
+  controller,
+  visible,
+}: PartyWatchControlsProps) {
   const { t } = useLanguage();
 
   if (!visible && !controller.isInGroup) {
@@ -47,7 +62,9 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
   return (
     <section
       className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[rgba(12,13,15,0.82)] p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
-        visible || controller.isInGroup ? "translate-y-0 opacity-100" : "-translate-y-2 opacity-0"
+        visible || controller.isInGroup
+          ? "translate-y-0 opacity-100"
+          : "-translate-y-2 opacity-0"
       }`}
       aria-label={t("party.title")}
     >
@@ -60,19 +77,27 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
           <div className="min-w-0">
             <p className="truncate text-sm font-bold">{t("party.title")}</p>
             <p className="truncate text-[0.72rem] font-medium text-white/55">
-              {[roleLabel, participantLabel, controller.groupState].filter(Boolean).join(" · ") || socketLabel}
+              {[roleLabel, participantLabel, controller.groupState]
+                .filter(Boolean)
+                .join(" · ") || socketLabel}
             </p>
           </div>
         </div>
 
         <span
           className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${
-            controller.socketStatus === "connected" ? "text-[var(--accent)]" : "text-white/45"
+            controller.socketStatus === "connected"
+              ? "text-[var(--accent)]"
+              : "text-white/45"
           }`}
           title={socketLabel}
           aria-label={socketLabel}
         >
-          {controller.socketStatus === "connected" ? <Wifi size={16} /> : <WifiOff size={16} />}
+          {controller.socketStatus === "connected" ? (
+            <Wifi size={16} />
+          ) : (
+            <WifiOff size={16} />
+          )}
         </span>
       </div>
 
@@ -126,7 +151,11 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
               aria-label={t("party.leave")}
               title={t("party.leave")}
             >
-              {controller.isLoading ? <Loader2 className="animate-spin" size={16} /> : <LogOut size={16} />}
+              {controller.isLoading ? (
+                <Loader2 className="animate-spin" size={16} />
+              ) : (
+                <LogOut size={16} />
+              )}
             </button>
           </div>
         </div>
@@ -138,7 +167,11 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
             disabled={!controller.isAvailable || isBusy}
             className="inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-black transition hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
           >
-            {controller.isLoading ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+            {controller.isLoading ? (
+              <Loader2 className="animate-spin" size={16} />
+            ) : (
+              <Plus size={16} />
+            )}
             <AnimatedWidth value={t("party.createRoom")}>
               <AnimatedText value={t("party.createRoom")} />
             </AnimatedWidth>
@@ -156,7 +189,11 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
             <button
               type="button"
               onClick={() => void controller.joinGroup()}
-              disabled={!controller.isAvailable || isBusy || controller.joinInput.trim().length === 0}
+              disabled={
+                !controller.isAvailable ||
+                isBusy ||
+                controller.joinInput.trim().length === 0
+              }
               className="SyncPlay-joinButton inline-flex h-10 items-center justify-center gap-2 rounded-md border border-white/12 px-3 text-sm font-bold text-white transition hover:bg-white/12 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-55"
             >
               <Link2 size={15} />
@@ -168,7 +205,9 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
         </div>
       )}
 
-      {controller.copyStatusKey || controller.errorKey || controller.statusKey ? (
+      {controller.copyStatusKey ||
+      controller.errorKey ||
+      controller.statusKey ? (
         <p
           className={`mt-2 text-xs font-semibold ${
             controller.errorKey
@@ -178,7 +217,12 @@ export function PartyWatchControls({ controller, visible }: PartyWatchControlsPr
                 : "text-white/62"
           }`}
         >
-          {t(controller.errorKey ?? controller.copyStatusKey ?? controller.statusKey ?? "party.syncingWithJellyfinSyncPlay")}
+          {t(
+            controller.errorKey ??
+              controller.copyStatusKey ??
+              controller.statusKey ??
+              "party.syncingWithJellyfinSyncPlay",
+          )}
         </p>
       ) : null}
     </section>

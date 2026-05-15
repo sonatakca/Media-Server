@@ -9,7 +9,11 @@ import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getOrCreateDeviceId } from "../lib/device";
 import { authenticateByName } from "../lib/jellyfinApi";
-import { getServerUrl, isAuthenticated, setAuthSession } from "../lib/authStorage";
+import {
+  getServerUrl,
+  isAuthenticated,
+  setAuthSession,
+} from "../lib/authStorage";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 
@@ -50,7 +54,10 @@ export function LoginPage() {
       });
       navigate("/home", { replace: true });
     } catch (loginError) {
-      const message = loginError instanceof Error ? loginError.message : t("auth.loginFailed");
+      const message =
+        loginError instanceof Error
+          ? loginError.message
+          : t("auth.loginFailed");
       setError(`${t("auth.failedMessagePrefix")} ${message}`);
     } finally {
       setIsSubmitting(false);
@@ -61,41 +68,30 @@ export function LoginPage() {
     <main className="flex min-h-screen items-center justify-center px-4 py-10 text-white">
       <RainbowAnimation
         startDelay={0}
-
         fadeInDuration={2.5}
         holdDuration={5}
         fadeOutDuration={2.5}
-
         driftDuration={16.7}
         driftDistancePercent={35}
-
         startYPercent={-50}
         endYPercent={-50}
-
         startScale={0.92}
         endScale={1.08}
-
         maxOpacity={0.5}
-
         stripeAngleDeg={106}
-
         spinAngleDeg={2.2}
         spinSpeedDegPerSecond={0.035}
-
         blurPx={22}
-
         width="max(80vw, 62rem)"
         height="min(20rem, 35vh)"
         top="2rem"
-
         glowFadeInDuration={2.2}
         glowHoldDuration={5}
         glowFadeOutDuration={2.2}
         glowMaxOpacity={0.72}
         glowTop="-10rem"
-
         side="top"
-        />
+      />
 
       <RainbowAnimation
         startDelay={0.5} // Slight delay so it follows the top
@@ -129,29 +125,20 @@ export function LoginPage() {
         fadeInDuration={2.5}
         holdDuration={5}
         fadeOutDuration={2.5}
-
         driftDuration={15}
         driftDistancePercent={24}
-
         startYPercent={-50}
         endYPercent={-50}
-
         startScale={0.98}
         endScale={1.02}
-
         maxOpacity={0.3}
-
         stripeAngleDeg={108}
-
         spinAngleDeg={0.8}
         spinSpeedDegPerSecond={0.012}
-
         blurPx={30}
-
         width="max(64vw, 48rem)"
         height="min(20rem, 35vh)"
         top="2rem"
-
         glowFadeInDuration={2}
         glowHoldDuration={5}
         glowFadeOutDuration={2}
@@ -160,7 +147,6 @@ export function LoginPage() {
         glowWidth="min(32rem, 64vw)"
         glowHeight="min(8rem, 18vh)"
         glowBlurPx={22}
-
         side="left"
       />
 
@@ -194,18 +180,33 @@ export function LoginPage() {
 
       <section className="w-full max-w-md">
         <div className="mb-8 text-center">
-          <img src={appIcon} alt="" className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl" />
-          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">Seyirlik</p>
+          <img
+            src={appIcon}
+            alt=""
+            className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl"
+          />
+          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">
+            Seyirlik
+          </p>
           <h1 className="text-3xl font-black">{t("auth.signInToJellyfin")}</h1>
           <p className="mt-3 break-all text-sm text-zinc-400">{serverUrl}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6">
-          <label htmlFor="username" className="block text-sm font-semibold text-zinc-100">
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6"
+        >
+          <label
+            htmlFor="username"
+            className="block text-sm font-semibold text-zinc-100"
+          >
             {t("auth.username")}
           </label>
           <div className="relative mt-2">
-            <User className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+            <User
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+              size={18}
+            />
             <input
               id="username"
               autoComplete="username"
@@ -216,11 +217,17 @@ export function LoginPage() {
             />
           </div>
 
-          <label htmlFor="password" className="mt-5 block text-sm font-semibold text-zinc-100">
+          <label
+            htmlFor="password"
+            className="mt-5 block text-sm font-semibold text-zinc-100"
+          >
             {t("auth.password")}
           </label>
           <div className="relative mt-2">
-            <Lock className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+            <Lock
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+              size={18}
+            />
             <input
               id="password"
               type="password"
@@ -239,9 +246,13 @@ export function LoginPage() {
           ) : null}
 
           <Button type="submit" className="mt-6 w-full" disabled={isSubmitting}>
-            <AnimatedWidth value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}>
+            <AnimatedWidth
+              value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+            >
               <span className="inline-flex py-1 leading-normal">
-                <AnimatedText value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")} />
+                <AnimatedText
+                  value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+                />
               </span>
             </AnimatedWidth>
           </Button>

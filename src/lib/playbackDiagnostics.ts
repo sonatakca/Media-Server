@@ -1,13 +1,20 @@
 import { redactPlaybackUrl } from "./jellyfinApi";
 import type { TranslationKey } from "../i18n/translations";
-import type { JellyfinMediaSource, JellyfinMediaStream, PlaybackSourceCandidate } from "./types";
+import type {
+  JellyfinMediaSource,
+  JellyfinMediaStream,
+  PlaybackSourceCandidate,
+} from "./types";
 
 type Translate = (key: TranslationKey) => string;
 
 export function getPlaybackModeLabel(mode?: string, t?: Translate): string {
-  if (mode === "DirectPlay") return t ? t("playback.mode.directPlay") : "Direct Play";
-  if (mode === "DirectStream") return t ? t("playback.mode.directStream") : "Direct Stream";
-  if (mode === "Transcoding") return t ? t("playback.mode.transcoding") : "Transcoding";
+  if (mode === "DirectPlay")
+    return t ? t("playback.mode.directPlay") : "Direct Play";
+  if (mode === "DirectStream")
+    return t ? t("playback.mode.directStream") : "Direct Stream";
+  if (mode === "Transcoding")
+    return t ? t("playback.mode.transcoding") : "Transcoding";
   return t ? t("playback.mode.unknown") : "Unknown";
 }
 
@@ -31,11 +38,19 @@ export function getStreamOfType(
   mediaSource: JellyfinMediaSource | undefined,
   type: "Video" | "Audio",
 ): JellyfinMediaStream | undefined {
-  return mediaSource?.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === type.toLowerCase());
+  return mediaSource?.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
+  );
 }
 
-export function getSubtitleStreams(mediaSource: JellyfinMediaSource | undefined): JellyfinMediaStream[] {
-  return mediaSource?.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === "subtitle") ?? [];
+export function getSubtitleStreams(
+  mediaSource: JellyfinMediaSource | undefined,
+): JellyfinMediaStream[] {
+  return (
+    mediaSource?.MediaStreams?.filter(
+      (stream) => stream.Type?.toLowerCase() === "subtitle",
+    ) ?? []
+  );
 }
 
 export function formatBytes(bytes?: number, unknownLabel = "Unknown"): string {
@@ -107,12 +122,17 @@ function getReadableTranscodeReasonKey(reason: string): TranslationKey | null {
   const normalized = reason.toLowerCase();
 
   if (normalized.includes("container")) return "playback.reason.container";
-  if (normalized.includes("videocodec") || normalized.includes("video codec")) return "playback.reason.videoCodec";
-  if (normalized.includes("audiocodec") || normalized.includes("audio codec")) return "playback.reason.audioCodec";
+  if (normalized.includes("videocodec") || normalized.includes("video codec"))
+    return "playback.reason.videoCodec";
+  if (normalized.includes("audiocodec") || normalized.includes("audio codec"))
+    return "playback.reason.audioCodec";
   if (normalized.includes("subtitle")) return "playback.reason.subtitle";
   if (normalized.includes("bitrate")) return "playback.reason.bitrate";
   if (normalized.includes("resolution")) return "playback.reason.resolution";
-  if (normalized.includes("videorangetype") || normalized.includes("range type")) {
+  if (
+    normalized.includes("videorangetype") ||
+    normalized.includes("range type")
+  ) {
     return "playback.reason.videoRangeTypeNotSupported";
   }
   if (normalized.includes("audiochannels") || normalized.includes("channels")) {
@@ -125,24 +145,36 @@ function getReadableTranscodeReasonKey(reason: string): TranslationKey | null {
 function getSourceReasonKey(reason: string): TranslationKey | null {
   const normalized = reason.toLowerCase();
 
-  if (normalized.includes("transcoding url from playbackinfo")) return "playback.reason.jellyfinTranscodingUrl";
-  if (normalized.includes("hls fallback url")) return "playback.reason.hlsFallback";
-  if (normalized.includes("browser-compatible")) return "playback.reason.browserCompatible";
+  if (normalized.includes("transcoding url from playbackinfo"))
+    return "playback.reason.jellyfinTranscodingUrl";
+  if (normalized.includes("hls fallback url"))
+    return "playback.reason.hlsFallback";
+  if (normalized.includes("browser-compatible"))
+    return "playback.reason.browserCompatible";
   if (normalized.includes("last resort")) return "playback.reason.directRisky";
 
-  if (normalized.includes("selected player setting") || normalized.includes("selected audio track")) {
+  if (
+    normalized.includes("selected player setting") ||
+    normalized.includes("selected audio track")
+  ) {
     return "playback.reason.selectedSetting";
   }
 
   return null;
 }
 
-export function getReadableTranscodeReason(reason: string, t?: Translate): string {
+export function getReadableTranscodeReason(
+  reason: string,
+  t?: Translate,
+): string {
   const reasonKey = getReadableTranscodeReasonKey(reason);
   return reasonKey && t ? t(reasonKey) : reason;
 }
 
-export function getPrimaryTranscodeReasons(source: PlaybackSourceCandidate, t?: Translate): string[] {
+export function getPrimaryTranscodeReasons(
+  source: PlaybackSourceCandidate,
+  t?: Translate,
+): string[] {
   const rawReasons = [
     ...(source.transcodeReasons ?? []),
     ...(source.mediaSource.TranscodingReasons ?? []),
@@ -157,15 +189,26 @@ export function getPrimaryTranscodeReasons(source: PlaybackSourceCandidate, t?: 
   );
 }
 
-export function getPlaybackReasons(source: PlaybackSourceCandidate, t?: Translate): string[] {
+export function getPlaybackReasons(
+  source: PlaybackSourceCandidate,
+  t?: Translate,
+): string[] {
   const reasons: string[] = [];
 
   if (source.transcodeReasons?.length) {
-    reasons.push(...source.transcodeReasons.map((reason) => getReadableTranscodeReason(reason, t)));
+    reasons.push(
+      ...source.transcodeReasons.map((reason) =>
+        getReadableTranscodeReason(reason, t),
+      ),
+    );
   }
 
   if (source.mediaSource.TranscodingReasons?.length) {
-    reasons.push(...source.mediaSource.TranscodingReasons.map((reason) => getReadableTranscodeReason(reason, t)));
+    reasons.push(
+      ...source.mediaSource.TranscodingReasons.map((reason) =>
+        getReadableTranscodeReason(reason, t),
+      ),
+    );
   }
 
   if (source.directPlayError) {
@@ -192,7 +235,10 @@ export function getPlaybackReasons(source: PlaybackSourceCandidate, t?: Translat
   return Array.from(new Set(reasons));
 }
 
-export function getDirectPlayRecommendation(source: PlaybackSourceCandidate, t?: Translate): string[] {
+export function getDirectPlayRecommendation(
+  source: PlaybackSourceCandidate,
+  t?: Translate,
+): string[] {
   const mediaSource = source.mediaSource;
   const video = getStreamOfType(mediaSource, "Video");
   const audio = getStreamOfType(mediaSource, "Audio");
@@ -236,7 +282,11 @@ export function getDirectPlayRecommendation(source: PlaybackSourceCandidate, t?:
     );
   }
 
-  if (["opus", "flac", "dts", "truehd"].some((codec) => audioCodec.includes(codec))) {
+  if (
+    ["opus", "flac", "dts", "truehd"].some((codec) =>
+      audioCodec.includes(codec),
+    )
+  ) {
     recommendations.push(
       t
         ? t("playback.recommendation.audio")
@@ -244,7 +294,13 @@ export function getDirectPlayRecommendation(source: PlaybackSourceCandidate, t?:
     );
   }
 
-  if (subtitles.some((subtitle) => ["ass", "ssa", "pgs", "vobsub"].includes((subtitle.Codec ?? "").toLowerCase()))) {
+  if (
+    subtitles.some((subtitle) =>
+      ["ass", "ssa", "pgs", "vobsub"].includes(
+        (subtitle.Codec ?? "").toLowerCase(),
+      ),
+    )
+  ) {
     recommendations.push(
       t
         ? t("playback.recommendation.subtitles")
@@ -269,7 +325,10 @@ export function getDirectPlayRecommendation(source: PlaybackSourceCandidate, t?:
   return recommendations;
 }
 
-export function getSanitizedDebugPayload(source: PlaybackSourceCandidate, videoError?: string | null) {
+export function getSanitizedDebugPayload(
+  source: PlaybackSourceCandidate,
+  videoError?: string | null,
+) {
   return {
     mode: source.mode,
     mediaSourceId: source.mediaSourceId,

@@ -113,7 +113,9 @@ export function getAuthHeaders(): Record<string, string> {
 
   return {
     Authorization: createJellyfinAuthorizationHeader(session.accessToken),
-    "X-Emby-Authorization": createJellyfinAuthorizationHeader(session.accessToken),
+    "X-Emby-Authorization": createJellyfinAuthorizationHeader(
+      session.accessToken,
+    ),
     "X-Emby-Token": session.accessToken,
   };
 }

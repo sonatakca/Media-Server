@@ -9,14 +9,24 @@ import { MotionReveal } from "../components/MotionReveal";
 import { LibrarySkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
-import { getBackdropImageUrl, getItem, getItemsForLibrary, getSeasonEpisodes, getSeriesSeasons, getTopLevelItemsForLibrary } from "../lib/jellyfinApi";
+import {
+  getBackdropImageUrl,
+  getItem,
+  getItemsForLibrary,
+  getSeasonEpisodes,
+  getSeriesSeasons,
+  getTopLevelItemsForLibrary,
+} from "../lib/jellyfinApi";
 import { getDisplayTitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 
-type LibraryFallbackTitleKey = "common.series" | "format.season" | "library.library";
+type LibraryFallbackTitleKey =
+  | "common.series"
+  | "format.season"
+  | "library.library";
 
 interface LibraryData {
   library?: JellyfinItem;
@@ -37,7 +47,11 @@ function getSortNumber(item: JellyfinItem): number {
 }
 
 function compareNames(left: JellyfinItem, right: JellyfinItem): number {
-  return (left.SortName ?? left.Name).localeCompare(right.SortName ?? right.Name, undefined, { numeric: true });
+  return (left.SortName ?? left.Name).localeCompare(
+    right.SortName ?? right.Name,
+    undefined,
+    { numeric: true },
+  );
 }
 
 function compareDates(leftDate?: string, rightDate?: string): number {
@@ -46,14 +60,19 @@ function compareDates(leftDate?: string, rightDate?: string): number {
   return leftTime - rightTime;
 }
 
-function sortJellyfinItems(left: JellyfinItem, right: JellyfinItem, sortBy: "name" | "year" | "latest"): number {
+function sortJellyfinItems(
+  left: JellyfinItem,
+  right: JellyfinItem,
+  sortBy: "name" | "year" | "latest",
+): number {
   if (left.Type === "Season" && right.Type === "Season") {
     const seasonCompare = getSortNumber(left) - getSortNumber(right);
     return seasonCompare !== 0 ? seasonCompare : compareNames(left, right);
   }
 
   if (left.Type === "Episode" && right.Type === "Episode") {
-    const seasonCompare = (left.ParentIndexNumber ?? 0) - (right.ParentIndexNumber ?? 0);
+    const seasonCompare =
+      (left.ParentIndexNumber ?? 0) - (right.ParentIndexNumber ?? 0);
 
     if (seasonCompare !== 0) {
       return seasonCompare;
@@ -90,7 +109,10 @@ async function loadLibraryItems(
   seriesIdFromRoute?: string,
 ): Promise<JellyfinItem[]> {
   if (mode === "library") {
-    if (library?.CollectionType === "tvshows" || library?.CollectionType === "movies") {
+    if (
+      library?.CollectionType === "tvshows" ||
+      library?.CollectionType === "movies"
+    ) {
       return getTopLevelItemsForLibrary(id, library.CollectionType);
     }
 
@@ -106,7 +128,8 @@ async function loadLibraryItems(
           const existingCount =
             typeof season.ChildCount === "number" && season.ChildCount > 0
               ? season.ChildCount
-              : typeof season.RecursiveItemCount === "number" && season.RecursiveItemCount > 0
+              : typeof season.RecursiveItemCount === "number" &&
+                  season.RecursiveItemCount > 0
                 ? season.RecursiveItemCount
                 : null;
 
@@ -114,7 +137,9 @@ async function loadLibraryItems(
             return season;
           }
 
-          const episodes = await getSeasonEpisodes(id, season.Id).catch(() => []);
+          const episodes = await getSeasonEpisodes(id, season.Id).catch(
+            () => [],
+          );
 
           return {
             ...season,
@@ -131,7 +156,8 @@ async function loadLibraryItems(
   }
 
   if (mode === "season") {
-    const resolvedSeriesId = seriesIdFromRoute ?? library?.SeriesId ?? library?.ParentId;
+    const resolvedSeriesId =
+      seriesIdFromRoute ?? library?.SeriesId ?? library?.ParentId;
 
     if (resolvedSeriesId) {
       const episodes = await getSeasonEpisodes(resolvedSeriesId, id);
@@ -188,7 +214,12 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
       try {
         const libraryResult = await getItem(activeId).catch(() => undefined);
-        const items = await loadLibraryItems(activeId, mode, libraryResult, seriesId);
+        const items = await loadLibraryItems(
+          activeId,
+          mode,
+          libraryResult,
+          seriesId,
+        );
 
         const fallbackLibrary =
           libraryResult ??
@@ -241,10 +272,14 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
     const normalizedSearch = searchTerm.trim().toLowerCase();
     const items = normalizedSearch
-      ? data.items.filter((item) => item.Name.toLowerCase().includes(normalizedSearch))
+      ? data.items.filter((item) =>
+          item.Name.toLowerCase().includes(normalizedSearch),
+        )
       : data.items;
 
-    return [...items].sort((left, right) => sortJellyfinItems(left, right, sortBy));
+    return [...items].sort((left, right) =>
+      sortJellyfinItems(left, right, sortBy),
+    );
   }, [data, searchTerm, sortBy]);
 
   if (error) {
@@ -257,12 +292,18 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
   const libraryBackdrop =
     data.library?.BackdropImageTags?.[0] && data.library
-      ? getBackdropImageUrl(data.library.Id, data.library.BackdropImageTags[0], 1600)
+      ? getBackdropImageUrl(
+          data.library.Id,
+          data.library.BackdropImageTags[0],
+          1600,
+        )
       : "";
 
   const libraryTitle =
     data.library?.Name ||
-    (data.fallbackTitleKey ? t(data.fallbackTitleKey as TranslationKey) : t("library.library"));
+    (data.fallbackTitleKey
+      ? t(data.fallbackTitleKey as TranslationKey)
+      : t("library.library"));
 
   return (
     <div>
@@ -273,7 +314,9 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
             alt=""
             className="absolute inset-0 h-full w-full object-cover opacity-35"
             initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 0.35, scale: 1 }}
+            animate={
+              shouldReduceMotion ? undefined : { opacity: 0.35, scale: 1 }
+            }
             transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
           />
         ) : (
@@ -284,9 +327,13 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           <BackButton className="mb-14" />
 
           <MotionReveal className="max-w-4xl" direction="up">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">{t("library.library")}</p>
+            <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
+              {t("library.library")}
+            </p>
             <h1 className="mt-2 text-5xl font-black leading-none text-white sm:text-6xl">
-              {data.library?.Name ? getDisplayTitle(data.library, mediaFormatLabels) : libraryTitle}
+              {data.library?.Name
+                ? getDisplayTitle(data.library, mediaFormatLabels)
+                : libraryTitle}
             </h1>
             <p className="mt-4 text-base font-medium text-white/[0.62]">
               {data.items.length} {t("library.itemsAvailable")}
@@ -295,9 +342,15 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
         </div>
       </section>
 
-      <MotionReveal className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between" delay={0.04}>
+      <MotionReveal
+        className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"
+        delay={0.04}
+      >
         <label className="relative flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/[0.42]" size={19} />
+          <Search
+            className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/[0.42]"
+            size={19}
+          />
           <input
             type="search"
             value={searchTerm}
@@ -311,7 +364,9 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           <SlidersHorizontal size={18} />
           <select
             value={sortBy}
-            onChange={(event) => setSortBy(event.target.value as "name" | "year" | "latest")}
+            onChange={(event) =>
+              setSortBy(event.target.value as "name" | "year" | "latest")
+            }
             aria-label={t("library.sortBy")}
             className="bg-transparent text-white outline-none"
           >

@@ -25,7 +25,8 @@ export const translations = {
     "home.noLibraries": "No Jellyfin libraries were returned for this user.",
     "hero.featured": "Featured",
     "hero.nowStreaming": "Now Streaming",
-    "hero.fallbackDescription": "A focused, frontend-only way to browse and watch your existing Jellyfin library.",
+    "hero.fallbackDescription":
+      "A focused, frontend-only way to browse and watch your existing Jellyfin library.",
     "common.play": "Play",
     "common.pause": "Pause",
     "common.details": "Details",
@@ -66,7 +67,8 @@ export const translations = {
     "auth.changeServerUrl": "Change server URL",
     "auth.signInToJellyfin": "Sign in",
     "auth.failedTitle": "Authentication failed",
-    "auth.failedMessagePrefix": "Login failed. Check your username, password, and server URL.",
+    "auth.failedMessagePrefix":
+      "Login failed. Check your username, password, and server URL.",
     "auth.loginFailed": "Login failed.",
     "server.connectJellyfin": "Connect",
     "server.jellyfinServerUrl": "Server URL",
@@ -76,7 +78,8 @@ export const translations = {
     "server.connectionIssue": "Connection issue",
     "server.connectedTo": "Connected to",
     "server.saveFailed": "Could not save this server URL.",
-    "server.couldNotConnect": "Could not connect. Check the URL and network settings.",
+    "server.couldNotConnect":
+      "Could not connect. Check the URL and network settings.",
     "server.localhostNote":
       "means the current machine. If Jellyfin is running on your Windows PC and you are testing from your Mac, enter the Windows PC local IP address instead.",
     "library.library": "Library",
@@ -134,7 +137,8 @@ export const translations = {
     "player.resizeSubtitlesBottomLeft": "Resize subtitles from bottom left",
     "player.resizeSubtitlesBottomRight": "Resize subtitles from bottom right",
     "player.rotateTitle": "Turn your phone sideways",
-    "player.rotateMessage": "Seyirlik player works best in landscape on phones.",
+    "player.rotateMessage":
+      "Seyirlik player works best in landscape on phones.",
     "player.rotateHint": "Playback stays ready while you rotate.",
     "settings.settings": "Settings",
     "settings.playbackOptions": "Playback options",
@@ -204,59 +208,106 @@ export const translations = {
     "playback.outputVideoH264": "H.264 if using current Seyirlik HLS profile",
     "playback.outputAudioAac": "AAC if using current Seyirlik HLS profile",
     "playback.notTranscoding": "Not transcoding",
-    "playback.speedUnavailable": "Speed not available from the current frontend API response.",
-    "playback.speedNote": "Accurate transcode speed may require Jellyfin active session or dashboard permissions.",
-    "playback.reason.container": "Container not supported by the browser or selected client profile.",
+    "playback.speedUnavailable":
+      "Speed not available from the current frontend API response.",
+    "playback.speedNote":
+      "Accurate transcode speed may require Jellyfin active session or dashboard permissions.",
+    "playback.reason.container":
+      "Container not supported by the browser or selected client profile.",
     "playback.reason.videoCodec": "Video codec not supported.",
     "playback.reason.audioCodec": "Audio codec not supported.",
-    "playback.reason.subtitle": "Subtitle format or burn-in requirement may require transcoding.",
+    "playback.reason.subtitle":
+      "Subtitle format or burn-in requirement may require transcoding.",
     "playback.reason.bitrate": "Bitrate limit requires transcoding.",
     "playback.reason.resolution": "Resolution limit requires transcoding.",
-    "playback.reason.audioChannels": "Audio channel limit requires transcoding.",
-    "playback.reason.jellyfinSpecific": "Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.",
-    "playback.reason.jellyfinTranscodingUrl": "Jellyfin returned a transcoding URL from PlaybackInfo.",
-    "playback.reason.hlsFallback": "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
-    "playback.reason.browserCompatible": "Container and codecs look browser-compatible.",
-    "playback.reason.directRisky": "Direct URL kept as a last resort because this container or codec is risky in browsers.",
-    "playback.reason.selectedSetting": "Built a Jellyfin HLS URL for the selected player setting.",
+    "playback.reason.audioChannels":
+      "Audio channel limit requires transcoding.",
+    "playback.reason.jellyfinSpecific":
+      "Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.",
+    "playback.reason.jellyfinTranscodingUrl":
+      "Jellyfin returned a transcoding URL from PlaybackInfo.",
+    "playback.reason.hlsFallback":
+      "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
+    "playback.reason.browserCompatible":
+      "Container and codecs look browser-compatible.",
+    "playback.reason.directRisky":
+      "Direct URL kept as a last resort because this container or codec is risky in browsers.",
+    "playback.reason.selectedSetting":
+      "Built a Jellyfin HLS URL for the selected player setting.",
     "playback.transcodingReason": "Reason for transcoding",
     "playback.transcodingReasonTitle": "Jellyfin is transcoding because",
-    "playback.transcodingReasonNote": "These are the most important playback diagnostics. Fixing these usually moves the file closer to direct play.",
-    "playback.reason.containerNotSupported": "The media container is not supported by the client.",
-    "playback.reason.videoCodecNotSupported": "The video codec is not supported by the client.",
-    "playback.reason.audioCodecNotSupported": "The audio codec is not supported by the client.",
-    "playback.reason.subtitleCodecNotSupported": "The subtitle codec is not supported by the client.",
-    "playback.reason.audioIsExternal": "The selected audio stream is external and requires processing.",
-    "playback.reason.secondaryAudioNotSupported": "The selected secondary audio stream is not supported.",
-    "playback.reason.videoProfileNotSupported": "The video codec profile is not supported.",
-    "playback.reason.videoLevelNotSupported": "The video codec level is not supported.",
-    "playback.reason.videoResolutionNotSupported": "The video resolution is not supported.",
-    "playback.reason.videoBitDepthNotSupported": "The video bit depth is not supported.",
-    "playback.reason.videoFramerateNotSupported": "The video frame rate is not supported.",
-    "playback.reason.refFramesNotSupported": "The number of video reference frames is not supported.",
-    "playback.reason.anamorphicVideoNotSupported": "Anamorphic video is not supported.",
-    "playback.reason.interlacedVideoNotSupported": "Interlaced video is not supported.",
-    "playback.reason.audioChannelsNotSupported": "The number of audio channels is not supported.",
-    "playback.reason.audioProfileNotSupported": "The audio codec profile is not supported.",
-    "playback.reason.audioSampleRateNotSupported": "The audio sample rate is not supported.",
-    "playback.reason.audioBitDepthNotSupported": "The audio bit depth is not supported.",
-    "playback.reason.containerBitrateExceedsLimit": "The container bitrate exceeds the allowed limit.",
-    "playback.reason.videoBitrateNotSupported": "The video bitrate is not supported or exceeds the limit.",
-    "playback.reason.audioBitrateNotSupported": "The audio bitrate is not supported or exceeds the limit.",
-    "playback.reason.unknownVideoStreamInfo": "Jellyfin could not read enough video stream information.",
-    "playback.reason.unknownAudioStreamInfo": "Jellyfin could not read enough audio stream information.",
-    "playback.reason.directPlayError": "Jellyfin encountered a direct play error.",
-    "playback.reason.videoRangeTypeNotSupported": "The video's range type is not supported, usually HDR or Dolby Vision.",
-    "playback.reason.videoCodecTagNotSupported": "The video codec tag is not supported.",
-    "playback.reason.streamCountExceedsLimit": "The number of streams exceeds the client profile limit.",
-    "playback.recommendation.browserTarget": "For maximum browser compatibility, use MP4 container with H.264 video and AAC audio.",
-    "playback.recommendation.mkv": "Current container looks like MKV/Matroska. Browser playback is safer with MP4.",
-    "playback.recommendation.hevc": "Current video appears to be HEVC/H.265. Support varies by browser and device; H.264 is safer.",
-    "playback.recommendation.av1": "AV1 support is improving, but H.264 is still the safest choice for older devices.",
-    "playback.recommendation.audio": "Current audio codec may trigger audio transcoding. AAC stereo or AAC 5.1 is safer.",
-    "playback.recommendation.subtitles": "ASS/SSA/PGS/VobSub subtitles may require burn-in. External SRT/WebVTT subtitles are safer.",
-    "playback.recommendation.hdr": "HDR or Dolby Vision may require tone mapping on unsupported clients. SDR H.264 is safer for maximum compatibility.",
-    "playback.recommendation.bestTarget": "Best target: SDR H.264 + AAC in MP4, with external SRT subtitles.",
+    "playback.transcodingReasonNote":
+      "These are the most important playback diagnostics. Fixing these usually moves the file closer to direct play.",
+    "playback.reason.containerNotSupported":
+      "The media container is not supported by the client.",
+    "playback.reason.videoCodecNotSupported":
+      "The video codec is not supported by the client.",
+    "playback.reason.audioCodecNotSupported":
+      "The audio codec is not supported by the client.",
+    "playback.reason.subtitleCodecNotSupported":
+      "The subtitle codec is not supported by the client.",
+    "playback.reason.audioIsExternal":
+      "The selected audio stream is external and requires processing.",
+    "playback.reason.secondaryAudioNotSupported":
+      "The selected secondary audio stream is not supported.",
+    "playback.reason.videoProfileNotSupported":
+      "The video codec profile is not supported.",
+    "playback.reason.videoLevelNotSupported":
+      "The video codec level is not supported.",
+    "playback.reason.videoResolutionNotSupported":
+      "The video resolution is not supported.",
+    "playback.reason.videoBitDepthNotSupported":
+      "The video bit depth is not supported.",
+    "playback.reason.videoFramerateNotSupported":
+      "The video frame rate is not supported.",
+    "playback.reason.refFramesNotSupported":
+      "The number of video reference frames is not supported.",
+    "playback.reason.anamorphicVideoNotSupported":
+      "Anamorphic video is not supported.",
+    "playback.reason.interlacedVideoNotSupported":
+      "Interlaced video is not supported.",
+    "playback.reason.audioChannelsNotSupported":
+      "The number of audio channels is not supported.",
+    "playback.reason.audioProfileNotSupported":
+      "The audio codec profile is not supported.",
+    "playback.reason.audioSampleRateNotSupported":
+      "The audio sample rate is not supported.",
+    "playback.reason.audioBitDepthNotSupported":
+      "The audio bit depth is not supported.",
+    "playback.reason.containerBitrateExceedsLimit":
+      "The container bitrate exceeds the allowed limit.",
+    "playback.reason.videoBitrateNotSupported":
+      "The video bitrate is not supported or exceeds the limit.",
+    "playback.reason.audioBitrateNotSupported":
+      "The audio bitrate is not supported or exceeds the limit.",
+    "playback.reason.unknownVideoStreamInfo":
+      "Jellyfin could not read enough video stream information.",
+    "playback.reason.unknownAudioStreamInfo":
+      "Jellyfin could not read enough audio stream information.",
+    "playback.reason.directPlayError":
+      "Jellyfin encountered a direct play error.",
+    "playback.reason.videoRangeTypeNotSupported":
+      "The video's range type is not supported, usually HDR or Dolby Vision.",
+    "playback.reason.videoCodecTagNotSupported":
+      "The video codec tag is not supported.",
+    "playback.reason.streamCountExceedsLimit":
+      "The number of streams exceeds the client profile limit.",
+    "playback.recommendation.browserTarget":
+      "For maximum browser compatibility, use MP4 container with H.264 video and AAC audio.",
+    "playback.recommendation.mkv":
+      "Current container looks like MKV/Matroska. Browser playback is safer with MP4.",
+    "playback.recommendation.hevc":
+      "Current video appears to be HEVC/H.265. Support varies by browser and device; H.264 is safer.",
+    "playback.recommendation.av1":
+      "AV1 support is improving, but H.264 is still the safest choice for older devices.",
+    "playback.recommendation.audio":
+      "Current audio codec may trigger audio transcoding. AAC stereo or AAC 5.1 is safer.",
+    "playback.recommendation.subtitles":
+      "ASS/SSA/PGS/VobSub subtitles may require burn-in. External SRT/WebVTT subtitles are safer.",
+    "playback.recommendation.hdr":
+      "HDR or Dolby Vision may require tone mapping on unsupported clients. SDR H.264 is safer for maximum compatibility.",
+    "playback.recommendation.bestTarget":
+      "Best target: SDR H.264 + AAC in MP4, with external SRT subtitles.",
     "party.title": "SyncPlay",
     "party.createRoom": "Create room",
     "party.joinPlaceholder": "Group ID or invite link",
@@ -303,7 +354,8 @@ export const translations = {
     "home.noLibraries": "Bu kullanıcı için Jellyfin kütüphanesi döndürülmedi.",
     "hero.featured": "Öne Çıkan",
     "hero.nowStreaming": "Şimdi Yayında",
-    "hero.fallbackDescription": "Mevcut Jellyfin kütüphaneni gezmek ve izlemek için sade, tamamen frontend odaklı bir deneyim.",
+    "hero.fallbackDescription":
+      "Mevcut Jellyfin kütüphaneni gezmek ve izlemek için sade, tamamen frontend odaklı bir deneyim.",
     "common.play": "Oynat",
     "common.pause": "Duraklat",
     "common.details": "Detaylar",
@@ -344,7 +396,8 @@ export const translations = {
     "auth.changeServerUrl": "Sunucu adresini değiştir",
     "auth.signInToJellyfin": "Giriş yap",
     "auth.failedTitle": "Kimlik doğrulama başarısız",
-    "auth.failedMessagePrefix": "Giriş başarısız. Kullanıcı adını, şifreni ve sunucu adresini kontrol et.",
+    "auth.failedMessagePrefix":
+      "Giriş başarısız. Kullanıcı adını, şifreni ve sunucu adresini kontrol et.",
     "auth.loginFailed": "Giriş başarısız.",
     "server.connectJellyfin": "Bağlan",
     "server.jellyfinServerUrl": "Sunucu adresi",
@@ -354,7 +407,8 @@ export const translations = {
     "server.connectionIssue": "Bağlantı sorunu",
     "server.connectedTo": "Bağlanıldı:",
     "server.saveFailed": "Bu sunucu adresi kaydedilemedi.",
-    "server.couldNotConnect": "Bağlanılamadı. Adresi ve ağ ayarlarını kontrol et.",
+    "server.couldNotConnect":
+      "Bağlanılamadı. Adresi ve ağ ayarlarını kontrol et.",
     "server.localhostNote":
       "geçerli cihaz anlamına gelir. Jellyfin Windows PC'nde çalışıyorsa ve Mac'ten test ediyorsan, Windows PC'nin yerel IP adresini gir.",
     "library.library": "Kütüphane",
@@ -408,11 +462,15 @@ export const translations = {
     "player.subtitleEditPlaceholder": "Altyazı düzenleme örneği.",
     "player.dragSubtitles": "Altyazıları sürükle",
     "player.resizeSubtitlesTopLeft": "Altyazıyı sol üstten yeniden boyutlandır",
-    "player.resizeSubtitlesTopRight": "Altyazıyı sağ üstten yeniden boyutlandır",
-    "player.resizeSubtitlesBottomLeft": "Altyazıyı sol alttan yeniden boyutlandır",
-    "player.resizeSubtitlesBottomRight": "Altyazıyı sağ alttan yeniden boyutlandır",
+    "player.resizeSubtitlesTopRight":
+      "Altyazıyı sağ üstten yeniden boyutlandır",
+    "player.resizeSubtitlesBottomLeft":
+      "Altyazıyı sol alttan yeniden boyutlandır",
+    "player.resizeSubtitlesBottomRight":
+      "Altyazıyı sağ alttan yeniden boyutlandır",
     "player.rotateTitle": "Telefonunu yan çevir",
-    "player.rotateMessage": "Seyirlik oynatıcı telefonda en iyi yatay kullanımda çalışır.",
+    "player.rotateMessage":
+      "Seyirlik oynatıcı telefonda en iyi yatay kullanımda çalışır.",
     "player.rotateHint": "Çevirirken oynatma hazır kalır.",
     "settings.settings": "Ayarlar",
     "settings.playbackOptions": "Oynatma seçenekleri",
@@ -479,62 +537,111 @@ export const translations = {
     "playback.outputVideo": "Çıkış videosu",
     "playback.outputAudio": "Çıkış sesi",
     "playback.speed": "Hız",
-    "playback.outputVideoH264": "Geçerli Seyirlik HLS profili kullanılıyorsa H.264",
-    "playback.outputAudioAac": "Geçerli Seyirlik HLS profili kullanılıyorsa AAC",
+    "playback.outputVideoH264":
+      "Geçerli Seyirlik HLS profili kullanılıyorsa H.264",
+    "playback.outputAudioAac":
+      "Geçerli Seyirlik HLS profili kullanılıyorsa AAC",
     "playback.notTranscoding": "Dönüştürülmüyor",
-    "playback.speedUnavailable": "Hız bilgisi geçerli frontend API yanıtında yok.",
-    "playback.speedNote": "Doğru dönüştürme hızı için Jellyfin aktif oturum veya panel izinleri gerekebilir.",
-    "playback.reason.container": "Kapsayıcı tarayıcı veya seçili istemci profili tarafından desteklenmiyor.",
+    "playback.speedUnavailable":
+      "Hız bilgisi geçerli frontend API yanıtında yok.",
+    "playback.speedNote":
+      "Doğru dönüştürme hızı için Jellyfin aktif oturum veya panel izinleri gerekebilir.",
+    "playback.reason.container":
+      "Kapsayıcı tarayıcı veya seçili istemci profili tarafından desteklenmiyor.",
     "playback.reason.videoCodec": "Video codec desteklenmiyor.",
     "playback.reason.audioCodec": "Ses codec desteklenmiyor.",
-    "playback.reason.subtitle": "Altyazı biçimi veya gömme gereksinimi dönüştürme gerektirebilir.",
+    "playback.reason.subtitle":
+      "Altyazı biçimi veya gömme gereksinimi dönüştürme gerektirebilir.",
     "playback.reason.bitrate": "Bit hızı sınırı dönüştürme gerektiriyor.",
     "playback.reason.resolution": "Çözünürlük sınırı dönüştürme gerektiriyor.",
-    "playback.reason.audioChannels": "Ses kanal sınırı dönüştürme gerektiriyor.",
-    "playback.reason.jellyfinSpecific": "Jellyfin belirli bir neden döndürmedi. Sunucu günlüklerini veya PlaybackInfo yanıtını kontrol et.",
-    "playback.reason.jellyfinTranscodingUrl": "Jellyfin, PlaybackInfo içinde dönüştürme adresi döndürdü.",
-    "playback.reason.hlsFallback": "PlaybackInfo medya kaynağı verisinden Jellyfin HLS yedeği oluşturuldu.",
-    "playback.reason.browserCompatible": "Kapsayıcı ve codec'ler tarayıcıyla uyumlu görünüyor.",
-    "playback.reason.directRisky": "Bu kapsayıcı veya codec tarayıcılarda riskli olduğu için doğrudan adres son çare olarak tutuldu.",
-    "playback.reason.selectedSetting": "Seçili oynatıcı ayarı için Jellyfin HLS adresi oluşturuldu.",
+    "playback.reason.audioChannels":
+      "Ses kanal sınırı dönüştürme gerektiriyor.",
+    "playback.reason.jellyfinSpecific":
+      "Jellyfin belirli bir neden döndürmedi. Sunucu günlüklerini veya PlaybackInfo yanıtını kontrol et.",
+    "playback.reason.jellyfinTranscodingUrl":
+      "Jellyfin, PlaybackInfo içinde dönüştürme adresi döndürdü.",
+    "playback.reason.hlsFallback":
+      "PlaybackInfo medya kaynağı verisinden Jellyfin HLS yedeği oluşturuldu.",
+    "playback.reason.browserCompatible":
+      "Kapsayıcı ve codec'ler tarayıcıyla uyumlu görünüyor.",
+    "playback.reason.directRisky":
+      "Bu kapsayıcı veya codec tarayıcılarda riskli olduğu için doğrudan adres son çare olarak tutuldu.",
+    "playback.reason.selectedSetting":
+      "Seçili oynatıcı ayarı için Jellyfin HLS adresi oluşturuldu.",
     "playback.transcodingReason": "Dönüştürme nedeni",
     "playback.transcodingReasonTitle": "Jellyfin şu yüzden dönüştürüyor",
-    "playback.transcodingReasonNote": "Bunlar en önemli oynatma tanılarıdır. Genelde bunları düzeltmek dosyayı doğrudan oynatmaya yaklaştırır.",
-    "playback.reason.containerNotSupported": "Medya kapsayıcısı istemci tarafından desteklenmiyor.",
-    "playback.reason.videoCodecNotSupported": "Video codec'i istemci tarafından desteklenmiyor.",
-    "playback.reason.audioCodecNotSupported": "Ses codec'i istemci tarafından desteklenmiyor.",
-    "playback.reason.subtitleCodecNotSupported": "Altyazı codec'i istemci tarafından desteklenmiyor.",
-    "playback.reason.audioIsExternal": "Seçili ses akışı harici ve işleme gerektiriyor.",
-    "playback.reason.secondaryAudioNotSupported": "Seçili ikincil ses akışı desteklenmiyor.",
-    "playback.reason.videoProfileNotSupported": "Video codec profili desteklenmiyor.",
-    "playback.reason.videoLevelNotSupported": "Video codec seviyesi desteklenmiyor.",
-    "playback.reason.videoResolutionNotSupported": "Video çözünürlüğü desteklenmiyor.",
-    "playback.reason.videoBitDepthNotSupported": "Video bit derinliği desteklenmiyor.",
-    "playback.reason.videoFramerateNotSupported": "Video kare hızı desteklenmiyor.",
-    "playback.reason.refFramesNotSupported": "Video referans kare sayısı desteklenmiyor.",
-    "playback.reason.anamorphicVideoNotSupported": "Anamorfik video desteklenmiyor.",
-    "playback.reason.interlacedVideoNotSupported": "Geçmeli video desteklenmiyor.",
-    "playback.reason.audioChannelsNotSupported": "Ses kanal sayısı desteklenmiyor.",
-    "playback.reason.audioProfileNotSupported": "Ses codec profili desteklenmiyor.",
-    "playback.reason.audioSampleRateNotSupported": "Ses örnekleme hızı desteklenmiyor.",
-    "playback.reason.audioBitDepthNotSupported": "Ses bit derinliği desteklenmiyor.",
-    "playback.reason.containerBitrateExceedsLimit": "Kapsayıcı bit hızı izin verilen sınırı aşıyor.",
-    "playback.reason.videoBitrateNotSupported": "Video bit hızı desteklenmiyor veya sınırı aşıyor.",
-    "playback.reason.audioBitrateNotSupported": "Ses bit hızı desteklenmiyor veya sınırı aşıyor.",
-    "playback.reason.unknownVideoStreamInfo": "Jellyfin yeterli video akışı bilgisini okuyamadı.",
-    "playback.reason.unknownAudioStreamInfo": "Jellyfin yeterli ses akışı bilgisini okuyamadı.",
-    "playback.reason.directPlayError": "Jellyfin doğrudan oynatma hatasıyla karşılaştı.",
-    "playback.reason.videoRangeTypeNotSupported": "Videonun aralık tipi desteklenmiyor; genelde HDR veya Dolby Vision kaynaklıdır.",
-    "playback.reason.videoCodecTagNotSupported": "Video codec etiketi desteklenmiyor.",
-    "playback.reason.streamCountExceedsLimit": "Akış sayısı istemci profili sınırını aşıyor.",
-    "playback.recommendation.browserTarget": "En yüksek tarayıcı uyumluluğu için MP4 kapsayıcı, H.264 video ve AAC ses kullan.",
-    "playback.recommendation.mkv": "Geçerli kapsayıcı MKV/Matroska görünüyor. Tarayıcı oynatımı MP4 ile daha güvenlidir.",
-    "playback.recommendation.hevc": "Geçerli video HEVC/H.265 görünüyor. Destek tarayıcı ve cihaza göre değişir; H.264 daha güvenlidir.",
-    "playback.recommendation.av1": "AV1 desteği gelişiyor ama eski cihazlar için H.264 hâlâ en güvenli tercihtir.",
-    "playback.recommendation.audio": "Geçerli ses codec'i ses dönüştürmeyi tetikleyebilir. AAC stereo veya AAC 5.1 daha güvenlidir.",
-    "playback.recommendation.subtitles": "ASS/SSA/PGS/VobSub altyazılar gömme gerektirebilir. Harici SRT/WebVTT altyazılar daha güvenlidir.",
-    "playback.recommendation.hdr": "HDR veya Dolby Vision desteklenmeyen istemcilerde ton eşleme gerektirebilir. En geniş uyumluluk için SDR H.264 daha güvenlidir.",
-    "playback.recommendation.bestTarget": "En iyi hedef: MP4 içinde SDR H.264 + AAC ve harici SRT altyazılar.",
+    "playback.transcodingReasonNote":
+      "Bunlar en önemli oynatma tanılarıdır. Genelde bunları düzeltmek dosyayı doğrudan oynatmaya yaklaştırır.",
+    "playback.reason.containerNotSupported":
+      "Medya kapsayıcısı istemci tarafından desteklenmiyor.",
+    "playback.reason.videoCodecNotSupported":
+      "Video codec'i istemci tarafından desteklenmiyor.",
+    "playback.reason.audioCodecNotSupported":
+      "Ses codec'i istemci tarafından desteklenmiyor.",
+    "playback.reason.subtitleCodecNotSupported":
+      "Altyazı codec'i istemci tarafından desteklenmiyor.",
+    "playback.reason.audioIsExternal":
+      "Seçili ses akışı harici ve işleme gerektiriyor.",
+    "playback.reason.secondaryAudioNotSupported":
+      "Seçili ikincil ses akışı desteklenmiyor.",
+    "playback.reason.videoProfileNotSupported":
+      "Video codec profili desteklenmiyor.",
+    "playback.reason.videoLevelNotSupported":
+      "Video codec seviyesi desteklenmiyor.",
+    "playback.reason.videoResolutionNotSupported":
+      "Video çözünürlüğü desteklenmiyor.",
+    "playback.reason.videoBitDepthNotSupported":
+      "Video bit derinliği desteklenmiyor.",
+    "playback.reason.videoFramerateNotSupported":
+      "Video kare hızı desteklenmiyor.",
+    "playback.reason.refFramesNotSupported":
+      "Video referans kare sayısı desteklenmiyor.",
+    "playback.reason.anamorphicVideoNotSupported":
+      "Anamorfik video desteklenmiyor.",
+    "playback.reason.interlacedVideoNotSupported":
+      "Geçmeli video desteklenmiyor.",
+    "playback.reason.audioChannelsNotSupported":
+      "Ses kanal sayısı desteklenmiyor.",
+    "playback.reason.audioProfileNotSupported":
+      "Ses codec profili desteklenmiyor.",
+    "playback.reason.audioSampleRateNotSupported":
+      "Ses örnekleme hızı desteklenmiyor.",
+    "playback.reason.audioBitDepthNotSupported":
+      "Ses bit derinliği desteklenmiyor.",
+    "playback.reason.containerBitrateExceedsLimit":
+      "Kapsayıcı bit hızı izin verilen sınırı aşıyor.",
+    "playback.reason.videoBitrateNotSupported":
+      "Video bit hızı desteklenmiyor veya sınırı aşıyor.",
+    "playback.reason.audioBitrateNotSupported":
+      "Ses bit hızı desteklenmiyor veya sınırı aşıyor.",
+    "playback.reason.unknownVideoStreamInfo":
+      "Jellyfin yeterli video akışı bilgisini okuyamadı.",
+    "playback.reason.unknownAudioStreamInfo":
+      "Jellyfin yeterli ses akışı bilgisini okuyamadı.",
+    "playback.reason.directPlayError":
+      "Jellyfin doğrudan oynatma hatasıyla karşılaştı.",
+    "playback.reason.videoRangeTypeNotSupported":
+      "Videonun aralık tipi desteklenmiyor; genelde HDR veya Dolby Vision kaynaklıdır.",
+    "playback.reason.videoCodecTagNotSupported":
+      "Video codec etiketi desteklenmiyor.",
+    "playback.reason.streamCountExceedsLimit":
+      "Akış sayısı istemci profili sınırını aşıyor.",
+    "playback.recommendation.browserTarget":
+      "En yüksek tarayıcı uyumluluğu için MP4 kapsayıcı, H.264 video ve AAC ses kullan.",
+    "playback.recommendation.mkv":
+      "Geçerli kapsayıcı MKV/Matroska görünüyor. Tarayıcı oynatımı MP4 ile daha güvenlidir.",
+    "playback.recommendation.hevc":
+      "Geçerli video HEVC/H.265 görünüyor. Destek tarayıcı ve cihaza göre değişir; H.264 daha güvenlidir.",
+    "playback.recommendation.av1":
+      "AV1 desteği gelişiyor ama eski cihazlar için H.264 hâlâ en güvenli tercihtir.",
+    "playback.recommendation.audio":
+      "Geçerli ses codec'i ses dönüştürmeyi tetikleyebilir. AAC stereo veya AAC 5.1 daha güvenlidir.",
+    "playback.recommendation.subtitles":
+      "ASS/SSA/PGS/VobSub altyazılar gömme gerektirebilir. Harici SRT/WebVTT altyazılar daha güvenlidir.",
+    "playback.recommendation.hdr":
+      "HDR veya Dolby Vision desteklenmeyen istemcilerde ton eşleme gerektirebilir. En geniş uyumluluk için SDR H.264 daha güvenlidir.",
+    "playback.recommendation.bestTarget":
+      "En iyi hedef: MP4 içinde SDR H.264 + AAC ve harici SRT altyazılar.",
     "party.title": "SyncPlay",
     "party.createRoom": "Oda oluştur",
     "party.joinPlaceholder": "Grup ID'si veya davet bağlantısı",

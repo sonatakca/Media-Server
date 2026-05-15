@@ -1,8 +1,18 @@
 import type { TranslationKey } from "../../i18n/translations";
 
-export type JellyfinSyncPlayGroupState = "Idle" | "Waiting" | "Paused" | "Playing" | string;
+export type JellyfinSyncPlayGroupState =
+  | "Idle"
+  | "Waiting"
+  | "Paused"
+  | "Playing"
+  | string;
 
-export type JellyfinSyncPlayCommandType = "Unpause" | "Pause" | "Stop" | "Seek" | string;
+export type JellyfinSyncPlayCommandType =
+  | "Unpause"
+  | "Pause"
+  | "Stop"
+  | "Seek"
+  | string;
 
 export type JellyfinSyncPlayGroupUpdateType =
   | "UserJoined"
@@ -16,7 +26,11 @@ export type JellyfinSyncPlayGroupUpdateType =
   | "LibraryAccessDenied"
   | string;
 
-export type JellyfinSyncPlaySocketStatus = "connecting" | "connected" | "disconnected" | "error";
+export type JellyfinSyncPlaySocketStatus =
+  | "connecting"
+  | "connected"
+  | "disconnected"
+  | "error";
 
 export type PartyWatchRole = "host" | "member";
 

@@ -32,7 +32,10 @@ export function PartyWatchOverlay({ controller }: PartyWatchOverlayProps) {
         }`}
       >
         {controller.isApplyingRemoteCommand || controller.isLoading ? (
-          <Loader2 className="shrink-0 animate-spin text-[var(--accent)]" size={16} />
+          <Loader2
+            className="shrink-0 animate-spin text-[var(--accent)]"
+            size={16}
+          />
         ) : (
           <Users className="shrink-0 text-[var(--accent)]" size={16} />
         )}

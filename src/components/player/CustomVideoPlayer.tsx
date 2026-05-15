@@ -1,6 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent, type PointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+  type PointerEvent,
+} from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronsRight, Loader2, RotateCw, Smartphone, Users } from "lucide-react";
+import {
+  ChevronsRight,
+  Loader2,
+  RotateCw,
+  Smartphone,
+  Users,
+} from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
@@ -13,7 +27,10 @@ import {
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
-import { getVideoErrorDetails, type PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
+import {
+  getVideoErrorDetails,
+  type PlaybackTechnicalDetails,
+} from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useMediaSegments } from "../../hooks/useMediaSegments";
@@ -141,15 +158,29 @@ const initialSeekFeedback: SeekFeedbackState = {
   },
 };
 
-function getStreamsOfType(source: PlaybackSourceCandidate, type: "Audio" | "Subtitle"): JellyfinMediaStream[] {
-  return source.mediaSource.MediaStreams?.filter((stream) => stream.Type?.toLowerCase() === type.toLowerCase()) ?? [];
+function getStreamsOfType(
+  source: PlaybackSourceCandidate,
+  type: "Audio" | "Subtitle",
+): JellyfinMediaStream[] {
+  return (
+    source.mediaSource.MediaStreams?.filter(
+      (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
+    ) ?? []
+  );
 }
 
-function getDefaultAudioStreamIndex(source: PlaybackSourceCandidate): number | undefined {
-  return source.mediaSource.DefaultAudioStreamIndex ?? getStreamsOfType(source, "Audio")[0]?.Index;
+function getDefaultAudioStreamIndex(
+  source: PlaybackSourceCandidate,
+): number | undefined {
+  return (
+    source.mediaSource.DefaultAudioStreamIndex ??
+    getStreamsOfType(source, "Audio")[0]?.Index
+  );
 }
 
-function getDefaultSubtitleStreamIndex(source: PlaybackSourceCandidate): number {
+function getDefaultSubtitleStreamIndex(
+  source: PlaybackSourceCandidate,
+): number {
   return source.mediaSource.DefaultSubtitleStreamIndex ?? -1;
 }
 
@@ -158,10 +189,14 @@ function getStreamByIndex(
   type: "Audio" | "Subtitle",
   streamIndex: number,
 ): JellyfinMediaStream | undefined {
-  return getStreamsOfType(source, type).find((stream) => stream.Index === streamIndex);
+  return getStreamsOfType(source, type).find(
+    (stream) => stream.Index === streamIndex,
+  );
 }
 
-function getQualitySettings(quality?: PlaybackQualityOption): PlaybackSourceSettings {
+function getQualitySettings(
+  quality?: PlaybackQualityOption,
+): PlaybackSourceSettings {
   if (!quality) {
     return {};
   }
@@ -217,13 +252,26 @@ function SkipSegmentButton({
         <motion.div
           key={segment.id}
           className="pointer-events-auto absolute bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.6rem)] right-[max(0.85rem,env(safe-area-inset-right))] z-[38] sm:bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+7.2rem)] sm:right-[max(1.25rem,env(safe-area-inset-right))]"
-          initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }}
-          animate={shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }}
-          exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+          initial={
+            shouldReduceMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 14, scale: 0.98 }
+          }
+          animate={
+            shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }
+          }
+          exit={
+            shouldReduceMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 8, scale: 0.98 }
+          }
           transition={
             shouldReduceMotion
               ? { duration: 0.01 }
-              : { duration: 0.22, ease: [0.16, 1, 0.3, 1] as [number, number, number, number] }
+              : {
+                  duration: 0.22,
+                  ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+                }
           }
         >
           <button
@@ -284,7 +332,10 @@ function parseSubtitleTimestamp(rawTimestamp: string): number | null {
 }
 
 function parseSubtitleCues(rawText: string): SubtitleCue[] {
-  const normalizedText = rawText.replace(/^\uFEFF/, "").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const normalizedText = rawText
+    .replace(/^\uFEFF/, "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n");
   const blocks = normalizedText.split(/\n{2,}/);
   const cues: SubtitleCue[] = [];
 
@@ -296,7 +347,13 @@ function parseSubtitleCues(rawText: string): SubtitleCue[] {
 
     const firstLine = lines[0]?.trim().toUpperCase() ?? "";
 
-    if (!firstLine || firstLine === "WEBVTT" || firstLine.startsWith("NOTE") || firstLine === "STYLE" || firstLine === "REGION") {
+    if (
+      !firstLine ||
+      firstLine === "WEBVTT" ||
+      firstLine.startsWith("NOTE") ||
+      firstLine === "STYLE" ||
+      firstLine === "REGION"
+    ) {
       return;
     }
 
@@ -310,7 +367,10 @@ function parseSubtitleCues(rawText: string): SubtitleCue[] {
 
     const start = parseSubtitleTimestamp(timingMatch[1]);
     const end = parseSubtitleTimestamp(timingMatch[2]);
-    const text = lines.slice(timingLineIndex + 1).join("\n").trim();
+    const text = lines
+      .slice(timingLineIndex + 1)
+      .join("\n")
+      .trim();
 
     if (start === null || end === null || end <= start || !text) {
       return;
@@ -322,7 +382,10 @@ function parseSubtitleCues(rawText: string): SubtitleCue[] {
   return cues.sort((left, right) => left.start - right.start);
 }
 
-function getActiveSubtitleTextForTime(cues: SubtitleCue[], currentTime: number): string {
+function getActiveSubtitleTextForTime(
+  cues: SubtitleCue[],
+  currentTime: number,
+): string {
   const activeTexts = cues
     .filter((cue) => cue.start <= currentTime && cue.end >= currentTime)
     .map((cue) => decodeCueText(cue.text))
@@ -379,7 +442,9 @@ export function CustomVideoPlayer({
     targetSeconds: number;
   } | null>(null);
   const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
-  const seekFeedbackHideTimersRef = useRef<Record<SeekFeedbackDirection, number | null>>({
+  const seekFeedbackHideTimersRef = useRef<
+    Record<SeekFeedbackDirection, number | null>
+  >({
     backward: null,
     forward: null,
   });
@@ -400,7 +465,10 @@ export function CustomVideoPlayer({
 
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
-  const { segments: mediaSegments, activeSegment } = useMediaSegments(item.Id, progress.currentTime);
+  const { segments: mediaSegments, activeSegment } = useMediaSegments(
+    item.Id,
+    progress.currentTime,
+  );
 
   const controlsShouldStayVisible =
     isSettingsOpen ||
@@ -430,14 +498,22 @@ export function CustomVideoPlayer({
     showControls,
   });
 
-  const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<string | null>(null);
-  const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] = useState(false);
-  const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] = useState<number | null>(null);
-  const [seekFeedback, setSeekFeedback] = useState<SeekFeedbackState>(initialSeekFeedback);
-  const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<string | null>(null);
+  const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<
+    string | null
+  >(null);
+  const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] =
+    useState(false);
+  const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] =
+    useState<number | null>(null);
+  const [seekFeedback, setSeekFeedback] =
+    useState<SeekFeedbackState>(initialSeekFeedback);
+  const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<
+    string | null
+  >(null);
 
   const updateLatestPlaybackPosition = useCallback(() => {
-    const currentTime = videoRef.current?.currentTime ?? latestPlaybackPositionRef.current;
+    const currentTime =
+      videoRef.current?.currentTime ?? latestPlaybackPositionRef.current;
 
     if (Number.isFinite(currentTime)) {
       latestPlaybackPositionRef.current = currentTime;
@@ -467,7 +543,10 @@ export function CustomVideoPlayer({
   );
 
   useEffect(() => {
-    if (dismissedSkipSegmentId && activeSegment?.id !== dismissedSkipSegmentId) {
+    if (
+      dismissedSkipSegmentId &&
+      activeSegment?.id !== dismissedSkipSegmentId
+    ) {
       setDismissedSkipSegmentId(null);
     }
   }, [activeSegment?.id, dismissedSkipSegmentId]);
@@ -495,51 +574,65 @@ export function CustomVideoPlayer({
     };
   }, [partyWatch.partyEventMessage, displayedPartyEventMessage]);
 
-  const [activeSource, setActiveSource] = useState<PlaybackSourceCandidate>(source);
+  const [activeSource, setActiveSource] =
+    useState<PlaybackSourceCandidate>(source);
   const [selectedQualityId, setSelectedQualityId] = useState(AUTO_QUALITY_ID);
-  const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<number | undefined>(() =>
-    getDefaultAudioStreamIndex(source),
-  );
-  const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] = useState<number>(() =>
-    getDefaultSubtitleStreamIndex(source),
-  );
+  const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<
+    number | undefined
+  >(() => getDefaultAudioStreamIndex(source));
+  const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
+    useState<number>(() => getDefaultSubtitleStreamIndex(source));
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
-  const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<string[]>([]);
+  const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<
+    string[]
+  >([]);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
-  const [subtitlePosition, setSubtitlePosition] = useState<SubtitlePosition | null>(null);
-  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({ scale: DEFAULT_SUBTITLE_SCALE });
+  const [subtitlePosition, setSubtitlePosition] =
+    useState<SubtitlePosition | null>(null);
+  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({
+    scale: DEFAULT_SUBTITLE_SCALE,
+  });
   const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false);
   const [isResizingSubtitle, setIsResizingSubtitle] = useState(false);
-  const availablePlaybackCandidates = playbackCandidates.length > 0 ? playbackCandidates : [source];
-  const qualityOptions = useMemo(() => getManualQualityOptions(activeSource.mediaSource), [activeSource.mediaSource]);
+  const availablePlaybackCandidates =
+    playbackCandidates.length > 0 ? playbackCandidates : [source];
+  const qualityOptions = useMemo(
+    () => getManualQualityOptions(activeSource.mediaSource),
+    [activeSource.mediaSource],
+  );
   const canSwitchAudio = Boolean(
-    activeSource.mediaSource.Id && (activeSource.mediaSource.SupportsTranscoding || activeSource.mode === "Transcoding"),
+    activeSource.mediaSource.Id &&
+    (activeSource.mediaSource.SupportsTranscoding ||
+      activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
 
-  const sourceWithLiveTranscodingReasons = useMemo<PlaybackSourceCandidate>(() => {
-    if (liveTranscodingReasons.length === 0) {
-      return activeSource;
-    }
+  const sourceWithLiveTranscodingReasons =
+    useMemo<PlaybackSourceCandidate>(() => {
+      if (liveTranscodingReasons.length === 0) {
+        return activeSource;
+      }
 
-    const mergedTranscodeReasons = Array.from(
-      new Set([
-        ...(activeSource.transcodeReasons ?? []),
-        ...(activeSource.mediaSource.TranscodingReasons ?? []),
-        ...liveTranscodingReasons,
-      ].filter(Boolean)),
-    );
+      const mergedTranscodeReasons = Array.from(
+        new Set(
+          [
+            ...(activeSource.transcodeReasons ?? []),
+            ...(activeSource.mediaSource.TranscodingReasons ?? []),
+            ...liveTranscodingReasons,
+          ].filter(Boolean),
+        ),
+      );
 
-    return {
-      ...activeSource,
-      transcodeReasons: mergedTranscodeReasons,
-      mediaSource: {
-        ...activeSource.mediaSource,
-        TranscodingReasons: mergedTranscodeReasons,
-      },
-    };
-  }, [activeSource, liveTranscodingReasons]);
+      return {
+        ...activeSource,
+        transcodeReasons: mergedTranscodeReasons,
+        mediaSource: {
+          ...activeSource.mediaSource,
+          TranscodingReasons: mergedTranscodeReasons,
+        },
+      };
+    }, [activeSource, liveTranscodingReasons]);
 
   const skippableActiveSegment = useMemo(() => {
     if (
@@ -580,13 +673,20 @@ export function CustomVideoPlayer({
   const skipSegmentLabel = skippableActiveSegment
     ? t(getSkipSegmentLabelKey(skippableActiveSegment.type))
     : t("player.skipSegment");
-  
+
   const fullscreenSeekPreview = useMemo(() => {
-    if (fullscreenSeekPreviewSeconds === null || !activeSource.mediaSourceId || progress.duration <= 0) {
+    if (
+      fullscreenSeekPreviewSeconds === null ||
+      !activeSource.mediaSourceId ||
+      progress.duration <= 0
+    ) {
       return null;
     }
 
-    const globalTileIndex = Math.max(0, Math.floor(fullscreenSeekPreviewSeconds / TRICKPLAY_INTERVAL_SECONDS));
+    const globalTileIndex = Math.max(
+      0,
+      Math.floor(fullscreenSeekPreviewSeconds / TRICKPLAY_INTERVAL_SECONDS),
+    );
     const sheetIndex = Math.floor(globalTileIndex / TRICKPLAY_IMAGES_PER_SHEET);
     const tileIndexOnSheet = globalTileIndex % TRICKPLAY_IMAGES_PER_SHEET;
     const column = tileIndexOnSheet % TRICKPLAY_COLUMNS;
@@ -602,46 +702,51 @@ export function CustomVideoPlayer({
       column,
       row,
     };
-  }, [activeSource.itemId, activeSource.mediaSourceId, fullscreenSeekPreviewSeconds, progress.duration]);
+  }, [
+    activeSource.itemId,
+    activeSource.mediaSourceId,
+    fullscreenSeekPreviewSeconds,
+    progress.duration,
+  ]);
 
   const fullscreenSeekPreviewRect = useMemo(() => {
-  const video = videoRef.current;
-  const container = containerRef.current;
+    const video = videoRef.current;
+    const container = containerRef.current;
 
-  if (!video || !container) {
-    return null;
-  }
+    if (!video || !container) {
+      return null;
+    }
 
-  const containerBounds = container.getBoundingClientRect();
-  const videoAspect =
-    video.videoWidth > 0 && video.videoHeight > 0
-      ? video.videoWidth / video.videoHeight
-      : TRICKPLAY_TILE_WIDTH / TRICKPLAY_TILE_HEIGHT;
+    const containerBounds = container.getBoundingClientRect();
+    const videoAspect =
+      video.videoWidth > 0 && video.videoHeight > 0
+        ? video.videoWidth / video.videoHeight
+        : TRICKPLAY_TILE_WIDTH / TRICKPLAY_TILE_HEIGHT;
 
-  const containerAspect = containerBounds.width / containerBounds.height;
+    const containerAspect = containerBounds.width / containerBounds.height;
 
-  let width = containerBounds.width;
-  let height = containerBounds.height;
-  let left = 0;
-  let top = 0;
+    let width = containerBounds.width;
+    let height = containerBounds.height;
+    let left = 0;
+    let top = 0;
 
-  if (containerAspect > videoAspect) {
-    height = containerBounds.height;
-    width = height * videoAspect;
-    left = (containerBounds.width - width) / 2;
-  } else {
-    width = containerBounds.width;
-    height = width / videoAspect;
-    top = (containerBounds.height - height) / 2;
-  }
+    if (containerAspect > videoAspect) {
+      height = containerBounds.height;
+      width = height * videoAspect;
+      left = (containerBounds.width - width) / 2;
+    } else {
+      width = containerBounds.width;
+      height = width / videoAspect;
+      top = (containerBounds.height - height) / 2;
+    }
 
-  return {
-    left,
-    top,
-    width,
-    height,
-  };
-}, [fullscreenSeekPreviewSeconds, progress.duration]);
+    return {
+      left,
+      top,
+      width,
+      height,
+    };
+  }, [fullscreenSeekPreviewSeconds, progress.duration]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -678,7 +783,6 @@ export function CustomVideoPlayer({
       window.clearInterval(interval);
     };
   }, [activeSource.id, activeSource.url]);
-  
 
   useEffect(() => {
     pendingSourceRestoreRef.current = null;
@@ -695,7 +799,8 @@ export function CustomVideoPlayer({
     let isCancelled = false;
     let intervalId: number | null = null;
 
-    const shouldFetchLiveReasons = activeSource.mode === "Transcoding" || activeSource.isHls;
+    const shouldFetchLiveReasons =
+      activeSource.mode === "Transcoding" || activeSource.isHls;
 
     if (!shouldFetchLiveReasons) {
       setLiveTranscodingReasons([]);
@@ -704,7 +809,10 @@ export function CustomVideoPlayer({
 
     const fetchLiveReasons = async () => {
       try {
-        const reasons = await getActiveTranscodingReasons(activeSource.itemId, activeSource.playSessionId);
+        const reasons = await getActiveTranscodingReasons(
+          activeSource.itemId,
+          activeSource.playSessionId,
+        );
 
         if (isCancelled) {
           return;
@@ -715,7 +823,9 @@ export function CustomVideoPlayer({
 
           if (
             currentReasons.length === nextReasons.length &&
-            currentReasons.every((reason, index) => reason === nextReasons[index])
+            currentReasons.every(
+              (reason, index) => reason === nextReasons[index],
+            )
           ) {
             return currentReasons;
           }
@@ -724,7 +834,10 @@ export function CustomVideoPlayer({
         });
       } catch (reasonError) {
         if (!isCancelled) {
-          console.warn("[Seyirlik Playback] Could not fetch live transcoding reasons", reasonError);
+          console.warn(
+            "[Seyirlik Playback] Could not fetch live transcoding reasons",
+            reasonError,
+          );
         }
       }
     };
@@ -739,7 +852,12 @@ export function CustomVideoPlayer({
         window.clearInterval(intervalId);
       }
     };
-  }, [activeSource.itemId, activeSource.playSessionId, activeSource.mode, activeSource.isHls]);
+  }, [
+    activeSource.itemId,
+    activeSource.playSessionId,
+    activeSource.mode,
+    activeSource.isHls,
+  ]);
 
   useEffect(() => {
     latestPlaybackPositionRef.current = 0;
@@ -784,41 +902,48 @@ export function CustomVideoPlayer({
       return;
     }
 
-    const direction: SeekFeedbackDirection = seconds < 0 ? "backward" : "forward";
-    const oppositeDirection: SeekFeedbackDirection = direction === "backward" ? "forward" : "backward";
+    const direction: SeekFeedbackDirection =
+      seconds < 0 ? "backward" : "forward";
+    const oppositeDirection: SeekFeedbackDirection =
+      direction === "backward" ? "forward" : "backward";
     const amount = Math.abs(seconds);
 
     if (seekFeedbackHideTimersRef.current[oppositeDirection] !== null) {
-      window.clearTimeout(seekFeedbackHideTimersRef.current[oppositeDirection]!);
+      window.clearTimeout(
+        seekFeedbackHideTimersRef.current[oppositeDirection]!,
+      );
     }
 
-    seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(() => {
-      setSeekFeedback((current) => ({
-        ...current,
-        [oppositeDirection]: {
-          ...current[oppositeDirection],
-          visible: false,
-        },
-      }));
+    seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(
+      () => {
+        setSeekFeedback((current) => ({
+          ...current,
+          [oppositeDirection]: {
+            ...current[oppositeDirection],
+            visible: false,
+          },
+        }));
 
-      window.setTimeout(() => {
-        setSeekFeedback((current) => {
-          if (current[oppositeDirection].visible) {
-            return current;
-          }
+        window.setTimeout(() => {
+          setSeekFeedback((current) => {
+            if (current[oppositeDirection].visible) {
+              return current;
+            }
 
-          return {
-            ...current,
-            [oppositeDirection]: {
-              ...current[oppositeDirection],
-              amount: 0,
-            },
-          };
-        });
-      }, SEEK_FEEDBACK_FADE_RESET_MS);
+            return {
+              ...current,
+              [oppositeDirection]: {
+                ...current[oppositeDirection],
+                amount: 0,
+              },
+            };
+          });
+        }, SEEK_FEEDBACK_FADE_RESET_MS);
 
-      seekFeedbackHideTimersRef.current[oppositeDirection] = null;
-    }, SEEK_FEEDBACK_OPPOSITE_HIDE_MS);
+        seekFeedbackHideTimersRef.current[oppositeDirection] = null;
+      },
+      SEEK_FEEDBACK_OPPOSITE_HIDE_MS,
+    );
 
     setSeekFeedback((current) => {
       const currentDirection = current[direction];
@@ -829,7 +954,8 @@ export function CustomVideoPlayer({
           ...currentDirection,
           amount: currentDirection.amount + amount,
           visible: true,
-          rotation: currentDirection.rotation + (direction === "forward" ? 360 : -360),
+          rotation:
+            currentDirection.rotation + (direction === "forward" ? 360 : -360),
           pulse: currentDirection.pulse + 1,
         },
       };
@@ -882,13 +1008,16 @@ export function CustomVideoPlayer({
       const video = videoRef.current;
       const videoDuration = video?.duration;
       const duration =
-        typeof videoDuration === "number" && Number.isFinite(videoDuration) && videoDuration > 0
+        typeof videoDuration === "number" &&
+        Number.isFinite(videoDuration) &&
+        videoDuration > 0
           ? videoDuration
           : progress.duration;
       const rawTarget = segment.endSeconds + 0.15;
-      const target = Number.isFinite(duration) && duration > 0
-        ? clamp(rawTarget, 0, Math.max(0, duration - 0.25))
-        : Math.max(0, rawTarget);
+      const target =
+        Number.isFinite(duration) && duration > 0
+          ? clamp(rawTarget, 0, Math.max(0, duration - 0.25))
+          : Math.max(0, rawTarget);
 
       setDismissedSkipSegmentId(segment.id);
       partyWatch.seekTo(target);
@@ -932,7 +1061,9 @@ export function CustomVideoPlayer({
       return undefined;
     }
 
-    const handlePointerDownOutsidePartyWatch = (event: globalThis.PointerEvent) => {
+    const handlePointerDownOutsidePartyWatch = (
+      event: globalThis.PointerEvent,
+    ) => {
       const target = event.target as HTMLElement | null;
 
       if (target?.closest("[data-party-watch-root]")) {
@@ -942,10 +1073,16 @@ export function CustomVideoPlayer({
       setIsPartyWatchOpen(false);
     };
 
-    document.addEventListener("pointerdown", handlePointerDownOutsidePartyWatch);
+    document.addEventListener(
+      "pointerdown",
+      handlePointerDownOutsidePartyWatch,
+    );
 
     return () => {
-      document.removeEventListener("pointerdown", handlePointerDownOutsidePartyWatch);
+      document.removeEventListener(
+        "pointerdown",
+        handlePointerDownOutsidePartyWatch,
+      );
     };
   }, [isPartyWatchOpen]);
 
@@ -954,7 +1091,9 @@ export function CustomVideoPlayer({
       return undefined;
     }
 
-    const handlePointerDownOutsideSubtitle = (event: globalThis.PointerEvent) => {
+    const handlePointerDownOutsideSubtitle = (
+      event: globalThis.PointerEvent,
+    ) => {
       const target = event.target as HTMLElement | null;
 
       if (
@@ -975,55 +1114,72 @@ export function CustomVideoPlayer({
     document.addEventListener("pointerdown", handlePointerDownOutsideSubtitle);
 
     return () => {
-      document.removeEventListener("pointerdown", handlePointerDownOutsideSubtitle);
+      document.removeEventListener(
+        "pointerdown",
+        handlePointerDownOutsideSubtitle,
+      );
     };
   }, [isSubtitleEditMode]);
 
-  const stopCurrentPlaybackForSourceSwitch = useCallback(async (currentSource: PlaybackSourceCandidate) => {
-    const video = videoRef.current;
+  const stopCurrentPlaybackForSourceSwitch = useCallback(
+    async (currentSource: PlaybackSourceCandidate) => {
+      const video = videoRef.current;
 
-    try {
-      video?.pause();
-    } catch {
-      // Ignore pause errors during source switching.
-    }
-
-    try {
-      activeAttachmentRef.current?.destroy();
-    } catch (destroyError) {
-      console.warn("[Seyirlik Playback] Could not destroy current video attachment before source switch", destroyError);
-    } finally {
-      activeAttachmentRef.current = null;
-    }
-
-    try {
-      video?.removeAttribute("src");
-      video?.load();
-    } catch {
-      // Ignore media reset errors during source switching.
-    }
-
-    if (currentSource.mode === "Transcoding" || currentSource.isHls) {
       try {
-        await stopActiveTranscodeSession(currentSource.playSessionId);
-      } catch (stopError) {
-        console.warn("[Seyirlik Playback] Could not stop active Jellyfin transcode session", stopError);
+        video?.pause();
+      } catch {
+        // Ignore pause errors during source switching.
       }
-    }
-  }, []);
+
+      try {
+        activeAttachmentRef.current?.destroy();
+      } catch (destroyError) {
+        console.warn(
+          "[Seyirlik Playback] Could not destroy current video attachment before source switch",
+          destroyError,
+        );
+      } finally {
+        activeAttachmentRef.current = null;
+      }
+
+      try {
+        video?.removeAttribute("src");
+        video?.load();
+      } catch {
+        // Ignore media reset errors during source switching.
+      }
+
+      if (currentSource.mode === "Transcoding" || currentSource.isHls) {
+        try {
+          await stopActiveTranscodeSession(currentSource.playSessionId);
+        } catch (stopError) {
+          console.warn(
+            "[Seyirlik Playback] Could not stop active Jellyfin transcode session",
+            stopError,
+          );
+        }
+      }
+    },
+    [],
+  );
 
   const switchPlayerSource = useCallback(
     async (nextSource: PlaybackSourceCandidate) => {
       const video = videoRef.current;
 
-      if (nextSource.id === activeSource.id && nextSource.url === activeSource.url) {
+      if (
+        nextSource.id === activeSource.id &&
+        nextSource.url === activeSource.url
+      ) {
         return;
       }
 
       sourceSwitchTokenRef.current += 1;
 
       const currentTime = video?.currentTime ?? progress.currentTime;
-      const wasPlaying = video ? !video.paused && !video.ended : progress.isPlaying;
+      const wasPlaying = video
+        ? !video.paused && !video.ended
+        : progress.isPlaying;
 
       pendingSourceRestoreRef.current = {
         token: sourceSwitchTokenRef.current,
@@ -1039,7 +1195,10 @@ export function CustomVideoPlayer({
       const cacheBustedUrl = (() => {
         try {
           const url = new URL(nextSource.url);
-          url.searchParams.set("seyirlikRestart", `${Date.now()}-${sourceSwitchTokenRef.current}`);
+          url.searchParams.set(
+            "seyirlikRestart",
+            `${Date.now()}-${sourceSwitchTokenRef.current}`,
+          );
           return url.toString();
         } catch {
           return nextSource.url;
@@ -1061,7 +1220,11 @@ export function CustomVideoPlayer({
   );
 
   const buildConfiguredSource = useCallback(
-    (baseSource: PlaybackSourceCandidate, quality?: PlaybackQualityOption, audioStreamIndex = selectedAudioStreamIndex) => {
+    (
+      baseSource: PlaybackSourceCandidate,
+      quality?: PlaybackQualityOption,
+      audioStreamIndex = selectedAudioStreamIndex,
+    ) => {
       const settings: PlaybackSourceSettings = {
         ...getQualitySettings(quality),
         audioStreamIndex,
@@ -1083,18 +1246,30 @@ export function CustomVideoPlayer({
     const bestSource = availablePlaybackCandidates[0] ?? source;
     const defaultAudioIndex = getDefaultAudioStreamIndex(bestSource);
     const shouldKeepAudioOverride =
-      selectedAudioStreamIndex !== undefined && selectedAudioStreamIndex !== defaultAudioIndex;
+      selectedAudioStreamIndex !== undefined &&
+      selectedAudioStreamIndex !== defaultAudioIndex;
 
     setSelectedQualityId(AUTO_QUALITY_ID);
 
     void switchPlayerSource(
-      shouldKeepAudioOverride ? buildConfiguredSource(bestSource, undefined, selectedAudioStreamIndex) : bestSource,
+      shouldKeepAudioOverride
+        ? buildConfiguredSource(bestSource, undefined, selectedAudioStreamIndex)
+        : bestSource,
     ).catch((switchError: unknown) => {
-      console.warn("[Seyirlik Playback] Could not keep selected audio while returning to Auto quality", switchError);
+      console.warn(
+        "[Seyirlik Playback] Could not keep selected audio while returning to Auto quality",
+        switchError,
+      );
       setSelectedAudioStreamIndex(defaultAudioIndex);
       void switchPlayerSource(bestSource);
     });
-  }, [availablePlaybackCandidates, buildConfiguredSource, selectedAudioStreamIndex, source, switchPlayerSource]);
+  }, [
+    availablePlaybackCandidates,
+    buildConfiguredSource,
+    selectedAudioStreamIndex,
+    source,
+    switchPlayerSource,
+  ]);
 
   const handleSelectQuality = useCallback(
     (quality: PlaybackQualityOption) => {
@@ -1103,14 +1278,20 @@ export function CustomVideoPlayer({
       try {
         nextSource = buildConfiguredSource(activeSource, quality);
       } catch (switchError) {
-        console.warn("[Seyirlik Playback] Could not build quality source", switchError);
+        console.warn(
+          "[Seyirlik Playback] Could not build quality source",
+          switchError,
+        );
         return;
       }
 
       setSelectedQualityId(quality.id);
 
       void switchPlayerSource(nextSource).catch((switchError: unknown) => {
-        console.warn("[Seyirlik Playback] Could not switch quality", switchError);
+        console.warn(
+          "[Seyirlik Playback] Could not switch quality",
+          switchError,
+        );
       });
     },
     [activeSource, buildConfiguredSource, switchPlayerSource],
@@ -1122,23 +1303,42 @@ export function CustomVideoPlayer({
         return;
       }
 
-      const selectedQuality = qualityOptions.find((quality) => quality.id === selectedQualityId);
+      const selectedQuality = qualityOptions.find(
+        (quality) => quality.id === selectedQualityId,
+      );
       let nextSource: PlaybackSourceCandidate;
 
       try {
-        nextSource = buildConfiguredSource(activeSource, selectedQuality, streamIndex);
+        nextSource = buildConfiguredSource(
+          activeSource,
+          selectedQuality,
+          streamIndex,
+        );
       } catch (switchError) {
-        console.warn("[Seyirlik Playback] Could not build audio stream source", switchError);
+        console.warn(
+          "[Seyirlik Playback] Could not build audio stream source",
+          switchError,
+        );
         return;
       }
 
       setSelectedAudioStreamIndex(streamIndex);
 
       void switchPlayerSource(nextSource).catch((switchError: unknown) => {
-        console.warn("[Seyirlik Playback] Could not switch audio stream", switchError);
+        console.warn(
+          "[Seyirlik Playback] Could not switch audio stream",
+          switchError,
+        );
       });
     },
-    [activeSource, buildConfiguredSource, canSwitchAudio, qualityOptions, selectedQualityId, switchPlayerSource],
+    [
+      activeSource,
+      buildConfiguredSource,
+      canSwitchAudio,
+      qualityOptions,
+      selectedQualityId,
+      switchPlayerSource,
+    ],
   );
 
   const clearFullscreenSeekPreviewFallbackTimer = useCallback(() => {
@@ -1224,9 +1424,14 @@ export function CustomVideoPlayer({
         return;
       }
 
-      const currentTime = Number.isFinite(video.currentTime) ? video.currentTime : 0;
+      const currentTime = Number.isFinite(video.currentTime)
+        ? video.currentTime
+        : 0;
 
-      if (!video.ended && Math.abs(currentTime - pendingPreview.targetSeconds) > 1.5) {
+      if (
+        !video.ended &&
+        Math.abs(currentTime - pendingPreview.targetSeconds) > 1.5
+      ) {
         return;
       }
 
@@ -1244,11 +1449,14 @@ export function CustomVideoPlayer({
     };
   }, [hideFullscreenSeekPreviewAfterPaint]);
 
-  const handleSelectSubtitleStream = useCallback((streamIndex: number) => {
-    setActiveSubtitleText("");
-    setSelectedSubtitleStreamIndex(streamIndex);
-    showControls();
-  }, [showControls]);
+  const handleSelectSubtitleStream = useCallback(
+    (streamIndex: number) => {
+      setActiveSubtitleText("");
+      setSelectedSubtitleStreamIndex(streamIndex);
+      showControls();
+    },
+    [showControls],
+  );
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1291,12 +1499,19 @@ export function CustomVideoPlayer({
         video.currentTime = nextTime;
         latestPlaybackPositionRef.current = nextTime;
       } catch (seekError) {
-        console.warn("[Seyirlik Playback] Could not apply saved playback position", seekError);
+        console.warn(
+          "[Seyirlik Playback] Could not apply saved playback position",
+          seekError,
+        );
       }
     };
 
     const restorePlayback = () => {
-      if (!pendingRestore || didRestore || pendingRestore.token !== sourceSwitchTokenRef.current) {
+      if (
+        !pendingRestore ||
+        didRestore ||
+        pendingRestore.token !== sourceSwitchTokenRef.current
+      ) {
         return;
       }
 
@@ -1311,12 +1526,18 @@ export function CustomVideoPlayer({
           video.currentTime = Math.min(pendingRestore.currentTime, maxTime);
         }
       } catch (seekError) {
-        console.warn("[Seyirlik Playback] Could not restore playback position after source switch", seekError);
+        console.warn(
+          "[Seyirlik Playback] Could not restore playback position after source switch",
+          seekError,
+        );
       }
 
       if (pendingRestore.wasPlaying) {
         void video.play().catch((playError: unknown) => {
-          console.info("[Seyirlik Playback] Playback resume was blocked or deferred", playError);
+          console.info(
+            "[Seyirlik Playback] Playback resume was blocked or deferred",
+            playError,
+          );
         });
       } else {
         video.pause();
@@ -1327,11 +1548,16 @@ export function CustomVideoPlayer({
     };
 
     try {
-      attachment = attachSourceToVideo(video, sourceToAttach.url, sourceToAttach.mimeType);
+      attachment = attachSourceToVideo(
+        video,
+        sourceToAttach.url,
+        sourceToAttach.mimeType,
+      );
       activeAttachmentRef.current = attachment;
 
       setActiveSource((currentSource) =>
-        currentSource.id === sourceToAttach.id && currentSource.url === sourceToAttach.url
+        currentSource.id === sourceToAttach.id &&
+        currentSource.url === sourceToAttach.url
           ? { ...currentSource, usingHlsJs: attachment?.usingHlsJs }
           : currentSource,
       );
@@ -1342,11 +1568,18 @@ export function CustomVideoPlayer({
       video.load();
       if (!pendingRestore && !partyWatch.shouldDeferAutoplay) {
         void video.play().catch((playError: unknown) => {
-          console.info("[Seyirlik Playback] Autoplay was blocked or deferred", playError);
+          console.info(
+            "[Seyirlik Playback] Autoplay was blocked or deferred",
+            playError,
+          );
         });
       }
     } catch (attachError) {
-      onVideoFailure(attachError instanceof Error ? attachError.message : String(attachError));
+      onVideoFailure(
+        attachError instanceof Error
+          ? attachError.message
+          : String(attachError),
+      );
     }
 
     return () => {
@@ -1362,18 +1595,21 @@ export function CustomVideoPlayer({
       try {
         attachment?.destroy();
       } catch (destroyError) {
-        console.warn("[Seyirlik Playback] Could not destroy video attachment during cleanup", destroyError);
+        console.warn(
+          "[Seyirlik Playback] Could not destroy video attachment during cleanup",
+          destroyError,
+        );
       }
     };
   }, [
-  activeSource.id,
-  activeSource.mimeType,
-  activeSource.url,
-  initialStartSeconds,
-  onVideoFailure,
-  partyWatch.shouldDeferAutoplay,
-  refreshProgress,
-]);
+    activeSource.id,
+    activeSource.mimeType,
+    activeSource.url,
+    initialStartSeconds,
+    onVideoFailure,
+    partyWatch.shouldDeferAutoplay,
+    refreshProgress,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -1387,7 +1623,11 @@ export function CustomVideoPlayer({
 
       reportStoppedOnce(false);
     };
-  }, [clearFullscreenSeekPreviewFallbackTimer, clearSeekFeedbackTimers, reportStoppedOnce]);
+  }, [
+    clearFullscreenSeekPreviewFallbackTimer,
+    clearSeekFeedbackTimers,
+    reportStoppedOnce,
+  ]);
 
   useEffect(() => {
     const handlePageExit = () => {
@@ -1411,7 +1651,11 @@ export function CustomVideoPlayer({
       return undefined;
     }
 
-    const subtitleStream = getStreamByIndex(activeSource, "Subtitle", selectedSubtitleStreamIndex);
+    const subtitleStream = getStreamByIndex(
+      activeSource,
+      "Subtitle",
+      selectedSubtitleStreamIndex,
+    );
 
     if (!subtitleStream) {
       return undefined;
@@ -1426,7 +1670,9 @@ export function CustomVideoPlayer({
 
     const loadSubtitleCues = async () => {
       try {
-        const response = await fetch(subtitleUrl, { signal: abortController.signal });
+        const response = await fetch(subtitleUrl, {
+          signal: abortController.signal,
+        });
 
         if (!response.ok) {
           throw new Error(`Subtitle request failed with ${response.status}`);
@@ -1439,7 +1685,10 @@ export function CustomVideoPlayer({
         }
       } catch (subtitleError) {
         if (!abortController.signal.aborted) {
-          console.warn("[Seyirlik Subtitles] Could not load subtitle stream", subtitleError);
+          console.warn(
+            "[Seyirlik Subtitles] Could not load subtitle stream",
+            subtitleError,
+          );
         }
       }
     };
@@ -1449,7 +1698,12 @@ export function CustomVideoPlayer({
     return () => {
       abortController.abort();
     };
-  }, [activeSource.itemId, activeSource.mediaSource, activeSource.mediaSourceId, selectedSubtitleStreamIndex]);
+  }, [
+    activeSource.itemId,
+    activeSource.mediaSource,
+    activeSource.mediaSourceId,
+    selectedSubtitleStreamIndex,
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -1460,9 +1714,14 @@ export function CustomVideoPlayer({
     }
 
     const syncSubtitleText = () => {
-      const nextSubtitleText = getActiveSubtitleTextForTime(subtitleCues, video.currentTime);
+      const nextSubtitleText = getActiveSubtitleTextForTime(
+        subtitleCues,
+        video.currentTime,
+      );
       setActiveSubtitleText((currentSubtitleText) =>
-        currentSubtitleText === nextSubtitleText ? currentSubtitleText : nextSubtitleText,
+        currentSubtitleText === nextSubtitleText
+          ? currentSubtitleText
+          : nextSubtitleText,
       );
     };
 
@@ -1545,7 +1804,11 @@ export function CustomVideoPlayer({
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
-    if (isDraggingSubtitle || isResizingSubtitle || Date.now() < suppressPlayerTapUntilRef.current) {
+    if (
+      isDraggingSubtitle ||
+      isResizingSubtitle ||
+      Date.now() < suppressPlayerTapUntilRef.current
+    ) {
       return;
     }
 
@@ -1566,7 +1829,11 @@ export function CustomVideoPlayer({
     const now = Date.now();
     const previousTap = lastTapRef.current;
 
-    if (previousTap && now - previousTap.time < 320 && Math.abs(previousTap.x - event.clientX) < 70) {
+    if (
+      previousTap &&
+      now - previousTap.time < 320 &&
+      Math.abs(previousTap.x - event.clientX) < 70
+    ) {
       if (singleTapTimerRef.current !== null) {
         window.clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
@@ -1580,7 +1847,11 @@ export function CustomVideoPlayer({
     lastTapRef.current = { time: now, x: event.clientX };
 
     singleTapTimerRef.current = window.setTimeout(() => {
-      if (areControlsVisible || controlsShouldStayVisible || !progress.isPlaying) {
+      if (
+        areControlsVisible ||
+        controlsShouldStayVisible ||
+        !progress.isPlaying
+      ) {
         releaseControlsHover();
       } else {
         showControls();
@@ -1590,19 +1861,30 @@ export function CustomVideoPlayer({
     }, 180);
   };
 
-  const getSubtitlePositionFromPoint = useCallback((clientX: number, clientY: number): SubtitlePosition | null => {
-    const bounds = containerRef.current?.getBoundingClientRect();
-    const dragState = subtitleDragStateRef.current;
+  const getSubtitlePositionFromPoint = useCallback(
+    (clientX: number, clientY: number): SubtitlePosition | null => {
+      const bounds = containerRef.current?.getBoundingClientRect();
+      const dragState = subtitleDragStateRef.current;
 
-    if (!bounds || !dragState) {
-      return null;
-    }
+      if (!bounds || !dragState) {
+        return null;
+      }
 
-    return {
-      x: clamp(((clientX - bounds.left - dragState.offsetX) / bounds.width) * 100, 8, 92),
-      y: clamp(((clientY - bounds.top - dragState.offsetY) / bounds.height) * 100, 10, 90),
-    };
-  }, []);
+      return {
+        x: clamp(
+          ((clientX - bounds.left - dragState.offsetX) / bounds.width) * 100,
+          8,
+          92,
+        ),
+        y: clamp(
+          ((clientY - bounds.top - dragState.offsetY) / bounds.height) * 100,
+          10,
+          90,
+        ),
+      };
+    },
+    [],
+  );
 
   const handleSubtitleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -1615,10 +1897,21 @@ export function CustomVideoPlayer({
       const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
       const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
 
-      setSubtitlePosition((currentPosition) => currentPosition ?? {
-        x: clamp(((overlayCenterX - bounds.left) / bounds.width) * 100, 8, 92),
-        y: clamp(((overlayCenterY - bounds.top) / bounds.height) * 100, 10, 90),
-      });
+      setSubtitlePosition(
+        (currentPosition) =>
+          currentPosition ?? {
+            x: clamp(
+              ((overlayCenterX - bounds.left) / bounds.width) * 100,
+              8,
+              92,
+            ),
+            y: clamp(
+              ((overlayCenterY - bounds.top) / bounds.height) * 100,
+              10,
+              90,
+            ),
+          },
+      );
     }
 
     setIsSubtitleEditMode(true);
@@ -1652,7 +1945,9 @@ export function CustomVideoPlayer({
     showControls();
   };
 
-  const handleSubtitleResizePointerMove = (event: PointerEvent<HTMLButtonElement>) => {
+  const handleSubtitleResizePointerMove = (
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
     const resizeState = subtitleResizeStateRef.current;
 
     if (!resizeState || resizeState.pointerId !== event.pointerId) {
@@ -1662,10 +1957,17 @@ export function CustomVideoPlayer({
     event.preventDefault();
     event.stopPropagation();
 
-    const deltaX = (event.clientX - resizeState.startClientX) * resizeState.directionX;
-    const deltaY = (event.clientY - resizeState.startClientY) * resizeState.directionY;
-    const strongestDelta = Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-    const nextScale = clamp(resizeState.startScale + strongestDelta / 220, MIN_SUBTITLE_SCALE, MAX_SUBTITLE_SCALE);
+    const deltaX =
+      (event.clientX - resizeState.startClientX) * resizeState.directionX;
+    const deltaY =
+      (event.clientY - resizeState.startClientY) * resizeState.directionY;
+    const strongestDelta =
+      Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
+    const nextScale = clamp(
+      resizeState.startScale + strongestDelta / 220,
+      MIN_SUBTITLE_SCALE,
+      MAX_SUBTITLE_SCALE,
+    );
 
     setSubtitleSize({ scale: nextScale });
   };
@@ -1690,7 +1992,9 @@ export function CustomVideoPlayer({
     lastTapRef.current = null;
   };
 
-  const handleSubtitleResizePointerCancel = (event: PointerEvent<HTMLButtonElement>) => {
+  const handleSubtitleResizePointerCancel = (
+    event: PointerEvent<HTMLButtonElement>,
+  ) => {
     if (subtitleResizeStateRef.current?.pointerId !== event.pointerId) {
       return;
     }
@@ -1727,10 +2031,21 @@ export function CustomVideoPlayer({
       offsetY: event.clientY - overlayCenterY,
     };
 
-    setSubtitlePosition((currentPosition) => currentPosition ?? {
-      x: clamp(((overlayCenterX - bounds.left) / bounds.width) * 100, 8, 92),
-      y: clamp(((overlayCenterY - bounds.top) / bounds.height) * 100, 10, 90),
-    });
+    setSubtitlePosition(
+      (currentPosition) =>
+        currentPosition ?? {
+          x: clamp(
+            ((overlayCenterX - bounds.left) / bounds.width) * 100,
+            8,
+            92,
+          ),
+          y: clamp(
+            ((overlayCenterY - bounds.top) / bounds.height) * 100,
+            10,
+            90,
+          ),
+        },
+    );
     setIsDraggingSubtitle(true);
     setIsResizingSubtitle(false);
     subtitleResizeStateRef.current = null;
@@ -1748,7 +2063,10 @@ export function CustomVideoPlayer({
     event.preventDefault();
     event.stopPropagation();
 
-    const nextPosition = getSubtitlePositionFromPoint(event.clientX, event.clientY);
+    const nextPosition = getSubtitlePositionFromPoint(
+      event.clientX,
+      event.clientY,
+    );
 
     if (nextPosition) {
       setSubtitlePosition(nextPosition);
@@ -1768,7 +2086,10 @@ export function CustomVideoPlayer({
       event.currentTarget.releasePointerCapture(event.pointerId);
     }
 
-    const nextPosition = getSubtitlePositionFromPoint(event.clientX, event.clientY);
+    const nextPosition = getSubtitlePositionFromPoint(
+      event.clientX,
+      event.clientY,
+    );
 
     if (nextPosition) {
       setSubtitlePosition(nextPosition);
@@ -1794,11 +2115,19 @@ export function CustomVideoPlayer({
   };
 
   const subtitle = getItemSubtitle(item, mediaFormatLabels);
-  const titleLogoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900) : "";
-  const isSubtitleBeingEdited = isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
-  const isShowingSubtitlePlaceholder = isSubtitleBeingEdited && activeSubtitleText.trim().length === 0;
+  const titleLogoUrl = item.ImageTags?.Logo
+    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900)
+    : "";
+  const isSubtitleBeingEdited =
+    isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
+  const isShowingSubtitlePlaceholder =
+    isSubtitleBeingEdited && activeSubtitleText.trim().length === 0;
 
-  const subtitleLines = (isShowingSubtitlePlaceholder ? t("player.subtitleEditPlaceholder") : activeSubtitleText)
+  const subtitleLines = (
+    isShowingSubtitlePlaceholder
+      ? t("player.subtitleEditPlaceholder")
+      : activeSubtitleText
+  )
     .split("\n")
     .map((line) => line.trim())
     .filter(Boolean);
@@ -1870,7 +2199,6 @@ export function CustomVideoPlayer({
             />
 
             <div className="absolute inset-0 bg-black/22" />
-
           </div>
         </div>
       ) : null}
@@ -1881,12 +2209,21 @@ export function CustomVideoPlayer({
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]">
               <div className="relative">
                 <Smartphone size={30} />
-                <RotateCw className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none" size={19} />
+                <RotateCw
+                  className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none"
+                  size={19}
+                />
               </div>
             </div>
-            <h2 className="mt-4 text-xl font-black text-white">{t("player.rotateTitle")}</h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/72">{t("player.rotateMessage")}</p>
-            <p className="mt-3 text-xs font-medium text-white/45">{t("player.rotateHint")}</p>
+            <h2 className="mt-4 text-xl font-black text-white">
+              {t("player.rotateTitle")}
+            </h2>
+            <p className="mt-2 text-sm font-semibold leading-6 text-white/72">
+              {t("player.rotateMessage")}
+            </p>
+            <p className="mt-3 text-xs font-medium text-white/45">
+              {t("player.rotateHint")}
+            </p>
           </div>
         </div>
       ) : null}
@@ -1898,7 +2235,9 @@ export function CustomVideoPlayer({
           className={`seyirlik-subtitle-overlay absolute z-[24] ${
             subtitlePosition ? "" : "bottom-[12%] left-1/2"
           } ${isSubtitleEditMode ? (isDraggingSubtitle ? "cursor-grabbing" : "cursor-grab") : "cursor-default"} ${
-            isShowingSubtitlePlaceholder ? "seyirlik-subtitle-overlay--placeholder" : ""
+            isShowingSubtitlePlaceholder
+              ? "seyirlik-subtitle-overlay--placeholder"
+              : ""
           } ${isSubtitleEditMode ? "seyirlik-subtitle-overlay--editing" : ""}`}
           style={subtitleOverlayStyle}
           onPointerDown={handleSubtitlePointerDown}
@@ -1910,7 +2249,10 @@ export function CustomVideoPlayer({
           aria-label={t("player.dragSubtitles")}
         >
           {subtitleLines.map((line, index) => (
-            <div key={`${line}-${index}`} className="seyirlik-subtitle-line-wrap">
+            <div
+              key={`${line}-${index}`}
+              className="seyirlik-subtitle-line-wrap"
+            >
               <span className="seyirlik-subtitle-line">{line}</span>
             </div>
           ))}
@@ -1921,7 +2263,9 @@ export function CustomVideoPlayer({
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tl"
                 aria-label={t("player.resizeSubtitlesTopLeft")}
-                onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, -1)}
+                onPointerDown={(event) =>
+                  handleSubtitleResizePointerDown(event, -1, -1)
+                }
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
                 onPointerCancel={handleSubtitleResizePointerCancel}
@@ -1931,7 +2275,9 @@ export function CustomVideoPlayer({
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--tr"
                 aria-label={t("player.resizeSubtitlesTopRight")}
-                onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, -1)}
+                onPointerDown={(event) =>
+                  handleSubtitleResizePointerDown(event, 1, -1)
+                }
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
                 onPointerCancel={handleSubtitleResizePointerCancel}
@@ -1941,7 +2287,9 @@ export function CustomVideoPlayer({
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--bl"
                 aria-label={t("player.resizeSubtitlesBottomLeft")}
-                onPointerDown={(event) => handleSubtitleResizePointerDown(event, -1, 1)}
+                onPointerDown={(event) =>
+                  handleSubtitleResizePointerDown(event, -1, 1)
+                }
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
                 onPointerCancel={handleSubtitleResizePointerCancel}
@@ -1951,7 +2299,9 @@ export function CustomVideoPlayer({
                 type="button"
                 className="seyirlik-subtitle-resize-handle seyirlik-subtitle-resize-handle--br"
                 aria-label={t("player.resizeSubtitlesBottomRight")}
-                onPointerDown={(event) => handleSubtitleResizePointerDown(event, 1, 1)}
+                onPointerDown={(event) =>
+                  handleSubtitleResizePointerDown(event, 1, 1)
+                }
                 onPointerMove={handleSubtitleResizePointerMove}
                 onPointerUp={finishSubtitleResize}
                 onPointerCancel={handleSubtitleResizePointerCancel}
@@ -1975,9 +2325,13 @@ export function CustomVideoPlayer({
         titleLogoUrl={titleLogoUrl}
         subtitle={subtitle}
         backTo={`/item/${item.Id}`}
-        visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
+        visible={
+          areControlsVisible || !progress.isPlaying || controlsShouldStayVisible
+        }
         isPlaying={progress.isPlaying}
-        isPlayPausePending={partyWatch.isInGroup && partyWatch.isPlayPausePending}
+        isPlayPausePending={
+          partyWatch.isInGroup && partyWatch.isPlayPausePending
+        }
         notice={notice}
         onTogglePlay={partyWatch.togglePlay}
         onControlsHoverStart={keepControlsVisible}
@@ -1997,7 +2351,9 @@ export function CustomVideoPlayer({
       {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}
 
       <PlayerControls
-        visible={areControlsVisible || !progress.isPlaying || controlsShouldStayVisible}
+        visible={
+          areControlsVisible || !progress.isPlaying || controlsShouldStayVisible
+        }
         isPlaying={progress.isPlaying}
         playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
         onControlsHoverStart={keepControlsVisible}
@@ -2056,7 +2412,9 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {areControlsVisible || !progress.isPlaying || controlsShouldStayVisible ? (
+      {areControlsVisible ||
+      !progress.isPlaying ||
+      controlsShouldStayVisible ? (
         <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex flex-col items-end gap-3">
           <div className="flex items-center gap-2" data-party-watch-root>
             <button
@@ -2083,7 +2441,10 @@ export function CustomVideoPlayer({
               </span>
             </button>
 
-            <PlaybackInfoButton source={sourceWithLiveTranscodingReasons} onClick={() => setIsPlaybackInfoOpen(true)} />
+            <PlaybackInfoButton
+              source={sourceWithLiveTranscodingReasons}
+              onClick={() => setIsPlaybackInfoOpen(true)}
+            />
           </div>
 
           {isPartyWatchOpen ? (

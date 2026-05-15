@@ -25,14 +25,19 @@ function readNonPlayerHistory(): string[] {
     const rawValue = sessionStorage.getItem(NON_PLAYER_HISTORY_KEY);
     const parsedValue = rawValue ? JSON.parse(rawValue) : [];
 
-    return Array.isArray(parsedValue) ? parsedValue.filter((entry) => typeof entry === "string") : [];
+    return Array.isArray(parsedValue)
+      ? parsedValue.filter((entry) => typeof entry === "string")
+      : [];
   } catch {
     return [];
   }
 }
 
 function writeNonPlayerHistory(history: string[]) {
-  sessionStorage.setItem(NON_PLAYER_HISTORY_KEY, JSON.stringify(history.slice(-30)));
+  sessionStorage.setItem(
+    NON_PLAYER_HISTORY_KEY,
+    JSON.stringify(history.slice(-30)),
+  );
 }
 
 export function NonPlayerHistoryTracker() {
@@ -67,7 +72,10 @@ export function NonPlayerHistoryTracker() {
   return null;
 }
 
-export function BackButton({ fallbackTo = "/home", className = "" }: BackButtonProps) {
+export function BackButton({
+  fallbackTo = "/home",
+  className = "",
+}: BackButtonProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useLanguage();

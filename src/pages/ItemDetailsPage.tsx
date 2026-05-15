@@ -11,7 +11,12 @@ import { MotionReveal } from "../components/MotionReveal";
 import { DetailsSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
-import { getBackdropImageUrl, getItem, getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import {
+  getBackdropImageUrl,
+  getItem,
+  getLogoImageUrl,
+  getPrimaryImageUrl,
+} from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import { setDefaultPageTitle, setPageTitle } from "../lib/pageTitle";
 
@@ -23,17 +28,28 @@ function getBackdrop(item: JellyfinItem): string {
   }
 
   if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]) {
-    return getBackdropImageUrl(item.ParentBackdropItemId, item.ParentBackdropImageTags[0], 1800);
+    return getBackdropImageUrl(
+      item.ParentBackdropItemId,
+      item.ParentBackdropImageTags[0],
+      1800,
+    );
   }
 
   return "";
 }
 
-function getRemainingRuntime(item: JellyfinItem, labels: Parameters<typeof formatRuntime>[1]): string | null {
+function getRemainingRuntime(
+  item: JellyfinItem,
+  labels: Parameters<typeof formatRuntime>[1],
+): string | null {
   const positionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const runtimeTicks = item.RunTimeTicks ?? 0;
 
-  if (positionTicks <= 0 || runtimeTicks <= 0 || positionTicks >= runtimeTicks) {
+  if (
+    positionTicks <= 0 ||
+    runtimeTicks <= 0 ||
+    positionTicks >= runtimeTicks
+  ) {
     return null;
   }
 
@@ -78,7 +94,11 @@ export function ItemDetailsPage() {
         }
       } catch (itemError) {
         if (isMounted) {
-          setError(itemError instanceof Error ? itemError.message : t("details.couldNotLoad"));
+          setError(
+            itemError instanceof Error
+              ? itemError.message
+              : t("details.couldNotLoad"),
+          );
         }
       }
     }
@@ -91,7 +111,9 @@ export function ItemDetailsPage() {
   }, [itemId, t]);
 
   if (error) {
-    return <ErrorMessage title={t("details.itemUnavailable")} message={error} />;
+    return (
+      <ErrorMessage title={t("details.itemUnavailable")} message={error} />
+    );
   }
 
   if (!item) {
@@ -100,16 +122,28 @@ export function ItemDetailsPage() {
 
   const title = getDisplayTitle(item, mediaFormatLabels);
   const runtime = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
-  const posterUrl = item.ImageTags?.Primary ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760) : "";
-  const logoUrl = item.ImageTags?.Logo ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100) : "";
+  const posterUrl = item.ImageTags?.Primary
+    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
+    : "";
+  const logoUrl = item.ImageTags?.Logo
+    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
+    : "";
   const backdropUrl = getBackdrop(item);
-  const videoStream = item.MediaSources?.[0]?.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "video");
-  const audioStream = item.MediaSources?.[0]?.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "audio");
+  const videoStream = item.MediaSources?.[0]?.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "video",
+  );
+  const audioStream = item.MediaSources?.[0]?.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "audio",
+  );
   const chips = [
-    item.ProductionYear ? { label: String(item.ProductionYear), icon: Film } : null,
+    item.ProductionYear
+      ? { label: String(item.ProductionYear), icon: Film }
+      : null,
     runtime ? { label: runtime, icon: Clock } : null,
     item.OfficialRating ? { label: item.OfficialRating, icon: Star } : null,
-    item.CommunityRating ? { label: item.CommunityRating.toFixed(1), icon: Star } : null,
+    item.CommunityRating
+      ? { label: item.CommunityRating.toFixed(1), icon: Star }
+      : null,
   ].filter(Boolean) as Array<{ label: string; icon: typeof Film }>;
   const mediaLabel =
     item.Type === "Movie"
@@ -118,8 +152,11 @@ export function ItemDetailsPage() {
         ? t("common.series")
         : item.Type === "BoxSet"
           ? t("common.boxsets")
-          : item.Type ?? t("details.media");
-  const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
+          : (item.Type ?? t("details.media"));
+  const canPlay =
+    item.Type === "Movie" ||
+    item.Type === "Episode" ||
+    item.MediaType === "Video";
   const playbackPositionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const hasStarted = playbackPositionTicks > 0 && !item.UserData?.Played;
   const remainingRuntime = getRemainingRuntime(item, mediaFormatLabels);
@@ -142,17 +179,25 @@ export function ItemDetailsPage() {
       <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.34] to-black/40" />
 
       <div className="relative mx-auto max-w-[1500px]">
-        <BackButton className="mb-10"/>
+        <BackButton className="mb-10" />
 
         <div className="grid gap-8 md:grid-cols-[minmax(16rem,22rem)_1fr] md:items-end lg:gap-12">
           <motion.div
             className="overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-[0_30px_120px_rgba(0,0,0,0.64)]"
-            initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }}
-            animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }}
+            initial={
+              shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }
+            }
+            animate={
+              shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1 }
+            }
             transition={{ duration: 0.34, delay: 0.04, ease: easeOut }}
           >
             {posterUrl ? (
-              <img src={posterUrl} alt={title} className="aspect-[2/3] w-full object-cover" />
+              <img
+                src={posterUrl}
+                alt={title}
+                className="aspect-[2/3] w-full object-cover"
+              />
             ) : (
               <div className="flex aspect-[2/3] items-center justify-center bg-[linear-gradient(145deg,#27272a,#050506)] p-6 text-center font-semibold text-zinc-200">
                 {title}
@@ -188,8 +233,14 @@ export function ItemDetailsPage() {
                   key={label}
                   className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/[0.12] bg-black/[0.35] px-3 text-sm font-bold text-white/[0.78] backdrop-blur"
                   initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-                  animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
-                  transition={{ duration: 0.24, delay: 0.12 + index * 0.03, ease: easeOut }}
+                  animate={
+                    shouldReduceMotion ? undefined : { opacity: 1, y: 0 }
+                  }
+                  transition={{
+                    duration: 0.24,
+                    delay: 0.12 + index * 0.03,
+                    ease: easeOut,
+                  }}
                 >
                   <Icon size={15} />
                   {label}
@@ -215,8 +266,12 @@ export function ItemDetailsPage() {
                   className="min-h-12 rounded-full px-7 text-base shadow-2xl"
                 >
                   <Play size={20} fill="currentColor" className="shrink-0" />
-                  <AnimatedWidth value={hasStarted ? "Devam Et" : t("common.play")}>
-                    <AnimatedText value={hasStarted ? "Devam Et" : t("common.play")} />
+                  <AnimatedWidth
+                    value={hasStarted ? "Devam Et" : t("common.play")}
+                  >
+                    <AnimatedText
+                      value={hasStarted ? "Devam Et" : t("common.play")}
+                    />
                   </AnimatedWidth>
                 </ButtonLink>
 
@@ -224,17 +279,24 @@ export function ItemDetailsPage() {
                   <motion.div
                     className="-mt-1 flex w-16 flex-col items-center gap-1.5"
                     initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-                    animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+                    animate={
+                      shouldReduceMotion ? undefined : { opacity: 1, y: 0 }
+                    }
                     transition={{ duration: 0.26, delay: 0.18, ease: easeOut }}
                   >
-                   <ButtonLink
-                    to={restartHref}
-                    aria-label="Baştan İzle"
-                    title="Baştan İzle"
-                    className="!flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
-                  >
-                    <RotateCcw size={23} strokeWidth={2} className="shrink-0 text-white/70" group-hover:text-white />
-                  </ButtonLink>
+                    <ButtonLink
+                      to={restartHref}
+                      aria-label="Baştan İzle"
+                      title="Baştan İzle"
+                      className="!flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
+                    >
+                      <RotateCcw
+                        size={23}
+                        strokeWidth={2}
+                        className="shrink-0 text-white/70"
+                        group-hover:text-white
+                      />
+                    </ButtonLink>
                   </motion.div>
                 ) : null}
 
@@ -242,7 +304,9 @@ export function ItemDetailsPage() {
                   <motion.div
                     className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-black/[0.32] px-4 text-sm font-black text-white/[0.78] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur"
                     initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
-                    animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
+                    animate={
+                      shouldReduceMotion ? undefined : { opacity: 1, y: 0 }
+                    }
                     transition={{ duration: 0.26, delay: 0.18, ease: easeOut }}
                   >
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)]/15 text-[var(--accent)]">
@@ -254,11 +318,13 @@ export function ItemDetailsPage() {
                 ) : null}
               </div>
             ) : null}
-
           </motion.div>
         </div>
 
-        <MotionReveal className="mt-12 grid gap-5 lg:grid-cols-[1.4fr_0.8fr]" delay={0.08}>
+        <MotionReveal
+          className="mt-12 grid gap-5 lg:grid-cols-[1.4fr_0.8fr]"
+          delay={0.08}
+        >
           <section className="rounded-2xl border border-white/10 bg-white/[0.055] p-5 backdrop-blur-xl sm:p-6">
             <h2 className="text-xl font-black text-white">
               <AnimatedWidth value={t("details.overview")}>
@@ -301,7 +367,12 @@ export function ItemDetailsPage() {
                   </AnimatedWidth>
                 </dt>
                 <dd className="text-right font-semibold text-white/[0.78]">
-                  {[videoStream?.Codec, videoStream?.Width && videoStream?.Height ? `${videoStream.Width}x${videoStream.Height}` : undefined]
+                  {[
+                    videoStream?.Codec,
+                    videoStream?.Width && videoStream?.Height
+                      ? `${videoStream.Width}x${videoStream.Height}`
+                      : undefined,
+                  ]
                     .filter(Boolean)
                     .join(" / ") || (
                     <AnimatedWidth value={t("details.unknown")}>
@@ -317,7 +388,15 @@ export function ItemDetailsPage() {
                   </AnimatedWidth>
                 </dt>
                 <dd className="text-right font-semibold text-white/[0.78]">
-                  {[audioStream?.Codec, audioStream?.Channels ? t("details.audioChannelsShort").replace("{count}", String(audioStream.Channels)) : undefined]
+                  {[
+                    audioStream?.Codec,
+                    audioStream?.Channels
+                      ? t("details.audioChannelsShort").replace(
+                          "{count}",
+                          String(audioStream.Channels),
+                        )
+                      : undefined,
+                  ]
                     .filter(Boolean)
                     .join(" / ") || (
                     <AnimatedWidth value={t("details.unknown")}>

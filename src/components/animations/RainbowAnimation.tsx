@@ -1,7 +1,14 @@
 import { useId } from "react";
 import { createPortal } from "react-dom";
 
-type RainbowSide = "top" | "right" | "bottom" | "left" | "top-bottom" | "left-right" | "all";
+type RainbowSide =
+  | "top"
+  | "right"
+  | "bottom"
+  | "left"
+  | "top-bottom"
+  | "left-right"
+  | "all";
 
 interface RainbowAnimationProps {
   /**
@@ -216,7 +223,8 @@ export function RainbowAnimation({
   const actualDriftDuration = driftDuration ?? totalDuration;
 
   const fadeInEndPercent = (fadeInDuration / totalDuration) * 100;
-  const holdEndPercent = ((fadeInDuration + holdDuration) / totalDuration) * 100;
+  const holdEndPercent =
+    ((fadeInDuration + holdDuration) / totalDuration) * 100;
 
   const glowTotalDuration =
     glowFadeInDuration + glowHoldDuration + glowFadeOutDuration;
@@ -502,13 +510,15 @@ export function RainbowAnimation({
           <div
             key={rotation}
             className={layerClass}
-            style={{
-              zIndex,
-              "--rainbow-side-rotation": `${rotation}deg`,
-              // Swap vw and vh if the container is rotated vertically
-              "--layer-width": isVertical ? "100vh" : "100vw",
-              "--layer-height": isVertical ? "100vw" : "100vh",
-            } as React.CSSProperties}
+            style={
+              {
+                zIndex,
+                "--rainbow-side-rotation": `${rotation}deg`,
+                // Swap vw and vh if the container is rotated vertically
+                "--layer-width": isVertical ? "100vh" : "100vw",
+                "--layer-height": isVertical ? "100vw" : "100vh",
+              } as React.CSSProperties
+            }
             aria-hidden="true"
           >
             <div className={rainbowClass}>

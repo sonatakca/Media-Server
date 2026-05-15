@@ -31,9 +31,9 @@ export function LibraryTile({ library }: LibraryTileProps) {
       ? t("common.movies")
       : library.CollectionType === "tvshows"
         ? t("common.series")
-      : library.CollectionType === "boxsets"
-        ? t("common.boxsets")
-        : library.CollectionType || t("library.library");
+        : library.CollectionType === "boxsets"
+          ? t("common.boxsets")
+          : library.CollectionType || t("library.library");
 
   return (
     <Link

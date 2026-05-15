@@ -7,7 +7,12 @@ type AnimatedWidthProps = {
   safetyPx?: number;
 };
 
-export function AnimatedWidth({ children, value, className = "", safetyPx = 4 }: AnimatedWidthProps) {
+export function AnimatedWidth({
+  children,
+  value,
+  className = "",
+  safetyPx = 4,
+}: AnimatedWidthProps) {
   const measureRef = useRef<HTMLSpanElement | null>(null);
   const [width, setWidth] = useState<number | undefined>(undefined);
   const prefersReducedMotion = usePrefersReducedMotion();
@@ -20,7 +25,8 @@ export function AnimatedWidth({ children, value, className = "", safetyPx = 4 }:
 
     if (!measureRef.current) return;
 
-    const nextWidth = Math.ceil(measureRef.current.getBoundingClientRect().width) + safetyPx;
+    const nextWidth =
+      Math.ceil(measureRef.current.getBoundingClientRect().width) + safetyPx;
     setWidth(nextWidth);
   }, [prefersReducedMotion, value, safetyPx]);
 
@@ -31,7 +37,9 @@ export function AnimatedWidth({ children, value, className = "", safetyPx = 4 }:
       } ${className}`}
       style={width ? { width } : undefined}
     >
-      <span className="inline-flex items-center justify-center">{children}</span>
+      <span className="inline-flex items-center justify-center">
+        {children}
+      </span>
 
       <span
         ref={measureRef}

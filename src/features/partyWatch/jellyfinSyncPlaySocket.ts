@@ -31,13 +31,17 @@ function buildSocketUrl(): string {
   }).replace(/^http/i, "ws");
 }
 
-function parseSocketMessage(rawData: unknown): JellyfinSyncPlaySocketMessage | null {
+function parseSocketMessage(
+  rawData: unknown,
+): JellyfinSyncPlaySocketMessage | null {
   if (typeof rawData !== "string") {
     return null;
   }
 
   try {
-    const parsed = JSON.parse(rawData) as Partial<JellyfinSyncPlaySocketMessage>;
+    const parsed = JSON.parse(
+      rawData,
+    ) as Partial<JellyfinSyncPlaySocketMessage>;
 
     if (typeof parsed.MessageType !== "string") {
       return null;
@@ -102,7 +106,10 @@ export function connectJellyfinSyncPlaySocket({
       socket = new WebSocket(buildSocketUrl());
     } catch (error) {
       onStatus?.("error");
-      console.warn("[Seyirlik SyncPlay] Could not create Jellyfin websocket", error);
+      console.warn(
+        "[Seyirlik SyncPlay] Could not create Jellyfin websocket",
+        error,
+      );
       scheduleReconnect();
       return;
     }
@@ -119,12 +126,18 @@ export function connectJellyfinSyncPlaySocket({
         return;
       }
 
-      if (message.MessageType === "ForceKeepAlive" && typeof message.Data === "number") {
+      if (
+        message.MessageType === "ForceKeepAlive" &&
+        typeof message.Data === "number"
+      ) {
         if (keepAliveTimeout !== null) {
           window.clearTimeout(keepAliveTimeout);
         }
 
-        keepAliveTimeout = window.setTimeout(sendKeepAlive, Math.max(1000, message.Data / 2));
+        keepAliveTimeout = window.setTimeout(
+          sendKeepAlive,
+          Math.max(1000, message.Data / 2),
+        );
         return;
       }
 

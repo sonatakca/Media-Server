@@ -7,11 +7,16 @@ import * as jellyfinApi from "../lib/jellyfinApi";
 
 // Mock routing
 vi.mock("react-router-dom", async () => {
-  const actual = await vi.importActual<typeof import("react-router-dom")>("react-router-dom");
+  const actual =
+    await vi.importActual<typeof import("react-router-dom")>(
+      "react-router-dom",
+    );
   return {
     ...actual,
     useNavigate: vi.fn(),
-    Navigate: ({ to }: { to: string }) => <div data-testid={`navigate-${to}`} />,
+    Navigate: ({ to }: { to: string }) => (
+      <div data-testid={`navigate-${to}`} />
+    ),
   };
 });
 
@@ -33,7 +38,9 @@ describe("LoginPage", () => {
     vi.clearAllMocks();
     vi.mocked(useNavigate).mockReturnValue(mockNavigate);
     // Assume the user has a server selected but is not logged in
-    vi.mocked(authStorage.getServerUrl).mockReturnValue("http://mock-server.local");
+    vi.mocked(authStorage.getServerUrl).mockReturnValue(
+      "http://mock-server.local",
+    );
     vi.mocked(authStorage.isAuthenticated).mockReturnValue(false);
   });
 
@@ -42,30 +49,40 @@ describe("LoginPage", () => {
     render(
       <MemoryRouter>
         <LoginPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByTestId("navigate-/server")).toBeInTheDocument();
   });
 
   it("shows an error message when authentication fails", async () => {
-    vi.mocked(jellyfinApi.authenticateByName).mockRejectedValue(new Error("Invalid credentials"));
+    vi.mocked(jellyfinApi.authenticateByName).mockRejectedValue(
+      new Error("Invalid credentials"),
+    );
 
     render(
       <MemoryRouter>
         <LoginPage />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
-    fireEvent.change(screen.getByLabelText("auth.username"), { target: { value: "testuser" } });
-    fireEvent.change(screen.getByLabelText("auth.password"), { target: { value: "wrongpass" } });
+    fireEvent.change(screen.getByLabelText("auth.username"), {
+      target: { value: "testuser" },
+    });
+    fireEvent.change(screen.getByLabelText("auth.password"), {
+      target: { value: "wrongpass" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "auth.signIn" }));
 
     // Button should show loading state temporarily
-    expect(screen.getByRole("button", { name: "auth.signingIn" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "auth.signingIn" }),
+    ).toBeInTheDocument();
 
     // Wait for the API to reject and the error to render
     await waitFor(() => {
-      expect(screen.getByText("auth.failedMessagePrefix Invalid credentials")).toBeInTheDocument();
+      expect(
+        screen.getByText("auth.failedMessagePrefix Invalid credentials"),
+      ).toBeInTheDocument();
     });
 
     // Check that we did not save auth session

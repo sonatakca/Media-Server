@@ -7,7 +7,12 @@ interface ErrorMessageProps {
   onRetry?: () => void;
 }
 
-export function ErrorMessage({ title, message, details, onRetry }: ErrorMessageProps) {
+export function ErrorMessage({
+  title,
+  message,
+  details,
+  onRetry,
+}: ErrorMessageProps) {
   const { t } = useLanguage();
 
   return (
@@ -25,7 +30,9 @@ export function ErrorMessage({ title, message, details, onRetry }: ErrorMessageP
       ) : null}
       {details ? (
         <details className="mt-4 rounded-lg border border-white/10 bg-black/[0.35] p-3">
-          <summary className="cursor-pointer font-semibold text-rose-50/90">{t("player.technicalDetails")}</summary>
+          <summary className="cursor-pointer font-semibold text-rose-50/90">
+            {t("player.technicalDetails")}
+          </summary>
           <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-rose-50/65">
             {details}
           </pre>

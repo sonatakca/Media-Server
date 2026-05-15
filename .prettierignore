@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+coverage
+.vite
+.vercel
+.DS_Store
+*.mov
+*.mp4
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.m4a

@@ -14,7 +14,9 @@ interface TimedCarouselIndicatorsProps {
   showPauseButton?: boolean;
 }
 
-function classNames(...values: Array<string | false | null | undefined>): string {
+function classNames(
+  ...values: Array<string | false | null | undefined>
+): string {
   return values.filter(Boolean).join(" ");
 }
 
@@ -51,10 +53,7 @@ export function TimedCarouselIndicators({
     <motion.div
       role="group"
       aria-label={ariaLabel}
-      className={classNames(
-        "flex max-w-full items-center",
-        className,
-      )}
+      className={classNames("flex max-w-full items-center", className)}
     >
       <motion.div
         layout
@@ -120,7 +119,9 @@ export function TimedCarouselIndicators({
                     initial={{ scaleX: showSettledProgress ? 1 : 0 }}
                     animate={{ scaleX: 1 }}
                     transition={{
-                      duration: showSettledProgress ? 0 : Math.max(0, durationMs / 1000),
+                      duration: showSettledProgress
+                        ? 0
+                        : Math.max(0, durationMs / 1000),
                       ease: "linear",
                     }}
                   />
@@ -157,15 +158,34 @@ export function TimedCarouselIndicators({
             <motion.span
               key={isPaused ? "play" : "pause"}
               className="flex items-center justify-center"
-              initial={shouldReduceMotion ? { opacity: 1 } : { opacity: 0, scale: 0.75, rotate: -4 }}
+              initial={
+                shouldReduceMotion
+                  ? { opacity: 1 }
+                  : { opacity: 0, scale: 0.75, rotate: -4 }
+              }
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 0.75, rotate: 4 }}
-              transition={{ duration: shouldReduceMotion ? 0 : 0.16, ease: [0.16, 1, 0.3, 1] }}
+              exit={
+                shouldReduceMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, scale: 0.75, rotate: 4 }
+              }
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.16,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             >
               {isPaused ? (
-                <Play className="ml-0.5 h-[18px] w-[18px]" fill="currentColor" strokeWidth={2.5} />
+                <Play
+                  className="ml-0.5 h-[18px] w-[18px]"
+                  fill="currentColor"
+                  strokeWidth={2.5}
+                />
               ) : (
-                <Pause className="h-[18px] w-[18px]" fill="currentColor" strokeWidth={2.5} />
+                <Pause
+                  className="h-[18px] w-[18px]"
+                  fill="currentColor"
+                  strokeWidth={2.5}
+                />
               )}
             </motion.span>
           </AnimatePresence>

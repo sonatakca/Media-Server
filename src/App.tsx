@@ -22,28 +22,27 @@ import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { setDefaultPageTitle } from "./lib/pageTitle";
 
-
 const DEFAULT_SERVER_URL =
-  (import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined)?.trim() ||
-  "https://izle.sonatakca.com";
+  (
+    import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined
+  )?.trim() || "https://izle.sonatakca.com";
 
 const DEFAULT_SERVER_CHECK_TIMEOUT_MS = 6000;
 
 type DefaultServerState = "checking" | "ready" | "failed";
-
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   return new Promise((resolve, reject) => {
     const timeoutId = window.setTimeout(() => {
       reject(new Error(`Default server check timed out after ${timeoutMs}ms.`));
     }, timeoutMs);
-    
+
     promise
-    .then(resolve)
-    .catch(reject)
-    .finally(() => {
-      window.clearTimeout(timeoutId);
-    });
+      .then(resolve)
+      .catch(reject)
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+      });
   });
 }
 
@@ -52,54 +51,59 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DefaultServerState>(() => {
     return getServerUrl() ? "ready" : "checking";
   });
-  
+
   useEffect(() => {
     let isMounted = true;
-    
+
     async function prepareDefaultServer() {
       if (getServerUrl()) {
         setState("ready");
         return;
       }
-      
+
       try {
-        await withTimeout(testServerConnection(DEFAULT_SERVER_URL), DEFAULT_SERVER_CHECK_TIMEOUT_MS);
+        await withTimeout(
+          testServerConnection(DEFAULT_SERVER_URL),
+          DEFAULT_SERVER_CHECK_TIMEOUT_MS,
+        );
         setServerUrl(DEFAULT_SERVER_URL);
-        
+
         if (isMounted) {
           setState("ready");
         }
       } catch (error) {
         console.warn("[Seyirlik] Default server connection failed", error);
-        
+
         if (isMounted) {
           setState("failed");
         }
       }
     }
-    
+
     void prepareDefaultServer();
-    
+
     return () => {
       isMounted = false;
     };
   }, []);
-  
+
   if (state === "checking") {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 text-white">
         <div className="text-center">
           <LoadingSpinner />
-          <p className="mt-4 text-sm text-white/58">{t("app.connectingDefaultServer")}</p>
+          <p className="mt-4 text-sm text-white/58">
+            {t("app.connectingDefaultServer")}
+          </p>
         </div>
       </main>
     );
   }
-  
+
   if (state === "failed" && !getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-  
+
   return <>{children}</>;
 }
 
@@ -107,11 +111,11 @@ function RootRedirect() {
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-  
+
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <Navigate to="/home" replace />;
 }
 
@@ -119,11 +123,11 @@ function RequireAuth() {
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
-  
+
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
-  
+
   return <Outlet />;
 }
 
@@ -135,7 +139,7 @@ export default function App() {
     <>
       <ScrollToTop />
       <NonPlayerHistoryTracker />
-      
+
       <DefaultServerGate>
         <RouteColorTransition />
         <Routes>
@@ -149,15 +153,39 @@ export default function App() {
             <Route element={<Layout />}>
               <Route path="/home" element={<HomePage />} />
               <Route path="/dev" element={<DevToolsPage />} />
-              <Route path="/dev/playback-audit" element={<PlaybackAuditPage />} />
-              <Route path="/dev/library-maintenance" element={<LibraryMaintenancePage />} />
+              <Route
+                path="/dev/playback-audit"
+                element={<PlaybackAuditPage />}
+              />
+              <Route
+                path="/dev/library-maintenance"
+                element={<LibraryMaintenancePage />}
+              />
               <Route path="/dev/content" element={<ContentExplorerPage />} />
-              <Route path="/dev/known-bugs" element={<DevToolsBoardPage type="bugs" />} />
-              <Route path="/dev/wanted-features" element={<DevToolsBoardPage type="features" />} />
-              <Route path="/library/:libraryId" element={<LibraryPage mode="library" />} />
-              <Route path="/series/:seriesId" element={<LibraryPage mode="series" />} />
-              <Route path="/series/:seriesId/season/:seasonId" element={<LibraryPage mode="season" />} />
-              <Route path="/season/:seasonId" element={<LibraryPage mode="season" />} />
+              <Route
+                path="/dev/known-bugs"
+                element={<DevToolsBoardPage type="bugs" />}
+              />
+              <Route
+                path="/dev/wanted-features"
+                element={<DevToolsBoardPage type="features" />}
+              />
+              <Route
+                path="/library/:libraryId"
+                element={<LibraryPage mode="library" />}
+              />
+              <Route
+                path="/series/:seriesId"
+                element={<LibraryPage mode="series" />}
+              />
+              <Route
+                path="/series/:seriesId/season/:seasonId"
+                element={<LibraryPage mode="season" />}
+              />
+              <Route
+                path="/season/:seasonId"
+                element={<LibraryPage mode="season" />}
+              />
               <Route path="/item/:itemId" element={<ItemDetailsPage />} />
             </Route>
             <Route element={<RouteTransitionOutlet variant="player" />}>

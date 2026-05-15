@@ -6,7 +6,11 @@ import { MediaRow } from "../components/MediaRow";
 import { MotionReveal } from "../components/MotionReveal";
 import { HomeSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
-import { getContinueWatchingItems, getLatestMediaItems, getUserViews } from "../lib/jellyfinApi";
+import {
+  getContinueWatchingItems,
+  getLatestMediaItems,
+  getUserViews,
+} from "../lib/jellyfinApi";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
@@ -30,12 +34,18 @@ interface RowWarning {
   message: string;
 }
 
-function getErrorMessage(result: PromiseRejectedResult, fallback: string): string {
+function getErrorMessage(
+  result: PromiseRejectedResult,
+  fallback: string,
+): string {
   return result.reason instanceof Error ? result.reason.message : fallback;
 }
 
 function hasBackdrop(item: JellyfinItem): boolean {
-  return Boolean(item.BackdropImageTags?.[0] || (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]));
+  return Boolean(
+    item.BackdropImageTags?.[0] ||
+    (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]),
+  );
 }
 
 function hasPrimaryImage(item: JellyfinItem): boolean {
@@ -86,7 +96,11 @@ function buildFeaturedPool(items: JellyfinItem[]): JellyfinItem[] {
       index,
       score: scoreFeaturedItem(item),
     }))
-    .sort((firstItem, secondItem) => secondItem.score - firstItem.score || firstItem.index - secondItem.index)
+    .sort(
+      (firstItem, secondItem) =>
+        secondItem.score - firstItem.score ||
+        firstItem.index - secondItem.index,
+    )
     .slice(0, HERO_POOL_LIMIT)
     .map(({ item }) => item);
 }
@@ -100,7 +114,11 @@ export function HomePage() {
   const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
   const featuredPool = useMemo(
-    () => buildFeaturedPool([...(data?.continueWatching ?? []), ...(data?.latestMedia ?? [])]),
+    () =>
+      buildFeaturedPool([
+        ...(data?.continueWatching ?? []),
+        ...(data?.latestMedia ?? []),
+      ]),
     [data?.continueWatching, data?.latestMedia],
   );
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
@@ -117,11 +135,12 @@ export function HomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [librariesResult, continueResult, latestResult] = await Promise.allSettled([
-        getUserViews(),
-        getContinueWatchingItems(),
-        getLatestMediaItems(),
-      ]);
+      const [librariesResult, continueResult, latestResult] =
+        await Promise.allSettled([
+          getUserViews(),
+          getContinueWatchingItems(),
+          getLatestMediaItems(),
+        ]);
 
       if (!isMounted) {
         return;
@@ -136,18 +155,26 @@ export function HomePage() {
       const warnings: RowWarning[] = [];
 
       if (continueResult.status === "rejected") {
-        warnings.push({ labelKey: "home.continueWatching", message: getErrorMessage(continueResult, t("home.someDataFailed")) });
+        warnings.push({
+          labelKey: "home.continueWatching",
+          message: getErrorMessage(continueResult, t("home.someDataFailed")),
+        });
       }
 
       if (latestResult.status === "rejected") {
-        warnings.push({ labelKey: "home.latestMedia", message: getErrorMessage(latestResult, t("home.someDataFailed")) });
+        warnings.push({
+          labelKey: "home.latestMedia",
+          message: getErrorMessage(latestResult, t("home.someDataFailed")),
+        });
       }
 
       setRowWarnings(warnings);
       setData({
         libraries: librariesResult.value,
-        continueWatching: continueResult.status === "fulfilled" ? continueResult.value : [],
-        latestMedia: latestResult.status === "fulfilled" ? latestResult.value : [],
+        continueWatching:
+          continueResult.status === "fulfilled" ? continueResult.value : [],
+        latestMedia:
+          latestResult.status === "fulfilled" ? latestResult.value : [],
       });
     }
 
@@ -176,7 +203,12 @@ export function HomePage() {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [featuredPool.length, heroProgressResetKey, isHeroPaused, selectedHeroIndex]);
+  }, [
+    featuredPool.length,
+    heroProgressResetKey,
+    isHeroPaused,
+    selectedHeroIndex,
+  ]);
 
   const handleSelectHeroIndex = (index: number) => {
     setHeroIndex(index);
@@ -199,7 +231,7 @@ export function HomePage() {
 
   return (
     <div>
-      <ConfettiAnimation startDelay={0} pieceCount={200}/>
+      <ConfettiAnimation startDelay={0} pieceCount={200} />
       <HeroSection
         item={heroItem}
         currentIndex={selectedHeroIndex}
@@ -224,18 +256,22 @@ export function HomePage() {
         </div>
       ) : null}
 
-           {showContinueWatchingRow ? (
-            <div className="relative z-10 -mt-14 sm:-mt-20">
-              <MediaRow
-                title={t("home.continueWatching")}
-                items={data.continueWatching}
-                getItemTo={getRouteForItem}
-                emptyMessage={t("home.nothingInProgress")}
-              />
-            </div>
-          ) : null}
+      {showContinueWatchingRow ? (
+        <div className="relative z-10 -mt-14 sm:-mt-20">
+          <MediaRow
+            title={t("home.continueWatching")}
+            items={data.continueWatching}
+            getItemTo={getRouteForItem}
+            emptyMessage={t("home.nothingInProgress")}
+          />
+        </div>
+      ) : null}
 
-          <MediaRow title={t("home.latestMedia")} items={data.latestMedia} getItemTo={getRouteForItem} />
+      <MediaRow
+        title={t("home.latestMedia")}
+        items={data.latestMedia}
+        getItemTo={getRouteForItem}
+      />
 
       <MotionReveal className="group/row relative py-6" direction="up">
         <div className="mb-4 flex items-end justify-between gap-4">

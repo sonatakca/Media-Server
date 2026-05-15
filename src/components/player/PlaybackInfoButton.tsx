@@ -1,6 +1,9 @@
 import { Info } from "lucide-react";
 import type { PlaybackSourceCandidate } from "../../lib/types";
-import { getPlaybackModeLabel, getPlaybackModeTone } from "../../lib/playbackDiagnostics";
+import {
+  getPlaybackModeLabel,
+  getPlaybackModeTone,
+} from "../../lib/playbackDiagnostics";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 interface PlaybackInfoButtonProps {
@@ -8,11 +11,18 @@ interface PlaybackInfoButtonProps {
   onClick: () => void;
 }
 
-export function PlaybackInfoButton({ source, onClick }: PlaybackInfoButtonProps) {
+export function PlaybackInfoButton({
+  source,
+  onClick,
+}: PlaybackInfoButtonProps) {
   const { t } = useLanguage();
   const label = getPlaybackModeLabel(source.mode, t);
   const tone = getPlaybackModeTone(source.mode);
-  const suffix = source.isHls ? " · HLS" : source.mediaSource.Container ? ` · ${source.mediaSource.Container.toUpperCase()}` : "";
+  const suffix = source.isHls
+    ? " · HLS"
+    : source.mediaSource.Container
+      ? ` · ${source.mediaSource.Container.toUpperCase()}`
+      : "";
 
   return (
     <button
@@ -23,7 +33,10 @@ export function PlaybackInfoButton({ source, onClick }: PlaybackInfoButtonProps)
       title={t("playback.details")}
     >
       <Info size={14} className="shrink-0" />
-      <span>{label}{suffix}</span>
+      <span>
+        {label}
+        {suffix}
+      </span>
     </button>
   );
 }

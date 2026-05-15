@@ -6,7 +6,9 @@ interface RouteTransitionOutletProps {
   variant?: "default" | "player";
 }
 
-export function RouteTransitionOutlet({ variant = "default" }: RouteTransitionOutletProps) {
+export function RouteTransitionOutlet({
+  variant = "default",
+}: RouteTransitionOutletProps) {
   const location = useLocation();
 
   return (

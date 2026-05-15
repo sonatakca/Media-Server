@@ -7,7 +7,12 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
-import { clearAuthSession, getServerUrl, normalizeServerUrl, setServerUrl } from "../lib/authStorage";
+import {
+  clearAuthSession,
+  getServerUrl,
+  normalizeServerUrl,
+  setServerUrl,
+} from "../lib/authStorage";
 import { testServerConnection } from "../lib/jellyfinApi";
 import { setPageTitle } from "../lib/pageTitle";
 
@@ -25,11 +30,17 @@ export function ServerSetupPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const defaultServerUrl =
-    (import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined)?.trim() ||
-    "https://izle.sonatakca.com";
-  const [serverUrlInput, setServerUrlInput] = useState(getServerUrl() ?? defaultServerUrl ?? "");
+    (
+      import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined
+    )?.trim() || "https://izle.sonatakca.com";
+  const [serverUrlInput, setServerUrlInput] = useState(
+    getServerUrl() ?? defaultServerUrl ?? "",
+  );
   const [error, setError] = useState<string | null>(null);
-  const [connectionInfo, setConnectionInfo] = useState<{ serverName: string; version: string } | null>(null);
+  const [connectionInfo, setConnectionInfo] = useState<{
+    serverName: string;
+    version: string;
+  } | null>(null);
   const [isTesting, setIsTesting] = useState(false);
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -45,7 +56,11 @@ export function ServerSetupPage() {
         state: { serverUrl: normalizedServerUrl },
       });
     } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : t("server.saveFailed"));
+      setError(
+        submitError instanceof Error
+          ? submitError.message
+          : t("server.saveFailed"),
+      );
     }
   };
 
@@ -57,7 +72,8 @@ export function ServerSetupPage() {
     try {
       const normalizedServerUrl = normalizeServerUrl(serverUrlInput);
       const publicInfo = await testServerConnection(normalizedServerUrl);
-      const serverName = publicInfo.ServerName || publicInfo.ProductName || "Jellyfin";
+      const serverName =
+        publicInfo.ServerName || publicInfo.ProductName || "Jellyfin";
       const version = publicInfo.Version ? ` ${publicInfo.Version}` : "";
       setConnectionInfo({ serverName, version });
     } catch (testError) {
@@ -75,15 +91,29 @@ export function ServerSetupPage() {
     <main className="flex min-h-screen items-center justify-center px-4 py-10 text-white">
       <section className="w-full max-w-2xl">
         <div className="mb-8 flex items-center gap-3">
-          <img src={appIcon} alt="" className="h-12 w-12 rounded-2xl object-cover shadow-2xl" />
+          <img
+            src={appIcon}
+            alt=""
+            className="h-12 w-12 rounded-2xl object-cover shadow-2xl"
+          />
           <div>
-            <p className="text-sm font-semibold text-[var(--accent)]">Seyirlik</p>
-            <h1 className="text-3xl font-black sm:text-4xl">{t("server.connectJellyfin")}</h1>
+            <p className="text-sm font-semibold text-[var(--accent)]">
+              Seyirlik
+            </p>
+            <h1 className="text-3xl font-black sm:text-4xl">
+              {t("server.connectJellyfin")}
+            </h1>
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6">
-          <label htmlFor="server-url" className="block text-sm font-semibold text-zinc-100">
+        <form
+          onSubmit={handleSubmit}
+          className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6"
+        >
+          <label
+            htmlFor="server-url"
+            className="block text-sm font-semibold text-zinc-100"
+          >
             {t("server.jellyfinServerUrl")}
           </label>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
@@ -96,17 +126,29 @@ export function ServerSetupPage() {
               placeholder="http://192.168.1.50:8096"
               className="min-h-12 flex-1 rounded-lg border border-white/10 bg-white/10 px-4 text-base text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/30"
             />
-            <Button type="button" variant="secondary" onClick={handleTestConnection} disabled={isTesting}>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleTestConnection}
+              disabled={isTesting}
+            >
               <Wifi size={18} />
-              <AnimatedWidth value={isTesting ? t("server.testing") : t("server.test")}>
-                <AnimatedText value={isTesting ? t("server.testing") : t("server.test")} />
+              <AnimatedWidth
+                value={isTesting ? t("server.testing") : t("server.test")}
+              >
+                <AnimatedText
+                  value={isTesting ? t("server.testing") : t("server.test")}
+                />
               </AnimatedWidth>
             </Button>
           </div>
 
           <div className="mt-5 rounded-lg border border-white/10 bg-white/[0.045] p-4 text-sm text-zinc-300">
             <p>
-              <code className="rounded bg-black/40 px-1 py-0.5 text-zinc-100">localhost</code> {t("server.localhostNote")}
+              <code className="rounded bg-black/40 px-1 py-0.5 text-zinc-100">
+                localhost
+              </code>{" "}
+              {t("server.localhostNote")}
             </p>
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {examples.map((example) => (
@@ -132,7 +174,10 @@ export function ServerSetupPage() {
 
           {error ? (
             <div className="mt-4">
-              <ErrorMessage title={t("server.connectionIssue")} message={error} />
+              <ErrorMessage
+                title={t("server.connectionIssue")}
+                message={error}
+              />
             </div>
           ) : null}
 

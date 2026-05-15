@@ -67,7 +67,9 @@ export function useMediaSegments(itemId?: string, currentTime?: number) {
 
     return (
       state.segments.find(
-        (segment) => currentTime >= segment.startSeconds && currentTime < segment.endSeconds,
+        (segment) =>
+          currentTime >= segment.startSeconds &&
+          currentTime < segment.endSeconds,
       ) ?? null
     );
   }, [currentTime, state.segments]);
@@ -81,7 +83,10 @@ export function useMediaSegments(itemId?: string, currentTime?: number) {
       return state.segments[0] ?? null;
     }
 
-    return state.segments.find((segment) => segment.startSeconds > currentTime) ?? null;
+    return (
+      state.segments.find((segment) => segment.startSeconds > currentTime) ??
+      null
+    );
   }, [currentTime, state.segments]);
 
   return {

@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
@@ -77,20 +84,35 @@ function extractGroupIdFromInput(value: string): string | null {
 
   try {
     const url = new URL(trimmed, window.location.origin);
-    return normalizeGroupId(url.searchParams.get("syncplay") || url.searchParams.get("party") || trimmed);
+    return normalizeGroupId(
+      url.searchParams.get("syncplay") ||
+        url.searchParams.get("party") ||
+        trimmed,
+    );
   } catch {
     return normalizeGroupId(trimmed);
   }
 }
 
 function getGroupErrorKey(error: unknown): TranslationKey {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
 
-  if (message.includes("404") || message.includes("not found") || message.includes("does not exist")) {
+  if (
+    message.includes("404") ||
+    message.includes("not found") ||
+    message.includes("does not exist")
+  ) {
     return "party.syncPlayGroupNotFound";
   }
 
-  if (message.includes("401") || message.includes("403") || message.includes("forbidden")) {
+  if (
+    message.includes("401") ||
+    message.includes("403") ||
+    message.includes("forbidden")
+  ) {
     return "party.syncPlayUnavailable";
   }
 
@@ -98,13 +120,24 @@ function getGroupErrorKey(error: unknown): TranslationKey {
 }
 
 function getControlErrorKey(error: unknown): TranslationKey {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+  const message =
+    error instanceof Error
+      ? error.message.toLowerCase()
+      : String(error).toLowerCase();
 
-  if (message.includes("401") || message.includes("403") || message.includes("forbidden")) {
+  if (
+    message.includes("401") ||
+    message.includes("403") ||
+    message.includes("forbidden")
+  ) {
     return "party.syncPlayHostOnly";
   }
 
-  if (message.includes("not in group") || message.includes("does not exist") || message.includes("404")) {
+  if (
+    message.includes("not in group") ||
+    message.includes("does not exist") ||
+    message.includes("404")
+  ) {
     return "party.syncPlayGroupNotFound";
   }
 
@@ -129,14 +162,21 @@ function copyTextWithTextarea(text: string): boolean {
   }
 }
 
-function formatTemplate(template: string, values: Record<string, string | number>): string {
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
   return Object.entries(values).reduce(
     (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
     template,
   );
 }
 
-function getParticipantName(participant: unknown, fallbackIndex: number, fallbackTemplate: string): string {
+function getParticipantName(
+  participant: unknown,
+  fallbackIndex: number,
+  fallbackTemplate: string,
+): string {
   if (typeof participant === "string" && participant.trim()) {
     return participant.trim();
   }
@@ -194,7 +234,9 @@ function asSendCommand(value: unknown): JellyfinSyncPlaySendCommand | null {
   return value as JellyfinSyncPlaySendCommand;
 }
 
-function asStateUpdate(value: unknown): JellyfinSyncPlayGroupStateUpdate | null {
+function asStateUpdate(
+  value: unknown,
+): JellyfinSyncPlayGroupStateUpdate | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -202,7 +244,9 @@ function asStateUpdate(value: unknown): JellyfinSyncPlayGroupStateUpdate | null 
   return value as JellyfinSyncPlayGroupStateUpdate;
 }
 
-function asPlayQueueUpdate(value: unknown): JellyfinSyncPlayPlayQueueUpdate | null {
+function asPlayQueueUpdate(
+  value: unknown,
+): JellyfinSyncPlayPlayQueueUpdate | null {
   if (!isRecord(value)) {
     return null;
   }
@@ -236,36 +280,59 @@ export function usePartyWatchController({
   const playlistItemIdRef = useRef<string | undefined>(itemId);
   const canControlRef = useRef(true);
   const isApplyingRemoteCommandRef = useRef(false);
-  const remoteGuardTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
-  const remoteCommandTimersRef = useRef<Array<ReturnType<typeof window.setTimeout>>>([]);
-  const lastRemotePlayCommandRef = useRef<JellyfinSyncPlaySendCommand | null>(null);
+  const remoteGuardTimeoutRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null);
+  const remoteCommandTimersRef = useRef<
+    Array<ReturnType<typeof window.setTimeout>>
+  >([]);
+  const lastRemotePlayCommandRef = useRef<JellyfinSyncPlaySendCommand | null>(
+    null,
+  );
   const pingEstimateMsRef = useRef(150);
-  const copyStatusTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const copyStatusTimeoutRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null);
   const previousParticipantNamesRef = useRef<string[]>([]);
-  const partyEventTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const partyEventTimeoutRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null);
   const playPauseAnimationIdRef = useRef(0);
   const activePlayPauseAnimationRef = useRef<{
     id: number;
     target: "playing" | "paused";
     startedAt: number;
   } | null>(null);
-  const remotePlayPauseApplyTimeoutRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const remotePlayPauseApplyTimeoutRef = useRef<ReturnType<
+    typeof window.setTimeout
+  > | null>(null);
 
-  const [groupInfo, setGroupInfo] = useState<JellyfinSyncPlayGroupInfo | null>(null);
+  const [groupInfo, setGroupInfo] = useState<JellyfinSyncPlayGroupInfo | null>(
+    null,
+  );
   const [groupId, setGroupId] = useState<string | null>(null);
-  const [joinInput, setJoinInput] = useState(initialInviteGroupIdRef.current ?? "");
+  const [joinInput, setJoinInput] = useState(
+    initialInviteGroupIdRef.current ?? "",
+  );
   const [role, setRole] = useState<PartyWatchRole | null>(null);
   const [canControl, setCanControl] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [isApplyingRemoteCommand, setIsApplyingRemoteCommand] = useState(false);
-  const [socketStatus, setSocketStatus] = useState<JellyfinSyncPlaySocketStatus>("disconnected");
+  const [socketStatus, setSocketStatus] =
+    useState<JellyfinSyncPlaySocketStatus>("disconnected");
   const [isPlayPausePending, setIsPlayPausePending] = useState(false);
   const [isResumePending, setIsResumePending] = useState(false);
-  const [pendingPlayPauseTarget, setPendingPlayPauseTarget] = useState<"playing" | "paused" | null>(null);
+  const [pendingPlayPauseTarget, setPendingPlayPauseTarget] = useState<
+    "playing" | "paused" | null
+  >(null);
   const [statusKey, setStatusKey] = useState<TranslationKey | null>(null);
   const [errorKey, setErrorKey] = useState<TranslationKey | null>(null);
-  const [copyStatusKey, setCopyStatusKey] = useState<TranslationKey | null>(null);
-  const [partyEventMessage, setPartyEventMessage] = useState<string | null>(null);
+  const [copyStatusKey, setCopyStatusKey] = useState<TranslationKey | null>(
+    null,
+  );
+  const [partyEventMessage, setPartyEventMessage] = useState<string | null>(
+    null,
+  );
 
   const isAvailable = useMemo(() => typeof WebSocket !== "undefined", []);
   const isInGroup = Boolean(groupId);
@@ -284,7 +351,9 @@ export function usePartyWatchController({
     groupInfo?.Participants?.map((participant, index) =>
       getParticipantName(participant, index, t("party.participantFallback")),
     ) ?? [];
-  const groupName = groupInfo?.GroupName ?? (groupId ? `SyncPlay ${groupId.slice(0, 8)}` : null);
+  const groupName =
+    groupInfo?.GroupName ??
+    (groupId ? `SyncPlay ${groupId.slice(0, 8)}` : null);
   const groupState = groupInfo?.State ?? groupStateRef.current;
 
   useEffect(() => {
@@ -341,36 +410,56 @@ export function usePartyWatchController({
     }, 3200);
   }, []);
 
-  const applyGroupInfo = useCallback((nextGroupInfo: JellyfinSyncPlayGroupInfo) => {
-    const nextParticipantNames =
-      nextGroupInfo.Participants?.map((participant, index) =>
-        getParticipantName(participant, index, t("party.participantFallback")),
-      ) ?? [];
-    const previousParticipantNames = previousParticipantNamesRef.current;
+  const applyGroupInfo = useCallback(
+    (nextGroupInfo: JellyfinSyncPlayGroupInfo) => {
+      const nextParticipantNames =
+        nextGroupInfo.Participants?.map((participant, index) =>
+          getParticipantName(
+            participant,
+            index,
+            t("party.participantFallback"),
+          ),
+        ) ?? [];
+      const previousParticipantNames = previousParticipantNamesRef.current;
 
-    if (previousParticipantNames.length > 0 && nextParticipantNames.length !== previousParticipantNames.length) {
-      const joinedNames = nextParticipantNames.filter((name) => !previousParticipantNames.includes(name));
-      const leftNames = previousParticipantNames.filter((name) => !nextParticipantNames.includes(name));
+      if (
+        previousParticipantNames.length > 0 &&
+        nextParticipantNames.length !== previousParticipantNames.length
+      ) {
+        const joinedNames = nextParticipantNames.filter(
+          (name) => !previousParticipantNames.includes(name),
+        );
+        const leftNames = previousParticipantNames.filter(
+          (name) => !nextParticipantNames.includes(name),
+        );
 
-      if (joinedNames.length > 0) {
-        showPartyEventMessage(formatTemplate(t("party.participantJoined"), { name: joinedNames[0] }));
-      } else if (leftNames.length > 0) {
-        showPartyEventMessage(formatTemplate(t("party.participantLeft"), { name: leftNames[0] }));
+        if (joinedNames.length > 0) {
+          showPartyEventMessage(
+            formatTemplate(t("party.participantJoined"), {
+              name: joinedNames[0],
+            }),
+          );
+        } else if (leftNames.length > 0) {
+          showPartyEventMessage(
+            formatTemplate(t("party.participantLeft"), { name: leftNames[0] }),
+          );
+        }
       }
-    }
 
-    previousParticipantNamesRef.current = nextParticipantNames;
-    setGroupInfo(nextGroupInfo);
+      previousParticipantNamesRef.current = nextParticipantNames;
+      setGroupInfo(nextGroupInfo);
 
-    if (nextGroupInfo.GroupId) {
-      setGroupId(nextGroupInfo.GroupId);
-      groupIdRef.current = nextGroupInfo.GroupId;
-    }
+      if (nextGroupInfo.GroupId) {
+        setGroupId(nextGroupInfo.GroupId);
+        groupIdRef.current = nextGroupInfo.GroupId;
+      }
 
-    if (nextGroupInfo.State) {
-      groupStateRef.current = nextGroupInfo.State;
-    }
-  }, [showPartyEventMessage, t]);
+      if (nextGroupInfo.State) {
+        groupStateRef.current = nextGroupInfo.State;
+      }
+    },
+    [showPartyEventMessage, t],
+  );
 
   const clearGroupState = useCallback(() => {
     groupIdRef.current = null;
@@ -415,7 +504,9 @@ export function usePartyWatchController({
   const readPlayerStatus = useCallback((): JellyfinSyncPlayPlayerStatus => {
     const video = videoRef.current;
     const positionSeconds = video?.currentTime ?? currentTimeRef.current;
-    const playbackIsActive = video ? !video.paused && !video.ended : isPlayingRef.current;
+    const playbackIsActive = video
+      ? !video.paused && !video.ended
+      : isPlayingRef.current;
 
     return {
       when: new Date().toISOString(),
@@ -448,7 +539,9 @@ export function usePartyWatchController({
         return;
       }
 
-      const duration = Number.isFinite(video.duration) ? video.duration : seconds;
+      const duration = Number.isFinite(video.duration)
+        ? video.duration
+        : seconds;
       video.currentTime = Math.min(Math.max(0, seconds), Math.max(0, duration));
       refreshProgress();
     },
@@ -463,7 +556,10 @@ export function usePartyWatchController({
     }
 
     void video.play().catch((error: unknown) => {
-      console.warn("[Seyirlik SyncPlay] video.play() was blocked or failed", error);
+      console.warn(
+        "[Seyirlik SyncPlay] video.play() was blocked or failed",
+        error,
+      );
     });
     refreshProgress();
   }, [refreshProgress, videoRef]);
@@ -473,38 +569,45 @@ export function usePartyWatchController({
     refreshProgress();
   }, [refreshProgress, videoRef]);
 
-  const beginPlayPauseAnimation = useCallback((target: "playing" | "paused") => {
-    const now = Date.now();
-    const active = activePlayPauseAnimationRef.current;
+  const beginPlayPauseAnimation = useCallback(
+    (target: "playing" | "paused") => {
+      const now = Date.now();
+      const active = activePlayPauseAnimationRef.current;
 
-    if (active && active.target === target && now - active.startedAt < 2500) {
-      return active.id;
-    }
+      if (active && active.target === target && now - active.startedAt < 2500) {
+        return active.id;
+      }
 
-    playPauseAnimationIdRef.current += 1;
+      playPauseAnimationIdRef.current += 1;
 
-    const nextAnimation = {
-      id: playPauseAnimationIdRef.current,
-      target,
-      startedAt: now,
-    };
+      const nextAnimation = {
+        id: playPauseAnimationIdRef.current,
+        target,
+        startedAt: now,
+      };
 
-    activePlayPauseAnimationRef.current = nextAnimation;
-    setPendingPlayPauseTarget(target);
-    setIsPlayPausePending(true);
+      activePlayPauseAnimationRef.current = nextAnimation;
+      setPendingPlayPauseTarget(target);
+      setIsPlayPausePending(true);
 
-    if (target === "playing") {
-      setIsResumePending(true);
-    }
+      if (target === "playing") {
+        setIsResumePending(true);
+      }
 
-    return nextAnimation.id;
-  }, []);
+      return nextAnimation.id;
+    },
+    [],
+  );
 
   const applyRemoteCommand = useCallback(
     (command: JellyfinSyncPlaySendCommand) => {
       const activeGroupId = groupIdRef.current;
 
-      if (command.GroupId && activeGroupId && command.GroupId !== activeGroupId) {
+      if (
+        command.GroupId &&
+        activeGroupId &&
+        command.GroupId !== activeGroupId
+      ) {
         return;
       }
 
@@ -512,7 +615,10 @@ export function usePartyWatchController({
         playlistItemIdRef.current = command.PlaylistItemId;
       }
 
-      const delayMs = Math.min(getCommandDelayMs(command), MAX_SCHEDULED_COMMAND_DELAY_MS);
+      const delayMs = Math.min(
+        getCommandDelayMs(command),
+        MAX_SCHEDULED_COMMAND_DELAY_MS,
+      );
       const timer = window.setTimeout(() => {
         const video = videoRef.current;
 
@@ -524,7 +630,10 @@ export function usePartyWatchController({
 
         const targetSeconds = getExpectedCommandPositionSeconds(command);
 
-        if (targetSeconds !== null && Math.abs(video.currentTime - targetSeconds) > 0.35) {
+        if (
+          targetSeconds !== null &&
+          Math.abs(video.currentTime - targetSeconds) > 0.35
+        ) {
           seekVideoLocally(targetSeconds);
         }
 
@@ -538,7 +647,11 @@ export function usePartyWatchController({
           remotePlayPauseApplyTimeoutRef.current = window.setTimeout(() => {
             const active = activePlayPauseAnimationRef.current;
 
-            if (!active || active.id !== animationId || active.target !== "paused") {
+            if (
+              !active ||
+              active.id !== animationId ||
+              active.target !== "paused"
+            ) {
               return;
             }
 
@@ -552,7 +665,8 @@ export function usePartyWatchController({
           lastRemotePlayCommandRef.current = {
             ...command,
             When: command.When ?? new Date().toISOString(),
-            PositionTicks: command.PositionTicks ?? ticksFromSeconds(video.currentTime),
+            PositionTicks:
+              command.PositionTicks ?? ticksFromSeconds(video.currentTime),
           };
 
           if (remotePlayPauseApplyTimeoutRef.current !== null) {
@@ -562,7 +676,11 @@ export function usePartyWatchController({
           remotePlayPauseApplyTimeoutRef.current = window.setTimeout(() => {
             const active = activePlayPauseAnimationRef.current;
 
-            if (!active || active.id !== animationId || active.target !== "playing") {
+            if (
+              !active ||
+              active.id !== animationId ||
+              active.target !== "playing"
+            ) {
               return;
             }
 
@@ -678,7 +796,9 @@ export function usePartyWatchController({
         if (stateUpdate?.State) {
           groupStateRef.current = stateUpdate.State;
           setGroupInfo((currentGroupInfo) =>
-            currentGroupInfo ? { ...currentGroupInfo, State: stateUpdate.State } : currentGroupInfo,
+            currentGroupInfo
+              ? { ...currentGroupInfo, State: stateUpdate.State }
+              : currentGroupInfo,
           );
         }
 
@@ -779,7 +899,14 @@ export function usePartyWatchController({
     } finally {
       setIsLoading(false);
     }
-  }, [applyGroupInfo, isLoading, itemId, readPlayerStatus, refreshGroupInfo, title]);
+  }, [
+    applyGroupInfo,
+    isLoading,
+    itemId,
+    readPlayerStatus,
+    refreshGroupInfo,
+    title,
+  ]);
 
   const joinGroup = useCallback(
     async (requestedGroupId?: string) => {
@@ -787,7 +914,9 @@ export function usePartyWatchController({
         return;
       }
 
-      const nextGroupId = extractGroupIdFromInput(requestedGroupId ?? joinInput);
+      const nextGroupId = extractGroupIdFromInput(
+        requestedGroupId ?? joinInput,
+      );
 
       if (!nextGroupId) {
         return;
@@ -943,7 +1072,15 @@ export function usePartyWatchController({
         playPausePending: true,
       },
     );
-  }, [beginPlayPauseAnimation, pauseVideoLocally, playVideoLocally, readPlayerStatus, runSyncPlayControl, sendReadyStatus, videoRef]);
+  }, [
+    beginPlayPauseAnimation,
+    pauseVideoLocally,
+    playVideoLocally,
+    readPlayerStatus,
+    runSyncPlayControl,
+    sendReadyStatus,
+    videoRef,
+  ]);
 
   const seekTo = useCallback(
     (seconds: number) => {
@@ -1006,13 +1143,17 @@ export function usePartyWatchController({
           return;
         }
         lastBufferingReportAt = now;
-        void sendSyncPlayBufferingCommand(readPlayerStatus()).catch(() => undefined);
+        void sendSyncPlayBufferingCommand(readPlayerStatus()).catch(
+          () => undefined,
+        );
       } else {
         if (now - lastReadyReportAt < 800) {
           return;
         }
         lastReadyReportAt = now;
-        void sendSyncPlayReadyCommand(readPlayerStatus()).catch(() => undefined);
+        void sendSyncPlayReadyCommand(readPlayerStatus()).catch(
+          () => undefined,
+        );
       }
     };
 
@@ -1042,7 +1183,10 @@ export function usePartyWatchController({
 
       void sendSyncPlayPingCommand(pingEstimateMsRef.current)
         .then(() => {
-          pingEstimateMsRef.current = Math.max(1, performance.now() - startedAt);
+          pingEstimateMsRef.current = Math.max(
+            1,
+            performance.now() - startedAt,
+          );
         })
         .catch(() => undefined);
     }, SYNCPLAY_PING_INTERVAL_MS);
@@ -1067,7 +1211,10 @@ export function usePartyWatchController({
 
       const expectedSeconds = getExpectedCommandPositionSeconds(command);
 
-      if (expectedSeconds !== null && shouldCorrectSyncPlayDrift(video.currentTime, expectedSeconds)) {
+      if (
+        expectedSeconds !== null &&
+        shouldCorrectSyncPlayDrift(video.currentTime, expectedSeconds)
+      ) {
         markApplyingRemoteCommand();
         seekVideoLocally(expectedSeconds);
       }
@@ -1100,7 +1247,9 @@ export function usePartyWatchController({
         window.clearTimeout(remotePlayPauseApplyTimeoutRef.current);
       }
 
-      remoteCommandTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      remoteCommandTimersRef.current.forEach((timer) =>
+        window.clearTimeout(timer),
+      );
       remoteCommandTimersRef.current = [];
     };
   }, []);

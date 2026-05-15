@@ -17,14 +17,24 @@ interface MediaRowProps {
   viewAllTo?: string;
 }
 
-function formatTemplate(template: string, values: Record<string, string | number>): string {
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
   return Object.entries(values).reduce(
     (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
     template,
   );
 }
 
-export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMessage, viewAllTo }: MediaRowProps) {
+export function MediaRow({
+  title,
+  items,
+  getItemTo,
+  variant = "poster",
+  emptyMessage,
+  viewAllTo,
+}: MediaRowProps) {
   const { t } = useLanguage();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -78,7 +88,10 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
     }
 
     scroller.scrollBy({
-      left: direction === "left" ? -scroller.clientWidth * 0.82 : scroller.clientWidth * 0.82,
+      left:
+        direction === "left"
+          ? -scroller.clientWidth * 0.82
+          : scroller.clientWidth * 0.82,
       behavior: "smooth",
     });
   };
@@ -92,7 +105,10 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
           </AnimatedWidth>
         </h2>
         {viewAllTo ? (
-          <Link to={viewAllTo} className="text-sm font-bold text-white/[0.55] transition hover:text-white">
+          <Link
+            to={viewAllTo}
+            className="text-sm font-bold text-white/[0.55] transition hover:text-white"
+          >
             <AnimatedWidth value={t("common.viewAll")}>
               <AnimatedText value={t("common.viewAll")} />
             </AnimatedWidth>
@@ -108,7 +124,13 @@ export function MediaRow({ title, items, getItemTo, variant = "poster", emptyMes
           >
             {items.map((item, index) => (
               <div key={item.Id} className="snap-start">
-                <MediaCard item={item} to={getItemTo(item)} variant={variant} index={index} animateIn />
+                <MediaCard
+                  item={item}
+                  to={getItemTo(item)}
+                  variant={variant}
+                  index={index}
+                  animateIn
+                />
               </div>
             ))}
           </div>

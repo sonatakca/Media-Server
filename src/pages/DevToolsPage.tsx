@@ -1,5 +1,13 @@
 import { Link } from "react-router-dom";
-import { Activity, ArrowRight, Bug, Database, DatabaseZap, Lightbulb, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  ArrowRight,
+  Bug,
+  Database,
+  DatabaseZap,
+  Lightbulb,
+  ShieldCheck,
+} from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
 import { useEffect } from "react";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
@@ -10,48 +18,48 @@ export function DevToolsPage() {
     setPageTitle("Devtools · Seyirlik");
   }, []);
 
-    const tools = [
-      {
-        title: "Playback Audit",
-        description:
-          "Scan Jellyfin media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
-        to: "/dev/playback-audit",
-        icon: Activity,
-        tag: "Diagnostics",
-      },
-      {
-        title: "Library Maintenance",
-        description:
-          "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
-        to: "/dev/library-maintenance",
-        icon: DatabaseZap,
-        tag: "Maintenance",
-      },
-      {
-        title: "Content Explorer",
-        description:
-          "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
-        to: "/dev/content",
-        icon: Database,
-        tag: "Inventory",
-      },
-      {
-        title: "Known Bugs",
-        description:
-          "Track current broken behaviour such as missing library items, Se7en audio problems, and pixelated transcoding.",
-        to: "/dev/known-bugs",
-        icon: Bug,
-        tag: "Bug tracker",
-      },
-      {
-        title: "Wanted Features",
-        description:
-          "Collect future improvements like rotating hero templates, better UX ideas, and planned Seyirlik upgrades.",
-        to: "/dev/wanted-features",
-        icon: Lightbulb,
-        tag: "Roadmap",
-      },
-    ];
+  const tools = [
+    {
+      title: "Playback Audit",
+      description:
+        "Scan Jellyfin media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
+      to: "/dev/playback-audit",
+      icon: Activity,
+      tag: "Diagnostics",
+    },
+    {
+      title: "Library Maintenance",
+      description:
+        "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
+      to: "/dev/library-maintenance",
+      icon: DatabaseZap,
+      tag: "Maintenance",
+    },
+    {
+      title: "Content Explorer",
+      description:
+        "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
+      to: "/dev/content",
+      icon: Database,
+      tag: "Inventory",
+    },
+    {
+      title: "Known Bugs",
+      description:
+        "Track current broken behaviour such as missing library items, Se7en audio problems, and pixelated transcoding.",
+      to: "/dev/known-bugs",
+      icon: Bug,
+      tag: "Bug tracker",
+    },
+    {
+      title: "Wanted Features",
+      description:
+        "Collect future improvements like rotating hero templates, better UX ideas, and planned Seyirlik upgrades.",
+      to: "/dev/wanted-features",
+      icon: Lightbulb,
+      tag: "Roadmap",
+    },
+  ];
 
   return (
     <div className="relative mx-auto max-w-5xl space-y-6">
@@ -102,7 +110,8 @@ export function DevToolsPage() {
               </h1>
 
               <p className="mt-1 text-sm font-semibold text-white/50">
-                Tools for debugging, maintenance, bug tracking, and future planning.
+                Tools for debugging, maintenance, bug tracking, and future
+                planning.
               </p>
             </div>
           </div>

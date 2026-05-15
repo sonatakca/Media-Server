@@ -9,7 +9,10 @@ import "./index.css";
 
 const userAgent = navigator.userAgent;
 
-if (/Chrome|CriOS|Chromium/.test(userAgent) && !/Edg|OPR|Opera|Safari\/.*Version/.test(userAgent)) {
+if (
+  /Chrome|CriOS|Chromium/.test(userAgent) &&
+  !/Edg|OPR|Opera|Safari\/.*Version/.test(userAgent)
+) {
   document.documentElement.classList.add("browser-chrome");
 }
 

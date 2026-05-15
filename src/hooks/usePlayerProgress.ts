@@ -30,7 +30,10 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       return;
     }
 
-    const bufferedEnd = video.buffered.length > 0 ? video.buffered.end(video.buffered.length - 1) : 0;
+    const bufferedEnd =
+      video.buffered.length > 0
+        ? video.buffered.end(video.buffered.length - 1)
+        : 0;
 
     setState({
       currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
@@ -74,7 +77,10 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
     ];
 
     events.forEach((eventName) => {
-      video.addEventListener(eventName, eventName === "waiting" ? markBuffering : readVideoState);
+      video.addEventListener(
+        eventName,
+        eventName === "waiting" ? markBuffering : readVideoState,
+      );
     });
     video.addEventListener("canplay", markReady);
     video.addEventListener("playing", markReady);
@@ -83,7 +89,10 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
 
     return () => {
       events.forEach((eventName) => {
-        video.removeEventListener(eventName, eventName === "waiting" ? markBuffering : readVideoState);
+        video.removeEventListener(
+          eventName,
+          eventName === "waiting" ? markBuffering : readVideoState,
+        );
       });
       video.removeEventListener("canplay", markReady);
       video.removeEventListener("playing", markReady);
@@ -99,7 +108,10 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
 
     if (video.paused) {
       void video.play().catch((error: unknown) => {
-        console.warn("[Seyirlik Playback] video.play() was blocked or failed", error);
+        console.warn(
+          "[Seyirlik Playback] video.play() was blocked or failed",
+          error,
+        );
       });
     } else {
       video.pause();

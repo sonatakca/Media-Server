@@ -55,7 +55,11 @@ export function Navbar() {
   return (
     <header className="sticky top-0 z-40 select-none border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl [-webkit-tap-highlight-color:transparent]">
       <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
-        <Link to="/home" className="flex min-w-0 items-center gap-3" aria-label={t("nav.brandHome")}>
+        <Link
+          to="/home"
+          className="flex min-w-0 items-center gap-3"
+          aria-label={t("nav.brandHome")}
+        >
           <span className="flex min-w-0 items-center gap-3 md:hidden">
             {!iconFailed ? (
               <img
@@ -70,7 +74,11 @@ export function Navbar() {
                 S
               </span>
             )}
-            {iconFailed ? <span className="text-base font-black tracking-wide text-white">Seyirlik</span> : null}
+            {iconFailed ? (
+              <span className="text-base font-black tracking-wide text-white">
+                Seyirlik
+              </span>
+            ) : null}
           </span>
 
           <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex">
@@ -87,7 +95,9 @@ export function Navbar() {
                 <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-xl">
                   S
                 </span>
-                <span className="text-base font-black tracking-wide text-white sm:text-lg">Seyirlik</span>
+                <span className="text-base font-black tracking-wide text-white sm:text-lg">
+                  Seyirlik
+                </span>
               </span>
             )}
           </span>
@@ -98,7 +108,9 @@ export function Navbar() {
             to="/home"
             className={({ isActive }) =>
               `inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-[width,min-width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out ${
-                isActive ? "bg-[var(--accent)] text-black shadow-[0_10px_30px_var(--accent-soft)] hover:bg-[var(--accent-hover)]" : "text-zinc-300 hover:bg-white/10 hover:text-white"
+                isActive
+                  ? "bg-[var(--accent)] text-black shadow-[0_10px_30px_var(--accent-soft)] hover:bg-[var(--accent-hover)]"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
               }`
             }
           >
@@ -114,12 +126,17 @@ export function Navbar() {
             to="/server"
             className={({ isActive }) =>
               `inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-semibold transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out lg:w-auto lg:px-3 ${
-                isActive ? "bg-white/[0.12] text-white" : "text-zinc-300 hover:bg-white/10 hover:text-white"
+                isActive
+                  ? "bg-white/[0.12] text-white"
+                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
               }`
             }
           >
             <Server size={17} className="shrink-0" />
-            <AnimatedWidth value={t("nav.server")} className="hidden xl:inline-block">
+            <AnimatedWidth
+              value={t("nav.server")}
+              className="hidden xl:inline-block"
+            >
               <AnimatedText value={t("nav.server")} />
             </AnimatedWidth>
           </NavLink>
@@ -136,7 +153,10 @@ export function Navbar() {
             }
           >
             <Palette size={17} className="shrink-0" />
-            <AnimatedWidth value={t("nav.changeTheme")} className="hidden xl:inline-block">
+            <AnimatedWidth
+              value={t("nav.changeTheme")}
+              className="hidden xl:inline-block"
+            >
               <AnimatedText value={t("nav.changeTheme")} />
             </AnimatedWidth>
           </NavLink>
@@ -156,7 +176,10 @@ export function Navbar() {
                 className="inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-bold text-zinc-200 transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:w-auto sm:px-3"
               >
                 <LogOut size={17} className="shrink-0" />
-                <AnimatedWidth value={t("nav.logout")} className="hidden sm:inline-block">
+                <AnimatedWidth
+                  value={t("nav.logout")}
+                  className="hidden sm:inline-block"
+                >
                   <AnimatedText value={t("nav.logout")} />
                 </AnimatedWidth>
               </button>

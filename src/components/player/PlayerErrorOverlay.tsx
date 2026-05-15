@@ -26,7 +26,9 @@ export function PlayerErrorOverlay({
             <AlertTriangle size={24} />
           </span>
           <div>
-            <h2 className="text-xl font-black text-white">{t("player.issue")}</h2>
+            <h2 className="text-xl font-black text-white">
+              {t("player.issue")}
+            </h2>
             <p className="mt-2 leading-6 text-white/[0.72]">{message}</p>
           </div>
         </div>
@@ -54,7 +56,9 @@ export function PlayerErrorOverlay({
 
         {details ? (
           <details className="mt-5 rounded-lg border border-white/10 bg-black/[0.45] p-4">
-            <summary className="cursor-pointer text-sm font-semibold text-white/[0.82]">{t("player.technicalDetails")}</summary>
+            <summary className="cursor-pointer text-sm font-semibold text-white/[0.82]">
+              {t("player.technicalDetails")}
+            </summary>
             <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-white/[0.58]">
               {details}
             </pre>

@@ -7,7 +7,7 @@ describe("Button Component", () => {
   it("renders a standard button with children", () => {
     render(<Button>Click Me</Button>);
     const button = screen.getByRole("button", { name: "Click Me" });
-    
+
     expect(button).toBeInTheDocument();
     expect(button).toHaveClass("bg-[var(--accent)]"); // Primary default
   });
@@ -15,7 +15,7 @@ describe("Button Component", () => {
   it("applies the secondary variant class correctly", () => {
     render(<Button variant="secondary">Secondary Action</Button>);
     const button = screen.getByRole("button", { name: "Secondary Action" });
-    
+
     expect(button).toHaveClass("border-white/15");
     expect(button).toHaveClass("bg-white/10");
   });
@@ -23,7 +23,7 @@ describe("Button Component", () => {
   it("handles the disabled state properly", () => {
     render(<Button disabled>Disabled</Button>);
     const button = screen.getByRole("button", { name: "Disabled" });
-    
+
     expect(button).toBeDisabled();
     expect(button).toHaveClass("disabled:cursor-not-allowed");
   });
@@ -34,7 +34,7 @@ describe("ButtonLink Component", () => {
     render(
       <MemoryRouter>
         <ButtonLink to="/watch/123">Play Movie</ButtonLink>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     const link = screen.getByRole("link", { name: "Play Movie" });
     expect(link).toHaveAttribute("href", "/watch/123");

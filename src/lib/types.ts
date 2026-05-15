@@ -107,7 +107,13 @@ export interface JellyfinChapter {
   ImageTag?: string;
 }
 
-export type SegmentKind = "Intro" | "Outro" | "Recap" | "Preview" | "Commercial" | string;
+export type SegmentKind =
+  | "Intro"
+  | "Outro"
+  | "Recap"
+  | "Preview"
+  | "Commercial"
+  | string;
 
 export interface JellyfinMediaSegment {
   Id?: string;
@@ -230,7 +236,11 @@ export interface JellyfinMetadataRefreshOptions {
   replaceAllImages?: boolean;
 }
 
-export type PlaybackMode = "DirectPlay" | "DirectStream" | "Transcoding" | "Unknown";
+export type PlaybackMode =
+  | "DirectPlay"
+  | "DirectStream"
+  | "Transcoding"
+  | "Unknown";
 
 export interface PlaybackQualityOption {
   id: string;

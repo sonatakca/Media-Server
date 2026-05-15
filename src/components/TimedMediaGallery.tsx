@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion, type Transition } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type Transition,
+} from "framer-motion";
 import { Pause, Play, RotateCcw } from "lucide-react";
 import { Link } from "react-router-dom";
-import { getBackdropImageUrl, getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import {
+  getBackdropImageUrl,
+  getLogoImageUrl,
+  getPrimaryImageUrl,
+} from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
@@ -24,7 +33,11 @@ function getBackdrop(item: JellyfinItem): string {
   }
 
   if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]) {
-    return getBackdropImageUrl(item.ParentBackdropItemId, item.ParentBackdropImageTags[0], 1900);
+    return getBackdropImageUrl(
+      item.ParentBackdropItemId,
+      item.ParentBackdropImageTags[0],
+      1900,
+    );
   }
 
   if (item.ImageTags?.Primary) {
@@ -35,14 +48,23 @@ function getBackdrop(item: JellyfinItem): string {
 }
 
 function getPoster(item: JellyfinItem): string {
-  return item.ImageTags?.Primary ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900) : "";
+  return item.ImageTags?.Primary
+    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900)
+    : "";
 }
 
 function canPlayItem(item: JellyfinItem): boolean {
-  return item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
+  return (
+    item.Type === "Movie" ||
+    item.Type === "Episode" ||
+    item.MediaType === "Video"
+  );
 }
 
-function getGalleryItems(items: JellyfinItem[], maxItems: number): JellyfinItem[] {
+function getGalleryItems(
+  items: JellyfinItem[],
+  maxItems: number,
+): JellyfinItem[] {
   const seenIds = new Set<string>();
 
   return items
@@ -65,7 +87,10 @@ export function TimedMediaGallery({
 }: TimedMediaGalleryProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
-  const galleryItems = useMemo(() => getGalleryItems(items, maxItems), [items, maxItems]);
+  const galleryItems = useMemo(
+    () => getGalleryItems(items, maxItems),
+    [items, maxItems],
+  );
 
   const [activeIndex, setActiveIndex] = useState(0);
   const [previousIndex, setPreviousIndex] = useState(0);
@@ -79,7 +104,9 @@ export function TimedMediaGallery({
   const activeItem = galleryItems[activeIndex];
   const activeImageUrl = activeItem ? getBackdrop(activeItem) : "";
   const activePosterUrl = activeItem ? getPoster(activeItem) : "";
-  const activeLogoUrl = activeItem?.ImageTags?.Logo ? getLogoImageUrl(activeItem.Id, activeItem.ImageTags.Logo, 950) : "";
+  const activeLogoUrl = activeItem?.ImageTags?.Logo
+    ? getLogoImageUrl(activeItem.Id, activeItem.ImageTags.Logo, 950)
+    : "";
   const activeTitle = activeItem ? getDisplayTitle(activeItem) : "";
   const activeSubtitle = activeItem ? getItemSubtitle(activeItem) : null;
   const activeHref = activeItem ? getRouteForItem(activeItem) : "#";
@@ -104,7 +131,12 @@ export function TimedMediaGallery({
   }, [galleryItems.length]);
 
   useEffect(() => {
-    if (!isPlaying || hasFinished || galleryItems.length <= 1 || shouldReduceMotion) {
+    if (
+      !isPlaying ||
+      hasFinished ||
+      galleryItems.length <= 1 ||
+      shouldReduceMotion
+    ) {
       return undefined;
     }
 
@@ -129,7 +161,15 @@ export function TimedMediaGallery({
         window.clearTimeout(timerRef.current);
       }
     };
-  }, [activeIndex, durationMs, galleryItems.length, hasFinished, indicatorResetKey, isPlaying, shouldReduceMotion]);
+  }, [
+    activeIndex,
+    durationMs,
+    galleryItems.length,
+    hasFinished,
+    indicatorResetKey,
+    isPlaying,
+    shouldReduceMotion,
+  ]);
 
   if (galleryItems.length === 0 || !activeItem) {
     return null;
@@ -547,19 +587,42 @@ export function TimedMediaGallery({
               <motion.div
                 key={`white-reveal-${revealKey}`}
                 className="apple-gallery__white-reveal"
-                initial={shouldReduceMotion ? { opacity: 0 } : { opacity: 1, scale: 1.04, filter: "blur(0px)" }}
-                animate={shouldReduceMotion ? { opacity: 0 } : { opacity: 0, scale: 1.22, filter: "blur(18px)" }}
+                initial={
+                  shouldReduceMotion
+                    ? { opacity: 0 }
+                    : { opacity: 1, scale: 1.04, filter: "blur(0px)" }
+                }
+                animate={
+                  shouldReduceMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, scale: 1.22, filter: "blur(18px)" }
+                }
                 exit={{ opacity: 0 }}
-                transition={{ duration: shouldReduceMotion ? 0 : 1.15, ease: [0.16, 1, 0.3, 1] }}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 1.15,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
               />
             </AnimatePresence>
 
             <motion.div
               className="apple-gallery__stage"
-              initial={shouldReduceMotion ? false : { opacity: 0, y: 34, scale: 0.955, filter: "blur(18px)" }}
-              whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+              initial={
+                shouldReduceMotion
+                  ? false
+                  : { opacity: 0, y: 34, scale: 0.955, filter: "blur(18px)" }
+              }
+              whileInView={
+                shouldReduceMotion
+                  ? undefined
+                  : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }
+              }
               viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 1.05, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                duration: 1.05,
+                delay: 0.12,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             >
               <AnimatePresence custom={direction} initial={false}>
                 <motion.div
@@ -604,8 +667,15 @@ export function TimedMediaGallery({
                       alt=""
                       className="apple-gallery__image"
                       initial={shouldReduceMotion ? false : { scale: 1.075 }}
-                      animate={shouldReduceMotion ? undefined : { scale: 1.015 }}
-                      transition={{ duration: shouldReduceMotion ? 0 : durationMs / 1000 + 0.9, ease: "linear" }}
+                      animate={
+                        shouldReduceMotion ? undefined : { scale: 1.015 }
+                      }
+                      transition={{
+                        duration: shouldReduceMotion
+                          ? 0
+                          : durationMs / 1000 + 0.9,
+                        ease: "linear",
+                      }}
                     />
                   ) : (
                     <div className="apple-gallery__fallback">{activeTitle}</div>
@@ -616,9 +686,21 @@ export function TimedMediaGallery({
                       src={activePosterUrl}
                       alt=""
                       className="apple-gallery__poster"
-                      initial={shouldReduceMotion ? false : { opacity: 0, y: "-48%", scale: 0.96 }}
-                      animate={shouldReduceMotion ? undefined : { opacity: 1, y: "-50%", scale: 1 }}
-                      transition={{ duration: 0.72, delay: 0.24, ease: [0.16, 1, 0.3, 1] }}
+                      initial={
+                        shouldReduceMotion
+                          ? false
+                          : { opacity: 0, y: "-48%", scale: 0.96 }
+                      }
+                      animate={
+                        shouldReduceMotion
+                          ? undefined
+                          : { opacity: 1, y: "-50%", scale: 1 }
+                      }
+                      transition={{
+                        duration: 0.72,
+                        delay: 0.24,
+                        ease: [0.16, 1, 0.3, 1],
+                      }}
                     />
                   ) : null}
 
@@ -630,30 +712,73 @@ export function TimedMediaGallery({
                 <motion.div
                   key={`content-${activeItem.Id}`}
                   className="apple-gallery__content"
-                  initial={shouldReduceMotion ? false : { opacity: 0, y: 22, scale: 0.985, filter: "blur(10px)" }}
-                  animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                  exit={shouldReduceMotion ? undefined : { opacity: 0, y: -16, scale: 0.992, filter: "blur(8px)" }}
-                  transition={{ duration: 0.62, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                  initial={
+                    shouldReduceMotion
+                      ? false
+                      : {
+                          opacity: 0,
+                          y: 22,
+                          scale: 0.985,
+                          filter: "blur(10px)",
+                        }
+                  }
+                  animate={
+                    shouldReduceMotion
+                      ? undefined
+                      : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }
+                  }
+                  exit={
+                    shouldReduceMotion
+                      ? undefined
+                      : {
+                          opacity: 0,
+                          y: -16,
+                          scale: 0.992,
+                          filter: "blur(8px)",
+                        }
+                  }
+                  transition={{
+                    duration: 0.62,
+                    delay: 0.12,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
                 >
                   {activeLogoUrl ? (
-                    <img src={activeLogoUrl} alt={activeTitle} className="apple-gallery__logo" draggable={false} />
+                    <img
+                      src={activeLogoUrl}
+                      alt={activeTitle}
+                      className="apple-gallery__logo"
+                      draggable={false}
+                    />
                   ) : (
                     <h3 className="apple-gallery__item-title">{activeTitle}</h3>
                   )}
 
-                  {activeSubtitle ? <p className="apple-gallery__subtitle">{activeSubtitle}</p> : null}
+                  {activeSubtitle ? (
+                    <p className="apple-gallery__subtitle">{activeSubtitle}</p>
+                  ) : null}
 
-                  {activeItem.Overview ? <p className="apple-gallery__overview">{activeItem.Overview}</p> : null}
+                  {activeItem.Overview ? (
+                    <p className="apple-gallery__overview">
+                      {activeItem.Overview}
+                    </p>
+                  ) : null}
 
                   <div className="apple-gallery__actions">
                     {canPlay ? (
-                      <Link to={`/watch/${activeItem.Id}`} className="apple-gallery__action apple-gallery__action--primary">
+                      <Link
+                        to={`/watch/${activeItem.Id}`}
+                        className="apple-gallery__action apple-gallery__action--primary"
+                      >
                         <Play size={18} fill="currentColor" />
                         {t("common.play")}
                       </Link>
                     ) : null}
 
-                    <Link to={activeHref} className="apple-gallery__action apple-gallery__action--secondary">
+                    <Link
+                      to={activeHref}
+                      className="apple-gallery__action apple-gallery__action--secondary"
+                    >
                       {t("common.details")}
                     </Link>
                   </div>
@@ -663,12 +788,29 @@ export function TimedMediaGallery({
 
             <motion.div
               className="apple-gallery__controls"
-              initial={shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.94, filter: "blur(10px)" }}
-              whileInView={shouldReduceMotion ? undefined : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+              initial={
+                shouldReduceMotion
+                  ? false
+                  : { opacity: 0, y: 18, scale: 0.94, filter: "blur(10px)" }
+              }
+              whileInView={
+                shouldReduceMotion
+                  ? undefined
+                  : { opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }
+              }
               viewport={{ once: true, margin: "-80px" }}
-              transition={{ duration: 0.68, delay: 0.72, ease: [0.16, 1, 0.3, 1] }}
+              transition={{
+                duration: 0.68,
+                delay: 0.72,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             >
-              <button type="button" onClick={handlePlayPause} aria-label={controlLabel} className="apple-gallery__round-control">
+              <button
+                type="button"
+                onClick={handlePlayPause}
+                aria-label={controlLabel}
+                className="apple-gallery__round-control"
+              >
                 <span className="apple-gallery__glass" />
                 <span className="relative z-10">
                   {hasFinished ? (

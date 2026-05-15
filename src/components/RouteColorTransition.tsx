@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { animate } from "animejs";
 import { useLocation } from "react-router-dom";
 import {
@@ -10,14 +16,18 @@ import {
 } from "../lib/accentTheme";
 import AppIcon from "../assets/AppIcon.png";
 
-export const ROUTE_COLOR_TRANSITION_FORCE_EVENT = "seyirlik:force-theme-transition";
+export const ROUTE_COLOR_TRANSITION_FORCE_EVENT =
+  "seyirlik:force-theme-transition";
 
-const ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY = "seyirlik.routeColorTransition.lastSeen";
-const ROUTE_COLOR_TRANSITION_USED_THEMES_KEY = "seyirlik.routeColorTransition.usedThemes";
-const ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY = "seyirlik.routeColorTransition.usedAnims";
+const ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY =
+  "seyirlik.routeColorTransition.lastSeen";
+const ROUTE_COLOR_TRANSITION_USED_THEMES_KEY =
+  "seyirlik.routeColorTransition.usedThemes";
+const ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY =
+  "seyirlik.routeColorTransition.usedAnims";
 
 const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 60 * 30;
-const ROUTE_COLOR_TRANSITION_REPEAT_CHANCE = 0.50;
+const ROUTE_COLOR_TRANSITION_REPEAT_CHANCE = 0.5;
 
 const INITIAL_BLACK_HOLD_MS = 200;
 const STEP_MS = 120;
@@ -38,7 +48,7 @@ const ANIMATION_TYPES = [
   "center-up",
 ] as const;
 
-type AnimationType = typeof ANIMATION_TYPES[number];
+type AnimationType = (typeof ANIMATION_TYPES)[number];
 
 type ColourBarState = {
   theme: AccentTheme;
@@ -49,26 +59,36 @@ type ColourBarState = {
 };
 
 function getNextAccentThemeWithoutRepeatingCycle(): AccentTheme {
-  const storedUsedThemes = localStorage.getItem(ROUTE_COLOR_TRANSITION_USED_THEMES_KEY);
+  const storedUsedThemes = localStorage.getItem(
+    ROUTE_COLOR_TRANSITION_USED_THEMES_KEY,
+  );
   let usedThemeNames: string[] = [];
 
   try {
-    const parsedUsedThemes = storedUsedThemes ? JSON.parse(storedUsedThemes) : [];
+    const parsedUsedThemes = storedUsedThemes
+      ? JSON.parse(storedUsedThemes)
+      : [];
     if (Array.isArray(parsedUsedThemes)) {
-      usedThemeNames = parsedUsedThemes.filter((themeName) => typeof themeName === "string");
+      usedThemeNames = parsedUsedThemes.filter(
+        (themeName) => typeof themeName === "string",
+      );
     }
   } catch {
     usedThemeNames = [];
   }
 
   const storedTheme = getStoredAccentTheme();
-  const currentThemeName = document.documentElement.dataset.accentTheme || storedTheme?.name;
+  const currentThemeName =
+    document.documentElement.dataset.accentTheme || storedTheme?.name;
 
   const availableThemes = ACCENT_THEMES.filter(
-    (theme) => !usedThemeNames.includes(theme.name) && theme.name !== currentThemeName,
+    (theme) =>
+      !usedThemeNames.includes(theme.name) && theme.name !== currentThemeName,
   );
 
-  const fallbackThemePool = ACCENT_THEMES.filter((theme) => theme.name !== currentThemeName);
+  const fallbackThemePool = ACCENT_THEMES.filter(
+    (theme) => theme.name !== currentThemeName,
+  );
 
   const themePool =
     availableThemes.length > 0
@@ -84,35 +104,48 @@ function getNextAccentThemeWithoutRepeatingCycle(): AccentTheme {
       ? [...usedThemeNames, selectedTheme.name]
       : [selectedTheme.name];
 
-  localStorage.setItem(ROUTE_COLOR_TRANSITION_USED_THEMES_KEY, JSON.stringify(nextUsedThemeNames));
+  localStorage.setItem(
+    ROUTE_COLOR_TRANSITION_USED_THEMES_KEY,
+    JSON.stringify(nextUsedThemeNames),
+  );
 
   return selectedTheme;
 }
 
 function getNextAnimationTypeWithoutRepeatingCycle(): AnimationType {
-  const storedUsedAnims = localStorage.getItem(ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY);
+  const storedUsedAnims = localStorage.getItem(
+    ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY,
+  );
   let usedAnimNames: string[] = [];
 
   try {
     const parsedUsedAnims = storedUsedAnims ? JSON.parse(storedUsedAnims) : [];
     if (Array.isArray(parsedUsedAnims)) {
-      usedAnimNames = parsedUsedAnims.filter((animName) => typeof animName === "string");
+      usedAnimNames = parsedUsedAnims.filter(
+        (animName) => typeof animName === "string",
+      );
     }
   } catch {
     usedAnimNames = [];
   }
 
-  let availableAnims = ANIMATION_TYPES.filter((anim) => !usedAnimNames.includes(anim));
+  let availableAnims = ANIMATION_TYPES.filter(
+    (anim) => !usedAnimNames.includes(anim),
+  );
 
   if (availableAnims.length === 0) {
     availableAnims = [...ANIMATION_TYPES];
     usedAnimNames = [];
   }
 
-  const selectedAnim = availableAnims[Math.floor(Math.random() * availableAnims.length)];
+  const selectedAnim =
+    availableAnims[Math.floor(Math.random() * availableAnims.length)];
   const nextUsedAnimNames = [...usedAnimNames, selectedAnim];
 
-  localStorage.setItem(ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY, JSON.stringify(nextUsedAnimNames));
+  localStorage.setItem(
+    ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY,
+    JSON.stringify(nextUsedAnimNames),
+  );
 
   return selectedAnim;
 }
@@ -157,22 +190,27 @@ export function RouteColorTransition() {
     timeoutsRef.current = [];
   }, []);
 
-  const setBarRef = useCallback((element: HTMLDivElement | null, index: number) => {
-    barRefs.current[index] = element;
-  }, []);
+  const setBarRef = useCallback(
+    (element: HTMLDivElement | null, index: number) => {
+      barRefs.current[index] = element;
+    },
+    [],
+  );
 
   const playTransition = useCallback(
     (force = false) => {
       const now = Date.now();
-      const lastSeen = Number(localStorage.getItem(ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY) ?? "0");
+      const lastSeen = Number(
+        localStorage.getItem(ROUTE_COLOR_TRANSITION_LAST_SEEN_KEY) ?? "0",
+      );
       const hasSeenBefore = lastSeen > 0;
-      const isPastCooldown = now - lastSeen >= ROUTE_COLOR_TRANSITION_COOLDOWN_MS;
-      const passedRandomChance = Math.random() < ROUTE_COLOR_TRANSITION_REPEAT_CHANCE;
+      const isPastCooldown =
+        now - lastSeen >= ROUTE_COLOR_TRANSITION_COOLDOWN_MS;
+      const passedRandomChance =
+        Math.random() < ROUTE_COLOR_TRANSITION_REPEAT_CHANCE;
 
       const shouldSkipAnimation =
-        !force &&
-        hasSeenBefore &&
-        (!isPastCooldown || !passedRandomChance);
+        !force && hasSeenBefore && (!isPastCooldown || !passedRandomChance);
 
       if (shouldSkipAnimation) {
         applyStoredThemeIfAvailable();
@@ -184,12 +222,15 @@ export function RouteColorTransition() {
 
       const finalTheme = getNextAccentThemeWithoutRepeatingCycle();
       const nextAnim = getNextAnimationTypeWithoutRepeatingCycle();
-      
+
       selectedThemeRef.current = finalTheme;
       setAnimType(nextAnim);
 
-      const selectedIndex = ACCENT_THEMES.findIndex((theme) => theme.name === finalTheme.name);
-      const safeSelectedIndex = selectedIndex >= 0 ? selectedIndex : ACCENT_THEMES.length - 1;
+      const selectedIndex = ACCENT_THEMES.findIndex(
+        (theme) => theme.name === finalTheme.name,
+      );
+      const safeSelectedIndex =
+        selectedIndex >= 0 ? selectedIndex : ACCENT_THEMES.length - 1;
 
       saveAndApplyAccentTheme(finalTheme);
 
@@ -203,25 +244,30 @@ export function RouteColorTransition() {
       ACCENT_THEMES.forEach((_theme, index) => {
         const delayIndex = isUp ? ACCENT_THEMES.length - 1 - index : index;
 
-        const timeoutId = window.setTimeout(() => {
-          setBars((currentBars) =>
-            currentBars.map((bar, barIndex) =>
-              barIndex === index
-                ? {
-                    ...bar,
-                    isVisible: true,
-                    isBlack: false,
-                  }
-                : bar,
-            ),
-          );
-        }, INITIAL_BLACK_HOLD_MS + delayIndex * STEP_MS);
+        const timeoutId = window.setTimeout(
+          () => {
+            setBars((currentBars) =>
+              currentBars.map((bar, barIndex) =>
+                barIndex === index
+                  ? {
+                      ...bar,
+                      isVisible: true,
+                      isBlack: false,
+                    }
+                  : bar,
+              ),
+            );
+          },
+          INITIAL_BLACK_HOLD_MS + delayIndex * STEP_MS,
+        );
 
         timeoutsRef.current.push(timeoutId);
       });
 
       const colourFillFinishDelay =
-        INITIAL_BLACK_HOLD_MS + ACCENT_THEMES.length * STEP_MS + NON_SELECTED_BLACK_DELAY_MS;
+        INITIAL_BLACK_HOLD_MS +
+        ACCENT_THEMES.length * STEP_MS +
+        NON_SELECTED_BLACK_DELAY_MS;
 
       const selectedCenterTimeoutId = window.setTimeout(() => {
         setBars((currentBars) =>
@@ -253,29 +299,47 @@ export function RouteColorTransition() {
         );
       }, colourFillFinishDelay);
 
-      const selectedExitTimeoutId = window.setTimeout(() => {
-        setBars((currentBars) =>
-          currentBars.map((bar, index) =>
-            index === safeSelectedIndex
-              ? {
-                  ...bar,
-                  isBlack: false,
-                  isSelectedExiting: true,
-                }
-              : bar,
-          ),
-        );
-      }, colourFillFinishDelay + SELECTED_CENTER_SLIDE_MS + SELECTED_HOLD_MS);
+      const selectedExitTimeoutId = window.setTimeout(
+        () => {
+          setBars((currentBars) =>
+            currentBars.map((bar, index) =>
+              index === safeSelectedIndex
+                ? {
+                    ...bar,
+                    isBlack: false,
+                    isSelectedExiting: true,
+                  }
+                : bar,
+            ),
+          );
+        },
+        colourFillFinishDelay + SELECTED_CENTER_SLIDE_MS + SELECTED_HOLD_MS,
+      );
 
-      const leaveTimeoutId = window.setTimeout(() => {
-        setIsLeaving(true);
-      }, colourFillFinishDelay + SELECTED_CENTER_SLIDE_MS + SELECTED_HOLD_MS + SELECTED_EXIT_MS + FINAL_BLACK_HOLD_MS);
+      const leaveTimeoutId = window.setTimeout(
+        () => {
+          setIsLeaving(true);
+        },
+        colourFillFinishDelay +
+          SELECTED_CENTER_SLIDE_MS +
+          SELECTED_HOLD_MS +
+          SELECTED_EXIT_MS +
+          FINAL_BLACK_HOLD_MS,
+      );
 
-      const hideTimeoutId = window.setTimeout(() => {
-        setIsVisible(false);
-        setIsLeaving(false);
-        setIsLogoVisible(false);
-      }, colourFillFinishDelay + SELECTED_CENTER_SLIDE_MS + SELECTED_HOLD_MS + SELECTED_EXIT_MS + FINAL_BLACK_HOLD_MS + OVERLAY_FADE_OUT_MS);
+      const hideTimeoutId = window.setTimeout(
+        () => {
+          setIsVisible(false);
+          setIsLeaving(false);
+          setIsLogoVisible(false);
+        },
+        colourFillFinishDelay +
+          SELECTED_CENTER_SLIDE_MS +
+          SELECTED_HOLD_MS +
+          SELECTED_EXIT_MS +
+          FINAL_BLACK_HOLD_MS +
+          OVERLAY_FADE_OUT_MS,
+      );
 
       timeoutsRef.current.push(
         nonSelectedBlackTimeoutId,
@@ -311,17 +375,28 @@ export function RouteColorTransition() {
     return () => {
       clearTransitionTimers();
     };
-  }, [location.pathname, playTransition, clearTransitionTimers, applyStoredThemeIfAvailable]);
+  }, [
+    location.pathname,
+    playTransition,
+    clearTransitionTimers,
+    applyStoredThemeIfAvailable,
+  ]);
 
   useEffect(() => {
     const handleForcedThemeChange = () => {
       playTransition(true);
     };
 
-    window.addEventListener(ROUTE_COLOR_TRANSITION_FORCE_EVENT, handleForcedThemeChange);
+    window.addEventListener(
+      ROUTE_COLOR_TRANSITION_FORCE_EVENT,
+      handleForcedThemeChange,
+    );
 
     return () => {
-      window.removeEventListener(ROUTE_COLOR_TRANSITION_FORCE_EVENT, handleForcedThemeChange);
+      window.removeEventListener(
+        ROUTE_COLOR_TRANSITION_FORCE_EVENT,
+        handleForcedThemeChange,
+      );
     };
   }, [playTransition]);
 
@@ -373,7 +448,8 @@ export function RouteColorTransition() {
         top: `${isSelected ? selectedPos : normalPos}%`,
         height: `${isSelected ? selectedSize : sizePct}%`,
         scaleX: bar.isVisible ? 1 : 0,
-        backgroundColor: bar.isVisible && !bar.isBlack ? bar.theme.accent : "#000000",
+        backgroundColor:
+          bar.isVisible && !bar.isBlack ? bar.theme.accent : "#000000",
         duration: isSelected ? SELECTED_CENTER_SLIDE_MS : STEP_MS + 160,
         ease: isSelected ? "out(4)" : "out(3)",
       });
@@ -385,11 +461,12 @@ export function RouteColorTransition() {
   }
 
   const sizePct = 100 / ACCENT_THEMES.length;
-  
-  const transformOrigin = 
-    animType.startsWith("left") ? "left center" :
-    animType.startsWith("right") ? "right center" :
-    "center center";
+
+  const transformOrigin = animType.startsWith("left")
+    ? "left center"
+    : animType.startsWith("right")
+      ? "right center"
+      : "center center";
 
   return (
     <div

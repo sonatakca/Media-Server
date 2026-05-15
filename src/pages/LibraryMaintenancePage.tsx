@@ -27,7 +27,11 @@ import {
   getPrimaryImageUrl,
   getTrickplayImageUrl,
 } from "../lib/jellyfinApi";
-import type { JellyfinItem, JellyfinLibrary, JellyfinMetadataRefreshMode } from "../lib/types";
+import type {
+  JellyfinItem,
+  JellyfinLibrary,
+  JellyfinMetadataRefreshMode,
+} from "../lib/types";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
 
@@ -48,7 +52,6 @@ interface MetadataDraft {
   genres: string;
 }
 
-
 function createEmptyResult(): ActionResult {
   return {
     state: "idle",
@@ -64,7 +67,9 @@ function createDraftFromItem(item: JellyfinItem): MetadataDraft {
     productionYear: item.ProductionYear ? String(item.ProductionYear) : "",
     officialRating: item.OfficialRating ?? "",
     communityRating:
-      typeof item.CommunityRating === "number" ? String(item.CommunityRating) : "",
+      typeof item.CommunityRating === "number"
+        ? String(item.CommunityRating)
+        : "",
     genres: item.Genres?.join(", ") ?? "",
   };
 }
@@ -148,7 +153,6 @@ function getDetailValue(value: unknown): string {
   return String(value);
 }
 
-
 function DetailRow({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-3">
@@ -163,7 +167,10 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
 }
 
 // Helper to add a timeout to a library load
-async function withLibraryLoadTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+async function withLibraryLoadTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+): Promise<T> {
   let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -189,7 +196,9 @@ export function LibraryMaintenancePage() {
   );
   const [selectedItem, setSelectedItem] = useState<JellyfinItem | null>(null);
   const [draft, setDraft] = useState<MetadataDraft | null>(null);
-  const [trickplayStatus, setTrickplayStatus] = useState<"unknown" | "loading" | "available" | "missing">("unknown");
+  const [trickplayStatus, setTrickplayStatus] = useState<
+    "unknown" | "loading" | "available" | "missing"
+  >("unknown");
 
   const [libraryId, setLibraryId] = useState("all");
   const [search, setSearch] = useState("");
@@ -203,12 +212,18 @@ export function LibraryMaintenancePage() {
   const [replaceAllMetadata, setReplaceAllMetadata] = useState(false);
   const [replaceAllImages, setReplaceAllImages] = useState(false);
 
-  const [loadState, setLoadState] = useState<ActionResult>(() => createEmptyResult());
-  const [scanState, setScanState] = useState<ActionResult>(() => createEmptyResult());
+  const [loadState, setLoadState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
+  const [scanState, setScanState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
   const [itemRefreshState, setItemRefreshState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
-  const [saveState, setSaveState] = useState<ActionResult>(() => createEmptyResult());
+  const [saveState, setSaveState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
 
   useEffect(() => {
     setPageTitle("Library Maintenance · Devtools · Seyirlik");
@@ -253,7 +268,9 @@ export function LibraryMaintenancePage() {
         for (const result of libraryItemResults) {
           if (result.status === "rejected") {
             failedLibraries.push(
-              result.reason instanceof Error ? result.reason.message : "A library failed to load.",
+              result.reason instanceof Error
+                ? result.reason.message
+                : "A library failed to load.",
             );
             continue;
           }
@@ -281,7 +298,10 @@ export function LibraryMaintenancePage() {
 
         setLoadState({
           state: "error",
-          message: error instanceof Error ? error.message : "Could not load library data.",
+          message:
+            error instanceof Error
+              ? error.message
+              : "Could not load library data.",
         });
       }
     }
@@ -293,13 +313,15 @@ export function LibraryMaintenancePage() {
     };
   }, []);
 
-
   const visibleItems = useMemo(() => {
     const trimmedSearch = search.trim().toLowerCase();
 
     return items
       .filter((item) => {
-        if (selectedLibraryId !== "all" && itemLibraryById.get(item.Id) !== selectedLibraryId) {
+        if (
+          selectedLibraryId !== "all" &&
+          itemLibraryById.get(item.Id) !== selectedLibraryId
+        ) {
           return false;
         }
 
@@ -307,7 +329,11 @@ export function LibraryMaintenancePage() {
           return false;
         }
 
-        if (!selectedEpisodeLibraryId && selectedLibraryId !== "all" && item.Type === "Episode") {
+        if (
+          !selectedEpisodeLibraryId &&
+          selectedLibraryId !== "all" &&
+          item.Type === "Episode"
+        ) {
           return false;
         }
 
@@ -331,10 +357,18 @@ export function LibraryMaintenancePage() {
         return searchable.includes(trimmedSearch);
       })
       .sort((a, b) => getDisplayTitle(a).localeCompare(getDisplayTitle(b)));
-  }, [items, selectedLibraryId, selectedEpisodeLibraryId, search, itemLibraryById]);
+  }, [
+    items,
+    selectedLibraryId,
+    selectedEpisodeLibraryId,
+    search,
+    itemLibraryById,
+  ]);
 
   const libraryOptions = useMemo(() => {
-    const options: Array<{ id: string; label: string }> = [{ id: "all", label: "All libraries" }];
+    const options: Array<{ id: string; label: string }> = [
+      { id: "all", label: "All libraries" },
+    ];
 
     for (const library of libraries) {
       options.push({
@@ -395,7 +429,10 @@ export function LibraryMaintenancePage() {
     } catch (error) {
       setScanState({
         state: "error",
-        message: error instanceof Error ? error.message : "Could not start library scan.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not start library scan.",
       });
     }
   };
@@ -420,7 +457,10 @@ export function LibraryMaintenancePage() {
     } catch (error) {
       setScanState({
         state: "error",
-        message: error instanceof Error ? error.message : "Could not scan selected library.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not scan selected library.",
       });
     }
   };
@@ -452,7 +492,10 @@ export function LibraryMaintenancePage() {
     } catch (error) {
       setItemRefreshState({
         state: "error",
-        message: error instanceof Error ? error.message : "Could not refresh item metadata.",
+        message:
+          error instanceof Error
+            ? error.message
+            : "Could not refresh item metadata.",
       });
     }
   };
@@ -495,7 +538,9 @@ export function LibraryMaintenancePage() {
       setSelectedItem(refreshed);
       setDraft(createDraftFromItem(refreshed));
       setItems((currentItems) =>
-        currentItems.map((item) => (item.Id === refreshed.Id ? refreshed : item)),
+        currentItems.map((item) =>
+          item.Id === refreshed.Id ? refreshed : item,
+        ),
       );
 
       setSaveState({
@@ -505,7 +550,8 @@ export function LibraryMaintenancePage() {
     } catch (error) {
       setSaveState({
         state: "error",
-        message: error instanceof Error ? error.message : "Could not save metadata.",
+        message:
+          error instanceof Error ? error.message : "Could not save metadata.",
       });
     }
   };
@@ -541,7 +587,8 @@ export function LibraryMaintenancePage() {
                     Library Scan & Metadata
                   </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
-                    Scan Jellyfin libraries, refresh item metadata, replace images, and edit common item fields.
+                    Scan Jellyfin libraries, refresh item metadata, replace
+                    images, and edit common item fields.
                   </p>
                 </div>
               </div>
@@ -587,7 +634,8 @@ export function LibraryMaintenancePage() {
                 Library Items
               </p>
               <h2 className="mt-2 text-xl font-black text-white">
-                {visibleItems.length} visible item{visibleItems.length === 1 ? "" : "s"}
+                {visibleItems.length} visible item
+                {visibleItems.length === 1 ? "" : "s"}
               </h2>
             </div>
 
@@ -629,7 +677,6 @@ export function LibraryMaintenancePage() {
                 ))}
               </div>
             </div>
-
 
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
@@ -690,7 +737,9 @@ export function LibraryMaintenancePage() {
                       </h3>
 
                       <p className="mt-1 line-clamp-2 text-sm font-medium leading-6 text-white/50">
-                        {getItemSubtitle(item) || item.Overview || "No subtitle available."}
+                        {getItemSubtitle(item) ||
+                          item.Overview ||
+                          "No subtitle available."}
                       </p>
                     </div>
 
@@ -746,7 +795,9 @@ export function LibraryMaintenancePage() {
                   <select
                     value={metadataRefreshMode}
                     onChange={(event) =>
-                      setMetadataRefreshMode(event.target.value as JellyfinMetadataRefreshMode)
+                      setMetadataRefreshMode(
+                        event.target.value as JellyfinMetadataRefreshMode,
+                      )
                     }
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"
                   >
@@ -760,7 +811,9 @@ export function LibraryMaintenancePage() {
                   <input
                     type="checkbox"
                     checked={replaceAllMetadata}
-                    onChange={(event) => setReplaceAllMetadata(event.target.checked)}
+                    onChange={(event) =>
+                      setReplaceAllMetadata(event.target.checked)
+                    }
                     className="h-5 w-5 accent-[var(--accent)]"
                   />
                   <span className="text-sm font-black text-white/72">
@@ -772,7 +825,9 @@ export function LibraryMaintenancePage() {
                   <input
                     type="checkbox"
                     checked={replaceAllImages}
-                    onChange={(event) => setReplaceAllImages(event.target.checked)}
+                    onChange={(event) =>
+                      setReplaceAllImages(event.target.checked)
+                    }
                     className="h-5 w-5 accent-[var(--accent)]"
                   />
                   <span className="text-sm font-black text-white/72">
@@ -804,7 +859,8 @@ export function LibraryMaintenancePage() {
                     Images, trickplay, media source, and raw identifiers
                   </h3>
                   <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
-                    This section is read-only. It shows what Jellyfin currently exposes for this item.
+                    This section is read-only. It shows what Jellyfin currently
+                    exposes for this item.
                   </p>
                 </div>
 
@@ -812,7 +868,11 @@ export function LibraryMaintenancePage() {
                   <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                     <div className="aspect-[2/3] bg-white/[0.04]">
                       <img
-                        src={getPrimaryImageUrl(selectedItem.Id, selectedItem.ImageTags?.Primary, 600)}
+                        src={getPrimaryImageUrl(
+                          selectedItem.Id,
+                          selectedItem.ImageTags?.Primary,
+                          600,
+                        )}
                         alt={`${getDisplayTitle(selectedItem)} primary poster`}
                         className="h-full w-full object-cover"
                       />
@@ -826,7 +886,11 @@ export function LibraryMaintenancePage() {
                     <div className="aspect-video bg-white/[0.04]">
                       {selectedItem.BackdropImageTags?.[0] ? (
                         <img
-                          src={getBackdropImageUrl(selectedItem.Id, selectedItem.BackdropImageTags[0], 900)}
+                          src={getBackdropImageUrl(
+                            selectedItem.Id,
+                            selectedItem.BackdropImageTags[0],
+                            900,
+                          )}
                           alt={`${getDisplayTitle(selectedItem)} backdrop`}
                           className="h-full w-full object-cover"
                         />
@@ -843,11 +907,16 @@ export function LibraryMaintenancePage() {
 
                   <div className="overflow-hidden rounded-2xl border border-white/10 bg-black/30">
                     <div className="aspect-video bg-white/[0.04] p-4">
-                      {selectedItem.ImageTags?.Logo || selectedItem.ParentLogoImageTag ? (
+                      {selectedItem.ImageTags?.Logo ||
+                      selectedItem.ParentLogoImageTag ? (
                         <img
                           src={getLogoImageUrl(
-                            selectedItem.ImageTags?.Logo ? selectedItem.Id : (selectedItem.ParentLogoItemId ?? selectedItem.Id),
-                            selectedItem.ImageTags?.Logo ?? selectedItem.ParentLogoImageTag,
+                            selectedItem.ImageTags?.Logo
+                              ? selectedItem.Id
+                              : (selectedItem.ParentLogoItemId ??
+                                  selectedItem.Id),
+                            selectedItem.ImageTags?.Logo ??
+                              selectedItem.ParentLogoImageTag,
                             900,
                           )}
                           alt={`${getDisplayTitle(selectedItem)} logo`}
@@ -868,7 +937,12 @@ export function LibraryMaintenancePage() {
                     <div className="aspect-video bg-white/[0.04]">
                       {selectedItem.MediaSources?.[0]?.Id ? (
                         <img
-                          src={getTrickplayImageUrl(selectedItem.Id, selectedItem.MediaSources[0].Id, 320, 0)}
+                          src={getTrickplayImageUrl(
+                            selectedItem.Id,
+                            selectedItem.MediaSources[0].Id,
+                            320,
+                            0,
+                          )}
                           alt={`${getDisplayTitle(selectedItem)} trickplay sample`}
                           className="h-full w-full object-cover"
                         />
@@ -904,36 +978,114 @@ export function LibraryMaintenancePage() {
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <DetailRow label="Item ID" value={selectedItem.Id} />
                   <DetailRow label="Type" value={selectedItem.Type} />
-                  <DetailRow label="Media type" value={selectedItem.MediaType} />
+                  <DetailRow
+                    label="Media type"
+                    value={selectedItem.MediaType}
+                  />
                   <DetailRow label="Sort name" value={selectedItem.SortName} />
-                  <DetailRow label="Production year" value={selectedItem.ProductionYear} />
-                  <DetailRow label="Official rating" value={selectedItem.OfficialRating} />
-                  <DetailRow label="Community rating" value={selectedItem.CommunityRating} />
-                  <DetailRow label="Runtime" value={formatTicks(selectedItem.RunTimeTicks)} />
+                  <DetailRow
+                    label="Production year"
+                    value={selectedItem.ProductionYear}
+                  />
+                  <DetailRow
+                    label="Official rating"
+                    value={selectedItem.OfficialRating}
+                  />
+                  <DetailRow
+                    label="Community rating"
+                    value={selectedItem.CommunityRating}
+                  />
+                  <DetailRow
+                    label="Runtime"
+                    value={formatTicks(selectedItem.RunTimeTicks)}
+                  />
                   <DetailRow label="Genres" value={selectedItem.Genres} />
-                  <DetailRow label="Primary image tag" value={selectedItem.ImageTags?.Primary} />
-                  <DetailRow label="Logo image tag" value={selectedItem.ImageTags?.Logo ?? selectedItem.ParentLogoImageTag} />
-                  <DetailRow label="Backdrop image tags" value={selectedItem.BackdropImageTags} />
+                  <DetailRow
+                    label="Primary image tag"
+                    value={selectedItem.ImageTags?.Primary}
+                  />
+                  <DetailRow
+                    label="Logo image tag"
+                    value={
+                      selectedItem.ImageTags?.Logo ??
+                      selectedItem.ParentLogoImageTag
+                    }
+                  />
+                  <DetailRow
+                    label="Backdrop image tags"
+                    value={selectedItem.BackdropImageTags}
+                  />
                   <DetailRow label="Parent ID" value={selectedItem.ParentId} />
                   <DetailRow label="Series ID" value={selectedItem.SeriesId} />
                   <DetailRow label="Season ID" value={selectedItem.SeasonId} />
-                  <DetailRow label="User played" value={selectedItem.UserData?.Played} />
-                  <DetailRow label="Playback position" value={formatTicks(selectedItem.UserData?.PlaybackPositionTicks)} />
-                  <DetailRow label="Chapters" value={selectedItem.Chapters?.length ? `${selectedItem.Chapters.length} chapter(s)` : "None"} />
+                  <DetailRow
+                    label="User played"
+                    value={selectedItem.UserData?.Played}
+                  />
+                  <DetailRow
+                    label="Playback position"
+                    value={formatTicks(
+                      selectedItem.UserData?.PlaybackPositionTicks,
+                    )}
+                  />
+                  <DetailRow
+                    label="Chapters"
+                    value={
+                      selectedItem.Chapters?.length
+                        ? `${selectedItem.Chapters.length} chapter(s)`
+                        : "None"
+                    }
+                  />
                 </div>
 
                 {selectedItem.MediaSources?.[0] ? (
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                    <DetailRow label="Media source ID" value={selectedItem.MediaSources[0].Id} />
-                    <DetailRow label="Path" value={selectedItem.MediaSources[0].Path} />
-                    <DetailRow label="Container" value={selectedItem.MediaSources[0].Container} />
-                    <DetailRow label="Size" value={formatBytes(selectedItem.MediaSources[0].Size)} />
-                    <DetailRow label="Bitrate" value={formatBitrate(selectedItem.MediaSources[0].Bitrate)} />
-                    <DetailRow label="Direct play" value={selectedItem.MediaSources[0].SupportsDirectPlay} />
-                    <DetailRow label="Direct stream" value={selectedItem.MediaSources[0].SupportsDirectStream} />
-                    <DetailRow label="Transcoding" value={selectedItem.MediaSources[0].SupportsTranscoding} />
-                    <DetailRow label="Default audio index" value={selectedItem.MediaSources[0].DefaultAudioStreamIndex} />
-                    <DetailRow label="Default subtitle index" value={selectedItem.MediaSources[0].DefaultSubtitleStreamIndex} />
+                    <DetailRow
+                      label="Media source ID"
+                      value={selectedItem.MediaSources[0].Id}
+                    />
+                    <DetailRow
+                      label="Path"
+                      value={selectedItem.MediaSources[0].Path}
+                    />
+                    <DetailRow
+                      label="Container"
+                      value={selectedItem.MediaSources[0].Container}
+                    />
+                    <DetailRow
+                      label="Size"
+                      value={formatBytes(selectedItem.MediaSources[0].Size)}
+                    />
+                    <DetailRow
+                      label="Bitrate"
+                      value={formatBitrate(
+                        selectedItem.MediaSources[0].Bitrate,
+                      )}
+                    />
+                    <DetailRow
+                      label="Direct play"
+                      value={selectedItem.MediaSources[0].SupportsDirectPlay}
+                    />
+                    <DetailRow
+                      label="Direct stream"
+                      value={selectedItem.MediaSources[0].SupportsDirectStream}
+                    />
+                    <DetailRow
+                      label="Transcoding"
+                      value={selectedItem.MediaSources[0].SupportsTranscoding}
+                    />
+                    <DetailRow
+                      label="Default audio index"
+                      value={
+                        selectedItem.MediaSources[0].DefaultAudioStreamIndex
+                      }
+                    />
+                    <DetailRow
+                      label="Default subtitle index"
+                      value={
+                        selectedItem.MediaSources[0].DefaultSubtitleStreamIndex
+                      }
+                    />
                   </div>
                 ) : null}
 
@@ -949,21 +1101,46 @@ export function LibraryMaintenancePage() {
                         className="rounded-2xl border border-white/10 bg-black/25 p-4"
                       >
                         <p className="text-sm font-black text-white">
-                          {stream.Type ?? "Stream"} {stream.Index !== undefined ? `#${stream.Index}` : ""}
+                          {stream.Type ?? "Stream"}{" "}
+                          {stream.Index !== undefined ? `#${stream.Index}` : ""}
                         </p>
                         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                           <DetailRow label="Codec" value={stream.Codec} />
                           <DetailRow label="Profile" value={stream.Profile} />
                           <DetailRow label="Language" value={stream.Language} />
-                          <DetailRow label="Display title" value={stream.DisplayTitle} />
+                          <DetailRow
+                            label="Display title"
+                            value={stream.DisplayTitle}
+                          />
                           <DetailRow label="Default" value={stream.IsDefault} />
                           <DetailRow label="Forced" value={stream.IsForced} />
-                          <DetailRow label="External" value={stream.IsExternal} />
+                          <DetailRow
+                            label="External"
+                            value={stream.IsExternal}
+                          />
                           <DetailRow label="Channels" value={stream.Channels} />
-                          <DetailRow label="Bitrate" value={formatBitrate(stream.BitRate)} />
-                          <DetailRow label="Resolution" value={stream.Width && stream.Height ? `${stream.Width}×${stream.Height}` : "Unknown"} />
-                          <DetailRow label="Frame rate" value={stream.AverageFrameRate ?? stream.RealFrameRate} />
-                          <DetailRow label="Video range" value={stream.VideoRangeType ?? stream.VideoRange} />
+                          <DetailRow
+                            label="Bitrate"
+                            value={formatBitrate(stream.BitRate)}
+                          />
+                          <DetailRow
+                            label="Resolution"
+                            value={
+                              stream.Width && stream.Height
+                                ? `${stream.Width}×${stream.Height}`
+                                : "Unknown"
+                            }
+                          />
+                          <DetailRow
+                            label="Frame rate"
+                            value={
+                              stream.AverageFrameRate ?? stream.RealFrameRate
+                            }
+                          />
+                          <DetailRow
+                            label="Video range"
+                            value={stream.VideoRangeType ?? stream.VideoRange}
+                          />
                         </div>
                       </div>
                     ))}
@@ -980,7 +1157,9 @@ export function LibraryMaintenancePage() {
                     value={draft.name}
                     onChange={(event) =>
                       setDraft((current) =>
-                        current ? { ...current, name: event.target.value } : current,
+                        current
+                          ? { ...current, name: event.target.value }
+                          : current,
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
@@ -995,7 +1174,9 @@ export function LibraryMaintenancePage() {
                     value={draft.sortName}
                     onChange={(event) =>
                       setDraft((current) =>
-                        current ? { ...current, sortName: event.target.value } : current,
+                        current
+                          ? { ...current, sortName: event.target.value }
+                          : current,
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
@@ -1010,7 +1191,9 @@ export function LibraryMaintenancePage() {
                     value={draft.overview}
                     onChange={(event) =>
                       setDraft((current) =>
-                        current ? { ...current, overview: event.target.value } : current,
+                        current
+                          ? { ...current, overview: event.target.value }
+                          : current,
                       )
                     }
                     rows={8}
@@ -1063,7 +1246,10 @@ export function LibraryMaintenancePage() {
                       onChange={(event) =>
                         setDraft((current) =>
                           current
-                            ? { ...current, communityRating: event.target.value }
+                            ? {
+                                ...current,
+                                communityRating: event.target.value,
+                              }
                             : current,
                         )
                       }
@@ -1081,7 +1267,9 @@ export function LibraryMaintenancePage() {
                     value={draft.genres}
                     onChange={(event) =>
                       setDraft((current) =>
-                        current ? { ...current, genres: event.target.value } : current,
+                        current
+                          ? { ...current, genres: event.target.value }
+                          : current,
                       )
                     }
                     placeholder="Crime, Drama, Thriller"
@@ -1129,7 +1317,8 @@ export function LibraryMaintenancePage() {
                 </h2>
 
                 <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
-                  Choose a movie or episode from the left side to refresh its Jellyfin metadata or edit common fields.
+                  Choose a movie or episode from the left side to refresh its
+                  Jellyfin metadata or edit common fields.
                 </p>
 
                 <p className="mx-auto mt-4 flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/38">

@@ -113,7 +113,8 @@ const boardConfigs: Record<BoardType, BoardConfig> = {
     storageKey: FEATURES_STORAGE_KEY,
     icon: Lightbulb,
     emptyTitle: "No wanted features yet",
-    emptyDescription: "Add the first feature idea using the editor on this page.",
+    emptyDescription:
+      "Add the first feature idea using the editor on this page.",
     defaultItems: defaultWantedFeatures,
   },
 };
@@ -123,7 +124,10 @@ function readItems(config: BoardConfig): BoardItem[] {
     const stored = localStorage.getItem(config.storageKey);
 
     if (!stored) {
-      localStorage.setItem(config.storageKey, JSON.stringify(config.defaultItems));
+      localStorage.setItem(
+        config.storageKey,
+        JSON.stringify(config.defaultItems),
+      );
       return config.defaultItems;
     }
 
@@ -221,7 +225,9 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
   }, [config.storageKey, items]);
 
   const editingItem = useMemo(() => {
-    return editingId ? items.find((item) => item.id === editingId) ?? null : null;
+    return editingId
+      ? (items.find((item) => item.id === editingId) ?? null)
+      : null;
   }, [editingId, items]);
 
   const visibleItems = useMemo(() => {
@@ -242,13 +248,16 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
         const priorityScore = { high: 3, medium: 2, low: 1 };
         const statusScore = { open: 3, "in-progress": 2, done: 1 };
 
-        const priorityDifference = priorityScore[b.priority] - priorityScore[a.priority];
+        const priorityDifference =
+          priorityScore[b.priority] - priorityScore[a.priority];
         if (priorityDifference !== 0) return priorityDifference;
 
         const statusDifference = statusScore[b.status] - statusScore[a.status];
         if (statusDifference !== 0) return statusDifference;
 
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        return (
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+        );
       });
   }, [items, search]);
 
@@ -397,7 +406,9 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 </div>
 
                 <div>
-                  <h1 className="text-3xl font-black text-white sm:text-4xl">{config.title}</h1>
+                  <h1 className="text-3xl font-black text-white sm:text-4xl">
+                    {config.title}
+                  </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
                     {config.description}
                   </p>
@@ -408,22 +419,36 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             <div className="grid grid-cols-4 gap-2 rounded-3xl border border-white/10 bg-black/25 p-2">
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.total}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Total</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Total
+                </p>
               </div>
 
               <div className="rounded-2xl bg-amber-400/10 px-3 py-2 text-center">
-                <p className="text-lg font-black text-amber-100">{stats.open}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-amber-100/52">Open</p>
+                <p className="text-lg font-black text-amber-100">
+                  {stats.open}
+                </p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-amber-100/52">
+                  Open
+                </p>
               </div>
 
               <div className="rounded-2xl bg-sky-400/10 px-3 py-2 text-center">
-                <p className="text-lg font-black text-sky-100">{stats.inProgress}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-sky-100/52">Doing</p>
+                <p className="text-lg font-black text-sky-100">
+                  {stats.inProgress}
+                </p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-sky-100/52">
+                  Doing
+                </p>
               </div>
 
               <div className="rounded-2xl bg-emerald-400/10 px-3 py-2 text-center">
-                <p className="text-lg font-black text-emerald-100">{stats.done}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-emerald-100/52">Done</p>
+                <p className="text-lg font-black text-emerald-100">
+                  {stats.done}
+                </p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-emerald-100/52">
+                  Done
+                </p>
               </div>
             </div>
           </div>
@@ -465,8 +490,17 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             </span>
             <input
               value={draft.title}
-              onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
-              placeholder={type === "bugs" ? "Example: Audio selection causes transcode" : "Example: Add animated hero variants"}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  title: event.target.value,
+                }))
+              }
+              placeholder={
+                type === "bugs"
+                  ? "Example: Audio selection causes transcode"
+                  : "Example: Add animated hero variants"
+              }
               className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
             />
           </label>
@@ -477,7 +511,12 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             </span>
             <textarea
               value={draft.description}
-              onChange={(event) => setDraft((current) => ({ ...current, description: event.target.value }))}
+              onChange={(event) =>
+                setDraft((current) => ({
+                  ...current,
+                  description: event.target.value,
+                }))
+              }
               placeholder="Write what is happening, why it matters, and what should be checked."
               rows={7}
               className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
@@ -554,7 +593,8 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 Current list
               </p>
               <h2 className="mt-2 text-xl font-black text-white">
-                {visibleItems.length} visible item{visibleItems.length === 1 ? "" : "s"}
+                {visibleItems.length} visible item
+                {visibleItems.length === 1 ? "" : "s"}
               </h2>
             </div>
 
@@ -627,7 +667,11 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                         aria-label={`Copy ${item.title}`}
                         title={copiedId === item.id ? "Copied" : "Copy"}
                       >
-                        {copiedId === item.id ? <Check size={17} /> : <Copy size={17} />}
+                        {copiedId === item.id ? (
+                          <Check size={17} />
+                        ) : (
+                          <Copy size={17} />
+                        )}
                       </button>
 
                       <button
@@ -660,9 +704,13 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 <Icon size={22} />
               </div>
 
-              <h3 className="mt-4 text-lg font-black text-white">{config.emptyTitle}</h3>
+              <h3 className="mt-4 text-lg font-black text-white">
+                {config.emptyTitle}
+              </h3>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
-                {search.trim() ? "No item matched your search." : config.emptyDescription}
+                {search.trim()
+                  ? "No item matched your search."
+                  : config.emptyDescription}
               </p>
             </div>
           )}

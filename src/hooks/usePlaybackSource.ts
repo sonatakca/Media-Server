@@ -1,5 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { buildPlaybackCandidates, getPlaybackInfo, redactPlaybackUrl } from "../lib/jellyfinApi";
+import {
+  buildPlaybackCandidates,
+  getPlaybackInfo,
+  redactPlaybackUrl,
+} from "../lib/jellyfinApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
 
 export interface PlaybackTechnicalDetails {
@@ -23,9 +27,15 @@ const initialState: PlaybackSourceState = {
   error: null,
 };
 
-function getSourceSummary(source: PlaybackSourceCandidate): Record<string, unknown> {
-  const videoStream = source.mediaSource.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "video");
-  const audioStream = source.mediaSource.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "audio");
+function getSourceSummary(
+  source: PlaybackSourceCandidate,
+): Record<string, unknown> {
+  const videoStream = source.mediaSource.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "video",
+  );
+  const audioStream = source.mediaSource.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "audio",
+  );
 
   return {
     mode: source.mode,
@@ -58,7 +68,10 @@ function getVideoErrorName(code?: number): string {
   }
 }
 
-export function getVideoErrorDetails(video: HTMLVideoElement, source: PlaybackSourceCandidate | null): string {
+export function getVideoErrorDetails(
+  video: HTMLVideoElement,
+  source: PlaybackSourceCandidate | null,
+): string {
   const error = video.error;
   const payload = {
     videoErrorCode: error?.code,
@@ -66,7 +79,9 @@ export function getVideoErrorDetails(video: HTMLVideoElement, source: PlaybackSo
     videoErrorMessage: error?.message,
     networkState: video.networkState,
     readyState: video.readyState,
-    currentSrc: video.currentSrc ? redactPlaybackUrl(video.currentSrc) : undefined,
+    currentSrc: video.currentSrc
+      ? redactPlaybackUrl(video.currentSrc)
+      : undefined,
     selectedSource: source ? getSourceSummary(source) : undefined,
   };
 
@@ -111,7 +126,8 @@ export function usePlaybackSource(itemId?: string) {
           candidates: [],
           notice: null,
           error: {
-            message: "Playback failed. Jellyfin did not return a playable source.",
+            message:
+              "Playback failed. Jellyfin did not return a playable source.",
             details: JSON.stringify(playbackInfo, null, 2),
           },
         });
@@ -148,25 +164,26 @@ export function usePlaybackSource(itemId?: string) {
       return;
     }
 
-    console.info("[Seyirlik Playback] Selected MediaSource", getSourceSummary(activeSource));
+    console.info(
+      "[Seyirlik Playback] Selected MediaSource",
+      getSourceSummary(activeSource),
+    );
     setState((currentState) => ({ ...currentState, activeSource }));
   }, [activeSource]);
 
-  const switchToSource = useCallback(
-    (nextIndex: number, notice: string) => {
-      setSourceIndex(nextIndex);
-      setState((currentState) => ({
-        ...currentState,
-        notice,
-        error: null,
-      }));
-    },
-    [],
-  );
+  const switchToSource = useCallback((nextIndex: number, notice: string) => {
+    setSourceIndex(nextIndex);
+    setState((currentState) => ({
+      ...currentState,
+      notice,
+      error: null,
+    }));
+  }, []);
 
   const tryTranscodedPlayback = useCallback(() => {
     const transcodingIndex = state.candidates.findIndex(
-      (candidate, index) => index !== sourceIndex && candidate.mode === "Transcoding",
+      (candidate, index) =>
+        index !== sourceIndex && candidate.mode === "Transcoding",
     );
 
     if (transcodingIndex >= 0) {
@@ -178,10 +195,14 @@ export function usePlaybackSource(itemId?: string) {
     (technicalDetails: string) => {
       const currentSource = state.candidates[sourceIndex] ?? null;
       const transcodeFallbackIndex = state.candidates.findIndex(
-        (candidate, index) => index > sourceIndex && candidate.mode === "Transcoding",
+        (candidate, index) =>
+          index > sourceIndex && candidate.mode === "Transcoding",
       );
 
-      if (currentSource?.mode !== "Transcoding" && transcodeFallbackIndex >= 0) {
+      if (
+        currentSource?.mode !== "Transcoding" &&
+        transcodeFallbackIndex >= 0
+      ) {
         switchToSource(
           transcodeFallbackIndex,
           "This file could not be played directly. Trying Jellyfin transcoding...",
@@ -189,7 +210,9 @@ export function usePlaybackSource(itemId?: string) {
         return;
       }
 
-      const nextIndex = state.candidates.findIndex((_, index) => index > sourceIndex);
+      const nextIndex = state.candidates.findIndex(
+        (_, index) => index > sourceIndex,
+      );
 
       if (nextIndex >= 0) {
         switchToSource(nextIndex, "Trying another Jellyfin playback source...");
@@ -200,7 +223,8 @@ export function usePlaybackSource(itemId?: string) {
         ...currentState,
         notice: null,
         error: {
-          message: "Playback failed. This may be a codec, CORS, token, or transcoding issue.",
+          message:
+            "Playback failed. This may be a codec, CORS, token, or transcoding issue.",
           details: technicalDetails,
         },
       }));
@@ -209,7 +233,11 @@ export function usePlaybackSource(itemId?: string) {
   );
 
   const hasTranscodingFallback = useMemo(
-    () => state.candidates.some((candidate, index) => index !== sourceIndex && candidate.mode === "Transcoding"),
+    () =>
+      state.candidates.some(
+        (candidate, index) =>
+          index !== sourceIndex && candidate.mode === "Transcoding",
+      ),
     [sourceIndex, state.candidates],
   );
 

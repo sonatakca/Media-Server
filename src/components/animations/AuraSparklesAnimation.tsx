@@ -37,7 +37,8 @@ export function AuroraSparkleAnimation({
         left: `${sparkleSpreadLeftMin + Math.random() * (sparkleSpreadLeftMax - sparkleSpreadLeftMin)}%`,
         top: `${sparkleSpreadTopMin + Math.random() * (sparkleSpreadTopMax - sparkleSpreadTopMin)}%`,
         delay: `${startDelay + 0.15 + Math.random() * 1.4}s`,
-        scale: sparkleMinScale + Math.random() * (sparkleMaxScale - sparkleMinScale),
+        scale:
+          sparkleMinScale + Math.random() * (sparkleMaxScale - sparkleMinScale),
       })),
     [
       sparkleCount,

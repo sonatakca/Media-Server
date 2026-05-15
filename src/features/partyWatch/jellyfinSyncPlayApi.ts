@@ -38,7 +38,11 @@ async function parseSyncPlayError(response: Response): Promise<string> {
     }
 
     try {
-      const json = JSON.parse(text) as { message?: string; Message?: string; error?: string };
+      const json = JSON.parse(text) as {
+        message?: string;
+        Message?: string;
+        error?: string;
+      };
       return json.message || json.Message || json.error || text;
     } catch {
       return text;
@@ -80,7 +84,9 @@ async function requestSyncPlay<TResponse>(
   return (text ? JSON.parse(text) : undefined) as TResponse;
 }
 
-export async function createSyncPlayGroup(groupName: string): Promise<JellyfinSyncPlayGroupInfo> {
+export async function createSyncPlayGroup(
+  groupName: string,
+): Promise<JellyfinSyncPlayGroupInfo> {
   return requestSyncPlay<JellyfinSyncPlayGroupInfo>("/SyncPlay/New", {
     method: "POST",
     body: {
@@ -104,11 +110,17 @@ export async function leaveSyncPlayGroup(): Promise<void> {
   });
 }
 
-export async function getSyncPlayGroup(groupId: string): Promise<JellyfinSyncPlayGroupInfo> {
-  return requestSyncPlay<JellyfinSyncPlayGroupInfo>(`/SyncPlay/${encodeURIComponent(groupId)}`);
+export async function getSyncPlayGroup(
+  groupId: string,
+): Promise<JellyfinSyncPlayGroupInfo> {
+  return requestSyncPlay<JellyfinSyncPlayGroupInfo>(
+    `/SyncPlay/${encodeURIComponent(groupId)}`,
+  );
 }
 
-export async function getSyncPlayGroups(): Promise<JellyfinSyncPlayGroupInfo[]> {
+export async function getSyncPlayGroups(): Promise<
+  JellyfinSyncPlayGroupInfo[]
+> {
   return requestSyncPlay<JellyfinSyncPlayGroupInfo[]>("/SyncPlay/List");
 }
 
@@ -138,7 +150,9 @@ export async function sendSyncPlayPauseCommand(): Promise<void> {
   });
 }
 
-export async function sendSyncPlaySeekCommand(positionTicks: number): Promise<void> {
+export async function sendSyncPlaySeekCommand(
+  positionTicks: number,
+): Promise<void> {
   await requestSyncPlay<void>("/SyncPlay/Seek", {
     method: "POST",
     body: {

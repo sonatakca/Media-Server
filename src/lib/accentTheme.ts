@@ -6,7 +6,8 @@ export type AccentTheme = {
   accentStrong: string;
 };
 
-export const ACCENT_THEME_STORAGE_KEY = "seyirlik.routeColorTransition.selectedTheme";
+export const ACCENT_THEME_STORAGE_KEY =
+  "seyirlik.routeColorTransition.selectedTheme";
 
 export const ACCENT_THEMES: AccentTheme[] = [
   {

@@ -182,8 +182,7 @@ img {
   inset: 50% auto auto 50%;
   display: flex;
   color: rgba(255, 255, 255, 0.92);
-  filter:
-    drop-shadow(0 2px 8px rgba(0, 0, 0, 0.92))
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.92))
     drop-shadow(0 0 14px color-mix(in srgb, var(--accent) 42%, transparent));
   transform: translate(-50%, -50%) rotate(0deg);
   transform-origin: center;
@@ -283,7 +282,11 @@ img {
   border: 1px solid rgba(255, 255, 255, 0.16);
   border-radius: 0.85rem;
   background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12), transparent 52%),
+    radial-gradient(
+      circle at 50% 0%,
+      rgba(255, 255, 255, 0.12),
+      transparent 52%
+    ),
     rgba(7, 7, 8, 0.92);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.45),
@@ -456,7 +459,12 @@ img {
 .shimmer {
   position: relative;
   overflow: hidden;
-  background: linear-gradient(110deg, rgba(255, 255, 255, 0.055), var(--accent-soft), rgba(255, 255, 255, 0.055));
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.055),
+    var(--accent-soft),
+    rgba(255, 255, 255, 0.055)
+  );
   background-size: 220% 100%;
   animation: shimmer 1.35s linear infinite;
 }

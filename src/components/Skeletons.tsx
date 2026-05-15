@@ -3,15 +3,29 @@ import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
 export function BackButtonSkeleton({ className = "" }: { className?: string }) {
-  return <div className={`shimmer h-10 w-[5.25rem] rounded-full ${className}`} />;
+  return (
+    <div className={`shimmer h-10 w-[5.25rem] rounded-full ${className}`} />
+  );
 }
 
-export function MediaCardSkeleton({ variant = "poster" }: { variant?: "poster" | "landscape" }) {
+export function MediaCardSkeleton({
+  variant = "poster",
+}: {
+  variant?: "poster" | "landscape";
+}) {
   const isLandscape = variant === "landscape";
 
   return (
-    <div className={isLandscape ? "w-72 shrink-0 sm:w-80 lg:w-96" : "w-44 shrink-0 sm:w-52 lg:w-60"}>
-      <div className={`shimmer rounded-xl ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`} />
+    <div
+      className={
+        isLandscape
+          ? "w-72 shrink-0 sm:w-80 lg:w-96"
+          : "w-44 shrink-0 sm:w-52 lg:w-60"
+      }
+    >
+      <div
+        className={`shimmer rounded-xl ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
+      />
 
       <div className="flex min-h-[5.9rem] flex-col p-3.5">
         <div className="flex flex-1 items-center">

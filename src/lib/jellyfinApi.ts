@@ -26,7 +26,13 @@ import type {
   SegmentKind,
 } from "./types";
 
-type QueryValue = string | number | boolean | null | undefined | Array<string | number | boolean>;
+type QueryValue =
+  | string
+  | number
+  | boolean
+  | null
+  | undefined
+  | Array<string | number | boolean>;
 
 type QueryParams = Record<string, QueryValue>;
 
@@ -94,7 +100,11 @@ function appendQueryParams(url: URL, params: QueryParams = {}): void {
   });
 }
 
-export function buildJellyfinUrl(serverUrl: string, path: string, params: QueryParams = {}): string {
+export function buildJellyfinUrl(
+  serverUrl: string,
+  path: string,
+  params: QueryParams = {},
+): string {
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
   const normalizedPath = path.replace(/^\/+/, "");
   const url = new URL(`${normalizedServerUrl}/${normalizedPath}`);
@@ -114,7 +124,11 @@ function appendAuthTokenToMediaUrl(mediaUrl: string, token: string): string {
   return url.toString();
 }
 
-function makePlaybackUrlAbsolute(urlOrPath: string, serverUrl: string, token: string): string {
+function makePlaybackUrlAbsolute(
+  urlOrPath: string,
+  serverUrl: string,
+  token: string,
+): string {
   const normalizedServerUrl = normalizeServerUrl(serverUrl);
   let absoluteUrl: string;
 
@@ -146,7 +160,10 @@ export function redactPlaybackUrl(playbackUrl: string): string {
 
     return url.toString();
   } catch {
-    return playbackUrl.replace(/(api_key|access_token)=([^&]+)/gi, "$1=REDACTED");
+    return playbackUrl.replace(
+      /(api_key|access_token)=([^&]+)/gi,
+      "$1=REDACTED",
+    );
   }
 }
 
@@ -161,7 +178,11 @@ async function parseErrorMessage(response: Response): Promise<string> {
     }
 
     try {
-      const json = JSON.parse(text) as { message?: string; Message?: string; error?: string };
+      const json = JSON.parse(text) as {
+        message?: string;
+        Message?: string;
+        error?: string;
+      };
       return json.message || json.Message || json.error || text;
     } catch {
       return text;
@@ -193,7 +214,9 @@ async function requestJson<TResponse>(
     keepalive = false,
   }: RequestOptions = {},
 ): Promise<TResponse> {
-  const serverUrl = serverUrlOverride ? normalizeServerUrl(serverUrlOverride) : getServerUrl();
+  const serverUrl = serverUrlOverride
+    ? normalizeServerUrl(serverUrlOverride)
+    : getServerUrl();
 
   if (!serverUrl) {
     throw new Error("Missing Jellyfin server URL.");
@@ -231,7 +254,11 @@ async function requestJson<TResponse>(
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
-    throw new JellyfinRequestError(response.status, response.statusText, message);
+    throw new JellyfinRequestError(
+      response.status,
+      response.statusText,
+      message,
+    );
   }
 
   if (response.status === 204) {
@@ -242,7 +269,9 @@ async function requestJson<TResponse>(
   return (text ? JSON.parse(text) : undefined) as TResponse;
 }
 
-export async function testServerConnection(serverUrl: string): Promise<JellyfinPublicSystemInfo> {
+export async function testServerConnection(
+  serverUrl: string,
+): Promise<JellyfinPublicSystemInfo> {
   return requestJson<JellyfinPublicSystemInfo>("/System/Info/Public", {
     auth: false,
     serverUrlOverride: serverUrl,
@@ -267,38 +296,49 @@ export async function authenticateByName(
 export async function getUserViews(): Promise<JellyfinLibrary[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinLibrary>>("/UserViews", {
-    params: {
-      userId: session.userId,
-      includeExternalContent: false,
-      includeHidden: false,
+  const response = await requestJson<JellyfinItemsResponse<JellyfinLibrary>>(
+    "/UserViews",
+    {
+      params: {
+        userId: session.userId,
+        includeExternalContent: false,
+        includeHidden: false,
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
 
-export async function getItemsForLibrary(libraryId: string): Promise<JellyfinItem[]> {
+export async function getItemsForLibrary(
+  libraryId: string,
+): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
-    params: {
-      userId: session.userId,
-      parentId: libraryId,
-      recursive: false,
-      sortBy: "SortName",
-      sortOrder: "Ascending",
-      fields: DEFAULT_ITEM_FIELDS,
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Items",
+    {
+      params: {
+        userId: session.userId,
+        parentId: libraryId,
+        recursive: false,
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
 
-export async function getTopLevelItemsForLibrary(libraryId: string, collectionType?: string): Promise<JellyfinItem[]> {
+export async function getTopLevelItemsForLibrary(
+  libraryId: string,
+  collectionType?: string,
+): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
   const includeItemTypes =
@@ -308,55 +348,69 @@ export async function getTopLevelItemsForLibrary(libraryId: string, collectionTy
         ? "Movie"
         : undefined;
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
-    params: {
-      userId: session.userId,
-      parentId: libraryId,
-      recursive: false,
-      includeItemTypes,
-      sortBy: "SortName",
-      sortOrder: "Ascending",
-      fields: DEFAULT_ITEM_FIELDS,
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Items",
+    {
+      params: {
+        userId: session.userId,
+        parentId: libraryId,
+        recursive: false,
+        includeItemTypes,
+        sortBy: "SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
 
-export async function getSeriesSeasons(seriesId: string): Promise<JellyfinItem[]> {
+export async function getSeriesSeasons(
+  seriesId: string,
+): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Shows/Seasons", {
-    params: {
-      userId: session.userId,
-      seriesId,
-      fields: DEFAULT_ITEM_FIELDS,
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Shows/Seasons",
+    {
+      params: {
+        userId: session.userId,
+        seriesId,
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
 
-export async function getSeasonEpisodes(seriesId: string, seasonId: string): Promise<JellyfinItem[]> {
+export async function getSeasonEpisodes(
+  seriesId: string,
+  seasonId: string,
+): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Shows/Episodes", {
-    params: {
-      userId: session.userId,
-      seriesId,
-      seasonId,
-      fields: DEFAULT_ITEM_FIELDS,
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Shows/Episodes",
+    {
+      params: {
+        userId: session.userId,
+        seriesId,
+        seasonId,
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
@@ -373,14 +427,20 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
   };
 
   try {
-    return await requestJson<JellyfinItem>(`/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`, {
-      params,
-    });
+    return await requestJson<JellyfinItem>(
+      `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`,
+      {
+        params,
+      },
+    );
   } catch (userScopedError) {
     try {
-      return await requestJson<JellyfinItem>(`/Items/${encodeURIComponent(itemId)}`, {
-        params,
-      });
+      return await requestJson<JellyfinItem>(
+        `/Items/${encodeURIComponent(itemId)}`,
+        {
+          params,
+        },
+      );
     } catch {
       throw userScopedError;
     }
@@ -390,19 +450,22 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
 export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/UserItems/Resume", {
-    params: {
-      userId: session.userId,
-      limit: 20,
-      mediaTypes: "Video",
-      fields: DEFAULT_ITEM_FIELDS,
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
-      enableUserData: true,
-      excludeActiveSessions: false,
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/UserItems/Resume",
+    {
+      params: {
+        userId: session.userId,
+        limit: 20,
+        mediaTypes: "Video",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
+        excludeActiveSessions: false,
+      },
     },
-  });
+  );
 
   return response.Items ?? [];
 }
@@ -425,7 +488,6 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
   });
 }
 
-
 export async function getAllVideoItems(): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
   const allItems: JellyfinItem[] = [];
@@ -434,20 +496,23 @@ export async function getAllVideoItems(): Promise<JellyfinItem[]> {
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
-      params: {
-        userId: session.userId,
-        recursive: true,
-        includeItemTypes: "Movie,Episode",
-        mediaTypes: "Video",
-        sortBy: "SortName",
-        sortOrder: "Ascending",
-        fields: DEFAULT_ITEM_FIELDS,
-        enableImages: false,
-        startIndex,
-        limit,
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      "/Items",
+      {
+        params: {
+          userId: session.userId,
+          recursive: true,
+          includeItemTypes: "Movie,Episode",
+          mediaTypes: "Video",
+          sortBy: "SortName",
+          sortOrder: "Ascending",
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: false,
+          startIndex,
+          limit,
+        },
       },
-    });
+    );
 
     const items = response.Items ?? [];
     allItems.push(...items);
@@ -464,7 +529,9 @@ export async function getAllVideoItems(): Promise<JellyfinItem[]> {
   return allItems;
 }
 
-export async function getVideoItemsForLibrary(libraryId: string): Promise<JellyfinItem[]> {
+export async function getVideoItemsForLibrary(
+  libraryId: string,
+): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
   const allItems: JellyfinItem[] = [];
   const limit = 200;
@@ -472,22 +539,25 @@ export async function getVideoItemsForLibrary(libraryId: string): Promise<Jellyf
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
-      params: {
-        userId: session.userId,
-        parentId: libraryId,
-        recursive: true,
-        includeItemTypes: "Movie,Series,Episode,Video",
-        sortBy: "SortName",
-        sortOrder: "Ascending",
-        fields: DEFAULT_ITEM_FIELDS,
-        enableImages: true,
-        imageTypeLimit: 1,
-        enableImageTypes: "Primary,Backdrop,Logo",
-        startIndex,
-        limit,
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      "/Items",
+      {
+        params: {
+          userId: session.userId,
+          parentId: libraryId,
+          recursive: true,
+          includeItemTypes: "Movie,Series,Episode,Video",
+          sortBy: "SortName",
+          sortOrder: "Ascending",
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          startIndex,
+          limit,
+        },
       },
-    });
+    );
 
     const items = response.Items ?? [];
     allItems.push(...items);
@@ -512,20 +582,23 @@ export async function getAllContentItems(): Promise<JellyfinItem[]> {
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>("/Items", {
-      params: {
-        userId: session.userId,
-        recursive: true,
-        sortBy: "SortName",
-        sortOrder: "Ascending",
-        fields: DEFAULT_ITEM_FIELDS,
-        enableImages: true,
-        imageTypeLimit: 1,
-        enableImageTypes: "Primary,Backdrop,Logo",
-        startIndex,
-        limit,
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      "/Items",
+      {
+        params: {
+          userId: session.userId,
+          recursive: true,
+          sortBy: "SortName",
+          sortOrder: "Ascending",
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          startIndex,
+          limit,
+        },
       },
-    });
+    );
 
     const items = response.Items ?? [];
     allItems.push(...items);
@@ -577,7 +650,10 @@ export async function refreshItemMetadata(
   });
 }
 
-export async function updateItemMetadata(itemId: string, item: JellyfinItem): Promise<void> {
+export async function updateItemMetadata(
+  itemId: string,
+  item: JellyfinItem,
+): Promise<void> {
   await requestJson<void>(`/Items/${encodeURIComponent(itemId)}`, {
     method: "POST",
     body: item,
@@ -645,33 +721,38 @@ function getBrowserDeviceProfile(): Record<string, unknown> {
   };
 }
 
-export async function getPlaybackInfo(itemId: string): Promise<JellyfinPlaybackInfoResponse> {
+export async function getPlaybackInfo(
+  itemId: string,
+): Promise<JellyfinPlaybackInfoResponse> {
   const session = requireAuthSession();
 
-  return requestJson<JellyfinPlaybackInfoResponse>(`/Items/${encodeURIComponent(itemId)}/PlaybackInfo`, {
-    method: "POST",
-    params: {
-      userId: session.userId,
-      maxStreamingBitrate: MAX_STREAMING_BITRATE,
-      autoOpenLiveStream: true,
-      enableDirectPlay: true,
-      enableDirectStream: true,
-      enableTranscoding: true,
-      allowVideoStreamCopy: true,
-      allowAudioStreamCopy: true,
+  return requestJson<JellyfinPlaybackInfoResponse>(
+    `/Items/${encodeURIComponent(itemId)}/PlaybackInfo`,
+    {
+      method: "POST",
+      params: {
+        userId: session.userId,
+        maxStreamingBitrate: MAX_STREAMING_BITRATE,
+        autoOpenLiveStream: true,
+        enableDirectPlay: true,
+        enableDirectStream: true,
+        enableTranscoding: true,
+        allowVideoStreamCopy: true,
+        allowAudioStreamCopy: true,
+      },
+      body: {
+        UserId: session.userId,
+        DeviceProfile: getBrowserDeviceProfile(),
+        MaxStreamingBitrate: MAX_STREAMING_BITRATE,
+        EnableDirectPlay: true,
+        EnableDirectStream: true,
+        EnableTranscoding: true,
+        AllowVideoStreamCopy: true,
+        AllowAudioStreamCopy: true,
+        AutoOpenLiveStream: true,
+      },
     },
-    body: {
-      UserId: session.userId,
-      DeviceProfile: getBrowserDeviceProfile(),
-      MaxStreamingBitrate: MAX_STREAMING_BITRATE,
-      EnableDirectPlay: true,
-      EnableDirectStream: true,
-      EnableTranscoding: true,
-      AllowVideoStreamCopy: true,
-      AllowAudioStreamCopy: true,
-      AutoOpenLiveStream: true,
-    },
-  });
+  );
 }
 
 const TICKS_PER_SECOND = 10_000_000;
@@ -697,7 +778,10 @@ function getStringValue(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function getFirstValue(record: Record<string, unknown>, keys: string[]): unknown {
+function getFirstValue(
+  record: Record<string, unknown>,
+  keys: string[],
+): unknown {
   for (const key of keys) {
     if (record[key] !== undefined) {
       return record[key];
@@ -719,7 +803,9 @@ function secondsFromSecondsOrTicks(value: unknown): number | null {
     return null;
   }
 
-  return Math.abs(timestamp) > TICKS_PER_SECOND ? timestamp / TICKS_PER_SECOND : timestamp;
+  return Math.abs(timestamp) > TICKS_PER_SECOND
+    ? timestamp / TICKS_PER_SECOND
+    : timestamp;
 }
 
 function getMediaSegmentEntries(response: unknown): unknown[] {
@@ -731,7 +817,14 @@ function getMediaSegmentEntries(response: unknown): unknown[] {
     return [];
   }
 
-  const candidateKeys = ["Items", "Segments", "MediaSegments", "items", "segments", "mediaSegments"];
+  const candidateKeys = [
+    "Items",
+    "Segments",
+    "MediaSegments",
+    "items",
+    "segments",
+    "mediaSegments",
+  ];
 
   for (const key of candidateKeys) {
     const value = response[key];
@@ -744,25 +837,42 @@ function getMediaSegmentEntries(response: unknown): unknown[] {
   return [];
 }
 
-function normalizeMediaSegment(rawSegment: unknown, index: number): NormalizedMediaSegment | null {
+function normalizeMediaSegment(
+  rawSegment: unknown,
+  index: number,
+): NormalizedMediaSegment | null {
   if (!isRecord(rawSegment)) {
     return null;
   }
 
-  const type = getStringValue(rawSegment.Type ?? rawSegment.type) as SegmentKind | null;
+  const type = getStringValue(
+    rawSegment.Type ?? rawSegment.type,
+  ) as SegmentKind | null;
 
   if (!type) {
     return null;
   }
 
-  const startTicks = getFirstValue(rawSegment, ["StartTicks", "BeginTicks", "StartPositionTicks", "startTicks", "beginTicks"]);
-  const endTicks = getFirstValue(rawSegment, ["EndTicks", "EndPositionTicks", "endTicks"]);
-  const startSeconds = startTicks !== undefined
-    ? secondsFromTicks(startTicks)
-    : secondsFromSecondsOrTicks(rawSegment.Start ?? rawSegment.start);
-  const endSeconds = endTicks !== undefined
-    ? secondsFromTicks(endTicks)
-    : secondsFromSecondsOrTicks(rawSegment.End ?? rawSegment.end);
+  const startTicks = getFirstValue(rawSegment, [
+    "StartTicks",
+    "BeginTicks",
+    "StartPositionTicks",
+    "startTicks",
+    "beginTicks",
+  ]);
+  const endTicks = getFirstValue(rawSegment, [
+    "EndTicks",
+    "EndPositionTicks",
+    "endTicks",
+  ]);
+  const startSeconds =
+    startTicks !== undefined
+      ? secondsFromTicks(startTicks)
+      : secondsFromSecondsOrTicks(rawSegment.Start ?? rawSegment.start);
+  const endSeconds =
+    endTicks !== undefined
+      ? secondsFromTicks(endTicks)
+      : secondsFromSecondsOrTicks(rawSegment.End ?? rawSegment.end);
 
   if (
     startSeconds === null ||
@@ -774,7 +884,9 @@ function normalizeMediaSegment(rawSegment: unknown, index: number): NormalizedMe
   }
 
   const explicitId = getStringValue(rawSegment.Id ?? rawSegment.id);
-  const id = explicitId ?? `${type}-${startSeconds.toFixed(3)}-${endSeconds.toFixed(3)}-${index}`;
+  const id =
+    explicitId ??
+    `${type}-${startSeconds.toFixed(3)}-${endSeconds.toFixed(3)}-${index}`;
 
   return {
     id,
@@ -784,11 +896,13 @@ function normalizeMediaSegment(rawSegment: unknown, index: number): NormalizedMe
   };
 }
 
-export async function getMediaSegments(itemId: string): Promise<NormalizedMediaSegment[]> {
+export async function getMediaSegments(
+  itemId: string,
+): Promise<NormalizedMediaSegment[]> {
   try {
-    const response = await requestJson<JellyfinMediaSegment[] | Record<string, unknown>>(
-      `/MediaSegments/${encodeURIComponent(itemId)}`,
-    );
+    const response = await requestJson<
+      JellyfinMediaSegment[] | Record<string, unknown>
+    >(`/MediaSegments/${encodeURIComponent(itemId)}`);
 
     return getMediaSegmentEntries(response)
       .map((segment, index) => normalizeMediaSegment(segment, index))
@@ -807,10 +921,20 @@ export async function getMediaSegments(itemId: string): Promise<NormalizedMediaS
         message: error.message,
       };
 
-      if (error.status === 404 || error.status === 405 || error.status === 501) {
-        console.debug("[Seyirlik Playback] Jellyfin media segments endpoint unavailable", logPayload);
+      if (
+        error.status === 404 ||
+        error.status === 405 ||
+        error.status === 501
+      ) {
+        console.debug(
+          "[Seyirlik Playback] Jellyfin media segments endpoint unavailable",
+          logPayload,
+        );
       } else {
-        console.warn("[Seyirlik Playback] Could not load Jellyfin media segments", logPayload);
+        console.warn(
+          "[Seyirlik Playback] Could not load Jellyfin media segments",
+          logPayload,
+        );
       }
 
       return [];
@@ -831,7 +955,9 @@ export async function getActiveTranscodingInfo(
   });
 
   const matchingSession = sessions.find((session) => {
-    const sessionPlaySessionId = session.PlayState?.PlaySessionId ?? session.TranscodingInfo?.PlaySessionId;
+    const sessionPlaySessionId =
+      session.PlayState?.PlaySessionId ??
+      session.TranscodingInfo?.PlaySessionId;
     const nowPlayingItemId = session.NowPlayingItem?.Id;
 
     if (playSessionId && sessionPlaySessionId === playSessionId) {
@@ -857,14 +983,21 @@ export async function getActiveTranscodingReasons(
   const reasons = [
     ...(transcodingInfo.TranscodeReasons ?? []),
     ...(transcodingInfo.TranscodingReasons ?? []),
-    ...(transcodingInfo.ReasonForTranscoding ? [transcodingInfo.ReasonForTranscoding] : []),
+    ...(transcodingInfo.ReasonForTranscoding
+      ? [transcodingInfo.ReasonForTranscoding]
+      : []),
   ];
 
   return Array.from(new Set(reasons.filter(Boolean)));
 }
 
-function getMediaStream(mediaSource: JellyfinMediaSource, type: "Video" | "Audio"): JellyfinMediaStream | undefined {
-  return mediaSource.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === type.toLowerCase());
+function getMediaStream(
+  mediaSource: JellyfinMediaSource,
+  type: "Video" | "Audio",
+): JellyfinMediaStream | undefined {
+  return mediaSource.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
+  );
 }
 
 function normalizeCodec(codec?: string): string {
@@ -880,10 +1013,16 @@ function normalizeContainer(container?: string): string {
     .replace("quicktime", "mov");
 }
 
-function getMimeTypeForMediaSource(mediaSource: JellyfinMediaSource): string | undefined {
+function getMimeTypeForMediaSource(
+  mediaSource: JellyfinMediaSource,
+): string | undefined {
   const container = normalizeContainer(mediaSource.Container);
-  const videoCodec = normalizeCodec(getMediaStream(mediaSource, "Video")?.Codec);
-  const audioCodec = normalizeCodec(getMediaStream(mediaSource, "Audio")?.Codec);
+  const videoCodec = normalizeCodec(
+    getMediaStream(mediaSource, "Video")?.Codec,
+  );
+  const audioCodec = normalizeCodec(
+    getMediaStream(mediaSource, "Audio")?.Codec,
+  );
 
   if (container === "mp4" || container === "m4v" || container === "mov") {
     const codecs: string[] = [];
@@ -906,7 +1045,9 @@ function getMimeTypeForMediaSource(mediaSource: JellyfinMediaSource): string | u
       codecs.push("ec-3");
     }
 
-    return codecs.length > 0 ? `video/mp4; codecs="${codecs.join(", ")}"` : "video/mp4";
+    return codecs.length > 0
+      ? `video/mp4; codecs="${codecs.join(", ")}"`
+      : "video/mp4";
   }
 
   if (container === "webm") {
@@ -920,7 +1061,9 @@ function getMimeTypeForMediaSource(mediaSource: JellyfinMediaSource): string | u
       codecs.push(audioCodec);
     }
 
-    return codecs.length > 0 ? `video/webm; codecs="${codecs.join(", ")}"` : "video/webm";
+    return codecs.length > 0
+      ? `video/webm; codecs="${codecs.join(", ")}"`
+      : "video/webm";
   }
 
   return undefined;
@@ -952,7 +1095,9 @@ function buildDirectStreamUrl(
 ): string {
   const session = requireAuthSession();
   const container = normalizeContainer(mediaSource.Container);
-  const path = container ? `/Videos/${encodeURIComponent(itemId)}/stream.${container}` : `/Videos/${itemId}/stream`;
+  const path = container
+    ? `/Videos/${encodeURIComponent(itemId)}/stream.${container}`
+    : `/Videos/${itemId}/stream`;
 
   return buildJellyfinUrl(session.serverUrl, path, {
     static: true,
@@ -1050,20 +1195,36 @@ export function buildConfiguredHlsPlaybackSource(
   reason = "Built a Jellyfin HLS URL for the selected player setting.",
 ): PlaybackSourceCandidate {
   if (!source.mediaSource.Id) {
-    throw new Error("This media source does not have a Jellyfin mediaSourceId.");
+    throw new Error(
+      "This media source does not have a Jellyfin mediaSourceId.",
+    );
   }
 
-  if (!source.mediaSource.SupportsTranscoding && source.mode !== "Transcoding") {
-    throw new Error("This Jellyfin media source does not report transcoding support.");
+  if (
+    !source.mediaSource.SupportsTranscoding &&
+    source.mode !== "Transcoding"
+  ) {
+    throw new Error(
+      "This Jellyfin media source does not report transcoding support.",
+    );
   }
 
-  const url = buildMasterHlsUrl(source.itemId, source.mediaSource, source.playSessionId, settings);
+  const url = buildMasterHlsUrl(
+    source.itemId,
+    source.mediaSource,
+    source.playSessionId,
+    settings,
+  );
   const idParts = [
     "SettingsHls",
     source.mediaSource.Id,
-    settings.audioStreamIndex !== undefined ? `a${settings.audioStreamIndex}` : "a-auto",
+    settings.audioStreamIndex !== undefined
+      ? `a${settings.audioStreamIndex}`
+      : "a-auto",
     settings.maxHeight !== undefined ? `h${settings.maxHeight}` : "h-auto",
-    settings.maxStreamingBitrate !== undefined ? `b${settings.maxStreamingBitrate}` : "b-auto",
+    settings.maxStreamingBitrate !== undefined
+      ? `b${settings.maxStreamingBitrate}`
+      : "b-auto",
   ];
 
   return {
@@ -1080,7 +1241,11 @@ export function buildConfiguredHlsPlaybackSource(
   };
 }
 
-export function buildSubtitleStreamUrl(itemId: string, mediaSourceId: string, subtitleStreamIndex: number): string {
+export function buildSubtitleStreamUrl(
+  itemId: string,
+  mediaSourceId: string,
+  subtitleStreamIndex: number,
+): string {
   const session = requireAuthSession();
 
   return buildJellyfinUrl(
@@ -1092,12 +1257,16 @@ export function buildSubtitleStreamUrl(itemId: string, mediaSourceId: string, su
   );
 }
 
-export function getManualQualityOptions(mediaSource: JellyfinMediaSource): PlaybackQualityOption[] {
+export function getManualQualityOptions(
+  mediaSource: JellyfinMediaSource,
+): PlaybackQualityOption[] {
   if (!mediaSource.SupportsTranscoding) {
     return [];
   }
 
-  const videoStream = mediaSource.MediaStreams?.find((stream) => stream.Type?.toLowerCase() === "video");
+  const videoStream = mediaSource.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "video",
+  );
   const sourceHeight = videoStream?.Height;
   const sourceWidth = videoStream?.Width;
 
@@ -1137,12 +1306,20 @@ export function getManualQualityOptions(mediaSource: JellyfinMediaSource): Playb
   ];
 
   return qualityPresets
-    .filter((option) => option.maxHeight !== undefined && option.maxHeight <= sourceHeight)
+    .filter(
+      (option) =>
+        option.maxHeight !== undefined && option.maxHeight <= sourceHeight,
+    )
     .map((option) => {
       const maxHeight = option.maxHeight;
       const maxWidth =
         option.maxWidth && sourceWidth && sourceHeight
-          ? Math.min(option.maxWidth, Math.round((sourceWidth / sourceHeight) * (maxHeight ?? sourceHeight)))
+          ? Math.min(
+              option.maxWidth,
+              Math.round(
+                (sourceWidth / sourceHeight) * (maxHeight ?? sourceHeight),
+              ),
+            )
           : option.maxWidth;
 
       return {
@@ -1153,17 +1330,26 @@ export function getManualQualityOptions(mediaSource: JellyfinMediaSource): Playb
     });
 }
 
-function resolveTranscodingUrl(mediaSource: JellyfinMediaSource): string | null {
+function resolveTranscodingUrl(
+  mediaSource: JellyfinMediaSource,
+): string | null {
   const session = requireAuthSession();
 
   if (!mediaSource.TranscodingUrl) {
     return null;
   }
 
-  return makePlaybackUrlAbsolute(mediaSource.TranscodingUrl, session.serverUrl, session.accessToken);
+  return makePlaybackUrlAbsolute(
+    mediaSource.TranscodingUrl,
+    session.serverUrl,
+    session.accessToken,
+  );
 }
 
-function isHlsUrl(playbackUrl: string, mediaSource?: JellyfinMediaSource): boolean {
+function isHlsUrl(
+  playbackUrl: string,
+  mediaSource?: JellyfinMediaSource,
+): boolean {
   return (
     playbackUrl.toLowerCase().includes(".m3u8") ||
     mediaSource?.TranscodingSubProtocol?.toLowerCase() === "hls" ||
@@ -1209,7 +1395,9 @@ export function buildPlaybackCandidates(
   const candidates: PlaybackSourceCandidate[] = [];
 
   sources.forEach((mediaSource, sourceIndex) => {
-    const canDirectPlay = Boolean(mediaSource.SupportsDirectPlay || mediaSource.SupportsDirectStream);
+    const canDirectPlay = Boolean(
+      mediaSource.SupportsDirectPlay || mediaSource.SupportsDirectStream,
+    );
     const browserCanPlay = canBrowserPlayMediaSource(mediaSource);
     const mimeType = getMimeTypeForMediaSource(mediaSource);
     const playSessionId = playbackInfo.PlaySessionId;
@@ -1225,7 +1413,9 @@ export function buildPlaybackCandidates(
           playSessionId,
           browserCanPlay ? 35 + sourceIndex : 5 + sourceIndex,
           "Jellyfin returned a transcoding URL from PlaybackInfo.",
-          isHlsUrl(transcodingUrl, mediaSource) ? "application/vnd.apple.mpegurl" : undefined,
+          isHlsUrl(transcodingUrl, mediaSource)
+            ? "application/vnd.apple.mpegurl"
+            : undefined,
           playbackInfo,
         ),
       );
@@ -1246,7 +1436,9 @@ export function buildPlaybackCandidates(
     }
 
     if (canDirectPlay) {
-      const mode: PlaybackMode = mediaSource.SupportsDirectPlay ? "DirectPlay" : "DirectStream";
+      const mode: PlaybackMode = mediaSource.SupportsDirectPlay
+        ? "DirectPlay"
+        : "DirectStream";
       candidates.push(
         createPlaybackCandidate(
           itemId,
@@ -1272,50 +1464,74 @@ function getTokenForUrl(): string | undefined {
   return getAuthSession()?.accessToken;
 }
 
-export function getPrimaryImageUrl(itemId: string, tag?: string, maxWidth = 500): string {
+export function getPrimaryImageUrl(
+  itemId: string,
+  tag?: string,
+  maxWidth = 500,
+): string {
   const serverUrl = getServerUrl();
 
   if (!serverUrl) {
     return "";
   }
 
-  return buildJellyfinUrl(serverUrl, `/Items/${encodeURIComponent(itemId)}/Images/Primary`, {
-    maxWidth,
-    quality: 90,
-    tag,
-    api_key: getTokenForUrl(),
-  });
+  return buildJellyfinUrl(
+    serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/Images/Primary`,
+    {
+      maxWidth,
+      quality: 90,
+      tag,
+      api_key: getTokenForUrl(),
+    },
+  );
 }
 
-export function getLogoImageUrl(itemId: string, tag?: string, maxWidth = 900): string {
+export function getLogoImageUrl(
+  itemId: string,
+  tag?: string,
+  maxWidth = 900,
+): string {
   const serverUrl = getServerUrl();
 
   if (!serverUrl) {
     return "";
   }
 
-  return buildJellyfinUrl(serverUrl, `/Items/${encodeURIComponent(itemId)}/Images/Logo`, {
-    maxWidth,
-    quality: 95,
-    tag,
-    api_key: getTokenForUrl(),
-  });
+  return buildJellyfinUrl(
+    serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/Images/Logo`,
+    {
+      maxWidth,
+      quality: 95,
+      tag,
+      api_key: getTokenForUrl(),
+    },
+  );
 }
 
-export function getBackdropImageUrl(itemId: string, tag?: string, maxWidth = 1600): string {
+export function getBackdropImageUrl(
+  itemId: string,
+  tag?: string,
+  maxWidth = 1600,
+): string {
   const serverUrl = getServerUrl();
 
   if (!serverUrl) {
     return "";
   }
 
-  return buildJellyfinUrl(serverUrl, `/Items/${encodeURIComponent(itemId)}/Images/Backdrop`, {
-    maxWidth,
-    quality: 88,
-    imageIndex: 0,
-    tag,
-    api_key: getTokenForUrl(),
-  });
+  return buildJellyfinUrl(
+    serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/Images/Backdrop`,
+    {
+      maxWidth,
+      quality: 88,
+      imageIndex: 0,
+      tag,
+      api_key: getTokenForUrl(),
+    },
+  );
 }
 
 export function getStreamUrl(itemId: string): string {
@@ -1323,18 +1539,24 @@ export function getStreamUrl(itemId: string): string {
 
   // Legacy direct URL helper kept for compatibility. The player now uses
   // PlaybackInfo candidates so it can fall back to Jellyfin HLS/transcoding.
-  return buildJellyfinUrl(session.serverUrl, `/Videos/${encodeURIComponent(itemId)}/stream`, {
-    static: true,
-    deviceId: session.deviceId,
-    api_key: session.accessToken,
-  });
+  return buildJellyfinUrl(
+    session.serverUrl,
+    `/Videos/${encodeURIComponent(itemId)}/stream`,
+    {
+      static: true,
+      deviceId: session.deviceId,
+      api_key: session.accessToken,
+    },
+  );
 }
 
 export function ticksFromSeconds(seconds: number): number {
   return Math.max(0, Math.floor(seconds * 10_000_000));
 }
 
-function getPlayMethod(source: PlaybackSourceCandidate): PlaybackMode | "Transcode" {
+function getPlayMethod(
+  source: PlaybackSourceCandidate,
+): PlaybackMode | "Transcode" {
   return source.mode === "Transcoding" ? "Transcode" : source.mode;
 }
 
@@ -1430,7 +1652,9 @@ export function reportPlaybackStoppedBeforeUnload(
   }
 }
 
-export async function reportAuditPlaybackStart(source: PlaybackSourceCandidate): Promise<void> {
+export async function reportAuditPlaybackStart(
+  source: PlaybackSourceCandidate,
+): Promise<void> {
   await requestJson<void>("/Sessions/Playing", {
     method: "POST",
     body: {
@@ -1444,7 +1668,9 @@ export async function reportAuditPlaybackStart(source: PlaybackSourceCandidate):
   });
 }
 
-export async function reportAuditPlaybackProgress(source: PlaybackSourceCandidate): Promise<void> {
+export async function reportAuditPlaybackProgress(
+  source: PlaybackSourceCandidate,
+): Promise<void> {
   await requestJson<void>("/Sessions/Playing/Progress", {
     method: "POST",
     body: {
@@ -1459,7 +1685,9 @@ export async function reportAuditPlaybackProgress(source: PlaybackSourceCandidat
   });
 }
 
-export async function reportAuditPlaybackStopped(source: PlaybackSourceCandidate): Promise<void> {
+export async function reportAuditPlaybackStopped(
+  source: PlaybackSourceCandidate,
+): Promise<void> {
   await requestJson<void>("/Sessions/Playing/Stopped", {
     method: "POST",
     body: {
@@ -1471,7 +1699,9 @@ export async function reportAuditPlaybackStopped(source: PlaybackSourceCandidate
   });
 }
 
-export async function stopActiveTranscodeSession(playSessionId?: string): Promise<void> {
+export async function stopActiveTranscodeSession(
+  playSessionId?: string,
+): Promise<void> {
   const session = requireAuthSession();
 
   if (!playSessionId) {

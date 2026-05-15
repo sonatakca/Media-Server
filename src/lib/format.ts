@@ -50,7 +50,9 @@ export function getDisplayTitle(
 
   if (item.Type === "Episode" && item.SeriesName) {
     const episodeNumber = item.IndexNumber ? `E${item.IndexNumber}` : "";
-    const seasonNumber = item.ParentIndexNumber ? `S${item.ParentIndexNumber}` : "";
+    const seasonNumber = item.ParentIndexNumber
+      ? `S${item.ParentIndexNumber}`
+      : "";
     const prefix = `${seasonNumber}${episodeNumber}`;
     return prefix ? `${item.SeriesName} ${prefix}` : item.SeriesName;
   }
@@ -63,7 +65,9 @@ export function getItemSubtitle(
   labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
 ): string | null {
   if (item.Type === "Season") {
-    const parts = [item.SeriesName, item.ProductionYear?.toString()].filter(Boolean);
+    const parts = [item.SeriesName, item.ProductionYear?.toString()].filter(
+      Boolean,
+    );
     return parts.length > 0 ? parts.join(" / ") : null;
   }
 

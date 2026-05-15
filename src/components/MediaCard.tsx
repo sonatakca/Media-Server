@@ -26,7 +26,13 @@ function getProgressPercent(item: JellyfinItem): number | null {
   }
 
   if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks) {
-    return Math.min(100, Math.max(0, (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100));
+    return Math.min(
+      100,
+      Math.max(
+        0,
+        (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100,
+      ),
+    );
   }
 
   return null;
@@ -41,34 +47,66 @@ function getEpisodeLabel(item: JellyfinItem): string | null {
     return null;
   }
 
-  const seasonNumber = item.ParentIndexNumber ? `S${item.ParentIndexNumber}` : "";
+  const seasonNumber = item.ParentIndexNumber
+    ? `S${item.ParentIndexNumber}`
+    : "";
   const episodeNumber = item.IndexNumber ? `E${item.IndexNumber}` : "";
   const code = `${seasonNumber}${episodeNumber}`;
 
-  return code && item.Name ? `${code} · ${item.Name}` : code || item.Name || null;
+  return code && item.Name
+    ? `${code} · ${item.Name}`
+    : code || item.Name || null;
 }
 
-function formatTemplate(template: string, values: Record<string, string | number>): string {
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
   return Object.entries(values).reduce(
     (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
     template,
   );
 }
 
-function countLabel(count: number, singularKey: TranslationKey, pluralKey: TranslationKey, t: (key: TranslationKey) => string): string {
+function countLabel(
+  count: number,
+  singularKey: TranslationKey,
+  pluralKey: TranslationKey,
+  t: (key: TranslationKey) => string,
+): string {
   return count === 1 ? t(singularKey) : formatTemplate(t(pluralKey), { count });
 }
 
-function getCountLabel(item: JellyfinItem, t: (key: TranslationKey) => string): string | null {
+function getCountLabel(
+  item: JellyfinItem,
+  t: (key: TranslationKey) => string,
+): string | null {
   if (item.Type === "Series") {
     const parts: string[] = [];
 
     if (typeof item.ChildCount === "number" && item.ChildCount > 0) {
-      parts.push(countLabel(item.ChildCount, "media.seasonSingular", "media.seasonPlural", t));
+      parts.push(
+        countLabel(
+          item.ChildCount,
+          "media.seasonSingular",
+          "media.seasonPlural",
+          t,
+        ),
+      );
     }
 
-    if (typeof item.RecursiveItemCount === "number" && item.RecursiveItemCount > 0) {
-      parts.push(countLabel(item.RecursiveItemCount, "media.episodeSingular", "media.episodePlural", t));
+    if (
+      typeof item.RecursiveItemCount === "number" &&
+      item.RecursiveItemCount > 0
+    ) {
+      parts.push(
+        countLabel(
+          item.RecursiveItemCount,
+          "media.episodeSingular",
+          "media.episodePlural",
+          t,
+        ),
+      );
     }
 
     return parts.length > 0 ? parts.join(" · ") : null;
@@ -83,7 +121,8 @@ function getCountLabel(item: JellyfinItem, t: (key: TranslationKey) => string): 
     const episodeCount =
       typeof item.ChildCount === "number" && item.ChildCount > 0
         ? item.ChildCount
-        : typeof item.RecursiveItemCount === "number" && item.RecursiveItemCount > 0
+        : typeof item.RecursiveItemCount === "number" &&
+            item.RecursiveItemCount > 0
           ? item.RecursiveItemCount
           : null;
 
@@ -91,7 +130,12 @@ function getCountLabel(item: JellyfinItem, t: (key: TranslationKey) => string): 
       return seasonLabel;
     }
 
-    const episodeLabel = countLabel(episodeCount, "media.episodeSingular", "media.episodePlural", t);
+    const episodeLabel = countLabel(
+      episodeCount,
+      "media.episodeSingular",
+      "media.episodePlural",
+      t,
+    );
 
     return `${seasonLabel} · ${episodeLabel}`;
   }
@@ -123,17 +167,30 @@ export function MediaCard({
   const episodeLabel = getEpisodeLabel(item);
   const progressPercent = getProgressPercent(item);
   const imageUrl = item.ImageTags?.Primary
-    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, variant === "poster" ? 720 : 1100)
+    ? getPrimaryImageUrl(
+        item.Id,
+        item.ImageTags.Primary,
+        variant === "poster" ? 720 : 1100,
+      )
     : "";
   const logoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
     : item.ParentLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
       : "";
-  const secondaryLabel = episodeLabel ?? (item.Type === "Season" ? null : !logoUrl ? title : null);
-  const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
+  const secondaryLabel =
+    episodeLabel ?? (item.Type === "Season" ? null : !logoUrl ? title : null);
+  const canPlay =
+    item.Type === "Movie" ||
+    item.Type === "Episode" ||
+    item.MediaType === "Video";
   const isLandscape = variant === "landscape";
-  const sizeClass = layout === "grid" ? "w-full" : isLandscape ? "w-72 sm:w-80 lg:w-96" : "w-44 sm:w-52 lg:w-60";
+  const sizeClass =
+    layout === "grid"
+      ? "w-full"
+      : isLandscape
+        ? "w-72 sm:w-80 lg:w-96"
+        : "w-44 sm:w-52 lg:w-60";
   const entranceDelay = Math.min(index * 0.025, 0.18);
   const motionProps = animateIn
     ? shouldReduceMotion
@@ -147,7 +204,11 @@ export function MediaCard({
           initial: { opacity: 0, y: 14, scale: 0.985 },
           whileInView: { opacity: 1, y: 0, scale: 1 },
           viewport: { once: true, margin: "80px" },
-          transition: { duration: 0.3, delay: entranceDelay, ease: [0.22, 1, 0.36, 1] as [number, number, number, number] },
+          transition: {
+            duration: 0.3,
+            delay: entranceDelay,
+            ease: [0.22, 1, 0.36, 1] as [number, number, number, number],
+          },
         }
     : {};
 
@@ -164,8 +225,12 @@ export function MediaCard({
           className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
 
-        <div className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}>
-          {!imageLoaded && imageUrl && !imageFailed ? <div className="shimmer absolute inset-0" /> : null}
+        <div
+          className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
+        >
+          {!imageLoaded && imageUrl && !imageFailed ? (
+            <div className="shimmer absolute inset-0" />
+          ) : null}
           {imageUrl && !imageFailed ? (
             <img
               src={imageUrl}
@@ -209,7 +274,10 @@ export function MediaCard({
 
           {progressPercent !== null ? (
             <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/[0.18]">
-              <div className="h-full bg-[var(--accent)]" style={{ width: `${progressPercent}%` }} />
+              <div
+                className="h-full bg-[var(--accent)]"
+                style={{ width: `${progressPercent}%` }}
+              />
             </div>
           ) : null}
         </div>
@@ -223,7 +291,9 @@ export function MediaCard({
                 className="mx-auto h-auto max-h-28 w-auto object-contain object-left"
               />
             ) : (
-              <h3 className="h-8 w-full truncate text-sm font-bold leading-8 text-white">{title}</h3>
+              <h3 className="h-8 w-full truncate text-sm font-bold leading-8 text-white">
+                {title}
+              </h3>
             )}
           </div>
 
@@ -248,7 +318,10 @@ export function MediaCard({
                 {subtitle}
               </p>
             ) : (
-              <p className="mt-1 h-4 text-xs leading-4 text-transparent" aria-hidden={true} />
+              <p
+                className="mt-1 h-4 text-xs leading-4 text-transparent"
+                aria-hidden={true}
+              />
             )}
           </div>
         </div>

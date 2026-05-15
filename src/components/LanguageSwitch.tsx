@@ -29,14 +29,24 @@ export function LanguageSwitch() {
     <button
       type="button"
       onClick={toggleLanguage}
-      title={isEnglish ? t("nav.language.switchToTurkish") : t("nav.language.switchToEnglish")}
-      aria-label={isEnglish ? t("nav.language.ariaToTurkish") : t("nav.language.ariaToEnglish")}
+      title={
+        isEnglish
+          ? t("nav.language.switchToTurkish")
+          : t("nav.language.switchToEnglish")
+      }
+      aria-label={
+        isEnglish
+          ? t("nav.language.ariaToTurkish")
+          : t("nav.language.ariaToEnglish")
+      }
       className="inline-flex min-h-10 w-[76px] items-center justify-center rounded-full border border-white/10 bg-white/[0.08] px-0 py-1.5 text-sm font-semibold text-white/[0.90] backdrop-blur transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
       <span className="grid w-[54px] grid-cols-[22px_24px] items-center justify-center gap-2">
         <span
           className={`fi ${displayFlagClass} block h-[14px] w-[22px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
-            isFlagVisible ? "translate-y-0 opacity-100" : "-translate-y-0.5 opacity-0"
+            isFlagVisible
+              ? "translate-y-0 opacity-100"
+              : "-translate-y-0.5 opacity-0"
           }`}
         />
 

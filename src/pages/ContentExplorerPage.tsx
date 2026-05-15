@@ -22,7 +22,15 @@ import { getRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
 
-type ContentFilter = "all" | "movie" | "series" | "season" | "episode" | "video" | "folder" | "other";
+type ContentFilter =
+  | "all"
+  | "movie"
+  | "series"
+  | "season"
+  | "episode"
+  | "video"
+  | "folder"
+  | "other";
 
 function getContentBucket(item: JellyfinItem): ContentFilter {
   if (item.Type === "Movie") return "movie";
@@ -57,7 +65,10 @@ function getRuntimeLabel(item: JellyfinItem): string {
 }
 
 function getPlayableRoute(item: JellyfinItem): string | null {
-  const canPlay = item.Type === "Movie" || item.Type === "Episode" || item.MediaType === "Video";
+  const canPlay =
+    item.Type === "Movie" ||
+    item.Type === "Episode" ||
+    item.MediaType === "Video";
   return canPlay ? `/watch/${item.Id}` : null;
 }
 
@@ -148,7 +159,9 @@ function buildCsv(items: JellyfinItem[]): string {
 
   const rows = items.map((item) => {
     const mediaSources = item.MediaSources ?? [];
-    const mediaStreams = mediaSources.flatMap((source) => source.MediaStreams ?? []);
+    const mediaStreams = mediaSources.flatMap(
+      (source) => source.MediaStreams ?? [],
+    );
 
     return [
       item.Id,
@@ -311,7 +324,11 @@ export function ContentExplorerPage() {
         }
       } catch (loadError) {
         if (isMounted) {
-          setError(loadError instanceof Error ? loadError.message : "Could not load content items.");
+          setError(
+            loadError instanceof Error
+              ? loadError.message
+              : "Could not load content items.",
+          );
         }
       } finally {
         if (isMounted) {
@@ -369,33 +386,37 @@ export function ContentExplorerPage() {
         return searchableText.includes(normalizedSearch);
       })
       .sort((left, right) =>
-        (left.SortName ?? left.Name).localeCompare(right.SortName ?? right.Name, undefined, {
-          numeric: true,
-        }),
+        (left.SortName ?? left.Name).localeCompare(
+          right.SortName ?? right.Name,
+          undefined,
+          {
+            numeric: true,
+          },
+        ),
       );
   }, [activeFilter, items, searchTerm]);
 
   const exportSuffix = sanitizeForFilename(
     activeFilter === "all" ? "all-content" : `${activeFilter}-content`,
-    );
+  );
 
-    const handleExportJson = () => {
+  const handleExportJson = () => {
     const payload = buildAiFriendlyJson(filteredItems);
 
     downloadTextFile(
-        `seyirlik-${exportSuffix}-${new Date().toISOString().slice(0, 10)}.json`,
-        JSON.stringify(payload, null, 2),
-        "application/json;charset=utf-8",
+      `seyirlik-${exportSuffix}-${new Date().toISOString().slice(0, 10)}.json`,
+      JSON.stringify(payload, null, 2),
+      "application/json;charset=utf-8",
     );
-    };
+  };
 
-    const handleExportCsv = () => {
+  const handleExportCsv = () => {
     downloadTextFile(
-        `seyirlik-${exportSuffix}-${new Date().toISOString().slice(0, 10)}.csv`,
-        buildCsv(filteredItems),
-        "text/csv;charset=utf-8",
+      `seyirlik-${exportSuffix}-${new Date().toISOString().slice(0, 10)}.csv`,
+      buildCsv(filteredItems),
+      "text/csv;charset=utf-8",
     );
-    };
+  };
 
   const filterOptions: Array<{ id: ContentFilter; label: string }> = [
     { id: "all", label: "All" },
@@ -409,7 +430,9 @@ export function ContentExplorerPage() {
   ];
 
   if (error) {
-    return <ErrorMessage title="Content Explorer unavailable" message={error} />;
+    return (
+      <ErrorMessage title="Content Explorer unavailable" message={error} />
+    );
   }
 
   return (
@@ -439,10 +462,13 @@ export function ContentExplorerPage() {
                 </div>
 
                 <div>
-                  <h1 className="text-3xl font-black text-white sm:text-4xl">Content Explorer</h1>
+                  <h1 className="text-3xl font-black text-white sm:text-4xl">
+                    Content Explorer
+                  </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
-                    Lists every item Jellyfin returns for this user, including movies, series, seasons,
-                    episodes, folders, libraries, and unknown item types.
+                    Lists every item Jellyfin returns for this user, including
+                    movies, series, seasons, episodes, folders, libraries, and
+                    unknown item types.
                   </p>
                 </div>
               </div>
@@ -451,32 +477,46 @@ export function ContentExplorerPage() {
             <div className="grid grid-cols-3 gap-2 rounded-3xl border border-white/10 bg-black/25 p-2 sm:grid-cols-6">
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.total}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Total</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Total
+                </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.movies}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Movies</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Movies
+                </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.series}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Series</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Series
+                </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.seasons}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Seasons</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Seasons
+                </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
-                <p className="text-lg font-black text-white">{stats.episodes}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Episodes</p>
+                <p className="text-lg font-black text-white">
+                  {stats.episodes}
+                </p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Episodes
+                </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.videos}</p>
-                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">Videos</p>
+                <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
+                  Videos
+                </p>
               </div>
             </div>
           </div>
@@ -522,30 +562,31 @@ export function ContentExplorerPage() {
           </div>
           <div className="flex flex-wrap gap-2 lg:col-span-2">
             <button
-                type="button"
-                onClick={handleExportJson}
-                disabled={filteredItems.length === 0}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
+              type="button"
+              onClick={handleExportJson}
+              disabled={filteredItems.length === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
             >
-                <FileJson size={17} />
-                Export JSON
+              <FileJson size={17} />
+              Export JSON
             </button>
 
             <button
-                type="button"
-                onClick={handleExportCsv}
-                disabled={filteredItems.length === 0}
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/72 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              type="button"
+              onClick={handleExportCsv}
+              disabled={filteredItems.length === 0}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/72 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
-                <FileSpreadsheet size={17} />
-                Export CSV
+              <FileSpreadsheet size={17} />
+              Export CSV
             </button>
 
             <div className="flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold leading-5 text-white/42">
-                <Download size={15} />
-                Exports current search/filter only · {filteredItems.length} item{filteredItems.length === 1 ? "" : "s"}
+              <Download size={15} />
+              Exports current search/filter only · {filteredItems.length} item
+              {filteredItems.length === 1 ? "" : "s"}
             </div>
-            </div>
+          </div>
         </div>
 
         {isLoading ? (
@@ -559,10 +600,16 @@ export function ContentExplorerPage() {
                     <th className="border-b border-white/10 px-4 py-3">Item</th>
                     <th className="border-b border-white/10 px-4 py-3">Type</th>
                     <th className="border-b border-white/10 px-4 py-3">Year</th>
-                    <th className="border-b border-white/10 px-4 py-3">Runtime</th>
-                    <th className="border-b border-white/10 px-4 py-3">Parent</th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      Runtime
+                    </th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      Parent
+                    </th>
                     <th className="border-b border-white/10 px-4 py-3">ID</th>
-                    <th className="border-b border-white/10 px-4 py-3 text-right">Actions</th>
+                    <th className="border-b border-white/10 px-4 py-3 text-right">
+                      Actions
+                    </th>
                   </tr>
                 </thead>
 
@@ -628,7 +675,10 @@ export function ContentExplorerPage() {
 
                         <td className="border-b border-white/10 px-4 py-3 text-sm font-semibold text-white/48">
                           <div className="max-w-[14rem] truncate">
-                            {item.SeriesName ?? item.SeasonName ?? item.ParentId ?? "—"}
+                            {item.SeriesName ??
+                              item.SeasonName ??
+                              item.ParentId ??
+                              "—"}
                           </div>
                         </td>
 
@@ -647,7 +697,9 @@ export function ContentExplorerPage() {
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => copyText(JSON.stringify(item, null, 2))}
+                              onClick={() =>
+                                copyText(JSON.stringify(item, null, 2))
+                              }
                               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-emerald-400/35 hover:text-emerald-200"
                               title="Copy raw JSON"
                             >
@@ -685,7 +737,9 @@ export function ContentExplorerPage() {
               <Database size={22} />
             </div>
 
-            <h3 className="mt-4 text-lg font-black text-white">No content matched</h3>
+            <h3 className="mt-4 text-lg font-black text-white">
+              No content matched
+            </h3>
             <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
               Try clearing the search or switching the filter back to All.
             </p>

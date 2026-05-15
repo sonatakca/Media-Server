@@ -100,8 +100,12 @@ describe("getMediaSegments", () => {
   });
 
   it("returns an empty list when Jellyfin does not expose the endpoint", async () => {
-    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
-    fetchMock.mockResolvedValue(new Response("", { status: 404, statusText: "Not Found" }));
+    const debugSpy = vi
+      .spyOn(console, "debug")
+      .mockImplementation(() => undefined);
+    fetchMock.mockResolvedValue(
+      new Response("", { status: 404, statusText: "Not Found" }),
+    );
 
     await expect(getMediaSegments("movie-1")).resolves.toEqual([]);
     expect(debugSpy).toHaveBeenCalled();

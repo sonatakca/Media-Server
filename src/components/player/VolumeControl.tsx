@@ -8,9 +8,15 @@ interface VolumeControlProps {
   onVolumeChange: (volume: number) => void;
 }
 
-export function VolumeControl({ volume, muted, onToggleMute, onVolumeChange }: VolumeControlProps) {
+export function VolumeControl({
+  volume,
+  muted,
+  onToggleMute,
+  onVolumeChange,
+}: VolumeControlProps) {
   const { t } = useLanguage();
-  const Icon = muted || volume === 0 ? VolumeX : volume < 0.55 ? Volume1 : Volume2;
+  const Icon =
+    muted || volume === 0 ? VolumeX : volume < 0.55 ? Volume1 : Volume2;
 
   return (
     <div className="group flex items-center gap-2">

@@ -1,9 +1,20 @@
-import { Loader2, Maximize, Pause, Play, RotateCcw, RotateCw, Settings } from "lucide-react";
+import {
+  Loader2,
+  Maximize,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+  Settings,
+} from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { SeekBar } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
-import type { PlaybackQualityOption, PlaybackSourceCandidate } from "../../lib/types";
+import type {
+  PlaybackQualityOption,
+  PlaybackSourceCandidate,
+} from "../../lib/types";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -127,7 +138,13 @@ export function PlayerControls({
               onClick={onTogglePlay}
               disabled={playWaiting}
               className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
-              aria-label={playWaiting ? t("player.waitingForSyncPlay") : isPlaying ? t("common.pause") : t("common.play")}
+              aria-label={
+                playWaiting
+                  ? t("player.waitingForSyncPlay")
+                  : isPlaying
+                    ? t("common.pause")
+                    : t("common.play")
+              }
               title={playWaiting ? t("player.waitingForSyncPlay") : undefined}
             >
               {playWaiting ? (
@@ -190,7 +207,9 @@ export function PlayerControls({
               {seekPreviewLoading ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-white/70">
                   <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)]" />
-                  <span className="hidden sm:inline">{t("player.seeking")}</span>
+                  <span className="hidden sm:inline">
+                    {t("player.seeking")}
+                  </span>
                 </span>
               ) : null}
             </div>

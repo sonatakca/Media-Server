@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import { ArrowLeft, LoaderCircle, Pause, Play, RotateCcw, RotateCw } from "lucide-react";
+import {
+  ArrowLeft,
+  LoaderCircle,
+  Pause,
+  Play,
+  RotateCcw,
+  RotateCw,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 
@@ -41,9 +48,9 @@ export function PlayerOverlay({
   onControlsHoverStart,
   onControlsHoverEnd,
   seekFeedback,
-  }: PlayerOverlayProps) {
-  const { t } = useLanguage()
-  
+}: PlayerOverlayProps) {
+  const { t } = useLanguage();
+
   const wasPlayPausePendingRef = useRef(isPlayPausePending);
   const waveTimeoutRef = useRef<number | null>(null);
   const [showPlayPauseWave, setShowPlayPauseWave] = useState(false);
@@ -108,10 +115,16 @@ export function PlayerOverlay({
                 className="max-h-10 max-w-[min(20rem,52vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12"
               />
             ) : (
-              <p className="truncate text-base font-bold text-white sm:text-lg">{title}</p>
+              <p className="truncate text-base font-bold text-white sm:text-lg">
+                {title}
+              </p>
             )}
 
-            {subtitle ? <p className="mt-1 truncate text-sm text-white/[0.62]">{subtitle}</p> : null}
+            {subtitle ? (
+              <p className="mt-1 truncate text-sm text-white/[0.62]">
+                {subtitle}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
@@ -150,7 +163,9 @@ export function PlayerOverlay({
             >
               <RotateCcw size={60} strokeWidth={1.5} />
             </span>
-            <span className="seyirlik-seek-feedback__number">{backwardFeedback.amount}</span>
+            <span className="seyirlik-seek-feedback__number">
+              {backwardFeedback.amount}
+            </span>
           </div>
         </div>
       ) : null}
@@ -183,7 +198,9 @@ export function PlayerOverlay({
             >
               <RotateCw size={60} strokeWidth={1.5} />
             </span>
-            <span className="seyirlik-seek-feedback__number">{forwardFeedback.amount}</span>
+            <span className="seyirlik-seek-feedback__number">
+              {forwardFeedback.amount}
+            </span>
           </div>
         </div>
       ) : null}
@@ -196,7 +213,9 @@ export function PlayerOverlay({
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
         className={`absolute left-1/2 top-1/2 z-20 flex h-10 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/[0.75] text-white shadow-none backdrop-blur-lg transition duration-300 hover:scale-105 hover:bg-black/[0.6] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 cursor-pointer ${
-          visible || !isPlaying || isPlayPausePending ? "opacity-100" : "pointer-events-none opacity-0"
+          visible || !isPlaying || isPlayPausePending
+            ? "opacity-100"
+            : "pointer-events-none opacity-0"
         }`}
         aria-label={isPlaying ? t("common.pause") : t("common.play")}
       >

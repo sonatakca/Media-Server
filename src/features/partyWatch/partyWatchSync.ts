@@ -19,7 +19,10 @@ export function secondsFromTicks(ticks?: number | null): number | null {
   return Math.max(0, ticks / JELLYFIN_TICKS_PER_SECOND);
 }
 
-export function getCommandDelayMs(command: JellyfinSyncPlaySendCommand, now = Date.now()): number {
+export function getCommandDelayMs(
+  command: JellyfinSyncPlaySendCommand,
+  now = Date.now(),
+): number {
   if (!command.When) {
     return 0;
   }

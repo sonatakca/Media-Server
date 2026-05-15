@@ -65,7 +65,9 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
     });
 
     const cleanupTimeout = window.setTimeout(() => {
-      setLayers((current) => current.filter((layer) => layer.id === newLayerId));
+      setLayers((current) =>
+        current.filter((layer) => layer.id === newLayerId),
+      );
     }, 520);
 
     return () => {
@@ -83,7 +85,13 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
   const shouldAnimateLetters = layers.length > 1 || layers[0]?.phase !== "idle";
 
   if (!shouldAnimateLetters) {
-    return <span className={`inline-block whitespace-nowrap align-middle ${className}`}>{value}</span>;
+    return (
+      <span
+        className={`inline-block whitespace-nowrap align-middle ${className}`}
+      >
+        {value}
+      </span>
+    );
   }
 
   return (

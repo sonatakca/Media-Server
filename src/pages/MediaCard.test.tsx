@@ -57,12 +57,12 @@ describe("MediaCard Component", () => {
     render(
       <MemoryRouter>
         <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     // Check title rendering
     expect(screen.getAllByText("The Matrix").length).toBeGreaterThan(0);
-    
+
     // Check that the image source is built properly
     const image = screen.getByAltText("The Matrix");
     expect(image).toHaveAttribute("src", "/mock-primary-movie-123.jpg");
@@ -72,7 +72,7 @@ describe("MediaCard Component", () => {
     render(
       <MemoryRouter>
         <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
     expect(screen.getByLabelText("common.play The Matrix")).toBeInTheDocument();
   });

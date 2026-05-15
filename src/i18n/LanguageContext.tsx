@@ -1,4 +1,12 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   LANGUAGE_STORAGE_KEY,
   SUPPORTED_LANGUAGES,
@@ -18,7 +26,9 @@ const LanguageContext = createContext<LanguageContextValue | null>(null);
 
 function readStoredLanguage(): Language {
   const storedLanguage = localStorage.getItem(LANGUAGE_STORAGE_KEY);
-  return SUPPORTED_LANGUAGES.includes(storedLanguage as Language) ? (storedLanguage as Language) : "tr";
+  return SUPPORTED_LANGUAGES.includes(storedLanguage as Language)
+    ? (storedLanguage as Language)
+    : "tr";
 }
 
 interface LanguageProviderProps {
@@ -58,7 +68,11 @@ export function LanguageProvider({ children }: LanguageProviderProps) {
     [language, setLanguage, t, toggleLanguage],
   );
 
-  return <LanguageContext.Provider value={value}>{children}</LanguageContext.Provider>;
+  return (
+    <LanguageContext.Provider value={value}>
+      {children}
+    </LanguageContext.Provider>
+  );
 }
 
 export function useLanguage(): LanguageContextValue {

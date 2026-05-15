@@ -7,7 +7,9 @@ function createDeviceId(): string {
 
   const bytes = new Uint8Array(16);
   crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+    "",
+  );
 }
 
 export function getOrCreateDeviceId(): string {
@@ -48,7 +50,9 @@ export function readViewportCapabilities(): ViewportCapabilities {
   }
 
   const width = Math.round(window.visualViewport?.width ?? window.innerWidth);
-  const height = Math.round(window.visualViewport?.height ?? window.innerHeight);
+  const height = Math.round(
+    window.visualViewport?.height ?? window.innerHeight,
+  );
   const shortSide = Math.min(width, height);
   const longSide = Math.max(width, height);
   const isPortrait = height >= width;

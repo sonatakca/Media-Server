@@ -5,17 +5,25 @@ export interface AttachedVideoSource {
   destroy: () => void;
 }
 
-export function isHlsPlaybackUrl(playbackUrl: string, mimeType?: string): boolean {
+export function isHlsPlaybackUrl(
+  playbackUrl: string,
+  mimeType?: string,
+): boolean {
   const lowerUrl = playbackUrl.toLowerCase();
   const lowerMime = mimeType?.toLowerCase() ?? "";
 
-  return lowerUrl.includes(".m3u8") || lowerMime.includes("mpegurl") || lowerMime.includes("x-mpegurl");
+  return (
+    lowerUrl.includes(".m3u8") ||
+    lowerMime.includes("mpegurl") ||
+    lowerMime.includes("x-mpegurl")
+  );
 }
 
 function getRequestedMaxHeight(playbackUrl: string): number | null {
   try {
     const url = new URL(playbackUrl);
-    const rawMaxHeight = url.searchParams.get("maxHeight") ?? url.searchParams.get("MaxHeight");
+    const rawMaxHeight =
+      url.searchParams.get("maxHeight") ?? url.searchParams.get("MaxHeight");
     const maxHeight = rawMaxHeight ? Number(rawMaxHeight) : NaN;
 
     return Number.isFinite(maxHeight) && maxHeight > 0 ? maxHeight : null;
@@ -24,7 +32,10 @@ function getRequestedMaxHeight(playbackUrl: string): number | null {
   }
 }
 
-function getBestAllowedHlsLevel(hls: Hls, requestedMaxHeight: number | null): number {
+function getBestAllowedHlsLevel(
+  hls: Hls,
+  requestedMaxHeight: number | null,
+): number {
   let bestLevel = -1;
   let bestScore = -1;
 
@@ -56,7 +67,8 @@ function getBestAllowedHlsLevel(hls: Hls, requestedMaxHeight: number | null): nu
     }
 
     const levelScore = (level.height || 0) * 10_000_000 + (level.bitrate || 0);
-    const bestScoreSoFar = (bestLevelSoFar.height || 0) * 10_000_000 + (bestLevelSoFar.bitrate || 0);
+    const bestScoreSoFar =
+      (bestLevelSoFar.height || 0) * 10_000_000 + (bestLevelSoFar.bitrate || 0);
 
     return levelScore > bestScoreSoFar ? index : bestIndex;
   }, 0);
@@ -109,7 +121,10 @@ export function attachSourceToVideo(
         if (hls.levels.length > 0) {
           hls.currentLevel = -1;
           hls.nextLevel = -1;
-          hls.autoLevelCapping = getBestAllowedHlsLevel(hls, requestedMaxHeight);
+          hls.autoLevelCapping = getBestAllowedHlsLevel(
+            hls,
+            requestedMaxHeight,
+          );
         }
       }, 18_000);
     };
@@ -153,7 +168,9 @@ export function attachSourceToVideo(
   }
 
   if (isHls) {
-    throw new Error("This browser cannot attach HLS playback. Safari supports HLS natively, while Chrome, Edge, and Firefox need MediaSource Extensions.");
+    throw new Error(
+      "This browser cannot attach HLS playback. Safari supports HLS natively, while Chrome, Edge, and Firefox need MediaSource Extensions.",
+    );
   }
 
   videoElement.src = playbackUrl;

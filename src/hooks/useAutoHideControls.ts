@@ -40,7 +40,11 @@ export function useAutoHideControls({
     (delayMs: number) => {
       clearHideTimer();
 
-      if (disabledRef.current || !isPlayingRef.current || isHoveringControlsRef.current) {
+      if (
+        disabledRef.current ||
+        !isPlayingRef.current ||
+        isHoveringControlsRef.current
+      ) {
         setAreControlsVisible(true);
         return;
       }
@@ -59,7 +63,11 @@ export function useAutoHideControls({
   const showControls = useCallback(() => {
     setAreControlsVisible(true);
 
-    if (!disabledRef.current && isPlayingRef.current && !isHoveringControlsRef.current) {
+    if (
+      !disabledRef.current &&
+      isPlayingRef.current &&
+      !isHoveringControlsRef.current
+    ) {
       scheduleHide(interactionDelayMsRef.current);
     }
   }, [scheduleHide]);

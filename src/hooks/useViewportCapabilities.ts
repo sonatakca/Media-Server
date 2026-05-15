@@ -1,8 +1,13 @@
 import { useEffect, useState } from "react";
-import { readViewportCapabilities, type ViewportCapabilities } from "../lib/device";
+import {
+  readViewportCapabilities,
+  type ViewportCapabilities,
+} from "../lib/device";
 
 export function useViewportCapabilities(): ViewportCapabilities {
-  const [capabilities, setCapabilities] = useState<ViewportCapabilities>(() => readViewportCapabilities());
+  const [capabilities, setCapabilities] = useState<ViewportCapabilities>(() =>
+    readViewportCapabilities(),
+  );
 
   useEffect(() => {
     const updateCapabilities = () => {
