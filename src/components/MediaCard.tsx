@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Play, RotateCcw } from "lucide-react";
+import { Info, RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
@@ -184,6 +184,11 @@ export function MediaCard({
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
+  const detailsLabel = `${t("common.details")} ${title}`;
+  const primaryCardTo = canPlay ? `/watch/${item.Id}` : to;
+  const primaryCardLabel = canPlay
+    ? `${t("common.play")} ${title}`
+    : detailsLabel;
   const isLandscape = variant === "landscape";
   const isGrid = layout === "grid";
 
@@ -229,8 +234,8 @@ export function MediaCard({
     >
       <div className="media-card-cinematic group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-cinematic-card transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
         <Link
-          to={to}
-          aria-label={title}
+          to={primaryCardTo}
+          aria-label={primaryCardLabel}
           className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
         <div
@@ -261,28 +266,18 @@ export function MediaCard({
         <div
           className={`panel-top-highlight pointer-events-none relative z-20 flex flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset ${panelClass}`}
         >
-          {canPlay ? (
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
+          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
+            {canPlay && showPlayFromBeginning && progressPercent !== null ? (
               <Link
-                to={`/watch/${item.Id}`}
-                aria-label={`${t("common.play")} ${title}`}
-                className="pointer-events-auto absolute right-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-button-glow transition duration-300 hover:scale-110 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
+                to={`/watch/${item.Id}?start=0`}
+                aria-label={`Play ${title} from beginning`}
+                title="Play from beginning"
+                className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-player-controls backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/[0.14] focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
               >
-                <Play size={18} fill="currentColor" />
+                <RotateCcw size={17} />
               </Link>
-
-              {showPlayFromBeginning && progressPercent !== null ? (
-                <Link
-                  to={`/watch/${item.Id}?start=0`}
-                  aria-label={`Play ${title} from beginning`}
-                  title="Play from beginning"
-                  className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-player-controls backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/[0.14] focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
-                >
-                  <RotateCcw size={17} />
-                </Link>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
+          </div>
           {progressPercent !== null ? (
             <div className="absolute inset-x-0 top-0 h-1.5 bg-white/[0.18]">
               <div
@@ -331,33 +326,44 @@ export function MediaCard({
                 aria-hidden={true}
               />
             )}
-            <div className="mt-2 flex translate-y-2 flex-wrap gap-1.5 text-[0.68rem] font-semibold text-white/75 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-              {item.ProductionYear ? (
-                <span className="rounded-full bg-white/10 px-2 py-0.5">
-                  {item.ProductionYear}
-                </span>
-              ) : null}
+            <div className="mt-2 flex translate-y-2 items-end gap-1.5 text-[0.68rem] font-semibold text-white/75 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
+                {item.ProductionYear ? (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5">
+                    {item.ProductionYear}
+                  </span>
+                ) : null}
 
-              {item.OfficialRating ? (
-                <span className="rounded-full bg-white/10 px-2 py-0.5">
-                  {item.OfficialRating}
-                </span>
-              ) : null}
+                {item.OfficialRating ? (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5">
+                    {item.OfficialRating}
+                  </span>
+                ) : null}
 
-              {item.RunTimeTicks ? (
-                <span className="rounded-full bg-white/10 px-2 py-0.5">
-                  {Math.round(item.RunTimeTicks / 600000000)} dk
-                </span>
-              ) : null}
+                {item.RunTimeTicks ? (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5">
+                    {Math.round(item.RunTimeTicks / 600000000)} dk
+                  </span>
+                ) : null}
 
-              {item.Genres?.slice(0, 2).map((genre) => (
-                <span
-                  key={genre}
-                  className="rounded-full bg-white/10 px-2 py-0.5"
-                >
-                  {genre}
-                </span>
-              ))}
+                {item.Genres?.slice(0, 2).map((genre) => (
+                  <span
+                    key={genre}
+                    className="rounded-full bg-white/10 px-2 py-0.5"
+                  >
+                    {genre}
+                  </span>
+                ))}
+              </div>
+              <Link
+                to={to}
+                aria-label={detailsLabel}
+                title={t("common.details")}
+                className="pointer-events-auto ml-auto flex h-4 w-auto p-3 gap-1 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition duration-300 hover:scale-110 hover:bg-white/[0.16] focus:outline-none focus:ring-2 focus:ring-white/70"
+              >
+                <Info size={16} />
+                {t("common.details")}
+              </Link>
             </div>
           </div>
         </div>
