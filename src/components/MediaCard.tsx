@@ -235,7 +235,7 @@ export function MediaCard({
               src={imageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-hover:blur-[0.75px] group-focus-within:scale-[1.08] group-focus-within:blur-[1.5px] ${
+              className={`h-full w-full object-cover transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-focus-within:scale-[1.08] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
               onLoad={() => setImageLoaded(true)}
