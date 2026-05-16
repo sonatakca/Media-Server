@@ -289,7 +289,7 @@ export function HeroSection({
                 src={logoUrl}
                 alt={title}
                 draggable={false}
-                className="cinematic-logo-shadow max-h-36 max-w-[min(42rem,92vw)] select-none object-contain object-left sm:max-h-44 lg:max-h-52"
+                className="cinematic-logo-shadow h-[clamp(5.5rem,13vw,13rem)] max-w-[min(31rem,58vw)] select-none object-contain object-left"
                 initial={{
                   opacity: 0,
                   y: shouldReduceMotion ? 0 : 20,
