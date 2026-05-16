@@ -226,14 +226,13 @@ export function HeroSection({
           />
         ) : null}
       </AnimatePresence>
-      <div className="absolute inset-0 z-10 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
-      <div className="absolute inset-0 z-10 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
-      <div className="absolute bottom-0 left-0 right-0 z-10 h-40 bg-gradient-to-t from-[var(--background)] to-transparent" />
+      <div className="hero-cinematic-vignette z-10" />
+      <div className="hero-bottom-fade z-10" />
 
       <div className="relative z-20 mx-auto flex h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:h-[68svh] sm:px-6 md:pb-20 lg:h-[72svh] lg:px-8">
         {showSidePoster ? (
           <motion.div
-            className="pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-[0_30px_130px_rgba(0,0,0,0.65)] lg:block"
+            className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
             initial={false}
             animate={{
               opacity: heroContentVisible ? 1 : 0,
@@ -290,7 +289,7 @@ export function HeroSection({
                 src={logoUrl}
                 alt={title}
                 draggable={false}
-                className="max-h-36 max-w-[min(42rem,92vw)] select-none object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+                className="cinematic-logo-shadow max-h-36 max-w-[min(42rem,92vw)] select-none object-contain object-left sm:max-h-44 lg:max-h-52"
                 initial={{
                   opacity: 0,
                   y: shouldReduceMotion ? 0 : 20,
@@ -309,7 +308,7 @@ export function HeroSection({
               />
             ) : (
               <motion.h1
-                className="max-w-3xl text-5xl font-black leading-[0.95] text-white drop-shadow-2xl sm:text-6xl lg:text-7xl"
+                className="text-cinematic-title max-w-3xl text-5xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
                 initial={{
                   opacity: 0,
                   y: shouldReduceMotion ? 0 : 20,
@@ -429,7 +428,7 @@ export function HeroSection({
                   {canPlay ? (
                     <ButtonLink
                       to={`/watch/${item.Id}`}
-                      className="min-h-12 rounded-full px-6 text-base shadow-2xl"
+                      className="min-h-12 rounded-full px-6 text-base shadow-button-glow"
                     >
                       <Play size={20} fill="currentColor" />
                       <AnimatedWidth value={t("common.play")}>

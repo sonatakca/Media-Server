@@ -53,7 +53,7 @@ export function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-40 select-none border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-[0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl [-webkit-tap-highlight-color:transparent]">
+    <header className="sticky top-0 z-40 select-none border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-navbar-glass backdrop-blur-2xl [-webkit-tap-highlight-color:transparent]">
       <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
         <Link
           to="/home"
@@ -66,11 +66,11 @@ export function Navbar() {
                 src={appIcon}
                 alt="Seyirlik"
                 draggable={false}
-                className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-xl"
+                className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-cinematic-card"
                 onError={() => setIconFailed(true)}
               />
             ) : (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-xl">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-cinematic-card">
                 S
               </span>
             )}
@@ -92,7 +92,7 @@ export function Navbar() {
               />
             ) : (
               <span className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-xl">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-cinematic-card">
                   S
                 </span>
                 <span className="text-base font-black tracking-wide text-white sm:text-lg">
@@ -109,7 +109,7 @@ export function Navbar() {
             className={({ isActive }) =>
               `inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-[width,min-width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out ${
                 isActive
-                  ? "bg-[var(--accent)] text-black shadow-[0_10px_30px_var(--accent-soft)] hover:bg-[var(--accent-hover)]"
+                  ? "bg-[var(--accent)] text-black shadow-button-glow hover:bg-[var(--accent-hover)]"
                   : "text-zinc-300 hover:bg-white/10 hover:text-white"
               }`
             }

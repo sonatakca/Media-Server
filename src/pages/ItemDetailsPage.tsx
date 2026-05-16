@@ -169,21 +169,21 @@ export function ItemDetailsPage() {
         <motion.img
           src={backdropUrl}
           alt=""
-          className="absolute inset-0 h-[78vh] w-full object-cover opacity-50"
+          className="absolute inset-0 z-0 h-[78vh] w-full object-cover opacity-50"
           initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035 }}
           animate={shouldReduceMotion ? undefined : { opacity: 0.5, scale: 1 }}
           transition={{ duration: 0.5, ease: easeOut }}
         />
       ) : null}
-      <div className="absolute inset-0 bg-gradient-to-r from-black via-black/[0.78] to-black/[0.28]" />
-      <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.34] to-black/40" />
+      <div className="hero-cinematic-vignette z-0" />
+      <div className="hero-bottom-fade z-0" />
 
-      <div className="relative mx-auto max-w-[1500px]">
+      <div className="relative z-10 mx-auto max-w-[1500px]">
         <BackButton className="mb-10" />
 
         <div className="grid gap-8 md:grid-cols-[minmax(16rem,22rem)_1fr] md:items-end lg:gap-12">
           <motion.div
-            className="overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-[0_30px_120px_rgba(0,0,0,0.64)]"
+            className="artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow"
             initial={
               shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }
             }
@@ -220,10 +220,10 @@ export function ItemDetailsPage() {
               <img
                 src={logoUrl}
                 alt={title}
-                className="mt-3 max-h-36 max-w-[min(42rem,92vw)] object-contain object-left drop-shadow-[0_16px_42px_rgba(0,0,0,0.85)] sm:max-h-44 lg:max-h-52"
+                className="cinematic-logo-shadow mt-3 max-h-36 max-w-[min(42rem,92vw)] object-contain object-left sm:max-h-44 lg:max-h-52"
               />
             ) : (
-              <h1 className="mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">
+              <h1 className="text-cinematic-title mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">
                 {title}
               </h1>
             )}
@@ -263,7 +263,7 @@ export function ItemDetailsPage() {
               <div className="mt-8 flex flex-wrap items-start gap-3">
                 <ButtonLink
                   to={continueHref}
-                  className="min-h-12 rounded-full px-7 text-base shadow-2xl"
+                  className="min-h-12 rounded-full px-7 text-base shadow-button-glow"
                 >
                   <Play size={20} fill="currentColor" className="shrink-0" />
                   <AnimatedWidth
@@ -288,13 +288,12 @@ export function ItemDetailsPage() {
                       to={restartHref}
                       aria-label="Baştan İzle"
                       title="Baştan İzle"
-                      className="!flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
+                      className="group !flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-soft-inset !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
                     >
                       <RotateCcw
                         size={23}
                         strokeWidth={2}
-                        className="shrink-0 text-white/70"
-                        group-hover:text-white
+                        className="shrink-0 text-white/70 transition group-hover:text-white"
                       />
                     </ButtonLink>
                   </motion.div>
@@ -302,7 +301,7 @@ export function ItemDetailsPage() {
 
                 {hasStarted && remainingRuntime ? (
                   <motion.div
-                    className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-black/[0.32] px-4 text-sm font-black text-white/[0.78] shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur"
+                    className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-black/[0.32] px-4 text-sm font-black text-white/[0.78] shadow-soft-inset backdrop-blur"
                     initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                     animate={
                       shouldReduceMotion ? undefined : { opacity: 1, y: 0 }
@@ -312,7 +311,7 @@ export function ItemDetailsPage() {
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--accent)]/15 text-[var(--accent)]">
                       <Clock size={15} />
                     </span>
-                    <span className="text-white/48">Kalan süre</span>
+                    <span className="text-white/[0.48]">Kalan süre</span>
                     <span className="text-white">{remainingRuntime}</span>
                   </motion.div>
                 ) : null}
@@ -325,7 +324,7 @@ export function ItemDetailsPage() {
           className="mt-12 grid gap-5 lg:grid-cols-[1.4fr_0.8fr]"
           delay={0.08}
         >
-          <section className="rounded-2xl border border-white/10 bg-white/[0.055] p-5 backdrop-blur-xl sm:p-6">
+          <section className="panel-top-highlight rounded-2xl border border-white/10 bg-white/[0.055] p-5 shadow-soft-inset backdrop-blur-xl sm:p-6">
             <h2 className="text-xl font-black text-white">
               <AnimatedWidth value={t("details.overview")}>
                 <AnimatedText value={t("details.overview")} />
@@ -339,7 +338,7 @@ export function ItemDetailsPage() {
               )}
             </p>
           </section>
-          <section className="rounded-2xl border border-white/10 bg-white/[0.055] p-5 backdrop-blur-xl sm:p-6">
+          <section className="panel-top-highlight rounded-2xl border border-white/10 bg-white/[0.055] p-5 shadow-soft-inset backdrop-blur-xl sm:p-6">
             <h2 className="text-xl font-black text-white">
               <AnimatedWidth value={t("details.mediaInfo")}>
                 <AnimatedText value={t("details.mediaInfo")} />

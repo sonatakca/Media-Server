@@ -218,14 +218,14 @@ export function MediaCard({
       whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       {...motionProps}
     >
-      <div className="group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-[0_18px_60px_rgba(0,0,0,0.35)] transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-[0_22px_80px_rgba(0,0,0,0.52)] motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
+      <div className="media-card-cinematic group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-cinematic-card transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
         <Link
           to={to}
           aria-label={title}
           className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
         <div
-          className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
+          className={`artwork-edge-vignette relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
         >
           {!imageLoaded && imageUrl && !imageFailed ? (
             <div className="shimmer absolute inset-0" />
@@ -249,13 +249,13 @@ export function MediaCard({
           <div className="absolute inset-0 transition group-hover:opacity-100" />
         </div>
 
-        <div className="relative z-20 flex min-h-[5.9rem] flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-[0_-18px_45px_rgba(0,0,0,0.45)] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]">
+        <div className="panel-top-highlight pointer-events-none relative z-20 flex min-h-[5.9rem] flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]">
           {canPlay ? (
             <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
               <Link
                 to={`/watch/${item.Id}`}
                 aria-label={`${t("common.play")} ${title}`}
-                className="pointer-events-auto absolute right-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
+                className="pointer-events-auto absolute right-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-button-glow transition duration-300 hover:scale-110 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
               >
                 <Play size={18} fill="currentColor" />
               </Link>
@@ -265,7 +265,7 @@ export function MediaCard({
                   to={`/watch/${item.Id}?start=0`}
                   aria-label={`Play ${title} from beginning`}
                   title="Play from beginning"
-                  className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-xl backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/14 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
+                  className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-player-controls backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/[0.14] focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
                 >
                   <RotateCcw size={17} />
                 </Link>

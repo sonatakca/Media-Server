@@ -284,7 +284,7 @@ function SkipSegmentButton({
             onMouseLeave={onControlsHoverEnd}
             onPointerEnter={onControlsHoverStart}
             onPointerLeave={onControlsHoverEnd}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-sm font-black text-white shadow-[0_18px_70px_rgba(0,0,0,0.58)] backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)]/70 hover:bg-[var(--accent)] hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black active:scale-[0.98] motion-reduce:hover:translate-y-0 sm:min-h-12 sm:px-5 sm:text-base"
+            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-sm font-black text-white shadow-button-glow backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)]/70 hover:bg-[var(--accent)] hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black active:scale-[0.98] motion-reduce:hover:translate-y-0 sm:min-h-12 sm:px-5 sm:text-base"
             aria-label={label}
           >
             <ChevronsRight className="h-5 w-5 shrink-0" strokeWidth={2.5} />
@@ -2205,7 +2205,7 @@ export function CustomVideoPlayer({
 
       {viewport.isPhoneViewport && viewport.isPortrait ? (
         <div className="pointer-events-none absolute inset-0 z-[65] flex items-center justify-center bg-[rgba(5,6,7,0.82)] px-6 text-center backdrop-blur-xl">
-          <div className="max-w-sm rounded-2xl border border-white/10 bg-[var(--surface)] p-5 shadow-[0_24px_110px_rgba(0,0,0,0.62)]">
+          <div className="panel-top-highlight max-w-sm rounded-2xl border border-white/10 bg-[var(--surface)] p-5 shadow-floating-panel">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]">
               <div className="relative">
                 <Smartphone size={30} />
@@ -2395,7 +2395,7 @@ export function CustomVideoPlayer({
       {displayedPartyEventMessage ? (
         <div className="pointer-events-none absolute bottom-[calc(max(1rem,env(safe-area-inset-bottom))+5.8rem)] left-[max(1rem,env(safe-area-inset-left))] z-40">
           <div
-            className={`rounded-full border-[var(--accent)]/35 bg-black/72 px-3 py-1.5 text-xs font-bold text-white/88 shadow-[0_18px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl will-change-transform ${
+            className={`rounded-full border-[var(--accent)]/35 bg-black/72 px-3 py-1.5 text-xs font-bold text-white/[0.88] shadow-player-controls backdrop-blur-xl will-change-transform ${
               isPartyEventToastLeaving
                 ? "animate-[partyToastExit_420ms_cubic-bezier(0.4,0,0.2,1)_forwards]"
                 : "animate-[partyToastEnter_520ms_cubic-bezier(0.16,1,0.3,1)_forwards]"
@@ -2403,7 +2403,7 @@ export function CustomVideoPlayer({
           >
             <div className="flex items-center gap-2">
               <span className="relative flex h-5 w-5 items-center justify-center rounded-full bg-[var(--accent)]/18 text-[var(--accent)]">
-                <span className="absolute h-2 w-2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]" />
+                <span className="absolute h-2 w-2 rounded-full bg-[var(--accent)] shadow-accent-dot" />
               </span>
 
               <span>{displayedPartyEventMessage}</span>
@@ -2434,7 +2434,7 @@ export function CustomVideoPlayer({
                 <span
                   className={`h-1.5 w-1.5 rounded-full border ${
                     partyWatch.isInGroup
-                      ? "border-white/85 hover:border-white bg-white/85 hover:bg-white shadow-[0_0_12px_var(--accent)]"
+                      ? "border-white/85 hover:border-white bg-white/85 hover:bg-white shadow-accent-dot"
                       : "border-white/85 hover:border-white bg-transparent"
                   }`}
                 />
