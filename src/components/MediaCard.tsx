@@ -185,12 +185,21 @@ export function MediaCard({
     item.Type === "Episode" ||
     item.MediaType === "Video";
   const isLandscape = variant === "landscape";
-  const sizeClass =
-    layout === "grid"
-      ? "w-full"
-      : isLandscape
-        ? "w-72 sm:w-80 lg:w-96"
-        : "w-44 sm:w-52 lg:w-60";
+  const isGrid = layout === "grid";
+
+  const sizeClass = isGrid
+    ? "w-full"
+    : isLandscape
+      ? "w-72 sm:w-80 lg:w-96"
+      : "w-44 sm:w-52 lg:w-60";
+
+  const panelClass = isGrid
+    ? "min-h-[5.9rem] transition-[transform,background-color] duration-500 group-hover:-translate-y-1.5 group-focus-within:-translate-y-1.5"
+    : "min-h-[5.9rem] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]";
+
+  const hoverMetaClass = isGrid
+    ? "max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity,transform] duration-300 group-hover:max-h-16 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:max-h-16 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+    : "translate-y-2 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100";
   const entranceDelay = Math.min(index * 0.025, 0.18);
   const motionProps = animateIn
     ? shouldReduceMotion
@@ -249,7 +258,9 @@ export function MediaCard({
           <div className="absolute inset-0 transition group-hover:opacity-100" />
         </div>
 
-        <div className="panel-top-highlight pointer-events-none relative z-20 flex min-h-[5.9rem] flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]">
+        <div
+          className={`panel-top-highlight pointer-events-none relative z-20 flex flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset ${panelClass}`}
+        >
           {canPlay ? (
             <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
               <Link
