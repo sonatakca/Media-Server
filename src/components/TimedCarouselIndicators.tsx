@@ -41,7 +41,7 @@ export function TimedCarouselIndicators({
   }
 
   const safeActiveIndex = Math.min(Math.max(activeIndex, 0), count - 1);
-  const progressKey = `${safeActiveIndex}-${progressResetKey ?? "default"}-${isPaused ? "paused" : "playing"}`;
+  const progressKey = `${safeActiveIndex}-${progressResetKey ?? "default"}`;
   const springTransition = shouldReduceMotion
     ? { duration: 0 }
     : { type: "spring" as const, stiffness: 430, damping: 34, mass: 0.75 };
@@ -113,16 +113,15 @@ export function TimedCarouselIndicators({
                 transition={softSpringTransition}
               >
                 {isActive ? (
-                  <motion.span
+                  <span
                     key={progressKey}
                     className="absolute inset-y-0 left-0 h-full w-full origin-left rounded-full bg-white/[0.92]"
-                    initial={{ scaleX: showSettledProgress ? 1 : 0 }}
-                    animate={{ scaleX: 1 }}
-                    transition={{
-                      duration: showSettledProgress
-                        ? 0
-                        : Math.max(0, durationMs / 1000),
-                      ease: "linear",
+                    style={{
+                      transform: shouldReduceMotion ? "scaleX(1)" : undefined,
+                      animation: shouldReduceMotion
+                        ? undefined
+                        : `carousel-progress-fill ${Math.max(0, durationMs)}ms linear forwards`,
+                      animationPlayState: isPaused ? "paused" : "running",
                     }}
                   />
                 ) : null}

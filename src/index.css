@@ -459,19 +459,31 @@ img {
 .shimmer {
   position: relative;
   overflow: hidden;
+  background: rgba(255, 255, 255, 0.055);
+}
+
+.shimmer::after {
+  content: "";
+  position: absolute;
+  inset: -20%;
+  transform: translateX(-160%);
   background: linear-gradient(
     110deg,
-    rgba(255, 255, 255, 0.055),
-    var(--accent-soft),
-    rgba(255, 255, 255, 0.055)
+    transparent 0%,
+    rgba(255, 255, 255, 0.02) 28%,
+    var(--accent-soft) 55%,
+    rgba(255, 255, 255, 0.02) 72%,
+    transparent 100%
   );
-  background-size: 220% 100%;
-  animation: shimmer 1.35s linear infinite;
+  filter: blur(10px);
+  opacity: 1;
+  animation: shimmer 1.5s linear infinite;
+  will-change: transform;
 }
 
 @keyframes shimmer {
-  to {
-    background-position-x: -220%;
+  100% {
+    transform: translateX(160%);
   }
 }
 
@@ -574,6 +586,16 @@ img {
   100% {
     transform: perspective(700px) translateZ(0) scale(1);
     filter: blur(0);
+  }
+}
+
+@keyframes carousel-progress-fill {
+  from {
+    transform: scaleX(0);
+  }
+
+  to {
+    transform: scaleX(1);
   }
 }
 

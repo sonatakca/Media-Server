@@ -224,7 +224,6 @@ export function MediaCard({
           aria-label={title}
           className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
-
         <div
           className={`relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
         >
@@ -236,7 +235,7 @@ export function MediaCard({
               src={imageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover transition duration-500 group-hover:scale-[1.08] group-focus-within:scale-[1.08] ${
+              className={`h-full w-full object-cover transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-hover:blur-[0.75px] group-focus-within:scale-[1.08] group-focus-within:blur-[1.5px] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
               onLoad={() => setImageLoaded(true)}
@@ -247,14 +246,16 @@ export function MediaCard({
               {title}
             </div>
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-transparent opacity-65 transition group-hover:opacity-90 group-focus-within:opacity-90" />
+          <div className="absolute inset-0 transition group-hover:opacity-100" />
+        </div>
 
+        <div className="relative z-20 flex min-h-[5.9rem] flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-[0_-18px_45px_rgba(0,0,0,0.45)] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]">
           {canPlay ? (
-            <>
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
               <Link
                 to={`/watch/${item.Id}`}
                 aria-label={`${t("common.play")} ${title}`}
-                className="absolute bottom-3 right-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                className="pointer-events-auto absolute right-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 opacity-0 shadow-xl transition duration-300 hover:scale-110 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
               >
                 <Play size={18} fill="currentColor" />
               </Link>
@@ -264,25 +265,21 @@ export function MediaCard({
                   to={`/watch/${item.Id}?start=0`}
                   aria-label={`Play ${title} from beginning`}
                   title="Play from beginning"
-                  className="absolute bottom-3 left-3 z-20 flex h-10 w-10 translate-y-2 items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-xl backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/14 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+                  className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-xl backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/14 focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
                 >
                   <RotateCcw size={17} />
                 </Link>
               ) : null}
-            </>
+            </div>
           ) : null}
-
           {progressPercent !== null ? (
-            <div className="absolute inset-x-0 bottom-0 h-1.5 bg-white/[0.18]">
+            <div className="absolute inset-x-0 top-0 h-1.5 bg-white/[0.18]">
               <div
                 className="h-full bg-[var(--accent)]"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
           ) : null}
-        </div>
-
-        <div className="flex min-h-[5.9rem] flex-1 flex-col p-3.5">
           <div className="flex flex-1 items-center">
             {logoUrl ? (
               <img
@@ -323,6 +320,34 @@ export function MediaCard({
                 aria-hidden={true}
               />
             )}
+            <div className="mt-2 flex translate-y-2 flex-wrap gap-1.5 text-[0.68rem] font-semibold text-white/75 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
+              {item.ProductionYear ? (
+                <span className="rounded-full bg-white/10 px-2 py-0.5">
+                  {item.ProductionYear}
+                </span>
+              ) : null}
+
+              {item.OfficialRating ? (
+                <span className="rounded-full bg-white/10 px-2 py-0.5">
+                  {item.OfficialRating}
+                </span>
+              ) : null}
+
+              {item.RunTimeTicks ? (
+                <span className="rounded-full bg-white/10 px-2 py-0.5">
+                  {Math.round(item.RunTimeTicks / 600000000)} dk
+                </span>
+              ) : null}
+
+              {item.Genres?.slice(0, 2).map((genre) => (
+                <span
+                  key={genre}
+                  className="rounded-full bg-white/10 px-2 py-0.5"
+                >
+                  {genre}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>

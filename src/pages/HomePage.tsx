@@ -223,7 +223,9 @@ export function HomePage() {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
   }
 
-  if (!data) {
+  const debugSkeleton = false;
+
+  if (!data || debugSkeleton) {
     return <HomeSkeleton />;
   }
 

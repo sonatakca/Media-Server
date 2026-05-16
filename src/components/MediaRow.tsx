@@ -134,34 +134,24 @@ export function MediaRow({
               </div>
             ))}
           </div>
-          <div
-            className={`pointer-events-none absolute bottom-6 left-0 top-2 z-10 hidden w-14 bg-gradient-to-r from-[rgba(5,6,7,0.82)] to-transparent transition-opacity duration-200 lg:block ${
-              canScrollLeft ? "opacity-100" : "opacity-0"
-            }`}
-          />
-          <div
-            className={`pointer-events-none absolute bottom-6 right-0 top-2 z-10 hidden w-14 bg-gradient-to-l from-[rgba(5,6,7,0.82)] to-transparent transition-opacity duration-200 lg:block ${
-              canScrollRight ? "opacity-100" : "opacity-0"
-            }`}
-          />
           {canScrollLeft ? (
             <button
               type="button"
               onClick={() => scrollByCards("left")}
-              className="absolute left-3 top-[calc(50%-0.75rem)] z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/[0.58] text-white opacity-0 shadow-2xl backdrop-blur-xl transition hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
+              className="absolute left-3 top-[calc(50%-0.75rem)] z-20 hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/50 text-white opacity-0 shadow-2xl backdrop-blur-xl transition-opacity duration-[400ms] hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
               aria-label={formatTemplate(t("common.scrollLeft"), { title })}
             >
-              <ChevronLeft size={22} />
+              <ChevronLeft size={30} />
             </button>
           ) : null}
           {canScrollRight ? (
             <button
               type="button"
               onClick={() => scrollByCards("right")}
-              className="absolute right-3 top-[calc(50%-0.75rem)] z-20 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-black/[0.58] text-white opacity-0 shadow-2xl backdrop-blur-xl transition hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
+              className="absolute right-3 top-[calc(50%-0.75rem)] z-20 hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/50 text-white opacity-0 shadow-2xl backdrop-blur-xl transition-opacity duratiion-[400ms] hover:bg-white/[0.14] focus:opacity-100 focus:outline-none focus:ring-0 focus:ring-[var(--accent)] group-hover/viewport:opacity-100 lg:flex"
               aria-label={formatTemplate(t("common.scrollRight"), { title })}
             >
-              <ChevronRight size={22} />
+              <ChevronRight size={30} />
             </button>
           ) : null}
         </div>
