@@ -79,6 +79,13 @@ interface PendingSourceRestore {
   wasPlaying: boolean;
 }
 
+interface PendingAudioTranscodePlay {
+  token: number;
+  reason: string;
+  wasPlaying: boolean;
+  startedAt: number;
+}
+
 interface SubtitlePosition {
   x: number;
   y: number;
@@ -208,10 +215,49 @@ type VideoElementWithAudioTracks = HTMLVideoElement & {
   audioTracks?: NativeAudioTrackList;
 };
 
-function isDirectBrowserPlaybackSource(source: PlaybackSourceCandidate): boolean {
+function isDirectBrowserPlaybackSource(
+  source: PlaybackSourceCandidate,
+): boolean {
   return (
     !source.isHls &&
     (source.mode === "DirectPlay" || source.mode === "DirectStream")
+  );
+}
+
+function isAudioTranscodeSource(source: PlaybackSourceCandidate): boolean {
+  return source.isHls && source.hlsKind === "audio-transcode";
+}
+
+function hasUsefulBufferedRangeAroundCurrentTime(
+  video: HTMLVideoElement,
+  minAheadSeconds = 1.2,
+): boolean {
+  const currentTime = Number.isFinite(video.currentTime)
+    ? video.currentTime
+    : 0;
+
+  for (let index = 0; index < video.buffered.length; index += 1) {
+    const start = video.buffered.start(index);
+    const end = video.buffered.end(index);
+
+    if (
+      currentTime >= start - 0.25 &&
+      currentTime <= end &&
+      end - currentTime >= minAheadSeconds
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function isVideoReadyForAudioTranscodePlayback(
+  video: HTMLVideoElement,
+): boolean {
+  return (
+    video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
+    hasUsefulBufferedRangeAroundCurrentTime(video, 1.2)
   );
 }
 
@@ -285,12 +331,7 @@ function normalizeLanguage(value?: string): string {
 }
 
 function getStreamMatchText(stream: JellyfinMediaStream): string {
-  return [
-    stream.Language,
-    stream.DisplayTitle,
-    stream.Title,
-    stream.Codec,
-  ]
+  return [stream.Language, stream.DisplayTitle, stream.Title, stream.Codec]
     .map(normalizeMatchText)
     .filter(Boolean)
     .join(" ");
@@ -485,7 +526,9 @@ function getPlaybackUrlDebugParams(playbackUrl: string) {
       AllowVideoStreamCopy: getParam("AllowVideoStreamCopy"),
       AllowAudioStreamCopy: getParam("AllowAudioStreamCopy"),
       EnableAutoStreamCopy: getParam("EnableAutoStreamCopy"),
-      EnableAdaptiveBitrateStreaming: getParam("EnableAdaptiveBitrateStreaming"),
+      EnableAdaptiveBitrateStreaming: getParam(
+        "EnableAdaptiveBitrateStreaming",
+      ),
       AudioStreamIndex: getParam("AudioStreamIndex"),
       MaxHeight: getParam("MaxHeight"),
       MaxStreamingBitrate: getParam("MaxStreamingBitrate"),
@@ -521,7 +564,9 @@ function getPlaybackUrlDebugParams(playbackUrl: string) {
 function isMasterHlsPlaybackUrl(playbackUrl: string): boolean {
   try {
     const baseUrl =
-      typeof window === "undefined" ? "http://localhost" : window.location.origin;
+      typeof window === "undefined"
+        ? "http://localhost"
+        : window.location.origin;
     const url = new URL(playbackUrl, baseUrl);
 
     return url.pathname.toLowerCase().includes("/master.m3u8");
@@ -575,6 +620,17 @@ function canInjectDefaultAudioIntoStreamCopy(
     source.isHls &&
     source.hlsKind === "stream-copy" &&
     source.mode !== "Transcoding"
+  );
+}
+
+function didUserSelectNonDefaultAudio(
+  selectedAudioStreamIndex: number | undefined,
+  defaultAudioStreamIndex: number | undefined,
+): boolean {
+  return (
+    selectedAudioStreamIndex !== undefined &&
+    defaultAudioStreamIndex !== undefined &&
+    selectedAudioStreamIndex !== defaultAudioStreamIndex
   );
 }
 
@@ -846,6 +902,10 @@ export function CustomVideoPlayer({
   const hasAppliedInitialStartRef = useRef(false);
   const sourceSwitchTokenRef = useRef(0);
   const pendingSourceRestoreRef = useRef<PendingSourceRestore | null>(null);
+  const pendingAudioTranscodePlayRef = useRef<PendingAudioTranscodePlay | null>(
+    null,
+  );
+  const audioTranscodeReadinessTimerRef = useRef<number | null>(null);
   const subtitleOverlayRef = useRef<HTMLDivElement | null>(null);
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
@@ -957,6 +1017,13 @@ export function CustomVideoPlayer({
     [onPlaybackBeforeUnload, onPlaybackStopped, updateLatestPlaybackPosition],
   );
 
+  const clearAudioTranscodeReadinessTimer = useCallback(() => {
+    if (audioTranscodeReadinessTimerRef.current !== null) {
+      window.clearTimeout(audioTranscodeReadinessTimerRef.current);
+      audioTranscodeReadinessTimerRef.current = null;
+    }
+  }, []);
+
   useEffect(() => {
     if (
       dismissedSkipSegmentId &&
@@ -1007,6 +1074,8 @@ export function CustomVideoPlayer({
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
     useState<number>(() => getDefaultSubtitleStreamIndex(source));
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
+  const [isWaitingForAudioTranscodeReady, setIsWaitingForAudioTranscodeReady] =
+    useState(false);
   const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<
     string[]
   >([]);
@@ -1031,9 +1100,9 @@ export function CustomVideoPlayer({
   );
   const canSwitchAudio = Boolean(
     audioStreams.some((stream) => stream.Index !== undefined) &&
-      (isDirectBrowserPlaybackSource(activeSource) ||
-        activeSource.mediaSource.SupportsTranscoding ||
-        activeSource.mode === "Transcoding"),
+    (isDirectBrowserPlaybackSource(activeSource) ||
+      activeSource.mediaSource.SupportsTranscoding ||
+      activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
 
@@ -1640,6 +1709,9 @@ export function CustomVideoPlayer({
         currentTime,
         wasPlaying,
       };
+      pendingAudioTranscodePlayRef.current = null;
+      clearAudioTranscodeReadinessTimer();
+      setIsWaitingForAudioTranscodeReady(false);
 
       setLastVideoError(null);
       showControls();
@@ -1666,6 +1738,7 @@ export function CustomVideoPlayer({
     },
     [
       activeSource,
+      clearAudioTranscodeReadinessTimer,
       progress.currentTime,
       progress.isPlaying,
       showControls,
@@ -1806,7 +1879,7 @@ export function CustomVideoPlayer({
 
         if (
           syncResult.reason === "native-audio-tracks-unavailable" &&
-          streamIndex === defaultAudioIndex
+          !didUserSelectNonDefaultAudio(streamIndex, defaultAudioIndex)
         ) {
           setSelectedAudioStreamIndex(streamIndex);
           setActiveAudioStreamIndex(streamIndex);
@@ -1830,7 +1903,9 @@ export function CustomVideoPlayer({
         );
         setActiveAudioStreamIndex(currentNativeStreamIndex);
 
-        if (!getAudioFallbackSource(activeSource, availablePlaybackCandidates)) {
+        if (
+          !getAudioFallbackSource(activeSource, availablePlaybackCandidates)
+        ) {
           console.warn(
             "[Seyirlik Playback] Native audio switching failed and HLS fallback is unavailable",
             syncResult,
@@ -2059,6 +2134,191 @@ export function CustomVideoPlayer({
       }
     };
 
+    const requestPlayWhenAudioTranscodeReady = (
+      reason: string,
+      wasPlaying = true,
+    ) => {
+      if (!isAudioTranscodeSource(sourceToAttach)) {
+        if (wasPlaying) {
+          void video.play().catch((playError: unknown) => {
+            console.info(
+              "[Seyirlik Playback] Playback was blocked or deferred",
+              playError,
+            );
+          });
+        }
+        return;
+      }
+
+      const token = sourceSwitchTokenRef.current;
+      const existingPending = pendingAudioTranscodePlayRef.current;
+
+      pendingAudioTranscodePlayRef.current =
+        existingPending &&
+        existingPending.token === token &&
+        existingPending.reason === reason
+          ? { ...existingPending, wasPlaying }
+          : {
+              token,
+              reason,
+              wasPlaying,
+              startedAt: Date.now(),
+            };
+      setIsWaitingForAudioTranscodeReady(wasPlaying);
+
+      const tryStart = () => {
+        const pending = pendingAudioTranscodePlayRef.current;
+
+        if (
+          isDisposed ||
+          !pending ||
+          pending.token !== token ||
+          pending.token !== sourceSwitchTokenRef.current
+        ) {
+          return;
+        }
+
+        if (!pending.wasPlaying) {
+          pendingAudioTranscodePlayRef.current = null;
+          clearAudioTranscodeReadinessTimer();
+          setIsWaitingForAudioTranscodeReady(false);
+          video.pause();
+          return;
+        }
+
+        if (Date.now() - pending.startedAt > 7000) {
+          pendingAudioTranscodePlayRef.current = null;
+          clearAudioTranscodeReadinessTimer();
+          setIsWaitingForAudioTranscodeReady(false);
+          console.warn(
+            "[Seyirlik Playback] Audio-transcode readiness wait timed out; starting anyway",
+            {
+              reason: pending.reason,
+              readyState: video.readyState,
+              currentTime: video.currentTime,
+              buffered: Array.from(
+                { length: video.buffered.length },
+                (_, index) => ({
+                  start: video.buffered.start(index),
+                  end: video.buffered.end(index),
+                }),
+              ),
+              source: {
+                mode: sourceToAttach.mode,
+                hlsKind: sourceToAttach.hlsKind,
+                url: redactPlaybackUrl(sourceToAttach.url),
+              },
+            },
+          );
+          void video.play().catch((playError: unknown) => {
+            console.info(
+              "[Seyirlik Playback] Audio-transcode playback was blocked or deferred",
+              playError,
+            );
+          });
+          return;
+        }
+
+        if (!isVideoReadyForAudioTranscodePlayback(video)) {
+          clearAudioTranscodeReadinessTimer();
+
+          audioTranscodeReadinessTimerRef.current = window.setTimeout(() => {
+            tryStart();
+          }, 120);
+
+          return;
+        }
+
+        pendingAudioTranscodePlayRef.current = null;
+        clearAudioTranscodeReadinessTimer();
+        setIsWaitingForAudioTranscodeReady(false);
+
+        console.info(
+          "[Seyirlik Playback] Audio-transcode HLS is ready; starting playback",
+          {
+            reason: pending.reason,
+            readyState: video.readyState,
+            currentTime: video.currentTime,
+            buffered: Array.from(
+              { length: video.buffered.length },
+              (_, index) => ({
+                start: video.buffered.start(index),
+                end: video.buffered.end(index),
+              }),
+            ),
+            source: {
+              mode: sourceToAttach.mode,
+              hlsKind: sourceToAttach.hlsKind,
+              url: redactPlaybackUrl(sourceToAttach.url),
+            },
+          },
+        );
+
+        void video.play().catch((playError: unknown) => {
+          console.info(
+            "[Seyirlik Playback] Audio-transcode playback was blocked or deferred",
+            playError,
+          );
+        });
+      };
+
+      clearAudioTranscodeReadinessTimer();
+      tryStart();
+    };
+
+    const retryPendingAudioTranscodePlay = () => {
+      const pending = pendingAudioTranscodePlayRef.current;
+
+      if (!pending || pending.token !== sourceSwitchTokenRef.current) {
+        return;
+      }
+
+      requestPlayWhenAudioTranscodeReady(pending.reason, pending.wasPlaying);
+    };
+
+    let wasPlayingBeforeAudioTranscodeSeek = false;
+
+    const handleAudioTranscodeSeeking = () => {
+      if (!isAudioTranscodeSource(sourceToAttach)) {
+        return;
+      }
+
+      wasPlayingBeforeAudioTranscodeSeek = !video.paused && !video.ended;
+
+      if (wasPlayingBeforeAudioTranscodeSeek) {
+        video.pause();
+      }
+
+      pendingAudioTranscodePlayRef.current = {
+        token: sourceSwitchTokenRef.current,
+        reason: "seek-audio-transcode-buffering",
+        wasPlaying: wasPlayingBeforeAudioTranscodeSeek,
+        startedAt: Date.now(),
+      };
+      setIsWaitingForAudioTranscodeReady(wasPlayingBeforeAudioTranscodeSeek);
+
+      console.info(
+        "[Seyirlik Playback] Waiting for audio-transcode HLS after seek",
+        {
+          currentTime: video.currentTime,
+          wasPlayingBeforeSeek: wasPlayingBeforeAudioTranscodeSeek,
+          readyState: video.readyState,
+          bufferedLength: video.buffered.length,
+        },
+      );
+    };
+
+    const handleAudioTranscodeSeeked = () => {
+      if (!isAudioTranscodeSource(sourceToAttach)) {
+        return;
+      }
+
+      requestPlayWhenAudioTranscodeReady(
+        "seeked-audio-transcode-buffering",
+        wasPlayingBeforeAudioTranscodeSeek,
+      );
+    };
+
     const restorePlayback = () => {
       if (
         !pendingRestore ||
@@ -2085,18 +2345,20 @@ export function CustomVideoPlayer({
         );
       }
 
+      pendingSourceRestoreRef.current = null;
+
       if (pendingRestore.wasPlaying) {
-        void video.play().catch((playError: unknown) => {
-          console.info(
-            "[Seyirlik Playback] Playback resume was blocked or deferred",
-            playError,
-          );
-        });
+        requestPlayWhenAudioTranscodeReady(
+          "restore-playback-after-source-switch",
+          true,
+        );
       } else {
+        pendingAudioTranscodePlayRef.current = null;
+        clearAudioTranscodeReadinessTimer();
+        setIsWaitingForAudioTranscodeReady(false);
         video.pause();
       }
 
-      pendingSourceRestoreRef.current = null;
       refreshProgress();
     };
 
@@ -2212,6 +2474,40 @@ export function CustomVideoPlayer({
         return;
       }
 
+      const defaultAudioIndex = getDefaultAudioStreamIndex(sourceToAttach);
+      const userNeedsDifferentAudio = didUserSelectNonDefaultAudio(
+        selectedAudioIndexForSource,
+        defaultAudioIndex,
+      );
+      const nativeAudioControlUnavailable =
+        syncResult.reason === "native-audio-tracks-unavailable" ||
+        syncResult.reason === "native-track-match-not-found";
+
+      if (!userNeedsDifferentAudio && nativeAudioControlUnavailable) {
+        setActiveAudioStreamIndex(
+          defaultAudioIndex ?? selectedAudioIndexForSource,
+        );
+        console.info(
+          "[Seyirlik Playback] Preserving DirectPlay because native audioTracks are unavailable and the default audio should already be selected by the media element",
+          {
+            reason: syncResult.reason,
+            eventName,
+            sourceMode: sourceToAttach.mode,
+            hlsKind: sourceToAttach.hlsKind,
+            selectedAudioStreamIndex: selectedAudioIndexForSource,
+            defaultAudioStreamIndex: defaultAudioIndex,
+            audioStreamCount,
+            nativeAudioTracks: getNativeAudioTrackSnapshot(video),
+          },
+        );
+        return;
+      }
+
+      if (userNeedsDifferentAudio) {
+        requestHlsAudioFallback(syncResult.reason);
+        return;
+      }
+
       console.info(
         "[Seyirlik Playback] Keeping direct playback; native audioTracks unavailable is not a playback failure",
         {
@@ -2220,7 +2516,7 @@ export function CustomVideoPlayer({
           sourceMode: sourceToAttach.mode,
           hlsKind: sourceToAttach.hlsKind,
           selectedAudioStreamIndex: selectedAudioIndexForSource,
-          defaultAudioStreamIndex: getDefaultAudioStreamIndex(sourceToAttach),
+          defaultAudioStreamIndex: defaultAudioIndex,
           audioStreamCount,
           nativeAudioTracks: getNativeAudioTrackSnapshot(video),
         },
@@ -2246,6 +2542,13 @@ export function CustomVideoPlayer({
     };
 
     const markStartupPlaybackSignal = () => {
+      if (
+        isAudioTranscodeSource(sourceToAttach) &&
+        !isVideoReadyForAudioTranscodePlayback(video)
+      ) {
+        return;
+      }
+
       hasStartupPlaybackSignal = true;
       clearStartupWatchdog();
     };
@@ -2264,11 +2567,29 @@ export function CustomVideoPlayer({
       clearStartupWatchdog();
 
       startupWatchdogTimer = window.setTimeout(() => {
+        if (isDisposed || hasStartupPlaybackSignal || video.currentTime > 0) {
+          return;
+        }
+
         if (
-          isDisposed ||
-          hasStartupPlaybackSignal ||
-          video.currentTime > 0
+          isAudioTranscodeSource(sourceToAttach) &&
+          pendingAudioTranscodePlayRef.current
         ) {
+          console.info(
+            "[Seyirlik Playback] Startup watchdog extended while waiting for audio-transcode readiness",
+            {
+              readyState: video.readyState,
+              currentTime: video.currentTime,
+              bufferedLength: video.buffered.length,
+              source: {
+                mode: sourceToAttach.mode,
+                hlsKind: sourceToAttach.hlsKind,
+                url: redactPlaybackUrl(sourceToAttach.url),
+              },
+            },
+          );
+
+          startStartupWatchdog();
           return;
         }
 
@@ -2351,6 +2672,14 @@ export function CustomVideoPlayer({
       video.addEventListener("loadeddata", handleLoadedDataAudio);
       video.addEventListener("canplay", handleCanPlayAudio);
       video.addEventListener("durationchange", handleDurationChangeAudio);
+      video.addEventListener("loadedmetadata", retryPendingAudioTranscodePlay);
+      video.addEventListener("loadeddata", retryPendingAudioTranscodePlay);
+      video.addEventListener("canplay", retryPendingAudioTranscodePlay);
+      video.addEventListener("canplaythrough", retryPendingAudioTranscodePlay);
+      video.addEventListener("progress", retryPendingAudioTranscodePlay);
+      video.addEventListener("durationchange", retryPendingAudioTranscodePlay);
+      video.addEventListener("seeking", handleAudioTranscodeSeeking);
+      video.addEventListener("seeked", handleAudioTranscodeSeeked);
       video.addEventListener("loadeddata", markStartupPlaybackSignal);
       video.addEventListener("canplay", markStartupPlaybackSignal);
       video.addEventListener("playing", markStartupPlaybackSignal);
@@ -2360,12 +2689,7 @@ export function CustomVideoPlayer({
       video.load();
       startStartupWatchdog();
       if (!pendingRestore && !partyWatch.shouldDeferAutoplay) {
-        void video.play().catch((playError: unknown) => {
-          console.info(
-            "[Seyirlik Playback] Autoplay was blocked or deferred",
-            playError,
-          );
-        });
+        requestPlayWhenAudioTranscodeReady("initial-autoplay", true);
       }
     } catch (attachError) {
       onVideoFailure(
@@ -2378,6 +2702,9 @@ export function CustomVideoPlayer({
     return () => {
       isDisposed = true;
       clearStartupWatchdog();
+      pendingAudioTranscodePlayRef.current = null;
+      clearAudioTranscodeReadinessTimer();
+      setIsWaitingForAudioTranscodeReady(false);
       video.removeEventListener("loadedmetadata", applyInitialStartPosition);
       video.removeEventListener("canplay", applyInitialStartPosition);
       video.removeEventListener("loadedmetadata", restorePlayback);
@@ -2386,6 +2713,23 @@ export function CustomVideoPlayer({
       video.removeEventListener("loadeddata", handleLoadedDataAudio);
       video.removeEventListener("canplay", handleCanPlayAudio);
       video.removeEventListener("durationchange", handleDurationChangeAudio);
+      video.removeEventListener(
+        "loadedmetadata",
+        retryPendingAudioTranscodePlay,
+      );
+      video.removeEventListener("loadeddata", retryPendingAudioTranscodePlay);
+      video.removeEventListener("canplay", retryPendingAudioTranscodePlay);
+      video.removeEventListener(
+        "canplaythrough",
+        retryPendingAudioTranscodePlay,
+      );
+      video.removeEventListener("progress", retryPendingAudioTranscodePlay);
+      video.removeEventListener(
+        "durationchange",
+        retryPendingAudioTranscodePlay,
+      );
+      video.removeEventListener("seeking", handleAudioTranscodeSeeking);
+      video.removeEventListener("seeked", handleAudioTranscodeSeeked);
       video.removeEventListener("loadeddata", markStartupPlaybackSignal);
       video.removeEventListener("canplay", markStartupPlaybackSignal);
       video.removeEventListener("playing", markStartupPlaybackSignal);
@@ -2407,8 +2751,12 @@ export function CustomVideoPlayer({
     };
   }, [
     activeSource.id,
+    activeSource.hlsKind,
+    activeSource.isHls,
     activeSource.mimeType,
+    activeSource.mode,
     activeSource.url,
+    clearAudioTranscodeReadinessTimer,
     initialStartSeconds,
     onVideoFailure,
     partyWatch.shouldDeferAutoplay,
@@ -2425,9 +2773,14 @@ export function CustomVideoPlayer({
         singleTapTimerRef.current = null;
       }
 
+      pendingAudioTranscodePlayRef.current = null;
+      clearAudioTranscodeReadinessTimer();
+      setIsWaitingForAudioTranscodeReady(false);
+
       reportStoppedOnce(false);
     };
   }, [
+    clearAudioTranscodeReadinessTimer,
     clearFullscreenSeekPreviewFallbackTimer,
     clearSeekFeedbackTimers,
     reportStoppedOnce,
@@ -3116,7 +3469,7 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {progress.isBuffering && !error ? (
+      {(progress.isBuffering || isWaitingForAudioTranscodeReady) && !error ? (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
           <div className="rounded-full bg-black/50 p-4 backdrop-blur">
             <Loader2 className="h-10 w-10 animate-spin text-[var(--accent)]" />

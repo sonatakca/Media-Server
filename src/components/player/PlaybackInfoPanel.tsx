@@ -52,7 +52,18 @@ function Chip({ children }: { children: string }) {
 function getUrlType(source: PlaybackSourceCandidate): string {
   const url = source.url.toLowerCase();
 
-  if (source.hlsKind === "direct") return "Direct stream URL";
+  if (source.hlsKind === "direct" || url.includes("/stream.")) {
+    return "Direct stream URL";
+  }
+
+  if (url.includes("/master.m3u8") && source.hlsKind === "audio-transcode") {
+    return "master.m3u8 audio-transcode";
+  }
+
+  if (url.includes("/master.m3u8") && source.hlsKind === "stream-copy") {
+    return "master.m3u8 stream-copy";
+  }
+
   if (url.includes("/master.m3u8")) return "master.m3u8 HLS";
   if (url.includes("/main.m3u8")) return "main.m3u8 forced transcode";
   if (source.hlsKind === "jellyfin-transcoding-url") {
@@ -70,6 +81,10 @@ function getOutputVideoLabel(
 
   if (source.hlsKind === "forced-transcode") {
     return "H.264";
+  }
+
+  if (source.hlsKind === "audio-transcode") {
+    return "Stream copy / original codec";
   }
 
   if (source.hlsKind === "jellyfin-transcoding-url") {
@@ -96,6 +111,10 @@ function getOutputAudioLabel(
   void t;
 
   if (source.hlsKind === "forced-transcode") {
+    return "AAC";
+  }
+
+  if (source.hlsKind === "audio-transcode") {
     return "AAC";
   }
 

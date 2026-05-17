@@ -269,6 +269,7 @@ export interface PlaybackSourceCandidate {
   isHls: boolean;
   hlsKind?:
     | "stream-copy"
+    | "audio-transcode"
     | "forced-transcode"
     | "jellyfin-transcoding-url"
     | "direct";
