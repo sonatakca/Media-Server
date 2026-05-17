@@ -464,6 +464,7 @@ export function PlaybackAuditPage() {
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [modeFilter, setModeFilter] = useState<"all" | PlaybackMode>("all");
+  const [skipTranscodeReasonWait, setSkipTranscodeReasonWait] = useState(true);
 
   useEffect(() => {
     setPageTitle("Playback Audit · Seyirlik");
@@ -541,7 +542,7 @@ export function PlaybackAuditPage() {
           const selectedSource = candidates[0] ?? null;
 
           const activeReasons =
-            selectedSource?.mode === "Transcoding"
+            selectedSource?.mode === "Transcoding" && !skipTranscodeReasonWait
               ? await probeTranscodingReasons(selectedSource)
               : [];
 
@@ -622,8 +623,9 @@ export function PlaybackAuditPage() {
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-white/62">
               Scans Jellyfin video items with PlaybackInfo and documents the
-              selected mode, source media, and transcoding reasons without
-              opening every video manually.
+              selected mode and source media. Fast scan only marks whether an
+              item transcodes; turning Fast scan off waits for detailed
+              transcoding reasons.
             </p>
             {savedAtLabel ? (
               <p className="mt-2 text-xs font-semibold text-white/42">
@@ -633,6 +635,19 @@ export function PlaybackAuditPage() {
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <label className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-full border border-white/10 bg-white/10 px-5 text-sm font-black text-white/78 transition hover:bg-white/15 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-55">
+              <input
+                type="checkbox"
+                checked={skipTranscodeReasonWait}
+                onChange={(event) =>
+                  setSkipTranscodeReasonWait(event.target.checked)
+                }
+                disabled={isRunning}
+                className="h-4 w-4 accent-[var(--accent)]"
+              />
+              Fast scan
+            </label>
+
             <button
               type="button"
               onClick={runAudit}
@@ -720,7 +735,7 @@ export function PlaybackAuditPage() {
               <span>
                 {status === "loading-items"
                   ? "Loading video items..."
-                  : `Processed ${processedItems} / ${totalItems}`}
+                  : `Processed ${processedItems} / ${totalItems}${skipTranscodeReasonWait ? " · fast scan" : " · waiting for reasons"}`}
               </span>
               <span>
                 {totalItems > 0
@@ -900,6 +915,10 @@ export function PlaybackAuditPage() {
                               </p>
                             ))}
                           </div>
+                        ) : row.selectedMode === "Transcoding" ? (
+                          <span className="rounded-xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100/70">
+                            Transcoding detected · reasons skipped
+                          </span>
                         ) : (
                           <span className="text-xs text-white/25">—</span>
                         )}
