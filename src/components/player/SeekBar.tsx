@@ -103,7 +103,12 @@ export function SeekBar({
   } | null>(null);
 
   const [isSeeking, setIsSeeking] = useState(false);
-  const [isTrickplayImageBroken, setIsTrickplayImageBroken] = useState(false);
+  const [loadedTrickplayImageUrl, setLoadedTrickplayImageUrl] = useState<
+    string | null
+  >(null);
+  const [brokenTrickplayImageUrls, setBrokenTrickplayImageUrls] = useState<
+    Set<string>
+  >(() => new Set());
 
   const [hoverPreview, setHoverPreview] = useState<HoverPreviewState>({
     isVisible: false,
@@ -171,6 +176,12 @@ export function SeekBar({
     mediaSourceId,
   ]);
 
+  const hasUsableTrickplayImage = Boolean(
+    trickplay?.imageUrl &&
+    loadedTrickplayImageUrl === trickplay.imageUrl &&
+    !brokenTrickplayImageUrls.has(trickplay.imageUrl),
+  );
+
   const updateHoverPreview = (event: MouseEvent<HTMLDivElement>) => {
     const nextHoverPreview = getPointerSeekState(event.clientX);
 
@@ -178,7 +189,6 @@ export function SeekBar({
       return;
     }
 
-    setIsTrickplayImageBroken(false);
     setHoverPreview(nextHoverPreview);
   };
 
@@ -201,7 +211,6 @@ export function SeekBar({
     pointerDownSeekStateRef.current = nextSeekState;
 
     setIsSeeking(true);
-    setIsTrickplayImageBroken(false);
     setHoverPreview(nextSeekState);
     onSeekPreview?.(nextSeekState.displaySeconds);
   };
@@ -336,38 +345,67 @@ export function SeekBar({
     >
       {hoverPreview.isVisible && duration > 0 ? (
         <div
-          className="seyirlik-trickplay-preview"
+          className={
+            hasUsableTrickplayImage
+              ? "seyirlik-trickplay-preview"
+              : "seyirlik-trickplay-preview seyirlik-trickplay-preview--timeOnly"
+          }
           style={{ left: `${previewLeftPercent}%` }}
         >
           <div className="seyirlik-trickplay-preview__imageWrap">
-            {trickplay?.imageUrl && !isTrickplayImageBroken ? (
-              <div
-                className="seyirlik-trickplay-preview__image"
-                style={{
-                  width: `${TRICKPLAY_TILE_WIDTH}px`,
-                  height: `${TRICKPLAY_TILE_HEIGHT}px`,
-                  backgroundImage: `url("${trickplay.imageUrl}")`,
-                  backgroundSize: `${TRICKPLAY_TILE_WIDTH * TRICKPLAY_COLUMNS}px ${
-                    TRICKPLAY_TILE_HEIGHT * TRICKPLAY_ROWS
-                  }px`,
-                  backgroundPosition: `-${trickplay.column * TRICKPLAY_TILE_WIDTH}px -${
-                    trickplay.row * TRICKPLAY_TILE_HEIGHT
-                  }px`,
-                  backgroundRepeat: "no-repeat",
-                }}
-              >
+            {trickplay?.imageUrl ? (
+              <>
                 <img
                   src={trickplay.imageUrl}
                   alt=""
                   className="hidden"
-                  onError={() => setIsTrickplayImageBroken(true)}
+                  onLoad={() => {
+                    setLoadedTrickplayImageUrl(trickplay.imageUrl);
+                    setBrokenTrickplayImageUrls((currentUrls) => {
+                      if (!currentUrls.has(trickplay.imageUrl)) {
+                        return currentUrls;
+                      }
+
+                      const nextUrls = new Set(currentUrls);
+                      nextUrls.delete(trickplay.imageUrl);
+                      return nextUrls;
+                    });
+                  }}
+                  onError={() => {
+                    setLoadedTrickplayImageUrl((currentUrl) =>
+                      currentUrl === trickplay.imageUrl ? null : currentUrl,
+                    );
+                    setBrokenTrickplayImageUrls((currentUrls) => {
+                      if (currentUrls.has(trickplay.imageUrl)) {
+                        return currentUrls;
+                      }
+
+                      const nextUrls = new Set(currentUrls);
+                      nextUrls.add(trickplay.imageUrl);
+                      return nextUrls;
+                    });
+                  }}
                 />
-              </div>
-            ) : (
-              <div className="seyirlik-trickplay-preview__fallback">
-                {formatTime(hoverPreview.displaySeconds)}
-              </div>
-            )}
+
+                {hasUsableTrickplayImage ? (
+                  <div
+                    className="seyirlik-trickplay-preview__image"
+                    style={{
+                      width: `${TRICKPLAY_TILE_WIDTH}px`,
+                      height: `${TRICKPLAY_TILE_HEIGHT}px`,
+                      backgroundImage: `url("${trickplay.imageUrl}")`,
+                      backgroundSize: `${TRICKPLAY_TILE_WIDTH * TRICKPLAY_COLUMNS}px ${
+                        TRICKPLAY_TILE_HEIGHT * TRICKPLAY_ROWS
+                      }px`,
+                      backgroundPosition: `-${trickplay.column * TRICKPLAY_TILE_WIDTH}px -${
+                        trickplay.row * TRICKPLAY_TILE_HEIGHT
+                      }px`,
+                      backgroundRepeat: "no-repeat",
+                    }}
+                  />
+                ) : null}
+              </>
+            ) : null}
           </div>
 
           <div className="seyirlik-trickplay-preview__time">
