@@ -1802,6 +1802,28 @@ export function CustomVideoPlayer({
           return;
         }
 
+        const defaultAudioIndex = getDefaultAudioStreamIndex(activeSource);
+
+        if (
+          syncResult.reason === "native-audio-tracks-unavailable" &&
+          streamIndex === defaultAudioIndex
+        ) {
+          setSelectedAudioStreamIndex(streamIndex);
+          setActiveAudioStreamIndex(streamIndex);
+          console.info(
+            "[Seyirlik Playback] Native audioTracks unavailable for default track; keeping direct playback.",
+            {
+              sourceMode: activeSource.mode,
+              hlsKind: activeSource.hlsKind,
+              selectedAudioStreamIndex: streamIndex,
+              defaultAudioStreamIndex: defaultAudioIndex,
+              nativeAudioTracks: getNativeAudioTrackSnapshot(video),
+            },
+          );
+          showControls();
+          return;
+        }
+
         const currentNativeStreamIndex = getNativeActiveAudioStreamIndex(
           video,
           activeSource,
@@ -2174,7 +2196,9 @@ export function CustomVideoPlayer({
         ? selectedAudioIndexForSource
         : getNativeActiveAudioStreamIndex(video, sourceToAttach);
 
-      setActiveAudioStreamIndex(currentNativeStreamIndex);
+      setActiveAudioStreamIndex(
+        currentNativeStreamIndex ?? selectedAudioIndexForSource,
+      );
 
       logAudioSourceDebug(
         `Native audio sync (${eventName})`,
@@ -2188,11 +2212,19 @@ export function CustomVideoPlayer({
         return;
       }
 
-      if (eventName === "source-attached") {
-        return;
-      }
-
-      requestHlsAudioFallback(syncResult.reason);
+      console.info(
+        "[Seyirlik Playback] Keeping direct playback; native audioTracks unavailable is not a playback failure",
+        {
+          reason: syncResult.reason,
+          eventName,
+          sourceMode: sourceToAttach.mode,
+          hlsKind: sourceToAttach.hlsKind,
+          selectedAudioStreamIndex: selectedAudioIndexForSource,
+          defaultAudioStreamIndex: getDefaultAudioStreamIndex(sourceToAttach),
+          audioStreamCount,
+          nativeAudioTracks: getNativeAudioTrackSnapshot(video),
+        },
+      );
     };
 
     const handleLoadedMetadataAudio = () =>

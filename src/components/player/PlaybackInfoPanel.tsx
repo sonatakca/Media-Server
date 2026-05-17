@@ -49,6 +49,73 @@ function Chip({ children }: { children: string }) {
   );
 }
 
+function getUrlType(source: PlaybackSourceCandidate): string {
+  const url = source.url.toLowerCase();
+
+  if (source.hlsKind === "direct") return "Direct stream URL";
+  if (url.includes("/master.m3u8")) return "master.m3u8 HLS";
+  if (url.includes("/main.m3u8")) return "main.m3u8 forced transcode";
+  if (source.hlsKind === "jellyfin-transcoding-url") {
+    return "Jellyfin returned TranscodingUrl";
+  }
+
+  return "Unknown";
+}
+
+function getOutputVideoLabel(
+  source: PlaybackSourceCandidate,
+  t: unknown,
+): string {
+  void t;
+
+  if (source.hlsKind === "forced-transcode") {
+    return "H.264";
+  }
+
+  if (source.hlsKind === "jellyfin-transcoding-url") {
+    return "Jellyfin returned transcoding URL; output depends on server decision";
+  }
+
+  if (source.hlsKind === "stream-copy") {
+    return "Stream copy / original codec";
+  }
+
+  if (source.hlsKind === "direct") {
+    return "Direct / original codec";
+  }
+
+  return source.mode === "Transcoding"
+    ? "Jellyfin transcoding output"
+    : "Original codec";
+}
+
+function getOutputAudioLabel(
+  source: PlaybackSourceCandidate,
+  t: unknown,
+): string {
+  void t;
+
+  if (source.hlsKind === "forced-transcode") {
+    return "AAC";
+  }
+
+  if (source.hlsKind === "jellyfin-transcoding-url") {
+    return "Jellyfin returned transcoding URL; output depends on server decision";
+  }
+
+  if (source.hlsKind === "stream-copy") {
+    return "Stream copy / original codec";
+  }
+
+  if (source.hlsKind === "direct") {
+    return "Direct / original codec";
+  }
+
+  return source.mode === "Transcoding"
+    ? "Jellyfin transcoding output"
+    : "Original codec";
+}
+
 export function PlaybackInfoPanel({
   source,
   videoError,
@@ -176,6 +243,21 @@ export function PlaybackInfoPanel({
                       : t("playback.nativeHls")
                     : t("playback.notUsed")
                 }
+                unknownLabel={unknownLabel}
+              />
+              <InfoRow
+                label="HLS kind"
+                value={source.hlsKind ?? "N/A"}
+                unknownLabel={unknownLabel}
+              />
+              <InfoRow
+                label="URL type"
+                value={getUrlType(source)}
+                unknownLabel={unknownLabel}
+              />
+              <InfoRow
+                label="Selection reason"
+                value={source.reason}
                 unknownLabel={unknownLabel}
               />
             </dl>
@@ -334,20 +416,12 @@ export function PlaybackInfoPanel({
               />
               <InfoRow
                 label={t("playback.outputVideo")}
-                value={
-                  source.mode === "Transcoding"
-                    ? t("playback.outputVideoH264")
-                    : t("playback.notTranscoding")
-                }
+                value={getOutputVideoLabel(source, t)}
                 unknownLabel={unknownLabel}
               />
               <InfoRow
                 label={t("playback.outputAudio")}
-                value={
-                  source.mode === "Transcoding"
-                    ? t("playback.outputAudioAac")
-                    : t("playback.notTranscoding")
-                }
+                value={getOutputAudioLabel(source, t)}
                 unknownLabel={unknownLabel}
               />
               <InfoRow

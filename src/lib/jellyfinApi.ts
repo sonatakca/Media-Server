@@ -1069,18 +1069,63 @@ function shouldPreferFmp4Hls(mediaSource: JellyfinMediaSource): boolean {
   return isHevcCodec(videoCodec) || isAv1Codec(videoCodec);
 }
 
+function isSafariBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+
+  const ua = navigator.userAgent;
+
+  return (
+    /Safari/i.test(ua) &&
+    !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua)
+  );
+}
+
+function isAppleBrowser(): boolean {
+  if (typeof navigator === "undefined") return false;
+
+  return isSafariBrowser() || /iPhone|iPad|Macintosh/i.test(navigator.userAgent);
+}
+
+function getH264Avc1Codec(stream?: JellyfinMediaStream): string {
+  const profile = (stream?.Profile ?? "").toLowerCase();
+  const level = stream?.Level;
+
+  let profileHex = "42";
+
+  if (profile.includes("high")) {
+    profileHex = "64";
+  } else if (profile.includes("main")) {
+    profileHex = "4D";
+  } else if (profile.includes("baseline") || profile.includes("constrained")) {
+    profileHex = "42";
+  }
+
+  const compatibility = "00";
+  const levelHex =
+    typeof level === "number" && Number.isFinite(level)
+      ? Math.max(0, Math.min(255, level))
+          .toString(16)
+          .padStart(2, "0")
+          .toUpperCase()
+      : "1E";
+
+  return `avc1.${profileHex}${compatibility}${levelHex}`;
+}
+
 function getMimeTypeForMediaSource(
   mediaSource: JellyfinMediaSource,
 ): string | undefined {
   const container = normalizeContainer(mediaSource.Container);
-  const videoCodec = getVideoCodecForMediaSource(mediaSource);
-  const audioCodec = getAudioCodecForMediaSource(mediaSource);
+  const videoStream = getMediaStream(mediaSource, "Video");
+  const audioStream = getMediaStream(mediaSource, "Audio");
+  const videoCodec = normalizeCodec(videoStream?.Codec);
+  const audioCodec = normalizeCodec(audioStream?.Codec);
 
   if (container === "mp4" || container === "m4v" || container === "mov") {
     const codecs: string[] = [];
 
     if (videoCodec === "h264") {
-      codecs.push("avc1.42E01E");
+      codecs.push(getH264Avc1Codec(videoStream));
     } else if (videoCodec === "hevc" || videoCodec === "h265") {
       codecs.push("hvc1");
     } else if (videoCodec === "av1") {
@@ -1129,6 +1174,8 @@ function getBrowserCanPlayResult(mediaSource: JellyfinMediaSource): {
 } {
   const container = normalizeContainer(mediaSource.Container);
   const videoCodec = getVideoCodecForMediaSource(mediaSource);
+  const audioStream = getMediaStream(mediaSource, "Audio");
+  const audioCodec = normalizeCodec(audioStream?.Codec);
   const mimeType = getMimeTypeForMediaSource(mediaSource);
 
   if (!["mp4", "m4v", "mov", "webm"].includes(container)) {
@@ -1151,6 +1198,31 @@ function getBrowserCanPlayResult(mediaSource: JellyfinMediaSource): {
 
   const video = document.createElement("video");
   const support = video.canPlayType(mimeType) as "" | "maybe" | "probably";
+  const videoStream = getMediaStream(mediaSource, "Video");
+  const isBrowserMp4Family = ["mp4", "m4v", "mov"].includes(container);
+  const isH264 = videoCodec === "h264";
+  const isSdr =
+    !videoStream?.VideoRange?.toLowerCase().includes("hdr") &&
+    !videoStream?.VideoRangeType?.toLowerCase().includes("hdr") &&
+    !videoStream?.VideoRangeType?.toLowerCase().includes("dolby");
+  const isSafariFriendlyAudio = ["aac", "mp3", "ac3", "eac3"].includes(
+    audioCodec,
+  );
+
+  if (
+    isSafariBrowser() &&
+    isBrowserMp4Family &&
+    isH264 &&
+    isSdr &&
+    isSafariFriendlyAudio
+  ) {
+    return {
+      mimeType,
+      support: support || "probably",
+      browserCanPlay: true,
+      reason: "Safari-safe H.264 SDR MP4/MOV source with compatible audio.",
+    };
+  }
 
   if (isHevcCodec(videoCodec)) {
     return {
@@ -1597,21 +1669,27 @@ export function buildPlaybackCandidates(
     const transcodingUrl = resolveTranscodingUrl(mediaSource);
     const mediaSourceCandidates: PlaybackSourceCandidate[] = [];
     const prefersFmp4Hls = shouldPreferFmp4Hls(mediaSource);
-    const streamCopyHlsPriority = browserCanPlay
-      ? 40 + sourceIndex
-      : prefersFmp4Hls
-        ? 6 + sourceIndex
-        : 90 + sourceIndex;
-    const returnedTranscodingUrlPriority = browserCanPlay
-      ? 35 + sourceIndex
-      : prefersFmp4Hls
-        ? 7 + sourceIndex
-        : 5 + sourceIndex;
-    const forcedTranscodePriority = browserCanPlay
-      ? 95 + sourceIndex
-      : prefersFmp4Hls
-        ? 8 + sourceIndex
-        : 5 + sourceIndex;
+    let directPriority: number;
+    let streamCopyHlsPriority: number;
+    let returnedTranscodingUrlPriority: number;
+    let forcedTranscodePriority: number;
+
+    if (browserCanPlay) {
+      directPriority = 3 + sourceIndex;
+      streamCopyHlsPriority = 20 + sourceIndex;
+      returnedTranscodingUrlPriority = 50 + sourceIndex;
+      forcedTranscodePriority = 70 + sourceIndex;
+    } else if (prefersFmp4Hls) {
+      streamCopyHlsPriority = 6 + sourceIndex;
+      returnedTranscodingUrlPriority = 7 + sourceIndex;
+      forcedTranscodePriority = 8 + sourceIndex;
+      directPriority = 85 + sourceIndex;
+    } else {
+      returnedTranscodingUrlPriority = 5 + sourceIndex;
+      forcedTranscodePriority = 6 + sourceIndex;
+      directPriority = 85 + sourceIndex;
+      streamCopyHlsPriority = 90 + sourceIndex;
+    }
 
     console.info("[Seyirlik Playback] Browser media support check", {
       mediaSourceId: mediaSource.Id,
@@ -1621,6 +1699,8 @@ export function buildPlaybackCandidates(
       mimeType,
       canPlayType: browserPlay.support,
       browserCanPlay,
+      isSafariBrowser: isSafariBrowser(),
+      isAppleBrowser: isAppleBrowser(),
       prefersFmp4Hls,
       reason: browserPlay.reason,
       supportsDirectPlay: mediaSource.SupportsDirectPlay,
@@ -1702,7 +1782,7 @@ export function buildPlaybackCandidates(
           mode,
           buildDirectStreamUrl(itemId, mediaSource, playSessionId),
           playSessionId,
-          browserCanPlay ? 10 + sourceIndex : 85 + sourceIndex,
+          directPriority,
           browserCanPlay
             ? "Container and codecs look browser-compatible."
             : "Direct URL kept as a last resort because this container or codec is risky in browsers.",

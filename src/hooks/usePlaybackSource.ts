@@ -197,9 +197,31 @@ export function usePlaybackSource(itemId?: string) {
   const handleVideoFailure = useCallback(
     (technicalDetails: string) => {
       const currentSource = state.candidates[sourceIndex] ?? null;
-      const nextIndex = state.candidates.findIndex(
-        (_, index) => index > sourceIndex,
-      );
+      const detailsLower = technicalDetails.toLowerCase();
+      const looksLikeHlsSegmentFailure =
+        detailsLower.includes("500") ||
+        detailsLower.includes(".ts") ||
+        detailsLower.includes("segment") ||
+        detailsLower.includes("startup watchdog");
+      let nextIndex = -1;
+
+      if (
+        currentSource?.hlsKind === "stream-copy" ||
+        looksLikeHlsSegmentFailure
+      ) {
+        nextIndex = state.candidates.findIndex(
+          (candidate, index) =>
+            index > sourceIndex &&
+            (candidate.hlsKind === "jellyfin-transcoding-url" ||
+              candidate.hlsKind === "forced-transcode"),
+        );
+      }
+
+      if (nextIndex < 0) {
+        nextIndex = state.candidates.findIndex(
+          (_, index) => index > sourceIndex,
+        );
+      }
 
       if (nextIndex >= 0) {
         const nextSource = state.candidates[nextIndex] ?? null;
