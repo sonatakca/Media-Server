@@ -325,6 +325,58 @@ export function getDirectPlayRecommendation(
   return recommendations;
 }
 
+function getPlaybackUrlDebugParams(playbackUrl: string) {
+  try {
+    const url = new URL(playbackUrl);
+    const getParam = (name: string) =>
+      url.searchParams.get(name) ?? url.searchParams.get(name.toLowerCase());
+
+    return {
+      redactedUrl: redactPlaybackUrl(playbackUrl),
+      SegmentContainer: getParam("SegmentContainer"),
+      TranscodingContainer: getParam("TranscodingContainer"),
+      TranscodingProtocol: getParam("TranscodingProtocol"),
+      PlaySessionId: getParam("PlaySessionId"),
+      MediaSourceId: getParam("MediaSourceId"),
+      DeviceId: getParam("DeviceId"),
+      VideoCodec: getParam("VideoCodec"),
+      AudioCodec: getParam("AudioCodec"),
+      AllowVideoStreamCopy: getParam("AllowVideoStreamCopy"),
+      AllowAudioStreamCopy: getParam("AllowAudioStreamCopy"),
+      EnableAutoStreamCopy: getParam("EnableAutoStreamCopy"),
+      EnableAdaptiveBitrateStreaming: getParam("EnableAdaptiveBitrateStreaming"),
+      AudioStreamIndex: getParam("AudioStreamIndex"),
+      MaxHeight: getParam("MaxHeight"),
+      MaxStreamingBitrate: getParam("MaxStreamingBitrate"),
+      MinSegments: getParam("MinSegments"),
+      SegmentLength: getParam("SegmentLength"),
+      BreakOnNonKeyFrames: getParam("BreakOnNonKeyFrames"),
+    };
+  } catch {
+    return {
+      redactedUrl: redactPlaybackUrl(playbackUrl),
+      SegmentContainer: undefined,
+      TranscodingContainer: undefined,
+      TranscodingProtocol: undefined,
+      PlaySessionId: undefined,
+      MediaSourceId: undefined,
+      DeviceId: undefined,
+      VideoCodec: undefined,
+      AudioCodec: undefined,
+      AllowVideoStreamCopy: undefined,
+      AllowAudioStreamCopy: undefined,
+      EnableAutoStreamCopy: undefined,
+      EnableAdaptiveBitrateStreaming: undefined,
+      AudioStreamIndex: undefined,
+      MaxHeight: undefined,
+      MaxStreamingBitrate: undefined,
+      MinSegments: undefined,
+      SegmentLength: undefined,
+      BreakOnNonKeyFrames: undefined,
+    };
+  }
+}
+
 export function getSanitizedDebugPayload(
   source: PlaybackSourceCandidate,
   videoError?: string | null,
@@ -334,8 +386,10 @@ export function getSanitizedDebugPayload(
     mediaSourceId: source.mediaSourceId,
     playSessionId: source.playSessionId,
     isHls: source.isHls,
+    hlsKind: source.hlsKind,
     usingHlsJs: source.usingHlsJs,
     selectedUrl: redactPlaybackUrl(source.url),
+    selectedUrlParams: getPlaybackUrlDebugParams(source.url),
     mimeType: source.mimeType,
     reason: source.reason,
     transcodeReasons: source.transcodeReasons,

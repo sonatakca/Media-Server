@@ -687,6 +687,21 @@ function getBrowserDeviceProfile(): Record<string, unknown> {
     TranscodingProfiles: [
       {
         Type: "Video",
+        Container: "mp4",
+        Protocol: "hls",
+        VideoCodec: "h264,hevc,av1",
+        AudioCodec: "aac,mp3,ac3,eac3",
+        Context: "Streaming",
+        TranscodeSeekInfo: "Auto",
+        CopyTimestamps: false,
+        EnableSubtitlesInManifest: true,
+        MaxAudioChannels: "6",
+        MinSegments: 1,
+        SegmentLength: 6,
+        BreakOnNonKeyFrames: true,
+      },
+      {
+        Type: "Video",
         Container: "ts",
         Protocol: "hls",
         VideoCodec: "h264",
@@ -1000,6 +1015,23 @@ function getMediaStream(
   );
 }
 
+function getDefaultAudioStreamIndex(
+  mediaSource: JellyfinMediaSource,
+): number | undefined {
+  if (mediaSource.DefaultAudioStreamIndex !== undefined) {
+    return mediaSource.DefaultAudioStreamIndex;
+  }
+
+  return (
+    mediaSource.MediaStreams?.find(
+      (stream) => stream.Type?.toLowerCase() === "audio" && stream.IsDefault,
+    )?.Index ??
+    mediaSource.MediaStreams?.find(
+      (stream) => stream.Type?.toLowerCase() === "audio",
+    )?.Index
+  );
+}
+
 function normalizeCodec(codec?: string): string {
   return (codec ?? "").toLowerCase().replace("mpeg4", "mp4v");
 }
@@ -1013,16 +1045,36 @@ function normalizeContainer(container?: string): string {
     .replace("quicktime", "mov");
 }
 
+function getVideoCodecForMediaSource(mediaSource: JellyfinMediaSource): string {
+  return normalizeCodec(getMediaStream(mediaSource, "Video")?.Codec);
+}
+
+function getAudioCodecForMediaSource(mediaSource: JellyfinMediaSource): string {
+  return normalizeCodec(getMediaStream(mediaSource, "Audio")?.Codec);
+}
+
+function isHevcCodec(codec: string): boolean {
+  return codec === "hevc" || codec === "h265";
+}
+
+function isAv1Codec(codec: string): boolean {
+  return codec === "av1";
+}
+
+function shouldPreferFmp4Hls(mediaSource: JellyfinMediaSource): boolean {
+  const videoCodec = getVideoCodecForMediaSource(mediaSource);
+
+  // Mirrors Jellyfin's "Prefer fMP4-HLS Media Container" behavior: fMP4 HLS
+  // allows HEVC/AV1 to direct stream through HLS on supported clients.
+  return isHevcCodec(videoCodec) || isAv1Codec(videoCodec);
+}
+
 function getMimeTypeForMediaSource(
   mediaSource: JellyfinMediaSource,
 ): string | undefined {
   const container = normalizeContainer(mediaSource.Container);
-  const videoCodec = normalizeCodec(
-    getMediaStream(mediaSource, "Video")?.Codec,
-  );
-  const audioCodec = normalizeCodec(
-    getMediaStream(mediaSource, "Audio")?.Codec,
-  );
+  const videoCodec = getVideoCodecForMediaSource(mediaSource);
+  const audioCodec = getAudioCodecForMediaSource(mediaSource);
 
   if (container === "mp4" || container === "m4v" || container === "mov") {
     const codecs: string[] = [];
@@ -1069,23 +1121,58 @@ function getMimeTypeForMediaSource(
   return undefined;
 }
 
-function canBrowserPlayMediaSource(mediaSource: JellyfinMediaSource): boolean {
+function getBrowserCanPlayResult(mediaSource: JellyfinMediaSource): {
+  mimeType?: string;
+  support: "" | "maybe" | "probably";
+  browserCanPlay: boolean;
+  reason: string;
+} {
   const container = normalizeContainer(mediaSource.Container);
-
-  if (!["mp4", "m4v", "mov", "webm"].includes(container)) {
-    return false;
-  }
-
+  const videoCodec = getVideoCodecForMediaSource(mediaSource);
   const mimeType = getMimeTypeForMediaSource(mediaSource);
 
+  if (!["mp4", "m4v", "mov", "webm"].includes(container)) {
+    return {
+      mimeType,
+      support: "",
+      browserCanPlay: false,
+      reason: "Container is not browser-safe.",
+    };
+  }
+
   if (!mimeType || typeof document === "undefined") {
-    return container === "mp4" || container === "m4v" || container === "mov";
+    return {
+      mimeType,
+      support: "",
+      browserCanPlay: false,
+      reason: "Could not build/test browser MIME type.",
+    };
   }
 
   const video = document.createElement("video");
-  const support = video.canPlayType(mimeType);
+  const support = video.canPlayType(mimeType) as "" | "maybe" | "probably";
 
-  return support === "probably";
+  if (isHevcCodec(videoCodec)) {
+    return {
+      mimeType,
+      support,
+      browserCanPlay: support === "probably",
+      reason:
+        support === "probably"
+          ? "Browser confidently reports HEVC support."
+          : "HEVC support is uncertain or unavailable, so direct playback is risky.",
+    };
+  }
+
+  return {
+    mimeType,
+    support,
+    browserCanPlay: support === "probably" || support === "maybe",
+    reason:
+      support === "probably" || support === "maybe"
+        ? "Browser reports playable media support."
+        : "Browser reports this source is not playable.",
+  };
 }
 
 function buildDirectStreamUrl(
@@ -1108,61 +1195,124 @@ function buildDirectStreamUrl(
   });
 }
 
-function buildMasterHlsUrl(
+function getHlsDebugInfo(
+  mediaSource: JellyfinMediaSource,
+  url: string,
+  segmentContainer: "mp4" | "ts",
+  kind: "stream-copy" | "forced-transcode",
+) {
+  return {
+    mediaSourceId: mediaSource.Id,
+    sourceContainer: mediaSource.Container,
+    videoCodec: getVideoCodecForMediaSource(mediaSource),
+    audioCodec: getAudioCodecForMediaSource(mediaSource),
+    segmentContainer,
+    kind,
+    url: redactPlaybackUrl(url),
+  };
+}
+
+function logHlsCandidateUrl(
+  mediaSource: JellyfinMediaSource,
+  url: string,
+  segmentContainer: "mp4" | "ts",
+  kind: "stream-copy" | "forced-transcode",
+): void {
+  console.info(
+    "[Seyirlik Playback] Built HLS candidate URL",
+    getHlsDebugInfo(mediaSource, url, segmentContainer, kind),
+  );
+}
+
+function buildStreamCopyHlsUrl(
   itemId: string,
   mediaSource: JellyfinMediaSource,
   playSessionId: string | undefined,
   settings: PlaybackSourceSettings = {},
 ): string {
   const session = requireAuthSession();
+  const segmentContainer = shouldPreferFmp4Hls(mediaSource) ? "mp4" : "ts";
+  const url = buildJellyfinUrl(
+    session.serverUrl,
+    `/Videos/${encodeURIComponent(itemId)}/master.m3u8`,
+    {
+      MediaSourceId: mediaSource.Id,
+      PlaySessionId: playSessionId,
+      DeviceId: session.deviceId,
 
-  const isManualQuality =
-    settings.maxHeight !== undefined ||
-    settings.maxWidth !== undefined ||
-    settings.maxStreamingBitrate !== undefined;
+      AudioStreamIndex:
+        settings.audioStreamIndex ?? getDefaultAudioStreamIndex(mediaSource),
 
+      TranscodingMaxAudioChannels: 6,
+      SegmentContainer: segmentContainer,
+      MinSegments: 1,
+      SegmentLength: 6,
+      BreakOnNonKeyFrames: true,
+
+      EnableAutoStreamCopy: true,
+      AllowVideoStreamCopy: true,
+      AllowAudioStreamCopy: true,
+      EnableAdaptiveBitrateStreaming: true,
+
+      api_key: session.accessToken,
+    },
+  );
+
+  logHlsCandidateUrl(mediaSource, url, segmentContainer, "stream-copy");
+
+  return url;
+}
+
+function buildForcedTranscodeHlsUrl(
+  itemId: string,
+  mediaSource: JellyfinMediaSource,
+  playSessionId: string | undefined,
+  settings: PlaybackSourceSettings = {},
+): string {
+  const session = requireAuthSession();
   const audioBitrate = 640_000;
   const totalBitrate = settings.maxStreamingBitrate ?? MAX_STREAMING_BITRATE;
   const videoBitrate = Math.max(1_000_000, totalBitrate - audioBitrate);
 
-  const path = isManualQuality
-    ? `/Videos/${encodeURIComponent(itemId)}/main.m3u8`
-    : `/Videos/${encodeURIComponent(itemId)}/master.m3u8`;
+  const url = buildJellyfinUrl(
+    session.serverUrl,
+    `/Videos/${encodeURIComponent(itemId)}/main.m3u8`,
+    {
+      MediaSourceId: mediaSource.Id,
+      PlaySessionId: playSessionId,
+      DeviceId: session.deviceId,
 
-  return buildJellyfinUrl(session.serverUrl, path, {
-    MediaSourceId: mediaSource.Id,
-    PlaySessionId: playSessionId,
-    DeviceId: session.deviceId,
+      AudioStreamIndex:
+        settings.audioStreamIndex ?? getDefaultAudioStreamIndex(mediaSource),
 
-    AudioStreamIndex: settings.audioStreamIndex,
+      VideoCodec: "h264",
+      AudioCodec: "aac",
 
-    VideoCodec: "h264",
-    AudioCodec: "aac",
+      MaxStreamingBitrate: totalBitrate,
+      VideoBitrate: videoBitrate,
+      AudioBitrate: audioBitrate,
 
-    MaxStreamingBitrate: totalBitrate,
-    VideoBitrate: isManualQuality ? videoBitrate : undefined,
-    AudioBitrate: isManualQuality ? audioBitrate : undefined,
+      MaxWidth: settings.maxWidth,
+      MaxHeight: settings.maxHeight,
 
-    MaxWidth: settings.maxWidth,
-    MaxHeight: settings.maxHeight,
+      TranscodingMaxAudioChannels: 6,
+      SegmentContainer: "ts",
+      MinSegments: 1,
+      SegmentLength: 6,
+      BreakOnNonKeyFrames: true,
 
-    TranscodingMaxAudioChannels: 6,
-    SegmentContainer: "ts",
-    MinSegments: 1,
-    SegmentLength: 6,
-    BreakOnNonKeyFrames: true,
+      EnableAutoStreamCopy: false,
+      AllowVideoStreamCopy: false,
+      AllowAudioStreamCopy: false,
+      EnableAdaptiveBitrateStreaming: false,
 
-    EnableAutoStreamCopy: false,
-    AllowVideoStreamCopy: false,
-    AllowAudioStreamCopy: false,
+      api_key: session.accessToken,
+    },
+  );
 
-    // Auto uses the master playlist. Manual quality uses main.m3u8 so Jellyfin
-    // receives one explicit height/bitrate target instead of an adaptive ladder
-    // that can silently stay on a low level.
-    EnableAdaptiveBitrateStreaming: !isManualQuality,
+  logHlsCandidateUrl(mediaSource, url, "ts", "forced-transcode");
 
-    api_key: session.accessToken,
-  });
+  return url;
 }
 
 export function getTrickplayImageUrl(
@@ -1194,6 +1344,16 @@ export function buildConfiguredHlsPlaybackSource(
   label = "Custom HLS",
   reason = "Built a Jellyfin HLS URL for the selected player setting.",
 ): PlaybackSourceCandidate {
+  const isManualQuality =
+    settings.maxHeight !== undefined ||
+    settings.maxWidth !== undefined ||
+    settings.maxStreamingBitrate !== undefined;
+  const shouldForceTranscode =
+    isManualQuality ||
+    source.hlsKind === "forced-transcode" ||
+    (source.mode === "Transcoding" &&
+      source.hlsKind !== "jellyfin-transcoding-url");
+
   if (!source.mediaSource.Id) {
     throw new Error(
       "This media source does not have a Jellyfin mediaSourceId.",
@@ -1209,18 +1369,25 @@ export function buildConfiguredHlsPlaybackSource(
     );
   }
 
-  const url = buildMasterHlsUrl(
-    source.itemId,
-    source.mediaSource,
-    source.playSessionId,
-    settings,
-  );
+  const url = shouldForceTranscode
+    ? buildForcedTranscodeHlsUrl(
+        source.itemId,
+        source.mediaSource,
+        source.playSessionId,
+        settings,
+      )
+    : buildStreamCopyHlsUrl(
+        source.itemId,
+        source.mediaSource,
+        source.playSessionId,
+        settings,
+      );
   const idParts = [
     "SettingsHls",
     source.mediaSource.Id,
     settings.audioStreamIndex !== undefined
       ? `a${settings.audioStreamIndex}`
-      : "a-auto",
+      : `a-default-${getDefaultAudioStreamIndex(source.mediaSource) ?? "auto"}`,
     settings.maxHeight !== undefined ? `h${settings.maxHeight}` : "h-auto",
     settings.maxStreamingBitrate !== undefined
       ? `b${settings.maxStreamingBitrate}`
@@ -1230,14 +1397,21 @@ export function buildConfiguredHlsPlaybackSource(
   return {
     ...source,
     id: idParts.join("-"),
-    mode: "Transcoding",
+    mode: shouldForceTranscode
+      ? "Transcoding"
+      : source.mode === "DirectPlay"
+        ? "DirectStream"
+        : source.mode,
     url,
     mimeType: "application/vnd.apple.mpegurl",
     isHls: true,
+    hlsKind: shouldForceTranscode ? "forced-transcode" : "stream-copy",
     usingHlsJs: undefined,
     label,
     reason,
-    priority: Math.min(source.priority, 9),
+    priority: shouldForceTranscode
+      ? Math.min(source.priority, 9)
+      : source.priority,
   };
 }
 
@@ -1350,10 +1524,14 @@ function isHlsUrl(
   playbackUrl: string,
   mediaSource?: JellyfinMediaSource,
 ): boolean {
+  const transcodingContainer =
+    mediaSource?.TranscodingContainer?.toLowerCase();
+
   return (
     playbackUrl.toLowerCase().includes(".m3u8") ||
     mediaSource?.TranscodingSubProtocol?.toLowerCase() === "hls" ||
-    mediaSource?.TranscodingContainer?.toLowerCase() === "ts"
+    transcodingContainer === "ts" ||
+    transcodingContainer === "mp4"
   );
 }
 
@@ -1367,6 +1545,7 @@ function createPlaybackCandidate(
   reason: string,
   mimeType: string | undefined,
   playbackInfo: JellyfinPlaybackInfoResponse,
+  hlsKind?: PlaybackSourceCandidate["hlsKind"],
 ): PlaybackSourceCandidate {
   return {
     id: `${mode}-${mediaSource.Id ?? "source"}-${priority}`,
@@ -1377,6 +1556,7 @@ function createPlaybackCandidate(
     url,
     mimeType,
     isHls: isHlsUrl(url, mediaSource),
+    hlsKind,
     label: mode,
     mediaSource,
     playbackInfo,
@@ -1384,6 +1564,18 @@ function createPlaybackCandidate(
     transcodeReasons: mediaSource.TranscodingReasons ?? [],
     directPlayError: mediaSource.DirectPlayError,
     priority,
+  };
+}
+
+function getPlaybackCandidateDebug(candidate: PlaybackSourceCandidate) {
+  return {
+    id: candidate.id,
+    mode: candidate.mode,
+    isHls: candidate.isHls,
+    hlsKind: candidate.hlsKind,
+    priority: candidate.priority,
+    reason: candidate.reason,
+    url: redactPlaybackUrl(candidate.url),
   };
 }
 
@@ -1398,39 +1590,103 @@ export function buildPlaybackCandidates(
     const canDirectPlay = Boolean(
       mediaSource.SupportsDirectPlay || mediaSource.SupportsDirectStream,
     );
-    const browserCanPlay = canBrowserPlayMediaSource(mediaSource);
-    const mimeType = getMimeTypeForMediaSource(mediaSource);
+    const browserPlay = getBrowserCanPlayResult(mediaSource);
+    const browserCanPlay = browserPlay.browserCanPlay;
+    const mimeType = browserPlay.mimeType;
     const playSessionId = playbackInfo.PlaySessionId;
     const transcodingUrl = resolveTranscodingUrl(mediaSource);
+    const mediaSourceCandidates: PlaybackSourceCandidate[] = [];
+    const prefersFmp4Hls = shouldPreferFmp4Hls(mediaSource);
+    const streamCopyHlsPriority = browserCanPlay
+      ? 40 + sourceIndex
+      : prefersFmp4Hls
+        ? 6 + sourceIndex
+        : 90 + sourceIndex;
+    const returnedTranscodingUrlPriority = browserCanPlay
+      ? 35 + sourceIndex
+      : prefersFmp4Hls
+        ? 7 + sourceIndex
+        : 5 + sourceIndex;
+    const forcedTranscodePriority = browserCanPlay
+      ? 95 + sourceIndex
+      : prefersFmp4Hls
+        ? 8 + sourceIndex
+        : 5 + sourceIndex;
+
+    console.info("[Seyirlik Playback] Browser media support check", {
+      mediaSourceId: mediaSource.Id,
+      container: normalizeContainer(mediaSource.Container),
+      videoCodec: getVideoCodecForMediaSource(mediaSource),
+      audioCodec: getAudioCodecForMediaSource(mediaSource),
+      mimeType,
+      canPlayType: browserPlay.support,
+      browserCanPlay,
+      prefersFmp4Hls,
+      reason: browserPlay.reason,
+      supportsDirectPlay: mediaSource.SupportsDirectPlay,
+      supportsDirectStream: mediaSource.SupportsDirectStream,
+      supportsTranscoding: mediaSource.SupportsTranscoding,
+    });
 
     if (transcodingUrl) {
-      candidates.push(
+      mediaSourceCandidates.push(
         createPlaybackCandidate(
           itemId,
           mediaSource,
           "Transcoding",
           transcodingUrl,
           playSessionId,
-          browserCanPlay ? 35 + sourceIndex : 5 + sourceIndex,
+          returnedTranscodingUrlPriority,
           "Jellyfin returned a transcoding URL from PlaybackInfo.",
           isHlsUrl(transcodingUrl, mediaSource)
             ? "application/vnd.apple.mpegurl"
             : undefined,
           playbackInfo,
+          "jellyfin-transcoding-url",
         ),
       );
-    } else if (mediaSource.SupportsTranscoding && mediaSource.Id) {
-      candidates.push(
+    }
+
+    if (mediaSource.SupportsTranscoding && mediaSource.Id) {
+      mediaSourceCandidates.push(
         createPlaybackCandidate(
           itemId,
           mediaSource,
           "Transcoding",
-          buildMasterHlsUrl(itemId, mediaSource, playSessionId),
+          buildForcedTranscodeHlsUrl(itemId, mediaSource, playSessionId),
           playSessionId,
-          browserCanPlay ? 40 + sourceIndex : 8 + sourceIndex,
-          "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
+          forcedTranscodePriority,
+          browserCanPlay
+            ? "Forced H.264/AAC HLS fallback kept after browser-safe direct playback."
+            : prefersFmp4Hls
+              ? "Forced H.264/AAC HLS fallback kept behind fMP4 stream-copy HLS for HEVC/AV1."
+              : "Forced H.264/AAC HLS fallback prioritized because direct playback is risky.",
           "application/vnd.apple.mpegurl",
           playbackInfo,
+          "forced-transcode",
+        ),
+      );
+
+      const hlsMode: PlaybackMode = canDirectPlay
+        ? "DirectStream"
+        : "Transcoding";
+
+      mediaSourceCandidates.push(
+        createPlaybackCandidate(
+          itemId,
+          mediaSource,
+          hlsMode,
+          buildStreamCopyHlsUrl(itemId, mediaSource, playSessionId),
+          playSessionId,
+          streamCopyHlsPriority,
+          prefersFmp4Hls
+            ? "Built a Jellyfin fMP4 HLS stream-copy candidate for HEVC/AV1."
+            : canDirectPlay
+              ? "Built a Jellyfin HLS stream-copy candidate from PlaybackInfo media source data."
+              : "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
+          "application/vnd.apple.mpegurl",
+          playbackInfo,
+          "stream-copy",
         ),
       );
     }
@@ -1439,7 +1695,7 @@ export function buildPlaybackCandidates(
       const mode: PlaybackMode = mediaSource.SupportsDirectPlay
         ? "DirectPlay"
         : "DirectStream";
-      candidates.push(
+      mediaSourceCandidates.push(
         createPlaybackCandidate(
           itemId,
           mediaSource,
@@ -1452,9 +1708,20 @@ export function buildPlaybackCandidates(
             : "Direct URL kept as a last resort because this container or codec is risky in browsers.",
           mimeType,
           playbackInfo,
+          "direct",
         ),
       );
     }
+
+    console.info(
+      "[Seyirlik Playback] Candidate list for media source",
+      mediaSourceCandidates
+        .slice()
+        .sort((left, right) => left.priority - right.priority)
+        .map(getPlaybackCandidateDebug),
+    );
+
+    candidates.push(...mediaSourceCandidates);
   });
 
   return candidates.sort((left, right) => left.priority - right.priority);

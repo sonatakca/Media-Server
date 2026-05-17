@@ -39,6 +39,9 @@ function getSourceSummary(
 
   return {
     mode: source.mode,
+    isHls: source.isHls,
+    hlsKind: source.hlsKind,
+    priority: source.priority,
     reason: source.reason,
     mediaSourceId: source.mediaSourceId,
     container: source.mediaSource.Container,
@@ -194,24 +197,21 @@ export function usePlaybackSource(itemId?: string) {
   const handleVideoFailure = useCallback(
     (technicalDetails: string) => {
       const currentSource = state.candidates[sourceIndex] ?? null;
-      const transcodeFallbackIndex = state.candidates.findIndex(
-        (candidate, index) =>
-          index > sourceIndex && candidate.mode === "Transcoding",
-      );
-
-      if (
-        currentSource?.mode !== "Transcoding" &&
-        transcodeFallbackIndex >= 0
-      ) {
-        switchToSource(transcodeFallbackIndex);
-        return;
-      }
-
       const nextIndex = state.candidates.findIndex(
         (_, index) => index > sourceIndex,
       );
 
       if (nextIndex >= 0) {
+        const nextSource = state.candidates[nextIndex] ?? null;
+
+        console.info("[Seyirlik Playback] Switching to fallback candidate", {
+          failedIndex: sourceIndex,
+          nextIndex,
+          failedSource: currentSource
+            ? getSourceSummary(currentSource)
+            : undefined,
+          nextSource: nextSource ? getSourceSummary(nextSource) : undefined,
+        });
         switchToSource(nextIndex);
         return;
       }

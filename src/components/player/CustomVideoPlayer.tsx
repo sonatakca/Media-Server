@@ -22,6 +22,7 @@ import {
   getManualQualityOptions,
   getTrickplayImageUrl,
   getActiveTranscodingReasons,
+  redactPlaybackUrl,
   stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
@@ -141,6 +142,8 @@ const SEEK_FEEDBACK_HIDE_MS = 950;
 
 const SEEK_FEEDBACK_FADE_RESET_MS = 260;
 
+const STARTUP_WATCHDOG_MS = 8000;
+
 const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
 
 const initialSeekFeedback: SeekFeedbackState = {
@@ -172,16 +175,428 @@ function getStreamsOfType(
 function getDefaultAudioStreamIndex(
   source: PlaybackSourceCandidate,
 ): number | undefined {
+  const audioStreams = getStreamsOfType(source, "Audio");
+
   return (
     source.mediaSource.DefaultAudioStreamIndex ??
-    getStreamsOfType(source, "Audio")[0]?.Index
+    audioStreams.find((stream) => stream.IsDefault)?.Index ??
+    audioStreams[0]?.Index
   );
+}
+
+interface NativeAudioTrack {
+  enabled: boolean;
+  id?: string;
+  kind?: string;
+  label?: string;
+  language?: string;
+}
+
+interface NativeAudioTrackList {
+  readonly length: number;
+  [index: number]: NativeAudioTrack | undefined;
+}
+
+interface NativeAudioSyncResult {
+  succeeded: boolean;
+  streamIndex?: number;
+  nativeTrackIndex?: number;
+  reason: string;
+}
+
+type VideoElementWithAudioTracks = HTMLVideoElement & {
+  audioTracks?: NativeAudioTrackList;
+};
+
+function isDirectBrowserPlaybackSource(source: PlaybackSourceCandidate): boolean {
+  return (
+    !source.isHls &&
+    (source.mode === "DirectPlay" || source.mode === "DirectStream")
+  );
+}
+
+function getAudioTracks(
+  video: HTMLVideoElement,
+): NativeAudioTrackList | undefined {
+  return (video as VideoElementWithAudioTracks).audioTracks;
+}
+
+function getNativeAudioTrackSnapshot(video: HTMLVideoElement) {
+  const audioTracks = getAudioTracks(video);
+
+  return {
+    length: audioTracks?.length ?? 0,
+    tracks: Array.from({ length: audioTracks?.length ?? 0 }, (_, index) => {
+      const track = audioTracks?.[index];
+
+      return {
+        index,
+        id: track?.id,
+        kind: track?.kind,
+        label: track?.label,
+        language: track?.language,
+        enabled: track?.enabled,
+      };
+    }),
+  };
+}
+
+function normalizeMatchText(value?: string): string {
+  return (value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function normalizeLanguage(value?: string): string {
+  const normalized = normalizeMatchText(value).split(" ")[0] ?? "";
+  const languageAliases: Record<string, string> = {
+    en: "en",
+    eng: "en",
+    english: "en",
+    es: "es",
+    spa: "es",
+    esp: "es",
+    spanish: "es",
+    castellano: "es",
+    castilian: "es",
+    fr: "fr",
+    fra: "fr",
+    fre: "fr",
+    french: "fr",
+    de: "de",
+    deu: "de",
+    ger: "de",
+    german: "de",
+    it: "it",
+    ita: "it",
+    italian: "it",
+    pt: "pt",
+    por: "pt",
+    portuguese: "pt",
+    ja: "ja",
+    jpn: "ja",
+    japanese: "ja",
+  };
+
+  return languageAliases[normalized] ?? normalized;
+}
+
+function getStreamMatchText(stream: JellyfinMediaStream): string {
+  return [
+    stream.Language,
+    stream.DisplayTitle,
+    stream.Title,
+    stream.Codec,
+  ]
+    .map(normalizeMatchText)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getTrackMatchText(track: NativeAudioTrack): string {
+  return [track.language, track.label, track.id, track.kind]
+    .map(normalizeMatchText)
+    .filter(Boolean)
+    .join(" ");
+}
+
+function getNativeAudioTrackMatch(
+  source: PlaybackSourceCandidate,
+  streamIndex: number,
+  audioTracks: NativeAudioTrackList,
+): { nativeTrackIndex: number; reason: string } | null {
+  const audioStreams = getStreamsOfType(source, "Audio");
+  const jellyfinStream = audioStreams.find(
+    (stream) => stream.Index === streamIndex,
+  );
+
+  if (!jellyfinStream) {
+    return null;
+  }
+
+  const streamLanguage = normalizeLanguage(jellyfinStream.Language);
+
+  if (streamLanguage) {
+    for (let index = 0; index < audioTracks.length; index += 1) {
+      const track = audioTracks[index];
+      const trackLanguage = normalizeLanguage(track?.language);
+
+      if (track && trackLanguage && trackLanguage === streamLanguage) {
+        return { nativeTrackIndex: index, reason: "language" };
+      }
+    }
+  }
+
+  const streamText = getStreamMatchText(jellyfinStream);
+
+  if (streamText.length > 1) {
+    for (let index = 0; index < audioTracks.length; index += 1) {
+      const track = audioTracks[index];
+
+      if (!track) {
+        continue;
+      }
+
+      const trackText = getTrackMatchText(track);
+
+      if (
+        trackText.length > 1 &&
+        (trackText.includes(streamText) || streamText.includes(trackText))
+      ) {
+        return { nativeTrackIndex: index, reason: "label" };
+      }
+    }
+  }
+
+  const jellyfinOrdinal = audioStreams.findIndex(
+    (stream) => stream.Index === streamIndex,
+  );
+
+  if (
+    audioStreams.length === 2 &&
+    audioTracks.length === 2 &&
+    jellyfinOrdinal >= 0
+  ) {
+    return { nativeTrackIndex: jellyfinOrdinal, reason: "two-track-order" };
+  }
+
+  return null;
+}
+
+function getNativeActiveAudioStreamIndex(
+  video: HTMLVideoElement,
+  source: PlaybackSourceCandidate,
+): number | undefined {
+  const audioTracks = getAudioTracks(video);
+
+  if (!audioTracks || audioTracks.length === 0) {
+    return undefined;
+  }
+
+  for (let index = 0; index < audioTracks.length; index += 1) {
+    const track = audioTracks[index];
+
+    if (!track?.enabled) {
+      continue;
+    }
+
+    const audioStreams = getStreamsOfType(source, "Audio");
+
+    for (const stream of audioStreams) {
+      if (stream.Index === undefined) {
+        continue;
+      }
+
+      const match = getNativeAudioTrackMatch(source, stream.Index, audioTracks);
+
+      if (match?.nativeTrackIndex === index) {
+        return stream.Index;
+      }
+    }
+
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function tryApplyNativeAudioTrack(
+  video: HTMLVideoElement,
+  source: PlaybackSourceCandidate,
+  streamIndex: number | undefined,
+): NativeAudioSyncResult {
+  const audioTracks = getAudioTracks(video);
+
+  if (!audioTracks || audioTracks.length === 0) {
+    return { succeeded: false, reason: "native-audio-tracks-unavailable" };
+  }
+
+  if (streamIndex === undefined) {
+    return { succeeded: false, reason: "stream-index-missing" };
+  }
+
+  const match = getNativeAudioTrackMatch(source, streamIndex, audioTracks);
+
+  if (!match) {
+    return {
+      succeeded: false,
+      streamIndex,
+      reason: "native-track-match-not-found",
+    };
+  }
+
+  for (let index = 0; index < audioTracks.length; index += 1) {
+    const track = audioTracks[index];
+
+    if (track) {
+      track.enabled = index === match.nativeTrackIndex;
+    }
+  }
+
+  const enabledTrack = audioTracks[match.nativeTrackIndex];
+
+  if (!enabledTrack?.enabled) {
+    return {
+      succeeded: false,
+      streamIndex,
+      nativeTrackIndex: match.nativeTrackIndex,
+      reason: "native-track-enable-failed",
+    };
+  }
+
+  return {
+    succeeded: true,
+    streamIndex,
+    nativeTrackIndex: match.nativeTrackIndex,
+    reason: match.reason,
+  };
+}
+
+function getDebugAudioStreams(source: PlaybackSourceCandidate) {
+  return getStreamsOfType(source, "Audio").map((stream) => ({
+    Index: stream.Index,
+    Language: stream.Language,
+    DisplayTitle: stream.DisplayTitle,
+    Title: stream.Title,
+    Codec: stream.Codec,
+    IsDefault: stream.IsDefault,
+  }));
+}
+
+function getPlaybackUrlDebugParams(playbackUrl: string) {
+  try {
+    const url = new URL(playbackUrl);
+    const getParam = (name: string) =>
+      url.searchParams.get(name) ?? url.searchParams.get(name.toLowerCase());
+
+    return {
+      redactedUrl: redactPlaybackUrl(playbackUrl),
+      SegmentContainer: getParam("SegmentContainer"),
+      TranscodingContainer: getParam("TranscodingContainer"),
+      TranscodingProtocol: getParam("TranscodingProtocol"),
+      PlaySessionId: getParam("PlaySessionId"),
+      MediaSourceId: getParam("MediaSourceId"),
+      DeviceId: getParam("DeviceId"),
+      VideoCodec: getParam("VideoCodec"),
+      AudioCodec: getParam("AudioCodec"),
+      AllowVideoStreamCopy: getParam("AllowVideoStreamCopy"),
+      AllowAudioStreamCopy: getParam("AllowAudioStreamCopy"),
+      EnableAutoStreamCopy: getParam("EnableAutoStreamCopy"),
+      EnableAdaptiveBitrateStreaming: getParam("EnableAdaptiveBitrateStreaming"),
+      AudioStreamIndex: getParam("AudioStreamIndex"),
+      MaxHeight: getParam("MaxHeight"),
+      MaxStreamingBitrate: getParam("MaxStreamingBitrate"),
+      MinSegments: getParam("MinSegments"),
+      SegmentLength: getParam("SegmentLength"),
+      BreakOnNonKeyFrames: getParam("BreakOnNonKeyFrames"),
+    };
+  } catch {
+    return {
+      redactedUrl: redactPlaybackUrl(playbackUrl),
+      SegmentContainer: undefined,
+      TranscodingContainer: undefined,
+      TranscodingProtocol: undefined,
+      PlaySessionId: undefined,
+      MediaSourceId: undefined,
+      DeviceId: undefined,
+      VideoCodec: undefined,
+      AudioCodec: undefined,
+      AllowVideoStreamCopy: undefined,
+      AllowAudioStreamCopy: undefined,
+      EnableAutoStreamCopy: undefined,
+      EnableAdaptiveBitrateStreaming: undefined,
+      AudioStreamIndex: undefined,
+      MaxHeight: undefined,
+      MaxStreamingBitrate: undefined,
+      MinSegments: undefined,
+      SegmentLength: undefined,
+      BreakOnNonKeyFrames: undefined,
+    };
+  }
+}
+
+function isMasterHlsPlaybackUrl(playbackUrl: string): boolean {
+  try {
+    const baseUrl =
+      typeof window === "undefined" ? "http://localhost" : window.location.origin;
+    const url = new URL(playbackUrl, baseUrl);
+
+    return url.pathname.toLowerCase().includes("/master.m3u8");
+  } catch {
+    return playbackUrl.toLowerCase().includes("/master.m3u8");
+  }
+}
+
+function logAudioSourceDebug(
+  label: string,
+  video: HTMLVideoElement,
+  source: PlaybackSourceCandidate,
+  selectedAudioStreamIndex: number | undefined,
+  extra?: Record<string, unknown>,
+): void {
+  console.info(`[Seyirlik Playback] ${label}`, {
+    selectedAudioStreamIndex,
+    defaultAudioStreamIndex: source.mediaSource.DefaultAudioStreamIndex,
+    jellyfinAudioStreams: getDebugAudioStreams(source),
+    nativeAudioTracks: getNativeAudioTrackSnapshot(video),
+    activeSource: {
+      mode: source.mode,
+      isHls: source.isHls,
+      hlsKind: source.hlsKind,
+      mediaSourceId: source.mediaSourceId,
+      url: redactPlaybackUrl(source.url),
+      urlParams: getPlaybackUrlDebugParams(source.url),
+    },
+    ...extra,
+  });
 }
 
 function getDefaultSubtitleStreamIndex(
   source: PlaybackSourceCandidate,
 ): number {
   return source.mediaSource.DefaultSubtitleStreamIndex ?? -1;
+}
+
+function shouldForceDefaultAudioInPlaybackUrl(
+  source: PlaybackSourceCandidate,
+): boolean {
+  return source.mode === "Transcoding" || source.isHls;
+}
+
+function canInjectDefaultAudioIntoStreamCopy(
+  source: PlaybackSourceCandidate,
+  defaultAudioIndex: number | undefined,
+): boolean {
+  return (
+    defaultAudioIndex !== undefined &&
+    source.isHls &&
+    source.hlsKind === "stream-copy" &&
+    source.mode !== "Transcoding"
+  );
+}
+
+function getAudioFallbackSource(
+  source: PlaybackSourceCandidate,
+  candidates: PlaybackSourceCandidate[],
+): PlaybackSourceCandidate | null {
+  if (
+    source.mediaSource.Id &&
+    (source.mediaSource.SupportsTranscoding || source.mode === "Transcoding")
+  ) {
+    return source;
+  }
+
+  return (
+    candidates.find(
+      (candidate) =>
+        candidate.mediaSourceId === source.mediaSourceId &&
+        candidate.mediaSource.Id &&
+        (candidate.mode === "Transcoding" || candidate.isHls),
+    ) ?? null
+  );
 }
 
 function getStreamByIndex(
@@ -580,6 +995,15 @@ export function CustomVideoPlayer({
   const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<
     number | undefined
   >(() => getDefaultAudioStreamIndex(source));
+  const [activeAudioStreamIndex, setActiveAudioStreamIndex] = useState<
+    number | undefined
+  >(() =>
+    shouldForceDefaultAudioInPlaybackUrl(source)
+      ? getDefaultAudioStreamIndex(source)
+      : getStreamsOfType(source, "Audio").length <= 1
+        ? getDefaultAudioStreamIndex(source)
+        : undefined,
+  );
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
     useState<number>(() => getDefaultSubtitleStreamIndex(source));
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
@@ -601,10 +1025,15 @@ export function CustomVideoPlayer({
     () => getManualQualityOptions(activeSource.mediaSource),
     [activeSource.mediaSource],
   );
+  const audioStreams = useMemo(
+    () => getStreamsOfType(activeSource, "Audio"),
+    [activeSource],
+  );
   const canSwitchAudio = Boolean(
-    activeSource.mediaSource.Id &&
-    (activeSource.mediaSource.SupportsTranscoding ||
-      activeSource.mode === "Transcoding"),
+    audioStreams.some((stream) => stream.Index !== undefined) &&
+      (isDirectBrowserPlaybackSource(activeSource) ||
+        activeSource.mediaSource.SupportsTranscoding ||
+        activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
 
@@ -785,13 +1214,38 @@ export function CustomVideoPlayer({
   }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {
+    const defaultAudioIndex = getDefaultAudioStreamIndex(source);
+    let nextSource = source;
+
+    if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
+      try {
+        nextSource = buildConfiguredHlsPlaybackSource(
+          source,
+          { audioStreamIndex: defaultAudioIndex },
+          "Auto HLS",
+          "Built a Jellyfin HLS URL using the file's default audio track.",
+        );
+      } catch (switchError) {
+        console.warn(
+          "[Seyirlik Playback] Could not force default audio stream for initial playback",
+          switchError,
+        );
+      }
+    }
+
     pendingSourceRestoreRef.current = null;
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
-    setActiveSource(source);
+    setActiveSource(nextSource);
     setSelectedQualityId(AUTO_QUALITY_ID);
-    setSelectedAudioStreamIndex(getDefaultAudioStreamIndex(source));
-    setSelectedSubtitleStreamIndex(getDefaultSubtitleStreamIndex(source));
+    setSelectedAudioStreamIndex(defaultAudioIndex);
+    setActiveAudioStreamIndex(
+      shouldForceDefaultAudioInPlaybackUrl(nextSource) ||
+        getStreamsOfType(nextSource, "Audio").length <= 1
+        ? defaultAudioIndex
+        : undefined,
+    );
+    setSelectedSubtitleStreamIndex(getDefaultSubtitleStreamIndex(nextSource));
     setLastVideoError(null);
     setLiveTranscodingReasons([]);
   }, [source.id, source.mediaSourceId, source.url]);
@@ -1245,28 +1699,42 @@ export function CustomVideoPlayer({
   const handleSelectAutoQuality = useCallback(() => {
     const bestSource = availablePlaybackCandidates[0] ?? source;
     const defaultAudioIndex = getDefaultAudioStreamIndex(bestSource);
-    const shouldKeepAudioOverride =
-      selectedAudioStreamIndex !== undefined &&
-      selectedAudioStreamIndex !== defaultAudioIndex;
+    let nextSource = bestSource;
+
+    if (canInjectDefaultAudioIntoStreamCopy(bestSource, defaultAudioIndex)) {
+      try {
+        nextSource = buildConfiguredSource(
+          bestSource,
+          undefined,
+          defaultAudioIndex,
+        );
+      } catch (switchError) {
+        console.warn(
+          "[Seyirlik Playback] Could not build Auto quality source with default audio",
+          switchError,
+        );
+      }
+    }
 
     setSelectedQualityId(AUTO_QUALITY_ID);
+    setSelectedAudioStreamIndex(defaultAudioIndex);
+    setActiveAudioStreamIndex(
+      shouldForceDefaultAudioInPlaybackUrl(nextSource) ||
+        getStreamsOfType(nextSource, "Audio").length <= 1
+        ? defaultAudioIndex
+        : undefined,
+    );
 
-    void switchPlayerSource(
-      shouldKeepAudioOverride
-        ? buildConfiguredSource(bestSource, undefined, selectedAudioStreamIndex)
-        : bestSource,
-    ).catch((switchError: unknown) => {
+    void switchPlayerSource(nextSource).catch((switchError: unknown) => {
       console.warn(
-        "[Seyirlik Playback] Could not keep selected audio while returning to Auto quality",
+        "[Seyirlik Playback] Could not return to Auto quality with default audio",
         switchError,
       );
-      setSelectedAudioStreamIndex(defaultAudioIndex);
       void switchPlayerSource(bestSource);
     });
   }, [
     availablePlaybackCandidates,
     buildConfiguredSource,
-    selectedAudioStreamIndex,
     source,
     switchPlayerSource,
   ]);
@@ -1286,6 +1754,7 @@ export function CustomVideoPlayer({
       }
 
       setSelectedQualityId(quality.id);
+      setActiveAudioStreamIndex(selectedAudioStreamIndex);
 
       void switchPlayerSource(nextSource).catch((switchError: unknown) => {
         console.warn(
@@ -1294,7 +1763,12 @@ export function CustomVideoPlayer({
         );
       });
     },
-    [activeSource, buildConfiguredSource, switchPlayerSource],
+    [
+      activeSource,
+      buildConfiguredSource,
+      selectedAudioStreamIndex,
+      switchPlayerSource,
+    ],
   );
 
   const handleSelectAudioStream = useCallback(
@@ -1303,14 +1777,59 @@ export function CustomVideoPlayer({
         return;
       }
 
+      const video = videoRef.current;
+      let shouldDeferActiveAudioUntilSourceSwitch = false;
+
+      if (video && isDirectBrowserPlaybackSource(activeSource)) {
+        const syncResult = tryApplyNativeAudioTrack(
+          video,
+          activeSource,
+          streamIndex,
+        );
+
+        logAudioSourceDebug(
+          "Native audio track switch attempted",
+          video,
+          activeSource,
+          streamIndex,
+          { syncResult },
+        );
+
+        if (syncResult.succeeded) {
+          setSelectedAudioStreamIndex(streamIndex);
+          setActiveAudioStreamIndex(streamIndex);
+          showControls();
+          return;
+        }
+
+        const currentNativeStreamIndex = getNativeActiveAudioStreamIndex(
+          video,
+          activeSource,
+        );
+        setActiveAudioStreamIndex(currentNativeStreamIndex);
+
+        if (!getAudioFallbackSource(activeSource, availablePlaybackCandidates)) {
+          console.warn(
+            "[Seyirlik Playback] Native audio switching failed and HLS fallback is unavailable",
+            syncResult,
+          );
+          return;
+        }
+
+        shouldDeferActiveAudioUntilSourceSwitch = true;
+      }
+
       const selectedQuality = qualityOptions.find(
         (quality) => quality.id === selectedQualityId,
       );
+      const fallbackBaseSource =
+        getAudioFallbackSource(activeSource, availablePlaybackCandidates) ??
+        activeSource;
       let nextSource: PlaybackSourceCandidate;
 
       try {
         nextSource = buildConfiguredSource(
-          activeSource,
+          fallbackBaseSource,
           selectedQuality,
           streamIndex,
         );
@@ -1323,6 +1842,9 @@ export function CustomVideoPlayer({
       }
 
       setSelectedAudioStreamIndex(streamIndex);
+      setActiveAudioStreamIndex(
+        shouldDeferActiveAudioUntilSourceSwitch ? undefined : streamIndex,
+      );
 
       void switchPlayerSource(nextSource).catch((switchError: unknown) => {
         console.warn(
@@ -1333,10 +1855,12 @@ export function CustomVideoPlayer({
     },
     [
       activeSource,
+      availablePlaybackCandidates,
       buildConfiguredSource,
       canSwitchAudio,
       qualityOptions,
       selectedQualityId,
+      showControls,
       switchPlayerSource,
     ],
   );
@@ -1461,6 +1985,8 @@ export function CustomVideoPlayer({
   useEffect(() => {
     const video = videoRef.current;
     const sourceToAttach = activeSource;
+    const selectedAudioIndexForSource =
+      selectedAudioStreamIndex ?? getDefaultAudioStreamIndex(sourceToAttach);
 
     if (!video) {
       return undefined;
@@ -1471,7 +1997,12 @@ export function CustomVideoPlayer({
 
     let attachment: AttachedVideoSource | undefined;
     let didRestore = false;
+    let didRequestAudioFallback = false;
+    let isDisposed = false;
     const pendingRestore = pendingSourceRestoreRef.current;
+    const selectedQuality = qualityOptions.find(
+      (quality) => quality.id === selectedQualityId,
+    );
 
     const applyInitialStartPosition = () => {
       if (pendingRestore || hasAppliedInitialStartRef.current) {
@@ -1547,7 +2078,218 @@ export function CustomVideoPlayer({
       refreshProgress();
     };
 
+    const requestHlsAudioFallback = (reason: string) => {
+      const fallbackBaseSource = getAudioFallbackSource(
+        sourceToAttach,
+        availablePlaybackCandidates,
+      );
+
+      if (
+        didRequestAudioFallback ||
+        isDisposed ||
+        selectedAudioIndexForSource === undefined ||
+        !fallbackBaseSource
+      ) {
+        return;
+      }
+
+      didRequestAudioFallback = true;
+
+      let fallbackSource: PlaybackSourceCandidate;
+
+      try {
+        fallbackSource = buildConfiguredSource(
+          fallbackBaseSource,
+          selectedQuality,
+          selectedAudioIndexForSource,
+        );
+      } catch (fallbackError) {
+        console.warn(
+          "[Seyirlik Playback] Could not build HLS fallback for default audio",
+          fallbackError,
+        );
+        return;
+      }
+
+      setSelectedAudioStreamIndex(selectedAudioIndexForSource);
+      setActiveAudioStreamIndex(undefined);
+
+      console.info("[Seyirlik Playback] Falling back to HLS for audio track", {
+        reason,
+        selectedAudioStreamIndex: selectedAudioIndexForSource,
+        sourceMode: sourceToAttach.mode,
+        sourceUrl: redactPlaybackUrl(sourceToAttach.url),
+        fallbackUrl: redactPlaybackUrl(fallbackSource.url),
+      });
+
+      void switchPlayerSource(fallbackSource).catch((switchError: unknown) => {
+        console.warn(
+          "[Seyirlik Playback] Could not switch to HLS fallback for audio track",
+          switchError,
+        );
+        setActiveAudioStreamIndex(
+          getNativeActiveAudioStreamIndex(video, sourceToAttach),
+        );
+      });
+    };
+
+    const syncNativeAudioTrack = (eventName: string) => {
+      if (isDisposed || didRequestAudioFallback) {
+        return;
+      }
+
+      const audioStreamCount = getStreamsOfType(sourceToAttach, "Audio").length;
+
+      if (!isDirectBrowserPlaybackSource(sourceToAttach)) {
+        setActiveAudioStreamIndex(selectedAudioIndexForSource);
+        logAudioSourceDebug(
+          `Audio source attached (${eventName})`,
+          video,
+          sourceToAttach,
+          selectedAudioIndexForSource,
+          { syncResult: { reason: "hls-or-transcoded-source" } },
+        );
+        return;
+      }
+
+      if (audioStreamCount <= 1) {
+        setActiveAudioStreamIndex(selectedAudioIndexForSource);
+        logAudioSourceDebug(
+          `Audio source attached (${eventName})`,
+          video,
+          sourceToAttach,
+          selectedAudioIndexForSource,
+          { syncResult: { reason: "single-audio-stream" } },
+        );
+        return;
+      }
+
+      const syncResult = tryApplyNativeAudioTrack(
+        video,
+        sourceToAttach,
+        selectedAudioIndexForSource,
+      );
+
+      const currentNativeStreamIndex = syncResult.succeeded
+        ? selectedAudioIndexForSource
+        : getNativeActiveAudioStreamIndex(video, sourceToAttach);
+
+      setActiveAudioStreamIndex(currentNativeStreamIndex);
+
+      logAudioSourceDebug(
+        `Native audio sync (${eventName})`,
+        video,
+        sourceToAttach,
+        selectedAudioIndexForSource,
+        { syncResult, currentNativeStreamIndex },
+      );
+
+      if (syncResult.succeeded) {
+        return;
+      }
+
+      if (eventName === "source-attached") {
+        return;
+      }
+
+      requestHlsAudioFallback(syncResult.reason);
+    };
+
+    const handleLoadedMetadataAudio = () =>
+      syncNativeAudioTrack("loadedmetadata");
+    const handleLoadedDataAudio = () => syncNativeAudioTrack("loadeddata");
+    const handleCanPlayAudio = () => syncNativeAudioTrack("canplay");
+    const handleDurationChangeAudio = () =>
+      syncNativeAudioTrack("durationchange");
+    let startupWatchdogTimer: number | null = null;
+    let hasStartupPlaybackSignal = false;
+
+    const clearStartupWatchdog = () => {
+      if (startupWatchdogTimer === null) {
+        return;
+      }
+
+      window.clearTimeout(startupWatchdogTimer);
+      startupWatchdogTimer = null;
+    };
+
+    const markStartupPlaybackSignal = () => {
+      hasStartupPlaybackSignal = true;
+      clearStartupWatchdog();
+    };
+
+    const handleStartupTimeUpdate = () => {
+      if (video.currentTime > 0) {
+        markStartupPlaybackSignal();
+      }
+    };
+
+    const handleStartupError = () => {
+      clearStartupWatchdog();
+    };
+
+    const startStartupWatchdog = () => {
+      clearStartupWatchdog();
+
+      startupWatchdogTimer = window.setTimeout(() => {
+        if (
+          isDisposed ||
+          hasStartupPlaybackSignal ||
+          video.currentTime > 0
+        ) {
+          return;
+        }
+
+        const detailsPayload = {
+          message:
+            "HLS attached but playback did not start within startup watchdog timeout.",
+          source: {
+            mode: sourceToAttach.mode,
+            isHls: sourceToAttach.isHls,
+            hlsKind: sourceToAttach.hlsKind,
+            usingHlsJs: attachment?.usingHlsJs ?? sourceToAttach.usingHlsJs,
+            url: redactPlaybackUrl(sourceToAttach.url),
+            urlParams: getPlaybackUrlDebugParams(sourceToAttach.url),
+          },
+          video: {
+            readyState: video.readyState,
+            networkState: video.networkState,
+            paused: video.paused,
+            currentTime: video.currentTime,
+            duration: Number.isFinite(video.duration) ? video.duration : null,
+          },
+        };
+        const details = JSON.stringify(detailsPayload, null, 2);
+
+        console.warn(
+          "[Seyirlik Playback] Startup watchdog detected stalled playback",
+          detailsPayload,
+        );
+        setLastVideoError(details);
+        onVideoFailure(details);
+      }, STARTUP_WATCHDOG_MS);
+    };
+
     try {
+      const sourceUrlParams = getPlaybackUrlDebugParams(sourceToAttach.url);
+
+      if (
+        sourceToAttach.mode === "Transcoding" &&
+        isMasterHlsPlaybackUrl(sourceToAttach.url) &&
+        String(sourceUrlParams.EnableAutoStreamCopy).toLowerCase() === "true"
+      ) {
+        console.warn(
+          "[Seyirlik Playback] Bad mixed transcoding/stream-copy source detected",
+          {
+            mode: sourceToAttach.mode,
+            isHls: sourceToAttach.isHls,
+            hlsKind: sourceToAttach.hlsKind,
+            url: redactPlaybackUrl(sourceToAttach.url),
+            urlParams: sourceUrlParams,
+          },
+        );
+      }
+
       attachment = attachSourceToVideo(
         video,
         sourceToAttach.url,
@@ -1561,11 +2303,30 @@ export function CustomVideoPlayer({
           ? { ...currentSource, usingHlsJs: attachment?.usingHlsJs }
           : currentSource,
       );
+      console.info("[Seyirlik Playback] Attached playback source", {
+        mode: sourceToAttach.mode,
+        isHls: sourceToAttach.isHls,
+        hlsKind: sourceToAttach.hlsKind,
+        usingHlsJs: attachment?.usingHlsJs,
+        url: redactPlaybackUrl(sourceToAttach.url),
+        urlParams: sourceUrlParams,
+      });
       video.addEventListener("loadedmetadata", applyInitialStartPosition);
       video.addEventListener("canplay", applyInitialStartPosition);
       video.addEventListener("loadedmetadata", restorePlayback);
       video.addEventListener("canplay", restorePlayback);
+      video.addEventListener("loadedmetadata", handleLoadedMetadataAudio);
+      video.addEventListener("loadeddata", handleLoadedDataAudio);
+      video.addEventListener("canplay", handleCanPlayAudio);
+      video.addEventListener("durationchange", handleDurationChangeAudio);
+      video.addEventListener("loadeddata", markStartupPlaybackSignal);
+      video.addEventListener("canplay", markStartupPlaybackSignal);
+      video.addEventListener("playing", markStartupPlaybackSignal);
+      video.addEventListener("timeupdate", handleStartupTimeUpdate);
+      video.addEventListener("error", handleStartupError);
+      syncNativeAudioTrack("source-attached");
       video.load();
+      startStartupWatchdog();
       if (!pendingRestore && !partyWatch.shouldDeferAutoplay) {
         void video.play().catch((playError: unknown) => {
           console.info(
@@ -1583,10 +2344,21 @@ export function CustomVideoPlayer({
     }
 
     return () => {
+      isDisposed = true;
+      clearStartupWatchdog();
       video.removeEventListener("loadedmetadata", applyInitialStartPosition);
       video.removeEventListener("canplay", applyInitialStartPosition);
       video.removeEventListener("loadedmetadata", restorePlayback);
       video.removeEventListener("canplay", restorePlayback);
+      video.removeEventListener("loadedmetadata", handleLoadedMetadataAudio);
+      video.removeEventListener("loadeddata", handleLoadedDataAudio);
+      video.removeEventListener("canplay", handleCanPlayAudio);
+      video.removeEventListener("durationchange", handleDurationChangeAudio);
+      video.removeEventListener("loadeddata", markStartupPlaybackSignal);
+      video.removeEventListener("canplay", markStartupPlaybackSignal);
+      video.removeEventListener("playing", markStartupPlaybackSignal);
+      video.removeEventListener("timeupdate", handleStartupTimeUpdate);
+      video.removeEventListener("error", handleStartupError);
 
       if (activeAttachmentRef.current === attachment) {
         activeAttachmentRef.current = null;
@@ -2381,7 +3153,7 @@ export function CustomVideoPlayer({
         source={sourceWithLiveTranscodingReasons}
         qualityOptions={qualityOptions}
         selectedQualityId={selectedQualityId}
-        selectedAudioStreamIndex={selectedAudioStreamIndex}
+        selectedAudioStreamIndex={activeAudioStreamIndex}
         selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
         canSwitchAudio={canSwitchAudio}
         canSwitchSubtitles={canSwitchSubtitles}

@@ -267,6 +267,11 @@ export interface PlaybackSourceCandidate {
   url: string;
   mimeType?: string;
   isHls: boolean;
+  hlsKind?:
+    | "stream-copy"
+    | "forced-transcode"
+    | "jellyfin-transcoding-url"
+    | "direct";
   usingHlsJs?: boolean;
   label: string;
   mediaSource: JellyfinMediaSource;
