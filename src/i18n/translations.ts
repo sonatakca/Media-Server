@@ -8,6 +8,8 @@ export const translations = {
   en: {
     "nav.home": "Home",
     "nav.brandHome": "Seyirlik home",
+    "nav.movies": "Movies",
+    "nav.series": "TV Shows",
     "nav.server": "Server",
     "nav.logout": "Logout",
     "nav.language.switchToTurkish": "Switch to Turkish",
@@ -337,6 +339,8 @@ export const translations = {
   tr: {
     "nav.home": "Ana Sayfa",
     "nav.brandHome": "Seyirlik ana sayfa",
+    "nav.movies": "Filmler",
+    "nav.series": "Diziler",
     "nav.server": "Sunucu",
     "nav.logout": "Çıkış",
     "nav.language.switchToTurkish": "Türkçeye geç",

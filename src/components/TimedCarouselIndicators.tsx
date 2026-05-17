@@ -70,11 +70,14 @@ export function TimedCarouselIndicators({
               }
         }
         animate={{ opacity: 1, scale: 1, scaleX: 1, y: 0, filter: "blur(0px)" }}
-        transition={springTransition}
+        transition={{
+          ...springTransition,
+          delay: shouldReduceMotion ? 0 : 0.35,
+        }}
       >
         {Array.from({ length: count }, (_, index) => {
           const isActive = index === safeActiveIndex;
-          const revealDelay = shouldReduceMotion ? 0 : 0.16 + index * 0.028;
+          const revealDelay = shouldReduceMotion ? 0 : 0.65 + index * 0.045;
 
           return (
             <motion.button
@@ -84,22 +87,47 @@ export function TimedCarouselIndicators({
               aria-label={`Go to slide ${index + 1}`}
               aria-current={isActive ? "true" : undefined}
               className="group relative flex h-7 shrink-0 items-center justify-center rounded-full px-1 outline-none ring-white/70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
-              initial={shouldReduceMotion ? false : { opacity: 0, scale: 0.65 }}
+              initial={
+                shouldReduceMotion
+                  ? false
+                  : {
+                      opacity: 0,
+                      scale: 0.62,
+                      x: -10,
+                      y: 4,
+                      filter: "blur(6px)",
+                    }
+              }
               animate={{
                 width: isActive ? 48 : 24,
                 opacity: isActive ? 1 : 0.82,
                 scale: 1,
+                x: 0,
+                y: 0,
+                filter: "blur(0px)",
               }}
               transition={{
                 width: softSpringTransition,
                 opacity: {
-                  duration: shouldReduceMotion ? 0 : 0.22,
+                  duration: shouldReduceMotion ? 0 : 0.18,
                   ease: [0.16, 1, 0.3, 1],
-                  delay: revealDelay,
                 },
                 scale: {
                   ...softSpringTransition,
-                  delay: revealDelay,
+                  delay: shouldReduceMotion ? 0 : revealDelay,
+                },
+                x: {
+                  ...softSpringTransition,
+                  delay: shouldReduceMotion ? 0 : revealDelay,
+                },
+                y: {
+                  ...softSpringTransition,
+                  delay: shouldReduceMotion ? 0 : revealDelay,
+                },
+                filter: {
+                  duration: shouldReduceMotion ? 0 : 0.38,
+                  ease: [0.16, 1, 0.3, 1],
+                  delay: shouldReduceMotion ? 0 : revealDelay,
                 },
               }}
               onClick={() => onSelect(index)}
@@ -107,20 +135,32 @@ export function TimedCarouselIndicators({
               <motion.span
                 layout
                 className={classNames(
-                  "relative block h-[7px] overflow-hidden rounded-full transition-colors duration-200 group-hover:bg-white/[0.55]",
+                  "relative block h-[7px] bg-gray-500 overflow-hidden rounded-full transition-colors duration-200 group-hover:bg-white/[1]",
                   isActive ? "w-10 bg-white/[0.28]" : "w-[7px] bg-white/[0.44]",
                 )}
                 transition={softSpringTransition}
               >
                 {isActive ? (
-                  <span
+                  <motion.span
                     key={progressKey}
                     className="absolute inset-y-0 left-0 h-full w-full origin-left rounded-full bg-white/[0.92]"
+                    initial={
+                      shouldReduceMotion
+                        ? { opacity: 1 }
+                        : { opacity: 0, filter: "blur(4px)" }
+                    }
+                    animate={{ opacity: 1, filter: "blur(0px)" }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.35,
+                      delay: shouldReduceMotion ? 0 : 0.85,
+                      ease: [0.16, 1, 0.3, 1],
+                    }}
                     style={{
                       transform: shouldReduceMotion ? "scaleX(1)" : undefined,
                       animation: shouldReduceMotion
                         ? undefined
                         : `carousel-progress-fill ${Math.max(0, durationMs)}ms linear forwards`,
+                      animationDelay: shouldReduceMotion ? undefined : "850ms",
                       animationPlayState: isPaused ? "paused" : "running",
                     }}
                   />
@@ -142,14 +182,15 @@ export function TimedCarouselIndicators({
               : {
                   opacity: 0,
                   scale: 0.75,
-                  x: -8,
+                  x: -10,
+                  y: 4,
                   filter: "blur(8px)",
                 }
           }
-          animate={{ opacity: 1, scale: 1, x: 0, filter: "blur(0px)" }}
+          animate={{ opacity: 1, scale: 1, x: 0, y: 0, filter: "blur(0px)" }}
           transition={{
             ...softSpringTransition,
-            delay: shouldReduceMotion ? 0 : 0.18,
+            delay: shouldReduceMotion ? 0 : 0.65 + count * 0.045,
           }}
           onClick={onTogglePaused}
         >
@@ -160,13 +201,13 @@ export function TimedCarouselIndicators({
               initial={
                 shouldReduceMotion
                   ? { opacity: 1 }
-                  : { opacity: 0, scale: 0.75, rotate: -4 }
+                  : { opacity: 1, scale: 0, rotate: -4 }
               }
               animate={{ opacity: 1, scale: 1, rotate: 0 }}
               exit={
                 shouldReduceMotion
-                  ? { opacity: 0 }
-                  : { opacity: 0, scale: 0.75, rotate: 4 }
+                  ? { opacity: 1 }
+                  : { opacity: 1, scale: 0, rotate: 4 }
               }
               transition={{
                 duration: shouldReduceMotion ? 0 : 0.16,

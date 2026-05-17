@@ -236,10 +236,10 @@ export function MediaCard({
         <Link
           to={primaryCardTo}
           aria-label={primaryCardLabel}
-          className="absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          className="absolute inset-0 z-30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
         <div
-          className={`artwork-edge-vignette relative shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
+          className={`artwork-edge-vignette pointer-events-none relative z-40 shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
         >
           {!imageLoaded && imageUrl && !imageFailed ? (
             <div className="shimmer absolute inset-0" />
@@ -261,10 +261,18 @@ export function MediaCard({
             </div>
           )}
           <div className="absolute inset-0 transition group-hover:opacity-100" />
+          <Link
+            to={to}
+            aria-label={detailsLabel}
+            title={t("common.details")}
+            className="pointer-events-auto absolute right-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 shadow-3xl text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+          >
+            <Info size={16} />
+          </Link>
         </div>
 
         <div
-          className={`panel-top-highlight pointer-events-none relative z-20 flex flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset ${panelClass}`}
+          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset ${panelClass}`}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
             {canPlay && showPlayFromBeginning && progressPercent !== null ? (
@@ -355,15 +363,6 @@ export function MediaCard({
                   </span>
                 ))}
               </div>
-              <Link
-                to={to}
-                aria-label={detailsLabel}
-                title={t("common.details")}
-                className="pointer-events-auto ml-auto flex h-4 w-auto p-3 gap-1 shrink-0 items-center justify-center rounded-full border border-white/15 bg-white/10 text-white transition duration-300 hover:scale-110 hover:bg-white/[0.16] focus:outline-none focus:ring-2 focus:ring-white/70"
-              >
-                <Info size={16} />
-                {t("common.details")}
-              </Link>
             </div>
           </div>
         </div>

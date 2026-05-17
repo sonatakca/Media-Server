@@ -1,10 +1,11 @@
-import { useState, useRef } from "react";
-import { Home, LogOut, Palette, Server, UserRound } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { LogOut, Palette, Server, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import logoOnSide from "../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../i18n/LanguageContext";
 import { clearAuthSession, getAuthSession } from "../lib/authStorage";
+import { getUserViews } from "../lib/jellyfinApi";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { LanguageSwitch } from "./LanguageSwitch";
@@ -16,8 +17,70 @@ export function Navbar() {
   const { t } = useLanguage();
   const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);
   const [iconFailed, setIconFailed] = useState(false);
+  const [hasScrolled, setHasScrolled] = useState(false);
+  const [libraryRoutes, setLibraryRoutes] = useState({
+    movies: "/movies",
+    series: "/series",
+  });
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const updateScrolledState = () => {
+      setHasScrolled(window.scrollY > 12);
+    };
+
+    updateScrolledState();
+    window.addEventListener("scroll", updateScrolledState, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", updateScrolledState);
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadLibraryRoutes = async () => {
+      if (!session) {
+        return;
+      }
+
+      try {
+        const libraries = await getUserViews();
+        const moviesLibrary = libraries.find(
+          (library) => library.CollectionType === "movies",
+        );
+        const seriesLibrary = libraries.find(
+          (library) => library.CollectionType === "tvshows",
+        );
+
+        if (!isMounted) {
+          return;
+        }
+
+        setLibraryRoutes({
+          movies: moviesLibrary?.Id
+            ? `/library/${moviesLibrary.Id}`
+            : "/movies",
+          series: seriesLibrary?.Id
+            ? `/library/${seriesLibrary.Id}`
+            : "/series",
+        });
+      } catch (error) {
+        console.warn(
+          "[Seyirlik Navbar] Could not load Jellyfin library routes",
+          error,
+        );
+      }
+    };
+
+    void loadLibraryRoutes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session]);
 
   const handleLogout = () => {
     clearAuthSession();
@@ -53,11 +116,17 @@ export function Navbar() {
   };
 
   return (
-    <header className="sticky top-0 z-40 select-none border-b border-white/[0.08] bg-black/[0.45] pt-[env(safe-area-inset-top)] shadow-navbar-glass backdrop-blur-2xl [-webkit-tap-highlight-color:transparent]">
-      <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center justify-between px-4 sm:px-6 lg:px-8">
+    <header
+      className={`fixed inset-x-0 top-0 z-40 select-none pt-[env(safe-area-inset-top)] transition-[background-color,border-color,box-shadow,backdrop-filter] ease-out [-webkit-tap-highlight-color:transparent] ${
+        hasScrolled
+          ? "duration-700 border-b border-white/[0.08] bg-black/95 shadow-navbar-glass backdrop-blur-2xl"
+          : "duration-500 border-b border-transparent bg-transparent shadow-none backdrop-blur-0"
+      }`}
+    >
+      <nav className="mx-auto flex h-20 w-full max-w-[1600px] items-center gap-8 px-4 sm:px-6 lg:px-8">
         <Link
           to="/home"
-          className="flex min-w-0 items-center gap-3"
+          className="flex min-w-0 shrink-0 items-center gap-3"
           aria-label={t("nav.brandHome")}
         >
           <span className="flex min-w-0 items-center gap-3 md:hidden">
@@ -81,7 +150,7 @@ export function Navbar() {
             ) : null}
           </span>
 
-          <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex">
+          <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex lg:w-[11.5rem]">
             {!desktopLogoFailed ? (
               <img
                 src={logoOnSide}
@@ -103,69 +172,72 @@ export function Navbar() {
           </span>
         </Link>
 
-        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-white/[0.055] p-1 lg:flex">
+        <div className="hidden min-w-0 flex-1 items-center gap-7 md:flex">
           <NavLink
             to="/home"
             className={({ isActive }) =>
-              `inline-flex min-h-9 items-center justify-center gap-2 whitespace-nowrap rounded-full px-4 text-sm font-semibold transition-[width,min-width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out ${
-                isActive
-                  ? "bg-[var(--accent)] text-black shadow-button-glow hover:bg-[var(--accent-hover)]"
-                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
               }`
             }
           >
-            <Home size={17} className="shrink-0" />
             <AnimatedWidth value={t("nav.home")}>
               <AnimatedText value={t("nav.home")} />
             </AnimatedWidth>
           </NavLink>
-        </div>
 
-        <div className="flex items-center gap-2 sm:gap-3">
           <NavLink
-            to="/server"
+            to={libraryRoutes.movies}
             className={({ isActive }) =>
-              `inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-semibold transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out lg:w-auto lg:px-3 ${
-                isActive
-                  ? "bg-white/[0.12] text-white"
-                  : "text-zinc-300 hover:bg-white/10 hover:text-white"
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
               }`
             }
           >
-            <Server size={17} className="shrink-0" />
-            <AnimatedWidth
-              value={t("nav.server")}
-              className="hidden xl:inline-block"
-            >
-              <AnimatedText value={t("nav.server")} />
+            <AnimatedWidth value={t("nav.movies")}>
+              <AnimatedText value={t("nav.movies")} />
             </AnimatedWidth>
           </NavLink>
+
           <NavLink
-            to="/home"
-            onClick={(event) => {
-              event.preventDefault();
-              handleThemeChange();
-            }}
-            aria-label={t("nav.changeTheme")}
-            title={t("nav.changeTheme")}
-            className={() =>
-              "inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-semibold text-zinc-300 transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:w-auto sm:px-3"
+            to={libraryRoutes.series}
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
+              }`
             }
           >
-            <Palette size={17} className="shrink-0" />
-            <AnimatedWidth
-              value={t("nav.changeTheme")}
-              className="hidden xl:inline-block"
-            >
-              <AnimatedText value={t("nav.changeTheme")} />
+            <AnimatedWidth value={t("nav.series")}>
+              <AnimatedText value={t("nav.series")} />
             </AnimatedWidth>
           </NavLink>
+        </div>
+
+        <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
           <LanguageSwitch />
+
+          <NavLink
+            to="/server"
+            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+          >
+            <Server size={18} className="shrink-0" />
+          </NavLink>
+
+          <button
+            type="button"
+            onClick={handleThemeChange}
+            aria-label={t("nav.changeTheme")}
+            title={t("nav.changeTheme")}
+            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+          >
+            <Palette size={18} className="shrink-0" />
+          </button>
+
           {session ? (
             <>
               <div
                 onClick={handleBrandEasterEggClick}
-                className="hidden w-fit max-w-40 cursor-default select-none items-center gap-2 rounded-full border border-white/10 bg-white/[0.055] px-3 py-2 text-sm font-semibold text-white/[0.82] lg:flex [-webkit-tap-highlight-color:transparent]"
+                className="hidden w-fit max-w-40 cursor-default select-none items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-white/72 transition-colors hover:text-white lg:flex [-webkit-tap-highlight-color:transparent]"
               >
                 <UserRound size={16} className="shrink-0" />
                 <span className="min-w-0 truncate">{session.username}</span>
@@ -173,15 +245,11 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={handleLogout}
-                className="inline-flex min-h-10 w-10 items-center justify-center gap-2 whitespace-nowrap rounded-full px-0 text-sm font-bold text-zinc-200 transition-[width,padding,background-color,border-color,color,box-shadow,transform] duration-300 ease-out hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:w-auto sm:px-3"
+                aria-label={t("nav.logout")}
+                title={t("nav.logout")}
+                className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
               >
                 <LogOut size={17} className="shrink-0" />
-                <AnimatedWidth
-                  value={t("nav.logout")}
-                  className="hidden sm:inline-block"
-                >
-                  <AnimatedText value={t("nav.logout")} />
-                </AnimatedWidth>
               </button>
             </>
           ) : null}

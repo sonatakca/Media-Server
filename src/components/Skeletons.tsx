@@ -66,13 +66,13 @@ export function HomeSkeleton() {
 
   return (
     <div>
-      <section className="relative -mx-4 -mt-6 mb-0 h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:h-[68svh] lg:-mx-8 lg:h-[72svh]">
+      <section className="relative mb-0 min-h-screen w-full overflow-hidden bg-zinc-950">
         <div className="shimmer absolute inset-0" />
         <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
         <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
         <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[var(--background)] to-transparent" />
 
-        <div className="relative z-20 mx-auto flex h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:h-[68svh] sm:px-6 md:pb-20 lg:h-[72svh] lg:px-8">
+        <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(3rem,8vh,6rem)] pt-28 sm:px-6 lg:px-8">
           <div className="max-w-3xl">
             <div className="shimmer mb-4 h-9 w-40 rounded-full" />
 

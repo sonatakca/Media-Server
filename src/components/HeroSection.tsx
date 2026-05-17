@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Info, Play } from "lucide-react";
 import { ButtonLink } from "./Button";
@@ -14,7 +15,11 @@ import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
+
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
+
+const HERO_DESCRIPTION_VISIBLE_MS = 5000;
+const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 20;
 
 interface HeroSectionProps {
   item?: JellyfinItem;
@@ -83,8 +88,11 @@ export function HeroSection({
 }: HeroSectionProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
+  const heroSectionRef = useRef<HTMLElement | null>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
+  const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
+  const [showStickyIndicators, setShowStickyIndicators] = useState(true);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const mediaFormatLabels = useMemo(
     () => ({
@@ -139,10 +147,173 @@ export function HeroSection({
     Math.max(currentIndex, 0),
     Math.max(carouselItemCount - 1, 0),
   );
+  const showHeroIndicators = showCarouselDots && showStickyIndicators;
+
+  const heroIndicators = showCarouselDots ? (
+    <motion.div
+      layout
+      data-hero-carousel-indicators
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))] z-[99999] flex justify-center px-4"
+      initial={{
+        opacity: 0,
+        y: shouldReduceMotion ? 0 : "140%",
+        scale: shouldReduceMotion ? 1 : 0.96,
+        filter: shouldReduceMotion ? "none" : "blur(14px)",
+      }}
+      animate={{
+        opacity: showHeroIndicators ? 1 : 0,
+        y: showHeroIndicators ? 0 : "140%",
+        scale: showHeroIndicators ? 1 : shouldReduceMotion ? 1 : 0.96,
+        filter: showHeroIndicators ? "none" : "blur(14px)",
+      }}
+      transition={{
+        duration: shouldReduceMotion ? 0 : 1,
+        delay: shouldReduceMotion || !showHeroIndicators ? 0 : 0.1,
+        ease: softEase,
+      }}
+    >
+      <div
+        className="pointer-events-auto rounded-full border border-white/25 bg-black/80 p-1.5 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl"
+        style={{ pointerEvents: showHeroIndicators ? "auto" : "none" }}
+      >
+        <TimedCarouselIndicators
+          count={carouselItemCount}
+          activeIndex={activeCarouselIndex}
+          durationMs={durationMs}
+          onSelect={(index) => onSelectIndex?.(index)}
+          isPaused={isPaused}
+          progressResetKey={progressResetKey}
+          onTogglePaused={onTogglePaused}
+          showPauseButton={showPauseButton}
+          ariaLabel="Featured carousel"
+        />
+      </div>
+    </motion.div>
+  ) : null;
 
   useEffect(() => {
     setFailedImageUrls([]);
   }, [item?.Id]);
+
+  useEffect(() => {
+    setIsHeroIntroDone(false);
+
+    if (!item?.Id) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsHeroIntroDone(true);
+    }, HERO_DESCRIPTION_VISIBLE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [item?.Id]);
+
+  useEffect(() => {
+    const updateStickyIndicatorVisibility = () => {
+      const heroSection = heroSectionRef.current;
+
+      if (!heroSection) {
+        setShowStickyIndicators(false);
+        return;
+      }
+
+      const heroRect = heroSection.getBoundingClientRect();
+      const heroTop = heroRect.top + window.scrollY;
+      const bannerBottom = heroTop + window.innerHeight;
+      const indicatorLimit =
+        bannerBottom +
+        window.innerHeight * (HERO_INDICATOR_AFTER_BANNER_LIMIT_VH / 100);
+      const viewportBottom = window.scrollY + window.innerHeight;
+
+      setShowStickyIndicators(viewportBottom <= indicatorLimit);
+    };
+
+    updateStickyIndicatorVisibility();
+    window.addEventListener("scroll", updateStickyIndicatorVisibility, {
+      passive: true,
+    });
+    window.addEventListener("resize", updateStickyIndicatorVisibility);
+
+    return () => {
+      window.removeEventListener("scroll", updateStickyIndicatorVisibility);
+      window.removeEventListener("resize", updateStickyIndicatorVisibility);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return;
+    }
+
+    const heroRect = heroSectionRef.current?.getBoundingClientRect();
+    const bannerBottom =
+      heroRect && typeof window !== "undefined"
+        ? heroRect.top + window.scrollY + window.innerHeight
+        : null;
+
+    console.debug("[Seyirlik Hero] carousel indicators", {
+      carouselItemCount,
+      showCarouselDots,
+      currentIndex,
+      activeCarouselIndex,
+      featuredItem: item
+        ? {
+            id: item.Id,
+            name: item.Name,
+          }
+        : null,
+      heroContentVisible,
+      showStickyIndicators,
+      loadedImageUrl: loadedImageUrl
+        ? redactPlaybackUrl(loadedImageUrl)
+        : loadedImageUrl,
+      selectedImageUrl: selectedImage?.url
+        ? redactPlaybackUrl(selectedImage.url)
+        : selectedImage?.url,
+      selectedImageType: selectedImage?.type,
+      scrollY: typeof window === "undefined" ? null : window.scrollY,
+      viewportBottom:
+        typeof window === "undefined"
+          ? null
+          : window.scrollY + window.innerHeight,
+      heroSectionRect: heroRect
+        ? {
+            top: heroRect.top,
+            right: heroRect.right,
+            bottom: heroRect.bottom,
+            left: heroRect.left,
+            width: heroRect.width,
+            height: heroRect.height,
+          }
+        : null,
+      bannerBottom,
+      indicatorLimit:
+        bannerBottom === null || typeof window === "undefined"
+          ? null
+          : bannerBottom +
+            window.innerHeight * (HERO_INDICATOR_AFTER_BANNER_LIMIT_VH / 100),
+      indicatorLimitExtraVh: HERO_INDICATOR_AFTER_BANNER_LIMIT_VH,
+      reason: showCarouselDots
+        ? showStickyIndicators
+          ? "Indicators should be mounted and visible."
+          : "Indicators are mounted but fading because the viewport bottom is past the banner viewport bottom."
+        : "Indicators are intentionally not mounted because carouselItemCount <= 1; TimedCarouselIndicators returns null for a single slide.",
+    });
+  }, [
+    activeCarouselIndex,
+    carouselItemCount,
+    currentIndex,
+    heroContentVisible,
+    item,
+    loadedImageUrl,
+    selectedImage?.type,
+    selectedImage?.url,
+    showCarouselDots,
+    showStickyIndicators,
+  ]);
 
   useEffect(() => {
     if (!import.meta.env.DEV || !item) {
@@ -170,324 +341,355 @@ export function HeroSection({
   };
 
   return (
-    <section className="relative -mx-4 -mt-6 mb-0 h-[58svh] overflow-hidden bg-zinc-950 sm:-mx-6 md:h-[68svh] lg:-mx-8 lg:h-[72svh]">
-      <div className="absolute inset-0 z-0 bg-[linear-gradient(145deg,#18181b_0%,#09090b_52%,#050506_100%)]" />
-      <AnimatePresence initial>
-        {selectedImage ? (
-          <motion.img
-            key={selectedImage.url}
-            src={selectedImage.url}
-            alt=""
-            className={`absolute inset-0 z-0 h-full w-full object-cover ${
-              selectedImage.type === "primary" ? "blur-2xl" : ""
-            }`}
-            initial={{
-              opacity: 0,
-              scale: shouldReduceMotion
-                ? 1
-                : selectedImage.type === "primary"
-                  ? 1.16
-                  : 1.07,
-              filter: shouldReduceMotion ? "none" : "blur(18px)",
-            }}
-            animate={{
-              opacity: heroImageLoaded
-                ? selectedImage.type === "primary"
-                  ? 0.52
-                  : 0.78
-                : 0,
-              scale: heroImageLoaded
-                ? selectedImage.type === "primary"
-                  ? 1.1
-                  : 1
-                : shouldReduceMotion
+    <>
+      <section
+        ref={heroSectionRef}
+        className="relative mb-0 min-h-screen w-full overflow-hidden bg-zinc-950"
+      >
+        <div className="absolute inset-0 z-0 bg-[linear-gradient(145deg,#18181b_0%,#09090b_52%,#050506_100%)]" />
+        <AnimatePresence initial>
+          {selectedImage ? (
+            <motion.img
+              key={selectedImage.url}
+              src={selectedImage.url}
+              alt=""
+              className={`absolute inset-0 z-0 h-full w-full object-cover ${
+                selectedImage.type === "primary" ? "blur-2xl" : ""
+              }`}
+              initial={{
+                opacity: 0,
+                scale: shouldReduceMotion
                   ? 1
                   : selectedImage.type === "primary"
-                    ? 1.13
-                    : 1.04,
-              filter:
-                heroImageLoaded || shouldReduceMotion ? "none" : "blur(16px)",
-            }}
-            exit={{
-              opacity: 0,
-              scale: shouldReduceMotion
-                ? 1
-                : selectedImage.type === "primary"
-                  ? 1.12
-                  : 1.035,
-              filter: shouldReduceMotion ? "none" : "blur(16px)",
-            }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 1.45,
-              ease: softEase,
-            }}
-            onLoad={() => setLoadedImageUrl(selectedImage.url)}
-            onError={() => handleImageError(selectedImage.url)}
-          />
-        ) : null}
-      </AnimatePresence>
-      <div className="hero-cinematic-vignette z-10" />
-      <div className="hero-bottom-fade z-10" />
-
-      <div className="relative z-20 mx-auto flex h-[58svh] max-w-[1600px] flex-col justify-end px-4 pb-16 pt-28 sm:h-[68svh] sm:px-6 md:pb-20 lg:h-[72svh] lg:px-8">
-        {showSidePoster ? (
-          <motion.div
-            className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
-            initial={false}
-            animate={{
-              opacity: heroContentVisible ? 1 : 0,
-              y: heroContentVisible ? 0 : 18,
-              scale: heroContentVisible ? 1 : 0.985,
-            }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.55,
-              delay: shouldReduceMotion ? 0 : 0.12,
-              ease: easeOut,
-            }}
-          >
-            <img
-              src={primaryPosterUrl}
-              alt=""
-              className="aspect-[2/3] w-full object-cover"
-              onError={() => handleImageError(primaryPosterUrl)}
+                    ? 1.16
+                    : 1.07,
+                filter: shouldReduceMotion ? "none" : "blur(18px)",
+              }}
+              animate={{
+                opacity: heroImageLoaded
+                  ? selectedImage.type === "primary"
+                    ? 0.52
+                    : 0.78
+                  : 0,
+                scale: heroImageLoaded
+                  ? selectedImage.type === "primary"
+                    ? 1.1
+                    : 1
+                  : shouldReduceMotion
+                    ? 1
+                    : selectedImage.type === "primary"
+                      ? 1.13
+                      : 1.04,
+                filter:
+                  heroImageLoaded || shouldReduceMotion ? "none" : "blur(16px)",
+              }}
+              exit={{
+                opacity: 0,
+                scale: shouldReduceMotion
+                  ? 1
+                  : selectedImage.type === "primary"
+                    ? 1.12
+                    : 1.035,
+                filter: shouldReduceMotion ? "none" : "blur(16px)",
+              }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 1.45,
+                ease: softEase,
+              }}
+              onLoad={() => setLoadedImageUrl(selectedImage.url)}
+              onError={() => handleImageError(selectedImage.url)}
             />
-          </motion.div>
-        ) : null}
-        <AnimatePresence mode="wait" initial>
-          <motion.div
-            key={contentKey}
-            className="max-w-3xl"
-            initial={{
-              opacity: 0,
-              y: shouldReduceMotion ? 0 : 28,
-              scale: shouldReduceMotion ? 1 : 0.982,
-              filter: shouldReduceMotion ? "none" : "blur(14px)",
-            }}
-            animate={{
-              opacity: heroContentVisible ? 1 : 0,
-              y: heroContentVisible || shouldReduceMotion ? 0 : 18,
-              scale: heroContentVisible || shouldReduceMotion ? 1 : 0.982,
-              filter:
-                heroContentVisible || shouldReduceMotion
-                  ? "none"
-                  : "blur(10px)",
-            }}
-            exit={{
-              opacity: 0,
-              y: shouldReduceMotion ? 0 : -16,
-              scale: shouldReduceMotion ? 1 : 0.992,
-              filter: shouldReduceMotion ? "none" : "blur(10px)",
-            }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.5,
-              delay: shouldReduceMotion ? 0 : 0.18,
-              ease: softEase,
-            }}
-          >
-            {logoUrl ? (
-              <motion.img
-                src={logoUrl}
-                alt={title}
-                draggable={false}
-                className="cinematic-logo-shadow h-[clamp(5.5rem,13vw,13rem)] max-w-[min(31rem,58vw)] select-none object-contain object-left"
-                initial={{
-                  opacity: 0,
-                  y: shouldReduceMotion ? 0 : 20,
-                  scale: shouldReduceMotion ? 1 : 0.975,
-                }}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 14,
-                  scale: heroContentVisible ? 1 : 0.985,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.72,
-                  delay: shouldReduceMotion ? 0 : 0.28,
-                  ease: softEase,
-                }}
-              />
-            ) : (
-              <motion.h1
-                className="text-cinematic-title max-w-3xl text-5xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
-                initial={{
-                  opacity: 0,
-                  y: shouldReduceMotion ? 0 : 20,
-                  scale: shouldReduceMotion ? 1 : 0.975,
-                }}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 14,
-                  scale: heroContentVisible ? 1 : 0.985,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.72,
-                  delay: shouldReduceMotion ? 0 : 0.28,
-                  ease: softEase,
-                }}
-              >
-                {title}
-              </motion.h1>
-            )}
-            {subtitle ? (
-              <motion.p
-                className="mt-4 text-lg font-semibold text-white/[0.78]"
-                initial={false}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 10,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.62,
-                  delay: shouldReduceMotion ? 0 : 0.36,
-                  ease: softEase,
-                }}
-              >
-                {subtitle}
-              </motion.p>
-            ) : null}
-            {metadata.length > 0 ? (
-              <motion.div
-                className="mt-5 flex flex-wrap gap-2"
-                initial={false}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 10,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.62,
-                  delay: shouldReduceMotion ? 0 : 0.42,
-                  ease: softEase,
-                }}
-              >
-                {metadata.map((value) => (
-                  <span
-                    key={String(value)}
-                    className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/[0.82] backdrop-blur"
-                  >
-                    {value}
-                  </span>
-                ))}
-                {item?.Genres?.slice(0, 3).map((genre) => (
-                  <span
-                    key={genre}
-                    className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/70 backdrop-blur"
-                  >
-                    {genre}
-                  </span>
-                ))}
-              </motion.div>
-            ) : null}
-            {item?.Overview ? (
-              <motion.p
-                className="mt-5 line-clamp-3 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
-                initial={false}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 10,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.66,
-                  delay: shouldReduceMotion ? 0 : 0.48,
-                  ease: softEase,
-                }}
-              >
-                {item.Overview}
-              </motion.p>
-            ) : (
-              <motion.p
-                className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
-                initial={false}
-                animate={{
-                  opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? 0 : 10,
-                }}
-                transition={{
-                  duration: shouldReduceMotion ? 0 : 0.66,
-                  delay: shouldReduceMotion ? 0 : 0.48,
-                  ease: softEase,
-                }}
-              >
-                {t("hero.fallbackDescription")}
-              </motion.p>
-            )}
+          ) : null}
+        </AnimatePresence>
+        <motion.div
+          className="hero-cinematic-vignette z-10"
+          initial={false}
+          animate={{
+            opacity: isHeroIntroDone ? 0.58 : 1,
+          }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 1.25,
+            ease: softEase,
+          }}
+        />
+        <div className="hero-bottom-fade z-10" />
+
+        <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(3rem,8vh,6rem)] pt-28 sm:px-6 lg:px-8">
+          {showSidePoster ? (
             <motion.div
-              className="mt-7 flex flex-wrap gap-3"
+              className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
               initial={false}
               animate={{
                 opacity: heroContentVisible ? 1 : 0,
-                y: heroContentVisible ? 0 : 10,
+                y: heroContentVisible ? 0 : 18,
+                scale: heroContentVisible ? 1 : 0.985,
               }}
               transition={{
-                duration: shouldReduceMotion ? 0 : 0.66,
-                delay: shouldReduceMotion ? 0 : 0.56,
+                duration: shouldReduceMotion ? 0 : 0.55,
+                delay: shouldReduceMotion ? 0 : 0.12,
+                ease: easeOut,
+              }}
+            >
+              <img
+                src={primaryPosterUrl}
+                alt=""
+                className="aspect-[2/3] w-full object-cover"
+                onError={() => handleImageError(primaryPosterUrl)}
+              />
+            </motion.div>
+          ) : null}
+          <AnimatePresence mode="wait" initial>
+            <motion.div
+              key={contentKey}
+              className="max-w-3xl"
+              initial={{
+                opacity: 0,
+                y: shouldReduceMotion ? 0 : 28,
+                scale: shouldReduceMotion ? 1 : 0.982,
+                filter: shouldReduceMotion ? "none" : "blur(14px)",
+              }}
+              animate={{
+                opacity: heroContentVisible ? 1 : 0,
+                y: heroContentVisible || shouldReduceMotion ? 0 : 18,
+                scale: heroContentVisible || shouldReduceMotion ? 1 : 0.982,
+                filter:
+                  heroContentVisible || shouldReduceMotion
+                    ? "none"
+                    : "blur(10px)",
+              }}
+              exit={{
+                opacity: 0,
+                y: shouldReduceMotion ? 0 : -16,
+                scale: shouldReduceMotion ? 1 : 0.992,
+                filter: shouldReduceMotion ? "none" : "blur(10px)",
+              }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.5,
+                delay: shouldReduceMotion ? 0 : 0.18,
                 ease: softEase,
               }}
             >
-              {item ? (
-                <>
-                  {canPlay ? (
-                    <ButtonLink
-                      to={`/watch/${item.Id}`}
-                      className="min-h-12 rounded-full px-6 text-base shadow-button-glow"
+              {logoUrl ? (
+                <motion.img
+                  src={logoUrl}
+                  alt={title}
+                  draggable={false}
+                  className="cinematic-logo-shadow h-[clamp(8rem,18vw,18rem)] max-w-[min(44rem,72vw)] origin-left select-none object-contain object-left"
+                  initial={{
+                    opacity: 0,
+                    y: shouldReduceMotion ? 0 : 20,
+                    scale: shouldReduceMotion ? 1 : 0.975,
+                  }}
+                  animate={{
+                    opacity: heroContentVisible ? 1 : 0,
+                    y: heroContentVisible ? (isHeroIntroDone ? 180 : 0) : 14,
+                    scale: heroContentVisible
+                      ? isHeroIntroDone
+                        ? 0.68
+                        : 1
+                      : 0.985,
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion
+                      ? 0
+                      : isHeroIntroDone
+                        ? 1.35
+                        : 0.9,
+                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
+                    ease: softEase,
+                  }}
+                />
+              ) : (
+                <motion.h1
+                  className="text-cinematic-title max-w-3xl origin-left text-5xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
+                  initial={{
+                    opacity: 0,
+                    y: shouldReduceMotion ? 0 : 20,
+                    scale: shouldReduceMotion ? 1 : 0.975,
+                  }}
+                  animate={{
+                    opacity: heroContentVisible ? 1 : 0,
+                    y: heroContentVisible ? (isHeroIntroDone ? 64 : 0) : 14,
+                    scale: heroContentVisible
+                      ? isHeroIntroDone
+                        ? 0.78
+                        : 1
+                      : 0.985,
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion
+                      ? 0
+                      : isHeroIntroDone
+                        ? 1.35
+                        : 0.9,
+                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
+                    ease: softEase,
+                  }}
+                >
+                  {title}
+                </motion.h1>
+              )}
+              {item?.Overview ? (
+                <motion.p
+                  className="mt-5 line-clamp-3 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+                  initial={false}
+                  animate={{
+                    opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
+                    y: heroContentVisible ? (isHeroIntroDone ? 26 : 0) : 10,
+                    filter:
+                      heroContentVisible && !isHeroIntroDone
+                        ? "blur(0px)"
+                        : "blur(0px)",
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion
+                      ? 0
+                      : isHeroIntroDone
+                        ? 1.15
+                        : 0.78,
+                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.48,
+                    ease: softEase,
+                  }}
+                  style={{
+                    pointerEvents: isHeroIntroDone ? "none" : "auto",
+                  }}
+                >
+                  {item.Overview}
+                </motion.p>
+              ) : (
+                <motion.p
+                  className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+                  initial={false}
+                  animate={{
+                    opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
+                    y: heroContentVisible ? (isHeroIntroDone ? 26 : 0) : 10,
+                    filter:
+                      heroContentVisible && !isHeroIntroDone
+                        ? "blur(0px)"
+                        : "blur(0px)",
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion
+                      ? 0
+                      : isHeroIntroDone
+                        ? 1.15
+                        : 0.78,
+                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.48,
+                    ease: softEase,
+                  }}
+                  style={{
+                    pointerEvents: isHeroIntroDone ? "none" : "auto",
+                  }}
+                >
+                  {t("hero.fallbackDescription")}
+                </motion.p>
+              )}
+              {subtitle && false ? (
+                <motion.p
+                  className="mt-4 text-lg font-semibold text-white/[0.78]"
+                  initial={false}
+                  animate={{
+                    opacity: heroContentVisible ? 1 : 0,
+                    y: heroContentVisible ? 0 : 10,
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion ? 0 : 0.62,
+                    delay: shouldReduceMotion ? 0 : 0.36,
+                    ease: softEase,
+                  }}
+                >
+                  {subtitle}
+                </motion.p>
+              ) : null}
+              {metadata.length > 0 ? (
+                <motion.div
+                  className="mt-5 flex flex-wrap gap-2"
+                  initial={false}
+                  animate={{
+                    opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
+                    y: heroContentVisible ? (isHeroIntroDone ? 26 : 0) : 10,
+                  }}
+                  transition={{
+                    duration: shouldReduceMotion
+                      ? 0
+                      : isHeroIntroDone
+                        ? 1.15
+                        : 0.74,
+                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.42,
+                    ease: softEase,
+                  }}
+                  style={{
+                    pointerEvents: isHeroIntroDone ? "none" : "auto",
+                  }}
+                >
+                  {metadata.map((value) => (
+                    <span
+                      key={String(value)}
+                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/[0.82] backdrop-blur"
                     >
-                      <Play size={20} fill="currentColor" />
-                      <AnimatedWidth value={t("common.play")}>
-                        <AnimatedText value={t("common.play")} />
+                      {value}
+                    </span>
+                  ))}
+                  {item?.Genres?.slice(0, 3).map((genre) => (
+                    <span
+                      key={genre}
+                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/70 backdrop-blur"
+                    >
+                      {genre}
+                    </span>
+                  ))}
+                </motion.div>
+              ) : null}
+              <motion.div
+                className="mt-7 flex flex-wrap gap-3"
+                initial={false}
+                animate={{
+                  opacity: heroContentVisible ? 1 : 0,
+                  y: heroContentVisible ? (isHeroIntroDone ? -18 : 0) : 10,
+                }}
+                transition={{
+                  duration: shouldReduceMotion
+                    ? 0
+                    : isHeroIntroDone
+                      ? 1.05
+                      : 0.84,
+                  delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0.08 : 0.56,
+                  ease: softEase,
+                }}
+              >
+                {item ? (
+                  <>
+                    {canPlay ? (
+                      <ButtonLink
+                        to={`/watch/${item.Id}`}
+                        className="min-h-12 rounded-full px-6 text-base shadow-button-glow"
+                      >
+                        <Play size={20} fill="currentColor" />
+                        <AnimatedWidth value={t("common.play")}>
+                          <AnimatedText value={t("common.play")} />
+                        </AnimatedWidth>
+                      </ButtonLink>
+                    ) : null}
+                    <ButtonLink
+                      to={getRouteForItem(item)}
+                      variant="secondary"
+                      className="min-h-12 rounded-full px-6 text-base backdrop-blur"
+                    >
+                      <Info size={20} />
+                      <AnimatedWidth value={t("common.details")}>
+                        <AnimatedText value={t("common.details")} />
                       </AnimatedWidth>
                     </ButtonLink>
-                  ) : null}
-                  <ButtonLink
-                    to={getRouteForItem(item)}
-                    variant="secondary"
-                    className="min-h-12 rounded-full px-6 text-base backdrop-blur"
-                  >
-                    <Info size={20} />
-                    <AnimatedWidth value={t("common.details")}>
-                      <AnimatedText value={t("common.details")} />
-                    </AnimatedWidth>
-                  </ButtonLink>
-                </>
-              ) : null}
+                  </>
+                ) : null}
+              </motion.div>
             </motion.div>
-          </motion.div>
-        </AnimatePresence>
-        {showCarouselDots ? (
-          <motion.div
-            layout
-            className="mt-6 w-fit max-w-full"
-            initial={{
-              opacity: 0,
-              y: shouldReduceMotion ? 0 : 10,
-              scale: shouldReduceMotion ? 1 : 0.97,
-              filter: shouldReduceMotion ? "none" : "blur(8px)",
-            }}
-            animate={{
-              opacity: heroContentVisible ? 1 : 0,
-              y: heroContentVisible ? 0 : 10,
-              scale: heroContentVisible ? 1 : 0.97,
-              filter:
-                heroContentVisible || shouldReduceMotion ? "none" : "blur(8px)",
-            }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.62,
-              delay: shouldReduceMotion ? 0 : 0.72,
-              ease: softEase,
-            }}
-          >
-            <TimedCarouselIndicators
-              count={carouselItemCount}
-              activeIndex={activeCarouselIndex}
-              durationMs={durationMs}
-              onSelect={(index) => onSelectIndex?.(index)}
-              isPaused={isPaused}
-              progressResetKey={progressResetKey}
-              onTogglePaused={onTogglePaused}
-              showPauseButton={showPauseButton}
-              ariaLabel="Featured carousel"
-            />
-          </motion.div>
-        ) : null}
-      </div>
-    </section>
+          </AnimatePresence>
+        </div>
+      </section>
+      {typeof document === "undefined"
+        ? heroIndicators
+        : createPortal(heroIndicators, document.body)}
+    </>
   );
 }

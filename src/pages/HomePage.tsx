@@ -232,79 +232,84 @@ export function HomePage() {
   const showContinueWatchingRow = data.continueWatching.length > 0;
 
   return (
-    <div>
+    <div className="layout-no-offset">
       <ConfettiAnimation startDelay={0} pieceCount={200} />
-      <HeroSection
-        item={heroItem}
-        currentIndex={selectedHeroIndex}
-        totalItems={featuredPool.length}
-        durationMs={HERO_ROTATION_INTERVAL_MS}
-        progressResetKey={heroProgressResetKey}
-        isPaused={isHeroPaused}
-        onTogglePaused={handleToggleHeroPaused}
-        showPauseButton
-        onSelectIndex={handleSelectHeroIndex}
-      />
 
-      {rowWarnings.length > 0 ? (
-        <div className="mb-4 space-y-3">
-          {rowWarnings.map((warning) => (
-            <ErrorMessage
-              key={`${warning.labelKey}-${warning.message}`}
-              title={t("home.someDataFailed")}
-              message={`${t(warning.labelKey)}: ${warning.message}`}
-            />
-          ))}
-        </div>
-      ) : null}
+      <div className="min-h-[100svh] full-bleed ">
+        <HeroSection
+          item={heroItem}
+          currentIndex={selectedHeroIndex}
+          totalItems={featuredPool.length}
+          durationMs={HERO_ROTATION_INTERVAL_MS}
+          progressResetKey={heroProgressResetKey}
+          isPaused={isHeroPaused}
+          onTogglePaused={handleToggleHeroPaused}
+          showPauseButton
+          onSelectIndex={handleSelectHeroIndex}
+        />
+      </div>
 
-      {showContinueWatchingRow ? (
-        <div className="relative z-10 -mt-14 sm:-mt-20">
-          <MediaRow
-            title={t("home.continueWatching")}
-            items={data.continueWatching}
-            getItemTo={getRouteForItem}
-            emptyMessage={t("home.nothingInProgress")}
-          />
-        </div>
-      ) : null}
-
-      <MediaRow
-        title={t("home.latestMedia")}
-        items={data.latestMedia}
-        getItemTo={getRouteForItem}
-      />
-
-      <MotionReveal className="group/row relative py-6" direction="up">
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
-              <AnimatedWidth value={t("home.browse")}>
-                <AnimatedText value={t("home.browse")} />
-              </AnimatedWidth>
-            </p>
-
-            <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
-              <AnimatedWidth value={t("home.libraries")}>
-                <AnimatedText value={t("home.libraries")} />
-              </AnimatedWidth>
-            </h2>
-          </div>
-        </div>
-        {data.libraries.length > 0 ? (
-          <div className="media-scroll -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-5 pt-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-            {data.libraries.map((library) => (
-              <LibraryTile key={library.Id} library={library} />
+      <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8">
+        {rowWarnings.length > 0 ? (
+          <div className="mb-4 space-y-3">
+            {rowWarnings.map((warning) => (
+              <ErrorMessage
+                key={`${warning.labelKey}-${warning.message}`}
+                title={t("home.someDataFailed")}
+                message={`${t(warning.labelKey)}: ${warning.message}`}
+              />
             ))}
           </div>
-        ) : (
-          <p className="rounded-xl border border-white/10 bg-[var(--surface)] p-5 text-sm text-white/[0.62]">
-            <AnimatedWidth value={t("home.noLibraries")}>
-              <AnimatedText value={t("home.noLibraries")} />
-            </AnimatedWidth>
-          </p>
-        )}
-      </MotionReveal>
+        ) : null}
+
+        <MediaRow
+          title={t("home.latestMedia")}
+          items={data.latestMedia}
+          getItemTo={getRouteForItem}
+        />
+
+        {showContinueWatchingRow ? (
+          <div className="relative z-10">
+            <MediaRow
+              title={t("home.continueWatching")}
+              items={data.continueWatching}
+              getItemTo={getRouteForItem}
+              emptyMessage={t("home.nothingInProgress")}
+            />
+          </div>
+        ) : null}
+
+        <MotionReveal className="group/row relative py-6" direction="up">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
+                <AnimatedWidth value={t("home.browse")}>
+                  <AnimatedText value={t("home.browse")} />
+                </AnimatedWidth>
+              </p>
+
+              <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
+                <AnimatedWidth value={t("home.libraries")}>
+                  <AnimatedText value={t("home.libraries")} />
+                </AnimatedWidth>
+              </h2>
+            </div>
+          </div>
+          {data.libraries.length > 0 ? (
+            <div className="media-scroll -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-5 pt-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+              {data.libraries.map((library) => (
+                <LibraryTile key={library.Id} library={library} />
+              ))}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-white/10 bg-[var(--surface)] p-5 text-sm text-white/[0.62]">
+              <AnimatedWidth value={t("home.noLibraries")}>
+                <AnimatedText value={t("home.noLibraries")} />
+              </AnimatedWidth>
+            </p>
+          )}
+        </MotionReveal>
+      </div>
     </div>
   );
 }

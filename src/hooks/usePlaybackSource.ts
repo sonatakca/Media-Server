@@ -171,11 +171,11 @@ export function usePlaybackSource(itemId?: string) {
     setState((currentState) => ({ ...currentState, activeSource }));
   }, [activeSource]);
 
-  const switchToSource = useCallback((nextIndex: number, notice: string) => {
+  const switchToSource = useCallback((nextIndex: number) => {
     setSourceIndex(nextIndex);
     setState((currentState) => ({
       ...currentState,
-      notice,
+      notice: null,
       error: null,
     }));
   }, []);
@@ -187,7 +187,7 @@ export function usePlaybackSource(itemId?: string) {
     );
 
     if (transcodingIndex >= 0) {
-      switchToSource(transcodingIndex, "Trying Jellyfin transcoded playback.");
+      switchToSource(transcodingIndex);
     }
   }, [sourceIndex, state.candidates, switchToSource]);
 
@@ -203,10 +203,7 @@ export function usePlaybackSource(itemId?: string) {
         currentSource?.mode !== "Transcoding" &&
         transcodeFallbackIndex >= 0
       ) {
-        switchToSource(
-          transcodeFallbackIndex,
-          "This file could not be played directly. Trying Jellyfin transcoding...",
-        );
+        switchToSource(transcodeFallbackIndex);
         return;
       }
 
@@ -215,7 +212,7 @@ export function usePlaybackSource(itemId?: string) {
       );
 
       if (nextIndex >= 0) {
-        switchToSource(nextIndex, "Trying another Jellyfin playback source...");
+        switchToSource(nextIndex);
         return;
       }
 

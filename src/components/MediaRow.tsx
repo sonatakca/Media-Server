@@ -124,7 +124,7 @@ export function MediaRow({
           <div
             ref={scrollerRef}
             onScroll={updateScrollState}
-            className="media-scroll flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6"
+            className="media-scroll relative z-10 flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6"
           >
             {items.map((item, index) => (
               <div key={item.Id} className="snap-start">
@@ -138,10 +138,22 @@ export function MediaRow({
               </div>
             ))}
           </div>
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-y-0 left-0 z-[60] w-24 bg-gradient-to-r from-black/90 via-black/45 to-transparent transition-opacity duration-200 lg:w-32 ${
+              canScrollLeft ? "opacity-100" : "opacity-0"
+            }`}
+          />
+          <div
+            aria-hidden="true"
+            className={`pointer-events-none absolute inset-y-0 right-0 z-[60] w-24 bg-gradient-to-l from-black/90 via-black/45 to-transparent transition-opacity duration-200 lg:w-32 ${
+              canScrollRight ? "opacity-100" : "opacity-0"
+            }`}
+          />
           <button
             type="button"
             onClick={() => scrollByCards("left")}
-            className={`absolute left-3 top-[calc(50%-0.75rem)] z-[80] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/50 text-white shadow-[0_18px_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-white/[0.14] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
+            className={`absolute left-3 top-[calc(50%-0.75rem)] z-[90] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/90 text-white shadow-[0_18px_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
               canScrollLeft
                 ? "pointer-events-auto opacity-0 group-hover/viewport:opacity-100 focus:opacity-100"
                 : "pointer-events-none opacity-0"
@@ -155,7 +167,7 @@ export function MediaRow({
           <button
             type="button"
             onClick={() => scrollByCards("right")}
-            className={`absolute right-3 top-[calc(50%-0.75rem)] z-[80] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/50 text-white shadow-[0_18px_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] backdrop-blur-xl transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-white/[0.14] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
+            className={`absolute right-3 top-[calc(50%-0.75rem)] z-[90] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/90 text-white shadow-[0_18px_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
               canScrollRight
                 ? "pointer-events-auto opacity-0 group-hover/viewport:opacity-100 focus:opacity-100"
                 : "pointer-events-none opacity-0"

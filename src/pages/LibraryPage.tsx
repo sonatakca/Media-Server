@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, useReducedMotion } from "framer-motion";
-import { Navigate, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
+import { motion } from "framer-motion";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../components/BackButton";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -10,9 +10,9 @@ import { LibrarySkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import {
-  getBackdropImageUrl,
   getItem,
   getItemsForLibrary,
+  getLogoImageUrl,
   getSeasonEpisodes,
   getSeriesSeasons,
   getTopLevelItemsForLibrary,
@@ -27,6 +27,25 @@ type LibraryFallbackTitleKey =
   | "common.series"
   | "format.season"
   | "library.library";
+
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
+function countLabel(
+  count: number,
+  singularKey: TranslationKey,
+  pluralKey: TranslationKey,
+  t: (key: TranslationKey) => string,
+): string {
+  return count === 1 ? t(singularKey) : formatTemplate(t(pluralKey), { count });
+}
 
 interface LibraryData {
   library?: JellyfinItem;
@@ -194,7 +213,6 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
     }),
     [t],
   );
-  const shouldReduceMotion = useReducedMotion();
   const [data, setData] = useState<LibraryData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -290,57 +308,182 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
     return <LibrarySkeleton />;
   }
 
-  const libraryBackdrop =
-    data.library?.BackdropImageTags?.[0] && data.library
-      ? getBackdropImageUrl(
-          data.library.Id,
-          data.library.BackdropImageTags[0],
-          1600,
-        )
-      : "";
-
   const libraryTitle =
     data.library?.Name ||
     (data.fallbackTitleKey
       ? t(data.fallbackTitleKey as TranslationKey)
       : t("library.library"));
 
+  const firstItemWithLogo = data.items.find(
+    (libraryItem) =>
+      Boolean(libraryItem.ImageTags?.Logo) ||
+      Boolean(libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag),
+  );
+  const libraryLogoUrl = data.library?.ImageTags?.Logo
+    ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 1100)
+    : data.library?.ParentLogoItemId && data.library.ParentLogoImageTag
+      ? getLogoImageUrl(
+          data.library.ParentLogoItemId,
+          data.library.ParentLogoImageTag,
+          1100,
+        )
+      : firstItemWithLogo?.ParentLogoItemId &&
+          firstItemWithLogo.ParentLogoImageTag
+        ? getLogoImageUrl(
+            firstItemWithLogo.ParentLogoItemId,
+            firstItemWithLogo.ParentLogoImageTag,
+            1100,
+          )
+        : firstItemWithLogo?.ImageTags?.Logo
+          ? getLogoImageUrl(
+              firstItemWithLogo.Id,
+              firstItemWithLogo.ImageTags.Logo,
+              1100,
+            )
+          : "";
+  const displayLibraryTitle = data.library?.Name
+    ? getDisplayTitle(data.library, mediaFormatLabels)
+    : libraryTitle;
+
+  const visibleItemType = data.items.find(
+    (libraryItem) => libraryItem.Type,
+  )?.Type;
+
+  const headerCountLabel =
+    visibleItemType === "Season"
+      ? `${data.items.length} Sezon`
+      : visibleItemType === "Episode"
+        ? `${data.items.length} Bölüm`
+        : `${data.items.length} ${t("library.itemsAvailable")}`;
+  const firstEpisodeItem = data.items.find(
+    (libraryItem) => libraryItem.Type === "Episode",
+  );
+
+  const seasonHeaderLabel =
+    visibleItemType === "Episode"
+      ? typeof firstEpisodeItem?.ParentIndexNumber === "number" &&
+        firstEpisodeItem.ParentIndexNumber > 0
+        ? formatTemplate(t("media.seasonNumber"), {
+            number: firstEpisodeItem.ParentIndexNumber,
+          })
+        : data.library?.Name ||
+          firstEpisodeItem?.SeasonName ||
+          t("format.season")
+      : null;
+
   return (
     <div>
-      <section className="relative -mx-4 -mt-6 mb-8 overflow-hidden rounded-b-3xl px-4 pb-8 pt-8 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        {libraryBackdrop ? (
-          <motion.img
-            src={libraryBackdrop}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover opacity-35"
-            initial={shouldReduceMotion ? false : { opacity: 0, scale: 1.035 }}
-            animate={
-              shouldReduceMotion ? undefined : { opacity: 0.35, scale: 1 }
-            }
-            transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-          />
-        ) : (
-          <div className="absolute inset-0 bg-[linear-gradient(145deg,#18181b,#050506)]" />
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.62] to-black/30" />
-        <div className="relative mx-auto max-w-[1600px]">
-          <BackButton className="mb-14" />
-
-          <MotionReveal className="max-w-4xl" direction="up">
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-              {t("library.library")}
-            </p>
-            <h1 className="mt-2 text-5xl font-black leading-none text-white sm:text-6xl">
-              {data.library?.Name
-                ? getDisplayTitle(data.library, mediaFormatLabels)
-                : libraryTitle}
-            </h1>
-            <p className="mt-4 text-base font-medium text-white/[0.62]">
-              {data.items.length} {t("library.itemsAvailable")}
-            </p>
-          </MotionReveal>
+      <div className="relative mb-3 grid min-h-20 grid-cols-[auto_1fr_auto] items-end gap-4">
+        <div className="justify-self-start pb-1">
+          <BackButton />
         </div>
-      </section>
+
+        <MotionReveal
+          className="flex min-w-0 justify-center px-2"
+          direction="up"
+          delay={0.02}
+        >
+          {libraryLogoUrl && seasonHeaderLabel ? (
+            <div className="relative flex min-h-[5rem] w-full min-w-0 items-center justify-center sm:min-h-[5.5rem]">
+              <motion.img
+                src={libraryLogoUrl}
+                alt={displayLibraryTitle}
+                draggable={false}
+                className="cinematic-logo-shadow absolute left-1/2 z-30 h-auto max-h-[4.6rem] max-w-[min(18rem,40vw)] -translate-x-1/2 transform-gpu object-contain will-change-transform sm:max-h-20"
+                initial={{
+                  opacity: 0,
+                  x: "-50%",
+                  scale: 0.98,
+                }}
+                animate={{
+                  opacity: 1,
+                  x: "calc(-50% - 7.45rem)",
+                  scale: 1,
+                }}
+                transition={{
+                  opacity: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+                  scale: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+                  x: {
+                    duration: 1.05,
+                    delay: 1.15,
+                    ease: [0.16, 1, 0.3, 1],
+                  },
+                }}
+              />
+
+              <motion.div
+                aria-hidden="true"
+                className="absolute left-1/2 z-10 h-12 w-px shrink-0 origin-center bg-gradient-to-b from-transparent via-white/24 to-transparent will-change-transform sm:h-14"
+                initial={{
+                  opacity: 0,
+                  scaleY: 0.55,
+                  x: "1.75rem",
+                }}
+                animate={{
+                  opacity: 1,
+                  scaleY: 1,
+                  x: "1.85rem",
+                }}
+                transition={{
+                  duration: 0.78,
+                  delay: 1.55,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+              />
+
+              <motion.div
+                className="group/season-label absolute left-1/2 z-20 transform-gpu overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset will-change-[transform,opacity,filter] sm:px-5 sm:py-3"
+                initial={{
+                  opacity: 0,
+                  x: "1.55rem",
+                  scale: 0.975,
+                  filter: "blur(6px)",
+                }}
+                animate={{
+                  opacity: 1,
+                  x: "2.55rem",
+                  scale: 1,
+                  filter: "blur(0px)",
+                }}
+                transition={{
+                  duration: 0.95,
+                  delay: 1.25,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+              >
+                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
+
+                <div className="relative flex items-center">
+                  <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                    <AnimatedWidth value={seasonHeaderLabel}>
+                      <AnimatedText value={seasonHeaderLabel} />
+                    </AnimatedWidth>
+                  </span>
+                </div>
+              </motion.div>
+            </div>
+          ) : libraryLogoUrl ? (
+            <img
+              src={libraryLogoUrl}
+              alt={displayLibraryTitle}
+              draggable={false}
+              className="cinematic-logo-shadow h-auto max-h-20 max-w-[min(26rem,58vw)] object-contain"
+            />
+          ) : (
+            <h1 className="text-center text-4xl font-black leading-none text-white sm:text-5xl">
+              <AnimatedWidth value={displayLibraryTitle}>
+                <AnimatedText value={displayLibraryTitle} />
+              </AnimatedWidth>
+            </h1>
+          )}
+        </MotionReveal>
+
+        <p className="justify-self-end pb-2 text-right text-sm font-bold text-white/[0.62]">
+          <AnimatedWidth value={headerCountLabel}>
+            <AnimatedText value={headerCountLabel} />
+          </AnimatedWidth>
+        </p>
+      </div>
 
       <MotionReveal
         className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"

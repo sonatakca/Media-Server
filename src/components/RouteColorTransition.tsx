@@ -26,7 +26,7 @@ const ROUTE_COLOR_TRANSITION_USED_THEMES_KEY =
 const ROUTE_COLOR_TRANSITION_USED_ANIMS_KEY =
   "seyirlik.routeColorTransition.usedAnims";
 
-const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 60 * 30;
+const ROUTE_COLOR_TRANSITION_COOLDOWN_MS = 1000 * 1;
 const ROUTE_COLOR_TRANSITION_REPEAT_CHANCE = 0.5;
 
 const INITIAL_BLACK_HOLD_MS = 200;
@@ -197,6 +197,20 @@ export function RouteColorTransition() {
     [],
   );
 
+  const applyNextThemeSilently = useCallback(() => {
+    clearTransitionTimers();
+
+    const finalTheme = getNextAccentThemeWithoutRepeatingCycle();
+
+    selectedThemeRef.current = finalTheme;
+    saveAndApplyAccentTheme(finalTheme);
+
+    setIsVisible(false);
+    setIsLeaving(false);
+    setIsLogoVisible(false);
+    setBars(getInitialBars());
+  }, [clearTransitionTimers]);
+
   const playTransition = useCallback(
     (force = false) => {
       const now = Date.now();
@@ -354,8 +368,8 @@ export function RouteColorTransition() {
   );
 
   useEffect(() => {
-    applyStoredThemeIfAvailable();
-  }, [applyStoredThemeIfAvailable]);
+    applyNextThemeSilently();
+  }, [applyNextThemeSilently]);
 
   useLayoutEffect(() => {
     if (!hasMountedRef.current) {
@@ -370,17 +384,17 @@ export function RouteColorTransition() {
     }
 
     previousPathnameRef.current = location.pathname;
-    playTransition(false);
+
+    // Route changed:
+    // Pick and apply a new colour, but do NOT play the overlay animation.
+    const finalTheme = getNextAccentThemeWithoutRepeatingCycle();
+    selectedThemeRef.current = finalTheme;
+    saveAndApplyAccentTheme(finalTheme);
 
     return () => {
       clearTransitionTimers();
     };
-  }, [
-    location.pathname,
-    playTransition,
-    clearTransitionTimers,
-    applyStoredThemeIfAvailable,
-  ]);
+  }, [location.pathname, clearTransitionTimers, applyStoredThemeIfAvailable]);
 
   useEffect(() => {
     const handleForcedThemeChange = () => {

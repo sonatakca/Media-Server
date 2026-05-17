@@ -39,22 +39,22 @@ export function LanguageSwitch() {
           ? t("nav.language.ariaToTurkish")
           : t("nav.language.ariaToEnglish")
       }
-      className="inline-flex min-h-10 w-[76px] items-center justify-center rounded-full border border-white/10 bg-white/[0.08] px-0 py-1.5 text-sm font-semibold text-white/[0.90] backdrop-blur transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="inline-flex max-h-10 max-w-10 aspect-square items-center justify-center rounded-full border border-white/10 bg-transparent p-0 text-sm font-semibold text-white/[0.90] transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
     >
-      <span className="grid w-[54px] grid-cols-[22px_24px] items-center justify-center gap-2">
+      <span className="grid w-[54px] items-center justify-center gap-2">
         <span
-          className={`fi ${displayFlagClass} block h-[14px] w-[22px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
+          className={`fi ${displayFlagClass} block h-[18px] w-[25px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
             isFlagVisible
               ? "translate-y-0 opacity-100"
               : "-translate-y-0.5 opacity-0"
           }`}
         />
 
-        <span className="flex w-6 justify-center overflow-hidden">
+        {/* <span className="flex w-6 justify-center overflow-hidden">
           <AnimatedWidth value={isEnglish ? "EN" : "TR"} safetyPx={0}>
             <AnimatedText value={isEnglish ? "EN" : "TR"} />
           </AnimatedWidth>
-        </span>
+        </span> */}
       </span>
     </button>
   );
