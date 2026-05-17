@@ -19,7 +19,6 @@ import {
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import { setPageTitle } from "../lib/pageTitle";
-import { div } from "framer-motion/client";
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -55,6 +54,20 @@ function getRemainingRuntime(
   }
 
   return formatRuntime(runtimeTicks - positionTicks, labels);
+}
+
+function getEpisodeCode(item: JellyfinItem): string | null {
+  if (item.Type !== "Episode") {
+    return null;
+  }
+
+  const seasonNumber = item.ParentIndexNumber
+    ? `S${item.ParentIndexNumber}`
+    : "";
+  const episodeNumber = item.IndexNumber ? `E${item.IndexNumber}` : "";
+  const code = `${seasonNumber}${episodeNumber}`;
+
+  return code || null;
 }
 
 export function ItemDetailsPage() {
@@ -126,9 +139,15 @@ export function ItemDetailsPage() {
   const posterUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
     : "";
+  const isEpisode = item.Type === "Episode";
   const logoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
-    : "";
+    : item.ParentLogoItemId && item.ParentLogoImageTag
+      ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 1100)
+      : "";
+  const episodeCode = getEpisodeCode(item);
+  const episodeTitle = isEpisode ? item.Name || title : title;
+  const seriesTitle = item.SeriesName ?? title;
   const backdropUrl = getBackdrop(item);
   const videoStream = item.MediaSources?.[0]?.MediaStreams?.find(
     (stream) => stream.Type?.toLowerCase() === "video",
@@ -212,9 +231,19 @@ export function ItemDetailsPage() {
         <div className="relative z-10 mx-auto max-w-[1500px]">
           <BackButton className="mb-10 mt-16" />
 
-          <div className="grid gap-8 md:grid-cols-[minmax(16rem,22rem)_1fr] md:items-end lg:gap-12">
+          <div
+            className={
+              isEpisode
+                ? "grid gap-8 md:grid-cols-[minmax(28rem,44rem)_1fr] md:items-end lg:gap-12"
+                : "grid gap-8 md:grid-cols-[minmax(16rem,22rem)_1fr] md:items-end lg:gap-12"
+            }
+          >
             <motion.div
-              className="artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow"
+              className={
+                isEpisode
+                  ? "artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow md:self-center"
+                  : "artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow"
+              }
               initial={
                 shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }
               }
@@ -227,10 +256,20 @@ export function ItemDetailsPage() {
                 <img
                   src={posterUrl}
                   alt={title}
-                  className="aspect-[2/3] w-full object-cover"
+                  className={
+                    isEpisode
+                      ? "aspect-video w-full object-cover"
+                      : "aspect-[2/3] w-full object-cover"
+                  }
                 />
               ) : (
-                <div className="flex aspect-[2/3] items-center justify-center bg-[linear-gradient(145deg,#27272a,#050506)] p-6 text-center font-semibold text-zinc-200">
+                <div
+                  className={
+                    isEpisode
+                      ? "flex aspect-video items-center justify-center bg-[linear-gradient(145deg,#27272a,#050506)] p-6 text-center font-semibold text-zinc-200"
+                      : "flex aspect-[2/3] items-center justify-center bg-[linear-gradient(145deg,#27272a,#050506)] p-6 text-center font-semibold text-zinc-200"
+                  }
+                >
                   {title}
                 </div>
               )}
@@ -242,29 +281,67 @@ export function ItemDetailsPage() {
               animate={shouldReduceMotion ? undefined : { opacity: 1, y: 0 }}
               transition={{ duration: 0.36, delay: 0.08, ease: easeOut }}
             >
-              <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-                <AnimatedWidth value={mediaLabel}>
-                  <AnimatedText value={mediaLabel} />
-                </AnimatedWidth>
-              </p>
-              {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={title}
-                  className="cinematic-logo-shadow mt-3 max-h-36 max-w-[min(42rem,92vw)] object-contain object-left sm:max-h-44 lg:max-h-52"
-                />
+              {isEpisode ? (
+                <>
+                  <div className="flex min-w-0 flex-wrap items-center gap-4">
+                    {logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt={seriesTitle}
+                        className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
+                      />
+                    ) : (
+                      <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
+                        <AnimatedWidth value={seriesTitle}>
+                          <AnimatedText value={seriesTitle} />
+                        </AnimatedWidth>
+                      </h2>
+                    )}
+                  </div>
+                  <div className="flex">
+                    <h1 className=" mt-5 pb-2 text-4xl font-black leading-[1.08] text-white sm:text-5xl lg:text-6xl">
+                      <AnimatedWidth value={episodeTitle}>
+                        <AnimatedText value={episodeTitle} />
+                      </AnimatedWidth>
+                    </h1>
+                    {episodeCode ? (
+                      <div className="group/episode-label relative overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 my-7 mb-8 shadow-soft-inset sm:px-5 sm:py-3">
+                        <div className="relative flex items-center">
+                          <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                            {episodeCode}
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </>
               ) : (
-                <h1 className="text-cinematic-title mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">
-                  <AnimatedWidth value={title}>
-                    <AnimatedText value={title} />
-                  </AnimatedWidth>
-                </h1>
+                <>
+                  <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
+                    <AnimatedWidth value={mediaLabel}>
+                      <AnimatedText value={mediaLabel} />
+                    </AnimatedWidth>
+                  </p>
+                  {logoUrl ? (
+                    <img
+                      src={logoUrl}
+                      alt={title}
+                      className="cinematic-logo-shadow mt-3 max-h-36 max-w-[min(42rem,92vw)] object-contain object-left sm:max-h-44 lg:max-h-52"
+                    />
+                  ) : (
+                    <h1 className="text-cinematic-title mt-3 text-5xl font-black leading-[0.94] text-white sm:text-6xl lg:text-7xl">
+                      <AnimatedWidth value={title}>
+                        <AnimatedText value={title} />
+                      </AnimatedWidth>
+                    </h1>
+                  )}
+                </>
               )}
               <div className="mt-5 flex flex-wrap gap-2">
                 {chips.map(({ label, icon: Icon }, index) => (
                   <motion.span
                     key={label}
-                    className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/[0.12] bg-black/[0.35] px-3 text-sm font-bold text-white/[0.78] backdrop-blur"
+                    className="inline-flex min-h-9 items-center gap-2 rounded-full border border-white/[0.12] bg-gray-700/50 px-3 text-sm font-bold text-white/[0.78]"
                     initial={shouldReduceMotion ? false : { opacity: 0, y: 8 }}
                     animate={
                       shouldReduceMotion ? undefined : { opacity: 1, y: 0 }
@@ -287,7 +364,7 @@ export function ItemDetailsPage() {
                   {item.Genres.slice(0, 6).map((genre) => (
                     <span
                       key={genre}
-                      className="rounded-full border border-white/10 bg-white/[0.08] px-3 py-1.5 text-sm font-semibold text-white/[0.62]"
+                      className="rounded-full border border-white/10 bg-gray-500/20 px-3 py-1.5 text-sm font-semibold text-white/[0.62]"
                     >
                       <AnimatedWidth value={genre}>
                         <AnimatedText value={genre} />
@@ -331,7 +408,7 @@ export function ItemDetailsPage() {
                         to={restartHref}
                         aria-label="Baştan İzle"
                         title="Baştan İzle"
-                        className="group !flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-black/[0.32] !p-0 !px-0 !py-0 !text-white !shadow-soft-inset !backdrop-blur transition hover:!border-white/[0.24] hover:!bg-white/[0.1] hover:!text-white"
+                        className="group !flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-gray-700/75 !p-0 !px-0 !py-0 !text-white !shadow-soft-inset transition hover:!border-white/[0.24] hover:!bg-gray-500 hover:!text-white"
                       >
                         <RotateCcw
                           size={23}
@@ -344,7 +421,7 @@ export function ItemDetailsPage() {
 
                   {hasStarted && remainingRuntime ? (
                     <motion.div
-                      className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-black/[0.32] px-4 text-sm font-black text-white/[0.78] shadow-soft-inset backdrop-blur"
+                      className="inline-flex min-h-12 items-center gap-3 rounded-full border border-white/[0.14] bg-gray-700/75 px-4 text-sm font-black text-white/[0.78] shadow-soft-inset"
                       initial={
                         shouldReduceMotion ? false : { opacity: 0, y: 8 }
                       }
@@ -381,7 +458,7 @@ export function ItemDetailsPage() {
             className="mt-12 grid gap-5 lg:grid-cols-[1.4fr_0.8fr]"
             delay={0.08}
           >
-            <section className="panel-top-highlight rounded-2xl border border-white/10 bg-white/[0.055] p-5 shadow-soft-inset backdrop-blur-xl sm:p-6">
+            <section className="panel-top-highlight rounded-2xl border border-white/10 bg-gray-500/15 p-5 shadow-soft-inset sm:p-6">
               <h2 className="text-xl font-black text-white">
                 <AnimatedWidth value={t("details.overview")}>
                   <AnimatedText value={t("details.overview")} />
@@ -395,7 +472,7 @@ export function ItemDetailsPage() {
                 )}
               </p>
             </section>
-            <section className="panel-top-highlight rounded-2xl border border-white/10 bg-white/[0.055] p-5 shadow-soft-inset backdrop-blur-xl sm:p-6">
+            <section className="panel-top-highlight rounded-2xl border border-white/10 bg-gray-500/15 p-5 shadow-soft-inset sm:p-6">
               <h2 className="text-xl font-black text-white">
                 <AnimatedWidth value={t("details.mediaInfo")}>
                   <AnimatedText value={t("details.mediaInfo")} />

@@ -87,7 +87,7 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
   if (!shouldAnimateLetters) {
     return (
       <span
-        className={`inline-block whitespace-nowrap align-middle ${className}`}
+        className={`inline-block whitespace-nowrap py-[0.12em] align-middle ${className}`}
       >
         {value}
       </span>
@@ -96,19 +96,19 @@ export function AnimatedText({ value, className = "" }: AnimatedTextProps) {
 
   return (
     <span
-      className={`relative inline-grid overflow-hidden whitespace-nowrap align-middle ${className}`}
+      className={`relative inline-grid overflow-hidden whitespace-nowrap py-[0.12em] align-middle ${className}`}
       aria-label={value}
     >
       {layers.map((layer) => (
         <span
           key={layer.id}
           aria-hidden="true"
-          className="col-start-1 row-start-1 inline-flex whitespace-nowrap"
+          className="col-start-1 row-start-1 inline-flex whitespace-nowrap leading-[inherit]"
         >
           {splitText(layer.text).map((letter, index) => (
             <span
               key={`${layer.id}-${index}-${letter}`}
-              className="inline-block transition-[opacity,transform] duration-300 ease-out"
+              className="inline-block leading-[inherit] transition-[opacity,transform] duration-300 ease-out"
               style={{
                 transitionDelay: `${index * 22}ms`,
                 transform:

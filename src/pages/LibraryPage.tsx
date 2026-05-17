@@ -217,6 +217,9 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "year" | "latest">("name");
+  const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
+  const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
+    useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -300,6 +303,78 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
     );
   }, [data, searchTerm, sortBy]);
 
+  const libraryRotatingLogoUrls = useMemo(() => {
+    if (!data || mode !== "library") {
+      return [];
+    }
+
+    const logoUrls = data.items
+      .map((libraryItem) => {
+        if (libraryItem.ImageTags?.Logo) {
+          return getLogoImageUrl(
+            libraryItem.Id,
+            libraryItem.ImageTags.Logo,
+            1100,
+          );
+        }
+
+        if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
+          return getLogoImageUrl(
+            libraryItem.ParentLogoItemId,
+            libraryItem.ParentLogoImageTag,
+            1100,
+          );
+        }
+
+        return null;
+      })
+      .filter((url): url is string => Boolean(url));
+
+    return Array.from(new Set(logoUrls));
+  }, [data, mode]);
+
+  useEffect(() => {
+    setRotatingLogoIndex(0);
+    setHasFinishedLogoIntroSweep(false);
+
+    if (mode !== "library" || libraryRotatingLogoUrls.length <= 1) {
+      return undefined;
+    }
+
+    let currentIndex = 0;
+    let hasCompletedInitialSweep = false;
+    let timeoutId: number | undefined;
+    let introCompleteFrameId: number | undefined;
+
+    const advanceLogo = () => {
+      currentIndex = (currentIndex + 1) % libraryRotatingLogoUrls.length;
+      setRotatingLogoIndex(currentIndex);
+
+      if (currentIndex === 0) {
+        hasCompletedInitialSweep = true;
+        introCompleteFrameId = window.requestAnimationFrame(() => {
+          setHasFinishedLogoIntroSweep(true);
+        });
+      }
+
+      timeoutId = window.setTimeout(
+        advanceLogo,
+        hasCompletedInitialSweep ? 5000 : 100,
+      );
+    };
+
+    timeoutId = window.setTimeout(advanceLogo, 100);
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+      if (introCompleteFrameId !== undefined) {
+        window.cancelAnimationFrame(introCompleteFrameId);
+      }
+    };
+  }, [libraryRotatingLogoUrls.length, mode]);
+
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;
   }
@@ -341,6 +416,12 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
               1100,
             )
           : "";
+  const activeLibraryLogoUrl =
+    mode === "library" && libraryRotatingLogoUrls.length > 0
+      ? libraryRotatingLogoUrls[
+          rotatingLogoIndex % libraryRotatingLogoUrls.length
+        ]
+      : libraryLogoUrl;
   const displayLibraryTitle = data.library?.Name
     ? getDisplayTitle(data.library, mediaFormatLabels)
     : libraryTitle;
@@ -383,10 +464,10 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           direction="up"
           delay={0.02}
         >
-          {libraryLogoUrl && seasonHeaderLabel ? (
+          {activeLibraryLogoUrl && seasonHeaderLabel ? (
             <div className="relative flex min-h-[5rem] w-full min-w-0 items-center justify-center sm:min-h-[5.5rem]">
               <motion.img
-                src={libraryLogoUrl}
+                src={activeLibraryLogoUrl}
                 alt={displayLibraryTitle}
                 draggable={false}
                 className="cinematic-logo-shadow absolute left-1/2 z-30 h-auto max-h-[4.6rem] max-w-[min(18rem,40vw)] -translate-x-1/2 transform-gpu object-contain will-change-transform sm:max-h-20"
@@ -462,12 +543,23 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
                 </div>
               </motion.div>
             </div>
-          ) : libraryLogoUrl ? (
-            <img
-              src={libraryLogoUrl}
+          ) : activeLibraryLogoUrl ? (
+            <motion.img
+              key={activeLibraryLogoUrl}
+              src={activeLibraryLogoUrl}
               alt={displayLibraryTitle}
               draggable={false}
               className="cinematic-logo-shadow h-auto max-h-20 max-w-[min(26rem,58vw)] object-contain"
+              initial={
+                hasFinishedLogoIntroSweep
+                  ? { opacity: 0, y: 6, scale: 1.2, filter: "blur(0px)" }
+                  : false
+              }
+              animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+              transition={{
+                duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
+                ease: [0.16, 1, 0.3, 1],
+              }}
             />
           ) : (
             <h1 className="text-center text-4xl font-black leading-none text-white sm:text-5xl">

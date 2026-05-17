@@ -31,6 +31,7 @@ interface HeroSectionProps {
   onTogglePaused?: () => void;
   showPauseButton?: boolean;
   onSelectIndex?: (index: number) => void;
+  onHeroReady?: () => void;
 }
 
 type HeroImageType = "backdrop" | "primary";
@@ -85,6 +86,7 @@ export function HeroSection({
   onTogglePaused,
   showPauseButton = false,
   onSelectIndex,
+  onHeroReady,
 }: HeroSectionProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
@@ -147,7 +149,8 @@ export function HeroSection({
     Math.max(currentIndex, 0),
     Math.max(carouselItemCount - 1, 0),
   );
-  const showHeroIndicators = showCarouselDots && showStickyIndicators;
+  const showHeroIndicators =
+    showCarouselDots && showStickyIndicators && heroContentVisible;
 
   const heroIndicators = showCarouselDots ? (
     <motion.div
@@ -210,6 +213,14 @@ export function HeroSection({
       window.clearTimeout(timeoutId);
     };
   }, [item?.Id]);
+
+  useEffect(() => {
+    if (!heroContentVisible) {
+      return;
+    }
+
+    onHeroReady?.();
+  }, [heroContentVisible, onHeroReady]);
 
   useEffect(() => {
     const updateStickyIndicatorVisibility = () => {

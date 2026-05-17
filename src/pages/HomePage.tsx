@@ -113,6 +113,7 @@ export function HomePage() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
+  const [isHeroReady, setIsHeroReady] = useState(false);
   const featuredPool = useMemo(
     () =>
       buildFeaturedPool([
@@ -188,11 +189,12 @@ export function HomePage() {
   useEffect(() => {
     setHeroIndex(0);
     setIsHeroPaused(false);
+    setIsHeroReady(false);
     setHeroProgressResetKey((current) => current + 1);
   }, [featuredPool]);
 
   useEffect(() => {
-    if (featuredPool.length <= 1 || isHeroPaused) {
+    if (featuredPool.length <= 1 || isHeroPaused || !isHeroReady) {
       return;
     }
 
@@ -207,6 +209,7 @@ export function HomePage() {
     featuredPool.length,
     heroProgressResetKey,
     isHeroPaused,
+    isHeroReady,
     selectedHeroIndex,
   ]);
 
@@ -233,7 +236,9 @@ export function HomePage() {
 
   return (
     <div className="layout-no-offset">
-      <ConfettiAnimation startDelay={0} pieceCount={200} />
+      {isHeroReady ? (
+        <ConfettiAnimation startDelay={0} pieceCount={200} />
+      ) : null}
 
       <div className="min-h-[100svh] full-bleed ">
         <HeroSection
@@ -241,11 +246,12 @@ export function HomePage() {
           currentIndex={selectedHeroIndex}
           totalItems={featuredPool.length}
           durationMs={HERO_ROTATION_INTERVAL_MS}
-          progressResetKey={heroProgressResetKey}
-          isPaused={isHeroPaused}
+          progressResetKey={isHeroReady ? heroProgressResetKey : "hero-loading"}
+          isPaused={isHeroPaused || !isHeroReady}
           onTogglePaused={handleToggleHeroPaused}
-          showPauseButton
+          showPauseButton={isHeroReady}
           onSelectIndex={handleSelectHeroIndex}
+          onHeroReady={() => setIsHeroReady(true)}
         />
       </div>
 
