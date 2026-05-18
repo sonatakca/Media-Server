@@ -21,7 +21,7 @@ import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
 const HERO_ROTATION_INTERVAL_MS = 12000;
-const HERO_POOL_LIMIT = 14;
+const HERO_POOL_LIMIT = 10;
 
 interface HomeData {
   libraries: JellyfinLibrary[];
