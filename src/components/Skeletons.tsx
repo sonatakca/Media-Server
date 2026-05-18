@@ -65,45 +65,71 @@ export function HomeSkeleton() {
   const { t } = useLanguage();
 
   return (
-    <div>
-      <section className="relative mb-0 min-h-screen w-full overflow-hidden bg-zinc-950">
-        <div className="shimmer absolute inset-0" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
-        <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-[var(--background)] to-transparent" />
+    <div className="layout-no-offset">
+      <div className="min-h-[100svh] full-bleed">
+        <section className="relative min-h-[100svh] w-full overflow-hidden bg-zinc-950">
+          <div className="shimmer absolute inset-0" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
+          <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-[var(--background)] to-transparent" />
 
-        <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(3rem,8vh,6rem)] pt-28 sm:px-6 lg:px-8">
-          <div className="max-w-3xl">
-            <div className="shimmer mb-4 h-9 w-40 rounded-full" />
+          <div className="relative z-20 mx-auto flex min-h-[100svh] w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(3rem,8vh,6rem)] pt-28 sm:px-6 lg:px-8">
+            <div className="max-w-3xl">
+              <div className="shimmer h-32 w-[min(50rem,92vw)] rounded-2xl sm:h-40 lg:h-60" />
 
-            <div className="shimmer h-24 w-[min(42rem,92vw)] rounded-2xl sm:h-32 lg:h-36" />
+              <div className="mt-16 space-y-2">
+                <div className="shimmer h-5 w-10/12 max-w-2xl rounded-full" />
+                <div className="shimmer h-5 w-full max-w-2xl rounded-full" />
+                <div className="shimmer h-5 w-full max-w-xl rounded-full" />
+              </div>
 
-            <div className="mt-4">
-              <div className="shimmer h-6 w-48 rounded-full" />
-            </div>
+              <div className="mt-5 flex flex-wrap gap-2">
+                <div className="shimmer h-8 w-20 rounded-full" />
+                <div className="shimmer h-8 w-28 rounded-full" />
+                <div className="shimmer h-8 w-20 rounded-full" />
+                <div className="shimmer h-8 w-24 rounded-full" />
+              </div>
 
-            <div className="mt-5 flex flex-wrap gap-2">
-              <div className="shimmer h-8 w-20 rounded-full" />
-              <div className="shimmer h-8 w-28 rounded-full" />
-              <div className="shimmer h-8 w-20 rounded-full" />
-              <div className="shimmer h-8 w-24 rounded-full" />
-            </div>
-
-            <div className="mt-5 space-y-2">
-              <div className="shimmer h-5 w-full max-w-2xl rounded-full" />
-              <div className="shimmer h-5 w-11/12 max-w-xl rounded-full" />
-              <div className="shimmer h-5 w-3/5 max-w-lg rounded-full" />
-            </div>
-
-            <div className="mt-7 flex gap-3">
-              <div className="shimmer h-12 w-24 rounded-full" />
-              <div className="shimmer h-12 w-32 rounded-full" />
+              <div className="mt-7 flex gap-3">
+                <div className="shimmer h-12 w-32 rounded-xl" />
+                <div className="shimmer h-12 w-32 rounded-xl" />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </div>
 
-      <MediaRowSkeleton title={t("home.latestMedia")} />
+      <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8">
+        <MediaRowSkeleton title={t("home.latestMedia")} />
+        <MediaRowSkeleton title={t("home.continueWatching")} />
+
+        <section className="group/row relative py-6">
+          <div className="mb-4 flex items-end justify-between gap-4">
+            <div>
+              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
+                <AnimatedWidth value={t("home.browse")}>
+                  <AnimatedText value={t("home.browse")} />
+                </AnimatedWidth>
+              </p>
+
+              <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
+                <AnimatedWidth value={t("home.libraries")}>
+                  <AnimatedText value={t("home.libraries")} />
+                </AnimatedWidth>
+              </h2>
+            </div>
+          </div>
+
+          <div className="media-scroll -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-5 pt-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+            {Array.from({ length: 5 }, (_, index) => (
+              <div
+                key={index}
+                className="shimmer h-32 w-56 shrink-0 rounded-2xl border border-white/10 bg-white/[0.055] sm:w-64"
+              />
+            ))}
+          </div>
+        </section>
+      </div>
     </div>
   );
 }
