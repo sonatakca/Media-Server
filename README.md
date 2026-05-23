@@ -36,14 +36,19 @@ npm run build
 
 ## SEO / Search Indexing
 
-Seyirlik includes public search-indexing files for the deployed site:
+Seyirlik keeps public search indexing focused on the stable product landing
+page:
 
+- `/` is the public indexable landing page.
+- `/app` enters the private Jellyfin app flow for server setup, login, and
+  authenticated media browsing.
 - `robots.txt` is served at `/robots.txt`.
-- `sitemap.xml` is served at `/sitemap.xml`.
-- The canonical site URL is `https://www.seyirlik.sonatakcaa.com/`.
+- `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
+- The canonical site URL is `https://www.seyirlik.sonatakca.com/`.
 
-After deployment, submit `https://www.seyirlik.sonatakcaa.com/sitemap.xml` in
-Google Search Console.
+After deployment, submit `https://www.seyirlik.sonatakca.com/sitemap.xml` in
+Google Search Console. Use URL Inspection for
+`https://www.seyirlik.sonatakca.com/` and request indexing for the landing page.
 
 ## Jellyfin Server URL
 

@@ -27,7 +27,10 @@ export function LoginPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
-    setPageTitle(`${t("auth.login")} · Seyirlik`);
+    setPageTitle(`${t("auth.login")} · Seyirlik`, {
+      canonicalPath: "/login",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
 
   if (!serverUrl) {

@@ -260,8 +260,12 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setPageTitle(`${configTitle} · ${t("devtools.title")} · Seyirlik`);
-  }, [configTitle, t]);
+    setPageTitle(`${configTitle} · ${t("devtools.title")} · Seyirlik`, {
+      canonicalPath:
+        type === "bugs" ? "/dev/known-bugs" : "/dev/wanted-features",
+      robots: "noindex, nofollow",
+    });
+  }, [configTitle, t, type]);
 
   useEffect(() => {
     localStorage.setItem(config.storageKey, JSON.stringify(items));

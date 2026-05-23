@@ -256,7 +256,10 @@ export function LibraryMaintenancePage() {
   );
 
   useEffect(() => {
-    setPageTitle(`${t("maintenance.title")} · ${t("devtools.title")} · Seyirlik`);
+    setPageTitle(`${t("maintenance.title")} · ${t("devtools.title")} · Seyirlik`, {
+      canonicalPath: "/dev/library-maintenance",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
 
   useEffect(() => {

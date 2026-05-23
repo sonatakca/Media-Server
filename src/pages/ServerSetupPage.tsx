@@ -56,7 +56,10 @@ export function ServerSetupPage() {
   const { t } = useLanguage();
 
   useEffect(() => {
-    setPageTitle(`${t("nav.server")} · Seyirlik`);
+    setPageTitle(`${t("nav.server")} · Seyirlik`, {
+      canonicalPath: "/server",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
   const defaultServerUrl =
     (

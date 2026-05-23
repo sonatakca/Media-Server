@@ -20,6 +20,7 @@ import {
   setLoadingPageTitle,
   setPageTitle,
 } from "../lib/pageTitle";
+import { setSeoMetadata } from "../lib/seo";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
@@ -81,6 +82,11 @@ export function PlayerPage() {
           ? `${item.SeriesName} - ${item.Name}`
           : item?.Name;
 
+      setSeoMetadata({
+        title: loadingTitle ?? t("player.preparing"),
+        canonicalPath: itemId ? `/watch/${itemId}` : "/watch",
+        robots: "noindex, nofollow",
+      });
       setLoadingPageTitle(loadingTitle);
       return;
     }
@@ -90,12 +96,15 @@ export function PlayerPage() {
         ? `${item.SeriesName} - ${item.Name}`
         : item.Name;
 
-    setPageTitle(title);
+    setPageTitle(title, {
+      canonicalPath: `/watch/${item.Id}`,
+      robots: "noindex, nofollow",
+    });
 
     return () => {
       setDefaultPageTitle(false);
     };
-  }, [item, playback.isLoading]);
+  }, [item, itemId, playback.isLoading, t]);
 
   const handlePlaybackStarted = useCallback(
     (positionSeconds: number) => {

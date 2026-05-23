@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { RouteColorTransition } from "./components/RouteColorTransition";
@@ -17,10 +17,11 @@ import { PlayerPage } from "./pages/PlayerPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
+import { PublicLandingPage } from "./pages/PublicLandingPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
-import { setDefaultPageTitle } from "./lib/pageTitle";
+import { setDefaultPageTitle, setPageTitle } from "./lib/pageTitle";
 
 const DEFAULT_SERVER_URL =
   (
@@ -48,9 +49,21 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 
 function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage();
+  const location = useLocation();
   const [state, setState] = useState<DefaultServerState>(() => {
     return getServerUrl() ? "ready" : "checking";
   });
+
+  useEffect(() => {
+    if (state !== "checking") {
+      return;
+    }
+
+    setPageTitle("Seyirlik", {
+      canonicalPath: location.pathname,
+      robots: "noindex, nofollow",
+    });
+  }, [location.pathname, state]);
 
   useEffect(() => {
     let isMounted = true;
@@ -108,6 +121,13 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
 }
 
 function RootRedirect() {
+  useEffect(() => {
+    setPageTitle("Seyirlik", {
+      canonicalPath: "/app",
+      robots: "noindex, nofollow",
+    });
+  }, []);
+
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
   }
@@ -132,22 +152,36 @@ function RequireAuth() {
 }
 
 export default function App() {
+  const location = useLocation();
+
   useEffect(() => {
-    setDefaultPageTitle(false);
-  }, []);
+    if (location.pathname === "/") {
+      setDefaultPageTitle(false);
+    }
+  }, [location.pathname]);
+
   return (
     <>
       <ScrollToTop />
       <NonPlayerHistoryTracker />
 
-      <DefaultServerGate>
-        <RouteColorTransition />
-        <Routes>
-          <Route path="/" element={<RootRedirect />} />
-          <Route element={<RouteTransitionOutlet />}>
-            <Route path="/server" element={<ServerSetupPage />} />
-            <Route path="/login" element={<LoginPage />} />
-          </Route>
+      <RouteColorTransition />
+      <Routes>
+        <Route path="/" element={<PublicLandingPage />} />
+
+        <Route element={<RouteTransitionOutlet />}>
+          <Route path="/server" element={<ServerSetupPage />} />
+          <Route path="/login" element={<LoginPage />} />
+        </Route>
+
+        <Route
+          element={
+            <DefaultServerGate>
+              <Outlet />
+            </DefaultServerGate>
+          }
+        >
+          <Route path="/app" element={<RootRedirect />} />
 
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
@@ -192,10 +226,10 @@ export default function App() {
               <Route path="/watch/:itemId" element={<PlayerPage />} />
             </Route>
           </Route>
+        </Route>
 
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </DefaultServerGate>
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </>
   );
 }

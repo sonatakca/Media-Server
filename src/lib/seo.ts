@@ -1,4 +1,4 @@
-export const SITE_URL = "https://www.seyirlik.sonatakcaa.com/";
+export const SITE_URL = "https://www.seyirlik.sonatakca.com/";
 
 export const DEFAULT_SEO_TITLE = "Seyirlik — Modern Jellyfin Media Client";
 
@@ -9,6 +9,7 @@ interface SeoMetadataInput {
   title?: string;
   description?: string;
   canonicalPath?: string;
+  robots?: "index, follow" | "noindex, nofollow";
 }
 
 function getCanonicalUrl(path?: string): string {
@@ -63,6 +64,7 @@ export function setSeoMetadata({
   title = DEFAULT_SEO_TITLE,
   description = DEFAULT_SEO_DESCRIPTION,
   canonicalPath,
+  robots = "index, follow",
 }: SeoMetadataInput): void {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return;
@@ -72,6 +74,7 @@ export function setSeoMetadata({
 
   document.title = title;
   setMetaContent("meta[name='description']", { name: "description" }, description);
+  setMetaContent("meta[name='robots']", { name: "robots" }, robots);
   ensureCanonicalLink().setAttribute("href", canonicalUrl);
   setMetaContent("meta[property='og:title']", { property: "og:title" }, title);
   setMetaContent(

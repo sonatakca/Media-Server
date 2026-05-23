@@ -14,6 +14,7 @@ interface SeekBarProps {
   bufferedEnd: number;
   itemId: string;
   mediaSourceId?: string;
+  checkpointSeconds?: number | null;
   onSeek: (seconds: number) => void;
   onSeekPreview?: (seconds: number) => void;
 }
@@ -90,6 +91,7 @@ export function SeekBar({
   bufferedEnd,
   itemId,
   mediaSourceId,
+  checkpointSeconds = null,
   onSeek,
   onSeekPreview,
 }: SeekBarProps) {
@@ -120,6 +122,13 @@ export function SeekBar({
   const previewSeconds = isSeeking ? hoverPreview.displaySeconds : currentTime;
   const progressPercent = duration > 0 ? (previewSeconds / duration) * 100 : 0;
   const bufferedPercent = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
+  const checkpointPercent =
+    checkpointSeconds !== null &&
+    Number.isFinite(checkpointSeconds) &&
+    Number.isFinite(duration) &&
+    duration > 0
+      ? clamp((checkpointSeconds / duration) * 100, 0, 100)
+      : null;
 
   const getPointerSeekState = (clientX: number): HoverPreviewState | null => {
     const bounds = rootRef.current?.getBoundingClientRect();
@@ -327,7 +336,7 @@ export function SeekBar({
         if (event.key === "ArrowLeft") {
           event.preventDefault();
           const displaySeconds = getDisplaySeekPoint(
-            currentTime - 10,
+            currentTime - 5,
             duration,
           );
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
@@ -336,7 +345,7 @@ export function SeekBar({
         if (event.key === "ArrowRight") {
           event.preventDefault();
           const displaySeconds = getDisplaySeekPoint(
-            currentTime + 10,
+            currentTime + 5,
             duration,
           );
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
@@ -427,6 +436,14 @@ export function SeekBar({
         className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)] sm:h-1"
         style={{ width: `${progressPercent}%` }}
       />
+
+      {checkpointPercent !== null ? (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/2 z-20 h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]"
+          style={{ left: `${checkpointPercent}%` }}
+        />
+      ) : null}
 
       {hoverPreview.isVisible && duration > 0 ? (
         <div

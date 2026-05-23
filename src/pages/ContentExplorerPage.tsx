@@ -332,7 +332,10 @@ export function ContentExplorerPage() {
   const [activeFilter, setActiveFilter] = useState<ContentFilter>("all");
 
   useEffect(() => {
-    setPageTitle(`${t("content.title")} · ${t("devtools.title")} · Seyirlik`);
+    setPageTitle(`${t("content.title")} · ${t("devtools.title")} · Seyirlik`, {
+      canonicalPath: "/dev/content",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
 
   useEffect(() => {

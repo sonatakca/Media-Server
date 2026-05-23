@@ -44,10 +44,10 @@ export function useKeyboardShortcuts({
         onTogglePlay();
       } else if (event.key === "ArrowLeft") {
         event.preventDefault();
-        onSeekBy(-10);
+        onSeekBy(-5);
       } else if (event.key === "ArrowRight") {
         event.preventDefault();
-        onSeekBy(10);
+        onSeekBy(5);
       } else if (event.key.toLowerCase() === "m") {
         event.preventDefault();
         onToggleMute();

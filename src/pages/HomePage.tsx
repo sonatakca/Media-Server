@@ -126,8 +126,12 @@ export function HomePage() {
   const heroItem = featuredPool[selectedHeroIndex];
 
   useEffect(() => {
-    setSeoMetadata({ canonicalPath: "/" });
-  }, []);
+    setSeoMetadata({
+      title: `${t("common.home")} · Seyirlik`,
+      canonicalPath: "/home",
+      robots: "noindex, nofollow",
+    });
+  }, [t]);
 
   useEffect(() => {
     let isMounted = true;

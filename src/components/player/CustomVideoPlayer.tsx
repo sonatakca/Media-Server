@@ -9,8 +9,10 @@ import {
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
+  Bookmark,
   ChevronsRight,
-  Loader2,
+  Eye,
+  EyeOff,
   RotateCw,
   Smartphone,
   Users,
@@ -150,6 +152,8 @@ const SEEK_FEEDBACK_HIDE_MS = 950;
 const SEEK_FEEDBACK_FADE_RESET_MS = 260;
 
 const STARTUP_WATCHDOG_MS = 8000;
+
+const VIEW_MODE_CURSOR_HIDE_MS = 1600;
 
 const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
 
@@ -933,6 +937,7 @@ export function CustomVideoPlayer({
     forward: null,
   });
   const seekFeedbackChromeHideTimerRef = useRef<number | null>(null);
+  const viewModeCursorHideTimerRef = useRef<number | null>(null);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -949,6 +954,11 @@ export function CustomVideoPlayer({
   const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
   const [areControlsManuallyHidden, setAreControlsManuallyHidden] =
     useState(false);
+  const [isViewModeEnabled, setIsViewModeEnabled] = useState(false);
+  const [isViewModeCursorVisible, setIsViewModeCursorVisible] = useState(true);
+  const [checkpointSeconds, setCheckpointSeconds] = useState<number | null>(
+    null,
+  );
 
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
@@ -978,6 +988,9 @@ export function CustomVideoPlayer({
   const shouldShowPlayerChrome =
     !areControlsManuallyHidden &&
     (areControlsVisible || !progress.isPlaying || controlsShouldStayVisible);
+  const shouldRenderPlayerChrome = shouldShowPlayerChrome && !isViewModeEnabled;
+  const shouldShowPlayerCursor =
+    shouldRenderPlayerChrome || (isViewModeEnabled && isViewModeCursorVisible);
 
   const revealPlayerChrome = useCallback(() => {
     if (seekFeedbackChromeHideTimerRef.current !== null) {
@@ -988,6 +1001,23 @@ export function CustomVideoPlayer({
     setAreControlsManuallyHidden(false);
     showControls();
   }, [showControls]);
+
+  const clearViewModeCursorHideTimer = useCallback(() => {
+    if (viewModeCursorHideTimerRef.current !== null) {
+      window.clearTimeout(viewModeCursorHideTimerRef.current);
+      viewModeCursorHideTimerRef.current = null;
+    }
+  }, []);
+
+  const revealViewModeCursor = useCallback(() => {
+    clearViewModeCursorHideTimer();
+    setIsViewModeCursorVisible(true);
+
+    viewModeCursorHideTimerRef.current = window.setTimeout(() => {
+      setIsViewModeCursorVisible(false);
+      viewModeCursorHideTimerRef.current = null;
+    }, VIEW_MODE_CURSOR_HIDE_MS);
+  }, [clearViewModeCursorHideTimer]);
 
   const partyWatch = usePartyWatchController({
     videoRef,
@@ -1007,6 +1037,69 @@ export function CustomVideoPlayer({
   const visiblePartyWatchDotCount = partyWatch.isInGroup
     ? Math.min(partyWatchMemberCount, PARTY_WATCH_DOT_POSITIONS.length)
     : 1;
+  const checkpointButtonLabel =
+    checkpointSeconds === null
+      ? t("player.setCheckpoint")
+      : t("player.returnToCheckpoint");
+
+  const enterViewMode = useCallback(() => {
+    setIsViewModeEnabled(true);
+    setIsSettingsOpen(false);
+    setIsPlaybackInfoOpen(false);
+    setIsPartyWatchOpen(false);
+    setIsSubtitleEditMode(false);
+    setAreControlsManuallyHidden(true);
+    releaseControlsHover();
+    revealViewModeCursor();
+  }, [releaseControlsHover, revealViewModeCursor]);
+
+  const exitViewMode = useCallback(() => {
+    clearViewModeCursorHideTimer();
+    setIsViewModeCursorVisible(true);
+    setIsViewModeEnabled(false);
+    revealPlayerChrome();
+  }, [clearViewModeCursorHideTimer, revealPlayerChrome]);
+
+  const toggleCheckpointMode = useCallback(() => {
+    if (checkpointSeconds === null) {
+      const video = videoRef.current;
+      const currentSeconds =
+        video && Number.isFinite(video.currentTime)
+          ? video.currentTime
+          : progress.currentTime;
+
+      setCheckpointSeconds(Math.max(0, currentSeconds));
+
+      if (!isViewModeEnabled) {
+        revealPlayerChrome();
+      }
+
+      return;
+    }
+
+    const duration =
+      Number.isFinite(progress.duration) && progress.duration > 0
+        ? progress.duration
+        : undefined;
+    const target =
+      duration !== undefined
+        ? clamp(checkpointSeconds, 0, Math.max(0, duration - 0.25))
+        : Math.max(0, checkpointSeconds);
+
+    partyWatch.seekTo(target);
+    setCheckpointSeconds(null);
+
+    if (!isViewModeEnabled) {
+      revealPlayerChrome();
+    }
+  }, [
+    checkpointSeconds,
+    isViewModeEnabled,
+    partyWatch,
+    progress.currentTime,
+    progress.duration,
+    revealPlayerChrome,
+  ]);
 
   const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<
     string | null
@@ -1352,6 +1445,9 @@ export function CustomVideoPlayer({
     setSelectedSubtitleStreamIndex(getDefaultSubtitleStreamIndex(nextSource));
     setLastVideoError(null);
     setLiveTranscodingReasons([]);
+    setCheckpointSeconds(null);
+    setIsViewModeCursorVisible(true);
+    setIsViewModeEnabled(false);
   }, [source.id, source.mediaSourceId, source.url]);
   useEffect(() => {
     let isCancelled = false;
@@ -1418,6 +1514,18 @@ export function CustomVideoPlayer({
   ]);
 
   useEffect(() => {
+    if (!isViewModeEnabled) {
+      clearViewModeCursorHideTimer();
+      setIsViewModeCursorVisible(true);
+      return undefined;
+    }
+
+    revealViewModeCursor();
+
+    return clearViewModeCursorHideTimer;
+  }, [clearViewModeCursorHideTimer, isViewModeEnabled, revealViewModeCursor]);
+
+  useEffect(() => {
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
     hasAppliedInitialStartRef.current = false;
@@ -1428,6 +1536,9 @@ export function CustomVideoPlayer({
     setIsResizingSubtitle(false);
     setIsSubtitleEditMode(false);
     setAreControlsManuallyHidden(false);
+    setCheckpointSeconds(null);
+    setIsViewModeCursorVisible(true);
+    setIsViewModeEnabled(false);
     subtitleDragStateRef.current = null;
     subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
@@ -3020,7 +3131,7 @@ export function CustomVideoPlayer({
     }
 
     const isLeftSide = clientX - bounds.left < bounds.width / 2;
-    handleSeekBy(isLeftSide ? -10 : 10);
+    handleSeekBy(isLeftSide ? -5 : 5);
   };
 
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
@@ -3067,6 +3178,12 @@ export function CustomVideoPlayer({
     lastTapRef.current = { time: now, x: event.clientX };
 
     singleTapTimerRef.current = window.setTimeout(() => {
+      if (isViewModeEnabled) {
+        partyWatch.togglePlay();
+        singleTapTimerRef.current = null;
+        return;
+      }
+
       if (
         areControlsVisible ||
         controlsShouldStayVisible ||
@@ -3101,6 +3218,14 @@ export function CustomVideoPlayer({
         return;
       }
 
+      if (isViewModeEnabled) {
+        if (event.pointerType !== "touch") {
+          partyWatch.togglePlay();
+        }
+
+        return;
+      }
+
       if (shouldShowPlayerChrome) {
         setIsSettingsOpen(false);
         setIsPlaybackInfoOpen(false);
@@ -3116,11 +3241,22 @@ export function CustomVideoPlayer({
     [
       isDraggingSubtitle,
       isResizingSubtitle,
+      isViewModeEnabled,
+      partyWatch,
       releaseControlsHover,
       revealPlayerChrome,
       shouldShowPlayerChrome,
     ],
   );
+
+  const handlePlayerMouseMove = useCallback(() => {
+    if (isViewModeEnabled) {
+      revealViewModeCursor();
+      return;
+    }
+
+    revealPlayerChrome();
+  }, [isViewModeEnabled, revealPlayerChrome, revealViewModeCursor]);
 
   const getSubtitlePositionFromPoint = useCallback(
     (clientX: number, clientY: number): SubtitlePosition | null => {
@@ -3401,14 +3537,19 @@ export function CustomVideoPlayer({
     : {
         transform: `translateX(-50%) scale(${subtitleSize.scale})`,
       };
+  const isCenterPlayPauseLoading =
+    (progress.isBuffering ||
+      isWaitingForAudioTranscodeReady ||
+      fullscreenSeekPreview !== null) &&
+    !error;
 
   return (
     <div
       ref={containerRef}
       className={`seyirlik-player-shell fixed inset-0 z-50 min-h-0 overflow-hidden bg-black text-white ${
-        shouldShowPlayerChrome ? "cursor-default" : "cursor-none"
+        shouldShowPlayerCursor ? "cursor-default" : "cursor-none"
       }`}
-      onMouseMove={revealPlayerChrome}
+      onMouseMove={handlePlayerMouseMove}
       onPointerUp={(event) => {
         handlePointerUp(event);
         handlePlayerOverlayToggle(event);
@@ -3433,18 +3574,22 @@ export function CustomVideoPlayer({
         }}
       />
 
-      <div
-        aria-hidden="true"
-        className={`seyirlik-player-gradient-top pointer-events-none absolute inset-x-0 top-0 z-[8] h-[26%] transition-opacity duration-300 ${
-          shouldShowPlayerChrome ? "opacity-100" : "opacity-0"
-        }`}
-      />
-      <div
-        aria-hidden="true"
-        className={`seyirlik-player-gradient-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[8] h-[38%] transition-opacity duration-300 ${
-          shouldShowPlayerChrome ? "opacity-100" : "opacity-0"
-        }`}
-      />
+      {!isViewModeEnabled ? (
+        <>
+          <div
+            aria-hidden="true"
+            className={`seyirlik-player-gradient-top pointer-events-none absolute inset-x-0 top-0 z-[8] h-[26%] transition-opacity duration-300 ${
+              shouldRenderPlayerChrome ? "opacity-100" : "opacity-0"
+            }`}
+          />
+          <div
+            aria-hidden="true"
+            className={`seyirlik-player-gradient-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[8] h-[38%] transition-opacity duration-300 ${
+              shouldRenderPlayerChrome ? "opacity-100" : "opacity-0"
+            }`}
+          />
+        </>
+      ) : null}
 
       {fullscreenSeekPreview && fullscreenSeekPreviewRect ? (
         <div className="pointer-events-none absolute inset-0 z-[9] overflow-hidden">
@@ -3590,86 +3735,202 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {(progress.isBuffering ||
-        isWaitingForAudioTranscodeReady ||
-        fullscreenSeekPreview !== null) &&
-      !error ? (
-        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
-          <div className="rounded-full bg-black/100 p-7">
-            <Loader2 className="h-10 w-10 animate-spin text-[var(--accent)]" />
-          </div>
+      {!isViewModeEnabled ? (
+        <>
+          <PlayerOverlay
+            title={title}
+            titleLogoUrl={titleLogoUrl}
+            subtitle={subtitle}
+            backTo={`/item/${item.Id}`}
+            visible={shouldRenderPlayerChrome}
+            isPlaying={progress.isPlaying}
+            isPlayPausePending={
+              partyWatch.isInGroup && partyWatch.isPlayPausePending
+            }
+            isPlayPauseLoading={isCenterPlayPauseLoading}
+            notice={notice}
+            onTogglePlay={partyWatch.togglePlay}
+            onControlsHoverStart={keepControlsVisible}
+            onControlsHoverEnd={releaseControlsHover}
+            seekFeedback={seekFeedback}
+            topRightControls={
+              <div
+                className="relative flex flex-col items-end gap-3"
+                data-party-watch-root
+              >
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={enterViewMode}
+                    className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    aria-label={t("player.enterViewMode")}
+                    title={t("player.enterViewMode")}
+                  >
+                    <EyeOff size={18} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={toggleCheckpointMode}
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                      checkpointSeconds !== null
+                        ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
+                        : "text-white/85 hover:bg-white/[0.12] hover:text-white"
+                    }`}
+                    aria-label={checkpointButtonLabel}
+                    aria-pressed={checkpointSeconds !== null}
+                    title={checkpointButtonLabel}
+                  >
+                    <Bookmark
+                      size={18}
+                      fill={
+                        checkpointSeconds !== null ? "currentColor" : "none"
+                      }
+                    />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsPartyWatchOpen((current) => !current);
+                      setIsSettingsOpen(false);
+                      revealPlayerChrome();
+                    }}
+                    className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    aria-label={t("party.title")}
+                    title={t("party.title")}
+                  >
+                    <Users
+                      size={18}
+                      fill={partyWatch.isInGroup ? "#fff" : "none"}
+                    />
+
+                    <span
+                      className="pointer-events-none absolute inset-0"
+                      aria-hidden="true"
+                    >
+                      {partyWatch.isInGroup ? (
+                        Array.from({ length: visiblePartyWatchDotCount }).map(
+                          (_, index) => {
+                            const dotPosition =
+                              PARTY_WATCH_DOT_POSITIONS[index] ??
+                              PARTY_WATCH_DOT_POSITIONS[0];
+
+                            return (
+                              <span
+                                key={`${dotPosition}-${index}`}
+                                className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
+                              />
+                            );
+                          },
+                        )
+                      ) : (
+                        <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
+                      )}
+                    </span>
+                  </button>
+
+                  <PlaybackInfoButton
+                    source={sourceWithLiveTranscodingReasons}
+                    onClick={() => setIsPlaybackInfoOpen(true)}
+                  />
+                </div>
+
+                {isPartyWatchOpen ? (
+                  <div
+                    className="absolute right-0 top-full mt-3"
+                    data-party-watch-root
+                  >
+                    <PartyWatchControls controller={partyWatch} visible />
+                  </div>
+                ) : null}
+              </div>
+            }
+          />
+
+          <SkipSegmentButton
+            segment={skippableActiveSegment}
+            label={skipSegmentLabel}
+            shouldReduceMotion={shouldReduceMotion}
+            onSkip={handleSkipSegment}
+            onControlsHoverStart={keepControlsVisible}
+            onControlsHoverEnd={releaseControlsHover}
+          />
+
+          {isPartyWatchOpen ? (
+            <PartyWatchOverlay controller={partyWatch} />
+          ) : null}
+
+          <PlayerControls
+            visible={shouldRenderPlayerChrome}
+            isPlaying={progress.isPlaying}
+            playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
+            onControlsHoverStart={keepControlsVisible}
+            onControlsHoverEnd={releaseControlsHover}
+            seekPreviewLoading={fullscreenSeekPreview !== null}
+            currentTime={progress.currentTime}
+            duration={progress.duration}
+            bufferedEnd={progress.bufferedEnd}
+            volume={progress.volume}
+            muted={progress.muted}
+            itemId={item.Id}
+            mediaSourceId={activeSource.mediaSourceId}
+            checkpointSeconds={checkpointSeconds}
+            onTogglePlay={partyWatch.togglePlay}
+            onSeek={partyWatch.seekTo}
+            onSeekPreview={handleSeekPreview}
+            onSeekBy={handleSeekBy}
+            onToggleMute={progress.toggleMute}
+            onVolumeChange={progress.setVolume}
+            onToggleFullscreen={toggleFullscreen}
+            onOpenSettings={() => {
+              setIsSettingsOpen((current) => !current);
+              setIsPartyWatchOpen(false);
+              revealPlayerChrome();
+            }}
+            source={sourceWithLiveTranscodingReasons}
+            qualityOptions={qualityOptions}
+            selectedQualityId={selectedQualityId}
+            selectedAudioStreamIndex={activeAudioStreamIndex}
+            selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
+            canSwitchAudio={canSwitchAudio}
+            canSwitchSubtitles={canSwitchSubtitles}
+            settingsOpen={isSettingsOpen}
+            onSelectAutoQuality={handleSelectAutoQuality}
+            onSelectQuality={handleSelectQuality}
+            onSelectAudioStream={handleSelectAudioStream}
+            onSelectSubtitleStream={handleSelectSubtitleStream}
+          />
+        </>
+      ) : null}
+
+      {isViewModeEnabled ? (
+        <div className="pointer-events-auto absolute left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/25 p-1 text-white/35 opacity-25 backdrop-blur-md transition hover:bg-black/55 hover:text-white hover:opacity-100 focus-within:opacity-100">
+          {checkpointSeconds !== null ? (
+            <button
+              type="button"
+              onClick={toggleCheckpointMode}
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              aria-label={t("player.returnToCheckpoint")}
+              title={t("player.returnToCheckpoint")}
+            >
+              <Bookmark size={16} fill="currentColor" />
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={exitViewMode}
+            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            aria-label={t("player.exitViewMode")}
+            title={t("player.exitViewMode")}
+          >
+            <Eye size={16} />
+          </button>
         </div>
       ) : null}
 
-      <PlayerOverlay
-        title={title}
-        titleLogoUrl={titleLogoUrl}
-        subtitle={subtitle}
-        backTo={`/item/${item.Id}`}
-        visible={shouldShowPlayerChrome}
-        isPlaying={progress.isPlaying}
-        isPlayPausePending={
-          partyWatch.isInGroup && partyWatch.isPlayPausePending
-        }
-        notice={notice}
-        onTogglePlay={partyWatch.togglePlay}
-        onControlsHoverStart={keepControlsVisible}
-        onControlsHoverEnd={releaseControlsHover}
-        seekFeedback={seekFeedback}
-      />
-
-      <SkipSegmentButton
-        segment={skippableActiveSegment}
-        label={skipSegmentLabel}
-        shouldReduceMotion={shouldReduceMotion}
-        onSkip={handleSkipSegment}
-        onControlsHoverStart={keepControlsVisible}
-        onControlsHoverEnd={releaseControlsHover}
-      />
-
-      {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}
-
-      <PlayerControls
-        visible={shouldShowPlayerChrome}
-        isPlaying={progress.isPlaying}
-        playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
-        onControlsHoverStart={keepControlsVisible}
-        onControlsHoverEnd={releaseControlsHover}
-        seekPreviewLoading={fullscreenSeekPreview !== null}
-        currentTime={progress.currentTime}
-        duration={progress.duration}
-        bufferedEnd={progress.bufferedEnd}
-        volume={progress.volume}
-        muted={progress.muted}
-        itemId={item.Id}
-        mediaSourceId={activeSource.mediaSourceId}
-        onTogglePlay={partyWatch.togglePlay}
-        onSeek={partyWatch.seekTo}
-        onSeekPreview={handleSeekPreview}
-        onSeekBy={handleSeekBy}
-        onToggleMute={progress.toggleMute}
-        onVolumeChange={progress.setVolume}
-        onToggleFullscreen={toggleFullscreen}
-        onOpenSettings={() => {
-          setIsSettingsOpen((current) => !current);
-          setIsPartyWatchOpen(false);
-          revealPlayerChrome();
-        }}
-        source={sourceWithLiveTranscodingReasons}
-        qualityOptions={qualityOptions}
-        selectedQualityId={selectedQualityId}
-        selectedAudioStreamIndex={activeAudioStreamIndex}
-        selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
-        canSwitchAudio={canSwitchAudio}
-        canSwitchSubtitles={canSwitchSubtitles}
-        settingsOpen={isSettingsOpen}
-        onSelectAutoQuality={handleSelectAutoQuality}
-        onSelectQuality={handleSelectQuality}
-        onSelectAudioStream={handleSelectAudioStream}
-        onSelectSubtitleStream={handleSelectSubtitleStream}
-      />
-
-      {displayedPartyEventMessage ? (
+      {!isViewModeEnabled && displayedPartyEventMessage ? (
         <div className="pointer-events-none absolute bottom-[calc(max(1rem,env(safe-area-inset-bottom))+5.8rem)] left-[max(1rem,env(safe-area-inset-left))] z-40">
           <div
             className={`rounded-full border-[var(--accent)]/35 bg-black/72 px-3 py-1.5 text-xs font-bold text-white/[0.88] shadow-player-controls backdrop-blur-xl will-change-transform ${
@@ -3689,62 +3950,7 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {shouldShowPlayerChrome ? (
-        <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex flex-col items-end gap-3">
-          <div className="flex items-center gap-2" data-party-watch-root>
-            <button
-              type="button"
-              onClick={() => {
-                setIsPartyWatchOpen((current) => !current);
-                setIsSettingsOpen(false);
-                revealPlayerChrome();
-              }}
-              className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              aria-label={t("party.title")}
-              title={t("party.title")}
-            >
-              <Users size={18} fill={partyWatch.isInGroup ? "#fff" : "none"} />
-
-              <span
-                className="pointer-events-none absolute inset-0"
-                aria-hidden="true"
-              >
-                {partyWatch.isInGroup ? (
-                  Array.from({ length: visiblePartyWatchDotCount }).map(
-                    (_, index) => {
-                      const dotPosition =
-                        PARTY_WATCH_DOT_POSITIONS[index] ??
-                        PARTY_WATCH_DOT_POSITIONS[0];
-
-                      return (
-                        <span
-                          key={`${dotPosition}-${index}`}
-                          className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
-                        />
-                      );
-                    },
-                  )
-                ) : (
-                  <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
-                )}
-              </span>
-            </button>
-
-            <PlaybackInfoButton
-              source={sourceWithLiveTranscodingReasons}
-              onClick={() => setIsPlaybackInfoOpen(true)}
-            />
-          </div>
-
-          {isPartyWatchOpen ? (
-            <div data-party-watch-root>
-              <PartyWatchControls controller={partyWatch} visible />
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-
-      {isPlaybackInfoOpen ? (
+      {!isViewModeEnabled && isPlaybackInfoOpen ? (
         <PlaybackInfoPanel
           source={sourceWithLiveTranscodingReasons}
           videoError={lastVideoError}

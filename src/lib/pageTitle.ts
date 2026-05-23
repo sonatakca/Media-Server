@@ -3,6 +3,12 @@ import { DEFAULT_SEO_TITLE, setSeoMetadata } from "./seo";
 const DEFAULT_TITLE = DEFAULT_SEO_TITLE;
 const LOADING_PREFIX = "· ";
 
+interface PageTitleOptions {
+  description?: string;
+  canonicalPath?: string;
+  robots?: "index, follow" | "noindex, nofollow";
+}
+
 let lastRealTitle = DEFAULT_TITLE;
 
 function clean(title: string): string {
@@ -17,10 +23,10 @@ function withLoadingDot(title: string): string {
     : `${LOADING_PREFIX}${cleanTitle}`;
 }
 
-export function setPageTitle(title: string): void {
+export function setPageTitle(title: string, options?: PageTitleOptions): void {
   const nextTitle = clean(title);
   lastRealTitle = nextTitle;
-  setSeoMetadata({ title: nextTitle });
+  setSeoMetadata({ title: nextTitle, ...options });
 }
 
 export function setDefaultPageTitle(isLoading = false): void {

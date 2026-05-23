@@ -35,6 +35,7 @@ interface PlayerControlsProps {
   settingsOpen: boolean;
   itemId: string;
   mediaSourceId?: string;
+  checkpointSeconds?: number | null;
   seekPreviewLoading?: boolean;
   onTogglePlay: () => void;
   onControlsHoverStart?: () => void;
@@ -88,6 +89,7 @@ export function PlayerControls({
   settingsOpen,
   itemId,
   mediaSourceId,
+  checkpointSeconds,
   seekPreviewLoading = false,
   onTogglePlay,
   onControlsHoverStart,
@@ -109,12 +111,12 @@ export function PlayerControls({
   return (
     <div
       data-mobile-tight-controls
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
-        visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+        visible ? "translate-y-0 opacity-100" : "translate-y-28 opacity-0"
       }`}
     >
       <div
-        className="pointer-events-auto mx-auto w-full max-w-[1500px]"
+        className="pointer-events-auto mx-auto w-[95%]"
         onMouseEnter={onControlsHoverStart}
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
@@ -127,6 +129,7 @@ export function PlayerControls({
             bufferedEnd={bufferedEnd}
             itemId={itemId}
             mediaSourceId={mediaSourceId}
+            checkpointSeconds={checkpointSeconds}
             onSeek={onSeek}
             onSeekPreview={onSeekPreview}
           />
@@ -179,17 +182,17 @@ export function PlayerControls({
             </button>
             <button
               type="button"
-              onClick={() => onSeekBy(-10)}
+              onClick={() => onSeekBy(-5)}
               className="hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
-              aria-label={t("player.rewind10")}
+              aria-label={t("player.rewind5")}
             >
               <RotateCcw size={21} />
             </button>
             <button
               type="button"
-              onClick={() => onSeekBy(10)}
+              onClick={() => onSeekBy(5)}
               className="hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
-              aria-label={t("player.forward10")}
+              aria-label={t("player.forward5")}
             >
               <RotateCw size={21} />
             </button>

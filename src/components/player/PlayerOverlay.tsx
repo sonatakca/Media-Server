@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   LoaderCircle,
@@ -25,7 +25,9 @@ interface PlayerOverlayProps {
   visible: boolean;
   isPlaying: boolean;
   isPlayPausePending?: boolean;
+  isPlayPauseLoading?: boolean;
   notice?: string | null;
+  topRightControls?: ReactNode;
   onTogglePlay: () => void;
   onControlsHoverStart?: () => void;
   onControlsHoverEnd?: () => void;
@@ -35,6 +37,8 @@ interface PlayerOverlayProps {
   };
 }
 
+const PLAY_PAUSE_ICON_SWAP_DURATION_MS = 111;
+
 export function PlayerOverlay({
   title,
   titleLogoUrl,
@@ -43,7 +47,9 @@ export function PlayerOverlay({
   visible,
   isPlaying,
   isPlayPausePending = false,
+  isPlayPauseLoading = false,
   notice,
+  topRightControls,
   onTogglePlay,
   onControlsHoverStart,
   onControlsHoverEnd,
@@ -53,7 +59,10 @@ export function PlayerOverlay({
 
   const wasPlayPausePendingRef = useRef(isPlayPausePending);
   const waveTimeoutRef = useRef<number | null>(null);
+  const iconSwapTimeoutRef = useRef<number | null>(null);
   const [showPlayPauseWave, setShowPlayPauseWave] = useState(false);
+  const [displayedIsPlaying, setDisplayedIsPlaying] = useState(isPlaying);
+  const [isIconScaledOut, setIsIconScaledOut] = useState(false);
 
   useEffect(() => {
     const wasPending = wasPlayPausePendingRef.current;
@@ -79,8 +88,36 @@ export function PlayerOverlay({
       if (waveTimeoutRef.current !== null) {
         window.clearTimeout(waveTimeoutRef.current);
       }
+
+      if (iconSwapTimeoutRef.current !== null) {
+        window.clearTimeout(iconSwapTimeoutRef.current);
+      }
     };
   }, []);
+
+  useEffect(() => {
+    if (displayedIsPlaying === isPlaying && !isIconScaledOut) {
+      return;
+    }
+
+    if (iconSwapTimeoutRef.current !== null) {
+      window.clearTimeout(iconSwapTimeoutRef.current);
+      iconSwapTimeoutRef.current = null;
+    }
+
+    if (displayedIsPlaying === isPlaying) {
+      setIsIconScaledOut(false);
+      return;
+    }
+
+    setIsIconScaledOut(true);
+
+    iconSwapTimeoutRef.current = window.setTimeout(() => {
+      setDisplayedIsPlaying(isPlaying);
+      setIsIconScaledOut(false);
+      iconSwapTimeoutRef.current = null;
+    }, PLAY_PAUSE_ICON_SWAP_DURATION_MS);
+  }, [displayedIsPlaying, isIconScaledOut, isPlaying]);
 
   const backwardFeedback = seekFeedback?.backward;
   const forwardFeedback = seekFeedback?.forward;
@@ -88,12 +125,12 @@ export function PlayerOverlay({
   return (
     <>
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
-          visible ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
+        className={`pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
+          visible ? "translate-y-0 opacity-100" : "-translate-y-16 opacity-0"
         }`}
       >
         <div
-          className="pointer-events-auto mx-auto flex max-w-[1500px] items-center justify-between gap-4"
+          className="pointer-events-auto mx-auto flex w-[95%] items-center justify-between gap-4"
           onMouseEnter={onControlsHoverStart}
           onMouseLeave={onControlsHoverEnd}
           onPointerEnter={onControlsHoverStart}
@@ -130,6 +167,12 @@ export function PlayerOverlay({
               </p>
             ) : null}
           </div>
+
+          {topRightControls ? (
+            <div className="ml-auto flex shrink-0 items-center justify-end">
+              {topRightControls}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -216,38 +259,59 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex h-10 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/[0.75] text-white shadow-none backdrop-blur-lg transition duration-300 hover:scale-105 hover:bg-black/[0.6] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-24 sm:w-24 cursor-pointer ${
-          visible || !isPlaying || isPlayPausePending
-            ? "opacity-100"
-            : "pointer-events-none opacity-0"
+        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/[0.25] text-white shadow-none transition duration-300 hover:scale-105 hover:bg-black/[0.55] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+          visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
+            ? "scale-100 opacity-100"
+            : "pointer-events-none scale-0 opacity-0"
         }`}
-        aria-label={isPlaying ? t("common.pause") : t("common.play")}
+        aria-label={
+          isPlayPauseLoading
+            ? t("common.loading")
+            : isPlaying
+              ? t("common.pause")
+              : t("common.play")
+        }
       >
         <span className="relative flex items-center justify-center">
           {showPlayPauseWave ? (
             <span className="seyirlik-play-pause-wave" />
           ) : null}
 
-          {isPlaying ? (
-            <Pause
-              className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
-              fill="currentColor"
-              strokeWidth={2.2}
-            />
-          ) : (
-            <Play
-              className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
-              fill="currentColor"
-              strokeWidth={2.2}
-            />
-          )}
-
           {isPlayPausePending ? (
             <LoaderCircle
-              strokeWidth={1}
-              className="absolute z-[-1] h-16 w-16 animate-[spin_1.8s_linear_infinite] text-[var(--accent)] drop-shadow-[0_0_10px_rgba(255,153,31,0.35)] sm:h-[122px] sm:w-[122px]"
+              aria-hidden="true"
+              className="pointer-events-none absolute h-14 w-14 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] opacity-90 [filter:drop-shadow(0_0_10px_rgba(255,153,31,0.28))] sm:h-[6.5rem] sm:w-[6.5rem]"
+              strokeWidth={1.4}
             />
           ) : null}
+
+          <span
+            className={`flex items-center justify-center transition-transform ease-out ${
+              isIconScaledOut ? "scale-0" : "scale-100"
+            }`}
+            style={{
+              transitionDuration: `${PLAY_PAUSE_ICON_SWAP_DURATION_MS}ms`,
+            }}
+          >
+            {isPlayPauseLoading ? (
+              <LoaderCircle
+                className="h-7 w-7 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,153,31,0.28))] sm:h-[42px] sm:w-[42px]"
+                strokeWidth={2.2}
+              />
+            ) : displayedIsPlaying ? (
+              <Pause
+                className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
+                fill="currentColor"
+                strokeWidth={2.2}
+              />
+            ) : (
+              <Play
+                className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
+                fill="currentColor"
+                strokeWidth={2.2}
+              />
+            )}
+          </span>
         </span>
       </button>
     </>

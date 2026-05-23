@@ -205,6 +205,16 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
   }>();
 
   const activeId = libraryId ?? seriesId ?? seasonId;
+  const canonicalPath =
+    mode === "series" && seriesId
+      ? `/series/${seriesId}`
+      : mode === "season" && seriesId && seasonId
+        ? `/series/${seriesId}/season/${seasonId}`
+        : mode === "season" && seasonId
+          ? `/season/${seasonId}`
+          : activeId
+            ? `/library/${activeId}`
+            : "/home";
   const { t } = useLanguage();
   const mediaFormatLabels = useMemo(
     () => ({
@@ -377,6 +387,17 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
   }, [libraryRotatingLogoUrls.length, mode]);
 
   useEffect(() => {
+    if (data) {
+      return;
+    }
+
+    setPageTitle("Seyirlik", {
+      canonicalPath,
+      robots: "noindex, nofollow",
+    });
+  }, [canonicalPath, data]);
+
+  useEffect(() => {
     if (!data) {
       return;
     }
@@ -390,8 +411,11 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
       ? getDisplayTitle(data.library, mediaFormatLabels)
       : fallbackTitle;
 
-    setPageTitle(`${title} · Seyirlik`);
-  }, [data, mediaFormatLabels, t]);
+    setPageTitle(`${title} · Seyirlik`, {
+      canonicalPath,
+      robots: "noindex, nofollow",
+    });
+  }, [canonicalPath, data, mediaFormatLabels, t]);
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;

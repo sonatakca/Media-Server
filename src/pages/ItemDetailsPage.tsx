@@ -87,13 +87,17 @@ export function ItemDetailsPage() {
 
   useEffect(() => {
     if (!item) {
-      setSeoMetadata({ canonicalPath: itemId ? `/item/${itemId}` : "/" });
+      setSeoMetadata({
+        canonicalPath: itemId ? `/item/${itemId}` : "/home",
+        robots: "noindex, nofollow",
+      });
       return;
     }
 
     setSeoMetadata({
       title: `${getDisplayTitle(item, mediaFormatLabels)} · Seyirlik`,
       canonicalPath: `/item/${item.Id}`,
+      robots: "noindex, nofollow",
     });
   }, [item, itemId, mediaFormatLabels]);
 

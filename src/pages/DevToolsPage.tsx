@@ -18,7 +18,10 @@ export function DevToolsPage() {
   const { t } = useLanguage();
 
   useEffect(() => {
-    setPageTitle(`${t("devtools.title")} · Seyirlik`);
+    setPageTitle(`${t("devtools.title")} · Seyirlik`, {
+      canonicalPath: "/dev",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
 
   const tools = [

@@ -519,7 +519,10 @@ export function PlaybackAuditPage() {
   const shouldFollowTableBottomRef = useRef(true);
 
   useEffect(() => {
-    setPageTitle(`${t("audit.title")} · Seyirlik`);
+    setPageTitle(`${t("audit.title")} · Seyirlik`, {
+      canonicalPath: "/dev/playback-audit",
+      robots: "noindex, nofollow",
+    });
   }, [t]);
 
   const summary = useMemo(() => {
