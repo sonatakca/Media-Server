@@ -17,11 +17,10 @@ import { PlayerPage } from "./pages/PlayerPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
-import { PublicLandingPage } from "./pages/PublicLandingPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
-import { setDefaultPageTitle, setPageTitle } from "./lib/pageTitle";
+import { setPageTitle } from "./lib/pageTitle";
 
 const DEFAULT_SERVER_URL =
   (
@@ -121,12 +120,14 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
 }
 
 function RootRedirect() {
+  const location = useLocation();
+
   useEffect(() => {
     setPageTitle("Seyirlik", {
-      canonicalPath: "/app",
+      canonicalPath: location.pathname,
       robots: "noindex, nofollow",
     });
-  }, []);
+  }, [location.pathname]);
 
   if (!getServerUrl()) {
     return <Navigate to="/server" replace />;
@@ -152,14 +153,6 @@ function RequireAuth() {
 }
 
 export default function App() {
-  const location = useLocation();
-
-  useEffect(() => {
-    if (location.pathname === "/") {
-      setDefaultPageTitle(false);
-    }
-  }, [location.pathname]);
-
   return (
     <>
       <ScrollToTop />
@@ -167,8 +160,6 @@ export default function App() {
 
       <RouteColorTransition />
       <Routes>
-        <Route path="/" element={<PublicLandingPage />} />
-
         <Route element={<RouteTransitionOutlet />}>
           <Route path="/server" element={<ServerSetupPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -181,6 +172,7 @@ export default function App() {
             </DefaultServerGate>
           }
         >
+          <Route path="/" element={<RootRedirect />} />
           <Route path="/app" element={<RootRedirect />} />
 
           <Route element={<RequireAuth />}>
