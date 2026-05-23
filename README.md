@@ -36,21 +36,20 @@ npm run build
 
 ## SEO / Search Indexing
 
-Seyirlik keeps public search indexing focused on one Turkish-first landing
-page:
+Seyirlik currently prioritizes direct app entry over a public landing page:
 
-- `/` is the public indexable landing page with `index, follow`.
-- `/app` enters the private Jellyfin app flow for server setup, login, and
-  authenticated media browsing.
+- `/` enters the private Jellyfin app flow and redirects to `/home`, `/login`,
+  or `/server` depending on local app state.
+- `/app` is an alias for the same private app entry flow.
 - `/login`, `/server`, `/home`, media routes, player routes, and developer
   routes are private/internal and should remain `noindex, nofollow`.
 - `robots.txt` is served at `/robots.txt`.
-- `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
+- `sitemap.xml` is served at `/sitemap.xml`; it is intentionally empty while
+  there are no public indexable routes.
 - The canonical site URL is `https://www.seyirlik.sonatakca.com/`.
 
-After deployment, submit `https://www.seyirlik.sonatakca.com/sitemap.xml` in
-Google Search Console. Use URL Inspection for
-`https://www.seyirlik.sonatakca.com/` and request indexing for the landing page.
+If a public Google result is needed later, add a real public landing route and
+include only that route in `sitemap.xml`.
 
 ## Jellyfin Server URL
 

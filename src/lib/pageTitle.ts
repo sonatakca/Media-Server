@@ -50,7 +50,7 @@ export function setDefaultPageTitle(isLoading = false): void {
   setSeoMetadata({
     title: nextTitle,
     canonicalPath: PUBLIC_HOME_CANONICAL_PATH,
-    robots: SEO_ROBOTS.index,
+    robots: SEO_ROBOTS.noindex,
     lang: PUBLIC_SEO_LANG,
     ogLocale: PUBLIC_OG_LOCALE,
   });

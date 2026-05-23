@@ -78,7 +78,7 @@ export function setSeoMetadata({
   title = DEFAULT_SEO_TITLE,
   description = DEFAULT_SEO_DESCRIPTION,
   canonicalPath,
-  robots = SEO_ROBOTS.index,
+  robots = SEO_ROBOTS.noindex,
   lang,
   ogLocale,
 }: SeoMetadataInput): void {
