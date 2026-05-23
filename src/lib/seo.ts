@@ -1,15 +1,29 @@
 export const SITE_URL = "https://www.seyirlik.sonatakca.com/";
 
-export const DEFAULT_SEO_TITLE = "Seyirlik — Modern Jellyfin Media Client";
+export const DEFAULT_SEO_TITLE =
+  "Seyirlik | Kişisel Film ve Dizi İzleme Deneyimi";
 
 export const DEFAULT_SEO_DESCRIPTION =
-  "Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience.";
+  "Seyirlik, film ve dizileri modern, sinematik ve kişisel bir arayüzle keşfetmek ve izlemek için geliştirilen bir medya deneyimi uygulamasıdır.";
+
+export const PUBLIC_HOME_CANONICAL_PATH = "/";
+export const PUBLIC_SEO_LANG = "tr";
+export const PUBLIC_OG_LOCALE = "tr_TR";
+
+export const SEO_ROBOTS = {
+  index: "index, follow",
+  noindex: "noindex, nofollow",
+} as const;
+
+export type RobotsDirective = (typeof SEO_ROBOTS)[keyof typeof SEO_ROBOTS];
 
 interface SeoMetadataInput {
   title?: string;
   description?: string;
   canonicalPath?: string;
-  robots?: "index, follow" | "noindex, nofollow";
+  robots?: RobotsDirective;
+  lang?: string;
+  ogLocale?: string;
 }
 
 function getCanonicalUrl(path?: string): string {
@@ -64,7 +78,9 @@ export function setSeoMetadata({
   title = DEFAULT_SEO_TITLE,
   description = DEFAULT_SEO_DESCRIPTION,
   canonicalPath,
-  robots = "index, follow",
+  robots = SEO_ROBOTS.index,
+  lang,
+  ogLocale,
 }: SeoMetadataInput): void {
   if (typeof document === "undefined" || typeof window === "undefined") {
     return;
@@ -72,11 +88,22 @@ export function setSeoMetadata({
 
   const canonicalUrl = getCanonicalUrl(canonicalPath);
 
+  if (lang) {
+    document.documentElement.lang = lang;
+  }
+
   document.title = title;
   setMetaContent("meta[name='description']", { name: "description" }, description);
   setMetaContent("meta[name='robots']", { name: "robots" }, robots);
   ensureCanonicalLink().setAttribute("href", canonicalUrl);
   setMetaContent("meta[property='og:title']", { property: "og:title" }, title);
+  if (ogLocale) {
+    setMetaContent(
+      "meta[property='og:locale']",
+      { property: "og:locale" },
+      ogLocale,
+    );
+  }
   setMetaContent(
     "meta[property='og:description']",
     { property: "og:description" },

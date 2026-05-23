@@ -17,6 +17,7 @@ import { PlayerPage } from "./pages/PlayerPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
+import { PublicLandingPage } from "./pages/PublicLandingPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
@@ -160,6 +161,8 @@ export default function App() {
 
       <RouteColorTransition />
       <Routes>
+        <Route path="/" element={<PublicLandingPage />} />
+
         <Route element={<RouteTransitionOutlet />}>
           <Route path="/server" element={<ServerSetupPage />} />
           <Route path="/login" element={<LoginPage />} />
@@ -172,7 +175,6 @@ export default function App() {
             </DefaultServerGate>
           }
         >
-          <Route path="/" element={<RootRedirect />} />
           <Route path="/app" element={<RootRedirect />} />
 
           <Route element={<RequireAuth />}>

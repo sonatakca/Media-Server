@@ -1,4 +1,12 @@
-import { DEFAULT_SEO_TITLE, setSeoMetadata } from "./seo";
+import {
+  DEFAULT_SEO_TITLE,
+  PUBLIC_HOME_CANONICAL_PATH,
+  PUBLIC_OG_LOCALE,
+  PUBLIC_SEO_LANG,
+  SEO_ROBOTS,
+  setSeoMetadata,
+  type RobotsDirective,
+} from "./seo";
 
 const DEFAULT_TITLE = DEFAULT_SEO_TITLE;
 const LOADING_PREFIX = "· ";
@@ -6,7 +14,9 @@ const LOADING_PREFIX = "· ";
 interface PageTitleOptions {
   description?: string;
   canonicalPath?: string;
-  robots?: "index, follow" | "noindex, nofollow";
+  robots?: RobotsDirective;
+  lang?: string;
+  ogLocale?: string;
 }
 
 let lastRealTitle = DEFAULT_TITLE;
@@ -37,7 +47,13 @@ export function setDefaultPageTitle(isLoading = false): void {
     return;
   }
 
-  setSeoMetadata({ title: nextTitle, canonicalPath: "/" });
+  setSeoMetadata({
+    title: nextTitle,
+    canonicalPath: PUBLIC_HOME_CANONICAL_PATH,
+    robots: SEO_ROBOTS.index,
+    lang: PUBLIC_SEO_LANG,
+    ogLocale: PUBLIC_OG_LOCALE,
+  });
 }
 
 export function setLoadingPageTitle(title?: string): void {

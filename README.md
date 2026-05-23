@@ -36,12 +36,14 @@ npm run build
 
 ## SEO / Search Indexing
 
-Seyirlik keeps public search indexing focused on the stable product landing
+Seyirlik keeps public search indexing focused on one Turkish-first landing
 page:
 
-- `/` is the public indexable landing page.
+- `/` is the public indexable landing page with `index, follow`.
 - `/app` enters the private Jellyfin app flow for server setup, login, and
   authenticated media browsing.
+- `/login`, `/server`, `/home`, media routes, player routes, and developer
+  routes are private/internal and should remain `noindex, nofollow`.
 - `robots.txt` is served at `/robots.txt`.
 - `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
 - The canonical site URL is `https://www.seyirlik.sonatakca.com/`.
