@@ -259,7 +259,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-black/[0.25] text-white shadow-none transition duration-300 hover:scale-105 hover:bg-black/[0.55] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 hover:bg-[var(--accent-strongest)] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
             ? "scale-100 opacity-100"
             : "pointer-events-none scale-0 opacity-0"

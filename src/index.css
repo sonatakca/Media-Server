@@ -26,6 +26,12 @@
   initial-value: rgba(70, 122, 108, 0.36);
 }
 
+@property --accent-strongest {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgba(70, 122, 108, 0.8);
+}
+
 :root {
   color-scheme: dark;
   --background: #050607;
@@ -37,6 +43,7 @@
   --accent-hover: #75a27b;
   --accent-soft: rgba(70, 122, 108, 0.18);
   --accent-strong: rgba(70, 122, 108, 0.36);
+  --accent-strong: rgba(70, 122, 108, 0.8);
   --border: rgba(255, 255, 255, 0.12);
   --shadow-cinematic-card:
     0 30px 90px rgba(0, 0, 0, 0.42), 0 10px 28px rgba(0, 0, 0, 0.34),
