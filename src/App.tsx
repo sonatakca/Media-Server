@@ -21,6 +21,11 @@ import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { setPageTitle } from "./lib/pageTitle";
+import {
+  PUBLIC_HOME_CANONICAL_PATH,
+  SEO_ROBOTS,
+  setPublicRootSeoMetadata,
+} from "./lib/seo";
 
 const DEFAULT_SERVER_URL =
   (
@@ -58,9 +63,17 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    if (location.pathname === "/") {
+      setPublicRootSeoMetadata();
+      return;
+    }
+
     setPageTitle("Seyirlik", {
-      canonicalPath: location.pathname,
-      robots: "noindex, nofollow",
+      canonicalPath:
+        location.pathname === "/app"
+          ? PUBLIC_HOME_CANONICAL_PATH
+          : location.pathname,
+      robots: SEO_ROBOTS.noindex,
     });
   }, [location.pathname, state]);
 
@@ -123,9 +136,17 @@ function RootRedirect() {
   const location = useLocation();
 
   useEffect(() => {
+    if (location.pathname === "/") {
+      setPublicRootSeoMetadata();
+      return;
+    }
+
     setPageTitle("Seyirlik", {
-      canonicalPath: location.pathname,
-      robots: "noindex, nofollow",
+      canonicalPath:
+        location.pathname === "/app"
+          ? PUBLIC_HOME_CANONICAL_PATH
+          : location.pathname,
+      robots: SEO_ROBOTS.noindex,
     });
   }, [location.pathname]);
 

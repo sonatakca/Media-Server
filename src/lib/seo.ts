@@ -117,3 +117,14 @@ export function setSeoMetadata({
     description,
   );
 }
+
+export function setPublicRootSeoMetadata(): void {
+  setSeoMetadata({
+    title: DEFAULT_SEO_TITLE,
+    description: DEFAULT_SEO_DESCRIPTION,
+    canonicalPath: PUBLIC_HOME_CANONICAL_PATH,
+    robots: SEO_ROBOTS.index,
+    lang: PUBLIC_SEO_LANG,
+    ogLocale: PUBLIC_OG_LOCALE,
+  });
+}

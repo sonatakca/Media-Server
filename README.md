@@ -36,20 +36,23 @@ npm run build
 
 ## SEO / Search Indexing
 
-Seyirlik currently prioritizes direct app entry over a public landing page:
+Seyirlik uses Netflix-style app-entry SEO without a visible marketing landing
+page:
 
-- `/` enters the private Jellyfin app flow and redirects to `/home`, `/login`,
-  or `/server` depending on local app state.
+- `/` is the only public indexable canonical URL with Turkish-first metadata.
+- `/` immediately enters the private Jellyfin app flow and redirects users to
+  `/home`, `/login`, or `/server` depending on local app state.
 - `/app` is an alias for the same private app entry flow.
 - `/login`, `/server`, `/home`, media routes, player routes, and developer
   routes are private/internal and should remain `noindex, nofollow`.
+- Vercel sends `X-Robots-Tag: noindex, nofollow` for private route patterns
+  so crawlers see noindex before React renders route metadata.
 - `robots.txt` is served at `/robots.txt`.
-- `sitemap.xml` is served at `/sitemap.xml`; it is intentionally empty while
-  there are no public indexable routes.
+- `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
 - The canonical site URL is `https://www.seyirlik.sonatakca.com/`.
 
-If a public Google result is needed later, add a real public landing route and
-include only that route in `sitemap.xml`.
+After deployment, submit `https://www.seyirlik.sonatakca.com/sitemap.xml` in
+Google Search Console and inspect `https://www.seyirlik.sonatakca.com/`.
 
 ## Jellyfin Server URL
 

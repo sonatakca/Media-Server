@@ -1,9 +1,7 @@
 import {
   DEFAULT_SEO_TITLE,
-  PUBLIC_HOME_CANONICAL_PATH,
-  PUBLIC_OG_LOCALE,
-  PUBLIC_SEO_LANG,
   SEO_ROBOTS,
+  setPublicRootSeoMetadata,
   setSeoMetadata,
   type RobotsDirective,
 } from "./seo";
@@ -47,12 +45,16 @@ export function setDefaultPageTitle(isLoading = false): void {
     return;
   }
 
+  if (typeof window !== "undefined" && window.location.pathname === "/") {
+    setPublicRootSeoMetadata();
+    return;
+  }
+
   setSeoMetadata({
     title: nextTitle,
-    canonicalPath: PUBLIC_HOME_CANONICAL_PATH,
+    canonicalPath:
+      typeof window !== "undefined" ? window.location.pathname : undefined,
     robots: SEO_ROBOTS.noindex,
-    lang: PUBLIC_SEO_LANG,
-    ogLocale: PUBLIC_OG_LOCALE,
   });
 }
 
