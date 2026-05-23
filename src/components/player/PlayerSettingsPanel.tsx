@@ -1,4 +1,12 @@
-import { Check, ChevronRight } from "lucide-react";
+import {
+  Check,
+  ChevronRight,
+  SlidersHorizontal,
+  Volume2,
+  Subtitles,
+} from "lucide-react";
+import { useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import type {
   JellyfinMediaStream,
   PlaybackQualityOption,
@@ -164,9 +172,16 @@ export function PlayerSettingsPanel({
   const subtitleStreams = getUniqueStreams(
     getStreamsOfType(source, "Subtitle"),
   );
+  const [activeSection, setActiveSection] = useState<
+    "quality" | "audio" | "subtitles"
+  >("quality");
 
   return (
-    <div className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]">
+    <motion.div
+      layout="size"
+      transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+      className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
+    >
       <div className="border-b border-white/10 px-4 py-3">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
           {t("settings.settings")}
@@ -174,143 +189,234 @@ export function PlayerSettingsPanel({
         <h2 className="mt-0.5 text-base font-black text-white">
           {t("settings.playbackOptions")}
         </h2>
+
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => setActiveSection("quality")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
+              activeSection === "quality"
+                ? "bg-[var(--accent)] text-black"
+                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
+            }`}
+          >
+            <SlidersHorizontal size={15} strokeWidth={2.2} />
+            <span>Kalite</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSection("audio")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
+              activeSection === "audio"
+                ? "bg-[var(--accent)] text-black"
+                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
+            }`}
+          >
+            <Volume2 size={15} strokeWidth={2.2} />
+            <span>Audio</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSection("subtitles")}
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
+              activeSection === "subtitles"
+                ? "bg-[var(--accent)] text-black"
+                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
+            }`}
+          >
+            <Subtitles size={15} strokeWidth={2.2} />
+            <span>Subtitles</span>
+          </button>
+        </div>
       </div>
 
-      <div className="max-h-[calc(100dvh-5.25rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-12rem))]">
-        <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
-          {t("settings.quality")}
-        </div>
+      <motion.div
+        layout="size"
+        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+        className="max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]"
+      >
+        <AnimatePresence mode="wait" initial={false}>
+          {activeSection === "quality" ? (
+            <motion.div
+              key="quality"
+              layout="size"
+              initial={{ opacity: 0, height: 0, y: 8 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -8 }}
+              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                {t("settings.quality")}
+              </div>
 
-        <SettingsButton
-          title={getPlaybackModeLabel(source.mode, t)}
-          subtitle={
-            source.mediaSource.Container
-              ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
-              : t("settings.currentSource")
-          }
-          active
-        />
+              <SettingsButton
+                title={getPlaybackModeLabel(source.mode, t)}
+                subtitle={
+                  source.mediaSource.Container
+                    ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
+                    : t("settings.currentSource")
+                }
+                active
+              />
 
-        <SettingsButton
-          title={t("settings.auto")}
-          subtitle={
-            selectedQualityId === "auto"
-              ? t("settings.bestJellyfinSource")
-              : t("settings.useBestJellyfinSource")
-          }
-          active={selectedQualityId === "auto"}
-          onClick={onSelectAutoQuality}
-        />
+              <SettingsButton
+                title={t("settings.auto")}
+                subtitle={
+                  selectedQualityId === "auto"
+                    ? t("settings.bestJellyfinSource")
+                    : t("settings.useBestJellyfinSource")
+                }
+                active={selectedQualityId === "auto"}
+                onClick={onSelectAutoQuality}
+              />
 
-        {qualityOptions.length > 0 ? (
-          qualityOptions.map((quality) => (
-            <SettingsButton
-              key={quality.id}
-              title={quality.label}
-              subtitle={
-                selectedQualityId === quality.id
-                  ? t("settings.currentQuality")
-                  : formatTemplate(t("settings.hlsUpTo"), {
-                      mbps: Math.round(quality.maxStreamingBitrate / 1_000_000),
-                    })
-              }
-              active={selectedQualityId === quality.id}
-              onClick={() => onSelectQuality(quality)}
-            />
-          ))
-        ) : (
-          <SettingsButton
-            title={t("settings.manualQuality")}
-            subtitle={t("settings.noAlternateQualities")}
-            disabled
-            hasSubmenu
-          />
-        )}
-
-        <div className="mt-2 px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
-          {t("settings.audio")}
-        </div>
-
-        {audioStreams.length > 0 ? (
-          audioStreams.map((stream, index) => (
-            <SettingsButton
-              key={`${stream.Index ?? index}-audio`}
-              title={getStreamLabel(
-                stream,
-                formatTemplate(t("settings.audioTrack"), { number: index + 1 }),
-                t,
+              {qualityOptions.length > 0 ? (
+                qualityOptions.map((quality) => (
+                  <SettingsButton
+                    key={quality.id}
+                    title={quality.label}
+                    subtitle={
+                      selectedQualityId === quality.id
+                        ? t("settings.currentQuality")
+                        : formatTemplate(t("settings.hlsUpTo"), {
+                            mbps: Math.round(
+                              quality.maxStreamingBitrate / 1_000_000,
+                            ),
+                          })
+                    }
+                    active={selectedQualityId === quality.id}
+                    onClick={() => onSelectQuality(quality)}
+                  />
+                ))
+              ) : (
+                <SettingsButton
+                  title={t("settings.manualQuality")}
+                  subtitle={t("settings.noAlternateQualities")}
+                  disabled
+                  hasSubmenu
+                />
               )}
-              subtitle={
-                stream.Index === selectedAudioStreamIndex
-                  ? t("settings.currentAudio")
-                  : canSwitchAudio
-                    ? t("settings.clickToSwitch")
-                    : t("settings.requiresTranscoding")
-              }
-              active={stream.Index === selectedAudioStreamIndex}
-              disabled={stream.Index === undefined || !canSwitchAudio}
-              onClick={
-                stream.Index === undefined || !canSwitchAudio
-                  ? undefined
-                  : () => onSelectAudioStream(stream.Index as number)
-              }
-            />
-          ))
-        ) : (
-          <p className="mx-2 rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-white/50">
-            {t("settings.noAudioTracks")}
-          </p>
-        )}
+            </motion.div>
+          ) : null}
 
-        <div className="mt-2 px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
-          {t("settings.subtitles")}
-        </div>
+          {activeSection === "audio" ? (
+            <motion.div
+              key="audio"
+              layout="size"
+              initial={{ opacity: 0, height: 0, y: 8 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -8 }}
+              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                {t("settings.audio")}
+              </div>
 
-        <SettingsButton
-          title={t("settings.off")}
-          subtitle={
-            selectedSubtitleStreamIndex === -1
-              ? t("settings.subtitlesOff")
-              : t("settings.disableSubtitles")
-          }
-          active={selectedSubtitleStreamIndex === -1}
-          disabled={!canSwitchSubtitles}
-          onClick={
-            canSwitchSubtitles ? () => onSelectSubtitleStream(-1) : undefined
-          }
-        />
-
-        {subtitleStreams.length > 0 ? (
-          subtitleStreams.map((stream, index) => (
-            <SettingsButton
-              key={`${stream.Index ?? index}-subtitle`}
-              title={getStreamLabel(
-                stream,
-                formatTemplate(t("settings.subtitle"), { number: index + 1 }),
-                t,
+              {audioStreams.length > 0 ? (
+                audioStreams.map((stream, index) => (
+                  <SettingsButton
+                    key={`${stream.Index ?? index}-audio`}
+                    title={getStreamLabel(
+                      stream,
+                      formatTemplate(t("settings.audioTrack"), {
+                        number: index + 1,
+                      }),
+                      t,
+                    )}
+                    subtitle={
+                      stream.Index === selectedAudioStreamIndex
+                        ? t("settings.currentAudio")
+                        : canSwitchAudio
+                          ? t("settings.clickToSwitch")
+                          : t("settings.requiresTranscoding")
+                    }
+                    active={stream.Index === selectedAudioStreamIndex}
+                    disabled={stream.Index === undefined || !canSwitchAudio}
+                    onClick={
+                      stream.Index === undefined || !canSwitchAudio
+                        ? undefined
+                        : () => onSelectAudioStream(stream.Index as number)
+                    }
+                  />
+                ))
+              ) : (
+                <p className="mx-2 rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-white/50">
+                  {t("settings.noAudioTracks")}
+                </p>
               )}
-              subtitle={
-                stream.Index === selectedSubtitleStreamIndex
-                  ? t("settings.currentSubtitle")
-                  : canSwitchSubtitles
-                    ? t("settings.clickToEnable")
-                    : t("settings.subtitleUnavailable")
-              }
-              active={stream.Index === selectedSubtitleStreamIndex}
-              disabled={stream.Index === undefined || !canSwitchSubtitles}
-              onClick={
-                stream.Index === undefined || !canSwitchSubtitles
-                  ? undefined
-                  : () => onSelectSubtitleStream(stream.Index as number)
-              }
-            />
-          ))
-        ) : (
-          <p className="mx-2 rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-white/50">
-            {t("settings.noSubtitles")}
-          </p>
-        )}
-      </div>
-    </div>
+            </motion.div>
+          ) : null}
+
+          {activeSection === "subtitles" ? (
+            <motion.div
+              key="subtitles"
+              layout="size"
+              initial={{ opacity: 0, height: 0, y: 8 }}
+              animate={{ opacity: 1, height: "auto", y: 0 }}
+              exit={{ opacity: 0, height: 0, y: -8 }}
+              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
+              className="overflow-hidden"
+            >
+              <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
+                {t("settings.subtitles")}
+              </div>
+
+              <SettingsButton
+                title={t("settings.off")}
+                subtitle={
+                  selectedSubtitleStreamIndex === -1
+                    ? t("settings.subtitlesOff")
+                    : t("settings.disableSubtitles")
+                }
+                active={selectedSubtitleStreamIndex === -1}
+                disabled={!canSwitchSubtitles}
+                onClick={
+                  canSwitchSubtitles
+                    ? () => onSelectSubtitleStream(-1)
+                    : undefined
+                }
+              />
+
+              {subtitleStreams.length > 0 ? (
+                subtitleStreams.map((stream, index) => (
+                  <SettingsButton
+                    key={`${stream.Index ?? index}-subtitle`}
+                    title={getStreamLabel(
+                      stream,
+                      formatTemplate(t("settings.subtitle"), {
+                        number: index + 1,
+                      }),
+                      t,
+                    )}
+                    subtitle={
+                      stream.Index === selectedSubtitleStreamIndex
+                        ? t("settings.currentSubtitle")
+                        : canSwitchSubtitles
+                          ? t("settings.clickToEnable")
+                          : t("settings.subtitleUnavailable")
+                    }
+                    active={stream.Index === selectedSubtitleStreamIndex}
+                    disabled={stream.Index === undefined || !canSwitchSubtitles}
+                    onClick={
+                      stream.Index === undefined || !canSwitchSubtitles
+                        ? undefined
+                        : () => onSelectSubtitleStream(stream.Index as number)
+                    }
+                  />
+                ))
+              ) : (
+                <p className="mx-2 rounded-xl bg-white/[0.05] px-3 py-2 text-sm text-white/50">
+                  {t("settings.noSubtitles")}
+                </p>
+              )}
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+      </motion.div>
+    </motion.div>
   );
 }

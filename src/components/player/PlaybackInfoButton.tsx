@@ -28,7 +28,7 @@ export function PlaybackInfoButton({
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex min-h-8 items-center gap-2 rounded-full border px-3 py-1 text-xs font-bold shadow-2xl backdrop-blur transition hover:scale-[1.02] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${tone}`}
+      className={`inline-flex min-h-8 items-center gap-2 rounded-full p-3 text-xs font-bold transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${tone}`}
       aria-label={t("playback.details")}
       title={t("playback.details")}
     >

@@ -109,7 +109,7 @@ export function PlayerControls({
   return (
     <div
       data-mobile-tight-controls
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black via-black/55 to-transparent px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
         visible ? "translate-y-0 opacity-100" : "translate-y-4 opacity-0"
       }`}
     >

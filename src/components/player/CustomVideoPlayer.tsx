@@ -153,6 +153,15 @@ const STARTUP_WATCHDOG_MS = 8000;
 
 const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
 
+const PARTY_WATCH_DOT_POSITIONS = [
+  "right-[0.5rem] top-[0.42rem]",
+  "right-[0.15rem] top-[1.25rem]",
+  "right-[0.5rem] top-[2.08rem]",
+  "left-[0.5rem] top-[0.42rem]",
+  "left-[0.5rem] top-[2.08rem]",
+  "left-[0.15rem] top-[1.25rem]",
+] as const;
+
 const initialSeekFeedback: SeekFeedbackState = {
   backward: {
     amount: 0,
@@ -923,6 +932,7 @@ export function CustomVideoPlayer({
     backward: null,
     forward: null,
   });
+  const seekFeedbackChromeHideTimerRef = useRef<number | null>(null);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -937,6 +947,8 @@ export function CustomVideoPlayer({
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPartyWatchOpen, setIsPartyWatchOpen] = useState(false);
   const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
+  const [areControlsManuallyHidden, setAreControlsManuallyHidden] =
+    useState(false);
 
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
@@ -963,6 +975,20 @@ export function CustomVideoPlayer({
     interactionDelayMs: 2400,
   });
 
+  const shouldShowPlayerChrome =
+    !areControlsManuallyHidden &&
+    (areControlsVisible || !progress.isPlaying || controlsShouldStayVisible);
+
+  const revealPlayerChrome = useCallback(() => {
+    if (seekFeedbackChromeHideTimerRef.current !== null) {
+      window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
+      seekFeedbackChromeHideTimerRef.current = null;
+    }
+
+    setAreControlsManuallyHidden(false);
+    showControls();
+  }, [showControls]);
+
   const partyWatch = usePartyWatchController({
     videoRef,
     itemId: item.Id,
@@ -970,8 +996,17 @@ export function CustomVideoPlayer({
     currentTime: progress.currentTime,
     isPlaying: progress.isPlaying,
     refreshProgress,
-    showControls,
+    showControls: revealPlayerChrome,
   });
+  const partyWatchMemberCount = partyWatch.isInGroup
+    ? Math.max(
+        1,
+        partyWatch.participantCount ?? partyWatch.participantNames?.length ?? 0,
+      )
+    : 0;
+  const visiblePartyWatchDotCount = partyWatch.isInGroup
+    ? Math.min(partyWatchMemberCount, PARTY_WATCH_DOT_POSITIONS.length)
+    : 1;
 
   const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<
     string | null
@@ -1392,6 +1427,7 @@ export function CustomVideoPlayer({
     setIsDraggingSubtitle(false);
     setIsResizingSubtitle(false);
     setIsSubtitleEditMode(false);
+    setAreControlsManuallyHidden(false);
     subtitleDragStateRef.current = null;
     subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
@@ -1419,6 +1455,22 @@ export function CustomVideoPlayer({
       }
     });
   }, []);
+
+  const hidePlayerChromeWithSeekFeedback = useCallback(() => {
+    if (seekFeedbackChromeHideTimerRef.current !== null) {
+      window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
+      seekFeedbackChromeHideTimerRef.current = null;
+    }
+
+    if (!progress.isPlaying || controlsShouldStayVisible) {
+      return;
+    }
+
+    seekFeedbackChromeHideTimerRef.current = window.setTimeout(() => {
+      setAreControlsManuallyHidden(true);
+      seekFeedbackChromeHideTimerRef.current = null;
+    }, SEEK_FEEDBACK_HIDE_MS);
+  }, [controlsShouldStayVisible, progress.isPlaying]);
 
   const triggerSeekFeedback = useCallback((seconds: number) => {
     if (seconds === 0) {
@@ -1521,9 +1573,15 @@ export function CustomVideoPlayer({
     (seconds: number) => {
       partyWatch.seekBy(seconds);
       triggerSeekFeedback(seconds);
-      showControls();
+      revealPlayerChrome();
+      hidePlayerChromeWithSeekFeedback();
     },
-    [partyWatch, showControls, triggerSeekFeedback],
+    [
+      hidePlayerChromeWithSeekFeedback,
+      partyWatch,
+      revealPlayerChrome,
+      triggerSeekFeedback,
+    ],
   );
 
   const handleSkipSegment = useCallback(
@@ -1544,9 +1602,9 @@ export function CustomVideoPlayer({
 
       setDismissedSkipSegmentId(segment.id);
       partyWatch.seekTo(target);
-      showControls();
+      revealPlayerChrome();
     },
-    [partyWatch, progress.duration, showControls],
+    [partyWatch, progress.duration, revealPlayerChrome],
   );
 
   useKeyboardShortcuts({
@@ -1714,7 +1772,7 @@ export function CustomVideoPlayer({
       setIsWaitingForAudioTranscodeReady(false);
 
       setLastVideoError(null);
-      showControls();
+      revealPlayerChrome();
 
       await stopCurrentPlaybackForSourceSwitch(activeSource);
 
@@ -1741,7 +1799,7 @@ export function CustomVideoPlayer({
       clearAudioTranscodeReadinessTimer,
       progress.currentTime,
       progress.isPlaying,
-      showControls,
+      revealPlayerChrome,
       stopCurrentPlaybackForSourceSwitch,
     ],
   );
@@ -1871,7 +1929,7 @@ export function CustomVideoPlayer({
         if (syncResult.succeeded) {
           setSelectedAudioStreamIndex(streamIndex);
           setActiveAudioStreamIndex(streamIndex);
-          showControls();
+          revealPlayerChrome();
           return;
         }
 
@@ -1893,7 +1951,7 @@ export function CustomVideoPlayer({
               nativeAudioTracks: getNativeAudioTrackSnapshot(video),
             },
           );
-          showControls();
+          revealPlayerChrome();
           return;
         }
 
@@ -1956,8 +2014,8 @@ export function CustomVideoPlayer({
       buildConfiguredSource,
       canSwitchAudio,
       qualityOptions,
+      revealPlayerChrome,
       selectedQualityId,
-      showControls,
       switchPlayerSource,
     ],
   );
@@ -2026,9 +2084,9 @@ export function CustomVideoPlayer({
       }, 3500);
 
       setFullscreenSeekPreviewSeconds(seconds);
-      showControls();
+      revealPlayerChrome();
     },
-    [clearFullscreenSeekPreviewFallbackTimer, showControls],
+    [clearFullscreenSeekPreviewFallbackTimer, revealPlayerChrome],
   );
 
   useEffect(() => {
@@ -2074,9 +2132,9 @@ export function CustomVideoPlayer({
     (streamIndex: number) => {
       setActiveSubtitleText("");
       setSelectedSubtitleStreamIndex(streamIndex);
-      showControls();
+      revealPlayerChrome();
     },
-    [showControls],
+    [revealPlayerChrome],
   );
 
   useEffect(() => {
@@ -2768,6 +2826,11 @@ export function CustomVideoPlayer({
       clearFullscreenSeekPreviewFallbackTimer();
       clearSeekFeedbackTimers();
 
+      if (seekFeedbackChromeHideTimerRef.current !== null) {
+        window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
+        seekFeedbackChromeHideTimerRef.current = null;
+      }
+
       if (singleTapTimerRef.current !== null) {
         window.clearTimeout(singleTapTimerRef.current);
         singleTapTimerRef.current = null;
@@ -3018,6 +3081,47 @@ export function CustomVideoPlayer({
     }, 180);
   };
 
+  const handlePlayerOverlayToggle = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (
+        isDraggingSubtitle ||
+        isResizingSubtitle ||
+        Date.now() < suppressPlayerTapUntilRef.current
+      ) {
+        return;
+      }
+
+      const target = event.target as HTMLElement | null;
+
+      const tappedInteractiveElement = target?.closest(
+        "button, a, input, [role='slider'], [data-player-settings-root], [data-party-watch-root], [data-subtitle-editor-root]",
+      );
+
+      if (tappedInteractiveElement) {
+        return;
+      }
+
+      if (shouldShowPlayerChrome) {
+        setIsSettingsOpen(false);
+        setIsPlaybackInfoOpen(false);
+        setIsPartyWatchOpen(false);
+        setIsSubtitleEditMode(false);
+        setAreControlsManuallyHidden(true);
+        releaseControlsHover();
+        return;
+      }
+
+      revealPlayerChrome();
+    },
+    [
+      isDraggingSubtitle,
+      isResizingSubtitle,
+      releaseControlsHover,
+      revealPlayerChrome,
+      shouldShowPlayerChrome,
+    ],
+  );
+
   const getSubtitlePositionFromPoint = useCallback(
     (clientX: number, clientY: number): SubtitlePosition | null => {
       const bounds = containerRef.current?.getBoundingClientRect();
@@ -3072,7 +3176,7 @@ export function CustomVideoPlayer({
     }
 
     setIsSubtitleEditMode(true);
-    showControls();
+    revealPlayerChrome();
   };
 
   const handleSubtitleResizePointerDown = (
@@ -3099,7 +3203,7 @@ export function CustomVideoPlayer({
     setIsDraggingSubtitle(false);
     subtitleDragStateRef.current = null;
     lastTapRef.current = null;
-    showControls();
+    revealPlayerChrome();
   };
 
   const handleSubtitleResizePointerMove = (
@@ -3207,7 +3311,7 @@ export function CustomVideoPlayer({
     setIsResizingSubtitle(false);
     subtitleResizeStateRef.current = null;
     lastTapRef.current = null;
-    showControls();
+    revealPlayerChrome();
   };
 
   const handleSubtitlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
@@ -3301,10 +3405,14 @@ export function CustomVideoPlayer({
   return (
     <div
       ref={containerRef}
-      className="seyirlik-player-shell fixed inset-0 z-50 min-h-0 overflow-hidden bg-black text-white"
-      onMouseMove={showControls}
-      onPointerDown={showControls}
-      onPointerUp={handlePointerUp}
+      className={`seyirlik-player-shell fixed inset-0 z-50 min-h-0 overflow-hidden bg-black text-white ${
+        shouldShowPlayerChrome ? "cursor-default" : "cursor-none"
+      }`}
+      onMouseMove={revealPlayerChrome}
+      onPointerUp={(event) => {
+        handlePointerUp(event);
+        handlePlayerOverlayToggle(event);
+      }}
     >
       <video
         ref={videoRef}
@@ -3316,13 +3424,26 @@ export function CustomVideoPlayer({
         onPause={handleVideoPause}
         onTimeUpdate={handleTimeUpdate}
         onSeeked={handleVideoSeeked}
-        onWaiting={showControls}
+        onWaiting={revealPlayerChrome}
         onError={handleVideoError}
         onEnded={() => {
           const positionSeconds = updateLatestPlaybackPosition();
           onPlaybackProgress?.(positionSeconds, true);
           reportStoppedOnce(false);
         }}
+      />
+
+      <div
+        aria-hidden="true"
+        className={`seyirlik-player-gradient-top pointer-events-none absolute inset-x-0 top-0 z-[8] h-[26%] transition-opacity duration-300 ${
+          shouldShowPlayerChrome ? "opacity-100" : "opacity-0"
+        }`}
+      />
+      <div
+        aria-hidden="true"
+        className={`seyirlik-player-gradient-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[8] h-[38%] transition-opacity duration-300 ${
+          shouldShowPlayerChrome ? "opacity-100" : "opacity-0"
+        }`}
       />
 
       {fullscreenSeekPreview && fullscreenSeekPreviewRect ? (
@@ -3469,9 +3590,12 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {(progress.isBuffering || isWaitingForAudioTranscodeReady) && !error ? (
-        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center">
-          <div className="rounded-full bg-black/50 p-4 backdrop-blur">
+      {(progress.isBuffering ||
+        isWaitingForAudioTranscodeReady ||
+        fullscreenSeekPreview !== null) &&
+      !error ? (
+        <div className="pointer-events-none absolute inset-0 z-50 flex items-center justify-center">
+          <div className="rounded-full bg-black/100 p-7">
             <Loader2 className="h-10 w-10 animate-spin text-[var(--accent)]" />
           </div>
         </div>
@@ -3482,9 +3606,7 @@ export function CustomVideoPlayer({
         titleLogoUrl={titleLogoUrl}
         subtitle={subtitle}
         backTo={`/item/${item.Id}`}
-        visible={
-          areControlsVisible || !progress.isPlaying || controlsShouldStayVisible
-        }
+        visible={shouldShowPlayerChrome}
         isPlaying={progress.isPlaying}
         isPlayPausePending={
           partyWatch.isInGroup && partyWatch.isPlayPausePending
@@ -3508,9 +3630,7 @@ export function CustomVideoPlayer({
       {isPartyWatchOpen ? <PartyWatchOverlay controller={partyWatch} /> : null}
 
       <PlayerControls
-        visible={
-          areControlsVisible || !progress.isPlaying || controlsShouldStayVisible
-        }
+        visible={shouldShowPlayerChrome}
         isPlaying={progress.isPlaying}
         playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
         onControlsHoverStart={keepControlsVisible}
@@ -3533,7 +3653,7 @@ export function CustomVideoPlayer({
         onOpenSettings={() => {
           setIsSettingsOpen((current) => !current);
           setIsPartyWatchOpen(false);
-          showControls();
+          revealPlayerChrome();
         }}
         source={sourceWithLiveTranscodingReasons}
         qualityOptions={qualityOptions}
@@ -3569,9 +3689,7 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {areControlsVisible ||
-      !progress.isPlaying ||
-      controlsShouldStayVisible ? (
+      {shouldShowPlayerChrome ? (
         <div className="pointer-events-auto absolute right-[max(1rem,env(safe-area-inset-right))] top-[max(1rem,env(safe-area-inset-top))] z-40 flex flex-col items-end gap-3">
           <div className="flex items-center gap-2" data-party-watch-root>
             <button
@@ -3579,22 +3697,36 @@ export function CustomVideoPlayer({
               onClick={() => {
                 setIsPartyWatchOpen((current) => !current);
                 setIsSettingsOpen(false);
-                showControls();
+                revealPlayerChrome();
               }}
               className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
               aria-label={t("party.title")}
               title={t("party.title")}
             >
-              <Users size={18} />
+              <Users size={18} fill={partyWatch.isInGroup ? "#fff" : "none"} />
 
-              <span className="absolute right-[0.35rem] top-[0.50rem] flex h-2.5 w-2.5 items-center justify-center rounded-full bg-black">
-                <span
-                  className={`h-1.5 w-1.5 rounded-full border ${
-                    partyWatch.isInGroup
-                      ? "border-white/85 hover:border-white bg-white/85 hover:bg-white shadow-accent-dot"
-                      : "border-white/85 hover:border-white bg-transparent"
-                  }`}
-                />
+              <span
+                className="pointer-events-none absolute inset-0"
+                aria-hidden="true"
+              >
+                {partyWatch.isInGroup ? (
+                  Array.from({ length: visiblePartyWatchDotCount }).map(
+                    (_, index) => {
+                      const dotPosition =
+                        PARTY_WATCH_DOT_POSITIONS[index] ??
+                        PARTY_WATCH_DOT_POSITIONS[0];
+
+                      return (
+                        <span
+                          key={`${dotPosition}-${index}`}
+                          className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
+                        />
+                      );
+                    },
+                  )
+                ) : (
+                  <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
+                )}
               </span>
             </button>
 

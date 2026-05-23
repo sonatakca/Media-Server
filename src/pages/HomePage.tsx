@@ -268,12 +268,6 @@ export function HomePage() {
           </div>
         ) : null}
 
-        <MediaRow
-          title={t("home.latestMedia")}
-          items={data.latestMedia}
-          getItemTo={getRouteForItem}
-        />
-
         {showContinueWatchingRow ? (
           <div className="relative z-10">
             <MediaRow
@@ -284,6 +278,12 @@ export function HomePage() {
             />
           </div>
         ) : null}
+
+        <MediaRow
+          title={t("home.latestMedia")}
+          items={data.latestMedia}
+          getItemTo={getRouteForItem}
+        />
 
         <MotionReveal className="group/row relative py-6" direction="up">
           <div className="mb-4 flex items-end justify-between gap-4">

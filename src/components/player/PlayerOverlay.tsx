@@ -88,7 +88,7 @@ export function PlayerOverlay({
   return (
     <>
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black via-black/[0.52] to-transparent px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
+        className={`pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-300 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
           visible ? "translate-y-0 opacity-100" : "-translate-y-4 opacity-0"
         }`}
       >
@@ -101,10 +101,14 @@ export function PlayerOverlay({
         >
           <Link
             to={backTo}
-            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition hover:bg-white/[0.18] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-12 sm:w-12"
+            className="group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
             aria-label={t("player.backToDetails")}
           >
-            <ArrowLeft size={22} strokeWidth={2.2} />
+            <ArrowLeft
+              size={22}
+              strokeWidth={2.2}
+              className="transition-transform duration-300 translate-x-[0.5rem] group-hover:-translate-x-[0rem]"
+            />
           </Link>
 
           <div className="min-w-0 flex-1">
