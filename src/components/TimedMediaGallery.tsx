@@ -207,10 +207,10 @@ export function TimedMediaGallery({
   };
 
   const controlLabel = hasFinished
-    ? "Replay highlight gallery"
+    ? t("hero.replayHighlightGallery")
     : isPlaying
-      ? "Pause highlight gallery"
-      : "Play highlight gallery";
+      ? t("hero.pauseHighlightGallery")
+      : t("hero.playHighlightGallery");
 
   return (
     <>
@@ -571,7 +571,7 @@ export function TimedMediaGallery({
             transition={{ duration: 0.55, ease: [0.16, 1, 0.3, 1] }}
           >
             <div>
-              <p className="apple-gallery__eyebrow">Highlights</p>
+              <p className="apple-gallery__eyebrow">{t("hero.highlights")}</p>
               <h2 className="apple-gallery__title">
                 <AnimatedWidth value={title}>
                   <AnimatedText value={title} />

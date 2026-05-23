@@ -18,6 +18,8 @@ import {
   X,
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 type BoardType = "bugs" | "features";
 
@@ -32,16 +34,25 @@ interface BoardItem {
   createdAt: string;
 }
 
+interface DefaultBoardItem {
+  id: string;
+  titleKey: TranslationKey;
+  descriptionKey: TranslationKey;
+  status: BoardStatus;
+  priority: "low" | "medium" | "high";
+  createdAt: string;
+}
+
 interface BoardConfig {
   type: BoardType;
-  title: string;
-  eyebrow: string;
-  description: string;
+  titleKey: TranslationKey;
+  eyebrowKey: TranslationKey;
+  descriptionKey: TranslationKey;
   storageKey: string;
   icon: typeof Bug;
-  emptyTitle: string;
-  emptyDescription: string;
-  defaultItems: BoardItem[];
+  emptyTitleKey: TranslationKey;
+  emptyDescriptionKey: TranslationKey;
+  defaultItems: DefaultBoardItem[];
 }
 
 const nowIso = () => new Date().toISOString();
@@ -49,42 +60,38 @@ const nowIso = () => new Date().toISOString();
 const BUGS_STORAGE_KEY = "seyirlik-devtools-known-bugs";
 const FEATURES_STORAGE_KEY = "seyirlik-devtools-wanted-features";
 
-const defaultKnownBugs: BoardItem[] = [
+const defaultKnownBugs: DefaultBoardItem[] = [
   {
     id: "bug-library-missing-movies",
-    title: "Library is not getting every movie",
-    description:
-      "Some movies do not appear in the library view even though they exist in Jellyfin. Need to check whether paging, item type filters, parent IDs, or Jellyfin API query limits are causing missing results.",
+    titleKey: "devtools.defaultBug.libraryMissingMovies.title",
+    descriptionKey: "devtools.defaultBug.libraryMissingMovies.description",
     status: "open",
     priority: "high",
     createdAt: nowIso(),
   },
   {
     id: "bug-seven-no-english-audio",
-    title: "Se7en opens with no audio by default",
-    description:
-      "The movie Se7en does not have built-in English audio available in the expected way. By default it opens with no audio. Selecting another audio track causes transcoding.",
+    titleKey: "devtools.defaultBug.sevenNoEnglishAudio.title",
+    descriptionKey: "devtools.defaultBug.sevenNoEnglishAudio.description",
     status: "open",
     priority: "high",
     createdAt: nowIso(),
   },
   {
     id: "bug-transcode-pixelated",
-    title: "Transcoded video is pixelated",
-    description:
-      "Transcoded video looks pixelated even when transcoding speed is fast. The player should try the highest reasonable transcode quality first to preserve quality, then fall back lower only if the server is too slow.",
+    titleKey: "devtools.defaultBug.transcodePixelated.title",
+    descriptionKey: "devtools.defaultBug.transcodePixelated.description",
     status: "open",
     priority: "high",
     createdAt: nowIso(),
   },
 ];
 
-const defaultWantedFeatures: BoardItem[] = [
+const defaultWantedFeatures: DefaultBoardItem[] = [
   {
     id: "feature-rotating-hero-template",
-    title: "Hero template should change over time",
-    description:
-      "The hero section should not stay stable/static. It should rotate featured items or change its presentation over time to make the home page feel more alive.",
+    titleKey: "devtools.defaultFeature.rotatingHero.title",
+    descriptionKey: "devtools.defaultFeature.rotatingHero.description",
     status: "open",
     priority: "medium",
     createdAt: nowIso(),
@@ -94,60 +101,78 @@ const defaultWantedFeatures: BoardItem[] = [
 const boardConfigs: Record<BoardType, BoardConfig> = {
   bugs: {
     type: "bugs",
-    title: "Known Bugs",
-    eyebrow: "Debug Tracker",
-    description:
-      "Track broken behaviour, playback problems, library issues, and anything that needs investigation.",
+    titleKey: "devtools.bugs.title",
+    eyebrowKey: "devtools.bugs.eyebrow",
+    descriptionKey: "devtools.bugs.description",
     storageKey: BUGS_STORAGE_KEY,
     icon: Bug,
-    emptyTitle: "No bugs tracked",
-    emptyDescription: "Add the first known bug using the editor on this page.",
+    emptyTitleKey: "devtools.bugs.emptyTitle",
+    emptyDescriptionKey: "devtools.bugs.emptyDescription",
     defaultItems: defaultKnownBugs,
   },
   features: {
     type: "features",
-    title: "Wanted Features",
-    eyebrow: "Product Ideas",
-    description:
-      "Collect future ideas, UX improvements, and features you want to build into Seyirlik.",
+    titleKey: "devtools.features.title",
+    eyebrowKey: "devtools.features.eyebrow",
+    descriptionKey: "devtools.features.description",
     storageKey: FEATURES_STORAGE_KEY,
     icon: Lightbulb,
-    emptyTitle: "No wanted features yet",
-    emptyDescription:
-      "Add the first feature idea using the editor on this page.",
+    emptyTitleKey: "devtools.features.emptyTitle",
+    emptyDescriptionKey: "devtools.features.emptyDescription",
     defaultItems: defaultWantedFeatures,
   },
 };
 
-function readItems(config: BoardConfig): BoardItem[] {
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
+function materializeDefaultItems(
+  items: DefaultBoardItem[],
+  t: (key: TranslationKey) => string,
+): BoardItem[] {
+  return items.map((item) => ({
+    id: item.id,
+    title: t(item.titleKey),
+    description: t(item.descriptionKey),
+    status: item.status,
+    priority: item.priority,
+    createdAt: item.createdAt,
+  }));
+}
+
+function readItems(config: BoardConfig, defaultItems: BoardItem[]): BoardItem[] {
   try {
     const stored = localStorage.getItem(config.storageKey);
 
     if (!stored) {
-      localStorage.setItem(
-        config.storageKey,
-        JSON.stringify(config.defaultItems),
-      );
-      return config.defaultItems;
+      localStorage.setItem(config.storageKey, JSON.stringify(defaultItems));
+      return defaultItems;
     }
 
     const parsed = JSON.parse(stored);
 
     if (!Array.isArray(parsed)) {
-      return config.defaultItems;
+      return defaultItems;
     }
 
     return parsed;
   } catch {
-    return config.defaultItems;
+    return defaultItems;
   }
 }
 
-function formatDate(value: string) {
+function formatDate(value: string, t: (key: TranslationKey) => string) {
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return "Unknown date";
+    return t("devtools.unknownDate");
   }
 
   return new Intl.DateTimeFormat(undefined, {
@@ -157,10 +182,13 @@ function formatDate(value: string) {
   }).format(date);
 }
 
-function getStatusLabel(status: BoardStatus) {
-  if (status === "in-progress") return "In progress";
-  if (status === "done") return "Done";
-  return "Open";
+function getStatusLabel(
+  status: BoardStatus,
+  t: (key: TranslationKey) => string,
+) {
+  if (status === "in-progress") return t("devtools.status.inProgress");
+  if (status === "done") return t("devtools.status.done");
+  return t("devtools.status.open");
 }
 
 function getStatusClasses(status: BoardStatus) {
@@ -187,10 +215,13 @@ function getPriorityClasses(priority: BoardItem["priority"]) {
   return "border-white/10 bg-white/[0.06] text-white/62";
 }
 
-function getPriorityLabel(priority: BoardItem["priority"]) {
-  if (priority === "high") return "High";
-  if (priority === "medium") return "Medium";
-  return "Low";
+function getPriorityLabel(
+  priority: BoardItem["priority"],
+  t: (key: TranslationKey) => string,
+) {
+  if (priority === "high") return t("devtools.priority.high");
+  if (priority === "medium") return t("devtools.priority.medium");
+  return t("devtools.priority.low");
 }
 
 function createEmptyDraft(): Omit<BoardItem, "id" | "createdAt"> {
@@ -207,18 +238,30 @@ interface DevToolsBoardPageProps {
 }
 
 export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
+  const { t } = useLanguage();
   const config = boardConfigs[type];
   const Icon = config.icon;
+  const defaultItems = useMemo(
+    () => materializeDefaultItems(config.defaultItems, t),
+    [config.defaultItems, t],
+  );
+  const configTitle = t(config.titleKey);
+  const configEyebrow = t(config.eyebrowKey);
+  const configDescription = t(config.descriptionKey);
+  const configEmptyTitle = t(config.emptyTitleKey);
+  const configEmptyDescription = t(config.emptyDescriptionKey);
 
-  const [items, setItems] = useState<BoardItem[]>(() => readItems(config));
+  const [items, setItems] = useState<BoardItem[]>(() =>
+    readItems(config, defaultItems),
+  );
   const [draft, setDraft] = useState(createEmptyDraft);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
-    setPageTitle(`${config.title} · Devtools · Seyirlik`);
-  }, [config.title]);
+    setPageTitle(`${configTitle} · ${t("devtools.title")} · Seyirlik`);
+  }, [configTitle, t]);
 
   useEffect(() => {
     localStorage.setItem(config.storageKey, JSON.stringify(items));
@@ -339,11 +382,14 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
 
   const handleCopy = async (item: BoardItem) => {
     const copiedText = [
-      `${config.title}: ${item.title}`,
+      `${configTitle}: ${item.title}`,
       "",
-      `Status: ${getStatusLabel(item.status)}`,
-      `Priority: ${getPriorityLabel(item.priority)}`,
-      `Created: ${formatDate(item.createdAt)}`,
+      `${t("devtools.clipboard.status")}: ${getStatusLabel(item.status, t)}`,
+      `${t("devtools.clipboard.priority")}: ${getPriorityLabel(
+        item.priority,
+        t,
+      )}`,
+      `${t("devtools.clipboard.created")}: ${formatDate(item.createdAt, t)}`,
       "",
       item.description,
     ].join("\n");
@@ -375,7 +421,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
   };
 
   const handleResetDefaults = () => {
-    setItems(config.defaultItems);
+    setItems(defaultItems);
     resetForm();
   };
 
@@ -391,13 +437,13 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
           >
             <ArrowLeft size={16} />
-            Back to Devtools
+            {t("devtools.backToDevtools")}
           </Link>
 
           <div className="relative mt-6 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-                {config.eyebrow}
+                {configEyebrow}
               </p>
 
               <div className="mt-3 flex items-center gap-3">
@@ -407,10 +453,10 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
 
                 <div>
                   <h1 className="text-3xl font-black text-white sm:text-4xl">
-                    {config.title}
+                    {configTitle}
                   </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
-                    {config.description}
+                    {configDescription}
                   </p>
                 </div>
               </div>
@@ -420,7 +466,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.total}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Total
+                  {t("devtools.total")}
                 </p>
               </div>
 
@@ -429,7 +475,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                   {stats.open}
                 </p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-amber-100/52">
-                  Open
+                  {t("devtools.open")}
                 </p>
               </div>
 
@@ -438,7 +484,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                   {stats.inProgress}
                 </p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-sky-100/52">
-                  Doing
+                  {t("devtools.doing")}
                 </p>
               </div>
 
@@ -447,7 +493,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                   {stats.done}
                 </p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-emerald-100/52">
-                  Done
+                  {t("devtools.done")}
                 </p>
               </div>
             </div>
@@ -464,11 +510,11 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             <div>
               <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                 {editingItem ? <Pencil size={15} /> : <Plus size={15} />}
-                {editingItem ? "Edit item" : "Create item"}
+                {editingItem ? t("devtools.editItem") : t("devtools.createItem")}
               </p>
 
               <h2 className="mt-2 text-xl font-black text-white">
-                {editingItem ? editingItem.title : "Add new entry"}
+                {editingItem ? editingItem.title : t("devtools.addNewEntry")}
               </h2>
             </div>
 
@@ -477,7 +523,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 type="button"
                 onClick={resetForm}
                 className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:bg-white/10 hover:text-white"
-                aria-label="Cancel editing"
+                aria-label={t("devtools.cancelEditing")}
               >
                 <X size={18} />
               </button>
@@ -486,7 +532,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
 
           <label className="mt-5 block">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-              Title
+              {t("common.title")}
             </span>
             <input
               value={draft.title}
@@ -498,8 +544,8 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
               }
               placeholder={
                 type === "bugs"
-                  ? "Example: Audio selection causes transcode"
-                  : "Example: Add animated hero variants"
+                  ? t("devtools.titlePlaceholder.bugs")
+                  : t("devtools.titlePlaceholder.features")
               }
               className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
             />
@@ -507,7 +553,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
 
           <label className="mt-4 block">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-              Description
+              {t("common.description")}
             </span>
             <textarea
               value={draft.description}
@@ -517,7 +563,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                   description: event.target.value,
                 }))
               }
-              placeholder="Write what is happening, why it matters, and what should be checked."
+              placeholder={t("devtools.descriptionPlaceholder")}
               rows={7}
               className="mt-2 w-full resize-none rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold leading-6 text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
             />
@@ -526,7 +572,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                Status
+                {t("common.status")}
               </span>
               <select
                 value={draft.status}
@@ -538,15 +584,17 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 }
                 className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"
               >
-                <option value="open">Open</option>
-                <option value="in-progress">In progress</option>
-                <option value="done">Done</option>
+                <option value="open">{t("devtools.status.open")}</option>
+                <option value="in-progress">
+                  {t("devtools.status.inProgress")}
+                </option>
+                <option value="done">{t("devtools.status.done")}</option>
               </select>
             </label>
 
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                Priority
+                {t("common.priority")}
               </span>
               <select
                 value={draft.priority}
@@ -558,9 +606,9 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                 }
                 className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"
               >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
+                <option value="low">{t("devtools.priority.low")}</option>
+                <option value="medium">{t("devtools.priority.medium")}</option>
+                <option value="high">{t("devtools.priority.high")}</option>
               </select>
             </label>
           </div>
@@ -571,7 +619,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
               className="inline-flex min-h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)]"
             >
               {editingItem ? <Save size={17} /> : <Plus size={17} />}
-              {editingItem ? "Save changes" : "Add item"}
+              {editingItem ? t("devtools.saveChanges") : t("devtools.addItem")}
             </button>
 
             <button
@@ -580,7 +628,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/72 transition hover:bg-white/10 hover:text-white"
             >
               <Sparkles size={17} />
-              Reset defaults
+              {t("devtools.resetDefaults")}
             </button>
           </div>
         </form>
@@ -590,22 +638,28 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             <div>
               <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                 <ClipboardList size={15} />
-                Current list
+                {t("devtools.currentList")}
               </p>
               <h2 className="mt-2 text-xl font-black text-white">
-                {visibleItems.length} visible item
-                {visibleItems.length === 1 ? "" : "s"}
+                {formatTemplate(
+                  t(
+                    visibleItems.length === 1
+                      ? "devtools.visibleItemSingular"
+                      : "devtools.visibleItemPlural",
+                  ),
+                  { count: visibleItems.length },
+                )}
               </h2>
             </div>
 
             <label className="w-full sm:max-w-xs">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                Search
+                {t("common.search")}
               </span>
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search title, text, status..."
+                placeholder={t("devtools.searchPlaceholder")}
                 className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
               />
             </label>
@@ -633,7 +687,7 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                           ) : (
                             <CircleAlert size={13} />
                           )}
-                          {getStatusLabel(item.status)}
+                          {getStatusLabel(item.status, t)}
                         </span>
 
                         <span
@@ -641,12 +695,14 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                             item.priority,
                           )}`}
                         >
-                          {getPriorityLabel(item.priority)} priority
+                          {formatTemplate(t("devtools.priorityLabel"), {
+                            priority: getPriorityLabel(item.priority, t),
+                          })}
                         </span>
 
                         <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-xs font-bold text-white/42">
                           <CalendarDays size={13} />
-                          {formatDate(item.createdAt)}
+                          {formatDate(item.createdAt, t)}
                         </span>
                       </div>
 
@@ -664,8 +720,14 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                         type="button"
                         onClick={() => handleCopy(item)}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-emerald-400/35 hover:bg-emerald-400/10 hover:text-emerald-200"
-                        aria-label={`Copy ${item.title}`}
-                        title={copiedId === item.id ? "Copied" : "Copy"}
+                        aria-label={formatTemplate(t("devtools.copyItem"), {
+                          title: item.title,
+                        })}
+                        title={
+                          copiedId === item.id
+                            ? t("common.copied")
+                            : t("common.copy")
+                        }
                       >
                         {copiedId === item.id ? (
                           <Check size={17} />
@@ -678,8 +740,10 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                         type="button"
                         onClick={() => handleEdit(item)}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                        aria-label={`Edit ${item.title}`}
-                        title="Edit"
+                        aria-label={formatTemplate(t("devtools.editItemTitle"), {
+                          title: item.title,
+                        })}
+                        title={t("common.edit")}
                       >
                         <Pencil size={17} />
                       </button>
@@ -688,8 +752,11 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                         type="button"
                         onClick={() => handleDelete(item.id)}
                         className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-red-400/35 hover:bg-red-400/10 hover:text-red-200"
-                        aria-label={`Delete ${item.title}`}
-                        title="Delete"
+                        aria-label={formatTemplate(
+                          t("devtools.deleteItemTitle"),
+                          { title: item.title },
+                        )}
+                        title={t("common.delete")}
                       >
                         <Trash2 size={17} />
                       </button>
@@ -705,12 +772,12 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
               </div>
 
               <h3 className="mt-4 text-lg font-black text-white">
-                {config.emptyTitle}
+                {configEmptyTitle}
               </h3>
               <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
                 {search.trim()
-                  ? "No item matched your search."
-                  : config.emptyDescription}
+                  ? t("devtools.noSearchMatch")
+                  : configEmptyDescription}
               </p>
             </div>
           )}

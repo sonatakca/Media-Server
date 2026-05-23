@@ -15,6 +15,7 @@ import {
   getStreamOfType,
   getSubtitleStreams,
 } from "../../lib/playbackDiagnostics";
+import type { TranslationKey } from "../../i18n/translations";
 
 interface PlaybackInfoPanelProps {
   source: PlaybackSourceCandidate;
@@ -49,67 +50,66 @@ function Chip({ children }: { children: string }) {
   );
 }
 
-function getUrlType(source: PlaybackSourceCandidate): string {
+type Translate = (key: TranslationKey) => string;
+
+function getUrlType(source: PlaybackSourceCandidate, t: Translate): string {
   const url = source.url.toLowerCase();
 
   if (source.hlsKind === "direct" || url.includes("/stream.")) {
-    return "Direct stream URL";
+    return t("playback.urlType.directStreamUrl");
   }
 
   if (url.includes("/master.m3u8") && source.hlsKind === "audio-transcode") {
-    return "master.m3u8 audio-transcode";
+    return t("playback.urlType.masterAudioTranscode");
   }
 
   if (url.includes("/master.m3u8") && source.hlsKind === "stream-copy") {
-    return "master.m3u8 stream-copy";
+    return t("playback.urlType.masterStreamCopy");
   }
 
-  if (url.includes("/master.m3u8")) return "master.m3u8 HLS";
-  if (url.includes("/main.m3u8")) return "main.m3u8 forced transcode";
+  if (url.includes("/master.m3u8")) return t("playback.urlType.masterHls");
+  if (url.includes("/main.m3u8"))
+    return t("playback.urlType.mainForcedTranscode");
   if (source.hlsKind === "jellyfin-transcoding-url") {
-    return "Jellyfin returned TranscodingUrl";
+    return t("playback.urlType.jellyfinTranscodingUrl");
   }
 
-  return "Unknown";
+  return t("common.unknown");
 }
 
 function getOutputVideoLabel(
   source: PlaybackSourceCandidate,
-  t: unknown,
+  t: Translate,
 ): string {
-  void t;
-
   if (source.hlsKind === "forced-transcode") {
     return "H.264";
   }
 
   if (source.hlsKind === "audio-transcode") {
-    return "Stream copy / original codec";
+    return t("playback.output.streamCopyOriginal");
   }
 
   if (source.hlsKind === "jellyfin-transcoding-url") {
-    return "Jellyfin returned transcoding URL; output depends on server decision";
+    return t("playback.output.jellyfinDecision");
   }
 
   if (source.hlsKind === "stream-copy") {
-    return "Stream copy / original codec";
+    return t("playback.output.streamCopyOriginal");
   }
 
   if (source.hlsKind === "direct") {
-    return "Direct / original codec";
+    return t("playback.output.directOriginal");
   }
 
   return source.mode === "Transcoding"
-    ? "Jellyfin transcoding output"
-    : "Original codec";
+    ? t("playback.output.jellyfinTranscoding")
+    : t("playback.output.originalCodec");
 }
 
 function getOutputAudioLabel(
   source: PlaybackSourceCandidate,
-  t: unknown,
+  t: Translate,
 ): string {
-  void t;
-
   if (source.hlsKind === "forced-transcode") {
     return "AAC";
   }
@@ -119,20 +119,20 @@ function getOutputAudioLabel(
   }
 
   if (source.hlsKind === "jellyfin-transcoding-url") {
-    return "Jellyfin returned transcoding URL; output depends on server decision";
+    return t("playback.output.jellyfinDecision");
   }
 
   if (source.hlsKind === "stream-copy") {
-    return "Stream copy / original codec";
+    return t("playback.output.streamCopyOriginal");
   }
 
   if (source.hlsKind === "direct") {
-    return "Direct / original codec";
+    return t("playback.output.directOriginal");
   }
 
   return source.mode === "Transcoding"
-    ? "Jellyfin transcoding output"
-    : "Original codec";
+    ? t("playback.output.jellyfinTranscoding")
+    : t("playback.output.originalCodec");
 }
 
 export function PlaybackInfoPanel({
@@ -265,17 +265,17 @@ export function PlaybackInfoPanel({
                 unknownLabel={unknownLabel}
               />
               <InfoRow
-                label="HLS kind"
-                value={source.hlsKind ?? "N/A"}
+                label={t("playback.hlsKind")}
+                value={source.hlsKind ?? t("playback.notApplicable")}
                 unknownLabel={unknownLabel}
               />
               <InfoRow
-                label="URL type"
-                value={getUrlType(source)}
+                label={t("playback.urlType")}
+                value={getUrlType(source, t)}
                 unknownLabel={unknownLabel}
               />
               <InfoRow
-                label="Selection reason"
+                label={t("playback.selectionReason")}
                 value={source.reason}
                 unknownLabel={unknownLabel}
               />
@@ -408,7 +408,7 @@ export function PlaybackInfoPanel({
                     {[
                       subtitle.Codec,
                       subtitle.Language,
-                      subtitle.IsExternal ? "External" : undefined,
+                      subtitle.IsExternal ? t("stream.external") : undefined,
                     ]
                       .filter(Boolean)
                       .join(" · ")}

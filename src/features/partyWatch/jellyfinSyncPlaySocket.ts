@@ -59,8 +59,8 @@ export function connectJellyfinSyncPlaySocket({
   onError,
 }: JellyfinSyncPlaySocketOptions): JellyfinSyncPlaySocketConnection {
   let socket: WebSocket | null = null;
-  let reconnectTimeout: ReturnType<typeof window.setTimeout> | null = null;
-  let keepAliveTimeout: ReturnType<typeof window.setTimeout> | null = null;
+  let reconnectTimeout: number | null = null;
+  let keepAliveTimeout: number | null = null;
   let reconnectAttempts = 0;
   let isClosed = false;
 

@@ -21,6 +21,8 @@ import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 type ContentFilter =
   | "all"
@@ -32,6 +34,18 @@ type ContentFilter =
   | "folder"
   | "other";
 
+type Translate = (key: TranslationKey) => string;
+
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
 function getContentBucket(item: JellyfinItem): ContentFilter {
   if (item.Type === "Movie") return "movie";
   if (item.Type === "Series") return "series";
@@ -42,11 +56,22 @@ function getContentBucket(item: JellyfinItem): ContentFilter {
   return "other";
 }
 
-function getContentTypeLabel(item: JellyfinItem): string {
-  if (item.CollectionType) return `Library · ${item.CollectionType}`;
+function getContentTypeLabel(item: JellyfinItem, t: Translate): string {
+  if (item.CollectionType) {
+    return formatTemplate(t("content.libraryType"), {
+      type: item.CollectionType,
+    });
+  }
+
+  if (item.Type === "Movie") return t("common.movie");
+  if (item.Type === "Series") return t("common.series");
+  if (item.Type === "Season") return t("common.season");
+  if (item.Type === "Episode") return t("common.episode");
+  if (item.Type === "Folder") return t("common.folder");
   if (item.Type) return item.Type;
+  if (item.MediaType === "Video") return t("common.video");
   if (item.MediaType) return item.MediaType;
-  return "Unknown";
+  return t("common.unknown");
 }
 
 function getContentIcon(item: JellyfinItem) {
@@ -299,6 +324,7 @@ function buildAiFriendlyJson(items: JellyfinItem[]) {
 }
 
 export function ContentExplorerPage() {
+  const { t } = useLanguage();
   const [items, setItems] = useState<JellyfinItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -306,8 +332,8 @@ export function ContentExplorerPage() {
   const [activeFilter, setActiveFilter] = useState<ContentFilter>("all");
 
   useEffect(() => {
-    setPageTitle("Content Explorer · Devtools · Seyirlik");
-  }, []);
+    setPageTitle(`${t("content.title")} · ${t("devtools.title")} · Seyirlik`);
+  }, [t]);
 
   useEffect(() => {
     let isMounted = true;
@@ -327,7 +353,7 @@ export function ContentExplorerPage() {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Could not load content items.",
+              : t("content.loadFailed"),
           );
         }
       } finally {
@@ -419,20 +445,18 @@ export function ContentExplorerPage() {
   };
 
   const filterOptions: Array<{ id: ContentFilter; label: string }> = [
-    { id: "all", label: "All" },
-    { id: "movie", label: "Movies" },
-    { id: "series", label: "Series" },
-    { id: "season", label: "Seasons" },
-    { id: "episode", label: "Episodes" },
-    { id: "video", label: "Other videos" },
-    { id: "folder", label: "Folders / libraries" },
-    { id: "other", label: "Other" },
+    { id: "all", label: t("common.all") },
+    { id: "movie", label: t("common.movies") },
+    { id: "series", label: t("common.series") },
+    { id: "season", label: t("common.seasons") },
+    { id: "episode", label: t("common.episodes") },
+    { id: "video", label: t("content.filter.otherVideos") },
+    { id: "folder", label: t("content.filter.foldersLibraries") },
+    { id: "other", label: t("common.other") },
   ];
 
   if (error) {
-    return (
-      <ErrorMessage title="Content Explorer unavailable" message={error} />
-    );
+    return <ErrorMessage title={t("content.unavailable")} message={error} />;
   }
 
   return (
@@ -447,13 +471,13 @@ export function ContentExplorerPage() {
             className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
           >
             <ArrowLeft size={16} />
-            Back to Devtools
+            {t("devtools.backToDevtools")}
           </Link>
 
           <div className="relative mt-6 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-                Jellyfin Inventory
+                {t("content.eyebrow")}
               </p>
 
               <div className="mt-3 flex items-center gap-3">
@@ -463,12 +487,10 @@ export function ContentExplorerPage() {
 
                 <div>
                   <h1 className="text-3xl font-black text-white sm:text-4xl">
-                    Content Explorer
+                    {t("content.title")}
                   </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
-                    Lists every item Jellyfin returns for this user, including
-                    movies, series, seasons, episodes, folders, libraries, and
-                    unknown item types.
+                    {t("content.description")}
                   </p>
                 </div>
               </div>
@@ -478,28 +500,28 @@ export function ContentExplorerPage() {
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.total}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Total
+                  {t("common.total")}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.movies}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Movies
+                  {t("common.movies")}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.series}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Series
+                  {t("common.series")}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.seasons}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Seasons
+                  {t("common.seasons")}
                 </p>
               </div>
 
@@ -508,14 +530,14 @@ export function ContentExplorerPage() {
                   {stats.episodes}
                 </p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Episodes
+                  {t("common.episodes")}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/[0.06] px-3 py-2 text-center">
                 <p className="text-lg font-black text-white">{stats.videos}</p>
                 <p className="text-[0.68rem] font-bold uppercase tracking-wide text-white/42">
-                  Videos
+                  {t("common.videos")}
                 </p>
               </div>
             </div>
@@ -527,7 +549,7 @@ export function ContentExplorerPage() {
         <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-end">
           <label className="relative">
             <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-              Search content
+              {t("content.searchContent")}
             </span>
 
             <Search
@@ -539,7 +561,7 @@ export function ContentExplorerPage() {
               type="search"
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search title, type, series, year, or item ID..."
+              placeholder={t("content.searchPlaceholder")}
               className="mt-2 min-h-12 w-full rounded-2xl border border-white/10 bg-white/[0.06] py-3 pl-11 pr-4 text-sm font-semibold text-white outline-none transition placeholder:text-white/28 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
             />
           </label>
@@ -568,7 +590,7 @@ export function ContentExplorerPage() {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-4 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-45"
             >
               <FileJson size={17} />
-              Export JSON
+              {t("content.exportJson")}
             </button>
 
             <button
@@ -578,37 +600,51 @@ export function ContentExplorerPage() {
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-black text-white/72 transition hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
             >
               <FileSpreadsheet size={17} />
-              Export CSV
+              {t("content.exportCsv")}
             </button>
 
             <div className="flex min-h-11 items-center gap-2 rounded-2xl border border-white/10 bg-black/25 px-4 py-3 text-xs font-bold leading-5 text-white/42">
               <Download size={15} />
-              Exports current search/filter only · {filteredItems.length} item
-              {filteredItems.length === 1 ? "" : "s"}
+              {formatTemplate(
+                t(
+                  filteredItems.length === 1
+                    ? "content.exportSummarySingular"
+                    : "content.exportSummaryPlural",
+                ),
+                { count: filteredItems.length },
+              )}
             </div>
           </div>
         </div>
 
         {isLoading ? (
-          <LoadingSpinner label="Loading all content..." />
+          <LoadingSpinner label={t("content.loadingAll")} />
         ) : filteredItems.length > 0 ? (
           <div className="mt-5 overflow-hidden rounded-3xl border border-white/10">
             <div className="max-h-[68vh] overflow-auto">
               <table className="w-full min-w-[980px] border-separate border-spacing-0 text-left">
                 <thead className="sticky top-0 z-10 bg-zinc-950/95 backdrop-blur-xl">
                   <tr className="text-xs font-black uppercase tracking-[0.14em] text-white/42">
-                    <th className="border-b border-white/10 px-4 py-3">Item</th>
-                    <th className="border-b border-white/10 px-4 py-3">Type</th>
-                    <th className="border-b border-white/10 px-4 py-3">Year</th>
                     <th className="border-b border-white/10 px-4 py-3">
-                      Runtime
+                      {t("content.table.item")}
                     </th>
                     <th className="border-b border-white/10 px-4 py-3">
-                      Parent
+                      {t("common.type")}
                     </th>
-                    <th className="border-b border-white/10 px-4 py-3">ID</th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      {t("common.year")}
+                    </th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      {t("common.runtime")}
+                    </th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      {t("content.table.parent")}
+                    </th>
+                    <th className="border-b border-white/10 px-4 py-3">
+                      {t("content.table.id")}
+                    </th>
                     <th className="border-b border-white/10 px-4 py-3 text-right">
-                      Actions
+                      {t("common.actions")}
                     </th>
                   </tr>
                 </thead>
@@ -653,7 +689,7 @@ export function ContentExplorerPage() {
                               </Link>
 
                               <p className="mt-1 max-w-md truncate text-xs font-semibold text-white/42">
-                                {subtitle ?? item.Overview ?? "No subtitle"}
+                                {subtitle ?? item.Overview ?? t("content.noSubtitle")}
                               </p>
                             </div>
                           </div>
@@ -661,7 +697,7 @@ export function ContentExplorerPage() {
 
                         <td className="border-b border-white/10 px-4 py-3">
                           <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black text-white/62">
-                            {getContentTypeLabel(item)}
+                            {getContentTypeLabel(item, t)}
                           </span>
                         </td>
 
@@ -687,7 +723,7 @@ export function ContentExplorerPage() {
                             type="button"
                             onClick={() => copyText(item.Id)}
                             className="max-w-[11rem] truncate rounded-lg border border-white/10 bg-black/25 px-2 py-1 font-mono text-xs text-white/42 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                            title="Copy item ID"
+                            title={t("content.copyItemId")}
                           >
                             {item.Id}
                           </button>
@@ -701,7 +737,7 @@ export function ContentExplorerPage() {
                                 copyText(JSON.stringify(item, null, 2))
                               }
                               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-emerald-400/35 hover:text-emerald-200"
-                              title="Copy raw JSON"
+                              title={t("content.copyRawJson")}
                             >
                               <Copy size={16} />
                             </button>
@@ -709,7 +745,7 @@ export function ContentExplorerPage() {
                             <Link
                               to={detailsRoute}
                               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                              title="Open details"
+                              title={t("content.openDetails")}
                             >
                               <ExternalLink size={16} />
                             </Link>
@@ -719,7 +755,7 @@ export function ContentExplorerPage() {
                                 to={watchRoute}
                                 className="inline-flex h-9 items-center justify-center rounded-full bg-[var(--accent)] px-3 text-xs font-black text-black transition hover:bg-[var(--accent-hover)]"
                               >
-                                Play
+                                {t("common.play")}
                               </Link>
                             ) : null}
                           </div>
@@ -738,10 +774,10 @@ export function ContentExplorerPage() {
             </div>
 
             <h3 className="mt-4 text-lg font-black text-white">
-              No content matched
+              {t("content.noContentMatched")}
             </h3>
             <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
-              Try clearing the search or switching the filter back to All.
+              {t("content.noContentHint")}
             </p>
           </div>
         )}

@@ -1,5 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
-import { Download, Play, RefreshCw, Search, ShieldCheck } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CircleHelp,
+  Cpu,
+  Download,
+  GitBranch,
+  Play,
+  RefreshCw,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import {
   buildPlaybackCandidates,
   getActiveTranscodingReasons,
@@ -25,6 +34,7 @@ import type {
   PlaybackSourceCandidate,
 } from "../lib/types";
 import { setPageTitle } from "../lib/pageTitle";
+import type { TranslationKey } from "../i18n/translations";
 
 interface PlaybackAuditRow {
   itemId: string;
@@ -50,6 +60,7 @@ interface PlaybackAuditRow {
 }
 
 type AuditStatus = "idle" | "loading-items" | "running" | "done" | "failed";
+type Translate = (key: TranslationKey) => string;
 
 const PLAYBACK_AUDIT_STORAGE_KEY = "seyirlik.playbackAudit.history.v1";
 
@@ -58,6 +69,16 @@ interface StoredPlaybackAuditHistory {
   savedAt: string;
   totalItems: number;
   processedItems: number;
+}
+
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
 }
 
 function readStoredPlaybackAuditHistory(): StoredPlaybackAuditHistory | null {
@@ -142,25 +163,26 @@ function getBestSource(
   itemId: string,
   source: PlaybackSourceCandidate | null,
   transcodingReasons: string[] = [],
+  t: Translate,
 ): PlaybackAuditRow {
   if (!source) {
     return {
       itemId,
-      name: "Unknown",
-      type: "Unknown",
+      name: t("common.unknown"),
+      type: t("common.unknown"),
       selectedMode: "Unknown",
-      container: "Unknown",
-      videoCodec: "Unknown",
-      audioCodec: "Unknown",
-      audioChannels: "Unknown",
-      resolution: "Unknown",
-      range: "Unknown",
-      bitrate: "Unknown",
-      size: "Unknown",
-      subtitleSummary: "Unknown",
-      reasons: ["No playback source candidate was returned."],
+      container: t("common.unknown"),
+      videoCodec: t("common.unknown"),
+      audioCodec: t("common.unknown"),
+      audioChannels: t("common.unknown"),
+      resolution: t("common.unknown"),
+      range: t("common.unknown"),
+      bitrate: t("common.unknown"),
+      size: t("common.unknown"),
+      subtitleSummary: t("common.unknown"),
+      reasons: [t("audit.noPlaybackSource")],
       rawTranscodingReasons: [],
-      sourceReason: "No candidate",
+      sourceReason: t("audit.noCandidate"),
     };
   }
 
@@ -193,17 +215,22 @@ function getBestSource(
     name: mediaSource.Name || itemId,
     type: "Video",
     selectedMode: source.mode,
-    container: mediaSource.Container || "Unknown",
-    videoCodec: video?.Codec || "Unknown",
-    audioCodec: audio?.Codec || "Unknown",
-    audioChannels: audio?.Channels ? `${audio.Channels} ch` : "Unknown",
+    container: mediaSource.Container || t("common.unknown"),
+    videoCodec: video?.Codec || t("common.unknown"),
+    audioCodec: audio?.Codec || t("common.unknown"),
+    audioChannels: audio?.Channels
+      ? t("details.audioChannelsShort").replace(
+          "{count}",
+          String(audio.Channels),
+        )
+      : t("common.unknown"),
     resolution:
       video?.Width && video?.Height
         ? `${video.Width}x${video.Height}`
-        : "Unknown",
-    range: video?.VideoRange || video?.VideoRangeType || "Unknown",
-    bitrate: formatBitrate(mediaSource.Bitrate),
-    size: formatBytes(mediaSource.Size),
+        : t("common.unknown"),
+    range: video?.VideoRange || video?.VideoRangeType || t("common.unknown"),
+    bitrate: formatBitrate(mediaSource.Bitrate, t("common.unknown")),
+    size: formatBytes(mediaSource.Size, t("common.unknown")),
     subtitleSummary:
       subtitles.length > 0
         ? subtitles
@@ -211,15 +238,15 @@ function getBestSource(
               [
                 subtitle.Codec,
                 subtitle.Language,
-                subtitle.IsExternal ? "External" : undefined,
+                subtitle.IsExternal ? t("stream.external") : undefined,
               ]
                 .filter(Boolean)
                 .join(" · "),
             )
             .join(" | ")
-        : "None",
+        : t("common.none"),
     reasons: finalRawReasons.map((reason) =>
-      getReadableTranscodeReason(reason),
+      getReadableTranscodeReason(reason, t),
     ),
     rawTranscodingReasons: finalRawReasons,
     sourceReason: isTranscoding ? source.reason : "",
@@ -443,6 +470,29 @@ async function probeTranscodingReasons(
   }
 }
 
+function getPlaybackModeIcon(mode: PlaybackMode) {
+  if (mode === "DirectPlay") {
+    return <ShieldCheck size={13} />;
+  }
+
+  if (mode === "DirectStream") {
+    return <GitBranch size={13} />;
+  }
+
+  if (mode === "Transcoding") {
+    return <Cpu size={13} />;
+  }
+
+  return <CircleHelp size={13} />;
+}
+
+function isScrolledNearBottom(element: HTMLElement, thresholdPx = 24): boolean {
+  return (
+    element.scrollHeight - element.scrollTop - element.clientHeight <=
+    thresholdPx
+  );
+}
+
 export function PlaybackAuditPage() {
   const { t } = useLanguage();
   const storedHistory = useMemo(readStoredPlaybackAuditHistory, []);
@@ -465,10 +515,12 @@ export function PlaybackAuditPage() {
   const [query, setQuery] = useState("");
   const [modeFilter, setModeFilter] = useState<"all" | PlaybackMode>("all");
   const [skipTranscodeReasonWait, setSkipTranscodeReasonWait] = useState(true);
+  const tableScrollRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowTableBottomRef = useRef(true);
 
   useEffect(() => {
-    setPageTitle("Playback Audit · Seyirlik");
-  }, []);
+    setPageTitle(`${t("audit.title")} · Seyirlik`);
+  }, [t]);
 
   const summary = useMemo(() => {
     return rows.reduce(
@@ -518,8 +570,29 @@ export function PlaybackAuditPage() {
       return matchesQuery && matchesMode;
     });
   }, [modeFilter, query, rows]);
+  const previousFilteredRowCountRef = useRef(filteredRows.length);
+
+  useEffect(() => {
+    const scrollElement = tableScrollRef.current;
+
+    if (!scrollElement) {
+      previousFilteredRowCountRef.current = filteredRows.length;
+      return;
+    }
+
+    const previousCount = previousFilteredRowCountRef.current;
+    const rowWasAdded = filteredRows.length > previousCount;
+
+    if (rowWasAdded && shouldFollowTableBottomRef.current) {
+      scrollElement.scrollTop = scrollElement.scrollHeight;
+    }
+
+    previousFilteredRowCountRef.current = filteredRows.length;
+  }, [filteredRows.length]);
 
   const runAudit = async () => {
+    shouldFollowTableBottomRef.current = true;
+
     setStatus("loading-items");
     setRows([]);
     setTotalItems(0);
@@ -547,7 +620,7 @@ export function PlaybackAuditPage() {
               : [];
 
           const row = enrichRowWithItem(
-            getBestSource(item.Id, selectedSource, activeReasons),
+            getBestSource(item.Id, selectedSource, activeReasons, t),
             item,
           );
 
@@ -561,18 +634,18 @@ export function PlaybackAuditPage() {
             seriesName: item.SeriesName,
             seasonName: item.SeasonName,
             selectedMode: "Unknown",
-            container: "Unknown",
-            videoCodec: "Unknown",
-            audioCodec: "Unknown",
-            audioChannels: "Unknown",
-            resolution: "Unknown",
-            range: "Unknown",
-            bitrate: "Unknown",
-            size: "Unknown",
-            subtitleSummary: "Unknown",
+            container: t("common.unknown"),
+            videoCodec: t("common.unknown"),
+            audioCodec: t("common.unknown"),
+            audioChannels: t("common.unknown"),
+            resolution: t("common.unknown"),
+            range: t("common.unknown"),
+            bitrate: t("common.unknown"),
+            size: t("common.unknown"),
+            subtitleSummary: t("common.unknown"),
             reasons: [],
             rawTranscodingReasons: [],
-            sourceReason: "PlaybackInfo request failed.",
+            sourceReason: t("audit.playbackInfoFailed"),
             error:
               auditError instanceof Error
                 ? auditError.message
@@ -616,20 +689,19 @@ export function PlaybackAuditPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-              Devtool
+              {t("audit.eyebrow")}
             </p>
             <h1 className="mt-2 text-3xl font-black text-white sm:text-4xl">
-              Playback Audit
+              {t("audit.title")}
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-white/62">
-              Scans Jellyfin video items with PlaybackInfo and documents the
-              selected mode and source media. Fast scan only marks whether an
-              item transcodes; turning Fast scan off waits for detailed
-              transcoding reasons.
+              {t("audit.description")}
             </p>
             {savedAtLabel ? (
               <p className="mt-2 text-xs font-semibold text-white/42">
-                Last saved scan: {savedAtLabel}
+                {formatTemplate(t("audit.lastSavedScan"), {
+                  date: savedAtLabel,
+                })}
               </p>
             ) : null}
           </div>
@@ -645,7 +717,7 @@ export function PlaybackAuditPage() {
                 disabled={isRunning}
                 className="h-4 w-4 accent-[var(--accent)]"
               />
-              Fast scan
+              {t("audit.fastScan")}
             </label>
 
             <button
@@ -660,10 +732,10 @@ export function PlaybackAuditPage() {
                 <Play size={17} fill="currentColor" />
               )}
               {isRunning
-                ? "Auditing..."
+                ? t("audit.auditing")
                 : rows.length > 0
-                  ? "Run again"
-                  : "Start audit"}
+                  ? t("audit.runAgain")
+                  : t("audit.startAudit")}
             </button>
 
             {rows.length > 0 && !isRunning ? (
@@ -672,7 +744,7 @@ export function PlaybackAuditPage() {
                 onClick={clearHistory}
                 className="inline-flex min-h-11 items-center justify-center rounded-full border border-white/10 bg-white/10 px-5 text-sm font-black text-white/78 transition hover:bg-white/15"
               >
-                Clear history
+                {t("audit.clearHistory")}
               </button>
             ) : null}
           </div>
@@ -681,7 +753,7 @@ export function PlaybackAuditPage() {
         <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-6">
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">
-              Total
+              {t("common.total")}
             </p>
             <p className="mt-1 text-2xl font-black text-white">
               {summary.total}
@@ -689,7 +761,7 @@ export function PlaybackAuditPage() {
           </div>
           <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-emerald-100/62">
-              Direct Play
+              {t("playback.mode.directPlay")}
             </p>
             <p className="mt-1 text-2xl font-black text-emerald-50">
               {summary.directPlay}
@@ -697,7 +769,7 @@ export function PlaybackAuditPage() {
           </div>
           <div className="rounded-2xl border border-sky-300/20 bg-sky-300/10 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-100/62">
-              Direct Stream
+              {t("playback.mode.directStream")}
             </p>
             <p className="mt-1 text-2xl font-black text-sky-50">
               {summary.directStream}
@@ -705,7 +777,7 @@ export function PlaybackAuditPage() {
           </div>
           <div className="rounded-2xl border border-amber-300/25 bg-amber-300/10 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-amber-100/62">
-              Transcoding
+              {t("playback.mode.transcoding")}
             </p>
             <p className="mt-1 text-2xl font-black text-amber-50">
               {summary.transcoding}
@@ -713,7 +785,7 @@ export function PlaybackAuditPage() {
           </div>
           <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/42">
-              Unknown
+              {t("common.unknown")}
             </p>
             <p className="mt-1 text-2xl font-black text-white">
               {summary.unknown}
@@ -721,7 +793,7 @@ export function PlaybackAuditPage() {
           </div>
           <div className="rounded-2xl border border-red-300/20 bg-red-300/10 p-4">
             <p className="text-xs font-bold uppercase tracking-[0.16em] text-red-100/62">
-              Errors
+              {t("common.errors")}
             </p>
             <p className="mt-1 text-2xl font-black text-red-50">
               {summary.errors}
@@ -734,8 +806,15 @@ export function PlaybackAuditPage() {
             <div className="flex items-center justify-between gap-4 text-sm font-bold text-white/72">
               <span>
                 {status === "loading-items"
-                  ? "Loading video items..."
-                  : `Processed ${processedItems} / ${totalItems}${skipTranscodeReasonWait ? " · fast scan" : " · waiting for reasons"}`}
+                  ? t("audit.loadingVideoItems")
+                  : formatTemplate(
+                      t(
+                        skipTranscodeReasonWait
+                          ? "audit.processedFastScan"
+                          : "audit.processedWaitingReasons",
+                      ),
+                      { processed: processedItems, total: totalItems },
+                    )}
               </span>
               <span>
                 {totalItems > 0
@@ -776,7 +855,7 @@ export function PlaybackAuditPage() {
                 <input
                   value={query}
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search title, codec, container, reason..."
+                  placeholder={t("audit.searchPlaceholder")}
                   className="min-h-11 w-full rounded-2xl border border-white/10 bg-black/35 py-2 pl-11 pr-4 text-sm font-semibold text-white outline-none placeholder:text-white/35 focus:border-[var(--accent)]"
                 />
               </label>
@@ -788,11 +867,17 @@ export function PlaybackAuditPage() {
                 }
                 className="min-h-11 rounded-2xl border border-white/10 bg-black/35 px-4 text-sm font-bold text-white outline-none focus:border-[var(--accent)]"
               >
-                <option value="all">All modes</option>
-                <option value="DirectPlay">Direct Play</option>
-                <option value="DirectStream">Direct Stream</option>
-                <option value="Transcoding">Transcoding</option>
-                <option value="Unknown">Unknown</option>
+                <option value="all">{t("audit.allModes")}</option>
+                <option value="DirectPlay">
+                  {t("playback.mode.directPlay")}
+                </option>
+                <option value="DirectStream">
+                  {t("playback.mode.directStream")}
+                </option>
+                <option value="Transcoding">
+                  {t("playback.mode.transcoding")}
+                </option>
+                <option value="Unknown">{t("common.unknown")}</option>
               </select>
             </div>
 
@@ -830,18 +915,26 @@ export function PlaybackAuditPage() {
           </div>
 
           <div className="mt-4 overflow-hidden rounded-2xl border border-white/10">
-            <div className="max-h-[70vh] overflow-auto">
+            <div
+              ref={tableScrollRef}
+              onScroll={(event) => {
+                shouldFollowTableBottomRef.current = isScrolledNearBottom(
+                  event.currentTarget,
+                );
+              }}
+              className="max-h-[70vh] overflow-auto"
+            >
               <table className="w-full min-w-[1200px] border-collapse text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-zinc-950 text-xs uppercase tracking-[0.14em] text-white/48">
                   <tr>
-                    <th className="px-4 py-3">Title</th>
-                    <th className="px-4 py-3">Mode</th>
-                    <th className="px-4 py-3">Container</th>
-                    <th className="px-4 py-3">Video</th>
-                    <th className="px-4 py-3">Audio</th>
-                    <th className="px-4 py-3">Resolution</th>
-                    <th className="px-4 py-3">Range</th>
-                    <th className="px-4 py-3">Reasons</th>
+                    <th className="px-4 py-3">{t("audit.table.title")}</th>
+                    <th className="px-4 py-3">{t("audit.table.mode")}</th>
+                    <th className="px-4 py-3">{t("audit.table.container")}</th>
+                    <th className="px-4 py-3">{t("audit.table.video")}</th>
+                    <th className="px-4 py-3">{t("audit.table.audio")}</th>
+                    <th className="px-4 py-3">{t("audit.table.resolution")}</th>
+                    <th className="px-4 py-3">{t("audit.table.range")}</th>
+                    <th className="px-4 py-3">{t("audit.table.reasons")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -876,8 +969,8 @@ export function PlaybackAuditPage() {
                                   : "border-white/15 bg-white/10 text-white/70"
                           }`}
                         >
-                          <ShieldCheck size={13} />
-                          {getPlaybackModeLabel(row.selectedMode)}
+                          {getPlaybackModeIcon(row.selectedMode)}
+                          {getPlaybackModeLabel(row.selectedMode, t)}
                         </span>
                       </td>
 
@@ -917,7 +1010,7 @@ export function PlaybackAuditPage() {
                           </div>
                         ) : row.selectedMode === "Transcoding" ? (
                           <span className="rounded-xl border border-amber-300/15 bg-amber-300/10 px-3 py-2 text-xs font-semibold text-amber-100/70">
-                            Transcoding detected · reasons skipped
+                            {t("audit.transcodingReasonsSkipped")}
                           </span>
                         ) : (
                           <span className="text-xs text-white/25">—</span>

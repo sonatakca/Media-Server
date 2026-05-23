@@ -180,6 +180,9 @@ export function ItemDetailsPage() {
   const playbackPositionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const hasStarted = playbackPositionTicks > 0 && !item.UserData?.Played;
   const remainingRuntime = getRemainingRuntime(item, mediaFormatLabels);
+  const primaryPlayLabel = hasStarted
+    ? t("details.continueWatching")
+    : t("common.play");
   const continueHref = `/watch/${item.Id}`;
   const restartHref = `/watch/${item.Id}?restart=1`;
   const containerLabel =
@@ -380,12 +383,8 @@ export function ItemDetailsPage() {
                     className="min-h-12 rounded-full px-7 text-base shadow-button-glow"
                   >
                     <Play size={20} fill="currentColor" className="shrink-0" />
-                    <AnimatedWidth
-                      value={hasStarted ? "Devam Et" : t("common.play")}
-                    >
-                      <AnimatedText
-                        value={hasStarted ? "Devam Et" : t("common.play")}
-                      />
+                    <AnimatedWidth value={primaryPlayLabel}>
+                      <AnimatedText value={primaryPlayLabel} />
                     </AnimatedWidth>
                   </ButtonLink>
 
@@ -406,8 +405,8 @@ export function ItemDetailsPage() {
                     >
                       <ButtonLink
                         to={restartHref}
-                        aria-label="Baştan İzle"
-                        title="Baştan İzle"
+                        aria-label={t("details.playFromBeginning")}
+                        title={t("details.playFromBeginning")}
                         className="group !flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-gray-700/75 !p-0 !px-0 !py-0 !text-white !shadow-soft-inset transition hover:!border-white/[0.24] hover:!bg-gray-500 hover:!text-white"
                       >
                         <RotateCcw
@@ -438,8 +437,8 @@ export function ItemDetailsPage() {
                         <Clock size={15} />
                       </span>
                       <span className="text-white/[0.48]">
-                        <AnimatedWidth value="Kalan süre">
-                          <AnimatedText value="Kalan süre" />
+                        <AnimatedWidth value={t("details.remainingTime")}>
+                          <AnimatedText value={t("details.remainingTime")} />
                         </AnimatedWidth>
                       </span>
                       <span className="text-white">

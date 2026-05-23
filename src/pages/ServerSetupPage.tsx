@@ -15,6 +15,7 @@ import {
 } from "../lib/authStorage";
 import { testServerConnection } from "../lib/jellyfinApi";
 import { setPageTitle } from "../lib/pageTitle";
+import type { TranslationKey } from "../i18n/translations";
 
 const examples = [
   "http://localhost:8096",
@@ -23,12 +24,40 @@ const examples = [
   "https://mydomain.com/jellyfin",
 ];
 
+function getServerUrlErrorMessage(
+  error: unknown,
+  t: (key: TranslationKey) => string,
+  fallback: string,
+): string {
+  if (!(error instanceof Error)) {
+    return fallback;
+  }
+
+  if (error.message === "Enter your Jellyfin server URL.") {
+    return t("server.enterUrl");
+  }
+
+  if (error.message === "Enter a valid URL that starts with http:// or https://.") {
+    return t("server.enterValidUrl");
+  }
+
+  if (
+    error.message ===
+    "Jellyfin server URL must start with http:// or https://."
+  ) {
+    return t("server.urlMustStartHttp");
+  }
+
+  return error.message;
+}
+
 export function ServerSetupPage() {
-  useEffect(() => {
-    setPageTitle(`${t("nav.server")} · Seyirlik`);
-  }, []);
   const navigate = useNavigate();
   const { t } = useLanguage();
+
+  useEffect(() => {
+    setPageTitle(`${t("nav.server")} · Seyirlik`);
+  }, [t]);
   const defaultServerUrl =
     (
       import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined
@@ -56,11 +85,7 @@ export function ServerSetupPage() {
         state: { serverUrl: normalizedServerUrl },
       });
     } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : t("server.saveFailed"),
-      );
+      setError(getServerUrlErrorMessage(submitError, t, t("server.saveFailed")));
     }
   };
 
@@ -78,9 +103,7 @@ export function ServerSetupPage() {
       setConnectionInfo({ serverName, version });
     } catch (testError) {
       setError(
-        testError instanceof Error
-          ? testError.message
-          : t("server.couldNotConnect"),
+        getServerUrlErrorMessage(testError, t, t("server.couldNotConnect")),
       );
     } finally {
       setIsTesting(false);

@@ -5,6 +5,7 @@ import {
   redactPlaybackUrl,
 } from "../lib/jellyfinApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
+import { useLanguage } from "../i18n/LanguageContext";
 
 export interface PlaybackTechnicalDetails {
   message: string;
@@ -92,6 +93,7 @@ export function getVideoErrorDetails(
 }
 
 export function usePlaybackSource(itemId?: string) {
+  const { t } = useLanguage();
   const [state, setState] = useState<PlaybackSourceState>(initialState);
   const [sourceIndex, setSourceIndex] = useState(0);
   const activeSource = state.candidates[sourceIndex] ?? null;
@@ -102,8 +104,8 @@ export function usePlaybackSource(itemId?: string) {
         ...initialState,
         isLoading: false,
         error: {
-          message: "Missing item id.",
-          details: "The player route did not receive a Jellyfin item id.",
+          message: t("player.missingItemId"),
+          details: t("player.missingRouteItemId"),
         },
       });
       return;
@@ -129,8 +131,7 @@ export function usePlaybackSource(itemId?: string) {
           candidates: [],
           notice: null,
           error: {
-            message:
-              "Playback failed. Jellyfin did not return a playable source.",
+            message: t("player.noPlayableSource"),
             details: JSON.stringify(playbackInfo, null, 2),
           },
         });
@@ -151,12 +152,12 @@ export function usePlaybackSource(itemId?: string) {
         candidates: [],
         notice: null,
         error: {
-          message: "Playback failed while asking Jellyfin for PlaybackInfo.",
+          message: t("player.playbackInfoRequestFailed"),
           details: error instanceof Error ? error.message : String(error),
         },
       });
     }
-  }, [itemId]);
+  }, [itemId, t]);
 
   useEffect(() => {
     void loadPlaybackInfo();
@@ -242,13 +243,12 @@ export function usePlaybackSource(itemId?: string) {
         ...currentState,
         notice: null,
         error: {
-          message:
-            "Playback failed. This may be a codec, CORS, token, or transcoding issue.",
+          message: t("player.playbackFailurePossibleCauses"),
           details: technicalDetails,
         },
       }));
     },
-    [sourceIndex, state.candidates, switchToSource],
+    [sourceIndex, state.candidates, switchToSource, t],
   );
 
   const hasTranscodingFallback = useMemo(

@@ -280,32 +280,22 @@ export function usePartyWatchController({
   const playlistItemIdRef = useRef<string | undefined>(itemId);
   const canControlRef = useRef(true);
   const isApplyingRemoteCommandRef = useRef(false);
-  const remoteGuardTimeoutRef = useRef<ReturnType<
-    typeof window.setTimeout
-  > | null>(null);
-  const remoteCommandTimersRef = useRef<
-    Array<ReturnType<typeof window.setTimeout>>
-  >([]);
+  const remoteGuardTimeoutRef = useRef<number | null>(null);
+  const remoteCommandTimersRef = useRef<number[]>([]);
   const lastRemotePlayCommandRef = useRef<JellyfinSyncPlaySendCommand | null>(
     null,
   );
   const pingEstimateMsRef = useRef(150);
-  const copyStatusTimeoutRef = useRef<ReturnType<
-    typeof window.setTimeout
-  > | null>(null);
+  const copyStatusTimeoutRef = useRef<number | null>(null);
   const previousParticipantNamesRef = useRef<string[]>([]);
-  const partyEventTimeoutRef = useRef<ReturnType<
-    typeof window.setTimeout
-  > | null>(null);
+  const partyEventTimeoutRef = useRef<number | null>(null);
   const playPauseAnimationIdRef = useRef(0);
   const activePlayPauseAnimationRef = useRef<{
     id: number;
     target: "playing" | "paused";
     startedAt: number;
   } | null>(null);
-  const remotePlayPauseApplyTimeoutRef = useRef<ReturnType<
-    typeof window.setTimeout
-  > | null>(null);
+  const remotePlayPauseApplyTimeoutRef = useRef<number | null>(null);
 
   const [groupInfo, setGroupInfo] = useState<JellyfinSyncPlayGroupInfo | null>(
     null,

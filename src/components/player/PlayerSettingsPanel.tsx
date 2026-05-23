@@ -201,7 +201,7 @@ export function PlayerSettingsPanel({
             }`}
           >
             <SlidersHorizontal size={15} strokeWidth={2.2} />
-            <span>Kalite</span>
+            <span>{t("settings.quality")}</span>
           </button>
 
           <button
@@ -214,7 +214,7 @@ export function PlayerSettingsPanel({
             }`}
           >
             <Volume2 size={15} strokeWidth={2.2} />
-            <span>Audio</span>
+            <span>{t("settings.audio")}</span>
           </button>
 
           <button
@@ -227,7 +227,7 @@ export function PlayerSettingsPanel({
             }`}
           >
             <Subtitles size={15} strokeWidth={2.2} />
-            <span>Subtitles</span>
+            <span>{t("settings.subtitles")}</span>
           </button>
         </div>
       </div>

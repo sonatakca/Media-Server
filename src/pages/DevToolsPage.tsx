@@ -12,52 +12,50 @@ import { setPageTitle } from "../lib/pageTitle";
 import { useEffect } from "react";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
+import { useLanguage } from "../i18n/LanguageContext";
 
 export function DevToolsPage() {
+  const { t } = useLanguage();
+
   useEffect(() => {
-    setPageTitle("Devtools · Seyirlik");
-  }, []);
+    setPageTitle(`${t("devtools.title")} · Seyirlik`);
+  }, [t]);
 
   const tools = [
     {
-      title: "Playback Audit",
-      description:
-        "Scan Jellyfin media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
+      title: t("devtools.card.playbackAudit.title"),
+      description: t("devtools.card.playbackAudit.description"),
       to: "/dev/playback-audit",
       icon: Activity,
-      tag: "Diagnostics",
+      tag: t("devtools.card.playbackAudit.tag"),
     },
     {
-      title: "Library Maintenance",
-      description:
-        "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
+      title: t("devtools.card.libraryMaintenance.title"),
+      description: t("devtools.card.libraryMaintenance.description"),
       to: "/dev/library-maintenance",
       icon: DatabaseZap,
-      tag: "Maintenance",
+      tag: t("devtools.card.libraryMaintenance.tag"),
     },
     {
-      title: "Content Explorer",
-      description:
-        "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
+      title: t("devtools.card.contentExplorer.title"),
+      description: t("devtools.card.contentExplorer.description"),
       to: "/dev/content",
       icon: Database,
-      tag: "Inventory",
+      tag: t("devtools.card.contentExplorer.tag"),
     },
     {
-      title: "Known Bugs",
-      description:
-        "Track current broken behaviour such as missing library items, Se7en audio problems, and pixelated transcoding.",
+      title: t("devtools.card.knownBugs.title"),
+      description: t("devtools.card.knownBugs.description"),
       to: "/dev/known-bugs",
       icon: Bug,
-      tag: "Bug tracker",
+      tag: t("devtools.card.knownBugs.tag"),
     },
     {
-      title: "Wanted Features",
-      description:
-        "Collect future improvements like rotating hero templates, better UX ideas, and planned Seyirlik upgrades.",
+      title: t("devtools.card.wantedFeatures.title"),
+      description: t("devtools.card.wantedFeatures.description"),
       to: "/dev/wanted-features",
       icon: Lightbulb,
-      tag: "Roadmap",
+      tag: t("devtools.card.wantedFeatures.tag"),
     },
   ];
 
@@ -106,12 +104,11 @@ export function DevToolsPage() {
 
             <div>
               <h1 className="text-3xl font-black text-white sm:text-4xl">
-                Devtools
+                {t("devtools.title")}
               </h1>
 
               <p className="mt-1 text-sm font-semibold text-white/50">
-                Tools for debugging, maintenance, bug tracking, and future
-                planning.
+                {t("devtools.pageDescription")}
               </p>
             </div>
           </div>

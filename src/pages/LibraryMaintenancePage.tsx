@@ -34,8 +34,11 @@ import type {
 } from "../lib/types";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
+import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
 
 type ActionState = "idle" | "loading" | "success" | "error";
+type Translate = (key: TranslationKey) => string;
 
 interface ActionResult {
   state: ActionState;
@@ -74,11 +77,23 @@ function createDraftFromItem(item: JellyfinItem): MetadataDraft {
   };
 }
 
-function getTypeLabel(item: JellyfinItem) {
-  if (item.Type === "Movie") return "Movie";
-  if (item.Type === "Episode") return "Episode";
-  if (item.Type === "Series") return "Series";
-  return item.Type ?? "Item";
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
+function getTypeLabel(item: JellyfinItem, t: Translate) {
+  if (item.Type === "Movie") return t("common.movie");
+  if (item.Type === "Episode") return t("common.episode");
+  if (item.Type === "Series") return t("common.series");
+  if (item.Type === "Season") return t("common.season");
+  if (item.Type === "Folder") return t("common.folder");
+  return item.Type ?? t("common.item");
 }
 
 function parseNumberOrUndefined(value: string): number | undefined {
@@ -104,14 +119,14 @@ function parseGenres(value: string): string[] {
     .filter(Boolean);
 }
 
-function formatBoolean(value: boolean | undefined): string {
-  if (value === true) return "Yes";
-  if (value === false) return "No";
-  return "Unknown";
+function formatBoolean(value: boolean | undefined, t: Translate): string {
+  if (value === true) return t("common.yes");
+  if (value === false) return t("common.no");
+  return t("common.unknown");
 }
 
-function formatBytes(value: number | undefined): string {
-  if (!value || value <= 0) return "Unknown";
+function formatBytes(value: number | undefined, unknownLabel = "Unknown"): string {
+  if (!value || value <= 0) return unknownLabel;
 
   const units = ["B", "KB", "MB", "GB", "TB"];
   let nextValue = value;
@@ -125,13 +140,16 @@ function formatBytes(value: number | undefined): string {
   return `${nextValue.toFixed(unitIndex === 0 ? 0 : 2)} ${units[unitIndex]}`;
 }
 
-function formatBitrate(value: number | undefined): string {
-  if (!value || value <= 0) return "Unknown";
+function formatBitrate(
+  value: number | undefined,
+  unknownLabel = "Unknown",
+): string {
+  if (!value || value <= 0) return unknownLabel;
   return `${(value / 1_000_000).toFixed(2)} Mbps`;
 }
 
-function formatTicks(value: number | undefined): string {
-  if (!value || value <= 0) return "Unknown";
+function formatTicks(value: number | undefined, t: Translate): string {
+  if (!value || value <= 0) return t("common.unknown");
 
   const totalSeconds = Math.floor(value / 10_000_000);
   const hours = Math.floor(totalSeconds / 3600);
@@ -145,22 +163,30 @@ function formatTicks(value: number | undefined): string {
   return `${minutes}m ${seconds}s`;
 }
 
-function getDetailValue(value: unknown): string {
-  if (value === undefined || value === null || value === "") return "Unknown";
-  if (typeof value === "boolean") return formatBoolean(value);
-  if (Array.isArray(value)) return value.length > 0 ? value.join(", ") : "None";
+function getDetailValue(value: unknown, t: Translate): string {
+  if (value === undefined || value === null || value === "") {
+    return t("common.unknown");
+  }
+
+  if (typeof value === "boolean") return formatBoolean(value, t);
+  if (Array.isArray(value)) {
+    return value.length > 0 ? value.join(", ") : t("common.none");
+  }
+
   if (typeof value === "object") return JSON.stringify(value, null, 2);
   return String(value);
 }
 
 function DetailRow({ label, value }: { label: string; value: unknown }) {
+  const { t } = useLanguage();
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-3">
       <p className="text-[0.68rem] font-black uppercase tracking-[0.14em] text-white/35">
         {label}
       </p>
       <p className="mt-1 whitespace-pre-wrap break-words text-sm font-bold leading-6 text-white/72">
-        {getDetailValue(value)}
+        {getDetailValue(value, t)}
       </p>
     </div>
   );
@@ -170,12 +196,15 @@ function DetailRow({ label, value }: { label: string; value: unknown }) {
 async function withLibraryLoadTimeout<T>(
   promise: Promise<T>,
   label: string,
+  t: Translate,
 ): Promise<T> {
-  let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
+  let timeoutId: number | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
-      reject(new Error(`${label} took too long to load.`));
+      reject(
+        new Error(formatTemplate(t("maintenance.libraryLoadTimeout"), { label })),
+      );
     }, 15000);
   });
 
@@ -189,6 +218,7 @@ async function withLibraryLoadTimeout<T>(
 }
 
 export function LibraryMaintenancePage() {
+  const { t } = useLanguage();
   const [libraries, setLibraries] = useState<JellyfinLibrary[]>([]);
   const [items, setItems] = useState<JellyfinItem[]>([]);
   const [itemLibraryById, setItemLibraryById] = useState<Map<string, string>>(
@@ -226,8 +256,8 @@ export function LibraryMaintenancePage() {
   );
 
   useEffect(() => {
-    setPageTitle("Library Maintenance · Devtools · Seyirlik");
-  }, []);
+    setPageTitle(`${t("maintenance.title")} · ${t("devtools.title")} · Seyirlik`);
+  }, [t]);
 
   useEffect(() => {
     let isMounted = true;
@@ -235,7 +265,7 @@ export function LibraryMaintenancePage() {
     async function loadInitialData() {
       setLoadState({
         state: "loading",
-        message: "Loading Jellyfin libraries and video items...",
+        message: t("maintenance.loadingLibraries"),
       });
 
       try {
@@ -250,6 +280,7 @@ export function LibraryMaintenancePage() {
             const libraryItems = await withLibraryLoadTimeout(
               getVideoItemsForLibrary(library.Id),
               library.Name ?? library.Id,
+              t,
             );
 
             return {
@@ -270,7 +301,7 @@ export function LibraryMaintenancePage() {
             failedLibraries.push(
               result.reason instanceof Error
                 ? result.reason.message
-                : "A library failed to load.",
+                : t("maintenance.libraryFailedToLoad"),
             );
             continue;
           }
@@ -290,8 +321,24 @@ export function LibraryMaintenancePage() {
           state: failedLibraries.length > 0 ? "error" : "success",
           message:
             failedLibraries.length > 0
-              ? `Loaded ${nextVideoItems.length} video item${nextVideoItems.length === 1 ? "" : "s"}, but ${failedLibraries.length} librar${failedLibraries.length === 1 ? "y" : "ies"} failed: ${failedLibraries.join(" | ")}`
-              : `Loaded ${nextVideoItems.length} video item${nextVideoItems.length === 1 ? "" : "s"}.`,
+              ? formatTemplate(t("maintenance.loadedWithFailures"), {
+                  count: nextVideoItems.length,
+                  failedCount: failedLibraries.length,
+                  libraryLabel: t(
+                    failedLibraries.length === 1
+                      ? "maintenance.librarySingular"
+                      : "maintenance.libraryPlural",
+                  ),
+                  failures: failedLibraries.join(" | "),
+                })
+              : formatTemplate(
+                  t(
+                    nextVideoItems.length === 1
+                      ? "maintenance.loadedItemsSingular"
+                      : "maintenance.loadedItemsPlural",
+                  ),
+                  { count: nextVideoItems.length },
+                ),
         });
       } catch (error) {
         if (!isMounted) return;
@@ -301,7 +348,7 @@ export function LibraryMaintenancePage() {
           message:
             error instanceof Error
               ? error.message
-              : "Could not load library data.",
+              : t("maintenance.couldNotLoadData"),
         });
       }
     }
@@ -311,7 +358,7 @@ export function LibraryMaintenancePage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [t]);
 
   const visibleItems = useMemo(() => {
     const trimmedSearch = search.trim().toLowerCase();
@@ -367,25 +414,25 @@ export function LibraryMaintenancePage() {
 
   const libraryOptions = useMemo(() => {
     const options: Array<{ id: string; label: string }> = [
-      { id: "all", label: "All libraries" },
+      { id: "all", label: t("maintenance.allLibraries") },
     ];
 
     for (const library of libraries) {
       options.push({
         id: library.Id,
-        label: library.Name ?? "Unnamed library",
+        label: library.Name ?? t("maintenance.unnamedLibrary"),
       });
 
       if ((library.Name ?? "").toLocaleLowerCase("tr-TR").includes("dizi")) {
         options.push({
           id: `episodes:${library.Id}`,
-          label: "Bölümler",
+          label: t("common.episodes"),
         });
       }
     }
 
     return options;
-  }, [libraries]);
+  }, [libraries, t]);
 
   const selectItem = async (item: JellyfinItem) => {
     setSelectedItem(item);
@@ -417,14 +464,14 @@ export function LibraryMaintenancePage() {
   const handleScanAll = async () => {
     setScanState({
       state: "loading",
-      message: "Starting full Jellyfin library scan...",
+      message: t("maintenance.startingFullScan"),
     });
 
     try {
       await scanAllLibraries();
       setScanState({
         state: "success",
-        message: "Full library scan started.",
+        message: t("maintenance.fullScanStarted"),
       });
     } catch (error) {
       setScanState({
@@ -432,7 +479,7 @@ export function LibraryMaintenancePage() {
         message:
           error instanceof Error
             ? error.message
-            : "Could not start library scan.",
+            : t("maintenance.couldNotStartScan"),
       });
     }
   };
@@ -445,14 +492,14 @@ export function LibraryMaintenancePage() {
 
     setScanState({
       state: "loading",
-      message: "Starting selected library scan...",
+      message: t("maintenance.startingSelectedScan"),
     });
 
     try {
       await refreshLibraryMetadata(selectedLibraryId);
       setScanState({
         state: "success",
-        message: "Selected library scan started.",
+        message: t("maintenance.selectedScanStarted"),
       });
     } catch (error) {
       setScanState({
@@ -460,7 +507,7 @@ export function LibraryMaintenancePage() {
         message:
           error instanceof Error
             ? error.message
-            : "Could not scan selected library.",
+            : t("maintenance.couldNotScanSelected"),
       });
     }
   };
@@ -470,7 +517,7 @@ export function LibraryMaintenancePage() {
 
     setItemRefreshState({
       state: "loading",
-      message: "Refreshing selected item metadata...",
+      message: t("maintenance.refreshingSelected"),
     });
 
     try {
@@ -487,7 +534,7 @@ export function LibraryMaintenancePage() {
 
       setItemRefreshState({
         state: "success",
-        message: "Metadata refresh started for this item.",
+        message: t("maintenance.refreshStarted"),
       });
     } catch (error) {
       setItemRefreshState({
@@ -495,7 +542,7 @@ export function LibraryMaintenancePage() {
         message:
           error instanceof Error
             ? error.message
-            : "Could not refresh item metadata.",
+            : t("maintenance.couldNotRefresh"),
       });
     }
   };
@@ -510,14 +557,14 @@ export function LibraryMaintenancePage() {
     if (!name) {
       setSaveState({
         state: "error",
-        message: "Name cannot be empty.",
+        message: t("maintenance.nameCannotBeEmpty"),
       });
       return;
     }
 
     setSaveState({
       state: "loading",
-      message: "Saving metadata...",
+      message: t("maintenance.savingMetadata"),
     });
 
     try {
@@ -545,13 +592,13 @@ export function LibraryMaintenancePage() {
 
       setSaveState({
         state: "success",
-        message: "Metadata saved.",
+        message: t("maintenance.metadataSaved"),
       });
     } catch (error) {
       setSaveState({
         state: "error",
         message:
-          error instanceof Error ? error.message : "Could not save metadata.",
+          error instanceof Error ? error.message : t("maintenance.couldNotSave"),
       });
     }
   };
@@ -568,13 +615,13 @@ export function LibraryMaintenancePage() {
             className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
           >
             <ArrowLeft size={16} />
-            Back to Devtools
+            {t("maintenance.back")}
           </Link>
 
           <div className="relative mt-6 grid gap-5 lg:grid-cols-[1fr_auto] lg:items-end">
             <div>
               <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-                Jellyfin Maintenance
+                {t("maintenance.eyebrow")}
               </p>
 
               <div className="mt-3 flex items-center gap-3">
@@ -584,11 +631,10 @@ export function LibraryMaintenancePage() {
 
                 <div>
                   <h1 className="text-3xl font-black text-white sm:text-4xl">
-                    Library Scan & Metadata
+                    {t("maintenance.title")}
                   </h1>
                   <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/52">
-                    Scan Jellyfin libraries, refresh item metadata, replace
-                    images, and edit common item fields.
+                    {t("maintenance.description")}
                   </p>
                 </div>
               </div>
@@ -605,7 +651,7 @@ export function LibraryMaintenancePage() {
               ) : (
                 <RefreshCcw size={18} />
               )}
-              Scan all libraries
+              {t("maintenance.scanAllLibraries")}
             </button>
           </div>
 
@@ -631,11 +677,17 @@ export function LibraryMaintenancePage() {
             <div>
               <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                 <FolderSearch size={15} />
-                Library Items
+                {t("maintenance.libraryItems")}
               </p>
               <h2 className="mt-2 text-xl font-black text-white">
-                {visibleItems.length} visible item
-                {visibleItems.length === 1 ? "" : "s"}
+                {formatTemplate(
+                  t(
+                    visibleItems.length === 1
+                      ? "maintenance.visibleItemSingular"
+                      : "maintenance.visibleItemPlural",
+                  ),
+                  { count: visibleItems.length },
+                )}
               </h2>
             </div>
 
@@ -650,14 +702,14 @@ export function LibraryMaintenancePage() {
               ) : (
                 <RefreshCcw size={17} />
               )}
-              Scan selected
+              {t("maintenance.scanSelected")}
             </button>
           </div>
 
           <div className="mt-5 grid gap-4">
             <div className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                Library
+                {t("library.library")}
               </span>
 
               <div className="mt-2 flex flex-wrap gap-2">
@@ -680,7 +732,7 @@ export function LibraryMaintenancePage() {
 
             <label className="block">
               <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                Search
+                {t("common.search")}
               </span>
               <div className="relative mt-2">
                 <Search
@@ -690,7 +742,7 @@ export function LibraryMaintenancePage() {
                 <input
                   value={search}
                   onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search movie, episode, series..."
+                  placeholder={t("maintenance.searchPlaceholder")}
                   className="w-full rounded-2xl border border-white/10 bg-white/[0.06] py-3 pl-10 pr-4 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
                 />
               </div>
@@ -729,7 +781,7 @@ export function LibraryMaintenancePage() {
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="w-fit rounded-full border border-white/10 bg-white/[0.05] px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white/42">
-                        {getTypeLabel(item)}
+                        {getTypeLabel(item, t)}
                       </p>
 
                       <h3 className="mt-3 truncate text-base font-black text-white">
@@ -739,7 +791,7 @@ export function LibraryMaintenancePage() {
                       <p className="mt-1 line-clamp-2 text-sm font-medium leading-6 text-white/50">
                         {getItemSubtitle(item) ||
                           item.Overview ||
-                          "No subtitle available."}
+                          t("maintenance.noSubtitleAvailable")}
                       </p>
                     </div>
 
@@ -762,7 +814,7 @@ export function LibraryMaintenancePage() {
                 <div>
                   <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                     <FilePenLine size={15} />
-                    Metadata Editor
+                    {t("maintenance.metadataEditor")}
                   </p>
                   <h2 className="mt-2 text-xl font-black text-white">
                     {getDisplayTitle(selectedItem)}
@@ -783,14 +835,14 @@ export function LibraryMaintenancePage() {
                   ) : (
                     <WandSparkles size={17} />
                   )}
-                  Refresh metadata
+                  {t("maintenance.refreshMetadata")}
                 </button>
               </div>
 
               <div className="mt-5 grid gap-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4 sm:grid-cols-3">
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                    Metadata mode
+                    {t("maintenance.metadataMode")}
                   </span>
                   <select
                     value={metadataRefreshMode}
@@ -801,9 +853,11 @@ export function LibraryMaintenancePage() {
                     }
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"
                   >
-                    <option value="Default">Default</option>
-                    <option value="FullRefresh">Full refresh</option>
-                    <option value="None">None</option>
+                    <option value="Default">{t("common.default")}</option>
+                    <option value="FullRefresh">
+                      {t("maintenance.fullRefresh")}
+                    </option>
+                    <option value="None">{t("common.none")}</option>
                   </select>
                 </label>
 
@@ -817,7 +871,7 @@ export function LibraryMaintenancePage() {
                     className="h-5 w-5 accent-[var(--accent)]"
                   />
                   <span className="text-sm font-black text-white/72">
-                    Replace metadata
+                    {t("maintenance.replaceMetadata")}
                   </span>
                 </label>
 
@@ -831,7 +885,7 @@ export function LibraryMaintenancePage() {
                     className="h-5 w-5 accent-[var(--accent)]"
                   />
                   <span className="text-sm font-black text-white/72">
-                    Replace images
+                    {t("maintenance.replaceImages")}
                   </span>
                 </label>
               </div>
@@ -853,14 +907,13 @@ export function LibraryMaintenancePage() {
               <section className="mt-5 space-y-4 rounded-3xl border border-white/10 bg-white/[0.035] p-4">
                 <div>
                   <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
-                    Display metadata preview
+                    {t("maintenance.displayMetadataPreview")}
                   </p>
                   <h3 className="mt-2 text-lg font-black text-white">
-                    Images, trickplay, media source, and raw identifiers
+                    {t("maintenance.previewTitle")}
                   </h3>
                   <p className="mt-1 text-sm font-semibold leading-6 text-white/45">
-                    This section is read-only. It shows what Jellyfin currently
-                    exposes for this item.
+                    {t("maintenance.previewDescription")}
                   </p>
                 </div>
 
@@ -878,7 +931,7 @@ export function LibraryMaintenancePage() {
                       />
                     </div>
                     <p className="px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/45">
-                      Primary poster
+                      {t("maintenance.primaryPoster")}
                     </p>
                   </div>
 
@@ -896,12 +949,12 @@ export function LibraryMaintenancePage() {
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-sm font-bold text-white/35">
-                          No backdrop
+                          {t("maintenance.noBackdrop")}
                         </div>
                       )}
                     </div>
                     <p className="px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/45">
-                      Backdrop / banner
+                      {t("maintenance.backdropBanner")}
                     </p>
                   </div>
 
@@ -924,12 +977,12 @@ export function LibraryMaintenancePage() {
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-sm font-bold text-white/35">
-                          No logo
+                          {t("maintenance.noLogo")}
                         </div>
                       )}
                     </div>
                     <p className="px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/45">
-                      Logo
+                      {t("maintenance.logo")}
                     </p>
                   </div>
 
@@ -948,13 +1001,13 @@ export function LibraryMaintenancePage() {
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center text-sm font-bold text-white/35">
-                          No media source
+                          {t("maintenance.noMediaSource")}
                         </div>
                       )}
                     </div>
                     <div className="px-3 py-2">
                       <p className="text-xs font-black uppercase tracking-[0.12em] text-white/45">
-                        Trickplay sample
+                        {t("maintenance.trickplaySample")}
                       </p>
                       <p
                         className={`mt-1 text-xs font-black ${
@@ -966,74 +1019,97 @@ export function LibraryMaintenancePage() {
                         }`}
                       >
                         {trickplayStatus === "available"
-                          ? "Created / available"
+                          ? t("maintenance.trickplayAvailable")
                           : trickplayStatus === "missing"
-                            ? "Not created or unavailable"
-                            : "Checking..."}
+                            ? t("maintenance.trickplayMissing")
+                            : t("maintenance.checking")}
                       </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <DetailRow label="Item ID" value={selectedItem.Id} />
-                  <DetailRow label="Type" value={selectedItem.Type} />
+                  <DetailRow label={t("maintenance.itemId")} value={selectedItem.Id} />
+                  <DetailRow label={t("common.type")} value={selectedItem.Type} />
                   <DetailRow
-                    label="Media type"
+                    label={t("maintenance.mediaType")}
                     value={selectedItem.MediaType}
                   />
-                  <DetailRow label="Sort name" value={selectedItem.SortName} />
                   <DetailRow
-                    label="Production year"
+                    label={t("maintenance.sortName")}
+                    value={selectedItem.SortName}
+                  />
+                  <DetailRow
+                    label={t("maintenance.productionYear")}
                     value={selectedItem.ProductionYear}
                   />
                   <DetailRow
-                    label="Official rating"
+                    label={t("maintenance.officialRating")}
                     value={selectedItem.OfficialRating}
                   />
                   <DetailRow
-                    label="Community rating"
+                    label={t("maintenance.communityRating")}
                     value={selectedItem.CommunityRating}
                   />
                   <DetailRow
-                    label="Runtime"
-                    value={formatTicks(selectedItem.RunTimeTicks)}
+                    label={t("common.runtime")}
+                    value={formatTicks(selectedItem.RunTimeTicks, t)}
                   />
-                  <DetailRow label="Genres" value={selectedItem.Genres} />
                   <DetailRow
-                    label="Primary image tag"
+                    label={t("maintenance.genres")}
+                    value={selectedItem.Genres}
+                  />
+                  <DetailRow
+                    label={t("maintenance.primaryImageTag")}
                     value={selectedItem.ImageTags?.Primary}
                   />
                   <DetailRow
-                    label="Logo image tag"
+                    label={t("maintenance.logoImageTag")}
                     value={
                       selectedItem.ImageTags?.Logo ??
                       selectedItem.ParentLogoImageTag
                     }
                   />
                   <DetailRow
-                    label="Backdrop image tags"
+                    label={t("maintenance.backdropImageTags")}
                     value={selectedItem.BackdropImageTags}
                   />
-                  <DetailRow label="Parent ID" value={selectedItem.ParentId} />
-                  <DetailRow label="Series ID" value={selectedItem.SeriesId} />
-                  <DetailRow label="Season ID" value={selectedItem.SeasonId} />
                   <DetailRow
-                    label="User played"
+                    label={t("maintenance.parentId")}
+                    value={selectedItem.ParentId}
+                  />
+                  <DetailRow
+                    label={t("maintenance.seriesId")}
+                    value={selectedItem.SeriesId}
+                  />
+                  <DetailRow
+                    label={t("maintenance.seasonId")}
+                    value={selectedItem.SeasonId}
+                  />
+                  <DetailRow
+                    label={t("maintenance.userPlayed")}
                     value={selectedItem.UserData?.Played}
                   />
                   <DetailRow
-                    label="Playback position"
+                    label={t("maintenance.playbackPosition")}
                     value={formatTicks(
                       selectedItem.UserData?.PlaybackPositionTicks,
+                      t,
                     )}
                   />
                   <DetailRow
-                    label="Chapters"
+                    label={t("maintenance.chapters")}
                     value={
                       selectedItem.Chapters?.length
-                        ? `${selectedItem.Chapters.length} chapter(s)`
-                        : "None"
+                        ? formatTemplate(
+                            t(
+                              selectedItem.Chapters.length === 1
+                                ? "maintenance.chapterSingular"
+                                : "maintenance.chapterPlural",
+                            ),
+                            { count: selectedItem.Chapters.length },
+                          )
+                        : t("common.none")
                     }
                   />
                 </div>
@@ -1041,47 +1117,51 @@ export function LibraryMaintenancePage() {
                 {selectedItem.MediaSources?.[0] ? (
                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                     <DetailRow
-                      label="Media source ID"
+                      label={t("maintenance.mediaSourceId")}
                       value={selectedItem.MediaSources[0].Id}
                     />
                     <DetailRow
-                      label="Path"
+                      label={t("maintenance.path")}
                       value={selectedItem.MediaSources[0].Path}
                     />
                     <DetailRow
-                      label="Container"
+                      label={t("details.container")}
                       value={selectedItem.MediaSources[0].Container}
                     />
                     <DetailRow
-                      label="Size"
-                      value={formatBytes(selectedItem.MediaSources[0].Size)}
-                    />
-                    <DetailRow
-                      label="Bitrate"
-                      value={formatBitrate(
-                        selectedItem.MediaSources[0].Bitrate,
+                      label={t("maintenance.size")}
+                      value={formatBytes(
+                        selectedItem.MediaSources[0].Size,
+                        t("common.unknown"),
                       )}
                     />
                     <DetailRow
-                      label="Direct play"
+                      label={t("maintenance.bitrate")}
+                      value={formatBitrate(
+                        selectedItem.MediaSources[0].Bitrate,
+                        t("common.unknown"),
+                      )}
+                    />
+                    <DetailRow
+                      label={t("maintenance.directPlay")}
                       value={selectedItem.MediaSources[0].SupportsDirectPlay}
                     />
                     <DetailRow
-                      label="Direct stream"
+                      label={t("maintenance.directStream")}
                       value={selectedItem.MediaSources[0].SupportsDirectStream}
                     />
                     <DetailRow
-                      label="Transcoding"
+                      label={t("maintenance.transcoding")}
                       value={selectedItem.MediaSources[0].SupportsTranscoding}
                     />
                     <DetailRow
-                      label="Default audio index"
+                      label={t("maintenance.defaultAudioIndex")}
                       value={
                         selectedItem.MediaSources[0].DefaultAudioStreamIndex
                       }
                     />
                     <DetailRow
-                      label="Default subtitle index"
+                      label={t("maintenance.defaultSubtitleIndex")}
                       value={
                         selectedItem.MediaSources[0].DefaultSubtitleStreamIndex
                       }
@@ -1092,7 +1172,7 @@ export function LibraryMaintenancePage() {
                 {selectedItem.MediaSources?.[0]?.MediaStreams?.length ? (
                   <div className="space-y-3">
                     <p className="text-sm font-black uppercase tracking-[0.18em] text-white/38">
-                      Media streams
+                      {t("maintenance.mediaStreams")}
                     </p>
 
                     {selectedItem.MediaSources[0].MediaStreams.map((stream) => (
@@ -1101,44 +1181,65 @@ export function LibraryMaintenancePage() {
                         className="rounded-2xl border border-white/10 bg-black/25 p-4"
                       >
                         <p className="text-sm font-black text-white">
-                          {stream.Type ?? "Stream"}{" "}
+                          {stream.Type ?? t("maintenance.streamFallback")}{" "}
                           {stream.Index !== undefined ? `#${stream.Index}` : ""}
                         </p>
                         <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                          <DetailRow label="Codec" value={stream.Codec} />
-                          <DetailRow label="Profile" value={stream.Profile} />
-                          <DetailRow label="Language" value={stream.Language} />
                           <DetailRow
-                            label="Display title"
+                            label={t("maintenance.codec")}
+                            value={stream.Codec}
+                          />
+                          <DetailRow
+                            label={t("maintenance.profile")}
+                            value={stream.Profile}
+                          />
+                          <DetailRow
+                            label={t("maintenance.language")}
+                            value={stream.Language}
+                          />
+                          <DetailRow
+                            label={t("maintenance.displayTitle")}
                             value={stream.DisplayTitle}
                           />
-                          <DetailRow label="Default" value={stream.IsDefault} />
-                          <DetailRow label="Forced" value={stream.IsForced} />
                           <DetailRow
-                            label="External"
+                            label={t("common.default")}
+                            value={stream.IsDefault}
+                          />
+                          <DetailRow
+                            label={t("maintenance.forced")}
+                            value={stream.IsForced}
+                          />
+                          <DetailRow
+                            label={t("maintenance.external")}
                             value={stream.IsExternal}
                           />
-                          <DetailRow label="Channels" value={stream.Channels} />
                           <DetailRow
-                            label="Bitrate"
-                            value={formatBitrate(stream.BitRate)}
+                            label={t("maintenance.channels")}
+                            value={stream.Channels}
                           />
                           <DetailRow
-                            label="Resolution"
+                            label={t("maintenance.bitrate")}
+                            value={formatBitrate(
+                              stream.BitRate,
+                              t("common.unknown"),
+                            )}
+                          />
+                          <DetailRow
+                            label={t("maintenance.resolution")}
                             value={
                               stream.Width && stream.Height
                                 ? `${stream.Width}×${stream.Height}`
-                                : "Unknown"
+                                : t("common.unknown")
                             }
                           />
                           <DetailRow
-                            label="Frame rate"
+                            label={t("maintenance.frameRate")}
                             value={
                               stream.AverageFrameRate ?? stream.RealFrameRate
                             }
                           />
                           <DetailRow
-                            label="Video range"
+                            label={t("maintenance.videoRange")}
                             value={stream.VideoRangeType ?? stream.VideoRange}
                           />
                         </div>
@@ -1151,7 +1252,7 @@ export function LibraryMaintenancePage() {
               <form onSubmit={handleSaveMetadata} className="mt-5 space-y-4">
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                    Name
+                    {t("common.name")}
                   </span>
                   <input
                     value={draft.name}
@@ -1168,7 +1269,7 @@ export function LibraryMaintenancePage() {
 
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                    Sort name
+                    {t("maintenance.sortName")}
                   </span>
                   <input
                     value={draft.sortName}
@@ -1185,7 +1286,7 @@ export function LibraryMaintenancePage() {
 
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                    Overview
+                    {t("details.overview")}
                   </span>
                   <textarea
                     value={draft.overview}
@@ -1204,7 +1305,7 @@ export function LibraryMaintenancePage() {
                 <div className="grid gap-3 sm:grid-cols-3">
                   <label className="block">
                     <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                      Year
+                      {t("common.year")}
                     </span>
                     <input
                       value={draft.productionYear}
@@ -1221,7 +1322,7 @@ export function LibraryMaintenancePage() {
 
                   <label className="block">
                     <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                      Rating
+                      {t("maintenance.rating")}
                     </span>
                     <input
                       value={draft.officialRating}
@@ -1232,14 +1333,14 @@ export function LibraryMaintenancePage() {
                             : current,
                         )
                       }
-                      placeholder="R, PG-13..."
+                      placeholder={t("maintenance.ratingPlaceholder")}
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
                     />
                   </label>
 
                   <label className="block">
                     <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                      Community rating
+                      {t("maintenance.communityRating")}
                     </span>
                     <input
                       value={draft.communityRating}
@@ -1253,7 +1354,7 @@ export function LibraryMaintenancePage() {
                             : current,
                         )
                       }
-                      placeholder="8.5"
+                      placeholder={t("maintenance.communityRatingPlaceholder")}
                       className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
                     />
                   </label>
@@ -1261,7 +1362,7 @@ export function LibraryMaintenancePage() {
 
                 <label className="block">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
-                    Genres
+                    {t("maintenance.genres")}
                   </span>
                   <input
                     value={draft.genres}
@@ -1272,7 +1373,7 @@ export function LibraryMaintenancePage() {
                           : current,
                       )
                     }
-                    placeholder="Crime, Drama, Thriller"
+                    placeholder={t("maintenance.genresPlaceholder")}
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]"
                   />
                 </label>
@@ -1301,7 +1402,7 @@ export function LibraryMaintenancePage() {
                   ) : (
                     <Save size={18} />
                   )}
-                  Save metadata
+                  {t("maintenance.saveMetadata")}
                 </button>
               </form>
             </>
@@ -1313,17 +1414,16 @@ export function LibraryMaintenancePage() {
                 </div>
 
                 <h2 className="mt-4 text-xl font-black text-white">
-                  Select an item
+                  {t("maintenance.selectItem")}
                 </h2>
 
                 <p className="mx-auto mt-2 max-w-md text-sm font-medium leading-6 text-white/48">
-                  Choose a movie or episode from the left side to refresh its
-                  Jellyfin metadata or edit common fields.
+                  {t("maintenance.selectItemDescription")}
                 </p>
 
                 <p className="mx-auto mt-4 flex w-fit items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-black uppercase tracking-[0.12em] text-white/38">
                   <Sparkles size={14} />
-                  Admin permissions may be required
+                  {t("maintenance.adminRequired")}
                 </p>
               </div>
             </div>

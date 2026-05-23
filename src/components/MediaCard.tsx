@@ -278,8 +278,11 @@ export function MediaCard({
             {canPlay && showPlayFromBeginning && progressPercent !== null ? (
               <Link
                 to={`/watch/${item.Id}?start=0`}
-                aria-label={`Play ${title} from beginning`}
-                title="Play from beginning"
+                aria-label={formatTemplate(
+                  t("details.playTitleFromBeginning"),
+                  { title },
+                )}
+                title={t("details.playFromBeginning")}
                 className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-player-controls backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/[0.14] focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
               >
                 <RotateCcw size={17} />
