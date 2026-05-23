@@ -29,7 +29,7 @@ export function LoginPage() {
   useEffect(() => {
     setPageTitle(`${t("auth.login")} · Seyirlik`, {
       canonicalPath: "/login",
-      robots: "noindex, nofollow",
+      robots: "index, follow",
     });
   }, [t]);
 
