@@ -22,6 +22,7 @@ import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
+import { setPageTitle } from "../lib/pageTitle";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -374,6 +375,23 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
       }
     };
   }, [libraryRotatingLogoUrls.length, mode]);
+
+  useEffect(() => {
+    if (!data) {
+      return;
+    }
+
+    const fallbackTitle =
+      data.library?.Name ||
+      (data.fallbackTitleKey
+        ? t(data.fallbackTitleKey as TranslationKey)
+        : t("library.library"));
+    const title = data.library?.Name
+      ? getDisplayTitle(data.library, mediaFormatLabels)
+      : fallbackTitle;
+
+    setPageTitle(`${title} · Seyirlik`);
+  }, [data, mediaFormatLabels, t]);
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;

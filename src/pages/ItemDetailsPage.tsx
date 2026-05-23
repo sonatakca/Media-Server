@@ -18,7 +18,7 @@ import {
   getPrimaryImageUrl,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
-import { setPageTitle } from "../lib/pageTitle";
+import { setSeoMetadata } from "../lib/seo";
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -71,9 +71,6 @@ function getEpisodeCode(item: JellyfinItem): string | null {
 }
 
 export function ItemDetailsPage() {
-  useEffect(() => {
-    setPageTitle("Seyirlik");
-  }, []);
   const { itemId } = useParams<{ itemId: string }>();
   const { t } = useLanguage();
   const mediaFormatLabels = useMemo(
@@ -87,6 +84,18 @@ export function ItemDetailsPage() {
   const shouldReduceMotion = useReducedMotion();
   const [item, setItem] = useState<JellyfinItem | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!item) {
+      setSeoMetadata({ canonicalPath: itemId ? `/item/${itemId}` : "/" });
+      return;
+    }
+
+    setSeoMetadata({
+      title: `${getDisplayTitle(item, mediaFormatLabels)} · Seyirlik`,
+      canonicalPath: `/item/${item.Id}`,
+    });
+  }, [item, itemId, mediaFormatLabels]);
 
   useEffect(() => {
     let isMounted = true;

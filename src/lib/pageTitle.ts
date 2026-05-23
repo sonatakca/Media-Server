@@ -1,4 +1,6 @@
-const DEFAULT_TITLE = "Seyirlik";
+import { DEFAULT_SEO_TITLE, setSeoMetadata } from "./seo";
+
+const DEFAULT_TITLE = DEFAULT_SEO_TITLE;
 const LOADING_PREFIX = "· ";
 
 let lastRealTitle = DEFAULT_TITLE;
@@ -18,13 +20,18 @@ function withLoadingDot(title: string): string {
 export function setPageTitle(title: string): void {
   const nextTitle = clean(title);
   lastRealTitle = nextTitle;
-  document.title = nextTitle;
+  setSeoMetadata({ title: nextTitle });
 }
 
 export function setDefaultPageTitle(isLoading = false): void {
   const nextTitle = DEFAULT_TITLE;
   lastRealTitle = nextTitle;
-  document.title = isLoading ? withLoadingDot(nextTitle) : nextTitle;
+  if (isLoading) {
+    document.title = withLoadingDot(nextTitle);
+    return;
+  }
+
+  setSeoMetadata({ title: nextTitle, canonicalPath: "/" });
 }
 
 export function setLoadingPageTitle(title?: string): void {

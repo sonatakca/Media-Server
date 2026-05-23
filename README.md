@@ -34,6 +34,17 @@ Open the Vite URL shown in the terminal.
 npm run build
 ```
 
+## SEO / Search Indexing
+
+Seyirlik includes public search-indexing files for the deployed site:
+
+- `robots.txt` is served at `/robots.txt`.
+- `sitemap.xml` is served at `/sitemap.xml`.
+- The canonical site URL is `https://www.seyirlik.sonatakcaa.com/`.
+
+After deployment, submit `https://www.seyirlik.sonatakcaa.com/sitemap.xml` in
+Google Search Console.
+
 ## Jellyfin Server URL
 
 On first launch, Seyirlik asks for your Jellyfin server URL and saves the normalized URL in browser `localStorage`. Trailing slashes are removed.

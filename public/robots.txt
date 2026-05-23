@@ -1,0 +1,3 @@
+User-agent: *
+Allow: /
+Sitemap: https://www.seyirlik.sonatakcaa.com/sitemap.xml

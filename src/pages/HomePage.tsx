@@ -15,8 +15,8 @@ import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../lib/types";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
-import { setPageTitle } from "../lib/pageTitle";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
+import { setSeoMetadata } from "../lib/seo";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -126,7 +126,7 @@ export function HomePage() {
   const heroItem = featuredPool[selectedHeroIndex];
 
   useEffect(() => {
-    setPageTitle("Seyirlik");
+    setSeoMetadata({ canonicalPath: "/" });
   }, []);
 
   useEffect(() => {

@@ -3,9 +3,45 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Seyirlik — Modern Jellyfin Media Client</title>
     <meta
       name="description"
-      content="Seyirlik is a custom frontend for an existing Jellyfin server."
+      content="Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience."
+    />
+    <meta
+      name="keywords"
+      content="seyirlik, jellyfin, jellyfin client, media server, movie streaming, tv shows, home media server"
+    />
+    <meta name="author" content="Sonat Akça" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://www.seyirlik.sonatakcaa.com/" />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:title"
+      content="Seyirlik — Modern Jellyfin Media Client"
+    />
+    <meta
+      property="og:description"
+      content="Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience."
+    />
+    <meta property="og:url" content="https://www.seyirlik.sonatakcaa.com/" />
+    <meta property="og:site_name" content="Seyirlik" />
+    <meta
+      property="og:image"
+      content="https://www.seyirlik.sonatakcaa.com/seyirlik-preview.png"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="Seyirlik — Modern Jellyfin Media Client"
+    />
+    <meta
+      name="twitter:description"
+      content="Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience."
+    />
+    <meta
+      name="twitter:image"
+      content="https://www.seyirlik.sonatakcaa.com/seyirlik-preview.png"
     />
     <link
       rel="icon"
@@ -20,7 +56,35 @@
       href="/src/assets/favicon-32x32.png"
     />
     <link rel="apple-touch-icon" href="/src/assets/touchicon-seyirlik-v2.png" />
-    <title>· Seyirlik</title>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebSite",
+            "name": "Seyirlik",
+            "url": "https://www.seyirlik.sonatakcaa.com/",
+            "description": "Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience.",
+            "creator": {
+              "@type": "Person",
+              "name": "Sonat Akça"
+            }
+          },
+          {
+            "@type": "WebApplication",
+            "name": "Seyirlik",
+            "url": "https://www.seyirlik.sonatakcaa.com/",
+            "applicationCategory": "MultimediaApplication",
+            "operatingSystem": "Web",
+            "description": "Seyirlik is a modern web frontend for Jellyfin, built for browsing movies, TV shows, playback diagnostics, and a cinematic media experience.",
+            "creator": {
+              "@type": "Person",
+              "name": "Sonat Akça"
+            }
+          }
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
