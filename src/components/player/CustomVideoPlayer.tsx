@@ -16,11 +16,13 @@ import {
   RotateCw,
   Smartphone,
   Users,
+  X,
 } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
   getLogoImageUrl,
+  getPrimaryImageUrl,
   getManualQualityOptions,
   getTrickplayImageUrl,
   getActiveTranscodingReasons,
@@ -73,6 +75,9 @@ interface CustomVideoPlayerProps {
   onPlaybackProgress?: (positionSeconds: number, isPaused: boolean) => void;
   onPlaybackStopped?: (positionSeconds: number) => void;
   onPlaybackBeforeUnload?: (positionSeconds: number) => void;
+  nextEpisode?: JellyfinItem | null;
+  enableDefaultNextEpisodeCountdown?: boolean;
+  onAutoPlayNextEpisode?: (nextEpisode: JellyfinItem) => void;
 }
 
 interface PendingSourceRestore {
@@ -154,6 +159,8 @@ const SEEK_FEEDBACK_FADE_RESET_MS = 260;
 const STARTUP_WATCHDOG_MS = 8000;
 
 const VIEW_MODE_CURSOR_HIDE_MS = 1600;
+
+const DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS = 10;
 
 const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
 
@@ -696,8 +703,28 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
+function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}
+
 function isSkippableSegmentType(type: string): boolean {
   return SKIPPABLE_SEGMENT_TYPES.has(type.toLowerCase());
+}
+
+function isNextEpisodeSegmentType(type: string): boolean {
+  const normalizedType = type.toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+  return (
+    normalizedType.includes("nextup") ||
+    normalizedType.includes("upnext") ||
+    normalizedType.includes("nextepisode")
+  );
 }
 
 function getSkipSegmentLabelKey(type: string): TranslationKey {
@@ -777,6 +804,152 @@ function SkipSegmentButton({
         </motion.div>
       ) : null}
     </AnimatePresence>
+  );
+}
+
+interface NextEpisodeCountdownOverlayProps {
+  nextEpisode: JellyfinItem;
+  secondsRemaining: number;
+  shouldReduceMotion: boolean;
+  onPlayNow: () => void;
+  onCancel: () => void;
+  onControlsHoverStart?: () => void;
+  onControlsHoverEnd?: () => void;
+}
+
+function NextEpisodeCountdownOverlay({
+  nextEpisode,
+  secondsRemaining,
+  shouldReduceMotion,
+  onPlayNow,
+  onCancel,
+  onControlsHoverStart,
+  onControlsHoverEnd,
+}: NextEpisodeCountdownOverlayProps) {
+  const { t } = useLanguage();
+  const nextEpisodeImageUrl = nextEpisode.ImageTags?.Primary
+    ? getPrimaryImageUrl(nextEpisode.Id, nextEpisode.ImageTags.Primary, 320)
+    : "";
+  const nextEpisodeSeasonNumber =
+    typeof nextEpisode.ParentIndexNumber === "number" &&
+    Number.isFinite(nextEpisode.ParentIndexNumber)
+      ? nextEpisode.ParentIndexNumber
+      : null;
+  const nextEpisodeNumber =
+    typeof nextEpisode.IndexNumber === "number" &&
+    Number.isFinite(nextEpisode.IndexNumber)
+      ? nextEpisode.IndexNumber
+      : null;
+  const nextEpisodeContextParts =
+    nextEpisodeSeasonNumber !== null && nextEpisodeNumber !== null
+      ? [
+          formatTemplate(t("media.seasonEpisodeNumber"), {
+            seasonNumber: nextEpisodeSeasonNumber,
+            episodeNumber: nextEpisodeNumber,
+          }),
+        ]
+      : [
+          nextEpisodeSeasonNumber !== null
+            ? formatTemplate(t("media.seasonNumber"), {
+                number: nextEpisodeSeasonNumber,
+              })
+            : nextEpisode.SeasonName,
+          nextEpisodeNumber !== null
+            ? formatTemplate(t("media.episodeNumber"), {
+                number: nextEpisodeNumber,
+              })
+            : null,
+        ].filter(Boolean);
+
+  return (
+    <motion.div
+      className="pointer-events-auto absolute bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.9rem)] right-[max(0.85rem,env(safe-area-inset-right))] z-[39] flex w-[min(24rem,calc(100vw-1.7rem))] flex-col items-end gap-2 text-white sm:bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+7.5rem)] sm:right-[max(1.25rem,env(safe-area-inset-right))]"
+      initial={
+        shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }
+      }
+      animate={
+        shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }
+      }
+      exit={
+        shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }
+      }
+      transition={
+        shouldReduceMotion
+          ? { duration: 0.01 }
+          : {
+              duration: 0.22,
+              ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
+            }
+      }
+      onMouseEnter={onControlsHoverStart}
+      onMouseLeave={onControlsHoverEnd}
+      onPointerEnter={onControlsHoverStart}
+      onPointerLeave={onControlsHoverEnd}
+    >
+      <div className="relative w-full overflow-hidden rounded-xl bg-zinc-950/90 shadow-player-controls">
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onCancel();
+          }}
+          className="absolute right-2.5 top-2.5 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/80 shadow-player-controls transition hover:bg-white/[0.14] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:right-3 sm:top-3"
+          aria-label={t("player.cancelNextEpisode")}
+          title={t("player.cancelNextEpisode")}
+        >
+          <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.4} />
+        </button>
+
+        <div className="relative h-28 w-full overflow-hidden bg-white/[0.06] sm:h-32">
+          {nextEpisodeImageUrl ? (
+            <img
+              src={nextEpisodeImageUrl}
+              alt=""
+              className="h-full w-full object-cover"
+              loading="lazy"
+              draggable={false}
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-[var(--accent)]/16 text-3xl font-black text-[var(--accent)]">
+              {secondsRemaining}
+            </div>
+          )}
+          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/70 via-zinc-950/18 to-transparent" />
+          <div className="absolute bottom-3 left-3 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/45 text-lg font-black text-white shadow-lg">
+            {secondsRemaining}
+          </div>
+        </div>
+
+        <div className="px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
+          <p className="pr-10 text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+            {formatTemplate(t("player.nextEpisodeIn"), {
+              seconds: secondsRemaining,
+            })}
+          </p>
+          <p className="mt-1 line-clamp-2 pr-2 text-base font-black leading-6 text-white sm:text-lg">
+            {nextEpisode.Name}
+          </p>
+          {nextEpisode.SeriesName || nextEpisodeContextParts.length > 0 ? (
+            <p className="mt-1 truncate text-xs font-semibold text-white/55">
+              {[nextEpisode.SeriesName, ...nextEpisodeContextParts]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onPlayNow();
+        }}
+        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full bg-white z-50 mt-2 px-4 text-xs font-black text-zinc-950 shadow-player-controls transition hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:px-5 sm:text-sm"
+      >
+        <ChevronsRight className="h-4 w-4 shrink-0" strokeWidth={2.5} />
+        <span>{t("player.playNow")}</span>
+      </button>
+    </motion.div>
   );
 }
 
@@ -900,6 +1073,9 @@ export function CustomVideoPlayer({
   onPlaybackProgress,
   onPlaybackStopped,
   onPlaybackBeforeUnload,
+  nextEpisode = null,
+  enableDefaultNextEpisodeCountdown = false,
+  onAutoPlayNextEpisode,
 }: CustomVideoPlayerProps) {
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -912,6 +1088,7 @@ export function CustomVideoPlayer({
   const latestPlaybackPositionRef = useRef(0);
   const hasStartedRef = useRef(false);
   const hasReportedStoppedRef = useRef(false);
+  const hasAutoPlayedNextRef = useRef(false);
   const hasAppliedInitialStartRef = useRef(false);
   const sourceSwitchTokenRef = useRef(0);
   const pendingSourceRestoreRef = useRef<PendingSourceRestore | null>(null);
@@ -1113,6 +1290,10 @@ export function CustomVideoPlayer({
   const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<
     string | null
   >(null);
+  const [
+    dismissedDefaultNextEpisodeItemId,
+    setDismissedDefaultNextEpisodeItemId,
+  ] = useState<string | null>(null);
 
   const updateLatestPlaybackPosition = useCallback(() => {
     const currentTime =
@@ -1300,6 +1481,80 @@ export function CustomVideoPlayer({
     ? t(getSkipSegmentLabelKey(skippableActiveSegment.type))
     : t("player.skipSegment");
 
+  const hasDataDrivenNextUp = useMemo(
+    () =>
+      mediaSegments.some((segment) => isNextEpisodeSegmentType(segment.type)),
+    [mediaSegments],
+  );
+  const defaultNextEpisodeRemainingSeconds =
+    Number.isFinite(progress.duration) && progress.duration > 0
+      ? progress.duration - progress.currentTime
+      : Number.POSITIVE_INFINITY;
+  const defaultNextEpisodeCountdownSeconds =
+    Number.isFinite(defaultNextEpisodeRemainingSeconds) &&
+    defaultNextEpisodeRemainingSeconds > 0 &&
+    defaultNextEpisodeRemainingSeconds <= DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS
+      ? clamp(
+          Math.ceil(defaultNextEpisodeRemainingSeconds),
+          1,
+          DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS,
+        )
+      : null;
+  const isDefaultNextEpisodeDismissed =
+    dismissedDefaultNextEpisodeItemId === item.Id;
+  const isDefaultNextEpisodeCountdownEnabled = Boolean(
+    enableDefaultNextEpisodeCountdown &&
+    nextEpisode &&
+    onAutoPlayNextEpisode &&
+    !partyWatch.isInGroup &&
+    !error &&
+    Number.isFinite(progress.duration) &&
+    progress.duration > 0,
+  );
+  const shouldShowDefaultNextEpisodeCountdown = Boolean(
+    isDefaultNextEpisodeCountdownEnabled &&
+    !isDefaultNextEpisodeDismissed &&
+    defaultNextEpisodeCountdownSeconds !== null,
+  );
+
+  useEffect(() => {
+    if (import.meta.env.DEV) {
+      console.info("[Seyirlik Next Episode State Debug]", {
+        itemId: item.Id,
+        itemName: item.Name,
+        itemType: item.Type,
+        seriesId: item.SeriesId,
+        seasonId: item.SeasonId,
+        parentId: item.ParentId,
+        indexNumber: item.IndexNumber,
+        nextEpisode: nextEpisode
+          ? { id: nextEpisode.Id, name: nextEpisode.Name }
+          : null,
+        progressDuration: progress.duration,
+        progressCurrentTime: progress.currentTime,
+        remainingSeconds: defaultNextEpisodeRemainingSeconds,
+        countdownSeconds: defaultNextEpisodeCountdownSeconds,
+        enableDefaultCountdown: enableDefaultNextEpisodeCountdown,
+        partyWatchInGroup: partyWatch.isInGroup,
+        error,
+        hasDataDrivenNextUp,
+        shouldShowDefaultNextEpisodeCountdown,
+      });
+    }
+  }, [
+    item,
+    nextEpisode,
+    progress.duration,
+    progress.currentTime,
+    defaultNextEpisodeRemainingSeconds,
+    defaultNextEpisodeCountdownSeconds,
+    enableDefaultNextEpisodeCountdown,
+    partyWatch.isInGroup,
+    error,
+    hasDataDrivenNextUp,
+    shouldShowDefaultNextEpisodeCountdown,
+  ]);
+
   const fullscreenSeekPreview = useMemo(() => {
     if (
       fullscreenSeekPreviewSeconds === null ||
@@ -1433,6 +1688,7 @@ export function CustomVideoPlayer({
     pendingSourceRestoreRef.current = null;
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
+    hasAutoPlayedNextRef.current = false;
     setActiveSource(nextSource);
     setSelectedQualityId(AUTO_QUALITY_ID);
     setSelectedAudioStreamIndex(defaultAudioIndex);
@@ -1528,6 +1784,7 @@ export function CustomVideoPlayer({
   useEffect(() => {
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
+    hasAutoPlayedNextRef.current = false;
     hasAppliedInitialStartRef.current = false;
     setActiveSubtitleText("");
     setSubtitlePosition(null);
@@ -1537,12 +1794,17 @@ export function CustomVideoPlayer({
     setIsSubtitleEditMode(false);
     setAreControlsManuallyHidden(false);
     setCheckpointSeconds(null);
+    setDismissedDefaultNextEpisodeItemId(null);
     setIsViewModeCursorVisible(true);
     setIsViewModeEnabled(false);
     subtitleDragStateRef.current = null;
     subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
   }, [item.Id]);
+
+  useEffect(() => {
+    hasAutoPlayedNextRef.current = false;
+  }, [activeSource.id, activeSource.url]);
 
   const toggleFullscreen = useCallback(() => {
     const container = containerRef.current;
@@ -1717,6 +1979,30 @@ export function CustomVideoPlayer({
     },
     [partyWatch, progress.duration, revealPlayerChrome],
   );
+
+  const handleDefaultNextEpisodePlay = useCallback(() => {
+    if (
+      !nextEpisode ||
+      !isDefaultNextEpisodeCountdownEnabled ||
+      isDefaultNextEpisodeDismissed ||
+      hasAutoPlayedNextRef.current
+    ) {
+      return;
+    }
+
+    hasAutoPlayedNextRef.current = true;
+    onAutoPlayNextEpisode?.(nextEpisode);
+  }, [
+    isDefaultNextEpisodeCountdownEnabled,
+    isDefaultNextEpisodeDismissed,
+    nextEpisode,
+    onAutoPlayNextEpisode,
+  ]);
+
+  const handleDefaultNextEpisodeCancel = useCallback(() => {
+    setDismissedDefaultNextEpisodeItemId(item.Id);
+    revealPlayerChrome();
+  }, [item.Id, revealPlayerChrome]);
 
   useKeyboardShortcuts({
     enabled: true,
@@ -3571,6 +3857,7 @@ export function CustomVideoPlayer({
           const positionSeconds = updateLatestPlaybackPosition();
           onPlaybackProgress?.(positionSeconds, true);
           reportStoppedOnce(false);
+          handleDefaultNextEpisodePlay();
         }}
       />
 
@@ -3856,6 +4143,23 @@ export function CustomVideoPlayer({
             onControlsHoverStart={keepControlsVisible}
             onControlsHoverEnd={releaseControlsHover}
           />
+
+          <AnimatePresence initial={false}>
+            {(shouldShowDefaultNextEpisodeCountdown &&
+              nextEpisode &&
+              defaultNextEpisodeCountdownSeconds !== null) ? (
+              <NextEpisodeCountdownOverlay
+                key={`${item.Id}-${nextEpisode.Id}`}
+                nextEpisode={nextEpisode}
+                secondsRemaining={defaultNextEpisodeCountdownSeconds}
+                shouldReduceMotion={shouldReduceMotion}
+                onPlayNow={handleDefaultNextEpisodePlay}
+                onCancel={handleDefaultNextEpisodeCancel}
+                onControlsHoverStart={keepControlsVisible}
+                onControlsHoverEnd={releaseControlsHover}
+              />
+            ) : null}
+          </AnimatePresence>
 
           {isPartyWatchOpen ? (
             <PartyWatchOverlay controller={partyWatch} />

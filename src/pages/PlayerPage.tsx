@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import {
+  Link,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router-dom";
 import { ArrowLeft } from "lucide-react";
 import { CustomVideoPlayer } from "../components/player/CustomVideoPlayer";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -7,6 +12,7 @@ import { LoadingSpinner } from "../components/LoadingSpinner";
 import { usePlaybackSource } from "../hooks/usePlaybackSource";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
+  getNextEpisodeInSeason,
   getItem,
   reportPlaybackProgress,
   reportPlaybackStart,
@@ -15,6 +21,7 @@ import {
   ticksFromSeconds,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
+import { getWatchRouteForItem } from "../lib/routes";
 import {
   setDefaultPageTitle,
   setLoadingPageTitle,
@@ -28,8 +35,10 @@ import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 export function PlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { t } = useLanguage();
   const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [nextEpisode, setNextEpisode] = useState<JellyfinItem | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
   const playback = usePlaybackSource(itemId);
 
@@ -44,6 +53,7 @@ export function PlayerPage() {
 
       setItemError(null);
       setItem(null);
+      setNextEpisode(null);
 
       try {
         const itemDetails = await getItem(itemId);
@@ -72,6 +82,42 @@ export function PlayerPage() {
       isMounted = false;
     };
   }, [itemId, t]);
+
+  useEffect(() => {
+    if (item?.Type !== "Episode") {
+      setNextEpisode(null);
+      return undefined;
+    }
+
+    let isMounted = true;
+
+    setNextEpisode(null);
+
+    const loadNextEpisode = async () => {
+      try {
+        const nextEpisodeDetails = await getNextEpisodeInSeason(item);
+
+        if (isMounted) {
+          setNextEpisode(nextEpisodeDetails);
+        }
+      } catch (error) {
+        if (isMounted) {
+          setNextEpisode(null);
+        }
+
+        console.warn(
+          "[Seyirlik Playback] Could not load next episode fallback target",
+          error,
+        );
+      }
+    };
+
+    void loadNextEpisode();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [item]);
 
   useEffect(() => {
     const isPageLoading = !item || playback.isLoading;
@@ -185,6 +231,13 @@ export function PlayerPage() {
     [playback.activeSource],
   );
 
+  const handleAutoPlayNextEpisode = useCallback(
+    (episode: JellyfinItem) => {
+      navigate(getWatchRouteForItem(episode));
+    },
+    [navigate],
+  );
+
   if (itemError) {
     return (
       <main className="min-h-screen bg-black p-4 text-white">
@@ -267,6 +320,9 @@ export function PlayerPage() {
         onPlaybackProgress={handlePlaybackProgress}
         onPlaybackStopped={handlePlaybackStopped}
         onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
+        nextEpisode={nextEpisode}
+        enableDefaultNextEpisodeCountdown={item.Type === "Episode"}
+        onAutoPlayNextEpisode={handleAutoPlayNextEpisode}
       />
     </>
   );

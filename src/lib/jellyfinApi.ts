@@ -416,6 +416,304 @@ export async function getSeasonEpisodes(
   return response.Items ?? [];
 }
 
+function getEpisodeSeasonId(item: JellyfinItem): string | null {
+  return item.SeasonId ?? item.ParentId ?? null;
+}
+
+function getEpisodeCandidateTexts(item: JellyfinItem): string[] {
+  return [item.Name, item.SortName, item.SeriesName, item.SeasonName].filter(
+    (value): value is string => Boolean(value?.trim()),
+  );
+}
+
+function parseEpisodeNumberFromText(text: string): number | null {
+  const patterns = [
+    /(?:^|[^a-z0-9])s\d{1,2}\s*e(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])(\d{1,2})\s*x\s*(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])e(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])episode\s+(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])bölüm\s+(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])bolum\s+(\d{1,3})(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])böl\s+(\d{1,3})(?:[^a-z0-9]|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+
+    if (!match) {
+      continue;
+    }
+
+    const episodeGroup = match.length > 2 ? match[2] : match[1];
+    const parsed = episodeGroup ? Number(episodeGroup) : NaN;
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function parseSeasonNumberFromText(text: string): number | null {
+  const patterns = [
+    /(?:^|[^a-z0-9])s(\d{1,2})\s*e\d{1,3}(?:[^a-z0-9]|$)/i,
+    /(?:^|[^a-z0-9])(\d{1,2})\s*x\s*\d{1,3}(?:[^a-z0-9]|$)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern);
+    const parsed = match?.[1] ? Number(match[1]) : NaN;
+
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+
+  return null;
+}
+
+function getEpisodeIndexNumber(item: JellyfinItem): number | null {
+  const indexNumber = item.IndexNumber;
+
+  if (typeof indexNumber === "number" && Number.isFinite(indexNumber)) {
+    return indexNumber;
+  }
+
+  for (const text of getEpisodeCandidateTexts(item)) {
+    const parsedEpisodeNumber = parseEpisodeNumberFromText(text);
+
+    if (parsedEpisodeNumber !== null) {
+      return parsedEpisodeNumber;
+    }
+  }
+
+  return null;
+}
+
+function getEpisodeSeasonNumber(item: JellyfinItem): number | null {
+  const parentIndexNumber = item.ParentIndexNumber;
+
+  if (
+    typeof parentIndexNumber === "number" &&
+    Number.isFinite(parentIndexNumber)
+  ) {
+    return parentIndexNumber;
+  }
+
+  for (const text of getEpisodeCandidateTexts(item)) {
+    const parsedSeasonNumber = parseSeasonNumberFromText(text);
+
+    if (parsedSeasonNumber !== null) {
+      return parsedSeasonNumber;
+    }
+  }
+
+  return null;
+}
+
+function getNextEpisodeDebugPayload(
+  item: JellyfinItem,
+): Record<string, unknown> {
+  return {
+    id: item.Id,
+    name: item.Name,
+    type: item.Type,
+    seasonId: getEpisodeSeasonId(item),
+    seriesId: item.SeriesId ?? null,
+    indexNumber: item.IndexNumber ?? null,
+    parsedEpisodeNumber: getEpisodeIndexNumber(item),
+    parentIndexNumber: item.ParentIndexNumber ?? null,
+    parsedSeasonNumber: getEpisodeSeasonNumber(item),
+    candidateTexts: getEpisodeCandidateTexts(item),
+  };
+}
+
+function compareEpisodeOrder(left: JellyfinItem, right: JellyfinItem): number {
+  const leftIndex = getEpisodeIndexNumber(left);
+  const rightIndex = getEpisodeIndexNumber(right);
+
+  if (leftIndex !== null && rightIndex !== null && leftIndex !== rightIndex) {
+    return leftIndex - rightIndex;
+  }
+
+  if (leftIndex !== null && rightIndex === null) {
+    return -1;
+  }
+
+  if (leftIndex === null && rightIndex !== null) {
+    return 1;
+  }
+
+  const leftParentIndex = getEpisodeSeasonNumber(left);
+  const rightParentIndex = getEpisodeSeasonNumber(right);
+
+  if (
+    leftParentIndex !== null &&
+    rightParentIndex !== null &&
+    leftParentIndex !== rightParentIndex
+  ) {
+    return leftParentIndex - rightParentIndex;
+  }
+
+  if (leftParentIndex !== null && rightParentIndex === null) {
+    return -1;
+  }
+
+  if (leftParentIndex === null && rightParentIndex !== null) {
+    return 1;
+  }
+
+  return (left.SortName ?? left.Name).localeCompare(
+    right.SortName ?? right.Name,
+    undefined,
+    { numeric: true, sensitivity: "base" },
+  );
+}
+
+async function getEpisodesBySeasonParentId(
+  seasonId: string,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Items",
+    {
+      params: {
+        userId: session.userId,
+        parentId: seasonId,
+        recursive: false,
+        includeItemTypes: "Episode",
+        sortBy: "IndexNumber,SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+      },
+    },
+  );
+
+  return response.Items ?? [];
+}
+
+export async function getNextEpisodeInSeason(
+  currentEpisode: JellyfinItem,
+): Promise<JellyfinItem | null> {
+  if (currentEpisode.Type !== "Episode") {
+    console.debug(
+      "[Seyirlik Next Episode] Skipping next episode lookup for non-episode item",
+      getNextEpisodeDebugPayload(currentEpisode),
+    );
+    return null;
+  }
+
+  const seasonId = getEpisodeSeasonId(currentEpisode);
+  const currentIndexNumber = getEpisodeIndexNumber(currentEpisode);
+
+  if (!seasonId) {
+    console.debug(
+      "[Seyirlik Next Episode] Could not determine season id for current episode",
+      getNextEpisodeDebugPayload(currentEpisode),
+    );
+    return null;
+  }
+
+  if (currentIndexNumber === null) {
+    console.debug(
+      "[Seyirlik Next Episode] Could not determine episode number for current episode; continuing with ordered fallback",
+      getNextEpisodeDebugPayload(currentEpisode),
+    );
+  }
+
+  let episodes: JellyfinItem[] = [];
+
+  if (currentEpisode.SeriesId) {
+    try {
+      episodes = await getSeasonEpisodes(currentEpisode.SeriesId, seasonId);
+    } catch (error) {
+      console.warn(
+        "[Seyirlik Next Episode] Failed to get episodes by SeriesId",
+        error,
+      );
+    }
+  }
+
+  if (episodes.length === 0) {
+    try {
+      episodes = await getEpisodesBySeasonParentId(seasonId);
+    } catch (error) {
+      console.warn(
+        "[Seyirlik Next Episode] Failed to get episodes by SeasonParentId",
+        error,
+      );
+    }
+  }
+
+  const orderedEpisodes = episodes
+    .filter((episode) => {
+      const episodeSeasonId = getEpisodeSeasonId(episode);
+
+      return (
+        episode.Type === "Episode" &&
+        episode.Id !== currentEpisode.Id &&
+        (!episodeSeasonId ||
+          episodeSeasonId === seasonId ||
+          episodeSeasonId === currentEpisode.SeriesId)
+      );
+    })
+    .sort(compareEpisodeOrder);
+
+  let nextEpisode =
+    orderedEpisodes.find((episode) => {
+      const episodeIndexNumber = getEpisodeIndexNumber(episode);
+
+      return (
+        currentIndexNumber !== null &&
+        episodeIndexNumber !== null &&
+        episodeIndexNumber > currentIndexNumber
+      );
+    }) ?? null;
+
+  if (!nextEpisode && currentIndexNumber === null) {
+    const originalIndex = episodes.findIndex(
+      (episode) => episode.Id === currentEpisode.Id,
+    );
+
+    if (originalIndex >= 0) {
+      for (let index = originalIndex + 1; index < episodes.length; index += 1) {
+        const candidate = episodes[index];
+
+        if (
+          candidate?.Type === "Episode" &&
+          candidate.Id !== currentEpisode.Id
+        ) {
+          nextEpisode = candidate;
+          break;
+        }
+      }
+    }
+  }
+
+  console.debug(
+    nextEpisode
+      ? "[Seyirlik Next Episode] Found next episode in season"
+      : "[Seyirlik Next Episode] No next episode found in season",
+    {
+      currentEpisode: getNextEpisodeDebugPayload(currentEpisode),
+      fetchedEpisodeCount: episodes.length,
+      orderedCandidates: orderedEpisodes.map((episode) =>
+        getNextEpisodeDebugPayload(episode),
+      ),
+      selectedNextEpisode: nextEpisode
+        ? getNextEpisodeDebugPayload(nextEpisode)
+        : null,
+    },
+  );
+
+  return nextEpisode;
+}
+
 export async function getItem(itemId: string): Promise<JellyfinItem> {
   const session = requireAuthSession();
 
@@ -1108,15 +1406,16 @@ function isSafariBrowser(): boolean {
   const ua = navigator.userAgent;
 
   return (
-    /Safari/i.test(ua) &&
-    !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua)
+    /Safari/i.test(ua) && !/Chrome|Chromium|CriOS|Edg|OPR|Firefox/i.test(ua)
   );
 }
 
 function isAppleBrowser(): boolean {
   if (typeof navigator === "undefined") return false;
 
-  return isSafariBrowser() || /iPhone|iPad|Macintosh/i.test(navigator.userAgent);
+  return (
+    isSafariBrowser() || /iPhone|iPad|Macintosh/i.test(navigator.userAgent)
+  );
 }
 
 function getH264Avc1Codec(stream?: JellyfinMediaStream): string {
@@ -1555,11 +1854,12 @@ export function buildConfiguredHlsPlaybackSource(
   return {
     ...source,
     id: idParts.join("-"),
-    mode: shouldUseAudioTranscode || shouldForceTranscode
-      ? "Transcoding"
-      : source.mode === "DirectPlay"
-        ? "DirectStream"
-        : source.mode,
+    mode:
+      shouldUseAudioTranscode || shouldForceTranscode
+        ? "Transcoding"
+        : source.mode === "DirectPlay"
+          ? "DirectStream"
+          : source.mode,
     url,
     mimeType: "application/vnd.apple.mpegurl",
     isHls: true,
@@ -1688,8 +1988,7 @@ function isHlsUrl(
   playbackUrl: string,
   mediaSource?: JellyfinMediaSource,
 ): boolean {
-  const transcodingContainer =
-    mediaSource?.TranscodingContainer?.toLowerCase();
+  const transcodingContainer = mediaSource?.TranscodingContainer?.toLowerCase();
 
   return (
     playbackUrl.toLowerCase().includes(".m3u8") ||
@@ -1738,10 +2037,7 @@ function getPlaybackUrlType(candidate: PlaybackSourceCandidate): string {
     return "Direct stream URL";
   }
 
-  if (
-    url.includes("/master.m3u8") &&
-    candidate.hlsKind === "audio-transcode"
-  ) {
+  if (url.includes("/master.m3u8") && candidate.hlsKind === "audio-transcode") {
     return "master.m3u8 audio-transcode";
   }
 

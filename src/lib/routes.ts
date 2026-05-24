@@ -21,3 +21,7 @@ export function getRouteForItem(item: JellyfinItem): string {
 
   return `/item/${item.Id}`;
 }
+
+export function getWatchRouteForItem(item: JellyfinItem): string {
+  return `/watch/${encodeURIComponent(item.Id)}`;
+}
