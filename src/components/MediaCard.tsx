@@ -195,12 +195,12 @@ export function MediaCard({
   const sizeClass = isGrid
     ? "w-full"
     : isLandscape
-      ? "w-72 sm:w-80 lg:w-96"
-      : "w-44 sm:w-52 lg:w-60";
+      ? "w-60 sm:w-80 lg:w-96"
+      : "w-36 sm:w-52 lg:w-60";
 
   const panelClass = isGrid
-    ? "min-h-[5.9rem] transition-[transform,background-color] duration-500 group-hover:-translate-y-1.5 group-focus-within:-translate-y-1.5"
-    : "min-h-[5.9rem] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[10.5rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[10.5rem]";
+    ? "min-h-[4.8rem] transition-[transform,background-color] duration-500 group-hover:-translate-y-1.5 group-focus-within:-translate-y-1.5 sm:min-h-[5.9rem]"
+    : "min-h-[4.8rem] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[8.2rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[8.2rem] sm:min-h-[5.9rem] sm:group-hover:min-h-[10.5rem] sm:group-focus-within:min-h-[10.5rem]";
 
   const hoverMetaClass = isGrid
     ? "max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity,transform] duration-300 group-hover:max-h-16 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:max-h-16 group-focus-within:translate-y-0 group-focus-within:opacity-100"
@@ -272,7 +272,7 @@ export function MediaCard({
         </div>
 
         <div
-          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-3.5 shadow-soft-inset ${panelClass}`}
+          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-2.5 shadow-soft-inset sm:p-3.5 ${panelClass}`}
         >
           <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
             {canPlay && showPlayFromBeginning && progressPercent !== null ? (
@@ -302,10 +302,10 @@ export function MediaCard({
               <img
                 src={logoUrl}
                 alt={title}
-                className="mx-auto h-auto max-h-28 w-auto object-contain object-left"
+                className="mx-auto h-auto max-h-16 w-auto object-contain object-left sm:max-h-28"
               />
             ) : (
-              <h3 className="h-8 w-full truncate text-sm font-bold leading-8 text-white">
+              <h3 className="h-7 w-full truncate text-xs font-bold leading-7 text-white sm:h-8 sm:text-sm sm:leading-8">
                 {title}
               </h3>
             )}
@@ -313,12 +313,12 @@ export function MediaCard({
 
           <div className="mt-auto pt-3">
             {countLabel ? (
-              <p className="h-5 truncate text-sm font-bold leading-5 text-white">
+              <p className="h-5 truncate text-xs font-bold leading-5 text-white sm:text-sm">
                 {countLabel}
               </p>
             ) : (
               <h3
-                className={`h-5 truncate text-sm font-bold leading-5 ${
+                className={`h-5 truncate text-xs font-bold leading-5 sm:text-sm ${
                   secondaryLabel ? "text-white" : "text-transparent"
                 }`}
                 aria-hidden={!secondaryLabel}
@@ -328,7 +328,7 @@ export function MediaCard({
             )}
 
             {subtitle ? (
-              <p className="mt-1 h-4 truncate text-xs font-medium leading-4 text-white/50">
+              <p className="mt-0.5 h-4 truncate text-[0.68rem] font-medium leading-4 text-white/50 sm:mt-1 sm:text-xs">
                 {subtitle}
               </p>
             ) : (

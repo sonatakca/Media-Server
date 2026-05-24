@@ -97,9 +97,9 @@ export function MediaRow({
   };
 
   return (
-    <MotionReveal className="py-6" direction="up">
+    <MotionReveal className="py-4 sm:py-6" direction="up">
       <div className="mb-0 flex items-end justify-between gap-4">
-        <h2 className="text-xl font-black text-white sm:text-2xl">
+        <h2 className="text-lg font-black text-white sm:text-2xl">
           <AnimatedWidth value={title}>
             <AnimatedText value={title} />
           </AnimatedWidth>
@@ -124,7 +124,7 @@ export function MediaRow({
           <div
             ref={scrollerRef}
             onScroll={updateScrollState}
-            className="media-scroll relative z-10 flex snap-x gap-5 overflow-x-auto overflow-y-visible pb-8 pt-6"
+            className="media-scroll relative z-10 flex snap-x gap-3 overflow-x-auto overflow-y-visible pb-6 pt-4 sm:gap-5 sm:pb-8 sm:pt-6"
           >
             {items.map((item, index) => (
               <div key={item.Id} className="snap-start">

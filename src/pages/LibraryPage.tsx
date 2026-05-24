@@ -496,56 +496,52 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
 
   return (
     <div>
-      <div className="relative mb-3 grid min-h-20 grid-cols-[auto_1fr_auto] items-end gap-4">
-        <div className="justify-self-start pb-1">
-          <BackButton />
+      <div className="relative mb-4 flex flex-col gap-3 sm:grid sm:min-h-20 sm:grid-cols-[auto_1fr_auto] sm:items-end sm:gap-4">
+        <div className="order-2 flex items-center justify-between gap-3 sm:order-none sm:block sm:justify-self-start sm:pb-1">
+          <BackButton className="min-h-9 px-3 text-xs sm:min-h-10 sm:px-4 sm:text-sm" />
+          <p className="min-w-0 truncate text-right text-xs font-bold text-white/[0.62] sm:hidden">
+            <AnimatedWidth value={headerCountLabel}>
+              <AnimatedText value={headerCountLabel} />
+            </AnimatedWidth>
+          </p>
         </div>
 
         <MotionReveal
-          className="flex min-w-0 justify-center px-2"
+          className="order-1 flex min-w-0 justify-center px-2 sm:order-none"
           direction="up"
           delay={0.02}
         >
           {activeLibraryLogoUrl && seasonHeaderLabel ? (
-            <div className="relative flex min-h-[5rem] w-full min-w-0 items-center justify-center sm:min-h-[5.5rem]">
+            <div className="flex min-h-[3.4rem] w-full min-w-0 items-center justify-center gap-2.5 sm:min-h-[5.5rem] sm:gap-4">
               <motion.img
                 src={activeLibraryLogoUrl}
                 alt={displayLibraryTitle}
                 draggable={false}
-                className="cinematic-logo-shadow absolute left-1/2 z-30 h-auto max-h-[4.6rem] max-w-[min(18rem,40vw)] -translate-x-1/2 transform-gpu object-contain will-change-transform sm:max-h-20"
+                className="cinematic-logo-shadow z-30 h-auto max-h-10 max-w-[min(10rem,42vw)] transform-gpu object-contain will-change-transform sm:max-h-20 sm:max-w-[min(18rem,40vw)]"
                 initial={{
                   opacity: 0,
-                  x: "-50%",
                   scale: 0.98,
                 }}
                 animate={{
                   opacity: 1,
-                  x: "calc(-50% - 7.45rem)",
                   scale: 1,
                 }}
                 transition={{
                   opacity: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
                   scale: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
-                  x: {
-                    duration: 1.05,
-                    delay: 1.15,
-                    ease: [0.16, 1, 0.3, 1],
-                  },
                 }}
               />
 
               <motion.div
                 aria-hidden="true"
-                className="absolute left-1/2 z-10 h-12 w-px shrink-0 origin-center bg-gradient-to-b from-transparent via-white/24 to-transparent will-change-transform sm:h-14"
+                className="z-10 h-10 w-px shrink-0 origin-center bg-gradient-to-b from-transparent via-white/24 to-transparent will-change-transform sm:h-14"
                 initial={{
                   opacity: 0,
                   scaleY: 0.55,
-                  x: "1.75rem",
                 }}
                 animate={{
                   opacity: 1,
                   scaleY: 1,
-                  x: "1.85rem",
                 }}
                 transition={{
                   duration: 0.78,
@@ -555,16 +551,14 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
               />
 
               <motion.div
-                className="group/season-label absolute left-1/2 z-20 transform-gpu overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset will-change-[transform,opacity,filter] sm:px-5 sm:py-3"
+                className="group/season-label z-20 max-w-[44vw] transform-gpu overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset will-change-[transform,opacity,filter] sm:max-w-none sm:rounded-2xl sm:px-5 sm:py-3"
                 initial={{
                   opacity: 0,
-                  x: "1.55rem",
                   scale: 0.975,
                   filter: "blur(6px)",
                 }}
                 animate={{
                   opacity: 1,
-                  x: "2.55rem",
                   scale: 1,
                   filter: "blur(0px)",
                 }}
@@ -577,7 +571,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
                 <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
 
                 <div className="relative flex items-center">
-                  <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                  <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
                     <AnimatedWidth value={seasonHeaderLabel}>
                       <AnimatedText value={seasonHeaderLabel} />
                     </AnimatedWidth>
@@ -591,7 +585,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
               src={activeLibraryLogoUrl}
               alt={displayLibraryTitle}
               draggable={false}
-              className="cinematic-logo-shadow h-auto max-h-20 max-w-[min(26rem,58vw)] object-contain"
+              className="cinematic-logo-shadow h-auto max-h-12 max-w-[min(14rem,64vw)] object-contain sm:max-h-20 sm:max-w-[min(26rem,58vw)]"
               initial={
                 hasFinishedLogoIntroSweep
                   ? { opacity: 0, y: 6, scale: 1.2, filter: "blur(0px)" }
@@ -604,7 +598,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
               }}
             />
           ) : (
-            <h1 className="text-center text-4xl font-black leading-none text-white sm:text-5xl">
+            <h1 className="text-center text-3xl font-black leading-none text-white sm:text-5xl">
               <AnimatedWidth value={displayLibraryTitle}>
                 <AnimatedText value={displayLibraryTitle} />
               </AnimatedWidth>
@@ -612,7 +606,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
           )}
         </MotionReveal>
 
-        <p className="justify-self-end pb-2 text-right text-sm font-bold text-white/[0.62]">
+        <p className="hidden justify-self-end pb-2 text-right text-sm font-bold text-white/[0.62] sm:block">
           <AnimatedWidth value={headerCountLabel}>
             <AnimatedText value={headerCountLabel} />
           </AnimatedWidth>
@@ -620,7 +614,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
       </div>
 
       <MotionReveal
-        className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"
+        className="mb-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"
         delay={0.04}
       >
         <label className="relative flex-1">
@@ -655,7 +649,7 @@ export function LibraryPage({ mode = "library" }: LibraryPageProps) {
       </MotionReveal>
 
       {filteredItems.length > 0 ? (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
           {filteredItems.map((item, index) => (
             <MediaCard
               key={item.Id}

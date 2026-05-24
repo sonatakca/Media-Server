@@ -95,6 +95,7 @@ export function HeroSection({
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
+  const [isCompactHeroViewport, setIsCompactHeroViewport] = useState(false);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const mediaFormatLabels = useMemo(
     () => ({
@@ -156,7 +157,7 @@ export function HeroSection({
     <motion.div
       layout
       data-hero-carousel-indicators
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))] z-[99999] flex justify-center px-4"
+      className="pointer-events-none fixed inset-x-0 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] z-[99999] flex justify-center px-3 sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))] sm:px-4"
       initial={{
         opacity: 0,
         y: shouldReduceMotion ? 0 : "140%",
@@ -176,7 +177,7 @@ export function HeroSection({
       }}
     >
       <div
-        className="pointer-events-auto rounded-full border border-white/25 bg-black/80 p-1.5 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl"
+        className="pointer-events-auto max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:max-w-[calc(100vw-2rem)] sm:p-1.5"
         style={{ pointerEvents: showHeroIndicators ? "auto" : "none" }}
       >
         <TimedCarouselIndicators
@@ -197,6 +198,19 @@ export function HeroSection({
   useEffect(() => {
     setFailedImageUrls([]);
   }, [item?.Id]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 640px)");
+    const updateCompactViewport = () =>
+      setIsCompactHeroViewport(mediaQuery.matches);
+
+    updateCompactViewport();
+    mediaQuery.addEventListener("change", updateCompactViewport);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateCompactViewport);
+    };
+  }, []);
 
   useEffect(() => {
     setIsHeroIntroDone(false);
@@ -355,7 +369,7 @@ export function HeroSection({
     <>
       <section
         ref={heroSectionRef}
-        className="relative mb-0 min-h-screen w-full overflow-hidden bg-zinc-950"
+        className="seyirlik-hero-section relative mb-0 min-h-[min(100svh,44rem)] w-full overflow-hidden bg-zinc-950 sm:min-h-screen"
       >
         <div className="absolute inset-0 z-0 bg-[linear-gradient(145deg,#18181b_0%,#09090b_52%,#050506_100%)]" />
         <AnimatePresence initial>
@@ -364,7 +378,7 @@ export function HeroSection({
               key={selectedImage.url}
               src={selectedImage.url}
               alt=""
-              className={`absolute inset-0 z-0 h-full w-full object-cover ${
+              className={`seyirlik-hero-artwork absolute inset-0 z-0 h-full w-full object-cover ${
                 selectedImage.type === "primary" ? "blur-2xl" : ""
               }`}
               initial={{
@@ -425,7 +439,7 @@ export function HeroSection({
         />
         <div className="hero-bottom-fade z-10" />
 
-        <div className="relative z-20 mx-auto flex min-h-screen w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(3rem,8vh,6rem)] pt-28 sm:px-6 lg:px-8">
+        <div className="seyirlik-hero-content relative z-20 mx-auto flex min-h-[min(100svh,44rem)] w-full max-w-[1600px] flex-col justify-end px-4 pb-[calc(6.75rem+env(safe-area-inset-bottom))] pt-20 sm:min-h-screen sm:px-6 sm:pb-[clamp(3rem,8vh,6rem)] sm:pt-28 lg:px-8">
           {showSidePoster ? (
             <motion.div
               className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
@@ -452,7 +466,7 @@ export function HeroSection({
           <AnimatePresence mode="wait" initial>
             <motion.div
               key={contentKey}
-              className="max-w-3xl"
+              className="max-w-[min(32rem,88vw)] sm:max-w-3xl"
               initial={{
                 opacity: 0,
                 y: shouldReduceMotion ? 0 : 28,
@@ -485,7 +499,7 @@ export function HeroSection({
                   src={logoUrl}
                   alt={title}
                   draggable={false}
-                  className="cinematic-logo-shadow h-[clamp(8rem,18vw,18rem)] max-w-[min(44rem,72vw)] origin-left select-none object-contain object-left"
+                  className="cinematic-logo-shadow h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] origin-left select-none object-contain object-left sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)]"
                   initial={{
                     opacity: 0,
                     y: shouldReduceMotion ? 0 : 20,
@@ -493,10 +507,18 @@ export function HeroSection({
                   }}
                   animate={{
                     opacity: heroContentVisible ? 1 : 0,
-                    y: heroContentVisible ? (isHeroIntroDone ? 180 : 0) : 14,
+                    y: heroContentVisible
+                      ? isHeroIntroDone
+                        ? isCompactHeroViewport
+                          ? 72
+                          : 180
+                        : 0
+                      : 14,
                     scale: heroContentVisible
                       ? isHeroIntroDone
-                        ? 0.68
+                        ? isCompactHeroViewport
+                          ? 0.74
+                          : 0.68
                         : 1
                       : 0.985,
                   }}
@@ -512,7 +534,7 @@ export function HeroSection({
                 />
               ) : (
                 <motion.h1
-                  className="text-cinematic-title max-w-3xl origin-left text-5xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
+                  className="text-cinematic-title max-w-3xl origin-left text-4xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
                   initial={{
                     opacity: 0,
                     y: shouldReduceMotion ? 0 : 20,
@@ -520,7 +542,13 @@ export function HeroSection({
                   }}
                   animate={{
                     opacity: heroContentVisible ? 1 : 0,
-                    y: heroContentVisible ? (isHeroIntroDone ? 64 : 0) : 14,
+                    y: heroContentVisible
+                      ? isHeroIntroDone
+                        ? isCompactHeroViewport
+                          ? 42
+                          : 64
+                        : 0
+                      : 14,
                     scale: heroContentVisible
                       ? isHeroIntroDone
                         ? 0.78
@@ -542,7 +570,7 @@ export function HeroSection({
               )}
               {item?.Overview ? (
                 <motion.p
-                  className="mt-5 line-clamp-3 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+                  className="mt-3 line-clamp-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
                   initial={false}
                   animate={{
                     opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
@@ -569,7 +597,7 @@ export function HeroSection({
                 </motion.p>
               ) : (
                 <motion.p
-                  className="mt-5 max-w-2xl text-base leading-7 text-white/[0.76] sm:text-lg"
+                  className="mt-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
                   initial={false}
                   animate={{
                     opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
@@ -614,7 +642,7 @@ export function HeroSection({
               ) : null}
               {metadata.length > 0 ? (
                 <motion.div
-                  className="mt-5 flex flex-wrap gap-2"
+                  className="mt-4 flex flex-wrap gap-1.5 sm:mt-5 sm:gap-2"
                   initial={false}
                   animate={{
                     opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
@@ -636,7 +664,7 @@ export function HeroSection({
                   {metadata.map((value) => (
                     <span
                       key={String(value)}
-                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/[0.82] backdrop-blur"
+                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-2.5 py-1 text-xs font-semibold text-white/[0.82] backdrop-blur sm:px-3 sm:py-1.5 sm:text-sm"
                     >
                       {value}
                     </span>
@@ -644,7 +672,7 @@ export function HeroSection({
                   {item?.Genres?.slice(0, 3).map((genre) => (
                     <span
                       key={genre}
-                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-3 py-1.5 text-sm font-semibold text-white/70 backdrop-blur"
+                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-2.5 py-1 text-xs font-semibold text-white/70 backdrop-blur sm:px-3 sm:py-1.5 sm:text-sm"
                     >
                       {genre}
                     </span>
@@ -652,7 +680,7 @@ export function HeroSection({
                 </motion.div>
               ) : null}
               <motion.div
-                className="mt-7 flex flex-wrap gap-3"
+                className="mt-5 flex flex-wrap gap-2.5 sm:mt-7 sm:gap-3"
                 initial={false}
                 animate={{
                   opacity: heroContentVisible ? 1 : 0,
@@ -673,7 +701,7 @@ export function HeroSection({
                     {canPlay ? (
                       <ButtonLink
                         to={`/watch/${item.Id}`}
-                        className="min-h-12 rounded-full px-6 text-base shadow-button-glow"
+                        className="min-h-10 rounded-full px-4 text-sm shadow-button-glow sm:min-h-12 sm:px-6 sm:text-base"
                       >
                         <Play size={20} fill="currentColor" />
                         <AnimatedWidth value={t("common.play")}>
@@ -684,7 +712,7 @@ export function HeroSection({
                     <ButtonLink
                       to={getRouteForItem(item)}
                       variant="secondary"
-                      className="min-h-12 rounded-full px-6 text-base backdrop-blur"
+                      className="min-h-10 rounded-full px-4 text-sm backdrop-blur sm:min-h-12 sm:px-6 sm:text-base"
                     >
                       <Info size={20} />
                       <AnimatedWidth value={t("common.details")}>

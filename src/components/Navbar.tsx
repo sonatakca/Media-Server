@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { LogOut, Palette, Server, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import appIcon from "../assets/AppIcon2.png";
 import logoOnSide from "../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../i18n/LanguageContext";
 import { clearAuthSession, getAuthSession } from "../lib/authStorage";
@@ -16,7 +15,6 @@ export function Navbar() {
   const session = getAuthSession();
   const { t } = useLanguage();
   const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);
-  const [iconFailed, setIconFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [libraryRoutes, setLibraryRoutes] = useState({
     movies: "/movies",
@@ -123,40 +121,19 @@ export function Navbar() {
           : "duration-500 border-b border-transparent bg-transparent shadow-none backdrop-blur-0"
       }`}
     >
-      <nav className="mx-auto flex h-20 w-full max-w-[1600px] items-center gap-8 px-4 sm:px-6 lg:px-8">
+      <nav className="mx-auto flex h-16 w-full max-w-[1600px] items-center gap-3 px-4 sm:h-20 sm:gap-8 sm:px-6 lg:px-8">
         <Link
           to="/home"
-          className="flex min-w-0 shrink-0 items-center gap-3"
+          className="flex min-w-0 shrink-0 items-center"
           aria-label={t("nav.brandHome")}
         >
-          <span className="flex min-w-0 items-center gap-3 md:hidden">
-            {!iconFailed ? (
-              <img
-                src={appIcon}
-                alt="Seyirlik"
-                draggable={false}
-                className="h-10 w-10 shrink-0 rounded-xl object-cover shadow-cinematic-card"
-                onError={() => setIconFailed(true)}
-              />
-            ) : (
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-cinematic-card">
-                S
-              </span>
-            )}
-            {iconFailed ? (
-              <span className="text-base font-black tracking-wide text-white">
-                Seyirlik
-              </span>
-            ) : null}
-          </span>
-
-          <span className="hidden h-12 w-[10.5rem] shrink-0 items-center md:flex lg:w-[11.5rem]">
+          <span className="flex h-10 w-[6.25rem] shrink-0 items-center max-[360px]:w-[5.65rem] sm:h-12 sm:w-[10.5rem] lg:w-[11.5rem]">
             {!desktopLogoFailed ? (
               <img
                 src={logoOnSide}
                 alt="Seyirlik"
                 draggable={false}
-                className="h-11 w-full object-contain object-left"
+                className="h-8 w-full object-contain object-left sm:h-11"
                 onError={() => setDesktopLogoFailed(true)}
               />
             ) : (
@@ -218,7 +195,7 @@ export function Navbar() {
 
           <NavLink
             to="/server"
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+            className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
           >
             <Server size={18} className="shrink-0" />
           </NavLink>
@@ -228,7 +205,7 @@ export function Navbar() {
             onClick={handleThemeChange}
             aria-label={t("nav.changeTheme")}
             title={t("nav.changeTheme")}
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+            className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
           >
             <Palette size={18} className="shrink-0" />
           </button>
@@ -247,7 +224,7 @@ export function Navbar() {
                 onClick={handleLogout}
                 aria-label={t("nav.logout")}
                 title={t("nav.logout")}
-                className="inline-flex min-h-10 w-10 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black"
+                className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
               >
                 <LogOut size={17} className="shrink-0" />
               </button>

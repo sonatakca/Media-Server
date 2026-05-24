@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Pause, Play } from "lucide-react";
 
@@ -33,8 +34,22 @@ export function TimedCarouselIndicators({
   showPauseButton = false,
 }: TimedCarouselIndicatorsProps) {
   const shouldReduceMotion = Boolean(useReducedMotion());
+  const [isCompactViewport, setIsCompactViewport] = useState(false);
   // The carousel owner controls autoplay timing; paused/reduced-motion states use a settled fill instead of tracking fractional progress here.
   const showSettledProgress = isPaused || shouldReduceMotion;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 640px)");
+    const updateCompactViewport = () =>
+      setIsCompactViewport(mediaQuery.matches);
+
+    updateCompactViewport();
+    mediaQuery.addEventListener("change", updateCompactViewport);
+
+    return () => {
+      mediaQuery.removeEventListener("change", updateCompactViewport);
+    };
+  }, []);
 
   if (count <= 1) {
     return null;
@@ -48,6 +63,8 @@ export function TimedCarouselIndicators({
   const softSpringTransition = shouldReduceMotion
     ? { duration: 0 }
     : { type: "spring" as const, stiffness: 360, damping: 32, mass: 0.78 };
+  const activeButtonWidth = isCompactViewport ? 34 : 48;
+  const inactiveButtonWidth = isCompactViewport ? 17 : 24;
 
   return (
     <motion.div
@@ -57,7 +74,7 @@ export function TimedCarouselIndicators({
     >
       <motion.div
         layout
-        className="media-scroll relative flex h-10 max-w-full origin-center items-center gap-2.5 overflow-x-auto overscroll-x-contain rounded-full border border-white/[0.10] bg-white/[0.14] px-3.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl sm:h-11 sm:px-4"
+        className="media-scroll relative flex h-9 max-w-full origin-center items-center gap-1.5 overflow-x-auto overscroll-x-contain rounded-full border border-white/[0.10] bg-white/[0.14] px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl sm:h-11 sm:gap-2.5 sm:px-4"
         initial={
           shouldReduceMotion
             ? { opacity: 1 }
@@ -86,7 +103,7 @@ export function TimedCarouselIndicators({
               type="button"
               aria-label={`Go to slide ${index + 1}`}
               aria-current={isActive ? "true" : undefined}
-              className="group relative flex h-7 shrink-0 items-center justify-center rounded-full px-1 outline-none ring-white/70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              className="group relative flex h-6 shrink-0 items-center justify-center rounded-full px-0.5 outline-none ring-white/70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-7 sm:px-1"
               initial={
                 shouldReduceMotion
                   ? false
@@ -99,7 +116,7 @@ export function TimedCarouselIndicators({
                     }
               }
               animate={{
-                width: isActive ? 48 : 24,
+                width: isActive ? activeButtonWidth : inactiveButtonWidth,
                 opacity: isActive ? 1 : 0.82,
                 scale: 1,
                 x: 0,
@@ -136,7 +153,9 @@ export function TimedCarouselIndicators({
                 layout
                 className={classNames(
                   "relative block h-[7px] bg-gray-500 overflow-hidden rounded-full transition-colors duration-200 group-hover:bg-white/[1]",
-                  isActive ? "w-10 bg-white/[0.28]" : "w-[7px] bg-white/[0.44]",
+                  isActive
+                    ? "w-8 bg-white/[0.28] sm:w-10"
+                    : "w-[6px] bg-white/[0.44] sm:w-[7px]",
                 )}
                 transition={softSpringTransition}
               >
@@ -175,7 +194,7 @@ export function TimedCarouselIndicators({
         <motion.button
           type="button"
           aria-label={isPaused ? "Resume carousel" : "Pause carousel"}
-          className="ml-3 flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition-colors hover:bg-white/[0.20] hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-11 sm:w-11"
+          className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition-colors hover:bg-white/[0.20] hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11"
           initial={
             shouldReduceMotion
               ? { opacity: 1 }

@@ -39,7 +39,7 @@ export function LanguageSwitch() {
           ? t("nav.language.ariaToTurkish")
           : t("nav.language.ariaToEnglish")
       }
-      className="inline-flex max-h-10 max-w-10 aspect-square items-center justify-center rounded-full border border-white/10 bg-transparent p-0 text-sm font-semibold text-white/[0.90] transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+      className="inline-flex max-h-9 max-w-9 aspect-square items-center justify-center rounded-full border border-white/10 bg-transparent p-0 text-sm font-semibold text-white/[0.90] transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:max-h-10 sm:max-w-10"
     >
       <span className="grid w-[54px] items-center justify-center gap-2">
         <span
