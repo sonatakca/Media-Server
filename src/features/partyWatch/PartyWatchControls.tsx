@@ -61,7 +61,7 @@ export function PartyWatchControls({
 
   return (
     <section
-      className={`w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[rgba(12,13,15,0.82)] p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
+      className={`seyirlik-party-panel w-[min(22rem,calc(100vw-2rem))] rounded-lg border border-white/10 bg-[rgba(12,13,15,0.82)] p-3 text-white shadow-[0_18px_80px_rgba(0,0,0,0.48)] backdrop-blur-xl transition duration-300 ${
         visible || controller.isInGroup
           ? "translate-y-0 opacity-100"
           : "-translate-y-2 opacity-0"
@@ -177,7 +177,7 @@ export function PartyWatchControls({
             </AnimatedWidth>
           </button>
 
-          <div className="grid grid-cols-[1fr_auto] gap-2">
+          <div className="seyirlik-party-join-row grid grid-cols-[1fr_auto] gap-2">
             <input
               value={controller.joinInput}
               onChange={(event) => controller.setJoinInput(event.target.value)}

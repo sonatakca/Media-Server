@@ -201,9 +201,9 @@ export function PlaybackInfoPanel({
   const unknownLabel = t("common.unknown");
 
   return (
-    <div className="fixed inset-0 z-[80] flex items-end justify-center bg-black/62 p-0 backdrop-blur-sm sm:items-center sm:p-4">
-      <div className="max-h-[88svh] w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[linear-gradient(145deg,rgba(24,24,27,0.96),rgba(5,5,5,0.96))] shadow-[0_30px_140px_rgba(0,0,0,0.78)] sm:max-w-3xl sm:rounded-3xl">
-        <div className="flex items-center justify-between border-b border-white/10 px-5 py-4">
+    <div className="seyirlik-player-info-overlay fixed inset-0 z-[80] flex items-end justify-center bg-black/62 p-0 backdrop-blur-sm sm:items-center sm:p-4">
+      <div className="seyirlik-player-info-dialog max-h-[88svh] w-full overflow-hidden rounded-t-3xl border border-white/10 bg-[linear-gradient(145deg,rgba(24,24,27,0.96),rgba(5,5,5,0.96))] shadow-[0_30px_140px_rgba(0,0,0,0.78)] sm:max-w-3xl sm:rounded-3xl">
+        <div className="seyirlik-player-info-header flex items-center justify-between border-b border-white/10 px-5 py-4">
           <div>
             <p className="text-xs font-bold uppercase tracking-[0.22em] text-[var(--accent)]">
               {t("playback.details")}
@@ -222,7 +222,7 @@ export function PlaybackInfoPanel({
           </button>
         </div>
 
-        <div className="max-h-[calc(88svh-5rem)] overflow-y-auto px-5 py-5">
+        <div className="seyirlik-player-info-body max-h-[calc(88svh-5rem)] overflow-y-auto px-5 py-5">
           <section>
             <h3 className="text-sm font-black uppercase tracking-[0.18em] text-white/58">
               {t("playback.section.playback")}

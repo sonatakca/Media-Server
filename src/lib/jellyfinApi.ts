@@ -47,6 +47,9 @@ interface RequestOptions {
   keepalive?: boolean;
 }
 
+export const JELLYFIN_SERVER_UNAVAILABLE_EVENT =
+  "seyirlik:jellyfin-server-unavailable";
+
 class JellyfinRequestError extends Error {
   status: number;
   statusText: string;
@@ -246,12 +249,22 @@ async function requestJson<TResponse>(
     headers["X-Emby-Authorization"] = deviceAuthorization;
   }
 
-  const response = await fetch(url, {
-    method,
-    headers,
-    body: body === undefined ? undefined : JSON.stringify(body),
-    keepalive,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(url, {
+      method,
+      headers,
+      body: body === undefined ? undefined : JSON.stringify(body),
+      keepalive,
+    });
+  } catch (error) {
+    if (!serverUrlOverride && typeof window !== "undefined") {
+      window.dispatchEvent(new Event(JELLYFIN_SERVER_UNAVAILABLE_EVENT));
+    }
+
+    throw error;
+  }
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);

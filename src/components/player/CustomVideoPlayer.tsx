@@ -4,20 +4,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
   type PointerEvent,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import {
-  Bookmark,
-  ChevronsRight,
-  Eye,
-  EyeOff,
-  RotateCw,
-  Smartphone,
-  Users,
-  X,
-} from "lucide-react";
+import { Bookmark, ChevronsRight, Eye, EyeOff, Users, X } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
@@ -126,6 +118,22 @@ interface SeekFeedbackItem {
 interface SeekFeedbackState {
   backward: SeekFeedbackItem;
   forward: SeekFeedbackItem;
+}
+
+type PortraitPlayerRotation = -90 | 90;
+
+function readPortraitPlayerRotation(): PortraitPlayerRotation {
+  if (typeof window === "undefined") {
+    return 90;
+  }
+
+  const deprecatedWindowOrientation = (
+    window as Window & { orientation?: number }
+  ).orientation;
+  const orientationAngle =
+    window.screen.orientation?.angle ?? deprecatedWindowOrientation ?? 0;
+
+  return Math.abs(orientationAngle) === 180 ? -90 : 90;
 }
 
 interface SubtitleResizeState {
@@ -1080,6 +1088,31 @@ export function CustomVideoPlayer({
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
   const shouldReduceMotion = Boolean(useReducedMotion());
+  const [portraitPlayerRotation, setPortraitPlayerRotation] =
+    useState<PortraitPlayerRotation>(() => readPortraitPlayerRotation());
+
+  useEffect(() => {
+    const updatePortraitPlayerRotation = () => {
+      setPortraitPlayerRotation(readPortraitPlayerRotation());
+    };
+    const screenOrientation = window.screen.orientation;
+
+    updatePortraitPlayerRotation();
+    window.addEventListener("orientationchange", updatePortraitPlayerRotation);
+    screenOrientation?.addEventListener("change", updatePortraitPlayerRotation);
+
+    return () => {
+      window.removeEventListener(
+        "orientationchange",
+        updatePortraitPlayerRotation,
+      );
+      screenOrientation?.removeEventListener(
+        "change",
+        updatePortraitPlayerRotation,
+      );
+    };
+  }, []);
+
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
@@ -3828,13 +3861,33 @@ export function CustomVideoPlayer({
       isWaitingForAudioTranscodeReady ||
       fullscreenSeekPreview !== null) &&
     !error;
+  const isCompactPhonePlayer =
+    Math.min(viewport.width, viewport.height) <= 520 &&
+    Math.max(viewport.width, viewport.height) <= 980;
+  const shouldRotatePortraitPlayer =
+    viewport.isPortrait && isCompactPhonePlayer;
+  const seekPointerAxis = shouldRotatePortraitPlayer
+    ? portraitPlayerRotation === 90
+      ? "vertical-forward"
+      : "vertical-reverse"
+    : "horizontal";
+  const portraitPlayerStyle = shouldRotatePortraitPlayer
+    ? ({
+        "--seyirlik-player-rotation": `${portraitPlayerRotation}deg`,
+      } as CSSProperties)
+    : undefined;
 
   return (
     <div
       ref={containerRef}
-      className={`seyirlik-player-shell fixed inset-0 z-50 min-h-0 overflow-hidden bg-black text-white ${
+      className={`seyirlik-player-shell ${
+        shouldRotatePortraitPlayer
+          ? "seyirlik-player-shell--rotated-portrait"
+          : "fixed inset-0"
+      } ${isCompactPhonePlayer ? "seyirlik-player-shell--phone" : ""} z-50 min-h-0 overflow-hidden bg-black text-white ${
         shouldShowPlayerCursor ? "cursor-default" : "cursor-none"
       }`}
+      style={portraitPlayerStyle}
       onMouseMove={handlePlayerMouseMove}
       onPointerUp={(event) => {
         handlePointerUp(event);
@@ -3913,37 +3966,14 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {viewport.isPhoneViewport && viewport.isPortrait ? (
-        <div className="pointer-events-none absolute inset-0 z-[65] flex items-center justify-center bg-[rgba(5,6,7,0.82)] px-6 text-center backdrop-blur-xl">
-          <div className="panel-top-highlight max-w-sm rounded-2xl border border-white/10 bg-[var(--surface)] p-5 shadow-floating-panel">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--accent)]/35 bg-[var(--accent-soft)] text-[var(--accent)]">
-              <div className="relative">
-                <Smartphone size={30} />
-                <RotateCw
-                  className="absolute -right-5 -top-4 animate-[spin_4s_linear_infinite] text-[var(--accent-hover)] motion-reduce:animate-none"
-                  size={19}
-                />
-              </div>
-            </div>
-            <h2 className="mt-4 text-xl font-black text-white">
-              {t("player.rotateTitle")}
-            </h2>
-            <p className="mt-2 text-sm font-semibold leading-6 text-white/72">
-              {t("player.rotateMessage")}
-            </p>
-            <p className="mt-3 text-xs font-medium text-white/45">
-              {t("player.rotateHint")}
-            </p>
-          </div>
-        </div>
-      ) : null}
-
       {subtitleLines.length > 0 ? (
         <div
           ref={subtitleOverlayRef}
           data-subtitle-editor-root
           className={`seyirlik-subtitle-overlay absolute z-[24] ${
-            subtitlePosition ? "" : "bottom-[12%] left-1/2"
+            subtitlePosition
+              ? ""
+              : "seyirlik-subtitle-overlay--default bottom-[12%] left-1/2"
           } ${isSubtitleEditMode ? (isDraggingSubtitle ? "cursor-grabbing" : "cursor-grab") : "cursor-default"} ${
             isShowingSubtitlePlaceholder
               ? "seyirlik-subtitle-overlay--placeholder"
@@ -4042,10 +4072,10 @@ export function CustomVideoPlayer({
             seekFeedback={seekFeedback}
             topRightControls={
               <div
-                className="relative flex flex-col items-end gap-3"
+                className="seyirlik-player-top-actions relative flex flex-col items-end gap-3"
                 data-party-watch-root
               >
-                <div className="flex items-center gap-2">
+                <div className="seyirlik-player-top-actions-row flex items-center gap-2">
                   <button
                     type="button"
                     onClick={enterViewMode}
@@ -4125,7 +4155,7 @@ export function CustomVideoPlayer({
 
                 {isPartyWatchOpen ? (
                   <div
-                    className="absolute right-0 top-full mt-3"
+                    className="seyirlik-party-panel-anchor absolute right-0 top-full mt-3"
                     data-party-watch-root
                   >
                     <PartyWatchControls controller={partyWatch} visible />
@@ -4145,9 +4175,9 @@ export function CustomVideoPlayer({
           />
 
           <AnimatePresence initial={false}>
-            {(shouldShowDefaultNextEpisodeCountdown &&
-              nextEpisode &&
-              defaultNextEpisodeCountdownSeconds !== null) ? (
+            {shouldShowDefaultNextEpisodeCountdown &&
+            nextEpisode &&
+            defaultNextEpisodeCountdownSeconds !== null ? (
               <NextEpisodeCountdownOverlay
                 key={`${item.Id}-${nextEpisode.Id}`}
                 nextEpisode={nextEpisode}
@@ -4172,6 +4202,9 @@ export function CustomVideoPlayer({
             onControlsHoverStart={keepControlsVisible}
             onControlsHoverEnd={releaseControlsHover}
             seekPreviewLoading={fullscreenSeekPreview !== null}
+            seekPointerAxis={seekPointerAxis}
+            compactSeekPreview={isCompactPhonePlayer}
+            compactLayout={isCompactPhonePlayer}
             currentTime={progress.currentTime}
             duration={progress.duration}
             bufferedEnd={progress.bufferedEnd}

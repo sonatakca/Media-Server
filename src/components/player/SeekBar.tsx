@@ -17,7 +17,14 @@ interface SeekBarProps {
   checkpointSeconds?: number | null;
   onSeek: (seconds: number) => void;
   onSeekPreview?: (seconds: number) => void;
+  pointerAxis?: SeekPointerAxis;
+  compactPreview?: boolean;
 }
+
+export type SeekPointerAxis =
+  | "horizontal"
+  | "vertical-forward"
+  | "vertical-reverse";
 
 interface HoverPreviewState {
   isVisible: boolean;
@@ -94,13 +101,15 @@ export function SeekBar({
   checkpointSeconds = null,
   onSeek,
   onSeekPreview,
+  pointerAxis = "horizontal",
+  compactPreview = false,
 }: SeekBarProps) {
   const { t } = useLanguage();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const pointerDownSeekStateRef = useRef<HoverPreviewState | null>(null);
   const pointerStartRef = useRef<{
     pointerId: number;
-    clientX: number;
+    axisCoordinate: number;
     didPassDragThreshold: boolean;
   } | null>(null);
 
@@ -130,14 +139,27 @@ export function SeekBar({
       ? clamp((checkpointSeconds / duration) * 100, 0, 100)
       : null;
 
-  const getPointerSeekState = (clientX: number): HoverPreviewState | null => {
+  const getPointerAxisCoordinate = (clientX: number, clientY: number) =>
+    pointerAxis === "horizontal" ? clientX : clientY;
+
+  const getPointerSeekState = (
+    clientX: number,
+    clientY: number,
+  ): HoverPreviewState | null => {
     const bounds = rootRef.current?.getBoundingClientRect();
 
     if (!bounds || duration <= 0) {
       return null;
     }
 
-    const rawPercent = ((clientX - bounds.left) / bounds.width) * 100;
+    const horizontalPercent = ((clientX - bounds.left) / bounds.width) * 100;
+    const verticalPercent = ((clientY - bounds.top) / bounds.height) * 100;
+    const rawPercent =
+      pointerAxis === "horizontal"
+        ? horizontalPercent
+        : pointerAxis === "vertical-forward"
+          ? verticalPercent
+          : 100 - verticalPercent;
     const rawSeconds = (clamp(rawPercent, 0, 100) / 100) * duration;
     const displaySeconds = getDisplaySeekPoint(rawSeconds, duration);
     const seconds = getSafeSeekTargetSeconds(displaySeconds, duration);
@@ -192,7 +214,7 @@ export function SeekBar({
   );
 
   const updateHoverPreview = (event: MouseEvent<HTMLDivElement>) => {
-    const nextHoverPreview = getPointerSeekState(event.clientX);
+    const nextHoverPreview = getPointerSeekState(event.clientX, event.clientY);
 
     if (!nextHoverPreview) {
       return;
@@ -202,7 +224,7 @@ export function SeekBar({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    const nextSeekState = getPointerSeekState(event.clientX);
+    const nextSeekState = getPointerSeekState(event.clientX, event.clientY);
 
     if (!nextSeekState) {
       return;
@@ -214,7 +236,7 @@ export function SeekBar({
 
     pointerStartRef.current = {
       pointerId: event.pointerId,
-      clientX: event.clientX,
+      axisCoordinate: getPointerAxisCoordinate(event.clientX, event.clientY),
       didPassDragThreshold: false,
     };
     pointerDownSeekStateRef.current = nextSeekState;
@@ -229,7 +251,7 @@ export function SeekBar({
       return;
     }
 
-    const nextSeekState = getPointerSeekState(event.clientX);
+    const nextSeekState = getPointerSeekState(event.clientX, event.clientY);
 
     if (!nextSeekState) {
       return;
@@ -246,7 +268,10 @@ export function SeekBar({
       return;
     }
 
-    const movedDistance = Math.abs(event.clientX - pointerStart.clientX);
+    const movedDistance = Math.abs(
+      getPointerAxisCoordinate(event.clientX, event.clientY) -
+        pointerStart.axisCoordinate,
+    );
 
     if (
       !pointerStart.didPassDragThreshold &&
@@ -270,7 +295,8 @@ export function SeekBar({
 
     const pointerStart = pointerStartRef.current;
     const nextSeekState = pointerStart?.didPassDragThreshold
-      ? (getPointerSeekState(event.clientX) ?? pointerDownSeekStateRef.current)
+      ? (getPointerSeekState(event.clientX, event.clientY) ??
+        pointerDownSeekStateRef.current)
       : pointerDownSeekStateRef.current;
 
     if (nextSeekState) {
@@ -309,12 +335,16 @@ export function SeekBar({
     }));
   };
 
-  const previewLeftPercent = clamp(hoverPreview.percent, 6, 94);
+  const previewLeftPercent = clamp(
+    hoverPreview.percent,
+    compactPreview ? 11 : 6,
+    compactPreview ? 89 : 94,
+  );
 
   return (
     <div
       ref={rootRef}
-      className="relative h-5 w-full cursor-pointer touch-none sm:h-7"
+      className="relative h-7 w-full cursor-pointer touch-none"
       onMouseMove={updateHoverPreview}
       onMouseEnter={updateHoverPreview}
       onMouseLeave={hideHoverPreview}
@@ -335,30 +365,24 @@ export function SeekBar({
 
         if (event.key === "ArrowLeft") {
           event.preventDefault();
-          const displaySeconds = getDisplaySeekPoint(
-            currentTime - 5,
-            duration,
-          );
+          const displaySeconds = getDisplaySeekPoint(currentTime - 5, duration);
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
 
         if (event.key === "ArrowRight") {
           event.preventDefault();
-          const displaySeconds = getDisplaySeekPoint(
-            currentTime + 5,
-            duration,
-          );
+          const displaySeconds = getDisplaySeekPoint(currentTime + 5, duration);
           onSeek(getSafeSeekTargetSeconds(displaySeconds, duration));
         }
       }}
     >
       {hoverPreview.isVisible && duration > 0 ? (
         <div
-          className={
+          className={`seyirlik-trickplay-preview ${
             hasUsableTrickplayImage
-              ? "seyirlik-trickplay-preview"
-              : "seyirlik-trickplay-preview seyirlik-trickplay-preview--timeOnly"
-          }
+              ? ""
+              : "seyirlik-trickplay-preview--timeOnly"
+          } ${compactPreview ? "seyirlik-trickplay-preview--compact" : ""}`}
           style={{ left: `${previewLeftPercent}%` }}
         >
           <div className="seyirlik-trickplay-preview__imageWrap">
@@ -425,7 +449,7 @@ export function SeekBar({
         </div>
       ) : null}
 
-      <div className="absolute left-0 right-0 top-1/2 h-0.5 -translate-y-1/2 overflow-hidden rounded-full bg-white/20 sm:h-1">
+      <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
         <div
           className="h-full bg-white/30"
           style={{ width: `${bufferedPercent}%` }}
@@ -433,7 +457,7 @@ export function SeekBar({
       </div>
 
       <div
-        className="absolute left-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-[var(--accent)] sm:h-1"
+        className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[var(--accent)]"
         style={{ width: `${progressPercent}%` }}
       />
 
@@ -447,7 +471,7 @@ export function SeekBar({
 
       {hoverPreview.isVisible && duration > 0 ? (
         <div
-          className="pointer-events-none absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--accent)] shadow-[0_0_18px_var(--accent)] sm:h-3 sm:w-3"
+          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--accent)] shadow-[0_0_18px_var(--accent)]"
           style={{ left: `${hoverPreview.percent}%` }}
         />
       ) : null}

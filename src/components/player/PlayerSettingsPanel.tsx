@@ -30,6 +30,7 @@ interface PlayerSettingsPanelProps {
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
   onSelectSubtitleStream: (streamIndex: number) => void;
+  compact?: boolean;
 }
 
 function getStreamsOfType(
@@ -111,6 +112,7 @@ function SettingsButton({
   active,
   disabled,
   hasSubmenu,
+  compact,
   onClick,
 }: {
   title: string;
@@ -118,6 +120,7 @@ function SettingsButton({
   active?: boolean;
   disabled?: boolean;
   hasSubmenu?: boolean;
+  compact?: boolean;
   onClick?: () => void;
 }) {
   return (
@@ -133,15 +136,23 @@ function SettingsButton({
     >
       <span className="min-w-0">
         <span className="block truncate text-sm font-bold text-white">
-          <AnimatedWidth value={title}>
-            <AnimatedText value={title} />
-          </AnimatedWidth>
+          {compact ? (
+            title
+          ) : (
+            <AnimatedWidth value={title}>
+              <AnimatedText value={title} />
+            </AnimatedWidth>
+          )}
         </span>
         {subtitle ? (
           <span className="mt-0.5 block truncate text-xs text-white/45">
-            <AnimatedWidth value={subtitle}>
-              <AnimatedText value={subtitle} />
-            </AnimatedWidth>
+            {compact ? (
+              subtitle
+            ) : (
+              <AnimatedWidth value={subtitle}>
+                <AnimatedText value={subtitle} />
+              </AnimatedWidth>
+            )}
           </span>
         ) : null}
       </span>
@@ -166,6 +177,7 @@ export function PlayerSettingsPanel({
   onSelectQuality,
   onSelectAudioStream,
   onSelectSubtitleStream,
+  compact = false,
 }: PlayerSettingsPanelProps) {
   const { t } = useLanguage();
   const audioStreams = getUniqueStreams(getStreamsOfType(source, "Audio"));
@@ -180,9 +192,9 @@ export function PlayerSettingsPanel({
     <motion.div
       layout="size"
       transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-      className="fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
+      className="seyirlik-player-settings-panel fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
     >
-      <div className="border-b border-white/10 px-4 py-3">
+      <div className="seyirlik-player-settings-header border-b border-white/10 px-4 py-3">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">
           {t("settings.settings")}
         </p>
@@ -190,7 +202,7 @@ export function PlayerSettingsPanel({
           {t("settings.playbackOptions")}
         </h2>
 
-        <div className="mt-3 grid grid-cols-3 gap-2">
+        <div className="seyirlik-player-settings-tabs mt-3 grid grid-cols-3 gap-2">
           <button
             type="button"
             onClick={() => setActiveSection("quality")}
@@ -235,7 +247,7 @@ export function PlayerSettingsPanel({
       <motion.div
         layout="size"
         transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-        className="max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]"
+        className="seyirlik-player-settings-content max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]"
       >
         <AnimatePresence mode="wait" initial={false}>
           {activeSection === "quality" ? (
@@ -260,6 +272,7 @@ export function PlayerSettingsPanel({
                     : t("settings.currentSource")
                 }
                 active
+                compact={compact}
               />
 
               <SettingsButton
@@ -270,6 +283,7 @@ export function PlayerSettingsPanel({
                     : t("settings.useBestJellyfinSource")
                 }
                 active={selectedQualityId === "auto"}
+                compact={compact}
                 onClick={onSelectAutoQuality}
               />
 
@@ -288,6 +302,7 @@ export function PlayerSettingsPanel({
                           })
                     }
                     active={selectedQualityId === quality.id}
+                    compact={compact}
                     onClick={() => onSelectQuality(quality)}
                   />
                 ))
@@ -297,6 +312,7 @@ export function PlayerSettingsPanel({
                   subtitle={t("settings.noAlternateQualities")}
                   disabled
                   hasSubmenu
+                  compact={compact}
                 />
               )}
             </motion.div>
@@ -336,6 +352,7 @@ export function PlayerSettingsPanel({
                     }
                     active={stream.Index === selectedAudioStreamIndex}
                     disabled={stream.Index === undefined || !canSwitchAudio}
+                    compact={compact}
                     onClick={
                       stream.Index === undefined || !canSwitchAudio
                         ? undefined
@@ -374,6 +391,7 @@ export function PlayerSettingsPanel({
                 }
                 active={selectedSubtitleStreamIndex === -1}
                 disabled={!canSwitchSubtitles}
+                compact={compact}
                 onClick={
                   canSwitchSubtitles
                     ? () => onSelectSubtitleStream(-1)
@@ -401,6 +419,7 @@ export function PlayerSettingsPanel({
                     }
                     active={stream.Index === selectedSubtitleStreamIndex}
                     disabled={stream.Index === undefined || !canSwitchSubtitles}
+                    compact={compact}
                     onClick={
                       stream.Index === undefined || !canSwitchSubtitles
                         ? undefined

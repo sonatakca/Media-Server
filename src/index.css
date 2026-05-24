@@ -581,80 +581,241 @@ img {
   max-height: none;
 }
 
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 560px) {
-  .seyirlik-player-top-chrome {
-    padding-top: max(0.35rem, env(safe-area-inset-top));
-    padding-bottom: 0.75rem;
-  }
+.seyirlik-player-shell--phone {
+  --seyirlik-player-stage-height: 100dvh;
+  --seyirlik-player-stage-width: 100dvw;
+}
 
-  .seyirlik-player-top-bar,
-  .seyirlik-player-controls-inner {
-    width: min(90%, calc(100vw - 3.5rem));
-  }
+.seyirlik-player-shell--rotated-portrait {
+  --seyirlik-player-stage-height: 100dvw;
+  --seyirlik-player-stage-width: 100dvh;
+  position: fixed;
+  inset: auto;
+  left: 50%;
+  top: 50%;
+  width: 100dvh;
+  height: 100dvw;
+  max-height: none;
+  transform: translate(-50%, -50%)
+    rotate(var(--seyirlik-player-rotation, 90deg));
+  transform-origin: center;
+}
 
-  .seyirlik-player-top-bar {
-    gap: 0.6rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-chrome {
+  padding-inline: max(
+    0.7rem,
+    env(safe-area-inset-left),
+    env(safe-area-inset-right),
+    env(safe-area-inset-top),
+    env(safe-area-inset-bottom)
+  );
+  padding-top: 0.35rem;
+  padding-bottom: 0.7rem;
+}
 
-  .seyirlik-player-top-bar a,
-  .seyirlik-player-top-bar button {
-    min-height: 2.05rem;
-    width: 2.05rem;
-    height: 2.05rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-bar,
+.seyirlik-player-shell--phone .seyirlik-player-controls-inner {
+  width: min(94%, calc(100% - 1rem));
+}
 
-  .seyirlik-player-top-bar img {
-    max-height: 1.9rem;
-    max-width: min(15rem, 34vw);
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-bar {
+  gap: 0.55rem;
+}
 
-  .seyirlik-player-top-bar p {
-    font-size: 0.9rem;
-    line-height: 1.2;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-bar a,
+.seyirlik-player-shell--phone .seyirlik-player-top-actions-row button {
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+  padding: 0;
+}
 
-  .seyirlik-player-center-toggle {
-    width: 3.45rem !important;
-    height: 3.45rem !important;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-actions-row {
+  gap: 0.2rem;
+}
 
-  .seyirlik-player-center-toggle svg {
-    width: 1.95rem;
-    height: 1.95rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-bar img {
+  max-height: 1.85rem;
+  max-width: min(15rem, 37vw);
+}
 
-  .seyirlik-player-bottom-chrome {
-    padding-top: 1rem;
-    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
-  }
+.seyirlik-player-shell--phone .seyirlik-player-top-bar p {
+  font-size: 0.82rem;
+  line-height: 1.15;
+}
 
-  .seyirlik-player-main-toggle {
-    width: 2.65rem !important;
-    height: 2.65rem !important;
-  }
+.seyirlik-player-shell--phone .seyirlik-playback-info-label {
+  display: none;
+}
 
-  .seyirlik-player-controls-inner button:not(.seyirlik-player-main-toggle) {
-    width: 2.15rem !important;
-    height: 2.15rem !important;
-    min-height: 2.15rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-back-button,
+.seyirlik-player-shell--phone .seyirlik-player-skip-control {
+  display: flex;
+}
 
-  .seyirlik-player-controls-inner svg {
-    width: 1.1rem;
-    height: 1.1rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-volume-slider {
+  display: block;
+  width: 4.15rem;
+}
 
-  .seyirlik-player-controls-inner .seyir-slider {
-    width: 4.5rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-notice {
+  top: 3.75rem;
+  width: min(32rem, calc(100% - 3rem));
+}
 
-  .seyirlik-player-controls-inner [class*="min-w-[7.5rem]"] {
-    min-width: 6.2rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-center-toggle {
+  width: 3.75rem !important;
+  height: 3.75rem !important;
+}
 
-  .seyirlik-player-controls-inner [class*="text-sm"] {
-    font-size: 0.78rem;
-  }
+.seyirlik-player-shell--phone .seyirlik-player-center-toggle svg {
+  width: 1.8rem;
+  height: 1.8rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-bottom-chrome {
+  padding-inline: max(
+    0.7rem,
+    env(safe-area-inset-left),
+    env(safe-area-inset-right),
+    env(safe-area-inset-top),
+    env(safe-area-inset-bottom)
+  );
+  padding-top: 1.1rem;
+  padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+  transform: none;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-main-toggle {
+  width: 2.85rem !important;
+  height: 2.85rem !important;
+}
+
+.seyirlik-player-shell--phone
+  .seyirlik-player-controls-inner
+  button:not(.seyirlik-player-main-toggle) {
+  width: 2.5rem;
+  height: 2.5rem;
+  min-height: 2.5rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-controls-inner svg {
+  width: 1.05rem;
+  height: 1.05rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-clock {
+  min-width: 5.7rem;
+  font-size: 0.74rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-subtitle-overlay {
+  max-width: min(70%, 40rem);
+  font-size: clamp(0.9rem, 2vw, 1.08rem);
+  line-height: 1.25;
+}
+
+.seyirlik-player-shell--phone .seyirlik-subtitle-overlay--default {
+  bottom: 35%;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-settings-panel {
+  position: fixed;
+  inset: 0.5rem 0.65rem auto auto;
+  display: flex;
+  flex-direction: column;
+  width: min(19.5rem, calc(100% - 1.3rem));
+  height: calc(var(--seyirlik-player-stage-height) - 1rem);
+  max-height: none;
+  border-radius: 1rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-settings-header {
+  padding: 0.55rem 0.75rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-settings-header h2 {
+  font-size: 0.95rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-settings-tabs {
+  margin-top: 0.45rem;
+  gap: 0.35rem;
+}
+
+.seyirlik-player-shell--phone
+  .seyirlik-player-controls-inner
+  .seyirlik-player-settings-tabs
+  button {
+  width: auto;
+  height: auto;
+  min-height: 2.15rem;
+  padding-block: 0.38rem;
+  font-size: 0.7rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-settings-content {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 0.35rem;
+}
+
+.seyirlik-player-shell--phone
+  .seyirlik-player-controls-inner
+  .seyirlik-player-settings-content
+  button {
+  width: 100%;
+  height: auto;
+  min-height: 2.5rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-party-panel {
+  width: min(18rem, calc(var(--seyirlik-player-stage-width) - 1.3rem));
+  padding: 0.6rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-party-panel .SyncPlay-idInput {
+  min-width: 0;
+}
+
+.seyirlik-player-shell--phone .seyirlik-party-join-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.seyirlik-player-shell--phone .seyirlik-party-panel .SyncPlay-joinButton {
+  width: 100%;
+  margin-top: 0;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-info-overlay {
+  align-items: center;
+  padding: 0.5rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-info-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(42rem, calc(100% - 1rem));
+  height: calc(var(--seyirlik-player-stage-height) - 1rem);
+  max-height: none;
+  border-radius: 1rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-info-header {
+  padding: 0.55rem 0.8rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-info-header h2 {
+  margin-top: 0.1rem;
+  font-size: 0.95rem;
+}
+
+.seyirlik-player-shell--phone .seyirlik-player-info-body {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  padding: 0.65rem 0.8rem;
 }
 
 .seyirlik-player-gradient-top {
@@ -721,6 +882,25 @@ img {
   width: auto;
   min-width: 4.25rem;
   filter: drop-shadow(0 14px 26px rgba(0, 0, 0, 0.62));
+}
+
+.seyirlik-trickplay-preview--compact:not(
+  .seyirlik-trickplay-preview--timeOnly
+) {
+  bottom: 2.05rem;
+  width: 8.5rem;
+  filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.7));
+}
+
+.seyirlik-trickplay-preview--compact .seyirlik-trickplay-preview__imageWrap {
+  border-radius: 0.65rem;
+}
+
+.seyirlik-trickplay-preview--compact .seyirlik-trickplay-preview__time {
+  bottom: 0.3rem;
+  min-width: 3.15rem;
+  padding: 0.13rem 0.42rem;
+  font-size: 0.66rem;
 }
 
 .seyirlik-trickplay-preview__imageWrap {
@@ -822,7 +1002,7 @@ img {
 }
 
 @media (pointer: coarse) {
-  .seyirlik-trickplay-preview {
+  .seyirlik-trickplay-preview:not(.seyirlik-trickplay-preview--compact) {
     display: none;
   }
 }
@@ -1116,16 +1296,9 @@ img {
   }
 }
 
-@media (pointer: coarse) and (orientation: landscape) and (max-height: 560px) {
-  .seyirlik-player-shell .seyirlik-video {
-    height: 100%;
-    max-height: 100dvh;
-  }
-
-  .seyirlik-player-shell [data-mobile-tight-controls] {
-    padding-top: 1.75rem;
-    padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
-  }
+.seyirlik-player-shell--phone .seyirlik-video {
+  height: 100%;
+  max-height: var(--seyirlik-player-stage-height);
 }
 
 @media (prefers-reduced-motion: reduce) {

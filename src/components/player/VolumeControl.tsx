@@ -36,7 +36,7 @@ export function VolumeControl({
         value={muted ? 0 : volume}
         onChange={(event) => onVolumeChange(Number(event.target.value))}
         aria-label={t("player.volume")}
-        className="seyir-slider hidden h-1.5 w-20 cursor-pointer appearance-none rounded-full bg-white/20 accent-[var(--accent)] sm:block lg:w-28"
+        className="seyir-slider seyirlik-player-volume-slider hidden h-1.5 w-20 cursor-pointer appearance-none rounded-full bg-white/20 accent-[var(--accent)] sm:block lg:w-28"
       />
     </div>
   );

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuthSession } from "./authStorage";
-import { getMediaSegments, getNextEpisodeInSeason } from "./jellyfinApi";
+import {
+  getMediaSegments,
+  getNextEpisodeInSeason,
+  getUserViews,
+  JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+} from "./jellyfinApi";
 
 describe("getMediaSegments", () => {
   const fetchMock = vi.fn();
@@ -110,6 +115,23 @@ describe("getMediaSegments", () => {
 
     await expect(getMediaSegments("movie-1")).resolves.toEqual([]);
     expect(debugSpy).toHaveBeenCalled();
+  });
+
+  it("signals when the configured server becomes unreachable", async () => {
+    const unavailableHandler = vi.fn();
+    window.addEventListener(
+      JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+      unavailableHandler,
+    );
+    fetchMock.mockRejectedValue(new TypeError("Failed to fetch"));
+
+    await expect(getUserViews()).rejects.toThrow("Failed to fetch");
+    expect(unavailableHandler).toHaveBeenCalledTimes(1);
+
+    window.removeEventListener(
+      JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+      unavailableHandler,
+    );
   });
 });
 

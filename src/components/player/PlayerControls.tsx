@@ -8,7 +8,7 @@ import {
   Settings,
 } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { SeekBar } from "./SeekBar";
+import { SeekBar, type SeekPointerAxis } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
 import type {
@@ -37,6 +37,9 @@ interface PlayerControlsProps {
   mediaSourceId?: string;
   checkpointSeconds?: number | null;
   seekPreviewLoading?: boolean;
+  seekPointerAxis?: SeekPointerAxis;
+  compactSeekPreview?: boolean;
+  compactLayout?: boolean;
   onTogglePlay: () => void;
   onControlsHoverStart?: () => void;
   onControlsHoverEnd?: () => void;
@@ -91,6 +94,9 @@ export function PlayerControls({
   mediaSourceId,
   checkpointSeconds,
   seekPreviewLoading = false,
+  seekPointerAxis = "horizontal",
+  compactSeekPreview = false,
+  compactLayout = false,
   onTogglePlay,
   onControlsHoverStart,
   onControlsHoverEnd,
@@ -111,12 +117,12 @@ export function PlayerControls({
   return (
     <div
       data-mobile-tight-controls
-      className={`pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+      className={`seyirlik-player-bottom-chrome pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
         visible ? "translate-y-0 opacity-100" : "translate-y-28 opacity-0"
       }`}
     >
       <div
-        className="pointer-events-auto mx-auto w-[95%]"
+        className="seyirlik-player-controls-inner pointer-events-auto mx-auto w-[95%]"
         onMouseEnter={onControlsHoverStart}
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
@@ -132,6 +138,8 @@ export function PlayerControls({
             checkpointSeconds={checkpointSeconds}
             onSeek={onSeek}
             onSeekPreview={onSeekPreview}
+            pointerAxis={seekPointerAxis}
+            compactPreview={compactSeekPreview}
           />
         </div>
         <div className="mt-1 flex items-center justify-between gap-1 sm:mt-3 sm:gap-3">
@@ -140,7 +148,7 @@ export function PlayerControls({
               type="button"
               onClick={onTogglePlay}
               disabled={playWaiting}
-              className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
+              className="seyirlik-player-main-toggle relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
               aria-label={
                 playWaiting
                   ? t("player.waitingForSyncPlay")
@@ -183,7 +191,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={() => onSeekBy(-5)}
-              className="hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
               aria-label={t("player.rewind5")}
             >
               <RotateCcw size={21} />
@@ -191,7 +199,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={() => onSeekBy(5)}
-              className="hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
               aria-label={t("player.forward5")}
             >
               <RotateCw size={21} />
@@ -202,7 +210,7 @@ export function PlayerControls({
               onToggleMute={onToggleMute}
               onVolumeChange={onVolumeChange}
             />
-            <div className="ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-[0.68rem] font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
+            <div className="seyirlik-player-clock ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
               <span>
                 {formatTime(currentTime)} / {formatTime(duration)}
               </span>
@@ -229,6 +237,7 @@ export function PlayerControls({
                   selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
                   canSwitchAudio={canSwitchAudio}
                   canSwitchSubtitles={canSwitchSubtitles}
+                  compact={compactLayout}
                   onSelectAutoQuality={onSelectAutoQuality}
                   onSelectQuality={onSelectQuality}
                   onSelectAudioStream={onSelectAudioStream}
@@ -239,7 +248,7 @@ export function PlayerControls({
               <button
                 type="button"
                 onClick={onOpenSettings}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-11 sm:w-11"
+                className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                 aria-label={t("player.settingsLabel")}
                 title={t("player.settingsTitle")}
               >
@@ -249,7 +258,7 @@ export function PlayerControls({
             <button
               type="button"
               onClick={onToggleFullscreen}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:h-11 sm:w-11"
+              className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
               aria-label={t("player.fullscreen")}
             >
               <Maximize size={22} strokeWidth={2.2} />

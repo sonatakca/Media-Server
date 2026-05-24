@@ -25,6 +25,7 @@ export const translations = {
     "home.someDataFailed": "Some Jellyfin data could not load",
     "home.couldNotLoad": "Could not load Jellyfin",
     "home.noLibraries": "No Jellyfin libraries were returned for this user.",
+    "home.noLatestMedia": "No recently added media is available.",
     "hero.featured": "Featured",
     "hero.nowStreaming": "Now Streaming",
     "hero.fallbackDescription":
@@ -691,6 +692,7 @@ export const translations = {
     "home.someDataFailed": "Bazı Jellyfin verileri yüklenemedi",
     "home.couldNotLoad": "Jellyfin yüklenemedi",
     "home.noLibraries": "Bu kullanıcı için Jellyfin kütüphanesi döndürülmedi.",
+    "home.noLatestMedia": "Yakın zamanda eklenen medya bulunmuyor.",
     "hero.featured": "Öne Çıkan",
     "hero.nowStreaming": "Şimdi Yayında",
     "hero.fallbackDescription":

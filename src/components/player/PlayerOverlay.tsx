@@ -125,12 +125,12 @@ export function PlayerOverlay({
   return (
     <>
       <div
-        className={`pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
+        className={`seyirlik-player-top-chrome pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
           visible ? "translate-y-0 opacity-100" : "-translate-y-16 opacity-0"
         }`}
       >
         <div
-          className="pointer-events-auto mx-auto flex w-[95%] items-center justify-between gap-4"
+          className="seyirlik-player-top-bar pointer-events-auto mx-auto flex w-[95%] items-center justify-between gap-4"
           onMouseEnter={onControlsHoverStart}
           onMouseLeave={onControlsHoverEnd}
           onPointerEnter={onControlsHoverStart}
@@ -138,7 +138,7 @@ export function PlayerOverlay({
         >
           <Link
             to={backTo}
-            className="group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+            className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
             aria-label={t("player.backToDetails")}
           >
             <ArrowLeft
@@ -177,7 +177,7 @@ export function PlayerOverlay({
       </div>
 
       {notice ? (
-        <div className="pointer-events-none absolute left-1/2 top-24 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[var(--accent)]/30 bg-black/[0.78] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_18px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="seyirlik-player-notice pointer-events-none absolute left-1/2 top-24 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[var(--accent)]/30 bg-black/[0.78] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_18px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
           {notice}
         </div>
       ) : null}
@@ -259,7 +259,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 hover:bg-[var(--accent-strongest)] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+        className={`seyirlik-player-center-toggle absolute left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 hover:bg-[var(--accent-strongest)] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
             ? "scale-100 opacity-100"
             : "pointer-events-none scale-0 opacity-0"

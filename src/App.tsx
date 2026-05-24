@@ -7,8 +7,17 @@ import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { useLanguage } from "./i18n/LanguageContext";
-import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
-import { testServerConnection } from "./lib/jellyfinApi";
+import {
+  clearAuthSession,
+  clearServerUrl,
+  getServerUrl,
+  isAuthenticated,
+  setServerUrl,
+} from "./lib/authStorage";
+import {
+  JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+  testServerConnection,
+} from "./lib/jellyfinApi";
 import { HomePage } from "./pages/HomePage";
 import { ItemDetailsPage } from "./pages/ItemDetailsPage";
 import { LibraryPage } from "./pages/LibraryPage";
@@ -54,9 +63,7 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
 function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const { t } = useLanguage();
   const location = useLocation();
-  const [state, setState] = useState<DefaultServerState>(() => {
-    return getServerUrl() ? "ready" : "checking";
-  });
+  const [state, setState] = useState<DefaultServerState>("checking");
 
   useEffect(() => {
     if (state !== "checking") {
@@ -81,23 +88,29 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     async function prepareDefaultServer() {
-      if (getServerUrl()) {
-        setState("ready");
-        return;
-      }
+      const savedServerUrl = getServerUrl();
+      const serverUrl = savedServerUrl ?? DEFAULT_SERVER_URL;
 
       try {
         await withTimeout(
-          testServerConnection(DEFAULT_SERVER_URL),
+          testServerConnection(serverUrl),
           DEFAULT_SERVER_CHECK_TIMEOUT_MS,
         );
-        setServerUrl(DEFAULT_SERVER_URL);
+
+        if (!savedServerUrl) {
+          setServerUrl(DEFAULT_SERVER_URL);
+        }
 
         if (isMounted) {
           setState("ready");
         }
       } catch (error) {
-        console.warn("[Seyirlik] Default server connection failed", error);
+        console.warn("[Seyirlik] Server connection failed", error);
+
+        if (savedServerUrl) {
+          clearAuthSession();
+          clearServerUrl();
+        }
 
         if (isMounted) {
           setState("failed");
@@ -109,6 +122,26 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    function handleServerUnavailable() {
+      clearAuthSession();
+      clearServerUrl();
+      setState("failed");
+    }
+
+    window.addEventListener(
+      JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+      handleServerUnavailable,
+    );
+
+    return () => {
+      window.removeEventListener(
+        JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+        handleServerUnavailable,
+      );
     };
   }, []);
 
