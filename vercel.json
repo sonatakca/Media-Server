@@ -83,7 +83,7 @@
       ]
     },
     {
-      "source": "/(favicon-16x16.png|favicon-32x32.png|touchicon-seyirlik-v2.png|seyirlik-preview.png|robots.txt|sitemap.xml|google8ce07be5ec1e1076.html)",
+      "source": "/(favicon-16x16.png|favicon-32x32.png|touchicon-seyirlik-v2.png|apple-touch-icon.png|pwa-192x192.png|pwa-512x512.png|maskable-icon-512x512.png|manifest.webmanifest|sw.js|registerSW.js|workbox-.*.js|seyirlik-preview.png|robots.txt|sitemap.xml|google8ce07be5ec1e1076.html)",
       "headers": [
         {
           "key": "Cache-Control",
@@ -107,7 +107,7 @@
   ],
   "rewrites": [
     {
-      "source": "/((?!assets/|favicon-16x16.png|favicon-32x32.png|touchicon-seyirlik-v2.png|seyirlik-preview.png|robots.txt|sitemap.xml|google8ce07be5ec1e1076.html).*)",
+      "source": "/((?!assets/|favicon-16x16.png|favicon-32x32.png|touchicon-seyirlik-v2.png|apple-touch-icon.png|pwa-192x192.png|pwa-512x512.png|maskable-icon-512x512.png|manifest.webmanifest|sw.js|registerSW.js|workbox-.*.js|seyirlik-preview.png|robots.txt|sitemap.xml|google8ce07be5ec1e1076.html).*)",
       "destination": "/index.html"
     }
   ]
