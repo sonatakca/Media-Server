@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Clock, Film, Play, RotateCcw, Star } from "lucide-react";
 import { AnimatedText } from "../../components/AnimatedText";
 import { AnimatedWidth } from "../../components/AnimatedWidth";
@@ -153,6 +153,12 @@ export function DesktopItemDetailsPage() {
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
     : "";
   const isEpisode = item.Type === "Episode";
+  const seriesItemId = isEpisode
+    ? (item.SeriesId ?? item.ParentLogoItemId ?? null)
+    : null;
+  const seasonItemId = isEpisode
+    ? (item.SeasonId ?? item.ParentId ?? null)
+    : null;
   const logoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
     : item.ParentLogoItemId && item.ParentLogoImageTag
@@ -301,11 +307,39 @@ export function DesktopItemDetailsPage() {
                 <>
                   <div className="flex min-w-0 flex-wrap items-center gap-4">
                     {logoUrl ? (
-                      <img
-                        src={logoUrl}
-                        alt={seriesTitle}
-                        className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
-                      />
+                      seriesItemId ? (
+                        <Link
+                          to={`/library/${seriesItemId}`}
+                          aria-label={`Go to ${seriesTitle}`}
+                          title={seriesTitle}
+                          className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                        >
+                          <img
+                            src={logoUrl}
+                            alt={seriesTitle}
+                            className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
+                          />
+                        </Link>
+                      ) : (
+                        <img
+                          src={logoUrl}
+                          alt={seriesTitle}
+                          className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
+                        />
+                      )
+                    ) : seriesItemId ? (
+                      <Link
+                        to={`/library/${seriesItemId}`}
+                        aria-label={`Go to ${seriesTitle}`}
+                        title={seriesTitle}
+                        className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                      >
+                        <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
+                          <AnimatedWidth value={seriesTitle}>
+                            <AnimatedText value={seriesTitle} />
+                          </AnimatedWidth>
+                        </h2>
+                      </Link>
                     ) : (
                       <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
                         <AnimatedWidth value={seriesTitle}>
@@ -321,13 +355,28 @@ export function DesktopItemDetailsPage() {
                       </AnimatedWidth>
                     </h1>
                     {episodeCode ? (
-                      <div className="group/episode-label relative overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 my-7 mb-8 shadow-soft-inset sm:px-5 sm:py-3">
-                        <div className="relative flex items-center">
-                          <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
-                            {episodeCode}
-                          </span>
+                      seasonItemId ? (
+                        <Link
+                          to={`/library/${seasonItemId}`}
+                          aria-label={`Go to ${episodeCode}`}
+                          title={episodeCode}
+                          className="group/episode-label relative my-7 mb-8 overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset transition hover:border-white/[0.24] hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70 sm:px-5 sm:py-3"
+                        >
+                          <div className="relative flex items-center">
+                            <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                              {episodeCode}
+                            </span>
+                          </div>
+                        </Link>
+                      ) : (
+                        <div className="group/episode-label relative my-7 mb-8 overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset sm:px-5 sm:py-3">
+                          <div className="relative flex items-center">
+                            <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                              {episodeCode}
+                            </span>
+                          </div>
                         </div>
-                      </div>
+                      )
                     ) : null}
                   </div>
                 </>

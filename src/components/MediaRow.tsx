@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -15,6 +16,8 @@ interface MediaRowProps {
   variant?: "poster" | "landscape";
   emptyMessage?: string;
   viewAllTo?: string;
+  showRestartWatching?: boolean;
+  onClearContinueWatching?: (item: JellyfinItem) => void;
 }
 
 function formatTemplate(
@@ -34,8 +37,11 @@ export function MediaRow({
   variant = "poster",
   emptyMessage,
   viewAllTo,
+  showRestartWatching = false,
+  onClearContinueWatching,
 }: MediaRowProps) {
   const { t } = useLanguage();
+  const shouldReduceMotion = useReducedMotion();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -126,17 +132,35 @@ export function MediaRow({
             onScroll={updateScrollState}
             className="media-scroll relative z-10 flex snap-x gap-3 overflow-x-auto overflow-y-visible pb-6 pt-4 sm:gap-5 sm:pb-8 sm:pt-6"
           >
-            {items.map((item, index) => (
-              <div key={item.Id} className="snap-start">
-                <MediaCard
-                  item={item}
-                  to={getItemTo(item)}
-                  variant={variant}
-                  index={index}
-                  animateIn
-                />
-              </div>
-            ))}
+            <AnimatePresence initial={false}>
+              {items.map((item, index) => (
+                <motion.div
+                  key={item.Id}
+                  layout={onClearContinueWatching ? "position" : undefined}
+                  exit={
+                    onClearContinueWatching
+                      ? {
+                          opacity: 0,
+                          x: shouldReduceMotion ? 0 : -36,
+                          scale: shouldReduceMotion ? 1 : 0.96,
+                          filter: shouldReduceMotion ? "none" : "blur(8px)",
+                        }
+                      : undefined
+                  }
+                  className="snap-start"
+                >
+                  <MediaCard
+                    item={item}
+                    to={getItemTo(item)}
+                    variant={variant}
+                    index={index}
+                    animateIn
+                    showRestartWatching={showRestartWatching}
+                    onClearContinueWatching={onClearContinueWatching}
+                  />
+                </motion.div>
+              ))}
+            </AnimatePresence>
           </div>
           <div
             aria-hidden="true"

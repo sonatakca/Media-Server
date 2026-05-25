@@ -6,6 +6,7 @@ import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MediaCard } from "../../components/MediaCard";
 import { MotionReveal } from "../../components/MotionReveal";
+import { SeasonPicker } from "../../components/SeasonPicker";
 import { LibrarySkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
@@ -53,6 +54,7 @@ interface LibraryData {
   library?: JellyfinItem;
   fallbackTitleKey?: LibraryFallbackTitleKey;
   items: JellyfinItem[];
+  selectableSeasons: JellyfinItem[];
 }
 
 function getSortNumber(item: JellyfinItem): number {
@@ -249,6 +251,15 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
           libraryResult,
           seriesId,
         );
+        const firstEpisode = items.find((item) => item.Type === "Episode");
+        const selectableSeriesId = firstEpisode
+          ? (libraryResult?.SeriesId ??
+            firstEpisode.SeriesId ??
+            libraryResult?.ParentId)
+          : undefined;
+        const selectableSeasons = selectableSeriesId
+          ? await getSeriesSeasons(selectableSeriesId).catch(() => [])
+          : [];
 
         const fallbackLibrary =
           libraryResult ??
@@ -274,7 +285,12 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
               : "library.library";
 
         if (isMounted) {
-          setData({ library: fallbackLibrary, fallbackTitleKey, items });
+          setData({
+            library: fallbackLibrary,
+            fallbackTitleKey,
+            items,
+            selectableSeasons,
+          });
         }
       } catch (libraryError) {
         if (isMounted) {
@@ -490,6 +506,21 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
           firstEpisodeItem?.SeasonName ||
           t("format.season")
       : null;
+  const currentSeasonId =
+    data.library?.Type === "Season"
+      ? data.library.Id
+      : (firstEpisodeItem?.SeasonId ?? activeId);
+  const seasonPickerOptions = [...data.selectableSeasons]
+    .sort((left, right) => sortJellyfinItems(left, right, "name"))
+    .map((season) => ({
+      id: season.Id,
+      label:
+        typeof season.IndexNumber === "number" && season.IndexNumber > 0
+          ? formatTemplate(t("media.seasonNumber"), {
+              number: season.IndexNumber,
+            })
+          : season.Name || t("format.season"),
+    }));
 
   return (
     <div>
@@ -504,7 +535,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
         </div>
 
         <MotionReveal
-          className="order-1 flex min-w-0 justify-center px-2 sm:order-none"
+          className="relative z-20 order-1 flex min-w-0 justify-center px-2 sm:order-none"
           direction="up"
           delay={0.02}
         >
@@ -548,7 +579,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
               />
 
               <motion.div
-                className="group/season-label z-20 max-w-[44vw] transform-gpu overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset will-change-[transform,opacity,filter] sm:max-w-none sm:rounded-2xl sm:px-5 sm:py-3"
+                className="relative z-20 transform-gpu will-change-[transform,opacity,filter]"
                 initial={{
                   opacity: 0,
                   scale: 0.975,
@@ -565,15 +596,31 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                   ease: [0.16, 1, 0.3, 1],
                 }}
               >
-                <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
+                {seasonPickerOptions.length > 0 ? (
+                  <SeasonPicker
+                    activeSeasonId={currentSeasonId}
+                    currentLabel={seasonHeaderLabel}
+                    labelContent={
+                      <AnimatedWidth value={seasonHeaderLabel}>
+                        <AnimatedText value={seasonHeaderLabel} />
+                      </AnimatedWidth>
+                    }
+                    options={seasonPickerOptions}
+                    selectLabel={t("library.selectSeason")}
+                  />
+                ) : (
+                  <div className="group/season-label relative max-w-[44vw] overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset sm:max-w-none sm:rounded-2xl sm:px-5 sm:py-3">
+                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
 
-                <div className="relative flex items-center">
-                  <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
-                    <AnimatedWidth value={seasonHeaderLabel}>
-                      <AnimatedText value={seasonHeaderLabel} />
-                    </AnimatedWidth>
-                  </span>
-                </div>
+                    <div className="relative flex items-center">
+                      <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
+                        <AnimatedWidth value={seasonHeaderLabel}>
+                          <AnimatedText value={seasonHeaderLabel} />
+                        </AnimatedWidth>
+                      </span>
+                    </div>
+                  </div>
+                )}
               </motion.div>
             </div>
           ) : activeLibraryLogoUrl ? (

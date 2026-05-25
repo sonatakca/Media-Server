@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Clock, Film, Play, RotateCcw, Star } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
@@ -151,6 +151,12 @@ export function MobileItemDetailsPage() {
   const title = getDisplayTitle(item, labels);
   const runtime = formatRuntime(item.RunTimeTicks, labels);
   const isEpisode = item.Type === "Episode";
+  const seriesItemId = isEpisode
+    ? (item.SeriesId ?? item.ParentLogoItemId ?? null)
+    : null;
+  const seasonItemId = isEpisode
+    ? (item.SeasonId ?? item.ParentId ?? null)
+    : null;
   const artworkUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 520)
     : "";
@@ -270,19 +276,45 @@ export function MobileItemDetailsPage() {
                 {mediaLabel}
               </p>
               {logoUrl ? (
-                <img
-                  src={logoUrl}
-                  alt={seriesTitle}
-                  className="cinematic-logo-shadow mb-2 max-h-12 max-w-full object-contain object-left"
-                />
+                seriesItemId ? (
+                  <Link
+                    to={`/library/${seriesItemId}`}
+                    aria-label={`Go to ${seriesTitle}`}
+                    title={seriesTitle}
+                    className="mb-2 inline-flex min-w-0 rounded-lg transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                  >
+                    <img
+                      src={logoUrl}
+                      alt={seriesTitle}
+                      className="cinematic-logo-shadow max-h-12 max-w-full object-contain object-left"
+                    />
+                  </Link>
+                ) : (
+                  <img
+                    src={logoUrl}
+                    alt={seriesTitle}
+                    className="cinematic-logo-shadow mb-2 max-h-12 max-w-full object-contain object-left"
+                  />
+                )
               ) : null}
               <h1 className="line-clamp-3 text-2xl font-black leading-tight text-white">
                 {displayTitle}
               </h1>
               {episodeCode ? (
-                <p className="mt-2 text-xs font-black tracking-[0.18em] text-white/60">
-                  {episodeCode}
-                </p>
+                seasonItemId ? (
+                  <Link
+                    to={`/library/${seasonItemId}`}
+                    aria-label={`Go to ${episodeCode}`}
+                    title={episodeCode}
+                    className="mt-2 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black tracking-[0.18em] text-white/68 transition active:scale-[0.98] hover:bg-white/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                  >
+                    {episodeCode}
+                  </Link>
+                ) : (
+                  <p className="mt-2 text-xs font-black tracking-[0.18em] text-white/60">
+                    {episodeCode}
+                  </p>
+                )
               ) : null}
             </div>
           </div>

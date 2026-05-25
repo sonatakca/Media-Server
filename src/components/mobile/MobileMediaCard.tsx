@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { Info, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -5,12 +6,17 @@ import type { TranslationKey } from "../../i18n/translations";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
+import { ClearWatchingButton } from "../ClearWatchingButton";
+import { RestartWatchingButton } from "../RestartWatchingButton";
 
 interface MobileMediaCardProps {
   item: JellyfinItem;
   to: string;
   variant?: "poster" | "landscape";
   layout?: "row" | "grid";
+  showRestartWatching?: boolean;
+  animateRemoval?: boolean;
+  onClearContinueWatching?: (item: JellyfinItem) => void;
 }
 
 function getProgressPercent(item: JellyfinItem): number | null {
@@ -84,6 +90,9 @@ export function MobileMediaCard({
   to,
   variant = "poster",
   layout = "row",
+  showRestartWatching = false,
+  animateRemoval = false,
+  onClearContinueWatching,
 }: MobileMediaCardProps) {
   const { t } = useLanguage();
   const labels = {
@@ -118,7 +127,15 @@ export function MobileMediaCard({
       : "";
 
   return (
-    <article className={isRow ? "w-[8.8rem] shrink-0 snap-start" : "min-w-0"}>
+    <motion.article
+      layout={animateRemoval ? "position" : undefined}
+      exit={
+        animateRemoval
+          ? { opacity: 0, x: -28, scale: 0.96, filter: "blur(6px)" }
+          : undefined
+      }
+      className={isRow ? "w-[8.8rem] shrink-0 snap-start" : "min-w-0"}
+    >
       <div className="overflow-hidden rounded-xl border border-white/10 bg-[#141416] shadow-cinematic-card">
         <div
           className={`relative overflow-hidden bg-zinc-900 ${
@@ -151,13 +168,30 @@ export function MobileMediaCard({
           </Link>
 
           {canPlay ? (
-            <Link
-              to={to}
-              aria-label={`${t("common.details")} ${title}`}
-              className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
-            >
-              <Info size={15} />
-            </Link>
+            <>
+              {onClearContinueWatching ? (
+                <ClearWatchingButton
+                  item={item}
+                  onCleared={onClearContinueWatching}
+                  className="absolute left-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
+                  iconSize={15}
+                />
+              ) : null}
+              {showRestartWatching ? (
+                <RestartWatchingButton
+                  item={item}
+                  className="absolute right-12 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
+                  iconSize={15}
+                />
+              ) : null}
+              <Link
+                to={to}
+                aria-label={`${t("common.details")} ${title}`}
+                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
+              >
+                <Info size={15} />
+              </Link>
+            </>
           ) : null}
 
           {progressPercent !== null ? (
@@ -189,6 +223,6 @@ export function MobileMediaCard({
           ) : null}
         </div>
       </div>
-    </article>
+    </motion.article>
   );
 }

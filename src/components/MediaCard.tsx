@@ -7,6 +7,8 @@ import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
+import { ClearWatchingButton } from "./ClearWatchingButton";
+import { RestartWatchingButton } from "./RestartWatchingButton";
 
 interface MediaCardProps {
   item: JellyfinItem;
@@ -16,6 +18,8 @@ interface MediaCardProps {
   index?: number;
   animateIn?: boolean;
   showPlayFromBeginning?: boolean;
+  showRestartWatching?: boolean;
+  onClearContinueWatching?: (item: JellyfinItem) => void;
 }
 
 function getProgressPercent(item: JellyfinItem): number | null {
@@ -151,6 +155,8 @@ export function MediaCard({
   index = 0,
   animateIn = false,
   showPlayFromBeginning = false,
+  showRestartWatching = false,
+  onClearContinueWatching,
 }: MediaCardProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
@@ -261,6 +267,19 @@ export function MediaCard({
             </div>
           )}
           <div className="absolute inset-0 transition group-hover:opacity-100" />
+          {canPlay && onClearContinueWatching ? (
+            <ClearWatchingButton
+              item={item}
+              onCleared={onClearContinueWatching}
+              className="pointer-events-auto absolute left-3 top-3 z-50 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+            />
+          ) : null}
+          {canPlay && showRestartWatching ? (
+            <RestartWatchingButton
+              item={item}
+              className="pointer-events-auto absolute left-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+            />
+          ) : null}
           <Link
             to={to}
             aria-label={detailsLabel}

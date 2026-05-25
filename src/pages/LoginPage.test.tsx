@@ -3,6 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { MemoryRouter, useNavigate } from "react-router-dom";
 import { LoginPage } from "./LoginPage";
 import * as authStorage from "../lib/authStorage";
+import * as homeConfetti from "../lib/homeConfetti";
 import * as jellyfinApi from "../lib/jellyfinApi";
 
 // Mock routing
@@ -22,7 +23,11 @@ vi.mock("react-router-dom", async () => {
 
 // Mock API and Storage
 vi.mock("../lib/authStorage");
+vi.mock("../lib/homeConfetti");
 vi.mock("../lib/jellyfinApi");
+vi.mock("../lib/device", () => ({
+  getOrCreateDeviceId: () => "device-id",
+}));
 
 // Mock translations
 vi.mock("../i18n/LanguageContext", () => ({
@@ -88,5 +93,31 @@ describe("LoginPage", () => {
     // Check that we did not save auth session
     expect(authStorage.setAuthSession).not.toHaveBeenCalled();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it("marks login confetti pending before navigating home on success", async () => {
+    vi.mocked(jellyfinApi.authenticateByName).mockResolvedValue({
+      AccessToken: "access-token",
+      User: {
+        Id: "user-id",
+        Name: "testuser",
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <LoginPage />
+      </MemoryRouter>,
+    );
+
+    fireEvent.change(screen.getByLabelText("auth.username"), {
+      target: { value: "testuser" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "auth.signIn" }));
+
+    await waitFor(() => {
+      expect(homeConfetti.markLoginConfettiPending).toHaveBeenCalledOnce();
+      expect(mockNavigate).toHaveBeenCalledWith("/home", { replace: true });
+    });
   });
 });

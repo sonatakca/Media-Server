@@ -1,13 +1,19 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { MediaCard } from "../components/MediaCard";
+import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import type { JellyfinItem } from "../lib/types";
 
 // 1. Mock the Jellyfin API URL builders
 vi.mock("../lib/jellyfinApi", () => ({
   getPrimaryImageUrl: vi.fn((id) => `/mock-primary-${id}.jpg`),
   getLogoImageUrl: vi.fn((id) => `/mock-logo-${id}.png`),
+}));
+
+vi.mock("../lib/continueWatchingActions", () => ({
+  clearContinueWatchingHistory: vi.fn(),
 }));
 
 // 2. Mock the Language Context
@@ -75,5 +81,70 @@ describe("MediaCard Component", () => {
       </MemoryRouter>,
     );
     expect(screen.getByLabelText("common.play The Matrix")).toBeInTheDocument();
+  });
+
+  it("renders start over only when a continue-watching row opts in", () => {
+    const { rerender } = render(
+      <MemoryRouter>
+        <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "home.startOver The Matrix" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: "home.clearHistory The Matrix",
+      }),
+    ).not.toBeInTheDocument();
+
+    rerender(
+      <MemoryRouter>
+        <MediaCard
+          item={mockMovie}
+          to={`/item/${mockMovie.Id}`}
+          showRestartWatching
+          onClearContinueWatching={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "home.startOver The Matrix" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "home.clearHistory The Matrix" }),
+    ).toBeInTheDocument();
+  });
+
+  it("uses the shared clear workflow for both continue-watching actions", async () => {
+    const user = userEvent.setup();
+    const onClearContinueWatching = vi.fn();
+
+    vi.mocked(clearContinueWatchingHistory).mockResolvedValue(mockMovie);
+
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={mockMovie}
+          to={`/item/${mockMovie.Id}`}
+          showRestartWatching
+          onClearContinueWatching={onClearContinueWatching}
+        />
+      </MemoryRouter>,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: "home.clearHistory The Matrix" }),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "home.startOver The Matrix" }),
+    );
+
+    expect(clearContinueWatchingHistory).toHaveBeenCalledTimes(2);
+    expect(clearContinueWatchingHistory).toHaveBeenNthCalledWith(1, mockMovie);
+    expect(clearContinueWatchingHistory).toHaveBeenNthCalledWith(2, mockMovie);
+    expect(onClearContinueWatching).toHaveBeenCalledWith(mockMovie);
   });
 });

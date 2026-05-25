@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Info, Play } from "lucide-react";
 import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileLibraryTile } from "../../components/mobile/MobileLibraryTile";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { getLatestContinueWatchingItems } from "../../lib/continueWatching";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
   getBackdropImageUrl,
@@ -182,7 +184,9 @@ export function MobileHomePage() {
       setData({
         libraries: librariesResult.value,
         continueWatching:
-          continueResult.status === "fulfilled" ? continueResult.value : [],
+          continueResult.status === "fulfilled"
+            ? getLatestContinueWatchingItems(continueResult.value)
+            : [],
         latestMedia:
           latestResult.status === "fulfilled" ? latestResult.value : [],
       });
@@ -202,6 +206,19 @@ export function MobileHomePage() {
   if (!data) {
     return <MobileHomeLoading />;
   }
+
+  const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            continueWatching: currentData.continueWatching.filter(
+              (item) => item.Id !== clearedItem.Id,
+            ),
+          }
+        : currentData,
+    );
+  };
 
   const heroItem = getFeaturedItem([
     ...data.continueWatching,
@@ -326,15 +343,25 @@ export function MobileHomePage() {
           </div>
         ) : null}
 
-        {data.continueWatching.length > 0 ? (
-          <MobileMediaRow
-            title={t("home.continueWatching")}
-            items={data.continueWatching}
-            getItemTo={getRouteForItem}
-            variant="landscape"
-            emptyMessage={t("home.nothingInProgress")}
-          />
-        ) : null}
+        <AnimatePresence initial={false}>
+          {data.continueWatching.length > 0 ? (
+            <motion.div
+              key="continue-watching"
+              exit={{ opacity: 0, y: -8, height: 0 }}
+              transition={{ duration: 0.22 }}
+            >
+              <MobileMediaRow
+                title={t("home.continueWatching")}
+                items={data.continueWatching}
+                getItemTo={getRouteForItem}
+                variant="landscape"
+                emptyMessage={t("home.nothingInProgress")}
+                showRestartWatching
+                onClearContinueWatching={handleClearContinueWatching}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <MobileMediaRow
           title={t("home.latestMedia")}

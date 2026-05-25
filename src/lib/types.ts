@@ -45,6 +45,7 @@ export interface JellyfinUserData {
   Played?: boolean;
   PlayedPercentage?: number;
   UnplayedItemCount?: number;
+  LastPlayedDate?: string;
 }
 
 export interface JellyfinMediaStream {
@@ -146,6 +147,8 @@ export interface JellyfinItem {
   RecursiveItemCount?: number;
   PremiereDate?: string;
   DateCreated?: string;
+  LastPlayedDate?: string;
+  DatePlayed?: string;
   Overview?: string;
   Taglines?: string[];
   Genres?: string[];

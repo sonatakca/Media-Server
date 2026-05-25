@@ -15,6 +15,7 @@ import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
+import { useState } from "react";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -113,6 +114,11 @@ export function PlayerControls({
   onSeekPreview,
 }: PlayerControlsProps) {
   const { t } = useLanguage();
+  const [showRemainingTime, setShowRemainingTime] = useState(false);
+  const remainingTime = Math.max(duration - currentTime, 0);
+  const timeDisplay = showRemainingTime
+    ? `-${formatTime(remainingTime)} / ${formatTime(duration)}`
+    : `${formatTime(currentTime)} / ${formatTime(duration)}`;
 
   return (
     <div
@@ -211,9 +217,23 @@ export function PlayerControls({
               onVolumeChange={onVolumeChange}
             />
             <div className="seyirlik-player-clock ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
-              <span>
-                {formatTime(currentTime)} / {formatTime(duration)}
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowRemainingTime((value) => !value)}
+                className="rounded-full p-2 text-left transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                aria-label={
+                  showRemainingTime
+                    ? t("player.showElapsedTime")
+                    : t("player.showRemainingTime")
+                }
+                title={
+                  showRemainingTime
+                    ? t("player.showElapsedTime")
+                    : t("player.showRemainingTime")
+                }
+              >
+                {timeDisplay}
+              </button>
 
               {seekPreviewLoading ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-white/70">

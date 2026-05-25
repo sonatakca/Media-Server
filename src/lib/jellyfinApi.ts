@@ -727,6 +727,57 @@ export async function getNextEpisodeInSeason(
   return nextEpisode;
 }
 
+export async function getAllSeriesEpisodes(
+  seriesId: string,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    `/Shows/${encodeURIComponent(seriesId)}/Episodes`,
+    {
+      params: {
+        userId: session.userId,
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
+        sortBy: "ParentIndexNumber,IndexNumber,SortName",
+        sortOrder: "Ascending",
+      },
+    },
+  );
+
+  return response.Items ?? [];
+}
+
+export async function markItemUnplayed(itemId: string): Promise<void> {
+  const session = requireAuthSession();
+
+  try {
+    await requestJson<unknown>(
+      `/UserPlayedItems/${encodeURIComponent(itemId)}`,
+      {
+        method: "DELETE",
+        params: {
+          userId: session.userId,
+        },
+      },
+    );
+  } catch (error) {
+    if (!(error instanceof JellyfinRequestError) || error.status !== 404) {
+      throw error;
+    }
+
+    await requestJson<unknown>(
+      `/Users/${encodeURIComponent(session.userId)}/PlayedItems/${encodeURIComponent(itemId)}`,
+      {
+        method: "DELETE",
+      },
+    );
+  }
+}
+
 export async function getItem(itemId: string): Promise<JellyfinItem> {
   const session = requireAuthSession();
 

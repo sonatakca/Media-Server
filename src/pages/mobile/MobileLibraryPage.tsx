@@ -4,6 +4,7 @@ import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
+import { SeasonPicker } from "../../components/SeasonPicker";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getDisplayTitle } from "../../lib/format";
@@ -29,6 +30,7 @@ interface LibraryData {
   library?: JellyfinItem;
   fallbackTitleKey?: LibraryFallbackTitleKey;
   items: JellyfinItem[];
+  selectableSeasons: JellyfinItem[];
 }
 
 function formatTemplate(
@@ -223,6 +225,13 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
       try {
         const library = await getItem(activeId).catch(() => undefined);
         const items = await loadLibraryItems(activeId, mode, library, seriesId);
+        const firstEpisode = items.find((item) => item.Type === "Episode");
+        const selectableSeriesId = firstEpisode
+          ? (library?.SeriesId ?? firstEpisode.SeriesId ?? library?.ParentId)
+          : undefined;
+        const selectableSeasons = selectableSeriesId
+          ? await getSeriesSeasons(selectableSeriesId).catch(() => [])
+          : [];
         const fallbackLibrary =
           library ??
           (mode === "series"
@@ -243,7 +252,12 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
               : "library.library";
 
         if (isMounted) {
-          setData({ library: fallbackLibrary, fallbackTitleKey, items });
+          setData({
+            library: fallbackLibrary,
+            fallbackTitleKey,
+            items,
+            selectableSeasons,
+          });
         }
       } catch (libraryError) {
         if (isMounted) {
@@ -308,11 +322,25 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
   const title = data.library?.Name
     ? getDisplayTitle(data.library, labels)
     : fallbackTitle;
+  const itemType = data.items.find((item) => item.Type)?.Type;
+  const firstEpisodeItem = data.items.find((item) => item.Type === "Episode");
   const logoUrl =
     data.library && !data.library.CollectionType && data.library.ImageTags?.Logo
       ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 600)
-      : "";
-  const itemType = data.items.find((item) => item.Type)?.Type;
+      : data.library?.ParentLogoItemId && data.library.ParentLogoImageTag
+        ? getLogoImageUrl(
+            data.library.ParentLogoItemId,
+            data.library.ParentLogoImageTag,
+            600,
+          )
+        : firstEpisodeItem?.ParentLogoItemId &&
+            firstEpisodeItem.ParentLogoImageTag
+          ? getLogoImageUrl(
+              firstEpisodeItem.ParentLogoItemId,
+              firstEpisodeItem.ParentLogoImageTag,
+              600,
+            )
+          : "";
   const countText =
     itemType === "Season"
       ? countLabel(
@@ -330,6 +358,32 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
           )
         : `${data.items.length} ${t("library.itemsAvailable")}`;
   const usesLandscapeCards = itemType === "Episode";
+  const seasonHeaderLabel =
+    itemType === "Episode"
+      ? typeof firstEpisodeItem?.ParentIndexNumber === "number" &&
+        firstEpisodeItem.ParentIndexNumber > 0
+        ? formatTemplate(t("media.seasonNumber"), {
+            number: firstEpisodeItem.ParentIndexNumber,
+          })
+        : data.library?.Name ||
+          firstEpisodeItem?.SeasonName ||
+          t("format.season")
+      : null;
+  const currentSeasonId =
+    data.library?.Type === "Season"
+      ? data.library.Id
+      : (firstEpisodeItem?.SeasonId ?? activeId);
+  const seasonPickerOptions = [...data.selectableSeasons]
+    .sort((left, right) => sortItems(left, right, "name"))
+    .map((season) => ({
+      id: season.Id,
+      label:
+        typeof season.IndexNumber === "number" && season.IndexNumber > 0
+          ? formatTemplate(t("media.seasonNumber"), {
+              number: season.IndexNumber,
+            })
+          : season.Name || t("format.season"),
+    }));
 
   return (
     <div className="pb-5">
@@ -339,7 +393,34 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
       </div>
 
       <header className="mb-6 text-center">
-        {logoUrl ? (
+        {logoUrl && seasonHeaderLabel ? (
+          <div className="flex min-w-0 items-center justify-center gap-2.5">
+            <img
+              src={logoUrl}
+              alt={title}
+              className="cinematic-logo-shadow max-h-12 max-w-[min(10rem,42vw)] object-contain"
+            />
+            <div
+              aria-hidden="true"
+              className="h-9 w-px shrink-0 bg-gradient-to-b from-transparent via-white/24 to-transparent"
+            />
+            {seasonPickerOptions.length > 0 ? (
+              <SeasonPicker
+                activeSeasonId={currentSeasonId}
+                currentLabel={seasonHeaderLabel}
+                options={seasonPickerOptions}
+                selectLabel={t("library.selectSeason")}
+                variant="mobile"
+              />
+            ) : (
+              <div className="relative max-w-[44vw] overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset">
+                <span className="relative truncate text-sm font-black leading-none text-white">
+                  {seasonHeaderLabel}
+                </span>
+              </div>
+            )}
+          </div>
+        ) : logoUrl ? (
           <img
             src={logoUrl}
             alt={title}

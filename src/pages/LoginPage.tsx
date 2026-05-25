@@ -14,6 +14,7 @@ import {
   isAuthenticated,
   setAuthSession,
 } from "../lib/authStorage";
+import { markLoginConfettiPending } from "../lib/homeConfetti";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 
@@ -55,6 +56,7 @@ export function LoginPage() {
         username: authResponse.User.Name || username,
         deviceId: getOrCreateDeviceId(),
       });
+      markLoginConfettiPending();
       navigate("/home", { replace: true });
     } catch (loginError) {
       const message =

@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { HeroSection } from "../../components/HeroSection";
 import { LibraryTile } from "../../components/LibraryTile";
@@ -11,6 +12,7 @@ import {
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/jellyfinApi";
+import { getLatestContinueWatchingItems } from "../../lib/continueWatching";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
 import { AnimatedText } from "../../components/AnimatedText";
@@ -18,6 +20,11 @@ import { AnimatedWidth } from "../../components/AnimatedWidth";
 import { ConfettiAnimation } from "../../components/animations/ConfettiAnimation";
 import { setSeoMetadata } from "../../lib/seo";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
+import {
+  consumeLoginConfettiPending,
+  markDailyHomeConfettiShown,
+  shouldShowDailyHomeConfetti,
+} from "../../lib/homeConfetti";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -116,6 +123,8 @@ export function DesktopHomePage() {
   const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
   const [isHeroReady, setIsHeroReady] = useState(false);
+  const [shouldShowConfetti, setShouldShowConfetti] = useState(false);
+  const hasEvaluatedConfetti = useRef(false);
   const featuredPool = useMemo(
     () =>
       buildFeaturedPool([
@@ -134,6 +143,25 @@ export function DesktopHomePage() {
       robots: "noindex, nofollow",
     });
   }, [t]);
+
+  useEffect(() => {
+    if (!isHeroReady || hasEvaluatedConfetti.current) {
+      return;
+    }
+
+    hasEvaluatedConfetti.current = true;
+
+    if (consumeLoginConfettiPending()) {
+      markDailyHomeConfettiShown();
+      setShouldShowConfetti(true);
+      return;
+    }
+
+    if (shouldShowDailyHomeConfetti()) {
+      markDailyHomeConfettiShown();
+      setShouldShowConfetti(true);
+    }
+  }, [isHeroReady]);
 
   useEffect(() => {
     let isMounted = true;
@@ -179,7 +207,9 @@ export function DesktopHomePage() {
       setData({
         libraries: librariesResult.value,
         continueWatching:
-          continueResult.status === "fulfilled" ? continueResult.value : [],
+          continueResult.status === "fulfilled"
+            ? getLatestContinueWatchingItems(continueResult.value)
+            : [],
         latestMedia:
           latestResult.status === "fulfilled" ? latestResult.value : [],
       });
@@ -228,6 +258,19 @@ export function DesktopHomePage() {
     setIsHeroPaused((current) => !current);
   };
 
+  const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            continueWatching: currentData.continueWatching.filter(
+              (item) => item.Id !== clearedItem.Id,
+            ),
+          }
+        : currentData,
+    );
+  };
+
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
   }
@@ -247,7 +290,7 @@ export function DesktopHomePage() {
         isWebApp ? "pt-[calc(env(safe-area-inset-top)+0rem)]" : "",
       ].join(" ")}
     >
-      {isHeroReady ? (
+      {shouldShowConfetti ? (
         <ConfettiAnimation startDelay={0} pieceCount={200} />
       ) : null}
 
@@ -279,16 +322,25 @@ export function DesktopHomePage() {
           </div>
         ) : null}
 
-        {showContinueWatchingRow ? (
-          <div className="relative z-10">
-            <MediaRow
-              title={t("home.continueWatching")}
-              items={data.continueWatching}
-              getItemTo={getRouteForItem}
-              emptyMessage={t("home.nothingInProgress")}
-            />
-          </div>
-        ) : null}
+        <AnimatePresence initial={false}>
+          {showContinueWatchingRow ? (
+            <motion.div
+              key="continue-watching"
+              className="relative z-10"
+              exit={{ opacity: 0, y: -10, height: 0 }}
+              transition={{ duration: 0.24 }}
+            >
+              <MediaRow
+                title={t("home.continueWatching")}
+                items={data.continueWatching}
+                getItemTo={getRouteForItem}
+                emptyMessage={t("home.nothingInProgress")}
+                showRestartWatching
+                onClearContinueWatching={handleClearContinueWatching}
+              />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <MediaRow
           title={t("home.latestMedia")}
