@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { AnimatePresence, motion } from "framer-motion";
 import {
   ArrowLeft,
   LoaderCircle,
@@ -13,8 +14,8 @@ import { useLanguage } from "../../i18n/LanguageContext";
 interface SeekFeedbackItem {
   amount: number;
   visible: boolean;
-  rotation: number;
   pulse: number;
+  spinPulse: number;
 }
 
 interface PlayerOverlayProps {
@@ -38,6 +39,10 @@ interface PlayerOverlayProps {
 }
 
 const PLAY_PAUSE_ICON_SWAP_DURATION_MS = 111;
+const SEEK_FEEDBACK_SPIN_MS = 1000;
+const SEEK_FEEDBACK_NUMBER_SWAP_MS = 600;
+const SEEK_FEEDBACK_SPIN_EASE = [0.16, 1, 0.3, 1] as const;
+const SEEK_FEEDBACK_NUMBER_EASE = [0.22, 1, 0.36, 1] as const;
 
 export function PlayerOverlay({
   title,
@@ -189,29 +194,39 @@ export function PlayerOverlay({
           }`}
           aria-hidden="true"
         >
-          <div
-            className="seyirlik-seek-feedback__bubble"
-            style={{
-              animation:
-                backwardFeedback.pulse > 0
-                  ? `${
-                      backwardFeedback.pulse % 2 === 0
-                        ? "seekFeedbackButtonPressA"
-                        : "seekFeedbackButtonPressB"
-                    } 620ms cubic-bezier(0.16, 1, 0.3, 1) both`
-                  : undefined,
-            }}
-          >
-            <span
-              className="seyirlik-seek-feedback__icon"
-              style={{
-                transform: `translate(-50%, -50%) rotate(${backwardFeedback.rotation}deg)`,
-              }}
-            >
-              <RotateCcw size={60} strokeWidth={1.5} />
+          <div className="seyirlik-seek-feedback__bubble">
+            <span className="seyirlik-seek-feedback__icon">
+              <motion.span
+                key={backwardFeedback.spinPulse}
+                className="flex"
+                initial={{ rotate: 0 }}
+                animate={{
+                  rotate: backwardFeedback.spinPulse > 0 ? -360 : 0,
+                }}
+                transition={{
+                  duration: SEEK_FEEDBACK_SPIN_MS / 1000,
+                  ease: SEEK_FEEDBACK_SPIN_EASE,
+                }}
+              >
+                <RotateCcw size={60} strokeWidth={1.5} />
+              </motion.span>
             </span>
-            <span className="seyirlik-seek-feedback__number">
-              {backwardFeedback.amount}
+            <span className="seyirlik-seek-feedback__number relative inline-flex min-h-[1em] min-w-[1.65em] items-center justify-center leading-none">
+              <AnimatePresence initial={false}>
+                <motion.span
+                  key={backwardFeedback.amount}
+                  className="absolute inset-0 flex origin-center items-center justify-center leading-none"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  transition={{
+                    duration: SEEK_FEEDBACK_NUMBER_SWAP_MS / 1000,
+                    ease: SEEK_FEEDBACK_NUMBER_EASE,
+                  }}
+                >
+                  {backwardFeedback.amount}
+                </motion.span>
+              </AnimatePresence>
             </span>
           </div>
         </div>
@@ -224,29 +239,39 @@ export function PlayerOverlay({
           }`}
           aria-hidden="true"
         >
-          <div
-            className="seyirlik-seek-feedback__bubble"
-            style={{
-              animation:
-                forwardFeedback.pulse > 0
-                  ? `${
-                      forwardFeedback.pulse % 2 === 0
-                        ? "seekFeedbackButtonPressA"
-                        : "seekFeedbackButtonPressB"
-                    } 620ms cubic-bezier(0.16, 1, 0.3, 1) both`
-                  : undefined,
-            }}
-          >
-            <span
-              className="seyirlik-seek-feedback__icon"
-              style={{
-                transform: `translate(-50%, -50%) rotate(${forwardFeedback.rotation}deg)`,
-              }}
-            >
-              <RotateCw size={60} strokeWidth={1.5} />
+          <div className="seyirlik-seek-feedback__bubble">
+            <span className="seyirlik-seek-feedback__icon">
+              <motion.span
+                key={forwardFeedback.spinPulse}
+                className="flex"
+                initial={{ rotate: 0 }}
+                animate={{
+                  rotate: forwardFeedback.spinPulse > 0 ? 360 : 0,
+                }}
+                transition={{
+                  duration: SEEK_FEEDBACK_SPIN_MS / 1000,
+                  ease: SEEK_FEEDBACK_SPIN_EASE,
+                }}
+              >
+                <RotateCw size={60} strokeWidth={1.5} />
+              </motion.span>
             </span>
-            <span className="seyirlik-seek-feedback__number">
-              {forwardFeedback.amount}
+            <span className="seyirlik-seek-feedback__number relative inline-flex min-h-[1em] min-w-[1.65em] items-center justify-center leading-none">
+              <AnimatePresence initial={false}>
+                <motion.span
+                  key={forwardFeedback.amount}
+                  className="absolute inset-0 flex origin-center items-center justify-center leading-none"
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  exit={{ scale: 0 }}
+                  transition={{
+                    duration: SEEK_FEEDBACK_NUMBER_SWAP_MS / 1000,
+                    ease: SEEK_FEEDBACK_NUMBER_EASE,
+                  }}
+                >
+                  {forwardFeedback.amount}
+                </motion.span>
+              </AnimatePresence>
             </span>
           </div>
         </div>

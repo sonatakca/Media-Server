@@ -107,17 +107,32 @@ interface SubtitleCue {
 }
 
 type SeekFeedbackDirection = "backward" | "forward";
+type TouchSeekSide = "left" | "right";
+
+interface TouchSeekSessionState {
+  lastTapTime: number;
+  lastTapSide: TouchSeekSide | null;
+  isActive: boolean;
+  accumulatedSeconds: number;
+  timeoutId: number | null;
+}
 
 interface SeekFeedbackItem {
   amount: number;
   visible: boolean;
-  rotation: number;
   pulse: number;
+  spinPulse: number;
 }
 
 interface SeekFeedbackState {
   backward: SeekFeedbackItem;
   forward: SeekFeedbackItem;
+}
+
+interface SeekFeedbackSpinState {
+  isSpinning: boolean;
+  hasPendingSpin: boolean;
+  finishTimerId: number | null;
 }
 
 type PortraitPlayerRotation = -90 | 90;
@@ -164,9 +179,15 @@ const SEEK_FEEDBACK_HIDE_MS = 950;
 
 const SEEK_FEEDBACK_FADE_RESET_MS = 260;
 
+const SEEK_FEEDBACK_SPIN_MS = 1000;
+
 const STARTUP_WATCHDOG_MS = 8000;
 
 const VIEW_MODE_CURSOR_HIDE_MS = 1600;
+
+const TOUCH_DOUBLE_TAP_THRESHOLD_MS = 320;
+const TOUCH_SINGLE_TAP_DELAY_MS = 180;
+const TOUCH_SEEK_SESSION_TIMEOUT_MS = 850;
 
 const DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS = 10;
 
@@ -185,14 +206,14 @@ const initialSeekFeedback: SeekFeedbackState = {
   backward: {
     amount: 0,
     visible: false,
-    rotation: 0,
     pulse: 0,
+    spinPulse: 0,
   },
   forward: {
     amount: 0,
     visible: false,
-    rotation: 0,
     pulse: 0,
+    spinPulse: 0,
   },
 };
 
@@ -1116,7 +1137,13 @@ export function CustomVideoPlayer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
-  const lastTapRef = useRef<{ time: number; x: number } | null>(null);
+  const touchSeekSessionRef = useRef<TouchSeekSessionState>({
+    lastTapTime: 0,
+    lastTapSide: null,
+    isActive: false,
+    accumulatedSeconds: 0,
+    timeoutId: null,
+  });
   const lastProgressReportRef = useRef(0);
   const latestPlaybackPositionRef = useRef(0);
   const hasStartedRef = useRef(false);
@@ -1146,8 +1173,49 @@ export function CustomVideoPlayer({
     backward: null,
     forward: null,
   });
+  const seekFeedbackSpinStateRef = useRef<
+    Record<SeekFeedbackDirection, SeekFeedbackSpinState>
+  >({
+    backward: {
+      isSpinning: false,
+      hasPendingSpin: false,
+      finishTimerId: null,
+    },
+    forward: {
+      isSpinning: false,
+      hasPendingSpin: false,
+      finishTimerId: null,
+    },
+  });
   const seekFeedbackChromeHideTimerRef = useRef<number | null>(null);
   const viewModeCursorHideTimerRef = useRef<number | null>(null);
+  const clearSingleTapTimer = useCallback(() => {
+    if (singleTapTimerRef.current !== null) {
+      window.clearTimeout(singleTapTimerRef.current);
+      singleTapTimerRef.current = null;
+    }
+  }, []);
+  const clearTouchSeekSessionTimeout = useCallback(() => {
+    if (touchSeekSessionRef.current.timeoutId !== null) {
+      window.clearTimeout(touchSeekSessionRef.current.timeoutId);
+      touchSeekSessionRef.current.timeoutId = null;
+    }
+  }, []);
+  const resetTouchSeekSession = useCallback(
+    (clearPendingSingleTap = true) => {
+      if (clearPendingSingleTap) {
+        clearSingleTapTimer();
+      }
+
+      clearTouchSeekSessionTimeout();
+
+      touchSeekSessionRef.current.lastTapTime = 0;
+      touchSeekSessionRef.current.lastTapSide = null;
+      touchSeekSessionRef.current.isActive = false;
+      touchSeekSessionRef.current.accumulatedSeconds = 0;
+    },
+    [clearSingleTapTimer, clearTouchSeekSessionTimeout],
+  );
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -1320,6 +1388,71 @@ export function CustomVideoPlayer({
     useState<number | null>(null);
   const [seekFeedback, setSeekFeedback] =
     useState<SeekFeedbackState>(initialSeekFeedback);
+  const resetSeekFeedbackSpinState = useCallback(
+    (direction: SeekFeedbackDirection) => {
+      const spinState = seekFeedbackSpinStateRef.current[direction];
+
+      if (spinState.finishTimerId !== null) {
+        window.clearTimeout(spinState.finishTimerId);
+      }
+
+      spinState.isSpinning = false;
+      spinState.hasPendingSpin = false;
+      spinState.finishTimerId = null;
+    },
+    [],
+  );
+  const clearSeekFeedbackSpinTimers = useCallback(() => {
+    (["backward", "forward"] as const).forEach(resetSeekFeedbackSpinState);
+  }, [resetSeekFeedbackSpinState]);
+  const startSeekFeedbackSpin = useCallback(
+    (direction: SeekFeedbackDirection) => {
+      const spinState = seekFeedbackSpinStateRef.current[direction];
+
+      const beginSpin = () => {
+        spinState.isSpinning = true;
+        setSeekFeedback((current) => ({
+          ...current,
+          [direction]: {
+            ...current[direction],
+            spinPulse: current[direction].spinPulse + 1,
+          },
+        }));
+
+        if (spinState.finishTimerId !== null) {
+          window.clearTimeout(spinState.finishTimerId);
+        }
+
+        spinState.finishTimerId = window.setTimeout(() => {
+          spinState.finishTimerId = null;
+
+          if (spinState.hasPendingSpin) {
+            spinState.hasPendingSpin = false;
+            beginSpin();
+            return;
+          }
+
+          spinState.isSpinning = false;
+        }, SEEK_FEEDBACK_SPIN_MS);
+      };
+
+      beginSpin();
+    },
+    [],
+  );
+  const requestSeekFeedbackSpin = useCallback(
+    (direction: SeekFeedbackDirection) => {
+      const spinState = seekFeedbackSpinStateRef.current[direction];
+
+      if (spinState.isSpinning) {
+        spinState.hasPendingSpin = true;
+        return;
+      }
+
+      startSeekFeedbackSpin(direction);
+    },
+    [startSeekFeedbackSpin],
+  );
   const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<
     string | null
   >(null);
@@ -1833,7 +1966,8 @@ export function CustomVideoPlayer({
     subtitleDragStateRef.current = null;
     subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
-  }, [item.Id]);
+    resetTouchSeekSession();
+  }, [item.Id, resetTouchSeekSession]);
 
   useEffect(() => {
     hasAutoPlayedNextRef.current = false;
@@ -1878,102 +2012,107 @@ export function CustomVideoPlayer({
     }, SEEK_FEEDBACK_HIDE_MS);
   }, [controlsShouldStayVisible, progress.isPlaying]);
 
-  const triggerSeekFeedback = useCallback((seconds: number) => {
-    if (seconds === 0) {
-      return;
-    }
+  const triggerSeekFeedback = useCallback(
+    (seconds: number) => {
+      if (seconds === 0) {
+        return;
+      }
 
-    const direction: SeekFeedbackDirection =
-      seconds < 0 ? "backward" : "forward";
-    const oppositeDirection: SeekFeedbackDirection =
-      direction === "backward" ? "forward" : "backward";
-    const amount = Math.abs(seconds);
+      const direction: SeekFeedbackDirection =
+        seconds < 0 ? "backward" : "forward";
+      const oppositeDirection: SeekFeedbackDirection =
+        direction === "backward" ? "forward" : "backward";
+      const amount = Math.abs(seconds);
 
-    if (seekFeedbackHideTimersRef.current[oppositeDirection] !== null) {
-      window.clearTimeout(
-        seekFeedbackHideTimersRef.current[oppositeDirection]!,
+      resetSeekFeedbackSpinState(oppositeDirection);
+
+      if (seekFeedbackHideTimersRef.current[oppositeDirection] !== null) {
+        window.clearTimeout(
+          seekFeedbackHideTimersRef.current[oppositeDirection]!,
+        );
+      }
+
+      seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(
+        () => {
+          setSeekFeedback((current) => ({
+            ...current,
+            [oppositeDirection]: {
+              ...current[oppositeDirection],
+              visible: false,
+            },
+          }));
+
+          window.setTimeout(() => {
+            setSeekFeedback((current) => {
+              if (current[oppositeDirection].visible) {
+                return current;
+              }
+
+              return {
+                ...current,
+                [oppositeDirection]: {
+                  ...current[oppositeDirection],
+                  amount: 0,
+                },
+              };
+            });
+          }, SEEK_FEEDBACK_FADE_RESET_MS);
+
+          seekFeedbackHideTimersRef.current[oppositeDirection] = null;
+        },
+        SEEK_FEEDBACK_OPPOSITE_HIDE_MS,
       );
-    }
 
-    seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(
-      () => {
+      setSeekFeedback((current) => {
+        const currentDirection = current[direction];
+
+        return {
+          ...current,
+          [direction]: {
+            ...currentDirection,
+            amount: currentDirection.amount + amount,
+            visible: true,
+            pulse: currentDirection.pulse + 1,
+          },
+        };
+      });
+
+      requestSeekFeedbackSpin(direction);
+
+      if (seekFeedbackHideTimersRef.current[direction] !== null) {
+        window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
+      }
+
+      seekFeedbackHideTimersRef.current[direction] = window.setTimeout(() => {
         setSeekFeedback((current) => ({
           ...current,
-          [oppositeDirection]: {
-            ...current[oppositeDirection],
+          [direction]: {
+            ...current[direction],
             visible: false,
           },
         }));
 
         window.setTimeout(() => {
           setSeekFeedback((current) => {
-            if (current[oppositeDirection].visible) {
+            if (current[direction].visible) {
               return current;
             }
 
             return {
               ...current,
-              [oppositeDirection]: {
-                ...current[oppositeDirection],
+              [direction]: {
+                ...current[direction],
                 amount: 0,
               },
             };
           });
         }, SEEK_FEEDBACK_FADE_RESET_MS);
 
-        seekFeedbackHideTimersRef.current[oppositeDirection] = null;
-      },
-      SEEK_FEEDBACK_OPPOSITE_HIDE_MS,
-    );
-
-    setSeekFeedback((current) => {
-      const currentDirection = current[direction];
-
-      return {
-        ...current,
-        [direction]: {
-          ...currentDirection,
-          amount: currentDirection.amount + amount,
-          visible: true,
-          rotation:
-            currentDirection.rotation + (direction === "forward" ? 360 : -360),
-          pulse: currentDirection.pulse + 1,
-        },
-      };
-    });
-
-    if (seekFeedbackHideTimersRef.current[direction] !== null) {
-      window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
-    }
-
-    seekFeedbackHideTimersRef.current[direction] = window.setTimeout(() => {
-      setSeekFeedback((current) => ({
-        ...current,
-        [direction]: {
-          ...current[direction],
-          visible: false,
-        },
-      }));
-
-      window.setTimeout(() => {
-        setSeekFeedback((current) => {
-          if (current[direction].visible) {
-            return current;
-          }
-
-          return {
-            ...current,
-            [direction]: {
-              ...current[direction],
-              amount: 0,
-            },
-          };
-        });
-      }, SEEK_FEEDBACK_FADE_RESET_MS);
-
-      seekFeedbackHideTimersRef.current[direction] = null;
-    }, SEEK_FEEDBACK_HIDE_MS);
-  }, []);
+        seekFeedbackHideTimersRef.current[direction] = null;
+      }, SEEK_FEEDBACK_HIDE_MS);
+    },
+    [requestSeekFeedbackSpin, resetSeekFeedbackSpinState],
+  );
 
   const handleSeekBy = useCallback(
     (seconds: number) => {
@@ -3255,16 +3394,14 @@ export function CustomVideoPlayer({
     return () => {
       clearFullscreenSeekPreviewFallbackTimer();
       clearSeekFeedbackTimers();
+      clearSeekFeedbackSpinTimers();
 
       if (seekFeedbackChromeHideTimerRef.current !== null) {
         window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
         seekFeedbackChromeHideTimerRef.current = null;
       }
 
-      if (singleTapTimerRef.current !== null) {
-        window.clearTimeout(singleTapTimerRef.current);
-        singleTapTimerRef.current = null;
-      }
+      resetTouchSeekSession();
 
       pendingAudioTranscodePlayRef.current = null;
       clearAudioTranscodeReadinessTimer();
@@ -3275,8 +3412,10 @@ export function CustomVideoPlayer({
   }, [
     clearAudioTranscodeReadinessTimer,
     clearFullscreenSeekPreviewFallbackTimer,
+    clearSeekFeedbackSpinTimers,
     clearSeekFeedbackTimers,
     reportStoppedOnce,
+    resetTouchSeekSession,
   ]);
 
   useEffect(() => {
@@ -3438,28 +3577,53 @@ export function CustomVideoPlayer({
     onVideoFailure(details);
   };
 
-  const handleDoubleSeek = (clientX: number) => {
-    if (Date.now() < suppressPlayerTapUntilRef.current) {
-      return;
-    }
-
+  const getTouchSeekSide = (clientX: number): TouchSeekSide | null => {
     const bounds = containerRef.current?.getBoundingClientRect();
 
     if (!bounds) {
-      return;
+      return null;
     }
 
-    const isLeftSide = clientX - bounds.left < bounds.width / 2;
-    handleSeekBy(isLeftSide ? -5 : 5);
+    return clientX - bounds.left < bounds.width / 2 ? "left" : "right";
   };
 
-  const handlePointerUp = (event: PointerEvent<HTMLDivElement>) => {
+  const scheduleTouchSeekSessionExpiry = () => {
+    clearTouchSeekSessionTimeout();
+
+    touchSeekSessionRef.current.timeoutId = window.setTimeout(() => {
+      touchSeekSessionRef.current.lastTapTime = 0;
+      touchSeekSessionRef.current.lastTapSide = null;
+      touchSeekSessionRef.current.isActive = false;
+      touchSeekSessionRef.current.accumulatedSeconds = 0;
+      touchSeekSessionRef.current.timeoutId = null;
+    }, TOUCH_SEEK_SESSION_TIMEOUT_MS);
+  };
+
+  const seekByTouchSide = (side: TouchSeekSide, now: number) => {
+    const seconds = side === "left" ? -5 : 5;
+    const session = touchSeekSessionRef.current;
+    const isContinuingSameSide = session.lastTapSide === side;
+
+    session.lastTapTime = now;
+    session.lastTapSide = side;
+    session.isActive = true;
+    // The video seek uses only this tap's delta; feedback state accumulates
+    // separately, while this ref keeps the session's direction/total current.
+    session.accumulatedSeconds = isContinuingSameSide
+      ? session.accumulatedSeconds + seconds
+      : seconds;
+
+    handleSeekBy(seconds);
+    scheduleTouchSeekSessionExpiry();
+  };
+
+  const handlePointerUp = (event: PointerEvent<HTMLDivElement>): boolean => {
     if (
       isDraggingSubtitle ||
       isResizingSubtitle ||
       Date.now() < suppressPlayerTapUntilRef.current
     ) {
-      return;
+      return false;
     }
 
     const target = event.target as HTMLElement | null;
@@ -3469,32 +3633,48 @@ export function CustomVideoPlayer({
     );
 
     if (tappedInteractiveElement) {
-      return;
+      return false;
     }
 
     if (event.pointerType !== "touch") {
-      return;
+      return false;
     }
 
     const now = Date.now();
-    const previousTap = lastTapRef.current;
+    const tappedSide = getTouchSeekSide(event.clientX);
 
-    if (
-      previousTap &&
-      now - previousTap.time < 320 &&
-      Math.abs(previousTap.x - event.clientX) < 70
-    ) {
-      if (singleTapTimerRef.current !== null) {
-        window.clearTimeout(singleTapTimerRef.current);
-        singleTapTimerRef.current = null;
-      }
-
-      handleDoubleSeek(event.clientX);
-      lastTapRef.current = null;
-      return;
+    if (!tappedSide) {
+      return false;
     }
 
-    lastTapRef.current = { time: now, x: event.clientX };
+    const session = touchSeekSessionRef.current;
+
+    if (session.isActive) {
+      if (session.lastTapSide === tappedSide) {
+        clearSingleTapTimer();
+        event.preventDefault();
+        seekByTouchSide(tappedSide, now);
+        return true;
+      }
+
+      resetTouchSeekSession();
+    }
+
+    if (
+      touchSeekSessionRef.current.lastTapSide === tappedSide &&
+      now - touchSeekSessionRef.current.lastTapTime <
+        TOUCH_DOUBLE_TAP_THRESHOLD_MS
+    ) {
+      clearSingleTapTimer();
+      event.preventDefault();
+      touchSeekSessionRef.current.accumulatedSeconds = 0;
+      seekByTouchSide(tappedSide, now);
+      return true;
+    }
+
+    resetTouchSeekSession();
+    touchSeekSessionRef.current.lastTapTime = now;
+    touchSeekSessionRef.current.lastTapSide = tappedSide;
 
     singleTapTimerRef.current = window.setTimeout(() => {
       if (isViewModeEnabled) {
@@ -3514,7 +3694,9 @@ export function CustomVideoPlayer({
       }
 
       singleTapTimerRef.current = null;
-    }, 180);
+    }, TOUCH_SINGLE_TAP_DELAY_MS);
+
+    return false;
   };
 
   const handlePlayerOverlayToggle = useCallback(
@@ -3657,7 +3839,7 @@ export function CustomVideoPlayer({
     setIsResizingSubtitle(true);
     setIsDraggingSubtitle(false);
     subtitleDragStateRef.current = null;
-    lastTapRef.current = null;
+    resetTouchSeekSession();
     revealPlayerChrome();
   };
 
@@ -3705,7 +3887,7 @@ export function CustomVideoPlayer({
     subtitleResizeStateRef.current = null;
     setIsResizingSubtitle(false);
     suppressPlayerTapUntilRef.current = Date.now() + 450;
-    lastTapRef.current = null;
+    resetTouchSeekSession();
   };
 
   const handleSubtitleResizePointerCancel = (
@@ -3719,7 +3901,7 @@ export function CustomVideoPlayer({
     subtitleResizeStateRef.current = null;
     setIsResizingSubtitle(false);
     suppressPlayerTapUntilRef.current = Date.now() + 450;
-    lastTapRef.current = null;
+    resetTouchSeekSession();
   };
 
   const handleSubtitlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
@@ -3765,7 +3947,7 @@ export function CustomVideoPlayer({
     setIsDraggingSubtitle(true);
     setIsResizingSubtitle(false);
     subtitleResizeStateRef.current = null;
-    lastTapRef.current = null;
+    resetTouchSeekSession();
     revealPlayerChrome();
   };
 
@@ -3814,7 +3996,7 @@ export function CustomVideoPlayer({
     subtitleDragStateRef.current = null;
     suppressPlayerTapUntilRef.current = Date.now() + 450;
     setIsDraggingSubtitle(false);
-    lastTapRef.current = null;
+    resetTouchSeekSession();
   };
 
   const handleSubtitlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
@@ -3827,7 +4009,7 @@ export function CustomVideoPlayer({
     suppressPlayerTapUntilRef.current = Date.now() + 450;
     setIsDraggingSubtitle(false);
     setIsResizingSubtitle(false);
-    lastTapRef.current = null;
+    resetTouchSeekSession();
   };
 
   const subtitle = getItemSubtitle(item, mediaFormatLabels);
@@ -3890,8 +4072,11 @@ export function CustomVideoPlayer({
       style={portraitPlayerStyle}
       onMouseMove={handlePlayerMouseMove}
       onPointerUp={(event) => {
-        handlePointerUp(event);
-        handlePlayerOverlayToggle(event);
+        const wasTouchSeekHandled = handlePointerUp(event);
+
+        if (!wasTouchSeekHandled) {
+          handlePlayerOverlayToggle(event);
+        }
       }}
     >
       <video

@@ -485,7 +485,7 @@ export function RouteColorTransition() {
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-[9999] overflow-hidden bg-black opacity-0"
+      className="fixed inset-0 z-[999999] overflow-hidden bg-black opacity-0"
       style={{ pointerEvents: isLeaving ? "none" : "auto" }}
       aria-hidden="true"
     >
@@ -505,7 +505,7 @@ export function RouteColorTransition() {
               backgroundColor: "#000000",
               transformOrigin,
               transform: "scaleX(0)",
-              borderRadius: "10px",
+              borderRadius: "0.3rem",
               overflow: "hidden",
               zIndex: bar.isSelectedCentering || bar.isSelectedExiting ? 5 : 1,
             }}
@@ -516,12 +516,12 @@ export function RouteColorTransition() {
       <div
         ref={logoRef}
         className="absolute inset-0 z-10 flex items-center justify-center opacity-0"
-        style={{ transform: "scale(0.88)" }}
+        style={{ transform: "scale(0)" }}
       >
         <div className="relative flex h-32 w-32 items-center justify-center md:h-64 md:w-64">
-          <div className="absolute inset-0 rounded-[2rem] bg-black/40 blur-2xl" />
+          <div className="seyirlik-logo-theme-glow absolute inset-5 rounded-[2rem] " />
 
-          <div className="absolute inset-5 rounded-[2rem] bg-black/50" />
+          {/* <div className="absolute inset-5 rounded-[2rem] bg-black/50" /> */}
 
           <img
             src={AppIcon}
