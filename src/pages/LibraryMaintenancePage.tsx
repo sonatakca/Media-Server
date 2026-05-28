@@ -21,6 +21,7 @@ import {
   refreshItemMetadata,
   refreshLibraryMetadata,
   scanAllLibraries,
+  updateItemDefaultSubtitlePreference,
   updateItemMetadata,
   getBackdropImageUrl,
   getLogoImageUrl,
@@ -30,6 +31,7 @@ import {
 import type {
   JellyfinItem,
   JellyfinLibrary,
+  JellyfinMediaStream,
   JellyfinMetadataRefreshMode,
 } from "../lib/types";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
@@ -75,6 +77,41 @@ function createDraftFromItem(item: JellyfinItem): MetadataDraft {
         : "",
     genres: item.Genres?.join(", ") ?? "",
   };
+}
+
+function getDefaultSubtitlePreferenceIndex(item: JellyfinItem): number {
+  return item.MediaSources?.[0]?.DefaultSubtitleStreamIndex ?? -1;
+}
+
+function getSubtitleStreams(item: JellyfinItem | null): JellyfinMediaStream[] {
+  return (
+    item?.MediaSources?.[0]?.MediaStreams?.filter(
+      (stream) => stream.Type?.toLowerCase() === "subtitle",
+    ) ?? []
+  );
+}
+
+function getSubtitleStreamLabel(
+  stream: JellyfinMediaStream,
+  fallback: string,
+  t: Translate,
+): string {
+  const detailParts = [
+    stream.DisplayTitle,
+    stream.Title,
+    stream.Language?.toUpperCase(),
+    stream.Codec?.toUpperCase(),
+    stream.IsExternal ? t("maintenance.external") : undefined,
+    stream.IsDefault ? t("common.default") : undefined,
+    stream.IsForced ? t("maintenance.forced") : undefined,
+  ].filter(Boolean);
+  const uniqueDetails = Array.from(new Set(detailParts));
+  const streamPrefix =
+    stream.Index !== undefined ? `#${stream.Index}` : fallback;
+
+  return uniqueDetails.length > 0
+    ? `${streamPrefix} · ${uniqueDetails.join(" · ")}`
+    : streamPrefix;
 }
 
 function formatTemplate(
@@ -125,7 +162,10 @@ function formatBoolean(value: boolean | undefined, t: Translate): string {
   return t("common.unknown");
 }
 
-function formatBytes(value: number | undefined, unknownLabel = "Unknown"): string {
+function formatBytes(
+  value: number | undefined,
+  unknownLabel = "Unknown",
+): string {
   if (!value || value <= 0) return unknownLabel;
 
   const units = ["B", "KB", "MB", "GB", "TB"];
@@ -203,7 +243,9 @@ async function withLibraryLoadTimeout<T>(
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = window.setTimeout(() => {
       reject(
-        new Error(formatTemplate(t("maintenance.libraryLoadTimeout"), { label })),
+        new Error(
+          formatTemplate(t("maintenance.libraryLoadTimeout"), { label }),
+        ),
       );
     }, 15000);
   });
@@ -254,12 +296,19 @@ export function LibraryMaintenancePage() {
   const [saveState, setSaveState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
+  const [selectedDefaultSubtitleIndex, setSelectedDefaultSubtitleIndex] =
+    useState(-1);
+  const [subtitlePreferenceState, setSubtitlePreferenceState] =
+    useState<ActionResult>(() => createEmptyResult());
 
   useEffect(() => {
-    setPageTitle(`${t("maintenance.title")} · ${t("devtools.title")} · Seyirlik`, {
-      canonicalPath: "/dev/library-maintenance",
-      robots: "noindex, nofollow",
-    });
+    setPageTitle(
+      `${t("maintenance.title")} · ${t("devtools.title")} · Seyirlik`,
+      {
+        canonicalPath: "/dev/library-maintenance",
+        robots: "noindex, nofollow",
+      },
+    );
   }, [t]);
 
   useEffect(() => {
@@ -437,10 +486,17 @@ export function LibraryMaintenancePage() {
     return options;
   }, [libraries, t]);
 
+  const selectedSubtitleStreams = useMemo(
+    () => getSubtitleStreams(selectedItem),
+    [selectedItem],
+  );
+
   const selectItem = async (item: JellyfinItem) => {
     setSelectedItem(item);
     setDraft(createDraftFromItem(item));
+    setSelectedDefaultSubtitleIndex(getDefaultSubtitlePreferenceIndex(item));
     setSaveState(createEmptyResult());
+    setSubtitlePreferenceState(createEmptyResult());
     setItemRefreshState(createEmptyResult());
     setTrickplayStatus("loading");
 
@@ -448,6 +504,9 @@ export function LibraryMaintenancePage() {
       const freshItem = await getItem(item.Id);
       setSelectedItem(freshItem);
       setDraft(createDraftFromItem(freshItem));
+      setSelectedDefaultSubtitleIndex(
+        getDefaultSubtitlePreferenceIndex(freshItem),
+      );
     } catch {
       // Keep the existing loaded item if the detail refresh fails.
     }
@@ -534,6 +593,14 @@ export function LibraryMaintenancePage() {
       const refreshed = await getItem(selectedItem.Id);
       setSelectedItem(refreshed);
       setDraft(createDraftFromItem(refreshed));
+      setSelectedDefaultSubtitleIndex(
+        getDefaultSubtitlePreferenceIndex(refreshed),
+      );
+      setItems((currentItems) =>
+        currentItems.map((item) =>
+          item.Id === refreshed.Id ? refreshed : item,
+        ),
+      );
 
       setItemRefreshState({
         state: "success",
@@ -587,6 +654,9 @@ export function LibraryMaintenancePage() {
       const refreshed = await getItem(selectedItem.Id);
       setSelectedItem(refreshed);
       setDraft(createDraftFromItem(refreshed));
+      setSelectedDefaultSubtitleIndex(
+        getDefaultSubtitlePreferenceIndex(refreshed),
+      );
       setItems((currentItems) =>
         currentItems.map((item) =>
           item.Id === refreshed.Id ? refreshed : item,
@@ -601,10 +671,73 @@ export function LibraryMaintenancePage() {
       setSaveState({
         state: "error",
         message:
-          error instanceof Error ? error.message : t("maintenance.couldNotSave"),
+          error instanceof Error
+            ? error.message
+            : t("maintenance.couldNotSave"),
       });
     }
   };
+
+  const handleSaveSubtitlePreference = async () => {
+    if (!selectedItem) return;
+
+    const oldDefaultSubtitleIndex =
+      getDefaultSubtitlePreferenceIndex(selectedItem);
+    const nextDefaultSubtitleIndex = selectedDefaultSubtitleIndex;
+
+    setSubtitlePreferenceState({
+      state: "loading",
+      message: t("maintenance.savingSubtitlePreference"),
+    });
+
+    if (import.meta.env.DEV) {
+      console.info("[Seyirlik Maintenance] Saving subtitle preference", {
+        itemId: selectedItem.Id,
+        oldDefaultSubtitleStreamIndex: oldDefaultSubtitleIndex,
+        newDefaultSubtitleStreamIndex: nextDefaultSubtitleIndex,
+      });
+    }
+
+    try {
+      await updateItemDefaultSubtitlePreference(
+        selectedItem.Id,
+        selectedItem,
+        nextDefaultSubtitleIndex,
+      );
+
+      const refreshed = await getItem(selectedItem.Id);
+      setSelectedItem(refreshed);
+      setDraft(createDraftFromItem(refreshed));
+      setSelectedDefaultSubtitleIndex(
+        getDefaultSubtitlePreferenceIndex(refreshed),
+      );
+      setItems((currentItems) =>
+        currentItems.map((item) =>
+          item.Id === refreshed.Id ? refreshed : item,
+        ),
+      );
+
+      setSubtitlePreferenceState({
+        state: "success",
+        message: t("maintenance.subtitlePreferenceSaved"),
+      });
+    } catch (error) {
+      setSubtitlePreferenceState({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("maintenance.couldNotSaveSubtitlePreference"),
+      });
+    }
+  };
+
+  const selectedMediaSource = selectedItem?.MediaSources?.[0];
+  const hasSelectedSubtitleOption =
+    selectedDefaultSubtitleIndex < 0 ||
+    selectedSubtitleStreams.some(
+      (stream) => stream.Index === selectedDefaultSubtitleIndex,
+    );
 
   return (
     <div className="relative mx-auto max-w-7xl space-y-6">
@@ -907,6 +1040,100 @@ export function LibraryMaintenancePage() {
                 </p>
               ) : null}
 
+              <section className="mt-5 rounded-3xl border border-white/10 bg-white/[0.045] p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
+                      {t("maintenance.defaultSubtitlePreference")}
+                    </p>
+                    <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
+                      {t("maintenance.defaultSubtitlePreferenceDescription")}
+                    </p>
+
+                    <label className="mt-4 block">
+                      <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
+                        {t("maintenance.defaultSubtitleIndex")}
+                      </span>
+                      <select
+                        value={String(selectedDefaultSubtitleIndex)}
+                        disabled={!selectedMediaSource}
+                        onChange={(event) =>
+                          setSelectedDefaultSubtitleIndex(
+                            Number(event.target.value),
+                          )
+                        }
+                        className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-55"
+                      >
+                        <option value="-1">
+                          {t("maintenance.subtitlePreferenceOff")}
+                        </option>
+                        {!hasSelectedSubtitleOption ? (
+                          <option value={String(selectedDefaultSubtitleIndex)}>
+                            {formatTemplate(
+                              t("maintenance.subtitleTrackMissing"),
+                              { index: selectedDefaultSubtitleIndex },
+                            )}
+                          </option>
+                        ) : null}
+                        {selectedSubtitleStreams.map((stream, index) =>
+                          stream.Index === undefined ? null : (
+                            <option
+                              key={`${stream.Index}-${stream.DisplayTitle ?? index}`}
+                              value={stream.Index}
+                            >
+                              {getSubtitleStreamLabel(
+                                stream,
+                                formatTemplate(t("settings.subtitle"), {
+                                  number: index + 1,
+                                }),
+                                t,
+                              )}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+
+                    {selectedSubtitleStreams.length === 0 ? (
+                      <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/50">
+                        {t("maintenance.noSubtitleStreams")}
+                      </p>
+                    ) : null}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveSubtitlePreference}
+                    disabled={
+                      !selectedMediaSource ||
+                      subtitlePreferenceState.state === "loading"
+                    }
+                    className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {subtitlePreferenceState.state === "loading" ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Save size={18} />
+                    )}
+                    {t("maintenance.saveSubtitlePreference")}
+                  </button>
+                </div>
+
+                {subtitlePreferenceState.message ? (
+                  <p
+                    className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${
+                      subtitlePreferenceState.state === "error"
+                        ? "border-red-400/20 bg-red-400/10 text-red-100"
+                        : subtitlePreferenceState.state === "success"
+                          ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+                          : "border-white/10 bg-white/[0.06] text-white/62"
+                    }`}
+                  >
+                    {subtitlePreferenceState.message}
+                  </p>
+                ) : null}
+              </section>
+
               <section className="mt-5 space-y-4 rounded-3xl border border-white/10 bg-white/[0.035] p-4">
                 <div>
                   <p className="text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
@@ -1032,8 +1259,14 @@ export function LibraryMaintenancePage() {
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <DetailRow label={t("maintenance.itemId")} value={selectedItem.Id} />
-                  <DetailRow label={t("common.type")} value={selectedItem.Type} />
+                  <DetailRow
+                    label={t("maintenance.itemId")}
+                    value={selectedItem.Id}
+                  />
+                  <DetailRow
+                    label={t("common.type")}
+                    value={selectedItem.Type}
+                  />
                   <DetailRow
                     label={t("maintenance.mediaType")}
                     value={selectedItem.MediaType}

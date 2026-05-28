@@ -33,6 +33,7 @@ interface PlayerControlsProps {
   selectedSubtitleStreamIndex: number;
   canSwitchAudio: boolean;
   canSwitchSubtitles: boolean;
+  isSubtitleEditMode?: boolean;
   settingsOpen: boolean;
   itemId: string;
   mediaSourceId?: string;
@@ -54,6 +55,7 @@ interface PlayerControlsProps {
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
   onSelectSubtitleStream: (streamIndex: number) => void;
+  onStartSubtitleEdit?: () => void;
   onSeekPreview?: (seconds: number) => void;
 }
 
@@ -90,6 +92,7 @@ export function PlayerControls({
   selectedSubtitleStreamIndex,
   canSwitchAudio,
   canSwitchSubtitles,
+  isSubtitleEditMode = false,
   settingsOpen,
   itemId,
   mediaSourceId,
@@ -111,6 +114,7 @@ export function PlayerControls({
   onSelectQuality,
   onSelectAudioStream,
   onSelectSubtitleStream,
+  onStartSubtitleEdit,
   onSeekPreview,
 }: PlayerControlsProps) {
   const { t } = useLanguage();
@@ -248,7 +252,7 @@ export function PlayerControls({
 
           <div className="flex shrink-0 items-center gap-1 sm:gap-2">
             <div className="relative" data-player-settings-root>
-              {settingsOpen ? (
+              {settingsOpen && !isSubtitleEditMode ? (
                 <PlayerSettingsPanel
                   source={source}
                   qualityOptions={qualityOptions}
@@ -262,6 +266,7 @@ export function PlayerControls({
                   onSelectQuality={onSelectQuality}
                   onSelectAudioStream={onSelectAudioStream}
                   onSelectSubtitleStream={onSelectSubtitleStream}
+                  onStartSubtitleEdit={onStartSubtitleEdit}
                 />
               ) : null}
 

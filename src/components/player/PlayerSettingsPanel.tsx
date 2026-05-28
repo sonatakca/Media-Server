@@ -30,6 +30,7 @@ interface PlayerSettingsPanelProps {
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
   onSelectSubtitleStream: (streamIndex: number) => void;
+  onStartSubtitleEdit?: () => void;
   compact?: boolean;
 }
 
@@ -177,6 +178,7 @@ export function PlayerSettingsPanel({
   onSelectQuality,
   onSelectAudioStream,
   onSelectSubtitleStream,
+  onStartSubtitleEdit,
   compact = false,
 }: PlayerSettingsPanelProps) {
   const { t } = useLanguage();
@@ -432,6 +434,28 @@ export function PlayerSettingsPanel({
                   {t("settings.noSubtitles")}
                 </p>
               )}
+
+              <SettingsButton
+                title={t("settings.editSubtitles")}
+                subtitle={
+                  selectedSubtitleStreamIndex >= 0
+                    ? t("settings.dragResizeSubtitles")
+                    : t("settings.enableSubtitlesToEdit")
+                }
+                disabled={
+                  selectedSubtitleStreamIndex < 0 ||
+                  !canSwitchSubtitles ||
+                  !onStartSubtitleEdit
+                }
+                compact={compact}
+                onClick={
+                  selectedSubtitleStreamIndex < 0 ||
+                  !canSwitchSubtitles ||
+                  !onStartSubtitleEdit
+                    ? undefined
+                    : onStartSubtitleEdit
+                }
+              />
             </motion.div>
           ) : null}
         </AnimatePresence>

@@ -1023,6 +1023,35 @@ export async function updateItemMetadata(
   });
 }
 
+export async function updateItemDefaultSubtitlePreference(
+  itemId: string,
+  item: JellyfinItem,
+  subtitleStreamIndex: number,
+): Promise<void> {
+  const firstMediaSource = item.MediaSources?.[0];
+
+  if (!firstMediaSource) {
+    throw new Error("This item does not have a media source to update.");
+  }
+
+  const updatedMediaSource = { ...firstMediaSource };
+
+  if (subtitleStreamIndex < 0) {
+    delete updatedMediaSource.DefaultSubtitleStreamIndex;
+  } else {
+    updatedMediaSource.DefaultSubtitleStreamIndex = subtitleStreamIndex;
+  }
+
+  // TODO: If a Jellyfin server ignores MediaSources on item metadata updates,
+  // replace this with a dedicated item-scoped default stream endpoint.
+  await updateItemMetadata(itemId, {
+    ...item,
+    MediaSources: item.MediaSources?.map((mediaSource, index) =>
+      index === 0 ? updatedMediaSource : mediaSource,
+    ),
+  });
+}
+
 function getBrowserDeviceProfile(): Record<string, unknown> {
   return {
     Name: "Seyirlik HTML5",

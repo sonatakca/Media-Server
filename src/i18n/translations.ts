@@ -174,6 +174,7 @@ export const translations = {
     "player.resizeSubtitlesTopRight": "Resize subtitles from top right",
     "player.resizeSubtitlesBottomLeft": "Resize subtitles from bottom left",
     "player.resizeSubtitlesBottomRight": "Resize subtitles from bottom right",
+    "player.finishSubtitleEdit": "Done",
     "player.rotateTitle": "Turn your phone sideways",
     "player.rotateMessage":
       "Seyirlik player works best in landscape on phones.",
@@ -204,6 +205,9 @@ export const translations = {
     "settings.clickToEnable": "Click to enable",
     "settings.subtitleUnavailable": "Subtitle URL unavailable",
     "settings.noSubtitles": "No subtitles returned.",
+    "settings.editSubtitles": "Edit subtitles",
+    "settings.dragResizeSubtitles": "Drag and resize the subtitle position",
+    "settings.enableSubtitlesToEdit": "Enable a subtitle track first",
     "stream.default": "Default",
     "stream.forced": "Forced",
     "stream.external": "External",
@@ -635,6 +639,15 @@ export const translations = {
     "maintenance.transcoding": "Transcoding",
     "maintenance.defaultAudioIndex": "Default audio index",
     "maintenance.defaultSubtitleIndex": "Default subtitle index",
+    "maintenance.defaultSubtitlePreference": "Default subtitle preference",
+    "maintenance.defaultSubtitlePreferenceDescription":
+      "Choose which subtitle track should be preferred when playback starts for this item.",
+    "maintenance.subtitlePreferenceOff": "Off / No subtitles",
+    "maintenance.noSubtitleStreams":
+      "No subtitle streams returned for this media source.",
+    "maintenance.subtitleTrackMissing":
+      "Stream #{index} (not in the current media streams)",
+    "maintenance.saveSubtitlePreference": "Save subtitle preference",
     "maintenance.mediaStreams": "Media streams",
     "maintenance.streamFallback": "Stream",
     "maintenance.codec": "Codec",
@@ -680,6 +693,10 @@ export const translations = {
     "maintenance.savingMetadata": "Saving metadata...",
     "maintenance.metadataSaved": "Metadata saved.",
     "maintenance.couldNotSave": "Could not save metadata.",
+    "maintenance.savingSubtitlePreference": "Saving subtitle preference...",
+    "maintenance.subtitlePreferenceSaved": "Subtitle preference saved.",
+    "maintenance.couldNotSaveSubtitlePreference":
+      "Could not save subtitle preference.",
   },
   tr: {
     "nav.home": "Ana Sayfa",
@@ -853,6 +870,7 @@ export const translations = {
       "Altyazıyı sol alttan yeniden boyutlandır",
     "player.resizeSubtitlesBottomRight":
       "Altyazıyı sağ alttan yeniden boyutlandır",
+    "player.finishSubtitleEdit": "Bitti",
     "player.rotateTitle": "Telefonunu yan çevir",
     "player.rotateMessage":
       "Seyirlik oynatıcı telefonda en iyi yatay kullanımda çalışır.",
@@ -883,6 +901,9 @@ export const translations = {
     "settings.clickToEnable": "Açmak için dokun",
     "settings.subtitleUnavailable": "Altyazı adresi kullanılamıyor",
     "settings.noSubtitles": "Altyazı dönmedi.",
+    "settings.editSubtitles": "Altyazıları düzenle",
+    "settings.dragResizeSubtitles": "Altyazı konumunu sürükleyip boyutlandır",
+    "settings.enableSubtitlesToEdit": "Önce bir altyazı parçası seç",
     "stream.default": "Varsayılan",
     "stream.forced": "Zorunlu",
     "stream.external": "Harici",
@@ -1316,6 +1337,15 @@ export const translations = {
     "maintenance.transcoding": "Dönüştürme",
     "maintenance.defaultAudioIndex": "Varsayılan ses indeksi",
     "maintenance.defaultSubtitleIndex": "Varsayılan altyazı indeksi",
+    "maintenance.defaultSubtitlePreference": "Varsayılan altyazı tercihi",
+    "maintenance.defaultSubtitlePreferenceDescription":
+      "Bu içerik oynatılırken hangi altyazı parçasının tercih edileceğini seç.",
+    "maintenance.subtitlePreferenceOff": "Kapalı / Altyazı yok",
+    "maintenance.noSubtitleStreams":
+      "Bu medya kaynağı için altyazı akışı dönmedi.",
+    "maintenance.subtitleTrackMissing":
+      "Akış #{index} (geçerli medya akışlarında yok)",
+    "maintenance.saveSubtitlePreference": "Altyazı tercihini kaydet",
     "maintenance.mediaStreams": "Medya akışları",
     "maintenance.streamFallback": "Akış",
     "maintenance.codec": "Codec",
@@ -1365,6 +1395,10 @@ export const translations = {
     "maintenance.savingMetadata": "Metadata kaydediliyor...",
     "maintenance.metadataSaved": "Metadata kaydedildi.",
     "maintenance.couldNotSave": "Metadata kaydedilemedi.",
+    "maintenance.savingSubtitlePreference": "Altyazı tercihi kaydediliyor...",
+    "maintenance.subtitlePreferenceSaved": "Altyazı tercihi kaydedildi.",
+    "maintenance.couldNotSaveSubtitlePreference":
+      "Altyazı tercihi kaydedilemedi.",
   },
 } satisfies Record<Language, Record<string, string>>;
 

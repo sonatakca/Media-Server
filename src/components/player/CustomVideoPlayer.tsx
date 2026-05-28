@@ -1246,10 +1246,7 @@ export function CustomVideoPlayer({
   );
 
   const controlsShouldStayVisible =
-    isSettingsOpen ||
-    isPlaybackInfoOpen ||
-    isPartyWatchOpen ||
-    isSubtitleEditMode;
+    isSettingsOpen || isPlaybackInfoOpen || isPartyWatchOpen;
 
   const {
     areControlsVisible,
@@ -1264,6 +1261,7 @@ export function CustomVideoPlayer({
   });
 
   const shouldShowPlayerChrome =
+    !isSubtitleEditMode &&
     !areControlsManuallyHidden &&
     (areControlsVisible || !progress.isPlaying || controlsShouldStayVisible);
   const shouldRenderPlayerChrome = shouldShowPlayerChrome && !isViewModeEnabled;
@@ -1580,6 +1578,65 @@ export function CustomVideoPlayer({
       activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
+
+  const initializeSubtitleEditPosition = useCallback(() => {
+    const bounds = containerRef.current?.getBoundingClientRect();
+    const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
+
+    if (!bounds || !overlayBounds) {
+      return;
+    }
+
+    const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
+    const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
+
+    setSubtitlePosition(
+      (currentPosition) =>
+        currentPosition ?? {
+          x: clamp(
+            ((overlayCenterX - bounds.left) / bounds.width) * 100,
+            8,
+            92,
+          ),
+          y: clamp(
+            ((overlayCenterY - bounds.top) / bounds.height) * 100,
+            10,
+            90,
+          ),
+        },
+    );
+  }, []);
+
+  const startSubtitleEditMode = useCallback(() => {
+    initializeSubtitleEditPosition();
+    setIsSettingsOpen(false);
+    setIsPlaybackInfoOpen(false);
+    setIsPartyWatchOpen(false);
+    setIsDraggingSubtitle(false);
+    setIsResizingSubtitle(false);
+    setIsSubtitleEditMode(true);
+    setAreControlsManuallyHidden(true);
+    subtitleDragStateRef.current = null;
+    subtitleResizeStateRef.current = null;
+    suppressPlayerTapUntilRef.current = Date.now() + 350;
+    resetTouchSeekSession();
+    releaseControlsHover();
+  }, [
+    initializeSubtitleEditPosition,
+    releaseControlsHover,
+    resetTouchSeekSession,
+  ]);
+
+  const finishSubtitleEditMode = useCallback(() => {
+    setIsSubtitleEditMode(false);
+    setIsDraggingSubtitle(false);
+    setIsResizingSubtitle(false);
+    subtitleDragStateRef.current = null;
+    subtitleResizeStateRef.current = null;
+    suppressPlayerTapUntilRef.current = Date.now() + 350;
+    resetTouchSeekSession();
+    revealPlayerChrome();
+  }, [resetTouchSeekSession, revealPlayerChrome]);
 
   const sourceWithLiveTranscodingReasons =
     useMemo<PlaybackSourceCandidate>(() => {
@@ -2253,12 +2310,7 @@ export function CustomVideoPlayer({
         return;
       }
 
-      setIsSubtitleEditMode(false);
-      setIsDraggingSubtitle(false);
-      setIsResizingSubtitle(false);
-      subtitleDragStateRef.current = null;
-      subtitleResizeStateRef.current = null;
-      suppressPlayerTapUntilRef.current = Date.now() + 350;
+      finishSubtitleEditMode();
     };
 
     document.addEventListener("pointerdown", handlePointerDownOutsideSubtitle);
@@ -2269,7 +2321,7 @@ export function CustomVideoPlayer({
         handlePointerDownOutsideSubtitle,
       );
     };
-  }, [isSubtitleEditMode]);
+  }, [finishSubtitleEditMode, isSubtitleEditMode]);
 
   const stopCurrentPlaybackForSourceSwitch = useCallback(
     async (currentSource: PlaybackSourceCandidate) => {
@@ -3759,6 +3811,25 @@ export function CustomVideoPlayer({
     revealPlayerChrome();
   }, [isViewModeEnabled, revealPlayerChrome, revealViewModeCursor]);
 
+  const releaseTouchFocusAndControlsHover = useCallback(
+    (event: PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== "touch") {
+        return;
+      }
+
+      const activeElement = document.activeElement;
+
+      if (activeElement instanceof HTMLElement) {
+        activeElement.blur();
+      }
+
+      window.setTimeout(() => {
+        releaseControlsHover();
+      }, 120);
+    },
+    [releaseControlsHover],
+  );
+
   const getSubtitlePositionFromPoint = useCallback(
     (clientX: number, clientY: number): SubtitlePosition | null => {
       const bounds = containerRef.current?.getBoundingClientRect();
@@ -3787,33 +3858,7 @@ export function CustomVideoPlayer({
   const handleSubtitleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
     event.preventDefault();
     event.stopPropagation();
-
-    const bounds = containerRef.current?.getBoundingClientRect();
-    const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
-
-    if (bounds && overlayBounds) {
-      const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
-      const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
-
-      setSubtitlePosition(
-        (currentPosition) =>
-          currentPosition ?? {
-            x: clamp(
-              ((overlayCenterX - bounds.left) / bounds.width) * 100,
-              8,
-              92,
-            ),
-            y: clamp(
-              ((overlayCenterY - bounds.top) / bounds.height) * 100,
-              10,
-              90,
-            ),
-          },
-      );
-    }
-
-    setIsSubtitleEditMode(true);
-    revealPlayerChrome();
+    startSubtitleEditMode();
   };
 
   const handleSubtitleResizePointerDown = (
@@ -4062,7 +4107,7 @@ export function CustomVideoPlayer({
   return (
     <div
       ref={containerRef}
-      className={`seyirlik-player-shell ${
+      className={`seyirlik-player-shell select-none ${
         shouldRotatePortraitPlayer
           ? "seyirlik-player-shell--rotated-portrait"
           : "fixed inset-0"
@@ -4071,6 +4116,8 @@ export function CustomVideoPlayer({
       }`}
       style={portraitPlayerStyle}
       onMouseMove={handlePlayerMouseMove}
+      onPointerUpCapture={releaseTouchFocusAndControlsHover}
+      onPointerCancelCapture={releaseTouchFocusAndControlsHover}
       onPointerUp={(event) => {
         const wasTouchSeekHandled = handlePointerUp(event);
 
@@ -4237,7 +4284,18 @@ export function CustomVideoPlayer({
         </div>
       ) : null}
 
-      {!isViewModeEnabled ? (
+      {isSubtitleEditMode ? (
+        <button
+          type="button"
+          data-subtitle-editor-root
+          onClick={finishSubtitleEditMode}
+          className="pointer-events-auto absolute right-[max(0.85rem,env(safe-area-inset-right))] top-[max(0.75rem,env(safe-area-inset-top))] z-[72] rounded-full border border-white/15 bg-black/70 px-4 py-2 text-sm font-black text-white shadow-player-controls backdrop-blur-xl transition hover:bg-white/[0.14] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+        >
+          {t("player.finishSubtitleEdit")}
+        </button>
+      ) : null}
+
+      {!isViewModeEnabled && !isSubtitleEditMode ? (
         <>
           <PlayerOverlay
             title={title}
@@ -4417,11 +4475,13 @@ export function CustomVideoPlayer({
             selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
             canSwitchAudio={canSwitchAudio}
             canSwitchSubtitles={canSwitchSubtitles}
+            isSubtitleEditMode={isSubtitleEditMode}
             settingsOpen={isSettingsOpen}
             onSelectAutoQuality={handleSelectAutoQuality}
             onSelectQuality={handleSelectQuality}
             onSelectAudioStream={handleSelectAudioStream}
             onSelectSubtitleStream={handleSelectSubtitleStream}
+            onStartSubtitleEdit={startSubtitleEditMode}
           />
         </>
       ) : null}
