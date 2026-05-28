@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeft,
   Check,
@@ -15,13 +15,13 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import {
+  getAllSeriesEpisodes,
   getVideoItemsForLibrary,
   getItem,
   getUserViews,
   refreshItemMetadata,
   refreshLibraryMetadata,
   scanAllLibraries,
-  updateItemDefaultSubtitlePreference,
   updateItemMetadata,
   getBackdropImageUrl,
   getLogoImageUrl,
@@ -36,6 +36,10 @@ import type {
 } from "../lib/types";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
+import {
+  getDefaultSubtitleStreamIndexForItem,
+  saveDefaultSubtitleStreamPreferences,
+} from "../lib/subtitlePreferences";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 
@@ -56,6 +60,14 @@ interface MetadataDraft {
   communityRating: string;
   genres: string;
 }
+
+interface SubtitlePreferenceOption {
+  index: number;
+  stream: JellyfinMediaStream;
+  itemCount: number;
+}
+
+const MIXED_SUBTITLE_PREFERENCE_INDEX = -2;
 
 function createEmptyResult(): ActionResult {
   return {
@@ -80,7 +92,7 @@ function createDraftFromItem(item: JellyfinItem): MetadataDraft {
 }
 
 function getDefaultSubtitlePreferenceIndex(item: JellyfinItem): number {
-  return item.MediaSources?.[0]?.DefaultSubtitleStreamIndex ?? -1;
+  return getDefaultSubtitleStreamIndexForItem(item);
 }
 
 function getSubtitleStreams(item: JellyfinItem | null): JellyfinMediaStream[] {
@@ -112,6 +124,59 @@ function getSubtitleStreamLabel(
   return uniqueDetails.length > 0
     ? `${streamPrefix} · ${uniqueDetails.join(" · ")}`
     : streamPrefix;
+}
+
+function getCommonSubtitlePreferenceIndex(items: JellyfinItem[]): number {
+  if (items.length === 0) return -1;
+
+  const firstPreference = getDefaultSubtitlePreferenceIndex(items[0]);
+
+  return items.every(
+    (item) => getDefaultSubtitlePreferenceIndex(item) === firstPreference,
+  )
+    ? firstPreference
+    : MIXED_SUBTITLE_PREFERENCE_INDEX;
+}
+
+function getSubtitlePreferenceOptions(
+  items: JellyfinItem[],
+): SubtitlePreferenceOption[] {
+  const optionsByIndex = new Map<number, SubtitlePreferenceOption>();
+
+  items.forEach((item) => {
+    const seenIndexes = new Set<number>();
+
+    getSubtitleStreams(item).forEach((stream) => {
+      if (stream.Index === undefined || seenIndexes.has(stream.Index)) return;
+
+      seenIndexes.add(stream.Index);
+
+      const existingOption = optionsByIndex.get(stream.Index);
+
+      if (existingOption) {
+        existingOption.itemCount += 1;
+      } else {
+        optionsByIndex.set(stream.Index, {
+          index: stream.Index,
+          stream,
+          itemCount: 1,
+        });
+      }
+    });
+  });
+
+  return Array.from(optionsByIndex.values()).sort(
+    (left, right) => left.index - right.index,
+  );
+}
+
+function getSubtitlePreferenceTargetItems(
+  selectedItem: JellyfinItem | null,
+  seriesEpisodes: JellyfinItem[],
+): JellyfinItem[] {
+  if (!selectedItem) return [];
+  if (selectedItem.Type === "Series") return seriesEpisodes;
+  return [selectedItem];
 }
 
 function formatTemplate(
@@ -298,8 +363,14 @@ export function LibraryMaintenancePage() {
   );
   const [selectedDefaultSubtitleIndex, setSelectedDefaultSubtitleIndex] =
     useState(-1);
+  const [seriesSubtitleEpisodes, setSeriesSubtitleEpisodes] = useState<
+    JellyfinItem[]
+  >([]);
+  const [isLoadingSeriesSubtitleEpisodes, setIsLoadingSeriesSubtitleEpisodes] =
+    useState(false);
   const [subtitlePreferenceState, setSubtitlePreferenceState] =
     useState<ActionResult>(() => createEmptyResult());
+  const subtitlePreferenceRequestIdRef = useRef(0);
 
   useEffect(() => {
     setPageTitle(
@@ -486,30 +557,86 @@ export function LibraryMaintenancePage() {
     return options;
   }, [libraries, t]);
 
-  const selectedSubtitleStreams = useMemo(
-    () => getSubtitleStreams(selectedItem),
-    [selectedItem],
+  const subtitlePreferenceTargetItems = useMemo(
+    () =>
+      getSubtitlePreferenceTargetItems(selectedItem, seriesSubtitleEpisodes),
+    [selectedItem, seriesSubtitleEpisodes],
   );
+
+  const selectedSubtitleOptions = useMemo(
+    () => getSubtitlePreferenceOptions(subtitlePreferenceTargetItems),
+    [subtitlePreferenceTargetItems],
+  );
+
+  const loadSubtitlePreferenceTargets = async (item: JellyfinItem) => {
+    const requestId = subtitlePreferenceRequestIdRef.current + 1;
+    subtitlePreferenceRequestIdRef.current = requestId;
+
+    if (item.Type !== "Series") {
+      setSeriesSubtitleEpisodes([]);
+      setIsLoadingSeriesSubtitleEpisodes(false);
+      setSelectedDefaultSubtitleIndex(getDefaultSubtitlePreferenceIndex(item));
+      return;
+    }
+
+    setSeriesSubtitleEpisodes([]);
+    setIsLoadingSeriesSubtitleEpisodes(true);
+    setSelectedDefaultSubtitleIndex(-1);
+
+    try {
+      const episodes = await getAllSeriesEpisodes(item.Id);
+
+      if (subtitlePreferenceRequestIdRef.current !== requestId) return;
+
+      setSeriesSubtitleEpisodes(episodes);
+      setSelectedDefaultSubtitleIndex(
+        getCommonSubtitlePreferenceIndex(episodes),
+      );
+    } catch (error) {
+      if (subtitlePreferenceRequestIdRef.current !== requestId) return;
+
+      setSeriesSubtitleEpisodes([]);
+      setSelectedDefaultSubtitleIndex(-1);
+      setSubtitlePreferenceState({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("maintenance.couldNotLoadSeriesEpisodes"),
+      });
+    } finally {
+      if (subtitlePreferenceRequestIdRef.current === requestId) {
+        setIsLoadingSeriesSubtitleEpisodes(false);
+      }
+    }
+  };
 
   const selectItem = async (item: JellyfinItem) => {
     setSelectedItem(item);
     setDraft(createDraftFromItem(item));
-    setSelectedDefaultSubtitleIndex(getDefaultSubtitlePreferenceIndex(item));
+    setSelectedDefaultSubtitleIndex(
+      item.Type === "Series" ? -1 : getDefaultSubtitlePreferenceIndex(item),
+    );
+    setSeriesSubtitleEpisodes([]);
+    setIsLoadingSeriesSubtitleEpisodes(item.Type === "Series");
     setSaveState(createEmptyResult());
     setSubtitlePreferenceState(createEmptyResult());
     setItemRefreshState(createEmptyResult());
     setTrickplayStatus("loading");
 
+    let currentItem = item;
+
     try {
       const freshItem = await getItem(item.Id);
+      currentItem = freshItem;
       setSelectedItem(freshItem);
       setDraft(createDraftFromItem(freshItem));
-      setSelectedDefaultSubtitleIndex(
-        getDefaultSubtitlePreferenceIndex(freshItem),
-      );
     } catch {
       // Keep the existing loaded item if the detail refresh fails.
     }
+
+    void loadSubtitlePreferenceTargets(currentItem);
+
     const mediaSourceId = item.MediaSources?.[0]?.Id;
 
     if (!mediaSourceId) {
@@ -593,9 +720,7 @@ export function LibraryMaintenancePage() {
       const refreshed = await getItem(selectedItem.Id);
       setSelectedItem(refreshed);
       setDraft(createDraftFromItem(refreshed));
-      setSelectedDefaultSubtitleIndex(
-        getDefaultSubtitlePreferenceIndex(refreshed),
-      );
+      void loadSubtitlePreferenceTargets(refreshed);
       setItems((currentItems) =>
         currentItems.map((item) =>
           item.Id === refreshed.Id ? refreshed : item,
@@ -654,9 +779,7 @@ export function LibraryMaintenancePage() {
       const refreshed = await getItem(selectedItem.Id);
       setSelectedItem(refreshed);
       setDraft(createDraftFromItem(refreshed));
-      setSelectedDefaultSubtitleIndex(
-        getDefaultSubtitlePreferenceIndex(refreshed),
-      );
+      void loadSubtitlePreferenceTargets(refreshed);
       setItems((currentItems) =>
         currentItems.map((item) =>
           item.Id === refreshed.Id ? refreshed : item,
@@ -678,11 +801,36 @@ export function LibraryMaintenancePage() {
     }
   };
 
-  const handleSaveSubtitlePreference = async () => {
+  const handleSaveSubtitlePreference = () => {
     if (!selectedItem) return;
+    if (selectedDefaultSubtitleIndex === MIXED_SUBTITLE_PREFERENCE_INDEX) {
+      setSubtitlePreferenceState({
+        state: "error",
+        message: t("maintenance.chooseSubtitlePreferenceToSave"),
+      });
+      return;
+    }
+
+    const targetItems = getSubtitlePreferenceTargetItems(
+      selectedItem,
+      seriesSubtitleEpisodes,
+    );
+
+    if (targetItems.length === 0) {
+      setSubtitlePreferenceState({
+        state: "error",
+        message:
+          selectedItem.Type === "Series"
+            ? t("maintenance.noSeriesEpisodes")
+            : t("maintenance.noMediaSourceForSubtitlePreference"),
+      });
+      return;
+    }
 
     const oldDefaultSubtitleIndex =
-      getDefaultSubtitlePreferenceIndex(selectedItem);
+      selectedItem.Type === "Series"
+        ? getCommonSubtitlePreferenceIndex(targetItems)
+        : getDefaultSubtitlePreferenceIndex(selectedItem);
     const nextDefaultSubtitleIndex = selectedDefaultSubtitleIndex;
 
     setSubtitlePreferenceState({
@@ -693,33 +841,31 @@ export function LibraryMaintenancePage() {
     if (import.meta.env.DEV) {
       console.info("[Seyirlik Maintenance] Saving subtitle preference", {
         itemId: selectedItem.Id,
+        targetItemIds: targetItems.map((item) => item.Id),
         oldDefaultSubtitleStreamIndex: oldDefaultSubtitleIndex,
         newDefaultSubtitleStreamIndex: nextDefaultSubtitleIndex,
       });
     }
 
     try {
-      await updateItemDefaultSubtitlePreference(
-        selectedItem.Id,
-        selectedItem,
-        nextDefaultSubtitleIndex,
+      saveDefaultSubtitleStreamPreferences(
+        targetItems.map((item) => ({
+          itemId: item.Id,
+          subtitleStreamIndex: nextDefaultSubtitleIndex,
+        })),
       );
 
-      const refreshed = await getItem(selectedItem.Id);
-      setSelectedItem(refreshed);
-      setDraft(createDraftFromItem(refreshed));
-      setSelectedDefaultSubtitleIndex(
-        getDefaultSubtitlePreferenceIndex(refreshed),
-      );
-      setItems((currentItems) =>
-        currentItems.map((item) =>
-          item.Id === refreshed.Id ? refreshed : item,
-        ),
-      );
+      setSelectedDefaultSubtitleIndex(nextDefaultSubtitleIndex);
 
       setSubtitlePreferenceState({
         state: "success",
-        message: t("maintenance.subtitlePreferenceSaved"),
+        message:
+          selectedItem.Type === "Series"
+            ? formatTemplate(
+                t("maintenance.subtitlePreferenceSavedForEpisodes"),
+                { count: targetItems.length },
+              )
+            : t("maintenance.subtitlePreferenceSaved"),
       });
     } catch (error) {
       setSubtitlePreferenceState({
@@ -733,10 +879,22 @@ export function LibraryMaintenancePage() {
   };
 
   const selectedMediaSource = selectedItem?.MediaSources?.[0];
+  const isSelectedSeries = selectedItem?.Type === "Series";
+  const canEditSubtitlePreference = Boolean(
+    selectedItem &&
+    (isSelectedSeries
+      ? !isLoadingSeriesSubtitleEpisodes && seriesSubtitleEpisodes.length > 0
+      : selectedMediaSource),
+  );
+  const canSaveSubtitlePreference =
+    canEditSubtitlePreference &&
+    selectedDefaultSubtitleIndex !== MIXED_SUBTITLE_PREFERENCE_INDEX &&
+    subtitlePreferenceState.state !== "loading";
   const hasSelectedSubtitleOption =
-    selectedDefaultSubtitleIndex < 0 ||
-    selectedSubtitleStreams.some(
-      (stream) => stream.Index === selectedDefaultSubtitleIndex,
+    selectedDefaultSubtitleIndex === -1 ||
+    selectedDefaultSubtitleIndex === MIXED_SUBTITLE_PREFERENCE_INDEX ||
+    selectedSubtitleOptions.some(
+      (option) => option.index === selectedDefaultSubtitleIndex,
     );
 
   return (
@@ -1047,7 +1205,11 @@ export function LibraryMaintenancePage() {
                       {t("maintenance.defaultSubtitlePreference")}
                     </p>
                     <p className="mt-2 max-w-2xl text-sm font-semibold leading-6 text-white/48">
-                      {t("maintenance.defaultSubtitlePreferenceDescription")}
+                      {t(
+                        isSelectedSeries
+                          ? "maintenance.defaultSubtitlePreferenceSeriesDescription"
+                          : "maintenance.defaultSubtitlePreferenceDescription",
+                      )}
                     </p>
 
                     <label className="mt-4 block">
@@ -1056,7 +1218,7 @@ export function LibraryMaintenancePage() {
                       </span>
                       <select
                         value={String(selectedDefaultSubtitleIndex)}
-                        disabled={!selectedMediaSource}
+                        disabled={!canEditSubtitlePreference}
                         onChange={(event) =>
                           setSelectedDefaultSubtitleIndex(
                             Number(event.target.value),
@@ -1064,6 +1226,14 @@ export function LibraryMaintenancePage() {
                         }
                         className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-55"
                       >
+                        {selectedDefaultSubtitleIndex ===
+                        MIXED_SUBTITLE_PREFERENCE_INDEX ? (
+                          <option
+                            value={String(MIXED_SUBTITLE_PREFERENCE_INDEX)}
+                          >
+                            {t("maintenance.subtitlePreferenceMixed")}
+                          </option>
+                        ) : null}
                         <option value="-1">
                           {t("maintenance.subtitlePreferenceOff")}
                         </option>
@@ -1075,26 +1245,47 @@ export function LibraryMaintenancePage() {
                             )}
                           </option>
                         ) : null}
-                        {selectedSubtitleStreams.map((stream, index) =>
-                          stream.Index === undefined ? null : (
-                            <option
-                              key={`${stream.Index}-${stream.DisplayTitle ?? index}`}
-                              value={stream.Index}
-                            >
-                              {getSubtitleStreamLabel(
-                                stream,
+                        {selectedSubtitleOptions.map((option, index) => (
+                          <option
+                            key={`${option.index}-${option.stream.DisplayTitle ?? index}`}
+                            value={option.index}
+                          >
+                            {[
+                              getSubtitleStreamLabel(
+                                option.stream,
                                 formatTemplate(t("settings.subtitle"), {
                                   number: index + 1,
                                 }),
                                 t,
-                              )}
-                            </option>
-                          ),
-                        )}
+                              ),
+                              isSelectedSeries
+                                ? formatTemplate(
+                                    t(
+                                      option.itemCount === 1
+                                        ? "media.episodeSingular"
+                                        : "media.episodePlural",
+                                    ),
+                                    { count: option.itemCount },
+                                  )
+                                : undefined,
+                            ]
+                              .filter(Boolean)
+                              .join(" · ")}
+                          </option>
+                        ))}
                       </select>
                     </label>
 
-                    {selectedSubtitleStreams.length === 0 ? (
+                    {isLoadingSeriesSubtitleEpisodes ? (
+                      <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/50">
+                        {t("maintenance.loadingSeriesEpisodes")}
+                      </p>
+                    ) : isSelectedSeries &&
+                      seriesSubtitleEpisodes.length === 0 ? (
+                      <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/50">
+                        {t("maintenance.noSeriesEpisodes")}
+                      </p>
+                    ) : selectedSubtitleOptions.length === 0 ? (
                       <p className="mt-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3 text-sm font-bold text-white/50">
                         {t("maintenance.noSubtitleStreams")}
                       </p>
@@ -1104,10 +1295,7 @@ export function LibraryMaintenancePage() {
                   <button
                     type="button"
                     onClick={handleSaveSubtitlePreference}
-                    disabled={
-                      !selectedMediaSource ||
-                      subtitlePreferenceState.state === "loading"
-                    }
+                    disabled={!canSaveSubtitlePreference}
                     className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     {subtitlePreferenceState.state === "loading" ? (

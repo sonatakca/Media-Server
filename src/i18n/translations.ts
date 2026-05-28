@@ -642,12 +642,21 @@ export const translations = {
     "maintenance.defaultSubtitlePreference": "Default subtitle preference",
     "maintenance.defaultSubtitlePreferenceDescription":
       "Choose which subtitle track should be preferred when playback starts for this item.",
+    "maintenance.defaultSubtitlePreferenceSeriesDescription":
+      "Choose which subtitle track Seyirlik should prefer when playback starts for every episode in this series.",
     "maintenance.subtitlePreferenceOff": "Off / No subtitles",
+    "maintenance.subtitlePreferenceMixed": "Mixed episode preferences",
     "maintenance.noSubtitleStreams":
       "No subtitle streams returned for this media source.",
+    "maintenance.noSeriesEpisodes": "No episodes found for this series.",
+    "maintenance.loadingSeriesEpisodes": "Loading series episodes...",
     "maintenance.subtitleTrackMissing":
       "Stream #{index} (not in the current media streams)",
     "maintenance.saveSubtitlePreference": "Save subtitle preference",
+    "maintenance.chooseSubtitlePreferenceToSave":
+      "Choose Off or a subtitle track before saving.",
+    "maintenance.noMediaSourceForSubtitlePreference":
+      "This item does not have a media source for subtitle preferences.",
     "maintenance.mediaStreams": "Media streams",
     "maintenance.streamFallback": "Stream",
     "maintenance.codec": "Codec",
@@ -695,8 +704,12 @@ export const translations = {
     "maintenance.couldNotSave": "Could not save metadata.",
     "maintenance.savingSubtitlePreference": "Saving subtitle preference...",
     "maintenance.subtitlePreferenceSaved": "Subtitle preference saved.",
+    "maintenance.subtitlePreferenceSavedForEpisodes":
+      "Subtitle preference saved for {count} episodes.",
     "maintenance.couldNotSaveSubtitlePreference":
       "Could not save subtitle preference.",
+    "maintenance.couldNotLoadSeriesEpisodes":
+      "Could not load episodes for this series.",
   },
   tr: {
     "nav.home": "Ana Sayfa",
@@ -1340,12 +1353,21 @@ export const translations = {
     "maintenance.defaultSubtitlePreference": "Varsayılan altyazı tercihi",
     "maintenance.defaultSubtitlePreferenceDescription":
       "Bu içerik oynatılırken hangi altyazı parçasının tercih edileceğini seç.",
+    "maintenance.defaultSubtitlePreferenceSeriesDescription":
+      "Bu dizinin her bölümü oynatılırken Seyirlik'in hangi altyazı parçasını tercih edeceğini seç.",
     "maintenance.subtitlePreferenceOff": "Kapalı / Altyazı yok",
+    "maintenance.subtitlePreferenceMixed": "Bölümlerde farklı tercihler var",
     "maintenance.noSubtitleStreams":
       "Bu medya kaynağı için altyazı akışı dönmedi.",
+    "maintenance.noSeriesEpisodes": "Bu dizi için bölüm bulunamadı.",
+    "maintenance.loadingSeriesEpisodes": "Dizi bölümleri yükleniyor...",
     "maintenance.subtitleTrackMissing":
       "Akış #{index} (geçerli medya akışlarında yok)",
     "maintenance.saveSubtitlePreference": "Altyazı tercihini kaydet",
+    "maintenance.chooseSubtitlePreferenceToSave":
+      "Kaydetmeden önce Kapalı'yı veya bir altyazı parçasını seç.",
+    "maintenance.noMediaSourceForSubtitlePreference":
+      "Bu içerikte altyazı tercihi için medya kaynağı yok.",
     "maintenance.mediaStreams": "Medya akışları",
     "maintenance.streamFallback": "Akış",
     "maintenance.codec": "Codec",
@@ -1397,8 +1419,12 @@ export const translations = {
     "maintenance.couldNotSave": "Metadata kaydedilemedi.",
     "maintenance.savingSubtitlePreference": "Altyazı tercihi kaydediliyor...",
     "maintenance.subtitlePreferenceSaved": "Altyazı tercihi kaydedildi.",
+    "maintenance.subtitlePreferenceSavedForEpisodes":
+      "Altyazı tercihi {count} bölüm için kaydedildi.",
     "maintenance.couldNotSaveSubtitlePreference":
       "Altyazı tercihi kaydedilemedi.",
+    "maintenance.couldNotLoadSeriesEpisodes":
+      "Bu dizinin bölümleri yüklenemedi.",
   },
 } satisfies Record<Language, Record<string, string>>;
 

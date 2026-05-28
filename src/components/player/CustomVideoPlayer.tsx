@@ -24,6 +24,7 @@ import {
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
+import { getDefaultSubtitleStreamIndexForSource } from "../../lib/subtitlePreferences";
 import {
   getVideoErrorDetails,
   type PlaybackTechnicalDetails,
@@ -651,7 +652,7 @@ function logAudioSourceDebug(
 function getDefaultSubtitleStreamIndex(
   source: PlaybackSourceCandidate,
 ): number {
-  return source.mediaSource.DefaultSubtitleStreamIndex ?? -1;
+  return getDefaultSubtitleStreamIndexForSource(source);
 }
 
 function shouldForceDefaultAudioInPlaybackUrl(
