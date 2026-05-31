@@ -19,17 +19,31 @@ import { AnimatedWidth } from "./AnimatedWidth";
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
-const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 20;
+const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
+
+type IndicatorsPlacement =
+  | "top-center"
+  | "top-right"
+  | "top-left"
+  | "top-left-quarter"
+  | "top-right-quarter"
+  | "bottom-center"
+  | "bottom-left"
+  | "bottom-right"
+  | "bottom-left-quarter"
+  | "bottom-right-quarter";
 
 interface HeroSectionProps {
   item?: JellyfinItem;
   currentIndex?: number;
   totalItems?: number;
   durationMs?: number;
+  progressStartedAtMs?: number;
   progressResetKey?: string | number;
   isPaused?: boolean;
   onTogglePaused?: () => void;
   showPauseButton?: boolean;
+  indicatorPlacement?: IndicatorsPlacement;
   onSelectIndex?: (index: number) => void;
   onHeroReady?: () => void;
 }
@@ -81,10 +95,12 @@ export function HeroSection({
   currentIndex = 0,
   totalItems = 0,
   durationMs = 12000,
+  progressStartedAtMs,
   progressResetKey,
   isPaused = false,
   onTogglePaused,
   showPauseButton = false,
+  indicatorPlacement = "bottom-right-quarter",
   onSelectIndex,
   onHeroReady,
 }: HeroSectionProps) {
@@ -95,6 +111,8 @@ export function HeroSection({
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
+  const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
+    useState(false);
   const [isCompactHeroViewport, setIsCompactHeroViewport] = useState(false);
   const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
   const mediaFormatLabels = useMemo(
@@ -150,54 +168,101 @@ export function HeroSection({
     Math.max(currentIndex, 0),
     Math.max(carouselItemCount - 1, 0),
   );
-  const showHeroIndicators =
-    showCarouselDots && showStickyIndicators && heroContentVisible;
+  const showHeroIndicators = showCarouselDots && showStickyIndicators;
+  const indicatorPlacementClasses: Record<IndicatorsPlacement, string> = {
+    "top-center":
+      "inset-x-0 top-[calc(0.85rem+env(safe-area-inset-top))] justify-center",
+    "top-right":
+      "inset-x-0 top-[calc(0.85rem+env(safe-area-inset-top))] justify-end",
+    "top-left":
+      "inset-x-0 top-[calc(0.85rem+env(safe-area-inset-top))] justify-start",
+    "top-left-quarter":
+      "left-1/4 top-[calc(0.85rem+env(safe-area-inset-top))] -translate-x-1/2 justify-center",
+    "top-right-quarter":
+      "left-3/4 top-[calc(0.85rem+env(safe-area-inset-top))] -translate-x-1/2 justify-center",
+    "bottom-center":
+      "inset-x-0 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] justify-center sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))]",
+    "bottom-right":
+      "inset-x-0 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] justify-end sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))]",
+    "bottom-left":
+      "inset-x-0 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] justify-start sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))]",
+    "bottom-left-quarter":
+      "left-1/4 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] -translate-x-1/2 justify-center sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))]",
+    "bottom-right-quarter":
+      "left-3/4 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] -translate-x-1/2 justify-center sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))]",
+  };
 
   const heroIndicators = showCarouselDots ? (
-    <motion.div
-      layout
-      data-hero-carousel-indicators
-      className="pointer-events-none fixed inset-x-0 bottom-[calc(0.85rem+env(safe-area-inset-bottom))] z-[99999] flex justify-center px-3 sm:bottom-[calc(clamp(5.75rem,10vh,7.25rem)+env(safe-area-inset-bottom))] sm:px-4"
-      initial={{
-        opacity: 0,
-        y: shouldReduceMotion ? 0 : "140%",
-        scale: shouldReduceMotion ? 1 : 0.96,
-        filter: shouldReduceMotion ? "none" : "blur(14px)",
-      }}
-      animate={{
-        opacity: showHeroIndicators ? 1 : 0,
-        y: showHeroIndicators ? 0 : "140%",
-        scale: showHeroIndicators ? 1 : shouldReduceMotion ? 1 : 0.96,
-        filter: showHeroIndicators ? "none" : "blur(14px)",
-      }}
-      transition={{
-        duration: shouldReduceMotion ? 0 : 1,
-        delay: shouldReduceMotion || !showHeroIndicators ? 0 : 0.1,
-        ease: softEase,
-      }}
-    >
-      <div
-        className="pointer-events-auto max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] backdrop-blur-2xl sm:max-w-[calc(100vw-2rem)] sm:p-1.5"
-        style={{ pointerEvents: showHeroIndicators ? "auto" : "none" }}
-      >
-        <TimedCarouselIndicators
-          count={carouselItemCount}
-          activeIndex={activeCarouselIndex}
-          durationMs={durationMs}
-          onSelect={(index) => onSelectIndex?.(index)}
-          isPaused={isPaused}
-          progressResetKey={progressResetKey}
-          onTogglePaused={onTogglePaused}
-          showPauseButton={showPauseButton}
-          ariaLabel="Featured carousel"
-        />
-      </div>
-    </motion.div>
+    <AnimatePresence>
+      {showHeroIndicators ? (
+        <motion.div
+          key="hero-carousel-indicators"
+          layout
+          data-hero-carousel-indicators
+          className={`pointer-events-none fixed z-[99999] flex px-3 sm:px-4 ${indicatorPlacementClasses[indicatorPlacement]}`}
+          initial={
+            hasHiddenStickyIndicators
+              ? {
+                  opacity: 0,
+                  y: 0,
+                  scale: 1,
+                }
+              : {
+                  opacity: 0,
+                  y: shouldReduceMotion ? 0 : "140%",
+                  scale: shouldReduceMotion ? 1 : 0.96,
+                }
+          }
+          animate={{
+            opacity: 1,
+            y: 0,
+            scale: 1,
+          }}
+          exit={{
+            opacity: 0,
+            y: shouldReduceMotion ? 0 : "222%",
+            scale: shouldReduceMotion ? 1 : 0.96,
+          }}
+          transition={{
+            duration: shouldReduceMotion ? 0 : 1,
+            delay: shouldReduceMotion || hasHiddenStickyIndicators ? 0 : 0.1,
+            ease: softEase,
+          }}
+        >
+          <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] sm:max-w-[calc(100vw-2rem)] sm:p-1.5">
+            <TimedCarouselIndicators
+              count={carouselItemCount}
+              activeIndex={activeCarouselIndex}
+              durationMs={durationMs}
+              progressStartedAtMs={progressStartedAtMs}
+              onSelect={(index) => onSelectIndex?.(index)}
+              isPaused={isPaused}
+              progressResetKey={progressResetKey}
+              onTogglePaused={onTogglePaused}
+              showPauseButton={showPauseButton}
+              maxVisibleDots={9}
+              ariaLabel="Featured carousel"
+            />
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   ) : null;
 
   useEffect(() => {
     setFailedImageUrls([]);
   }, [item?.Id]);
+
+  useEffect(() => {
+    if (!showCarouselDots) {
+      setHasHiddenStickyIndicators(false);
+      return;
+    }
+
+    if (!showHeroIndicators) {
+      setHasHiddenStickyIndicators(true);
+    }
+  }, [showCarouselDots, showHeroIndicators]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 640px)");
@@ -324,7 +389,7 @@ export function HeroSection({
       reason: showCarouselDots
         ? showStickyIndicators
           ? "Indicators should be mounted and visible."
-          : "Indicators are mounted but fading because the viewport bottom is past the banner viewport bottom."
+          : "Indicators are mounted but fading because the viewport bottom is past the hero indicator limit."
         : "Indicators are intentionally not mounted because carouselItemCount <= 1; TimedCarouselIndicators returns null for a single slide.",
     });
   }, [

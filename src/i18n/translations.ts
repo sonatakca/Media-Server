@@ -482,6 +482,14 @@ export const translations = {
     "devtools.card.contentExplorer.description":
       "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
     "devtools.card.contentExplorer.tag": "Inventory",
+    "devtools.card.homeCuration.title": "Home Curation",
+    "devtools.card.homeCuration.description":
+      "Control hero carousel order and hide items from the carousel or Latest Media.",
+    "devtools.card.homeCuration.tag": "Home",
+    "devtools.card.playbackDefaults.title": "Playback Defaults",
+    "devtools.card.playbackDefaults.description":
+      "Choose per-movie and per-series audio/subtitle defaults for everyone using Seyirlik.",
+    "devtools.card.playbackDefaults.tag": "Streams",
     "devtools.card.knownBugs.title": "Known Bugs",
     "devtools.card.knownBugs.description":
       "Track current broken behaviour such as missing library items, Se7en audio problems, and pixelated transcoding.",
@@ -520,6 +528,83 @@ export const translations = {
       "Hero template should change over time",
     "devtools.defaultFeature.rotatingHero.description":
       "The hero section should not stay stable/static. It should rotate featured items or change its presentation over time to make the home page feel more alive.",
+    "homeCuration.unavailable": "Home curation unavailable",
+    "homeCuration.loading": "Loading home page items...",
+    "homeCuration.loadFailed": "Could not load home page items.",
+    "homeCuration.eyebrow": "Home Page",
+    "homeCuration.title": "Home Curation",
+    "homeCuration.description":
+      "Choose homepage carousel and Latest Media order, then hide titles from either section separately.",
+    "homeCuration.carouselSummary": "{visible} in carousel · {hidden} hidden",
+    "homeCuration.latestSummary": "{visible} in Latest Media · {hidden} hidden",
+    "homeCuration.carouselTab": "Carousel",
+    "homeCuration.carouselTabDescription":
+      "Order movies and series shown in the hero carousel.",
+    "homeCuration.latestTab": "Latest Media",
+    "homeCuration.latestTabDescription":
+      "Order or hide items in the Son Eklenenler / Latest Media row.",
+    "homeCuration.searchPlaceholder": "Search movie, series, year, or ID...",
+    "homeCuration.searchLabel": "Search home curation items",
+    "homeCuration.savedAt": "Saved {time}",
+    "homeCuration.resetAll": "Reset all",
+    "homeCuration.inCarousel": "In carousel",
+    "homeCuration.outOfCarousel": "Hidden",
+    "homeCuration.excludeFromCarousel": "Hide",
+    "homeCuration.includeInCarousel": "Show",
+    "homeCuration.inLatest": "In Latest",
+    "homeCuration.outOfLatest": "Hidden",
+    "homeCuration.excludeFromLatest": "Hide",
+    "homeCuration.includeInLatest": "Show",
+    "homeCuration.moveTopItem": "Move {title} to top",
+    "homeCuration.moveUpItem": "Move {title} up",
+    "homeCuration.moveDownItem": "Move {title} down",
+    "homeCuration.moveBottomItem": "Move {title} to bottom",
+    "homeCuration.noMatches": "No item matched this search.",
+    "playbackDefaults.unavailable": "Playback defaults unavailable",
+    "playbackDefaults.loading": "Loading movies and series...",
+    "playbackDefaults.loadFailed": "Could not load movies and series.",
+    "playbackDefaults.targetLoadFailed":
+      "Could not load streams for this title.",
+    "playbackDefaults.eyebrow": "Title Playback",
+    "playbackDefaults.title": "Playback Defaults",
+    "playbackDefaults.description":
+      "Choose a movie or series and set the audio/subtitle streams Seyirlik should prefer for everyone.",
+    "playbackDefaults.titles": "Titles",
+    "playbackDefaults.formTitle": "Defaults for this title",
+    "playbackDefaults.previewSummary": "Audio {audio} · Subtitles {subtitles}",
+    "playbackDefaults.searchPlaceholder":
+      "Search movie, series, year, or ID...",
+    "playbackDefaults.searchLabel": "Search playback default titles",
+    "playbackDefaults.noMatches": "No title matched this search.",
+    "playbackDefaults.noTitleSelected": "Select a movie or series",
+    "playbackDefaults.noTitleSelectedDescription":
+      "Pick a title from the list to choose the default audio and subtitle streams.",
+    "playbackDefaults.movieTargetSummary":
+      "This default applies when anyone plays this movie.",
+    "playbackDefaults.seriesTargetSummary":
+      "This default applies to {count} episodes in this series.",
+    "playbackDefaults.loadingTargets": "Loading stream options...",
+    "playbackDefaults.audioStream": "Audio stream",
+    "playbackDefaults.subtitleStream": "Subtitle stream",
+    "playbackDefaults.mixed": "Mixed across episodes",
+    "playbackDefaults.noAudioStreams": "No audio streams were returned.",
+    "playbackDefaults.noSubtitleStreams": "No subtitle streams were returned.",
+    "playbackDefaults.subtitlesOff": "Subtitles off",
+    "playbackDefaults.streamMissing":
+      "Stream #{index} (not in the current media streams)",
+    "playbackDefaults.saveToItems": "Save for {count} items",
+    "playbackDefaults.saving": "Saving playback defaults...",
+    "playbackDefaults.saveFailed": "Could not update this item.",
+    "playbackDefaults.saveSuccess":
+      "Playback defaults saved for {count} items.",
+    "playbackDefaults.savePartial": "{success} saved · {failed} failed",
+    "playbackDefaults.applyWarning":
+      "This writes Seyirlik defaults into Jellyfin item metadata.",
+    "playbackDefaults.adminRequiredTitle": "Admin permissions required",
+    "playbackDefaults.adminRequired":
+      "Jellyfin may reject the save unless the signed-in account can edit item metadata. Once saved, Seyirlik uses these defaults for all users.",
+    "playbackDefaults.results": "Results",
+    "playbackDefaults.resultSummary": "{success} saved · {failed} failed",
     "audit.eyebrow": "Devtool",
     "audit.title": "Playback Audit",
     "audit.description":
@@ -1193,6 +1278,14 @@ export const translations = {
     "devtools.card.contentExplorer.description":
       "Bu kullanıcıya açık tüm Jellyfin içeriklerini; filmler, diziler, sezonlar, bölümler, klasörler ve bilinmeyen türlerle birlikte listele.",
     "devtools.card.contentExplorer.tag": "Envanter",
+    "devtools.card.homeCuration.title": "Ana Sayfa Düzeni",
+    "devtools.card.homeCuration.description":
+      "Hero carousel sırasını düzenle; içerikleri carousel'den veya Son Eklenenler'den gizle.",
+    "devtools.card.homeCuration.tag": "Ana sayfa",
+    "devtools.card.playbackDefaults.title": "Oynatma Varsayılanları",
+    "devtools.card.playbackDefaults.description":
+      "Seyirlik kullanan herkes için film/dizi bazlı ses ve altyazı varsayılanlarını seç.",
+    "devtools.card.playbackDefaults.tag": "Akışlar",
     "devtools.card.knownBugs.title": "Bilinen Hatalar",
     "devtools.card.knownBugs.description":
       "Eksik kütüphane içerikleri, Se7en ses sorunları ve pikselli dönüştürme gibi mevcut bozuk davranışları takip et.",
@@ -1231,6 +1324,83 @@ export const translations = {
       "Hero şablonu zamanla değişmeli",
     "devtools.defaultFeature.rotatingHero.description":
       "Hero bölümü sabit kalmamalı. Ana sayfayı daha canlı hissettirmek için öne çıkan içerikleri döndürmeli veya sunumunu zamanla değiştirmeli.",
+    "homeCuration.unavailable": "Ana sayfa düzeni kullanılamıyor",
+    "homeCuration.loading": "Ana sayfa içerikleri yükleniyor...",
+    "homeCuration.loadFailed": "Ana sayfa içerikleri yüklenemedi.",
+    "homeCuration.eyebrow": "Ana Sayfa",
+    "homeCuration.title": "Ana Sayfa Düzeni",
+    "homeCuration.description":
+      "Ana sayfa carousel ve Son Eklenenler sırasını seç, içerikleri iki bölümden ayrı ayrı gizle.",
+    "homeCuration.carouselSummary": "{visible} carousel'de · {hidden} gizli",
+    "homeCuration.latestSummary":
+      "{visible} Son Eklenenler'de · {hidden} gizli",
+    "homeCuration.carouselTab": "Carousel",
+    "homeCuration.carouselTabDescription":
+      "Hero carousel'de gösterilen film ve dizilerin sırasını düzenle.",
+    "homeCuration.latestTab": "Son Eklenenler",
+    "homeCuration.latestTabDescription":
+      "Son Eklenenler satırındaki içerikleri sırala veya gizle.",
+    "homeCuration.searchPlaceholder": "Film, dizi, yıl veya ID ara...",
+    "homeCuration.searchLabel": "Ana sayfa düzeni içeriklerinde ara",
+    "homeCuration.savedAt": "{time} kaydedildi",
+    "homeCuration.resetAll": "Tümünü sıfırla",
+    "homeCuration.inCarousel": "Carousel'de",
+    "homeCuration.outOfCarousel": "Gizli",
+    "homeCuration.excludeFromCarousel": "Gizle",
+    "homeCuration.includeInCarousel": "Göster",
+    "homeCuration.inLatest": "Son Eklenenler'de",
+    "homeCuration.outOfLatest": "Gizli",
+    "homeCuration.excludeFromLatest": "Gizle",
+    "homeCuration.includeInLatest": "Göster",
+    "homeCuration.moveTopItem": "{title} en üste taşı",
+    "homeCuration.moveUpItem": "{title} yukarı taşı",
+    "homeCuration.moveDownItem": "{title} aşağı taşı",
+    "homeCuration.moveBottomItem": "{title} en alta taşı",
+    "homeCuration.noMatches": "Bu aramayla eşleşen içerik yok.",
+    "playbackDefaults.unavailable": "Oynatma varsayılanları kullanılamıyor",
+    "playbackDefaults.loading": "Film ve diziler yükleniyor...",
+    "playbackDefaults.loadFailed": "Film ve diziler yüklenemedi.",
+    "playbackDefaults.targetLoadFailed": "Bu içerik için akışlar yüklenemedi.",
+    "playbackDefaults.eyebrow": "İçerik Oynatması",
+    "playbackDefaults.title": "Oynatma Varsayılanları",
+    "playbackDefaults.description":
+      "Bir film veya dizi seç ve Seyirlik'in herkes için tercih edeceği ses/altyazı akışlarını ayarla.",
+    "playbackDefaults.titles": "İçerik",
+    "playbackDefaults.formTitle": "Bu içerik için varsayılanlar",
+    "playbackDefaults.previewSummary": "Ses {audio} · Altyazı {subtitles}",
+    "playbackDefaults.searchPlaceholder": "Film, dizi, yıl veya ID ara...",
+    "playbackDefaults.searchLabel": "Oynatma varsayılanı içeriklerinde ara",
+    "playbackDefaults.noMatches": "Bu aramayla eşleşen içerik yok.",
+    "playbackDefaults.noTitleSelected": "Bir film veya dizi seç",
+    "playbackDefaults.noTitleSelectedDescription":
+      "Varsayılan ses ve altyazı akışlarını seçmek için listeden bir içerik seç.",
+    "playbackDefaults.movieTargetSummary":
+      "Bu varsayılan herkes bu filmi oynattığında uygulanır.",
+    "playbackDefaults.seriesTargetSummary":
+      "Bu varsayılan dizideki {count} bölüme uygulanır.",
+    "playbackDefaults.loadingTargets": "Akış seçenekleri yükleniyor...",
+    "playbackDefaults.audioStream": "Ses akışı",
+    "playbackDefaults.subtitleStream": "Altyazı akışı",
+    "playbackDefaults.mixed": "Bölümlerde farklı",
+    "playbackDefaults.noAudioStreams": "Ses akışı döndürülmedi.",
+    "playbackDefaults.noSubtitleStreams": "Altyazı akışı döndürülmedi.",
+    "playbackDefaults.subtitlesOff": "Altyazılar kapalı",
+    "playbackDefaults.streamMissing":
+      "Akış #{index} (geçerli medya akışlarında yok)",
+    "playbackDefaults.saveToItems": "{count} içerik için kaydet",
+    "playbackDefaults.saving": "Oynatma varsayılanları kaydediliyor...",
+    "playbackDefaults.saveFailed": "Bu içerik güncellenemedi.",
+    "playbackDefaults.saveSuccess":
+      "Oynatma varsayılanları {count} içerik için kaydedildi.",
+    "playbackDefaults.savePartial": "{success} kaydedildi · {failed} başarısız",
+    "playbackDefaults.applyWarning":
+      "Bu işlem Seyirlik varsayılanlarını Jellyfin içerik metadata'sına yazar.",
+    "playbackDefaults.adminRequiredTitle": "Admin izni gerekli",
+    "playbackDefaults.adminRequired":
+      "Oturum açmış hesap içerik metadata'sını düzenleyemiyorsa Jellyfin kaydı reddedebilir. Kaydedildikten sonra Seyirlik bu varsayılanları tüm kullanıcılar için kullanır.",
+    "playbackDefaults.results": "Sonuçlar",
+    "playbackDefaults.resultSummary":
+      "{success} kaydedildi · {failed} başarısız",
     "audit.eyebrow": "Devtool",
     "audit.title": "Oynatma Denetimi",
     "audit.description":

@@ -5,7 +5,7 @@ import {
   Volume2,
   Subtitles,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type {
   JellyfinMediaStream,
@@ -17,6 +17,164 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
+
+const HIDE_QUALITY_SETTINGS = true;
+const HIDE_AUDIO_SETTINGS = true;
+const DISABLE_AUDIO_SELECTION = false;
+
+type SettingsSection = "quality" | "audio" | "subtitles";
+
+const LANGUAGE_FLAG_COUNTRY_CODES: Record<string, string> = {
+  ar: "sa",
+  arabic: "sa",
+  ara: "sa",
+  bg: "bg",
+  bul: "bg",
+  bulgarian: "bg",
+  ca: "es-ct",
+  catalan: "es-ct",
+  chi: "cn",
+  chinese: "cn",
+  cs: "cz",
+  cze: "cz",
+  ces: "cz",
+  czech: "cz",
+  da: "dk",
+  dan: "dk",
+  danish: "dk",
+  de: "de",
+  deu: "de",
+  ger: "de",
+  german: "de",
+  el: "gr",
+  ell: "gr",
+  gre: "gr",
+  greek: "gr",
+  en: "gb",
+  eng: "gb",
+  english: "gb",
+  es: "es",
+  spa: "es",
+  spanish: "es",
+  castellano: "es",
+  castilian: "es",
+  fa: "ir",
+  fas: "ir",
+  per: "ir",
+  persian: "ir",
+  fi: "fi",
+  fin: "fi",
+  finnish: "fi",
+  fr: "fr",
+  fra: "fr",
+  fre: "fr",
+  french: "fr",
+  he: "il",
+  heb: "il",
+  hebrew: "il",
+  hi: "in",
+  hin: "in",
+  hindi: "in",
+  hr: "hr",
+  hrv: "hr",
+  croatian: "hr",
+  hu: "hu",
+  hun: "hu",
+  hungarian: "hu",
+  id: "id",
+  ind: "id",
+  indonesian: "id",
+  is: "is",
+  ice: "is",
+  isl: "is",
+  icelandic: "is",
+  it: "it",
+  ita: "it",
+  italian: "it",
+  ja: "jp",
+  jpn: "jp",
+  japanese: "jp",
+  ko: "kr",
+  kor: "kr",
+  korean: "kr",
+  ms: "my",
+  may: "my",
+  msa: "my",
+  malay: "my",
+  nl: "nl",
+  dut: "nl",
+  nld: "nl",
+  dutch: "nl",
+  no: "no",
+  nor: "no",
+  nb: "no",
+  nn: "no",
+  norwegian: "no",
+  pl: "pl",
+  pol: "pl",
+  polish: "pl",
+  pt: "pt",
+  por: "pt",
+  portuguese: "pt",
+  ro: "ro",
+  rum: "ro",
+  ron: "ro",
+  romanian: "ro",
+  ru: "ru",
+  rus: "ru",
+  russian: "ru",
+  sk: "sk",
+  slo: "sk",
+  slk: "sk",
+  slovak: "sk",
+  sl: "si",
+  slv: "si",
+  slovenian: "si",
+  sr: "rs",
+  srp: "rs",
+  serbian: "rs",
+  sv: "se",
+  swe: "se",
+  swedish: "se",
+  th: "th",
+  tha: "th",
+  thai: "th",
+  tr: "tr",
+  tur: "tr",
+  turkish: "tr",
+  uk: "ua",
+  ukr: "ua",
+  ukrainian: "ua",
+  ur: "pk",
+  urd: "pk",
+  urdu: "pk",
+  vi: "vn",
+  vie: "vn",
+  vietnamese: "vn",
+  zh: "cn",
+  zho: "cn",
+};
+
+const COUNTRY_NAME_FLAG_CODES: Record<string, string> = {
+  brazil: "br",
+  brazilian: "br",
+  canada: "ca",
+  canadian: "ca",
+  china: "cn",
+  france: "fr",
+  germany: "de",
+  japan: "jp",
+  korea: "kr",
+  mexico: "mx",
+  mexican: "mx",
+  portugal: "pt",
+  spain: "es",
+  turkey: "tr",
+  turkiye: "tr",
+  uk: "gb",
+  us: "us",
+  usa: "us",
+};
 
 interface PlayerSettingsPanelProps {
   source: PlaybackSourceCandidate;
@@ -107,9 +265,111 @@ function getStreamLabel(
   return parts.length > 0 ? parts.join(" · ") : fallback;
 }
 
+function normalizeFlagText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function getFlagCountryCode(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = normalizeFlagText(value);
+  const exactLanguageCode = LANGUAGE_FLAG_COUNTRY_CODES[normalized];
+
+  if (exactLanguageCode) {
+    return exactLanguageCode;
+  }
+
+  const exactCountryCode = COUNTRY_NAME_FLAG_CODES[normalized];
+
+  if (exactCountryCode) {
+    return exactCountryCode;
+  }
+
+  const localeRegion = normalized.match(/\b[a-z]{2,3}[-_ ]([a-z]{2})\b/);
+
+  if (localeRegion?.[1]) {
+    return localeRegion[1];
+  }
+
+  if (normalized.includes("united kingdom")) {
+    return "gb";
+  }
+
+  if (normalized.includes("united states")) {
+    return "us";
+  }
+
+  const tokens = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+  const countryToken = tokens.find((token) => COUNTRY_NAME_FLAG_CODES[token]);
+
+  if (countryToken) {
+    return COUNTRY_NAME_FLAG_CODES[countryToken];
+  }
+
+  const languageToken = tokens.find(
+    (token) => LANGUAGE_FLAG_COUNTRY_CODES[token],
+  );
+
+  return languageToken ? LANGUAGE_FLAG_COUNTRY_CODES[languageToken] : undefined;
+}
+
+function getStreamFlagCountryCode(
+  stream: JellyfinMediaStream,
+): string | undefined {
+  return [stream.Language, stream.DisplayTitle, stream.Title]
+    .map(getFlagCountryCode)
+    .find(Boolean);
+}
+
+function StreamFlag({ stream }: { stream: JellyfinMediaStream }) {
+  const countryCode = getStreamFlagCountryCode(stream);
+
+  if (!countryCode) {
+    return null;
+  }
+
+  return (
+    <span
+      className={`fi fi-${countryCode} block h-[18px] w-[25px] shrink-0 rounded-sm shadow-sm`}
+      aria-hidden="true"
+    />
+  );
+}
+
+function getDefaultSettingsSection(): SettingsSection {
+  if (!HIDE_QUALITY_SETTINGS) {
+    return "quality";
+  }
+
+  if (!HIDE_AUDIO_SETTINGS) {
+    return "audio";
+  }
+
+  return "subtitles";
+}
+
+function getSettingsTabButtonClass(active: boolean, disabled = false): string {
+  if (disabled) {
+    return "cursor-not-allowed bg-white/[0.03] text-white/25 opacity-60";
+  }
+
+  if (active) {
+    return "bg-[var(--accent)] text-black";
+  }
+
+  return "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white";
+}
+
 function SettingsButton({
   title,
   subtitle,
+  leading,
   active,
   disabled,
   hasSubmenu,
@@ -118,6 +378,7 @@ function SettingsButton({
 }: {
   title: string;
   subtitle?: string;
+  leading?: ReactNode;
   active?: boolean;
   disabled?: boolean;
   hasSubmenu?: boolean;
@@ -135,27 +396,30 @@ function SettingsButton({
           : "hover:bg-white/[0.09] focus:bg-white/[0.09] focus:outline-none"
       }`}
     >
-      <span className="min-w-0">
-        <span className="block truncate text-sm font-bold text-white">
-          {compact ? (
-            title
-          ) : (
-            <AnimatedWidth value={title}>
-              <AnimatedText value={title} />
-            </AnimatedWidth>
-          )}
-        </span>
-        {subtitle ? (
-          <span className="mt-0.5 block truncate text-xs text-white/45">
+      <span className="flex min-w-0 items-center gap-3">
+        {leading ? <span className="shrink-0">{leading}</span> : null}
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-bold text-white">
             {compact ? (
-              subtitle
+              title
             ) : (
-              <AnimatedWidth value={subtitle}>
-                <AnimatedText value={subtitle} />
+              <AnimatedWidth value={title}>
+                <AnimatedText value={title} />
               </AnimatedWidth>
             )}
           </span>
-        ) : null}
+          {subtitle ? (
+            <span className="mt-0.5 block truncate text-xs text-white/45">
+              {compact ? (
+                subtitle
+              ) : (
+                <AnimatedWidth value={subtitle}>
+                  <AnimatedText value={subtitle} />
+                </AnimatedWidth>
+              )}
+            </span>
+          ) : null}
+        </span>
       </span>
 
       <span className="flex shrink-0 items-center gap-2 text-white/55">
@@ -186,9 +450,10 @@ export function PlayerSettingsPanel({
   const subtitleStreams = getUniqueStreams(
     getStreamsOfType(source, "Subtitle"),
   );
-  const [activeSection, setActiveSection] = useState<
-    "quality" | "audio" | "subtitles"
-  >("quality");
+  const [activeSection, setActiveSection] = useState<SettingsSection>(
+    getDefaultSettingsSection,
+  );
+  const canSelectAudio = canSwitchAudio && !DISABLE_AUDIO_SELECTION;
 
   return (
     <motion.div
@@ -207,12 +472,16 @@ export function PlayerSettingsPanel({
         <div className="seyirlik-player-settings-tabs mt-3 grid grid-cols-3 gap-2">
           <button
             type="button"
-            onClick={() => setActiveSection("quality")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
-              activeSection === "quality"
-                ? "bg-[var(--accent)] text-black"
-                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
-            }`}
+            disabled={HIDE_QUALITY_SETTINGS}
+            onClick={
+              HIDE_QUALITY_SETTINGS
+                ? undefined
+                : () => setActiveSection("quality")
+            }
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${getSettingsTabButtonClass(
+              activeSection === "quality",
+              HIDE_QUALITY_SETTINGS,
+            )}`}
           >
             <SlidersHorizontal size={15} strokeWidth={2.2} />
             <span>{t("settings.quality")}</span>
@@ -220,12 +489,14 @@ export function PlayerSettingsPanel({
 
           <button
             type="button"
-            onClick={() => setActiveSection("audio")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
-              activeSection === "audio"
-                ? "bg-[var(--accent)] text-black"
-                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
-            }`}
+            disabled={HIDE_AUDIO_SETTINGS}
+            onClick={
+              HIDE_AUDIO_SETTINGS ? undefined : () => setActiveSection("audio")
+            }
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${getSettingsTabButtonClass(
+              activeSection === "audio",
+              HIDE_AUDIO_SETTINGS,
+            )}`}
           >
             <Volume2 size={15} strokeWidth={2.2} />
             <span>{t("settings.audio")}</span>
@@ -234,11 +505,9 @@ export function PlayerSettingsPanel({
           <button
             type="button"
             onClick={() => setActiveSection("subtitles")}
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${
-              activeSection === "subtitles"
-                ? "bg-[var(--accent)] text-black"
-                : "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white"
-            }`}
+            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${getSettingsTabButtonClass(
+              activeSection === "subtitles",
+            )}`}
           >
             <Subtitles size={15} strokeWidth={2.2} />
             <span>{t("settings.subtitles")}</span>
@@ -252,7 +521,7 @@ export function PlayerSettingsPanel({
         className="seyirlik-player-settings-content max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]"
       >
         <AnimatePresence mode="wait" initial={false}>
-          {activeSection === "quality" ? (
+          {!HIDE_QUALITY_SETTINGS && activeSection === "quality" ? (
             <motion.div
               key="quality"
               layout="size"
@@ -320,7 +589,7 @@ export function PlayerSettingsPanel({
             </motion.div>
           ) : null}
 
-          {activeSection === "audio" ? (
+          {!HIDE_AUDIO_SETTINGS && activeSection === "audio" ? (
             <motion.div
               key="audio"
               layout="size"
@@ -338,6 +607,7 @@ export function PlayerSettingsPanel({
                 audioStreams.map((stream, index) => (
                   <SettingsButton
                     key={`${stream.Index ?? index}-audio`}
+                    leading={<StreamFlag stream={stream} />}
                     title={getStreamLabel(
                       stream,
                       formatTemplate(t("settings.audioTrack"), {
@@ -353,10 +623,10 @@ export function PlayerSettingsPanel({
                           : t("settings.requiresTranscoding")
                     }
                     active={stream.Index === selectedAudioStreamIndex}
-                    disabled={stream.Index === undefined || !canSwitchAudio}
+                    disabled={stream.Index === undefined || !canSelectAudio}
                     compact={compact}
                     onClick={
-                      stream.Index === undefined || !canSwitchAudio
+                      stream.Index === undefined || !canSelectAudio
                         ? undefined
                         : () => onSelectAudioStream(stream.Index as number)
                     }
@@ -405,6 +675,7 @@ export function PlayerSettingsPanel({
                 subtitleStreams.map((stream, index) => (
                   <SettingsButton
                     key={`${stream.Index ?? index}-subtitle`}
+                    leading={<StreamFlag stream={stream} />}
                     title={getStreamLabel(
                       stream,
                       formatTemplate(t("settings.subtitle"), {

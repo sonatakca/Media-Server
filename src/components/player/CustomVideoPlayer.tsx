@@ -24,7 +24,10 @@ import {
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
-import { getDefaultSubtitleStreamIndexForSource } from "../../lib/subtitlePreferences";
+import {
+  getDefaultAudioStreamIndexForSource,
+  getDefaultSubtitleStreamIndexForSource,
+} from "../../lib/playbackDefaults";
 import {
   getVideoErrorDetails,
   type PlaybackTechnicalDetails,
@@ -230,6 +233,13 @@ function getStreamsOfType(
 }
 
 function getDefaultAudioStreamIndex(
+  item: JellyfinItem,
+  source: PlaybackSourceCandidate,
+): number | undefined {
+  return getDefaultAudioStreamIndexForSource(item, source);
+}
+
+function getMediaSourceDefaultAudioStreamIndex(
   source: PlaybackSourceCandidate,
 ): number | undefined {
   const audioStreams = getStreamsOfType(source, "Audio");
@@ -650,9 +660,10 @@ function logAudioSourceDebug(
 }
 
 function getDefaultSubtitleStreamIndex(
+  item: JellyfinItem,
   source: PlaybackSourceCandidate,
 ): number {
-  return getDefaultSubtitleStreamIndexForSource(source);
+  return getDefaultSubtitleStreamIndexForSource(item, source);
 }
 
 function shouldForceDefaultAudioInPlaybackUrl(
@@ -1535,18 +1546,18 @@ export function CustomVideoPlayer({
   const [selectedQualityId, setSelectedQualityId] = useState(AUTO_QUALITY_ID);
   const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<
     number | undefined
-  >(() => getDefaultAudioStreamIndex(source));
+  >(() => getDefaultAudioStreamIndex(item, source));
   const [activeAudioStreamIndex, setActiveAudioStreamIndex] = useState<
     number | undefined
   >(() =>
     shouldForceDefaultAudioInPlaybackUrl(source)
-      ? getDefaultAudioStreamIndex(source)
+      ? getDefaultAudioStreamIndex(item, source)
       : getStreamsOfType(source, "Audio").length <= 1
-        ? getDefaultAudioStreamIndex(source)
+        ? getDefaultAudioStreamIndex(item, source)
         : undefined,
   );
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
-    useState<number>(() => getDefaultSubtitleStreamIndex(source));
+    useState<number>(() => getDefaultSubtitleStreamIndex(item, source));
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
   const [isWaitingForAudioTranscodeReady, setIsWaitingForAudioTranscodeReady] =
     useState(false);
@@ -1890,7 +1901,7 @@ export function CustomVideoPlayer({
   }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {
-    const defaultAudioIndex = getDefaultAudioStreamIndex(source);
+    const defaultAudioIndex = getDefaultAudioStreamIndex(item, source);
     let nextSource = source;
 
     if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
@@ -1922,13 +1933,15 @@ export function CustomVideoPlayer({
         ? defaultAudioIndex
         : undefined,
     );
-    setSelectedSubtitleStreamIndex(getDefaultSubtitleStreamIndex(nextSource));
+    setSelectedSubtitleStreamIndex(
+      getDefaultSubtitleStreamIndex(item, nextSource),
+    );
     setLastVideoError(null);
     setLiveTranscodingReasons([]);
     setCheckpointSeconds(null);
     setIsViewModeCursorVisible(true);
     setIsViewModeEnabled(false);
-  }, [source.id, source.mediaSourceId, source.url]);
+  }, [item, source.id, source.mediaSourceId, source.url]);
   useEffect(() => {
     let isCancelled = false;
     let intervalId: number | null = null;
@@ -2451,7 +2464,7 @@ export function CustomVideoPlayer({
 
   const handleSelectAutoQuality = useCallback(() => {
     const bestSource = availablePlaybackCandidates[0] ?? source;
-    const defaultAudioIndex = getDefaultAudioStreamIndex(bestSource);
+    const defaultAudioIndex = getDefaultAudioStreamIndex(item, bestSource);
     let nextSource = bestSource;
 
     if (canInjectDefaultAudioIntoStreamCopy(bestSource, defaultAudioIndex)) {
@@ -2488,6 +2501,7 @@ export function CustomVideoPlayer({
   }, [
     availablePlaybackCandidates,
     buildConfiguredSource,
+    item,
     source,
     switchPlayerSource,
   ]);
@@ -2555,21 +2569,22 @@ export function CustomVideoPlayer({
           return;
         }
 
-        const defaultAudioIndex = getDefaultAudioStreamIndex(activeSource);
+        const mediaDefaultAudioIndex =
+          getMediaSourceDefaultAudioStreamIndex(activeSource);
 
         if (
           syncResult.reason === "native-audio-tracks-unavailable" &&
-          !didUserSelectNonDefaultAudio(streamIndex, defaultAudioIndex)
+          !didUserSelectNonDefaultAudio(streamIndex, mediaDefaultAudioIndex)
         ) {
           setSelectedAudioStreamIndex(streamIndex);
           setActiveAudioStreamIndex(streamIndex);
           console.info(
-            "[Seyirlik Playback] Native audioTracks unavailable for default track; keeping direct playback.",
+            "[Seyirlik Playback] Native audioTracks unavailable for the media default track; keeping direct playback.",
             {
               sourceMode: activeSource.mode,
               hlsKind: activeSource.hlsKind,
               selectedAudioStreamIndex: streamIndex,
-              defaultAudioStreamIndex: defaultAudioIndex,
+              mediaDefaultAudioStreamIndex: mediaDefaultAudioIndex,
               nativeAudioTracks: getNativeAudioTrackSnapshot(video),
             },
           );
@@ -2635,6 +2650,7 @@ export function CustomVideoPlayer({
       availablePlaybackCandidates,
       buildConfiguredSource,
       canSwitchAudio,
+      item,
       qualityOptions,
       revealPlayerChrome,
       selectedQualityId,
@@ -2763,7 +2779,8 @@ export function CustomVideoPlayer({
     const video = videoRef.current;
     const sourceToAttach = activeSource;
     const selectedAudioIndexForSource =
-      selectedAudioStreamIndex ?? getDefaultAudioStreamIndex(sourceToAttach);
+      selectedAudioStreamIndex ??
+      getDefaultAudioStreamIndex(item, sourceToAttach);
 
     if (!video) {
       return undefined;
@@ -3154,10 +3171,11 @@ export function CustomVideoPlayer({
         return;
       }
 
-      const defaultAudioIndex = getDefaultAudioStreamIndex(sourceToAttach);
+      const mediaDefaultAudioIndex =
+        getMediaSourceDefaultAudioStreamIndex(sourceToAttach);
       const userNeedsDifferentAudio = didUserSelectNonDefaultAudio(
         selectedAudioIndexForSource,
-        defaultAudioIndex,
+        mediaDefaultAudioIndex,
       );
       const nativeAudioControlUnavailable =
         syncResult.reason === "native-audio-tracks-unavailable" ||
@@ -3165,7 +3183,7 @@ export function CustomVideoPlayer({
 
       if (!userNeedsDifferentAudio && nativeAudioControlUnavailable) {
         setActiveAudioStreamIndex(
-          defaultAudioIndex ?? selectedAudioIndexForSource,
+          mediaDefaultAudioIndex ?? selectedAudioIndexForSource,
         );
         console.info(
           "[Seyirlik Playback] Preserving DirectPlay because native audioTracks are unavailable and the default audio should already be selected by the media element",
@@ -3175,7 +3193,7 @@ export function CustomVideoPlayer({
             sourceMode: sourceToAttach.mode,
             hlsKind: sourceToAttach.hlsKind,
             selectedAudioStreamIndex: selectedAudioIndexForSource,
-            defaultAudioStreamIndex: defaultAudioIndex,
+            mediaDefaultAudioStreamIndex: mediaDefaultAudioIndex,
             audioStreamCount,
             nativeAudioTracks: getNativeAudioTrackSnapshot(video),
           },
@@ -3196,7 +3214,7 @@ export function CustomVideoPlayer({
           sourceMode: sourceToAttach.mode,
           hlsKind: sourceToAttach.hlsKind,
           selectedAudioStreamIndex: selectedAudioIndexForSource,
-          defaultAudioStreamIndex: defaultAudioIndex,
+          mediaDefaultAudioStreamIndex: mediaDefaultAudioIndex,
           audioStreamCount,
           nativeAudioTracks: getNativeAudioTrackSnapshot(video),
         },
@@ -3438,6 +3456,7 @@ export function CustomVideoPlayer({
     activeSource.url,
     clearAudioTranscodeReadinessTimer,
     initialStartSeconds,
+    item,
     onVideoFailure,
     partyWatch.shouldDeferAutoplay,
     refreshProgress,

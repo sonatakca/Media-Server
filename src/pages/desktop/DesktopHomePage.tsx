@@ -8,10 +8,18 @@ import { MotionReveal } from "../../components/MotionReveal";
 import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
+  getAllMovieAndSeriesItems,
   getContinueWatchingItems,
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/jellyfinApi";
+import {
+  applyHomeCarouselCuration,
+  buildHomeCarouselPool,
+  filterLatestMediaItems,
+  loadHomeCurationPreferences,
+  type HomeCurationPreferences,
+} from "../../lib/homeCuration";
 import { getLatestContinueWatchingItems } from "../../lib/continueWatching";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
@@ -29,12 +37,12 @@ import {
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
 const HERO_ROTATION_INTERVAL_MS = 12000;
-const HERO_POOL_LIMIT = 10;
 
 interface HomeData {
   libraries: JellyfinLibrary[];
   continueWatching: JellyfinItem[];
   latestMedia: JellyfinItem[];
+  heroItems: JellyfinItem[];
 }
 
 interface RowWarning {
@@ -49,70 +57,6 @@ function getErrorMessage(
   return result.reason instanceof Error ? result.reason.message : fallback;
 }
 
-function hasBackdrop(item: JellyfinItem): boolean {
-  return Boolean(
-    item.BackdropImageTags?.[0] ||
-    (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]),
-  );
-}
-
-function hasPrimaryImage(item: JellyfinItem): boolean {
-  return Boolean(item.ImageTags?.Primary);
-}
-
-function removeDuplicateItems(items: JellyfinItem[]): JellyfinItem[] {
-  const seenItemIds = new Set<string>();
-
-  return items.filter((item) => {
-    if (seenItemIds.has(item.Id)) {
-      return false;
-    }
-
-    seenItemIds.add(item.Id);
-    return true;
-  });
-}
-
-function scoreFeaturedItem(item: JellyfinItem): number {
-  let score = 0;
-
-  if (hasBackdrop(item)) {
-    score += 100;
-  } else if (hasPrimaryImage(item)) {
-    score += 50;
-  }
-
-  if (item.ImageTags?.Logo) {
-    score += 20;
-  }
-
-  if (item.Overview?.trim()) {
-    score += 15;
-  }
-
-  if (item.Type === "Movie" || item.Type === "Series") {
-    score += 10;
-  }
-
-  return score;
-}
-
-function buildFeaturedPool(items: JellyfinItem[]): JellyfinItem[] {
-  return removeDuplicateItems(items)
-    .map((item, index) => ({
-      item,
-      index,
-      score: scoreFeaturedItem(item),
-    }))
-    .sort(
-      (firstItem, secondItem) =>
-        secondItem.score - firstItem.score ||
-        firstItem.index - secondItem.index,
-    )
-    .slice(0, HERO_POOL_LIMIT)
-    .map(({ item }) => item);
-}
-
 export function DesktopHomePage() {
   const { t } = useLanguage();
   const isWebApp = useStandaloneWebApp();
@@ -122,17 +66,25 @@ export function DesktopHomePage() {
   const [heroIndex, setHeroIndex] = useState(0);
   const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
+  const [heroProgressStartedAtMs, setHeroProgressStartedAtMs] = useState(() =>
+    Date.now(),
+  );
+  const [homeCurationPreferences, setHomeCurationPreferences] =
+    useState<HomeCurationPreferences>(() => loadHomeCurationPreferences());
   const [isHeroReady, setIsHeroReady] = useState(false);
   const [shouldShowConfetti, setShouldShowConfetti] = useState(false);
   const hasEvaluatedConfetti = useRef(false);
-  const featuredPool = useMemo(
-    () =>
-      buildFeaturedPool([
-        ...(data?.continueWatching ?? []),
-        ...(data?.latestMedia ?? []),
-      ]),
-    [data?.continueWatching, data?.latestMedia],
-  );
+  const featuredPool = useMemo(() => {
+    const heroItems =
+      data?.heroItems && data.heroItems.length > 0
+        ? data.heroItems
+        : (data?.latestMedia ?? []);
+
+    return applyHomeCarouselCuration(
+      buildHomeCarouselPool(heroItems),
+      homeCurationPreferences,
+    );
+  }, [data?.heroItems, data?.latestMedia, homeCurationPreferences]);
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
   const heroItem = featuredPool[selectedHeroIndex];
 
@@ -170,11 +122,12 @@ export function DesktopHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [librariesResult, continueResult, latestResult] =
+      const [librariesResult, continueResult, latestResult, heroItemsResult] =
         await Promise.allSettled([
           getUserViews(),
           getContinueWatchingItems(),
           getLatestMediaItems(),
+          getAllMovieAndSeriesItems(),
         ]);
 
       if (!isMounted) {
@@ -204,14 +157,30 @@ export function DesktopHomePage() {
       }
 
       setRowWarnings(warnings);
+      const nextHomeCurationPreferences = loadHomeCurationPreferences();
+      setHomeCurationPreferences(nextHomeCurationPreferences);
+
+      const latestMedia =
+        latestResult.status === "fulfilled"
+          ? filterLatestMediaItems(
+              latestResult.value,
+              nextHomeCurationPreferences,
+            )
+          : [];
+      const heroItems =
+        heroItemsResult.status === "fulfilled" &&
+        Array.isArray(heroItemsResult.value)
+          ? heroItemsResult.value
+          : latestMedia;
+
       setData({
         libraries: librariesResult.value,
         continueWatching:
           continueResult.status === "fulfilled"
             ? getLatestContinueWatchingItems(continueResult.value)
             : [],
-        latestMedia:
-          latestResult.status === "fulfilled" ? latestResult.value : [],
+        latestMedia,
+        heroItems,
       });
     }
 
@@ -226,6 +195,7 @@ export function DesktopHomePage() {
     setHeroIndex(0);
     setIsHeroPaused(false);
     setIsHeroReady(false);
+    setHeroProgressStartedAtMs(Date.now());
     setHeroProgressResetKey((current) => current + 1);
   }, [featuredPool]);
 
@@ -235,6 +205,7 @@ export function DesktopHomePage() {
     }
 
     const timeoutId = window.setTimeout(() => {
+      setHeroProgressStartedAtMs(Date.now());
       setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
     }, HERO_ROTATION_INTERVAL_MS);
 
@@ -250,6 +221,7 @@ export function DesktopHomePage() {
   ]);
 
   const handleSelectHeroIndex = (index: number) => {
+    setHeroProgressStartedAtMs(Date.now());
     setHeroIndex(index);
     setHeroProgressResetKey((current) => current + 1);
   };
@@ -300,6 +272,7 @@ export function DesktopHomePage() {
           currentIndex={selectedHeroIndex}
           totalItems={featuredPool.length}
           durationMs={HERO_ROTATION_INTERVAL_MS}
+          progressStartedAtMs={heroProgressStartedAtMs}
           progressResetKey={isHeroReady ? heroProgressResetKey : "hero-loading"}
           isPaused={isHeroPaused || !isHeroReady}
           onTogglePaused={handleToggleHeroPaused}

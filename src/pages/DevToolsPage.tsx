@@ -5,7 +5,9 @@ import {
   Bug,
   Database,
   DatabaseZap,
+  Languages,
   Lightbulb,
+  ListOrdered,
   ShieldCheck,
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
@@ -45,6 +47,20 @@ export function DevToolsPage() {
       to: "/dev/content",
       icon: Database,
       tag: t("devtools.card.contentExplorer.tag"),
+    },
+    {
+      title: t("devtools.card.homeCuration.title"),
+      description: t("devtools.card.homeCuration.description"),
+      to: "/dev/home-curation",
+      icon: ListOrdered,
+      tag: t("devtools.card.homeCuration.tag"),
+    },
+    {
+      title: t("devtools.card.playbackDefaults.title"),
+      description: t("devtools.card.playbackDefaults.description"),
+      to: "/dev/playback-defaults",
+      icon: Languages,
+      tag: t("devtools.card.playbackDefaults.tag"),
     },
     {
       title: t("devtools.card.knownBugs.title"),

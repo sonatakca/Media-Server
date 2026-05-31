@@ -152,6 +152,7 @@ export interface JellyfinItem {
   Overview?: string;
   Taglines?: string[];
   Genres?: string[];
+  ProviderIds?: Record<string, string>;
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;

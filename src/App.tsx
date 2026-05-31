@@ -29,6 +29,8 @@ import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
 import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
+import { HomeCurationPage } from "./pages/HomeCurationPage";
+import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -242,6 +244,11 @@ export default function App() {
                 element={<LibraryMaintenancePage />}
               />
               <Route path="/dev/content" element={<ContentExplorerPage />} />
+              <Route path="/dev/home-curation" element={<HomeCurationPage />} />
+              <Route
+                path="/dev/playback-defaults"
+                element={<PlaybackDefaultsPage />}
+              />
               <Route
                 path="/dev/known-bugs"
                 element={<DevToolsBoardPage type="bugs" />}

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Pause, Play } from "lucide-react";
 
@@ -6,6 +6,7 @@ interface TimedCarouselIndicatorsProps {
   count: number;
   activeIndex: number;
   durationMs: number;
+  progressStartedAtMs?: number;
   onSelect: (index: number) => void;
   isPaused?: boolean;
   className?: string;
@@ -13,6 +14,7 @@ interface TimedCarouselIndicatorsProps {
   ariaLabel?: string;
   onTogglePaused?: () => void;
   showPauseButton?: boolean;
+  maxVisibleDots?: number;
 }
 
 function classNames(
@@ -21,10 +23,13 @@ function classNames(
   return values.filter(Boolean).join(" ");
 }
 
+const INITIAL_DOT_REVEAL_MS = 1300;
+
 export function TimedCarouselIndicators({
   count,
   activeIndex,
   durationMs,
+  progressStartedAtMs,
   onSelect,
   isPaused = false,
   className,
@@ -32,9 +37,20 @@ export function TimedCarouselIndicators({
   ariaLabel = "Carousel navigation",
   onTogglePaused,
   showPauseButton = false,
+  maxVisibleDots,
 }: TimedCarouselIndicatorsProps) {
   const shouldReduceMotion = Boolean(useReducedMotion());
   const [isCompactViewport, setIsCompactViewport] = useState(false);
+  const [hasCompletedInitialReveal, setHasCompletedInitialReveal] =
+    useState(false);
+  const boundedCount = Math.max(count, 1);
+  const safeActiveIndex = Math.min(Math.max(activeIndex, 0), boundedCount - 1);
+  const previousActiveIndexRef = useRef(safeActiveIndex);
+  const revealDirectionRef = useRef<1 | -1>(1);
+  const progressAnimationOffsetRef = useRef<{
+    key: string;
+    elapsedMs: number;
+  } | null>(null);
   // The carousel owner controls autoplay timing; paused/reduced-motion states use a settled fill instead of tracking fractional progress here.
   const showSettledProgress = isPaused || shouldReduceMotion;
 
@@ -51,12 +67,88 @@ export function TimedCarouselIndicators({
     };
   }, []);
 
+  useEffect(() => {
+    if (count <= 1 || shouldReduceMotion) {
+      setHasCompletedInitialReveal(true);
+      return;
+    }
+
+    setHasCompletedInitialReveal(false);
+
+    const timeoutId = window.setTimeout(() => {
+      setHasCompletedInitialReveal(true);
+    }, INITIAL_DOT_REVEAL_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [count, shouldReduceMotion]);
+
   if (count <= 1) {
     return null;
   }
 
-  const safeActiveIndex = Math.min(Math.max(activeIndex, 0), count - 1);
+  if (previousActiveIndexRef.current !== safeActiveIndex) {
+    let delta = safeActiveIndex - previousActiveIndexRef.current;
+    const halfCount = count / 2;
+
+    if (delta > halfCount) {
+      delta -= count;
+    } else if (delta < -halfCount) {
+      delta += count;
+    }
+
+    revealDirectionRef.current = delta < 0 ? -1 : 1;
+    previousActiveIndexRef.current = safeActiveIndex;
+  }
+
+  const normalizedMaxVisibleDots =
+    typeof maxVisibleDots === "number" && maxVisibleDots > 0
+      ? Math.max(1, Math.floor(maxVisibleDots))
+      : null;
+  const visibleDotLimit = normalizedMaxVisibleDots
+    ? normalizedMaxVisibleDots % 2 === 0
+      ? Math.max(1, normalizedMaxVisibleDots - 1)
+      : normalizedMaxVisibleDots
+    : count;
+  const shouldWindowDots =
+    normalizedMaxVisibleDots !== null && count > visibleDotLimit;
+  const visibleDotCount = shouldWindowDots ? visibleDotLimit : count;
+  const visibleDotCenter = Math.floor(visibleDotCount / 2);
+  const visibleIndicators = Array.from(
+    { length: visibleDotCount },
+    (_, position) => {
+      const offset = shouldWindowDots ? position - visibleDotCenter : 0;
+      const index = shouldWindowDots
+        ? (safeActiveIndex + offset + count) % count
+        : position;
+
+      return {
+        index,
+        position,
+        distanceFromActive: shouldWindowDots
+          ? Math.abs(offset)
+          : Math.abs(position - safeActiveIndex),
+      };
+    },
+  );
   const progressKey = `${safeActiveIndex}-${progressResetKey ?? "default"}`;
+  const normalizedDurationMs = Math.max(durationMs, 0);
+  const progressAnimationKey = `${progressKey}-${progressStartedAtMs ?? "none"}-${normalizedDurationMs}`;
+
+  if (progressAnimationOffsetRef.current?.key !== progressAnimationKey) {
+    progressAnimationOffsetRef.current = {
+      key: progressAnimationKey,
+      elapsedMs: Math.min(
+        Math.max(progressStartedAtMs ? Date.now() - progressStartedAtMs : 0, 0),
+        normalizedDurationMs,
+      ),
+    };
+  }
+
+  const elapsedProgressMs = progressAnimationOffsetRef.current.elapsedMs;
+  const progressFillRevealDelaySeconds =
+    elapsedProgressMs > INITIAL_DOT_REVEAL_MS ? 0 : 0.85;
   const springTransition = shouldReduceMotion
     ? { duration: 0 }
     : { type: "spring" as const, stiffness: 430, damping: 34, mass: 0.75 };
@@ -65,6 +157,9 @@ export function TimedCarouselIndicators({
     : { type: "spring" as const, stiffness: 360, damping: 32, mass: 0.78 };
   const activeButtonWidth = isCompactViewport ? 34 : 48;
   const inactiveButtonWidth = isCompactViewport ? 17 : 24;
+  const activeDotWidth = isCompactViewport ? 32 : 40;
+  const baseInactiveDotSize = isCompactViewport ? 6 : 7;
+  const windowedContainerWidth = isCompactViewport ? 200 : 286;
 
   return (
     <motion.div
@@ -74,7 +169,21 @@ export function TimedCarouselIndicators({
     >
       <motion.div
         layout
-        className="media-scroll relative flex h-9 max-w-full origin-center items-center gap-1.5 overflow-x-auto overscroll-x-contain rounded-full border border-white/[0.10] bg-white/[0.14] px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl sm:h-11 sm:gap-2.5 sm:px-4"
+        style={
+          shouldWindowDots
+            ? {
+                width: windowedContainerWidth,
+                minWidth: windowedContainerWidth,
+                maxWidth: windowedContainerWidth,
+              }
+            : undefined
+        }
+        className={classNames(
+          "relative flex h-9 max-w-full origin-center items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.14] px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] sm:h-11 sm:gap-2.5 sm:px-4",
+          shouldWindowDots
+            ? "overflow-hidden"
+            : "media-scroll overflow-x-auto overscroll-x-contain",
+        )}
         initial={
           shouldReduceMotion
             ? { opacity: 1 }
@@ -83,18 +192,44 @@ export function TimedCarouselIndicators({
                 scale: 0.72,
                 scaleX: 0.18,
                 y: 12,
-                filter: "blur(8px)",
               }
         }
-        animate={{ opacity: 1, scale: 1, scaleX: 1, y: 0, filter: "blur(0px)" }}
+        animate={{ opacity: 1, scale: 1, scaleX: 1, y: 0 }}
         transition={{
           ...springTransition,
           delay: shouldReduceMotion ? 0 : 0.35,
         }}
       >
-        {Array.from({ length: count }, (_, index) => {
+        {visibleIndicators.map(({ index, position, distanceFromActive }) => {
           const isActive = index === safeActiveIndex;
-          const revealDelay = shouldReduceMotion ? 0 : 0.65 + index * 0.045;
+          const shiftedRevealPosition =
+            revealDirectionRef.current < 0
+              ? visibleDotCount - 1 - position
+              : position;
+          const revealDelay = shouldReduceMotion
+            ? 0
+            : shouldWindowDots && hasCompletedInitialReveal
+              ? 0.12 + shiftedRevealPosition * 0.05
+              : 0.65 + position * 0.045;
+          const taperedDotSize = shouldWindowDots
+            ? Math.max(3, baseInactiveDotSize - distanceFromActive)
+            : baseInactiveDotSize;
+          const buttonWidth = isActive
+            ? activeButtonWidth
+            : shouldWindowDots
+              ? Math.max(11, taperedDotSize + (isCompactViewport ? 8 : 11))
+              : inactiveButtonWidth;
+          const buttonOpacity = isActive
+            ? 1
+            : shouldWindowDots
+              ? Math.max(0.34, 0.88 - distanceFromActive * 0.13)
+              : 0.82;
+          const initialSlideX =
+            shouldWindowDots &&
+            hasCompletedInitialReveal &&
+            revealDirectionRef.current < 0
+              ? 10
+              : -10;
 
           return (
             <motion.button
@@ -110,14 +245,14 @@ export function TimedCarouselIndicators({
                   : {
                       opacity: 0,
                       scale: 0.62,
-                      x: -10,
+                      x: initialSlideX,
                       y: 4,
                       filter: "blur(6px)",
                     }
               }
               animate={{
-                width: isActive ? activeButtonWidth : inactiveButtonWidth,
-                opacity: isActive ? 1 : 0.82,
+                width: buttonWidth,
+                opacity: buttonOpacity,
                 scale: 1,
                 x: 0,
                 y: 0,
@@ -147,16 +282,26 @@ export function TimedCarouselIndicators({
                   delay: shouldReduceMotion ? 0 : revealDelay,
                 },
               }}
-              onClick={() => onSelect(index)}
+              onClick={() => {
+                if (isActive) {
+                  return;
+                }
+
+                onSelect(index);
+              }}
             >
               <motion.span
                 layout
                 className={classNames(
-                  "relative block h-[7px] bg-gray-500 overflow-hidden rounded-full transition-colors duration-200 group-hover:bg-white/[1]",
+                  "relative block overflow-hidden rounded-full transition-colors duration-200",
                   isActive
-                    ? "w-8 bg-white/[0.28] sm:w-10"
-                    : "w-[6px] bg-white/[0.44] sm:w-[7px]",
+                    ? "bg-white/[0.28] group-hover:bg-white/[0.28]"
+                    : "bg-white/[0.44] group-hover:bg-white/[1]",
                 )}
+                animate={{
+                  width: isActive ? activeDotWidth : taperedDotSize,
+                  height: isActive ? 7 : taperedDotSize,
+                }}
                 transition={softSpringTransition}
               >
                 {isActive ? (
@@ -164,22 +309,24 @@ export function TimedCarouselIndicators({
                     key={progressKey}
                     className="absolute inset-y-0 left-0 h-full w-full origin-left rounded-full bg-white/[0.92]"
                     initial={
-                      shouldReduceMotion
-                        ? { opacity: 1 }
-                        : { opacity: 0, filter: "blur(4px)" }
+                      shouldReduceMotion ? { opacity: 1 } : { opacity: 0 }
                     }
-                    animate={{ opacity: 1, filter: "blur(0px)" }}
+                    animate={{ opacity: 1 }}
                     transition={{
                       duration: shouldReduceMotion ? 0 : 0.35,
-                      delay: shouldReduceMotion ? 0 : 0.85,
+                      delay: shouldReduceMotion
+                        ? 0
+                        : progressFillRevealDelaySeconds,
                       ease: [0.16, 1, 0.3, 1],
                     }}
                     style={{
                       transform: shouldReduceMotion ? "scaleX(1)" : undefined,
                       animation: shouldReduceMotion
                         ? undefined
-                        : `carousel-progress-fill ${Math.max(0, durationMs)}ms linear forwards`,
-                      animationDelay: shouldReduceMotion ? undefined : "850ms",
+                        : `carousel-progress-fill ${normalizedDurationMs}ms linear forwards`,
+                      animationDelay: shouldReduceMotion
+                        ? undefined
+                        : `${-elapsedProgressMs}ms`,
                       animationPlayState: isPaused ? "paused" : "running",
                     }}
                   />
@@ -194,7 +341,7 @@ export function TimedCarouselIndicators({
         <motion.button
           type="button"
           aria-label={isPaused ? "Resume carousel" : "Pause carousel"}
-          className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none backdrop-blur-2xl transition-colors hover:bg-white/[0.20] hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11"
+          className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition-colors hover:bg-white/[0.20] hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11"
           initial={
             shouldReduceMotion
               ? { opacity: 1 }
@@ -203,13 +350,14 @@ export function TimedCarouselIndicators({
                   scale: 0.75,
                   x: -10,
                   y: 4,
-                  filter: "blur(8px)",
                 }
           }
-          animate={{ opacity: 1, scale: 1, x: 0, y: 0, filter: "blur(0px)" }}
+          animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
           transition={{
             ...softSpringTransition,
-            delay: shouldReduceMotion ? 0 : 0.65 + count * 0.045,
+            delay: shouldReduceMotion
+              ? 0
+              : 0.65 + visibleIndicators.length * 0.045,
           }}
           onClick={onTogglePaused}
         >

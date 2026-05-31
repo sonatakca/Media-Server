@@ -16,6 +16,10 @@ import {
   getPrimaryImageUrl,
   getUserViews,
 } from "../../lib/jellyfinApi";
+import {
+  filterLatestMediaItems,
+  loadHomeCurationPreferences,
+} from "../../lib/homeCuration";
 import { getRouteForItem } from "../../lib/routes";
 import { setSeoMetadata } from "../../lib/seo";
 import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
@@ -181,6 +185,8 @@ export function MobileHomePage() {
       }
 
       setRowWarnings(warnings);
+      const homeCurationPreferences = loadHomeCurationPreferences();
+
       setData({
         libraries: librariesResult.value,
         continueWatching:
@@ -188,7 +194,12 @@ export function MobileHomePage() {
             ? getLatestContinueWatchingItems(continueResult.value)
             : [],
         latestMedia:
-          latestResult.status === "fulfilled" ? latestResult.value : [],
+          latestResult.status === "fulfilled"
+            ? filterLatestMediaItems(
+                latestResult.value,
+                homeCurationPreferences,
+              )
+            : [],
       });
     }
 

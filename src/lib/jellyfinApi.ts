@@ -66,6 +66,7 @@ const DEFAULT_ITEM_FIELDS = [
   "PrimaryImageAspectRatio",
   "SortName",
   "Overview",
+  "ProviderIds",
   "Chapters",
   "Genres",
   "RunTimeTicks",
@@ -849,6 +850,49 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
       groupItems: false,
     },
   });
+}
+
+export async function getAllMovieAndSeriesItems(): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+  const allItems: JellyfinItem[] = [];
+  const limit = 200;
+  let startIndex = 0;
+  let totalRecordCount = Number.POSITIVE_INFINITY;
+
+  while (startIndex < totalRecordCount) {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      "/Items",
+      {
+        params: {
+          userId: session.userId,
+          recursive: true,
+          includeItemTypes: "Movie,Series",
+          sortBy: "SortName",
+          sortOrder: "Ascending",
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          enableUserData: true,
+          startIndex,
+          limit,
+        },
+      },
+    );
+
+    const items = response.Items ?? [];
+    allItems.push(...items);
+
+    totalRecordCount = response.TotalRecordCount ?? allItems.length;
+
+    if (items.length === 0) {
+      break;
+    }
+
+    startIndex += items.length;
+  }
+
+  return allItems;
 }
 
 export async function getAllVideoItems(): Promise<JellyfinItem[]> {
