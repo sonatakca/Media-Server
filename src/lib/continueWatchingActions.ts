@@ -1,5 +1,10 @@
-import { getAllSeriesEpisodes, getItem, markItemUnplayed } from "./jellyfinApi";
+import {
+  getAllSeriesEpisodes,
+  getItem,
+  resetItemWatchedStatus,
+} from "./jellyfinApi";
 import type { JellyfinItem } from "./types";
+import { WATCH_STATUS_CHANGED_EVENT } from "./watchedStatusActions";
 
 interface IndexedEpisode {
   item: JellyfinItem;
@@ -112,8 +117,18 @@ export async function clearContinueWatchingHistory(
   const itemsToClear = await getItemsToClear(item);
 
   await Promise.all(
-    itemsToClear.map((historyItem) => markItemUnplayed(historyItem.Id)),
+    itemsToClear.map((historyItem) => resetItemWatchedStatus(historyItem.Id)),
   );
+
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(
+      new CustomEvent(WATCH_STATUS_CHANGED_EVENT, {
+        detail: {
+          itemIds: itemsToClear.map((historyItem) => historyItem.Id),
+        },
+      }),
+    );
+  }
 
   return itemsToClear[0] ?? item;
 }

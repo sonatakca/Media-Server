@@ -17,6 +17,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { Tooltip } from "../components/ui/Tooltip";
 import { setPageTitle } from "../lib/pageTitle";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -147,7 +148,10 @@ function materializeDefaultItems(
   }));
 }
 
-function readItems(config: BoardConfig, defaultItems: BoardItem[]): BoardItem[] {
+function readItems(
+  config: BoardConfig,
+  defaultItems: BoardItem[],
+): BoardItem[] {
   try {
     const stored = localStorage.getItem(config.storageKey);
 
@@ -514,7 +518,9 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
             <div>
               <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                 {editingItem ? <Pencil size={15} /> : <Plus size={15} />}
-                {editingItem ? t("devtools.editItem") : t("devtools.createItem")}
+                {editingItem
+                  ? t("devtools.editItem")
+                  : t("devtools.createItem")}
               </p>
 
               <h2 className="mt-2 text-xl font-black text-white">
@@ -720,50 +726,58 @@ export function DevToolsBoardPage({ type }: DevToolsBoardPageProps) {
                     </div>
 
                     <div className="flex shrink-0 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleCopy(item)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-emerald-400/35 hover:bg-emerald-400/10 hover:text-emerald-200"
-                        aria-label={formatTemplate(t("devtools.copyItem"), {
-                          title: item.title,
-                        })}
-                        title={
+                      <Tooltip
+                        content={
                           copiedId === item.id
                             ? t("common.copied")
                             : t("common.copy")
                         }
                       >
-                        {copiedId === item.id ? (
-                          <Check size={17} />
-                        ) : (
-                          <Copy size={17} />
-                        )}
-                      </button>
+                        <button
+                          type="button"
+                          onClick={() => handleCopy(item)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-emerald-400/35 hover:bg-emerald-400/10 hover:text-emerald-200"
+                          aria-label={formatTemplate(t("devtools.copyItem"), {
+                            title: item.title,
+                          })}
+                        >
+                          {copiedId === item.id ? (
+                            <Check size={17} />
+                          ) : (
+                            <Copy size={17} />
+                          )}
+                        </button>
+                      </Tooltip>
 
-                      <button
-                        type="button"
-                        onClick={() => handleEdit(item)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                        aria-label={formatTemplate(t("devtools.editItemTitle"), {
-                          title: item.title,
-                        })}
-                        title={t("common.edit")}
-                      >
-                        <Pencil size={17} />
-                      </button>
+                      <Tooltip content={t("common.edit")}>
+                        <button
+                          type="button"
+                          onClick={() => handleEdit(item)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
+                          aria-label={formatTemplate(
+                            t("devtools.editItemTitle"),
+                            {
+                              title: item.title,
+                            },
+                          )}
+                        >
+                          <Pencil size={17} />
+                        </button>
+                      </Tooltip>
 
-                      <button
-                        type="button"
-                        onClick={() => handleDelete(item.id)}
-                        className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-red-400/35 hover:bg-red-400/10 hover:text-red-200"
-                        aria-label={formatTemplate(
-                          t("devtools.deleteItemTitle"),
-                          { title: item.title },
-                        )}
-                        title={t("common.delete")}
-                      >
-                        <Trash2 size={17} />
-                      </button>
+                      <Tooltip content={t("common.delete")}>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/58 transition hover:border-red-400/35 hover:bg-red-400/10 hover:text-red-200"
+                          aria-label={formatTemplate(
+                            t("devtools.deleteItemTitle"),
+                            { title: item.title },
+                          )}
+                        >
+                          <Trash2 size={17} />
+                        </button>
+                      </Tooltip>
                     </div>
                   </div>
                 </article>

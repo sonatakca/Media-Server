@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Info, Play } from "lucide-react";
 import { ButtonLink } from "../../components/Button";
@@ -6,11 +6,9 @@ import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileLibraryTile } from "../../components/mobile/MobileLibraryTile";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getLatestContinueWatchingItems } from "../../lib/continueWatching";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
   getBackdropImageUrl,
-  getContinueWatchingItems,
   getLatestMediaItems,
   getLogoImageUrl,
   getPrimaryImageUrl,
@@ -22,7 +20,9 @@ import {
 } from "../../lib/homeCuration";
 import { getRouteForItem } from "../../lib/routes";
 import { setSeoMetadata } from "../../lib/seo";
+import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
+import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -136,6 +136,19 @@ export function MobileHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
 
+  const refreshSmartContinueWatching = useCallback(async () => {
+    const smartContinueItems = await getSmartContinueWatchingItems();
+
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            continueWatching: smartContinueItems,
+          }
+        : currentData,
+    );
+  }, []);
+
   useEffect(() => {
     setSeoMetadata({
       title: `${t("common.home")} · Seyirlik`,
@@ -154,7 +167,7 @@ export function MobileHomePage() {
       const [librariesResult, continueResult, latestResult] =
         await Promise.allSettled([
           getUserViews(),
-          getContinueWatchingItems(),
+          getSmartContinueWatchingItems(),
           getLatestMediaItems(),
         ]);
 
@@ -190,9 +203,7 @@ export function MobileHomePage() {
       setData({
         libraries: librariesResult.value,
         continueWatching:
-          continueResult.status === "fulfilled"
-            ? getLatestContinueWatchingItems(continueResult.value)
-            : [],
+          continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia:
           latestResult.status === "fulfilled"
             ? filterLatestMediaItems(
@@ -209,6 +220,24 @@ export function MobileHomePage() {
       isMounted = false;
     };
   }, [t]);
+
+  useEffect(() => {
+    const handleWatchStatusChanged = () => {
+      void refreshSmartContinueWatching();
+    };
+
+    window.addEventListener(
+      WATCH_STATUS_CHANGED_EVENT,
+      handleWatchStatusChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        WATCH_STATUS_CHANGED_EVENT,
+        handleWatchStatusChanged,
+      );
+    };
+  }, [refreshSmartContinueWatching]);
 
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
@@ -229,6 +258,7 @@ export function MobileHomePage() {
           }
         : currentData,
     );
+    void refreshSmartContinueWatching();
   };
 
   const heroItem = getFeaturedItem([

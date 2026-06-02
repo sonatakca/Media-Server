@@ -8,20 +8,23 @@ import {
 } from "../../lib/homeConfetti";
 import {
   getAllMovieAndSeriesItems,
-  getContinueWatchingItems,
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/jellyfinApi";
+import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { DesktopHomePage } from "./DesktopHomePage";
 
 vi.mock("../../lib/jellyfinApi");
+vi.mock("../../lib/smartContinueWatching");
 vi.mock("../../lib/homeConfetti");
 vi.mock("../../lib/seo");
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
   motion: {
     div: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+    span: ({ children }: { children: ReactNode }) => <span>{children}</span>,
   },
+  useReducedMotion: () => true,
 }));
 vi.mock("../../hooks/useStandaloneWebApp", () => ({
   useStandaloneWebApp: () => false,
@@ -65,7 +68,7 @@ describe("DesktopHomePage confetti", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getUserViews).mockResolvedValue([]);
-    vi.mocked(getContinueWatchingItems).mockResolvedValue([]);
+    vi.mocked(getSmartContinueWatchingItems).mockResolvedValue([]);
     vi.mocked(getLatestMediaItems).mockResolvedValue([]);
     vi.mocked(getAllMovieAndSeriesItems).mockResolvedValue([]);
     vi.mocked(consumeLoginConfettiPending).mockReturnValue(false);

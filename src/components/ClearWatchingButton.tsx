@@ -4,6 +4,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import { getDisplayTitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
+import { Tooltip } from "./ui/Tooltip";
 
 interface ClearWatchingButtonProps {
   item: JellyfinItem;
@@ -49,18 +50,21 @@ export function ClearWatchingButton({
     }
   };
 
+  const tooltipLabel = didClearFail
+    ? t("home.couldNotClearHistory")
+    : t("home.clearHistory");
+
   return (
-    <button
-      type="button"
-      onClick={() => void handleClear()}
-      disabled={isClearing}
-      aria-label={`${t("home.clearHistory")} ${title}`}
-      title={
-        didClearFail ? t("home.couldNotClearHistory") : t("home.clearHistory")
-      }
-      className={`${className} disabled:cursor-wait disabled:opacity-65`}
-    >
-      <X size={iconSize} />
-    </button>
+    <Tooltip content={tooltipLabel}>
+      <button
+        type="button"
+        onClick={() => void handleClear()}
+        disabled={isClearing}
+        aria-label={`${t("home.clearHistory")} ${title}`}
+        className={`${className} disabled:cursor-wait disabled:opacity-65`}
+      >
+        <X size={iconSize} />
+      </button>
+    </Tooltip>
   );
 }

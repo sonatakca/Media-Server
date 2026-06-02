@@ -7,6 +7,7 @@ import { clearAuthSession, getAuthSession } from "../../lib/authStorage";
 import { getUserViews } from "../../lib/jellyfinApi";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
+import { Tooltip } from "../ui/Tooltip";
 
 function getTabClassName(isActive: boolean): string {
   const colorClass = isActive ? "text-white" : "text-white/52";
@@ -127,15 +128,16 @@ export function MobileNavbar() {
         <div className="flex items-center gap-1">
           <LanguageSwitch />
           {session ? (
-            <button
-              type="button"
-              onClick={handleLogout}
-              aria-label={t("nav.logout")}
-              title={t("nav.logout")}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
-            >
-              <LogOut size={18} />
-            </button>
+            <Tooltip content={t("nav.logout")}>
+              <button
+                type="button"
+                onClick={handleLogout}
+                aria-label={t("nav.logout")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
+              >
+                <LogOut size={18} />
+              </button>
+            </Tooltip>
           ) : null}
         </div>
       </header>
@@ -162,16 +164,17 @@ export function MobileNavbar() {
           <Tv size={20} />
           <span>{t("nav.series")}</span>
         </NavLink>
-        <button
-          type="button"
-          onClick={handleThemeChange}
-          aria-label={t("nav.changeTheme")}
-          title={t("nav.changeTheme")}
-          className={getTabClassName(false)}
-        >
-          <Palette size={20} />
-          <span>{t("nav.changeTheme")}</span>
-        </button>
+        <Tooltip content={t("nav.changeTheme")} placement="top">
+          <button
+            type="button"
+            onClick={handleThemeChange}
+            aria-label={t("nav.changeTheme")}
+            className={getTabClassName(false)}
+          >
+            <Palette size={20} />
+            <span>{t("nav.changeTheme")}</span>
+          </button>
+        </Tooltip>
       </nav>
     </>
   );

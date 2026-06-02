@@ -42,10 +42,13 @@ export interface JellyfinUserData {
   PlaybackPositionTicks?: number;
   PlayCount?: number;
   IsFavorite?: boolean;
+  Likes?: boolean;
+  LastPlayedDate?: string | null;
   Played?: boolean;
   PlayedPercentage?: number;
   UnplayedItemCount?: number;
-  LastPlayedDate?: string;
+  Key?: string;
+  ItemId?: string;
 }
 
 export interface JellyfinMediaStream {
@@ -139,6 +142,7 @@ export interface JellyfinItem {
   Id: string;
   Name: string;
   SortName?: string;
+  OriginalTitle?: string;
   Type?: string;
   MediaType?: string;
   CollectionType?: string;
@@ -170,6 +174,7 @@ export interface JellyfinItem {
   ParentLogoItemId?: string;
   ParentLogoImageTag?: string;
   SeriesId?: string;
+  SeriesPrimaryImageTag?: string;
   SeasonId?: string;
   ParentId?: string;
 }

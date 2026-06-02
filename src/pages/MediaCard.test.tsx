@@ -44,6 +44,9 @@ vi.mock("framer-motion", () => ({
       transition,
       ...props
     }: any) => <img {...props} />,
+    span: ({ children, initial, animate, transition, ...props }: any) => (
+      <span {...props}>{children}</span>
+    ),
   },
   useReducedMotion: () => true,
 }));
@@ -72,6 +75,91 @@ describe("MediaCard Component", () => {
     // Check that the image source is built properly
     const image = screen.getByAltText("The Matrix");
     expect(image).toHaveAttribute("src", "/mock-primary-movie-123.jpg");
+  });
+
+  it("shows a clear watched indicator for completed items", () => {
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={{ ...mockMovie, UserData: { Played: true } }}
+          to={`/item/${mockMovie.Id}`}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("details.watched")).toBeInTheDocument();
+  });
+
+  it("shows a full progress bar for items Jellyfin marks played", () => {
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={{ ...mockMovie, UserData: { Played: true } }}
+          to={`/item/${mockMovie.Id}`}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("media-card-progress-fill")).toHaveStyle({
+      width: "100%",
+    });
+  });
+
+  it("offers to mark incomplete playable items as watched", () => {
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={mockMovie}
+          to={`/item/${mockMovie.Id}`}
+          onWatchedStatusReset={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("button", { name: "details.markWatchedStatus" }),
+    ).toBeInTheDocument();
+  });
+
+  it("renders a collection mosaic when a BoxSet has no primary image", () => {
+    const collection: JellyfinItem = {
+      Id: "collection-1",
+      Name: "Example Collection",
+      Type: "BoxSet",
+    };
+    const collectionItems: JellyfinItem[] = [
+      {
+        Id: "movie-1",
+        Name: "Example",
+        Type: "Movie",
+        ImageTags: { Primary: "poster-1" },
+      },
+      {
+        Id: "movie-2",
+        Name: "Example 2",
+        Type: "Movie",
+        ImageTags: { Primary: "poster-2" },
+      },
+    ];
+
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={collection}
+          to={`/library/${collection.Id}`}
+          collectionItems={collectionItems}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByAltText("Example")).toHaveAttribute(
+      "src",
+      "/mock-primary-movie-1.jpg",
+    );
+    expect(screen.getByAltText("Example 2")).toHaveAttribute(
+      "src",
+      "/mock-primary-movie-2.jpg",
+    );
   });
 
   it("renders a play button overlay for playable items", () => {

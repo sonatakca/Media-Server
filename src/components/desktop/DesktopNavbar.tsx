@@ -10,6 +10,7 @@ import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
+import { Tooltip } from "../ui/Tooltip";
 
 export function DesktopNavbar() {
   const navigate = useNavigate();
@@ -195,15 +196,16 @@ export function DesktopNavbar() {
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
           <LanguageSwitch />
 
-          <button
-            type="button"
-            onClick={handleThemeChange}
-            aria-label={t("nav.changeTheme")}
-            title={t("nav.changeTheme")}
-            className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
-          >
-            <Palette size={18} className="shrink-0" />
-          </button>
+          <Tooltip content={t("nav.changeTheme")}>
+            <button
+              type="button"
+              onClick={handleThemeChange}
+              aria-label={t("nav.changeTheme")}
+              className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
+            >
+              <Palette size={18} className="shrink-0" />
+            </button>
+          </Tooltip>
 
           {session ? (
             <>
@@ -214,15 +216,16 @@ export function DesktopNavbar() {
                 <UserRound size={16} className="shrink-0" />
                 <span className="min-w-0 truncate">{session.username}</span>
               </div>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label={t("nav.logout")}
-                title={t("nav.logout")}
-                className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
-              >
-                <LogOut size={17} className="shrink-0" />
-              </button>
+              <Tooltip content={t("nav.logout")}>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  aria-label={t("nav.logout")}
+                  className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
+                >
+                  <LogOut size={17} className="shrink-0" />
+                </button>
+              </Tooltip>
             </>
           ) : null}
         </div>

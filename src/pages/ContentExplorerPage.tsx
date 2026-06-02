@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Tooltip } from "../components/ui/Tooltip";
 import { getAllContentItems, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
@@ -692,7 +693,9 @@ export function ContentExplorerPage() {
                               </Link>
 
                               <p className="mt-1 max-w-md truncate text-xs font-semibold text-white/42">
-                                {subtitle ?? item.Overview ?? t("content.noSubtitle")}
+                                {subtitle ??
+                                  item.Overview ??
+                                  t("content.noSubtitle")}
                               </p>
                             </div>
                           </div>
@@ -722,36 +725,42 @@ export function ContentExplorerPage() {
                         </td>
 
                         <td className="border-b border-white/10 px-4 py-3">
-                          <button
-                            type="button"
-                            onClick={() => copyText(item.Id)}
-                            className="max-w-[11rem] truncate rounded-lg border border-white/10 bg-black/25 px-2 py-1 font-mono text-xs text-white/42 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                            title={t("content.copyItemId")}
-                          >
-                            {item.Id}
-                          </button>
+                          <Tooltip content={t("content.copyItemId")}>
+                            <button
+                              type="button"
+                              onClick={() => copyText(item.Id)}
+                              className="max-w-[11rem] truncate rounded-lg border border-white/10 bg-black/25 px-2 py-1 font-mono text-xs text-white/42 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
+                              aria-label={t("content.copyItemId")}
+                            >
+                              {item.Id}
+                            </button>
+                          </Tooltip>
                         </td>
 
                         <td className="border-b border-white/10 px-4 py-3">
                           <div className="flex justify-end gap-2">
-                            <button
-                              type="button"
-                              onClick={() =>
-                                copyText(JSON.stringify(item, null, 2))
-                              }
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-emerald-400/35 hover:text-emerald-200"
-                              title={t("content.copyRawJson")}
-                            >
-                              <Copy size={16} />
-                            </button>
+                            <Tooltip content={t("content.copyRawJson")}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  copyText(JSON.stringify(item, null, 2))
+                                }
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-emerald-400/35 hover:text-emerald-200"
+                                aria-label={t("content.copyRawJson")}
+                              >
+                                <Copy size={16} />
+                              </button>
+                            </Tooltip>
 
-                            <Link
-                              to={detailsRoute}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
-                              title={t("content.openDetails")}
-                            >
-                              <ExternalLink size={16} />
-                            </Link>
+                            <Tooltip content={t("content.openDetails")}>
+                              <Link
+                                to={detailsRoute}
+                                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/50 transition hover:border-[var(--accent)]/35 hover:text-[var(--accent)]"
+                                aria-label={t("content.openDetails")}
+                              >
+                                <ExternalLink size={16} />
+                              </Link>
+                            </Tooltip>
 
                             {watchRoute ? (
                               <Link

@@ -1,7 +1,7 @@
 import type { JellyfinItem } from "./types";
 
 export function getRouteForItem(item: JellyfinItem): string {
-  if (item.CollectionType) {
+  if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
     return `/library/${item.Id}`;
   }
 

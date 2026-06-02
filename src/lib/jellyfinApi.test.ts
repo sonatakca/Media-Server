@@ -6,6 +6,7 @@ import {
   getNextEpisodeInSeason,
   getUserViews,
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+  markItemWatchedStatus,
 } from "./jellyfinApi";
 
 describe("getMediaSegments", () => {
@@ -441,9 +442,24 @@ describe("clearContinueWatchingHistory", () => {
   });
 
   it("clears a movie playback history and restarts that movie", async () => {
-    fetchMock.mockResolvedValue(
-      new Response(JSON.stringify({}), { status: 200 }),
-    );
+    fetchMock.mockImplementation((url: string, options?: RequestInit) => {
+      if (url.includes("/Items/movie-1")) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              Id: "movie-1",
+              Name: "Movie",
+              Type: "Movie",
+              UserData: { Played: true, PlaybackPositionTicks: 100 },
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      expect(options?.method).toBe("POST");
+      return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
+    });
 
     const movie = {
       Id: "movie-1",
@@ -453,17 +469,28 @@ describe("clearContinueWatchingHistory", () => {
 
     await expect(clearContinueWatchingHistory(movie)).resolves.toEqual(movie);
 
-    expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
-      expect.stringContaining("/UserPlayedItems/movie-1?userId=user-1"),
+      expect.stringContaining("/UserItems/movie-1/UserData?userId=user-1"),
       expect.objectContaining({
-        method: "DELETE",
+        method: "POST",
+        body: expect.stringContaining('"PlaybackPositionTicks":0'),
       }),
     );
   });
 
   it("falls back to the legacy unplayed endpoint used by older servers", async () => {
     fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            Id: "movie-1",
+            Name: "Movie",
+            Type: "Movie",
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(new Response("", { status: 404 }))
       .mockResolvedValueOnce(new Response("", { status: 404 }))
       .mockResolvedValueOnce(new Response(JSON.stringify({}), { status: 200 }));
 
@@ -473,12 +500,57 @@ describe("clearContinueWatchingHistory", () => {
       Type: "Movie",
     });
 
-    expect(String(fetchMock.mock.calls[0]?.[0])).toContain(
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "/UserItems/movie-1/UserData",
+    );
+    expect(String(fetchMock.mock.calls[2]?.[0])).toContain(
       "/UserPlayedItems/movie-1?userId=user-1",
     );
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+    expect(String(fetchMock.mock.calls[3]?.[0])).toContain(
       "/Users/user-1/PlayedItems/movie-1",
     );
+  });
+
+  it("marks an item watched through Jellyfin user data", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            Id: "movie-1",
+            Name: "Movie",
+            Type: "Movie",
+            RunTimeTicks: 1_000,
+            UserData: {
+              PlaybackPositionTicks: 0,
+              Played: false,
+            },
+          }),
+          { status: 200 },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            PlaybackPositionTicks: 1_000,
+            PlayedPercentage: 100,
+            Played: true,
+          }),
+          { status: 200 },
+        ),
+      );
+
+    await markItemWatchedStatus("movie-1");
+
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain(
+      "/UserItems/movie-1/UserData",
+    );
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body)),
+    ).toMatchObject({
+      PlaybackPositionTicks: 1_000,
+      PlayedPercentage: 100,
+      Played: true,
+    });
   });
 
   it("clears every series episode and starts at the earliest episode", async () => {
@@ -519,7 +591,22 @@ describe("clearContinueWatchingHistory", () => {
         );
       }
 
-      expect(options?.method).toBe("DELETE");
+      if (url.includes("/Items/")) {
+        const itemId = url.match(/Items\/([^?]+)/)?.[1];
+
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              Id: itemId,
+              Name: itemId,
+              Type: "Episode",
+            }),
+            { status: 200 },
+          ),
+        );
+      }
+
+      expect(options?.method).toBe("POST");
       return Promise.resolve(new Response(JSON.stringify({}), { status: 200 }));
     });
 
@@ -541,8 +628,8 @@ describe("clearContinueWatchingHistory", () => {
     expect(requestUrls[0]).toContain("/Shows/series-1/Episodes");
     expect(
       requestUrls
-        .filter((url) => url.includes("/UserPlayedItems/"))
-        .map((url) => url.match(/UserPlayedItems\/([^?]+)/)?.[1])
+        .filter((url) => url.includes("/UserItems/"))
+        .map((url) => url.match(/UserItems\/([^/]+)/)?.[1])
         .sort(),
     ).toEqual(
       ["season-1-episode-1", "season-1-episode-2", "season-2-episode-1"].sort(),

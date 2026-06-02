@@ -5,10 +5,15 @@ import { Info, RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
+import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import { ClearWatchingButton } from "./ClearWatchingButton";
+import { CollectionPosterMosaic } from "./CollectionPosterMosaic";
 import { RestartWatchingButton } from "./RestartWatchingButton";
+import { WatchedIndicator } from "./WatchedIndicator";
+import { WatchedStatusButton } from "./WatchedStatusButton";
+import { Tooltip } from "./ui/Tooltip";
 
 interface MediaCardProps {
   item: JellyfinItem;
@@ -19,47 +24,26 @@ interface MediaCardProps {
   animateIn?: boolean;
   showPlayFromBeginning?: boolean;
   showRestartWatching?: boolean;
+  collectionItems?: JellyfinItem[];
   onClearContinueWatching?: (item: JellyfinItem) => void;
+  onWatchedStatusReset?: (items: JellyfinItem[]) => void;
 }
 
-function getProgressPercent(item: JellyfinItem): number | null {
-  const explicitPercentage = item.UserData?.PlayedPercentage;
-
-  if (typeof explicitPercentage === "number") {
-    return Math.min(100, Math.max(0, explicitPercentage));
-  }
-
-  if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks) {
-    return Math.min(
-      100,
-      Math.max(
-        0,
-        (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100,
-      ),
-    );
-  }
-
-  return null;
-}
-
-function getCardMainLabel(item: JellyfinItem): string {
-  return getDisplayTitle(item);
-}
-
-function getEpisodeLabel(item: JellyfinItem): string | null {
+function getEpisodeDisplayTitle(
+  item: JellyfinItem,
+  t: (key: TranslationKey) => string,
+): string | null {
   if (item.Type !== "Episode") {
     return null;
   }
 
-  const seasonNumber = item.ParentIndexNumber
-    ? `S${item.ParentIndexNumber}`
-    : "";
-  const episodeNumber = item.IndexNumber ? `E${item.IndexNumber}` : "";
-  const code = `${seasonNumber}${episodeNumber}`;
+  if (typeof item.IndexNumber === "number" && item.IndexNumber > 0) {
+    return formatTemplate(t("media.episodeCardTitle"), {
+      number: item.IndexNumber,
+    });
+  }
 
-  return code && item.Name
-    ? `${code} · ${item.Name}`
-    : code || item.Name || null;
+  return item.Name || null;
 }
 
 function formatTemplate(
@@ -156,7 +140,9 @@ export function MediaCard({
   animateIn = false,
   showPlayFromBeginning = false,
   showRestartWatching = false,
+  collectionItems,
   onClearContinueWatching,
+  onWatchedStatusReset,
 }: MediaCardProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
@@ -167,11 +153,30 @@ export function MediaCard({
   };
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
+  const [shouldUseShowPrimaryImage, setShouldUseShowPrimaryImage] =
+    useState(false);
   const title = getDisplayTitle(item, mediaFormatLabels);
-  const subtitle = getItemSubtitle(item, mediaFormatLabels);
+  const isSeasonEpisodeGrid =
+    item.Type === "Episode" && layout === "grid" && variant === "landscape";
+
+  const episodeDisplayTitle = isSeasonEpisodeGrid
+    ? getEpisodeDisplayTitle(item, t)
+    : item.Type === "Episode"
+      ? item.Name || null
+      : null;
+
+  const displayTitle = episodeDisplayTitle ?? title;
+
+  const subtitle =
+    item.Type === "Episode"
+      ? isSeasonEpisodeGrid
+        ? null
+        : item.RunTimeTicks
+          ? `${Math.round(item.RunTimeTicks / 600000000)} dk`
+          : null
+      : getItemSubtitle(item, mediaFormatLabels);
   const countLabel = getCountLabel(item, t);
-  const episodeLabel = getEpisodeLabel(item);
-  const progressPercent = getProgressPercent(item);
+  const progressPercent = getItemProgressPercent(item);
   const imageUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(
         item.Id,
@@ -179,17 +184,37 @@ export function MediaCard({
         variant === "poster" ? 720 : 1100,
       )
     : "";
-  const logoUrl = item.ImageTags?.Logo
-    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
-    : item.ParentLogoItemId && item.ParentLogoImageTag
-      ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
+  const showPrimaryImageUrl =
+    item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag
+      ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 720)
       : "";
+  const displayImageUrl =
+    shouldUseShowPrimaryImage && showPrimaryImageUrl
+      ? showPrimaryImageUrl
+      : imageUrl;
+  const logoUrl =
+    item.Type === "Episode" && isSeasonEpisodeGrid
+      ? ""
+      : item.ImageTags?.Logo
+        ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
+        : item.ParentLogoItemId && item.ParentLogoImageTag
+          ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
+          : "";
   const secondaryLabel =
-    episodeLabel ?? (item.Type === "Season" ? null : !logoUrl ? title : null);
+    item.Type === "Episode"
+      ? isSeasonEpisodeGrid
+        ? item.Name || null
+        : title
+      : item.Type === "Season"
+        ? null
+        : !logoUrl
+          ? title
+          : null;
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
+  const isWatched = isItemCompleted(item);
   const detailsLabel = `${t("common.details")} ${title}`;
   const primaryCardTo = canPlay ? `/watch/${item.Id}` : to;
   const primaryCardLabel = canPlay
@@ -203,6 +228,8 @@ export function MediaCard({
     : isLandscape
       ? "w-60 sm:w-80 lg:w-96"
       : "w-36 sm:w-52 lg:w-60";
+
+  const artworkObjectFitClass = "object-cover";
 
   const panelClass = isGrid
     ? "min-h-[4.8rem] transition-[transform,background-color] duration-500 group-hover:-translate-y-1.5 group-focus-within:-translate-y-1.5 sm:min-h-[5.9rem]"
@@ -238,7 +265,13 @@ export function MediaCard({
       whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       {...motionProps}
     >
-      <div className="media-card-cinematic group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-cinematic-card transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100">
+      <div
+        className={`media-card-cinematic group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+          isWatched
+            ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.28),0_22px_60px_rgba(16,185,129,0.2)]"
+            : "border-white/10"
+        }`}
+      >
         <Link
           to={primaryCardTo}
           aria-label={primaryCardLabel}
@@ -247,23 +280,47 @@ export function MediaCard({
         <div
           className={`artwork-edge-vignette pointer-events-none relative z-40 shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
         >
-          {!imageLoaded && imageUrl && !imageFailed ? (
+          {!imageLoaded && displayImageUrl && !imageFailed ? (
             <div className="shimmer absolute inset-0" />
           ) : null}
-          {imageUrl && !imageFailed ? (
+          {displayImageUrl && !imageFailed ? (
             <img
-              src={imageUrl}
+              src={displayImageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full object-cover transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-focus-within:scale-[1.08] ${
+              className={`h-full w-full ${artworkObjectFitClass} transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-focus-within:scale-[1.08] ${
                 imageLoaded ? "opacity-100" : "opacity-0"
               }`}
-              onLoad={() => setImageLoaded(true)}
+              onLoad={(event) => {
+                const image = event.currentTarget;
+                const imageAspectRatio =
+                  image.naturalWidth / image.naturalHeight;
+
+                if (
+                  item.Type === "Episode" &&
+                  variant === "poster" &&
+                  !shouldUseShowPrimaryImage &&
+                  showPrimaryImageUrl &&
+                  imageAspectRatio > 1.2
+                ) {
+                  setImageLoaded(false);
+                  setShouldUseShowPrimaryImage(true);
+                  return;
+                }
+
+                setImageLoaded(true);
+              }}
               onError={() => setImageFailed(true)}
+            />
+          ) : collectionItems?.length ? (
+            <CollectionPosterMosaic
+              title={title}
+              items={collectionItems}
+              imageSize={variant === "poster" ? 520 : 760}
             />
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] p-5 text-center text-sm font-bold text-zinc-100">
-              {title}
+              {displayTitle}
             </div>
           )}
           <div className="absolute inset-0 transition group-hover:opacity-100" />
@@ -271,7 +328,18 @@ export function MediaCard({
             <ClearWatchingButton
               item={item}
               onCleared={onClearContinueWatching}
-              className="pointer-events-auto absolute left-3 top-3 z-50 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+              className="pointer-events-auto absolute right-3 top-3 z-50 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+            />
+          ) : null}
+          {canPlay && onWatchedStatusReset ? (
+            <WatchedStatusButton
+              scope="item"
+              action={isWatched ? "remove" : "mark"}
+              item={item}
+              onReset={onWatchedStatusReset}
+              className={`pointer-events-auto absolute top-3 z-50 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100 ${
+                onClearContinueWatching ? "right-3" : "left-3"
+              }`}
             />
           ) : null}
           {canPlay && showRestartWatching ? (
@@ -280,58 +348,70 @@ export function MediaCard({
               className="pointer-events-auto absolute left-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
             />
           ) : null}
-          <Link
-            to={to}
-            aria-label={detailsLabel}
-            title={t("common.details")}
-            className="pointer-events-auto absolute right-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 shadow-3xl text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
-          >
-            <Info size={16} />
-          </Link>
-        </div>
-
-        <div
-          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-2.5 shadow-soft-inset sm:p-3.5 ${panelClass}`}
-        >
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-30 h-0">
-            {canPlay && showPlayFromBeginning && progressPercent !== null ? (
+          {canPlay && showPlayFromBeginning && progressPercent !== null ? (
+            <Tooltip content={t("details.playFromBeginning")}>
               <Link
                 to={`/watch/${item.Id}?start=0`}
                 aria-label={formatTemplate(
                   t("details.playTitleFromBeginning"),
                   { title },
                 )}
-                title={t("details.playFromBeginning")}
-                className="pointer-events-auto absolute left-3 top-0 flex h-10 w-10 -translate-y-[calc(100%+0.75rem)] items-center justify-center rounded-full border border-white/15 bg-black/72 text-white opacity-0 shadow-player-controls backdrop-blur-xl transition duration-300 hover:scale-110 hover:bg-white/[0.14] focus:-translate-y-[calc(100%+0.75rem)] focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-[calc(100%+0.75rem)] group-hover:opacity-100 group-focus-within:-translate-y-[calc(100%+0.75rem)] group-focus-within:opacity-100"
+                className="pointer-events-auto absolute left-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
               >
-                <RotateCcw size={17} />
+                <RotateCcw size={16} />
               </Link>
-            ) : null}
-          </div>
+            </Tooltip>
+          ) : null}
+          <Tooltip content={t("common.details")}>
+            <Link
+              to={to}
+              aria-label={detailsLabel}
+              className="pointer-events-auto absolute right-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 shadow-3xl text-white opacity-0 shadow-player-controls transition duration-500 hover:scale-110 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+            >
+              <Info size={16} />
+            </Link>
+          </Tooltip>
+        </div>
+
+        <div
+          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-2.5 shadow-soft-inset sm:p-3.5 ${panelClass}`}
+        >
           {progressPercent !== null ? (
             <div className="absolute inset-x-0 top-0 h-1.5 bg-white/[0.18]">
               <div
+                data-testid="media-card-progress-fill"
                 className="h-full bg-[var(--accent)]"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>
           ) : null}
+          <WatchedIndicator
+            item={item}
+            className="mb-2 self-end px-2 py-0.5 text-[0.56rem] tracking-[0.14em] sm:px-2.5 sm:py-1 sm:text-[0.62rem]"
+            iconSize={12}
+          />
           <div className="flex flex-1 items-center">
             {logoUrl ? (
               <img
                 src={logoUrl}
-                alt={title}
+                alt={displayTitle}
                 className="mx-auto h-auto max-h-16 w-auto object-contain object-left sm:max-h-28"
               />
             ) : (
-              <h3 className="h-7 w-full truncate text-xs font-bold leading-7 text-white sm:h-8 sm:text-sm sm:leading-8">
-                {title}
+              <h3
+                className={`h-8 w-full truncate font-bold leading-8 text-white sm:h-10 sm:leading-10 ${
+                  isSeasonEpisodeGrid
+                    ? "text-base sm:text-3xl"
+                    : "text-xs sm:text-sm"
+                }`}
+              >
+                {displayTitle}
               </h3>
             )}
           </div>
 
           <div className="mt-auto pt-3">
-            {countLabel ? (
+            {countLabel && item.Type !== "Episode" ? (
               <p className="h-5 truncate text-xs font-bold leading-5 text-white sm:text-sm">
                 {countLabel}
               </p>
@@ -352,7 +432,11 @@ export function MediaCard({
               </p>
             ) : (
               <p
-                className="mt-1 h-4 text-xs leading-4 text-transparent"
+                className={
+                  isSeasonEpisodeGrid
+                    ? "hidden"
+                    : "mt-1 h-4 text-xs leading-4 text-transparent"
+                }
                 aria-hidden={true}
               />
             )}

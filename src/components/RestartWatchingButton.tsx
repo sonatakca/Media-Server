@@ -6,6 +6,7 @@ import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import { getDisplayTitle } from "../lib/format";
 import { getWatchRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
+import { Tooltip } from "./ui/Tooltip";
 
 interface RestartWatchingButtonProps {
   item: JellyfinItem;
@@ -52,19 +53,24 @@ export function RestartWatchingButton({
     }
   };
 
+  const tooltipLabel = didRestartFail
+    ? t("home.couldNotStartOver")
+    : t("home.startOver");
+
   return (
-    <button
-      type="button"
-      onClick={() => void handleRestart()}
-      disabled={isRestarting}
-      aria-label={accessibleLabel}
-      title={didRestartFail ? t("home.couldNotStartOver") : t("home.startOver")}
-      className={`${className} disabled:cursor-wait disabled:opacity-65`}
-    >
-      <RotateCw
-        size={iconSize}
-        className={isRestarting ? "animate-spin" : undefined}
-      />
-    </button>
+    <Tooltip content={tooltipLabel}>
+      <button
+        type="button"
+        onClick={() => void handleRestart()}
+        disabled={isRestarting}
+        aria-label={accessibleLabel}
+        className={`${className} disabled:cursor-wait disabled:opacity-65`}
+      >
+        <RotateCw
+          size={iconSize}
+          className={isRestarting ? "animate-spin" : undefined}
+        />
+      </button>
+    </Tooltip>
   );
 }

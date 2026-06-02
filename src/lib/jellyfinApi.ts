@@ -5,6 +5,7 @@ import {
   getServerUrl,
   normalizeServerUrl,
 } from "./authStorage";
+import { sortCollectionItemsForWatching } from "./collectionUtils";
 import type {
   JellyfinAuthResponse,
   JellyfinItem,
@@ -65,12 +66,17 @@ class JellyfinRequestError extends Error {
 const DEFAULT_ITEM_FIELDS = [
   "PrimaryImageAspectRatio",
   "SortName",
+  "OriginalTitle",
   "Overview",
   "ProviderIds",
   "Chapters",
   "Genres",
   "RunTimeTicks",
   "ProductionYear",
+  "PremiereDate",
+  "DateCreated",
+  "IndexNumber",
+  "ParentIndexNumber",
   "ChildCount",
   "RecursiveItemCount",
   "MediaSources",
@@ -752,6 +758,86 @@ export async function getAllSeriesEpisodes(
   return response.Items ?? [];
 }
 
+async function getAllItemsByType(
+  includeItemTypes: string,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+  const allItems: JellyfinItem[] = [];
+  const limit = 200;
+  let startIndex = 0;
+  let totalRecordCount = Number.POSITIVE_INFINITY;
+
+  while (startIndex < totalRecordCount) {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      "/Items",
+      {
+        params: {
+          userId: session.userId,
+          recursive: true,
+          includeItemTypes,
+          sortBy: "SortName",
+          sortOrder: "Ascending",
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          enableUserData: true,
+          startIndex,
+          limit,
+        },
+      },
+    );
+
+    const items = response.Items ?? [];
+    allItems.push(...items);
+
+    totalRecordCount = response.TotalRecordCount ?? allItems.length;
+
+    if (items.length === 0) {
+      break;
+    }
+
+    startIndex += items.length;
+  }
+
+  return allItems;
+}
+
+export async function getAllMovieItems(): Promise<JellyfinItem[]> {
+  return getAllItemsByType("Movie");
+}
+
+export async function getAllBoxSetItems(): Promise<JellyfinItem[]> {
+  return getAllItemsByType("BoxSet");
+}
+
+export async function getBoxSetItems(
+  boxSetId: string,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Items",
+    {
+      params: {
+        userId: session.userId,
+        parentId: boxSetId,
+        recursive: false,
+        includeItemTypes: "Movie",
+        sortBy: "PremiereDate,ProductionYear,SortName",
+        sortOrder: "Ascending",
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
+      },
+    },
+  );
+
+  return sortCollectionItemsForWatching(response.Items ?? []);
+}
+
 export async function markItemUnplayed(itemId: string): Promise<void> {
   const session = requireAuthSession();
 
@@ -777,6 +863,102 @@ export async function markItemUnplayed(itemId: string): Promise<void> {
       },
     );
   }
+}
+
+export async function markItemPlayed(itemId: string): Promise<void> {
+  const session = requireAuthSession();
+
+  try {
+    await requestJson<unknown>(
+      `/UserPlayedItems/${encodeURIComponent(itemId)}`,
+      {
+        method: "POST",
+        params: {
+          userId: session.userId,
+        },
+      },
+    );
+  } catch (error) {
+    if (!(error instanceof JellyfinRequestError) || error.status !== 404) {
+      throw error;
+    }
+
+    await requestJson<unknown>(
+      `/Users/${encodeURIComponent(session.userId)}/PlayedItems/${encodeURIComponent(itemId)}`,
+      {
+        method: "POST",
+      },
+    );
+  }
+}
+
+export async function updateItemUserData(
+  itemId: string,
+  userData: Partial<NonNullable<JellyfinItem["UserData"]>>,
+): Promise<NonNullable<JellyfinItem["UserData"]>> {
+  const session = requireAuthSession();
+
+  return requestJson<NonNullable<JellyfinItem["UserData"]>>(
+    `/UserItems/${encodeURIComponent(itemId)}/UserData`,
+    {
+      method: "POST",
+      params: {
+        userId: session.userId,
+      },
+      body: userData,
+    },
+  );
+}
+
+export async function resetItemWatchedStatus(itemId: string): Promise<void> {
+  const item = await getItem(itemId).catch(() => null);
+  const currentUserData = item?.UserData ?? {};
+
+  try {
+    await updateItemUserData(itemId, {
+      ...currentUserData,
+      PlaybackPositionTicks: 0,
+      PlayedPercentage: 0,
+      Played: false,
+    });
+    return;
+  } catch (error) {
+    if (!(error instanceof JellyfinRequestError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  await markItemUnplayed(itemId);
+  await requestJson<void>("/Sessions/Playing/Stopped", {
+    method: "POST",
+    body: {
+      ItemId: itemId,
+      PositionTicks: 0,
+    },
+  }).catch(() => undefined);
+}
+
+export async function markItemWatchedStatus(itemId: string): Promise<void> {
+  const item = await getItem(itemId).catch(() => null);
+  const currentUserData = item?.UserData ?? {};
+
+  try {
+    await updateItemUserData(itemId, {
+      ...currentUserData,
+      PlaybackPositionTicks:
+        item?.RunTimeTicks ?? currentUserData.PlaybackPositionTicks ?? 0,
+      PlayedPercentage: 100,
+      Played: true,
+      LastPlayedDate: new Date().toISOString(),
+    });
+    return;
+  } catch (error) {
+    if (!(error instanceof JellyfinRequestError) || error.status !== 404) {
+      throw error;
+    }
+  }
+
+  await markItemPlayed(itemId);
 }
 
 export async function getItem(itemId: string): Promise<JellyfinItem> {

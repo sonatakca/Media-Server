@@ -16,6 +16,7 @@ import {
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
+import { Tooltip } from "../components/ui/Tooltip";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   buildHomeCarouselPool,
@@ -212,6 +213,18 @@ function CurationItemRow({
       minuteShort: t("format.minuteShort"),
     }),
   ].filter(Boolean);
+  const moveTopLabel = formatTemplate(t("homeCuration.moveTopItem"), {
+    title,
+  });
+  const moveUpLabel = formatTemplate(t("homeCuration.moveUpItem"), {
+    title,
+  });
+  const moveDownLabel = formatTemplate(t("homeCuration.moveDownItem"), {
+    title,
+  });
+  const moveBottomLabel = formatTemplate(t("homeCuration.moveBottomItem"), {
+    title,
+  });
 
   return (
     <article
@@ -259,63 +272,59 @@ function CurationItemRow({
 
       <div className="flex flex-wrap gap-2 sm:justify-end">
         {onMoveToTop ? (
-          <button
-            type="button"
-            onClick={onMoveToTop}
-            disabled={!canMoveToTop}
-            aria-label={formatTemplate(t("homeCuration.moveTopItem"), {
-              title,
-            })}
-            title={formatTemplate(t("homeCuration.moveTopItem"), { title })}
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            <ArrowUpToLine size={16} />
-          </button>
+          <Tooltip content={moveTopLabel}>
+            <button
+              type="button"
+              onClick={onMoveToTop}
+              disabled={!canMoveToTop}
+              aria-label={moveTopLabel}
+              className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowUpToLine size={16} />
+            </button>
+          </Tooltip>
         ) : null}
 
         {onMoveUp ? (
-          <button
-            type="button"
-            onClick={onMoveUp}
-            disabled={!canMoveUp}
-            aria-label={formatTemplate(t("homeCuration.moveUpItem"), {
-              title,
-            })}
-            title={formatTemplate(t("homeCuration.moveUpItem"), { title })}
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            <ArrowUp size={16} />
-          </button>
+          <Tooltip content={moveUpLabel}>
+            <button
+              type="button"
+              onClick={onMoveUp}
+              disabled={!canMoveUp}
+              aria-label={moveUpLabel}
+              className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowUp size={16} />
+            </button>
+          </Tooltip>
         ) : null}
 
         {onMoveDown ? (
-          <button
-            type="button"
-            onClick={onMoveDown}
-            disabled={!canMoveDown}
-            aria-label={formatTemplate(t("homeCuration.moveDownItem"), {
-              title,
-            })}
-            title={formatTemplate(t("homeCuration.moveDownItem"), { title })}
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            <ArrowDown size={16} />
-          </button>
+          <Tooltip content={moveDownLabel}>
+            <button
+              type="button"
+              onClick={onMoveDown}
+              disabled={!canMoveDown}
+              aria-label={moveDownLabel}
+              className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowDown size={16} />
+            </button>
+          </Tooltip>
         ) : null}
 
         {onMoveToBottom ? (
-          <button
-            type="button"
-            onClick={onMoveToBottom}
-            disabled={!canMoveToBottom}
-            aria-label={formatTemplate(t("homeCuration.moveBottomItem"), {
-              title,
-            })}
-            title={formatTemplate(t("homeCuration.moveBottomItem"), { title })}
-            className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-          >
-            <ArrowDownToLine size={16} />
-          </button>
+          <Tooltip content={moveBottomLabel}>
+            <button
+              type="button"
+              onClick={onMoveToBottom}
+              disabled={!canMoveToBottom}
+              aria-label={moveBottomLabel}
+              className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.06] text-white/72 transition hover:bg-white/[0.12] hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+            >
+              <ArrowDownToLine size={16} />
+            </button>
+          </Tooltip>
         ) : null}
 
         <button

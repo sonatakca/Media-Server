@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { HeroSection } from "../../components/HeroSection";
@@ -9,7 +9,6 @@ import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   getAllMovieAndSeriesItems,
-  getContinueWatchingItems,
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/jellyfinApi";
@@ -20,7 +19,8 @@ import {
   loadHomeCurationPreferences,
   type HomeCurationPreferences,
 } from "../../lib/homeCuration";
-import { getLatestContinueWatchingItems } from "../../lib/continueWatching";
+import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
+import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
 import { AnimatedText } from "../../components/AnimatedText";
@@ -88,6 +88,19 @@ export function DesktopHomePage() {
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
   const heroItem = featuredPool[selectedHeroIndex];
 
+  const refreshSmartContinueWatching = useCallback(async () => {
+    const smartContinueItems = await getSmartContinueWatchingItems();
+
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            continueWatching: smartContinueItems,
+          }
+        : currentData,
+    );
+  }, []);
+
   useEffect(() => {
     setSeoMetadata({
       title: `${t("common.home")} · Seyirlik`,
@@ -125,7 +138,7 @@ export function DesktopHomePage() {
       const [librariesResult, continueResult, latestResult, heroItemsResult] =
         await Promise.allSettled([
           getUserViews(),
-          getContinueWatchingItems(),
+          getSmartContinueWatchingItems(),
           getLatestMediaItems(),
           getAllMovieAndSeriesItems(),
         ]);
@@ -176,9 +189,7 @@ export function DesktopHomePage() {
       setData({
         libraries: librariesResult.value,
         continueWatching:
-          continueResult.status === "fulfilled"
-            ? getLatestContinueWatchingItems(continueResult.value)
-            : [],
+          continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia,
         heroItems,
       });
@@ -190,6 +201,24 @@ export function DesktopHomePage() {
       isMounted = false;
     };
   }, [t]);
+
+  useEffect(() => {
+    const handleWatchStatusChanged = () => {
+      void refreshSmartContinueWatching();
+    };
+
+    window.addEventListener(
+      WATCH_STATUS_CHANGED_EVENT,
+      handleWatchStatusChanged,
+    );
+
+    return () => {
+      window.removeEventListener(
+        WATCH_STATUS_CHANGED_EVENT,
+        handleWatchStatusChanged,
+      );
+    };
+  }, [refreshSmartContinueWatching]);
 
   useEffect(() => {
     setHeroIndex(0);
@@ -241,6 +270,7 @@ export function DesktopHomePage() {
           }
         : currentData,
     );
+    void refreshSmartContinueWatching();
   };
 
   if (error) {

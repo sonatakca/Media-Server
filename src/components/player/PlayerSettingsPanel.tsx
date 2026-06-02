@@ -21,6 +21,9 @@ import { AnimatedWidth } from "../AnimatedWidth";
 const HIDE_QUALITY_SETTINGS = true;
 const HIDE_AUDIO_SETTINGS = true;
 const DISABLE_AUDIO_SELECTION = false;
+const SUBTITLE_DELAY_MIN_SECONDS = -40;
+const SUBTITLE_DELAY_MAX_SECONDS = 40;
+const SUBTITLE_DELAY_STEP_SECONDS = 0.25;
 
 type SettingsSection = "quality" | "audio" | "subtitles";
 
@@ -182,12 +185,14 @@ interface PlayerSettingsPanelProps {
   selectedQualityId: string;
   selectedAudioStreamIndex?: number;
   selectedSubtitleStreamIndex: number;
+  subtitleDelaySeconds: number;
   canSwitchAudio: boolean;
   canSwitchSubtitles: boolean;
   onSelectAutoQuality: () => void;
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
   onSelectSubtitleStream: (streamIndex: number) => void;
+  onSubtitleDelayChange: (seconds: number) => void;
   onStartSubtitleEdit?: () => void;
   compact?: boolean;
 }
@@ -366,6 +371,17 @@ function getSettingsTabButtonClass(active: boolean, disabled = false): string {
   return "bg-white/[0.06] text-white/65 hover:bg-white/[0.1] hover:text-white";
 }
 
+function formatSubtitleDelaySeconds(seconds: number): string {
+  const roundedSeconds = Math.round(seconds * 100) / 100;
+  const normalizedSeconds = Object.is(roundedSeconds, -0) ? 0 : roundedSeconds;
+  const sign = normalizedSeconds > 0 ? "+" : "";
+  const value = Number.isInteger(normalizedSeconds)
+    ? normalizedSeconds.toFixed(1)
+    : normalizedSeconds.toFixed(2).replace(/0$/, "");
+
+  return `${sign}${value}s`;
+}
+
 function SettingsButton({
   title,
   subtitle,
@@ -436,12 +452,14 @@ export function PlayerSettingsPanel({
   selectedQualityId,
   selectedAudioStreamIndex,
   selectedSubtitleStreamIndex,
+  subtitleDelaySeconds,
   canSwitchAudio,
   canSwitchSubtitles,
   onSelectAutoQuality,
   onSelectQuality,
   onSelectAudioStream,
   onSelectSubtitleStream,
+  onSubtitleDelayChange,
   onStartSubtitleEdit,
   compact = false,
 }: PlayerSettingsPanelProps) {
@@ -705,6 +723,37 @@ export function PlayerSettingsPanel({
                   {t("settings.noSubtitles")}
                 </p>
               )}
+
+              <div className="mx-2 mt-2 rounded-xl bg-white/[0.05] px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-bold text-white">
+                    {t("settings.subtitleDelay")}
+                  </span>
+                  <span className="shrink-0 rounded-full bg-white/[0.08] px-2 py-1 text-xs font-black text-[var(--accent)]">
+                    {formatSubtitleDelaySeconds(subtitleDelaySeconds)}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={SUBTITLE_DELAY_MIN_SECONDS}
+                  max={SUBTITLE_DELAY_MAX_SECONDS}
+                  step={SUBTITLE_DELAY_STEP_SECONDS}
+                  value={subtitleDelaySeconds}
+                  aria-label={t("settings.subtitleDelay")}
+                  onChange={(event) =>
+                    onSubtitleDelayChange(Number(event.currentTarget.value))
+                  }
+                  className="mt-3 h-2 w-full cursor-pointer accent-[var(--accent)]"
+                />
+                <div className="mt-1 flex items-center justify-between text-[0.65rem] font-bold text-white/35">
+                  <span>
+                    {formatSubtitleDelaySeconds(SUBTITLE_DELAY_MIN_SECONDS)}
+                  </span>
+                  <span>
+                    {formatSubtitleDelaySeconds(SUBTITLE_DELAY_MAX_SECONDS)}
+                  </span>
+                </div>
+              </div>
 
               <SettingsButton
                 title={t("settings.editSubtitles")}

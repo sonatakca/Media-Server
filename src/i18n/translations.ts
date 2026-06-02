@@ -61,6 +61,7 @@ export const translations = {
     "format.minuteShort": "m",
     "media.seasonSingular": "1 season",
     "media.seasonPlural": "{count} seasons",
+    "media.episodeCardTitle": "Episode {number}",
     "media.episodeSingular": "1 episode",
     "media.episodePlural": "{count} episodes",
     "media.seasonNumber": "Season {number}",
@@ -119,9 +120,26 @@ export const translations = {
     "details.audio": "Audio",
     "details.unknown": "Unknown",
     "details.media": "Media",
+    "details.watched": "Watched",
     "details.missingItemId": "Missing item id.",
     "details.couldNotLoad": "Could not load item details.",
     "details.audioChannelsShort": "{count} ch",
+    "details.markWatchedStatus": "Mark as watched",
+    "details.markWatchedStatusForSeason": "Mark this season as watched",
+    "details.markWatchedStatusForShow": "Mark whole show as watched",
+    "details.removeWatchedStatus": "Remove watched status",
+    "details.removeWatchedStatusForSeason":
+      "Remove watched status for this season",
+    "details.removeWatchedStatusForShow":
+      "Remove watched status for whole show",
+    "details.confirmMarkWatchedStatus":
+      "This will mark multiple episodes as watched. Continue?",
+    "details.confirmRemoveWatchedStatus":
+      "This will reset watched status and progress for multiple episodes. Continue?",
+    "details.couldNotMarkWatchedStatus":
+      "Could not mark watched status. Try again.",
+    "details.couldNotRemoveWatchedStatus":
+      "Could not remove watched status. Try again.",
     "player.playbackFailed": "Playback failed",
     "player.playbackUnavailable": "Playback unavailable",
     "player.missingRouteItemId":
@@ -205,6 +223,7 @@ export const translations = {
     "settings.clickToEnable": "Click to enable",
     "settings.subtitleUnavailable": "Subtitle URL unavailable",
     "settings.noSubtitles": "No subtitles returned.",
+    "settings.subtitleDelay": "Subtitle delay",
     "settings.editSubtitles": "Edit subtitles",
     "settings.dragResizeSubtitles": "Drag and resize the subtitle position",
     "settings.enableSubtitlesToEdit": "Enable a subtitle track first",
@@ -852,6 +871,7 @@ export const translations = {
     "format.minuteShort": "dk",
     "media.seasonSingular": "1 sezon",
     "media.seasonPlural": "{count} sezon",
+    "media.episodeCardTitle": "{number}. Bölüm",
     "media.episodeSingular": "1 bölüm",
     "media.episodePlural": "{count} bölüm",
     "media.seasonNumber": "{number}. Sezon",
@@ -910,9 +930,25 @@ export const translations = {
     "details.audio": "Ses",
     "details.unknown": "Bilinmiyor",
     "details.media": "Medya",
+    "details.watched": "İzlendi",
     "details.missingItemId": "İçerik ID'si eksik.",
     "details.couldNotLoad": "İçerik detayları yüklenemedi.",
     "details.audioChannelsShort": "{count} knl",
+    "details.markWatchedStatus": "İzlendi olarak işaretle",
+    "details.markWatchedStatusForSeason": "Bu sezonu izlendi olarak işaretle",
+    "details.markWatchedStatusForShow": "Tüm diziyi izlendi olarak işaretle",
+    "details.removeWatchedStatus": "İzlendi durumunu kaldır",
+    "details.removeWatchedStatusForSeason":
+      "Bu sezonun izlendi durumunu kaldır",
+    "details.removeWatchedStatusForShow": "Tüm dizinin izlendi durumunu kaldır",
+    "details.confirmMarkWatchedStatus":
+      "Bu işlem birden fazla bölümü izlendi olarak işaretler. Devam edilsin mi?",
+    "details.confirmRemoveWatchedStatus":
+      "Bu işlem birden fazla bölümün izlendi durumunu ve ilerlemesini sıfırlar. Devam edilsin mi?",
+    "details.couldNotMarkWatchedStatus":
+      "İzlendi durumu işaretlenemedi. Tekrar deneyin.",
+    "details.couldNotRemoveWatchedStatus":
+      "İzlendi durumu kaldırılamadı. Tekrar dene.",
     "player.playbackFailed": "Oynatma başarısız",
     "player.playbackUnavailable": "Oynatma kullanılamıyor",
     "player.missingRouteItemId":
@@ -999,6 +1035,7 @@ export const translations = {
     "settings.clickToEnable": "Açmak için dokun",
     "settings.subtitleUnavailable": "Altyazı adresi kullanılamıyor",
     "settings.noSubtitles": "Altyazı dönmedi.",
+    "settings.subtitleDelay": "Altyazı gecikmesi",
     "settings.editSubtitles": "Altyazıları düzenle",
     "settings.dragResizeSubtitles": "Altyazı konumunu sürükleyip boyutlandır",
     "settings.enableSubtitlesToEdit": "Önce bir altyazı parçası seç",

@@ -5,10 +5,13 @@ import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeasonPicker } from "../../components/SeasonPicker";
+import { WatchedIndicator } from "../../components/WatchedIndicator";
+import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getDisplayTitle } from "../../lib/format";
 import {
+  getBoxSetItems,
   getItem,
   getItemsForLibrary,
   getLogoImageUrl,
@@ -16,9 +19,15 @@ import {
   getSeriesSeasons,
   getTopLevelItemsForLibrary,
 } from "../../lib/jellyfinApi";
+import {
+  loadCollectionPosterChildrenMap,
+  type CollectionPosterChildrenMap,
+} from "../../lib/collectionPoster";
+import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { setPageTitle } from "../../lib/pageTitle";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem } from "../../lib/types";
+import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 
 type LibraryFallbackTitleKey =
@@ -31,6 +40,7 @@ interface LibraryData {
   fallbackTitleKey?: LibraryFallbackTitleKey;
   items: JellyfinItem[];
   selectableSeasons: JellyfinItem[];
+  collectionPosterChildrenById: CollectionPosterChildrenMap;
 }
 
 function formatTemplate(
@@ -104,6 +114,49 @@ function sortItems(
   return compareNames(left, right);
 }
 
+function isWholeWatchedScope(
+  library: JellyfinItem | undefined,
+  items: JellyfinItem[],
+): boolean {
+  if (library && isItemCompleted(library)) {
+    return true;
+  }
+
+  const watchableItems = items.filter(
+    (item) =>
+      item.Type === "Episode" ||
+      item.Type === "Season" ||
+      item.Type === "Movie" ||
+      item.MediaType === "Video",
+  );
+
+  return watchableItems.length > 0 && watchableItems.every(isItemCompleted);
+}
+
+function isWatchableScopeItem(item: JellyfinItem): boolean {
+  return (
+    item.Type === "Episode" ||
+    item.Type === "Season" ||
+    item.Type === "Movie" ||
+    item.MediaType === "Video"
+  );
+}
+
+function withWatchedState(item: JellyfinItem, watched: boolean): JellyfinItem {
+  return {
+    ...item,
+    UserData: {
+      ...(item.UserData ?? {}),
+      PlaybackPositionTicks: watched
+        ? (item.RunTimeTicks ?? item.UserData?.PlaybackPositionTicks ?? 0)
+        : 0,
+      PlayedPercentage: watched ? 100 : 0,
+      Played: watched,
+      LastPlayedDate: watched ? new Date().toISOString() : null,
+    },
+  };
+}
+
 async function loadLibraryItems(
   id: string,
   mode: "library" | "series" | "season",
@@ -118,7 +171,10 @@ async function loadLibraryItems(
       return getTopLevelItemsForLibrary(id, library.CollectionType);
     }
 
-    return getItemsForLibrary(id);
+    const items = await getItemsForLibrary(id);
+    return library?.Type === "BoxSet"
+      ? sortCollectionItemsForWatching(items)
+      : items;
   }
 
   if (mode === "series") {
@@ -225,6 +281,8 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
       try {
         const library = await getItem(activeId).catch(() => undefined);
         const items = await loadLibraryItems(activeId, mode, library, seriesId);
+        const collectionPosterChildrenById =
+          await loadCollectionPosterChildrenMap(items, getBoxSetItems);
         const firstEpisode = items.find((item) => item.Type === "Episode");
         const selectableSeriesId = firstEpisode
           ? (library?.SeriesId ?? firstEpisode.SeriesId ?? library?.ParentId)
@@ -257,6 +315,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
             fallbackTitleKey,
             items,
             selectableSeasons,
+            collectionPosterChildrenById,
           });
         }
       } catch (libraryError) {
@@ -287,8 +346,43 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
       ? data.items.filter((item) => item.Name.toLowerCase().includes(query))
       : data.items;
 
+    if (data.library?.Type === "BoxSet") {
+      return sortCollectionItemsForWatching(items);
+    }
+
     return [...items].sort((left, right) => sortItems(left, right, sortBy));
   }, [data, searchTerm, sortBy]);
+
+  const handleWatchedStatusReset = (
+    resetItems: JellyfinItem[],
+    options?: { action: "mark" | "remove"; scope: "show" },
+  ) => {
+    const resetItemsById = new Map(
+      resetItems.map((resetItem) => [resetItem.Id, resetItem]),
+    );
+    const forceWatched = options ? options.action === "mark" : undefined;
+
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            library:
+              forceWatched !== undefined && options?.scope === "show"
+                ? currentData.library
+                  ? withWatchedState(currentData.library, forceWatched)
+                  : currentData.library
+                : currentData.library,
+            items: currentData.items.map(
+              (item) =>
+                resetItemsById.get(item.Id) ??
+                (forceWatched !== undefined && options?.scope === "show"
+                  ? withWatchedState(item, forceWatched)
+                  : item),
+            ),
+          }
+        : currentData,
+    );
+  };
 
   useEffect(() => {
     if (!data) {
@@ -373,6 +467,28 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     data.library?.Type === "Season"
       ? data.library.Id
       : (firstEpisodeItem?.SeasonId ?? activeId);
+  const seasonResetSeriesId =
+    mode === "season"
+      ? (seriesId ?? data.library?.SeriesId ?? firstEpisodeItem?.SeriesId)
+      : undefined;
+  const showResetSeriesId = mode === "series" ? activeId : undefined;
+  const hasWatchedSeasonItems =
+    mode === "season" && data.items.some(isItemCompleted);
+  const hasWatchedShowItems =
+    mode === "series" &&
+    (Boolean(data.library && isItemCompleted(data.library)) ||
+      data.items.some(isItemCompleted));
+  const hasUnwatchedSeasonItems =
+    mode === "season" &&
+    data.items.some(
+      (libraryItem) =>
+        isWatchableScopeItem(libraryItem) && !isItemCompleted(libraryItem),
+    );
+  const hasUnwatchedShowItems =
+    mode === "series" && !isWholeWatchedScope(data.library, data.items);
+  const isLibraryScopeWatched =
+    (mode === "series" || mode === "season") &&
+    isWholeWatchedScope(data.library, data.items);
   const seasonPickerOptions = [...data.selectableSeasons]
     .sort((left, right) => sortItems(left, right, "name"))
     .map((season) => ({
@@ -433,6 +549,16 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
         )}
       </header>
 
+      {isLibraryScopeWatched ? (
+        <div className="mb-5 flex justify-center">
+          <WatchedIndicator
+            isWatched
+            className="px-4 py-1.5 text-xs tracking-[0.14em]"
+            iconSize={15}
+          />
+        </div>
+      ) : null}
+
       <div className="mb-5 flex gap-2 rounded-2xl border border-white/10 bg-white/[0.05] p-2">
         <label className="relative min-w-0 flex-1">
           <Search
@@ -463,6 +589,62 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
             <option value="year">{t("library.year")}</option>
           </select>
         </label>
+        {seasonResetSeriesId && currentSeasonId && hasWatchedSeasonItems ? (
+          <WatchedStatusButton
+            scope="season"
+            action="remove"
+            seriesId={seasonResetSeriesId}
+            seasonId={currentSeasonId}
+            confirm
+            onReset={handleWatchedStatusReset}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/35 text-white/70 transition hover:bg-white/[0.09] hover:text-white"
+            iconSize={16}
+          />
+        ) : null}
+        {seasonResetSeriesId && currentSeasonId && hasUnwatchedSeasonItems ? (
+          <WatchedStatusButton
+            scope="season"
+            action="mark"
+            seriesId={seasonResetSeriesId}
+            seasonId={currentSeasonId}
+            confirm
+            onReset={handleWatchedStatusReset}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/70 bg-emerald-300 text-black transition hover:bg-emerald-200"
+            iconSize={16}
+          />
+        ) : null}
+        {showResetSeriesId && hasWatchedShowItems ? (
+          <WatchedStatusButton
+            scope="show"
+            action="remove"
+            seriesId={showResetSeriesId}
+            confirm
+            onReset={(items) =>
+              handleWatchedStatusReset(items, {
+                action: "remove",
+                scope: "show",
+              })
+            }
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/35 text-white/70 transition hover:bg-white/[0.09] hover:text-white"
+            iconSize={16}
+          />
+        ) : null}
+        {showResetSeriesId && hasUnwatchedShowItems ? (
+          <WatchedStatusButton
+            scope="show"
+            action="mark"
+            seriesId={showResetSeriesId}
+            confirm
+            onReset={(items) =>
+              handleWatchedStatusReset(items, {
+                action: "mark",
+                scope: "show",
+              })
+            }
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/70 bg-emerald-300 text-black transition hover:bg-emerald-200"
+            iconSize={16}
+          />
+        ) : null}
       </div>
 
       {filteredItems.length > 0 ? (
@@ -480,6 +662,8 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
               to={getRouteForItem(item)}
               layout="grid"
               variant={item.Type === "Episode" ? "landscape" : "poster"}
+              collectionItems={data.collectionPosterChildrenById[item.Id]}
+              onWatchedStatusReset={handleWatchedStatusReset}
             />
           ))}
         </div>

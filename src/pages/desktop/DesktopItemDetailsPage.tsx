@@ -9,6 +9,9 @@ import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MotionReveal } from "../../components/MotionReveal";
 import { DetailsSkeleton } from "../../components/Skeletons";
+import { WatchedIndicator } from "../../components/WatchedIndicator";
+import { WatchedStatusButton } from "../../components/WatchedStatusButton";
+import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
@@ -19,6 +22,7 @@ import {
 } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
 import { setSeoMetadata } from "../../lib/seo";
+import { isItemCompleted } from "../../lib/watchStatus";
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -137,6 +141,19 @@ export function DesktopItemDetailsPage() {
     };
   }, [itemId, t]);
 
+  const handleWatchedStatusReset = (resetItems: JellyfinItem[]) => {
+    setItem((currentItem) => {
+      if (!currentItem) {
+        return currentItem;
+      }
+
+      return (
+        resetItems.find((resetItem) => resetItem.Id === currentItem.Id) ??
+        currentItem
+      );
+    });
+  };
+
   if (error) {
     return (
       <ErrorMessage title={t("details.itemUnavailable")} message={error} />
@@ -196,6 +213,7 @@ export function DesktopItemDetailsPage() {
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
+  const isWatched = isItemCompleted(item);
   const playbackPositionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const hasStarted = playbackPositionTicks > 0 && !item.UserData?.Played;
   const remainingRuntime = getRemainingRuntime(item, mediaFormatLabels);
@@ -263,8 +281,16 @@ export function DesktopItemDetailsPage() {
             <motion.div
               className={
                 isEpisode
-                  ? "artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow md:self-center"
-                  : "artwork-edge-vignette overflow-hidden rounded-2xl border border-white/[0.12] bg-zinc-900 shadow-artwork-glow"
+                  ? `artwork-edge-vignette relative overflow-hidden rounded-2xl border bg-zinc-900 shadow-artwork-glow md:self-center ${
+                      isWatched
+                        ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_24px_70px_rgba(16,185,129,0.22)]"
+                        : "border-white/[0.12]"
+                    }`
+                  : `artwork-edge-vignette relative overflow-hidden rounded-2xl border bg-zinc-900 shadow-artwork-glow ${
+                      isWatched
+                        ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_24px_70px_rgba(16,185,129,0.22)]"
+                        : "border-white/[0.12]"
+                    }`
               }
               initial={
                 shouldReduceMotion ? false : { opacity: 0, y: 18, scale: 0.985 }
@@ -295,6 +321,11 @@ export function DesktopItemDetailsPage() {
                   {title}
                 </div>
               )}
+              <WatchedIndicator
+                item={item}
+                className="absolute left-4 top-4 z-20 px-4 py-2 text-sm tracking-[0.16em]"
+                iconSize={18}
+              />
             </motion.div>
 
             <motion.div
@@ -308,18 +339,19 @@ export function DesktopItemDetailsPage() {
                   <div className="flex min-w-0 flex-wrap items-center gap-4">
                     {logoUrl ? (
                       seriesItemId ? (
-                        <Link
-                          to={`/library/${seriesItemId}`}
-                          aria-label={`Go to ${seriesTitle}`}
-                          title={seriesTitle}
-                          className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
-                        >
-                          <img
-                            src={logoUrl}
-                            alt={seriesTitle}
-                            className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
-                          />
-                        </Link>
+                        <Tooltip content={seriesTitle}>
+                          <Link
+                            to={`/library/${seriesItemId}`}
+                            aria-label={`Go to ${seriesTitle}`}
+                            className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                          >
+                            <img
+                              src={logoUrl}
+                              alt={seriesTitle}
+                              className="cinematic-logo-shadow h-auto max-h-24 max-w-[min(22rem,58vw)] object-contain object-left sm:max-h-28 lg:max-h-32"
+                            />
+                          </Link>
+                        </Tooltip>
                       ) : (
                         <img
                           src={logoUrl}
@@ -328,18 +360,19 @@ export function DesktopItemDetailsPage() {
                         />
                       )
                     ) : seriesItemId ? (
-                      <Link
-                        to={`/library/${seriesItemId}`}
-                        aria-label={`Go to ${seriesTitle}`}
-                        title={seriesTitle}
-                        className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
-                      >
-                        <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
-                          <AnimatedWidth value={seriesTitle}>
-                            <AnimatedText value={seriesTitle} />
-                          </AnimatedWidth>
-                        </h2>
-                      </Link>
+                      <Tooltip content={seriesTitle}>
+                        <Link
+                          to={`/library/${seriesItemId}`}
+                          aria-label={`Go to ${seriesTitle}`}
+                          className="inline-flex min-w-0 rounded-xl transition hover:scale-[1.02] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                        >
+                          <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
+                            <AnimatedWidth value={seriesTitle}>
+                              <AnimatedText value={seriesTitle} />
+                            </AnimatedWidth>
+                          </h2>
+                        </Link>
+                      </Tooltip>
                     ) : (
                       <h2 className="max-w-[min(28rem,70vw)] truncate text-3xl font-black leading-none text-white sm:text-4xl">
                         <AnimatedWidth value={seriesTitle}>
@@ -356,18 +389,19 @@ export function DesktopItemDetailsPage() {
                     </h1>
                     {episodeCode ? (
                       seasonItemId ? (
-                        <Link
-                          to={`/library/${seasonItemId}`}
-                          aria-label={`Go to ${episodeCode}`}
-                          title={episodeCode}
-                          className="group/episode-label relative my-7 mb-8 overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset transition hover:border-white/[0.24] hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70 sm:px-5 sm:py-3"
-                        >
-                          <div className="relative flex items-center">
-                            <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
-                              {episodeCode}
-                            </span>
-                          </div>
-                        </Link>
+                        <Tooltip content={episodeCode}>
+                          <Link
+                            to={`/library/${seasonItemId}`}
+                            aria-label={`Go to ${episodeCode}`}
+                            className="group/episode-label relative my-7 mb-8 overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset transition hover:border-white/[0.24] hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70 sm:px-5 sm:py-3"
+                          >
+                            <div className="relative flex items-center">
+                              <span className="text-2xl font-black leading-none tracking-[-0.04em] text-white sm:text-4xl">
+                                {episodeCode}
+                              </span>
+                            </div>
+                          </Link>
+                        </Tooltip>
                       ) : (
                         <div className="group/episode-label relative my-7 mb-8 overflow-hidden rounded-2xl border border-white/[0.12] bg-gray-700 px-4 py-2.5 shadow-soft-inset sm:px-5 sm:py-3">
                           <div className="relative flex items-center">
@@ -403,6 +437,11 @@ export function DesktopItemDetailsPage() {
                 </>
               )}
               <div className="mt-5 flex flex-wrap gap-2">
+                <WatchedIndicator
+                  item={item}
+                  className="min-h-9 px-4 text-sm tracking-[0.16em]"
+                  iconSize={17}
+                />
                 {chips.map(({ label, icon: Icon }, index) => (
                   <motion.span
                     key={label}
@@ -468,7 +507,7 @@ export function DesktopItemDetailsPage() {
                       <ButtonLink
                         to={restartHref}
                         aria-label={t("details.playFromBeginning")}
-                        title={t("details.playFromBeginning")}
+                        tooltip={t("details.playFromBeginning")}
                         className="group !flex !h-[3.5rem] !w-[3.5rem] !min-w-[3.5rem] !items-center !justify-center !rounded-full !border !border-white/[0.14] !bg-gray-700/75 !p-0 !px-0 !py-0 !text-white !shadow-soft-inset transition hover:!border-white/[0.24] hover:!bg-gray-500 hover:!text-white"
                       >
                         <RotateCcw
@@ -479,6 +518,23 @@ export function DesktopItemDetailsPage() {
                       </ButtonLink>
                     </motion.div>
                   ) : null}
+
+                  <WatchedStatusButton
+                    scope="item"
+                    action={isWatched ? "remove" : "mark"}
+                    item={item}
+                    label={
+                      isWatched
+                        ? t("details.removeWatchedStatus")
+                        : t("details.markWatchedStatus")
+                    }
+                    onReset={handleWatchedStatusReset}
+                    className={`inline-flex min-h-12 items-center gap-2 rounded-full border px-4 text-sm font-black shadow-soft-inset transition focus:outline-none focus:ring-2 focus:ring-white/70 ${
+                      isWatched
+                        ? "border-white/[0.14] bg-gray-700/75 text-white/[0.78] hover:bg-rose-500 hover:text-black"
+                        : "border-white/[0.14] bg-gray-700/75 text-white/[0.78] hover:bg-emerald-300 hover:text-black"
+                    }`}
+                  />
 
                   {hasStarted && remainingRuntime ? (
                     <motion.div

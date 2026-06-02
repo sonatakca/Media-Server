@@ -55,6 +55,7 @@ import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
 import { PartyWatchControls } from "../../features/partyWatch/PartyWatchControls";
 import { PartyWatchOverlay } from "../../features/partyWatch/PartyWatchOverlay";
 import { usePartyWatchController } from "../../features/partyWatch/usePartyWatchController";
+import { Tooltip } from "../ui/Tooltip";
 
 interface CustomVideoPlayerProps {
   item: JellyfinItem;
@@ -928,18 +929,19 @@ function NextEpisodeCountdownOverlay({
       onPointerLeave={onControlsHoverEnd}
     >
       <div className="relative w-full overflow-hidden rounded-xl bg-zinc-950/90 shadow-player-controls">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            onCancel();
-          }}
-          className="absolute right-2.5 top-2.5 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/80 shadow-player-controls transition hover:bg-white/[0.14] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:right-3 sm:top-3"
-          aria-label={t("player.cancelNextEpisode")}
-          title={t("player.cancelNextEpisode")}
-        >
-          <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.4} />
-        </button>
+        <Tooltip content={t("player.cancelNextEpisode")}>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              onCancel();
+            }}
+            className="absolute right-2.5 top-2.5 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/80 shadow-player-controls transition hover:bg-white/[0.14] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:right-3 sm:top-3"
+            aria-label={t("player.cancelNextEpisode")}
+          >
+            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.4} />
+          </button>
+        </Tooltip>
 
         <div className="relative h-28 w-full overflow-hidden bg-white/[0.06] sm:h-32">
           {nextEpisodeImageUrl ? (
@@ -1566,6 +1568,7 @@ export function CustomVideoPlayer({
   >([]);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
+  const [subtitleDelaySeconds, setSubtitleDelaySeconds] = useState(0);
   const [subtitlePosition, setSubtitlePosition] =
     useState<SubtitlePosition | null>(null);
   const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({
@@ -3577,7 +3580,7 @@ export function CustomVideoPlayer({
     const syncSubtitleText = () => {
       const nextSubtitleText = getActiveSubtitleTextForTime(
         subtitleCues,
-        video.currentTime,
+        video.currentTime - subtitleDelaySeconds,
       );
       setActiveSubtitleText((currentSubtitleText) =>
         currentSubtitleText === nextSubtitleText
@@ -3606,7 +3609,7 @@ export function CustomVideoPlayer({
       video.removeEventListener("timeupdate", syncSubtitleText);
       window.clearInterval(intervalId);
     };
-  }, [subtitleCues]);
+  }, [subtitleCues, subtitleDelaySeconds]);
 
   const handleVideoPlay = () => {
     if (!hasStartedRef.current) {
@@ -4339,76 +4342,79 @@ export function CustomVideoPlayer({
                 data-party-watch-root
               >
                 <div className="seyirlik-player-top-actions-row flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={enterViewMode}
-                    className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                    aria-label={t("player.enterViewMode")}
-                    title={t("player.enterViewMode")}
-                  >
-                    <EyeOff size={18} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={toggleCheckpointMode}
-                    className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-                      checkpointSeconds !== null
-                        ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
-                        : "text-white/85 hover:bg-white/[0.12] hover:text-white"
-                    }`}
-                    aria-label={checkpointButtonLabel}
-                    aria-pressed={checkpointSeconds !== null}
-                    title={checkpointButtonLabel}
-                  >
-                    <Bookmark
-                      size={18}
-                      fill={
-                        checkpointSeconds !== null ? "currentColor" : "none"
-                      }
-                    />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsPartyWatchOpen((current) => !current);
-                      setIsSettingsOpen(false);
-                      revealPlayerChrome();
-                    }}
-                    className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                    aria-label={t("party.title")}
-                    title={t("party.title")}
-                  >
-                    <Users
-                      size={18}
-                      fill={partyWatch.isInGroup ? "#fff" : "none"}
-                    />
-
-                    <span
-                      className="pointer-events-none absolute inset-0"
-                      aria-hidden="true"
+                  <Tooltip content={t("player.enterViewMode")}>
+                    <button
+                      type="button"
+                      onClick={enterViewMode}
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      aria-label={t("player.enterViewMode")}
                     >
-                      {partyWatch.isInGroup ? (
-                        Array.from({ length: visiblePartyWatchDotCount }).map(
-                          (_, index) => {
-                            const dotPosition =
-                              PARTY_WATCH_DOT_POSITIONS[index] ??
-                              PARTY_WATCH_DOT_POSITIONS[0];
+                      <EyeOff size={18} />
+                    </button>
+                  </Tooltip>
 
-                            return (
-                              <span
-                                key={`${dotPosition}-${index}`}
-                                className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
-                              />
-                            );
-                          },
-                        )
-                      ) : (
-                        <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
-                      )}
-                    </span>
-                  </button>
+                  <Tooltip content={checkpointButtonLabel}>
+                    <button
+                      type="button"
+                      onClick={toggleCheckpointMode}
+                      className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                        checkpointSeconds !== null
+                          ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
+                          : "text-white/85 hover:bg-white/[0.12] hover:text-white"
+                      }`}
+                      aria-label={checkpointButtonLabel}
+                      aria-pressed={checkpointSeconds !== null}
+                    >
+                      <Bookmark
+                        size={18}
+                        fill={
+                          checkpointSeconds !== null ? "currentColor" : "none"
+                        }
+                      />
+                    </button>
+                  </Tooltip>
+
+                  <Tooltip content={t("party.title")}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsPartyWatchOpen((current) => !current);
+                        setIsSettingsOpen(false);
+                        revealPlayerChrome();
+                      }}
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      aria-label={t("party.title")}
+                    >
+                      <Users
+                        size={18}
+                        fill={partyWatch.isInGroup ? "#fff" : "none"}
+                      />
+
+                      <span
+                        className="pointer-events-none absolute inset-0"
+                        aria-hidden="true"
+                      >
+                        {partyWatch.isInGroup ? (
+                          Array.from({ length: visiblePartyWatchDotCount }).map(
+                            (_, index) => {
+                              const dotPosition =
+                                PARTY_WATCH_DOT_POSITIONS[index] ??
+                                PARTY_WATCH_DOT_POSITIONS[0];
+
+                              return (
+                                <span
+                                  key={`${dotPosition}-${index}`}
+                                  className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
+                                />
+                              );
+                            },
+                          )
+                        ) : (
+                          <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
+                        )}
+                      </span>
+                    </button>
+                  </Tooltip>
 
                   <PlaybackInfoButton
                     source={sourceWithLiveTranscodingReasons}
@@ -4493,6 +4499,7 @@ export function CustomVideoPlayer({
             selectedQualityId={selectedQualityId}
             selectedAudioStreamIndex={activeAudioStreamIndex}
             selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
+            subtitleDelaySeconds={subtitleDelaySeconds}
             canSwitchAudio={canSwitchAudio}
             canSwitchSubtitles={canSwitchSubtitles}
             isSubtitleEditMode={isSubtitleEditMode}
@@ -4501,6 +4508,7 @@ export function CustomVideoPlayer({
             onSelectQuality={handleSelectQuality}
             onSelectAudioStream={handleSelectAudioStream}
             onSelectSubtitleStream={handleSelectSubtitleStream}
+            onSubtitleDelayChange={setSubtitleDelaySeconds}
             onStartSubtitleEdit={startSubtitleEditMode}
           />
         </>
@@ -4509,26 +4517,28 @@ export function CustomVideoPlayer({
       {isViewModeEnabled ? (
         <div className="pointer-events-auto absolute left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/25 p-1 text-white/35 opacity-25 backdrop-blur-md transition hover:bg-black/55 hover:text-white hover:opacity-100 focus-within:opacity-100">
           {checkpointSeconds !== null ? (
-            <button
-              type="button"
-              onClick={toggleCheckpointMode}
-              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              aria-label={t("player.returnToCheckpoint")}
-              title={t("player.returnToCheckpoint")}
-            >
-              <Bookmark size={16} fill="currentColor" />
-            </button>
+            <Tooltip content={t("player.returnToCheckpoint")}>
+              <button
+                type="button"
+                onClick={toggleCheckpointMode}
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                aria-label={t("player.returnToCheckpoint")}
+              >
+                <Bookmark size={16} fill="currentColor" />
+              </button>
+            </Tooltip>
           ) : null}
 
-          <button
-            type="button"
-            onClick={exitViewMode}
-            className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-            aria-label={t("player.exitViewMode")}
-            title={t("player.exitViewMode")}
-          >
-            <Eye size={16} />
-          </button>
+          <Tooltip content={t("player.exitViewMode")}>
+            <button
+              type="button"
+              onClick={exitViewMode}
+              className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-full transition hover:bg-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              aria-label={t("player.exitViewMode")}
+            >
+              <Eye size={16} />
+            </button>
+          </Tooltip>
         </div>
       ) : null}
 

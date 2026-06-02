@@ -6,8 +6,13 @@ import type { TranslationKey } from "../../i18n/translations";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
+import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
 import { ClearWatchingButton } from "../ClearWatchingButton";
+import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
 import { RestartWatchingButton } from "../RestartWatchingButton";
+import { WatchedIndicator } from "../WatchedIndicator";
+import { WatchedStatusButton } from "../WatchedStatusButton";
+import { Tooltip } from "../ui/Tooltip";
 
 interface MobileMediaCardProps {
   item: JellyfinItem;
@@ -15,28 +20,10 @@ interface MobileMediaCardProps {
   variant?: "poster" | "landscape";
   layout?: "row" | "grid";
   showRestartWatching?: boolean;
+  collectionItems?: JellyfinItem[];
   animateRemoval?: boolean;
   onClearContinueWatching?: (item: JellyfinItem) => void;
-}
-
-function getProgressPercent(item: JellyfinItem): number | null {
-  const playedPercentage = item.UserData?.PlayedPercentage;
-
-  if (typeof playedPercentage === "number") {
-    return Math.min(100, Math.max(0, playedPercentage));
-  }
-
-  if (item.UserData?.PlaybackPositionTicks && item.RunTimeTicks) {
-    return Math.min(
-      100,
-      Math.max(
-        0,
-        (item.UserData.PlaybackPositionTicks / item.RunTimeTicks) * 100,
-      ),
-    );
-  }
-
-  return null;
+  onWatchedStatusReset?: (items: JellyfinItem[]) => void;
 }
 
 function formatTemplate(
@@ -91,8 +78,10 @@ export function MobileMediaCard({
   variant = "poster",
   layout = "row",
   showRestartWatching = false,
+  collectionItems,
   animateRemoval = false,
   onClearContinueWatching,
+  onWatchedStatusReset,
 }: MobileMediaCardProps) {
   const { t } = useLanguage();
   const labels = {
@@ -102,7 +91,7 @@ export function MobileMediaCard({
   };
   const title = getDisplayTitle(item, labels);
   const runtime = formatRuntime(item.RunTimeTicks, labels);
-  const progressPercent = getProgressPercent(item);
+  const progressPercent = getItemProgressPercent(item);
   const countText = getSeriesCount(item, t);
   const subtitle =
     countText ?? [item.ProductionYear, runtime].filter(Boolean).join(" / ");
@@ -113,6 +102,7 @@ export function MobileMediaCard({
   const primaryTo = canPlay ? `/watch/${item.Id}` : to;
   const isLandscape = variant === "landscape";
   const isRow = layout === "row";
+  const isWatched = isItemCompleted(item);
   const imageUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(
         item.Id,
@@ -136,7 +126,13 @@ export function MobileMediaCard({
       }
       className={isRow ? "w-[8.8rem] shrink-0 snap-start" : "min-w-0"}
     >
-      <div className="overflow-hidden rounded-xl border border-white/10 bg-[#141416] shadow-cinematic-card">
+      <div
+        className={`overflow-hidden rounded-xl border bg-[#141416] shadow-cinematic-card ${
+          isWatched
+            ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_18px_48px_rgba(16,185,129,0.18)]"
+            : "border-white/10"
+        }`}
+      >
         <div
           className={`relative overflow-hidden bg-zinc-900 ${
             isLandscape ? "aspect-video" : "aspect-[2/3]"
@@ -154,6 +150,12 @@ export function MobileMediaCard({
                 loading="lazy"
                 decoding="async"
                 className="h-full w-full object-cover"
+              />
+            ) : collectionItems?.length ? (
+              <CollectionPosterMosaic
+                title={title}
+                items={collectionItems}
+                imageSize={isLandscape ? 520 : 400}
               />
             ) : (
               <span className="flex h-full items-center justify-center bg-[linear-gradient(145deg,#27272a,#080809)] p-3 text-center text-xs font-bold text-white/80">
@@ -177,6 +179,18 @@ export function MobileMediaCard({
                   iconSize={15}
                 />
               ) : null}
+              {onWatchedStatusReset ? (
+                <WatchedStatusButton
+                  scope="item"
+                  action={isWatched ? "remove" : "mark"}
+                  item={item}
+                  onReset={onWatchedStatusReset}
+                  className={`absolute top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur ${
+                    onClearContinueWatching ? "left-12" : "left-2"
+                  }`}
+                  iconSize={15}
+                />
+              ) : null}
               {showRestartWatching ? (
                 <RestartWatchingButton
                   item={item}
@@ -184,19 +198,22 @@ export function MobileMediaCard({
                   iconSize={15}
                 />
               ) : null}
-              <Link
-                to={to}
-                aria-label={`${t("common.details")} ${title}`}
-                className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
-              >
-                <Info size={15} />
-              </Link>
+              <Tooltip content={t("common.details")}>
+                <Link
+                  to={to}
+                  aria-label={`${t("common.details")} ${title}`}
+                  className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/15 bg-black/60 text-white backdrop-blur"
+                >
+                  <Info size={15} />
+                </Link>
+              </Tooltip>
             </>
           ) : null}
 
           {progressPercent !== null ? (
             <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
               <div
+                data-testid="media-card-progress-fill"
                 className="h-full bg-[var(--accent)]"
                 style={{ width: `${progressPercent}%` }}
               />
@@ -205,6 +222,11 @@ export function MobileMediaCard({
         </div>
 
         <div className="flex min-h-[3.65rem] flex-col justify-center px-2.5 py-2.5">
+          <WatchedIndicator
+            item={item}
+            className="mb-1.5 self-start px-2 py-0.5 text-[0.52rem] tracking-[0.12em]"
+            iconSize={11}
+          />
           {logoUrl ? (
             <img
               src={logoUrl}

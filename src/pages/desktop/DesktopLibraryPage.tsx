@@ -8,9 +8,12 @@ import { MediaCard } from "../../components/MediaCard";
 import { MotionReveal } from "../../components/MotionReveal";
 import { SeasonPicker } from "../../components/SeasonPicker";
 import { LibrarySkeleton } from "../../components/Skeletons";
+import { WatchedIndicator } from "../../components/WatchedIndicator";
+import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
+  getBoxSetItems,
   getItem,
   getItemsForLibrary,
   getLogoImageUrl,
@@ -18,9 +21,15 @@ import {
   getSeriesSeasons,
   getTopLevelItemsForLibrary,
 } from "../../lib/jellyfinApi";
+import {
+  loadCollectionPosterChildrenMap,
+  type CollectionPosterChildrenMap,
+} from "../../lib/collectionPoster";
+import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { getDisplayTitle } from "../../lib/format";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem } from "../../lib/types";
+import { isItemCompleted } from "../../lib/watchStatus";
 import { AnimatedText } from "../../components/AnimatedText";
 import { AnimatedWidth } from "../../components/AnimatedWidth";
 import { setPageTitle } from "../../lib/pageTitle";
@@ -55,6 +64,7 @@ interface LibraryData {
   fallbackTitleKey?: LibraryFallbackTitleKey;
   items: JellyfinItem[];
   selectableSeasons: JellyfinItem[];
+  collectionPosterChildrenById: CollectionPosterChildrenMap;
 }
 
 function getSortNumber(item: JellyfinItem): number {
@@ -125,6 +135,49 @@ function sortJellyfinItems(
   return compareNames(left, right);
 }
 
+function isWholeWatchedScope(
+  library: JellyfinItem | undefined,
+  items: JellyfinItem[],
+): boolean {
+  if (library && isItemCompleted(library)) {
+    return true;
+  }
+
+  const watchableItems = items.filter(
+    (item) =>
+      item.Type === "Episode" ||
+      item.Type === "Season" ||
+      item.Type === "Movie" ||
+      item.MediaType === "Video",
+  );
+
+  return watchableItems.length > 0 && watchableItems.every(isItemCompleted);
+}
+
+function isWatchableScopeItem(item: JellyfinItem): boolean {
+  return (
+    item.Type === "Episode" ||
+    item.Type === "Season" ||
+    item.Type === "Movie" ||
+    item.MediaType === "Video"
+  );
+}
+
+function withWatchedState(item: JellyfinItem, watched: boolean): JellyfinItem {
+  return {
+    ...item,
+    UserData: {
+      ...(item.UserData ?? {}),
+      PlaybackPositionTicks: watched
+        ? (item.RunTimeTicks ?? item.UserData?.PlaybackPositionTicks ?? 0)
+        : 0,
+      PlayedPercentage: watched ? 100 : 0,
+      Played: watched,
+      LastPlayedDate: watched ? new Date().toISOString() : null,
+    },
+  };
+}
+
 async function loadLibraryItems(
   id: string,
   mode: "library" | "series" | "season",
@@ -139,7 +192,10 @@ async function loadLibraryItems(
       return getTopLevelItemsForLibrary(id, library.CollectionType);
     }
 
-    return getItemsForLibrary(id);
+    const items = await getItemsForLibrary(id);
+    return library?.Type === "BoxSet"
+      ? sortCollectionItemsForWatching(items)
+      : items;
   }
 
   if (mode === "series") {
@@ -251,6 +307,8 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
           libraryResult,
           seriesId,
         );
+        const collectionPosterChildrenById =
+          await loadCollectionPosterChildrenMap(items, getBoxSetItems);
         const firstEpisode = items.find((item) => item.Type === "Episode");
         const selectableSeriesId = firstEpisode
           ? (libraryResult?.SeriesId ??
@@ -290,6 +348,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
             fallbackTitleKey,
             items,
             selectableSeasons,
+            collectionPosterChildrenById,
           });
         }
       } catch (libraryError) {
@@ -322,10 +381,45 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
         )
       : data.items;
 
+    if (data.library?.Type === "BoxSet") {
+      return sortCollectionItemsForWatching(items);
+    }
+
     return [...items].sort((left, right) =>
       sortJellyfinItems(left, right, sortBy),
     );
   }, [data, searchTerm, sortBy]);
+
+  const handleWatchedStatusReset = (
+    resetItems: JellyfinItem[],
+    options?: { action: "mark" | "remove"; scope: "show" },
+  ) => {
+    const resetItemsById = new Map(
+      resetItems.map((resetItem) => [resetItem.Id, resetItem]),
+    );
+    const forceWatched = options ? options.action === "mark" : undefined;
+
+    setData((currentData) =>
+      currentData
+        ? {
+            ...currentData,
+            library:
+              forceWatched !== undefined && options?.scope === "show"
+                ? currentData.library
+                  ? withWatchedState(currentData.library, forceWatched)
+                  : currentData.library
+                : currentData.library,
+            items: currentData.items.map(
+              (item) =>
+                resetItemsById.get(item.Id) ??
+                (forceWatched !== undefined && options?.scope === "show"
+                  ? withWatchedState(item, forceWatched)
+                  : item),
+            ),
+          }
+        : currentData,
+    );
+  };
 
   const libraryRotatingLogoUrls = useMemo(() => {
     if (!data || mode !== "library") {
@@ -510,6 +604,28 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
     data.library?.Type === "Season"
       ? data.library.Id
       : (firstEpisodeItem?.SeasonId ?? activeId);
+  const seasonResetSeriesId =
+    mode === "season"
+      ? (seriesId ?? data.library?.SeriesId ?? firstEpisodeItem?.SeriesId)
+      : undefined;
+  const showResetSeriesId = mode === "series" ? activeId : undefined;
+  const hasWatchedSeasonItems =
+    mode === "season" && data.items.some(isItemCompleted);
+  const hasWatchedShowItems =
+    mode === "series" &&
+    (Boolean(data.library && isItemCompleted(data.library)) ||
+      data.items.some(isItemCompleted));
+  const hasUnwatchedSeasonItems =
+    mode === "season" &&
+    data.items.some(
+      (libraryItem) =>
+        isWatchableScopeItem(libraryItem) && !isItemCompleted(libraryItem),
+    );
+  const hasUnwatchedShowItems =
+    mode === "series" && !isWholeWatchedScope(data.library, data.items);
+  const isLibraryScopeWatched =
+    (mode === "series" || mode === "season") &&
+    isWholeWatchedScope(data.library, data.items);
   const seasonPickerOptions = [...data.selectableSeasons]
     .sort((left, right) => sortJellyfinItems(left, right, "name"))
     .map((season) => ({
@@ -610,8 +726,6 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                   />
                 ) : (
                   <div className="group/season-label relative max-w-[44vw] overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset sm:max-w-none sm:rounded-2xl sm:px-5 sm:py-3">
-                    <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
-
                     <div className="relative flex items-center">
                       <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
                         <AnimatedWidth value={seasonHeaderLabel}>
@@ -657,6 +771,20 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
         </p>
       </div>
 
+      {isLibraryScopeWatched ? (
+        <MotionReveal
+          className="mb-5 flex justify-center"
+          direction="up"
+          delay={0.03}
+        >
+          <WatchedIndicator
+            isWatched
+            className="px-5 py-2 text-sm tracking-[0.16em]"
+            iconSize={18}
+          />
+        </MotionReveal>
+      ) : null}
+
       <MotionReveal
         className="mb-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"
         delay={0.04}
@@ -690,6 +818,62 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
             <option value="year">{t("library.year")}</option>
           </select>
         </label>
+        {seasonResetSeriesId && currentSeasonId && hasWatchedSeasonItems ? (
+          <WatchedStatusButton
+            scope="season"
+            action="remove"
+            seriesId={seasonResetSeriesId}
+            seasonId={currentSeasonId}
+            label={t("details.removeWatchedStatusForSeason")}
+            confirm
+            onReset={handleWatchedStatusReset}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/[0.35] px-4 text-sm font-black text-white/[0.72] transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
+          />
+        ) : null}
+        {seasonResetSeriesId && currentSeasonId && hasUnwatchedSeasonItems ? (
+          <WatchedStatusButton
+            scope="season"
+            action="mark"
+            seriesId={seasonResetSeriesId}
+            seasonId={currentSeasonId}
+            label={t("details.markWatchedStatusForSeason")}
+            confirm
+            onReset={handleWatchedStatusReset}
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-300 px-4 text-sm font-black text-black transition hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          />
+        ) : null}
+        {showResetSeriesId && hasWatchedShowItems ? (
+          <WatchedStatusButton
+            scope="show"
+            action="remove"
+            seriesId={showResetSeriesId}
+            label={t("details.removeWatchedStatusForShow")}
+            confirm
+            onReset={(items) =>
+              handleWatchedStatusReset(items, {
+                action: "remove",
+                scope: "show",
+              })
+            }
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/[0.35] px-4 text-sm font-black text-white/[0.72] transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
+          />
+        ) : null}
+        {showResetSeriesId && hasUnwatchedShowItems ? (
+          <WatchedStatusButton
+            scope="show"
+            action="mark"
+            seriesId={showResetSeriesId}
+            label={t("details.markWatchedStatusForShow")}
+            confirm
+            onReset={(items) =>
+              handleWatchedStatusReset(items, {
+                action: "mark",
+                scope: "show",
+              })
+            }
+            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-300 px-4 text-sm font-black text-black transition hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+          />
+        ) : null}
       </MotionReveal>
 
       {filteredItems.length > 0 ? (
@@ -704,6 +888,8 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
               index={index}
               animateIn
               showPlayFromBeginning
+              collectionItems={data.collectionPosterChildrenById[item.Id]}
+              onWatchedStatusReset={handleWatchedStatusReset}
             />
           ))}
         </div>

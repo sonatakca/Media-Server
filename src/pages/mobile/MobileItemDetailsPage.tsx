@@ -4,6 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
+import { WatchedIndicator } from "../../components/WatchedIndicator";
+import { WatchedStatusButton } from "../../components/WatchedStatusButton";
+import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
@@ -14,6 +17,7 @@ import {
 } from "../../lib/jellyfinApi";
 import { setSeoMetadata } from "../../lib/seo";
 import type { JellyfinItem } from "../../lib/types";
+import { isItemCompleted } from "../../lib/watchStatus";
 
 function getBackdrop(item: JellyfinItem): string {
   if (item.BackdropImageTags?.[0]) {
@@ -138,6 +142,19 @@ export function MobileItemDetailsPage() {
     };
   }, [itemId, t]);
 
+  const handleWatchedStatusReset = (resetItems: JellyfinItem[]) => {
+    setItem((currentItem) => {
+      if (!currentItem) {
+        return currentItem;
+      }
+
+      return (
+        resetItems.find((resetItem) => resetItem.Id === currentItem.Id) ??
+        currentItem
+      );
+    });
+  };
+
   if (error) {
     return (
       <ErrorMessage title={t("details.itemUnavailable")} message={error} />
@@ -181,6 +198,7 @@ export function MobileItemDetailsPage() {
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
+  const isWatched = isItemCompleted(item);
   const positionTicks = item.UserData?.PlaybackPositionTicks ?? 0;
   const hasStarted = positionTicks > 0 && !item.UserData?.Played;
   const remainingRuntime = getRemainingRuntime(item, labels);
@@ -254,8 +272,12 @@ export function MobileItemDetailsPage() {
 
           <div className="mt-[5.25rem] flex items-end gap-4">
             <div
-              className={`w-[7.4rem] shrink-0 overflow-hidden rounded-xl border border-white/15 bg-zinc-900 shadow-artwork-glow ${
+              className={`relative w-[7.4rem] shrink-0 overflow-hidden rounded-xl border bg-zinc-900 shadow-artwork-glow ${
                 isEpisode ? "aspect-video" : "aspect-[2/3]"
+              } ${
+                isWatched
+                  ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_18px_52px_rgba(16,185,129,0.2)]"
+                  : "border-white/15"
               }`}
             >
               {artworkUrl ? (
@@ -269,6 +291,12 @@ export function MobileItemDetailsPage() {
                   {title}
                 </div>
               )}
+              <WatchedIndicator
+                item={item}
+                className="absolute left-2 top-2 z-20 px-2 py-0.5 text-[0.52rem] tracking-[0.12em]"
+                iconSize={11}
+                showLabel={!isEpisode}
+              />
             </div>
 
             <div className="min-w-0 flex-1 pb-1">
@@ -277,18 +305,19 @@ export function MobileItemDetailsPage() {
               </p>
               {logoUrl ? (
                 seriesItemId ? (
-                  <Link
-                    to={`/library/${seriesItemId}`}
-                    aria-label={`Go to ${seriesTitle}`}
-                    title={seriesTitle}
-                    className="mb-2 inline-flex min-w-0 rounded-lg transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
-                  >
-                    <img
-                      src={logoUrl}
-                      alt={seriesTitle}
-                      className="cinematic-logo-shadow max-h-12 max-w-full object-contain object-left"
-                    />
-                  </Link>
+                  <Tooltip content={seriesTitle}>
+                    <Link
+                      to={`/library/${seriesItemId}`}
+                      aria-label={`Go to ${seriesTitle}`}
+                      className="mb-2 inline-flex min-w-0 rounded-lg transition active:scale-[0.98] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                    >
+                      <img
+                        src={logoUrl}
+                        alt={seriesTitle}
+                        className="cinematic-logo-shadow max-h-12 max-w-full object-contain object-left"
+                      />
+                    </Link>
+                  </Tooltip>
                 ) : (
                   <img
                     src={logoUrl}
@@ -302,14 +331,15 @@ export function MobileItemDetailsPage() {
               </h1>
               {episodeCode ? (
                 seasonItemId ? (
-                  <Link
-                    to={`/library/${seasonItemId}`}
-                    aria-label={`Go to ${episodeCode}`}
-                    title={episodeCode}
-                    className="mt-2 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black tracking-[0.18em] text-white/68 transition active:scale-[0.98] hover:bg-white/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
-                  >
-                    {episodeCode}
-                  </Link>
+                  <Tooltip content={episodeCode}>
+                    <Link
+                      to={`/library/${seasonItemId}`}
+                      aria-label={`Go to ${episodeCode}`}
+                      className="mt-2 inline-flex rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black tracking-[0.18em] text-white/68 transition active:scale-[0.98] hover:bg-white/[0.1] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70"
+                    >
+                      {episodeCode}
+                    </Link>
+                  </Tooltip>
                 ) : (
                   <p className="mt-2 text-xs font-black tracking-[0.18em] text-white/60">
                     {episodeCode}
@@ -320,6 +350,11 @@ export function MobileItemDetailsPage() {
           </div>
 
           <div className="mt-5 flex flex-wrap gap-2">
+            <WatchedIndicator
+              item={item}
+              className="min-h-8 px-3 text-xs tracking-[0.14em]"
+              iconSize={14}
+            />
             {chips.map(({ label, icon: Icon }) => (
               <span
                 key={label}
@@ -358,12 +393,28 @@ export function MobileItemDetailsPage() {
                   to={`/watch/${item.Id}?restart=1`}
                   variant="secondary"
                   aria-label={t("details.playFromBeginning")}
-                  title={t("details.playFromBeginning")}
+                  tooltip={t("details.playFromBeginning")}
                   className="h-12 min-h-12 w-12 rounded-full px-0"
                 >
                   <RotateCcw size={18} />
                 </ButtonLink>
               ) : null}
+              <WatchedStatusButton
+                scope="item"
+                action={isWatched ? "remove" : "mark"}
+                item={item}
+                label={
+                  isWatched
+                    ? t("details.removeWatchedStatus")
+                    : t("details.markWatchedStatus")
+                }
+                onReset={handleWatchedStatusReset}
+                className={`inline-flex min-h-12 items-center gap-2 rounded-full border px-4 text-xs font-black transition focus:outline-none focus:ring-2 focus:ring-white/70 ${
+                  isWatched
+                    ? "border-white/10 bg-white/[0.08] text-white/75 hover:bg-white/[0.12]"
+                    : "border-emerald-200/70 bg-emerald-300 text-black hover:bg-emerald-200"
+                }`}
+              />
             </div>
           ) : null}
 

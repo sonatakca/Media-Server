@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
+import { Tooltip } from "./ui/Tooltip";
 
 export function LanguageSwitch() {
   const { language, toggleLanguage, t } = useLanguage();
@@ -25,37 +26,37 @@ export function LanguageSwitch() {
     return () => window.clearTimeout(timeoutId);
   }, [displayFlagClass, flagClass]);
 
-  return (
-    <button
-      type="button"
-      onClick={toggleLanguage}
-      title={
-        isEnglish
-          ? t("nav.language.switchToTurkish")
-          : t("nav.language.switchToEnglish")
-      }
-      aria-label={
-        isEnglish
-          ? t("nav.language.ariaToTurkish")
-          : t("nav.language.ariaToEnglish")
-      }
-      className="inline-flex max-h-9 max-w-9 aspect-square items-center justify-center rounded-full border border-white/10 bg-transparent p-0 text-sm font-semibold text-white/[0.90] transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:max-h-10 sm:max-w-10"
-    >
-      <span className="grid w-[54px] items-center justify-center gap-2">
-        <span
-          className={`fi ${displayFlagClass} block h-[18px] w-[25px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
-            isFlagVisible
-              ? "translate-y-0 opacity-100"
-              : "-translate-y-0.5 opacity-0"
-          }`}
-        />
+  const tooltipLabel = isEnglish
+    ? t("nav.language.switchToTurkish")
+    : t("nav.language.switchToEnglish");
+  const ariaLabel = isEnglish
+    ? t("nav.language.ariaToTurkish")
+    : t("nav.language.ariaToEnglish");
 
-        {/* <span className="flex w-6 justify-center overflow-hidden">
+  return (
+    <Tooltip content={tooltipLabel}>
+      <button
+        type="button"
+        onClick={toggleLanguage}
+        aria-label={ariaLabel}
+        className="inline-flex max-h-9 max-w-9 aspect-square items-center justify-center rounded-full border border-white/10 bg-transparent p-0 text-sm font-semibold text-white/[0.90] transition-[background-color,border-color,color,transform] duration-300 ease-out hover:border-white/20 hover:bg-white/[0.12] active:scale-95 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:max-h-10 sm:max-w-10"
+      >
+        <span className="grid w-[54px] items-center justify-center gap-2">
+          <span
+            className={`fi ${displayFlagClass} block h-[18px] w-[25px] shrink-0 rounded-sm shadow-sm transition-[opacity,transform] duration-200 ease-out ${
+              isFlagVisible
+                ? "translate-y-0 opacity-100"
+                : "-translate-y-0.5 opacity-0"
+            }`}
+          />
+
+          {/* <span className="flex w-6 justify-center overflow-hidden">
           <AnimatedWidth value={isEnglish ? "EN" : "TR"} safetyPx={0}>
             <AnimatedText value={isEnglish ? "EN" : "TR"} />
           </AnimatedWidth>
         </span> */}
-      </span>
-    </button>
+        </span>
+      </button>
+    </Tooltip>
   );
 }
