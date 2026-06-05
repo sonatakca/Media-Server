@@ -21,6 +21,8 @@ interface SeekFeedbackItem {
 interface PlayerOverlayProps {
   title: string;
   titleLogoUrl?: string;
+  episodeLabel?: string | null;
+  episodeName?: string | null;
   subtitle?: string | null;
   backTo: string;
   visible: boolean;
@@ -44,9 +46,43 @@ const SEEK_FEEDBACK_NUMBER_SWAP_MS = 600;
 const SEEK_FEEDBACK_SPIN_EASE = [0.16, 1, 0.3, 1] as const;
 const SEEK_FEEDBACK_NUMBER_EASE = [0.22, 1, 0.36, 1] as const;
 
+function isSubtitleMetadataPart(part: string): boolean {
+  const normalized = part.trim().toLowerCase().replace(/\s+/g, "");
+
+  if (!normalized) {
+    return true;
+  }
+
+  if (/^\d{4}$/.test(normalized)) {
+    return true;
+  }
+
+  return /^(?=.*\d)(?:\d+(?:h|hr|hrs|hour|hours|sa|saat))?(?:\d+(?:m|min|mins|minute|minutes|dk|dakika))?$/.test(
+    normalized,
+  );
+}
+
+function getCleanSubtitleLine(subtitle?: string | null): string | null {
+  if (!subtitle) {
+    return null;
+  }
+
+  const parts = subtitle
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  const meaningfulParts = parts.filter((part) => !isSubtitleMetadataPart(part));
+  const cleanSubtitle = meaningfulParts.join(" / ");
+
+  return cleanSubtitle || null;
+}
+
 export function PlayerOverlay({
   title,
   titleLogoUrl,
+  episodeLabel,
+  episodeName,
   subtitle,
   backTo,
   visible,
@@ -61,6 +97,7 @@ export function PlayerOverlay({
   seekFeedback,
 }: PlayerOverlayProps) {
   const { t } = useLanguage();
+  const displaySubtitle = episodeName?.trim() || getCleanSubtitleLine(subtitle);
 
   const wasPlayPausePendingRef = useRef(isPlayPausePending);
   const waveTimeoutRef = useRef<number | null>(null);
@@ -153,23 +190,35 @@ export function PlayerOverlay({
             />
           </Link>
 
-          <div className="min-w-0 flex-1">
-            {titleLogoUrl ? (
-              <img
-                src={titleLogoUrl}
-                alt={title}
-                className="max-h-10 max-w-[min(20rem,52vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12"
-              />
-            ) : (
-              <p className="truncate text-base font-bold text-white sm:text-lg">
-                {title}
-              </p>
-            )}
+          <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
+            <div className="min-w-0 shrink-0">
+              {titleLogoUrl ? (
+                <img
+                  src={titleLogoUrl}
+                  alt={title}
+                  className="max-h-10 max-w-[min(14rem,36vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12 sm:max-w-[min(18rem,40vw)]"
+                />
+              ) : (
+                <p className="max-w-[min(14rem,36vw)] truncate text-base font-bold text-white sm:max-w-[min(18rem,40vw)] sm:text-lg">
+                  {title}
+                </p>
+              )}
+            </div>
 
-            {subtitle ? (
-              <p className="mt-1 truncate text-sm text-white/[0.62]">
-                {subtitle}
-              </p>
+            {episodeLabel || displaySubtitle ? (
+              <div className="min-w-0 leading-tight drop-shadow-[0_2px_8px_rgba(0,0,0,0.95)]">
+                {episodeLabel ? (
+                  <p className="truncate text-base font-medium text-white/[0.78]">
+                    {episodeLabel}
+                  </p>
+                ) : null}
+
+                {displaySubtitle ? (
+                  <p className="mt-1 truncate text-sm text-white/[0.68]">
+                    {displaySubtitle}
+                  </p>
+                ) : null}
+              </div>
             ) : null}
           </div>
 

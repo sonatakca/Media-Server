@@ -43,7 +43,7 @@ const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
 
 const SEEK_DRAG_THRESHOLD_PX = 6;
 const SEEK_SNAP_INTERVAL_SECONDS = 3;
-const SEEK_TRACK_HIT_SLOP_PX = 5;
+const SEEK_TRACK_HIT_SLOP_PX = 10;
 const SEEK_HOVER_RANGE_OVERLAP_PERCENT = 0.35;
 
 function formatTime(seconds: number): string {
@@ -282,6 +282,10 @@ export function SeekBar({
   };
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (!isPointerInsideVisibleTrack(event.clientX, event.clientY)) {
+      return;
+    }
+
     const nextSeekState = getPointerSeekState(event.clientX, event.clientY);
 
     if (!nextSeekState) {
@@ -514,7 +518,7 @@ export function SeekBar({
 
       <div
         aria-hidden="true"
-        className="absolute left-0 right-0 top-1/2 z-[64] h-4 -translate-y-1/2 cursor-pointer"
+        className="absolute left-0 right-0 top-1/2 z-[64] h-[26px] -translate-y-1/2 cursor-pointer"
       />
 
       <div

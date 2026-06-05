@@ -4191,9 +4191,42 @@ export function CustomVideoPlayer({
   };
 
   const subtitle = getItemSubtitle(item, mediaFormatLabels);
-  const titleLogoUrl = item.ImageTags?.Logo
-    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900)
-    : "";
+  const isEpisodeItem = item.Type === "Episode";
+  const playerHeaderTitle = isEpisodeItem
+    ? item.SeriesName?.trim() || title
+    : title;
+  const episodeSeasonNumber =
+    isEpisodeItem &&
+    typeof item.ParentIndexNumber === "number" &&
+    Number.isFinite(item.ParentIndexNumber)
+      ? item.ParentIndexNumber
+      : null;
+  const episodeNumber =
+    isEpisodeItem &&
+    typeof item.IndexNumber === "number" &&
+    Number.isFinite(item.IndexNumber)
+      ? item.IndexNumber
+      : null;
+  const playerEpisodeLabel =
+    episodeSeasonNumber !== null && episodeNumber !== null
+      ? formatTemplate(t("player.seasonEpisodeLabel"), {
+          season: episodeSeasonNumber,
+          episode: episodeNumber,
+        })
+      : null;
+  const playerEpisodeName = isEpisodeItem ? item.Name.trim() || null : null;
+  const playerSeriesLogoItemId = isEpisodeItem
+    ? (item.ParentLogoItemId ?? item.SeriesId ?? null)
+    : null;
+  const titleLogoUrl =
+    playerSeriesLogoItemId && item.ParentLogoImageTag
+      ? getLogoImageUrl(playerSeriesLogoItemId, item.ParentLogoImageTag, 900)
+      : item.ImageTags?.Logo
+        ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900)
+        : "";
+  const playerHeaderSubtitle = isEpisodeItem
+    ? (playerEpisodeName ?? subtitle)
+    : subtitle;
   const isSubtitleBeingEdited =
     isDraggingSubtitle || isResizingSubtitle || isSubtitleEditMode;
   const isShowingSubtitlePlaceholder =
@@ -4430,9 +4463,11 @@ export function CustomVideoPlayer({
       {!isViewModeEnabled && !isSubtitleEditMode ? (
         <>
           <PlayerOverlay
-            title={title}
+            title={playerHeaderTitle}
             titleLogoUrl={titleLogoUrl}
-            subtitle={subtitle}
+            episodeLabel={playerEpisodeLabel}
+            episodeName={playerEpisodeName}
+            subtitle={playerHeaderSubtitle}
             backTo={`/item/${item.Id}`}
             visible={shouldRenderPlayerChrome}
             isPlaying={progress.isPlaying}
