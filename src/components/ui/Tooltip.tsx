@@ -16,14 +16,26 @@ export type TooltipPlacement = "top" | "bottom" | "left" | "right";
 interface TooltipProps {
   children: ReactElement;
   content?: ReactNode;
+  shortcut?: ReactNode;
   placement?: TooltipPlacement;
   disabled?: boolean;
+  offset?: string;
+  group?: string;
 }
 
 interface TooltipPosition {
   left: number;
   top: number;
 }
+
+type BrowserFullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  mozFullScreenElement?: Element | null;
+  msFullscreenElement?: Element | null;
+};
+
+const TOOLTIP_FADE_OUT_MS = 180;
+const activeTooltipByGroup = new Map<string, () => void>();
 
 function assignRef<TValue>(ref: Ref<TValue> | undefined, value: TValue) {
   if (!ref) {
@@ -38,12 +50,59 @@ function assignRef<TValue>(ref: Ref<TValue> | undefined, value: TValue) {
   (ref as { current: TValue }).current = value;
 }
 
+function getBrowserFullscreenElement(): Element | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  const fullscreenDocument = document as BrowserFullscreenDocument;
+
+  return (
+    document.fullscreenElement ??
+    fullscreenDocument.webkitFullscreenElement ??
+    fullscreenDocument.mozFullScreenElement ??
+    fullscreenDocument.msFullscreenElement ??
+    null
+  );
+}
+
+function getTooltipPortalRoot(): Element | null {
+  if (typeof document === "undefined") {
+    return null;
+  }
+
+  return getBrowserFullscreenElement() ?? document.body;
+}
+
+function cssLengthToPx(value: string): number {
+  if (typeof document === "undefined") {
+    return 8;
+  }
+
+  const root = getTooltipPortalRoot() ?? document.body;
+  const element = document.createElement("div");
+
+  element.style.position = "absolute";
+  element.style.visibility = "hidden";
+  element.style.pointerEvents = "none";
+  element.style.width = value;
+
+  root.appendChild(element);
+
+  const pixels = element.getBoundingClientRect().width;
+
+  root.removeChild(element);
+
+  return Number.isFinite(pixels) ? pixels : 8;
+}
+
 function getTooltipPosition(
   triggerRect: DOMRect,
   tooltipRect: DOMRect,
   placement: TooltipPlacement,
+  offset = "8px",
 ): TooltipPosition {
-  const gap = 8;
+  const gap = cssLengthToPx(offset);
   const viewportMargin = 8;
   const viewportWidth = window.innerWidth;
   const viewportHeight = window.innerHeight;
@@ -100,20 +159,43 @@ function getTooltipPosition(
 export function Tooltip({
   children,
   content,
+  shortcut,
   placement = "top",
   disabled = false,
+  offset = "8px",
+  group,
 }: TooltipProps) {
   const triggerRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
+  const fadeOutTimerRef = useRef<number | null>(null);
+  const [shouldRender, setShouldRender] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<TooltipPosition | null>(null);
+  const [portalRoot, setPortalRoot] = useState<Element | null>(() =>
+    getTooltipPortalRoot(),
+  );
 
   const hasContent = Boolean(content);
 
   useEffect(() => {
-    if (!hasContent || disabled) {
+    const hideImmediately = () => {
+      if (fadeOutTimerRef.current !== null) {
+        window.clearTimeout(fadeOutTimerRef.current);
+        fadeOutTimerRef.current = null;
+      }
+
       setIsVisible(false);
+      setShouldRender(false);
+      setPosition(null);
+
+      if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+        activeTooltipByGroup.delete(group);
+      }
+    };
+
+    if (!hasContent || disabled) {
+      hideImmediately();
       return;
     }
 
@@ -124,10 +206,44 @@ export function Tooltip({
     }
 
     const show = () => {
+      if (fadeOutTimerRef.current !== null) {
+        window.clearTimeout(fadeOutTimerRef.current);
+        fadeOutTimerRef.current = null;
+      }
+
+      if (group) {
+        const activeTooltip = activeTooltipByGroup.get(group);
+
+        if (activeTooltip && activeTooltip !== hideImmediately) {
+          activeTooltip();
+        }
+
+        activeTooltipByGroup.set(group, hideImmediately);
+      }
+
       setPosition(null);
+      setShouldRender(true);
       setIsVisible(true);
     };
-    const hide = () => setIsVisible(false);
+
+    const hide = () => {
+      setIsVisible(false);
+
+      if (fadeOutTimerRef.current !== null) {
+        window.clearTimeout(fadeOutTimerRef.current);
+      }
+
+      fadeOutTimerRef.current = window.setTimeout(() => {
+        setShouldRender(false);
+        setPosition(null);
+        fadeOutTimerRef.current = null;
+
+        if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+          activeTooltipByGroup.delete(group);
+        }
+      }, TOOLTIP_FADE_OUT_MS);
+    };
+
     const handlePointerEnter = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
 
@@ -169,11 +285,47 @@ export function Tooltip({
       trigger.removeEventListener("mouseleave", hide);
       trigger.removeEventListener("focusin", handleFocusIn);
       trigger.removeEventListener("focusout", hide);
+
+      if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+        activeTooltipByGroup.delete(group);
+      }
     };
-  }, [disabled, hasContent]);
+  }, [disabled, group, hasContent]);
+
+  useEffect(() => {
+    return () => {
+      if (fadeOutTimerRef.current !== null) {
+        window.clearTimeout(fadeOutTimerRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const updatePortalRoot = () => {
+      setPortalRoot(getTooltipPortalRoot());
+      setPosition(null);
+    };
+
+    updatePortalRoot();
+    document.addEventListener("fullscreenchange", updatePortalRoot);
+    document.addEventListener("webkitfullscreenchange", updatePortalRoot);
+    document.addEventListener("mozfullscreenchange", updatePortalRoot);
+    document.addEventListener("MSFullscreenChange", updatePortalRoot);
+
+    return () => {
+      document.removeEventListener("fullscreenchange", updatePortalRoot);
+      document.removeEventListener("webkitfullscreenchange", updatePortalRoot);
+      document.removeEventListener("mozfullscreenchange", updatePortalRoot);
+      document.removeEventListener("MSFullscreenChange", updatePortalRoot);
+    };
+  }, []);
 
   useLayoutEffect(() => {
-    if (!isVisible || !hasContent) {
+    if (!shouldRender || !hasContent) {
       return;
     }
 
@@ -190,6 +342,7 @@ export function Tooltip({
           trigger.getBoundingClientRect(),
           tooltip.getBoundingClientRect(),
           placement,
+          offset,
         ),
       );
     };
@@ -202,7 +355,15 @@ export function Tooltip({
       window.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
     };
-  }, [hasContent, isVisible, placement, content]);
+  }, [
+    hasContent,
+    shouldRender,
+    placement,
+    content,
+    shortcut,
+    offset,
+    portalRoot,
+  ]);
 
   if (!isValidElement(children) || !hasContent || disabled) {
     return children;
@@ -222,33 +383,48 @@ export function Tooltip({
       assignRef(child.props.ref, node);
     },
   });
+  const isPositioned = position !== null;
 
   return (
     <>
       {trigger}
-      {isVisible && typeof document !== "undefined"
+      {shouldRender && portalRoot
         ? createPortal(
             <div
               ref={tooltipRef}
               role="tooltip"
-              className={`pointer-events-none fixed z-[9999] max-w-[17rem] origin-center rounded-md border border-white/10 bg-zinc-950/90 px-2.5 py-1.5 text-xs font-semibold leading-snug text-white/92 opacity-0 shadow-[0_18px_58px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-[opacity,transform] duration-100 ${
-                position ? "scale-100 opacity-100" : "scale-95 translate-y-0.5"
+              className={`pointer-events-none fixed z-[9999] max-w-[17rem] origin-center rounded-lg border border-white/10 bg-zinc-950/85 px-2.5 py-1.5 text-sm font-semibold leading-none text-white shadow-[0_18px_58px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-opacity ease-out ${
+                !isPositioned
+                  ? "invisible opacity-0 duration-0"
+                  : isVisible
+                    ? "visible opacity-100 duration-0"
+                    : "visible opacity-0 duration-200"
               }`}
               style={
                 position
                   ? {
                       left: position.left,
                       top: position.top,
+                      visibility: "visible",
                     }
                   : {
                       left: 0,
                       top: 0,
+                      visibility: "hidden",
                     }
               }
             >
-              {content}
+              <div className="flex items-center gap-2 whitespace-nowrap">
+                <span>{content}</span>
+
+                {shortcut ? (
+                  <span className="rounded-md border border-white/30 bg-white/10 px-1.5 py-0.5 text-xs font-semibold leading-none text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">
+                    {shortcut}
+                  </span>
+                ) : null}
+              </div>
             </div>,
-            document.body,
+            portalRoot,
           )
         : null}
     </>

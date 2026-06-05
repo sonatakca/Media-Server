@@ -20,8 +20,62 @@ const initialState: PlayerProgressState = {
   muted: false,
 };
 
+const PLAYER_VOLUME_STORAGE_KEY = "seyirlik.playerVolume";
+
+function clampVolume(volume: number): number {
+  return Math.min(1, Math.max(0, volume));
+}
+
+function getStoredVolumeState(): Pick<PlayerProgressState, "volume" | "muted"> {
+  if (typeof window === "undefined") {
+    return { volume: 1, muted: false };
+  }
+
+  try {
+    const rawValue = window.localStorage.getItem(PLAYER_VOLUME_STORAGE_KEY);
+
+    if (!rawValue) {
+      return { volume: 1, muted: false };
+    }
+
+    const parsedValue = JSON.parse(rawValue) as {
+      volume?: unknown;
+      muted?: unknown;
+    };
+    const volume =
+      typeof parsedValue.volume === "number" &&
+      Number.isFinite(parsedValue.volume)
+        ? clampVolume(parsedValue.volume)
+        : 1;
+    const muted =
+      typeof parsedValue.muted === "boolean" ? parsedValue.muted : false;
+
+    return { volume, muted };
+  } catch {
+    return { volume: 1, muted: false };
+  }
+}
+
+function saveStoredVolumeState(volume: number, muted: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      PLAYER_VOLUME_STORAGE_KEY,
+      JSON.stringify({ volume: clampVolume(volume), muted }),
+    );
+  } catch {
+    // Ignore storage failures; playback should continue normally.
+  }
+}
+
 export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
-  const [state, setState] = useState<PlayerProgressState>(initialState);
+  const [state, setState] = useState<PlayerProgressState>(() => ({
+    ...initialState,
+    ...getStoredVolumeState(),
+  }));
 
   const readVideoState = useCallback(() => {
     const video = videoRef.current;
@@ -61,6 +115,10 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       readVideoState();
       setState((currentState) => ({ ...currentState, isBuffering: false }));
     };
+    const handleVolumeChange = () => {
+      saveStoredVolumeState(video.volume, video.muted);
+      readVideoState();
+    };
 
     const events: Array<keyof HTMLMediaElementEventMap> = [
       "durationchange",
@@ -76,10 +134,18 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       "ended",
     ];
 
+    const storedVolumeState = getStoredVolumeState();
+    video.volume = storedVolumeState.volume;
+    video.muted = storedVolumeState.muted;
+
     events.forEach((eventName) => {
       video.addEventListener(
         eventName,
-        eventName === "waiting" ? markBuffering : readVideoState,
+        eventName === "waiting"
+          ? markBuffering
+          : eventName === "volumechange"
+            ? handleVolumeChange
+            : readVideoState,
       );
     });
     video.addEventListener("canplay", markReady);
@@ -91,7 +157,11 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       events.forEach((eventName) => {
         video.removeEventListener(
           eventName,
-          eventName === "waiting" ? markBuffering : readVideoState,
+          eventName === "waiting"
+            ? markBuffering
+            : eventName === "volumechange"
+              ? handleVolumeChange
+              : readVideoState,
         );
       });
       video.removeEventListener("canplay", markReady);
@@ -153,8 +223,11 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
         return;
       }
 
-      video.volume = Math.min(1, Math.max(0, volume));
-      video.muted = volume === 0;
+      const nextVolume = clampVolume(volume);
+
+      video.volume = nextVolume;
+      video.muted = nextVolume === 0;
+      saveStoredVolumeState(video.volume, video.muted);
       readVideoState();
     },
     [readVideoState, videoRef],
@@ -168,6 +241,7 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
     }
 
     video.muted = !video.muted;
+    saveStoredVolumeState(video.volume, video.muted);
     readVideoState();
   }, [readVideoState, videoRef]);
 

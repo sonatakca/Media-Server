@@ -69,6 +69,7 @@ export interface JellyfinMediaStream {
   BitRate?: number;
   Width?: number;
   Height?: number;
+  AspectRatio?: string;
   AverageFrameRate?: number;
   RealFrameRate?: number;
   VideoRange?: string;

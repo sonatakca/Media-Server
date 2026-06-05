@@ -175,8 +175,7 @@ const TRICKPLAY_INTERVAL_SECONDS = 10;
 const TRICKPLAY_COLUMNS = 10;
 const TRICKPLAY_ROWS = 10;
 const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
-const TRICKPLAY_TILE_WIDTH = 320;
-const TRICKPLAY_TILE_HEIGHT = 132;
+const DEFAULT_VIDEO_ASPECT_RATIO = 16 / 9;
 
 const SEEK_FEEDBACK_OPPOSITE_HIDE_MS = 100;
 
@@ -743,6 +742,76 @@ function getQualitySettings(
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function getSpritePositionPercent(index: number, count: number): number {
+  if (count <= 1) {
+    return 0;
+  }
+
+  return (index / (count - 1)) * 100;
+}
+
+function getAspectRatioFromDimensions(
+  width?: number,
+  height?: number,
+): number | null {
+  if (
+    typeof width !== "number" ||
+    typeof height !== "number" ||
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0
+  ) {
+    return null;
+  }
+
+  return width / height;
+}
+
+function getAspectRatioFromText(aspectRatio?: string): number | null {
+  const trimmedAspectRatio = aspectRatio?.trim();
+
+  if (!trimmedAspectRatio) {
+    return null;
+  }
+
+  const pairMatch = trimmedAspectRatio.match(
+    /^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/i,
+  );
+
+  if (pairMatch) {
+    const width = Number(pairMatch[1]);
+    const height = Number(pairMatch[2]);
+
+    return getAspectRatioFromDimensions(width, height);
+  }
+
+  const numericAspectRatio = Number(trimmedAspectRatio);
+
+  return Number.isFinite(numericAspectRatio) && numericAspectRatio > 0
+    ? numericAspectRatio
+    : null;
+}
+
+function getVideoAspectRatioFromSource(
+  source: PlaybackSourceCandidate,
+): number | null {
+  const videoStream = source.mediaSource.MediaStreams?.find(
+    (stream) => stream.Type?.toLowerCase() === "video",
+  );
+
+  return (
+    getAspectRatioFromText(videoStream?.AspectRatio) ??
+    getAspectRatioFromDimensions(videoStream?.Width, videoStream?.Height)
+  );
+}
+
+function getVideoAspectRatioFromElement(
+  video: HTMLVideoElement,
+): number | null {
+  return getAspectRatioFromDimensions(video.videoWidth, video.videoHeight);
 }
 
 function formatTemplate(
@@ -1545,6 +1614,12 @@ export function CustomVideoPlayer({
 
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
+  const [loadedVideoAspectRatio, setLoadedVideoAspectRatio] = useState<
+    number | null
+  >(null);
+  const sourceVideoAspectRatio =
+    getVideoAspectRatioFromSource(activeSource) ?? DEFAULT_VIDEO_ASPECT_RATIO;
+  const previewAspectRatio = loadedVideoAspectRatio ?? sourceVideoAspectRatio;
   const [selectedQualityId, setSelectedQualityId] = useState(AUTO_QUALITY_ID);
   const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] = useState<
     number | undefined
@@ -1838,9 +1913,9 @@ export function CustomVideoPlayer({
 
     const containerBounds = container.getBoundingClientRect();
     const videoAspect =
-      video.videoWidth > 0 && video.videoHeight > 0
-        ? video.videoWidth / video.videoHeight
-        : TRICKPLAY_TILE_WIDTH / TRICKPLAY_TILE_HEIGHT;
+      loadedVideoAspectRatio ??
+      getVideoAspectRatioFromElement(video) ??
+      sourceVideoAspectRatio;
 
     const containerAspect = containerBounds.width / containerBounds.height;
 
@@ -1865,7 +1940,42 @@ export function CustomVideoPlayer({
       width,
       height,
     };
-  }, [fullscreenSeekPreviewSeconds, progress.duration]);
+  }, [
+    fullscreenSeekPreviewSeconds,
+    loadedVideoAspectRatio,
+    progress.duration,
+    sourceVideoAspectRatio,
+    viewport.height,
+    viewport.width,
+  ]);
+
+  useEffect(() => {
+    setLoadedVideoAspectRatio(null);
+  }, [activeSource.id, activeSource.url]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+
+    if (!video) {
+      return undefined;
+    }
+
+    const syncVideoAspectRatio = () => {
+      setLoadedVideoAspectRatio(getVideoAspectRatioFromElement(video));
+    };
+
+    syncVideoAspectRatio();
+
+    video.addEventListener("loadedmetadata", syncVideoAspectRatio);
+    video.addEventListener("loadeddata", syncVideoAspectRatio);
+    video.addEventListener("resize", syncVideoAspectRatio);
+
+    return () => {
+      video.removeEventListener("loadedmetadata", syncVideoAspectRatio);
+      video.removeEventListener("loadeddata", syncVideoAspectRatio);
+      video.removeEventListener("resize", syncVideoAspectRatio);
+    };
+  }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -4198,20 +4308,19 @@ export function CustomVideoPlayer({
             }}
           >
             <div
-              className="origin-top-left opacity-95"
+              className="absolute inset-0 opacity-95"
               style={{
-                width: `${TRICKPLAY_TILE_WIDTH}px`,
-                height: `${TRICKPLAY_TILE_HEIGHT}px`,
-                transform: `scale(${fullscreenSeekPreviewRect.width / TRICKPLAY_TILE_WIDTH}, ${
-                  fullscreenSeekPreviewRect.height / TRICKPLAY_TILE_HEIGHT
-                })`,
                 backgroundImage: `url("${fullscreenSeekPreview.imageUrl}")`,
-                backgroundSize: `${TRICKPLAY_TILE_WIDTH * TRICKPLAY_COLUMNS}px ${
-                  TRICKPLAY_TILE_HEIGHT * TRICKPLAY_ROWS
-                }px`,
-                backgroundPosition: `-${fullscreenSeekPreview.column * TRICKPLAY_TILE_WIDTH}px -${
-                  fullscreenSeekPreview.row * TRICKPLAY_TILE_HEIGHT
-                }px`,
+                backgroundSize: `${TRICKPLAY_COLUMNS * 100}% ${
+                  TRICKPLAY_ROWS * 100
+                }%`,
+                backgroundPosition: `${getSpritePositionPercent(
+                  fullscreenSeekPreview.column,
+                  TRICKPLAY_COLUMNS,
+                )}% ${getSpritePositionPercent(
+                  fullscreenSeekPreview.row,
+                  TRICKPLAY_ROWS,
+                )}%`,
                 backgroundRepeat: "no-repeat",
               }}
             />
@@ -4482,6 +4591,7 @@ export function CustomVideoPlayer({
             itemId={item.Id}
             mediaSourceId={activeSource.mediaSourceId}
             checkpointSeconds={checkpointSeconds}
+            previewAspectRatio={previewAspectRatio}
             onTogglePlay={partyWatch.togglePlay}
             onSeek={partyWatch.seekTo}
             onSeekPreview={handleSeekPreview}

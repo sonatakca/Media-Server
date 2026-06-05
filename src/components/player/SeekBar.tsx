@@ -15,6 +15,7 @@ interface SeekBarProps {
   itemId: string;
   mediaSourceId?: string;
   checkpointSeconds?: number | null;
+  previewAspectRatio?: number;
   onSeek: (seconds: number) => void;
   onSeekPreview?: (seconds: number) => void;
   pointerAxis?: SeekPointerAxis;
@@ -40,10 +41,10 @@ const TRICKPLAY_COLUMNS = 10;
 const TRICKPLAY_ROWS = 10;
 const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
 
-const TRICKPLAY_TILE_WIDTH = 320;
-const TRICKPLAY_TILE_HEIGHT = 132;
 const SEEK_DRAG_THRESHOLD_PX = 6;
 const SEEK_SNAP_INTERVAL_SECONDS = 3;
+const SEEK_TRACK_HIT_SLOP_PX = 5;
+const SEEK_HOVER_RANGE_OVERLAP_PERCENT = 0.35;
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) {
@@ -92,6 +93,14 @@ function getSafeSeekTargetSeconds(
   return clamp(displaySeconds, 0, duration);
 }
 
+function getSpritePositionPercent(index: number, count: number): number {
+  if (count <= 1) {
+    return 0;
+  }
+
+  return (index / (count - 1)) * 100;
+}
+
 export function SeekBar({
   currentTime,
   duration,
@@ -99,6 +108,7 @@ export function SeekBar({
   itemId,
   mediaSourceId,
   checkpointSeconds = null,
+  previewAspectRatio,
   onSeek,
   onSeekPreview,
   pointerAxis = "horizontal",
@@ -106,6 +116,7 @@ export function SeekBar({
 }: SeekBarProps) {
   const { t } = useLanguage();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const trackRef = useRef<HTMLDivElement | null>(null);
   const pointerDownSeekStateRef = useRef<HoverPreviewState | null>(null);
   const pointerStartRef = useRef<{
     pointerId: number;
@@ -129,8 +140,32 @@ export function SeekBar({
   });
 
   const previewSeconds = isSeeking ? hoverPreview.displaySeconds : currentTime;
-  const progressPercent = duration > 0 ? (previewSeconds / duration) * 100 : 0;
-  const bufferedPercent = duration > 0 ? (bufferedEnd / duration) * 100 : 0;
+  const playedPercent =
+    duration > 0 ? clamp((currentTime / duration) * 100, 0, 100) : 0;
+  const progressPercent =
+    duration > 0 ? clamp((previewSeconds / duration) * 100, 0, 100) : 0;
+  const bufferedPercent =
+    duration > 0 ? clamp((bufferedEnd / duration) * 100, 0, 100) : 0;
+  const hoverRangeStartPercent =
+    hoverPreview.isVisible && hoverPreview.percent > playedPercent
+      ? clamp(
+          playedPercent - SEEK_HOVER_RANGE_OVERLAP_PERCENT,
+          0,
+          hoverPreview.percent,
+        )
+      : playedPercent;
+  const hoverRangeWidthPercent =
+    duration > 0
+      ? Math.max(0, hoverPreview.percent - hoverRangeStartPercent)
+      : 0;
+  const isHoverRangeVisible =
+    hoverPreview.isVisible && hoverRangeWidthPercent > 0.25;
+  const previewImageWrapStyle =
+    typeof previewAspectRatio === "number" &&
+    Number.isFinite(previewAspectRatio) &&
+    previewAspectRatio > 0
+      ? { aspectRatio: String(previewAspectRatio) }
+      : undefined;
   const checkpointPercent =
     checkpointSeconds !== null &&
     Number.isFinite(checkpointSeconds) &&
@@ -141,6 +176,24 @@ export function SeekBar({
 
   const getPointerAxisCoordinate = (clientX: number, clientY: number) =>
     pointerAxis === "horizontal" ? clientX : clientY;
+
+  const isPointerInsideVisibleTrack = (
+    clientX: number,
+    clientY: number,
+  ): boolean => {
+    const trackBounds = trackRef.current?.getBoundingClientRect();
+
+    if (!trackBounds) {
+      return false;
+    }
+
+    return (
+      clientX >= trackBounds.left &&
+      clientX <= trackBounds.right &&
+      clientY >= trackBounds.top - SEEK_TRACK_HIT_SLOP_PX &&
+      clientY <= trackBounds.bottom + SEEK_TRACK_HIT_SLOP_PX
+    );
+  };
 
   const getPointerSeekState = (
     clientX: number,
@@ -160,10 +213,10 @@ export function SeekBar({
         : pointerAxis === "vertical-forward"
           ? verticalPercent
           : 100 - verticalPercent;
-    const rawSeconds = (clamp(rawPercent, 0, 100) / 100) * duration;
+    const percent = clamp(rawPercent, 0, 100);
+    const rawSeconds = (percent / 100) * duration;
     const displaySeconds = getDisplaySeekPoint(rawSeconds, duration);
     const seconds = getSafeSeekTargetSeconds(displaySeconds, duration);
-    const percent = duration > 0 ? (displaySeconds / duration) * 100 : 0;
 
     return {
       isVisible: true,
@@ -214,6 +267,11 @@ export function SeekBar({
   );
 
   const updateHoverPreview = (event: MouseEvent<HTMLDivElement>) => {
+    if (!isPointerInsideVisibleTrack(event.clientX, event.clientY)) {
+      hideHoverPreview();
+      return;
+    }
+
     const nextHoverPreview = getPointerSeekState(event.clientX, event.clientY);
 
     if (!nextHoverPreview) {
@@ -344,7 +402,7 @@ export function SeekBar({
   return (
     <div
       ref={rootRef}
-      className="relative h-7 w-full cursor-pointer touch-none"
+      className="relative h-7 w-full touch-none"
       onMouseMove={updateHoverPreview}
       onMouseEnter={updateHoverPreview}
       onMouseLeave={hideHoverPreview}
@@ -385,7 +443,10 @@ export function SeekBar({
           } ${compactPreview ? "seyirlik-trickplay-preview--compact" : ""}`}
           style={{ left: `${previewLeftPercent}%` }}
         >
-          <div className="seyirlik-trickplay-preview__imageWrap">
+          <div
+            className="seyirlik-trickplay-preview__imageWrap"
+            style={previewImageWrapStyle}
+          >
             {trickplay?.imageUrl ? (
               <>
                 <img
@@ -424,15 +485,17 @@ export function SeekBar({
                   <div
                     className="seyirlik-trickplay-preview__image"
                     style={{
-                      width: `${TRICKPLAY_TILE_WIDTH}px`,
-                      height: `${TRICKPLAY_TILE_HEIGHT}px`,
                       backgroundImage: `url("${trickplay.imageUrl}")`,
-                      backgroundSize: `${TRICKPLAY_TILE_WIDTH * TRICKPLAY_COLUMNS}px ${
-                        TRICKPLAY_TILE_HEIGHT * TRICKPLAY_ROWS
-                      }px`,
-                      backgroundPosition: `-${trickplay.column * TRICKPLAY_TILE_WIDTH}px -${
-                        trickplay.row * TRICKPLAY_TILE_HEIGHT
-                      }px`,
+                      backgroundSize: `${TRICKPLAY_COLUMNS * 100}% ${
+                        TRICKPLAY_ROWS * 100
+                      }%`,
+                      backgroundPosition: `${getSpritePositionPercent(
+                        trickplay.column,
+                        TRICKPLAY_COLUMNS,
+                      )}% ${getSpritePositionPercent(
+                        trickplay.row,
+                        TRICKPLAY_ROWS,
+                      )}%`,
                       backgroundRepeat: "no-repeat",
                     }}
                   />
@@ -445,34 +508,46 @@ export function SeekBar({
             {formatTime(hoverPreview.displaySeconds)}
           </div>
 
-          <span className="seyirlik-trickplay-preview__pointer" />
+          {/* <span className="seyirlik-trickplay-preview__pointer" /> */}
         </div>
       ) : null}
 
-      <div className="absolute left-0 right-0 top-1/2 h-1 -translate-y-1/2 overflow-hidden rounded-full bg-white/20">
+      <div
+        aria-hidden="true"
+        className="absolute left-0 right-0 top-1/2 z-[64] h-4 -translate-y-1/2 cursor-pointer"
+      />
+
+      <div
+        ref={trackRef}
+        className="absolute left-0 right-0 top-1/2 z-[60] h-1.5 -translate-y-1/2 cursor-pointer overflow-hidden rounded-full bg-white/20"
+      >
         <div
-          className="h-full bg-white/30"
+          className="pointer-events-none h-full rounded-full bg-white/30"
           style={{ width: `${bufferedPercent}%` }}
         />
       </div>
 
+      {duration > 0 ? (
+        <div
+          className="pointer-events-none absolute top-1/2 z-[61] h-1.5 -translate-y-1/2 rounded-full bg-white/50 opacity-0 transition-opacity duration-150 ease-out"
+          style={{
+            left: `${hoverRangeStartPercent}%`,
+            width: `${hoverRangeWidthPercent}%`,
+            opacity: isHoverRangeVisible ? 1 : 0,
+          }}
+        />
+      ) : null}
+
       <div
-        className="absolute left-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-[var(--accent)]"
+        className="pointer-events-none absolute left-0 top-1/2 z-[62] h-1.5 -translate-y-1/2 rounded-full bg-[var(--accent)]"
         style={{ width: `${progressPercent}%` }}
       />
 
       {checkpointPercent !== null ? (
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute top-1/2 z-20 h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]"
+          className="pointer-events-none absolute top-1/2 z-[63] h-3 w-1 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]"
           style={{ left: `${checkpointPercent}%` }}
-        />
-      ) : null}
-
-      {hoverPreview.isVisible && duration > 0 ? (
-        <div
-          className="pointer-events-none absolute top-1/2 h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[var(--accent)] shadow-[0_0_18px_var(--accent)]"
-          style={{ left: `${hoverPreview.percent}%` }}
         />
       ) : null}
     </div>

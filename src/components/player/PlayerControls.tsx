@@ -40,6 +40,7 @@ interface PlayerControlsProps {
   itemId: string;
   mediaSourceId?: string;
   checkpointSeconds?: number | null;
+  previewAspectRatio?: number;
   seekPreviewLoading?: boolean;
   seekPointerAxis?: SeekPointerAxis;
   compactSeekPreview?: boolean;
@@ -101,6 +102,7 @@ export function PlayerControls({
   itemId,
   mediaSourceId,
   checkpointSeconds,
+  previewAspectRatio,
   seekPreviewLoading = false,
   seekPointerAxis = "horizontal",
   compactSeekPreview = false,
@@ -124,6 +126,7 @@ export function PlayerControls({
 }: PlayerControlsProps) {
   const { t } = useLanguage();
   const [showRemainingTime, setShowRemainingTime] = useState(false);
+  const [isVolumeControlOpen, setIsVolumeControlOpen] = useState(false);
   const remainingTime = Math.max(duration - currentTime, 0);
   const timeDisplay = showRemainingTime
     ? `-${formatTime(remainingTime)} / ${formatTime(duration)}`
@@ -151,169 +154,214 @@ export function PlayerControls({
             itemId={itemId}
             mediaSourceId={mediaSourceId}
             checkpointSeconds={checkpointSeconds}
+            previewAspectRatio={previewAspectRatio}
             onSeek={onSeek}
             onSeekPreview={onSeekPreview}
             pointerAxis={seekPointerAxis}
             compactPreview={compactSeekPreview}
           />
         </div>
-        <div className="mt-1 flex items-center justify-between gap-1 sm:mt-3 sm:gap-3">
-          <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
-            <Tooltip
-              content={
-                playWaiting
-                  ? t("player.waitingForSyncPlay")
-                  : isPlaying
-                    ? t("common.pause")
-                    : t("common.play")
-              }
-            >
-              <button
-                type="button"
-                onClick={onTogglePlay}
-                disabled={playWaiting}
-                className="seyirlik-player-main-toggle relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
-                aria-label={
+        <div
+          className="relative mt-1 sm:mt-3"
+          onMouseLeave={() => setIsVolumeControlOpen(false)}
+          onPointerLeave={() => setIsVolumeControlOpen(false)}
+          onBlur={(event) => {
+            if (
+              !event.currentTarget.contains(event.relatedTarget as Node | null)
+            ) {
+              setIsVolumeControlOpen(false);
+            }
+          }}
+        >
+          <div
+            aria-hidden="true"
+            className="pointer-events-auto absolute inset-x-0 top-0 z-0 h-[calc(100%+max(1.25rem,env(safe-area-inset-bottom)))]"
+          />
+
+          <div className="relative z-10 flex items-center justify-between gap-1 sm:gap-3">
+            <div className="flex min-w-0 flex-1 items-center gap-1 sm:gap-2">
+              <Tooltip
+                content={
                   playWaiting
                     ? t("player.waitingForSyncPlay")
                     : isPlaying
                       ? t("common.pause")
                       : t("common.play")
                 }
-              >
-                {playWaiting ? (
-                  <>
-                    <Loader2
-                      size={38}
-                      className="absolute animate-spin text-black/70 sm:size-12"
-                      strokeWidth={2}
-                    />
-                    <Play
-                      size={18}
-                      className="ml-0.5 text-black"
-                      fill="currentColor"
-                      strokeWidth={2.4}
-                    />
-                  </>
-                ) : isPlaying ? (
-                  <Pause
-                    size={25}
-                    className="text-black sm:size-7"
-                    fill="currentColor"
-                    strokeWidth={2.4}
-                  />
-                ) : (
-                  <Play
-                    size={25}
-                    className="ml-0.5 text-black sm:size-7"
-                    fill="currentColor"
-                    strokeWidth={2.4}
-                  />
-                )}
-              </button>
-            </Tooltip>
-            <Tooltip content={t("player.rewind5")}>
-              <button
-                type="button"
-                onClick={() => onSeekBy(-5)}
-                className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
-                aria-label={t("player.rewind5")}
-              >
-                <RotateCcw size={21} />
-              </button>
-            </Tooltip>
-            <Tooltip content={t("player.forward5")}>
-              <button
-                type="button"
-                onClick={() => onSeekBy(5)}
-                className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
-                aria-label={t("player.forward5")}
-              >
-                <RotateCw size={21} />
-              </button>
-            </Tooltip>
-            <VolumeControl
-              volume={volume}
-              muted={muted}
-              onToggleMute={onToggleMute}
-              onVolumeChange={onVolumeChange}
-            />
-            <div className="seyirlik-player-clock ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
-              <Tooltip
-                content={
-                  showRemainingTime
-                    ? t("player.showElapsedTime")
-                    : t("player.showRemainingTime")
-                }
+                offset="2.6rem"
+                shortcut="␣"
+                group="player-controls"
               >
                 <button
                   type="button"
-                  onClick={() => setShowRemainingTime((value) => !value)}
-                  className="rounded-full p-2 text-left transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                  onClick={onTogglePlay}
+                  disabled={playWaiting}
+                  className="seyirlik-player-main-toggle relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
                   aria-label={
+                    playWaiting
+                      ? t("player.waitingForSyncPlay")
+                      : isPlaying
+                        ? t("common.pause")
+                        : t("common.play")
+                  }
+                >
+                  {playWaiting ? (
+                    <>
+                      <Loader2
+                        size={38}
+                        className="absolute animate-spin text-black/70 sm:size-12"
+                        strokeWidth={2}
+                      />
+                      <Play
+                        size={18}
+                        className="ml-0.5 text-black"
+                        fill="currentColor"
+                        strokeWidth={2.4}
+                      />
+                    </>
+                  ) : isPlaying ? (
+                    <Pause
+                      size={25}
+                      className="text-black sm:size-7"
+                      fill="currentColor"
+                      strokeWidth={2.4}
+                    />
+                  ) : (
+                    <Play
+                      size={25}
+                      className="ml-0.5 text-black sm:size-7"
+                      fill="currentColor"
+                      strokeWidth={2.4}
+                    />
+                  )}
+                </button>
+              </Tooltip>
+              <Tooltip
+                content={t("player.rewind5")}
+                offset="3rem"
+                shortcut="←"
+                group="player-controls"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSeekBy(-5)}
+                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+                  aria-label={t("player.rewind5")}
+                >
+                  <RotateCcw size={21} />
+                </button>
+              </Tooltip>
+              <Tooltip
+                content={t("player.forward5")}
+                offset="3rem"
+                shortcut="→"
+                group="player-controls"
+              >
+                <button
+                  type="button"
+                  onClick={() => onSeekBy(5)}
+                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+                  aria-label={t("player.forward5")}
+                >
+                  <RotateCw size={21} />
+                </button>
+              </Tooltip>
+              <VolumeControl
+                volume={volume}
+                muted={muted}
+                isExpanded={isVolumeControlOpen}
+                onToggleMute={onToggleMute}
+                onVolumeChange={onVolumeChange}
+                onRequestExpand={() => setIsVolumeControlOpen(true)}
+              />
+              <div className="seyirlik-player-clock ml-0.5 flex min-w-[4.8rem] items-center gap-1 whitespace-nowrap text-xs font-medium text-white/[0.82] sm:ml-1 sm:min-w-[7.5rem] sm:gap-2 sm:text-sm">
+                <Tooltip
+                  content={
                     showRemainingTime
                       ? t("player.showElapsedTime")
                       : t("player.showRemainingTime")
                   }
+                  offset="3.2rem"
+                  group="player-controls"
                 >
-                  {timeDisplay}
-                </button>
-              </Tooltip>
+                  <button
+                    type="button"
+                    onClick={() => setShowRemainingTime((value) => !value)}
+                    className="rounded-full p-2 text-left transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    aria-label={
+                      showRemainingTime
+                        ? t("player.showElapsedTime")
+                        : t("player.showRemainingTime")
+                    }
+                  >
+                    {timeDisplay}
+                  </button>
+                </Tooltip>
 
-              {seekPreviewLoading ? (
-                <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-white/70">
-                  <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)]" />
-                  <span className="hidden sm:inline">
-                    {t("player.seeking")}
+                {seekPreviewLoading ? (
+                  <span className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.08] px-2 py-0.5 text-[0.65rem] font-bold uppercase tracking-[0.12em] text-white/70">
+                    <Loader2 className="h-3 w-3 animate-spin text-[var(--accent)]" />
+                    <span className="hidden sm:inline">
+                      {t("player.seeking")}
+                    </span>
                   </span>
-                </span>
-              ) : null}
+                ) : null}
+              </div>
             </div>
-          </div>
 
-          <div className="flex shrink-0 items-center gap-1 sm:gap-2">
-            <div className="relative" data-player-settings-root>
-              {settingsOpen && !isSubtitleEditMode ? (
-                <PlayerSettingsPanel
-                  source={source}
-                  qualityOptions={qualityOptions}
-                  selectedQualityId={selectedQualityId}
-                  selectedAudioStreamIndex={selectedAudioStreamIndex}
-                  selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
-                  subtitleDelaySeconds={subtitleDelaySeconds}
-                  canSwitchAudio={canSwitchAudio}
-                  canSwitchSubtitles={canSwitchSubtitles}
-                  compact={compactLayout}
-                  onSelectAutoQuality={onSelectAutoQuality}
-                  onSelectQuality={onSelectQuality}
-                  onSelectAudioStream={onSelectAudioStream}
-                  onSelectSubtitleStream={onSelectSubtitleStream}
-                  onSubtitleDelayChange={onSubtitleDelayChange}
-                  onStartSubtitleEdit={onStartSubtitleEdit}
-                />
-              ) : null}
+            <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              <div className="relative" data-player-settings-root>
+                {settingsOpen && !isSubtitleEditMode ? (
+                  <PlayerSettingsPanel
+                    source={source}
+                    qualityOptions={qualityOptions}
+                    selectedQualityId={selectedQualityId}
+                    selectedAudioStreamIndex={selectedAudioStreamIndex}
+                    selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
+                    subtitleDelaySeconds={subtitleDelaySeconds}
+                    canSwitchAudio={canSwitchAudio}
+                    canSwitchSubtitles={canSwitchSubtitles}
+                    compact={compactLayout}
+                    onSelectAutoQuality={onSelectAutoQuality}
+                    onSelectQuality={onSelectQuality}
+                    onSelectAudioStream={onSelectAudioStream}
+                    onSelectSubtitleStream={onSelectSubtitleStream}
+                    onSubtitleDelayChange={onSubtitleDelayChange}
+                    onStartSubtitleEdit={onStartSubtitleEdit}
+                  />
+                ) : null}
 
-              <Tooltip content={t("player.settingsTitle")}>
+                <Tooltip
+                  content={t("player.settingsTitle")}
+                  offset="3rem"
+                  group="player-controls"
+                >
+                  <button
+                    type="button"
+                    onClick={onOpenSettings}
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    aria-label={t("player.settingsLabel")}
+                  >
+                    <Settings size={22} strokeWidth={2.2} />
+                  </button>
+                </Tooltip>
+              </div>
+              <Tooltip
+                content={t("player.fullscreen")}
+                offset="3rem"
+                shortcut="F"
+                group="player-controls"
+              >
                 <button
                   type="button"
-                  onClick={onOpenSettings}
+                  onClick={onToggleFullscreen}
                   className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                  aria-label={t("player.settingsLabel")}
+                  aria-label={t("player.fullscreen")}
                 >
-                  <Settings size={22} strokeWidth={2.2} />
+                  <Maximize size={22} strokeWidth={2.2} />
                 </button>
               </Tooltip>
             </div>
-            <Tooltip content={t("player.fullscreen")}>
-              <button
-                type="button"
-                onClick={onToggleFullscreen}
-                className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                aria-label={t("player.fullscreen")}
-              >
-                <Maximize size={22} strokeWidth={2.2} />
-              </button>
-            </Tooltip>
           </div>
         </div>
       </div>

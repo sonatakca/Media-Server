@@ -872,7 +872,7 @@ img {
   position: absolute;
   bottom: 1.8rem;
   z-index: 45;
-  width: min(13.5rem, 42vw);
+  width: min(18rem, 52vw);
   transform: translateX(-50%);
   opacity: 1;
   filter: drop-shadow(0 20px 40px rgba(0, 0, 0, 0.7));
@@ -888,7 +888,7 @@ img {
   .seyirlik-trickplay-preview--timeOnly
 ) {
   bottom: 2.05rem;
-  width: 8.5rem;
+  width: 10.75rem;
   filter: drop-shadow(0 12px 25px rgba(0, 0, 0, 0.7));
 }
 
@@ -931,7 +931,7 @@ img {
   z-index: 2;
   height: 100%;
   width: 100%;
-  object-fit: cover;
+  background-color: #050505;
 }
 
 .seyirlik-trickplay-preview__fallback {

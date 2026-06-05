@@ -149,7 +149,7 @@ export function PlayerOverlay({
             <ArrowLeft
               size={22}
               strokeWidth={2.2}
-              className="transition-transform duration-300 translate-x-[0.5rem] group-hover:-translate-x-[0rem]"
+              className="transition-transform duration-300 group-hover:-translate-x-[0rem]"
             />
           </Link>
 
