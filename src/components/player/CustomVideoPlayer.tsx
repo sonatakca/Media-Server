@@ -188,6 +188,7 @@ const SEEK_FEEDBACK_SPIN_MS = 1000;
 const STARTUP_WATCHDOG_MS = 8000;
 
 const VIEW_MODE_CURSOR_HIDE_MS = 1600;
+const PLAYBACK_PROGRESS_REPORT_INTERVAL_MS = 15_000;
 
 const TOUCH_DOUBLE_TAP_THRESHOLD_MS = 320;
 const TOUCH_SINGLE_TAP_DELAY_MS = 180;
@@ -1571,6 +1572,29 @@ export function CustomVideoPlayer({
       onPlaybackStopped?.(positionSeconds);
     },
     [onPlaybackBeforeUnload, onPlaybackStopped, updateLatestPlaybackPosition],
+  );
+
+  const reportPlaybackProgressCheckpoint = useCallback(
+    (isPaused: boolean, force = false) => {
+      if (!hasStartedRef.current) {
+        return;
+      }
+
+      const positionSeconds = updateLatestPlaybackPosition();
+      const now = Date.now();
+
+      if (
+        !force &&
+        now - lastProgressReportRef.current <
+          PLAYBACK_PROGRESS_REPORT_INTERVAL_MS
+      ) {
+        return;
+      }
+
+      lastProgressReportRef.current = now;
+      onPlaybackProgress?.(positionSeconds, isPaused);
+    },
+    [onPlaybackProgress, updateLatestPlaybackPosition],
   );
 
   const clearAudioTranscodeReadinessTimer = useCallback(() => {
@@ -3618,6 +3642,43 @@ export function CustomVideoPlayer({
   }, [reportStoppedOnce]);
 
   useEffect(() => {
+    const reportCurrentPlaybackProgress = (force = false) => {
+      const video = videoRef.current;
+
+      if (!video || video.ended) {
+        return;
+      }
+
+      if (video.paused) {
+        if (force) {
+          reportPlaybackProgressCheckpoint(true, true);
+        }
+
+        return;
+      }
+
+      reportPlaybackProgressCheckpoint(false, force);
+    };
+
+    const intervalId = window.setInterval(
+      () => reportCurrentPlaybackProgress(false),
+      PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
+    );
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        reportCurrentPlaybackProgress(true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.clearInterval(intervalId);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [activeSource.id, reportPlaybackProgressCheckpoint]);
+
+  useEffect(() => {
     setActiveSubtitleText("");
     setSubtitleCues([]);
 
@@ -3729,24 +3790,15 @@ export function CustomVideoPlayer({
   };
 
   const handleVideoPause = () => {
-    const positionSeconds = updateLatestPlaybackPosition();
-    onPlaybackProgress?.(positionSeconds, true);
+    reportPlaybackProgressCheckpoint(true, true);
   };
 
   const handleVideoSeeked = () => {
-    updateLatestPlaybackPosition();
+    reportPlaybackProgressCheckpoint(videoRef.current?.paused ?? false, true);
   };
 
   const handleTimeUpdate = () => {
-    const positionSeconds = updateLatestPlaybackPosition();
-    const now = Date.now();
-
-    if (now - lastProgressReportRef.current < 15_000) {
-      return;
-    }
-
-    lastProgressReportRef.current = now;
-    onPlaybackProgress?.(positionSeconds, false);
+    reportPlaybackProgressCheckpoint(false);
   };
 
   const handleVideoError = () => {
