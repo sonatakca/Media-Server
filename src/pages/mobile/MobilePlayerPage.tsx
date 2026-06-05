@@ -290,12 +290,12 @@ export function MobilePlayerPage() {
 
   return (
     <>
-      <RainbowAnimation
+      {/* <RainbowAnimation
         startDelay={1}
         fadeInDuration={2}
         height="min(30rem, 45vh)"
         glowTop="10"
-      />
+      /> */}
       <CustomVideoPlayer
         item={item}
         source={playback.activeSource}
