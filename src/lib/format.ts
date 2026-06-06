@@ -79,3 +79,13 @@ export function getItemSubtitle(
 
   return parts.length > 0 ? parts.join(" / ") : null;
 }
+
+export function formatTemplate(
+  template: string,
+  values: Record<string, string | number>,
+): string {
+  return Object.entries(values).reduce(
+    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
+    template,
+  );
+}

@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { Tooltip } from "../ui/Tooltip";
 
 interface SeekFeedbackItem {
   amount: number;
@@ -178,17 +179,19 @@ export function PlayerOverlay({
           onPointerEnter={onControlsHoverStart}
           onPointerLeave={onControlsHoverEnd}
         >
-          <Link
-            to={backTo}
-            className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
-            aria-label={t("player.backToDetails")}
-          >
-            <ArrowLeft
-              size={22}
-              strokeWidth={2.2}
-              className="transition-transform duration-300 group-hover:-translate-x-[0rem]"
-            />
-          </Link>
+          <Tooltip content={t("player.backToDetails")} offset="1rem">
+            <Link
+              to={backTo}
+              className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              aria-label={t("player.backToDetails")}
+            >
+              <ArrowLeft
+                size={22}
+                strokeWidth={2.2}
+                className="transition-transform duration-300 group-hover:-translate-x-[0rem]"
+              />
+            </Link>
+          </Tooltip>
 
           <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
             <div className="min-w-0 shrink-0">

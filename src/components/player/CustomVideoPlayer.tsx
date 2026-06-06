@@ -9,12 +9,11 @@ import {
   type PointerEvent,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Bookmark, ChevronsRight, Eye, EyeOff, Users, X } from "lucide-react";
+import { Bookmark, Eye, EyeOff, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
   getLogoImageUrl,
-  getPrimaryImageUrl,
   getManualQualityOptions,
   getTrickplayImageUrl,
   getActiveTranscodingReasons,
@@ -23,15 +22,12 @@ import {
 } from "../../lib/jellyfinApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
-import { getDisplayTitle, getItemSubtitle } from "../../lib/format";
 import {
-  getDefaultAudioStreamIndexForSource,
-  getDefaultSubtitleStreamIndexForSource,
-} from "../../lib/playbackDefaults";
-import {
-  getVideoErrorDetails,
-  type PlaybackTechnicalDetails,
-} from "../../hooks/usePlaybackSource";
+  formatTemplate,
+  getDisplayTitle,
+  getItemSubtitle,
+} from "../../lib/format";
+import { getVideoErrorDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
 import { useMediaSegments } from "../../hooks/useMediaSegments";
@@ -39,1137 +35,98 @@ import { usePlayerProgress } from "../../hooks/usePlayerProgress";
 import { useViewportCapabilities } from "../../hooks/useViewportCapabilities";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type {
-  JellyfinItem,
-  JellyfinMediaStream,
   NormalizedMediaSegment,
   PlaybackQualityOption,
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
 } from "../../lib/types";
-import type { TranslationKey } from "../../i18n/translations";
 import { PlayerControls } from "./PlayerControls";
 import { PlayerErrorOverlay } from "./PlayerErrorOverlay";
 import { PlayerOverlay } from "./PlayerOverlay";
 import { PlaybackInfoButton } from "./PlaybackInfoButton";
 import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
+import { NextEpisodeCountdownOverlay } from "./NextEpisodeCountdownOverlay";
 import { PartyWatchControls } from "../../features/partyWatch/PartyWatchControls";
 import { PartyWatchOverlay } from "../../features/partyWatch/PartyWatchOverlay";
 import { usePartyWatchController } from "../../features/partyWatch/usePartyWatchController";
+import { SkipSegmentButton } from "./SkipSegmentButton";
 import { Tooltip } from "../ui/Tooltip";
-
-interface CustomVideoPlayerProps {
-  item: JellyfinItem;
-  source: PlaybackSourceCandidate;
-  playbackCandidates?: PlaybackSourceCandidate[];
-  notice?: string | null;
-  error?: PlaybackTechnicalDetails | null;
-  hasTranscodingFallback: boolean;
-  initialStartSeconds?: number;
-  onVideoFailure: (details: string) => void;
-  onTryTranscodedPlayback: () => void;
-  onRetryPlayback: () => void;
-  onPlaybackStarted?: (positionSeconds: number) => void;
-  onPlaybackProgress?: (positionSeconds: number, isPaused: boolean) => void;
-  onPlaybackStopped?: (positionSeconds: number) => void;
-  onPlaybackBeforeUnload?: (positionSeconds: number) => void;
-  nextEpisode?: JellyfinItem | null;
-  enableDefaultNextEpisodeCountdown?: boolean;
-  onAutoPlayNextEpisode?: (nextEpisode: JellyfinItem) => void;
-}
-
-interface PendingSourceRestore {
-  token: number;
-  currentTime: number;
-  wasPlaying: boolean;
-}
-
-interface PendingAudioTranscodePlay {
-  token: number;
-  reason: string;
-  wasPlaying: boolean;
-  startedAt: number;
-}
-
-interface SubtitlePosition {
-  x: number;
-  y: number;
-}
-
-interface SubtitleDragState {
-  pointerId: number;
-  offsetX: number;
-  offsetY: number;
-}
-
-interface SubtitleSize {
-  scale: number;
-}
-
-interface SubtitleCue {
-  start: number;
-  end: number;
-  text: string;
-}
-
-type SeekFeedbackDirection = "backward" | "forward";
-type TouchSeekSide = "left" | "right";
-
-interface TouchSeekSessionState {
-  lastTapTime: number;
-  lastTapSide: TouchSeekSide | null;
-  isActive: boolean;
-  accumulatedSeconds: number;
-  timeoutId: number | null;
-}
-
-interface SeekFeedbackItem {
-  amount: number;
-  visible: boolean;
-  pulse: number;
-  spinPulse: number;
-}
-
-interface SeekFeedbackState {
-  backward: SeekFeedbackItem;
-  forward: SeekFeedbackItem;
-}
-
-interface SeekFeedbackSpinState {
-  isSpinning: boolean;
-  hasPendingSpin: boolean;
-  finishTimerId: number | null;
-}
-
-type PortraitPlayerRotation = -90 | 90;
-
-function readPortraitPlayerRotation(): PortraitPlayerRotation {
-  if (typeof window === "undefined") {
-    return 90;
-  }
-
-  const deprecatedWindowOrientation = (
-    window as Window & { orientation?: number }
-  ).orientation;
-  const orientationAngle =
-    window.screen.orientation?.angle ?? deprecatedWindowOrientation ?? 0;
-
-  return Math.abs(orientationAngle) === 180 ? -90 : 90;
-}
-
-interface SubtitleResizeState {
-  pointerId: number;
-  startClientX: number;
-  startClientY: number;
-  startScale: number;
-  directionX: -1 | 1;
-  directionY: -1 | 1;
-}
-
-const AUTO_QUALITY_ID = "auto";
-const DEFAULT_SUBTITLE_SCALE = 1;
-const MIN_SUBTITLE_SCALE = 0.7;
-const MAX_SUBTITLE_SCALE = 2.4;
-
-const TRICKPLAY_RESOLUTION = 320;
-const TRICKPLAY_INTERVAL_SECONDS = 10;
-const TRICKPLAY_COLUMNS = 10;
-const TRICKPLAY_ROWS = 10;
-const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
-const DEFAULT_VIDEO_ASPECT_RATIO = 16 / 9;
-
-const SEEK_FEEDBACK_OPPOSITE_HIDE_MS = 100;
-
-const SEEK_FEEDBACK_HIDE_MS = 950;
-
-const SEEK_FEEDBACK_FADE_RESET_MS = 260;
-
-const SEEK_FEEDBACK_SPIN_MS = 1000;
-
-const STARTUP_WATCHDOG_MS = 8000;
-
-const VIEW_MODE_CURSOR_HIDE_MS = 1600;
-const PLAYBACK_PROGRESS_REPORT_INTERVAL_MS = 15_000;
-
-const TOUCH_DOUBLE_TAP_THRESHOLD_MS = 320;
-const TOUCH_SINGLE_TAP_DELAY_MS = 180;
-const TOUCH_SEEK_SESSION_TIMEOUT_MS = 850;
-
-const DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS = 10;
-
-const SKIPPABLE_SEGMENT_TYPES = new Set(["intro", "recap", "outro"]);
-
-const PARTY_WATCH_DOT_POSITIONS = [
-  "right-[0.5rem] top-[0.42rem]",
-  "right-[0.15rem] top-[1.25rem]",
-  "right-[0.5rem] top-[2.08rem]",
-  "left-[0.5rem] top-[0.42rem]",
-  "left-[0.5rem] top-[2.08rem]",
-  "left-[0.15rem] top-[1.25rem]",
-] as const;
-
-const initialSeekFeedback: SeekFeedbackState = {
-  backward: {
-    amount: 0,
-    visible: false,
-    pulse: 0,
-    spinPulse: 0,
-  },
-  forward: {
-    amount: 0,
-    visible: false,
-    pulse: 0,
-    spinPulse: 0,
-  },
-};
-
-function getStreamsOfType(
-  source: PlaybackSourceCandidate,
-  type: "Audio" | "Subtitle",
-): JellyfinMediaStream[] {
-  return (
-    source.mediaSource.MediaStreams?.filter(
-      (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
-    ) ?? []
-  );
-}
-
-function getDefaultAudioStreamIndex(
-  item: JellyfinItem,
-  source: PlaybackSourceCandidate,
-): number | undefined {
-  return getDefaultAudioStreamIndexForSource(item, source);
-}
-
-function getMediaSourceDefaultAudioStreamIndex(
-  source: PlaybackSourceCandidate,
-): number | undefined {
-  const audioStreams = getStreamsOfType(source, "Audio");
-
-  return (
-    source.mediaSource.DefaultAudioStreamIndex ??
-    audioStreams.find((stream) => stream.IsDefault)?.Index ??
-    audioStreams[0]?.Index
-  );
-}
-
-interface NativeAudioTrack {
-  enabled: boolean;
-  id?: string;
-  kind?: string;
-  label?: string;
-  language?: string;
-}
-
-interface NativeAudioTrackList {
-  readonly length: number;
-  [index: number]: NativeAudioTrack | undefined;
-}
-
-interface NativeAudioSyncResult {
-  succeeded: boolean;
-  streamIndex?: number;
-  nativeTrackIndex?: number;
-  reason: string;
-}
-
-type VideoElementWithAudioTracks = HTMLVideoElement & {
-  audioTracks?: NativeAudioTrackList;
-};
-
-function isDirectBrowserPlaybackSource(
-  source: PlaybackSourceCandidate,
-): boolean {
-  return (
-    !source.isHls &&
-    (source.mode === "DirectPlay" || source.mode === "DirectStream")
-  );
-}
-
-function isAudioTranscodeSource(source: PlaybackSourceCandidate): boolean {
-  return source.isHls && source.hlsKind === "audio-transcode";
-}
-
-function hasUsefulBufferedRangeAroundCurrentTime(
-  video: HTMLVideoElement,
-  minAheadSeconds = 1.2,
-): boolean {
-  const currentTime = Number.isFinite(video.currentTime)
-    ? video.currentTime
-    : 0;
-
-  for (let index = 0; index < video.buffered.length; index += 1) {
-    const start = video.buffered.start(index);
-    const end = video.buffered.end(index);
-
-    if (
-      currentTime >= start - 0.25 &&
-      currentTime <= end &&
-      end - currentTime >= minAheadSeconds
-    ) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function isVideoReadyForAudioTranscodePlayback(
-  video: HTMLVideoElement,
-): boolean {
-  return (
-    video.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
-    hasUsefulBufferedRangeAroundCurrentTime(video, 1.2)
-  );
-}
-
-function getAudioTracks(
-  video: HTMLVideoElement,
-): NativeAudioTrackList | undefined {
-  return (video as VideoElementWithAudioTracks).audioTracks;
-}
-
-function getNativeAudioTrackSnapshot(video: HTMLVideoElement) {
-  const audioTracks = getAudioTracks(video);
-
-  return {
-    length: audioTracks?.length ?? 0,
-    tracks: Array.from({ length: audioTracks?.length ?? 0 }, (_, index) => {
-      const track = audioTracks?.[index];
-
-      return {
-        index,
-        id: track?.id,
-        kind: track?.kind,
-        label: track?.label,
-        language: track?.language,
-        enabled: track?.enabled,
-      };
-    }),
-  };
-}
-
-function normalizeMatchText(value?: string): string {
-  return (value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function normalizeLanguage(value?: string): string {
-  const normalized = normalizeMatchText(value).split(" ")[0] ?? "";
-  const languageAliases: Record<string, string> = {
-    en: "en",
-    eng: "en",
-    english: "en",
-    es: "es",
-    spa: "es",
-    esp: "es",
-    spanish: "es",
-    castellano: "es",
-    castilian: "es",
-    fr: "fr",
-    fra: "fr",
-    fre: "fr",
-    french: "fr",
-    de: "de",
-    deu: "de",
-    ger: "de",
-    german: "de",
-    it: "it",
-    ita: "it",
-    italian: "it",
-    pt: "pt",
-    por: "pt",
-    portuguese: "pt",
-    ja: "ja",
-    jpn: "ja",
-    japanese: "ja",
-  };
-
-  return languageAliases[normalized] ?? normalized;
-}
-
-function getStreamMatchText(stream: JellyfinMediaStream): string {
-  return [stream.Language, stream.DisplayTitle, stream.Title, stream.Codec]
-    .map(normalizeMatchText)
-    .filter(Boolean)
-    .join(" ");
-}
-
-function getTrackMatchText(track: NativeAudioTrack): string {
-  return [track.language, track.label, track.id, track.kind]
-    .map(normalizeMatchText)
-    .filter(Boolean)
-    .join(" ");
-}
-
-function getNativeAudioTrackMatch(
-  source: PlaybackSourceCandidate,
-  streamIndex: number,
-  audioTracks: NativeAudioTrackList,
-): { nativeTrackIndex: number; reason: string } | null {
-  const audioStreams = getStreamsOfType(source, "Audio");
-  const jellyfinStream = audioStreams.find(
-    (stream) => stream.Index === streamIndex,
-  );
-
-  if (!jellyfinStream) {
-    return null;
-  }
-
-  const streamLanguage = normalizeLanguage(jellyfinStream.Language);
-
-  if (streamLanguage) {
-    for (let index = 0; index < audioTracks.length; index += 1) {
-      const track = audioTracks[index];
-      const trackLanguage = normalizeLanguage(track?.language);
-
-      if (track && trackLanguage && trackLanguage === streamLanguage) {
-        return { nativeTrackIndex: index, reason: "language" };
-      }
-    }
-  }
-
-  const streamText = getStreamMatchText(jellyfinStream);
-
-  if (streamText.length > 1) {
-    for (let index = 0; index < audioTracks.length; index += 1) {
-      const track = audioTracks[index];
-
-      if (!track) {
-        continue;
-      }
-
-      const trackText = getTrackMatchText(track);
-
-      if (
-        trackText.length > 1 &&
-        (trackText.includes(streamText) || streamText.includes(trackText))
-      ) {
-        return { nativeTrackIndex: index, reason: "label" };
-      }
-    }
-  }
-
-  const jellyfinOrdinal = audioStreams.findIndex(
-    (stream) => stream.Index === streamIndex,
-  );
-
-  if (
-    audioStreams.length === 2 &&
-    audioTracks.length === 2 &&
-    jellyfinOrdinal >= 0
-  ) {
-    return { nativeTrackIndex: jellyfinOrdinal, reason: "two-track-order" };
-  }
-
-  return null;
-}
-
-function getNativeActiveAudioStreamIndex(
-  video: HTMLVideoElement,
-  source: PlaybackSourceCandidate,
-): number | undefined {
-  const audioTracks = getAudioTracks(video);
-
-  if (!audioTracks || audioTracks.length === 0) {
-    return undefined;
-  }
-
-  for (let index = 0; index < audioTracks.length; index += 1) {
-    const track = audioTracks[index];
-
-    if (!track?.enabled) {
-      continue;
-    }
-
-    const audioStreams = getStreamsOfType(source, "Audio");
-
-    for (const stream of audioStreams) {
-      if (stream.Index === undefined) {
-        continue;
-      }
-
-      const match = getNativeAudioTrackMatch(source, stream.Index, audioTracks);
-
-      if (match?.nativeTrackIndex === index) {
-        return stream.Index;
-      }
-    }
-
-    return undefined;
-  }
-
-  return undefined;
-}
-
-function tryApplyNativeAudioTrack(
-  video: HTMLVideoElement,
-  source: PlaybackSourceCandidate,
-  streamIndex: number | undefined,
-): NativeAudioSyncResult {
-  const audioTracks = getAudioTracks(video);
-
-  if (!audioTracks || audioTracks.length === 0) {
-    return { succeeded: false, reason: "native-audio-tracks-unavailable" };
-  }
-
-  if (streamIndex === undefined) {
-    return { succeeded: false, reason: "stream-index-missing" };
-  }
-
-  const match = getNativeAudioTrackMatch(source, streamIndex, audioTracks);
-
-  if (!match) {
-    return {
-      succeeded: false,
-      streamIndex,
-      reason: "native-track-match-not-found",
-    };
-  }
-
-  for (let index = 0; index < audioTracks.length; index += 1) {
-    const track = audioTracks[index];
-
-    if (track) {
-      track.enabled = index === match.nativeTrackIndex;
-    }
-  }
-
-  const enabledTrack = audioTracks[match.nativeTrackIndex];
-
-  if (!enabledTrack?.enabled) {
-    return {
-      succeeded: false,
-      streamIndex,
-      nativeTrackIndex: match.nativeTrackIndex,
-      reason: "native-track-enable-failed",
-    };
-  }
-
-  return {
-    succeeded: true,
-    streamIndex,
-    nativeTrackIndex: match.nativeTrackIndex,
-    reason: match.reason,
-  };
-}
-
-function getDebugAudioStreams(source: PlaybackSourceCandidate) {
-  return getStreamsOfType(source, "Audio").map((stream) => ({
-    Index: stream.Index,
-    Language: stream.Language,
-    DisplayTitle: stream.DisplayTitle,
-    Title: stream.Title,
-    Codec: stream.Codec,
-    IsDefault: stream.IsDefault,
-  }));
-}
-
-function getPlaybackUrlDebugParams(playbackUrl: string) {
-  try {
-    const url = new URL(playbackUrl);
-    const getParam = (name: string) =>
-      url.searchParams.get(name) ?? url.searchParams.get(name.toLowerCase());
-
-    return {
-      redactedUrl: redactPlaybackUrl(playbackUrl),
-      SegmentContainer: getParam("SegmentContainer"),
-      TranscodingContainer: getParam("TranscodingContainer"),
-      TranscodingProtocol: getParam("TranscodingProtocol"),
-      PlaySessionId: getParam("PlaySessionId"),
-      MediaSourceId: getParam("MediaSourceId"),
-      DeviceId: getParam("DeviceId"),
-      VideoCodec: getParam("VideoCodec"),
-      AudioCodec: getParam("AudioCodec"),
-      AllowVideoStreamCopy: getParam("AllowVideoStreamCopy"),
-      AllowAudioStreamCopy: getParam("AllowAudioStreamCopy"),
-      EnableAutoStreamCopy: getParam("EnableAutoStreamCopy"),
-      EnableAdaptiveBitrateStreaming: getParam(
-        "EnableAdaptiveBitrateStreaming",
-      ),
-      AudioStreamIndex: getParam("AudioStreamIndex"),
-      MaxHeight: getParam("MaxHeight"),
-      MaxStreamingBitrate: getParam("MaxStreamingBitrate"),
-      MinSegments: getParam("MinSegments"),
-      SegmentLength: getParam("SegmentLength"),
-      BreakOnNonKeyFrames: getParam("BreakOnNonKeyFrames"),
-    };
-  } catch {
-    return {
-      redactedUrl: redactPlaybackUrl(playbackUrl),
-      SegmentContainer: undefined,
-      TranscodingContainer: undefined,
-      TranscodingProtocol: undefined,
-      PlaySessionId: undefined,
-      MediaSourceId: undefined,
-      DeviceId: undefined,
-      VideoCodec: undefined,
-      AudioCodec: undefined,
-      AllowVideoStreamCopy: undefined,
-      AllowAudioStreamCopy: undefined,
-      EnableAutoStreamCopy: undefined,
-      EnableAdaptiveBitrateStreaming: undefined,
-      AudioStreamIndex: undefined,
-      MaxHeight: undefined,
-      MaxStreamingBitrate: undefined,
-      MinSegments: undefined,
-      SegmentLength: undefined,
-      BreakOnNonKeyFrames: undefined,
-    };
-  }
-}
-
-function isMasterHlsPlaybackUrl(playbackUrl: string): boolean {
-  try {
-    const baseUrl =
-      typeof window === "undefined"
-        ? "http://localhost"
-        : window.location.origin;
-    const url = new URL(playbackUrl, baseUrl);
-
-    return url.pathname.toLowerCase().includes("/master.m3u8");
-  } catch {
-    return playbackUrl.toLowerCase().includes("/master.m3u8");
-  }
-}
-
-function logAudioSourceDebug(
-  label: string,
-  video: HTMLVideoElement,
-  source: PlaybackSourceCandidate,
-  selectedAudioStreamIndex: number | undefined,
-  extra?: Record<string, unknown>,
-): void {
-  console.info(`[Seyirlik Playback] ${label}`, {
-    selectedAudioStreamIndex,
-    defaultAudioStreamIndex: source.mediaSource.DefaultAudioStreamIndex,
-    jellyfinAudioStreams: getDebugAudioStreams(source),
-    nativeAudioTracks: getNativeAudioTrackSnapshot(video),
-    activeSource: {
-      mode: source.mode,
-      isHls: source.isHls,
-      hlsKind: source.hlsKind,
-      mediaSourceId: source.mediaSourceId,
-      url: redactPlaybackUrl(source.url),
-      urlParams: getPlaybackUrlDebugParams(source.url),
-    },
-    ...extra,
-  });
-}
-
-function getDefaultSubtitleStreamIndex(
-  item: JellyfinItem,
-  source: PlaybackSourceCandidate,
-): number {
-  return getDefaultSubtitleStreamIndexForSource(item, source);
-}
-
-function shouldForceDefaultAudioInPlaybackUrl(
-  source: PlaybackSourceCandidate,
-): boolean {
-  return source.mode === "Transcoding" || source.isHls;
-}
-
-function canInjectDefaultAudioIntoStreamCopy(
-  source: PlaybackSourceCandidate,
-  defaultAudioIndex: number | undefined,
-): boolean {
-  return (
-    defaultAudioIndex !== undefined &&
-    source.isHls &&
-    source.hlsKind === "stream-copy" &&
-    source.mode !== "Transcoding"
-  );
-}
-
-function didUserSelectNonDefaultAudio(
-  selectedAudioStreamIndex: number | undefined,
-  defaultAudioStreamIndex: number | undefined,
-): boolean {
-  return (
-    selectedAudioStreamIndex !== undefined &&
-    defaultAudioStreamIndex !== undefined &&
-    selectedAudioStreamIndex !== defaultAudioStreamIndex
-  );
-}
-
-function getAudioFallbackSource(
-  source: PlaybackSourceCandidate,
-  candidates: PlaybackSourceCandidate[],
-): PlaybackSourceCandidate | null {
-  if (
-    source.mediaSource.Id &&
-    (source.mediaSource.SupportsTranscoding || source.mode === "Transcoding")
-  ) {
-    return source;
-  }
-
-  return (
-    candidates.find(
-      (candidate) =>
-        candidate.mediaSourceId === source.mediaSourceId &&
-        candidate.mediaSource.Id &&
-        (candidate.mode === "Transcoding" || candidate.isHls),
-    ) ?? null
-  );
-}
-
-function getStreamByIndex(
-  source: PlaybackSourceCandidate,
-  type: "Audio" | "Subtitle",
-  streamIndex: number,
-): JellyfinMediaStream | undefined {
-  return getStreamsOfType(source, type).find(
-    (stream) => stream.Index === streamIndex,
-  );
-}
-
-function getQualitySettings(
-  quality?: PlaybackQualityOption,
-): PlaybackSourceSettings {
-  if (!quality) {
-    return {};
-  }
-
-  return {
-    maxHeight: quality.maxHeight,
-    maxWidth: quality.maxWidth,
-    maxStreamingBitrate: quality.maxStreamingBitrate,
-  };
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
-
-function getSpritePositionPercent(index: number, count: number): number {
-  if (count <= 1) {
-    return 0;
-  }
-
-  return (index / (count - 1)) * 100;
-}
-
-function getAspectRatioFromDimensions(
-  width?: number,
-  height?: number,
-): number | null {
-  if (
-    typeof width !== "number" ||
-    typeof height !== "number" ||
-    !Number.isFinite(width) ||
-    !Number.isFinite(height) ||
-    width <= 0 ||
-    height <= 0
-  ) {
-    return null;
-  }
-
-  return width / height;
-}
-
-function getAspectRatioFromText(aspectRatio?: string): number | null {
-  const trimmedAspectRatio = aspectRatio?.trim();
-
-  if (!trimmedAspectRatio) {
-    return null;
-  }
-
-  const pairMatch = trimmedAspectRatio.match(
-    /^(\d+(?:\.\d+)?)\s*[:/x]\s*(\d+(?:\.\d+)?)$/i,
-  );
-
-  if (pairMatch) {
-    const width = Number(pairMatch[1]);
-    const height = Number(pairMatch[2]);
-
-    return getAspectRatioFromDimensions(width, height);
-  }
-
-  const numericAspectRatio = Number(trimmedAspectRatio);
-
-  return Number.isFinite(numericAspectRatio) && numericAspectRatio > 0
-    ? numericAspectRatio
-    : null;
-}
-
-function getVideoAspectRatioFromSource(
-  source: PlaybackSourceCandidate,
-): number | null {
-  const videoStream = source.mediaSource.MediaStreams?.find(
-    (stream) => stream.Type?.toLowerCase() === "video",
-  );
-
-  return (
-    getAspectRatioFromText(videoStream?.AspectRatio) ??
-    getAspectRatioFromDimensions(videoStream?.Width, videoStream?.Height)
-  );
-}
-
-function getVideoAspectRatioFromElement(
-  video: HTMLVideoElement,
-): number | null {
-  return getAspectRatioFromDimensions(video.videoWidth, video.videoHeight);
-}
-
-function formatTemplate(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
-    template,
-  );
-}
-
-function isSkippableSegmentType(type: string): boolean {
-  return SKIPPABLE_SEGMENT_TYPES.has(type.toLowerCase());
-}
-
-function isNextEpisodeSegmentType(type: string): boolean {
-  const normalizedType = type.toLowerCase().replace(/[^a-z0-9]+/g, "");
-
-  return (
-    normalizedType.includes("nextup") ||
-    normalizedType.includes("upnext") ||
-    normalizedType.includes("nextepisode")
-  );
-}
-
-function getSkipSegmentLabelKey(type: string): TranslationKey {
-  switch (type.toLowerCase()) {
-    case "intro":
-      return "player.skipIntro";
-    case "recap":
-      return "player.skipRecap";
-    case "outro":
-      return "player.skipOutro";
-    default:
-      return "player.skipSegment";
-  }
-}
-
-interface SkipSegmentButtonProps {
-  segment: NormalizedMediaSegment | null;
-  label: string;
-  shouldReduceMotion: boolean;
-  onSkip: (segment: NormalizedMediaSegment) => void;
-  onControlsHoverStart?: () => void;
-  onControlsHoverEnd?: () => void;
-}
-
-function SkipSegmentButton({
-  segment,
-  label,
-  shouldReduceMotion,
-  onSkip,
-  onControlsHoverStart,
-  onControlsHoverEnd,
-}: SkipSegmentButtonProps) {
-  return (
-    <AnimatePresence initial={false}>
-      {segment ? (
-        <motion.div
-          key={segment.id}
-          className="pointer-events-auto absolute bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.6rem)] right-[max(0.85rem,env(safe-area-inset-right))] z-[38] sm:bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+7.2rem)] sm:right-[max(1.25rem,env(safe-area-inset-right))]"
-          initial={
-            shouldReduceMotion
-              ? { opacity: 0 }
-              : { opacity: 0, y: 14, scale: 0.98 }
-          }
-          animate={
-            shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }
-          }
-          exit={
-            shouldReduceMotion
-              ? { opacity: 0 }
-              : { opacity: 0, y: 8, scale: 0.98 }
-          }
-          transition={
-            shouldReduceMotion
-              ? { duration: 0.01 }
-              : {
-                  duration: 0.22,
-                  ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
-                }
-          }
-        >
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onSkip(segment);
-            }}
-            onMouseEnter={onControlsHoverStart}
-            onMouseLeave={onControlsHoverEnd}
-            onPointerEnter={onControlsHoverStart}
-            onPointerLeave={onControlsHoverEnd}
-            className="inline-flex min-h-11 items-center justify-center gap-2 rounded-full border border-white/15 bg-black/70 px-4 py-2 text-sm font-black text-white shadow-button-glow backdrop-blur-xl transition duration-200 hover:-translate-y-0.5 hover:border-[var(--accent)]/70 hover:bg-[var(--accent)] hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black active:scale-[0.98] motion-reduce:hover:translate-y-0 sm:min-h-12 sm:px-5 sm:text-base"
-            aria-label={label}
-          >
-            <ChevronsRight className="h-5 w-5 shrink-0" strokeWidth={2.5} />
-            <span className="whitespace-nowrap">{label}</span>
-          </button>
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-interface NextEpisodeCountdownOverlayProps {
-  nextEpisode: JellyfinItem;
-  secondsRemaining: number;
-  shouldReduceMotion: boolean;
-  onPlayNow: () => void;
-  onCancel: () => void;
-  onControlsHoverStart?: () => void;
-  onControlsHoverEnd?: () => void;
-}
-
-function NextEpisodeCountdownOverlay({
-  nextEpisode,
-  secondsRemaining,
-  shouldReduceMotion,
-  onPlayNow,
-  onCancel,
-  onControlsHoverStart,
-  onControlsHoverEnd,
-}: NextEpisodeCountdownOverlayProps) {
-  const { t } = useLanguage();
-  const nextEpisodeImageUrl = nextEpisode.ImageTags?.Primary
-    ? getPrimaryImageUrl(nextEpisode.Id, nextEpisode.ImageTags.Primary, 320)
-    : "";
-  const nextEpisodeSeasonNumber =
-    typeof nextEpisode.ParentIndexNumber === "number" &&
-    Number.isFinite(nextEpisode.ParentIndexNumber)
-      ? nextEpisode.ParentIndexNumber
-      : null;
-  const nextEpisodeNumber =
-    typeof nextEpisode.IndexNumber === "number" &&
-    Number.isFinite(nextEpisode.IndexNumber)
-      ? nextEpisode.IndexNumber
-      : null;
-  const nextEpisodeContextParts =
-    nextEpisodeSeasonNumber !== null && nextEpisodeNumber !== null
-      ? [
-          formatTemplate(t("media.seasonEpisodeNumber"), {
-            seasonNumber: nextEpisodeSeasonNumber,
-            episodeNumber: nextEpisodeNumber,
-          }),
-        ]
-      : [
-          nextEpisodeSeasonNumber !== null
-            ? formatTemplate(t("media.seasonNumber"), {
-                number: nextEpisodeSeasonNumber,
-              })
-            : nextEpisode.SeasonName,
-          nextEpisodeNumber !== null
-            ? formatTemplate(t("media.episodeNumber"), {
-                number: nextEpisodeNumber,
-              })
-            : null,
-        ].filter(Boolean);
-
-  return (
-    <motion.div
-      className="pointer-events-auto absolute bottom-[calc(max(0.75rem,env(safe-area-inset-bottom))+5.9rem)] right-[max(0.85rem,env(safe-area-inset-right))] z-[39] flex w-[min(24rem,calc(100vw-1.7rem))] flex-col items-end gap-2 text-white sm:bottom-[calc(max(1.25rem,env(safe-area-inset-bottom))+7.5rem)] sm:right-[max(1.25rem,env(safe-area-inset-right))]"
-      initial={
-        shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 14, scale: 0.98 }
-      }
-      animate={
-        shouldReduceMotion ? { opacity: 1 } : { opacity: 1, y: 0, scale: 1 }
-      }
-      exit={
-        shouldReduceMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }
-      }
-      transition={
-        shouldReduceMotion
-          ? { duration: 0.01 }
-          : {
-              duration: 0.22,
-              ease: [0.16, 1, 0.3, 1] as [number, number, number, number],
-            }
-      }
-      onMouseEnter={onControlsHoverStart}
-      onMouseLeave={onControlsHoverEnd}
-      onPointerEnter={onControlsHoverStart}
-      onPointerLeave={onControlsHoverEnd}
-    >
-      <div className="relative w-full overflow-hidden rounded-xl bg-zinc-950/90 shadow-player-controls">
-        <Tooltip content={t("player.cancelNextEpisode")}>
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              onCancel();
-            }}
-            className="absolute right-2.5 top-2.5 z-20 flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white/80 shadow-player-controls transition hover:bg-white/[0.14] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:right-3 sm:top-3"
-            aria-label={t("player.cancelNextEpisode")}
-          >
-            <X className="h-3.5 w-3.5 sm:h-4 sm:w-4" strokeWidth={2.4} />
-          </button>
-        </Tooltip>
-
-        <div className="relative h-28 w-full overflow-hidden bg-white/[0.06] sm:h-32">
-          {nextEpisodeImageUrl ? (
-            <img
-              src={nextEpisodeImageUrl}
-              alt=""
-              className="h-full w-full object-cover"
-              loading="lazy"
-              draggable={false}
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center bg-[var(--accent)]/16 text-3xl font-black text-[var(--accent)]">
-              {secondsRemaining}
-            </div>
-          )}
-          <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-zinc-950/70 via-zinc-950/18 to-transparent" />
-          <div className="absolute bottom-3 left-3 flex h-11 w-11 items-center justify-center rounded-full border border-white/15 bg-black/45 text-lg font-black text-white shadow-lg">
-            {secondsRemaining}
-          </div>
-        </div>
-
-        <div className="px-3 pb-3 pt-3 sm:px-4 sm:pb-4">
-          <p className="pr-10 text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
-            {formatTemplate(t("player.nextEpisodeIn"), {
-              seconds: secondsRemaining,
-            })}
-          </p>
-          <p className="mt-1 line-clamp-2 pr-2 text-base font-black leading-6 text-white sm:text-lg">
-            {nextEpisode.Name}
-          </p>
-          {nextEpisode.SeriesName || nextEpisodeContextParts.length > 0 ? (
-            <p className="mt-1 truncate text-xs font-semibold text-white/55">
-              {[nextEpisode.SeriesName, ...nextEpisodeContextParts]
-                .filter(Boolean)
-                .join(" · ")}
-            </p>
-          ) : null}
-        </div>
-      </div>
-      <button
-        type="button"
-        onClick={(event) => {
-          event.stopPropagation();
-          onPlayNow();
-        }}
-        className="inline-flex min-h-9 items-center justify-center gap-2 rounded-full bg-white z-50 mt-2 px-4 text-xs font-black text-zinc-950 shadow-player-controls transition hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:px-5 sm:text-sm"
-      >
-        <ChevronsRight className="h-4 w-4 shrink-0" strokeWidth={2.5} />
-        <span>{t("player.playNow")}</span>
-      </button>
-    </motion.div>
-  );
-}
-
-function decodeCueText(rawText: string): string {
-  const textWithLineBreaks = rawText
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/?(b|i|u|c|lang|ruby|rt)[^>]*>/gi, "")
-    .replace(/<\/?v[^>]*>/gi, "")
-    .replace(/<[^>]+>/g, "");
-
-  const textarea = document.createElement("textarea");
-  textarea.innerHTML = textWithLineBreaks;
-  return textarea.value.trim();
-}
-
-function parseSubtitleTimestamp(rawTimestamp: string): number | null {
-  const timestamp = rawTimestamp.trim().replace(",", ".");
-  const parts = timestamp.split(":");
-
-  if (parts.length < 2 || parts.length > 3) {
-    return null;
-  }
-
-  const seconds = Number(parts.pop());
-  const minutes = Number(parts.pop());
-  const hours = parts.length > 0 ? Number(parts.pop()) : 0;
-
-  if (![hours, minutes, seconds].every(Number.isFinite)) {
-    return null;
-  }
-
-  if (minutes < 0 || minutes > 59 || seconds < 0) {
-    return null;
-  }
-
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-function parseSubtitleCues(rawText: string): SubtitleCue[] {
-  const normalizedText = rawText
-    .replace(/^\uFEFF/, "")
-    .replace(/\r\n/g, "\n")
-    .replace(/\r/g, "\n");
-  const blocks = normalizedText.split(/\n{2,}/);
-  const cues: SubtitleCue[] = [];
-
-  blocks.forEach((block) => {
-    const lines = block
-      .split("\n")
-      .map((line) => line.trimEnd())
-      .filter((line, index) => index > 0 || line.trim() !== "WEBVTT");
-
-    const firstLine = lines[0]?.trim().toUpperCase() ?? "";
-
-    if (
-      !firstLine ||
-      firstLine === "WEBVTT" ||
-      firstLine.startsWith("NOTE") ||
-      firstLine === "STYLE" ||
-      firstLine === "REGION"
-    ) {
-      return;
-    }
-
-    const timingLineIndex = lines.findIndex((line) => line.includes("-->"));
-    const timingLine = timingLineIndex >= 0 ? lines[timingLineIndex] : "";
-    const timingMatch = timingLine.match(/^(.+?)\s*-->\s*(\S+)/);
-
-    if (!timingMatch) {
-      return;
-    }
-
-    const start = parseSubtitleTimestamp(timingMatch[1]);
-    const end = parseSubtitleTimestamp(timingMatch[2]);
-    const text = lines
-      .slice(timingLineIndex + 1)
-      .join("\n")
-      .trim();
-
-    if (start === null || end === null || end <= start || !text) {
-      return;
-    }
-
-    cues.push({ start, end, text });
-  });
-
-  return cues.sort((left, right) => left.start - right.start);
-}
-
-function getActiveSubtitleTextForTime(
-  cues: SubtitleCue[],
-  currentTime: number,
-): string {
-  const activeTexts = cues
-    .filter((cue) => cue.start <= currentTime && cue.end >= currentTime)
-    .map((cue) => decodeCueText(cue.text))
-    .filter(Boolean);
-
-  return activeTexts.join("\n");
-}
-
-function disableNativeVideoTextTracks(video: HTMLVideoElement): void {
-  for (let index = 0; index < video.textTracks.length; index += 1) {
-    const track = video.textTracks[index];
-    track.mode = "disabled";
-  }
-}
+import {
+  AUTO_QUALITY_ID,
+  DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS,
+  DEFAULT_SUBTITLE_SCALE,
+  DEFAULT_VIDEO_ASPECT_RATIO,
+  MAX_SUBTITLE_SCALE,
+  MIN_SUBTITLE_SCALE,
+  PARTY_WATCH_DOT_POSITIONS,
+  PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
+  STARTUP_WATCHDOG_MS,
+  TOUCH_DOUBLE_TAP_THRESHOLD_MS,
+  TOUCH_SEEK_SESSION_TIMEOUT_MS,
+  TOUCH_SINGLE_TAP_DELAY_MS,
+  TRICKPLAY_COLUMNS,
+  TRICKPLAY_IMAGES_PER_SHEET,
+  TRICKPLAY_INTERVAL_SECONDS,
+  TRICKPLAY_RESOLUTION,
+  TRICKPLAY_ROWS,
+  VIEW_MODE_CURSOR_HIDE_MS,
+} from "./constants";
+import {
+  clamp,
+  getSpritePositionPercent,
+  getVideoAspectRatioFromElement,
+  getVideoAspectRatioFromSource,
+} from "./mediaGeometry";
+import {
+  getNativeActiveAudioStreamIndex,
+  getNativeAudioTrackSnapshot,
+  tryApplyNativeAudioTrack,
+} from "./nativeAudioTracks";
+import { readPortraitPlayerRotation } from "./orientation";
+import {
+  getPlaybackUrlDebugParams,
+  isMasterHlsPlaybackUrl,
+  logAudioSourceDebug,
+} from "./playbackDebug";
+import {
+  getSkipSegmentLabelKey,
+  isNextEpisodeSegmentType,
+  isSkippableSegmentType,
+} from "./segmentUtils";
+import {
+  canInjectDefaultAudioIntoStreamCopy,
+  didUserSelectNonDefaultAudio,
+  getAudioFallbackSource,
+  getDefaultAudioStreamIndex,
+  getDefaultSubtitleStreamIndex,
+  getMediaSourceDefaultAudioStreamIndex,
+  getQualitySettings,
+  getStreamByIndex,
+  getStreamsOfType,
+  isAudioTranscodeSource,
+  isDirectBrowserPlaybackSource,
+  isVideoReadyForAudioTranscodePlayback,
+  shouldForceDefaultAudioInPlaybackUrl,
+} from "./streamUtils";
+import {
+  disableNativeVideoTextTracks,
+  getActiveSubtitleTextForTime,
+  parseSubtitleCues,
+} from "./subtitleUtils";
+import type {
+  CustomVideoPlayerProps,
+  PendingAudioTranscodePlay,
+  PendingSourceRestore,
+  PortraitPlayerRotation,
+  SubtitleCue,
+  SubtitleDragState,
+  SubtitlePosition,
+  SubtitleResizeState,
+  SubtitleSize,
+  TouchSeekSessionState,
+  TouchSeekSide,
+} from "./types";
+import { useSeekFeedback } from "./useSeekFeedback";
 
 export function CustomVideoPlayer({
   item,
@@ -1251,27 +208,6 @@ export function CustomVideoPlayer({
     targetSeconds: number;
   } | null>(null);
   const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
-  const seekFeedbackHideTimersRef = useRef<
-    Record<SeekFeedbackDirection, number | null>
-  >({
-    backward: null,
-    forward: null,
-  });
-  const seekFeedbackSpinStateRef = useRef<
-    Record<SeekFeedbackDirection, SeekFeedbackSpinState>
-  >({
-    backward: {
-      isSpinning: false,
-      hasPendingSpin: false,
-      finishTimerId: null,
-    },
-    forward: {
-      isSpinning: false,
-      hasPendingSpin: false,
-      finishTimerId: null,
-    },
-  });
-  const seekFeedbackChromeHideTimerRef = useRef<number | null>(null);
   const viewModeCursorHideTimerRef = useRef<number | null>(null);
   const clearSingleTapTimer = useCallback(() => {
     if (singleTapTimerRef.current !== null) {
@@ -1352,15 +288,27 @@ export function CustomVideoPlayer({
   const shouldShowPlayerCursor =
     shouldRenderPlayerChrome || (isViewModeEnabled && isViewModeCursorVisible);
 
-  const revealPlayerChrome = useCallback(() => {
-    if (seekFeedbackChromeHideTimerRef.current !== null) {
-      window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
-      seekFeedbackChromeHideTimerRef.current = null;
-    }
+  const hidePlayerChrome = useCallback(() => {
+    setAreControlsManuallyHidden(true);
+  }, []);
+  const {
+    clearSeekFeedbackChromeHideTimer,
+    clearSeekFeedbackSpinTimers,
+    clearSeekFeedbackTimers,
+    hidePlayerChromeWithSeekFeedback,
+    seekFeedback,
+    triggerSeekFeedback,
+  } = useSeekFeedback({
+    isPlaying: progress.isPlaying,
+    controlsShouldStayVisible,
+    onHidePlayerChrome: hidePlayerChrome,
+  });
 
+  const revealPlayerChrome = useCallback(() => {
+    clearSeekFeedbackChromeHideTimer();
     setAreControlsManuallyHidden(false);
     showControls();
-  }, [showControls]);
+  }, [clearSeekFeedbackChromeHideTimer, showControls]);
 
   const clearViewModeCursorHideTimer = useCallback(() => {
     if (viewModeCursorHideTimerRef.current !== null) {
@@ -1468,73 +416,6 @@ export function CustomVideoPlayer({
     useState(false);
   const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] =
     useState<number | null>(null);
-  const [seekFeedback, setSeekFeedback] =
-    useState<SeekFeedbackState>(initialSeekFeedback);
-  const resetSeekFeedbackSpinState = useCallback(
-    (direction: SeekFeedbackDirection) => {
-      const spinState = seekFeedbackSpinStateRef.current[direction];
-
-      if (spinState.finishTimerId !== null) {
-        window.clearTimeout(spinState.finishTimerId);
-      }
-
-      spinState.isSpinning = false;
-      spinState.hasPendingSpin = false;
-      spinState.finishTimerId = null;
-    },
-    [],
-  );
-  const clearSeekFeedbackSpinTimers = useCallback(() => {
-    (["backward", "forward"] as const).forEach(resetSeekFeedbackSpinState);
-  }, [resetSeekFeedbackSpinState]);
-  const startSeekFeedbackSpin = useCallback(
-    (direction: SeekFeedbackDirection) => {
-      const spinState = seekFeedbackSpinStateRef.current[direction];
-
-      const beginSpin = () => {
-        spinState.isSpinning = true;
-        setSeekFeedback((current) => ({
-          ...current,
-          [direction]: {
-            ...current[direction],
-            spinPulse: current[direction].spinPulse + 1,
-          },
-        }));
-
-        if (spinState.finishTimerId !== null) {
-          window.clearTimeout(spinState.finishTimerId);
-        }
-
-        spinState.finishTimerId = window.setTimeout(() => {
-          spinState.finishTimerId = null;
-
-          if (spinState.hasPendingSpin) {
-            spinState.hasPendingSpin = false;
-            beginSpin();
-            return;
-          }
-
-          spinState.isSpinning = false;
-        }, SEEK_FEEDBACK_SPIN_MS);
-      };
-
-      beginSpin();
-    },
-    [],
-  );
-  const requestSeekFeedbackSpin = useCallback(
-    (direction: SeekFeedbackDirection) => {
-      const spinState = seekFeedbackSpinStateRef.current[direction];
-
-      if (spinState.isSpinning) {
-        spinState.hasPendingSpin = true;
-        return;
-      }
-
-      startSeekFeedbackSpin(direction);
-    },
-    [startSeekFeedbackSpin],
-  );
   const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<
     string | null
   >(null);
@@ -2194,133 +1075,6 @@ export function CustomVideoPlayer({
       void container.requestFullscreen?.();
     }
   }, []);
-
-  const clearSeekFeedbackTimers = useCallback(() => {
-    (["backward", "forward"] as const).forEach((direction) => {
-      if (seekFeedbackHideTimersRef.current[direction] !== null) {
-        window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
-        seekFeedbackHideTimersRef.current[direction] = null;
-      }
-    });
-  }, []);
-
-  const hidePlayerChromeWithSeekFeedback = useCallback(() => {
-    if (seekFeedbackChromeHideTimerRef.current !== null) {
-      window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
-      seekFeedbackChromeHideTimerRef.current = null;
-    }
-
-    if (!progress.isPlaying || controlsShouldStayVisible) {
-      return;
-    }
-
-    seekFeedbackChromeHideTimerRef.current = window.setTimeout(() => {
-      setAreControlsManuallyHidden(true);
-      seekFeedbackChromeHideTimerRef.current = null;
-    }, SEEK_FEEDBACK_HIDE_MS);
-  }, [controlsShouldStayVisible, progress.isPlaying]);
-
-  const triggerSeekFeedback = useCallback(
-    (seconds: number) => {
-      if (seconds === 0) {
-        return;
-      }
-
-      const direction: SeekFeedbackDirection =
-        seconds < 0 ? "backward" : "forward";
-      const oppositeDirection: SeekFeedbackDirection =
-        direction === "backward" ? "forward" : "backward";
-      const amount = Math.abs(seconds);
-
-      resetSeekFeedbackSpinState(oppositeDirection);
-
-      if (seekFeedbackHideTimersRef.current[oppositeDirection] !== null) {
-        window.clearTimeout(
-          seekFeedbackHideTimersRef.current[oppositeDirection]!,
-        );
-      }
-
-      seekFeedbackHideTimersRef.current[oppositeDirection] = window.setTimeout(
-        () => {
-          setSeekFeedback((current) => ({
-            ...current,
-            [oppositeDirection]: {
-              ...current[oppositeDirection],
-              visible: false,
-            },
-          }));
-
-          window.setTimeout(() => {
-            setSeekFeedback((current) => {
-              if (current[oppositeDirection].visible) {
-                return current;
-              }
-
-              return {
-                ...current,
-                [oppositeDirection]: {
-                  ...current[oppositeDirection],
-                  amount: 0,
-                },
-              };
-            });
-          }, SEEK_FEEDBACK_FADE_RESET_MS);
-
-          seekFeedbackHideTimersRef.current[oppositeDirection] = null;
-        },
-        SEEK_FEEDBACK_OPPOSITE_HIDE_MS,
-      );
-
-      setSeekFeedback((current) => {
-        const currentDirection = current[direction];
-
-        return {
-          ...current,
-          [direction]: {
-            ...currentDirection,
-            amount: currentDirection.amount + amount,
-            visible: true,
-            pulse: currentDirection.pulse + 1,
-          },
-        };
-      });
-
-      requestSeekFeedbackSpin(direction);
-
-      if (seekFeedbackHideTimersRef.current[direction] !== null) {
-        window.clearTimeout(seekFeedbackHideTimersRef.current[direction]!);
-      }
-
-      seekFeedbackHideTimersRef.current[direction] = window.setTimeout(() => {
-        setSeekFeedback((current) => ({
-          ...current,
-          [direction]: {
-            ...current[direction],
-            visible: false,
-          },
-        }));
-
-        window.setTimeout(() => {
-          setSeekFeedback((current) => {
-            if (current[direction].visible) {
-              return current;
-            }
-
-            return {
-              ...current,
-              [direction]: {
-                ...current[direction],
-                amount: 0,
-              },
-            };
-          });
-        }, SEEK_FEEDBACK_FADE_RESET_MS);
-
-        seekFeedbackHideTimersRef.current[direction] = null;
-      }, SEEK_FEEDBACK_HIDE_MS);
-    },
-    [requestSeekFeedbackSpin, resetSeekFeedbackSpinState],
-  );
 
   const handleSeekBy = useCallback(
     (seconds: number) => {
@@ -3604,11 +2358,7 @@ export function CustomVideoPlayer({
       clearFullscreenSeekPreviewFallbackTimer();
       clearSeekFeedbackTimers();
       clearSeekFeedbackSpinTimers();
-
-      if (seekFeedbackChromeHideTimerRef.current !== null) {
-        window.clearTimeout(seekFeedbackChromeHideTimerRef.current);
-        seekFeedbackChromeHideTimerRef.current = null;
-      }
+      clearSeekFeedbackChromeHideTimer();
 
       resetTouchSeekSession();
 
@@ -3621,6 +2371,7 @@ export function CustomVideoPlayer({
   }, [
     clearAudioTranscodeReadinessTimer,
     clearFullscreenSeekPreviewFallbackTimer,
+    clearSeekFeedbackChromeHideTimer,
     clearSeekFeedbackSpinTimers,
     clearSeekFeedbackTimers,
     reportStoppedOnce,
@@ -4538,7 +3289,10 @@ export function CustomVideoPlayer({
                 data-party-watch-root
               >
                 <div className="seyirlik-player-top-actions-row flex items-center gap-2">
-                  <Tooltip content={t("player.enterViewMode")}>
+                  <Tooltip
+                    content={t("player.enterViewMode")}
+                    group="top-right"
+                  >
                     <button
                       type="button"
                       onClick={enterViewMode}
@@ -4549,7 +3303,7 @@ export function CustomVideoPlayer({
                     </button>
                   </Tooltip>
 
-                  <Tooltip content={checkpointButtonLabel}>
+                  <Tooltip content={checkpointButtonLabel} group="top-right">
                     <button
                       type="button"
                       onClick={toggleCheckpointMode}
@@ -4570,7 +3324,7 @@ export function CustomVideoPlayer({
                     </button>
                   </Tooltip>
 
-                  <Tooltip content={t("party.title")}>
+                  <Tooltip content={t("party.title")} group="top-right">
                     <button
                       type="button"
                       onClick={() => {
@@ -4714,7 +3468,7 @@ export function CustomVideoPlayer({
       {isViewModeEnabled ? (
         <div className="pointer-events-auto absolute left-1/2 top-[max(0.75rem,env(safe-area-inset-top))] z-[70] flex -translate-x-1/2 items-center gap-1 rounded-full border border-white/10 bg-black/25 p-1 text-white/35 opacity-25 backdrop-blur-md transition hover:bg-black/55 hover:text-white hover:opacity-100 focus-within:opacity-100">
           {checkpointSeconds !== null ? (
-            <Tooltip content={t("player.returnToCheckpoint")}>
+            <Tooltip content={t("player.returnToCheckpoint")} group="top-right">
               <button
                 type="button"
                 onClick={toggleCheckpointMode}
