@@ -1,11 +1,12 @@
-import { useLayoutEffect, useRef, useState, type Ref } from "react";
-import { Eye, Pause } from "lucide-react";
+import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
+import { Pause } from "lucide-react";
 import type { TranslationKey } from "../../i18n/translations";
 import { formatTemplate } from "../../lib/format";
 import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import { Tooltip } from "../ui/Tooltip";
+import { WatchedStatusButton } from "../WatchedStatusButton";
 
 export type PlayerQueueTranslate = (key: TranslationKey) => string;
 export type QueueItemVariant = "episode" | "collection";
@@ -92,14 +93,6 @@ function QueueItemTitle({
   );
 }
 
-function WatchedBadge({ label }: { label: string }) {
-  return (
-    <span className="absolute right-2 top-2 rounded-full border border-white/35 bg-[linear-gradient(135deg,#6ee7b7,#10b981)] px-1 py-1 text-[0.58rem] font-black uppercase tracking-[0.12em] text-emerald-950 shadow-[0_8px_18px_rgba(0,0,0,0.5),0_0_0_1px_rgba(6,78,59,0.35)]">
-      <Eye size={15} />
-    </span>
-  );
-}
-
 function CurrentItemIndicator() {
   return (
     <span className="absolute right-2 top-2 flex h-7 w-7 items-center justify-center rounded-full border border-white/25 bg-black/75 text-[var(--accent)] shadow-[0_8px_20px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.16)]">
@@ -121,7 +114,14 @@ export function QueueItemButton({
     item.Type === "Episode" ? getEpisodeLabel(item, t) : null;
   const releaseYear = item.Type === "Movie" ? getReleaseYear(item) : null;
   const imageUrl = isMoviePoster ? getPosterUrl(item) : getThumbnailUrl(item);
-  const isWatched = isItemCompleted(item);
+
+  const [watchedStatusItem, setWatchedStatusItem] = useState(item);
+  const [shouldShowWatchedStatusButton, setShouldShowWatchedStatusButton] =
+    useState(() => isItemCompleted(item));
+
+  const watchedStatusAction = isItemCompleted(watchedStatusItem)
+    ? "remove"
+    : "mark";
 
   const titleRef = useRef<HTMLSpanElement | null>(null);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
@@ -154,6 +154,11 @@ export function QueueItemButton({
       resizeObserver.disconnect();
     };
   }, [item.Name, isMoviePoster, isCollection]);
+
+  useEffect(() => {
+    setWatchedStatusItem(item);
+    setShouldShowWatchedStatusButton(isItemCompleted(item));
+  }, [item]);
 
   return (
     <Tooltip
@@ -221,7 +226,31 @@ export function QueueItemButton({
           />
 
           {isCurrent ? <CurrentItemIndicator /> : null}
-          {isWatched ? <WatchedBadge label={t("details.watched")} /> : null}
+          {shouldShowWatchedStatusButton ? (
+            <WatchedStatusButton
+              scope="item"
+              action={watchedStatusAction}
+              item={watchedStatusItem}
+              iconSize={15}
+              onReset={(changedItems) => {
+                const updatedItem = changedItems.find(
+                  (changedItem) => changedItem.Id === item.Id,
+                );
+
+                if (updatedItem) {
+                  setWatchedStatusItem(updatedItem);
+
+                  // Keep visible after removing watched, so user can undo.
+                  setShouldShowWatchedStatusButton(true);
+                }
+              }}
+              className={`absolute top-2 z-20 flex h-7 w-7 items-center justify-center rounded-full border border-white/35 shadow-[0_8px_18px_rgba(0,0,0,0.5),0_0_0_1px_rgba(6,78,59,0.35)] transition-[background-color,color,transform,filter] duration-200 ease-out hover:scale-105 focus:outline-none focus:ring-2 focus:ring-white/70 ${
+                watchedStatusAction === "remove"
+                  ? "bg-[linear-gradient(135deg,#6ee7b7,#10b981)] text-emerald-950 hover:bg-none hover:bg-rose-500"
+                  : "bg-gray-500 text-white hover:bg-emerald-400 hover:text-emerald-950"
+              } ${isCurrent ? "left-2" : "right-2"}`}
+            />
+          ) : null}
         </span>
 
         <span
