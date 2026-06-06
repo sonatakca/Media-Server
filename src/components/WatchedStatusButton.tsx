@@ -36,7 +36,7 @@ export function WatchedStatusButton({
   seriesId,
   seasonId,
   className,
-  iconSize = 16,
+  iconSize = 18,
   label,
   confirm = false,
   onReset,

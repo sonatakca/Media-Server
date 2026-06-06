@@ -1,4 +1,5 @@
 import type { PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
+import type { PlaybackQueue } from "../../lib/playbackQueue";
 import type { JellyfinItem, PlaybackSourceCandidate } from "../../lib/types";
 
 export interface CustomVideoPlayerProps {
@@ -17,8 +18,10 @@ export interface CustomVideoPlayerProps {
   onPlaybackStopped?: (positionSeconds: number) => void;
   onPlaybackBeforeUnload?: (positionSeconds: number) => void;
   nextEpisode?: JellyfinItem | null;
+  playbackQueue?: PlaybackQueue | null;
   enableDefaultNextEpisodeCountdown?: boolean;
   onAutoPlayNextEpisode?: (nextEpisode: JellyfinItem) => void;
+  onPlayQueueItem?: (item: JellyfinItem) => void;
 }
 
 export interface PendingSourceRestore {

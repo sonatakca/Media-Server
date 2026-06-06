@@ -9,10 +9,10 @@ import { ArrowLeft } from "lucide-react";
 import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
+import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
-  getNextEpisodeInSeason,
   getItem,
   reportPlaybackProgress,
   reportPlaybackStart,
@@ -38,9 +38,9 @@ export function DesktopPlayerPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const [item, setItem] = useState<JellyfinItem | null>(null);
-  const [nextEpisode, setNextEpisode] = useState<JellyfinItem | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
   const playback = usePlaybackSource(itemId);
+  const playbackQueue = usePlaybackQueue(item);
 
   useEffect(() => {
     let isMounted = true;
@@ -53,7 +53,6 @@ export function DesktopPlayerPage() {
 
       setItemError(null);
       setItem(null);
-      setNextEpisode(null);
 
       try {
         const itemDetails = await getItem(itemId);
@@ -82,42 +81,6 @@ export function DesktopPlayerPage() {
       isMounted = false;
     };
   }, [itemId, t]);
-
-  useEffect(() => {
-    if (item?.Type !== "Episode") {
-      setNextEpisode(null);
-      return undefined;
-    }
-
-    let isMounted = true;
-
-    setNextEpisode(null);
-
-    const loadNextEpisode = async () => {
-      try {
-        const nextEpisodeDetails = await getNextEpisodeInSeason(item);
-
-        if (isMounted) {
-          setNextEpisode(nextEpisodeDetails);
-        }
-      } catch (error) {
-        if (isMounted) {
-          setNextEpisode(null);
-        }
-
-        console.warn(
-          "[Seyirlik Playback] Could not load next episode fallback target",
-          error,
-        );
-      }
-    };
-
-    void loadNextEpisode();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [item]);
 
   useEffect(() => {
     const isPageLoading = !item || playback.isLoading;
@@ -231,9 +194,9 @@ export function DesktopPlayerPage() {
     [playback.activeSource],
   );
 
-  const handleAutoPlayNextEpisode = useCallback(
-    (episode: JellyfinItem) => {
-      navigate(getWatchRouteForItem(episode));
+  const handlePlayNextUp = useCallback(
+    (nextItem: JellyfinItem) => {
+      navigate(getWatchRouteForItem(nextItem));
     },
     [navigate],
   );
@@ -320,9 +283,13 @@ export function DesktopPlayerPage() {
         onPlaybackProgress={handlePlaybackProgress}
         onPlaybackStopped={handlePlaybackStopped}
         onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
-        nextEpisode={nextEpisode}
+        nextEpisode={
+          item.Type === "Episode" ? (playbackQueue?.nextItem ?? null) : null
+        }
+        playbackQueue={playbackQueue}
         enableDefaultNextEpisodeCountdown={item.Type === "Episode"}
-        onAutoPlayNextEpisode={handleAutoPlayNextEpisode}
+        onAutoPlayNextEpisode={handlePlayNextUp}
+        onPlayQueueItem={handlePlayNextUp}
       />
     </>
   );

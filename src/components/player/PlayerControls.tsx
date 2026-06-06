@@ -1,4 +1,5 @@
 import {
+  GalleryVerticalEnd,
   Loader2,
   Maximize,
   Pause,
@@ -11,12 +12,14 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { SeekBar, type SeekPointerAxis } from "./SeekBar";
 import { VolumeControl } from "./VolumeControl";
 import { PlayerSettingsPanel } from "./PlayerSettingsPanel";
+import type { PlaybackQueue } from "../../lib/playbackQueue";
 import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
 import { useState } from "react";
 import { Tooltip } from "../ui/Tooltip";
+import { PlayerQueuePanel } from "./PlayerQueuePanel";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -37,6 +40,8 @@ interface PlayerControlsProps {
   canSwitchSubtitles: boolean;
   isSubtitleEditMode?: boolean;
   settingsOpen: boolean;
+  playbackQueue?: PlaybackQueue | null;
+  queueOpen?: boolean;
   itemId: string;
   mediaSourceId?: string;
   checkpointSeconds?: number | null;
@@ -53,6 +58,8 @@ interface PlayerControlsProps {
   onToggleMute: () => void;
   onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
+  onOpenQueue?: () => void;
+  onPlayQueueItem?: (itemId: string) => void;
   onOpenSettings: () => void;
   onSelectAutoQuality: () => void;
   onSelectQuality: (quality: PlaybackQualityOption) => void;
@@ -99,6 +106,8 @@ export function PlayerControls({
   canSwitchSubtitles,
   isSubtitleEditMode = false,
   settingsOpen,
+  playbackQueue = null,
+  queueOpen = false,
   itemId,
   mediaSourceId,
   checkpointSeconds,
@@ -115,6 +124,8 @@ export function PlayerControls({
   onToggleMute,
   onVolumeChange,
   onToggleFullscreen,
+  onOpenQueue,
+  onPlayQueueItem,
   onOpenSettings,
   onSelectAutoQuality,
   onSelectQuality,
@@ -131,6 +142,11 @@ export function PlayerControls({
   const timeDisplay = showRemainingTime
     ? `-${formatTime(remainingTime)} / ${formatTime(duration)}`
     : `${formatTime(currentTime)} / ${formatTime(duration)}`;
+  const playbackQueueLabel = playbackQueue
+    ? playbackQueue.kind === "series"
+      ? t("player.queueEpisodes")
+      : t("player.queueCollection")
+    : t("player.playbackQueue");
 
   return (
     <div
@@ -310,6 +326,38 @@ export function PlayerControls({
             </div>
 
             <div className="flex shrink-0 items-center gap-1 sm:gap-2">
+              {playbackQueue ? (
+                <div className="relative" data-player-queue-root>
+                  {queueOpen && !isSubtitleEditMode ? (
+                    <PlayerQueuePanel
+                      queue={playbackQueue}
+                      compact={compactLayout}
+                      onPlayItem={(queueItem) =>
+                        onPlayQueueItem?.(queueItem.Id)
+                      }
+                    />
+                  ) : null}
+
+                  <Tooltip
+                    content={playbackQueueLabel}
+                    offset="3rem"
+                    group="player-controls"
+                  >
+                    <button
+                      type="button"
+                      onClick={onOpenQueue}
+                      className={`flex h-11 w-11 items-center justify-center rounded-full transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                        queueOpen ? "text-white" : "text-white/85"
+                      }`}
+                      aria-label={playbackQueueLabel}
+                      aria-pressed={queueOpen}
+                    >
+                      <GalleryVerticalEnd size={22} strokeWidth={2.2} />
+                    </button>
+                  </Tooltip>
+                </div>
+              ) : null}
+
               <div className="relative" data-player-settings-root>
                 {settingsOpen && !isSubtitleEditMode ? (
                   <PlayerSettingsPanel

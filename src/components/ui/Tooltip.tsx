@@ -50,6 +50,24 @@ function assignRef<TValue>(ref: Ref<TValue> | undefined, value: TValue) {
   (ref as { current: TValue }).current = value;
 }
 
+function removeNativeTitles(root: HTMLElement | null) {
+  if (!root) {
+    return;
+  }
+
+  const elements = [
+    root,
+    ...Array.from(root.querySelectorAll<HTMLElement>("[title]")),
+  ];
+
+  elements.forEach((element) => {
+    if (element.title) {
+      element.dataset.nativeTitle = element.title;
+      element.removeAttribute("title");
+    }
+  });
+}
+
 function getBrowserFullscreenElement(): Element | null {
   if (typeof document === "undefined") {
     return null;
@@ -168,7 +186,11 @@ export function Tooltip({
   const triggerRef = useRef<HTMLElement | null>(null);
   const tooltipRef = useRef<HTMLDivElement | null>(null);
   const lastPointerTypeRef = useRef<string | null>(null);
+  const lastPointerPositionRef = useRef<{ x: number; y: number } | null>(null);
   const fadeOutTimerRef = useRef<number | null>(null);
+  const isScrollLockedRef = useRef(false);
+  const scrollUnlockTimerRef = useRef<number | null>(null);
+  const isPointerOverRef = useRef(false);
   const [shouldRender, setShouldRender] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState<TooltipPosition | null>(null);
@@ -178,24 +200,46 @@ export function Tooltip({
 
   const hasContent = Boolean(content);
 
+  const isPointerStillOverTrigger = () => {
+    const trigger = triggerRef.current;
+    const pointerPosition = lastPointerPositionRef.current;
+
+    if (!trigger || !pointerPosition) {
+      return false;
+    }
+
+    const rect = trigger.getBoundingClientRect();
+
+    return (
+      pointerPosition.x >= rect.left &&
+      pointerPosition.x <= rect.right &&
+      pointerPosition.y >= rect.top &&
+      pointerPosition.y <= rect.bottom
+    );
+  };
+
+  const hideImmediately = () => {
+    if (fadeOutTimerRef.current !== null) {
+      window.clearTimeout(fadeOutTimerRef.current);
+      fadeOutTimerRef.current = null;
+    }
+
+    setIsVisible(false);
+    setShouldRender(false);
+    setPosition(null);
+  };
+
   useEffect(() => {
-    const hideImmediately = () => {
-      if (fadeOutTimerRef.current !== null) {
-        window.clearTimeout(fadeOutTimerRef.current);
-        fadeOutTimerRef.current = null;
-      }
+    const hideForGroup = () => {
+      hideImmediately();
 
-      setIsVisible(false);
-      setShouldRender(false);
-      setPosition(null);
-
-      if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+      if (group && activeTooltipByGroup.get(group) === hideForGroup) {
         activeTooltipByGroup.delete(group);
       }
     };
 
     if (!hasContent || disabled) {
-      hideImmediately();
+      hideForGroup();
       return;
     }
 
@@ -206,6 +250,10 @@ export function Tooltip({
     }
 
     const show = () => {
+      if (isScrollLockedRef.current) {
+        return;
+      }
+
       if (fadeOutTimerRef.current !== null) {
         window.clearTimeout(fadeOutTimerRef.current);
         fadeOutTimerRef.current = null;
@@ -214,11 +262,11 @@ export function Tooltip({
       if (group) {
         const activeTooltip = activeTooltipByGroup.get(group);
 
-        if (activeTooltip && activeTooltip !== hideImmediately) {
+        if (activeTooltip && activeTooltip !== hideForGroup) {
           activeTooltip();
         }
 
-        activeTooltipByGroup.set(group, hideImmediately);
+        activeTooltipByGroup.set(group, hideForGroup);
       }
 
       setPosition(null);
@@ -238,7 +286,7 @@ export function Tooltip({
         setPosition(null);
         fadeOutTimerRef.current = null;
 
-        if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+        if (group && activeTooltipByGroup.get(group) === hideForGroup) {
           activeTooltipByGroup.delete(group);
         }
       }, TOOLTIP_FADE_OUT_MS);
@@ -246,6 +294,11 @@ export function Tooltip({
 
     const handlePointerEnter = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
+      lastPointerPositionRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+      isPointerOverRef.current = true;
 
       if (event.pointerType !== "touch") {
         show();
@@ -253,49 +306,115 @@ export function Tooltip({
     };
     const handlePointerDown = (event: globalThis.PointerEvent) => {
       lastPointerTypeRef.current = event.pointerType;
+      lastPointerPositionRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
 
       if (event.pointerType === "touch") {
         hide();
       }
     };
+    const handlePointerMove = (event: globalThis.PointerEvent) => {
+      lastPointerTypeRef.current = event.pointerType;
+      lastPointerPositionRef.current = {
+        x: event.clientX,
+        y: event.clientY,
+      };
+    };
+    const handlePointerLeave = () => {
+      isPointerOverRef.current = false;
+      lastPointerPositionRef.current = null;
+      hide();
+    };
     const handleMouseEnter = () => {
+      isPointerOverRef.current = true;
+
       if (lastPointerTypeRef.current !== "touch") {
         show();
       }
     };
     const handleFocusIn = () => {
+      isPointerOverRef.current = true;
+
       if (lastPointerTypeRef.current !== "touch") {
         show();
       }
     };
+    const handleFocusOut = () => {
+      isPointerOverRef.current = false;
+      hide();
+    };
 
     trigger.addEventListener("pointerenter", handlePointerEnter);
-    trigger.addEventListener("pointerleave", hide);
+    trigger.addEventListener("pointerleave", handlePointerLeave);
     trigger.addEventListener("pointerdown", handlePointerDown);
+    trigger.addEventListener("pointermove", handlePointerMove);
     trigger.addEventListener("mouseenter", handleMouseEnter);
-    trigger.addEventListener("mouseleave", hide);
+    trigger.addEventListener("mouseleave", handlePointerLeave);
     trigger.addEventListener("focusin", handleFocusIn);
-    trigger.addEventListener("focusout", hide);
+    trigger.addEventListener("focusout", handleFocusOut);
 
     return () => {
       trigger.removeEventListener("pointerenter", handlePointerEnter);
-      trigger.removeEventListener("pointerleave", hide);
+      trigger.removeEventListener("pointerleave", handlePointerLeave);
       trigger.removeEventListener("pointerdown", handlePointerDown);
+      trigger.removeEventListener("pointermove", handlePointerMove);
       trigger.removeEventListener("mouseenter", handleMouseEnter);
-      trigger.removeEventListener("mouseleave", hide);
+      trigger.removeEventListener("mouseleave", handlePointerLeave);
       trigger.removeEventListener("focusin", handleFocusIn);
-      trigger.removeEventListener("focusout", hide);
+      trigger.removeEventListener("focusout", handleFocusOut);
 
-      if (group && activeTooltipByGroup.get(group) === hideImmediately) {
+      if (group && activeTooltipByGroup.get(group) === hideForGroup) {
         activeTooltipByGroup.delete(group);
       }
     };
   }, [disabled, group, hasContent]);
 
   useEffect(() => {
+    if (!hasContent || disabled) {
+      return;
+    }
+
+    const handleScroll = () => {
+      isScrollLockedRef.current = true;
+      hideImmediately();
+
+      if (scrollUnlockTimerRef.current !== null) {
+        window.clearTimeout(scrollUnlockTimerRef.current);
+      }
+
+      scrollUnlockTimerRef.current = window.setTimeout(() => {
+        isScrollLockedRef.current = false;
+        scrollUnlockTimerRef.current = null;
+
+        if (
+          isPointerOverRef.current &&
+          isPointerStillOverTrigger() &&
+          lastPointerTypeRef.current !== "touch"
+        ) {
+          setPosition(null);
+          setShouldRender(true);
+          setIsVisible(true);
+        }
+      }, 260);
+    };
+
+    window.addEventListener("scroll", handleScroll, true);
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll, true);
+    };
+  }, [disabled, hasContent]);
+
+  useEffect(() => {
     return () => {
       if (fadeOutTimerRef.current !== null) {
         window.clearTimeout(fadeOutTimerRef.current);
+      }
+
+      if (scrollUnlockTimerRef.current !== null) {
+        window.clearTimeout(scrollUnlockTimerRef.current);
       }
     };
   }, []);
@@ -348,11 +467,10 @@ export function Tooltip({
     };
 
     updatePosition();
-    window.addEventListener("scroll", updatePosition, true);
+
     window.addEventListener("resize", updatePosition);
 
     return () => {
-      window.removeEventListener("scroll", updatePosition, true);
       window.removeEventListener("resize", updatePosition);
     };
   }, [
@@ -393,7 +511,7 @@ export function Tooltip({
             <div
               ref={tooltipRef}
               role="tooltip"
-              className={`pointer-events-none fixed z-[9999] max-w-[17rem] origin-center rounded-lg border border-white/10 bg-zinc-950/85 px-2.5 py-1.5 text-sm font-semibold leading-none text-white shadow-[0_18px_58px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-opacity ease-out ${
+              className={`pointer-events-none fixed z-[9999] max-w-[min(32rem,calc(100vw-1rem))] origin-center rounded-lg border border-white/10 bg-zinc-950/85 px-2.5 py-1.5 text-sm font-semibold leading-snug text-white shadow-[0_18px_58px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-xl transition-opacity ease-out ${
                 !isPositioned
                   ? "invisible opacity-0 duration-0"
                   : isVisible
@@ -414,8 +532,10 @@ export function Tooltip({
                     }
               }
             >
-              <div className="flex items-center gap-2 whitespace-nowrap">
-                <span>{content}</span>
+              <div className="flex max-w-full items-center gap-2">
+                <span className="min-w-0 max-w-full whitespace-normal break-words">
+                  {content}
+                </span>
 
                 {shortcut ? (
                   <span className="rounded-md border border-white/30 bg-white/10 px-1.5 py-0.5 text-xs font-semibold leading-none text-white/95 shadow-[inset_0_1px_0_rgba(255,255,255,0.18)]">

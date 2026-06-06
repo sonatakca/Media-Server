@@ -477,7 +477,7 @@ export function PlayerSettingsPanel({
     <motion.div
       layout="size"
       transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-      className="seyirlik-player-settings-panel fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[4.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
+      className="seyirlik-player-settings-panel fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[5.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
     >
       <div className="seyirlik-player-settings-header border-b border-white/10 px-4 py-3">
         <p className="text-xs font-bold uppercase tracking-[0.18em] text-[var(--accent)]">

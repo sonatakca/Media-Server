@@ -144,8 +144,10 @@ export function CustomVideoPlayer({
   onPlaybackStopped,
   onPlaybackBeforeUnload,
   nextEpisode = null,
+  playbackQueue = null,
   enableDefaultNextEpisodeCountdown = false,
   onAutoPlayNextEpisode,
+  onPlayQueueItem,
 }: CustomVideoPlayerProps) {
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -248,6 +250,7 @@ export function CustomVideoPlayer({
 
   const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isQueueOpen, setIsQueueOpen] = useState(false);
   const [isPartyWatchOpen, setIsPartyWatchOpen] = useState(false);
   const [isSubtitleEditMode, setIsSubtitleEditMode] = useState(false);
   const [areControlsManuallyHidden, setAreControlsManuallyHidden] =
@@ -266,7 +269,7 @@ export function CustomVideoPlayer({
   );
 
   const controlsShouldStayVisible =
-    isSettingsOpen || isPlaybackInfoOpen || isPartyWatchOpen;
+    isSettingsOpen || isQueueOpen || isPlaybackInfoOpen || isPartyWatchOpen;
 
   const {
     areControlsVisible,
@@ -353,6 +356,7 @@ export function CustomVideoPlayer({
   const enterViewMode = useCallback(() => {
     setIsViewModeEnabled(true);
     setIsSettingsOpen(false);
+    setIsQueueOpen(false);
     setIsPlaybackInfoOpen(false);
     setIsPartyWatchOpen(false);
     setIsSubtitleEditMode(false);
@@ -605,6 +609,7 @@ export function CustomVideoPlayer({
   const startSubtitleEditMode = useCallback(() => {
     initializeSubtitleEditPosition();
     setIsSettingsOpen(false);
+    setIsQueueOpen(false);
     setIsPlaybackInfoOpen(false);
     setIsPartyWatchOpen(false);
     setIsDraggingSubtitle(false);
@@ -663,6 +668,7 @@ export function CustomVideoPlayer({
     if (
       Boolean(error) ||
       isSettingsOpen ||
+      isQueueOpen ||
       isPlaybackInfoOpen ||
       isPartyWatchOpen ||
       isSubtitleEditMode ||
@@ -687,6 +693,7 @@ export function CustomVideoPlayer({
     error,
     isPartyWatchOpen,
     isPlaybackInfoOpen,
+    isQueueOpen,
     isSettingsOpen,
     isSubtitleEditMode,
     mediaSegments,
@@ -734,6 +741,28 @@ export function CustomVideoPlayer({
     !isDefaultNextEpisodeDismissed &&
     defaultNextEpisodeCountdownSeconds !== null,
   );
+  const handlePlayQueueItem = useCallback(
+    (queueItemId: string) => {
+      const queueItem = playbackQueue?.items.find(
+        (candidate) => candidate.Id === queueItemId,
+      );
+
+      if (!queueItem) {
+        return;
+      }
+
+      setIsQueueOpen(false);
+      onPlayQueueItem?.(queueItem);
+    },
+    [onPlayQueueItem, playbackQueue?.items],
+  );
+
+  useEffect(() => {
+    if (!playbackQueue) {
+      setIsQueueOpen(false);
+      return;
+    }
+  }, [playbackQueue]);
 
   useEffect(() => {
     if (import.meta.env.DEV) {
@@ -1169,6 +1198,31 @@ export function CustomVideoPlayer({
   }, [isSettingsOpen]);
 
   useEffect(() => {
+    if (!isQueueOpen) {
+      return undefined;
+    }
+
+    const handlePointerDownOutsideQueue = (event: globalThis.PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+
+      if (target?.closest("[data-player-queue-root]")) {
+        return;
+      }
+
+      setIsQueueOpen(false);
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutsideQueue);
+
+    return () => {
+      document.removeEventListener(
+        "pointerdown",
+        handlePointerDownOutsideQueue,
+      );
+    };
+  }, [isQueueOpen]);
+
+  useEffect(() => {
     if (!isPartyWatchOpen) {
       return undefined;
     }
@@ -1210,7 +1264,8 @@ export function CustomVideoPlayer({
 
       if (
         target?.closest("[data-subtitle-editor-root]") ||
-        target?.closest("[data-player-settings-root]")
+        target?.closest("[data-player-settings-root]") ||
+        target?.closest("[data-player-queue-root]")
       ) {
         return;
       }
@@ -2617,7 +2672,7 @@ export function CustomVideoPlayer({
     const target = event.target as HTMLElement | null;
 
     const tappedInteractiveElement = target?.closest(
-      "button, a, input, [role='slider'], [data-player-settings-root], [data-party-watch-root], [data-subtitle-editor-root]",
+      "button, a, input, [role='slider'], [data-player-settings-root], [data-player-queue-root], [data-party-watch-root], [data-subtitle-editor-root]",
     );
 
     if (tappedInteractiveElement) {
@@ -2700,7 +2755,7 @@ export function CustomVideoPlayer({
       const target = event.target as HTMLElement | null;
 
       const tappedInteractiveElement = target?.closest(
-        "button, a, input, [role='slider'], [data-player-settings-root], [data-party-watch-root], [data-subtitle-editor-root]",
+        "button, a, input, [role='slider'], [data-player-settings-root], [data-player-queue-root], [data-party-watch-root], [data-subtitle-editor-root]",
       );
 
       if (tappedInteractiveElement) {
@@ -2717,6 +2772,7 @@ export function CustomVideoPlayer({
 
       if (shouldShowPlayerChrome) {
         setIsSettingsOpen(false);
+        setIsQueueOpen(false);
         setIsPlaybackInfoOpen(false);
         setIsPartyWatchOpen(false);
         setIsSubtitleEditMode(false);
@@ -3330,6 +3386,7 @@ export function CustomVideoPlayer({
                       onClick={() => {
                         setIsPartyWatchOpen((current) => !current);
                         setIsSettingsOpen(false);
+                        setIsQueueOpen(false);
                         revealPlayerChrome();
                       }}
                       className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
@@ -3368,7 +3425,10 @@ export function CustomVideoPlayer({
 
                   <PlaybackInfoButton
                     source={sourceWithLiveTranscodingReasons}
-                    onClick={() => setIsPlaybackInfoOpen(true)}
+                    onClick={() => {
+                      setIsPlaybackInfoOpen(true);
+                      setIsQueueOpen(false);
+                    }}
                   />
                 </div>
 
@@ -3440,8 +3500,18 @@ export function CustomVideoPlayer({
             onToggleMute={progress.toggleMute}
             onVolumeChange={progress.setVolume}
             onToggleFullscreen={toggleFullscreen}
+            playbackQueue={playbackQueue}
+            queueOpen={isQueueOpen}
+            onOpenQueue={() => {
+              setIsQueueOpen((current) => !current);
+              setIsSettingsOpen(false);
+              setIsPartyWatchOpen(false);
+              revealPlayerChrome();
+            }}
+            onPlayQueueItem={onPlayQueueItem ? handlePlayQueueItem : undefined}
             onOpenSettings={() => {
               setIsSettingsOpen((current) => !current);
+              setIsQueueOpen(false);
               setIsPartyWatchOpen(false);
               revealPlayerChrome();
             }}
