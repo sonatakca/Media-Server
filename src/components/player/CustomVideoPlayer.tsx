@@ -3345,6 +3345,14 @@ export function CustomVideoPlayer({
                 data-party-watch-root
               >
                 <div className="seyirlik-player-top-actions-row flex items-center gap-2">
+                  <PlaybackInfoButton
+                    source={sourceWithLiveTranscodingReasons}
+                    onClick={() => {
+                      setIsPlaybackInfoOpen(true);
+                      setIsQueueOpen(false);
+                    }}
+                  />
+
                   <Tooltip
                     content={t("player.enterViewMode")}
                     group="top-right"
@@ -3356,27 +3364,6 @@ export function CustomVideoPlayer({
                       aria-label={t("player.enterViewMode")}
                     >
                       <EyeOff size={18} />
-                    </button>
-                  </Tooltip>
-
-                  <Tooltip content={checkpointButtonLabel} group="top-right">
-                    <button
-                      type="button"
-                      onClick={toggleCheckpointMode}
-                      className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-                        checkpointSeconds !== null
-                          ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
-                          : "text-white/85 hover:bg-white/[0.12] hover:text-white"
-                      }`}
-                      aria-label={checkpointButtonLabel}
-                      aria-pressed={checkpointSeconds !== null}
-                    >
-                      <Bookmark
-                        size={18}
-                        fill={
-                          checkpointSeconds !== null ? "currentColor" : "none"
-                        }
-                      />
                     </button>
                   </Tooltip>
 
@@ -3423,13 +3410,26 @@ export function CustomVideoPlayer({
                     </button>
                   </Tooltip>
 
-                  <PlaybackInfoButton
-                    source={sourceWithLiveTranscodingReasons}
-                    onClick={() => {
-                      setIsPlaybackInfoOpen(true);
-                      setIsQueueOpen(false);
-                    }}
-                  />
+                  <Tooltip content={checkpointButtonLabel} group="top-right">
+                    <button
+                      type="button"
+                      onClick={toggleCheckpointMode}
+                      className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                        checkpointSeconds !== null
+                          ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
+                          : "text-white/85 hover:bg-white/[0.12] hover:text-white"
+                      }`}
+                      aria-label={checkpointButtonLabel}
+                      aria-pressed={checkpointSeconds !== null}
+                    >
+                      <Bookmark
+                        size={18}
+                        fill={
+                          checkpointSeconds !== null ? "currentColor" : "none"
+                        }
+                      />
+                    </button>
+                  </Tooltip>
                 </div>
 
                 {isPartyWatchOpen ? (

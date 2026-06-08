@@ -173,7 +173,7 @@ export function PlayerOverlay({
         }`}
       >
         <div
-          className="seyirlik-player-top-bar pointer-events-auto mx-auto flex w-[95%] items-center justify-between gap-4"
+          className="seyirlik-player-top-bar pointer-events-auto mx-auto flex w-[99%] items-center justify-between gap-4"
           onMouseEnter={onControlsHoverStart}
           onMouseLeave={onControlsHoverEnd}
           onPointerEnter={onControlsHoverStart}
