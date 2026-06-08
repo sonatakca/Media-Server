@@ -17,6 +17,7 @@ import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
+import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { Tooltip } from "../ui/Tooltip";
 import { PlayerQueuePanel } from "./PlayerQueuePanel";
@@ -156,7 +157,7 @@ export function PlayerControls({
       }`}
     >
       <div
-        className="seyirlik-player-controls-inner pointer-events-auto mx-auto w-[95%]"
+        className="seyirlik-player-controls-inner pointer-events-auto mx-auto w-[100%]"
         onMouseEnter={onControlsHoverStart}
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
@@ -204,7 +205,7 @@ export function PlayerControls({
                       ? t("common.pause")
                       : t("common.play")
                 }
-                offset="2.6rem"
+                offset="2.1rem"
                 shortcut="␣"
                 group="player-controls"
               >
@@ -212,7 +213,7 @@ export function PlayerControls({
                   type="button"
                   onClick={onTogglePlay}
                   disabled={playWaiting}
-                  className="seyirlik-player-main-toggle relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-white text-black shadow-2xl transition hover:scale-105 hover:bg-[var(--accent)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] disabled:cursor-wait disabled:hover:scale-100 sm:h-14 sm:w-14"
+                  className="seyirlik-player-main-toggle relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
                   aria-label={
                     playWaiting
                       ? t("player.waitingForSyncPlay")
@@ -225,12 +226,12 @@ export function PlayerControls({
                     <>
                       <Loader2
                         size={38}
-                        className="absolute animate-spin text-black/70 sm:size-12"
+                        className="absolute animate-spin text-white sm:size-12"
                         strokeWidth={2}
                       />
                       <Play
                         size={18}
-                        className="ml-0.5 text-black"
+                        className="ml-0.5 text-white"
                         fill="currentColor"
                         strokeWidth={2.4}
                       />
@@ -238,14 +239,14 @@ export function PlayerControls({
                   ) : isPlaying ? (
                     <Pause
                       size={25}
-                      className="text-black sm:size-7"
+                      className="text-white sm:size-7"
                       fill="currentColor"
                       strokeWidth={2.4}
                     />
                   ) : (
                     <Play
                       size={25}
-                      className="ml-0.5 text-black sm:size-7"
+                      className="ml-0.5 text-white sm:size-7"
                       fill="currentColor"
                       strokeWidth={2.4}
                     />
@@ -254,7 +255,7 @@ export function PlayerControls({
               </Tooltip>
               <Tooltip
                 content={t("player.rewind5")}
-                offset="3rem"
+                offset="2.5rem"
                 shortcut="←"
                 group="player-controls"
               >
@@ -269,7 +270,7 @@ export function PlayerControls({
               </Tooltip>
               <Tooltip
                 content={t("player.forward5")}
-                offset="3rem"
+                offset="2.5rem"
                 shortcut="→"
                 group="player-controls"
               >
@@ -297,7 +298,7 @@ export function PlayerControls({
                       ? t("player.showElapsedTime")
                       : t("player.showRemainingTime")
                   }
-                  offset="3.2rem"
+                  offset="2.8rem"
                   group="player-controls"
                 >
                   <button
@@ -340,7 +341,7 @@ export function PlayerControls({
 
                   <Tooltip
                     content={playbackQueueLabel}
-                    offset="3rem"
+                    offset="2.5rem"
                     group="player-controls"
                   >
                     <button
@@ -381,7 +382,7 @@ export function PlayerControls({
 
                 <Tooltip
                   content={t("player.settingsTitle")}
-                  offset="3rem"
+                  offset="2.5rem"
                   group="player-controls"
                 >
                   <button
@@ -396,7 +397,7 @@ export function PlayerControls({
               </div>
               <Tooltip
                 content={t("player.fullscreen")}
-                offset="3rem"
+                offset="2.5rem"
                 shortcut="F"
                 group="player-controls"
               >

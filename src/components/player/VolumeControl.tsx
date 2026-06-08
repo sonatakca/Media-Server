@@ -31,7 +31,7 @@ export function VolumeControl({
     >
       <Tooltip
         content={muted ? t("player.unmute") : t("player.mute")}
-        offset="3rem"
+        offset="2.5rem"
         shortcut="M"
         group="player-controls"
       >
@@ -49,7 +49,7 @@ export function VolumeControl({
       </Tooltip>
       <Tooltip
         content={`${t("player.volume")} ${Math.round((muted ? 0 : volume) * 100)}%`}
-        offset="4.3rem"
+        offset="3.7rem"
         group="player-controls"
       >
         <input
