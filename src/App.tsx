@@ -7,13 +7,7 @@ import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { useLanguage } from "./i18n/LanguageContext";
-import {
-  clearAuthSession,
-  clearServerUrl,
-  getServerUrl,
-  isAuthenticated,
-  setServerUrl,
-} from "./lib/authStorage";
+import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
 import {
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
   testServerConnection,
@@ -109,13 +103,8 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.warn("[Seyirlik] Server connection failed", error);
 
-        if (savedServerUrl) {
-          clearAuthSession();
-          clearServerUrl();
-        }
-
         if (isMounted) {
-          setState("failed");
+          setState(savedServerUrl ? "ready" : "failed");
         }
       }
     }
@@ -129,9 +118,10 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     function handleServerUnavailable() {
-      clearAuthSession();
-      clearServerUrl();
-      setState("failed");
+      console.warn(
+        "[Seyirlik] Jellyfin server became temporarily unavailable.",
+      );
+      setState("ready");
     }
 
     window.addEventListener(
