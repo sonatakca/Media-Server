@@ -439,7 +439,8 @@ export function MobileHomePage() {
     heroItem?.Type === "Series" ||
     heroItem?.MediaType === "Video";
 
-  let heroArtwork = null;
+  const heroThemeImageUrl = heroPosterUrl || heroImageUrl;
+  const heroArtworkKey = heroThemeImageUrl || "mobile-hero-bg-fallback";
   const heroDetailsTo = heroItem ? getRouteForItem(heroItem) : "/home";
 
   const heroCardVariants = {
@@ -466,23 +467,62 @@ export function MobileHomePage() {
     }),
   };
 
-  if (heroImageUrl) {
-    heroArtwork = (
-      <img
-        src={heroImageUrl}
-        alt=""
-        className="absolute inset-0 h-full w-full object-cover opacity-65"
-      />
-    );
-  }
-
   return (
     <div className="layout-no-offset min-h-screen pb-[calc(5.25rem+env(safe-area-inset-bottom))]">
       <section className="full-bleed relative min-h-[min(72svh,42rem)] overflow-hidden bg-zinc-950 px-4 pb-8 pt-[calc(4.75rem+env(safe-area-inset-top))]">
-        {heroArtwork}
-        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/45 to-[#050506]" />
-        <div className="absolute inset-0 backdrop-blur-xl" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-[#050506]/25 to-black/45" />
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(82,82,91,0.28),transparent_46%),linear-gradient(180deg,#111113_0%,#070708_55%,#050506_100%)]" />
+        <AnimatePresence mode="sync" initial={false}>
+          {heroThemeImageUrl ? (
+            <motion.div
+              key={heroArtworkKey}
+              className="absolute -inset-16 overflow-hidden will-change-[opacity,transform]"
+              initial={{
+                opacity: 0,
+                scale: shouldReduceMotion ? 1 : 1.025,
+              }}
+              animate={{
+                opacity: 1,
+                scale: 1,
+              }}
+              exit={{
+                opacity: 0,
+                scale: shouldReduceMotion ? 1 : 1.01,
+                transition: {
+                  opacity: {
+                    duration: shouldReduceMotion ? 0 : 0.6,
+                    ease: [0.4, 0, 1, 1],
+                  },
+                  scale: {
+                    duration: shouldReduceMotion ? 0 : 0.14,
+                    ease: [0.4, 0, 1, 1],
+                  },
+                },
+              }}
+              transition={{
+                opacity: {
+                  duration: shouldReduceMotion ? 0 : 0.9,
+                  delay: shouldReduceMotion ? 0 : 0.6,
+                  ease: [0.25, 1, 0.5, 1],
+                },
+                scale: {
+                  duration: shouldReduceMotion ? 0 : 0.62,
+                  delay: shouldReduceMotion ? 0 : 0.18,
+                  ease: [0.25, 1, 0.5, 1],
+                },
+              }}
+            >
+              <img
+                src={heroThemeImageUrl}
+                alt=""
+                className="h-full w-full scale-125 object-cover opacity-72 blur-3xl saturate-150"
+              />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_36%,rgba(255,255,255,0.12),transparent_42%)] mix-blend-overlay" />
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
+        <div className="absolute inset-0 bg-gradient-to-b from-black/72 via-black/38 to-[#050506]" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-[#050506]/20 to-black/30" />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#050506] to-transparent" />
 
         <div className="relative mx-auto flex w-full max-w-[25rem] flex-col items-center">
           <AnimatePresence mode="wait" custom={heroDirection} initial={false}>
@@ -510,97 +550,99 @@ export function MobileHomePage() {
                 ease: [0.25, 1, 0.5, 1],
               }}
             >
-              <Link
-                to={heroDetailsTo}
-                aria-label={heroTitle}
-                className="cinematic-card-shadow relative block aspect-[2/3] w-full overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900 shadow-2xl transition-transform duration-200 active:scale-[0.985]"
-              >
-                <AnimatePresence mode="wait" initial={false}>
-                  {heroPosterUrl || heroImageUrl ? (
-                    <motion.img
-                      key={heroPosterUrl || heroImageUrl}
-                      src={heroPosterUrl || heroImageUrl}
-                      alt={heroTitle}
-                      className="absolute inset-0 h-full w-full object-cover"
+              <div className="cinematic-card-shadow relative aspect-[2/3] w-full rounded-[2rem] bg-gradient-to-t from-zinc-400/35 via-zinc-600/18 to-transparent p-px shadow-2xl transition-transform duration-200 active:scale-[0.985]">
+                <Link
+                  to={heroDetailsTo}
+                  aria-label={heroTitle}
+                  className="relative block h-full w-full overflow-hidden rounded-[calc(2rem-1px)] bg-zinc-900"
+                >
+                  <AnimatePresence mode="wait" initial={false}>
+                    {heroPosterUrl || heroImageUrl ? (
+                      <motion.img
+                        key={heroPosterUrl || heroImageUrl}
+                        src={heroPosterUrl || heroImageUrl}
+                        alt={heroTitle}
+                        className="absolute inset-0 h-full w-full object-cover"
+                        initial={{
+                          opacity: 0,
+                          scale: shouldReduceMotion ? 1 : 1.045,
+                          filter: shouldReduceMotion ? "none" : "blur(14px)",
+                        }}
+                        animate={{
+                          opacity: 1,
+                          scale: 1,
+                          filter: "blur(0px)",
+                        }}
+                        exit={{
+                          opacity: 0,
+                          scale: shouldReduceMotion ? 1 : 0.985,
+                          filter: shouldReduceMotion ? "none" : "blur(10px)",
+                        }}
+                        transition={{
+                          duration: shouldReduceMotion ? 0 : 0.55,
+                          ease: [0.25, 1, 0.5, 1],
+                        }}
+                      />
+                    ) : null}
+                  </AnimatePresence>
+
+                  <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/0 to-black/90" />
+                  <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black via-black/50 to-transparent" />
+                  <AnimatePresence mode="wait" initial={false}>
+                    <motion.div
+                      key={heroItem?.Id ?? "mobile-hero-content-fallback"}
+                      className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-5 text-center"
                       initial={{
                         opacity: 0,
-                        scale: shouldReduceMotion ? 1 : 1.045,
-                        filter: shouldReduceMotion ? "none" : "blur(14px)",
+                        y: shouldReduceMotion ? 0 : 22,
+                        scale: shouldReduceMotion ? 1 : 0.985,
+                        filter: shouldReduceMotion ? "none" : "blur(10px)",
                       }}
                       animate={{
                         opacity: 1,
+                        y: 0,
                         scale: 1,
                         filter: "blur(0px)",
                       }}
                       exit={{
                         opacity: 0,
-                        scale: shouldReduceMotion ? 1 : 0.985,
-                        filter: shouldReduceMotion ? "none" : "blur(10px)",
+                        y: shouldReduceMotion ? 0 : -14,
+                        scale: shouldReduceMotion ? 1 : 0.99,
+                        filter: shouldReduceMotion ? "none" : "blur(8px)",
                       }}
                       transition={{
-                        duration: shouldReduceMotion ? 0 : 0.55,
+                        duration: shouldReduceMotion ? 0 : 0.42,
                         ease: [0.25, 1, 0.5, 1],
                       }}
-                    />
-                  ) : null}
-                </AnimatePresence>
+                    >
+                      {logoUrl ? (
+                        <img
+                          src={logoUrl}
+                          alt={heroTitle}
+                          className="cinematic-logo-shadow mb-4 max-h-20 max-w-[82%] object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]"
+                        />
+                      ) : (
+                        <h1 className="cinematic-logo-shadow mb-4 line-clamp-2 text-3xl font-black leading-none text-white drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]">
+                          {heroTitle}
+                        </h1>
+                      )}
 
-                <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/0 to-black/90" />
-                <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black via-black/50 to-transparent" />
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={heroItem?.Id ?? "mobile-hero-content-fallback"}
-                    className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-5 text-center"
-                    initial={{
-                      opacity: 0,
-                      y: shouldReduceMotion ? 0 : 22,
-                      scale: shouldReduceMotion ? 1 : 0.985,
-                      filter: shouldReduceMotion ? "none" : "blur(10px)",
-                    }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      scale: 1,
-                      filter: "blur(0px)",
-                    }}
-                    exit={{
-                      opacity: 0,
-                      y: shouldReduceMotion ? 0 : -14,
-                      scale: shouldReduceMotion ? 1 : 0.99,
-                      filter: shouldReduceMotion ? "none" : "blur(8px)",
-                    }}
-                    transition={{
-                      duration: shouldReduceMotion ? 0 : 0.42,
-                      ease: [0.25, 1, 0.5, 1],
-                    }}
-                  >
-                    {logoUrl ? (
-                      <img
-                        src={logoUrl}
-                        alt={heroTitle}
-                        className="cinematic-logo-shadow mb-4 max-h-20 max-w-[82%] object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]"
-                      />
-                    ) : (
-                      <h1 className="cinematic-logo-shadow mb-4 line-clamp-2 text-3xl font-black leading-none text-white drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]">
-                        {heroTitle}
-                      </h1>
-                    )}
-
-                    {heroItem && canPlay ? (
-                      <div className="flex w-full">
-                        <ButtonLink
-                          to={`/watch/${heroItem.Id}`}
-                          className="min-h-11 w-full rounded-full bg-white px-5 text-black shadow-[0_12px_30px_rgba(0,0,0,0.65)] hover:bg-white/90"
-                          onClick={(event) => event.stopPropagation()}
-                        >
-                          <Play size={20} fill="currentColor" />
-                          {t("common.play")}
-                        </ButtonLink>
-                      </div>
-                    ) : null}
-                  </motion.div>
-                </AnimatePresence>
-              </Link>
+                      {heroItem && canPlay ? (
+                        <div className="flex w-full">
+                          <ButtonLink
+                            to={`/watch/${heroItem.Id}`}
+                            className="min-h-11 w-full rounded-full bg-white px-5 text-black shadow-[0_12px_30px_rgba(0,0,0,0.65)] hover:bg-white/90"
+                            onClick={(event) => event.stopPropagation()}
+                          >
+                            <Play size={20} fill="currentColor" />
+                            {t("common.play")}
+                          </ButtonLink>
+                        </div>
+                      ) : null}
+                    </motion.div>
+                  </AnimatePresence>
+                </Link>
+              </div>
             </motion.div>
           </AnimatePresence>
 
