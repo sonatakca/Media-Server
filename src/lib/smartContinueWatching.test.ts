@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   buildSmartContinueWatchingItems,
   isSmartContinueCompleted,
@@ -30,13 +30,6 @@ function episode(
   });
 }
 
-const emptyDependencies = {
-  getAllSeriesEpisodes: vi.fn(),
-  getAllMovieItems: vi.fn(async () => []),
-  getAllBoxSetItems: vi.fn(async () => []),
-  getBoxSetItems: vi.fn(async () => []),
-};
-
 describe("Smart Continue Watching", () => {
   it("treats played items and 90% progress as completed", () => {
     expect(
@@ -66,96 +59,66 @@ describe("Smart Continue Watching", () => {
     ).toBe(false);
   });
 
-  it("replaces stale old episode resumes with the next episode after the latest completed episode", async () => {
-    const dependencies = {
-      ...emptyDependencies,
-      getAllSeriesEpisodes: vi.fn(async () => [
-        episode("s1e1", 1, 1, { UserData: { Played: true } }),
-        episode("s1e2", 1, 2, { UserData: { Played: true } }),
-        episode("s2e1", 2, 1, {
-          UserData: { LastPlayedDate: "2026-01-10T10:00:00Z" },
-        }),
-      ]),
-    };
+  it("prioritizes NextUp episodes and drops stale completed episodes from the resume feed", () => {
+    const staleResumeItem = episode("s1e1", 1, 1, {
+      UserData: {
+        PlaybackPositionTicks: 94,
+        LastPlayedDate: "2025-12-01T10:00:00Z",
+      },
+    });
+    const nextUpItem = episode("s1e2", 1, 2, {
+      UserData: {
+        PlaybackPositionTicks: 0,
+        LastPlayedDate: "2026-01-10T10:00:00Z",
+      },
+    });
 
-    const result = await buildSmartContinueWatchingItems(
-      [
-        episode("s1e1", 1, 1, {
-          UserData: {
-            PlaybackPositionTicks: 94,
-            LastPlayedDate: "2025-12-01T10:00:00Z",
-          },
-        }),
-      ],
-      { dependencies },
+    const result = buildSmartContinueWatchingItems(
+      [staleResumeItem],
+      [nextUpItem],
     );
 
-    expect(result.map((candidate) => candidate.Id)).toEqual(["s2e1"]);
+    expect(result.map((candidate) => candidate.Id)).toEqual(["s1e2"]);
   });
 
-  it("drops the show when every episode after the latest completed episode is also completed", async () => {
-    const dependencies = {
-      ...emptyDependencies,
-      getAllSeriesEpisodes: vi.fn(async () => [
-        episode("s1e1", 1, 1, { UserData: { Played: true } }),
-        episode("s1e2", 1, 2, { UserData: { Played: true } }),
-      ]),
-    };
+  it("filters out completely unstarted S1E1 pilot episodes", () => {
+    const unstartedPilot = episode("s1e1", 1, 1, {
+      UserData: { PlaybackPositionTicks: 0 },
+    });
 
-    const result = await buildSmartContinueWatchingItems(
-      [
-        episode("s1e1", 1, 1, {
-          UserData: { PlaybackPositionTicks: 94 },
-        }),
-      ],
-      { dependencies },
+    const startedPilot = episode("s1e1-started", 1, 1, {
+      SeriesId: "series-2",
+      UserData: { PlaybackPositionTicks: 15 },
+    });
+
+    const result = buildSmartContinueWatchingItems(
+      [],
+      [unstartedPilot, startedPilot],
     );
+
+    expect(result.map((candidate) => candidate.Id)).toEqual(["s1e1-started"]);
+  });
+
+  it("drops the show completely when the latest episode is completed and NextUp returns nothing", () => {
+    const finishedResumeItem = episode("s1e1", 1, 1, {
+      UserData: { PlaybackPositionTicks: 94 },
+    });
+
+    const result = buildSmartContinueWatchingItems([finishedResumeItem], []);
 
     expect(result).toEqual([]);
   });
 
-  it("keeps genuinely unfinished movie resumes without guessing sequels from titles", async () => {
-    const result = await buildSmartContinueWatchingItems(
-      [
-        item("movie-1", {
-          Type: "Movie",
-          Name: "Batman Returns",
-          RunTimeTicks: 100,
-          UserData: { PlaybackPositionTicks: 50 },
-        }),
-      ],
-      { dependencies: emptyDependencies },
-    );
+  it("keeps genuinely unfinished movie resumes", () => {
+    const movie = item("movie-1", {
+      Type: "Movie",
+      Name: "Batman Returns",
+      RunTimeTicks: 100,
+      UserData: { PlaybackPositionTicks: 50 },
+    });
+
+    const result = buildSmartContinueWatchingItems([movie], []);
 
     expect(result.map((candidate) => candidate.Id)).toEqual(["movie-1"]);
-    expect(emptyDependencies.getAllMovieItems).not.toHaveBeenCalled();
-  });
-
-  it("promotes the next movie only when TMDb collection metadata links the movies", async () => {
-    const completedMovie = item("movie-1", {
-      Type: "Movie",
-      Name: "Collection Part 1",
-      ProductionYear: 2020,
-      ProviderIds: { TmdbCollection: "collection-1" },
-      RunTimeTicks: 100,
-      UserData: { PlaybackPositionTicks: 95 },
-    });
-    const nextMovie = item("movie-2", {
-      Type: "Movie",
-      Name: "Collection Part 2",
-      ProductionYear: 2021,
-      ProviderIds: { TmdbCollection: "collection-1" },
-      UserData: { Played: false },
-    });
-    const dependencies = {
-      ...emptyDependencies,
-      getAllMovieItems: vi.fn(async () => [completedMovie, nextMovie]),
-    };
-
-    const result = await buildSmartContinueWatchingItems([completedMovie], {
-      dependencies,
-    });
-
-    expect(result.map((candidate) => candidate.Id)).toEqual(["movie-2"]);
   });
 });

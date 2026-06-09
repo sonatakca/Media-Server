@@ -48,16 +48,13 @@ export function isSmartContinueCompleted(
   return isItemCompleted(item, completionThreshold);
 }
 
-export async function getSmartContinueWatchingItems(options?: {
-  completionThreshold?: number;
-}): Promise<JellyfinItem[]> {
+export function buildSmartContinueWatchingItems(
+  resumeItems: JellyfinItem[],
+  nextUpItems: JellyfinItem[],
+  options?: { completionThreshold?: number },
+): JellyfinItem[] {
   const completionThreshold =
     options?.completionThreshold ?? DEFAULT_COMPLETION_THRESHOLD;
-
-  const [resumeItems, nextUpItems] = await Promise.all([
-    getContinueWatchingItems().catch(() => [] as JellyfinItem[]),
-    getNextUpEpisodes().catch(() => [] as JellyfinItem[]),
-  ]);
 
   const seenItemIds = new Set<string>();
   const seenSeriesIds = new Set<string>();
@@ -106,4 +103,15 @@ export async function getSmartContinueWatchingItems(options?: {
   return smartItems.sort(
     (left, right) => getActivityTimestamp(right) - getActivityTimestamp(left),
   );
+}
+
+export async function getSmartContinueWatchingItems(options?: {
+  completionThreshold?: number;
+}): Promise<JellyfinItem[]> {
+  const [resumeItems, nextUpItems] = await Promise.all([
+    getContinueWatchingItems().catch(() => [] as JellyfinItem[]),
+    getNextUpEpisodes().catch(() => [] as JellyfinItem[]),
+  ]);
+
+  return buildSmartContinueWatchingItems(resumeItems, nextUpItems, options);
 }
