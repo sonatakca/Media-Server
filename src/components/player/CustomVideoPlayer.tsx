@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type MouseEvent,
   type PointerEvent,
 } from "react";
@@ -82,7 +81,6 @@ import {
   getNativeAudioTrackSnapshot,
   tryApplyNativeAudioTrack,
 } from "./nativeAudioTracks";
-import { readPortraitPlayerRotation } from "./orientation";
 import {
   getPlaybackUrlDebugParams,
   isMasterHlsPlaybackUrl,
@@ -117,7 +115,6 @@ import type {
   CustomVideoPlayerProps,
   PendingAudioTranscodePlay,
   PendingSourceRestore,
-  PortraitPlayerRotation,
   SubtitleCue,
   SubtitleDragState,
   SubtitlePosition,
@@ -152,31 +149,6 @@ export function CustomVideoPlayer({
   const { t } = useLanguage();
   const viewport = useViewportCapabilities();
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const [portraitPlayerRotation, setPortraitPlayerRotation] =
-    useState<PortraitPlayerRotation>(() => readPortraitPlayerRotation());
-
-  useEffect(() => {
-    const updatePortraitPlayerRotation = () => {
-      setPortraitPlayerRotation(readPortraitPlayerRotation());
-    };
-    const screenOrientation = window.screen.orientation;
-
-    updatePortraitPlayerRotation();
-    window.addEventListener("orientationchange", updatePortraitPlayerRotation);
-    screenOrientation?.addEventListener("change", updatePortraitPlayerRotation);
-
-    return () => {
-      window.removeEventListener(
-        "orientationchange",
-        updatePortraitPlayerRotation,
-      );
-      screenOrientation?.removeEventListener(
-        "change",
-        updatePortraitPlayerRotation,
-      );
-    };
-  }, []);
-
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
@@ -3116,30 +3088,17 @@ export function CustomVideoPlayer({
   const isCompactPhonePlayer =
     Math.min(viewport.width, viewport.height) <= 520 &&
     Math.max(viewport.width, viewport.height) <= 980;
-  const shouldRotatePortraitPlayer =
-    viewport.isPortrait && isCompactPhonePlayer;
-  const seekPointerAxis = shouldRotatePortraitPlayer
-    ? portraitPlayerRotation === 90
-      ? "vertical-forward"
-      : "vertical-reverse"
-    : "horizontal";
-  const portraitPlayerStyle = shouldRotatePortraitPlayer
-    ? ({
-        "--seyirlik-player-rotation": `${portraitPlayerRotation}deg`,
-      } as CSSProperties)
-    : undefined;
+
+  const seekPointerAxis = "horizontal";
 
   return (
     <div
       ref={containerRef}
-      className={`seyirlik-player-shell select-none ${
-        shouldRotatePortraitPlayer
-          ? "seyirlik-player-shell--rotated-portrait"
-          : "fixed inset-0"
-      } ${isCompactPhonePlayer ? "seyirlik-player-shell--phone" : ""} z-50 min-h-0 overflow-hidden bg-black text-white ${
+      className={`seyirlik-player-shell fixed inset-0 select-none ${
+        isCompactPhonePlayer ? "seyirlik-player-shell--phone" : ""
+      } z-50 min-h-0 overflow-hidden bg-black text-white ${
         shouldShowPlayerCursor ? "cursor-default" : "cursor-none"
       }`}
-      style={portraitPlayerStyle}
       onMouseMove={handlePlayerMouseMove}
       onPointerUpCapture={releaseTouchFocusAndControlsHover}
       onPointerCancelCapture={releaseTouchFocusAndControlsHover}

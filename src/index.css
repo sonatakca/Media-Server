@@ -608,21 +608,6 @@ img {
   --seyirlik-player-stage-width: 100dvw;
 }
 
-.seyirlik-player-shell--rotated-portrait {
-  --seyirlik-player-stage-height: 100dvw;
-  --seyirlik-player-stage-width: 100dvh;
-  position: fixed;
-  inset: auto;
-  left: 50%;
-  top: 50%;
-  width: 100dvh;
-  height: 100dvw;
-  max-height: none;
-  transform: translate(-50%, -50%)
-    rotate(var(--seyirlik-player-rotation, 90deg));
-  transform-origin: center;
-}
-
 .seyirlik-player-shell--phone .seyirlik-player-top-chrome {
   padding-inline: max(
     0.7rem,
