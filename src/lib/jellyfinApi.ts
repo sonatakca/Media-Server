@@ -356,6 +356,27 @@ export async function getItemsForLibrary(
   return response.Items ?? [];
 }
 
+export async function getNextUpEpisodes(): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    "/Shows/NextUp",
+    {
+      params: {
+        userId: session.userId,
+        limit: 20,
+        fields: DEFAULT_ITEM_FIELDS,
+        enableImages: true,
+        imageTypeLimit: 1,
+        enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
+      },
+    },
+  );
+
+  return response.Items ?? [];
+}
+
 export async function getTopLevelItemsForLibrary(
   libraryId: string,
   collectionType?: string,

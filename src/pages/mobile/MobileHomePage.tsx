@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Info, Play } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { Link } from "react-router-dom";
+import { Play } from "lucide-react";
 import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileLibraryTile } from "../../components/mobile/MobileLibraryTile";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
+import { TimedCarouselIndicators } from "../../components/TimedCarouselIndicators";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
@@ -25,6 +27,11 @@ import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
+
+const HERO_ROTATION_INTERVAL_MS = 12000;
+
+const HERO_SWIPE_DISTANCE_THRESHOLD = 70;
+const HERO_SWIPE_VELOCITY_THRESHOLD = 450;
 
 interface MobileHomeData {
   libraries: JellyfinLibrary[];
@@ -68,6 +75,34 @@ function getHeroImage(item?: JellyfinItem): string {
   return "";
 }
 
+function getHeroPosterImage(item?: JellyfinItem): string {
+  if (!item) {
+    return "";
+  }
+
+  if (item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag) {
+    return getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 900);
+  }
+
+  if (item.ImageTags?.Primary) {
+    return getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900);
+  }
+
+  if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]) {
+    return getBackdropImageUrl(
+      item.ParentBackdropItemId,
+      item.ParentBackdropImageTags[0],
+      1280,
+    );
+  }
+
+  if (item.BackdropImageTags?.[0]) {
+    return getBackdropImageUrl(item.Id, item.BackdropImageTags[0], 1280);
+  }
+
+  return "";
+}
+
 function scoreHeroItem(item: JellyfinItem): number {
   let score = 0;
 
@@ -101,6 +136,21 @@ function getFeaturedItem(items: JellyfinItem[]): JellyfinItem | undefined {
     .sort((left, right) => scoreHeroItem(right) - scoreHeroItem(left))[0];
 }
 
+function getFeaturedItems(items: JellyfinItem[]): JellyfinItem[] {
+  const seenIds = new Set<string>();
+
+  return [...items]
+    .filter((item) => {
+      if (seenIds.has(item.Id)) {
+        return false;
+      }
+
+      seenIds.add(item.Id);
+      return true;
+    })
+    .sort((left, right) => scoreHeroItem(right) - scoreHeroItem(left));
+}
+
 function MobileHomeLoading() {
   return (
     <div className="layout-no-offset min-h-screen pb-24">
@@ -124,6 +174,8 @@ function MobileHomeLoading() {
 
 export function MobileHomePage() {
   const { t } = useLanguage();
+  const shouldReduceMotion = useReducedMotion();
+  const wasHeroPausedBeforeDragRef = useRef(false);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -135,6 +187,21 @@ export function MobileHomePage() {
   const [data, setData] = useState<MobileHomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
+  const [heroIndex, setHeroIndex] = useState(0);
+  const [heroDirection, setHeroDirection] = useState<1 | -1>(1);
+  const [isHeroPaused, setIsHeroPaused] = useState(false);
+  const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
+  const [heroProgressStartedAtMs, setHeroProgressStartedAtMs] = useState(() =>
+    Date.now(),
+  );
+
+  const heroItems = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+
+    return getFeaturedItems([...data.continueWatching, ...data.latestMedia]);
+  }, [data]);
 
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
@@ -156,6 +223,29 @@ export function MobileHomePage() {
       robots: "noindex, nofollow",
     });
   }, [t]);
+
+  useEffect(() => {
+    setHeroIndex(0);
+    setIsHeroPaused(false);
+    setHeroProgressStartedAtMs(Date.now());
+    setHeroProgressResetKey((current) => current + 1);
+  }, [heroItems]);
+
+  useEffect(() => {
+    if (heroItems.length <= 1 || isHeroPaused) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setHeroProgressStartedAtMs(Date.now());
+      setHeroDirection(1);
+      setHeroIndex((currentIndex) => (currentIndex + 1) % heroItems.length);
+    }, HERO_ROTATION_INTERVAL_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [heroItems.length, heroProgressResetKey, isHeroPaused, heroIndex]);
 
   useEffect(() => {
     let isMounted = true;
@@ -239,6 +329,57 @@ export function MobileHomePage() {
     };
   }, [refreshSmartContinueWatching]);
 
+  const goToHeroIndex = useCallback(
+    (nextIndex: number, direction: 1 | -1) => {
+      if (heroItems.length === 0) {
+        return;
+      }
+
+      const wrappedIndex = (nextIndex + heroItems.length) % heroItems.length;
+
+      setHeroDirection(direction);
+      setHeroProgressStartedAtMs(Date.now());
+      setHeroIndex(wrappedIndex);
+      setHeroProgressResetKey((current) => current + 1);
+    },
+    [heroItems.length],
+  );
+
+  const handleSelectHeroIndex = (index: number) => {
+    const direction = index >= heroIndex ? 1 : -1;
+    goToHeroIndex(index, direction);
+  };
+
+  const handleToggleHeroPaused = () => {
+    setIsHeroPaused((current) => !current);
+  };
+
+  const handleHeroDragEnd = (
+    _event: MouseEvent | TouchEvent | PointerEvent,
+    info: { offset: { x: number }; velocity: { x: number } },
+  ) => {
+    if (heroItems.length <= 1) {
+      return;
+    }
+
+    const draggedLeft =
+      info.offset.x < -HERO_SWIPE_DISTANCE_THRESHOLD ||
+      info.velocity.x < -HERO_SWIPE_VELOCITY_THRESHOLD;
+
+    const draggedRight =
+      info.offset.x > HERO_SWIPE_DISTANCE_THRESHOLD ||
+      info.velocity.x > HERO_SWIPE_VELOCITY_THRESHOLD;
+
+    if (draggedLeft) {
+      goToHeroIndex(heroIndex + 1, 1);
+      return;
+    }
+
+    if (draggedRight) {
+      goToHeroIndex(heroIndex - 1, -1);
+    }
+  };
+
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
   }
@@ -261,16 +402,16 @@ export function MobileHomePage() {
     void refreshSmartContinueWatching();
   };
 
-  const heroItem = getFeaturedItem([
-    ...data.continueWatching,
-    ...data.latestMedia,
-  ]);
+  const selectedHeroIndex = heroIndex < heroItems.length ? heroIndex : 0;
+  const heroItem =
+    heroItems[selectedHeroIndex] ??
+    getFeaturedItem([...data.continueWatching, ...data.latestMedia]);
+  const showHeroCarousel = heroItems.length > 1;
   const heroImageUrl = getHeroImage(heroItem);
+  const heroPosterUrl = getHeroPosterImage(heroItem);
   const heroTitle = heroItem
     ? getDisplayTitle(heroItem, mediaFormatLabels)
     : "Seyirlik";
-  const heroDescription =
-    heroItem?.Overview?.trim() || t("hero.fallbackDescription");
   const logoUrl = heroItem?.ImageTags?.Logo
     ? getLogoImageUrl(heroItem.Id, heroItem.ImageTags.Logo, 620)
     : heroItem?.ParentLogoItemId && heroItem.ParentLogoImageTag
@@ -291,16 +432,39 @@ export function MobileHomePage() {
     formatRuntime(heroItem?.RunTimeTicks, mediaFormatLabels),
     mediaTypeLabel,
   ].filter(Boolean);
+  const heroGenres = heroItem?.Genres?.slice(0, 3) ?? [];
   const canPlay =
     heroItem?.Type === "Movie" ||
     heroItem?.Type === "Episode" ||
+    heroItem?.Type === "Series" ||
     heroItem?.MediaType === "Video";
-  const detailsButtonVariant = canPlay ? "secondary" : "primary";
-  const detailsButtonClass = canPlay
-    ? "min-h-11 rounded-full px-5"
-    : "min-h-11 rounded-full bg-white px-5 text-black hover:bg-white/90";
 
   let heroArtwork = null;
+  const heroDetailsTo = heroItem ? getRouteForItem(heroItem) : "/home";
+
+  const heroCardVariants = {
+    initial: (direction: 1 | -1) => ({
+      opacity: 0,
+      x: shouldReduceMotion ? 0 : direction * 200,
+      scale: shouldReduceMotion ? 1 : 0.965,
+      rotateY: shouldReduceMotion ? 0 : direction * -8,
+      filter: shouldReduceMotion ? "none" : "blur(14px)",
+    }),
+    animate: {
+      opacity: 1,
+      x: 0,
+      scale: 1,
+      rotateY: 0,
+      filter: "blur(0px)",
+    },
+    exit: (direction: 1 | -1) => ({
+      opacity: 0,
+      x: shouldReduceMotion ? 0 : direction * -200,
+      scale: shouldReduceMotion ? 1 : 0.965,
+      rotateY: shouldReduceMotion ? 0 : direction * 8,
+      filter: shouldReduceMotion ? "none" : "blur(12px)",
+    }),
+  };
 
   if (heroImageUrl) {
     heroArtwork = (
@@ -312,62 +476,177 @@ export function MobileHomePage() {
     );
   }
 
-  let playAction = null;
-
-  if (heroItem && canPlay) {
-    playAction = (
-      <ButtonLink
-        to={`/watch/${heroItem.Id}`}
-        className="min-h-11 rounded-full bg-white px-5 text-black hover:bg-white/90"
-      >
-        <Play size={16} fill="currentColor" />
-        {t("common.play")}
-      </ButtonLink>
-    );
-  }
-
   return (
     <div className="layout-no-offset min-h-screen pb-[calc(5.25rem+env(safe-area-inset-bottom))]">
-      <section className="full-bleed relative h-[min(62svh,31rem)] min-h-[27rem] overflow-hidden bg-zinc-950">
+      <section className="full-bleed relative min-h-[min(72svh,42rem)] overflow-hidden bg-zinc-950 px-4 pb-8 pt-[calc(4.75rem+env(safe-area-inset-top))]">
         {heroArtwork}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/80 via-black/38 to-transparent" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-black/18 to-black/45" />
-        <div className="relative flex h-full flex-col justify-end px-4 pb-8 pt-[calc(4.25rem+env(safe-area-inset-top))]">
-          <p className="mb-3 text-xs font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-            {t("hero.featured")}
-          </p>
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={heroTitle}
-              className="cinematic-logo-shadow mb-3 max-h-[4.5rem] max-w-[78vw] object-contain object-left"
-            />
-          ) : (
-            <h1 className="mb-2 max-w-[20rem] text-4xl font-black leading-[0.95] text-white">
-              {heroTitle}
-            </h1>
-          )}
-          {metadata.length > 0 ? (
-            <p className="mb-3 text-xs font-bold uppercase tracking-[0.14em] text-white/68">
-              {metadata.join(" · ")}
-            </p>
-          ) : null}
-          <p className="line-clamp-2 max-w-[21rem] text-sm leading-6 text-white/66">
-            {heroDescription}
-          </p>
-          {heroItem ? (
-            <div className="mt-5 flex gap-2.5">
-              {playAction}
-              <ButtonLink
-                to={getRouteForItem(heroItem)}
-                variant={detailsButtonVariant}
-                className={detailsButtonClass}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/75 via-black/45 to-[#050506]" />
+        <div className="absolute inset-0 backdrop-blur-xl" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-[#050506]/25 to-black/45" />
+
+        <div className="relative mx-auto flex w-full max-w-[25rem] flex-col items-center">
+          <AnimatePresence mode="wait" custom={heroDirection} initial={false}>
+            <motion.div
+              key={heroItem?.Id ?? "mobile-hero-card-fallback"}
+              custom={heroDirection}
+              drag={showHeroCarousel ? "x" : false}
+              dragConstraints={{ left: 0, right: 0 }}
+              dragElastic={0.18}
+              onDragStart={() => {
+                wasHeroPausedBeforeDragRef.current = isHeroPaused;
+                setIsHeroPaused(true);
+              }}
+              onDragEnd={(event, info) => {
+                handleHeroDragEnd(event, info);
+                setIsHeroPaused(wasHeroPausedBeforeDragRef.current);
+              }}
+              className="w-full max-w-[20.5rem] touch-pan-y"
+              variants={heroCardVariants}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.42,
+                ease: [0.25, 1, 0.5, 1],
+              }}
+            >
+              <Link
+                to={heroDetailsTo}
+                aria-label={heroTitle}
+                className="cinematic-card-shadow relative block aspect-[2/3] w-full overflow-hidden rounded-[2rem] border border-white/10 bg-zinc-900 shadow-2xl transition-transform duration-200 active:scale-[0.985]"
               >
-                <Info size={16} />
-                {t("common.details")}
-              </ButtonLink>
-            </div>
-          ) : null}
+                <AnimatePresence mode="wait" initial={false}>
+                  {heroPosterUrl || heroImageUrl ? (
+                    <motion.img
+                      key={heroPosterUrl || heroImageUrl}
+                      src={heroPosterUrl || heroImageUrl}
+                      alt={heroTitle}
+                      className="absolute inset-0 h-full w-full object-cover"
+                      initial={{
+                        opacity: 0,
+                        scale: shouldReduceMotion ? 1 : 1.045,
+                        filter: shouldReduceMotion ? "none" : "blur(14px)",
+                      }}
+                      animate={{
+                        opacity: 1,
+                        scale: 1,
+                        filter: "blur(0px)",
+                      }}
+                      exit={{
+                        opacity: 0,
+                        scale: shouldReduceMotion ? 1 : 0.985,
+                        filter: shouldReduceMotion ? "none" : "blur(10px)",
+                      }}
+                      transition={{
+                        duration: shouldReduceMotion ? 0 : 0.55,
+                        ease: [0.25, 1, 0.5, 1],
+                      }}
+                    />
+                  ) : null}
+                </AnimatePresence>
+
+                <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/0 to-black/90" />
+                <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black via-black/50 to-transparent" />
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={heroItem?.Id ?? "mobile-hero-content-fallback"}
+                    className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-5 text-center"
+                    initial={{
+                      opacity: 0,
+                      y: shouldReduceMotion ? 0 : 22,
+                      scale: shouldReduceMotion ? 1 : 0.985,
+                      filter: shouldReduceMotion ? "none" : "blur(10px)",
+                    }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      scale: 1,
+                      filter: "blur(0px)",
+                    }}
+                    exit={{
+                      opacity: 0,
+                      y: shouldReduceMotion ? 0 : -14,
+                      scale: shouldReduceMotion ? 1 : 0.99,
+                      filter: shouldReduceMotion ? "none" : "blur(8px)",
+                    }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.42,
+                      ease: [0.25, 1, 0.5, 1],
+                    }}
+                  >
+                    {logoUrl ? (
+                      <img
+                        src={logoUrl}
+                        alt={heroTitle}
+                        className="cinematic-logo-shadow mb-4 max-h-20 max-w-[82%] object-contain drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]"
+                      />
+                    ) : (
+                      <h1 className="cinematic-logo-shadow mb-4 line-clamp-2 text-3xl font-black leading-none text-white drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]">
+                        {heroTitle}
+                      </h1>
+                    )}
+
+                    {heroItem && canPlay ? (
+                      <div className="flex w-full">
+                        <ButtonLink
+                          to={`/watch/${heroItem.Id}`}
+                          className="min-h-11 w-full rounded-full bg-white px-5 text-black shadow-[0_12px_30px_rgba(0,0,0,0.65)] hover:bg-white/90"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <Play size={20} fill="currentColor" />
+                          {t("common.play")}
+                        </ButtonLink>
+                      </div>
+                    ) : null}
+                  </motion.div>
+                </AnimatePresence>
+              </Link>
+            </motion.div>
+          </AnimatePresence>
+
+          <AnimatePresence>
+            {showHeroCarousel ? (
+              <motion.div
+                key="mobile-hero-carousel-indicators"
+                layout
+                className="mt-4 max-w-full overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)]"
+                initial={{
+                  opacity: 0,
+                  y: shouldReduceMotion ? 0 : "140%",
+                  scale: shouldReduceMotion ? 1 : 1.25,
+                }}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  scale: 1.3,
+                }}
+                exit={{
+                  opacity: 0,
+                  y: shouldReduceMotion ? 0 : "222%",
+                  scale: shouldReduceMotion ? 1 : 0.96,
+                }}
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 1,
+                  delay: shouldReduceMotion ? 0 : 0.1,
+                  ease: [0.25, 1, 0.5, 1],
+                }}
+              >
+                <TimedCarouselIndicators
+                  count={heroItems.length}
+                  activeIndex={selectedHeroIndex}
+                  durationMs={HERO_ROTATION_INTERVAL_MS}
+                  progressStartedAtMs={heroProgressStartedAtMs}
+                  onSelect={handleSelectHeroIndex}
+                  isPaused={isHeroPaused}
+                  progressResetKey={heroProgressResetKey}
+                  onTogglePaused={handleToggleHeroPaused}
+                  showPauseButton
+                  maxVisibleDots={9}
+                  ariaLabel="Featured carousel"
+                />
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
         </div>
       </section>
 

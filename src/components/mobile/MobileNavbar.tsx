@@ -1,5 +1,8 @@
 import { useEffect, useState } from "react";
-import { Film, Home, LogOut, Palette, Tv } from "lucide-react";
+import { LogOut, Palette } from "lucide-react";
+import { GoHomeFill } from "react-icons/go";
+import { RiMovie2Fill } from "react-icons/ri";
+import { TbDeviceTv } from "react-icons/tb";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -9,11 +12,19 @@ import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { Tooltip } from "../ui/Tooltip";
 
+function ActiveTabBorder() {
+  return (
+    <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/50 via-white/20 to-transparent p-px opacity-50">
+      <div className="h-full w-full rounded-2xl bg-black/50" />
+    </div>
+  );
+}
+
 function getTabClassName(isActive: boolean): string {
   const colorClass = isActive ? "text-white" : "text-white/52";
   const backgroundClass = isActive ? "bg-white/[0.08]" : "bg-transparent";
 
-  return `relative mx-0.5 mt-1 flex min-h-14 min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-2xl text-[0.68rem] font-bold transition-[background-color,color] ${colorClass} ${backgroundClass}`;
+  return `relative mx-0.5 mt-1 flex min-h-14 min-w-0 flex-1 overflow-hidden flex-col items-center justify-center gap-1 rounded-2xl text-[0.68rem] font-bold transition-[background-color,color] ${colorClass} ${backgroundClass}`;
 }
 
 export function MobileNavbar() {
@@ -97,13 +108,13 @@ export function MobileNavbar() {
     location.pathname === "/home" || location.pathname.startsWith("/item/");
   const showHeaderSurface = hasScrolled || !headerOverArtwork;
   const headerSurfaceClass = showHeaderSurface
-    ? "border-white/[0.08] bg-black/88 backdrop-blur-xl"
-    : "border-transparent bg-gradient-to-b from-black/60 to-transparent";
+    ? "bg-black/50 backdrop-blur-xl"
+    : "bg-transparent";
 
   return (
     <>
       <header
-        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between border-b px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[background-color,border-color,backdrop-filter] duration-300 ${headerSurfaceClass}`}
+        className={`fixed inset-x-0 top-0 z-40 flex h-[calc(3.5rem+env(safe-area-inset-top))] items-end justify-between  px-4 pb-2 pt-[env(safe-area-inset-top)] transition-[background-color,border-color,backdrop-filter] duration-300 ${headerSurfaceClass}`}
       >
         <Link
           to="/home"
@@ -115,7 +126,7 @@ export function MobileNavbar() {
               src={logoOnSide}
               alt="Seyirlik"
               draggable={false}
-              className="h-7 w-auto max-w-28 object-contain object-left"
+              className="h-12 w-auto max-w-40 object-contain object-left"
               onError={() => setLogoFailed(true)}
             />
           ) : (
@@ -142,39 +153,52 @@ export function MobileNavbar() {
         </div>
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start border-t border-white/10 bg-black/95 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl">
+      <nav className="fixed inset-x-0 bottom-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start bg-black/50 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl  landscape:hidden">
         <NavLink
           to="/home"
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          <Home size={20} />
-          <span>{t("nav.home")}</span>
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              <GoHomeFill size={30} className="relative z-10" />
+              <span className="relative z-10">{t("nav.home")}</span>
+            </>
+          )}
         </NavLink>
         <NavLink
           to={libraryRoutes.movies}
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          <Film size={20} />
-          <span>{t("nav.movies")}</span>
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              <RiMovie2Fill size={30} className="relative z-10" />
+              <span className="relative z-10">{t("nav.movies")}</span>
+            </>
+          )}
         </NavLink>
         <NavLink
           to={libraryRoutes.series}
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          <Tv size={20} />
-          <span>{t("nav.series")}</span>
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              <TbDeviceTv size={30} className="relative z-10" />
+              <span className="relative z-10">{t("nav.series")}</span>
+            </>
+          )}
         </NavLink>
-        <Tooltip content={t("nav.changeTheme")} placement="top">
-          <button
-            type="button"
-            onClick={handleThemeChange}
-            aria-label={t("nav.changeTheme")}
-            className={getTabClassName(false)}
-          >
-            <Palette size={20} />
-            <span>{t("nav.changeTheme")}</span>
-          </button>
-        </Tooltip>
+        <button
+          type="button"
+          onClick={handleThemeChange}
+          aria-label={t("nav.changeTheme")}
+          className={getTabClassName(false)}
+        >
+          <Palette size={27} className="relative z-10" />
+          <span className="relative z-10">{t("nav.changeTheme")}</span>
+        </button>
       </nav>
     </>
   );

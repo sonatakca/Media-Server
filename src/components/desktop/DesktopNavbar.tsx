@@ -120,7 +120,7 @@ export function DesktopNavbar() {
     <header
       className={`fixed inset-x-0 top-0 z-40 select-none pt-[env(safe-area-inset-top)] transition-[background-color,border-color,box-shadow,backdrop-filter] ease-out [-webkit-tap-highlight-color:transparent] ${
         hasScrolled
-          ? "duration-700 border-b border-white/[0.08] bg-black/95 shadow-navbar-glass backdrop-blur-2xl"
+          ? "duration-700 border-b border-white/[0.08] bg-black/50 shadow-navbar-glass backdrop-blur-2xl"
           : "duration-500 border-b border-transparent bg-transparent shadow-none backdrop-blur-0"
       }`}
     >

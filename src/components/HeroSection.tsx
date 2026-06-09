@@ -1,5 +1,5 @@
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Info, Play } from "lucide-react";
 import { ButtonLink } from "./Button";
@@ -11,6 +11,8 @@ import {
 } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
+import { getPlayTargetForItem } from "../lib/playTarget";
+import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
@@ -106,6 +108,7 @@ export function HeroSection({
 }: HeroSectionProps) {
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
+  const navigate = useNavigate();
   const heroSectionRef = useRef<HTMLElement | null>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
@@ -154,7 +157,24 @@ export function HeroSection({
   const canPlay =
     item?.Type === "Movie" ||
     item?.Type === "Episode" ||
+    item?.Type === "Series" ||
     item?.MediaType === "Video";
+  const playTo =
+    item?.Type === "Series"
+      ? getRouteForItem(item)
+      : item
+        ? `/watch/${item.Id}`
+        : "#";
+  const handlePlayClick = async (event: MouseEvent<HTMLAnchorElement>) => {
+    if (!item) {
+      return;
+    }
+
+    event.preventDefault();
+
+    const target = await getPlayTargetForItem(item);
+    navigate(target);
+  };
   const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
   const softEase: [number, number, number, number] = [0.25, 1, 0.5, 1];
   const heroImageLoaded = Boolean(
@@ -765,8 +785,9 @@ export function HeroSection({
                   <>
                     {canPlay ? (
                       <ButtonLink
-                        to={`/watch/${item.Id}`}
+                        to={playTo}
                         className="min-h-10 rounded-full px-4 text-sm shadow-button-glow sm:min-h-12 sm:px-6 sm:text-base"
+                        onClick={handlePlayClick}
                       >
                         <Play size={20} fill="currentColor" />
                         <AnimatedWidth value={t("common.play")}>

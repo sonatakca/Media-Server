@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
-const MOBILE_VIEW_QUERY = "(max-width: 768px)";
+const MOBILE_VIEW_QUERY = "(max-width: 1023px)";
+const devMode = import.meta.env.DEV;
 
 function readIsMobileView(): boolean {
   if (typeof window === "undefined" || !window.matchMedia) {
@@ -20,6 +21,13 @@ export function useIsMobileView(): boolean {
 
     const mediaQuery = window.matchMedia(MOBILE_VIEW_QUERY);
     const updateIsMobile = () => {
+      if (devMode) {
+        console.log("devMode", devMode);
+        console.log("innerWidth:", window.innerWidth);
+        console.log("visualViewport:", window.visualViewport?.width);
+        console.log("mobile:", mediaQuery.matches);
+      }
+
       setIsMobile(mediaQuery.matches);
     };
 
