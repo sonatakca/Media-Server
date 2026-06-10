@@ -336,7 +336,7 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`seyirlik-player-center-toggle absolute left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 hover:bg-[var(--accent-strongest)] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+        className={`seyirlik-player-center-toggle absolute backdrop-blur-2xl left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 hover:bg-[var(--accent-strongest)] focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
             ? "scale-100 opacity-100"
             : "pointer-events-none scale-0 opacity-0"
