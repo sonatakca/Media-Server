@@ -112,6 +112,7 @@ export function HeroSection({
   const heroSectionRef = useRef<HTMLElement | null>(null);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
+  const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
   const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
@@ -271,6 +272,7 @@ export function HeroSection({
 
   useEffect(() => {
     setFailedImageUrls([]);
+    setIsLogoLoaded(false);
   }, [item?.Id]);
 
   useEffect(() => {
@@ -515,7 +517,7 @@ export function HeroSection({
           className="hero-cinematic-vignette z-10"
           initial={false}
           animate={{
-            opacity: isHeroIntroDone ? 0.58 : 1,
+            opacity: isHeroIntroDone ? 0.25 : 1,
           }}
           transition={{
             duration: shouldReduceMotion ? 0 : 1.25,
@@ -580,11 +582,8 @@ export function HeroSection({
               }}
             >
               {logoUrl ? (
-                <motion.img
-                  src={logoUrl}
-                  alt={title}
-                  draggable={false}
-                  className="cinematic-logo-shadow h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] origin-left select-none object-contain object-left sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)]"
+                <motion.div
+                  className="cinematic-logo-motion-wrap origin-left"
                   initial={{
                     opacity: 0,
                     y: shouldReduceMotion ? 0 : 20,
@@ -616,7 +615,27 @@ export function HeroSection({
                     delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
                     ease: softEase,
                   }}
-                />
+                >
+                  <img
+                    src={logoUrl}
+                    alt=""
+                    draggable={false}
+                    aria-hidden="true"
+                    className={`cinematic-logo-shadow cinematic-logo-shadow-ghost h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] select-none object-contain object-left transition-opacity duration-300 sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)] ${
+                      isLogoLoaded ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+
+                  <img
+                    src={logoUrl}
+                    alt={title}
+                    draggable={false}
+                    onLoad={() => setIsLogoLoaded(true)}
+                    className={`cinematic-logo-image h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] select-none object-contain object-left transition-opacity duration-300 sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)] ${
+                      isLogoLoaded ? "opacity-100" : "opacity-0"
+                    }`}
+                  />
+                </motion.div>
               ) : (
                 <motion.h1
                   className="text-cinematic-title max-w-3xl origin-left text-4xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
@@ -669,8 +688,8 @@ export function HeroSection({
                     duration: shouldReduceMotion
                       ? 0
                       : isHeroIntroDone
-                        ? 1.15
-                        : 0.78,
+                        ? 0.5
+                        : 0.5,
                     delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.48,
                     ease: softEase,
                   }}
@@ -786,10 +805,10 @@ export function HeroSection({
                     {canPlay ? (
                       <ButtonLink
                         to={playTo}
-                        className="min-h-10 rounded-full px-4 text-sm shadow-button-glow sm:min-h-12 sm:px-6 sm:text-base"
+                        className="bg-white min-h-10 rounded-full px-4 text-sm shadow-button-glow hover:translate-y-0 hover:bg-white/80 sm:min-h-16 sm:px-12 sm:text-lg"
                         onClick={handlePlayClick}
                       >
-                        <Play size={20} fill="currentColor" />
+                        <Play size={30} fill="currentColor" />
                         <AnimatedWidth value={t("common.play")}>
                           <AnimatedText value={t("common.play")} />
                         </AnimatedWidth>
@@ -798,9 +817,9 @@ export function HeroSection({
                     <ButtonLink
                       to={getRouteForItem(item)}
                       variant="secondary"
-                      className="min-h-10 rounded-full px-4 text-sm backdrop-blur sm:min-h-12 sm:px-6 sm:text-base"
+                      className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 sm:min-h-16 sm:px-10 sm:text-base"
                     >
-                      <Info size={20} />
+                      <Info size={30} />
                       <AnimatedWidth value={t("common.details")}>
                         <AnimatedText value={t("common.details")} />
                       </AnimatedWidth>
