@@ -48,6 +48,14 @@ function jsonResponse(body: unknown, status = 200): Response {
   });
 }
 
+function itemQueryResponse(item: unknown) {
+  return {
+    Items: [item],
+    TotalRecordCount: 1,
+    StartIndex: 0,
+  };
+}
+
 function fetchItem(
   body: unknown,
   options: {
@@ -70,7 +78,7 @@ async function createResolver(
     mediaRoot,
     jellyfinServerUrl: "http://jellyfin.test/",
     apiKey: "test-api-key",
-    fetchImpl: fetchItem(item),
+    fetchImpl: fetchItem(itemQueryResponse(item)),
     ...options,
   });
 }
@@ -200,6 +208,25 @@ describe("jellyfin media resolver", () => {
       mediaRoot,
       {},
       {
+        fetchImpl: fetchItem(
+          { Items: [], TotalRecordCount: 0, StartIndex: 0 },
+          { status: 200 },
+        ),
+      },
+    );
+
+    await expect(resolver.resolveMedia("missing")).rejects.toMatchObject({
+      code: "JELLYFIN_ITEM_NOT_FOUND",
+      statusCode: 404,
+    });
+  });
+
+  it("keeps explicit Jellyfin HTTP 404 handling", async () => {
+    const mediaRoot = await createTempDir();
+    const resolver = await createResolver(
+      mediaRoot,
+      {},
+      {
         fetchImpl: fetchItem({ error: "not found" }, { status: 404 }),
       },
     );
@@ -224,7 +251,7 @@ describe("jellyfin media resolver", () => {
     });
   });
 
-  it("rejects malformed Jellyfin responses", async () => {
+  it("rejects malformed Jellyfin item entries", async () => {
     const mediaRoot = await createTempDir();
     const resolver = await createResolver(mediaRoot, ["not", "an", "item"]);
 
@@ -233,6 +260,25 @@ describe("jellyfin media resolver", () => {
       statusCode: 502,
     });
   });
+
+  it.each([{}, { Items: null }, { Items: {} }, { Items: ["not-an-object"] }])(
+    "rejects malformed Jellyfin item query wrappers %#",
+    async (wrapper) => {
+      const mediaRoot = await createTempDir();
+      const resolver = await createResolver(
+        mediaRoot,
+        {},
+        {
+          fetchImpl: fetchItem(wrapper),
+        },
+      );
+
+      await expect(resolver.resolveMedia("movie")).rejects.toMatchObject({
+        code: "JELLYFIN_RESPONSE_INVALID",
+        statusCode: 502,
+      });
+    },
+  );
 
   it("rejects file sources without a usable path", async () => {
     const mediaRoot = await createTempDir();
@@ -406,6 +452,8 @@ describe("jellyfin media resolver", () => {
     const mediaRoot = await createTempDir();
     const filePath = await writeMediaFile(mediaRoot, "Movies/sample.mp4");
     let seenUrl = "";
+    let seenMethod: string | undefined;
+    let seenAccept: string | null = null;
     let seenToken: string | null = null;
     const resolver = await createResolver(
       mediaRoot,
@@ -413,14 +461,18 @@ describe("jellyfin media resolver", () => {
       {
         apiKey: "super-secret-test-key",
         fetchImpl: fetchItem(
-          {
+          itemQueryResponse({
             Type: "Movie",
             MediaSources: [{ Protocol: "File", Path: filePath }],
-          },
+          }),
           {
             onRequest: (input, init) => {
+              const headers = new Headers(init?.headers);
+
               seenUrl = input.toString();
-              seenToken = new Headers(init?.headers).get("X-Emby-Token");
+              seenMethod = init?.method;
+              seenAccept = headers.get("Accept");
+              seenToken = headers.get("X-Emby-Token");
             },
           },
         ),
@@ -429,9 +481,16 @@ describe("jellyfin media resolver", () => {
 
     await resolver.resolveMedia("abc:def");
 
-    expect(seenUrl).toBe(
-      "http://jellyfin.test/Items/abc%3Adef?Fields=Path,MediaSources",
-    );
+    const requestUrl = new URL(seenUrl);
+
+    expect(requestUrl.pathname).toBe("/Items");
+    expect(requestUrl.pathname).not.toContain("abc:def");
+    expect(requestUrl.searchParams.get("Ids")).toBe("abc:def");
+    expect(requestUrl.searchParams.get("Fields")).toBe("Path,MediaSources");
+    expect(requestUrl.searchParams.get("Limit")).toBe("1");
+    expect(seenUrl).toContain("Ids=abc%3Adef");
+    expect(seenMethod).toBeUndefined();
+    expect(seenAccept).toBe("application/json");
     expect(seenUrl).not.toContain("super-secret-test-key");
     expect(seenToken).toBe("super-secret-test-key");
   });
@@ -480,6 +539,76 @@ describe("jellyfin media resolver", () => {
     await resolver.resolveMedia("movie").catch((error: unknown) => {
       expect(error).toBeInstanceOf(Error);
       expect((error as Error).message).not.toContain("super-secret-test-key");
+    });
+  });
+
+  it("maps Jellyfin forbidden responses to a 502 auth failure", async () => {
+    const mediaRoot = await createTempDir();
+    const resolver = await createResolver(
+      mediaRoot,
+      {},
+      {
+        fetchImpl: fetchItem({ error: "forbidden" }, { status: 403 }),
+      },
+    );
+
+    await expect(resolver.resolveMedia("movie")).rejects.toMatchObject({
+      code: "JELLYFIN_AUTH_FAILED",
+      statusCode: 502,
+    });
+  });
+
+  it("logs safe metadata for unexpected Jellyfin HTTP statuses", async () => {
+    const mediaRoot = await createTempDir();
+    const warnings: string[] = [];
+    const resolver = await createResolver(
+      mediaRoot,
+      {},
+      {
+        apiKey: "super-secret-test-key",
+        logger: {
+          warn: (message) => warnings.push(message),
+        },
+        fetchImpl: fetchItem(
+          {
+            error: "body contains D:\\media\\Movies\\secret.mp4",
+          },
+          { status: 500 },
+        ),
+      },
+    );
+
+    await expect(
+      resolver.resolveMedia("cca0673dea01eba8cd3fe7749a25f110"),
+    ).rejects.toMatchObject({
+      code: "JELLYFIN_UNAVAILABLE",
+      statusCode: 502,
+    });
+
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("HTTP 500");
+    expect(warnings[0]).toContain("cca0673dea01...");
+    expect(warnings[0]).not.toContain("super-secret-test-key");
+    expect(warnings[0]).not.toContain("X-Emby-Token");
+    expect(warnings[0]).not.toContain("D:\\media");
+    expect(warnings[0]).not.toContain("body contains");
+  });
+
+  it("maps Jellyfin fetch failures to a 502 without exposing internals", async () => {
+    const mediaRoot = await createTempDir();
+    const resolver = await createJellyfinMediaResolver({
+      mediaRoot,
+      jellyfinServerUrl: "http://jellyfin.test",
+      apiKey: "test-api-key",
+      fetchImpl: async () => {
+        throw new Error("network failed with backend-only details");
+      },
+    });
+
+    await expect(resolver.resolveMedia("movie")).rejects.toMatchObject({
+      code: "JELLYFIN_UNAVAILABLE",
+      statusCode: 502,
+      message: "Jellyfin item lookup failed.",
     });
   });
 

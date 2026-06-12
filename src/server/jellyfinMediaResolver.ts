@@ -23,6 +23,12 @@ interface JellyfinItemResponse {
   MediaSources?: unknown;
 }
 
+interface JellyfinItemsResponse {
+  Items?: unknown;
+  TotalRecordCount?: unknown;
+  StartIndex?: unknown;
+}
+
 interface JellyfinMediaSource {
   Id?: unknown;
   Protocol?: unknown;
@@ -132,6 +138,36 @@ function assertJellyfinItem(value: unknown): JellyfinItemResponse {
   }
 
   return value as JellyfinItemResponse;
+}
+
+function extractSingleJellyfinItem(value: unknown): JellyfinItemResponse {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new JellyfinMediaResolverError(
+      "JELLYFIN_RESPONSE_INVALID",
+      "Jellyfin returned an invalid item response.",
+      502,
+    );
+  }
+
+  const response = value as JellyfinItemsResponse;
+
+  if (!Array.isArray(response.Items)) {
+    throw new JellyfinMediaResolverError(
+      "JELLYFIN_RESPONSE_INVALID",
+      "Jellyfin returned an invalid item response.",
+      502,
+    );
+  }
+
+  if (response.Items.length === 0) {
+    throw new JellyfinMediaResolverError(
+      "JELLYFIN_ITEM_NOT_FOUND",
+      "Jellyfin item was not found.",
+      404,
+    );
+  }
+
+  return assertJellyfinItem(response.Items[0]);
 }
 
 function isVideoItem(item: JellyfinItemResponse): boolean {
@@ -299,12 +335,11 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
   }
 
   private async fetchItem(itemId: string): Promise<JellyfinItemResponse> {
-    const requestUrl = new URL(
-      `Items/${encodeURIComponent(itemId)}`,
-      `${this.serverUrl}/`,
-    );
+    const requestUrl = new URL("Items", `${this.serverUrl}/`);
 
-    requestUrl.search = "Fields=Path,MediaSources";
+    requestUrl.searchParams.set("Ids", itemId);
+    requestUrl.searchParams.set("Fields", "Path,MediaSources");
+    requestUrl.searchParams.set("Limit", "1");
 
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), this.timeoutMs);
@@ -335,6 +370,12 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
       }
 
       if (!response.ok) {
+        this.logger?.warn?.(
+          `[Seyirlik Playback Backend] Jellyfin item lookup returned HTTP ${
+            response.status
+          } for item ${safeItemLabel(itemId)}.`,
+        );
+
         throw new JellyfinMediaResolverError(
           "JELLYFIN_UNAVAILABLE",
           "Jellyfin item lookup failed.",
@@ -342,7 +383,7 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
         );
       }
 
-      return assertJellyfinItem(await response.json());
+      return extractSingleJellyfinItem(await response.json());
     } catch (error) {
       if (error instanceof JellyfinMediaResolverError) {
         throw error;
