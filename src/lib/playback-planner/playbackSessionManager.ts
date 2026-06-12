@@ -1,6 +1,10 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import {
+  spawn,
+  type ChildProcess,
+  type SpawnOptions,
+} from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
@@ -21,14 +25,34 @@ export interface PlaybackSessionManagerOptions {
   ffmpegPath?: string;
   idleTimeoutMs?: number;
   killGraceMs?: number;
+  hlsStartupTimeoutMs?: number;
+  hlsStartupPollMs?: number;
   tempPrefix?: string;
   sessionRouteBase?: string;
+  spawnProcess?: (
+    command: string,
+    args: string[],
+    options: SpawnOptions,
+  ) => ChildProcess;
 }
 
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 1_500;
+const DEFAULT_HLS_STARTUP_TIMEOUT_MS = 10_000;
+const DEFAULT_HLS_STARTUP_POLL_MS = 100;
 const DEFAULT_TEMP_PREFIX = "seyirlik-playback-";
 const DEFAULT_SESSION_ROUTE_BASE = "/api/playback/sessions";
+const STDERR_TAIL_LIMIT = 8_000;
+
+export class PlaybackSessionStartupError extends Error {
+  code = "FFMPEG_STARTUP_FAILED";
+  statusCode = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PlaybackSessionStartupError";
+  }
+}
 
 function withSessionDelivery(
   plan: PlaybackPlan,
@@ -81,16 +105,26 @@ export class PlaybackSessionManager {
   private ffmpegPath: string;
   private idleTimeoutMs: number;
   private killGraceMs: number;
+  private hlsStartupTimeoutMs: number;
+  private hlsStartupPollMs: number;
   private tempPrefix: string;
   private sessionRouteBase: string;
+  private spawnProcess: NonNullable<
+    PlaybackSessionManagerOptions["spawnProcess"]
+  >;
 
   constructor(options: PlaybackSessionManagerOptions = {}) {
     this.ffmpegPath = options.ffmpegPath ?? "ffmpeg";
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
+    this.hlsStartupTimeoutMs =
+      options.hlsStartupTimeoutMs ?? DEFAULT_HLS_STARTUP_TIMEOUT_MS;
+    this.hlsStartupPollMs =
+      options.hlsStartupPollMs ?? DEFAULT_HLS_STARTUP_POLL_MS;
     this.tempPrefix = options.tempPrefix ?? DEFAULT_TEMP_PREFIX;
     this.sessionRouteBase =
       options.sessionRouteBase ?? DEFAULT_SESSION_ROUTE_BASE;
+    this.spawnProcess = options.spawnProcess ?? spawn;
   }
 
   async createSession(
@@ -114,13 +148,14 @@ export class PlaybackSessionManager {
       outputDir,
       ffmpegPath: this.ffmpegPath,
     });
+    let session: PlaybackSession | undefined;
 
     try {
-      const child = spawn(command.command, command.args, {
+      const child = this.spawnProcess(command.command, command.args, {
         stdio: ["ignore", "pipe", "pipe"],
       });
       const now = new Date();
-      const session: PlaybackSession = {
+      const nextSession: PlaybackSession = {
         sessionId,
         mediaId: media.mediaId,
         plan: planWithSession,
@@ -130,18 +165,161 @@ export class PlaybackSessionManager {
         lastAccessedAt: now,
         stderrTail: "",
       };
+      session = nextSession;
 
       child.stderr?.setEncoding("utf8");
       child.stderr?.on("data", (chunk: string) => {
-        session.stderrTail = `${session.stderrTail}${chunk}`.slice(-8_000);
+        nextSession.stderrTail = `${nextSession.stderrTail}${chunk}`.slice(
+          -STDERR_TAIL_LIMIT,
+        );
       });
-      this.sessions.set(sessionId, session);
+      this.sessions.set(sessionId, nextSession);
+      await this.waitForInitialPlaylist(nextSession, command.playlistPath);
 
-      return session;
+      console.info(
+        `[Seyirlik Playback Backend] FFmpeg session ready in ${
+          Date.now() - now.getTime()
+        }ms.`,
+      );
+      return nextSession;
     } catch (error) {
+      this.sessions.delete(sessionId);
+      if (session) {
+        await this.terminateSessionProcess(session);
+      }
       await rm(outputDir, { recursive: true, force: true });
       throw error;
     }
+  }
+
+  private async terminateSessionProcess(
+    session: PlaybackSession,
+  ): Promise<void> {
+    if (session.process.exitCode !== null || session.process.killed) {
+      return;
+    }
+
+    try {
+      session.process.kill("SIGTERM");
+    } catch {
+      return;
+    }
+
+    const exited = await waitForExit(session.process, this.killGraceMs);
+
+    if (!exited && session.process.exitCode === null) {
+      try {
+        session.process.kill("SIGKILL");
+      } catch {
+        return;
+      }
+
+      await waitForExit(session.process, this.killGraceMs);
+    }
+  }
+
+  private async waitForInitialPlaylist(
+    session: PlaybackSession,
+    playlistPath: string | undefined,
+  ): Promise<void> {
+    if (!playlistPath) {
+      throw new PlaybackSessionStartupError(
+        "FFmpeg did not provide an HLS playlist path.",
+      );
+    }
+
+    const startedAt = Date.now();
+
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let pollTimer: ReturnType<typeof setTimeout> | null = null;
+      let timeoutTimer: ReturnType<typeof setTimeout> | null = null;
+
+      const cleanup = () => {
+        if (pollTimer) {
+          clearTimeout(pollTimer);
+          pollTimer = null;
+        }
+
+        if (timeoutTimer) {
+          clearTimeout(timeoutTimer);
+          timeoutTimer = null;
+        }
+
+        session.process.off("error", handleError);
+        session.process.off("exit", handleExit);
+      };
+
+      const finish = (error?: Error) => {
+        if (settled) {
+          return;
+        }
+
+        settled = true;
+        cleanup();
+
+        if (error) {
+          reject(error);
+          return;
+        }
+
+        resolve();
+      };
+
+      const poll = async () => {
+        if (session.process.exitCode !== null) {
+          handleExit();
+          return;
+        }
+
+        try {
+          const playlistStat = await stat(playlistPath);
+
+          if (playlistStat.isFile() && playlistStat.size > 0) {
+            finish();
+            return;
+          }
+        } catch {
+          // Keep polling until the playlist exists, FFmpeg exits, or timeout fires.
+        }
+
+        if (!settled) {
+          pollTimer = setTimeout(poll, this.hlsStartupPollMs);
+        }
+      };
+
+      const handleError = () => {
+        finish(new PlaybackSessionStartupError("FFmpeg could not be started."));
+      };
+
+      const handleExit = () => {
+        console.warn(
+          "[Seyirlik Playback Backend] FFmpeg exited before HLS playlist was ready.",
+        );
+        finish(
+          new PlaybackSessionStartupError(
+            "FFmpeg exited before the HLS playlist was ready.",
+          ),
+        );
+      };
+
+      timeoutTimer = setTimeout(() => {
+        console.warn(
+          `[Seyirlik Playback Backend] FFmpeg HLS playlist was not ready after ${
+            Date.now() - startedAt
+          }ms.`,
+        );
+        finish(
+          new PlaybackSessionStartupError(
+            "FFmpeg did not produce an HLS playlist before startup timeout.",
+          ),
+        );
+      }, this.hlsStartupTimeoutMs);
+
+      session.process.once("error", handleError);
+      session.process.once("exit", handleExit);
+      void poll();
+    });
   }
 
   getSession(sessionId: string): PlaybackSession | undefined {
@@ -169,15 +347,7 @@ export class PlaybackSessionManager {
 
     this.sessions.delete(sessionId);
 
-    if (session.process.exitCode === null && !session.process.killed) {
-      session.process.kill("SIGTERM");
-      const exited = await waitForExit(session.process, this.killGraceMs);
-
-      if (!exited && session.process.exitCode === null) {
-        session.process.kill("SIGKILL");
-        await waitForExit(session.process, this.killGraceMs);
-      }
-    }
+    await this.terminateSessionProcess(session);
 
     await rm(session.outputDir, { recursive: true, force: true });
   }

@@ -19,10 +19,11 @@ import {
   redactPlaybackUrl,
   stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
+import { isCustomPlaybackCandidate } from "../../lib/playback-planner/customPlaybackApi";
 import {
-  isCustomPlaybackCandidate,
-  stopCustomPlaybackSession,
-} from "../../lib/playback-planner/customPlaybackApi";
+  stopCustomPlaybackSessionImmediately,
+  useCustomPlaybackSessionLease,
+} from "../../lib/playback-planner/customPlaybackSessionLease";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import {
@@ -642,6 +643,8 @@ export function CustomVideoPlayer({
         },
       };
     }, [activeSource, liveTranscodingReasons]);
+
+  useCustomPlaybackSessionLease(activeSource);
 
   const skippableActiveSegment = useMemo(() => {
     if (
@@ -1293,7 +1296,7 @@ export function CustomVideoPlayer({
 
       if (isCustomPlaybackCandidate(currentSource)) {
         try {
-          await stopCustomPlaybackSession(currentSource);
+          await stopCustomPlaybackSessionImmediately(currentSource);
         } catch (stopError) {
           console.warn(
             "[Seyirlik Playback] Could not stop active custom playback session",
@@ -1316,19 +1319,6 @@ export function CustomVideoPlayer({
     },
     [],
   );
-
-  useEffect(() => {
-    return () => {
-      void stopCustomPlaybackSession(activeSource, { keepalive: true }).catch(
-        (stopError) => {
-          console.warn(
-            "[Seyirlik Playback] Could not stop custom playback session during cleanup",
-            stopError,
-          );
-        },
-      );
-    };
-  }, [activeSource]);
 
   const switchPlayerSource = useCallback(
     async (nextSource: PlaybackSourceCandidate) => {
@@ -2441,6 +2431,14 @@ export function CustomVideoPlayer({
   useEffect(() => {
     const handlePageExit = () => {
       reportStoppedOnce(true);
+      void stopCustomPlaybackSessionImmediately(activeSource, {
+        keepalive: true,
+      }).catch((stopError) => {
+        console.warn(
+          "[Seyirlik Playback] Could not stop custom playback session during page exit",
+          stopError,
+        );
+      });
     };
 
     window.addEventListener("pagehide", handlePageExit);
@@ -2450,7 +2448,7 @@ export function CustomVideoPlayer({
       window.removeEventListener("pagehide", handlePageExit);
       window.removeEventListener("beforeunload", handlePageExit);
     };
-  }, [reportStoppedOnce]);
+  }, [activeSource, reportStoppedOnce]);
 
   useEffect(() => {
     const reportCurrentPlaybackProgress = (force = false) => {

@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { EventEmitter } from "node:events";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
@@ -11,7 +12,10 @@ import type {
   PlaybackMediaStore,
   PlaybackResolvedMedia,
 } from "../lib/playback-planner/playbackRoutes";
-import type { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
+import type {
+  PlaybackSession,
+  PlaybackSessionManager,
+} from "../lib/playback-planner/playbackSessionManager";
 import type {
   ClientCapabilities,
   MediaAnalysis,
@@ -179,6 +183,77 @@ function createFakeSessionManager() {
   } as unknown as PlaybackSessionManager;
 
   return { createSession, manager };
+}
+
+function createDeferredReadySessionManager(outputDir: string) {
+  const sessions = new Map<string, PlaybackSession>();
+  let markReady: (() => void) | undefined;
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve;
+  });
+  const createSession = vi.fn(
+    async (plan: PlaybackPlan, media: MediaAnalysis) => {
+      await ready;
+      await mkdir(outputDir, { recursive: true });
+      await writeFile(path.join(outputDir, "master.m3u8"), "#EXTM3U\n");
+
+      const sessionId = "session-ready";
+      const fakeProcess = new EventEmitter() as EventEmitter & {
+        exitCode: number | null;
+        killed: boolean;
+        kill: ReturnType<typeof vi.fn>;
+      };
+
+      fakeProcess.exitCode = null;
+      fakeProcess.killed = false;
+      fakeProcess.kill = vi.fn(() => {
+        fakeProcess.killed = true;
+        return true;
+      });
+
+      const session: PlaybackSession = {
+        sessionId,
+        mediaId: media.mediaId,
+        plan: {
+          ...plan,
+          delivery: {
+            type: "hls" as const,
+            sessionId,
+            url: `/api/playback/sessions/${sessionId}/master.m3u8`,
+          },
+        },
+        process: fakeProcess as unknown as PlaybackSession["process"],
+        outputDir,
+        createdAt: new Date(),
+        lastAccessedAt: new Date(),
+        stderrTail: "",
+      };
+
+      sessions.set(sessionId, session);
+      return session;
+    },
+  );
+  const manager = {
+    createSession,
+    getSession: vi.fn((sessionId: string) => sessions.get(sessionId)),
+    getActiveSessionIds: vi.fn(() => Array.from(sessions.keys())),
+    touchSession: vi.fn((sessionId: string) => {
+      const session = sessions.get(sessionId);
+
+      if (session) {
+        session.lastAccessedAt = new Date();
+      }
+    }),
+    stopSession: vi.fn(async (sessionId: string) => {
+      sessions.delete(sessionId);
+    }),
+    stopAllSessions: vi.fn(async () => {
+      sessions.clear();
+    }),
+    cleanupIdleSessions: vi.fn(async () => undefined),
+  } as unknown as PlaybackSessionManager;
+
+  return { createSession, manager, markReady: markReady! };
 }
 
 async function createFixtureBackend() {
@@ -431,6 +506,83 @@ describe("playback backend HTTP routes", () => {
       mediaId: resolvedMedia.mediaId,
       filePath,
     });
+  });
+
+  it("does not return an HLS playback response until the playlist is ready", async () => {
+    const mediaRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-http-media-"),
+    );
+    const filePath = await writeMediaFile(mediaRoot, "Movies/hevc.mkv");
+    const outputDir = path.join(mediaRoot, "hls-output");
+    const resolvedMedia = {
+      mediaId: "cca06700000000000000000000000000",
+      filePath,
+      size: 10,
+      mtimeMs: 1,
+    };
+    const mediaResolver = createFakeResolver(mediaRoot, resolvedMedia);
+    const mediaStore: PlaybackMediaStore = {
+      getMediaAnalysis: vi.fn((media) =>
+        Promise.resolve(hlsAnalysis(media.mediaId, media.filePath)),
+      ),
+      saveClientCapabilities: vi.fn(),
+    };
+    const { createSession, manager, markReady } =
+      createDeferredReadySessionManager(outputDir);
+    const backend = await createPlaybackBackend({
+      host: "127.0.0.1",
+      port: 0,
+      mediaRoot,
+      mediaResolver,
+      mediaStore,
+      sessionManager: manager,
+      allowedOrigins: ["http://allowed.test"],
+      cleanupIntervalMs: 1_000,
+    });
+    const baseUrl = await listenBackend(backend);
+
+    backends.push(backend);
+    mediaRoots.push(mediaRoot);
+
+    let requestSettled = false;
+    const requestPromise = fetch(`${baseUrl}/api/playback/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: resolvedMedia.mediaId,
+        clientCapabilities: clientCapabilities(),
+      }),
+    }).then(async (response) => {
+      requestSettled = true;
+      return {
+        response,
+        payload: (await response.json()) as {
+          delivery: { type: string; sessionId?: string; url?: string };
+        },
+      };
+    });
+
+    await vi.waitFor(() => expect(createSession).toHaveBeenCalledTimes(1));
+    await Promise.resolve();
+    expect(requestSettled).toBe(false);
+
+    markReady();
+
+    const { response, payload } = await requestPromise;
+    expect(response.status).toBe(200);
+    expect(payload.delivery).toMatchObject({
+      type: "hls",
+      sessionId: "session-ready",
+      url: "/api/playback/sessions/session-ready/master.m3u8",
+    });
+
+    const playlistResponse = await fetch(`${baseUrl}${payload.delivery.url}`);
+
+    expect(playlistResponse.status).toBe(200);
+    expect(playlistResponse.headers.get("content-type")).toBe(
+      "application/vnd.apple.mpegurl",
+    );
+    await expect(playlistResponse.text()).resolves.toContain("#EXTM3U");
   });
 
   it("streams a full direct response", async () => {

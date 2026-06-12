@@ -7,6 +7,10 @@ import { buildClientCapabilities } from "./clientCapabilities";
 import type { PlaybackPlan } from "./types";
 
 const CAPABILITY_CACHE_TTL_MS = 30 * 60 * 1000;
+const pendingPlaybackRequests = new Map<
+  string,
+  Promise<PlaybackSourceCandidate | null>
+>();
 let cachedCapabilities:
   | {
       testedAtMs: number;
@@ -33,6 +37,14 @@ function buildPlaybackEndpoint(baseUrl: string): string {
   }
 
   return `${baseUrl}/api/playback/request`;
+}
+
+function safeItemLabel(itemId: string): string {
+  return itemId.length <= 12 ? itemId : `${itemId.slice(0, 12)}...`;
+}
+
+function buildPlaybackRequestKey(itemId: string): string {
+  return JSON.stringify({ itemId });
 }
 
 function buildSessionStopEndpoint(baseUrl: string, sessionId: string): string {
@@ -214,28 +226,47 @@ export async function requestCustomPlaybackCandidate(
     return null;
   }
 
-  const clientCapabilities = await getCachedClientCapabilities();
-  const response = await fetch(buildPlaybackEndpoint(baseUrl), {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      mediaId: itemId,
-      clientCapabilities,
-    }),
-  });
+  const requestKey = buildPlaybackRequestKey(itemId);
+  const pendingRequest = pendingPlaybackRequests.get(requestKey);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(
-      `Custom playback request failed with ${response.status}: ${text}`,
+  if (pendingRequest) {
+    console.info(
+      `[Seyirlik Playback] Custom playback request deduplicated for item ${safeItemLabel(
+        itemId,
+      )}.`,
     );
+    return pendingRequest;
   }
 
-  const plan = (await response.json()) as PlaybackPlan;
-  return planToPlaybackCandidate(itemId, plan, baseUrl);
+  const request = (async () => {
+    const clientCapabilities = await getCachedClientCapabilities();
+    const response = await fetch(buildPlaybackEndpoint(baseUrl), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        mediaId: itemId,
+        clientCapabilities,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `Custom playback request failed with ${response.status}: ${text}`,
+      );
+    }
+
+    const plan = (await response.json()) as PlaybackPlan;
+    return planToPlaybackCandidate(itemId, plan, baseUrl);
+  })().finally(() => {
+    pendingPlaybackRequests.delete(requestKey);
+  });
+
+  pendingPlaybackRequests.set(requestKey, request);
+  return request;
 }
 
 export async function stopCustomPlaybackSession(
