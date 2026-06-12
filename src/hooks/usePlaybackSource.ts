@@ -4,6 +4,10 @@ import {
   getPlaybackInfo,
   redactPlaybackUrl,
 } from "../lib/jellyfinApi";
+import {
+  isCustomPlaybackBackendConfigured,
+  requestCustomPlaybackCandidate,
+} from "../lib/playback-planner/customPlaybackApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 
@@ -115,6 +119,34 @@ export function usePlaybackSource(itemId?: string) {
     setSourceIndex(0);
 
     try {
+      if (isCustomPlaybackBackendConfigured()) {
+        try {
+          const customCandidate = await requestCustomPlaybackCandidate(itemId);
+
+          if (customCandidate) {
+            console.info("[Seyirlik Playback] Custom PlaybackPlan received", {
+              mode: customCandidate.mode,
+              hlsKind: customCandidate.hlsKind,
+              reason: customCandidate.reason,
+              url: redactPlaybackUrl(customCandidate.url),
+            });
+            setState({
+              isLoading: false,
+              activeSource: customCandidate,
+              candidates: [customCandidate],
+              notice: null,
+              error: null,
+            });
+            return;
+          }
+        } catch (error) {
+          console.warn(
+            "[Seyirlik Playback] Custom backend failed; falling back to Jellyfin PlaybackInfo",
+            error,
+          );
+        }
+      }
+
       const playbackInfo = await getPlaybackInfo(itemId);
       const candidates = buildPlaybackCandidates(itemId, playbackInfo);
 

@@ -19,6 +19,10 @@ import {
   redactPlaybackUrl,
   stopActiveTranscodeSession,
 } from "../../lib/jellyfinApi";
+import {
+  isCustomPlaybackCandidate,
+  stopCustomPlaybackSession,
+} from "../../lib/playback-planner/customPlaybackApi";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
 import {
@@ -969,7 +973,8 @@ export function CustomVideoPlayer({
     let intervalId: number | null = null;
 
     const shouldFetchLiveReasons =
-      activeSource.mode === "Transcoding" || activeSource.isHls;
+      !isCustomPlaybackCandidate(activeSource) &&
+      (activeSource.mode === "Transcoding" || activeSource.isHls);
 
     if (!shouldFetchLiveReasons) {
       setLiveTranscodingReasons([]);
@@ -1286,6 +1291,18 @@ export function CustomVideoPlayer({
         // Ignore media reset errors during source switching.
       }
 
+      if (isCustomPlaybackCandidate(currentSource)) {
+        try {
+          await stopCustomPlaybackSession(currentSource);
+        } catch (stopError) {
+          console.warn(
+            "[Seyirlik Playback] Could not stop active custom playback session",
+            stopError,
+          );
+        }
+        return;
+      }
+
       if (currentSource.mode === "Transcoding" || currentSource.isHls) {
         try {
           await stopActiveTranscodeSession(currentSource.playSessionId);
@@ -1299,6 +1316,19 @@ export function CustomVideoPlayer({
     },
     [],
   );
+
+  useEffect(() => {
+    return () => {
+      void stopCustomPlaybackSession(activeSource, { keepalive: true }).catch(
+        (stopError) => {
+          console.warn(
+            "[Seyirlik Playback] Could not stop custom playback session during cleanup",
+            stopError,
+          );
+        },
+      );
+    };
+  }, [activeSource]);
 
   const switchPlayerSource = useCallback(
     async (nextSource: PlaybackSourceCandidate) => {
