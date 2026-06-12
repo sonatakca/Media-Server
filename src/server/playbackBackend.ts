@@ -4,13 +4,15 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { stat } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { InMemoryAnalysisCache } from "./analysisCache";
+import { createJellyfinMediaResolver } from "./jellyfinMediaResolver";
 import { createMediaRegistry, type MediaRegistry } from "./mediaRegistry";
+import { assertMediaRootDirectory } from "./pathSecurity";
 import {
   createPlaybackRequestHandler,
+  type PlaybackMediaResolver,
   type PlaybackMediaStore,
 } from "../lib/playback-planner/playbackRoutes";
 import { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
@@ -21,6 +23,7 @@ export interface PlaybackBackendOptions {
   mediaRoot?: string;
   allowedOrigins?: string[];
   cleanupIntervalMs?: number;
+  mediaResolver?: PlaybackMediaResolver & { mediaRoot?: string };
   mediaRegistry?: MediaRegistry;
   mediaStore?: PlaybackMediaStore;
   sessionManager?: PlaybackSessionManager;
@@ -101,16 +104,7 @@ function applyCors(
 }
 
 async function assertConfiguredMediaRoot(mediaRoot: string): Promise<string> {
-  const resolvedRoot = path.resolve(mediaRoot);
-  const mediaRootStat = await stat(resolvedRoot).catch(() => null);
-
-  if (!mediaRootStat?.isDirectory()) {
-    throw new Error(
-      "SEYIRLIK_MEDIA_ROOT must point to an existing media directory.",
-    );
-  }
-
-  return resolvedRoot;
+  return assertMediaRootDirectory(mediaRoot);
 }
 
 function closeServer(server: Server): Promise<void> {
@@ -136,15 +130,16 @@ export async function createPlaybackBackend(
 ): Promise<PlaybackBackend> {
   const host = options.host ?? DEFAULT_HOST;
   const port = options.port ?? DEFAULT_PORT;
-  const configuredMediaRoot = options.mediaRegistry
-    ? options.mediaRegistry.mediaRoot
+  const providedResolver = options.mediaResolver ?? options.mediaRegistry;
+  const configuredMediaRoot = providedResolver?.mediaRoot
+    ? providedResolver.mediaRoot
     : options.mediaRoot
       ? await assertConfiguredMediaRoot(options.mediaRoot)
       : (() => {
           throw new Error("SEYIRLIK_MEDIA_ROOT is required.");
         })();
-  const mediaRegistry =
-    options.mediaRegistry ?? (await createMediaRegistry(configuredMediaRoot));
+  const mediaResolver =
+    providedResolver ?? (await createMediaRegistry(configuredMediaRoot));
   const analysisCache = new InMemoryAnalysisCache();
   const mediaStore: PlaybackMediaStore =
     options.mediaStore ??
@@ -158,7 +153,7 @@ export async function createPlaybackBackend(
   );
   const playbackHandler = createPlaybackRequestHandler({
     mediaStore,
-    mediaResolver: mediaRegistry,
+    mediaResolver,
     sessionManager,
     basePath: "/api/playback",
   });
@@ -216,7 +211,7 @@ export async function createPlaybackBackend(
     server,
     host,
     port,
-    mediaRoot: mediaRegistry.mediaRoot,
+    mediaRoot: providedResolver?.mediaRoot ?? configuredMediaRoot,
     sessionManager,
     close: async () => {
       clearInterval(cleanupTimer);
@@ -242,15 +237,32 @@ function parsePort(rawPort: string | undefined): number {
 
 export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
   const mediaRoot = process.env.SEYIRLIK_MEDIA_ROOT;
+  const jellyfinServerUrl = process.env.SEYIRLIK_JELLYFIN_SERVER_URL;
+  const jellyfinApiKey = process.env.SEYIRLIK_JELLYFIN_API_KEY;
 
   if (!mediaRoot) {
     throw new Error("SEYIRLIK_MEDIA_ROOT is required.");
   }
 
+  if (!jellyfinServerUrl) {
+    throw new Error("SEYIRLIK_JELLYFIN_SERVER_URL is required.");
+  }
+
+  if (!jellyfinApiKey) {
+    throw new Error("SEYIRLIK_JELLYFIN_API_KEY is required.");
+  }
+
+  const mediaResolver = await createJellyfinMediaResolver({
+    mediaRoot,
+    jellyfinServerUrl,
+    apiKey: jellyfinApiKey,
+    logger: console,
+  });
   const backend = await createPlaybackBackend({
     host: process.env.SEYIRLIK_PLAYBACK_BACKEND_HOST ?? DEFAULT_HOST,
     port: parsePort(process.env.SEYIRLIK_PLAYBACK_BACKEND_PORT),
     mediaRoot,
+    mediaResolver,
     allowedOrigins: parseAllowedOrigins(process.env.SEYIRLIK_ALLOWED_ORIGINS),
   });
 

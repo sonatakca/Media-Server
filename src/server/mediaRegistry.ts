@@ -1,5 +1,10 @@
-import { realpath, stat } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
+import {
+  assertMediaRootDirectory,
+  isPathInsideRoot,
+  resolveTrustedFileInRoot,
+} from "./pathSecurity";
 
 export interface ResolvedMedia {
   mediaId: string;
@@ -14,6 +19,7 @@ export type MediaRegistryErrorCode =
   | "MEDIA_OUTSIDE_ROOT"
   | "MEDIA_NOT_FOUND"
   | "MEDIA_NOT_FILE"
+  | "MEDIA_NOT_READABLE"
   | "MEDIA_TOKEN_INVALID";
 
 export class MediaRegistryError extends Error {
@@ -41,6 +47,41 @@ export interface MediaRegistry {
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]+$/;
 const WINDOWS_ABSOLUTE_PATTERN = /^(?:[a-zA-Z]:[\\/]|\\\\|\/\/)/;
+
+export class MediaTokenRegistry {
+  private mediaIdsByToken = new Map<string, string>();
+
+  encodeMediaToken(mediaId: string): string {
+    const token = randomUUID();
+
+    this.mediaIdsByToken.set(token, mediaId);
+    return token;
+  }
+
+  decodeMediaToken(token: string): string {
+    if (!token || !TOKEN_PATTERN.test(token)) {
+      throw new MediaRegistryError(
+        "MEDIA_TOKEN_INVALID",
+        "Media token is invalid.",
+      );
+    }
+
+    const mediaId = this.mediaIdsByToken.get(token);
+
+    if (!mediaId) {
+      throw new MediaRegistryError(
+        "MEDIA_TOKEN_INVALID",
+        "Media token is invalid or expired.",
+      );
+    }
+
+    return mediaId;
+  }
+}
+
+export function createMediaTokenRegistry(): MediaTokenRegistry {
+  return new MediaTokenRegistry();
+}
 
 function toRouteRelativePath(mediaId: string): string {
   if (mediaId.includes("\0")) {
@@ -112,54 +153,13 @@ function toRouteRelativePath(mediaId: string): string {
   return normalized;
 }
 
-function isInsideRoot(realRoot: string, realFile: string): boolean {
-  const relativePath = path.relative(realRoot, realFile);
-
-  return (
-    relativePath !== "" &&
-    !relativePath.startsWith("..") &&
-    !path.isAbsolute(relativePath)
-  );
-}
-
 async function assertMediaRoot(mediaRoot: string): Promise<string> {
-  const resolvedRoot = path.resolve(mediaRoot);
-  const rootStat = await stat(resolvedRoot).catch(() => null);
-
-  if (!rootStat?.isDirectory()) {
+  try {
+    return await assertMediaRootDirectory(mediaRoot);
+  } catch {
     throw new MediaRegistryError(
       "MEDIA_ID_INVALID",
       "SEYIRLIK_MEDIA_ROOT must point to an existing directory.",
-    );
-  }
-
-  return realpath(resolvedRoot);
-}
-
-export function encodeMediaToken(mediaId: string): string {
-  return Buffer.from(mediaId, "utf8").toString("base64url");
-}
-
-export function decodeMediaToken(token: string): string {
-  if (!token || !TOKEN_PATTERN.test(token)) {
-    throw new MediaRegistryError(
-      "MEDIA_TOKEN_INVALID",
-      "Media token is invalid.",
-    );
-  }
-
-  try {
-    const decoded = Buffer.from(token, "base64url").toString("utf8");
-
-    if (!decoded || encodeMediaToken(decoded) !== token) {
-      throw new Error("Token round trip failed.");
-    }
-
-    return decoded;
-  } catch {
-    throw new MediaRegistryError(
-      "MEDIA_TOKEN_INVALID",
-      "Media token is invalid.",
     );
   }
 }
@@ -168,12 +168,14 @@ export async function createMediaRegistry(
   mediaRoot: string,
 ): Promise<MediaRegistry> {
   const realRoot = await assertMediaRoot(mediaRoot);
+  const tokenRegistry = createMediaTokenRegistry();
 
   return {
     mediaRoot: realRoot,
     resolveMedia: async (mediaId: string) => resolveMedia(realRoot, mediaId),
-    encodeMediaToken,
-    decodeMediaToken,
+    encodeMediaToken: (mediaId: string) =>
+      tokenRegistry.encodeMediaToken(mediaId),
+    decodeMediaToken: (token: string) => tokenRegistry.decodeMediaToken(token),
   };
 }
 
@@ -191,19 +193,9 @@ export async function resolveMedia(
   const realRoot = await assertMediaRoot(mediaRoot);
   const relativeMediaId = toRouteRelativePath(mediaId.trim());
   const candidatePath = path.resolve(realRoot, ...relativeMediaId.split("/"));
-  let realFile: string;
+  const trustedFile = await resolveTrustedFileInRoot(realRoot, candidatePath);
 
-  try {
-    realFile = await realpath(candidatePath);
-  } catch {
-    throw new MediaRegistryError(
-      "MEDIA_NOT_FOUND",
-      "The requested media could not be found.",
-      404,
-    );
-  }
-
-  if (!isInsideRoot(realRoot, realFile)) {
+  if (!isPathInsideRoot(realRoot, trustedFile.filePath)) {
     throw new MediaRegistryError(
       "MEDIA_OUTSIDE_ROOT",
       "The requested media is outside the configured media root.",
@@ -211,21 +203,10 @@ export async function resolveMedia(
     );
   }
 
-  const mediaStat = await stat(realFile);
-
-  if (!mediaStat.isFile()) {
-    throw new MediaRegistryError(
-      "MEDIA_NOT_FILE",
-      "The requested media is not a regular file.",
-    );
-  }
-
   return {
-    // TODO: Production should map opaque database item IDs to files instead of
-    // treating media IDs as relative paths under SEYIRLIK_MEDIA_ROOT.
     mediaId: relativeMediaId,
-    filePath: realFile,
-    size: mediaStat.size,
-    mtimeMs: mediaStat.mtimeMs,
+    filePath: trustedFile.filePath,
+    size: trustedFile.size,
+    mtimeMs: trustedFile.mtimeMs,
   };
 }

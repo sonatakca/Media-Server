@@ -10,12 +10,7 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  createMediaRegistry,
-  decodeMediaToken,
-  encodeMediaToken,
-  resolveMedia,
-} from "./mediaRegistry";
+import { createMediaRegistry, resolveMedia } from "./mediaRegistry";
 
 async function createTempMediaRoot() {
   return mkdtemp(path.join(tmpdir(), "seyirlik-media-registry-"));
@@ -163,16 +158,34 @@ describe("mediaRegistry", () => {
     }
   });
 
-  it("round trips valid media tokens", async () => {
-    const mediaId = "Movies/Arcane/Episode 1.mkv";
-    const token = encodeMediaToken(mediaId);
+  it("round trips opaque media tokens through a registry instance", async () => {
+    const root = await createTempMediaRoot();
 
-    expect(token).not.toContain("/");
-    expect(decodeMediaToken(token)).toBe(mediaId);
+    try {
+      const registry = await createMediaRegistry(root);
+      const mediaId = "Movies/Arcane/Episode 1.mkv";
+      const token = registry.encodeMediaToken(mediaId);
+
+      expect(token).toMatch(/^[A-Za-z0-9_-]+$/);
+      expect(token).not.toContain("/");
+      expect(token).not.toContain(mediaId);
+      expect(registry.decodeMediaToken(token)).toBe(mediaId);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
-  it("rejects invalid media tokens", () => {
-    expect(() => decodeMediaToken("not+a+token")).toThrow();
+  it("rejects invalid and unknown media tokens", async () => {
+    const root = await createTempMediaRoot();
+
+    try {
+      const registry = await createMediaRegistry(root);
+
+      expect(() => registry.decodeMediaToken("not+a+token")).toThrow();
+      expect(() => registry.decodeMediaToken("unknown-token")).toThrow();
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("creates a registry bound to a media root", async () => {

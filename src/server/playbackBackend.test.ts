@@ -3,13 +3,19 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createPlaybackBackend, type PlaybackBackend } from "./playbackBackend";
 import { createMediaRegistry } from "./mediaRegistry";
-import type { PlaybackMediaStore } from "../lib/playback-planner/playbackRoutes";
+import type {
+  PlaybackMediaResolver,
+  PlaybackMediaStore,
+  PlaybackResolvedMedia,
+} from "../lib/playback-planner/playbackRoutes";
+import type { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
 import type {
   ClientCapabilities,
   MediaAnalysis,
+  PlaybackPlan,
 } from "../lib/playback-planner/types";
 
 let backends: PlaybackBackend[] = [];
@@ -70,6 +76,111 @@ function analysis(mediaId: string, filePath: string): MediaAnalysis {
   };
 }
 
+async function writeMediaFile(
+  mediaRoot: string,
+  relativePath: string,
+  contents = "0123456789",
+) {
+  const filePath = path.join(mediaRoot, ...relativePath.split("/"));
+
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, contents);
+  return filePath;
+}
+
+function hlsAnalysis(mediaId: string, filePath: string): MediaAnalysis {
+  return {
+    ...analysis(mediaId, filePath),
+    videoStreams: [
+      {
+        index: 0,
+        codecName: "hevc",
+        profile: "Main 10",
+        width: 3840,
+        height: 2160,
+        bitDepth: 10,
+      },
+    ],
+  };
+}
+
+function createFakeResolver(
+  mediaRoot: string,
+  resolvedMedia: PlaybackResolvedMedia,
+): PlaybackMediaResolver & { mediaRoot: string } {
+  const mediaIdsByToken = new Map<string, string>();
+  let tokenCount = 0;
+
+  return {
+    mediaRoot,
+    resolveMedia: vi.fn(async (mediaId: string) => {
+      if (mediaId !== resolvedMedia.mediaId) {
+        throw new Error("Unexpected media id.");
+      }
+
+      return resolvedMedia;
+    }),
+    encodeMediaToken: vi.fn((mediaId: string) => {
+      tokenCount += 1;
+
+      const token = `opaque-token-${tokenCount}`;
+
+      mediaIdsByToken.set(token, mediaId);
+      return token;
+    }),
+    decodeMediaToken: vi.fn((token: string) => {
+      const mediaId = mediaIdsByToken.get(token);
+
+      if (!mediaId) {
+        throw new Error("Invalid token.");
+      }
+
+      return mediaId;
+    }),
+  };
+}
+
+function createFakeSessionManager() {
+  const createSession = vi.fn(
+    async (plan: PlaybackPlan, media: MediaAnalysis) => {
+      const sessionId = "session-1";
+
+      return {
+        sessionId,
+        mediaId: media.mediaId,
+        plan: {
+          ...plan,
+          delivery: {
+            type: "hls" as const,
+            sessionId,
+            url: `/api/playback/sessions/${sessionId}/master.m3u8`,
+          },
+        },
+        process: {
+          exitCode: 0,
+          killed: true,
+          kill: vi.fn(),
+        },
+        outputDir: path.join(tmpdir(), "seyirlik-fake-hls-session"),
+        createdAt: new Date(),
+        lastAccessedAt: new Date(),
+        stderrTail: "",
+      };
+    },
+  );
+  const manager = {
+    createSession,
+    getSession: vi.fn(() => undefined),
+    getActiveSessionIds: vi.fn(() => []),
+    touchSession: vi.fn(),
+    stopSession: vi.fn(async () => undefined),
+    stopAllSessions: vi.fn(async () => undefined),
+    cleanupIdleSessions: vi.fn(async () => undefined),
+  } as unknown as PlaybackSessionManager;
+
+  return { createSession, manager };
+}
+
 async function createFixtureBackend() {
   const mediaRoot = await mkdtemp(path.join(tmpdir(), "seyirlik-http-media-"));
 
@@ -107,6 +218,16 @@ async function createFixtureBackend() {
     mediaToken: mediaRegistry.encodeMediaToken("Movies/sample.mp4"),
     traversalToken: mediaRegistry.encodeMediaToken("../secret.mp4"),
   };
+}
+
+async function listenBackend(backend: PlaybackBackend) {
+  await new Promise<void>((resolveListen) => {
+    backend.server.listen(0, "127.0.0.1", resolveListen);
+  });
+
+  const address = backend.server.address() as AddressInfo;
+
+  return `http://127.0.0.1:${address.port}`;
 }
 
 afterEach(async () => {
@@ -196,6 +317,120 @@ describe("playback backend HTTP routes", () => {
       /^\/api\/playback\/direct\/[A-Za-z0-9_-]+$/,
     );
     expect(payload.delivery.url).not.toContain("Movies/sample.mp4");
+  });
+
+  it("resolves opaque Jellyfin item ids before analysing media", async () => {
+    const mediaRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-http-media-"),
+    );
+    const filePath = await writeMediaFile(mediaRoot, "Movies/sample.mp4");
+    const resolvedMedia = {
+      mediaId: "3cb1ddd87cbc4fd9bb70e179e7990755",
+      filePath,
+      size: 10,
+      mtimeMs: 1,
+    };
+    const mediaResolver = createFakeResolver(mediaRoot, resolvedMedia);
+    const mediaStore: PlaybackMediaStore = {
+      getMediaAnalysis: vi.fn((media) =>
+        Promise.resolve(analysis(media.mediaId, media.filePath)),
+      ),
+      saveClientCapabilities: vi.fn(),
+    };
+    const backend = await createPlaybackBackend({
+      host: "127.0.0.1",
+      port: 0,
+      mediaRoot,
+      mediaResolver,
+      mediaStore,
+      allowedOrigins: ["http://allowed.test"],
+      cleanupIntervalMs: 1_000,
+    });
+    const baseUrl = await listenBackend(backend);
+
+    backends.push(backend);
+    mediaRoots.push(mediaRoot);
+
+    const response = await fetch(`${baseUrl}/api/playback/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: resolvedMedia.mediaId,
+        clientCapabilities: clientCapabilities(),
+      }),
+    });
+    const payload = (await response.json()) as {
+      delivery: { type: string; url: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(mediaResolver.resolveMedia).toHaveBeenCalledWith(
+      resolvedMedia.mediaId,
+    );
+    expect(mediaStore.getMediaAnalysis).toHaveBeenCalledWith(resolvedMedia);
+    expect(payload.delivery.type).toBe("file");
+    expect(payload.delivery.url).not.toContain(resolvedMedia.mediaId);
+  });
+
+  it("creates HLS sessions from trusted resolver output", async () => {
+    const mediaRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-http-media-"),
+    );
+    const filePath = await writeMediaFile(mediaRoot, "Movies/hevc.mkv");
+    const resolvedMedia = {
+      mediaId: "cca06700000000000000000000000000",
+      filePath,
+      size: 10,
+      mtimeMs: 1,
+    };
+    const mediaResolver = createFakeResolver(mediaRoot, resolvedMedia);
+    const mediaStore: PlaybackMediaStore = {
+      getMediaAnalysis: vi.fn((media) =>
+        Promise.resolve(hlsAnalysis(media.mediaId, media.filePath)),
+      ),
+      saveClientCapabilities: vi.fn(),
+    };
+    const { createSession, manager } = createFakeSessionManager();
+    const backend = await createPlaybackBackend({
+      host: "127.0.0.1",
+      port: 0,
+      mediaRoot,
+      mediaResolver,
+      mediaStore,
+      sessionManager: manager,
+      allowedOrigins: ["http://allowed.test"],
+      cleanupIntervalMs: 1_000,
+    });
+    const baseUrl = await listenBackend(backend);
+
+    backends.push(backend);
+    mediaRoots.push(mediaRoot);
+
+    const response = await fetch(`${baseUrl}/api/playback/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: resolvedMedia.mediaId,
+        clientCapabilities: clientCapabilities(),
+      }),
+    });
+    const payload = (await response.json()) as {
+      mode: string;
+      delivery: { type: string; sessionId?: string; url?: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.mode).toBe("video-transcode");
+    expect(payload.delivery).toEqual({
+      type: "hls",
+      sessionId: "session-1",
+      url: "/api/playback/sessions/session-1/master.m3u8",
+    });
+    expect(createSession).toHaveBeenCalledTimes(1);
+    expect(createSession.mock.calls[0]?.[1]).toMatchObject({
+      mediaId: resolvedMedia.mediaId,
+      filePath,
+    });
   });
 
   it("streams a full direct response", async () => {
