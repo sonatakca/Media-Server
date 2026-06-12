@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { MotionReveal } from "../../components/MotionReveal";
 import { Link } from "react-router-dom";
 import { Play } from "lucide-react";
 import { ButtonLink } from "../../components/Button";
@@ -153,17 +154,55 @@ function getFeaturedItems(items: JellyfinItem[]): JellyfinItem[] {
 
 function MobileHomeLoading() {
   return (
-    <div className="layout-no-offset min-h-screen pb-24">
-      <div className="shimmer h-[min(62svh,31rem)] min-h-[27rem] full-bleed" />
-      <div className="space-y-8 px-4 pt-7">
-        <div>
-          <div className="shimmer h-6 w-40 rounded-full" />
-          <div className="mt-4 flex gap-3">
+    <div className="layout-no-offset min-h-screen pb-[calc(5.25rem+env(safe-area-inset-bottom))]">
+      <section className="full-bleed relative min-h-[min(72svh,42rem)] overflow-hidden bg-zinc-950 px-4 pb-8 pt-[calc(4.75rem+env(safe-area-inset-top))]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(82,82,91,0.28),transparent_46%),linear-gradient(180deg,#111113_0%,#070708_55%,#050506_100%)]" />
+
+        <div className="relative mx-auto flex w-full max-w-[25rem] flex-col items-center">
+          <div className="w-full max-w-[20.5rem]">
+            <div className="cinematic-card-shadow relative aspect-[2/3] w-full rounded-[2rem] bg-gradient-to-t from-zinc-400/35 via-zinc-600/18 to-transparent p-px shadow-2xl">
+              <div className="relative block h-full w-full overflow-hidden rounded-[calc(2rem-1px)] bg-zinc-900">
+                <div className="shimmer absolute inset-0" />
+
+                <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black via-black/50 to-transparent" />
+                <div className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-5">
+                  <div className="shimmer mb-6 h-8 w-2/3 rounded-full bg-white/20" />
+                  <div className="shimmer min-h-11 w-full rounded-full bg-white/20" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 flex items-center justify-center gap-2">
+            <div className="shimmer h-9 w-40 rounded-full border border-white/25 bg-black/80 shadow-[0_24px_90px_rgba(0,0,0,0.78)]" />
+            <div className="shimmer h-9 w-9 rounded-full border border-white/25 bg-black/80 shadow-[0_24px_90px_rgba(0,0,0,0.78)]" />
+          </div>
+        </div>
+      </section>
+
+      <div className="mx-auto w-full px-4 pt-5">
+        <div className="mb-8">
+          <div className="shimmer mb-4 h-5 w-40 rounded-full" />
+          <div className="flex gap-4 overflow-hidden">
             {Array.from({ length: 3 }, (_, index) => (
-              <div
-                key={index}
-                className="shimmer h-64 w-[8.8rem] shrink-0 rounded-xl"
-              />
+              <div key={index} className="w-56 shrink-0 sm:w-64">
+                <div className="shimmer aspect-video w-full rounded-xl" />
+                <div className="mt-3 space-y-2">
+                  <div className="shimmer h-4 w-3/4 rounded-full" />
+                  <div className="shimmer h-3 w-1/2 rounded-full" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mb-8">
+          <div className="shimmer mb-4 h-5 w-32 rounded-full" />
+          <div className="flex gap-4 overflow-hidden">
+            {Array.from({ length: 4 }, (_, index) => (
+              <div key={index} className="w-32 shrink-0 sm:w-40">
+                <div className="shimmer aspect-[2/3] w-full rounded-xl" />
+              </div>
             ))}
           </div>
         </div>
@@ -446,7 +485,7 @@ export function MobileHomePage() {
   const heroCardVariants = {
     initial: (direction: 1 | -1) => ({
       opacity: 0,
-      x: shouldReduceMotion ? 0 : direction * 200,
+      x: shouldReduceMotion ? 0 : direction * 100,
       scale: shouldReduceMotion ? 1 : 0.965,
       rotateY: shouldReduceMotion ? 0 : direction * -8,
       filter: shouldReduceMotion ? "none" : "blur(14px)",
@@ -460,7 +499,7 @@ export function MobileHomePage() {
     },
     exit: (direction: 1 | -1) => ({
       opacity: 0,
-      x: shouldReduceMotion ? 0 : direction * -200,
+      x: shouldReduceMotion ? 0 : direction * -100,
       scale: shouldReduceMotion ? 1 : 0.965,
       rotateY: shouldReduceMotion ? 0 : direction * 8,
       filter: shouldReduceMotion ? "none" : "blur(12px)",
@@ -471,44 +510,25 @@ export function MobileHomePage() {
     <div className="layout-no-offset min-h-screen pb-[calc(5.25rem+env(safe-area-inset-bottom))]">
       <section className="full-bleed relative min-h-[min(72svh,42rem)] overflow-hidden bg-zinc-950 px-4 pb-8 pt-[calc(4.75rem+env(safe-area-inset-top))]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(82,82,91,0.28),transparent_46%),linear-gradient(180deg,#111113_0%,#070708_55%,#050506_100%)]" />
-        <AnimatePresence mode="sync" initial={false}>
+
+        <AnimatePresence mode="sync">
           {heroThemeImageUrl ? (
             <motion.div
               key={heroArtworkKey}
               className="absolute -inset-16 overflow-hidden will-change-[opacity,transform]"
-              initial={{
-                opacity: 0,
-                scale: shouldReduceMotion ? 1 : 1.025,
-              }}
-              animate={{
-                opacity: 1,
-                scale: 1,
-              }}
+              initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 1.025 }}
+              animate={{ opacity: 1, scale: 1 }}
               exit={{
                 opacity: 0,
                 scale: shouldReduceMotion ? 1 : 1.01,
                 transition: {
-                  opacity: {
-                    duration: shouldReduceMotion ? 0 : 0.6,
-                    ease: [0.4, 0, 1, 1],
-                  },
-                  scale: {
-                    duration: shouldReduceMotion ? 0 : 0.14,
-                    ease: [0.4, 0, 1, 1],
-                  },
+                  opacity: { duration: 0.6 },
+                  scale: { duration: 0.14 },
                 },
               }}
               transition={{
-                opacity: {
-                  duration: shouldReduceMotion ? 0 : 0.9,
-                  delay: shouldReduceMotion ? 0 : 0.6,
-                  ease: [0.25, 1, 0.5, 1],
-                },
-                scale: {
-                  duration: shouldReduceMotion ? 0 : 0.62,
-                  delay: shouldReduceMotion ? 0 : 0.18,
-                  ease: [0.25, 1, 0.5, 1],
-                },
+                opacity: { duration: 0.9, delay: 0.2, ease: [0.25, 1, 0.5, 1] },
+                scale: { duration: 0.62, delay: 0.18, ease: [0.25, 1, 0.5, 1] },
               }}
             >
               <img
@@ -524,8 +544,17 @@ export function MobileHomePage() {
         <div className="absolute inset-0 bg-gradient-to-t from-[#050506] via-[#050506]/20 to-black/30" />
         <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#050506] to-transparent" />
 
-        <div className="relative mx-auto flex w-full max-w-[25rem] flex-col items-center">
-          <AnimatePresence mode="wait" custom={heroDirection} initial={false}>
+        <motion.div
+          className="relative mx-auto flex w-full max-w-[25rem] flex-col items-center"
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.7, ease: [0.25, 1, 0.5, 1] }}
+        >
+          <AnimatePresence
+            mode="popLayout"
+            custom={heroDirection}
+            initial={false}
+          >
             <motion.div
               key={heroItem?.Id ?? "mobile-hero-card-fallback"}
               custom={heroDirection}
@@ -556,7 +585,7 @@ export function MobileHomePage() {
                   aria-label={heroTitle}
                   className="relative block h-full w-full overflow-hidden rounded-[calc(2rem-1px)] bg-zinc-900"
                 >
-                  <AnimatePresence mode="wait" initial={false}>
+                  <AnimatePresence mode="popLayout" initial={false}>
                     {heroPosterUrl || heroImageUrl ? (
                       <motion.img
                         key={heroPosterUrl || heroImageUrl}
@@ -588,7 +617,8 @@ export function MobileHomePage() {
 
                   <div className="absolute inset-0 bg-gradient-to-b from-black/5 via-black/0 to-black/90" />
                   <div className="absolute inset-x-0 bottom-0 h-[33%] bg-gradient-to-t from-black via-black/50 to-transparent" />
-                  <AnimatePresence mode="wait" initial={false}>
+
+                  <AnimatePresence mode="popLayout" initial={false}>
                     <motion.div
                       key={heroItem?.Id ?? "mobile-hero-content-fallback"}
                       className="absolute inset-x-0 bottom-0 z-10 flex flex-col items-center px-5 pb-5 text-center"
@@ -654,22 +684,18 @@ export function MobileHomePage() {
                 className="mt-4 max-w-full overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)]"
                 initial={{
                   opacity: 0,
-                  y: shouldReduceMotion ? 0 : "140%",
-                  scale: shouldReduceMotion ? 1 : 1.25,
+                  y: shouldReduceMotion ? 0 : 20,
+                  scale: shouldReduceMotion ? 1 : 0.9,
                 }}
-                animate={{
-                  opacity: 1,
-                  y: 0,
-                  scale: 1.3,
-                }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{
                   opacity: 0,
-                  y: shouldReduceMotion ? 0 : "222%",
+                  y: shouldReduceMotion ? 0 : 10,
                   scale: shouldReduceMotion ? 1 : 0.96,
                 }}
                 transition={{
-                  duration: shouldReduceMotion ? 0 : 1,
-                  delay: shouldReduceMotion ? 0 : 0.1,
+                  duration: 0.6,
+                  delay: 0.1,
                   ease: [0.25, 1, 0.5, 1],
                 }}
               >
@@ -689,7 +715,7 @@ export function MobileHomePage() {
               </motion.div>
             ) : null}
           </AnimatePresence>
-        </div>
+        </motion.div>
       </section>
 
       <div className="mx-auto w-full px-4 pt-2">
@@ -705,18 +731,19 @@ export function MobileHomePage() {
           </div>
         ) : null}
 
-        <AnimatePresence initial={false}>
+        <AnimatePresence>
           {data.continueWatching.length > 0 ? (
             <motion.div
               key="continue-watching"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -8, height: 0 }}
-              transition={{ duration: 0.22 }}
+              transition={{ duration: 0.4, ease: [0.25, 1, 0.5, 1] }}
             >
               <MobileMediaRow
                 title={t("home.continueWatching")}
                 items={data.continueWatching}
                 getItemTo={getRouteForItem}
-                variant="landscape"
                 emptyMessage={t("home.nothingInProgress")}
                 showRestartWatching
                 onClearContinueWatching={handleClearContinueWatching}
@@ -725,14 +752,16 @@ export function MobileHomePage() {
           ) : null}
         </AnimatePresence>
 
-        <MobileMediaRow
-          title={t("home.latestMedia")}
-          items={data.latestMedia}
-          getItemTo={getRouteForItem}
-          emptyMessage={t("home.noLatestMedia")}
-        />
+        <MotionReveal direction="up">
+          <MobileMediaRow
+            title={t("home.latestMedia")}
+            items={data.latestMedia}
+            getItemTo={getRouteForItem}
+            emptyMessage={t("home.noLatestMedia")}
+          />
+        </MotionReveal>
 
-        <section className="relative py-5">
+        <MotionReveal className="relative py-5" direction="up">
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
             {t("home.browse")}
           </p>
@@ -751,7 +780,7 @@ export function MobileHomePage() {
               {t("home.noLibraries")}
             </p>
           )}
-        </section>
+        </MotionReveal>
       </div>
     </div>
   );

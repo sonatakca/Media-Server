@@ -55,10 +55,12 @@ export function PlayerQueuePanel({
   const visibleItems =
     queue.kind === "series" ? (selectedSeason?.episodes ?? []) : queue.items;
   const panelWidthClass = compact
-    ? "sm:w-fit sm:max-w-[min(19rem,calc(100vw-2rem))]"
+    ? queue.kind === "collection"
+      ? "sm:w-fit sm:max-w-md"
+      : "sm:w-72 sm:max-w-[calc(100vw-2rem)]"
     : queue.kind === "collection"
-      ? "sm:w-fit sm:max-w-[min(38rem,calc(100vw-2rem))]"
-      : "sm:w-[20rem]";
+      ? "sm:w-fit sm:max-w-2xl"
+      : "sm:w-80 sm:max-w-[calc(100vw-2rem)]";
 
   useEffect(() => {
     setSelectedSeasonId(defaultSeasonId);

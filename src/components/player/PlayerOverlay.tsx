@@ -182,7 +182,7 @@ export function PlayerOverlay({
           <Tooltip content={t("player.backToDetails")} offset="1rem">
             <Link
               to={backTo}
-              className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
               aria-label={t("player.backToDetails")}
             >
               <ArrowLeft

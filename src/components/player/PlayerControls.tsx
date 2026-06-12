@@ -213,7 +213,7 @@ export function PlayerControls({
                   type="button"
                   onClick={onTogglePlay}
                   disabled={playWaiting}
-                  className="seyirlik-player-main-toggle relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+                  className="seyirlik-player-main-toggle relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
                   aria-label={
                     playWaiting
                       ? t("player.waitingForSyncPlay")
@@ -262,7 +262,7 @@ export function PlayerControls({
                 <button
                   type="button"
                   onClick={() => onSeekBy(-5)}
-                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
                   aria-label={t("player.rewind5")}
                 >
                   <RotateCcw size={21} />
@@ -277,7 +277,7 @@ export function PlayerControls({
                 <button
                   type="button"
                   onClick={() => onSeekBy(5)}
-                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+                  className="seyirlik-player-skip-control hidden h-11 w-11 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
                   aria-label={t("player.forward5")}
                 >
                   <RotateCw size={21} />
@@ -304,7 +304,7 @@ export function PlayerControls({
                   <button
                     type="button"
                     onClick={() => setShowRemainingTime((value) => !value)}
-                    className="rounded-full p-2 text-left transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    className="rounded-full px-4 py-2.5 text-left hover:bg-white/[0.08] hover:backdrop-blur-lg transition-[backdrop-filter] hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                     aria-label={
                       showRemainingTime
                         ? t("player.showElapsedTime")
@@ -347,7 +347,7 @@ export function PlayerControls({
                     <button
                       type="button"
                       onClick={onOpenQueue}
-                      className={`flex h-11 w-11 items-center justify-center rounded-full transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                      className={`flex h-11 w-11 items-center justify-center rounded-full transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
                         queueOpen ? "text-white" : "text-white/85"
                       }`}
                       aria-label={playbackQueueLabel}
@@ -388,7 +388,7 @@ export function PlayerControls({
                   <button
                     type="button"
                     onClick={onOpenSettings}
-                    className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                     aria-label={t("player.settingsLabel")}
                   >
                     <Settings size={22} strokeWidth={2.2} />
@@ -404,7 +404,7 @@ export function PlayerControls({
                 <button
                   type="button"
                   onClick={onToggleFullscreen}
-                  className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                   aria-label={t("player.fullscreen")}
                 >
                   <Maximize size={22} strokeWidth={2.2} />

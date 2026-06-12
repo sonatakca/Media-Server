@@ -19,7 +19,7 @@ import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 
 const HIDE_QUALITY_SETTINGS = true;
-const HIDE_AUDIO_SETTINGS = true;
+const HIDE_AUDIO_SETTINGS = false;
 const DISABLE_AUDIO_SELECTION = false;
 const SUBTITLE_DELAY_MIN_SECONDS = -40;
 const SUBTITLE_DELAY_MAX_SECONDS = 40;

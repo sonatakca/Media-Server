@@ -14,7 +14,7 @@ import {
   saveAndApplyAccentTheme,
   type AccentTheme,
 } from "../lib/accentTheme";
-import AppIcon from "../assets/AppIcon.png";
+import AppIcon from "../assets/AppIcon3.png";
 
 export const ROUTE_COLOR_TRANSITION_FORCE_EVENT =
   "seyirlik:force-theme-transition";
@@ -35,7 +35,7 @@ const NON_SELECTED_BLACK_DELAY_MS = 120;
 const SELECTED_CENTER_SLIDE_MS = 420;
 const LOGO_APPEAR_AFTER_CENTER_START_MS = 180;
 const SELECTED_HOLD_MS = 420;
-const SELECTED_EXIT_MS = 120;
+const SELECTED_EXIT_MS = 500;
 const FINAL_BLACK_HOLD_MS = 60;
 const OVERLAY_FADE_OUT_MS = 420;
 
@@ -518,15 +518,15 @@ export function RouteColorTransition() {
         className="absolute inset-0 z-10 flex items-center justify-center opacity-0"
         style={{ transform: "scale(0)" }}
       >
-        <div className="relative flex h-32 w-32 items-center justify-center md:h-64 md:w-64">
-          <div className="seyirlik-logo-theme-glow absolute inset-5 rounded-[2rem] " />
+        <div className="relative flex h-36 w-36 items-center justify-center md:h-64 md:w-64">
+          <div className="seyirlik-logo-theme-glow absolute md:inset-10 md:rounded-[3rem] inset-1.5 rounded-[2.25rem] " />
 
           {/* <div className="absolute inset-5 rounded-[2rem] bg-black/50" /> */}
 
           <img
             src={AppIcon}
             alt=""
-            className="relative z-10 h-24 w-24 rounded-[1.5rem] object-cover shadow-2xl md:h-48 md:w-48"
+            className="relative z-10 h-36 w-36 object-cover md:h-48 md:w-48"
           />
         </div>
       </div>

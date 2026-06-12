@@ -175,6 +175,7 @@ export function CustomVideoPlayer({
   const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
   const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
+  const suppressMouseMoveUntilRef = useRef(0);
   const singleTapTimerRef = useRef<number | null>(null);
   const fullscreenSeekPreviewTokenRef = useRef(0);
   const pendingFullscreenSeekPreviewRef = useRef<{
@@ -261,7 +262,9 @@ export function CustomVideoPlayer({
     (areControlsVisible || !progress.isPlaying || controlsShouldStayVisible);
   const shouldRenderPlayerChrome = shouldShowPlayerChrome && !isViewModeEnabled;
   const shouldShowPlayerCursor =
-    shouldRenderPlayerChrome || (isViewModeEnabled && isViewModeCursorVisible);
+    isSubtitleEditMode ||
+    shouldRenderPlayerChrome ||
+    (isViewModeEnabled && isViewModeCursorVisible);
 
   const hidePlayerChrome = useCallback(() => {
     setAreControlsManuallyHidden(true);
@@ -2622,8 +2625,6 @@ export function CustomVideoPlayer({
     session.lastTapTime = now;
     session.lastTapSide = side;
     session.isActive = true;
-    // The video seek uses only this tap's delta; feedback state accumulates
-    // separately, while this ref keeps the session's direction/total current.
     session.accumulatedSeconds = isContinuingSameSide
       ? session.accumulatedSeconds + seconds
       : seconds;
@@ -2669,10 +2670,11 @@ export function CustomVideoPlayer({
         clearSingleTapTimer();
         event.preventDefault();
         seekByTouchSide(tappedSide, now);
+        revealPlayerChrome();
         return true;
       }
 
-      resetTouchSeekSession();
+      resetTouchSeekSession(false);
     }
 
     if (
@@ -2684,34 +2686,31 @@ export function CustomVideoPlayer({
       event.preventDefault();
       touchSeekSessionRef.current.accumulatedSeconds = 0;
       seekByTouchSide(tappedSide, now);
+      revealPlayerChrome();
       return true;
     }
 
-    resetTouchSeekSession();
+    resetTouchSeekSession(false);
     touchSeekSessionRef.current.lastTapTime = now;
     touchSeekSessionRef.current.lastTapSide = tappedSide;
 
-    singleTapTimerRef.current = window.setTimeout(() => {
-      if (isViewModeEnabled) {
-        partyWatch.togglePlay();
-        singleTapTimerRef.current = null;
-        return;
-      }
+    suppressMouseMoveUntilRef.current = now + 500;
 
-      if (
-        areControlsVisible ||
-        controlsShouldStayVisible ||
-        !progress.isPlaying
-      ) {
-        releaseControlsHover();
-      } else {
-        showControls();
-      }
+    if (isViewModeEnabled) {
+      partyWatch.togglePlay();
+    } else if (shouldShowPlayerChrome) {
+      setIsSettingsOpen(false);
+      setIsQueueOpen(false);
+      setIsPlaybackInfoOpen(false);
+      setIsPartyWatchOpen(false);
+      setIsSubtitleEditMode(false);
+      setAreControlsManuallyHidden(true);
+      releaseControlsHover();
+    } else {
+      revealPlayerChrome();
+    }
 
-      singleTapTimerRef.current = null;
-    }, TOUCH_SINGLE_TAP_DELAY_MS);
-
-    return false;
+    return true;
   };
 
   const handlePlayerOverlayToggle = useCallback(
@@ -2767,6 +2766,10 @@ export function CustomVideoPlayer({
   );
 
   const handlePlayerMouseMove = useCallback(() => {
+    if (Date.now() < suppressMouseMoveUntilRef.current) {
+      return;
+    }
+
     if (isViewModeEnabled) {
       revealViewModeCursor();
       return;
@@ -3086,8 +3089,8 @@ export function CustomVideoPlayer({
       fullscreenSeekPreview !== null) &&
     !error;
   const isCompactPhonePlayer =
-    Math.min(viewport.width, viewport.height) <= 520 &&
-    Math.max(viewport.width, viewport.height) <= 980;
+    Math.min(viewport.width, viewport.height) < 640 &&
+    Math.max(viewport.width, viewport.height) < 1024;
 
   const seekPointerAxis = "horizontal";
 
@@ -3095,7 +3098,7 @@ export function CustomVideoPlayer({
     <div
       ref={containerRef}
       className={`seyirlik-player-shell fixed inset-0 select-none ${
-        isCompactPhonePlayer ? "seyirlik-player-shell--phone" : ""
+        isCompactPhonePlayer && false ? "seyirlik-player-shell--phone" : "" //TODO - false for now
       } z-50 min-h-0 overflow-hidden bg-black text-white ${
         shouldShowPlayerCursor ? "cursor-default" : "cursor-none"
       }`}
@@ -3319,7 +3322,7 @@ export function CustomVideoPlayer({
                     <button
                       type="button"
                       onClick={enterViewMode}
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                       aria-label={t("player.enterViewMode")}
                     >
                       <EyeOff size={18} />
@@ -3335,7 +3338,7 @@ export function CustomVideoPlayer({
                         setIsQueueOpen(false);
                         revealPlayerChrome();
                       }}
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                       aria-label={t("party.title")}
                     >
                       <Users
@@ -3373,7 +3376,7 @@ export function CustomVideoPlayer({
                     <button
                       type="button"
                       onClick={toggleCheckpointMode}
-                      className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-colors duration-300 ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                      className={`relative flex h-11 w-11 items-center justify-center rounded-full transition-[backdrop-filter] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] ease focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
                         checkpointSeconds !== null
                           ? " text-[var(--accent)] ring-0 ring-[var(--accent)]/45 hover:bg-white/[0.12]"
                           : "text-white/85 hover:bg-white/[0.12] hover:text-white"

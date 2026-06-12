@@ -30,6 +30,7 @@ export function MobileMediaRow({
       <h2 className="mb-3 text-xl font-black tracking-tight text-white">
         {title}
       </h2>
+
       {items.length > 0 ? (
         <div className="media-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
           <AnimatePresence initial={false}>

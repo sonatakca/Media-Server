@@ -598,10 +598,6 @@ img {
     0 0 18px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
-.browser-chrome .seyirlik-seekbar-position {
-  bottom: 1.6rem;
-}
-
 .SyncPlay-idInput {
   min-height: 40px;
   min-width: 240px;
