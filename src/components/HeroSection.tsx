@@ -1,6 +1,11 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import {
+  AnimatePresence,
+  motion,
+  useIsPresent,
+  useReducedMotion,
+} from "framer-motion";
 import { Info, Play, Volume2, VolumeX } from "lucide-react";
 import { ButtonLink } from "./Button";
 import {
@@ -50,6 +55,7 @@ interface HeroSectionProps {
   onSelectIndex?: (index: number) => void;
   onHeroReady?: () => void;
   onPreviewPlaybackChange?: (isPlayingPreview: boolean) => void;
+  onSlideDurationChange?: (durationMs: number) => void;
 }
 
 type HeroImageType = "backdrop" | "primary";
@@ -94,6 +100,140 @@ function getHeroImageCandidates(item?: JellyfinItem): HeroImageCandidate[] {
   return candidates;
 }
 
+interface HeroPreviewVideoProps {
+  previewUrl: string | null;
+  isPreviewMuted: boolean;
+  shouldReduceMotion: boolean;
+  isPreviewReady: boolean;
+  softEase: [number, number, number, number];
+  isCarouselPaused: boolean;
+  shouldPlay: boolean;
+  onDurationChange: (durationMs: number) => void;
+  onCanPlay: () => void;
+  onPlay: () => void;
+  onEnded: () => void;
+  onError: () => void;
+  onLoadStart: () => void;
+}
+
+function HeroPreviewVideo({
+  previewUrl,
+  isPreviewMuted,
+  shouldReduceMotion,
+  isPreviewReady,
+  softEase,
+  isCarouselPaused,
+  shouldPlay,
+  onDurationChange,
+  onCanPlay,
+  onPlay,
+  onEnded,
+  onError,
+  onLoadStart,
+}: HeroPreviewVideoProps) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const isPresent = useIsPresent();
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !isPresent) return;
+
+    if (isCarouselPaused || !shouldPlay) {
+      video.pause();
+    } else {
+      video.play().catch(() => {});
+    }
+  }, [isCarouselPaused, isPresent, shouldPlay]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isPresent) {
+      video.volume = 1;
+    } else {
+      const initialVolume = video.volume;
+      const duration = shouldReduceMotion ? 0 : 1200;
+
+      if (duration <= 0 || isPreviewMuted) {
+        video.muted = true;
+        return;
+      }
+
+      let start: number;
+      let animationFrame: number;
+
+      const fade = (timestamp: number) => {
+        if (!start) start = timestamp;
+        const progress = timestamp - start;
+
+        const volumeMultiplier = Math.max(0.01, 1 - progress / duration);
+        video.volume = initialVolume * volumeMultiplier;
+
+        if (progress < duration) {
+          animationFrame = requestAnimationFrame(fade);
+          return;
+        }
+
+        video.muted = true;
+      };
+
+      animationFrame = requestAnimationFrame(fade);
+
+      return () => cancelAnimationFrame(animationFrame);
+    }
+  }, [isPresent, shouldReduceMotion, isPreviewMuted]);
+
+  const handleLoadedMetadata = () => {
+    if (videoRef.current) {
+      const dur = videoRef.current.duration;
+      if (!isNaN(dur) && dur > 0) {
+        onDurationChange(dur * 1000);
+      }
+    }
+  };
+
+  return (
+    <motion.video
+      ref={videoRef}
+      src={previewUrl ?? undefined}
+      className="absolute inset-0 z-[1] h-full w-full object-cover"
+      autoPlay={false}
+      muted={isPreviewMuted}
+      playsInline
+      preload="auto"
+      onLoadedMetadata={handleLoadedMetadata}
+      onLoadStart={onLoadStart}
+      onCanPlay={onCanPlay}
+      onPlay={onPlay}
+      onEnded={onEnded}
+      onError={onError}
+      initial={{
+        opacity: 0,
+        scale: shouldReduceMotion ? 1 : 1.035,
+        filter: shouldReduceMotion ? "none" : "blur(10px)",
+      }}
+      animate={{
+        opacity: isPreviewReady && shouldPlay ? 0.72 : 0,
+        scale: 1,
+        filter:
+          (isPreviewReady && shouldPlay) || shouldReduceMotion
+            ? "none"
+            : "blur(10px)",
+      }}
+      exit={{
+        opacity: 0,
+        scale: shouldReduceMotion ? 1 : 1.025,
+        filter: shouldReduceMotion ? "none" : "blur(10px)",
+      }}
+      transition={{
+        duration: shouldReduceMotion ? 0 : 1.2,
+        ease: softEase,
+      }}
+    />
+  );
+}
+
 export function HeroSection({
   item,
   currentIndex = 0,
@@ -108,9 +248,10 @@ export function HeroSection({
   indicatorPlacement = "bottom-right-quarter",
   onSelectIndex,
   onHeroReady,
+  onSlideDurationChange,
 }: HeroSectionProps) {
   const { t } = useLanguage();
-  const shouldReduceMotion = useReducedMotion();
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const navigate = useNavigate();
   const heroSectionRef = useRef<HTMLElement | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -119,7 +260,6 @@ export function HeroSection({
   const [shouldStartPreviewUnmuted, setShouldStartPreviewUnmuted] =
     useState(false);
   const [isPreviewMuted, setIsPreviewMuted] = useState(true);
-  const shouldShowPreviewRef = useRef(false);
   const isPreviewReadyRef = useRef(false);
   const isPreviewMutedRef = useRef(true);
   const shouldStartPreviewUnmutedRef = useRef(false);
@@ -127,13 +267,14 @@ export function HeroSection({
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
-  const shouldShowPreview = Boolean(
-    previewUrl && isHeroIntroDone && !hasPreviewEnded,
-  );
+
+  const hasPreview = Boolean(previewUrl && !hasPreviewEnded);
+  const shouldPlayPreview = Boolean(hasPreview && isHeroIntroDone);
+  const shouldShowPreviewRef = useRef(shouldPlayPreview);
 
   useEffect(() => {
-    shouldShowPreviewRef.current = shouldShowPreview;
-  }, [shouldShowPreview]);
+    shouldShowPreviewRef.current = shouldPlayPreview;
+  }, [shouldPlayPreview]);
 
   useEffect(() => {
     isPreviewReadyRef.current = isPreviewReady;
@@ -322,7 +463,7 @@ export function HeroSection({
               progressResetKey={progressResetKey}
               onTogglePaused={onTogglePaused}
               showPauseButton={showPauseButton}
-              isPauseButtonDisabled={shouldShowPreview}
+              isPauseButtonDisabled={false}
               maxVisibleDots={9}
               ariaLabel="Featured carousel"
             />
@@ -334,11 +475,10 @@ export function HeroSection({
 
   useEffect(() => {
     let cancelled = false;
-
     setPreviewUrl(null);
     setIsPreviewReady(false);
 
-    if (!item || !isHeroIntroDone) {
+    if (!item) {
       return;
     }
 
@@ -362,7 +502,7 @@ export function HeroSection({
     return () => {
       cancelled = true;
     };
-  }, [item?.Id, isHeroIntroDone]);
+  }, [item?.Id]);
 
   useEffect(() => {
     setFailedImageUrls([]);
@@ -578,7 +718,7 @@ export function HeroSection({
               }}
               animate={{
                 opacity: heroImageLoaded
-                  ? shouldShowPreview && isPreviewReady
+                  ? shouldPlayPreview && isPreviewReady
                     ? 0
                     : selectedImage.type === "primary"
                       ? 0.52
@@ -615,37 +755,23 @@ export function HeroSection({
           ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {shouldShowPreview ? (
-            <motion.video
+          {hasPreview ? (
+            <HeroPreviewVideo
               key={`${item?.Id}-hero-preview`}
-              src={previewUrl ?? undefined}
-              className="absolute inset-0 z-[1] h-full w-full object-cover"
-              autoPlay
-              muted={isPreviewMuted}
-              playsInline
-              preload="auto"
+              previewUrl={previewUrl}
+              isPreviewMuted={isPreviewMuted}
+              shouldReduceMotion={shouldReduceMotion}
+              isPreviewReady={isPreviewReady}
+              softEase={softEase}
+              isCarouselPaused={isPaused}
+              shouldPlay={shouldPlayPreview}
+              onDurationChange={(durationMs) => {
+                onSlideDurationChange?.(
+                  HERO_DESCRIPTION_VISIBLE_MS + durationMs + 10000,
+                );
+              }}
               onLoadStart={() => {
                 onPreviewPlaybackChange?.(true);
-              }}
-              initial={{
-                opacity: 0,
-                scale: shouldReduceMotion ? 1 : 1.035,
-                filter: shouldReduceMotion ? "none" : "blur(10px)",
-              }}
-              animate={{
-                opacity: isPreviewReady ? 0.72 : 0,
-                scale: 1,
-                filter:
-                  isPreviewReady || shouldReduceMotion ? "none" : "blur(10px)",
-              }}
-              exit={{
-                opacity: 0,
-                scale: shouldReduceMotion ? 1 : 1.025,
-                filter: shouldReduceMotion ? "none" : "blur(10px)",
-              }}
-              transition={{
-                duration: shouldReduceMotion ? 0 : 1.2,
-                ease: softEase,
               }}
               onCanPlay={() => setIsPreviewReady(true)}
               onPlay={() => {
@@ -666,7 +792,7 @@ export function HeroSection({
           ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {shouldShowPreview && isPreviewReady ? (
+          {shouldPlayPreview && isPreviewReady ? (
             <motion.button
               key="hero-preview-mute-toggle"
               type="button"

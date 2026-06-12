@@ -63,17 +63,28 @@ export function DesktopHomePage() {
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
+
+  const [slideDuration, setSlideDuration] = useState(HERO_ROTATION_INTERVAL_MS);
+
   const [heroIndex, setHeroIndex] = useState(0);
   const [isHeroPaused, setIsHeroPaused] = useState(false);
   const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
-  const [heroProgressStartedAtMs, setHeroProgressStartedAtMs] = useState(() =>
-    Date.now(),
-  );
-  const [homeCurationPreferences, setHomeCurationPreferences] =
-    useState<HomeCurationPreferences>(() => loadHomeCurationPreferences());
+
+  const [effectiveStartMs, setEffectiveStartMs] = useState(() => Date.now());
   const [isHeroReady, setIsHeroReady] = useState(false);
   const [shouldShowConfetti, setShouldShowConfetti] = useState(false);
   const hasEvaluatedConfetti = useRef(false);
+
+  const timerRef = useRef({
+    startMs: Date.now(),
+    accumulatedPause: 0,
+    pauseBeganMs: null as number | null,
+    timeoutId: null as number | null,
+  });
+
+  const [homeCurationPreferences, setHomeCurationPreferences] =
+    useState<HomeCurationPreferences>(() => loadHomeCurationPreferences());
+
   const featuredPool = useMemo(() => {
     const heroItems =
       data?.heroItems && data.heroItems.length > 0
@@ -84,22 +95,18 @@ export function DesktopHomePage() {
       buildHomeCarouselPool(heroItems),
       homeCurationPreferences,
     );
-  }, [data?.heroItems, data?.latestMedia, homeCurationPreferences]);
+  }, [data?.heroItems, data?.latestMedia]);
+
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
   const heroItem = featuredPool[selectedHeroIndex];
-  const [isHeroPreviewPlaying, setIsHeroPreviewPlaying] = useState(false);
-  const isHeroCarouselPaused =
-    isHeroPaused || !isHeroReady || isHeroPreviewPlaying;
+
+  const isHeroCarouselPaused = isHeroPaused || !isHeroReady;
 
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
-
     setData((currentData) =>
       currentData
-        ? {
-            ...currentData,
-            continueWatching: smartContinueItems,
-          }
+        ? { ...currentData, continueWatching: smartContinueItems }
         : currentData,
     );
   }, []);
@@ -113,10 +120,7 @@ export function DesktopHomePage() {
   }, [t]);
 
   useEffect(() => {
-    if (!isHeroReady || hasEvaluatedConfetti.current) {
-      return;
-    }
-
+    if (!isHeroReady || hasEvaluatedConfetti.current) return;
     hasEvaluatedConfetti.current = true;
 
     if (consumeLoginConfettiPending()) {
@@ -133,7 +137,6 @@ export function DesktopHomePage() {
 
   useEffect(() => {
     let isMounted = true;
-
     async function loadHome() {
       setError(null);
       setRowWarnings([]);
@@ -146,9 +149,7 @@ export function DesktopHomePage() {
           getAllMovieAndSeriesItems(),
         ]);
 
-      if (!isMounted) {
-        return;
-      }
+      if (!isMounted) return;
 
       if (librariesResult.status === "rejected") {
         setError(getErrorMessage(librariesResult, t("home.couldNotLoad")));
@@ -197,64 +198,95 @@ export function DesktopHomePage() {
         heroItems,
       });
     }
-
     void loadHome();
-
     return () => {
       isMounted = false;
     };
   }, [t]);
 
   useEffect(() => {
-    const handleWatchStatusChanged = () => {
-      void refreshSmartContinueWatching();
-    };
-
+    const handleWatchStatusChanged = () => void refreshSmartContinueWatching();
     window.addEventListener(
       WATCH_STATUS_CHANGED_EVENT,
       handleWatchStatusChanged,
     );
-
-    return () => {
+    return () =>
       window.removeEventListener(
         WATCH_STATUS_CHANGED_EVENT,
         handleWatchStatusChanged,
       );
-    };
   }, [refreshSmartContinueWatching]);
 
+  const advanceSlide = useCallback(() => {
+    timerRef.current.startMs = Date.now();
+    timerRef.current.accumulatedPause = 0;
+    timerRef.current.pauseBeganMs = null;
+    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
+    setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
+    setHeroProgressResetKey((current) => current + 1);
+    setEffectiveStartMs(Date.now());
+  }, [featuredPool.length]);
+
   useEffect(() => {
+    timerRef.current.startMs = Date.now();
+    timerRef.current.accumulatedPause = 0;
+    timerRef.current.pauseBeganMs = null;
     setHeroIndex(0);
     setIsHeroPaused(false);
     setIsHeroReady(false);
-    setHeroProgressStartedAtMs(Date.now());
+    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
     setHeroProgressResetKey((current) => current + 1);
+    setEffectiveStartMs(Date.now());
   }, [featuredPool]);
 
   useEffect(() => {
-    if (featuredPool.length <= 1 || isHeroCarouselPaused) {
-      return;
+    if (featuredPool.length <= 1) return;
+
+    if (isHeroCarouselPaused) {
+      if (timerRef.current.pauseBeganMs === null) {
+        timerRef.current.pauseBeganMs = Date.now();
+      }
+      if (timerRef.current.timeoutId) {
+        window.clearTimeout(timerRef.current.timeoutId);
+        timerRef.current.timeoutId = null;
+      }
+    } else {
+      if (timerRef.current.pauseBeganMs !== null) {
+        timerRef.current.accumulatedPause +=
+          Date.now() - timerRef.current.pauseBeganMs;
+        timerRef.current.pauseBeganMs = null;
+        setEffectiveStartMs(
+          timerRef.current.startMs + timerRef.current.accumulatedPause,
+        );
+      }
+
+      const elapsedMs =
+        Date.now() -
+        timerRef.current.startMs -
+        timerRef.current.accumulatedPause;
+      const remainingMs = Math.max(0, slideDuration - elapsedMs);
+
+      timerRef.current.timeoutId = window.setTimeout(() => {
+        advanceSlide();
+      }, remainingMs);
     }
 
-    const timeoutId = window.setTimeout(() => {
-      setHeroProgressStartedAtMs(Date.now());
-      setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
-    }, HERO_ROTATION_INTERVAL_MS);
-
     return () => {
-      window.clearTimeout(timeoutId);
+      if (timerRef.current.timeoutId) {
+        window.clearTimeout(timerRef.current.timeoutId);
+        timerRef.current.timeoutId = null;
+      }
     };
-  }, [
-    featuredPool.length,
-    heroProgressResetKey,
-    isHeroCarouselPaused,
-    selectedHeroIndex,
-  ]);
+  }, [isHeroCarouselPaused, featuredPool.length, slideDuration, advanceSlide]);
 
   const handleSelectHeroIndex = (index: number) => {
-    setHeroProgressStartedAtMs(Date.now());
+    timerRef.current.startMs = Date.now();
+    timerRef.current.accumulatedPause = 0;
+    timerRef.current.pauseBeganMs = isHeroCarouselPaused ? Date.now() : null;
     setHeroIndex(index);
+    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
     setHeroProgressResetKey((current) => current + 1);
+    setEffectiveStartMs(Date.now());
   };
 
   const handleToggleHeroPaused = () => {
@@ -303,15 +335,15 @@ export function DesktopHomePage() {
           item={heroItem}
           currentIndex={selectedHeroIndex}
           totalItems={featuredPool.length}
-          durationMs={HERO_ROTATION_INTERVAL_MS}
-          progressStartedAtMs={heroProgressStartedAtMs}
+          durationMs={slideDuration}
+          progressStartedAtMs={effectiveStartMs}
           progressResetKey={isHeroReady ? heroProgressResetKey : "hero-loading"}
           isPaused={isHeroCarouselPaused}
           onTogglePaused={handleToggleHeroPaused}
           showPauseButton={isHeroReady}
           onSelectIndex={handleSelectHeroIndex}
           onHeroReady={() => setIsHeroReady(true)}
-          onPreviewPlaybackChange={setIsHeroPreviewPlaying}
+          onSlideDurationChange={setSlideDuration}
         />
       </div>
 
