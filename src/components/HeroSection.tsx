@@ -671,7 +671,7 @@ export function HeroSection({
               key="hero-preview-mute-toggle"
               type="button"
               aria-label={isPreviewMuted ? "Unmute preview" : "Mute preview"}
-              className="group absolute right-0 top-1/2 z-30 flex h-14 w-24 -translate-y-1/2 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+              className="group absolute right-0 top-1/2 z-30 flex h-auto w-24 -translate-y-1/2 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
               initial={{ opacity: 0, x: 38, scale: 0.96 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 38, scale: 0.96 }}
@@ -687,7 +687,7 @@ export function HeroSection({
                 });
               }}
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+              <span className="flex w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
                 <AnimatePresence mode="wait" initial={false}>
                   {isPreviewMuted ? (
                     <motion.span
