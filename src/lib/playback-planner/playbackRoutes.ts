@@ -58,7 +58,7 @@ interface ValidatedPlaybackRequestBody {
   forceQualityLimit?: PlaybackQualityLimit;
 }
 
-type ErrorStatusCode = 400 | 403 | 404 | 405 | 409 | 413 | 500;
+type ErrorStatusCode = 400 | 403 | 404 | 405 | 409 | 413 | 500 | 502;
 
 const DEFAULT_MAX_JSON_BODY_BYTES = 1024 * 1024;
 const VALID_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
