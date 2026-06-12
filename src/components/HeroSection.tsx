@@ -250,7 +250,7 @@ export function HeroSection({
             ease: softEase,
           }}
         >
-          <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] sm:max-w-[calc(100vw-2rem)] sm:p-1.5">
+          <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] -translate-x-7 overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] sm:max-w-[calc(100vw-2rem)] sm:-translate-x-8 sm:p-1.5">
             <TimedCarouselIndicators
               count={carouselItemCount}
               activeIndex={activeCarouselIndex}

@@ -23,6 +23,54 @@ function classNames(
   return values.filter(Boolean).join(" ");
 }
 
+function AnimatedCarouselNumber({
+  value,
+  digitCount,
+}: {
+  value: number;
+  digitCount: number;
+}) {
+  const digits = String(value).padStart(digitCount, "0").split("");
+
+  return (
+    <span
+      className="flex h-[1em] items-center overflow-hidden tabular-nums leading-none"
+      aria-label={String(value)}
+    >
+      {digits.map((digit, index) => (
+        <span
+          key={index}
+          className="relative block h-[1em] w-[0.65em] overflow-hidden" // Widened to 0.65em
+          aria-hidden="true"
+        >
+          <motion.span
+            className="absolute left-0 top-0 flex flex-col"
+            initial={false}
+            animate={{
+              y: `-${Number(digit)}em`,
+            }}
+            transition={{
+              type: "spring",
+              stiffness: 520,
+              damping: 42,
+              mass: 0.7,
+            }}
+          >
+            {Array.from({ length: 10 }, (_, number) => (
+              <span
+                key={number}
+                className="flex h-[1em] w-[0.65em] items-center justify-center" // Widened to 0.65em
+              >
+                {number}
+              </span>
+            ))}
+          </motion.span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
 const INITIAL_DOT_REVEAL_MS = 1300;
 
 export function TimedCarouselIndicators({
@@ -47,6 +95,7 @@ export function TimedCarouselIndicators({
   const safeActiveIndex = Math.min(Math.max(activeIndex, 0), boundedCount - 1);
   const previousActiveIndexRef = useRef(safeActiveIndex);
   const revealDirectionRef = useRef<1 | -1>(1);
+  const counterDigitCount = String(count).length;
   const progressAnimationOffsetRef = useRef<{
     key: string;
     elapsedMs: number;
@@ -167,6 +216,32 @@ export function TimedCarouselIndicators({
       aria-label={ariaLabel}
       className={classNames("flex max-w-full items-center", className)}
     >
+      <motion.div
+        layout
+        className="mr-2 flex h-9 min-w-12 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] px-3 text-[0.72rem] font-black tabular-nums text-white/90 shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] sm:mr-3 sm:h-11 sm:min-w-14 sm:text-sm"
+        initial={
+          shouldReduceMotion
+            ? { opacity: 1 }
+            : {
+                opacity: 0,
+                scale: 0.75,
+                x: 10,
+                y: 4,
+              }
+        }
+        animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+        transition={{
+          ...softSpringTransition,
+          delay: shouldReduceMotion ? 0 : 0.55,
+        }}
+        aria-hidden="true"
+      >
+        <AnimatedCarouselNumber
+          value={safeActiveIndex + 1}
+          digitCount={counterDigitCount}
+        />
+      </motion.div>
+
       <motion.div
         layout
         style={
