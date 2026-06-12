@@ -2657,6 +2657,81 @@ export function getStreamUrl(itemId: string): string {
   );
 }
 
+function normalizePreviewName(item: JellyfinItem): string {
+  return `${item.Name ?? ""} ${item.SortName ?? ""}`.toLowerCase();
+}
+
+function sortHeroPreviewTrailers(left: JellyfinItem, right: JellyfinItem) {
+  const leftName = normalizePreviewName(left);
+  const rightName = normalizePreviewName(right);
+
+  const leftPriority = leftName.includes("teaser")
+    ? 0
+    : leftName.includes("trailer")
+      ? 1
+      : 2;
+
+  const rightPriority = rightName.includes("teaser")
+    ? 0
+    : rightName.includes("trailer")
+      ? 1
+      : 2;
+
+  return leftPriority - rightPriority || leftName.localeCompare(rightName);
+}
+
+export async function getLocalTrailers(
+  itemId: string,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  try {
+    const response = await requestJson<
+      JellyfinItemsResponse<JellyfinItem> | JellyfinItem[]
+    >(
+      `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(
+        itemId,
+      )}/LocalTrailers`,
+      {
+        params: {
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: false,
+          enableUserData: false,
+        },
+      },
+    );
+
+    return Array.isArray(response) ? response : (response.Items ?? []);
+  } catch (error) {
+    if (error instanceof JellyfinRequestError && error.status === 404) {
+      return [];
+    }
+
+    console.debug("[Seyirlik Hero] Could not load local trailers", {
+      itemId,
+      error,
+    });
+
+    return [];
+  }
+}
+
+export async function getHeroPreviewUrl(
+  item: JellyfinItem,
+): Promise<string | null> {
+  const previewSourceItemId =
+    item.Type === "Episode" && item.SeriesId ? item.SeriesId : item.Id;
+
+  const trailers = await getLocalTrailers(previewSourceItemId);
+  const selectedTrailer = trailers.slice().sort(sortHeroPreviewTrailers)[0];
+
+  if (!selectedTrailer) {
+    return null;
+  }
+
+  return getStreamUrl(selectedTrailer.Id);
+}
+
 export function ticksFromSeconds(seconds: number): number {
   return Math.max(0, Math.floor(seconds * 10_000_000));
 }

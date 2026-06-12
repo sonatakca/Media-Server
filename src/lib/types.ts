@@ -142,6 +142,7 @@ export interface NormalizedMediaSegment {
 export interface JellyfinItem {
   Id: string;
   Name: string;
+  Path?: string;
   SortName?: string;
   OriginalTitle?: string;
   Type?: string;

@@ -14,6 +14,7 @@ interface TimedCarouselIndicatorsProps {
   ariaLabel?: string;
   onTogglePaused?: () => void;
   showPauseButton?: boolean;
+  isPauseButtonDisabled?: boolean;
   maxVisibleDots?: number;
 }
 
@@ -85,6 +86,7 @@ export function TimedCarouselIndicators({
   ariaLabel = "Carousel navigation",
   onTogglePaused,
   showPauseButton = false,
+  isPauseButtonDisabled = false,
   maxVisibleDots,
 }: TimedCarouselIndicatorsProps) {
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -322,7 +324,7 @@ export function TimedCarouselIndicators({
                       scale: 0.62,
                       x: initialSlideX,
                       y: 4,
-                      filter: "blur(6px)",
+                      filter: "blur(30px)",
                     }
               }
               animate={{
@@ -416,7 +418,14 @@ export function TimedCarouselIndicators({
         <motion.button
           type="button"
           aria-label={isPaused ? "Resume carousel" : "Pause carousel"}
-          className="ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition-colors hover:bg-white/[0.20] hover:text-white focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11"
+          className={classNames(
+            "ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11",
+            isPauseButtonDisabled
+              ? "cursor-not-allowed opacity-55"
+              : "hover:bg-white/[0.20] hover:text-white",
+          )}
+          disabled={isPauseButtonDisabled}
+          aria-disabled={isPauseButtonDisabled}
           initial={
             shouldReduceMotion
               ? { opacity: 1 }
@@ -434,7 +443,7 @@ export function TimedCarouselIndicators({
               ? 0
               : 0.65 + visibleIndicators.length * 0.045,
           }}
-          onClick={onTogglePaused}
+          onClick={isPauseButtonDisabled ? undefined : onTogglePaused}
         >
           <AnimatePresence mode="wait" initial={false}>
             <motion.span

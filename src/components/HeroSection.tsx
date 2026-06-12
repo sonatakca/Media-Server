@@ -1,10 +1,11 @@
 import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { Info, Play } from "lucide-react";
+import { Info, Play, Volume2, VolumeX } from "lucide-react";
 import { ButtonLink } from "./Button";
 import {
   getBackdropImageUrl,
+  getHeroPreviewUrl,
   getLogoImageUrl,
   getPrimaryImageUrl,
   redactPlaybackUrl,
@@ -48,6 +49,7 @@ interface HeroSectionProps {
   indicatorPlacement?: IndicatorsPlacement;
   onSelectIndex?: (index: number) => void;
   onHeroReady?: () => void;
+  onPreviewPlaybackChange?: (isPlayingPreview: boolean) => void;
 }
 
 type HeroImageType = "backdrop" | "primary";
@@ -101,6 +103,7 @@ export function HeroSection({
   progressResetKey,
   isPaused = false,
   onTogglePaused,
+  onPreviewPlaybackChange,
   showPauseButton = false,
   indicatorPlacement = "bottom-right-quarter",
   onSelectIndex,
@@ -110,10 +113,68 @@ export function HeroSection({
   const shouldReduceMotion = useReducedMotion();
   const navigate = useNavigate();
   const heroSectionRef = useRef<HTMLElement | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [isPreviewReady, setIsPreviewReady] = useState(false);
+  const [hasPreviewEnded, setHasPreviewEnded] = useState(false);
+  const [shouldStartPreviewUnmuted, setShouldStartPreviewUnmuted] =
+    useState(false);
+  const [isPreviewMuted, setIsPreviewMuted] = useState(true);
+  const shouldShowPreviewRef = useRef(false);
+  const isPreviewReadyRef = useRef(false);
+  const isPreviewMutedRef = useRef(true);
+  const shouldStartPreviewUnmutedRef = useRef(false);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
+  const shouldShowPreview = Boolean(
+    previewUrl && isHeroIntroDone && !hasPreviewEnded,
+  );
+
+  useEffect(() => {
+    shouldShowPreviewRef.current = shouldShowPreview;
+  }, [shouldShowPreview]);
+
+  useEffect(() => {
+    isPreviewReadyRef.current = isPreviewReady;
+  }, [isPreviewReady]);
+
+  useEffect(() => {
+    isPreviewMutedRef.current = isPreviewMuted;
+  }, [isPreviewMuted]);
+
+  useEffect(() => {
+    shouldStartPreviewUnmutedRef.current = shouldStartPreviewUnmuted;
+  }, [shouldStartPreviewUnmuted]);
+
+  useEffect(() => {
+    const handleGlobalPointerDown = () => {
+      const previewIsShowing = shouldShowPreviewRef.current;
+      const previewIsReady = isPreviewReadyRef.current;
+      const previewIsMuted = isPreviewMutedRef.current;
+
+      if (!previewIsShowing || !previewIsReady) {
+        setShouldStartPreviewUnmuted(true);
+        setIsPreviewMuted(false);
+        return;
+      }
+
+      if (!previewIsMuted) {
+        setShouldStartPreviewUnmuted(true);
+      }
+    };
+
+    window.addEventListener("pointerdown", handleGlobalPointerDown, {
+      capture: true,
+    });
+
+    return () => {
+      window.removeEventListener("pointerdown", handleGlobalPointerDown, {
+        capture: true,
+      });
+    };
+  }, []);
+
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
   const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
     useState(false);
@@ -242,7 +303,7 @@ export function HeroSection({
           exit={{
             opacity: 0,
             y: shouldReduceMotion ? 0 : "222%",
-            scale: shouldReduceMotion ? 1 : 0.96,
+            scale: shouldReduceMotion ? 1 : 1,
           }}
           transition={{
             duration: shouldReduceMotion ? 0 : 1,
@@ -261,6 +322,7 @@ export function HeroSection({
               progressResetKey={progressResetKey}
               onTogglePaused={onTogglePaused}
               showPauseButton={showPauseButton}
+              isPauseButtonDisabled={shouldShowPreview}
               maxVisibleDots={9}
               ariaLabel="Featured carousel"
             />
@@ -271,9 +333,46 @@ export function HeroSection({
   ) : null;
 
   useEffect(() => {
+    let cancelled = false;
+
+    setPreviewUrl(null);
+    setIsPreviewReady(false);
+
+    if (!item || !isHeroIntroDone) {
+      return;
+    }
+
+    getHeroPreviewUrl(item)
+      .then((url) => {
+        if (!cancelled) {
+          setPreviewUrl(url);
+        }
+      })
+      .catch((error) => {
+        console.debug("[Seyirlik Hero] No preview trailer available", {
+          itemId: item.Id,
+          error,
+        });
+
+        if (!cancelled) {
+          setPreviewUrl(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [item?.Id, isHeroIntroDone]);
+
+  useEffect(() => {
     setFailedImageUrls([]);
     setIsLogoLoaded(false);
-  }, [item?.Id]);
+    setPreviewUrl(null);
+    setIsPreviewReady(false);
+    setHasPreviewEnded(false);
+    setIsPreviewMuted(!shouldStartPreviewUnmutedRef.current);
+    onPreviewPlaybackChange?.(false);
+  }, [item?.Id, onPreviewPlaybackChange]);
 
   useEffect(() => {
     if (!showCarouselDots) {
@@ -479,9 +578,11 @@ export function HeroSection({
               }}
               animate={{
                 opacity: heroImageLoaded
-                  ? selectedImage.type === "primary"
-                    ? 0.52
-                    : 0.78
+                  ? shouldShowPreview && isPreviewReady
+                    ? 0
+                    : selectedImage.type === "primary"
+                      ? 0.52
+                      : 0.78
                   : 0,
                 scale: heroImageLoaded
                   ? selectedImage.type === "primary"
@@ -513,6 +614,121 @@ export function HeroSection({
             />
           ) : null}
         </AnimatePresence>
+        <AnimatePresence>
+          {shouldShowPreview ? (
+            <motion.video
+              key={`${item?.Id}-hero-preview`}
+              src={previewUrl ?? undefined}
+              className="absolute inset-0 z-[1] h-full w-full object-cover"
+              autoPlay
+              muted={isPreviewMuted}
+              playsInline
+              preload="auto"
+              onLoadStart={() => {
+                onPreviewPlaybackChange?.(true);
+              }}
+              initial={{
+                opacity: 0,
+                scale: shouldReduceMotion ? 1 : 1.035,
+                filter: shouldReduceMotion ? "none" : "blur(10px)",
+              }}
+              animate={{
+                opacity: isPreviewReady ? 0.72 : 0,
+                scale: 1,
+                filter:
+                  isPreviewReady || shouldReduceMotion ? "none" : "blur(10px)",
+              }}
+              exit={{
+                opacity: 0,
+                scale: shouldReduceMotion ? 1 : 1.025,
+                filter: shouldReduceMotion ? "none" : "blur(10px)",
+              }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 1.2,
+                ease: softEase,
+              }}
+              onCanPlay={() => setIsPreviewReady(true)}
+              onPlay={() => {
+                onPreviewPlaybackChange?.(true);
+              }}
+              onEnded={() => {
+                setHasPreviewEnded(true);
+                setIsPreviewReady(false);
+                onPreviewPlaybackChange?.(false);
+              }}
+              onError={() => {
+                setPreviewUrl(null);
+                setIsPreviewReady(false);
+                setHasPreviewEnded(true);
+                onPreviewPlaybackChange?.(false);
+              }}
+            />
+          ) : null}
+        </AnimatePresence>
+        <AnimatePresence>
+          {shouldShowPreview && isPreviewReady ? (
+            <motion.button
+              key="hero-preview-mute-toggle"
+              type="button"
+              aria-label={isPreviewMuted ? "Unmute preview" : "Mute preview"}
+              className="group absolute right-0 top-1/2 z-30 flex h-14 w-24 -translate-y-1/2 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+              initial={{ opacity: 0, x: 38, scale: 0.96 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 38, scale: 0.96 }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.28,
+                ease: softEase,
+              }}
+              onClick={() => {
+                setIsPreviewMuted((current) => {
+                  const nextMuted = !current;
+                  setShouldStartPreviewUnmuted(!nextMuted);
+                  return nextMuted;
+                });
+              }}
+            >
+              <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+                <AnimatePresence mode="wait" initial={false}>
+                  {isPreviewMuted ? (
+                    <motion.span
+                      key="muted"
+                      className="flex items-center justify-center"
+                      initial={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                      animate={{ scale: 1 }}
+                      exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                      transition={{
+                        duration: shouldReduceMotion ? 0 : 0.16,
+                        ease: softEase,
+                      }}
+                    >
+                      <VolumeX
+                        className="h-5 w-5 sm:h-5 sm:w-5"
+                        strokeWidth={2.4}
+                      />
+                    </motion.span>
+                  ) : (
+                    <motion.span
+                      key="unmuted"
+                      className="flex items-center justify-center"
+                      initial={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                      animate={{ scale: 1 }}
+                      exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                      transition={{
+                        duration: shouldReduceMotion ? 0 : 0.16,
+                        ease: softEase,
+                      }}
+                    >
+                      <Volume2
+                        className="h-5 w-5 sm:h-5 sm:w-5"
+                        strokeWidth={2.4}
+                      />
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </span>
+            </motion.button>
+          ) : null}
+        </AnimatePresence>
         <motion.div
           className="hero-cinematic-vignette z-10"
           initial={false}
@@ -527,7 +743,7 @@ export function HeroSection({
         <div className="hero-bottom-fade z-10" />
 
         <div className="seyirlik-hero-content relative z-20 mx-auto flex min-h-[min(100svh,44rem)] w-full max-w-[1600px] flex-col justify-end px-4 pb-[calc(6.75rem+env(safe-area-inset-bottom))] pt-20 sm:min-h-screen sm:px-6 sm:pb-[clamp(3rem,8vh,6rem)] sm:pt-28 lg:px-8">
-          {showSidePoster ? (
+          {showSidePoster && false ? ( //TODO - for now I made it always false because of a bug
             <motion.div
               className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
               initial={false}

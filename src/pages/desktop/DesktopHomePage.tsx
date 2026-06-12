@@ -87,6 +87,9 @@ export function DesktopHomePage() {
   }, [data?.heroItems, data?.latestMedia, homeCurationPreferences]);
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
   const heroItem = featuredPool[selectedHeroIndex];
+  const [isHeroPreviewPlaying, setIsHeroPreviewPlaying] = useState(false);
+  const isHeroCarouselPaused =
+    isHeroPaused || !isHeroReady || isHeroPreviewPlaying;
 
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
@@ -229,7 +232,7 @@ export function DesktopHomePage() {
   }, [featuredPool]);
 
   useEffect(() => {
-    if (featuredPool.length <= 1 || isHeroPaused || !isHeroReady) {
+    if (featuredPool.length <= 1 || isHeroCarouselPaused) {
       return;
     }
 
@@ -244,8 +247,7 @@ export function DesktopHomePage() {
   }, [
     featuredPool.length,
     heroProgressResetKey,
-    isHeroPaused,
-    isHeroReady,
+    isHeroCarouselPaused,
     selectedHeroIndex,
   ]);
 
@@ -304,11 +306,12 @@ export function DesktopHomePage() {
           durationMs={HERO_ROTATION_INTERVAL_MS}
           progressStartedAtMs={heroProgressStartedAtMs}
           progressResetKey={isHeroReady ? heroProgressResetKey : "hero-loading"}
-          isPaused={isHeroPaused || !isHeroReady}
+          isPaused={isHeroCarouselPaused}
           onTogglePaused={handleToggleHeroPaused}
           showPauseButton={isHeroReady}
           onSelectIndex={handleSelectHeroIndex}
           onHeroReady={() => setIsHeroReady(true)}
+          onPreviewPlaybackChange={setIsHeroPreviewPlaying}
         />
       </div>
 
