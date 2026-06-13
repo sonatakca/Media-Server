@@ -23,8 +23,8 @@ import { useLanguage } from "../i18n/LanguageContext";
 import type { JellyfinItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
-
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
+import { useCroppedTransparentImage } from "../hooks/useCroppedTransparentImage";
 
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
 const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
@@ -214,7 +214,7 @@ function HeroPreviewVideo({
         filter: shouldReduceMotion ? "none" : "blur(10px)",
       }}
       animate={{
-        opacity: isPreviewReady && shouldPlay ? 0.72 : 0,
+        opacity: isPreviewReady && shouldPlay ? 1 : 0,
         scale: 1,
         filter:
           (isPreviewReady && shouldPlay) || shouldReduceMotion
@@ -338,6 +338,9 @@ export function HeroSection({
   const logoUrl = item?.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
     : "";
+
+  const croppedLogoUrl = useCroppedTransparentImage(logoUrl);
+
   const showSidePoster = Boolean(
     primaryPosterUrl && selectedImage?.type === "primary",
   );
@@ -356,6 +359,8 @@ export function HeroSection({
   const metadata = [item?.ProductionYear, runtime, mediaTypeLabel].filter(
     Boolean,
   );
+  const heroGenres = item?.Genres?.filter(Boolean).slice(0, 3) ?? [];
+  const heroGenreLabel = heroGenres.join(" · ");
   const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
   const canPlay =
     item?.Type === "Movie" ||
@@ -513,6 +518,10 @@ export function HeroSection({
     setIsPreviewMuted(!shouldStartPreviewUnmutedRef.current);
     onPreviewPlaybackChange?.(false);
   }, [item?.Id, onPreviewPlaybackChange]);
+
+  useEffect(() => {
+    setIsLogoLoaded(false);
+  }, [croppedLogoUrl]);
 
   useEffect(() => {
     if (!showCarouselDots) {
@@ -859,7 +868,7 @@ export function HeroSection({
           className="hero-cinematic-vignette z-10"
           initial={false}
           animate={{
-            opacity: isHeroIntroDone ? 0.25 : 1,
+            opacity: isHeroIntroDone ? 0.12 : 1,
           }}
           transition={{
             duration: shouldReduceMotion ? 0 : 1.25,
@@ -923,97 +932,108 @@ export function HeroSection({
                 ease: softEase,
               }}
             >
-              {logoUrl ? (
-                <motion.div
-                  className="cinematic-logo-motion-wrap origin-left"
-                  initial={{
-                    opacity: 0,
-                    y: shouldReduceMotion ? 0 : 20,
-                    scale: shouldReduceMotion ? 1 : 0.975,
-                  }}
-                  animate={{
-                    opacity: heroContentVisible ? 1 : 0,
-                    y: heroContentVisible
-                      ? isHeroIntroDone
-                        ? isCompactHeroViewport
-                          ? 72
-                          : 180
-                        : 0
-                      : 14,
-                    scale: heroContentVisible
-                      ? isHeroIntroDone
-                        ? isCompactHeroViewport
-                          ? 0.74
-                          : 0.68
-                        : 1
-                      : 0.985,
-                  }}
-                  transition={{
-                    duration: shouldReduceMotion
-                      ? 0
-                      : isHeroIntroDone
-                        ? 1.35
-                        : 0.9,
-                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
-                    ease: softEase,
-                  }}
-                >
-                  <img
-                    src={logoUrl}
-                    alt=""
-                    draggable={false}
-                    aria-hidden="true"
-                    className={`cinematic-logo-shadow cinematic-logo-shadow-ghost h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] select-none object-contain object-left transition-opacity duration-300 sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)] ${
-                      isLogoLoaded ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
-
-                  <img
-                    src={logoUrl}
-                    alt={title}
-                    draggable={false}
-                    onLoad={() => setIsLogoLoaded(true)}
-                    className={`cinematic-logo-image h-[clamp(5rem,22vw,8rem)] max-w-[min(24rem,70vw)] select-none object-contain object-left transition-opacity duration-300 sm:h-[clamp(8rem,18vw,18rem)] sm:max-w-[min(44rem,72vw)] ${
-                      isLogoLoaded ? "opacity-100" : "opacity-0"
-                    }`}
-                  />
-                </motion.div>
-              ) : (
-                <motion.h1
-                  className="text-cinematic-title max-w-3xl origin-left text-4xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl"
-                  initial={{
-                    opacity: 0,
-                    y: shouldReduceMotion ? 0 : 20,
-                    scale: shouldReduceMotion ? 1 : 0.975,
-                  }}
-                  animate={{
-                    opacity: heroContentVisible ? 1 : 0,
-                    y: heroContentVisible
-                      ? isHeroIntroDone
-                        ? isCompactHeroViewport
-                          ? 42
+              <motion.div
+                className="cinematic-logo-motion-wrap origin-left"
+                initial={{
+                  opacity: 0,
+                  y: shouldReduceMotion ? 0 : 20,
+                  scale: shouldReduceMotion ? 1 : 0.975,
+                }}
+                animate={{
+                  opacity: heroContentVisible ? 1 : 0,
+                  y: heroContentVisible
+                    ? isHeroIntroDone
+                      ? isCompactHeroViewport
+                        ? logoUrl
+                          ? 48
+                          : 42
+                        : logoUrl
+                          ? 145
                           : 64
-                        : 0
-                      : 14,
-                    scale: heroContentVisible
-                      ? isHeroIntroDone
-                        ? 0.78
-                        : 1
-                      : 0.985,
-                  }}
-                  transition={{
-                    duration: shouldReduceMotion
-                      ? 0
-                      : isHeroIntroDone
-                        ? 1.35
-                        : 0.9,
-                    delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
-                    ease: softEase,
-                  }}
-                >
-                  {title}
-                </motion.h1>
-              )}
+                      : 0
+                    : 14,
+                  scale: heroContentVisible ? 1 : 0.985,
+                }}
+                transition={{
+                  duration: shouldReduceMotion
+                    ? 0
+                    : isHeroIntroDone
+                      ? 1.35
+                      : 0.9,
+                  delay: shouldReduceMotion ? 0 : isHeroIntroDone ? 0 : 0.28,
+                  ease: softEase,
+                }}
+              >
+                {logoUrl ? (
+                  <div className="relative flex h-[clamp(6rem,28vw,15rem)] w-[min(24rem,70vw)] items-end justify-start sm:h-[clamp(10rem,26vw,32rem)] sm:w-[min(44rem,72vw)]">
+                    <motion.div
+                      className="relative inline-block w-fit max-h-[clamp(6rem,28vw,15rem)] max-w-full leading-none sm:max-h-[clamp(10rem,26vw,32rem)]"
+                      initial={false}
+                      animate={{
+                        scale: isHeroIntroDone
+                          ? isCompactHeroViewport
+                            ? 0.592
+                            : 0.544
+                          : 1,
+                      }}
+                      transition={{
+                        duration: shouldReduceMotion
+                          ? 0
+                          : isHeroIntroDone
+                            ? 1.35
+                            : 0.9,
+                        ease: softEase,
+                      }}
+                      style={{ transformOrigin: "left bottom" }}
+                    >
+                      <img
+                        key={`shadow-${croppedLogoUrl || logoUrl}`}
+                        src={croppedLogoUrl || logoUrl}
+                        alt=""
+                        draggable={false}
+                        aria-hidden="true"
+                        className={`cinematic-logo-shadow cinematic-logo-shadow-ghost block h-auto w-auto max-h-[clamp(6rem,28vw,15rem)] max-w-full sm:max-h-[clamp(10rem,26vw,32rem)] select-none transition-opacity duration-300 ${
+                          isLogoLoaded ? "opacity-100" : "opacity-0"
+                        }`}
+                      />
+
+                      <img
+                        key={`logo-${croppedLogoUrl || logoUrl}`}
+                        src={croppedLogoUrl || logoUrl}
+                        alt={title}
+                        draggable={false}
+                        onLoad={() => setIsLogoLoaded(true)}
+                        onError={() => setIsLogoLoaded(false)}
+                        className={`cinematic-logo-image block h-auto w-auto max-h-[clamp(6rem,28vw,15rem)] max-w-full sm:max-h-[clamp(10rem,26vw,32rem)] select-none transition-opacity duration-300 ${
+                          isLogoLoaded ? "opacity-100" : "opacity-0"
+                        }`}
+                      />
+                    </motion.div>
+                  </div>
+                ) : (
+                  <h1 className="text-cinematic-title max-w-3xl text-4xl font-black leading-[0.95] text-white sm:text-6xl lg:text-7xl">
+                    {title}
+                  </h1>
+                )}
+
+                {heroGenreLabel ? (
+                  <motion.p
+                    className="mt-2 max-w-2xl origin-left text-xs font-semibold leading-5 tracking-[0.01em] text-white/[0.84] drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] sm:mt-3 sm:text-sm sm:leading-6"
+                    initial={false}
+                    animate={{ scale: 1 }}
+                    transition={{
+                      duration: shouldReduceMotion
+                        ? 0
+                        : isHeroIntroDone
+                          ? 1.35
+                          : 0.9,
+                      ease: softEase,
+                    }}
+                  >
+                    {heroGenreLabel}
+                  </motion.p>
+                ) : null}
+              </motion.div>
               {item?.Overview ? (
                 <motion.p
                   className="mt-3 line-clamp-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
@@ -1115,14 +1135,6 @@ export function HeroSection({
                       {value}
                     </span>
                   ))}
-                  {item?.Genres?.slice(0, 3).map((genre) => (
-                    <span
-                      key={genre}
-                      className="rounded-full border border-white/[0.12] bg-black/[0.32] px-2.5 py-1 text-xs font-semibold text-white/70 backdrop-blur sm:px-3 sm:py-1.5 sm:text-sm"
-                    >
-                      {genre}
-                    </span>
-                  ))}
                 </motion.div>
               ) : null}
               <motion.div
@@ -1130,7 +1142,7 @@ export function HeroSection({
                 initial={false}
                 animate={{
                   opacity: heroContentVisible ? 1 : 0,
-                  y: heroContentVisible ? (isHeroIntroDone ? -18 : 0) : 10,
+                  y: heroContentVisible ? 0 : 10,
                 }}
                 transition={{
                   duration: shouldReduceMotion
