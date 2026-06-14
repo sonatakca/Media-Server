@@ -151,32 +151,28 @@ export function MediaCard({
     hourShort: t("format.hourShort"),
     minuteShort: t("format.minuteShort"),
   };
+
   const [imageFailed, setImageFailed] = useState(false);
   const [imageLoaded, setImageLoaded] = useState(false);
   const [shouldUseShowPrimaryImage, setShouldUseShowPrimaryImage] =
     useState(false);
-  const title = getDisplayTitle(item, mediaFormatLabels);
-  const isSeasonEpisodeGrid =
-    item.Type === "Episode" && layout === "grid" && variant === "landscape";
 
+  const title = getDisplayTitle(item, mediaFormatLabels);
+  const isEpisode = item.Type === "Episode";
+  const episodeNumberLabel = isEpisode ? getEpisodeDisplayTitle(item, t) : null;
+  const isSeasonEpisodeGrid =
+    isEpisode && layout === "grid" && variant === "landscape";
   const episodeDisplayTitle = isSeasonEpisodeGrid
-    ? getEpisodeDisplayTitle(item, t)
-    : item.Type === "Episode"
+    ? episodeNumberLabel
+    : isEpisode
       ? item.Name || null
       : null;
-
   const displayTitle = episodeDisplayTitle ?? title;
 
-  const subtitle =
-    item.Type === "Episode"
-      ? isSeasonEpisodeGrid
-        ? null
-        : item.RunTimeTicks
-          ? `${Math.round(item.RunTimeTicks / 600000000)} dk`
-          : null
-      : getItemSubtitle(item, mediaFormatLabels);
-  const countLabel = getCountLabel(item, t);
+  const itemCounts = getCountLabel(item, t);
   const progressPercent = getItemProgressPercent(item);
+  const isWatched = isItemCompleted(item);
+
   const imageUrl = item.ImageTags?.Primary
     ? getPrimaryImageUrl(
         item.Id,
@@ -200,27 +196,14 @@ export function MediaCard({
         : item.ParentLogoItemId && item.ParentLogoImageTag
           ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
           : "";
-  const secondaryLabel =
-    item.Type === "Episode"
-      ? isSeasonEpisodeGrid
-        ? item.Name || null
-        : title
-      : item.Type === "Season"
-        ? null
-        : !logoUrl
-          ? title
-          : null;
+
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
-  const isWatched = isItemCompleted(item);
-  const detailsLabel = `${t("common.details")} ${title}`;
   const primaryCardTo = canPlay ? `/watch/${item.Id}` : to;
-  const primaryCardLabel = canPlay
-    ? `${t("common.play")} ${title}`
-    : detailsLabel;
-  const isLandscape = variant === "landscape";
+
+  const isLandscape = variant === "landscape" || isEpisode;
   const isGrid = layout === "grid";
 
   const sizeClass = isGrid
@@ -229,15 +212,12 @@ export function MediaCard({
       ? "w-60 sm:w-80 lg:w-96"
       : "w-36 sm:w-52 lg:w-60";
 
-  const artworkObjectFitClass = "object-cover";
+  const aspectClass = isEpisode
+    ? ""
+    : isLandscape
+      ? "aspect-video"
+      : "aspect-[2/3]";
 
-  const panelClass = isGrid
-    ? "min-h-[4.8rem] transition-[transform,background-color] duration-500 group-hover:-translate-y-1.5 group-focus-within:-translate-y-1.5 sm:min-h-[5.9rem]"
-    : "min-h-[4.8rem] transition-[transform,min-height,background-color] duration-700 group-hover:-translate-y-2.5 group-hover:min-h-[8.2rem] group-focus-within:-translate-y-2.5 group-focus-within:min-h-[8.2rem] sm:min-h-[5.9rem] sm:group-hover:min-h-[10.5rem] sm:group-focus-within:min-h-[10.5rem]";
-
-  const hoverMetaClass = isGrid
-    ? "max-h-0 overflow-hidden opacity-0 transition-[max-height,opacity,transform] duration-300 group-hover:max-h-16 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:max-h-16 group-focus-within:translate-y-0 group-focus-within:opacity-100"
-    : "translate-y-2 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100";
   const entranceDelay = Math.min(index * 0.025, 0.18);
   const motionProps = animateIn
     ? shouldReduceMotion
@@ -259,6 +239,71 @@ export function MediaCard({
         }
     : {};
 
+  const renderContentByType = () => {
+    if (item.Type === "Season") {
+      return (
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/40 to-transparent">
+          <h3 className="mb-1 line-clamp-1 text-base font-bold text-white sm:text-lg">
+            {displayTitle}
+          </h3>
+          {itemCounts && (
+            <p className="line-clamp-1 text-[0.7rem] font-medium text-gray-300 sm:text-sm">
+              {itemCounts}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    if (item.Type === "BoxSet" || collectionItems?.length) {
+      return (
+        <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center p-3 sm:p-4 bg-black/60 transition-colors group-hover:bg-black/40">
+          <h3 className="text-center text-lg font-black text-white sm:text-xl drop-shadow-lg">
+            {displayTitle}
+          </h3>
+          {itemCounts && (
+            <p className="mt-2 rounded-full bg-white/20 px-3 py-1 text-xs font-bold text-white backdrop-blur-md">
+              {itemCounts}
+            </p>
+          )}
+        </div>
+      );
+    }
+
+    return (
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/40 to-transparent">
+        {logoUrl ? (
+          <img
+            src={logoUrl}
+            alt={displayTitle}
+            className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
+          />
+        ) : (
+          <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
+            {displayTitle}
+          </h3>
+        )}
+        {itemCounts && (
+          <p className="mb-1 line-clamp-1 text-[0.7rem] font-bold text-white sm:text-sm">
+            {itemCounts}
+          </p>
+        )}
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
+          {item.ProductionYear && (
+            <span className="rounded-full bg-white/10 px-2 py-0.5">
+              {item.ProductionYear}
+            </span>
+          )}
+          {item.OfficialRating && (
+            <span className="rounded-full bg-white/10 px-2 py-0.5">
+              {item.OfficialRating}
+            </span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   return (
     <motion.div
       className={`h-full min-w-0 shrink-0 ${sizeClass}`}
@@ -266,7 +311,11 @@ export function MediaCard({
       {...motionProps}
     >
       <div
-        className={`media-card-cinematic group relative flex h-full w-full min-w-0 flex-col scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[background-color,border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.025] hover:border-white/20 hover:bg-[var(--surface-hover)] hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+        className={`media-card-cinematic group relative h-full w-full min-w-0 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:border-white/20 hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+          isEpisode
+            ? "flex flex-col hover:-translate-y-1"
+            : `block ${aspectClass} hover:-translate-y-1.5 hover:scale-[1.025]`
+        } ${
           isWatched
             ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.28),0_22px_60px_rgba(16,185,129,0.2)]"
             : "border-white/10"
@@ -274,11 +323,16 @@ export function MediaCard({
       >
         <Link
           to={primaryCardTo}
-          aria-label={primaryCardLabel}
-          className="absolute inset-0 z-30 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          aria-label={`${t("common.details")} ${title}`}
+          className="absolute inset-0 z-30 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
+
         <div
-          className={`artwork-edge-vignette pointer-events-none relative z-40 shrink-0 overflow-hidden bg-zinc-900 ${isLandscape ? "aspect-video" : "aspect-[2/3]"}`}
+          className={
+            isEpisode
+              ? "pointer-events-none relative z-0 aspect-video w-full shrink-0 overflow-hidden bg-zinc-950"
+              : "pointer-events-none absolute inset-0 z-0 overflow-hidden bg-zinc-900"
+          }
         >
           {!imageLoaded && displayImageUrl && !imageFailed ? (
             <div className="shimmer absolute inset-0" />
@@ -288,14 +342,15 @@ export function MediaCard({
               src={displayImageUrl}
               alt={title}
               loading="lazy"
-              className={`h-full w-full ${artworkObjectFitClass} transition-[transform,filter,opacity] duration-500 group-hover:scale-[1.04] group-focus-within:scale-[1.08] ${
-                imageLoaded ? "opacity-100" : "opacity-0"
-              }`}
+              className={`relative z-10 h-full w-full transition-[transform,opacity] duration-500 ${
+                isEpisode
+                  ? "object-contain"
+                  : "object-cover group-hover:scale-[1.04] group-focus-within:scale-[1.08]"
+              } ${imageLoaded ? "opacity-100" : "opacity-0"}`}
               onLoad={(event) => {
                 const image = event.currentTarget;
                 const imageAspectRatio =
                   image.naturalWidth / image.naturalHeight;
-
                 if (
                   item.Type === "Episode" &&
                   variant === "poster" &&
@@ -307,7 +362,6 @@ export function MediaCard({
                   setShouldUseShowPrimaryImage(true);
                   return;
                 }
-
                 setImageLoaded(true);
               }}
               onError={() => setImageFailed(true)}
@@ -323,12 +377,95 @@ export function MediaCard({
               {displayTitle}
             </div>
           )}
-          <div className="absolute inset-0 transition group-hover:opacity-100" />
+        </div>
+
+        <div className="absolute right-3 top-3 z-30 sm:right-4 sm:top-4">
+          <WatchedIndicator
+            item={item}
+            className="px-2 py-0.5 text-[0.56rem] tracking-[0.14em] sm:px-2.5 sm:py-1 sm:text-[0.62rem]"
+            iconSize={12}
+          />
+        </div>
+
+        {isEpisode ? (
+          <div className="pointer-events-none relative isolate z-20 flex min-h-[8.5rem] flex-col overflow-hidden border-t border-white/16 bg-black/40 px-4 pb-4 pt-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.1)] sm:min-h-[9.75rem] sm:px-5 sm:pb-5 sm:pt-4 transform-gpu [backface-visibility:hidden]">
+            {displayImageUrl && !imageFailed ? (
+              <img
+                src={displayImageUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-x-0 top-0 -z-30 h-auto w-full -scale-y-100 object-contain opacity-60 blur-[30px] transform-gpu [backface-visibility:hidden]"
+              />
+            ) : null}
+
+            <div className="absolute inset-x-0 top-0 -z-[5] h-px bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+
+            {episodeNumberLabel ? (
+              <span className="mb-1 truncate text-[0.66rem] font-black uppercase tracking-[0.08em] text-white/95 sm:text-xs">
+                {episodeNumberLabel}
+              </span>
+            ) : null}
+
+            <h3 className="line-clamp-1 text-sm font-bold text-white sm:text-base">
+              {item.Name}
+            </h3>
+
+            {item.Overview ? (
+              <p className="mt-1.5 line-clamp-2 text-[0.7rem] font-medium leading-[1.35] text-white/78 sm:text-xs">
+                {item.Overview}
+              </p>
+            ) : null}
+
+            <div className="mt-auto flex items-end justify-between gap-3 pt-2">
+              {item.RunTimeTicks ? (
+                <span className="flex items-center gap-1.5 text-[0.7rem] font-semibold text-white/75 sm:text-xs">
+                  <svg
+                    aria-hidden="true"
+                    className="h-3.5 w-3.5"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 7v5l3 2" />
+                  </svg>
+                  {Math.round(item.RunTimeTicks / 600000000)} dk
+                </span>
+              ) : (
+                <span />
+              )}
+
+              <svg
+                aria-hidden="true"
+                className="h-4 w-4 text-white/60"
+                fill="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path d="M6 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM14 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0ZM22 12a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z" />
+              </svg>
+            </div>
+          </div>
+        ) : (
+          renderContentByType()
+        )}
+
+        {progressPercent !== null ? (
+          <div className="absolute inset-x-0 bottom-0 z-30 h-1 sm:h-1.5 bg-white/[0.18]">
+            <div
+              data-testid="media-card-progress-fill"
+              className="h-full bg-[var(--accent)]"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+        ) : null}
+
+        <div className="absolute inset-0 z-40 pointer-events-none">
           {canPlay && onClearContinueWatching ? (
             <ClearWatchingButton
               item={item}
               onCleared={onClearContinueWatching}
-              className="pointer-events-auto absolute right-3 top-3 z-50 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
+              className="pointer-events-auto absolute right-3 top-3 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
             />
           ) : null}
           {canPlay && onWatchedStatusReset ? (
@@ -337,15 +474,13 @@ export function MediaCard({
               action={isWatched ? "remove" : "mark"}
               item={item}
               onReset={onWatchedStatusReset}
-              className={`pointer-events-auto absolute z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100 ${
-                onClearContinueWatching ? "right-3 top-5" : "left-3 top-5"
-              }`}
+              className={`pointer-events-auto absolute flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100 ${onClearContinueWatching ? "right-3 top-5" : "left-3 top-5"}`}
             />
           ) : null}
           {canPlay && showRestartWatching ? (
             <RestartWatchingButton
               item={item}
-              className="pointer-events-auto absolute left-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+              className="pointer-events-auto absolute left-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
             />
           ) : null}
           {canPlay && showPlayFromBeginning && progressPercent !== null ? (
@@ -356,121 +491,12 @@ export function MediaCard({
                   t("details.playTitleFromBeginning"),
                   { title },
                 )}
-                className="pointer-events-auto absolute left-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+                className="pointer-events-auto absolute left-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
               >
                 <RotateCcw size={16} />
               </Link>
             </Tooltip>
           ) : null}
-          <Tooltip content={t("common.details")}>
-            <Link
-              to={to}
-              aria-label={detailsLabel}
-              className="pointer-events-auto absolute right-3 bottom-3 z-50 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 shadow-3xl text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
-            >
-              <Info size={16} />
-            </Link>
-          </Tooltip>
-        </div>
-
-        <div
-          className={`panel-top-highlight pointer-events-none relative z-40 flex flex-1 flex-col bg-[#171717]/95 p-2.5 shadow-soft-inset sm:p-3.5 ${panelClass}`}
-        >
-          {progressPercent !== null ? (
-            <div className="absolute inset-x-0 top-0 h-1.5 bg-white/[0.18]">
-              <div
-                data-testid="media-card-progress-fill"
-                className="h-full bg-[var(--accent)]"
-                style={{ width: `${progressPercent}%` }}
-              />
-            </div>
-          ) : null}
-          <WatchedIndicator
-            item={item}
-            className="mb-2 self-end px-2 py-0.5 text-[0.56rem] tracking-[0.14em] sm:px-2.5 sm:py-1 sm:text-[0.62rem]"
-            iconSize={12}
-          />
-          <div className="flex flex-1 items-center">
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={displayTitle}
-                className="mx-auto h-auto max-h-16 w-auto object-contain object-left sm:max-h-28"
-              />
-            ) : (
-              <h3
-                className={`h-8 w-full truncate font-bold leading-8 text-white sm:h-10 sm:leading-10 ${
-                  isSeasonEpisodeGrid
-                    ? "text-base sm:text-3xl"
-                    : "text-xs sm:text-sm"
-                }`}
-              >
-                {displayTitle}
-              </h3>
-            )}
-          </div>
-
-          <div className="mt-auto pt-3">
-            {countLabel && item.Type !== "Episode" ? (
-              <p className="h-5 truncate text-xs font-bold leading-5 text-white sm:text-sm">
-                {countLabel}
-              </p>
-            ) : (
-              <h3
-                className={`h-5 truncate text-xs font-bold leading-5 sm:text-sm ${
-                  secondaryLabel ? "text-white" : "text-transparent"
-                }`}
-                aria-hidden={!secondaryLabel}
-              >
-                {secondaryLabel ?? ""}
-              </h3>
-            )}
-
-            {subtitle ? (
-              <p className="mt-0.5 h-4 truncate text-[0.68rem] font-medium leading-4 text-white/50 sm:mt-1 sm:text-xs">
-                {subtitle}
-              </p>
-            ) : (
-              <p
-                className={
-                  isSeasonEpisodeGrid
-                    ? "hidden"
-                    : "mt-1 h-4 text-xs leading-4 text-transparent"
-                }
-                aria-hidden={true}
-              />
-            )}
-            <div className="mt-2 flex translate-y-2 items-end gap-1.5 text-[0.68rem] font-semibold text-white/75 opacity-0 transition duration-300 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100">
-              <div className="flex min-w-0 flex-1 flex-wrap gap-1.5">
-                {item.ProductionYear ? (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    {item.ProductionYear}
-                  </span>
-                ) : null}
-
-                {item.OfficialRating ? (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    {item.OfficialRating}
-                  </span>
-                ) : null}
-
-                {item.RunTimeTicks ? (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    {Math.round(item.RunTimeTicks / 600000000)} dk
-                  </span>
-                ) : null}
-
-                {item.Genres?.slice(0, 2).map((genre) => (
-                  <span
-                    key={genre}
-                    className="rounded-full bg-white/10 px-2 py-0.5"
-                  >
-                    {genre}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </motion.div>

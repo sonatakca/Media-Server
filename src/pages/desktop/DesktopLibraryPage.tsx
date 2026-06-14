@@ -1,12 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
+import { HeroSection } from "../../components/HeroSection";
 import { MediaCard } from "../../components/MediaCard";
 import { MotionReveal } from "../../components/MotionReveal";
 import { SeasonPicker } from "../../components/SeasonPicker";
+import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { LibrarySkeleton } from "../../components/Skeletons";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
@@ -286,6 +288,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
   const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
   const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
     useState(false);
+  const seriesDetailsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -530,6 +533,49 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
 
   if (!data) {
     return <LibrarySkeleton />;
+  }
+
+  const shouldShowSeriesDetails =
+    data.library?.Type === "Series" ||
+    data.library?.Type === "Season" ||
+    mode === "series" ||
+    mode === "season";
+
+  if (shouldShowSeriesDetails && data.library) {
+    return (
+      <div className="layout-no-offset flex min-w-0 flex-col">
+        <BackButton className="fixed left-5 top-24 z-[80] min-h-10 bg-black/50 px-4 text-sm shadow-player-controls backdrop-blur-2xl transition hover:bg-black/75 lg:left-8" />
+
+        <div className="full-bleed relative min-h-[100svh]">
+          <HeroSection item={data.library} variant="fixed" />
+
+          <button
+            type="button"
+            aria-label={t("library.selectSeason")}
+            onClick={() =>
+              seriesDetailsRef.current?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              })
+            }
+            className="absolute bottom-6 left-1/2 z-[70] flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-player-controls backdrop-blur-xl transition hover:scale-105 hover:bg-gray-700/65 focus:outline-none focus:ring-2 focus:ring-white/70"
+          >
+            <ChevronDown size={30} strokeWidth={2.4} />
+          </button>
+        </div>
+
+        <div
+          ref={seriesDetailsRef}
+          className="mx-auto w-full max-w-[1600px] scroll-mt-24 px-4 sm:px-6 lg:px-8"
+        >
+          <SeriesLibraryDetails
+            initialItem={data.library}
+            variant="desktop"
+            canonicalPath={canonicalPath}
+          />
+        </div>
+      </div>
+    );
   }
 
   const libraryTitle =

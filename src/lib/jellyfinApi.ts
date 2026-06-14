@@ -68,6 +68,11 @@ const DEFAULT_ITEM_FIELDS = [
   "SortName",
   "OriginalTitle",
   "Overview",
+  "People",
+  "Studios",
+  "Taglines",
+  "OfficialRating",
+  "CommunityRating",
   "ProviderIds",
   "Chapters",
   "Genres",
@@ -417,15 +422,15 @@ export async function getSeriesSeasons(
   const session = requireAuthSession();
 
   const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
-    "/Shows/Seasons",
+    `/Shows/${encodeURIComponent(seriesId)}/Seasons`,
     {
       params: {
         userId: session.userId,
-        seriesId,
         fields: DEFAULT_ITEM_FIELDS,
         enableImages: true,
         imageTypeLimit: 1,
         enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
       },
     },
   );
@@ -440,16 +445,18 @@ export async function getSeasonEpisodes(
   const session = requireAuthSession();
 
   const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
-    "/Shows/Episodes",
+    `/Shows/${encodeURIComponent(seriesId)}/Episodes`,
     {
       params: {
         userId: session.userId,
-        seriesId,
         seasonId,
         fields: DEFAULT_ITEM_FIELDS,
         enableImages: true,
         imageTypeLimit: 1,
         enableImageTypes: "Primary,Backdrop,Logo",
+        enableUserData: true,
+        sortBy: "IndexNumber,SortName",
+        sortOrder: "Ascending",
       },
     },
   );
@@ -2695,7 +2702,9 @@ export async function getLocalTrailers(
       {
         params: {
           fields: DEFAULT_ITEM_FIELDS,
-          enableImages: false,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
           enableUserData: false,
         },
       },
@@ -2708,6 +2717,43 @@ export async function getLocalTrailers(
     }
 
     console.debug("[Seyirlik Hero] Could not load local trailers", {
+      itemId,
+      error,
+    });
+
+    return [];
+  }
+}
+
+export async function getSimilarItems(
+  itemId: string,
+  limit = 18,
+): Promise<JellyfinItem[]> {
+  const session = requireAuthSession();
+
+  try {
+    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+      `/Items/${encodeURIComponent(itemId)}/Similar`,
+      {
+        params: {
+          userId: session.userId,
+          limit,
+          fields: DEFAULT_ITEM_FIELDS,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          enableUserData: true,
+        },
+      },
+    );
+
+    return response.Items ?? [];
+  } catch (error) {
+    if (error instanceof JellyfinRequestError && error.status === 404) {
+      return [];
+    }
+
+    console.debug("[Seyirlik Details] Could not load similar items", {
       itemId,
       error,
     });

@@ -25,6 +25,8 @@ import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 import { useCroppedTransparentImage } from "../hooks/useCroppedTransparentImage";
+import { getSmartContinueWatchingItems } from "../lib/smartContinueWatching";
+import { WATCH_STATUS_CHANGED_EVENT } from "../lib/watchedStatusActions";
 
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
 const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
@@ -42,7 +44,14 @@ type IndicatorsPlacement =
   | "bottom-right-quarter";
 
 interface HeroSectionProps {
+  /**
+   * `carousel` keeps the existing slide and indicator behaviour.
+   * `fixed` pins the hero to one media item for details pages while still
+   * allowing its backdrop and preview trailer to play.
+   */
+  variant?: "carousel" | "fixed";
   item?: JellyfinItem;
+  smartContinueItems?: JellyfinItem[];
   currentIndex?: number;
   totalItems?: number;
   durationMs?: number;
@@ -236,6 +245,8 @@ function HeroPreviewVideo({
 
 export function HeroSection({
   item,
+  smartContinueItems,
+  variant = "carousel",
   currentIndex = 0,
   totalItems = 0,
   durationMs = 12000,
@@ -267,6 +278,47 @@ export function HeroSection({
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
+
+  const [fallbackSmartContinueItems, setFallbackSmartContinueItems] = useState<
+    JellyfinItem[]
+  >([]);
+
+  useEffect(() => {
+    if (smartContinueItems) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadSmartContinueItems = async () => {
+      const items = await getSmartContinueWatchingItems().catch(
+        () => [] as JellyfinItem[],
+      );
+
+      if (!cancelled) {
+        setFallbackSmartContinueItems(items);
+      }
+    };
+
+    void loadSmartContinueItems();
+
+    const handleWatchStatusChanged = () => {
+      void loadSmartContinueItems();
+    };
+
+    window.addEventListener(
+      WATCH_STATUS_CHANGED_EVENT,
+      handleWatchStatusChanged,
+    );
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener(
+        WATCH_STATUS_CHANGED_EVENT,
+        handleWatchStatusChanged,
+      );
+    };
+  }, [smartContinueItems]);
 
   const hasPreview = Boolean(previewUrl && !hasPreviewEnded);
   const shouldPlayPreview = Boolean(hasPreview && isHeroIntroDone);
@@ -362,25 +414,72 @@ export function HeroSection({
   const heroGenres = item?.Genres?.filter(Boolean).slice(0, 3) ?? [];
   const heroGenreLabel = heroGenres.join(" · ");
   const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
-  const canPlay =
-    item?.Type === "Movie" ||
-    item?.Type === "Episode" ||
-    item?.Type === "Series" ||
-    item?.MediaType === "Video";
-  const playTo =
+  const effectiveSmartContinueItems =
+    smartContinueItems ?? fallbackSmartContinueItems;
+  const heroSeriesId =
     item?.Type === "Series"
-      ? getRouteForItem(item)
-      : item
-        ? `/watch/${item.Id}`
-        : "#";
+      ? item.Id
+      : item?.Type === "Season"
+        ? item.SeriesId
+        : item?.Type === "Episode"
+          ? item.SeriesId
+          : undefined;
+  const smartContinueTarget = item
+    ? effectiveSmartContinueItems.find((candidate) => {
+        if (item.Type === "Movie" || item.Type === "Episode") {
+          return candidate.Id === item.Id;
+        }
+
+        if (heroSeriesId) {
+          return (
+            candidate.Type === "Episode" && candidate.SeriesId === heroSeriesId
+          );
+        }
+
+        return false;
+      })
+    : undefined;
+  const effectivePlayItem = smartContinueTarget ?? item;
+  const hasResumeProgress =
+    (smartContinueTarget?.UserData?.PlaybackPositionTicks ?? 0) > 0;
+  const smartEpisodeLabel =
+    smartContinueTarget?.Type === "Episode" &&
+    typeof smartContinueTarget.ParentIndexNumber === "number" &&
+    typeof smartContinueTarget.IndexNumber === "number"
+      ? t("media.seasonEpisodeNumber")
+          .replace(
+            "{seasonNumber}",
+            String(smartContinueTarget.ParentIndexNumber),
+          )
+          .replace("{episodeNumber}", String(smartContinueTarget.IndexNumber))
+      : null;
+  const playButtonLabel = smartEpisodeLabel
+    ? `${
+        hasResumeProgress ? t("details.continueWatching") : t("common.play")
+      }: ${smartEpisodeLabel}`
+    : hasResumeProgress
+      ? t("details.continueWatching")
+      : t("common.play");
+  const canPlay = Boolean(
+    effectivePlayItem &&
+    (effectivePlayItem.Type === "Movie" ||
+      effectivePlayItem.Type === "Episode" ||
+      effectivePlayItem.Type === "Series" ||
+      effectivePlayItem.MediaType === "Video"),
+  );
+  const playTo = effectivePlayItem
+    ? effectivePlayItem.Type === "Series"
+      ? getRouteForItem(effectivePlayItem)
+      : `/watch/${effectivePlayItem.Id}`
+    : "#";
   const handlePlayClick = async (event: MouseEvent<HTMLAnchorElement>) => {
-    if (!item) {
+    if (!effectivePlayItem) {
       return;
     }
 
     event.preventDefault();
 
-    const target = await getPlayTargetForItem(item);
+    const target = await getPlayTargetForItem(effectivePlayItem);
     navigate(target);
   };
   const easeOut: [number, number, number, number] = [0.16, 1, 0.3, 1];
@@ -390,12 +489,12 @@ export function HeroSection({
   );
   const heroContentVisible = !selectedImage || heroImageLoaded;
   const contentKey = item?.Id ?? "hero-fallback";
-  const carouselItemCount = totalItems;
-  const showCarouselDots = carouselItemCount > 1;
-  const activeCarouselIndex = Math.min(
-    Math.max(currentIndex, 0),
-    Math.max(carouselItemCount - 1, 0),
-  );
+  const isFixedHero = variant === "fixed";
+  const carouselItemCount = isFixedHero ? 1 : totalItems;
+  const showCarouselDots = !isFixedHero && carouselItemCount > 1;
+  const activeCarouselIndex = isFixedHero
+    ? 0
+    : Math.min(Math.max(currentIndex, 0), Math.max(carouselItemCount - 1, 0));
   const showHeroIndicators = showCarouselDots && showStickyIndicators;
   const indicatorPlacementClasses: Record<IndicatorsPlacement, string> = {
     "top-center":
@@ -877,7 +976,7 @@ export function HeroSection({
         />
         <div className="hero-bottom-fade z-10" />
 
-        <div className="seyirlik-hero-content relative z-20 mx-auto flex min-h-[min(100svh,44rem)] w-full max-w-[1600px] flex-col justify-end px-4 pb-[calc(6.75rem+env(safe-area-inset-bottom))] pt-20 sm:min-h-screen sm:px-6 sm:pb-[clamp(3rem,8vh,6rem)] sm:pt-28 lg:px-8">
+        <div className="seyirlik-hero-content relative z-20 mx-auto flex min-h-[min(100svh,44rem)] w-full max-w-[1600px] flex-col justify-end px-4 pb-[calc(6.75rem+env(safe-area-inset-bottom))] pt-0 sm:min-h-screen sm:px-6 sm:pb-[clamp(3rem,8vh,6rem)] sm:pt-28 lg:px-8">
           {showSidePoster && false ? ( //TODO - for now I made it always false because of a bug
             <motion.div
               className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
@@ -1163,21 +1262,23 @@ export function HeroSection({
                         onClick={handlePlayClick}
                       >
                         <Play size={30} fill="currentColor" />
-                        <AnimatedWidth value={t("common.play")}>
-                          <AnimatedText value={t("common.play")} />
+                        <AnimatedWidth value={playButtonLabel}>
+                          <AnimatedText value={playButtonLabel} />
                         </AnimatedWidth>
                       </ButtonLink>
                     ) : null}
-                    <ButtonLink
-                      to={getRouteForItem(item)}
-                      variant="secondary"
-                      className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 sm:min-h-16 sm:px-10 sm:text-base"
-                    >
-                      <Info size={30} />
-                      <AnimatedWidth value={t("common.details")}>
-                        <AnimatedText value={t("common.details")} />
-                      </AnimatedWidth>
-                    </ButtonLink>
+                    {!isFixedHero ? (
+                      <ButtonLink
+                        to={getRouteForItem(item)}
+                        variant="secondary"
+                        className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 sm:min-h-16 sm:px-10 sm:text-base"
+                      >
+                        <Info size={30} />
+                        <AnimatedWidth value={t("common.details")}>
+                          <AnimatedText value={t("common.details")} />
+                        </AnimatedWidth>
+                      </ButtonLink>
+                    ) : null}
                   </>
                 ) : null}
               </motion.div>

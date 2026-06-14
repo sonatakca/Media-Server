@@ -5,6 +5,7 @@ import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeasonPicker } from "../../components/SeasonPicker";
+import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -410,6 +411,22 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
 
   if (!data) {
     return <MobileLibraryLoading />;
+  }
+
+  const shouldShowSeriesDetails =
+    data.library?.Type === "Series" ||
+    data.library?.Type === "Season" ||
+    mode === "series" ||
+    mode === "season";
+
+  if (shouldShowSeriesDetails && data.library) {
+    return (
+      <SeriesLibraryDetails
+        initialItem={data.library}
+        variant="mobile"
+        canonicalPath={canonicalPath}
+      />
+    );
   }
 
   const fallbackTitle = t(data.fallbackTitleKey ?? "library.library");
