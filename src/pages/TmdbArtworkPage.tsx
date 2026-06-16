@@ -205,6 +205,13 @@ function getResultSubtitle(result: TmdbSearchResult, t: Translate): string {
     .join(" / ");
 }
 
+function getLoadedMetadataText(
+  value: string | null | undefined,
+  fallback: string,
+): string {
+  return value?.trim() || fallback;
+}
+
 function getStatusClasses(state: ActionState): string {
   if (state === "error") {
     return "border-red-400/20 bg-red-400/10 text-red-100";
@@ -1338,8 +1345,8 @@ export function TmdbArtworkPage() {
                 </button>
               </div>
 
-              <div className="mt-5 grid gap-3 lg:grid-cols-[10rem_1fr_auto]">
-                <label className="block">
+              <div className="mt-5 flex flex-wrap items-end gap-3">
+                <label className="block w-full sm:w-64 lg:w-72">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                     {t("common.season")}
                   </span>
@@ -1370,11 +1377,11 @@ export function TmdbArtworkPage() {
                   </select>
                 </label>
 
-                <div>
+                <div className="min-w-[min(100%,24rem)] flex-1">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                     {t("tmdbArtwork.thumbnailLanguage")}
                   </span>
-                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     {EPISODE_THUMBNAIL_LANGUAGES.map((thumbnailLanguage) => {
                       const isSelected =
                         episodeThumbnailLanguage === thumbnailLanguage;
@@ -1389,7 +1396,7 @@ export function TmdbArtworkPage() {
                             setEpisodeMetadataState(createEmptyResult());
                             setEpisodeSaveState(createEmptyResult());
                           }}
-                          className={`rounded-2xl border px-3 py-3 text-left text-sm font-black transition ${
+                          className={`inline-flex min-h-12 min-w-32 items-center justify-center whitespace-nowrap rounded-2xl border px-4 py-3 text-center text-sm font-black transition ${
                             isSelected
                               ? "border-[var(--accent)]/45 bg-[var(--accent)] text-black"
                               : "border-white/10 bg-white/[0.055] text-white/56 hover:border-white/20 hover:text-white"
@@ -1412,7 +1419,7 @@ export function TmdbArtworkPage() {
                     seriesEpisodes.length === 0 ||
                     episodeMetadataState.state === "loading"
                   }
-                  className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 lg:mt-auto"
+                  className="inline-flex min-h-12 min-w-[min(100%,20rem)] flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 xl:flex-none"
                 >
                   {episodeMetadataState.state === "loading" ? (
                     <Loader2 size={18} className="animate-spin" />
@@ -1502,23 +1509,39 @@ export function TmdbArtworkPage() {
 
                         <div className="min-w-0">
                           <p className="line-clamp-1 text-sm font-bold text-white/80">
-                            {metadata?.name.en ?? episode.Name}
+                            {metadata
+                              ? getLoadedMetadataText(
+                                  metadata.name.en,
+                                  t("common.unknown"),
+                                )
+                              : episode.Name}
                           </p>
                           <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
-                            {metadata?.overview.en ??
-                              episode.Overview ??
-                              t("details.noOverview")}
+                            {metadata
+                              ? getLoadedMetadataText(
+                                  metadata.overview.en,
+                                  t("details.noOverview"),
+                                )
+                              : (episode.Overview ?? t("details.noOverview"))}
                           </p>
                         </div>
 
                         <div className="min-w-0">
                           <p className="line-clamp-1 text-sm font-bold text-white/80">
-                            {metadata?.name.tr ?? episode.Name}
+                            {metadata
+                              ? getLoadedMetadataText(
+                                  metadata.name.tr,
+                                  t("common.unknown"),
+                                )
+                              : episode.Name}
                           </p>
                           <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
-                            {metadata?.overview.tr ??
-                              episode.Overview ??
-                              t("details.noOverview")}
+                            {metadata
+                              ? getLoadedMetadataText(
+                                  metadata.overview.tr,
+                                  t("details.noOverview"),
+                                )
+                              : (episode.Overview ?? t("details.noOverview"))}
                           </p>
                         </div>
                       </div>

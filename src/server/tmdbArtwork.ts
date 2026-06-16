@@ -100,6 +100,21 @@ interface TmdbEpisodeImageResponse {
   stills?: unknown;
 }
 
+interface TmdbEpisodeTranslationsResponse {
+  translations?: unknown;
+}
+
+interface TmdbRawEpisodeTranslation {
+  iso_3166_1?: unknown;
+  iso_639_1?: unknown;
+  data?: unknown;
+}
+
+interface TmdbRawEpisodeTranslationData {
+  name?: unknown;
+  overview?: unknown;
+}
+
 interface TmdbRawImage {
   aspect_ratio?: unknown;
   file_path?: unknown;
@@ -157,6 +172,11 @@ interface NormalizedTmdbSeasonEpisode {
   name: string | null;
   overview: string | null;
   stillPath: string | null;
+}
+
+interface NormalizedTmdbEpisodeTranslations {
+  name: Record<"en" | "tr", string | null>;
+  overview: Record<"en" | "tr", string | null>;
 }
 
 type ErrorStatusCode = 400 | 403 | 404 | 405 | 409 | 413 | 500 | 502 | 503;
@@ -967,6 +987,97 @@ function normalizeSeasonEpisodes(
   return episodes;
 }
 
+function createEmptyEpisodeTranslations(): NormalizedTmdbEpisodeTranslations {
+  return {
+    name: {
+      en: null,
+      tr: null,
+    },
+    overview: {
+      en: null,
+      tr: null,
+    },
+  };
+}
+
+function getTranslationRank(language: "en" | "tr", country: string | null) {
+  const normalizedCountry = country?.toLocaleUpperCase("en-US") ?? "";
+
+  if (language === "en" && normalizedCountry === "US") {
+    return 0;
+  }
+
+  if (language === "tr" && normalizedCountry === "TR") {
+    return 0;
+  }
+
+  return 1;
+}
+
+function normalizeEpisodeTranslations(
+  response: TmdbEpisodeTranslationsResponse,
+): NormalizedTmdbEpisodeTranslations {
+  const translations = createEmptyEpisodeTranslations();
+  const ranks: Record<"en" | "tr", number> = {
+    en: Number.POSITIVE_INFINITY,
+    tr: Number.POSITIVE_INFINITY,
+  };
+
+  if (!Array.isArray(response.translations)) {
+    return translations;
+  }
+
+  for (const rawTranslation of response.translations) {
+    if (
+      !rawTranslation ||
+      typeof rawTranslation !== "object" ||
+      Array.isArray(rawTranslation)
+    ) {
+      continue;
+    }
+
+    const translation = rawTranslation as TmdbRawEpisodeTranslation;
+    const language = getString(translation.iso_639_1)?.toLocaleLowerCase(
+      "en-US",
+    );
+
+    if (language !== "en" && language !== "tr") {
+      continue;
+    }
+
+    if (
+      !translation.data ||
+      typeof translation.data !== "object" ||
+      Array.isArray(translation.data)
+    ) {
+      continue;
+    }
+
+    const rank = getTranslationRank(
+      language,
+      getString(translation.iso_3166_1),
+    );
+
+    if (rank > ranks[language]) {
+      continue;
+    }
+
+    const data = translation.data as TmdbRawEpisodeTranslationData;
+    const name = getString(data.name);
+    const overview = getString(data.overview);
+
+    if (!name && !overview) {
+      continue;
+    }
+
+    translations.name[language] = name;
+    translations.overview[language] = overview;
+    ranks[language] = rank;
+  }
+
+  return translations;
+}
+
 async function mapWithConcurrency<TItem, TResult>(
   items: TItem[],
   concurrency: number,
@@ -991,6 +1102,29 @@ async function mapWithConcurrency<TItem, TResult>(
   );
 
   return results;
+}
+
+async function fetchEpisodeTranslations(
+  seriesId: number,
+  seasonNumber: number,
+  episodeNumber: number,
+  options: {
+    apiKey: string;
+    fetchImpl: FetchLike;
+    timeoutMs: number;
+  },
+): Promise<NormalizedTmdbEpisodeTranslations> {
+  try {
+    const payload = await requestTmdbJson<TmdbEpisodeTranslationsResponse>(
+      `/tv/${seriesId}/season/${seasonNumber}/episode/${episodeNumber}/translations`,
+      {},
+      options,
+    );
+
+    return normalizeEpisodeTranslations(payload);
+  } catch {
+    return createEmptyEpisodeTranslations();
+  }
 }
 
 async function fetchEpisodeStill(
@@ -1575,23 +1709,39 @@ export function createTmdbArtworkRequestHandler(
         const episodeNumbers = Array.from(
           new Set([...englishEpisodes.keys(), ...turkishEpisodes.keys()]),
         ).sort((left, right) => left - right);
-        const stillEntries = await mapWithConcurrency(
+        const episodeMetadataEntries = await mapWithConcurrency(
           episodeNumbers,
           TMDB_EPISODE_STILL_CONCURRENCY,
-          async (episodeNumber) =>
-            [
-              episodeNumber,
-              await fetchEpisodeStill(
+          async (episodeNumber) => {
+            const [translations, still] = await Promise.all([
+              fetchEpisodeTranslations(tmdbId, seasonNumber, episodeNumber, {
+                apiKey,
+                fetchImpl,
+                timeoutMs,
+              }),
+              fetchEpisodeStill(
                 tmdbId,
                 seasonNumber,
                 episodeNumber,
                 thumbnailLanguage,
                 { apiKey, fetchImpl, timeoutMs },
               ),
-            ] as const,
+            ]);
+
+            return [
+              episodeNumber,
+              {
+                translations,
+                still,
+              },
+            ] as const;
+          },
         );
-        const stillsByEpisode = new Map(stillEntries);
+        const episodeMetadataByEpisode = new Map(episodeMetadataEntries);
         const episodes = episodeNumbers.map((episodeNumber) => {
+          const episodeMetadata = episodeMetadataByEpisode.get(episodeNumber);
+          const translations =
+            episodeMetadata?.translations ?? createEmptyEpisodeTranslations();
           const englishEpisode = englishEpisodes.get(episodeNumber);
           const turkishEpisode = turkishEpisodes.get(episodeNumber);
           const fallbackStillPath =
@@ -1603,15 +1753,9 @@ export function createTmdbArtworkRequestHandler(
           return {
             seasonNumber,
             episodeNumber,
-            name: {
-              en: englishEpisode?.name ?? null,
-              tr: turkishEpisode?.name ?? null,
-            },
-            overview: {
-              en: englishEpisode?.overview ?? null,
-              tr: turkishEpisode?.overview ?? null,
-            },
-            thumbnail: stillsByEpisode.get(episodeNumber) ?? fallbackStill,
+            name: translations.name,
+            overview: translations.overview,
+            thumbnail: episodeMetadata?.still ?? fallbackStill,
           };
         });
 

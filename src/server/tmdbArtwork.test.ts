@@ -437,37 +437,65 @@ describe("TMDB artwork backend", () => {
       }
 
       if (url.pathname === "/3/tv/99/season/1") {
-        if (url.searchParams.get("language") === "tr-TR") {
-          return jsonResponse({
-            episodes: [
-              {
-                episode_number: 1,
-                name: "Türkçe Bir",
-                overview: "Türkçe açıklama bir.",
-                still_path: "/ep1-tr-detail.jpg",
-              },
-              {
-                episode_number: 2,
-                name: "Türkçe İki",
-                overview: "Türkçe açıklama iki.",
-              },
-            ],
-          });
-        }
-
         return jsonResponse({
           episodes: [
             {
               episode_number: 1,
-              name: "English One",
-              overview: "English overview one.",
+              name: "Yanlış Sezon Detayı Bir",
+              overview: "Yanlış sezon açıklaması bir.",
               still_path: "/ep1-en-detail.jpg",
             },
             {
               episode_number: 2,
-              name: "English Two",
-              overview: "English overview two.",
+              name: "Yanlış Sezon Detayı İki",
+              overview: "Yanlış sezon açıklaması iki.",
               still_path: "/ep2-en-detail.jpg",
+            },
+          ],
+        });
+      }
+
+      if (url.pathname === "/3/tv/99/season/1/episode/1/translations") {
+        return jsonResponse({
+          translations: [
+            {
+              iso_3166_1: "US",
+              iso_639_1: "en",
+              data: {
+                name: "English One",
+                overview: "English overview one.",
+              },
+            },
+            {
+              iso_3166_1: "TR",
+              iso_639_1: "tr",
+              data: {
+                name: "Türkçe Bir",
+                overview: "Türkçe açıklama bir.",
+              },
+            },
+          ],
+        });
+      }
+
+      if (url.pathname === "/3/tv/99/season/1/episode/2/translations") {
+        return jsonResponse({
+          translations: [
+            {
+              iso_3166_1: "US",
+              iso_639_1: "en",
+              data: {
+                name: "English Two",
+                overview: "English overview two.",
+              },
+            },
+            {
+              iso_3166_1: "TR",
+              iso_639_1: "tr",
+              data: {
+                name: "Türkçe İki",
+                overview: "Türkçe açıklama iki.",
+              },
             },
           ],
         });
@@ -538,5 +566,13 @@ describe("TMDB artwork backend", () => {
         .filter((url) => url.pathname.endsWith("/images"))
         .map((url) => url.searchParams.get("include_image_language")),
     ).toEqual(["en,null", "en,null"]);
+    expect(
+      requests
+        .filter((url) => url.pathname.endsWith("/translations"))
+        .map((url) => url.pathname),
+    ).toEqual([
+      "/3/tv/99/season/1/episode/1/translations",
+      "/3/tv/99/season/1/episode/2/translations",
+    ]);
   });
 });
