@@ -12,6 +12,7 @@ import {
   getLogoImageUrl,
   getPrimaryImageUrl,
 } from "../lib/jellyfinApi";
+import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
@@ -85,7 +86,7 @@ export function TimedMediaGallery({
   durationMs = 7000,
   maxItems = 7,
 }: TimedMediaGalleryProps) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const galleryItems = useMemo(
     () => getGalleryItems(items, maxItems),
@@ -102,13 +103,25 @@ export function TimedMediaGallery({
   const timerRef = useRef<number | null>(null);
 
   const activeItem = galleryItems[activeIndex];
-  const activeImageUrl = activeItem ? getBackdrop(activeItem) : "";
-  const activePosterUrl = activeItem ? getPoster(activeItem) : "";
+  const activeEpisodeMetadata =
+    activeItem?.Type === "Episode"
+      ? getEpisodeDisplayMetadata(activeItem, language)
+      : null;
+  const activeImageUrl =
+    activeEpisodeMetadata?.thumbnailUrl ??
+    (activeItem ? getBackdrop(activeItem) : "");
+  const activePosterUrl =
+    activeEpisodeMetadata?.thumbnailUrl ??
+    (activeItem ? getPoster(activeItem) : "");
   const activeLogoUrl = activeItem?.ImageTags?.Logo
     ? getLogoImageUrl(activeItem.Id, activeItem.ImageTags.Logo, 950)
     : "";
-  const activeTitle = activeItem ? getDisplayTitle(activeItem) : "";
+  const activeTitle = activeItem
+    ? (activeEpisodeMetadata?.title ?? getDisplayTitle(activeItem))
+    : "";
   const activeSubtitle = activeItem ? getItemSubtitle(activeItem) : null;
+  const activeOverview =
+    activeEpisodeMetadata?.overview ?? activeItem?.Overview ?? null;
   const activeHref = activeItem ? getRouteForItem(activeItem) : "#";
   const canPlay = activeItem ? canPlayItem(activeItem) : false;
 
@@ -758,9 +771,9 @@ export function TimedMediaGallery({
                     <p className="apple-gallery__subtitle">{activeSubtitle}</p>
                   ) : null}
 
-                  {activeItem.Overview ? (
+                  {activeOverview ? (
                     <p className="apple-gallery__overview">
-                      {activeItem.Overview}
+                      {activeOverview}
                     </p>
                   ) : null}
 

@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import { ChevronsRight, X } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
 import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
@@ -25,10 +26,14 @@ export function NextEpisodeCountdownOverlay({
   onControlsHoverStart,
   onControlsHoverEnd,
 }: NextEpisodeCountdownOverlayProps) {
-  const { t } = useLanguage();
-  const nextEpisodeImageUrl = nextEpisode.ImageTags?.Primary
-    ? getPrimaryImageUrl(nextEpisode.Id, nextEpisode.ImageTags.Primary, 320)
-    : "";
+  const { language, t } = useLanguage();
+  const nextEpisodeMetadata = getEpisodeDisplayMetadata(nextEpisode, language);
+  const nextEpisodeImageUrl =
+    nextEpisodeMetadata.thumbnailUrl ??
+    (nextEpisode.ImageTags?.Primary
+      ? getPrimaryImageUrl(nextEpisode.Id, nextEpisode.ImageTags.Primary, 320)
+      : "");
+  const nextEpisodeTitle = nextEpisodeMetadata.title ?? nextEpisode.Name;
   const nextEpisodeSeasonNumber =
     typeof nextEpisode.ParentIndexNumber === "number" &&
     Number.isFinite(nextEpisode.ParentIndexNumber)
@@ -127,7 +132,7 @@ export function NextEpisodeCountdownOverlay({
             })}
           </p>
           <p className="mt-1 line-clamp-2 pr-2 text-base font-black leading-6 text-white sm:text-lg">
-            {nextEpisode.Name}
+            {nextEpisodeTitle}
           </p>
           {nextEpisode.SeriesName || nextEpisodeContextParts.length > 0 ? (
             <p className="mt-1 truncate text-xs font-semibold text-white/55">

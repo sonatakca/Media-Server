@@ -81,6 +81,21 @@ interface TmdbImageResponse {
   posters?: unknown;
 }
 
+interface TmdbSeasonDetailsResponse {
+  episodes?: unknown;
+}
+
+interface TmdbRawSeasonEpisode {
+  episode_number?: unknown;
+  name?: unknown;
+  overview?: unknown;
+  still_path?: unknown;
+}
+
+interface TmdbEpisodeImageResponse {
+  stills?: unknown;
+}
+
 interface TmdbRawImage {
   aspect_ratio?: unknown;
   file_path?: unknown;
@@ -113,6 +128,26 @@ interface NormalizedTmdbImage {
   targetFileName: string;
 }
 
+interface NormalizedTmdbEpisodeStill {
+  id: string;
+  filePath: string;
+  previewUrl: string;
+  fullUrl: string;
+  language: TmdbImageLanguage;
+  width: number | null;
+  height: number | null;
+  aspectRatio: number | null;
+  voteAverage: number | null;
+  voteCount: number | null;
+}
+
+interface NormalizedTmdbSeasonEpisode {
+  episodeNumber: number;
+  name: string | null;
+  overview: string | null;
+  stillPath: string | null;
+}
+
 type ErrorStatusCode = 400 | 403 | 404 | 405 | 409 | 413 | 500 | 502 | 503;
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -121,6 +156,7 @@ const TMDB_API_BASE_URL = "https://api.themoviedb.org/3/";
 const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
 const TMDB_ALLOWED_IMAGE_LANGUAGES = new Set(["en", "tr"]);
 const TMDB_INCLUDE_IMAGE_LANGUAGE = "en,tr,null";
+const TMDB_EPISODE_STILL_CONCURRENCY = 6;
 const ITEM_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const TMDB_FILE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$/;
 const LOCAL_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
@@ -290,6 +326,25 @@ function validateTmdbId(value: unknown): number {
   return parsed;
 }
 
+function validateSeasonNumber(value: unknown): number {
+  const parsed = typeof value === "string" ? Number(value) : value;
+
+  if (
+    typeof parsed !== "number" ||
+    !Number.isInteger(parsed) ||
+    parsed < 0 ||
+    parsed > 1_000
+  ) {
+    throw new TmdbArtworkRouteError(
+      "TMDB_SEASON_NUMBER_INVALID",
+      "TMDB season number must be an integer between 0 and 1000.",
+      400,
+    );
+  }
+
+  return parsed;
+}
+
 function validateMediaType(value: unknown): TmdbMediaType {
   if (value === "movie" || value === "tv") {
     return value;
@@ -349,8 +404,36 @@ function normalizePreferredLanguage(value: string | null): "en" | "tr" {
   return value === "tr" ? "tr" : "en";
 }
 
+function validateEpisodeThumbnailLanguage(value: unknown): TmdbImageLanguage {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    value === "null" ||
+    value === "none"
+  ) {
+    return null;
+  }
+
+  const normalized = normalizeImageLanguage(value);
+
+  if (normalized === "en" || normalized === "tr") {
+    return normalized;
+  }
+
+  throw new TmdbArtworkRouteError(
+    "TMDB_EPISODE_THUMBNAIL_LANGUAGE_INVALID",
+    "Episode thumbnail language must be English, Turkish, or no language.",
+    400,
+  );
+}
+
 function toTmdbLocale(language: "en" | "tr"): string {
   return language === "tr" ? "tr-TR" : "en-US";
+}
+
+function getEpisodeImageLanguageFilter(language: TmdbImageLanguage): string {
+  return language ? `${language},null` : "null";
 }
 
 function normalizeImageLanguage(value: unknown): TmdbImageLanguage | undefined {
@@ -388,6 +471,14 @@ function getNumber(value: unknown): number | null {
   return value;
 }
 
+function getInteger(value: unknown): number | null {
+  const numberValue = getNumber(value);
+
+  return numberValue !== null && Number.isInteger(numberValue)
+    ? numberValue
+    : null;
+}
+
 function getYear(value: unknown): number | null {
   const raw = getString(value);
   const year = raw?.slice(0, 4);
@@ -410,6 +501,21 @@ function getSourceTypeForKind(
 
 function buildImageUrl(size: string, filePath: string): string {
   return `${TMDB_IMAGE_BASE_URL}/${size}${filePath}`;
+}
+
+function getSafeTmdbFilePath(value: unknown): string | null {
+  const filePath = getString(value);
+
+  if (
+    !filePath ||
+    !TMDB_FILE_PATH_PATTERN.test(filePath) ||
+    filePath.includes("..") ||
+    filePath.includes("\\")
+  ) {
+    return null;
+  }
+
+  return filePath;
 }
 
 function getSearchYearParam(mediaType: TmdbMediaType): string {
@@ -723,6 +829,189 @@ function normalizeImages(
   return normalizedImages.sort((left, right) =>
     compareImages(preferredLanguage, kind, left, right),
   );
+}
+
+function compareEpisodeStills(
+  preferredLanguage: TmdbImageLanguage,
+  left: NormalizedTmdbEpisodeStill,
+  right: NormalizedTmdbEpisodeStill,
+): number {
+  const languageRank = (image: NormalizedTmdbEpisodeStill) => {
+    if (preferredLanguage === null) {
+      return image.language === null ? 0 : 1;
+    }
+
+    if (image.language === preferredLanguage) return 0;
+    if (image.language === null) return 1;
+    return 2;
+  };
+  const leftLanguageRank = languageRank(left);
+  const rightLanguageRank = languageRank(right);
+
+  if (leftLanguageRank !== rightLanguageRank) {
+    return leftLanguageRank - rightLanguageRank;
+  }
+
+  const voteAverageDelta = (right.voteAverage ?? 0) - (left.voteAverage ?? 0);
+
+  if (voteAverageDelta !== 0) {
+    return voteAverageDelta;
+  }
+
+  const voteCountDelta = (right.voteCount ?? 0) - (left.voteCount ?? 0);
+
+  if (voteCountDelta !== 0) {
+    return voteCountDelta;
+  }
+
+  const rightArea = (right.width ?? 0) * (right.height ?? 0);
+  const leftArea = (left.width ?? 0) * (left.height ?? 0);
+
+  return rightArea - leftArea;
+}
+
+function createEpisodeStill(
+  filePath: string,
+  language: TmdbImageLanguage,
+  source: Partial<TmdbRawImage> = {},
+): NormalizedTmdbEpisodeStill {
+  return {
+    id: `episode-still:${filePath}`,
+    filePath,
+    previewUrl: buildImageUrl("w780", filePath),
+    fullUrl: buildImageUrl("original", filePath),
+    language,
+    width: getNumber(source.width),
+    height: getNumber(source.height),
+    aspectRatio: getNumber(source.aspect_ratio),
+    voteAverage: getNumber(source.vote_average),
+    voteCount: getNumber(source.vote_count),
+  };
+}
+
+function normalizeEpisodeStills(
+  response: TmdbEpisodeImageResponse,
+  preferredLanguage: TmdbImageLanguage,
+): NormalizedTmdbEpisodeStill[] {
+  if (!Array.isArray(response.stills)) {
+    return [];
+  }
+
+  const seenFilePaths = new Set<string>();
+  const stills: NormalizedTmdbEpisodeStill[] = [];
+
+  for (const rawStill of response.stills) {
+    if (!rawStill || typeof rawStill !== "object" || Array.isArray(rawStill)) {
+      continue;
+    }
+
+    const still = rawStill as TmdbRawImage;
+    const filePath = getSafeTmdbFilePath(still.file_path);
+    const language = normalizeImageLanguage(still.iso_639_1);
+
+    if (!filePath || language === undefined || seenFilePaths.has(filePath)) {
+      continue;
+    }
+
+    seenFilePaths.add(filePath);
+    stills.push(createEpisodeStill(filePath, language, still));
+  }
+
+  return stills.sort((left, right) =>
+    compareEpisodeStills(preferredLanguage, left, right),
+  );
+}
+
+function normalizeSeasonEpisodes(
+  response: TmdbSeasonDetailsResponse,
+): Map<number, NormalizedTmdbSeasonEpisode> {
+  const episodes = new Map<number, NormalizedTmdbSeasonEpisode>();
+
+  if (!Array.isArray(response.episodes)) {
+    return episodes;
+  }
+
+  for (const rawEpisode of response.episodes) {
+    if (
+      !rawEpisode ||
+      typeof rawEpisode !== "object" ||
+      Array.isArray(rawEpisode)
+    ) {
+      continue;
+    }
+
+    const episode = rawEpisode as TmdbRawSeasonEpisode;
+    const episodeNumber = getInteger(episode.episode_number);
+
+    if (episodeNumber === null || episodeNumber <= 0) {
+      continue;
+    }
+
+    episodes.set(episodeNumber, {
+      episodeNumber,
+      name: getString(episode.name),
+      overview: getString(episode.overview),
+      stillPath: getSafeTmdbFilePath(episode.still_path),
+    });
+  }
+
+  return episodes;
+}
+
+async function mapWithConcurrency<TItem, TResult>(
+  items: TItem[],
+  concurrency: number,
+  mapper: (item: TItem, index: number) => Promise<TResult>,
+): Promise<TResult[]> {
+  const results = new Array<TResult>(items.length);
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      results[index] = await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from(
+      { length: Math.min(Math.max(concurrency, 1), items.length) },
+      () => worker(),
+    ),
+  );
+
+  return results;
+}
+
+async function fetchEpisodeStill(
+  seriesId: number,
+  seasonNumber: number,
+  episodeNumber: number,
+  thumbnailLanguage: TmdbImageLanguage,
+  options: {
+    apiKey: string;
+    fetchImpl: FetchLike;
+    timeoutMs: number;
+  },
+): Promise<NormalizedTmdbEpisodeStill | null> {
+  try {
+    const payload = await requestTmdbJson<TmdbEpisodeImageResponse>(
+      `/tv/${seriesId}/season/${seasonNumber}/episode/${episodeNumber}/images`,
+      {
+        language: toTmdbLocale(thumbnailLanguage ?? "en"),
+        include_image_language: getEpisodeImageLanguageFilter(
+          thumbnailLanguage,
+        ),
+      },
+      options,
+    );
+    const stills = normalizeEpisodeStills(payload, thumbnailLanguage);
+
+    return stills[0] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function getPathValue(value: unknown): string | null {
@@ -1078,6 +1367,86 @@ export function createTmdbArtworkRequestHandler(
           images,
           languageFilter: ["en", "tr", null],
           targetFileName: getTargetFileName(kind),
+        });
+        return true;
+      }
+
+      if (url.pathname === `${basePath}/episode-metadata`) {
+        if (request.method !== "GET") {
+          sendMethodNotAllowed(response, ["GET", "OPTIONS"]);
+          return true;
+        }
+
+        const apiKey = requireTmdbApiKey();
+        const tmdbId = validateTmdbId(url.searchParams.get("tmdbId"));
+        const seasonNumber = validateSeasonNumber(
+          url.searchParams.get("seasonNumber"),
+        );
+        const thumbnailLanguage = validateEpisodeThumbnailLanguage(
+          url.searchParams.get("thumbnailLanguage"),
+        );
+        const [englishPayload, turkishPayload] = await Promise.all([
+          requestTmdbJson<TmdbSeasonDetailsResponse>(
+            `/tv/${tmdbId}/season/${seasonNumber}`,
+            { language: "en-US" },
+            { apiKey, fetchImpl, timeoutMs },
+          ),
+          requestTmdbJson<TmdbSeasonDetailsResponse>(
+            `/tv/${tmdbId}/season/${seasonNumber}`,
+            { language: "tr-TR" },
+            { apiKey, fetchImpl, timeoutMs },
+          ),
+        ]);
+        const englishEpisodes = normalizeSeasonEpisodes(englishPayload);
+        const turkishEpisodes = normalizeSeasonEpisodes(turkishPayload);
+        const episodeNumbers = Array.from(
+          new Set([...englishEpisodes.keys(), ...turkishEpisodes.keys()]),
+        ).sort((left, right) => left - right);
+        const stillEntries = await mapWithConcurrency(
+          episodeNumbers,
+          TMDB_EPISODE_STILL_CONCURRENCY,
+          async (episodeNumber) =>
+            [
+              episodeNumber,
+              await fetchEpisodeStill(
+                tmdbId,
+                seasonNumber,
+                episodeNumber,
+                thumbnailLanguage,
+                { apiKey, fetchImpl, timeoutMs },
+              ),
+            ] as const,
+        );
+        const stillsByEpisode = new Map(stillEntries);
+        const episodes = episodeNumbers.map((episodeNumber) => {
+          const englishEpisode = englishEpisodes.get(episodeNumber);
+          const turkishEpisode = turkishEpisodes.get(episodeNumber);
+          const fallbackStillPath =
+            englishEpisode?.stillPath ?? turkishEpisode?.stillPath ?? null;
+          const fallbackStill = fallbackStillPath
+            ? createEpisodeStill(fallbackStillPath, null)
+            : null;
+
+          return {
+            seasonNumber,
+            episodeNumber,
+            name: {
+              en: englishEpisode?.name ?? null,
+              tr: turkishEpisode?.name ?? null,
+            },
+            overview: {
+              en: englishEpisode?.overview ?? null,
+              tr: turkishEpisode?.overview ?? null,
+            },
+            thumbnail: stillsByEpisode.get(episodeNumber) ?? fallbackStill,
+          };
+        });
+
+        sendJson(response, 200, {
+          seasonNumber,
+          thumbnailLanguage,
+          languageFilter: ["en", "tr", null],
+          episodes,
         });
         return true;
       }

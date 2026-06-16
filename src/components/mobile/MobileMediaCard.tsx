@@ -3,6 +3,7 @@ import { Info, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
@@ -92,7 +93,7 @@ export function MobileMediaCard({
   onClearContinueWatching,
   onWatchedStatusReset,
 }: MobileMediaCardProps) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const labels = {
     season: t("media.seasonNumber"),
     hourShort: t("format.hourShort"),
@@ -100,6 +101,9 @@ export function MobileMediaCard({
   };
 
   const isEpisode = item.Type === "Episode";
+  const episodeMetadata = isEpisode
+    ? getEpisodeDisplayMetadata(item, language)
+    : null;
   const isSeason = item.Type === "Season";
   const isLandscape = variant === "landscape";
   const isRow = layout === "row";
@@ -124,7 +128,7 @@ export function MobileMediaCard({
         : baseTitle;
 
     // Second line is the specific name of that episode
-    secondaryTitle = item.Name;
+    secondaryTitle = episodeMetadata?.title ?? item.Name;
 
     // Third line is the year and runtime (like desktop!)
     tertiaryInfo = [item.ProductionYear, runtime].filter(Boolean).join("  ");
@@ -148,15 +152,17 @@ export function MobileMediaCard({
 
   // Use Series Poster if it's an episode being shown as a vertical poster
   const imageUrl =
-    isEpisode && !isLandscape && item.SeriesId && item.SeriesPrimaryImageTag
-      ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 440)
-      : item.ImageTags?.Primary
-        ? getPrimaryImageUrl(
-            item.Id,
-            item.ImageTags.Primary,
-            isLandscape ? 680 : 440,
-          )
-        : "";
+    isEpisode && isLandscape && episodeMetadata?.thumbnailUrl
+      ? episodeMetadata.thumbnailUrl
+      : isEpisode && !isLandscape && item.SeriesId && item.SeriesPrimaryImageTag
+        ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 440)
+        : item.ImageTags?.Primary
+          ? getPrimaryImageUrl(
+              item.Id,
+              item.ImageTags.Primary,
+              isLandscape ? 680 : 440,
+            )
+          : "";
 
   const logoUrl =
     !isEpisode && !isSeason && item.ImageTags?.Logo

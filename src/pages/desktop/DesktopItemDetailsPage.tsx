@@ -13,6 +13,7 @@ import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
   getBackdropImageUrl,
@@ -76,7 +77,7 @@ function getEpisodeCode(item: JellyfinItem): string | null {
 
 export function DesktopItemDetailsPage() {
   const { itemId } = useParams<{ itemId: string }>();
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -99,11 +100,16 @@ export function DesktopItemDetailsPage() {
     }
 
     setSeoMetadata({
-      title: `${getDisplayTitle(item, mediaFormatLabels)} · Seyirlik`,
+      title: `${
+        item.Type === "Episode"
+          ? (getEpisodeDisplayMetadata(item, language).title ??
+            getDisplayTitle(item, mediaFormatLabels))
+          : getDisplayTitle(item, mediaFormatLabels)
+      } · Seyirlik`,
       canonicalPath: `/item/${item.Id}`,
       robots: "noindex, nofollow",
     });
-  }, [item, itemId, mediaFormatLabels]);
+  }, [item, itemId, language, mediaFormatLabels]);
 
   useEffect(() => {
     let isMounted = true;
@@ -166,10 +172,15 @@ export function DesktopItemDetailsPage() {
 
   const title = getDisplayTitle(item, mediaFormatLabels);
   const runtime = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
-  const posterUrl = item.ImageTags?.Primary
-    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
-    : "";
   const isEpisode = item.Type === "Episode";
+  const episodeMetadata = isEpisode
+    ? getEpisodeDisplayMetadata(item, language)
+    : null;
+  const posterUrl =
+    episodeMetadata?.thumbnailUrl ??
+    (item.ImageTags?.Primary
+      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
+      : "");
   const seriesItemId = isEpisode
     ? (item.SeriesId ?? item.ParentLogoItemId ?? null)
     : null;
@@ -182,7 +193,12 @@ export function DesktopItemDetailsPage() {
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 1100)
       : "";
   const episodeCode = getEpisodeCode(item);
-  const episodeTitle = isEpisode ? item.Name || title : title;
+  const episodeTitle = isEpisode
+    ? episodeMetadata?.title || item.Name || title
+    : title;
+  const overview = isEpisode
+    ? (episodeMetadata?.overview ?? item.Overview)
+    : item.Overview;
   const seriesTitle = item.SeriesName ?? title;
   const backdropUrl = getBackdrop(item);
   const videoStream = item.MediaSources?.[0]?.MediaStreams?.find(
@@ -582,7 +598,7 @@ export function DesktopItemDetailsPage() {
                 </AnimatedWidth>
               </h2>
               <p className="mt-4 max-w-4xl text-base leading-8 text-white/[0.68]">
-                {item.Overview || (
+                {overview || (
                   <AnimatedWidth value={t("details.noOverview")}>
                     <AnimatedText value={t("details.noOverview")} />
                   </AnimatedWidth>

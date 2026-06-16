@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
 import { Pause } from "lucide-react";
+import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
 import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
@@ -108,12 +110,18 @@ export function QueueItemButton({
   t,
   onPlayItem,
 }: QueueItemButtonProps) {
+  const { language } = useLanguage();
   const isCollection = variant === "collection";
   const isMoviePoster = isCollection && item.Type === "Movie";
+  const episodeMetadata =
+    item.Type === "Episode" ? getEpisodeDisplayMetadata(item, language) : null;
+  const displayTitle = episodeMetadata?.title ?? item.Name;
   const episodeLabel =
     item.Type === "Episode" ? getEpisodeLabel(item, t) : null;
   const releaseYear = item.Type === "Movie" ? getReleaseYear(item) : null;
-  const imageUrl = isMoviePoster ? getPosterUrl(item) : getThumbnailUrl(item);
+  const imageUrl = isMoviePoster
+    ? getPosterUrl(item)
+    : (episodeMetadata?.thumbnailUrl ?? getThumbnailUrl(item));
 
   const [watchedStatusItem, setWatchedStatusItem] = useState(item);
   const [shouldShowWatchedStatusButton, setShouldShowWatchedStatusButton] =
@@ -153,7 +161,7 @@ export function QueueItemButton({
     return () => {
       resizeObserver.disconnect();
     };
-  }, [item.Name, isMoviePoster, isCollection]);
+  }, [displayTitle, isMoviePoster, isCollection]);
 
   useEffect(() => {
     setWatchedStatusItem(item);
@@ -162,7 +170,7 @@ export function QueueItemButton({
 
   return (
     <Tooltip
-      content={item.Name}
+      content={displayTitle}
       disabled={!isTitleOverflowing}
       group="player-queue"
       offset="0.65rem"
@@ -258,7 +266,7 @@ export function QueueItemButton({
             isCollection ? "" : "mx-auto max-w-[12rem]"
           }`}
         >
-          <QueueItemTitle title={item.Name} titleRef={titleRef} />
+          <QueueItemTitle title={displayTitle} titleRef={titleRef} />
           {episodeLabel ? (
             <span className="block max-w-full truncate text-center text-[0.68rem] font-black uppercase tracking-[0.12em] text-white/45">
               {episodeLabel}

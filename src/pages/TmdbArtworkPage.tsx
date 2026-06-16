@@ -15,10 +15,15 @@ import {
   Tv,
 } from "lucide-react";
 import {
+  getAllSeriesEpisodes,
   getAllMovieAndSeriesItems,
   getPrimaryImageUrl,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
+import {
+  getSeriesEpisodeMetadataPreference,
+  saveEpisodeMetadataOverrides,
+} from "../lib/episodeMetadataPreferences";
 import {
   getDisplayTitle,
   getItemSubtitle,
@@ -27,11 +32,14 @@ import {
 import { setPageTitle } from "../lib/pageTitle";
 import {
   applyTmdbArtwork,
+  getTmdbEpisodeMetadata,
   getTmdbArtworkImages,
   isTmdbArtworkBackendConfigured,
   searchTmdbArtwork,
   type TmdbArtworkImage,
   type TmdbArtworkKind,
+  type TmdbEpisodeMetadata,
+  type TmdbEpisodeThumbnailLanguage,
   type TmdbMediaType,
   type TmdbSearchResult,
 } from "../lib/tmdbArtworkApi";
@@ -40,6 +48,7 @@ import type { TranslationKey } from "../i18n/translations";
 
 type ActionState = "idle" | "loading" | "success" | "error";
 type Translate = (key: TranslationKey) => string;
+type EpisodeSeasonFilter = "all" | number;
 
 interface ActionResult {
   state: ActionState;
@@ -59,6 +68,12 @@ const TARGET_FILE_BY_KIND: Record<TmdbArtworkKind, string> = {
   landscape: "landscape.jpg",
   logo: "logo.png",
 };
+
+const EPISODE_THUMBNAIL_LANGUAGES: TmdbEpisodeThumbnailLanguage[] = [
+  "en",
+  "tr",
+  null,
+];
 
 function createEmptyResult(): ActionResult {
   return {
@@ -143,6 +158,42 @@ function formatDimensions(image: TmdbArtworkImage, t: Translate): string {
   return `${image.width} x ${image.height}`;
 }
 
+function getEpisodeMetadataKey(
+  seasonNumber: number | null | undefined,
+  episodeNumber: number | null | undefined,
+): string | null {
+  if (
+    typeof seasonNumber !== "number" ||
+    !Number.isFinite(seasonNumber) ||
+    typeof episodeNumber !== "number" ||
+    !Number.isFinite(episodeNumber)
+  ) {
+    return null;
+  }
+
+  return `${seasonNumber}:${episodeNumber}`;
+}
+
+function getEpisodeLabel(item: JellyfinItem, t: Translate): string {
+  if (
+    typeof item.ParentIndexNumber === "number" &&
+    typeof item.IndexNumber === "number"
+  ) {
+    return formatTemplate(t("media.seasonEpisodeNumber"), {
+      seasonNumber: item.ParentIndexNumber,
+      episodeNumber: item.IndexNumber,
+    });
+  }
+
+  if (typeof item.IndexNumber === "number") {
+    return formatTemplate(t("media.episodeNumber"), {
+      number: item.IndexNumber,
+    });
+  }
+
+  return item.Name;
+}
+
 function getResultSubtitle(result: TmdbSearchResult, t: Translate): string {
   return [
     result.mediaType === "tv" ? t("common.series") : t("common.movie"),
@@ -198,6 +249,14 @@ export function TmdbArtworkPage() {
   const [selectedImages, setSelectedImages] = useState<
     Partial<Record<TmdbArtworkKind, TmdbArtworkImage>>
   >({});
+  const [seriesEpisodes, setSeriesEpisodes] = useState<JellyfinItem[]>([]);
+  const [episodeSeasonFilter, setEpisodeSeasonFilter] =
+    useState<EpisodeSeasonFilter>("all");
+  const [episodeThumbnailLanguage, setEpisodeThumbnailLanguage] =
+    useState<TmdbEpisodeThumbnailLanguage>("en");
+  const [episodeMetadataByKey, setEpisodeMetadataByKey] = useState<
+    Record<string, TmdbEpisodeMetadata>
+  >({});
   const [loadState, setLoadState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
@@ -208,6 +267,14 @@ export function TmdbArtworkPage() {
     createEmptyResult(),
   );
   const [applyState, setApplyState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
+  const [episodeListState, setEpisodeListState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
+  const [episodeMetadataState, setEpisodeMetadataState] =
+    useState<ActionResult>(() => createEmptyResult());
+  const [episodeSaveState, setEpisodeSaveState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
 
@@ -281,6 +348,50 @@ export function TmdbArtworkPage() {
 
   const activeImages = imagesByKind[activeKind] ?? [];
   const activeSelectedImage = selectedImages[activeKind] ?? null;
+  const episodeSeasonNumbers = useMemo(
+    () =>
+      Array.from(
+        new Set(
+          seriesEpisodes
+            .map((episode) => episode.ParentIndexNumber)
+            .filter(
+              (seasonNumber): seasonNumber is number =>
+                typeof seasonNumber === "number" &&
+                Number.isFinite(seasonNumber),
+            ),
+        ),
+      ).sort((left, right) => left - right),
+    [seriesEpisodes],
+  );
+  const selectedEpisodeSeasonNumbers =
+    episodeSeasonFilter === "all"
+      ? episodeSeasonNumbers
+      : [episodeSeasonFilter];
+  const episodePreviewRows = useMemo(
+    () =>
+      seriesEpisodes
+        .filter((episode) =>
+          episodeSeasonFilter === "all"
+            ? true
+            : episode.ParentIndexNumber === episodeSeasonFilter,
+        )
+        .map((episode) => {
+          const key = getEpisodeMetadataKey(
+            episode.ParentIndexNumber,
+            episode.IndexNumber,
+          );
+
+          return {
+            episode,
+            key,
+            metadata: key ? (episodeMetadataByKey[key] ?? null) : null,
+          };
+        }),
+    [episodeMetadataByKey, episodeSeasonFilter, seriesEpisodes],
+  );
+  const loadedEpisodeMetadataCount = episodePreviewRows.filter(
+    (row) => row.metadata,
+  ).length;
 
   const loadImagesForKind = useCallback(
     async (tmdbResult: TmdbSearchResult, kind: TmdbArtworkKind) => {
@@ -344,6 +455,67 @@ export function TmdbArtworkPage() {
     void loadImagesForKind(selectedTmdb, activeKind);
   }, [activeKind, imagesByKind, loadImagesForKind, selectedTmdb]);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    setSeriesEpisodes([]);
+    setEpisodeMetadataByKey({});
+    setEpisodeSeasonFilter("all");
+    setEpisodeMetadataState(createEmptyResult());
+    setEpisodeSaveState(createEmptyResult());
+
+    if (!selectedItem || selectedItem.Type !== "Series") {
+      setEpisodeListState(createEmptyResult());
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    const savedPreference = getSeriesEpisodeMetadataPreference(selectedItem.Id);
+    const seriesId = selectedItem.Id;
+
+    setEpisodeThumbnailLanguage(savedPreference?.thumbnailLanguage ?? "en");
+    setEpisodeListState({
+      state: "loading",
+      message: t("tmdbArtwork.loadingSeriesEpisodes"),
+    });
+
+    async function loadSeriesEpisodes() {
+      try {
+        const episodes = await getAllSeriesEpisodes(seriesId);
+
+        if (!isMounted) return;
+
+        setSeriesEpisodes(episodes);
+        setEpisodeListState({
+          state: episodes.length > 0 ? "success" : "idle",
+          message:
+            episodes.length > 0
+              ? formatTemplate(t("tmdbArtwork.loadedSeriesEpisodes"), {
+                  count: episodes.length,
+                })
+              : t("tmdbArtwork.noSeriesEpisodes"),
+        });
+      } catch (error) {
+        if (!isMounted) return;
+
+        setEpisodeListState({
+          state: "error",
+          message:
+            error instanceof Error
+              ? error.message
+              : t("tmdbArtwork.couldNotLoadSeriesEpisodes"),
+        });
+      }
+    }
+
+    void loadSeriesEpisodes();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedItem, t]);
+
   const selectItem = (item: JellyfinItem) => {
     const providerResult = createTmdbResultFromProvider(item);
 
@@ -358,6 +530,15 @@ export function TmdbArtworkPage() {
     setSearchState(createEmptyResult());
     setImagesState(createEmptyResult());
     setApplyState(createEmptyResult());
+    setEpisodeMetadataByKey({});
+    setEpisodeMetadataState(createEmptyResult());
+    setEpisodeSaveState(createEmptyResult());
+    setEpisodeThumbnailLanguage(
+      item.Type === "Series"
+        ? (getSeriesEpisodeMetadataPreference(item.Id)?.thumbnailLanguage ??
+            "en")
+        : "en",
+    );
 
     if (providerResult) {
       void loadImagesForKind(providerResult, activeKind);
@@ -416,6 +597,9 @@ export function TmdbArtworkPage() {
     setImagesByKind({});
     setSelectedImages({});
     setApplyState(createEmptyResult());
+    setEpisodeMetadataByKey({});
+    setEpisodeMetadataState(createEmptyResult());
+    setEpisodeSaveState(createEmptyResult());
     void loadImagesForKind(result, activeKind);
   };
 
@@ -447,6 +631,152 @@ export function TmdbArtworkPage() {
           error instanceof Error
             ? error.message
             : t("tmdbArtwork.couldNotSaveArtwork"),
+      });
+    }
+  };
+
+  const handleLoadEpisodeMetadata = async () => {
+    if (
+      !selectedItem ||
+      selectedItem.Type !== "Series" ||
+      !selectedTmdb ||
+      selectedTmdb.mediaType !== "tv"
+    ) {
+      setEpisodeMetadataState({
+        state: "error",
+        message: t("tmdbArtwork.episodeMetadataRequiresSeries"),
+      });
+      return;
+    }
+
+    if (selectedEpisodeSeasonNumbers.length === 0) {
+      setEpisodeMetadataState({
+        state: "error",
+        message: t("tmdbArtwork.noSeriesEpisodes"),
+      });
+      return;
+    }
+
+    const loadedMetadata: Record<string, TmdbEpisodeMetadata> = {};
+    let failedSeasonCount = 0;
+
+    setEpisodeMetadataState({
+      state: "loading",
+      message: t("tmdbArtwork.loadingEpisodeMetadata"),
+    });
+    setEpisodeSaveState(createEmptyResult());
+
+    for (let index = 0; index < selectedEpisodeSeasonNumbers.length; index += 1) {
+      const seasonNumber = selectedEpisodeSeasonNumbers[index];
+
+      setEpisodeMetadataState({
+        state: "loading",
+        message: formatTemplate(t("tmdbArtwork.loadingEpisodeMetadataSeason"), {
+          current: index + 1,
+          total: selectedEpisodeSeasonNumbers.length,
+        }),
+      });
+
+      try {
+        const episodes = await getTmdbEpisodeMetadata({
+          tmdbId: selectedTmdb.id,
+          seasonNumber,
+          thumbnailLanguage: episodeThumbnailLanguage,
+        });
+
+        episodes.forEach((episode) => {
+          const key = getEpisodeMetadataKey(
+            episode.seasonNumber,
+            episode.episodeNumber,
+          );
+
+          if (key) {
+            loadedMetadata[key] = episode;
+          }
+        });
+      } catch {
+        failedSeasonCount += 1;
+      }
+    }
+
+    const loadedCount = Object.keys(loadedMetadata).length;
+
+    if (loadedCount === 0) {
+      setEpisodeMetadataState({
+        state: "error",
+        message: t("tmdbArtwork.couldNotLoadEpisodeMetadata"),
+      });
+      return;
+    }
+
+    setEpisodeMetadataByKey((current) => ({
+      ...current,
+      ...loadedMetadata,
+    }));
+    setEpisodeMetadataState({
+      state: failedSeasonCount > 0 ? "error" : "success",
+      message:
+        failedSeasonCount > 0
+          ? formatTemplate(t("tmdbArtwork.episodeMetadataLoadedPartial"), {
+              count: loadedCount,
+              failed: failedSeasonCount,
+            })
+          : formatTemplate(t("tmdbArtwork.episodeMetadataLoaded"), {
+              count: loadedCount,
+            }),
+    });
+  };
+
+  const handleSaveEpisodeMetadata = () => {
+    if (!selectedItem || selectedItem.Type !== "Series") return;
+
+    setEpisodeSaveState({
+      state: "loading",
+      message: t("tmdbArtwork.savingEpisodeMetadata"),
+    });
+
+    try {
+      const overrides = episodePreviewRows.flatMap(({ episode, metadata }) => {
+        if (!metadata) {
+          return [];
+        }
+
+        return [
+          {
+            episodeId: episode.Id,
+            seriesId: selectedItem.Id,
+            seasonNumber: episode.ParentIndexNumber ?? metadata.seasonNumber,
+            episodeNumber: episode.IndexNumber ?? metadata.episodeNumber,
+            titles: metadata.name,
+            overviews: metadata.overview,
+            thumbnail: metadata.thumbnail
+              ? {
+                  url: metadata.thumbnail.previewUrl,
+                  filePath: metadata.thumbnail.filePath,
+                  language: metadata.thumbnail.language,
+                }
+              : null,
+          },
+        ];
+      });
+      const savedCount = saveEpisodeMetadataOverrides(overrides, {
+        seriesId: selectedItem.Id,
+        thumbnailLanguage: episodeThumbnailLanguage,
+      });
+
+      setEpisodeSaveState({
+        state: "success",
+        message: formatTemplate(t("tmdbArtwork.episodeMetadataSaved"), {
+          count: savedCount,
+        }),
+      });
+    } catch (error) {
+      setEpisodeSaveState({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("tmdbArtwork.couldNotSaveEpisodeMetadata"),
       });
     }
   };
@@ -966,6 +1296,231 @@ export function TmdbArtworkPage() {
               </div>
             )}
           </section>
+
+          {selectedItem?.Type === "Series" ? (
+            <section className="rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
+                    <Languages size={15} />
+                    {t("tmdbArtwork.episodeMetadata")}
+                  </p>
+                  <h2 className="mt-2 text-xl font-black text-white">
+                    {t("tmdbArtwork.episodeLanguages")}
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/45">
+                    {t("tmdbArtwork.episodeLanguagesDescription")}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveEpisodeMetadata}
+                  disabled={
+                    loadedEpisodeMetadataCount === 0 ||
+                    episodeSaveState.state === "loading"
+                  }
+                  className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {episodeSaveState.state === "loading" ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Save size={18} />
+                  )}
+                  {t("tmdbArtwork.saveEpisodeDisplay")}
+                </button>
+              </div>
+
+              <div className="mt-5 grid gap-3 lg:grid-cols-[10rem_1fr_auto]">
+                <label className="block">
+                  <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
+                    {t("common.season")}
+                  </span>
+                  <select
+                    value={
+                      episodeSeasonFilter === "all"
+                        ? "all"
+                        : String(episodeSeasonFilter)
+                    }
+                    onChange={(event) => {
+                      const nextValue = event.target.value;
+
+                      setEpisodeSeasonFilter(
+                        nextValue === "all" ? "all" : Number(nextValue),
+                      );
+                    }}
+                    disabled={seriesEpisodes.length === 0}
+                    className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    <option value="all">{t("tmdbArtwork.allSeasons")}</option>
+                    {episodeSeasonNumbers.map((seasonNumber) => (
+                      <option key={seasonNumber} value={seasonNumber}>
+                        {formatTemplate(t("media.seasonNumber"), {
+                          number: seasonNumber,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <div>
+                  <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
+                    {t("tmdbArtwork.thumbnailLanguage")}
+                  </span>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-3">
+                    {EPISODE_THUMBNAIL_LANGUAGES.map((thumbnailLanguage) => {
+                      const isSelected =
+                        episodeThumbnailLanguage === thumbnailLanguage;
+
+                      return (
+                        <button
+                          key={thumbnailLanguage ?? "none"}
+                          type="button"
+                          onClick={() => {
+                            setEpisodeThumbnailLanguage(thumbnailLanguage);
+                            setEpisodeMetadataByKey({});
+                            setEpisodeMetadataState(createEmptyResult());
+                            setEpisodeSaveState(createEmptyResult());
+                          }}
+                          className={`rounded-2xl border px-3 py-3 text-left text-sm font-black transition ${
+                            isSelected
+                              ? "border-[var(--accent)]/45 bg-[var(--accent)] text-black"
+                              : "border-white/10 bg-white/[0.055] text-white/56 hover:border-white/20 hover:text-white"
+                          }`}
+                        >
+                          {getLanguageLabel(thumbnailLanguage, t)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => void handleLoadEpisodeMetadata()}
+                  disabled={
+                    !backendConfigured ||
+                    !selectedTmdb ||
+                    selectedTmdb.mediaType !== "tv" ||
+                    seriesEpisodes.length === 0 ||
+                    episodeMetadataState.state === "loading"
+                  }
+                  className="mt-6 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 lg:mt-auto"
+                >
+                  {episodeMetadataState.state === "loading" ? (
+                    <Loader2 size={18} className="animate-spin" />
+                  ) : (
+                    <Search size={18} />
+                  )}
+                  {t("tmdbArtwork.loadEpisodeMetadata")}
+                </button>
+              </div>
+
+              {episodeListState.message ? (
+                <p
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${getStatusClasses(
+                    episodeListState.state,
+                  )}`}
+                >
+                  {episodeListState.message}
+                </p>
+              ) : null}
+
+              {episodeMetadataState.message ? (
+                <p
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${getStatusClasses(
+                    episodeMetadataState.state,
+                  )}`}
+                >
+                  {episodeMetadataState.message}
+                </p>
+              ) : null}
+
+              {episodeSaveState.message ? (
+                <p
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${getStatusClasses(
+                    episodeSaveState.state,
+                  )}`}
+                >
+                  {episodeSaveState.message}
+                </p>
+              ) : null}
+
+              <div className="mt-5 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.035]">
+                <div className="grid grid-cols-[7rem_1fr_1fr] gap-3 border-b border-white/10 px-4 py-3 text-xs font-black uppercase tracking-[0.12em] text-white/38 sm:grid-cols-[7rem_8rem_1fr_1fr]">
+                  <span>{t("common.episode")}</span>
+                  <span className="hidden sm:block">
+                    {t("tmdbArtwork.thumbnail")}
+                  </span>
+                  <span>{t("tmdbArtwork.englishMetadata")}</span>
+                  <span>{t("tmdbArtwork.turkishMetadata")}</span>
+                </div>
+
+                <div className="max-h-[34rem] overflow-y-auto">
+                  {episodePreviewRows.length === 0 ? (
+                    <div className="p-5 text-sm font-semibold text-white/48">
+                      {t("tmdbArtwork.noSeriesEpisodes")}
+                    </div>
+                  ) : (
+                    episodePreviewRows.map(({ episode, key, metadata }) => (
+                      <div
+                        key={episode.Id}
+                        className="grid grid-cols-[7rem_1fr_1fr] gap-3 border-b border-white/[0.07] px-4 py-3 last:border-b-0 sm:grid-cols-[7rem_8rem_1fr_1fr]"
+                      >
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-black text-white">
+                            {getEpisodeLabel(episode, t)}
+                          </p>
+                          <p className="mt-1 truncate text-xs font-semibold text-white/36">
+                            {key ?? episode.Id}
+                          </p>
+                        </div>
+
+                        <div className="hidden sm:block">
+                          {metadata?.thumbnail?.previewUrl ? (
+                            <div className="aspect-video overflow-hidden rounded-xl border border-white/10 bg-white/[0.04]">
+                              <img
+                                src={metadata.thumbnail.previewUrl}
+                                alt=""
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex aspect-video items-center justify-center rounded-xl border border-white/10 bg-white/[0.04] text-xs font-black uppercase tracking-[0.1em] text-white/26">
+                              {t("common.no")}
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="line-clamp-1 text-sm font-bold text-white/80">
+                            {metadata?.name.en ?? episode.Name}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
+                            {metadata?.overview.en ??
+                              episode.Overview ??
+                              t("details.noOverview")}
+                          </p>
+                        </div>
+
+                        <div className="min-w-0">
+                          <p className="line-clamp-1 text-sm font-bold text-white/80">
+                            {metadata?.name.tr ?? episode.Name}
+                          </p>
+                          <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
+                            {metadata?.overview.tr ??
+                              episode.Overview ??
+                              t("details.noOverview")}
+                          </p>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+            </section>
+          ) : null}
         </section>
       </section>
     </div>

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { Info, RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
+import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import type { JellyfinItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -144,7 +145,7 @@ export function MediaCard({
   onClearContinueWatching,
   onWatchedStatusReset,
 }: MediaCardProps) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const mediaFormatLabels = {
     season: t("media.seasonNumber"),
@@ -159,13 +160,16 @@ export function MediaCard({
 
   const title = getDisplayTitle(item, mediaFormatLabels);
   const isEpisode = item.Type === "Episode";
+  const episodeMetadata = isEpisode
+    ? getEpisodeDisplayMetadata(item, language)
+    : null;
   const episodeNumberLabel = isEpisode ? getEpisodeDisplayTitle(item, t) : null;
   const isSeasonEpisodeGrid =
     isEpisode && layout === "grid" && variant === "landscape";
   const episodeDisplayTitle = isSeasonEpisodeGrid
     ? episodeNumberLabel
     : isEpisode
-      ? item.Name || null
+      ? episodeMetadata?.title ?? item.Name ?? null
       : null;
   const displayTitle = episodeDisplayTitle ?? title;
 
@@ -173,13 +177,15 @@ export function MediaCard({
   const progressPercent = getItemProgressPercent(item);
   const isWatched = isItemCompleted(item);
 
-  const imageUrl = item.ImageTags?.Primary
-    ? getPrimaryImageUrl(
-        item.Id,
-        item.ImageTags.Primary,
-        variant === "poster" ? 720 : 1100,
-      )
-    : "";
+  const imageUrl =
+    episodeMetadata?.thumbnailUrl ??
+    (item.ImageTags?.Primary
+      ? getPrimaryImageUrl(
+          item.Id,
+          item.ImageTags.Primary,
+          variant === "poster" ? 720 : 1100,
+        )
+      : "");
   const showPrimaryImageUrl =
     item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag
       ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 720)
@@ -407,12 +413,12 @@ export function MediaCard({
             ) : null}
 
             <h3 className="line-clamp-1 text-sm font-bold text-white sm:text-base">
-              {item.Name}
+              {episodeMetadata?.title ?? item.Name}
             </h3>
 
-            {item.Overview ? (
+            {episodeMetadata?.overview ? (
               <p className="mt-1.5 line-clamp-2 text-[0.7rem] font-medium leading-[1.35] text-white/78 sm:text-xs">
-                {item.Overview}
+                {episodeMetadata.overview}
               </p>
             ) : null}
 

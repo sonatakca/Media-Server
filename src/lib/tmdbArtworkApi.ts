@@ -1,6 +1,7 @@
 export type TmdbArtworkKind = "poster" | "backdrop" | "landscape" | "logo";
 export type TmdbMediaType = "movie" | "tv";
 export type TmdbImageLanguage = "en" | "tr" | null;
+export type TmdbEpisodeThumbnailLanguage = TmdbImageLanguage;
 
 export interface TmdbSearchResult {
   id: number;
@@ -43,6 +44,27 @@ export interface TmdbArtworkApplyResult {
   bytes: number;
 }
 
+export interface TmdbEpisodeThumbnail {
+  id: string;
+  filePath: string;
+  previewUrl: string;
+  fullUrl: string;
+  language: TmdbImageLanguage;
+  width: number | null;
+  height: number | null;
+  aspectRatio: number | null;
+  voteAverage: number | null;
+  voteCount: number | null;
+}
+
+export interface TmdbEpisodeMetadata {
+  seasonNumber: number;
+  episodeNumber: number;
+  name: Record<"en" | "tr", string | null>;
+  overview: Record<"en" | "tr", string | null>;
+  thumbnail: TmdbEpisodeThumbnail | null;
+}
+
 interface SearchResponse {
   results?: TmdbSearchResult[];
 }
@@ -53,7 +75,14 @@ interface ImagesResponse {
   targetFileName?: string;
 }
 
+interface EpisodeMetadataResponse {
+  seasonNumber?: number;
+  thumbnailLanguage?: TmdbEpisodeThumbnailLanguage;
+  episodes?: TmdbEpisodeMetadata[];
+}
+
 const ARTWORK_REQUEST_TIMEOUT_MS = 15_000;
+const EPISODE_METADATA_REQUEST_TIMEOUT_MS = 45_000;
 
 function getBackendUrl(): string | null {
   const rawUrl = import.meta.env.VITE_SEYIRLIK_PLAYBACK_BACKEND_URL;
@@ -121,6 +150,7 @@ async function requestArtworkJson<TResponse>(
     method?: "GET" | "POST";
     params?: Record<string, string | number | null | undefined>;
     body?: unknown;
+    timeoutMs?: number;
   } = {},
 ): Promise<TResponse> {
   const baseUrl = getBackendUrl();
@@ -136,9 +166,10 @@ async function requestArtworkJson<TResponse>(
     options.params ?? {},
   );
   const abortController = new AbortController();
+  const requestTimeoutMs = options.timeoutMs ?? ARTWORK_REQUEST_TIMEOUT_MS;
   const timeoutId = globalThis.setTimeout(() => {
     abortController.abort();
-  }, ARTWORK_REQUEST_TIMEOUT_MS);
+  }, requestTimeoutMs);
   let response: Response;
 
   try {
@@ -158,7 +189,7 @@ async function requestArtworkJson<TResponse>(
     if (abortController.signal.aborted) {
       throw new Error(
         `TMDB artwork backend did not respond within ${Math.round(
-          ARTWORK_REQUEST_TIMEOUT_MS / 1000,
+          requestTimeoutMs / 1000,
         )} seconds. Check that ${baseUrl} is reachable from this browser.`,
       );
     }
@@ -219,6 +250,26 @@ export async function getTmdbArtworkImages(params: {
   });
 
   return response.images ?? [];
+}
+
+export async function getTmdbEpisodeMetadata(params: {
+  tmdbId: number;
+  seasonNumber: number;
+  thumbnailLanguage: TmdbEpisodeThumbnailLanguage;
+}): Promise<TmdbEpisodeMetadata[]> {
+  const response = await requestArtworkJson<EpisodeMetadataResponse>(
+    "episode-metadata",
+    {
+      params: {
+        tmdbId: params.tmdbId,
+        seasonNumber: params.seasonNumber,
+        thumbnailLanguage: params.thumbnailLanguage ?? "none",
+      },
+      timeoutMs: EPISODE_METADATA_REQUEST_TIMEOUT_MS,
+    },
+  );
+
+  return response.episodes ?? [];
 }
 
 export async function applyTmdbArtwork(params: {

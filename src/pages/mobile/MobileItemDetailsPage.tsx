@@ -8,6 +8,7 @@ import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import {
   getBackdropImageUrl,
@@ -78,7 +79,7 @@ function MobileDetailsLoading() {
 
 export function MobileItemDetailsPage() {
   const { itemId } = useParams<{ itemId: string }>();
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const labels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -100,11 +101,16 @@ export function MobileItemDetailsPage() {
     }
 
     setSeoMetadata({
-      title: `${getDisplayTitle(item, labels)} · Seyirlik`,
+      title: `${
+        item.Type === "Episode"
+          ? (getEpisodeDisplayMetadata(item, language).title ??
+            getDisplayTitle(item, labels))
+          : getDisplayTitle(item, labels)
+      } · Seyirlik`,
       canonicalPath: `/item/${item.Id}`,
       robots: "noindex, nofollow",
     });
-  }, [item, itemId, labels]);
+  }, [item, itemId, labels, language]);
 
   useEffect(() => {
     let isMounted = true;
@@ -168,22 +174,32 @@ export function MobileItemDetailsPage() {
   const title = getDisplayTitle(item, labels);
   const runtime = formatRuntime(item.RunTimeTicks, labels);
   const isEpisode = item.Type === "Episode";
+  const episodeMetadata = isEpisode
+    ? getEpisodeDisplayMetadata(item, language)
+    : null;
   const seriesItemId = isEpisode
     ? (item.SeriesId ?? item.ParentLogoItemId ?? null)
     : null;
   const seasonItemId = isEpisode
     ? (item.SeasonId ?? item.ParentId ?? null)
     : null;
-  const artworkUrl = item.ImageTags?.Primary
-    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 520)
-    : "";
+  const artworkUrl =
+    episodeMetadata?.thumbnailUrl ??
+    (item.ImageTags?.Primary
+      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 520)
+      : "");
   const backdropUrl = getBackdrop(item);
   const logoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 620)
     : item.ParentLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 620)
       : "";
-  const displayTitle = isEpisode ? item.Name || title : title;
+  const displayTitle = isEpisode
+    ? episodeMetadata?.title || item.Name || title
+    : title;
+  const overview = isEpisode
+    ? (episodeMetadata?.overview ?? item.Overview)
+    : item.Overview;
   const seriesTitle = item.SeriesName ?? title;
   const episodeCode = getEpisodeCode(item);
   const mediaLabel =
@@ -430,7 +446,7 @@ export function MobileItemDetailsPage() {
               {t("details.overview")}
             </h2>
             <p className="mt-3 text-sm leading-6 text-white/68">
-              {item.Overview || t("details.noOverview")}
+              {overview || t("details.noOverview")}
             </p>
           </section>
 

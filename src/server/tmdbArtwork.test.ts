@@ -282,4 +282,119 @@ describe("TMDB artwork backend", () => {
     expect(response.status).toBe(409);
     expect(payload.error.code).toBe("TMDB_IMAGE_TYPE_UNSUPPORTED");
   });
+
+  it("loads episode text in English and Turkish with a selected still language", async () => {
+    const mediaRoot = await createTempDir();
+    const requests: URL[] = [];
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+      requests.push(url);
+
+      if (url.hostname !== "api.themoviedb.org") {
+        return jsonResponse({ error: "unexpected request" }, 500);
+      }
+
+      if (url.pathname === "/3/tv/99/season/1") {
+        if (url.searchParams.get("language") === "tr-TR") {
+          return jsonResponse({
+            episodes: [
+              {
+                episode_number: 1,
+                name: "Türkçe Bir",
+                overview: "Türkçe açıklama bir.",
+                still_path: "/ep1-tr-detail.jpg",
+              },
+              {
+                episode_number: 2,
+                name: "Türkçe İki",
+                overview: "Türkçe açıklama iki.",
+              },
+            ],
+          });
+        }
+
+        return jsonResponse({
+          episodes: [
+            {
+              episode_number: 1,
+              name: "English One",
+              overview: "English overview one.",
+              still_path: "/ep1-en-detail.jpg",
+            },
+            {
+              episode_number: 2,
+              name: "English Two",
+              overview: "English overview two.",
+              still_path: "/ep2-en-detail.jpg",
+            },
+          ],
+        });
+      }
+
+      if (url.pathname === "/3/tv/99/season/1/episode/1/images") {
+        return jsonResponse({
+          stills: [
+            {
+              file_path: "/ep1-null.jpg",
+              iso_639_1: null,
+              width: 1920,
+              height: 1080,
+              aspect_ratio: 1.778,
+              vote_average: 10,
+              vote_count: 99,
+            },
+            {
+              file_path: "/ep1-en.jpg",
+              iso_639_1: "en",
+              width: 1280,
+              height: 720,
+              aspect_ratio: 1.778,
+              vote_average: 1,
+              vote_count: 1,
+            },
+          ],
+        });
+      }
+
+      if (url.pathname === "/3/tv/99/season/1/episode/2/images") {
+        return jsonResponse({ stills: [] });
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+    const response = await fetch(
+      `${baseUrl}/api/tmdb-artwork/episode-metadata?tmdbId=99&seasonNumber=1&thumbnailLanguage=en`,
+    );
+    const payload = (await response.json()) as {
+      episodes: Array<{
+        episodeNumber: number;
+        name: { en: string | null; tr: string | null };
+        overview: { en: string | null; tr: string | null };
+        thumbnail: { filePath: string; language: string | null } | null;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.episodes).toHaveLength(2);
+    expect(payload.episodes[0]).toMatchObject({
+      episodeNumber: 1,
+      name: { en: "English One", tr: "Türkçe Bir" },
+      overview: {
+        en: "English overview one.",
+        tr: "Türkçe açıklama bir.",
+      },
+      thumbnail: { filePath: "/ep1-en.jpg", language: "en" },
+    });
+    expect(payload.episodes[1]).toMatchObject({
+      episodeNumber: 2,
+      name: { en: "English Two", tr: "Türkçe İki" },
+      thumbnail: { filePath: "/ep2-en-detail.jpg", language: null },
+    });
+    expect(
+      requests
+        .filter((url) => url.pathname.endsWith("/images"))
+        .map((url) => url.searchParams.get("include_image_language")),
+    ).toEqual(["en,null", "en,null"]);
+  });
 });

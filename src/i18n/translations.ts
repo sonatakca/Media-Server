@@ -686,6 +686,38 @@ export const translations = {
     "tmdbArtwork.language.turkish": "Turkish",
     "tmdbArtwork.language.none": "No language",
     "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
+    "tmdbArtwork.episodeMetadata": "Episode Metadata",
+    "tmdbArtwork.episodeLanguages": "Episode names and descriptions",
+    "tmdbArtwork.episodeLanguagesDescription":
+      "Loads English and Turkish episode names/descriptions together, then Seyirlik switches between the saved values instantly with the website language. The thumbnail language is selected separately for every episode in the series.",
+    "tmdbArtwork.saveEpisodeDisplay": "Save display choices",
+    "tmdbArtwork.loadingSeriesEpisodes": "Loading Jellyfin episodes...",
+    "tmdbArtwork.loadedSeriesEpisodes": "Loaded {count} Jellyfin episodes.",
+    "tmdbArtwork.noSeriesEpisodes": "No Jellyfin episodes were found.",
+    "tmdbArtwork.couldNotLoadSeriesEpisodes":
+      "Could not load this series' episodes.",
+    "tmdbArtwork.episodeMetadataRequiresSeries":
+      "Select a series and a TV TMDB match first.",
+    "tmdbArtwork.loadingEpisodeMetadata": "Loading TMDB episode metadata...",
+    "tmdbArtwork.loadingEpisodeMetadataSeason":
+      "Loading episode metadata {current} / {total}...",
+    "tmdbArtwork.couldNotLoadEpisodeMetadata":
+      "Could not load TMDB episode metadata.",
+    "tmdbArtwork.episodeMetadataLoaded":
+      "Loaded TMDB metadata for {count} episodes.",
+    "tmdbArtwork.episodeMetadataLoadedPartial":
+      "Loaded {count} episodes; {failed} season requests failed.",
+    "tmdbArtwork.savingEpisodeMetadata": "Saving episode display choices...",
+    "tmdbArtwork.episodeMetadataSaved":
+      "Saved display choices for {count} episodes.",
+    "tmdbArtwork.couldNotSaveEpisodeMetadata":
+      "Could not save episode display choices.",
+    "tmdbArtwork.allSeasons": "All seasons",
+    "tmdbArtwork.thumbnailLanguage": "Episode thumbnail language",
+    "tmdbArtwork.loadEpisodeMetadata": "Load episode metadata",
+    "tmdbArtwork.thumbnail": "Thumbnail",
+    "tmdbArtwork.englishMetadata": "English",
+    "tmdbArtwork.turkishMetadata": "Turkish",
     "audit.eyebrow": "Devtool",
     "audit.title": "Playback Audit",
     "audit.description":
@@ -1564,6 +1596,40 @@ export const translations = {
     "tmdbArtwork.language.turkish": "Türkçe",
     "tmdbArtwork.language.none": "Dilsiz",
     "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
+    "tmdbArtwork.episodeMetadata": "Bölüm Metadata'sı",
+    "tmdbArtwork.episodeLanguages": "Bölüm adları ve açıklamaları",
+    "tmdbArtwork.episodeLanguagesDescription":
+      "İngilizce ve Türkçe bölüm adlarını/açıklamalarını birlikte yükler; sonra Seyirlik kayıtlı değerler arasında site diline göre anında geçiş yapar. Thumbnail dili dizideki tüm bölümler için ayrıca seçilir.",
+    "tmdbArtwork.saveEpisodeDisplay": "Görüntüleme seçimini kaydet",
+    "tmdbArtwork.loadingSeriesEpisodes": "Jellyfin bölümleri yükleniyor...",
+    "tmdbArtwork.loadedSeriesEpisodes": "{count} Jellyfin bölümü yüklendi.",
+    "tmdbArtwork.noSeriesEpisodes": "Jellyfin bölümü bulunamadı.",
+    "tmdbArtwork.couldNotLoadSeriesEpisodes":
+      "Bu dizinin bölümleri yüklenemedi.",
+    "tmdbArtwork.episodeMetadataRequiresSeries":
+      "Önce bir dizi ve TV türünde TMDB eşleşmesi seç.",
+    "tmdbArtwork.loadingEpisodeMetadata":
+      "TMDB bölüm metadata'sı yükleniyor...",
+    "tmdbArtwork.loadingEpisodeMetadataSeason":
+      "Bölüm metadata'sı yükleniyor {current} / {total}...",
+    "tmdbArtwork.couldNotLoadEpisodeMetadata":
+      "TMDB bölüm metadata'sı yüklenemedi.",
+    "tmdbArtwork.episodeMetadataLoaded":
+      "{count} bölüm için TMDB metadata'sı yüklendi.",
+    "tmdbArtwork.episodeMetadataLoadedPartial":
+      "{count} bölüm yüklendi; {failed} sezon isteği başarısız oldu.",
+    "tmdbArtwork.savingEpisodeMetadata":
+      "Bölüm görüntüleme seçimleri kaydediliyor...",
+    "tmdbArtwork.episodeMetadataSaved":
+      "{count} bölüm için görüntüleme seçimi kaydedildi.",
+    "tmdbArtwork.couldNotSaveEpisodeMetadata":
+      "Bölüm görüntüleme seçimleri kaydedilemedi.",
+    "tmdbArtwork.allSeasons": "Tüm sezonlar",
+    "tmdbArtwork.thumbnailLanguage": "Bölüm thumbnail dili",
+    "tmdbArtwork.loadEpisodeMetadata": "Bölüm metadata'sını yükle",
+    "tmdbArtwork.thumbnail": "Thumbnail",
+    "tmdbArtwork.englishMetadata": "İngilizce",
+    "tmdbArtwork.turkishMetadata": "Türkçe",
     "audit.eyebrow": "Devtool",
     "audit.title": "Oynatma Denetimi",
     "audit.description":

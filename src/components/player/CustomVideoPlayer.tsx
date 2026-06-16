@@ -31,6 +31,7 @@ import {
   getDisplayTitle,
   getItemSubtitle,
 } from "../../lib/format";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { getVideoErrorDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
@@ -151,7 +152,7 @@ export function CustomVideoPlayer({
   onAutoPlayNextEpisode,
   onPlayQueueItem,
 }: CustomVideoPlayerProps) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const viewport = useViewportCapabilities();
   const shouldReduceMotion = Boolean(useReducedMotion());
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -3076,7 +3077,12 @@ export function CustomVideoPlayer({
           episode: episodeNumber,
         })
       : null;
-  const playerEpisodeName = isEpisodeItem ? item.Name.trim() || null : null;
+  const episodeMetadata = isEpisodeItem
+    ? getEpisodeDisplayMetadata(item, language)
+    : null;
+  const playerEpisodeName = isEpisodeItem
+    ? (episodeMetadata?.title?.trim() || item.Name.trim() || null)
+    : null;
   const playerSeriesLogoItemId = isEpisodeItem
     ? (item.ParentLogoItemId ?? item.SeriesId ?? null)
     : null;

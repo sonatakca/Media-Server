@@ -16,6 +16,7 @@ import {
   redactPlaybackUrl,
 } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
+import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import { getPlayTargetForItem } from "../lib/playTarget";
 import { useNavigate } from "react-router-dom";
@@ -261,7 +262,7 @@ export function HeroSection({
   onHeroReady,
   onSlideDurationChange,
 }: HeroSectionProps) {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
   const navigate = useNavigate();
   const heroSectionRef = useRef<HTMLElement | null>(null);
@@ -372,7 +373,22 @@ export function HeroSection({
   const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
     useState(false);
   const [isCompactHeroViewport, setIsCompactHeroViewport] = useState(false);
-  const imageCandidates = useMemo(() => getHeroImageCandidates(item), [item]);
+  const episodeMetadata =
+    item?.Type === "Episode" ? getEpisodeDisplayMetadata(item, language) : null;
+  const imageCandidates = useMemo(() => {
+    const candidates = getHeroImageCandidates(item);
+
+    if (item?.Type !== "Episode" || !episodeMetadata?.thumbnailUrl) {
+      return candidates;
+    }
+
+    return [
+      { type: "primary" as const, url: episodeMetadata.thumbnailUrl },
+      ...candidates.filter(
+        (candidate) => candidate.url !== episodeMetadata.thumbnailUrl,
+      ),
+    ];
+  }, [episodeMetadata?.thumbnailUrl, item]);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -396,7 +412,9 @@ export function HeroSection({
   const showSidePoster = Boolean(
     primaryPosterUrl && selectedImage?.type === "primary",
   );
-  const title = item ? getDisplayTitle(item, mediaFormatLabels) : "Seyirlik";
+  const title = item
+    ? (episodeMetadata?.title ?? getDisplayTitle(item, mediaFormatLabels))
+    : "Seyirlik";
   const runtime = item
     ? formatRuntime(item.RunTimeTicks, mediaFormatLabels)
     : null;
@@ -413,6 +431,7 @@ export function HeroSection({
   );
   const heroGenres = item?.Genres?.filter(Boolean).slice(0, 3) ?? [];
   const heroGenreLabel = heroGenres.join(" · ");
+  const overview = episodeMetadata?.overview ?? item?.Overview ?? null;
   const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
   const effectiveSmartContinueItems =
     smartContinueItems ?? fallbackSmartContinueItems;
@@ -1133,7 +1152,7 @@ export function HeroSection({
                   </motion.p>
                 ) : null}
               </motion.div>
-              {item?.Overview ? (
+              {overview ? (
                 <motion.p
                   className="mt-3 line-clamp-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
                   initial={false}
@@ -1158,7 +1177,7 @@ export function HeroSection({
                     pointerEvents: isHeroIntroDone ? "none" : "auto",
                   }}
                 >
-                  {item.Overview}
+                  {overview}
                 </motion.p>
               ) : (
                 <motion.p
