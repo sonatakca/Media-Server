@@ -9,13 +9,21 @@ import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
-import { formatRuntime, getDisplayTitle } from "../../lib/format";
+import {
+  formatRuntime,
+  formatTemplate,
+  getDisplayTitle,
+} from "../../lib/format";
 import {
   getBackdropImageUrl,
   getItem,
   getLogoImageUrl,
   getPrimaryImageUrl,
 } from "../../lib/jellyfinApi";
+import {
+  resolveMetadataTarget,
+  type ResolvedMetadataTarget,
+} from "../../lib/metadataTarget";
 import { setSeoMetadata } from "../../lib/seo";
 import type { JellyfinItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
@@ -65,6 +73,28 @@ function getEpisodeCode(item: JellyfinItem): string | null {
   return `${season}${episode}` || null;
 }
 
+function isGenericExtraName(name: string | undefined): boolean {
+  const normalized = name?.trim().toLocaleLowerCase("en-US");
+
+  return (
+    normalized === "trailer" ||
+    normalized === "trailers" ||
+    normalized === "fragman"
+  );
+}
+
+function getExtraDisplayTitle(
+  item: JellyfinItem,
+  ownerTitle: string,
+  trailerTitleTemplate: string,
+): string {
+  if (item.Name && !isGenericExtraName(item.Name)) {
+    return item.Name;
+  }
+
+  return formatTemplate(trailerTitleTemplate, { title: ownerTitle });
+}
+
 function MobileDetailsLoading() {
   return (
     <div className="layout-no-offset min-h-screen pb-24">
@@ -88,11 +118,13 @@ export function MobileItemDetailsPage() {
     }),
     [t],
   );
-  const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [metadataTarget, setMetadataTarget] =
+    useState<ResolvedMetadataTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const item = metadataTarget?.item ?? null;
 
   useEffect(() => {
-    if (!item) {
+    if (!metadataTarget) {
       setSeoMetadata({
         canonicalPath: itemId ? `/item/${itemId}` : "/home",
         robots: "noindex, nofollow",
@@ -100,17 +132,27 @@ export function MobileItemDetailsPage() {
       return;
     }
 
+    const resolvedItem = metadataTarget.item;
+    const metadataItem = metadataTarget.metadataItem;
+    const ownerTitle = getDisplayTitle(metadataItem, labels);
+    const pageTitle =
+      metadataTarget.isExtra && metadataTarget.ownerItem
+        ? getExtraDisplayTitle(
+            resolvedItem,
+            ownerTitle,
+            t("details.trailerTitle"),
+          )
+        : resolvedItem.Type === "Episode"
+          ? (getEpisodeDisplayMetadata(resolvedItem, language).title ??
+            getDisplayTitle(resolvedItem, labels))
+          : getDisplayTitle(metadataItem, labels);
+
     setSeoMetadata({
-      title: `${
-        item.Type === "Episode"
-          ? (getEpisodeDisplayMetadata(item, language).title ??
-            getDisplayTitle(item, labels))
-          : getDisplayTitle(item, labels)
-      } · Seyirlik`,
-      canonicalPath: `/item/${item.Id}`,
+      title: `${pageTitle} · Seyirlik`,
+      canonicalPath: `/item/${resolvedItem.Id}`,
       robots: "noindex, nofollow",
     });
-  }, [item, itemId, labels, language]);
+  }, [metadataTarget, itemId, labels, language, t]);
 
   useEffect(() => {
     let isMounted = true;
@@ -122,13 +164,14 @@ export function MobileItemDetailsPage() {
       }
 
       setError(null);
-      setItem(null);
+      setMetadataTarget(null);
 
       try {
         const loadedItem = await getItem(itemId);
+        const resolvedTarget = await resolveMetadataTarget(loadedItem);
 
         if (isMounted) {
-          setItem(loadedItem);
+          setMetadataTarget(resolvedTarget);
         }
       } catch (itemError) {
         if (isMounted) {
@@ -149,15 +192,19 @@ export function MobileItemDetailsPage() {
   }, [itemId, t]);
 
   const handleWatchedStatusReset = (resetItems: JellyfinItem[]) => {
-    setItem((currentItem) => {
-      if (!currentItem) {
-        return currentItem;
+    setMetadataTarget((currentTarget) => {
+      if (!currentTarget) {
+        return currentTarget;
       }
 
-      return (
-        resetItems.find((resetItem) => resetItem.Id === currentItem.Id) ??
-        currentItem
-      );
+      const resetItem =
+        resetItems.find((nextItem) => nextItem.Id === currentTarget.item.Id) ??
+        currentTarget.item;
+
+      return {
+        ...currentTarget,
+        item: resetItem,
+      };
     });
   };
 
@@ -167,11 +214,17 @@ export function MobileItemDetailsPage() {
     );
   }
 
-  if (!item) {
+  if (!metadataTarget || !item) {
     return <MobileDetailsLoading />;
   }
 
-  const title = getDisplayTitle(item, labels);
+  const metadataItem = metadataTarget.metadataItem;
+  const artworkItem = metadataTarget.artworkItem;
+  const isExtra = metadataTarget.isExtra && Boolean(metadataTarget.ownerItem);
+  const ownerTitle = getDisplayTitle(metadataItem, labels);
+  const title = isExtra
+    ? getExtraDisplayTitle(item, ownerTitle, t("details.trailerTitle"))
+    : getDisplayTitle(metadataItem, labels);
   const runtime = formatRuntime(item.RunTimeTicks, labels);
   const isEpisode = item.Type === "Episode";
   const episodeMetadata = isEpisode
@@ -185,12 +238,12 @@ export function MobileItemDetailsPage() {
     : null;
   const artworkUrl =
     episodeMetadata?.thumbnailUrl ??
-    (item.ImageTags?.Primary
-      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 520)
+    (artworkItem.ImageTags?.Primary
+      ? getPrimaryImageUrl(artworkItem.Id, artworkItem.ImageTags.Primary, 520)
       : "");
-  const backdropUrl = getBackdrop(item);
-  const logoUrl = item.ImageTags?.Logo
-    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 620)
+  const backdropUrl = getBackdrop(artworkItem);
+  const logoUrl = artworkItem.ImageTags?.Logo
+    ? getLogoImageUrl(artworkItem.Id, artworkItem.ImageTags.Logo, 620)
     : item.ParentLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 620)
       : "";
@@ -199,17 +252,18 @@ export function MobileItemDetailsPage() {
     : title;
   const overview = isEpisode
     ? (episodeMetadata?.overview ?? item.Overview)
-    : item.Overview;
+    : metadataItem.Overview;
   const seriesTitle = item.SeriesName ?? title;
   const episodeCode = getEpisodeCode(item);
-  const mediaLabel =
-    item.Type === "Movie"
+  const mediaLabel = isExtra
+    ? t("common.trailer")
+    : metadataItem.Type === "Movie"
       ? t("common.movie")
-      : item.Type === "Series"
+      : metadataItem.Type === "Series"
         ? t("common.series")
-        : item.Type === "BoxSet"
+        : metadataItem.Type === "BoxSet"
           ? t("common.boxsets")
-          : (item.Type ?? t("details.media"));
+          : (metadataItem.Type ?? t("details.media"));
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
@@ -228,13 +282,15 @@ export function MobileItemDetailsPage() {
     (stream) => stream.Type?.toLowerCase() === "audio",
   );
   const chips = [
-    item.ProductionYear
-      ? { label: String(item.ProductionYear), icon: Film }
+    metadataItem.ProductionYear
+      ? { label: String(metadataItem.ProductionYear), icon: Film }
       : null,
     runtime ? { label: runtime, icon: Clock } : null,
-    item.OfficialRating ? { label: item.OfficialRating, icon: Star } : null,
-    item.CommunityRating
-      ? { label: item.CommunityRating.toFixed(1), icon: Star }
+    metadataItem.OfficialRating
+      ? { label: metadataItem.OfficialRating, icon: Star }
+      : null,
+    metadataItem.CommunityRating
+      ? { label: metadataItem.CommunityRating.toFixed(1), icon: Star }
       : null,
   ].filter(Boolean) as Array<{ label: string; icon: typeof Film }>;
   const mediaRows = [
@@ -382,9 +438,9 @@ export function MobileItemDetailsPage() {
             ))}
           </div>
 
-          {item.Genres?.length ? (
+          {metadataItem.Genres?.length ? (
             <div className="mt-3 flex flex-wrap gap-2">
-              {item.Genres.slice(0, 4).map((genre) => (
+              {metadataItem.Genres.slice(0, 4).map((genre) => (
                 <span
                   key={genre}
                   className="rounded-full bg-white/[0.06] px-3 py-1 text-xs font-semibold text-white/58"

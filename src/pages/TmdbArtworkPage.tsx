@@ -29,6 +29,7 @@ import {
   getItemSubtitle,
   formatTemplate,
 } from "../lib/format";
+import { resolveMetadataTarget } from "../lib/metadataTarget";
 import { setPageTitle } from "../lib/pageTitle";
 import {
   applyTmdbArtwork,
@@ -516,13 +517,15 @@ export function TmdbArtworkPage() {
     };
   }, [selectedItem, t]);
 
-  const selectItem = (item: JellyfinItem) => {
-    const providerResult = createTmdbResultFromProvider(item);
+  const selectItem = async (item: JellyfinItem) => {
+    const resolvedTarget = await resolveMetadataTarget(item);
+    const metadataItem = resolvedTarget.metadataItem;
+    const providerResult = createTmdbResultFromProvider(metadataItem);
 
     setSelectedItem(item);
-    setTmdbMediaType(getMediaTypeForItem(item));
-    setTmdbSearch(getDisplayTitle(item));
-    setTmdbYear(item.ProductionYear ? String(item.ProductionYear) : "");
+    setTmdbMediaType(getMediaTypeForItem(metadataItem));
+    setTmdbSearch(resolvedTarget.tmdbTitle || getDisplayTitle(metadataItem));
+    setTmdbYear(resolvedTarget.tmdbYear ? String(resolvedTarget.tmdbYear) : "");
     setTmdbResults([]);
     setSelectedTmdb(providerResult);
     setImagesByKind({});
@@ -534,9 +537,9 @@ export function TmdbArtworkPage() {
     setEpisodeMetadataState(createEmptyResult());
     setEpisodeSaveState(createEmptyResult());
     setEpisodeThumbnailLanguage(
-      item.Type === "Series"
-        ? (getSeriesEpisodeMetadataPreference(item.Id)?.thumbnailLanguage ??
-            "en")
+      metadataItem.Type === "Series"
+        ? (getSeriesEpisodeMetadataPreference(metadataItem.Id)
+            ?.thumbnailLanguage ?? "en")
         : "en",
     );
 
@@ -666,7 +669,11 @@ export function TmdbArtworkPage() {
     });
     setEpisodeSaveState(createEmptyResult());
 
-    for (let index = 0; index < selectedEpisodeSeasonNumbers.length; index += 1) {
+    for (
+      let index = 0;
+      index < selectedEpisodeSeasonNumbers.length;
+      index += 1
+    ) {
       const seasonNumber = selectedEpisodeSeasonNumbers[index];
 
       setEpisodeMetadataState({
@@ -885,7 +892,7 @@ export function TmdbArtworkPage() {
                 <button
                   key={item.Id}
                   type="button"
-                  onClick={() => selectItem(item)}
+                  onClick={() => void selectItem(item)}
                   className={`w-full rounded-3xl border p-3 text-left transition ${
                     isSelected
                       ? "border-[var(--accent)]/45 bg-[var(--accent)]/12"

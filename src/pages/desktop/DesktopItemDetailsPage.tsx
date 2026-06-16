@@ -14,7 +14,11 @@ import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import { Tooltip } from "../../components/ui/Tooltip";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
-import { formatRuntime, getDisplayTitle } from "../../lib/format";
+import {
+  formatRuntime,
+  formatTemplate,
+  getDisplayTitle,
+} from "../../lib/format";
 import {
   getBackdropImageUrl,
   getItem,
@@ -22,6 +26,10 @@ import {
   getPrimaryImageUrl,
 } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
+import {
+  resolveMetadataTarget,
+  type ResolvedMetadataTarget,
+} from "../../lib/metadataTarget";
 import { setSeoMetadata } from "../../lib/seo";
 import { isItemCompleted } from "../../lib/watchStatus";
 
@@ -75,6 +83,28 @@ function getEpisodeCode(item: JellyfinItem): string | null {
   return code || null;
 }
 
+function isGenericExtraName(name: string | undefined): boolean {
+  const normalized = name?.trim().toLocaleLowerCase("en-US");
+
+  return (
+    normalized === "trailer" ||
+    normalized === "trailers" ||
+    normalized === "fragman"
+  );
+}
+
+function getExtraDisplayTitle(
+  item: JellyfinItem,
+  ownerTitle: string,
+  trailerTitleTemplate: string,
+): string {
+  if (item.Name && !isGenericExtraName(item.Name)) {
+    return item.Name;
+  }
+
+  return formatTemplate(trailerTitleTemplate, { title: ownerTitle });
+}
+
 export function DesktopItemDetailsPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const { language, t } = useLanguage();
@@ -87,11 +117,13 @@ export function DesktopItemDetailsPage() {
     [t],
   );
   const shouldReduceMotion = useReducedMotion();
-  const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [metadataTarget, setMetadataTarget] =
+    useState<ResolvedMetadataTarget | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const item = metadataTarget?.item ?? null;
 
   useEffect(() => {
-    if (!item) {
+    if (!metadataTarget) {
       setSeoMetadata({
         canonicalPath: itemId ? `/item/${itemId}` : "/home",
         robots: "noindex, nofollow",
@@ -99,17 +131,27 @@ export function DesktopItemDetailsPage() {
       return;
     }
 
+    const resolvedItem = metadataTarget.item;
+    const metadataItem = metadataTarget.metadataItem;
+    const ownerTitle = getDisplayTitle(metadataItem, mediaFormatLabels);
+    const pageTitle =
+      metadataTarget.isExtra && metadataTarget.ownerItem
+        ? getExtraDisplayTitle(
+            resolvedItem,
+            ownerTitle,
+            t("details.trailerTitle"),
+          )
+        : resolvedItem.Type === "Episode"
+          ? (getEpisodeDisplayMetadata(resolvedItem, language).title ??
+            getDisplayTitle(resolvedItem, mediaFormatLabels))
+          : getDisplayTitle(metadataItem, mediaFormatLabels);
+
     setSeoMetadata({
-      title: `${
-        item.Type === "Episode"
-          ? (getEpisodeDisplayMetadata(item, language).title ??
-            getDisplayTitle(item, mediaFormatLabels))
-          : getDisplayTitle(item, mediaFormatLabels)
-      } · Seyirlik`,
-      canonicalPath: `/item/${item.Id}`,
+      title: `${pageTitle} · Seyirlik`,
+      canonicalPath: `/item/${resolvedItem.Id}`,
       robots: "noindex, nofollow",
     });
-  }, [item, itemId, language, mediaFormatLabels]);
+  }, [metadataTarget, itemId, language, mediaFormatLabels, t]);
 
   useEffect(() => {
     let isMounted = true;
@@ -121,13 +163,14 @@ export function DesktopItemDetailsPage() {
       }
 
       setError(null);
-      setItem(null);
+      setMetadataTarget(null);
 
       try {
         const itemDetails = await getItem(itemId);
+        const resolvedTarget = await resolveMetadataTarget(itemDetails);
 
         if (isMounted) {
-          setItem(itemDetails);
+          setMetadataTarget(resolvedTarget);
         }
       } catch (itemError) {
         if (isMounted) {
@@ -148,15 +191,19 @@ export function DesktopItemDetailsPage() {
   }, [itemId, t]);
 
   const handleWatchedStatusReset = (resetItems: JellyfinItem[]) => {
-    setItem((currentItem) => {
-      if (!currentItem) {
-        return currentItem;
+    setMetadataTarget((currentTarget) => {
+      if (!currentTarget) {
+        return currentTarget;
       }
 
-      return (
-        resetItems.find((resetItem) => resetItem.Id === currentItem.Id) ??
-        currentItem
-      );
+      const resetItem =
+        resetItems.find((nextItem) => nextItem.Id === currentTarget.item.Id) ??
+        currentTarget.item;
+
+      return {
+        ...currentTarget,
+        item: resetItem,
+      };
     });
   };
 
@@ -166,11 +213,17 @@ export function DesktopItemDetailsPage() {
     );
   }
 
-  if (!item) {
+  if (!metadataTarget || !item) {
     return <DetailsSkeleton />;
   }
 
-  const title = getDisplayTitle(item, mediaFormatLabels);
+  const metadataItem = metadataTarget.metadataItem;
+  const artworkItem = metadataTarget.artworkItem;
+  const isExtra = metadataTarget.isExtra && Boolean(metadataTarget.ownerItem);
+  const ownerTitle = getDisplayTitle(metadataItem, mediaFormatLabels);
+  const title = isExtra
+    ? getExtraDisplayTitle(item, ownerTitle, t("details.trailerTitle"))
+    : getDisplayTitle(metadataItem, mediaFormatLabels);
   const runtime = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
   const isEpisode = item.Type === "Episode";
   const episodeMetadata = isEpisode
@@ -178,8 +231,8 @@ export function DesktopItemDetailsPage() {
     : null;
   const posterUrl =
     episodeMetadata?.thumbnailUrl ??
-    (item.ImageTags?.Primary
-      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 760)
+    (artworkItem.ImageTags?.Primary
+      ? getPrimaryImageUrl(artworkItem.Id, artworkItem.ImageTags.Primary, 760)
       : "");
   const seriesItemId = isEpisode
     ? (item.SeriesId ?? item.ParentLogoItemId ?? null)
@@ -187,8 +240,8 @@ export function DesktopItemDetailsPage() {
   const seasonItemId = isEpisode
     ? (item.SeasonId ?? item.ParentId ?? null)
     : null;
-  const logoUrl = item.ImageTags?.Logo
-    ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
+  const logoUrl = artworkItem.ImageTags?.Logo
+    ? getLogoImageUrl(artworkItem.Id, artworkItem.ImageTags.Logo, 1100)
     : item.ParentLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 1100)
       : "";
@@ -198,9 +251,9 @@ export function DesktopItemDetailsPage() {
     : title;
   const overview = isEpisode
     ? (episodeMetadata?.overview ?? item.Overview)
-    : item.Overview;
+    : metadataItem.Overview;
   const seriesTitle = item.SeriesName ?? title;
-  const backdropUrl = getBackdrop(item);
+  const backdropUrl = getBackdrop(artworkItem);
   const videoStream = item.MediaSources?.[0]?.MediaStreams?.find(
     (stream) => stream.Type?.toLowerCase() === "video",
   );
@@ -208,23 +261,26 @@ export function DesktopItemDetailsPage() {
     (stream) => stream.Type?.toLowerCase() === "audio",
   );
   const chips = [
-    item.ProductionYear
-      ? { label: String(item.ProductionYear), icon: Film }
+    metadataItem.ProductionYear
+      ? { label: String(metadataItem.ProductionYear), icon: Film }
       : null,
     runtime ? { label: runtime, icon: Clock } : null,
-    item.OfficialRating ? { label: item.OfficialRating, icon: Star } : null,
-    item.CommunityRating
-      ? { label: item.CommunityRating.toFixed(1), icon: Star }
+    metadataItem.OfficialRating
+      ? { label: metadataItem.OfficialRating, icon: Star }
+      : null,
+    metadataItem.CommunityRating
+      ? { label: metadataItem.CommunityRating.toFixed(1), icon: Star }
       : null,
   ].filter(Boolean) as Array<{ label: string; icon: typeof Film }>;
-  const mediaLabel =
-    item.Type === "Movie"
+  const mediaLabel = isExtra
+    ? t("common.trailer")
+    : metadataItem.Type === "Movie"
       ? t("common.movie")
-      : item.Type === "Series"
+      : metadataItem.Type === "Series"
         ? t("common.series")
-        : item.Type === "BoxSet"
+        : metadataItem.Type === "BoxSet"
           ? t("common.boxsets")
-          : (item.Type ?? t("details.media"));
+          : (metadataItem.Type ?? t("details.media"));
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
@@ -479,9 +535,9 @@ export function DesktopItemDetailsPage() {
                   </motion.span>
                 ))}
               </div>
-              {item.Genres?.length ? (
+              {metadataItem.Genres?.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {item.Genres.slice(0, 6).map((genre) => (
+                  {metadataItem.Genres.slice(0, 6).map((genre) => (
                     <span
                       key={genre}
                       className="rounded-full border border-white/10 bg-gray-500/20 px-3 py-1.5 text-sm font-semibold text-white/[0.62]"

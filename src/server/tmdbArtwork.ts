@@ -31,11 +31,15 @@ export interface TmdbArtworkRequestHandlerOptions {
 
 interface JellyfinItemResponse {
   Id?: unknown;
+  Name?: unknown;
   Type?: unknown;
   MediaType?: unknown;
+  ExtraType?: unknown;
   Path?: unknown;
   MediaSources?: unknown;
   ProviderIds?: unknown;
+  ParentId?: unknown;
+  SeriesId?: unknown;
 }
 
 interface JellyfinItemsResponse {
@@ -110,6 +114,13 @@ interface TmdbArtworkApplyBody {
   itemId?: unknown;
   kind?: unknown;
   filePath?: unknown;
+}
+
+interface JellyfinLookupOptions {
+  jellyfinServerUrl: string;
+  apiKey: string;
+  fetchImpl: FetchLike;
+  timeoutMs: number;
 }
 
 interface NormalizedTmdbImage {
@@ -610,12 +621,7 @@ async function requestTmdbJson<TResponse>(
 
 async function fetchJellyfinItem(
   itemId: string,
-  options: {
-    jellyfinServerUrl: string;
-    apiKey: string;
-    fetchImpl: FetchLike;
-    timeoutMs: number;
-  },
+  options: JellyfinLookupOptions,
 ): Promise<JellyfinItemResponse> {
   const requestUrl = new URL(
     "Items",
@@ -623,7 +629,10 @@ async function fetchJellyfinItem(
   );
 
   requestUrl.searchParams.set("Ids", itemId);
-  requestUrl.searchParams.set("Fields", "Path,MediaSources,ProviderIds");
+  requestUrl.searchParams.set(
+    "Fields",
+    "Path,MediaSources,ProviderIds,ParentId,SeriesId,ExtraType",
+  );
   requestUrl.searchParams.set("Limit", "1");
 
   const response = await fetchWithTimeout(
@@ -1000,9 +1009,8 @@ async function fetchEpisodeStill(
       `/tv/${seriesId}/season/${seasonNumber}/episode/${episodeNumber}/images`,
       {
         language: toTmdbLocale(thumbnailLanguage ?? "en"),
-        include_image_language: getEpisodeImageLanguageFilter(
-          thumbnailLanguage,
-        ),
+        include_image_language:
+          getEpisodeImageLanguageFilter(thumbnailLanguage),
       },
       options,
     );
@@ -1024,12 +1032,43 @@ function getPathValue(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function getPathSegments(pathValue: string): string[] {
+  return pathValue.split(/[\\/]+/).filter(Boolean);
+}
+
+function getTrailersSegmentIndex(pathValue: string): number {
+  return getPathSegments(pathValue).findIndex(
+    (segment) => segment.toLocaleLowerCase("en-US") === "trailers",
+  );
+}
+
+function getTrailerOwnerPath(candidatePath: string): string | null {
+  const normalizedPath = candidatePath.replace(/\\/g, "/");
+  const segments = normalizedPath.split("/");
+  const trailersIndex = segments.findIndex(
+    (segment) => segment.toLocaleLowerCase("en-US") === "trailers",
+  );
+
+  if (trailersIndex <= 0) {
+    return null;
+  }
+
+  const ownerPath = segments.slice(0, trailersIndex).join("/");
+  return ownerPath || null;
+}
+
 function isLocalFilesystemPath(candidatePath: string): boolean {
   return (
     !LOCAL_URL_PATTERN.test(candidatePath) &&
     (path.isAbsolute(candidatePath) ||
       path.win32.isAbsolute(candidatePath) ||
       path.posix.isAbsolute(candidatePath))
+  );
+}
+
+function getItemPathCandidates(item: JellyfinItemResponse): string[] {
+  return [getPathValue(item.Path), ...getFileMediaSourcePaths(item)].filter(
+    (candidate): candidate is string => Boolean(candidate),
   );
 }
 
@@ -1052,6 +1091,57 @@ function getFileMediaSourcePaths(item: JellyfinItemResponse): string[] {
 
     return protocol === "file" && sourcePath ? [sourcePath] : [];
   });
+}
+
+function isJellyfinExtraItem(item: JellyfinItemResponse): boolean {
+  if (getString(item.ExtraType)) {
+    return true;
+  }
+
+  return getItemPathCandidates(item).some(
+    (candidate) => getTrailersSegmentIndex(candidate) >= 0,
+  );
+}
+
+function isUsableMetadataOwner(
+  item: JellyfinItemResponse,
+  childItem: JellyfinItemResponse,
+): boolean {
+  const itemId = getString(item.Id);
+  const childItemId = getString(childItem.Id);
+  const itemType = getString(item.Type);
+
+  return (
+    Boolean(itemId && itemId !== childItemId) &&
+    !isJellyfinExtraItem(item) &&
+    (itemType === "Movie" || itemType === "Series")
+  );
+}
+
+async function resolveOwnerItemFromRelationships(
+  item: JellyfinItemResponse,
+  options: JellyfinLookupOptions,
+): Promise<JellyfinItemResponse | null> {
+  const candidateIds = Array.from(
+    new Set(
+      [getString(item.ParentId), getString(item.SeriesId)].filter(Boolean),
+    ),
+  ) as string[];
+
+  for (const candidateId of candidateIds) {
+    try {
+      const candidate = await fetchJellyfinItem(candidateId, options);
+
+      if (isUsableMetadataOwner(candidate, item)) {
+        return candidate;
+      }
+    } catch {
+      // Keep the filesystem fallback available for servers that omit or return
+      // unusable extra relationships.
+    }
+  }
+
+  return null;
 }
 
 function isPathInsideOrEqualRoot(realRoot: string, realCandidate: string) {
@@ -1123,22 +1213,103 @@ async function resolveTrustedArtworkDirectory(
   return directoryPath;
 }
 
+async function resolveTrustedTrailerOwnerDirectory(
+  realMediaRoot: string,
+  candidatePath: string,
+): Promise<string> {
+  if (!isLocalFilesystemPath(candidatePath)) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_LOCAL_PATH_REJECTED",
+      "Jellyfin item does not expose a local path under the configured media root.",
+      409,
+    );
+  }
+
+  let realCandidate: string;
+
+  try {
+    realCandidate = await realpath(candidatePath);
+  } catch {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_LOCAL_PATH_NOT_FOUND",
+      "Jellyfin item path could not be found on disk.",
+      404,
+    );
+  }
+
+  if (!isPathInsideOrEqualRoot(realMediaRoot, realCandidate)) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_LOCAL_PATH_REJECTED",
+      "Jellyfin item path is outside the configured media root.",
+      403,
+    );
+  }
+
+  const ownerPath = getTrailerOwnerPath(realCandidate);
+
+  if (!ownerPath) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_EXTRA_OWNER_NOT_FOUND",
+      "Could not resolve the owning media folder for this Jellyfin extra.",
+      409,
+    );
+  }
+
+  const realOwnerPath = await realpath(ownerPath);
+
+  if (!isPathInsideOrEqualRoot(realMediaRoot, realOwnerPath)) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_LOCAL_PATH_REJECTED",
+      "Jellyfin extra owner path is outside the configured media root.",
+      403,
+    );
+  }
+
+  const ownerStat = await stat(realOwnerPath);
+
+  if (!ownerStat.isDirectory()) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_EXTRA_OWNER_NOT_FOUND",
+      "Jellyfin extra owner path is not a directory.",
+      409,
+    );
+  }
+
+  await access(realOwnerPath, constants.R_OK | constants.W_OK);
+  return realOwnerPath;
+}
+
 async function resolveArtworkTargetDirectory(
   item: JellyfinItemResponse,
   mediaRoot: string,
+  lookupOptions: JellyfinLookupOptions,
 ): Promise<string> {
   const realMediaRoot = await assertMediaRootDirectory(mediaRoot);
-  const candidates = [
-    getPathValue(item.Path),
-    ...getFileMediaSourcePaths(item),
-  ].filter((candidate): candidate is string => Boolean(candidate));
+  const isExtra = isJellyfinExtraItem(item);
+  const ownerItem = isExtra
+    ? await resolveOwnerItemFromRelationships(item, lookupOptions)
+    : null;
+  const candidates = getItemPathCandidates(ownerItem ?? item);
   let lastError: unknown;
 
-  for (const candidate of candidates) {
-    try {
-      return await resolveTrustedArtworkDirectory(realMediaRoot, candidate);
-    } catch (error) {
-      lastError = error;
+  if (ownerItem || !isExtra) {
+    for (const candidate of candidates) {
+      try {
+        return await resolveTrustedArtworkDirectory(realMediaRoot, candidate);
+      } catch (error) {
+        lastError = error;
+      }
+    }
+  } else {
+    for (const candidate of candidates) {
+      try {
+        return await resolveTrustedTrailerOwnerDirectory(
+          realMediaRoot,
+          candidate,
+        );
+      } catch (error) {
+        lastError = error;
+      }
     }
   }
 
@@ -1147,8 +1318,10 @@ async function resolveArtworkTargetDirectory(
   }
 
   throw new TmdbArtworkRouteError(
-    "JELLYFIN_LOCAL_PATH_MISSING",
-    "Jellyfin item does not expose a local file or folder path.",
+    isExtra ? "JELLYFIN_EXTRA_OWNER_NOT_FOUND" : "JELLYFIN_LOCAL_PATH_MISSING",
+    isExtra
+      ? "Could not resolve the owning media folder for this Jellyfin extra."
+      : "Jellyfin item does not expose a local file or folder path.",
     409,
   );
 }
@@ -1472,6 +1645,12 @@ export function createTmdbArtworkRequestHandler(
         const targetDirectory = await resolveArtworkTargetDirectory(
           item,
           options.mediaRoot,
+          {
+            jellyfinServerUrl,
+            apiKey: jellyfinApiKey,
+            fetchImpl,
+            timeoutMs,
+          },
         );
         const targetFileName = getTargetFileName(kind);
         const image = await downloadTmdbImage(filePath, kind, {

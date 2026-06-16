@@ -235,6 +235,148 @@ describe("TMDB artwork backend", () => {
     );
   });
 
+  it("writes trailer artwork next to the owning Jellyfin parent item", async () => {
+    const mediaRoot = await createTempDir();
+    const mediaFile = await writeMediaFile(
+      mediaRoot,
+      "Movies/Dune (2021)/Dune.mp4",
+    );
+    const trailerFile = await writeMediaFile(
+      mediaRoot,
+      "Movies/Dune (2021)/trailers/trailer.mp4",
+    );
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "jellyfin.test") {
+        const itemId = url.searchParams.get("Ids");
+
+        if (itemId === "trailer-1") {
+          return jsonResponse({
+            Items: [
+              {
+                Id: "trailer-1",
+                Name: "Trailer",
+                Type: "Video",
+                MediaType: "Video",
+                ExtraType: "Trailer",
+                ParentId: "dune",
+                Path: trailerFile,
+                MediaSources: [],
+              },
+            ],
+          });
+        }
+
+        if (itemId === "dune") {
+          return jsonResponse({
+            Items: [
+              {
+                Id: "dune",
+                Type: "Movie",
+                Path: mediaFile,
+                MediaSources: [],
+              },
+            ],
+          });
+        }
+      }
+
+      if (url.hostname === "image.tmdb.org") {
+        return imageResponse("owner-poster");
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+    const response = await fetch(`${baseUrl}/api/tmdb-artwork/apply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        itemId: "trailer-1",
+        kind: "poster",
+        filePath: "/poster.jpg",
+      }),
+    });
+    const payload = (await response.json()) as {
+      targetPath: string;
+    };
+
+    expect(response.status).toBe(200);
+    await expect(realpath(payload.targetPath)).resolves.toBe(
+      await realpath(
+        path.join(mediaRoot, "Movies", "Dune (2021)", "folder.jpg"),
+      ),
+    );
+    await expect(
+      readFile(
+        path.join(mediaRoot, "Movies", "Dune (2021)", "trailers", "folder.jpg"),
+        "utf8",
+      ),
+    ).rejects.toThrow();
+  });
+
+  it("falls back to the directory before a trailers segment for trailer artwork", async () => {
+    const mediaRoot = await createTempDir();
+    const trailerFile = await writeMediaFile(
+      mediaRoot,
+      "Series/Andor/trailers/trailer.mp4",
+    );
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "jellyfin.test") {
+        return jsonResponse({
+          Items: [
+            {
+              Id: "andor-trailer",
+              Name: "Fragman",
+              Type: "Video",
+              MediaType: "Video",
+              ExtraType: "Trailer",
+              Path: trailerFile,
+              MediaSources: [],
+            },
+          ],
+        });
+      }
+
+      if (url.hostname === "image.tmdb.org") {
+        return imageResponse("owner-backdrop");
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+    const response = await fetch(`${baseUrl}/api/tmdb-artwork/apply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        itemId: "andor-trailer",
+        kind: "backdrop",
+        filePath: "/backdrop.jpg",
+      }),
+    });
+    const payload = (await response.json()) as {
+      targetPath: string;
+    };
+
+    expect(response.status).toBe(200);
+    await expect(realpath(payload.targetPath)).resolves.toBe(
+      await realpath(path.join(mediaRoot, "Series", "Andor", "backdrop.jpg")),
+    );
+    await expect(
+      readFile(
+        path.join(mediaRoot, "Series", "Andor", "trailers", "backdrop.jpg"),
+        "utf8",
+      ),
+    ).rejects.toThrow();
+  });
+
   it("rejects mismatched source formats for fixed sidecar filenames", async () => {
     const mediaRoot = await createTempDir();
     const mediaFile = await writeMediaFile(

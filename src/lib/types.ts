@@ -147,6 +147,7 @@ export interface JellyfinItem {
   OriginalTitle?: string;
   Type?: string;
   MediaType?: string;
+  ExtraType?: string;
   CollectionType?: string;
   ProductionYear?: number;
   ChildCount?: number;

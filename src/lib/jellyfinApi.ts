@@ -65,6 +65,8 @@ class JellyfinRequestError extends Error {
 
 const DEFAULT_ITEM_FIELDS = [
   "PrimaryImageAspectRatio",
+  "Path",
+  "ExtraType",
   "SortName",
   "OriginalTitle",
   "Overview",
