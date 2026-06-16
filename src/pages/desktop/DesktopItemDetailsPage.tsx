@@ -32,6 +32,11 @@ import {
 } from "../../lib/metadataTarget";
 import { setSeoMetadata } from "../../lib/seo";
 import { isItemCompleted } from "../../lib/watchStatus";
+import {
+  getTmdbLocalizedMetadata,
+  type TmdbLocalizedMetadata,
+  type TmdbMediaType,
+} from "../../lib/tmdbArtworkApi";
 
 const easeOut: [number, number, number, number] = [0.22, 1, 0.36, 1];
 
@@ -49,6 +54,31 @@ function getBackdrop(item: JellyfinItem): string {
   }
 
   return "";
+}
+
+function getTmdbId(item: JellyfinItem): number | null {
+  const rawId =
+    item.ProviderIds?.Tmdb ?? item.ProviderIds?.TMDB ?? item.ProviderIds?.tmdb;
+
+  if (!rawId) {
+    return null;
+  }
+
+  const parsedId = Number(rawId);
+
+  return Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
+}
+
+function getTmdbMediaType(item: JellyfinItem): TmdbMediaType | null {
+  if (item.Type === "Movie") {
+    return "movie";
+  }
+
+  if (item.Type === "Series") {
+    return "tv";
+  }
+
+  return null;
 }
 
 function getRemainingRuntime(
@@ -119,6 +149,8 @@ export function DesktopItemDetailsPage() {
   const shouldReduceMotion = useReducedMotion();
   const [metadataTarget, setMetadataTarget] =
     useState<ResolvedMetadataTarget | null>(null);
+  const [localizedMetadata, setLocalizedMetadata] =
+    useState<TmdbLocalizedMetadata | null>(null);
   const [error, setError] = useState<string | null>(null);
   const item = metadataTarget?.item ?? null;
 
@@ -144,14 +176,22 @@ export function DesktopItemDetailsPage() {
         : resolvedItem.Type === "Episode"
           ? (getEpisodeDisplayMetadata(resolvedItem, language).title ??
             getDisplayTitle(resolvedItem, mediaFormatLabels))
-          : getDisplayTitle(metadataItem, mediaFormatLabels);
+          : localizedMetadata?.title?.trim() ||
+            getDisplayTitle(metadataItem, mediaFormatLabels);
 
     setSeoMetadata({
       title: `${pageTitle} · Seyirlik`,
       canonicalPath: `/item/${resolvedItem.Id}`,
       robots: "noindex, nofollow",
     });
-  }, [metadataTarget, itemId, language, mediaFormatLabels, t]);
+  }, [
+    metadataTarget,
+    localizedMetadata,
+    itemId,
+    language,
+    mediaFormatLabels,
+    t,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -190,6 +230,65 @@ export function DesktopItemDetailsPage() {
     };
   }, [itemId, t]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadLocalizedMetadata() {
+      const currentMetadataItem = metadataTarget?.metadataItem;
+
+      if (!currentMetadataItem || currentMetadataItem.Type === "Episode") {
+        setLocalizedMetadata(null);
+        return;
+      }
+
+      const tmdbId = getTmdbId(currentMetadataItem);
+      const mediaType = getTmdbMediaType(currentMetadataItem);
+
+      if (!tmdbId || !mediaType) {
+        setLocalizedMetadata(null);
+        return;
+      }
+
+      // Prevent the previous language from remaining visible while the new
+      // language is being loaded.
+      setLocalizedMetadata(null);
+
+      try {
+        const result = await getTmdbLocalizedMetadata({
+          tmdbId,
+          mediaType,
+          language,
+        });
+
+        if (!cancelled) {
+          setLocalizedMetadata(result);
+        }
+      } catch (metadataError) {
+        if (!cancelled) {
+          console.warn(
+            "[Seyirlik Details] Could not load localized TMDB metadata",
+            {
+              itemId: currentMetadataItem.Id,
+              tmdbId,
+              mediaType,
+              language,
+              error: metadataError,
+            },
+          );
+
+          // Jellyfin metadata remains the fallback.
+          setLocalizedMetadata(null);
+        }
+      }
+    }
+
+    void loadLocalizedMetadata();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [language, metadataTarget]);
+
   const handleWatchedStatusReset = (resetItems: JellyfinItem[]) => {
     setMetadataTarget((currentTarget) => {
       if (!currentTarget) {
@@ -221,9 +320,13 @@ export function DesktopItemDetailsPage() {
   const artworkItem = metadataTarget.artworkItem;
   const isExtra = metadataTarget.isExtra && Boolean(metadataTarget.ownerItem);
   const ownerTitle = getDisplayTitle(metadataItem, mediaFormatLabels);
+  const jellyfinTitle = getDisplayTitle(metadataItem, mediaFormatLabels);
+
+  const localizedTitle = localizedMetadata?.title?.trim() || jellyfinTitle;
+
   const title = isExtra
     ? getExtraDisplayTitle(item, ownerTitle, t("details.trailerTitle"))
-    : getDisplayTitle(metadataItem, mediaFormatLabels);
+    : localizedTitle;
   const runtime = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
   const isEpisode = item.Type === "Episode";
   const episodeMetadata = isEpisode
@@ -251,7 +354,11 @@ export function DesktopItemDetailsPage() {
     : title;
   const overview = isEpisode
     ? (episodeMetadata?.overview ?? item.Overview)
-    : metadataItem.Overview;
+    : localizedMetadata?.overview?.trim() || metadataItem.Overview;
+  const genres =
+    !isEpisode && localizedMetadata?.genres.length
+      ? localizedMetadata.genres
+      : (metadataItem.Genres ?? []);
   const seriesTitle = item.SeriesName ?? title;
   const backdropUrl = getBackdrop(artworkItem);
   const videoStream = item.MediaSources?.[0]?.MediaStreams?.find(
@@ -535,11 +642,11 @@ export function DesktopItemDetailsPage() {
                   </motion.span>
                 ))}
               </div>
-              {metadataItem.Genres?.length ? (
+              {genres.length ? (
                 <div className="mt-4 flex flex-wrap gap-2">
-                  {metadataItem.Genres.slice(0, 6).map((genre) => (
+                  {genres.slice(0, 6).map((genre) => (
                     <span
-                      key={genre}
+                      key={`${language}-${genre}`}
                       className="rounded-full border border-white/10 bg-gray-500/20 px-3 py-1.5 text-sm font-semibold text-white/[0.62]"
                     >
                       <AnimatedWidth value={genre}>

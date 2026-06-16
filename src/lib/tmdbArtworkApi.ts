@@ -19,6 +19,19 @@ export interface TmdbSearchResult {
   popularity: number | null;
 }
 
+export interface TmdbLocalizedMetadata {
+  tmdbId: number;
+  mediaType: TmdbMediaType;
+  language: "en" | "tr";
+  title: string | null;
+  overview: string | null;
+  genres: string[];
+}
+
+interface LocalizedMetadataResponse {
+  metadata?: TmdbLocalizedMetadata;
+}
+
 export interface TmdbArtworkImage {
   id: string;
   kind: TmdbArtworkKind;
@@ -232,6 +245,25 @@ export async function searchTmdbArtwork(params: {
   });
 
   return response.results ?? [];
+}
+
+export async function getTmdbLocalizedMetadata(params: {
+  mediaType: TmdbMediaType;
+  tmdbId: number;
+  language: "en" | "tr";
+}): Promise<TmdbLocalizedMetadata | null> {
+  const response = await requestArtworkJson<LocalizedMetadataResponse>(
+    "metadata",
+    {
+      params: {
+        mediaType: params.mediaType,
+        tmdbId: params.tmdbId,
+        language: params.language,
+      },
+    },
+  );
+
+  return response.metadata ?? null;
 }
 
 export async function getTmdbArtworkImages(params: {

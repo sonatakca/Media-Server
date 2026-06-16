@@ -1345,8 +1345,8 @@ export function TmdbArtworkPage() {
                 </button>
               </div>
 
-              <div className="mt-5 flex flex-wrap items-end gap-3">
-                <label className="block w-full sm:w-64 lg:w-72">
+              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(16rem,22rem)_minmax(26rem,1fr)_auto] xl:items-end">
+                <label className="block min-w-0">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                     {t("common.season")}
                   </span>
@@ -1377,11 +1377,11 @@ export function TmdbArtworkPage() {
                   </select>
                 </label>
 
-                <div className="min-w-[min(100%,24rem)] flex-1">
+                <div className="min-w-0">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                     {t("tmdbArtwork.thumbnailLanguage")}
                   </span>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <div className="mt-2 grid grid-cols-3 gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
                     {EPISODE_THUMBNAIL_LANGUAGES.map((thumbnailLanguage) => {
                       const isSelected =
                         episodeThumbnailLanguage === thumbnailLanguage;
@@ -1396,10 +1396,10 @@ export function TmdbArtworkPage() {
                             setEpisodeMetadataState(createEmptyResult());
                             setEpisodeSaveState(createEmptyResult());
                           }}
-                          className={`inline-flex min-h-12 min-w-32 items-center justify-center whitespace-nowrap rounded-2xl border px-4 py-3 text-center text-sm font-black transition ${
+                          className={`inline-flex min-h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl px-3 py-2 text-center text-sm font-black transition ${
                             isSelected
-                              ? "border-[var(--accent)]/45 bg-[var(--accent)] text-black"
-                              : "border-white/10 bg-white/[0.055] text-white/56 hover:border-white/20 hover:text-white"
+                              ? "bg-[var(--accent)] text-black"
+                              : "text-white/56 hover:bg-white/[0.06] hover:text-white"
                           }`}
                         >
                           {getLanguageLabel(thumbnailLanguage, t)}
@@ -1419,7 +1419,7 @@ export function TmdbArtworkPage() {
                     seriesEpisodes.length === 0 ||
                     episodeMetadataState.state === "loading"
                   }
-                  className="inline-flex min-h-12 min-w-[min(100%,20rem)] flex-1 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 xl:flex-none"
+                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 whitespace-nowrap rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 xl:w-auto"
                 >
                   {episodeMetadataState.state === "loading" ? (
                     <Loader2 size={18} className="animate-spin" />
@@ -1514,7 +1514,7 @@ export function TmdbArtworkPage() {
                                   metadata.name.en,
                                   t("common.unknown"),
                                 )
-                              : episode.Name}
+                              : t("tmdbArtwork.metadataNotLoaded")}
                           </p>
                           <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
                             {metadata
@@ -1522,7 +1522,7 @@ export function TmdbArtworkPage() {
                                   metadata.overview.en,
                                   t("details.noOverview"),
                                 )
-                              : (episode.Overview ?? t("details.noOverview"))}
+                              : t("tmdbArtwork.loadMetadataToPreview")}
                           </p>
                         </div>
 
@@ -1533,7 +1533,7 @@ export function TmdbArtworkPage() {
                                   metadata.name.tr,
                                   t("common.unknown"),
                                 )
-                              : episode.Name}
+                              : t("tmdbArtwork.metadataNotLoaded")}
                           </p>
                           <p className="mt-1 line-clamp-2 text-xs font-medium leading-5 text-white/42">
                             {metadata
@@ -1541,7 +1541,7 @@ export function TmdbArtworkPage() {
                                   metadata.overview.tr,
                                   t("details.noOverview"),
                                 )
-                              : (episode.Overview ?? t("details.noOverview"))}
+                              : t("tmdbArtwork.loadMetadataToPreview")}
                           </p>
                         </div>
                       </div>

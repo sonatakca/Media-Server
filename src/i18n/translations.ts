@@ -720,6 +720,9 @@ export const translations = {
     "tmdbArtwork.thumbnail": "Thumbnail",
     "tmdbArtwork.englishMetadata": "English",
     "tmdbArtwork.turkishMetadata": "Turkish",
+    "tmdbArtwork.metadataNotLoaded": "Not loaded",
+    "tmdbArtwork.loadMetadataToPreview":
+      "Load TMDB metadata to preview this language.",
     "audit.eyebrow": "Devtool",
     "audit.title": "Playback Audit",
     "audit.description":
@@ -1634,6 +1637,9 @@ export const translations = {
     "tmdbArtwork.thumbnail": "Thumbnail",
     "tmdbArtwork.englishMetadata": "İngilizce",
     "tmdbArtwork.turkishMetadata": "Türkçe",
+    "tmdbArtwork.metadataNotLoaded": "Yüklenmedi",
+    "tmdbArtwork.loadMetadataToPreview":
+      "Bu dili görmek için TMDB metadata'sını yükle.",
     "audit.eyebrow": "Devtool",
     "audit.title": "Oynatma Denetimi",
     "audit.description":
