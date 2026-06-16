@@ -16,6 +16,7 @@ import {
   type PlaybackMediaStore,
 } from "../lib/playback-planner/playbackRoutes";
 import { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
+import { createTmdbArtworkRequestHandler } from "./tmdbArtwork";
 
 export interface PlaybackBackendOptions {
   host?: string;
@@ -27,6 +28,10 @@ export interface PlaybackBackendOptions {
   mediaRegistry?: MediaRegistry;
   mediaStore?: PlaybackMediaStore;
   sessionManager?: PlaybackSessionManager;
+  tmdbApiKey?: string;
+  jellyfinServerUrl?: string;
+  jellyfinApiKey?: string;
+  fetchImpl?: typeof fetch;
 }
 
 export interface PlaybackBackend {
@@ -157,6 +162,13 @@ export async function createPlaybackBackend(
     sessionManager,
     basePath: "/api/playback",
   });
+  const tmdbArtworkHandler = createTmdbArtworkRequestHandler({
+    mediaRoot: configuredMediaRoot,
+    tmdbApiKey: options.tmdbApiKey,
+    jellyfinServerUrl: options.jellyfinServerUrl,
+    jellyfinApiKey: options.jellyfinApiKey,
+    fetchImpl: options.fetchImpl,
+  });
   const server = createServer(async (request, response) => {
     if (!applyCors(request, response, allowedOrigins)) {
       return;
@@ -185,7 +197,9 @@ export async function createPlaybackBackend(
       return;
     }
 
-    const handled = await playbackHandler(request, response);
+    const handled =
+      (await playbackHandler(request, response)) ||
+      (await tmdbArtworkHandler(request, response));
 
     if (!handled) {
       sendJson(response, 404, {
@@ -239,6 +253,7 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
   const mediaRoot = process.env.SEYIRLIK_MEDIA_ROOT;
   const jellyfinServerUrl = process.env.SEYIRLIK_JELLYFIN_SERVER_URL;
   const jellyfinApiKey = process.env.SEYIRLIK_JELLYFIN_API_KEY;
+  const tmdbApiKey = process.env.SEYIRLIK_TMDB_API_KEY;
 
   if (!mediaRoot) {
     throw new Error("SEYIRLIK_MEDIA_ROOT is required.");
@@ -264,6 +279,9 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
     mediaRoot,
     mediaResolver,
     allowedOrigins: parseAllowedOrigins(process.env.SEYIRLIK_ALLOWED_ORIGINS),
+    tmdbApiKey,
+    jellyfinServerUrl,
+    jellyfinApiKey,
   });
 
   await new Promise<void>((resolveListen) => {
@@ -275,6 +293,9 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
   );
   console.info(
     `Playback API mounted at http://${backend.host}:${backend.port}/api/playback`,
+  );
+  console.info(
+    `TMDB artwork API mounted at http://${backend.host}:${backend.port}/api/tmdb-artwork`,
   );
   console.info(`Media root: ${backend.mediaRoot}`);
 

@@ -133,6 +133,28 @@ MKV container, H.265/HEVC video, OPUS or other non-AAC audio
 
 Open the browser console while testing `/watch/:itemId`. Seyirlik logs the selected Jellyfin media source, whether it is using `DirectPlay`, `DirectStream`, or `Transcoding`, and a redacted playback URL.
 
+## TMDB Artwork Dev Tool
+
+The `/dev/tmdb-artwork` tool uses the local playback backend to search TMDB
+and replace local sidecar artwork next to a Jellyfin movie or series. Configure
+these backend variables before starting `npm run playback:backend`:
+
+```text
+SEYIRLIK_MEDIA_ROOT=/absolute/path/to/media
+SEYIRLIK_JELLYFIN_SERVER_URL=http://127.0.0.1:8096
+SEYIRLIK_JELLYFIN_API_KEY=replace-with-a-dedicated-jellyfin-api-key
+SEYIRLIK_TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
+```
+
+The picker only loads TMDB images tagged English, Turkish, or no language. It
+replaces `folder.jpg` for posters, `backdrop.jpg` for backdrops,
+`landscape.jpg` for landscape art, and `logo.png` for logos.
+
+If you open the frontend through a LAN address such as
+`http://192.168.1.186:5173`, add that exact origin to
+`SEYIRLIK_ALLOWED_ORIGINS`; otherwise the browser can be blocked from calling
+the local artwork backend even though TMDB works normally in another tab.
+
 If playback still fails, check Jellyfin:
 
 - Transcoding is enabled.

@@ -5,6 +5,7 @@ import {
   Bug,
   Database,
   DatabaseZap,
+  Images,
   Languages,
   Lightbulb,
   ListOrdered,
@@ -40,6 +41,13 @@ export function DevToolsPage() {
       to: "/dev/library-maintenance",
       icon: DatabaseZap,
       tag: t("devtools.card.libraryMaintenance.tag"),
+    },
+    {
+      title: t("devtools.card.tmdbArtwork.title"),
+      description: t("devtools.card.tmdbArtwork.description"),
+      to: "/dev/tmdb-artwork",
+      icon: Images,
+      tag: t("devtools.card.tmdbArtwork.tag"),
     },
     {
       title: t("devtools.card.contentExplorer.title"),

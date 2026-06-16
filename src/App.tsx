@@ -25,6 +25,7 @@ import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { HomeCurationPage } from "./pages/HomeCurationPage";
 import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
+import { TmdbArtworkPage } from "./pages/TmdbArtworkPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -233,6 +234,7 @@ export default function App() {
                 path="/dev/library-maintenance"
                 element={<LibraryMaintenancePage />}
               />
+              <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
               <Route path="/dev/content" element={<ContentExplorerPage />} />
               <Route path="/dev/home-curation" element={<HomeCurationPage />} />
               <Route

@@ -8,6 +8,7 @@ import { MobileMediaCard } from "./mobile/MobileMediaCard";
 import { MotionReveal } from "./MotionReveal";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
+  getAllSeriesEpisodes,
   getItem,
   getLocalTrailers,
   getLogoImageUrl,
@@ -20,6 +21,7 @@ import { getDisplayTitle } from "../lib/format";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
+import defaultProfileImage from "../assets/Default_pfp.jpg";
 
 interface JellyfinPerson {
   Id?: string;
@@ -38,6 +40,45 @@ type SeriesDetailsItem = JellyfinItem & {
   People?: JellyfinPerson[];
   Studios?: JellyfinStudio[];
 };
+
+function mergeSeriesPeople(
+  seriesPeople: JellyfinPerson[] | undefined,
+  episodeItems: JellyfinItem[],
+): JellyfinPerson[] {
+  const mergedPeople: JellyfinPerson[] = [];
+  const seenPeople = new Set<string>();
+
+  const addPerson = (person: JellyfinPerson) => {
+    if (!person.Name) {
+      return;
+    }
+
+    const identity = person.Id
+      ? `id:${person.Id}`
+      : `name:${person.Name.trim().toLocaleLowerCase()}:${person.Role ?? ""}`;
+
+    if (seenPeople.has(identity)) {
+      return;
+    }
+
+    seenPeople.add(identity);
+    mergedPeople.push(person);
+  };
+
+  for (const person of seriesPeople ?? []) {
+    addPerson(person);
+  }
+
+  for (const episode of episodeItems) {
+    const episodePeople = (episode as SeriesDetailsItem).People ?? [];
+
+    for (const person of episodePeople) {
+      addPerson(person);
+    }
+  }
+
+  return mergedPeople;
+}
 
 interface SeriesLibraryDetailsProps {
   initialItem: JellyfinItem;
@@ -234,21 +275,26 @@ export function SeriesLibraryDetails({
   const [error, setError] = useState<string | null>(null);
 
   const isDesktop = variant === "desktop";
-  const seriesId =
-    initialItem.Type === "Series"
+  const isMovie = initialItem.Type === "Movie";
+
+  const seriesId = isMovie
+    ? null
+    : initialItem.Type === "Series"
       ? initialItem.Id
       : (initialItem.SeriesId ?? initialItem.ParentId);
+
+  const detailsItemId = isMovie ? initialItem.Id : seriesId;
   const routeSeasonId = initialItem.Type === "Season" ? initialItem.Id : null;
 
   useEffect(() => {
     let cancelled = false;
 
     async function loadDetails() {
-      if (!seriesId) {
+      if (!detailsItemId) {
         setError(
           language === "tr"
-            ? "Bu sezonun bağlı olduğu dizi bulunamadı."
-            : "The series connected to this season could not be found.",
+            ? "İçerik bilgileri bulunamadı."
+            : "The media details could not be found.",
         );
         setIsLoading(false);
         return;
@@ -258,15 +304,29 @@ export function SeriesLibraryDetails({
       setError(null);
 
       try {
-        const [seriesResult, seasonResults, trailerResults, similarResults] =
-          await Promise.all([
-            initialItem.Type === "Series"
-              ? Promise.resolve(initialItem as SeriesDetailsItem)
-              : getItem(seriesId).then((item) => item as SeriesDetailsItem),
-            getSeriesSeasons(seriesId),
-            getLocalTrailers(seriesId).catch(() => []),
-            getSimilarItems(seriesId, 18).catch(() => []),
-          ]);
+        const [
+          seriesResult,
+          seasonResults,
+          trailerResults,
+          similarResults,
+          seriesEpisodeResults,
+        ] = await Promise.all([
+          initialItem.Type === "Series" || isMovie
+            ? Promise.resolve(initialItem as SeriesDetailsItem)
+            : getItem(detailsItemId).then((item) => item as SeriesDetailsItem),
+
+          isMovie
+            ? Promise.resolve([] as JellyfinItem[])
+            : getSeriesSeasons(detailsItemId),
+
+          getLocalTrailers(detailsItemId).catch(() => []),
+
+          getSimilarItems(detailsItemId, 18).catch(() => []),
+
+          isMovie
+            ? Promise.resolve([] as JellyfinItem[])
+            : getAllSeriesEpisodes(detailsItemId).catch(() => []),
+        ]);
 
         if (cancelled) {
           return;
@@ -279,7 +339,10 @@ export function SeriesLibraryDetails({
           orderedSeasons[0] ??
           null;
 
-        setSeries(seriesResult);
+        setSeries({
+          ...seriesResult,
+          People: mergeSeriesPeople(seriesResult.People, seriesEpisodeResults),
+        });
         setSeasons(orderedSeasons);
         setTrailers(trailerResults);
         setSimilarItems(
@@ -413,7 +476,7 @@ export function SeriesLibraryDetails({
           trailers: "Fragmanlar",
           trailerLabel: "Fragman",
           similar: "Benzerler",
-          cast: "Oyuncular ve teknik ekip",
+          cast: "Oyuncular ve ekip",
           about: "Hakkında",
           information: "Bilgiler",
           studio: "Stüdyo",
@@ -578,13 +641,14 @@ export function SeriesLibraryDetails({
           </h2>
           <div className="media-scroll flex gap-4 overflow-x-auto pb-3 sm:gap-5">
             {cast.map((person, index) => {
-              const personImageUrl = person.Id
-                ? getPrimaryImageUrl(
-                    person.Id,
-                    person.PrimaryImageTag,
-                    isDesktop ? 320 : 240,
-                  )
-                : "";
+              const personImageUrl =
+                person.Id && person.PrimaryImageTag
+                  ? getPrimaryImageUrl(
+                      person.Id,
+                      person.PrimaryImageTag,
+                      isDesktop ? 320 : 240,
+                    )
+                  : defaultProfileImage;
 
               return (
                 <div
@@ -602,18 +666,19 @@ export function SeriesLibraryDetails({
                         : "mx-auto h-20 w-20 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
                     }
                   >
-                    {personImageUrl ? (
-                      <img
-                        src={personImageUrl}
-                        alt={person.Name ?? ""}
-                        loading="lazy"
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <div className="grid h-full w-full place-items-center text-2xl font-black text-white/35">
-                        {person.Name?.slice(0, 1)}
-                      </div>
-                    )}
+                    <img
+                      src={personImageUrl}
+                      alt={person.Name ?? ""}
+                      loading="lazy"
+                      className="h-full w-full object-cover"
+                      onError={(event) => {
+                        const image = event.currentTarget;
+
+                        if (image.src !== defaultProfileImage) {
+                          image.src = defaultProfileImage;
+                        }
+                      }}
+                    />
                   </div>
                   <p className="mt-2 line-clamp-2 text-xs font-bold text-white">
                     {person.Name}
