@@ -32,6 +32,7 @@ export interface PendingSourceRestore {
 
 export interface PendingAudioTranscodePlay {
   token: number;
+  attemptId: number;
   reason: string;
   wasPlaying: boolean;
   startedAt: number;

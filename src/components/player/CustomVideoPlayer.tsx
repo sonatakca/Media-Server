@@ -66,7 +66,6 @@ import {
   MIN_SUBTITLE_SCALE,
   PARTY_WATCH_DOT_POSITIONS,
   PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
-  STARTUP_WATCHDOG_MS,
   TOUCH_DOUBLE_TAP_THRESHOLD_MS,
   TOUCH_SEEK_SESSION_TIMEOUT_MS,
   TOUCH_SINGLE_TAP_DELAY_MS,
@@ -93,6 +92,19 @@ import {
   isMasterHlsPlaybackUrl,
   logAudioSourceDebug,
 } from "./playbackDebug";
+import {
+  buildPlaybackStartupDiagnostics,
+  createPlaybackAttemptState,
+  getFatalPlaybackSuppression,
+  getVideoSnapshot,
+  hasPlayableBuffer,
+  isPlaybackStartupHealthy,
+  markStartupWatchdogCancelled,
+  recordHlsEvent,
+  recordSuccessfulPlaybackEvent,
+  type PlaybackAttemptState,
+  type PlaybackVideoSnapshot,
+} from "./playbackStartupGuard";
 import {
   getSkipSegmentLabelKey,
   isNextEpisodeSegmentType,
@@ -132,6 +144,49 @@ import type {
 } from "./types";
 import { useSeekFeedback } from "./useSeekFeedback";
 
+function isHlsStartupSuccessEvent(eventName: string): boolean {
+  const normalizedEventName = eventName.toLowerCase();
+
+  return (
+    normalizedEventName.includes("fragbuffered") ||
+    normalizedEventName.includes("frag_buffered") ||
+    normalizedEventName.includes("bufferappended") ||
+    normalizedEventName.includes("buffer_appended")
+  );
+}
+
+function getSerializableHlsError(data: unknown) {
+  if (!data || typeof data !== "object") {
+    return data;
+  }
+
+  const errorData = data as {
+    type?: unknown;
+    details?: unknown;
+    fatal?: unknown;
+    reason?: unknown;
+    response?: unknown;
+    error?: unknown;
+  };
+
+  return {
+    type: errorData.type,
+    details: errorData.details,
+    fatal: errorData.fatal,
+    reason: errorData.reason,
+    response: errorData.response,
+    error:
+      errorData.error instanceof Error
+        ? {
+            name: errorData.error.name,
+            message: errorData.error.message,
+          }
+        : errorData.error
+          ? String(errorData.error)
+          : undefined,
+  };
+}
+
 export function CustomVideoPlayer({
   item,
   source,
@@ -159,6 +214,8 @@ export function CustomVideoPlayer({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
+  const playbackAttemptIdRef = useRef(0);
+  const playbackAttemptRef = useRef<PlaybackAttemptState | null>(null);
   const touchSeekSessionRef = useRef<TouchSeekSessionState>({
     lastTapTime: 0,
     lastTapSide: null,
@@ -951,6 +1008,8 @@ export function CustomVideoPlayer({
       }
     }
 
+    playbackAttemptIdRef.current += 1;
+    playbackAttemptRef.current = null;
     pendingSourceRestoreRef.current = null;
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
@@ -1334,6 +1393,8 @@ export function CustomVideoPlayer({
       }
 
       sourceSwitchTokenRef.current += 1;
+      playbackAttemptIdRef.current += 1;
+      playbackAttemptRef.current = null;
 
       const currentTime = video?.currentTime ?? progress.currentTime;
       const wasPlaying = video
@@ -1434,7 +1495,13 @@ export function CustomVideoPlayer({
         : undefined,
     );
 
+    const switchRequestToken = sourceSwitchTokenRef.current;
+
     void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+      if (sourceSwitchTokenRef.current !== switchRequestToken + 1) {
+        return;
+      }
+
       console.warn(
         "[Seyirlik Playback] Could not return to Auto quality with default audio",
         switchError,
@@ -1740,9 +1807,26 @@ export function CustomVideoPlayer({
     const selectedQuality = qualityOptions.find(
       (quality) => quality.id === selectedQualityId,
     );
+    const attemptId = playbackAttemptIdRef.current + 1;
+    const playbackAttempt = createPlaybackAttemptState(
+      attemptId,
+      sourceToAttach,
+    );
+
+    playbackAttemptIdRef.current = attemptId;
+    playbackAttemptRef.current = playbackAttempt;
+
+    const isCurrentAttempt = () =>
+      !isDisposed &&
+      playbackAttemptRef.current === playbackAttempt &&
+      playbackAttemptIdRef.current === playbackAttempt.id;
 
     const applyInitialStartPosition = () => {
-      if (pendingRestore || hasAppliedInitialStartRef.current) {
+      if (
+        !isCurrentAttempt() ||
+        pendingRestore ||
+        hasAppliedInitialStartRef.current
+      ) {
         return;
       }
 
@@ -1778,9 +1862,17 @@ export function CustomVideoPlayer({
       reason: string,
       wasPlaying = true,
     ) => {
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
       if (!isAudioTranscodeSource(sourceToAttach)) {
         if (wasPlaying) {
           void video.play().catch((playError: unknown) => {
+            if (!isCurrentAttempt()) {
+              return;
+            }
+
             console.info(
               "[Seyirlik Playback] Playback was blocked or deferred",
               playError,
@@ -1796,10 +1888,12 @@ export function CustomVideoPlayer({
       pendingAudioTranscodePlayRef.current =
         existingPending &&
         existingPending.token === token &&
+        existingPending.attemptId === attemptId &&
         existingPending.reason === reason
           ? { ...existingPending, wasPlaying }
           : {
               token,
+              attemptId,
               reason,
               wasPlaying,
               startedAt: Date.now(),
@@ -1811,9 +1905,11 @@ export function CustomVideoPlayer({
 
         if (
           isDisposed ||
+          !isCurrentAttempt() ||
           !pending ||
           pending.token !== token ||
-          pending.token !== sourceSwitchTokenRef.current
+          pending.token !== sourceSwitchTokenRef.current ||
+          pending.attemptId !== attemptId
         ) {
           return;
         }
@@ -1851,6 +1947,10 @@ export function CustomVideoPlayer({
             },
           );
           void video.play().catch((playError: unknown) => {
+            if (!isCurrentAttempt()) {
+              return;
+            }
+
             console.info(
               "[Seyirlik Playback] Audio-transcode playback was blocked or deferred",
               playError,
@@ -1895,6 +1995,10 @@ export function CustomVideoPlayer({
         );
 
         void video.play().catch((playError: unknown) => {
+          if (!isCurrentAttempt()) {
+            return;
+          }
+
           console.info(
             "[Seyirlik Playback] Audio-transcode playback was blocked or deferred",
             playError,
@@ -1909,7 +2013,12 @@ export function CustomVideoPlayer({
     const retryPendingAudioTranscodePlay = () => {
       const pending = pendingAudioTranscodePlayRef.current;
 
-      if (!pending || pending.token !== sourceSwitchTokenRef.current) {
+      if (
+        !pending ||
+        pending.token !== sourceSwitchTokenRef.current ||
+        pending.attemptId !== attemptId ||
+        !isCurrentAttempt()
+      ) {
         return;
       }
 
@@ -1919,7 +2028,7 @@ export function CustomVideoPlayer({
     let wasPlayingBeforeAudioTranscodeSeek = false;
 
     const handleAudioTranscodeSeeking = () => {
-      if (!isAudioTranscodeSource(sourceToAttach)) {
+      if (!isCurrentAttempt() || !isAudioTranscodeSource(sourceToAttach)) {
         return;
       }
 
@@ -1931,6 +2040,7 @@ export function CustomVideoPlayer({
 
       pendingAudioTranscodePlayRef.current = {
         token: sourceSwitchTokenRef.current,
+        attemptId,
         reason: "seek-audio-transcode-buffering",
         wasPlaying: wasPlayingBeforeAudioTranscodeSeek,
         startedAt: Date.now(),
@@ -1949,7 +2059,7 @@ export function CustomVideoPlayer({
     };
 
     const handleAudioTranscodeSeeked = () => {
-      if (!isAudioTranscodeSource(sourceToAttach)) {
+      if (!isCurrentAttempt() || !isAudioTranscodeSource(sourceToAttach)) {
         return;
       }
 
@@ -1961,6 +2071,7 @@ export function CustomVideoPlayer({
 
     const restorePlayback = () => {
       if (
+        !isCurrentAttempt() ||
         !pendingRestore ||
         didRestore ||
         pendingRestore.token !== sourceSwitchTokenRef.current
@@ -2011,6 +2122,7 @@ export function CustomVideoPlayer({
       if (
         didRequestAudioFallback ||
         isDisposed ||
+        !isCurrentAttempt() ||
         selectedAudioIndexForSource === undefined ||
         !fallbackBaseSource
       ) {
@@ -2047,6 +2159,10 @@ export function CustomVideoPlayer({
       });
 
       void switchPlayerSource(fallbackSource).catch((switchError: unknown) => {
+        if (!isCurrentAttempt()) {
+          return;
+        }
+
         console.warn(
           "[Seyirlik Playback] Could not switch to HLS fallback for audio track",
           switchError,
@@ -2058,7 +2174,7 @@ export function CustomVideoPlayer({
     };
 
     const syncNativeAudioTrack = (eventName: string) => {
-      if (isDisposed || didRequestAudioFallback) {
+      if (isDisposed || didRequestAudioFallback || !isCurrentAttempt()) {
         return;
       }
 
@@ -2172,18 +2288,112 @@ export function CustomVideoPlayer({
       syncNativeAudioTrack("durationchange");
     let startupWatchdogTimer: number | null = null;
     let hasStartupPlaybackSignal = false;
+    let lastObservedCurrentTime = video.currentTime;
 
-    const clearStartupWatchdog = () => {
+    const clearStartupWatchdog = (markCancelled = true) => {
       if (startupWatchdogTimer === null) {
         return;
       }
 
       window.clearTimeout(startupWatchdogTimer);
       startupWatchdogTimer = null;
+
+      if (markCancelled) {
+        markStartupWatchdogCancelled(playbackAttempt);
+      }
     };
 
-    const markStartupPlaybackSignal = () => {
+    const clearPlaybackErrorIfHealthy = (snapshot: PlaybackVideoSnapshot) => {
+      if (isPlaybackStartupHealthy(snapshot)) {
+        setLastVideoError(null);
+      }
+    };
+
+    const buildFailurePayload = (
+      message: string,
+      cause: string,
+      snapshot: PlaybackVideoSnapshot,
+      extra: Record<string, unknown> = {},
+    ) => ({
+      message,
+      cause,
+      source: {
+        mode: sourceToAttach.mode,
+        isHls: sourceToAttach.isHls,
+        hlsKind: sourceToAttach.hlsKind,
+        usingHlsJs: attachment?.usingHlsJs ?? sourceToAttach.usingHlsJs,
+        url: redactPlaybackUrl(sourceToAttach.url),
+        urlParams: getPlaybackUrlDebugParams(sourceToAttach.url),
+      },
+      video: {
+        readyState: snapshot.readyState,
+        networkState: snapshot.networkState,
+        paused: snapshot.paused,
+        currentTime: snapshot.currentTime,
+        duration: snapshot.duration,
+        bufferedRanges: snapshot.bufferedRanges,
+      },
+      diagnostics: buildPlaybackStartupDiagnostics({
+        attempt: playbackAttempt,
+        activeAttemptId: playbackAttemptIdRef.current,
+        snapshot,
+      }),
+      ...extra,
+    });
+
+    const reportAttemptFailure = (
+      cause: string,
+      message: string,
+      extra: Record<string, unknown> = {},
+    ) => {
+      const snapshot = getVideoSnapshot(video);
+      const suppression = getFatalPlaybackSuppression(
+        playbackAttempt,
+        playbackAttemptIdRef.current,
+        snapshot,
+      );
+
+      if (suppression.reason === "playback-healthy") {
+        clearStartupWatchdog();
+      } else if (!suppression.suppress && cause !== "startup-watchdog") {
+        clearStartupWatchdog();
+      }
+
+      const payload = buildFailurePayload(message, cause, snapshot, {
+        ...extra,
+        suppressed: suppression.suppress,
+        suppressionReason: suppression.reason,
+      });
+
+      if (suppression.suppress) {
+        if (suppression.reason === "playback-healthy") {
+          clearPlaybackErrorIfHealthy(snapshot);
+        }
+
+        console.info(
+          "[Seyirlik Playback] Ignored stale or healthy playback failure",
+          payload,
+        );
+        return false;
+      }
+
+      const details = JSON.stringify(payload, null, 2);
+
+      console.error("[Seyirlik Playback] Fatal playback failure", payload);
+      setLastVideoError(details);
+      onVideoFailure(details);
+      return true;
+    };
+
+    const markStartupPlaybackSignal = (eventName: string) => {
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
+      const isHlsBufferSignal = eventName.startsWith("hls:");
+
       if (
+        !isHlsBufferSignal &&
         isAudioTranscodeSource(sourceToAttach) &&
         !isVideoReadyForAudioTranscodePlayback(video)
       ) {
@@ -2191,30 +2401,104 @@ export function CustomVideoPlayer({
       }
 
       hasStartupPlaybackSignal = true;
+      recordSuccessfulPlaybackEvent(playbackAttempt, eventName);
       clearStartupWatchdog();
+      setLastVideoError(null);
     };
 
     const handleStartupTimeUpdate = () => {
-      if (video.currentTime > 0) {
-        markStartupPlaybackSignal();
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
+      const nextCurrentTime = video.currentTime;
+
+      if (nextCurrentTime > 0 && nextCurrentTime > lastObservedCurrentTime) {
+        markStartupPlaybackSignal("timeupdate-currentTime-advanced");
+      }
+
+      lastObservedCurrentTime = nextCurrentTime;
+    };
+
+    const handleStartupPlayableBuffer = (eventName: string) => {
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
+      const snapshot = getVideoSnapshot(video);
+
+      if (hasPlayableBuffer(snapshot)) {
+        markStartupPlaybackSignal(`${eventName}-playable-buffer`);
+      } else {
+        clearPlaybackErrorIfHealthy(snapshot);
       }
     };
 
     const handleStartupError = () => {
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
       clearStartupWatchdog();
     };
 
+    const handleStartupStalled = () => {
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
+      console.info("[Seyirlik Playback] Temporary media stall", {
+        attemptId: playbackAttempt.id,
+        sourceMode: sourceToAttach.mode,
+        hlsKind: sourceToAttach.hlsKind,
+        currentTime: video.currentTime,
+        readyState: video.readyState,
+        bufferedRanges: getVideoSnapshot(video).bufferedRanges,
+      });
+    };
+
+    const handleStartupLoadedData = () =>
+      markStartupPlaybackSignal("loadeddata");
+    const handleStartupCanPlay = () => markStartupPlaybackSignal("canplay");
+    const handleStartupPlaying = () => markStartupPlaybackSignal("playing");
+    const handleStartupLoadedDataBuffer = () =>
+      handleStartupPlayableBuffer("loadeddata");
+    const handleStartupProgressBuffer = () =>
+      handleStartupPlayableBuffer("progress");
+    const handleStartupCanPlayThroughBuffer = () =>
+      handleStartupPlayableBuffer("canplaythrough");
+
     const startStartupWatchdog = () => {
-      clearStartupWatchdog();
+      if (!isCurrentAttempt()) {
+        return;
+      }
+
+      clearStartupWatchdog(false);
 
       startupWatchdogTimer = window.setTimeout(() => {
-        if (isDisposed || hasStartupPlaybackSignal || video.currentTime > 0) {
+        startupWatchdogTimer = null;
+
+        if (!isCurrentAttempt()) {
+          return;
+        }
+
+        const snapshot = getVideoSnapshot(video);
+
+        if (hasStartupPlaybackSignal || isPlaybackStartupHealthy(snapshot)) {
+          recordSuccessfulPlaybackEvent(
+            playbackAttempt,
+            hasStartupPlaybackSignal
+              ? (playbackAttempt.lastSuccessfulPlaybackEvent ??
+                  "startup-watchdog-existing-success")
+              : "startup-watchdog-playback-healthy",
+          );
+          clearPlaybackErrorIfHealthy(snapshot);
           return;
         }
 
         if (
           isAudioTranscodeSource(sourceToAttach) &&
-          pendingAudioTranscodePlayRef.current
+          pendingAudioTranscodePlayRef.current?.attemptId === attemptId
         ) {
           console.info(
             "[Seyirlik Playback] Startup watchdog extended while waiting for audio-transcode readiness",
@@ -2234,34 +2518,19 @@ export function CustomVideoPlayer({
           return;
         }
 
-        const detailsPayload = {
-          message:
-            "HLS attached but playback did not start within startup watchdog timeout.",
-          source: {
-            mode: sourceToAttach.mode,
-            isHls: sourceToAttach.isHls,
-            hlsKind: sourceToAttach.hlsKind,
-            usingHlsJs: attachment?.usingHlsJs ?? sourceToAttach.usingHlsJs,
-            url: redactPlaybackUrl(sourceToAttach.url),
-            urlParams: getPlaybackUrlDebugParams(sourceToAttach.url),
-          },
-          video: {
-            readyState: video.readyState,
-            networkState: video.networkState,
-            paused: video.paused,
-            currentTime: video.currentTime,
-            duration: Number.isFinite(video.duration) ? video.duration : null,
-          },
-        };
-        const details = JSON.stringify(detailsPayload, null, 2);
-
         console.warn(
           "[Seyirlik Playback] Startup watchdog detected stalled playback",
-          detailsPayload,
+          buildFailurePayload(
+            "Playback did not start within startup watchdog timeout.",
+            "startup-watchdog",
+            snapshot,
+          ),
         );
-        setLastVideoError(details);
-        onVideoFailure(details);
-      }, STARTUP_WATCHDOG_MS);
+        reportAttemptFailure(
+          "startup-watchdog",
+          "Playback did not start within startup watchdog timeout.",
+        );
+      }, playbackAttempt.startupWatchdogMs);
     };
 
     try {
@@ -2288,7 +2557,35 @@ export function CustomVideoPlayer({
         video,
         sourceToAttach.url,
         sourceToAttach.mimeType,
+        {
+          onHlsEvent: (event) => {
+            if (!isCurrentAttempt()) {
+              return;
+            }
+
+            recordHlsEvent(playbackAttempt, event.name);
+
+            if (isHlsStartupSuccessEvent(event.name)) {
+              markStartupPlaybackSignal(`hls:${event.name}`);
+            }
+          },
+          onHlsFatalError: (data) => {
+            if (!isCurrentAttempt()) {
+              return;
+            }
+
+            reportAttemptFailure(
+              "hls-fatal-error",
+              "hls.js reported a fatal playback error.",
+              { hlsError: getSerializableHlsError(data) },
+            );
+          },
+        },
       );
+      playbackAttempt.source = {
+        ...playbackAttempt.source,
+        usingHlsJs: attachment.usingHlsJs,
+      };
       activeAttachmentRef.current = attachment;
 
       setActiveSource((currentSource) =>
@@ -2321,10 +2618,17 @@ export function CustomVideoPlayer({
       video.addEventListener("durationchange", retryPendingAudioTranscodePlay);
       video.addEventListener("seeking", handleAudioTranscodeSeeking);
       video.addEventListener("seeked", handleAudioTranscodeSeeked);
-      video.addEventListener("loadeddata", markStartupPlaybackSignal);
-      video.addEventListener("canplay", markStartupPlaybackSignal);
-      video.addEventListener("playing", markStartupPlaybackSignal);
+      video.addEventListener("loadeddata", handleStartupLoadedData);
+      video.addEventListener("canplay", handleStartupCanPlay);
+      video.addEventListener("playing", handleStartupPlaying);
+      video.addEventListener("loadeddata", handleStartupLoadedDataBuffer);
+      video.addEventListener("progress", handleStartupProgressBuffer);
+      video.addEventListener(
+        "canplaythrough",
+        handleStartupCanPlayThroughBuffer,
+      );
       video.addEventListener("timeupdate", handleStartupTimeUpdate);
+      video.addEventListener("stalled", handleStartupStalled);
       video.addEventListener("error", handleStartupError);
       syncNativeAudioTrack("source-attached");
       video.load();
@@ -2333,7 +2637,8 @@ export function CustomVideoPlayer({
         requestPlayWhenAudioTranscodeReady("initial-autoplay", true);
       }
     } catch (attachError) {
-      onVideoFailure(
+      reportAttemptFailure(
+        "source-attach-error",
         attachError instanceof Error
           ? attachError.message
           : String(attachError),
@@ -2371,14 +2676,26 @@ export function CustomVideoPlayer({
       );
       video.removeEventListener("seeking", handleAudioTranscodeSeeking);
       video.removeEventListener("seeked", handleAudioTranscodeSeeked);
-      video.removeEventListener("loadeddata", markStartupPlaybackSignal);
-      video.removeEventListener("canplay", markStartupPlaybackSignal);
-      video.removeEventListener("playing", markStartupPlaybackSignal);
+      video.removeEventListener("loadeddata", handleStartupLoadedData);
+      video.removeEventListener("canplay", handleStartupCanPlay);
+      video.removeEventListener("playing", handleStartupPlaying);
+      video.removeEventListener("loadeddata", handleStartupLoadedDataBuffer);
+      video.removeEventListener("progress", handleStartupProgressBuffer);
+      video.removeEventListener(
+        "canplaythrough",
+        handleStartupCanPlayThroughBuffer,
+      );
       video.removeEventListener("timeupdate", handleStartupTimeUpdate);
+      video.removeEventListener("stalled", handleStartupStalled);
       video.removeEventListener("error", handleStartupError);
 
       if (activeAttachmentRef.current === attachment) {
         activeAttachmentRef.current = null;
+      }
+
+      if (playbackAttemptRef.current === playbackAttempt) {
+        playbackAttemptIdRef.current += 1;
+        playbackAttemptRef.current = null;
       }
 
       try {
@@ -2619,10 +2936,81 @@ export function CustomVideoPlayer({
       return;
     }
 
-    const details = getVideoErrorDetails(video, activeSource);
-    setLastVideoError(details);
-    console.error("[Seyirlik Playback] video element error", details);
-    onVideoFailure(details);
+    const attempt = playbackAttemptRef.current;
+    const snapshot = getVideoSnapshot(video);
+
+    if (attempt) {
+      const suppression = getFatalPlaybackSuppression(
+        attempt,
+        playbackAttemptIdRef.current,
+        snapshot,
+      );
+
+      if (suppression.suppress) {
+        if (suppression.reason === "playback-healthy") {
+          setLastVideoError(null);
+        }
+
+        console.info("[Seyirlik Playback] Ignored video element error", {
+          suppressionReason: suppression.reason,
+          diagnostics: buildPlaybackStartupDiagnostics({
+            attempt,
+            activeAttemptId: playbackAttemptIdRef.current,
+            snapshot,
+          }),
+        });
+        return;
+      }
+
+      const payload = {
+        message: "Video element reported a fatal playback error.",
+        cause: "video-element-error",
+        source: {
+          mode: attempt.source.mode,
+          isHls: attempt.source.isHls,
+          hlsKind: attempt.source.hlsKind,
+          usingHlsJs: attempt.source.usingHlsJs ?? null,
+          url: redactPlaybackUrl(attempt.source.url),
+          urlParams: getPlaybackUrlDebugParams(attempt.source.url),
+        },
+        video: {
+          readyState: snapshot.readyState,
+          networkState: snapshot.networkState,
+          paused: snapshot.paused,
+          currentTime: snapshot.currentTime,
+          duration: snapshot.duration,
+          bufferedRanges: snapshot.bufferedRanges,
+        },
+        diagnostics: buildPlaybackStartupDiagnostics({
+          attempt,
+          activeAttemptId: playbackAttemptIdRef.current,
+          snapshot,
+        }),
+        mediaError: getVideoErrorDetails(video, attempt.source),
+      };
+      const details = JSON.stringify(payload, null, 2);
+
+      setLastVideoError(details);
+      console.error("[Seyirlik Playback] video element error", payload);
+      onVideoFailure(details);
+      return;
+    }
+
+    if (isPlaybackStartupHealthy(snapshot)) {
+      setLastVideoError(null);
+    }
+
+    console.info(
+      "[Seyirlik Playback] Ignored video element error without an active playback attempt",
+      {
+        sourceId: activeSource.id,
+        sourceMode: activeSource.mode,
+        readyState: snapshot.readyState,
+        networkState: snapshot.networkState,
+        currentTime: snapshot.currentTime,
+        paused: snapshot.paused,
+      },
+    );
   };
 
   const getTouchSeekSide = (clientX: number): TouchSeekSide | null => {

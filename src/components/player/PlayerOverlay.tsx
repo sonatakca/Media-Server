@@ -373,7 +373,7 @@ export function PlayerOverlay({
           >
             {isPlayPauseLoading ? (
               <LoaderCircle
-                className="h-7 w-7 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,153,31,0.28))] sm:h-[42px] sm:w-[42px]"
+                className="h-7 w-7 animate-[spin_1.2s_linear_infinite] text-white] [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,153,31,0.28))] sm:h-[42px] sm:w-[42px]"
                 strokeWidth={2.2}
               />
             ) : displayedIsPlaying ? (

@@ -7,6 +7,7 @@ const hlsMock = vi.hoisted(() => ({
     destroy: ReturnType<typeof vi.fn>;
     loadSource: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    trigger: (event: string, data?: unknown) => void;
   }>,
   isSupported: vi.fn(() => true),
 }));
@@ -15,6 +16,8 @@ vi.mock("hls.js", () => {
   class HlsMock {
     static Events = {
       ERROR: "error",
+      BUFFER_APPENDED: "hlsBufferAppended",
+      FRAG_BUFFERED: "hlsFragBuffered",
       LEVEL_SWITCHED: "levelSwitched",
       LEVELS_UPDATED: "levelsUpdated",
       MANIFEST_PARSED: "manifestParsed",
@@ -27,11 +30,25 @@ vi.mock("hls.js", () => {
     levels = [];
     nextLevel = -1;
     startLevel = -1;
+    handlers = new Map<
+      string,
+      Array<(event: string, data?: unknown) => void>
+    >();
 
     attachMedia = vi.fn();
     destroy = vi.fn();
     loadSource = vi.fn();
-    on = vi.fn();
+    on = vi.fn(
+      (event: string, handler: (event: string, data?: unknown) => void) => {
+        const handlers = this.handlers.get(event) ?? [];
+        handlers.push(handler);
+        this.handlers.set(event, handlers);
+      },
+    );
+
+    trigger(event: string, data?: unknown) {
+      this.handlers.get(event)?.forEach((handler) => handler(event, data));
+    }
 
     constructor() {
       hlsMock.instances.push(this);
@@ -82,6 +99,44 @@ describe("videoSource", () => {
     expect(hlsMock.instances).toHaveLength(1);
     expect(hlsMock.instances[0]?.loadSource).toHaveBeenCalledWith(url);
     expect(hlsMock.instances[0]?.attachMedia).toHaveBeenCalledWith(video);
+  });
+
+  it("forwards HLS buffered and fatal events to attempt-aware callbacks", () => {
+    setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    );
+    const video = createVideo("");
+    const onHlsEvent = vi.fn();
+    const onHlsFatalError = vi.fn();
+
+    attachSourceToVideo(
+      video,
+      "http://example.test/play/master.m3u8",
+      undefined,
+      {
+        onHlsEvent,
+        onHlsFatalError,
+      },
+    );
+
+    const hls = hlsMock.instances[0];
+
+    hls?.trigger("hlsFragBuffered", { frag: "one" });
+    hls?.trigger("error", {
+      fatal: true,
+      type: "networkError",
+      details: "manifestLoadError",
+    });
+
+    expect(onHlsEvent).toHaveBeenCalledWith({
+      name: "hlsFragBuffered",
+      data: { frag: "one" },
+    });
+    expect(onHlsFatalError).toHaveBeenCalledWith({
+      fatal: true,
+      type: "networkError",
+      details: "manifestLoadError",
+    });
   });
 
   it("keeps native HLS for Safari maybe support", () => {

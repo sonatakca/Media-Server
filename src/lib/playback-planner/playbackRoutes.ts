@@ -1,5 +1,5 @@
 import { createReadStream } from "node:fs";
-import { stat } from "node:fs/promises";
+import { realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -38,6 +38,7 @@ export interface PlaybackRouteDependencies {
   mediaResolver: PlaybackMediaResolver;
   sessionManager: PlaybackSessionManager;
   basePath?: string;
+  mediaRoot?: string;
   maxJsonBodyBytes?: number;
 }
 
@@ -203,8 +204,9 @@ function getContentType(filePath: string): string {
   switch (extname(filePath).toLowerCase()) {
     case ".mp4":
     case ".m4v":
-    case ".mov":
       return "video/mp4";
+    case ".mov":
+      return "video/quicktime";
     case ".webm":
       return "video/webm";
     case ".mkv":
@@ -220,6 +222,42 @@ function getContentType(filePath: string): string {
     default:
       return "application/octet-stream";
   }
+}
+
+function normalizeRealPathForComparison(filePath: string): string {
+  return process.platform === "win32" ? filePath.toLowerCase() : filePath;
+}
+
+async function assertResolvedMediaInsideRoot(
+  mediaRoot: string | undefined,
+  media: PlaybackResolvedMedia,
+): Promise<PlaybackResolvedMedia> {
+  if (!mediaRoot) {
+    return media;
+  }
+
+  const [realRoot, realFile] = await Promise.all([
+    realpath(mediaRoot),
+    realpath(media.filePath),
+  ]);
+  const comparableRoot = normalizeRealPathForComparison(realRoot);
+  const comparableFile = normalizeRealPathForComparison(realFile);
+  const rootPrefix = comparableRoot.endsWith(sep)
+    ? comparableRoot
+    : `${comparableRoot}${sep}`;
+
+  if (comparableFile !== comparableRoot && !comparableFile.startsWith(rootPrefix)) {
+    throw new PlaybackRouteError(
+      "MEDIA_OUTSIDE_ROOT",
+      "The requested media is outside the configured media root.",
+      403,
+    );
+  }
+
+  return {
+    ...media,
+    filePath: realFile,
+  };
 }
 
 function safeSessionFile(outputDir: string, fileName: string): string | null {
@@ -476,10 +514,22 @@ function createPlaybackDiagnostics(
   media: MediaAnalysis,
   clientCapabilities: ClientCapabilities,
   plan: PlaybackPlan,
+  options: {
+    byteRangeSupported: boolean;
+    directMediaUrl?: string;
+    ffmpegStarted: boolean;
+  },
 ): PlaybackDiagnostics {
   const { filePath, ...mediaWithoutPath } = media;
   const blockingReasons = plan.reasons.filter(
     (reason) => reason.severity === "blocking",
+  );
+  const reasonCodes = new Set(plan.reasons.map((reason) => reason.code));
+  const selectedVideo = media.videoStreams.find(
+    (stream) => stream.index === plan.selected.videoStreamIndex,
+  );
+  const selectedAudio = media.audioStreams.find(
+    (stream) => stream.index === plan.selected.audioStreamIndex,
   );
 
   return {
@@ -489,8 +539,39 @@ function createPlaybackDiagnostics(
       fileName: basename(filePath),
     },
     decision: {
+      browserCapabilityMatch: {
+        container: !reasonCodes.has("container_unsupported"),
+        video: !blockingReasons.some((reasonItem) =>
+          [
+            "video_codec_unsupported",
+            "video_profile_unsupported",
+            "video_bit_depth_unsupported",
+            "hdr_tonemap_required",
+            "resolution_too_high",
+            "bitrate_too_high",
+          ].includes(reasonItem.code),
+        ),
+        audio: !blockingReasons.some((reasonItem) =>
+          reasonItem.code.startsWith("audio_"),
+        ),
+        subtitles:
+          plan.subtitles.action === "none" ||
+          plan.subtitles.action === "external",
+      },
+      byteRangeSupported: options.byteRangeSupported,
+      ...(options.directMediaUrl
+        ? { directMediaUrl: options.directMediaUrl }
+        : {}),
       directPlaySupported: plan.mode === "direct-play",
+      ffmpegStarted: options.ffmpegStarted,
       mode: plan.mode,
+      source: {
+        container: plan.container.input,
+        videoCodec: selectedVideo?.codecName ?? plan.video.inputCodec,
+        ...(selectedAudio?.codecName || plan.audio.inputCodec
+          ? { audioCodec: selectedAudio?.codecName ?? plan.audio.inputCodec }
+          : {}),
+      },
       requiresFfmpeg: plan.requiresFfmpeg,
       preservesOriginalVideoQuality: plan.preservesOriginalVideoQuality,
       expectedStartup: plan.expectedStartup,
@@ -529,22 +610,40 @@ async function handlePlaybackRequest(
     selectedSubtitleStreamIndex: validBody.selectedSubtitleStreamIndex,
     forceQualityLimit: validBody.forceQualityLimit,
   });
+  if (!plan.requiresFfmpeg) {
+    const directPlan = withDirectDelivery(
+      plan,
+      dependencies,
+      resolvedMedia.mediaId,
+    );
+
+    return {
+      ...directPlan,
+      diagnostics: createPlaybackDiagnostics(
+        media,
+        validBody.clientCapabilities,
+        directPlan,
+        {
+          byteRangeSupported: true,
+          directMediaUrl: directPlan.delivery.url,
+          ffmpegStarted: false,
+        },
+      ),
+    };
+  }
+
   const planWithDiagnostics: PlaybackPlan = {
     ...plan,
     diagnostics: createPlaybackDiagnostics(
       media,
       validBody.clientCapabilities,
       plan,
+      {
+        byteRangeSupported: false,
+        ffmpegStarted: true,
+      },
     ),
   };
-
-  if (!planWithDiagnostics.requiresFfmpeg) {
-    return withDirectDelivery(
-      planWithDiagnostics,
-      dependencies,
-      resolvedMedia.mediaId,
-    );
-  }
 
   const session = await dependencies.sessionManager.createSession(
     planWithDiagnostics,
@@ -621,8 +720,12 @@ async function routeRequest(
       const mediaId = dependencies.mediaResolver.decodeMediaToken(mediaToken);
       const resolvedMedia =
         await dependencies.mediaResolver.resolveMedia(mediaId);
+      const trustedMedia = await assertResolvedMediaInsideRoot(
+        dependencies.mediaRoot,
+        resolvedMedia,
+      );
 
-      await streamFile(request, response, resolvedMedia.filePath);
+      await streamFile(request, response, trustedMedia.filePath);
       return true;
     }
 

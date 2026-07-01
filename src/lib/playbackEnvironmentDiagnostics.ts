@@ -77,6 +77,10 @@ export interface PlaybackHealthSourceSummary {
   audioCodec?: string;
   reason?: string;
   diagnosticsPresent: boolean;
+  directMediaUrl?: string;
+  ffmpegStarted?: boolean;
+  byteRangeSupported?: boolean;
+  reasonCodes: string[];
 }
 
 export interface PlaybackEnvironmentHealthReport {
@@ -359,6 +363,8 @@ function getStreamCodec(
 function summarizeSource(
   source: PlaybackSourceCandidate,
 ): PlaybackHealthSourceSummary {
+  const decision = source.playbackDiagnostics?.decision;
+
   return {
     mode: source.mode,
     isHls: source.isHls,
@@ -375,6 +381,12 @@ function summarizeSource(
     audioCodec: getStreamCodec(source, "Audio"),
     reason: source.reason,
     diagnosticsPresent: Boolean(source.playbackDiagnostics),
+    directMediaUrl: decision?.directMediaUrl
+      ? redactDiagnosticsUrl(decision.directMediaUrl)
+      : undefined,
+    ffmpegStarted: decision?.ffmpegStarted,
+    byteRangeSupported: decision?.byteRangeSupported,
+    reasonCodes: decision?.reasons.map((reason) => reason.code) ?? [],
   };
 }
 

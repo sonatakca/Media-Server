@@ -68,6 +68,47 @@ function playbackPlan(sessionId: string): PlaybackPlan {
   };
 }
 
+function directMovPlaybackPlan(): PlaybackPlan {
+  return {
+    mode: "direct-play",
+    requiresFfmpeg: false,
+    preservesOriginalVideoQuality: true,
+    expectedStartup: "instant",
+    mediaId: "movie-1",
+    selected: {
+      videoStreamIndex: 0,
+      audioStreamIndex: 1,
+    },
+    container: {
+      input: "mov",
+      output: "original",
+      action: "direct",
+    },
+    video: {
+      inputCodec: "h264",
+      action: "copy",
+    },
+    audio: {
+      inputCodec: "aac",
+      action: "copy",
+    },
+    subtitles: {
+      action: "none",
+    },
+    reasons: [
+      {
+        code: "direct_play_supported",
+        severity: "info",
+        message: "Container and codecs are direct-play compatible.",
+      },
+    ],
+    delivery: {
+      type: "file",
+      url: "/api/playback/direct/token-1",
+    },
+  };
+}
+
 function jsonResponse(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), {
     status,
@@ -136,6 +177,27 @@ describe("custom playback API request deduplication", () => {
       playSessionId: "session-2",
     });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("maps direct MOV backend responses to a native DirectPlay source", async () => {
+    const api = await loadApi();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(directMovPlaybackPlan()));
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      api.requestCustomPlaybackCandidate("movie-1"),
+    ).resolves.toMatchObject({
+      mode: "DirectPlay",
+      mimeType: "video/quicktime",
+      isHls: false,
+      hlsKind: "direct",
+      url: "http://backend.test/api/playback/direct/token-1",
+      mediaSource: {
+        Container: "mov",
+        SupportsDirectPlay: true,
+      },
+    });
   });
 
   it("allows retry after a failed custom playback request", async () => {

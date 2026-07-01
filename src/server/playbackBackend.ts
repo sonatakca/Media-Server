@@ -172,6 +172,7 @@ export async function createPlaybackBackend(
     mediaResolver,
     sessionManager,
     basePath: "/api/playback",
+    mediaRoot: configuredMediaRoot,
   });
   const tmdbArtworkHandler = createTmdbArtworkRequestHandler({
     mediaRoot: configuredMediaRoot,

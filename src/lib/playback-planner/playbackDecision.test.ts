@@ -76,7 +76,10 @@ function buildMedia(overrides: Partial<MediaAnalysis> = {}): MediaAnalysis {
         extension === "mkv" ? "matroska,webm" : "mov,mp4,m4a,3gp,3g2,mj2",
       extension,
       isBrowserDirectPlayableContainer:
-        extension === "mp4" || extension === "webm",
+        extension === "mp4" ||
+        extension === "m4v" ||
+        extension === "mov" ||
+        extension === "webm",
       ...overrides.container,
     },
     durationSeconds: 120,
@@ -135,6 +138,45 @@ describe("decidePlaybackPlan", () => {
     expect(plan.reasons.map((item) => item.code)).toContain(
       "direct_play_supported",
     );
+  });
+
+  it("direct plays Safari-compatible MOV with H264 and AAC without FFmpeg", () => {
+    const plan = decidePlaybackPlan({
+      media: buildMedia({
+        container: {
+          formatName: "mov,mp4,m4a,3gp,3g2,mj2",
+          extension: "mov",
+          isBrowserDirectPlayableContainer: true,
+        },
+        filePath: "/media/example.mov",
+      }),
+      client: buildClient({
+        supportsHlsNative: true,
+        supportsManagedMediaSource: true,
+        directFileContainers: ["mp4", "m4v", "mov", "webm"],
+        video: {
+          h264: { supported: false },
+        },
+        audio: {
+          aac: { supported: false },
+        },
+      }),
+    });
+
+    expect(plan.mode).toBe("direct-play");
+    expect(plan.requiresFfmpeg).toBe(false);
+    expect(plan.container.input).toBe("mov");
+    expect(plan.video).toMatchObject({
+      inputCodec: "h264",
+      action: "copy",
+    });
+    expect(plan.audio).toMatchObject({
+      inputCodec: "aac",
+      action: "copy",
+    });
+    expect(plan.reasons.map((item) => item.code)).toEqual([
+      "direct_play_supported",
+    ]);
   });
 
   it("remuxes MKV with H264 and AAC", () => {

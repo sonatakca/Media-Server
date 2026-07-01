@@ -5,6 +5,16 @@ export interface AttachedVideoSource {
   destroy: () => void;
 }
 
+export interface HlsPlaybackEvent {
+  name: string;
+  data?: unknown;
+}
+
+export interface AttachSourceOptions {
+  onHlsEvent?: (event: HlsPlaybackEvent) => void;
+  onHlsFatalError?: (data: unknown) => void;
+}
+
 export function isHlsPlaybackUrl(
   playbackUrl: string,
   mimeType?: string,
@@ -19,7 +29,9 @@ export function isHlsPlaybackUrl(
   );
 }
 
-function getNativeHlsSupport(videoElement: HTMLVideoElement): CanPlayTypeResult {
+function getNativeHlsSupport(
+  videoElement: HTMLVideoElement,
+): CanPlayTypeResult {
   const appleHlsSupport = videoElement.canPlayType(
     "application/vnd.apple.mpegurl",
   );
@@ -113,6 +125,7 @@ export function attachSourceToVideo(
   videoElement: HTMLVideoElement,
   playbackUrl: string,
   mimeType?: string,
+  options: AttachSourceOptions = {},
 ): AttachedVideoSource {
   const isHls = isHlsPlaybackUrl(playbackUrl, mimeType);
   const requestedMaxHeight = getRequestedMaxHeight(playbackUrl);
@@ -164,10 +177,17 @@ export function attachSourceToVideo(
       }, 18_000);
     };
 
-    hls.on(Hls.Events.MANIFEST_PARSED, lockInitialBestLevel);
-    hls.on(Hls.Events.LEVELS_UPDATED, lockInitialBestLevel);
+    hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.MANIFEST_PARSED, data });
+      lockInitialBestLevel();
+    });
+    hls.on(Hls.Events.LEVELS_UPDATED, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.LEVELS_UPDATED, data });
+      lockInitialBestLevel();
+    });
 
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.LEVEL_SWITCHED, data });
       const level = hls.levels[data.level];
 
       console.info("[Seyirlik Playback] HLS level switched", {
@@ -180,10 +200,24 @@ export function attachSourceToVideo(
       });
     });
 
+    hls.on(Hls.Events.FRAG_BUFFERED, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.FRAG_BUFFERED, data });
+    });
+
+    hls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.BUFFER_APPENDED, data });
+    });
+
     hls.on(Hls.Events.ERROR, (_event, data) => {
+      options.onHlsEvent?.({ name: Hls.Events.ERROR, data });
+
       if (data.fatal) {
         console.error("[Seyirlik Playback] hls.js fatal error", data);
-        videoElement.dispatchEvent(new Event("error"));
+        if (options.onHlsFatalError) {
+          options.onHlsFatalError(data);
+        } else {
+          videoElement.dispatchEvent(new Event("error"));
+        }
       } else {
         console.warn("[Seyirlik Playback] hls.js warning", data);
       }

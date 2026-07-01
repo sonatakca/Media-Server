@@ -200,6 +200,22 @@ function SourceSummary({
           ["Direct stream", source.directStreamSupported ? "yes" : "no"],
           ["Transcoding", source.transcodingSupported ? "yes" : "no"],
           ["Diagnostics", source.diagnosticsPresent ? "yes" : "no"],
+          [
+            "FFmpeg started",
+            source.ffmpegStarted === undefined
+              ? "Unknown"
+              : source.ffmpegStarted
+                ? "yes"
+                : "no",
+          ],
+          [
+            "Byte ranges",
+            source.byteRangeSupported === undefined
+              ? "Unknown"
+              : source.byteRangeSupported
+                ? "yes"
+                : "no",
+          ],
         ].map(([label, value]) => (
           <div
             key={label}
@@ -222,6 +238,25 @@ function SourceSummary({
       <p className="mt-3 break-all rounded-xl bg-black/22 px-3 py-2 text-xs font-semibold text-white/48">
         {source.url}
       </p>
+
+      {source.directMediaUrl ? (
+        <p className="mt-3 break-all rounded-xl bg-black/22 px-3 py-2 text-xs font-semibold text-white/48">
+          {source.directMediaUrl}
+        </p>
+      ) : null}
+
+      {source.reasonCodes.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {source.reasonCodes.map((reasonCode) => (
+            <span
+              key={reasonCode}
+              className="rounded-full border border-white/10 bg-black/24 px-2.5 py-1 text-xs font-black text-white/54"
+            >
+              {reasonCode}
+            </span>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -183,8 +183,22 @@ export interface PlaybackDiagnostics {
   clientCapabilities: ClientCapabilities;
   media: PlaybackDiagnosticsMedia;
   decision: {
+    browserCapabilityMatch: {
+      container: boolean;
+      video: boolean;
+      audio: boolean;
+      subtitles: boolean;
+    };
+    byteRangeSupported: boolean;
+    directMediaUrl?: string;
     directPlaySupported: boolean;
+    ffmpegStarted: boolean;
     mode: PlaybackMode;
+    source: {
+      container: string;
+      videoCodec: string;
+      audioCodec?: string;
+    };
     requiresFfmpeg: boolean;
     preservesOriginalVideoQuality: boolean;
     expectedStartup: "instant" | "fast" | "slow";

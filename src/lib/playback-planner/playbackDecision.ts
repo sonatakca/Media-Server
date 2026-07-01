@@ -62,10 +62,6 @@ function normalizeContainer(media: MediaAnalysis): string {
   const extension = media.container.extension?.toLowerCase();
 
   if (extension) {
-    if (extension === "m4v" || extension === "mov") {
-      return "mp4";
-    }
-
     return extension;
   }
 
@@ -84,6 +80,10 @@ function normalizeContainer(media: MediaAnalysis): string {
   }
 
   return formatName.split(",")[0] || "unknown";
+}
+
+function isMp4FamilyContainer(container: string): boolean {
+  return container === "mp4" || container === "m4v" || container === "mov";
 }
 
 function videoCodecKey(codec: string): VideoCodecKey | undefined {
@@ -213,6 +213,8 @@ function evaluateVideoCompatibility(
   media: MediaAnalysis,
   client: ClientCapabilities,
   video: VideoStreamAnalysis,
+  container: string,
+  directContainerSupported: boolean,
   forceQualityLimit: DecidePlaybackPlanInput["forceQualityLimit"],
 ): {
   compatible: boolean;
@@ -230,6 +232,16 @@ function evaluateVideoCompatibility(
       ),
   );
   const browserCapability = codecKey ? client.video[codecKey] : undefined;
+  const inferredBrowserH264Support =
+    !nativePlayer &&
+    codecKey === "h264" &&
+    isMp4FamilyContainer(container) &&
+    directContainerSupported &&
+    media.container.isBrowserDirectPlayableContainer &&
+    (video.bitDepth === undefined || video.bitDepth <= 8) &&
+    !isHigh10Profile(video) &&
+    !video.isHdr &&
+    !video.hasDolbyVision;
   const capability: CodecCapability | undefined = nativeCodecSupported
     ? {
         supported: true,
@@ -241,7 +253,22 @@ function evaluateVideoCompatibility(
         supports10Bit: nativePlayer?.supports10BitVideo,
         supportsHdr: nativePlayer?.supportsHdr,
       }
-    : browserCapability;
+    : browserCapability?.supported
+      ? browserCapability
+      : inferredBrowserH264Support
+        ? {
+            supported: true,
+            smooth: true,
+            powerEfficient: browserCapability?.powerEfficient,
+            mimeTypesTested: browserCapability?.mimeTypesTested,
+            maxWidth: browserCapability?.maxWidth,
+            maxHeight: browserCapability?.maxHeight,
+            maxBitrate: browserCapability?.maxBitrate,
+            maxFramerate: browserCapability?.maxFramerate,
+            supports10Bit: browserCapability?.supports10Bit,
+            supportsHdr: browserCapability?.supportsHdr,
+          }
+        : browserCapability;
 
   if (!capability?.supported) {
     reasons.push(
@@ -351,6 +378,8 @@ function evaluateVideoCompatibility(
 function evaluateAudioCompatibility(
   client: ClientCapabilities,
   audio: AudioStreamAnalysis | undefined,
+  container: string,
+  directContainerSupported: boolean,
 ): {
   compatible: boolean;
   outputCodec?: string;
@@ -370,14 +399,26 @@ function evaluateAudioCompatibility(
         audio.codecName,
       ),
   );
+  const browserCapability = codecKey ? client.audio[codecKey] : undefined;
+  const inferredBrowserAacSupport =
+    !nativePlayer &&
+    codecKey === "aac" &&
+    isMp4FamilyContainer(container) &&
+    directContainerSupported;
   const capability: AudioCapability | undefined = nativeCodecSupported
     ? {
         supported: true,
         maxChannels: nativePlayer?.maxAudioChannels,
       }
-    : codecKey
-      ? client.audio[codecKey]
-      : undefined;
+    : browserCapability?.supported
+      ? browserCapability
+      : inferredBrowserAacSupport
+        ? {
+            supported: true,
+            mimeTypesTested: browserCapability?.mimeTypesTested,
+            maxChannels: browserCapability?.maxChannels,
+          }
+        : browserCapability;
 
   if (!capability?.supported) {
     reasons.push(
@@ -583,18 +624,25 @@ export function decidePlaybackPlan({
   const audio = findAudioStream(media, selectedAudioStreamIndex);
   const subtitle = findSubtitleStream(media, selectedSubtitleStreamIndex);
   const container = normalizeContainer(media);
-  const videoCompatibility = evaluateVideoCompatibility(
-    media,
-    client,
-    video,
-    forceQualityLimit,
-  );
-  const audioCompatibility = evaluateAudioCompatibility(client, audio);
-  const subtitleDecision = evaluateSubtitleAction(client, subtitle);
   const directContainerSupported = getNativePlayer(client)
     ? clientSupportsDirectContainer(client, container)
     : media.container.isBrowserDirectPlayableContainer &&
       clientSupportsDirectContainer(client, container);
+  const videoCompatibility = evaluateVideoCompatibility(
+    media,
+    client,
+    video,
+    container,
+    directContainerSupported,
+    forceQualityLimit,
+  );
+  const audioCompatibility = evaluateAudioCompatibility(
+    client,
+    audio,
+    container,
+    directContainerSupported,
+  );
+  const subtitleDecision = evaluateSubtitleAction(client, subtitle);
   const containerReasons: PlaybackReason[] = directContainerSupported
     ? []
     : [

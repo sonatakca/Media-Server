@@ -30,7 +30,7 @@ function clientCapabilities(): ClientCapabilities {
   return {
     supportsHlsNative: false,
     supportsMediaSource: true,
-    directFileContainers: ["mp4"],
+    directFileContainers: ["mp4", "m4v", "mov"],
     mseContainers: ["mp4"],
     video: {
       h264: { supported: true, supports10Bit: false, supportsHdr: false },
@@ -45,6 +45,18 @@ function clientCapabilities(): ClientCapabilities {
       imageBasedExternal: false,
     },
     testedAt: "2026-01-01T00:00:00.000Z",
+  };
+}
+
+function movAnalysis(mediaId: string, filePath: string): MediaAnalysis {
+  return {
+    ...analysis(mediaId, filePath),
+    filePath,
+    container: {
+      formatName: "mov,mp4,m4a,3gp,3g2,mj2",
+      extension: "mov",
+      isBrowserDirectPlayableContainer: true,
+    },
   };
 }
 
@@ -423,6 +435,117 @@ describe("playback backend HTTP routes", () => {
     expect(payload.delivery.url).not.toContain("Movies/sample.mp4");
   });
 
+  it("direct plays MOV H264/AAC from the backend without creating an HLS session", async () => {
+    const mediaRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-http-media-"),
+    );
+    const filePath = await writeMediaFile(
+      mediaRoot,
+      "Movies/sample.mov",
+      "quicktime-media",
+    );
+    const resolvedMedia = {
+      mediaId: "cca0673dea01eba8cd3fe7749a25f110",
+      filePath,
+      size: 15,
+      mtimeMs: 1,
+    };
+    const mediaResolver = createFakeResolver(mediaRoot, resolvedMedia);
+    const mediaStore: PlaybackMediaStore = {
+      getMediaAnalysis: vi.fn((media) =>
+        Promise.resolve(movAnalysis(media.mediaId, media.filePath)),
+      ),
+      saveClientCapabilities: vi.fn(),
+    };
+    const { createSession, manager } = createFakeSessionManager();
+    const backend = await createPlaybackBackend({
+      host: "127.0.0.1",
+      port: 0,
+      mediaRoot,
+      mediaResolver,
+      mediaStore,
+      sessionManager: manager,
+      allowedOrigins: ["http://allowed.test"],
+      cleanupIntervalMs: 1_000,
+    });
+    const baseUrl = await listenBackend(backend);
+
+    backends.push(backend);
+    mediaRoots.push(mediaRoot);
+
+    const response = await fetch(`${baseUrl}/api/playback/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: resolvedMedia.mediaId,
+        clientCapabilities: {
+          ...clientCapabilities(),
+          supportsHlsNative: true,
+          supportsManagedMediaSource: true,
+          directFileContainers: ["mp4", "m4v", "mov", "webm"],
+          video: {
+            h264: { supported: false },
+          },
+          audio: {
+            aac: { supported: false },
+          },
+        } satisfies ClientCapabilities,
+      }),
+    });
+    const payload = (await response.json()) as {
+      mode: string;
+      container: { input: string };
+      video: { inputCodec: string };
+      audio: { inputCodec?: string };
+      delivery: { type: string; url: string };
+      diagnostics?: PlaybackDiagnostics;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.mode).toBe("direct-play");
+    expect(payload.container.input).toBe("mov");
+    expect(payload.video.inputCodec).toBe("h264");
+    expect(payload.audio.inputCodec).toBe("aac");
+    expect(payload.delivery.type).toBe("file");
+    expect(payload.delivery.url).toMatch(
+      /^\/api\/playback\/direct\/[A-Za-z0-9_-]+$/,
+    );
+    expect(payload.diagnostics?.decision).toMatchObject({
+      byteRangeSupported: true,
+      directMediaUrl: payload.delivery.url,
+      directPlaySupported: true,
+      ffmpegStarted: false,
+      mode: "direct-play",
+      requiresFfmpeg: false,
+      source: {
+        container: "mov",
+        videoCodec: "h264",
+        audioCodec: "aac",
+      },
+    });
+    expect(
+      payload.diagnostics?.decision.reasons.map((reason) => reason.code),
+    ).toEqual(["direct_play_supported"]);
+    expect(createSession).not.toHaveBeenCalled();
+
+    const rangeResponse = await fetch(`${baseUrl}${payload.delivery.url}`, {
+      headers: {
+        Origin: "http://allowed.test",
+        Range: "bytes=0-4",
+      },
+    });
+
+    expect(rangeResponse.status).toBe(206);
+    expect(rangeResponse.headers.get("access-control-allow-origin")).toBe(
+      "http://allowed.test",
+    );
+    expect(rangeResponse.headers.get("accept-ranges")).toBe("bytes");
+    expect(rangeResponse.headers.get("content-type")).toBe("video/quicktime");
+    expect(rangeResponse.headers.get("content-range")).toBe("bytes 0-4/15");
+    expect(rangeResponse.headers.get("content-length")).toBe("5");
+    await expect(rangeResponse.text()).resolves.toBe("quick");
+  });
+
   it("resolves opaque Jellyfin item ids before analysing media", async () => {
     const mediaRoot = await mkdtemp(
       path.join(tmpdir(), "seyirlik-http-media-"),
@@ -712,6 +835,65 @@ describe("playback backend HTTP routes", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toMatchObject({
       error: { code: "MEDIA_ID_INVALID" },
+    });
+  });
+
+  it("rejects direct media files returned outside the configured media root", async () => {
+    const mediaRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-http-media-"),
+    );
+    const outsideRoot = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-outside-media-"),
+    );
+    const filePath = await writeMediaFile(
+      outsideRoot,
+      "Movies/outside.mp4",
+      "outside",
+    );
+    const resolvedMedia = {
+      mediaId: "outside-media",
+      filePath,
+      size: 7,
+      mtimeMs: 1,
+    };
+    const mediaResolver = createFakeResolver(mediaRoot, resolvedMedia);
+    const mediaStore: PlaybackMediaStore = {
+      getMediaAnalysis: vi.fn((media) =>
+        Promise.resolve(analysis(media.mediaId, media.filePath)),
+      ),
+      saveClientCapabilities: vi.fn(),
+    };
+    const backend = await createPlaybackBackend({
+      host: "127.0.0.1",
+      port: 0,
+      mediaRoot,
+      mediaResolver,
+      mediaStore,
+      allowedOrigins: ["http://allowed.test"],
+      cleanupIntervalMs: 1_000,
+    });
+    const baseUrl = await listenBackend(backend);
+
+    backends.push(backend);
+    mediaRoots.push(mediaRoot, outsideRoot);
+
+    const planResponse = await fetch(`${baseUrl}/api/playback/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        mediaId: resolvedMedia.mediaId,
+        clientCapabilities: clientCapabilities(),
+      }),
+    });
+    const payload = (await planResponse.json()) as {
+      delivery: { url: string };
+    };
+    const mediaResponse = await fetch(`${baseUrl}${payload.delivery.url}`);
+
+    expect(planResponse.status).toBe(200);
+    expect(mediaResponse.status).toBe(403);
+    await expect(mediaResponse.json()).resolves.toMatchObject({
+      error: { code: "MEDIA_OUTSIDE_ROOT" },
     });
   });
 
