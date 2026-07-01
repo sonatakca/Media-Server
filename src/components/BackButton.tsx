@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { ArrowLeft } from "lucide-react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useNavigationType } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
@@ -10,19 +10,15 @@ interface BackButtonProps {
   className?: string;
 }
 
-const NON_PLAYER_HISTORY_KEY = "seyirlik.nonPlayerHistory";
-
-function isPlayerPath(pathname: string): boolean {
-  return pathname.startsWith("/watch/");
-}
+const APP_ROUTE_HISTORY_KEY = "seyirlik.appRouteHistory";
 
 function getFullPath(location: ReturnType<typeof useLocation>): string {
   return `${location.pathname}${location.search}${location.hash}`;
 }
 
-function readNonPlayerHistory(): string[] {
+function readAppRouteHistory(): string[] {
   try {
-    const rawValue = sessionStorage.getItem(NON_PLAYER_HISTORY_KEY);
+    const rawValue = sessionStorage.getItem(APP_ROUTE_HISTORY_KEY);
     const parsedValue = rawValue ? JSON.parse(rawValue) : [];
 
     return Array.isArray(parsedValue)
@@ -33,23 +29,20 @@ function readNonPlayerHistory(): string[] {
   }
 }
 
-function writeNonPlayerHistory(history: string[]) {
+function writeAppRouteHistory(history: string[]) {
   sessionStorage.setItem(
-    NON_PLAYER_HISTORY_KEY,
+    APP_ROUTE_HISTORY_KEY,
     JSON.stringify(history.slice(-30)),
   );
 }
 
 export function NonPlayerHistoryTracker() {
   const location = useLocation();
+  const navigationType = useNavigationType();
 
   useEffect(() => {
-    if (isPlayerPath(location.pathname)) {
-      return;
-    }
-
     const currentPath = getFullPath(location);
-    const history = readNonPlayerHistory();
+    const history = readAppRouteHistory();
     const lastPath = history[history.length - 1];
     const previousPath = history[history.length - 2];
 
@@ -57,17 +50,29 @@ export function NonPlayerHistoryTracker() {
       return;
     }
 
+    if (navigationType === "REPLACE" && history.length > 0) {
+      const replacedHistory = [...history.slice(0, -1), currentPath];
+      const replacedPreviousPath = replacedHistory[replacedHistory.length - 2];
+
+      writeAppRouteHistory(
+        replacedPreviousPath === currentPath
+          ? replacedHistory.slice(0, -1)
+          : replacedHistory,
+      );
+      return;
+    }
+
     // Handles browser/app back properly.
     // Example: home -> details, then back to home.
     // Instead of storing [home, details, home], collapse it back to [home].
     if (previousPath === currentPath) {
-      writeNonPlayerHistory(history.slice(0, -1));
+      writeAppRouteHistory(history.slice(0, -1));
       return;
     }
 
     history.push(currentPath);
-    writeNonPlayerHistory(history);
-  }, [location]);
+    writeAppRouteHistory(history);
+  }, [location, navigationType]);
 
   return null;
 }
@@ -83,13 +88,13 @@ export function BackButton({
 
   const handleClick = () => {
     const currentPath = getFullPath(location);
-    const history = readNonPlayerHistory();
+    const history = readAppRouteHistory();
 
     const currentIndex = history.lastIndexOf(currentPath);
     const targetPath = currentIndex > 0 ? history[currentIndex - 1] : null;
 
     if (targetPath) {
-      writeNonPlayerHistory(history.slice(0, currentIndex));
+      writeAppRouteHistory(history.slice(0, currentIndex));
       navigate(targetPath, { replace: true });
       return;
     }

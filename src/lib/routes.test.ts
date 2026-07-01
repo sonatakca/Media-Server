@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getMediaOwnerRouteForItem, getRouteForItem } from "./routes";
+import {
+  getMediaOwnerRouteForItem,
+  getRouteForItem,
+  shouldOpenPlaybackForItem,
+} from "./routes";
 import type { JellyfinItem } from "./types";
 
 describe("media routes", () => {
@@ -8,10 +12,12 @@ describe("media routes", () => {
       Id: "movie-1",
       Name: "Movie",
       Type: "Movie",
+      MediaType: "Video",
     };
 
     expect(getRouteForItem(movie)).toBe("/library/movie-1");
     expect(getMediaOwnerRouteForItem(movie)).toBe("/library/movie-1");
+    expect(shouldOpenPlaybackForItem(movie)).toBe(false);
   });
 
   it("routes episodes to playback but returns to the series page", () => {
@@ -25,6 +31,7 @@ describe("media routes", () => {
 
     expect(getRouteForItem(episode)).toBe("/watch/episode-1");
     expect(getMediaOwnerRouteForItem(episode)).toBe("/library/series-1");
+    expect(shouldOpenPlaybackForItem(episode)).toBe(true);
   });
 
   it("routes local trailer playback back to its parent media page", () => {
@@ -38,5 +45,6 @@ describe("media routes", () => {
 
     expect(getRouteForItem(trailer)).toBe("/watch/trailer-1");
     expect(getMediaOwnerRouteForItem(trailer)).toBe("/library/movie-1");
+    expect(shouldOpenPlaybackForItem(trailer)).toBe(true);
   });
 });

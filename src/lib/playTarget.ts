@@ -1,5 +1,9 @@
 import { getAllSeriesEpisodes } from "./jellyfinApi";
-import { getRouteForItem } from "./routes";
+import {
+  getRouteForItem,
+  getWatchRouteForItem,
+  shouldOpenPlaybackForItem,
+} from "./routes";
 import type { JellyfinItem } from "./types";
 
 function getEpisodeOrderValue(item: JellyfinItem): number {
@@ -36,12 +40,22 @@ function getNextEpisodeForSeries(
 export async function getPlayTargetForItem(
   item: JellyfinItem,
 ): Promise<string> {
+  const targetItem = await getPlayTargetItemForItem(item);
+
+  return targetItem ? getWatchRouteForItem(targetItem) : getRouteForItem(item);
+}
+
+export async function getPlayTargetItemForItem(
+  item: JellyfinItem,
+): Promise<JellyfinItem | null> {
   if (item.Type !== "Series") {
-    return `/watch/${item.Id}`;
+    return item.Type === "Movie" || shouldOpenPlaybackForItem(item)
+      ? item
+      : null;
   }
 
   const episodes = await getAllSeriesEpisodes(item.Id);
   const targetEpisode = getNextEpisodeForSeries(episodes);
 
-  return targetEpisode ? `/watch/${targetEpisode.Id}` : getRouteForItem(item);
+  return targetEpisode;
 }

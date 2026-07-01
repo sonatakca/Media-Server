@@ -1,13 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  buildPlaybackCandidates,
-  getPlaybackInfo,
-  redactPlaybackUrl,
-} from "../lib/jellyfinApi";
-import {
-  isCustomPlaybackBackendConfigured,
-  requestCustomPlaybackCandidate,
-} from "../lib/playback-planner/customPlaybackApi";
+  NoPlayablePlaybackSourceError,
+  preloadPlaybackSource,
+  readCachedPlaybackSource,
+} from "../lib/playbackPreload";
+import { redactPlaybackUrl } from "../lib/jellyfinApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 
@@ -102,94 +99,66 @@ export function usePlaybackSource(itemId?: string) {
   const [sourceIndex, setSourceIndex] = useState(0);
   const activeSource = state.candidates[sourceIndex] ?? null;
 
-  const loadPlaybackInfo = useCallback(async () => {
-    if (!itemId) {
-      setState({
-        ...initialState,
-        isLoading: false,
-        error: {
-          message: t("player.missingItemId"),
-          details: t("player.missingRouteItemId"),
-        },
-      });
-      return;
-    }
-
-    setState(initialState);
-    setSourceIndex(0);
-
-    try {
-      if (isCustomPlaybackBackendConfigured()) {
-        try {
-          const customCandidate = await requestCustomPlaybackCandidate(itemId);
-
-          if (customCandidate) {
-            console.info("[Seyirlik Playback] Custom PlaybackPlan received", {
-              mode: customCandidate.mode,
-              hlsKind: customCandidate.hlsKind,
-              reason: customCandidate.reason,
-              url: redactPlaybackUrl(customCandidate.url),
-            });
-            setState({
-              isLoading: false,
-              activeSource: customCandidate,
-              candidates: [customCandidate],
-              notice: null,
-              error: null,
-            });
-            return;
-          }
-        } catch (error) {
-          console.warn(
-            "[Seyirlik Playback] Custom backend failed; falling back to Jellyfin PlaybackInfo",
-            error,
-          );
-        }
+  const loadPlaybackInfo = useCallback(
+    async (options?: { force?: boolean }) => {
+      if (!itemId) {
+        setState({
+          ...initialState,
+          isLoading: false,
+          error: {
+            message: t("player.missingItemId"),
+            details: t("player.missingRouteItemId"),
+          },
+        });
+        return;
       }
 
-      const playbackInfo = await getPlaybackInfo(itemId);
-      const candidates = buildPlaybackCandidates(itemId, playbackInfo);
+      setState(initialState);
+      setSourceIndex(0);
 
-      console.info("[Seyirlik Playback] PlaybackInfo received", {
-        playSessionId: playbackInfo.PlaySessionId,
-        mediaSources: playbackInfo.MediaSources?.length ?? 0,
-        errorCode: playbackInfo.ErrorCode,
-      });
+      try {
+        const preloadedPlayback = options?.force
+          ? await preloadPlaybackSource(itemId, { force: true })
+          : (readCachedPlaybackSource(itemId) ??
+            (await preloadPlaybackSource(itemId)));
+        const candidates = preloadedPlayback.candidates;
 
-      if (candidates.length === 0) {
+        setState({
+          isLoading: false,
+          activeSource: candidates[0],
+          candidates,
+          notice: null,
+          error: null,
+        });
+      } catch (error) {
+        if (error instanceof NoPlayablePlaybackSourceError) {
+          setState({
+            isLoading: false,
+            activeSource: null,
+            candidates: [],
+            notice: null,
+            error: {
+              message: t("player.noPlayableSource"),
+              details: JSON.stringify(error.playbackInfo, null, 2),
+            },
+          });
+          return;
+        }
+
         setState({
           isLoading: false,
           activeSource: null,
           candidates: [],
           notice: null,
           error: {
-            message: t("player.noPlayableSource"),
-            details: JSON.stringify(playbackInfo, null, 2),
+            message: t("player.playbackInfoRequestFailed"),
+            details: error instanceof Error ? error.message : String(error),
           },
         });
-        return;
       }
-
-      setState({
-        isLoading: false,
-        activeSource: candidates[0],
-        candidates,
-        notice: null,
-        error: null,
-      });
-    } catch (error) {
-      setState({
-        isLoading: false,
-        activeSource: null,
-        candidates: [],
-        notice: null,
-        error: {
-          message: t("player.playbackInfoRequestFailed"),
-          details: error instanceof Error ? error.message : String(error),
-        },
-      });
-    }
-  }, [itemId, t]);
+    },
+    [itemId, t],
+  );
 
   useEffect(() => {
     void loadPlaybackInfo();
@@ -295,7 +264,7 @@ export function usePlaybackSource(itemId?: string) {
   return {
     ...state,
     activeSource,
-    retry: loadPlaybackInfo,
+    retry: () => loadPlaybackInfo({ force: true }),
     handleVideoFailure,
     tryTranscodedPlayback,
     hasTranscodingFallback,

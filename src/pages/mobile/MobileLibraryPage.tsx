@@ -26,10 +26,12 @@ import {
 } from "../../lib/collectionPoster";
 import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { setPageTitle } from "../../lib/pageTitle";
+import { preloadMediaPlayback } from "../../lib/playbackPreload";
 import { getRouteForItem } from "../../lib/routes";
 import type { JellyfinItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
+import { preloadPlayerPage } from "../PlayerPage";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -404,6 +406,42 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
       robots: "noindex, nofollow",
     });
   }, [canonicalPath, data, labels, t]);
+
+  useEffect(() => {
+    const library = data?.library;
+
+    if (!library) {
+      return;
+    }
+
+    const shouldPreloadPlayback =
+      library.Type === "Movie" ||
+      library.Type === "Series" ||
+      mode === "series";
+
+    if (!shouldPreloadPlayback) {
+      return;
+    }
+
+    let isMounted = true;
+
+    void preloadMediaPlayback(library, {
+      preloadPlayer: () => preloadPlayerPage(true),
+    }).catch((preloadError) => {
+      if (!isMounted) {
+        return;
+      }
+
+      console.debug(
+        "[Seyirlik Playback] Details playback preload skipped",
+        preloadError,
+      );
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [data?.library?.Id, data?.library?.Type, mode]);
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;

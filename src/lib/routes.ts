@@ -1,5 +1,23 @@
 import type { JellyfinItem } from "./types";
 
+export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {
+  if (item.Type === "Episode") {
+    return true;
+  }
+
+  if (
+    item.Type === "Movie" ||
+    item.Type === "Series" ||
+    item.Type === "Season" ||
+    item.Type === "BoxSet" ||
+    item.CollectionType === "boxsets"
+  ) {
+    return false;
+  }
+
+  return item.MediaType === "Video";
+}
+
 export function getRouteForItem(item: JellyfinItem): string {
   if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
     return `/library/${item.Id}`;
@@ -13,7 +31,7 @@ export function getRouteForItem(item: JellyfinItem): string {
     return `/library/${item.Id}`;
   }
 
-  if (item.Type === "Episode" || item.MediaType === "Video") {
+  if (shouldOpenPlaybackForItem(item)) {
     return getWatchRouteForItem(item);
   }
 

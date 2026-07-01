@@ -30,6 +30,7 @@ import {
   getMediaOwnerRouteForItem,
   getWatchRouteForItem,
 } from "../../lib/routes";
+import { readPreloadedPlaybackItem } from "../../lib/playbackPreload";
 import { setSeoMetadata } from "../../lib/seo";
 import type { JellyfinItem } from "../../lib/types";
 
@@ -38,7 +39,9 @@ export function MobilePlayerPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [item, setItem] = useState<JellyfinItem | null>(() =>
+    itemId ? readPreloadedPlaybackItem(itemId) : null,
+  );
   const [itemError, setItemError] = useState<string | null>(null);
   const playback = usePlaybackSource(itemId);
   const playbackQueue = usePlaybackQueue(item);
@@ -53,7 +56,8 @@ export function MobilePlayerPage() {
       }
 
       setItemError(null);
-      setItem(null);
+      const preloadedItem = readPreloadedPlaybackItem(itemId);
+      setItem(preloadedItem);
 
       try {
         const loadedItem = await getItem(itemId);
@@ -225,6 +229,7 @@ export function MobilePlayerPage() {
           <div className="w-full max-w-2xl">
             <Link
               to={mediaOwnerRoute}
+              replace
               className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
             >
               <ArrowLeft size={17} />

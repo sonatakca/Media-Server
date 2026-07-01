@@ -55,6 +55,7 @@ const mockMovie: JellyfinItem = {
   Id: "movie-123",
   Name: "The Matrix",
   Type: "Movie",
+  MediaType: "Video",
   ProductionYear: 1999,
   ImageTags: {
     Primary: "primary-tag-abc",

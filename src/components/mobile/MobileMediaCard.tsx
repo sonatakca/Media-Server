@@ -6,6 +6,10 @@ import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
+import {
+  getWatchRouteForItem,
+  shouldOpenPlaybackForItem,
+} from "../../lib/routes";
 import type { JellyfinItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
 import { ClearWatchingButton } from "../ClearWatchingButton";
@@ -144,9 +148,8 @@ export function MobileMediaCard({
       countText ?? [item.ProductionYear, runtime].filter(Boolean).join(" / ");
   }
 
-  const shouldPlayOnCardClick =
-    item.Type === "Episode" || item.MediaType === "Video";
-  const primaryTo = shouldPlayOnCardClick ? `/watch/${item.Id}` : to;
+  const shouldPlayOnCardClick = shouldOpenPlaybackForItem(item);
+  const primaryTo = shouldPlayOnCardClick ? getWatchRouteForItem(item) : to;
 
   // Use Series Poster if it's an episode being shown as a vertical poster
   const imageUrl =

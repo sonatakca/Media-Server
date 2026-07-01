@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
+import { getWatchRouteForItem, shouldOpenPlaybackForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -289,9 +290,8 @@ export function MediaCard({
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
-  const shouldPlayOnCardClick =
-    item.Type === "Episode" || item.MediaType === "Video";
-  const primaryCardTo = shouldPlayOnCardClick ? `/watch/${item.Id}` : to;
+  const shouldPlayOnCardClick = shouldOpenPlaybackForItem(item);
+  const primaryCardTo = shouldPlayOnCardClick ? getWatchRouteForItem(item) : to;
 
   const isLandscape = variant === "landscape" || isEpisode;
   const isGrid = layout === "grid";
