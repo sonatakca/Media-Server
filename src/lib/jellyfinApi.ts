@@ -999,7 +999,7 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
     fields: DEFAULT_ITEM_FIELDS,
     enableImages: true,
     imageTypeLimit: 1,
-    enableImageTypes: "Primary,Backdrop,Logo",
+    enableImageTypes: "Primary,Backdrop,Logo,Thumb",
   };
 
   try {
@@ -1084,7 +1084,7 @@ export async function getAllMovieAndSeriesItems(): Promise<JellyfinItem[]> {
           fields: DEFAULT_ITEM_FIELDS,
           enableImages: true,
           imageTypeLimit: 1,
-          enableImageTypes: "Primary,Backdrop,Logo",
+          enableImageTypes: "Primary,Backdrop,Logo,Thumb",
           enableUserData: true,
           startIndex,
           limit,
@@ -2644,6 +2644,29 @@ export function getBackdropImageUrl(
       maxWidth,
       quality: 88,
       imageIndex: 0,
+      tag,
+      api_key: getTokenForUrl(),
+    },
+  );
+}
+
+export function getThumbImageUrl(
+  itemId: string,
+  tag?: string,
+  maxWidth = 900,
+): string {
+  const serverUrl = getServerUrl();
+
+  if (!serverUrl) {
+    return "";
+  }
+
+  return buildJellyfinUrl(
+    serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/Images/Thumb`,
+    {
+      maxWidth,
+      quality: 90,
       tag,
       api_key: getTokenForUrl(),
     },

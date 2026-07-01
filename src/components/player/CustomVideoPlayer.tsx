@@ -31,6 +31,7 @@ import {
   getDisplayTitle,
   getItemSubtitle,
 } from "../../lib/format";
+import { getMediaOwnerRouteForItem } from "../../lib/routes";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { getVideoErrorDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
@@ -3081,7 +3082,7 @@ export function CustomVideoPlayer({
     ? getEpisodeDisplayMetadata(item, language)
     : null;
   const playerEpisodeName = isEpisodeItem
-    ? (episodeMetadata?.title?.trim() || item.Name.trim() || null)
+    ? episodeMetadata?.title?.trim() || item.Name.trim() || null
     : null;
   const playerSeriesLogoItemId = isEpisodeItem
     ? (item.ParentLogoItemId ?? item.SeriesId ?? null)
@@ -3323,7 +3324,7 @@ export function CustomVideoPlayer({
             episodeLabel={playerEpisodeLabel}
             episodeName={playerEpisodeName}
             subtitle={playerHeaderSubtitle}
-            backTo={`/item/${item.Id}`}
+            backTo={getMediaOwnerRouteForItem(item)}
             visible={shouldRenderPlayerChrome}
             isPlaying={progress.isPlaying}
             isPlayPausePending={

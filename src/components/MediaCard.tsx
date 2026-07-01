@@ -1,9 +1,9 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { Info, RotateCcw } from "lucide-react";
+import { RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
-import { getDisplayTitle, getItemSubtitle } from "../lib/format";
+import { formatRuntime, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import type { JellyfinItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
@@ -132,6 +132,69 @@ function getCountLabel(
   return null;
 }
 
+function getPosterCountBubbleLabel(
+  item: JellyfinItem,
+  itemCounts: string | null,
+  t: (key: TranslationKey) => string,
+): string | null {
+  const episodeCount =
+    item.Type === "Series"
+      ? item.RecursiveItemCount
+      : item.Type === "Season"
+        ? (item.ChildCount ?? item.RecursiveItemCount)
+        : null;
+
+  if (typeof episodeCount === "number" && episodeCount > 0) {
+    return countLabel(
+      episodeCount,
+      "media.episodeSingular",
+      "media.episodePlural",
+      t,
+    );
+  }
+
+  return item.Type === "Series" ? itemCounts : null;
+}
+
+function getEpisodeSeasonLabel(
+  item: JellyfinItem,
+  t: (key: TranslationKey) => string,
+): string | null {
+  if (item.Type !== "Episode") {
+    return null;
+  }
+
+  if (
+    typeof item.ParentIndexNumber === "number" &&
+    item.ParentIndexNumber > 0
+  ) {
+    return formatTemplate(t("media.seasonNumber"), {
+      number: item.ParentIndexNumber,
+    });
+  }
+
+  return item.SeasonName ?? null;
+}
+
+function getCommunityRatingLabel(rating?: number): string | null {
+  if (typeof rating !== "number" || !Number.isFinite(rating)) {
+    return null;
+  }
+
+  return `${rating.toFixed(1).replace(/\.0$/, "")}/10`;
+}
+
+function getContinueEpisodeTitleFontSize(title: string): string {
+  const maxFontSizeRem = 1.125;
+  const minFontSizeRem = 0.82;
+  const shrinkStartLength = 18;
+  const titleLength = Array.from(title).length;
+  const fontSize =
+    maxFontSizeRem - Math.max(titleLength - shrinkStartLength, 0) * 0.024;
+
+  return `${Math.max(minFontSizeRem, fontSize).toFixed(3)}rem`;
+}
+
 export function MediaCard({
   item,
   to,
@@ -169,13 +232,27 @@ export function MediaCard({
   const episodeDisplayTitle = isSeasonEpisodeGrid
     ? episodeNumberLabel
     : isEpisode
-      ? episodeMetadata?.title ?? item.Name ?? null
+      ? (episodeMetadata?.title ?? item.Name ?? null)
       : null;
   const displayTitle = episodeDisplayTitle ?? title;
 
   const itemCounts = getCountLabel(item, t);
+  const posterCountBubbleLabel = getPosterCountBubbleLabel(item, itemCounts, t);
   const progressPercent = getItemProgressPercent(item);
   const isWatched = isItemCompleted(item);
+  const isContinueWatchingCard = Boolean(onClearContinueWatching);
+  const runtimeLabel = formatRuntime(item.RunTimeTicks, mediaFormatLabels);
+  const episodeSeasonLabel = getEpisodeSeasonLabel(item, t);
+  const continueContextLabel = isEpisode
+    ? [item.SeriesName, episodeSeasonLabel].filter(Boolean).join(" · ")
+    : item.Genres?.filter(Boolean).slice(0, 2).join(" · ") || null;
+  const continueDescription = isEpisode
+    ? (episodeMetadata?.overview ?? item.Overview)
+    : item.Overview;
+  const continueFactChips = [
+    runtimeLabel,
+    getCommunityRatingLabel(item.CommunityRating),
+  ].filter((chip): chip is string => Boolean(chip));
 
   const imageUrl =
     episodeMetadata?.thumbnailUrl ??
@@ -194,6 +271,11 @@ export function MediaCard({
     shouldUseShowPrimaryImage && showPrimaryImageUrl
       ? showPrimaryImageUrl
       : imageUrl;
+  const continueCoverImageUrl = isEpisode
+    ? showPrimaryImageUrl
+    : item.ImageTags?.Primary
+      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 720)
+      : displayImageUrl;
   const logoUrl =
     item.Type === "Episode" && isSeasonEpisodeGrid
       ? ""
@@ -207,16 +289,20 @@ export function MediaCard({
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
-  const primaryCardTo = canPlay ? `/watch/${item.Id}` : to;
+  const shouldPlayOnCardClick =
+    item.Type === "Episode" || item.MediaType === "Video";
+  const primaryCardTo = shouldPlayOnCardClick ? `/watch/${item.Id}` : to;
 
   const isLandscape = variant === "landscape" || isEpisode;
   const isGrid = layout === "grid";
 
   const sizeClass = isGrid
     ? "w-full"
-    : isLandscape
-      ? "w-60 sm:w-80 lg:w-96"
-      : "w-36 sm:w-52 lg:w-60";
+    : isContinueWatchingCard
+      ? "w-72 sm:w-[26rem] lg:w-[30rem]"
+      : isLandscape
+        ? "w-60 sm:w-80 lg:w-96"
+        : "w-36 sm:w-52 lg:w-60";
 
   const aspectClass = isEpisode
     ? ""
@@ -244,6 +330,200 @@ export function MediaCard({
           },
         }
     : {};
+
+  const handleImageLoaded = (event: React.SyntheticEvent<HTMLImageElement>) => {
+    const image = event.currentTarget;
+    const imageAspectRatio = image.naturalWidth / image.naturalHeight;
+
+    if (
+      !isContinueWatchingCard &&
+      item.Type === "Episode" &&
+      variant === "poster" &&
+      !shouldUseShowPrimaryImage &&
+      showPrimaryImageUrl &&
+      imageAspectRatio > 1.2
+    ) {
+      setImageLoaded(false);
+      setShouldUseShowPrimaryImage(true);
+      return;
+    }
+
+    setImageLoaded(true);
+  };
+
+  const renderContinueWatchingCard = () => {
+    const continueTitle = isEpisode
+      ? (episodeMetadata?.title ?? item.Name)
+      : displayTitle;
+    const continueTitleStyle: React.CSSProperties | undefined = isEpisode
+      ? {
+          fontSize: getContinueEpisodeTitleFontSize(continueTitle),
+          lineHeight: 1.14,
+        }
+      : undefined;
+    const continueActionButtonClass =
+      "pointer-events-auto flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/64 transition duration-200 hover:bg-white/[0.08] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/55 disabled:opacity-50";
+
+    return (
+      <motion.div
+        className={`h-full min-w-0 shrink-0 ${sizeClass}`}
+        whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
+        {...motionProps}
+      >
+        <div
+          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+            isWatched
+              ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.28),0_22px_60px_rgba(16,185,129,0.2)]"
+              : "border-white/10"
+          }`}
+        >
+          <Link
+            to={primaryCardTo}
+            aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${title}`}
+            className="absolute inset-0 z-20 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
+          />
+
+          <div className="pointer-events-none relative z-0 h-full min-w-0 overflow-hidden bg-zinc-950">
+            {!imageLoaded && continueCoverImageUrl && !imageFailed ? (
+              <div className="shimmer absolute inset-0" />
+            ) : null}
+            {continueCoverImageUrl && !imageFailed ? (
+              <img
+                src={continueCoverImageUrl}
+                alt={title}
+                loading="lazy"
+                decoding="async"
+                className="relative z-10 h-full w-full object-cover"
+                onLoad={handleImageLoaded}
+                onError={() => setImageFailed(true)}
+              />
+            ) : collectionItems?.length ? (
+              <CollectionPosterMosaic
+                title={title}
+                items={collectionItems}
+                imageSize={isEpisode || isLandscape ? 760 : 520}
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] p-4 text-center text-sm font-bold text-zinc-100">
+                {displayTitle}
+              </div>
+            )}
+            {renderContentByType()}
+          </div>
+
+          <div className="pointer-events-none relative isolate z-30 flex h-full min-w-0 flex-col overflow-hidden bg-black/40 px-4 py-3.5 shadow-[inset_1px_0_0_rgba(255,255,255,0.1)] sm:px-5 sm:py-4 transform-gpu [backface-visibility:hidden]">
+            {continueCoverImageUrl && !imageFailed ? (
+              <img
+                src={continueCoverImageUrl}
+                alt=""
+                aria-hidden="true"
+                className="absolute inset-y-0 left-0 -z-30 h-full w-full -scale-x-100 object-cover opacity-100 blur-[50px] transform-gpu [backface-visibility:hidden]"
+              />
+            ) : null}
+            <div className="absolute inset-0 -z-20" />
+            <div className="absolute inset-y-0 left-0 -z-[5] w-px bg-gradient-to-b from-transparent via-white/25 to-transparent" />
+
+            <div className="flex min-h-9 items-center justify-between gap-3">
+              <div className="min-w-0 self-stretch">
+                {isEpisode && episodeNumberLabel ? (
+                  <span className="flex h-full items-center truncate text-[0.67rem] font-black uppercase tracking-[0.12em] text-white/62 sm:text-xs">
+                    {episodeNumberLabel}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="pointer-events-auto relative z-40 flex shrink-0 items-center gap-2">
+                {canPlay && onWatchedStatusReset ? (
+                  <WatchedStatusButton
+                    scope="item"
+                    action={isWatched ? "remove" : "mark"}
+                    item={item}
+                    onReset={onWatchedStatusReset}
+                    className={continueActionButtonClass}
+                  />
+                ) : null}
+                {canPlay && showRestartWatching ? (
+                  <RestartWatchingButton
+                    item={item}
+                    className={continueActionButtonClass}
+                  />
+                ) : null}
+                {canPlay &&
+                showPlayFromBeginning &&
+                progressPercent !== null ? (
+                  <Tooltip content={t("details.playFromBeginning")}>
+                    <Link
+                      to={`/watch/${item.Id}?start=0`}
+                      aria-label={formatTemplate(
+                        t("details.playTitleFromBeginning"),
+                        { title },
+                      )}
+                      className={continueActionButtonClass}
+                    >
+                      <RotateCcw size={16} />
+                    </Link>
+                  </Tooltip>
+                ) : null}
+                {canPlay && onClearContinueWatching ? (
+                  <ClearWatchingButton
+                    item={item}
+                    onCleared={onClearContinueWatching}
+                    className={continueActionButtonClass}
+                  />
+                ) : null}
+              </div>
+            </div>
+
+            <h3
+              className={`mt-1 font-black text-white ${
+                isEpisode
+                  ? "truncate whitespace-nowrap"
+                  : "line-clamp-2 text-base leading-tight sm:text-lg"
+              }`}
+              style={continueTitleStyle}
+            >
+              {continueTitle}
+            </h3>
+
+            {continueContextLabel ? (
+              <p className="mt-1 truncate text-[0.72rem] font-bold text-white/58 sm:text-xs">
+                {continueContextLabel}
+              </p>
+            ) : null}
+
+            {continueDescription ? (
+              <p className="mt-2 min-h-0 overflow-hidden text-[0.72rem] font-medium leading-[1.45] text-white/76 line-clamp-[7] sm:text-xs sm:leading-[1.5] sm:line-clamp-[8] lg:line-clamp-[9] ">
+                {continueDescription}
+              </p>
+            ) : null}
+
+            {continueFactChips.length > 0 ? (
+              <div className="mt-auto flex flex-wrap items-center gap-1.5 pt-3">
+                {continueFactChips.map((chip) => (
+                  <span
+                    key={chip}
+                    className="rounded-full border border-white/10 bg-white/[0.07] px-2 py-0.5 text-[0.64rem] font-bold text-white/68 sm:text-[0.7rem]"
+                  >
+                    {chip}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+
+          {progressPercent !== null ? (
+            <div className="absolute inset-x-0 bottom-0 z-50 h-[0.15rem] bg-gray-600">
+              <div
+                data-testid="media-card-progress-fill"
+                className="h-full bg-[var(--accent)]"
+                style={{ width: `${progressPercent}%` }}
+              />
+            </div>
+          ) : null}
+        </div>
+      </motion.div>
+    );
+  };
 
   const renderContentByType = () => {
     if (item.Type === "Season") {
@@ -282,33 +562,40 @@ export function MediaCard({
           <img
             src={logoUrl}
             alt={displayTitle}
-            className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
+            // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
+            className="mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24"
           />
         ) : (
           <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
             {displayTitle}
           </h3>
         )}
-        {itemCounts && (
-          <p className="mb-1 line-clamp-1 text-[0.7rem] font-bold text-white sm:text-sm">
-            {itemCounts}
-          </p>
-        )}
-        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
-          {item.ProductionYear && (
-            <span className="rounded-full bg-white/10 px-2 py-0.5">
-              {item.ProductionYear}
+        <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {item.ProductionYear && (
+              <span className="rounded-full bg-white/10 px-2 py-0.5">
+                {item.ProductionYear}
+              </span>
+            )}
+            {item.OfficialRating && (
+              <span className="rounded-full bg-white/10 px-2 py-0.5">
+                {item.OfficialRating}
+              </span>
+            )}
+          </div>
+          {posterCountBubbleLabel ? (
+            <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
+              {posterCountBubbleLabel}
             </span>
-          )}
-          {item.OfficialRating && (
-            <span className="rounded-full bg-white/10 px-2 py-0.5">
-              {item.OfficialRating}
-            </span>
-          )}
+          ) : null}
         </div>
       </div>
     );
   };
+
+  if (isContinueWatchingCard) {
+    return renderContinueWatchingCard();
+  }
 
   return (
     <motion.div
@@ -329,7 +616,7 @@ export function MediaCard({
       >
         <Link
           to={primaryCardTo}
-          aria-label={`${t("common.details")} ${title}`}
+          aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${title}`}
           className="absolute inset-0 z-30 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
 
@@ -354,21 +641,7 @@ export function MediaCard({
                   : "object-cover group-hover:scale-[1.04] group-focus-within:scale-[1.08]"
               } ${imageLoaded ? "opacity-100" : "opacity-0"}`}
               onLoad={(event) => {
-                const image = event.currentTarget;
-                const imageAspectRatio =
-                  image.naturalWidth / image.naturalHeight;
-                if (
-                  item.Type === "Episode" &&
-                  variant === "poster" &&
-                  !shouldUseShowPrimaryImage &&
-                  showPrimaryImageUrl &&
-                  imageAspectRatio > 1.2
-                ) {
-                  setImageLoaded(false);
-                  setShouldUseShowPrimaryImage(true);
-                  return;
-                }
-                setImageLoaded(true);
+                handleImageLoaded(event);
               }}
               onError={() => setImageFailed(true)}
             />

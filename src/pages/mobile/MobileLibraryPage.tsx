@@ -416,6 +416,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
   const shouldShowSeriesDetails =
     data.library?.Type === "Series" ||
     data.library?.Type === "Season" ||
+    data.library?.Type === "Movie" ||
     mode === "series" ||
     mode === "season";
 

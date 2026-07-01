@@ -331,6 +331,17 @@ describe("playback backend HTTP routes", () => {
     });
   });
 
+  it("reports bounded transcode runtime status", async () => {
+    const { baseUrl } = await createFixtureBackend();
+    const response = await fetch(`${baseUrl}/api/playback/runtime`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      activeVideoTranscodes: 0,
+      maxConcurrentVideoTranscodes: 1,
+    });
+  });
+
   it("sets CORS headers for valid origins", async () => {
     const { baseUrl } = await createFixtureBackend();
     const response = await fetch(`${baseUrl}/health`, {

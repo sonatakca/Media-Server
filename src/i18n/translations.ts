@@ -666,6 +666,10 @@ export const translations = {
     "tmdbArtwork.noTmdbSelected": "No TMDB title selected",
     "tmdbArtwork.noTmdbSelectedDescription":
       "Select a TMDB match to load artwork choices.",
+    "tmdbArtwork.currentArtwork": "Currently applied",
+    "tmdbArtwork.currentArtworkDescription":
+      "This is the image Jellyfin currently exposes for {target}.",
+    "tmdbArtwork.noCurrentArtwork": "No current image found for this slot.",
     "tmdbArtwork.loadingImages": "Loading TMDB images...",
     "tmdbArtwork.loadedImages": "{count} choices for {target}",
     "tmdbArtwork.noImages": "No images matched this language filter.",
@@ -1579,6 +1583,10 @@ export const translations = {
     "tmdbArtwork.noTmdbSelected": "TMDB içeriği seçilmedi",
     "tmdbArtwork.noTmdbSelectedDescription":
       "Görsel seçeneklerini yüklemek için bir TMDB eşleşmesi seç.",
+    "tmdbArtwork.currentArtwork": "Şu anda uygulanan",
+    "tmdbArtwork.currentArtworkDescription":
+      "Jellyfin'in şu anda {target} için gösterdiği görsel.",
+    "tmdbArtwork.noCurrentArtwork": "Bu alan için mevcut görsel bulunamadı.",
     "tmdbArtwork.loadingImages": "TMDB görselleri yükleniyor...",
     "tmdbArtwork.loadedImages": "{target} için {count} seçenek",
     "tmdbArtwork.noImages": "Bu dil filtresine uyan görsel yok.",

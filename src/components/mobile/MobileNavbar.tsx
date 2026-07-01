@@ -104,8 +104,7 @@ export function MobileNavbar() {
   const handleThemeChange = () => {
     window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
   };
-  const headerOverArtwork =
-    location.pathname === "/home" || location.pathname.startsWith("/item/");
+  const headerOverArtwork = location.pathname === "/home";
   const showHeaderSurface = hasScrolled || !headerOverArtwork;
   const headerSurfaceClass = showHeaderSurface
     ? "bg-black/50 backdrop-blur-xl"

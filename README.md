@@ -2,7 +2,10 @@
 
 Seyirlik is a custom frontend/client for an existing Jellyfin server.
 
-Jellyfin remains the backend. This project does not rebuild Jellyfin, does not add a custom backend, and does not modify Jellyfin server files. The browser talks directly to Jellyfin through Jellyfin's HTTP API.
+Jellyfin remains the library/authentication backend. The browser normally talks
+directly to Jellyfin, while an optional local playback backend provides
+capability-based direct file delivery, remuxing, and bounded FFmpeg
+transcoding. Seyirlik does not modify Jellyfin server files.
 
 ## Tech Stack
 
@@ -13,6 +16,7 @@ Jellyfin remains the backend. This project does not rebuild Jellyfin, does not a
 - React Router
 - hls.js for HLS playback on browsers without native HLS support
 - Browser `fetch` requests to Jellyfin
+- Optional Node playback backend with FFmpeg/ffprobe
 
 ## Install
 
@@ -132,6 +136,19 @@ MKV container, H.265/HEVC video, OPUS or other non-AAC audio
 ```
 
 Open the browser console while testing `/watch/:itemId`. Seyirlik logs the selected Jellyfin media source, whether it is using `DirectPlay`, `DirectStream`, or `Transcoding`, and a redacted playback URL.
+
+## Native Desktop Player Direction
+
+The web player remains constrained by browser codec/container support. The
+cross-platform desktop design uses a native libmpv/FFmpeg renderer for Windows,
+Linux, and macOS, with direct play preferred over transcoding. The playback
+planner already accepts native capability profiles, and the server now selects
+available hardware H.264 encoders with bounded software fallback.
+
+See [Native playback architecture](docs/NATIVE_PLAYBACK_ARCHITECTURE.md) for
+the implementation plan, server controls, and the reasoning behind assigning a
+live transcode to one healthy node instead of splitting every stream across
+client and server.
 
 ## TMDB Artwork Dev Tool
 

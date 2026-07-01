@@ -13,7 +13,6 @@ import {
   testServerConnection,
 } from "./lib/jellyfinApi";
 import { HomePage } from "./pages/HomePage";
-import { ItemDetailsPage } from "./pages/ItemDetailsPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
@@ -265,7 +264,6 @@ export default function App() {
                 path="/season/:seasonId"
                 element={<LibraryPage mode="season" />}
               />
-              <Route path="/item/:itemId" element={<ItemDetailsPage />} />
             </Route>
             <Route element={<RouteTransitionOutlet variant="player" />}>
               <Route path="/watch/:itemId" element={<PlayerPage />} />

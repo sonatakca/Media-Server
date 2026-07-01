@@ -144,11 +144,9 @@ export function MobileMediaCard({
       countText ?? [item.ProductionYear, runtime].filter(Boolean).join(" / ");
   }
 
-  const canPlay =
-    item.Type === "Movie" ||
-    item.Type === "Episode" ||
-    item.MediaType === "Video";
-  const primaryTo = canPlay ? `/watch/${item.Id}` : to;
+  const shouldPlayOnCardClick =
+    item.Type === "Episode" || item.MediaType === "Video";
+  const primaryTo = shouldPlayOnCardClick ? `/watch/${item.Id}` : to;
 
   // Use Series Poster if it's an episode being shown as a vertical poster
   const imageUrl =
@@ -204,7 +202,7 @@ export function MobileMediaCard({
         >
           <Link
             to={primaryTo}
-            aria-label={`${canPlay ? t("common.play") : t("common.details")} ${mainTitle}`}
+            aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${mainTitle}`}
             className="block h-full w-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
           >
             {imageUrl ? (

@@ -382,4 +382,107 @@ describe("decidePlaybackPlan", () => {
     expect(plan.audio.action).toBe("copy");
     expect(reasonCodes(media, client)).toContain("container_unsupported");
   });
+
+  it("direct plays broad formats for a native libmpv client", () => {
+    const plan = decidePlaybackPlan({
+      media: buildMedia({
+        container: {
+          formatName: "matroska,webm",
+          extension: "mkv",
+          isBrowserDirectPlayableContainer: false,
+        },
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            profile: "Main 10",
+            width: 3840,
+            height: 2160,
+            bitDepth: 10,
+            isHdr: true,
+          },
+        ],
+        audioStreams: [
+          {
+            index: 1,
+            codecName: "dts",
+            channels: 8,
+            isDefault: true,
+          },
+        ],
+        subtitleStreams: [pgsSubtitle()],
+      }),
+      client: buildClient({
+        playbackEngine: "native",
+        nativePlayer: {
+          engine: "libmpv",
+          version: "test",
+          supportedContainers: "*",
+          supportedVideoCodecs: "*",
+          supportedAudioCodecs: "*",
+          hardwareDecoding: true,
+          supports10BitVideo: true,
+          supportsHdr: true,
+          supportsDolbyVisionBaseLayer: true,
+          maxWidth: 7680,
+          maxHeight: 4320,
+          maxAudioChannels: 16,
+          subtitles: {
+            text: true,
+            ass: true,
+            imageBased: true,
+          },
+        },
+      }),
+      selectedSubtitleStreamIndex: 2,
+    });
+
+    expect(plan.mode).toBe("direct-play");
+    expect(plan.requiresFfmpeg).toBe(false);
+    expect(plan.video.action).toBe("copy");
+    expect(plan.audio.action).toBe("copy");
+    expect(plan.subtitles.action).toBe("external");
+  });
+
+  it("tone maps Dolby Vision when native base-layer fallback is unavailable", () => {
+    const plan = decidePlaybackPlan({
+      media: buildMedia({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            profile: "Main 10",
+            width: 3840,
+            height: 2160,
+            bitDepth: 10,
+            isHdr: true,
+            hasDolbyVision: true,
+          },
+        ],
+      }),
+      client: buildClient({
+        playbackEngine: "native",
+        nativePlayer: {
+          engine: "libmpv",
+          supportedContainers: "*",
+          supportedVideoCodecs: "*",
+          supportedAudioCodecs: "*",
+          hardwareDecoding: true,
+          supports10BitVideo: true,
+          supportsHdr: true,
+          supportsDolbyVisionBaseLayer: false,
+          subtitles: {
+            text: true,
+            ass: true,
+            imageBased: true,
+          },
+        },
+      }),
+    });
+
+    expect(plan.mode).toBe("video-transcode");
+    expect(plan.reasons.map((item) => item.code)).toContain(
+      "hdr_tonemap_required",
+    );
+  });
 });

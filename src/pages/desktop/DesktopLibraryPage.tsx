@@ -538,8 +538,13 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
   const shouldShowSeriesDetails =
     data.library?.Type === "Series" ||
     data.library?.Type === "Season" ||
+    data.library?.Type === "Movie" ||
     mode === "series" ||
     mode === "season";
+  const detailsScrollLabel =
+    data.library?.Type === "Movie"
+      ? t("common.details")
+      : t("library.selectSeason");
 
   if (shouldShowSeriesDetails && data.library) {
     return (
@@ -551,7 +556,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
 
           <button
             type="button"
-            aria-label={t("library.selectSeason")}
+            aria-label={detailsScrollLabel}
             onClick={() =>
               seriesDetailsRef.current?.scrollIntoView({
                 behavior: "smooth",

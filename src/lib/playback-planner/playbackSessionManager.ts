@@ -8,6 +8,11 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
+import {
+  createSoftwareRuntimeProfile,
+  detectFfmpegRuntime,
+  type FfmpegRuntimeProfile,
+} from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
 export interface PlaybackSession {
@@ -29,6 +34,10 @@ export interface PlaybackSessionManagerOptions {
   hlsStartupPollMs?: number;
   tempPrefix?: string;
   sessionRouteBase?: string;
+  maxConcurrentVideoTranscodes?: number;
+  preferredVideoEncoder?: string;
+  softwareThreads?: number;
+  runtimeProfileProvider?: () => Promise<FfmpegRuntimeProfile>;
   spawnProcess?: (
     command: string,
     args: string[],
@@ -42,6 +51,7 @@ const DEFAULT_HLS_STARTUP_TIMEOUT_MS = 10_000;
 const DEFAULT_HLS_STARTUP_POLL_MS = 100;
 const DEFAULT_TEMP_PREFIX = "seyirlik-playback-";
 const DEFAULT_SESSION_ROUTE_BASE = "/api/playback/sessions";
+const DEFAULT_MAX_CONCURRENT_VIDEO_TRANSCODES = 1;
 const STDERR_TAIL_LIMIT = 8_000;
 
 export class PlaybackSessionStartupError extends Error {
@@ -51,6 +61,16 @@ export class PlaybackSessionStartupError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PlaybackSessionStartupError";
+  }
+}
+
+export class PlaybackCapacityError extends Error {
+  code = "TRANSCODE_CAPACITY_REACHED";
+  statusCode = 503;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PlaybackCapacityError";
   }
 }
 
@@ -109,6 +129,11 @@ export class PlaybackSessionManager {
   private hlsStartupPollMs: number;
   private tempPrefix: string;
   private sessionRouteBase: string;
+  private maxConcurrentVideoTranscodes: number;
+  private reservedVideoTranscodes = 0;
+  private runtimeProfileProvider: () => Promise<FfmpegRuntimeProfile>;
+  private runtimeProfilePromise: Promise<FfmpegRuntimeProfile> | null = null;
+  private resolvedRuntimeProfile: FfmpegRuntimeProfile | null = null;
   private spawnProcess: NonNullable<
     PlaybackSessionManagerOptions["spawnProcess"]
   >;
@@ -124,29 +149,77 @@ export class PlaybackSessionManager {
     this.tempPrefix = options.tempPrefix ?? DEFAULT_TEMP_PREFIX;
     this.sessionRouteBase =
       options.sessionRouteBase ?? DEFAULT_SESSION_ROUTE_BASE;
+    this.maxConcurrentVideoTranscodes = Math.max(
+      1,
+      Math.floor(
+        options.maxConcurrentVideoTranscodes ??
+          DEFAULT_MAX_CONCURRENT_VIDEO_TRANSCODES,
+      ),
+    );
+    this.runtimeProfileProvider =
+      options.runtimeProfileProvider ??
+      (() =>
+        detectFfmpegRuntime({
+          ffmpegPath: this.ffmpegPath,
+          preferredVideoEncoder: options.preferredVideoEncoder,
+          softwareThreads: options.softwareThreads,
+        }));
     this.spawnProcess = options.spawnProcess ?? spawn;
   }
 
-  async createSession(
-    plan: PlaybackPlan,
-    media: MediaAnalysis,
-  ): Promise<PlaybackSession> {
-    if (!plan.requiresFfmpeg) {
-      throw new Error("Direct-play plans do not need FFmpeg sessions.");
+  private getActiveVideoTranscodeCount(): number {
+    return Array.from(this.sessions.values()).filter(
+      (session) => session.plan.video.action === "transcode",
+    ).length;
+  }
+
+  private async getRuntimeProfile(): Promise<FfmpegRuntimeProfile> {
+    if (this.resolvedRuntimeProfile) {
+      return this.resolvedRuntimeProfile;
     }
 
-    const sessionId = randomUUID();
+    if (!this.runtimeProfilePromise) {
+      this.runtimeProfilePromise = this.runtimeProfileProvider()
+        .then((profile) => {
+          this.resolvedRuntimeProfile = profile;
+          return profile;
+        })
+        .finally(() => {
+          this.runtimeProfilePromise = null;
+        });
+    }
+
+    return this.runtimeProfilePromise;
+  }
+
+  private async startSessionAttempt(
+    sessionId: string,
+    plan: PlaybackPlan,
+    media: MediaAnalysis,
+    runtimeProfile: FfmpegRuntimeProfile,
+  ): Promise<PlaybackSession> {
     const outputDir = await mkdtemp(join(tmpdir(), this.tempPrefix));
-    const planWithSession = withSessionDelivery(
-      plan,
-      sessionId,
-      this.sessionRouteBase,
-    );
+    const planWithRuntime: PlaybackPlan = {
+      ...plan,
+      processing: {
+        node: "server",
+        videoEncoder:
+          plan.video.action === "transcode"
+            ? runtimeProfile.videoEncoder
+            : undefined,
+        hardwareAccelerated:
+          plan.video.action === "transcode"
+            ? runtimeProfile.hardwareAccelerated
+            : false,
+        softwareThreadLimit: runtimeProfile.softwareThreads,
+      },
+    };
     const command = buildFfmpegCommand({
-      plan: planWithSession,
+      plan: planWithRuntime,
       media,
       outputDir,
       ffmpegPath: this.ffmpegPath,
+      runtimeProfile,
     });
     let session: PlaybackSession | undefined;
 
@@ -158,7 +231,7 @@ export class PlaybackSessionManager {
       const nextSession: PlaybackSession = {
         sessionId,
         mediaId: media.mediaId,
-        plan: planWithSession,
+        plan: planWithRuntime,
         process: child,
         outputDir,
         createdAt: now,
@@ -179,7 +252,11 @@ export class PlaybackSessionManager {
       console.info(
         `[Seyirlik Playback Backend] FFmpeg session ready in ${
           Date.now() - now.getTime()
-        }ms.`,
+        }ms using ${
+          plan.video.action === "transcode"
+            ? runtimeProfile.videoEncoder
+            : "stream copy"
+        }.`,
       );
       return nextSession;
     } catch (error) {
@@ -190,6 +267,96 @@ export class PlaybackSessionManager {
       await rm(outputDir, { recursive: true, force: true });
       throw error;
     }
+  }
+
+  async createSession(
+    plan: PlaybackPlan,
+    media: MediaAnalysis,
+  ): Promise<PlaybackSession> {
+    if (!plan.requiresFfmpeg) {
+      throw new Error("Direct-play plans do not need FFmpeg sessions.");
+    }
+
+    const isVideoTranscode = plan.video.action === "transcode";
+
+    if (
+      isVideoTranscode &&
+      this.getActiveVideoTranscodeCount() + this.reservedVideoTranscodes >=
+        this.maxConcurrentVideoTranscodes
+    ) {
+      throw new PlaybackCapacityError(
+        `The server is already running the configured maximum of ${this.maxConcurrentVideoTranscodes} video transcode session(s).`,
+      );
+    }
+
+    if (isVideoTranscode) {
+      this.reservedVideoTranscodes += 1;
+    }
+
+    const sessionId = randomUUID();
+    const planWithSession = withSessionDelivery(
+      plan,
+      sessionId,
+      this.sessionRouteBase,
+    );
+
+    try {
+      const runtimeProfile = await this.getRuntimeProfile();
+
+      try {
+        return await this.startSessionAttempt(
+          sessionId,
+          planWithSession,
+          media,
+          runtimeProfile,
+        );
+      } catch (error) {
+        if (!runtimeProfile.hardwareAccelerated || !isVideoTranscode) {
+          throw error;
+        }
+
+        console.warn(
+          `[Seyirlik Playback Backend] ${runtimeProfile.videoEncoder} could not start; retrying with bounded libx264 software encoding.`,
+        );
+        const softwareProfile = createSoftwareRuntimeProfile(
+          runtimeProfile.softwareThreads,
+          runtimeProfile.supportsHdrToneMapping,
+        );
+
+        return await this.startSessionAttempt(
+          sessionId,
+          planWithSession,
+          media,
+          softwareProfile,
+        );
+      }
+    } finally {
+      if (isVideoTranscode) {
+        this.reservedVideoTranscodes = Math.max(
+          0,
+          this.reservedVideoTranscodes - 1,
+        );
+      }
+    }
+  }
+
+  getRuntimeStatus(): {
+    activeVideoTranscodes: number;
+    maxConcurrentVideoTranscodes: number;
+    videoEncoder?: string;
+    hardwareAccelerated?: boolean;
+    softwareThreadLimit?: number;
+    supportsHdrToneMapping?: boolean;
+  } {
+    return {
+      activeVideoTranscodes: this.getActiveVideoTranscodeCount(),
+      maxConcurrentVideoTranscodes: this.maxConcurrentVideoTranscodes,
+      videoEncoder: this.resolvedRuntimeProfile?.videoEncoder,
+      hardwareAccelerated: this.resolvedRuntimeProfile?.hardwareAccelerated,
+      softwareThreadLimit: this.resolvedRuntimeProfile?.softwareThreads,
+      supportsHdrToneMapping:
+        this.resolvedRuntimeProfile?.supportsHdrToneMapping,
+    };
   }
 
   private async terminateSessionProcess(

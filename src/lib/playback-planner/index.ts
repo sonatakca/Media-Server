@@ -6,6 +6,7 @@ export type {
   ContainerAction,
   DecidePlaybackPlanInput,
   MediaAnalysis,
+  NativePlayerCapabilities,
   PlaybackMode,
   PlaybackPlan,
   PlaybackQualityLimit,
@@ -22,3 +23,4 @@ export { buildFfmpegCommand } from "./ffmpegCommandBuilder";
 export { PlaybackSessionManager } from "./playbackSessionManager";
 export { createPlaybackRequestHandler } from "./playbackRoutes";
 export { buildClientCapabilities } from "./clientCapabilities";
+export { createNativeClientCapabilities } from "./nativeClientProfile";

@@ -32,6 +32,10 @@ export interface PlaybackBackendOptions {
   jellyfinServerUrl?: string;
   jellyfinApiKey?: string;
   fetchImpl?: typeof fetch;
+  ffmpegPath?: string;
+  preferredVideoEncoder?: string;
+  maxConcurrentVideoTranscodes?: number;
+  softwareTranscodeThreads?: number;
 }
 
 export interface PlaybackBackend {
@@ -152,7 +156,14 @@ export async function createPlaybackBackend(
       getMediaAnalysis: (media) => analysisCache.getOrAnalyse(media),
       saveClientCapabilities: () => undefined,
     } satisfies PlaybackMediaStore);
-  const sessionManager = options.sessionManager ?? new PlaybackSessionManager();
+  const sessionManager =
+    options.sessionManager ??
+    new PlaybackSessionManager({
+      ffmpegPath: options.ffmpegPath,
+      preferredVideoEncoder: options.preferredVideoEncoder,
+      maxConcurrentVideoTranscodes: options.maxConcurrentVideoTranscodes,
+      softwareThreads: options.softwareTranscodeThreads,
+    });
   const allowedOrigins = new Set(
     options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
   );
@@ -194,6 +205,18 @@ export async function createPlaybackBackend(
         status: "ok",
         service: "seyirlik-playback-backend",
       });
+      return;
+    }
+
+    if (url.pathname === "/api/playback/runtime") {
+      if (request.method !== "GET") {
+        response.statusCode = 405;
+        response.setHeader("Allow", "GET, OPTIONS");
+        response.end();
+        return;
+      }
+
+      sendJson(response, 200, sessionManager.getRuntimeStatus());
       return;
     }
 
@@ -249,6 +272,23 @@ function parsePort(rawPort: string | undefined): number {
   return port;
 }
 
+function parseOptionalPositiveInteger(
+  rawValue: string | undefined,
+  variableName: string,
+): number | undefined {
+  if (!rawValue) {
+    return undefined;
+  }
+
+  const value = Number(rawValue);
+
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${variableName} must be a positive integer.`);
+  }
+
+  return value;
+}
+
 export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
   const mediaRoot = process.env.SEYIRLIK_MEDIA_ROOT;
   const jellyfinServerUrl = process.env.SEYIRLIK_JELLYFIN_SERVER_URL;
@@ -282,6 +322,17 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
     tmdbApiKey,
     jellyfinServerUrl,
     jellyfinApiKey,
+    ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH,
+    preferredVideoEncoder:
+      process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
+    maxConcurrentVideoTranscodes: parseOptionalPositiveInteger(
+      process.env.SEYIRLIK_MAX_VIDEO_TRANSCODES,
+      "SEYIRLIK_MAX_VIDEO_TRANSCODES",
+    ),
+    softwareTranscodeThreads: parseOptionalPositiveInteger(
+      process.env.SEYIRLIK_SOFTWARE_TRANSCODE_THREADS,
+      "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS",
+    ),
   });
 
   await new Promise<void>((resolveListen) => {

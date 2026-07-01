@@ -78,6 +78,8 @@ export interface ClientCapabilities {
   deviceId?: string;
   userAgent?: string;
   platform?: string;
+  playbackEngine?: "browser" | "native";
+  nativePlayer?: NativePlayerCapabilities;
   supportsHlsNative: boolean;
   supportsMediaSource: boolean;
   supportsManagedMediaSource?: boolean;
@@ -109,6 +111,27 @@ export interface ClientCapabilities {
   };
   maxBitrate?: number;
   testedAt: string;
+}
+
+export interface NativePlayerCapabilities {
+  engine: "libmpv" | "ffmpeg" | "vlc" | "gstreamer" | "other";
+  version?: string;
+  supportedContainers: string[] | "*";
+  supportedVideoCodecs: string[] | "*";
+  supportedAudioCodecs: string[] | "*";
+  hardwareDecoding: boolean;
+  supports10BitVideo: boolean;
+  supportsHdr: boolean;
+  supportsDolbyVisionBaseLayer: boolean;
+  maxWidth?: number;
+  maxHeight?: number;
+  maxBitrate?: number;
+  maxAudioChannels?: number;
+  subtitles: {
+    text: boolean;
+    ass: boolean;
+    imageBased: boolean;
+  };
 }
 
 export interface CodecCapability {
@@ -186,6 +209,12 @@ export interface PlaybackPlan {
     reason?: string;
   };
   reasons: PlaybackReason[];
+  processing?: {
+    node: "server" | "client";
+    videoEncoder?: string;
+    hardwareAccelerated?: boolean;
+    softwareThreadLimit?: number;
+  };
   delivery: {
     type: "file" | "hls";
     url?: string;

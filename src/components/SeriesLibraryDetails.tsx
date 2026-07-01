@@ -524,49 +524,51 @@ export function SeriesLibraryDetails({
 
   return (
     <div className={isDesktop ? "pb-14" : "pb-7"}>
-      <MediaShelf
-        title={labels.episodes}
-        headerControl={seasonSelector}
-        variant={variant}
-      >
-        {isLoadingEpisodes ? (
-          Array.from({ length: 4 }, (_, index) => (
-            <div
-              key={index}
-              className={
-                isDesktop
-                  ? "shimmer aspect-video w-80 shrink-0 rounded-xl"
-                  : "shimmer aspect-video w-[78vw] shrink-0 rounded-xl"
-              }
-            />
-          ))
-        ) : episodes.length > 0 ? (
-          episodes.map((episode, index) => (
-            <div key={episode.Id} className="snap-start">
-              {isDesktop ? (
-                <MediaCard
-                  item={episode}
-                  to={getRouteForItem(episode)}
-                  variant="landscape"
-                  index={index}
-                  animateIn
-                  showPlayFromBeginning
-                />
-              ) : (
-                <MobileMediaCard
-                  item={episode}
-                  to={getRouteForItem(episode)}
-                  variant="landscape"
-                />
-              )}
-            </div>
-          ))
-        ) : (
-          <p className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-5 text-sm text-white/55">
-            {labels.noEpisodes}
-          </p>
-        )}
-      </MediaShelf>
+      {!isMovie ? (
+        <MediaShelf
+          title={labels.episodes}
+          headerControl={seasonSelector}
+          variant={variant}
+        >
+          {isLoadingEpisodes ? (
+            Array.from({ length: 4 }, (_, index) => (
+              <div
+                key={index}
+                className={
+                  isDesktop
+                    ? "shimmer aspect-video w-80 shrink-0 rounded-xl"
+                    : "shimmer aspect-video w-[78vw] shrink-0 rounded-xl"
+                }
+              />
+            ))
+          ) : episodes.length > 0 ? (
+            episodes.map((episode, index) => (
+              <div key={episode.Id} className="snap-start">
+                {isDesktop ? (
+                  <MediaCard
+                    item={episode}
+                    to={getRouteForItem(episode)}
+                    variant="landscape"
+                    index={index}
+                    animateIn
+                    showPlayFromBeginning
+                  />
+                ) : (
+                  <MobileMediaCard
+                    item={episode}
+                    to={getRouteForItem(episode)}
+                    variant="landscape"
+                  />
+                )}
+              </div>
+            ))
+          ) : (
+            <p className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-5 text-sm text-white/55">
+              {labels.noEpisodes}
+            </p>
+          )}
+        </MediaShelf>
+      ) : null}
 
       {trailers.length > 0 ? (
         <MediaShelf title={labels.trailers} variant={variant}>

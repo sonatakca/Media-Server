@@ -347,6 +347,7 @@ export async function buildClientCapabilities(): Promise<ClientCapabilities> {
     deviceId: getOrCreateDeviceId(),
     userAgent: navigator.userAgent,
     platform: navigator.platform,
+    playbackEngine: "browser",
     ...containers,
     video,
     audio,

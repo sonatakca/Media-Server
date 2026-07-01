@@ -65,7 +65,7 @@ describe("MediaCard Component", () => {
   it("renders the movie title and primary image", () => {
     render(
       <MemoryRouter>
-        <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
+        <MediaCard item={mockMovie} to={`/library/${mockMovie.Id}`} />
       </MemoryRouter>,
     );
 
@@ -82,7 +82,7 @@ describe("MediaCard Component", () => {
       <MemoryRouter>
         <MediaCard
           item={{ ...mockMovie, UserData: { Played: true } }}
-          to={`/item/${mockMovie.Id}`}
+          to={`/library/${mockMovie.Id}`}
         />
       </MemoryRouter>,
     );
@@ -95,7 +95,7 @@ describe("MediaCard Component", () => {
       <MemoryRouter>
         <MediaCard
           item={{ ...mockMovie, UserData: { Played: true } }}
-          to={`/item/${mockMovie.Id}`}
+          to={`/library/${mockMovie.Id}`}
         />
       </MemoryRouter>,
     );
@@ -110,7 +110,7 @@ describe("MediaCard Component", () => {
       <MemoryRouter>
         <MediaCard
           item={mockMovie}
-          to={`/item/${mockMovie.Id}`}
+          to={`/library/${mockMovie.Id}`}
           onWatchedStatusReset={vi.fn()}
         />
       </MemoryRouter>,
@@ -162,19 +162,77 @@ describe("MediaCard Component", () => {
     );
   });
 
-  it("renders a play button overlay for playable items", () => {
+  it("opens movie cards on the movie detail route", () => {
     render(
       <MemoryRouter>
-        <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
+        <MediaCard item={mockMovie} to={`/library/${mockMovie.Id}`} />
       </MemoryRouter>,
     );
-    expect(screen.getByLabelText("common.play The Matrix")).toBeInTheDocument();
+    expect(screen.getByLabelText("common.details The Matrix")).toHaveAttribute(
+      "href",
+      "/library/movie-123",
+    );
+  });
+
+  it("uses the series poster for continue-watching episodes", () => {
+    const episode: JellyfinItem = {
+      Id: "episode-123",
+      Name: "Let Him Go",
+      Type: "Episode",
+      SeriesName: "Ezel",
+      SeriesId: "series-123",
+      SeriesPrimaryImageTag: "series-primary",
+      IndexNumber: 18,
+      ParentIndexNumber: 1,
+      ImageTags: {
+        Primary: "episode-frame",
+      },
+    };
+
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={episode}
+          to="/library/series-123"
+          showRestartWatching
+          onClearContinueWatching={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByAltText("Ezel S1E18")).toHaveAttribute(
+      "src",
+      "/mock-primary-series-123.jpg",
+    );
+  });
+
+  it("does not duplicate poster metadata chips in continue-watching details", () => {
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={{
+            ...mockMovie,
+            OfficialRating: "R",
+            RunTimeTicks: 8_160_000_000,
+            CommunityRating: 8.7,
+          }}
+          to={`/library/${mockMovie.Id}`}
+          showRestartWatching
+          onClearContinueWatching={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText("1999")).toHaveLength(1);
+    expect(screen.getAllByText("R")).toHaveLength(1);
+    expect(screen.getByText("14format.minuteShort")).toBeInTheDocument();
+    expect(screen.getByText("8.7/10")).toBeInTheDocument();
   });
 
   it("renders start over only when a continue-watching row opts in", () => {
     const { rerender } = render(
       <MemoryRouter>
-        <MediaCard item={mockMovie} to={`/item/${mockMovie.Id}`} />
+        <MediaCard item={mockMovie} to={`/library/${mockMovie.Id}`} />
       </MemoryRouter>,
     );
 
@@ -191,7 +249,7 @@ describe("MediaCard Component", () => {
       <MemoryRouter>
         <MediaCard
           item={mockMovie}
-          to={`/item/${mockMovie.Id}`}
+          to={`/library/${mockMovie.Id}`}
           showRestartWatching
           onClearContinueWatching={vi.fn()}
         />
@@ -216,7 +274,7 @@ describe("MediaCard Component", () => {
       <MemoryRouter>
         <MediaCard
           item={mockMovie}
-          to={`/item/${mockMovie.Id}`}
+          to={`/library/${mockMovie.Id}`}
           showRestartWatching
           onClearContinueWatching={onClearContinueWatching}
         />

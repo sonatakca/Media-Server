@@ -1,4 +1,8 @@
 import { join } from "node:path";
+import type {
+  FfmpegRuntimeProfile,
+  H264VideoEncoder,
+} from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
 export interface FfmpegCommandInput {
@@ -6,6 +10,7 @@ export interface FfmpegCommandInput {
   media: MediaAnalysis;
   outputDir: string;
   ffmpegPath?: string;
+  runtimeProfile?: FfmpegRuntimeProfile;
 }
 
 export interface FfmpegCommand {
@@ -19,24 +24,141 @@ interface VideoEncoderPreset {
   args: string[];
 }
 
-function selectVideoEncoder(): VideoEncoderPreset {
-  return {
-    codec: "libx264",
-    args: [
-      "-c:v",
-      "libx264",
-      "-preset",
-      "veryfast",
-      "-tune",
-      "zerolatency",
-      "-g",
-      "120",
-      "-keyint_min",
-      "120",
-      "-sc_threshold",
-      "0",
-    ],
-  };
+function getTargetVideoBitrate(
+  media: MediaAnalysis,
+  videoStreamIndex: number,
+): number {
+  const video =
+    media.videoStreams.find((stream) => stream.index === videoStreamIndex) ??
+    media.videoStreams[0];
+  const sourceBitrate = video?.bitrate ?? media.overallBitrate;
+  const pixelCount = (video?.width ?? 1920) * (video?.height ?? 1080);
+  const resolutionTarget =
+    pixelCount >= 3840 * 2160
+      ? 16_000_000
+      : pixelCount >= 1920 * 1080
+        ? 8_000_000
+        : pixelCount >= 1280 * 720
+          ? 4_000_000
+          : 2_000_000;
+
+  if (!sourceBitrate || sourceBitrate <= 0) {
+    return resolutionTarget;
+  }
+
+  return Math.max(
+    1_000_000,
+    Math.min(resolutionTarget, Math.floor(sourceBitrate * 0.9)),
+  );
+}
+
+function getRateControlArgs(
+  media: MediaAnalysis,
+  videoStreamIndex: number,
+): string[] {
+  const targetBitrate = getTargetVideoBitrate(media, videoStreamIndex);
+
+  return [
+    "-b:v",
+    String(targetBitrate),
+    "-maxrate",
+    String(Math.floor(targetBitrate * 1.35)),
+    "-bufsize",
+    String(targetBitrate * 2),
+  ];
+}
+
+function selectVideoEncoder(
+  encoder: H264VideoEncoder,
+  media: MediaAnalysis,
+  videoStreamIndex: number,
+  softwareThreads: number,
+): VideoEncoderPreset {
+  const commonArgs = ["-g", "120", "-pix_fmt", "yuv420p"];
+  const rateControlArgs = getRateControlArgs(media, videoStreamIndex);
+
+  switch (encoder) {
+    case "h264_videotoolbox":
+      return {
+        codec: encoder,
+        args: [
+          "-c:v",
+          encoder,
+          "-realtime",
+          "1",
+          "-allow_sw",
+          "0",
+          ...rateControlArgs,
+          ...commonArgs,
+        ],
+      };
+    case "h264_nvenc":
+      return {
+        codec: encoder,
+        args: [
+          "-c:v",
+          encoder,
+          "-preset",
+          "p4",
+          "-tune",
+          "ll",
+          "-rc",
+          "vbr",
+          ...rateControlArgs,
+          ...commonArgs,
+        ],
+      };
+    case "h264_qsv":
+      return {
+        codec: encoder,
+        args: [
+          "-c:v",
+          encoder,
+          "-preset",
+          "veryfast",
+          "-async_depth",
+          "4",
+          ...rateControlArgs,
+          ...commonArgs,
+        ],
+      };
+    case "h264_amf":
+      return {
+        codec: encoder,
+        args: [
+          "-c:v",
+          encoder,
+          "-quality",
+          "speed",
+          "-usage",
+          "transcoding",
+          "-rc",
+          "vbr_peak",
+          ...rateControlArgs,
+          ...commonArgs,
+        ],
+      };
+    case "libx264":
+    default:
+      return {
+        codec: "libx264",
+        args: [
+          "-c:v",
+          "libx264",
+          "-preset",
+          "veryfast",
+          "-tune",
+          "zerolatency",
+          "-threads",
+          String(Math.max(1, softwareThreads)),
+          "-keyint_min",
+          "120",
+          "-sc_threshold",
+          "0",
+          ...commonArgs,
+        ],
+      };
+  }
 }
 
 function getAudioBitrate(
@@ -110,6 +232,45 @@ function escapeSubtitleFilterPath(filePath: string): string {
     .replace(/'/g, "\\'");
 }
 
+function buildVideoFilter(
+  plan: PlaybackPlan,
+  media: MediaAnalysis,
+  runtimeProfile: FfmpegRuntimeProfile,
+): string | undefined {
+  const filters: string[] = [];
+  const video = media.videoStreams.find(
+    (stream) => stream.index === plan.selected.videoStreamIndex,
+  );
+
+  if (video?.isHdr || video?.hasDolbyVision) {
+    if (!runtimeProfile.supportsHdrToneMapping) {
+      throw new Error(
+        "This FFmpeg build cannot tone-map HDR safely because the zscale and tonemap filters are not both available.",
+      );
+    }
+
+    filters.push(
+      "zscale=t=linear:npl=100",
+      "format=gbrpf32le",
+      "zscale=p=bt709",
+      "tonemap=hable:desat=0",
+      "zscale=t=bt709:m=bt709:r=tv",
+      "format=yuv420p",
+    );
+  }
+
+  if (plan.mode === "subtitle-burn") {
+    filters.push(
+      `subtitles='${escapeSubtitleFilterPath(media.filePath)}':si=${subtitleOrdinal(
+        media,
+        plan.selected.subtitleStreamIndex,
+      )}`,
+    );
+  }
+
+  return filters.length > 0 ? filters.join(",") : undefined;
+}
+
 function buildMapArgs(plan: PlaybackPlan): string[] {
   const args = ["-map", `0:${plan.selected.videoStreamIndex}`];
 
@@ -125,6 +286,13 @@ export function buildFfmpegCommand({
   media,
   outputDir,
   ffmpegPath = "ffmpeg",
+  runtimeProfile = {
+    videoEncoder: "libx264",
+    hardwareAccelerated: false,
+    softwareThreads: 4,
+    availableVideoEncoders: ["libx264"],
+    supportsHdrToneMapping: false,
+  },
 }: FfmpegCommandInput): FfmpegCommand {
   if (!plan.requiresFfmpeg) {
     return {
@@ -137,6 +305,8 @@ export function buildFfmpegCommand({
     "-hide_banner",
     "-y",
     "-nostdin",
+    "-filter_threads",
+    String(Math.max(1, runtimeProfile.softwareThreads)),
     "-i",
     media.filePath,
     ...buildMapArgs(plan),
@@ -145,18 +315,18 @@ export function buildFfmpegCommand({
   if (plan.video.action === "copy") {
     args.push("-c:v", "copy");
   } else {
-    const encoder = selectVideoEncoder();
+    const encoder = selectVideoEncoder(
+      runtimeProfile.videoEncoder,
+      media,
+      plan.selected.videoStreamIndex,
+      runtimeProfile.softwareThreads,
+    );
+    const videoFilter = buildVideoFilter(plan, media, runtimeProfile);
 
     args.push(...encoder.args);
 
-    if (plan.mode === "subtitle-burn") {
-      args.push(
-        "-vf",
-        `subtitles='${escapeSubtitleFilterPath(media.filePath)}':si=${subtitleOrdinal(
-          media,
-          plan.selected.subtitleStreamIndex,
-        )}`,
-      );
+    if (videoFilter) {
+      args.push("-vf", videoFilter);
     }
   }
 

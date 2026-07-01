@@ -5,6 +5,7 @@ import type {
   CodecCapability,
   DecidePlaybackPlanInput,
   MediaAnalysis,
+  NativePlayerCapabilities,
   PlaybackPlan,
   PlaybackReason,
   PlaybackReasonCode,
@@ -35,6 +36,26 @@ function reason(
 
 function normalizeCodec(codec: string | undefined): string {
   return (codec ?? "unknown").toLowerCase();
+}
+
+function nativeListSupports(
+  supportedValues: string[] | "*",
+  value: string,
+): boolean {
+  return (
+    supportedValues === "*" ||
+    supportedValues
+      .map((supportedValue) => normalizeCodec(supportedValue))
+      .includes(normalizeCodec(value))
+  );
+}
+
+function getNativePlayer(
+  client: ClientCapabilities,
+): NativePlayerCapabilities | undefined {
+  return client.playbackEngine === "native"
+    ? client.nativePlayer
+    : undefined;
 }
 
 function normalizeContainer(media: MediaAnalysis): string {
@@ -200,9 +221,29 @@ function evaluateVideoCompatibility(
 } {
   const reasons: PlaybackReason[] = [];
   const codecKey = videoCodecKey(video.codecName);
-  const capability = codecKey ? client.video[codecKey] : undefined;
+  const nativePlayer = getNativePlayer(client);
+  const nativeCodecSupported = Boolean(
+    nativePlayer &&
+      nativeListSupports(
+        nativePlayer.supportedVideoCodecs,
+        video.codecName,
+      ),
+  );
+  const browserCapability = codecKey ? client.video[codecKey] : undefined;
+  const capability: CodecCapability | undefined = nativeCodecSupported
+    ? {
+        supported: true,
+        smooth: true,
+        powerEfficient: nativePlayer?.hardwareDecoding,
+        maxWidth: nativePlayer?.maxWidth,
+        maxHeight: nativePlayer?.maxHeight,
+        maxBitrate: nativePlayer?.maxBitrate,
+        supports10Bit: nativePlayer?.supports10BitVideo,
+        supportsHdr: nativePlayer?.supportsHdr,
+      }
+    : browserCapability;
 
-  if (!codecKey || !capability?.supported) {
+  if (!capability?.supported) {
     reasons.push(
       reason(
         "video_codec_unsupported",
@@ -249,6 +290,21 @@ function evaluateVideoCompatibility(
         "hdr_tonemap_required",
         "blocking",
         "Video is HDR or Dolby Vision and the client did not report HDR support.",
+      ),
+    );
+  }
+
+  if (
+    video.hasDolbyVision &&
+    nativePlayer &&
+    !nativePlayer.supportsDolbyVisionBaseLayer &&
+    !reasons.some((item) => item.code === "hdr_tonemap_required")
+  ) {
+    reasons.push(
+      reason(
+        "hdr_tonemap_required",
+        "blocking",
+        "Dolby Vision requires base-layer fallback or tone mapping on this client.",
       ),
     );
   }
@@ -306,11 +362,24 @@ function evaluateAudioCompatibility(
 
   const reasons: PlaybackReason[] = [];
   const codecKey = audioCodecKey(audio.codecName);
-  const capability: AudioCapability | undefined = codecKey
-    ? client.audio[codecKey]
-    : undefined;
+  const nativePlayer = getNativePlayer(client);
+  const nativeCodecSupported = Boolean(
+    nativePlayer &&
+      nativeListSupports(
+        nativePlayer.supportedAudioCodecs,
+        audio.codecName,
+      ),
+  );
+  const capability: AudioCapability | undefined = nativeCodecSupported
+    ? {
+        supported: true,
+        maxChannels: nativePlayer?.maxAudioChannels,
+      }
+    : codecKey
+      ? client.audio[codecKey]
+      : undefined;
 
-  if (!codecKey || !capability?.supported) {
+  if (!capability?.supported) {
     reasons.push(
       reason(
         "audio_codec_unsupported",
@@ -354,6 +423,28 @@ function evaluateSubtitleAction(
   }
 
   const codec = normalizeCodec(subtitle.codecName);
+  const nativePlayer = getNativePlayer(client);
+
+  if (nativePlayer) {
+    const nativeSubtitleSupported = subtitle.isImageBased
+      ? nativePlayer.subtitles.imageBased
+      : codec === "ass" || codec === "ssa"
+        ? nativePlayer.subtitles.ass
+        : nativePlayer.subtitles.text;
+
+    if (nativeSubtitleSupported) {
+      return {
+        action: "external",
+        reasons: [
+          reason(
+            "subtitle_external_supported",
+            "info",
+            `Selected ${subtitle.codecName} subtitle can be rendered by the native player.`,
+          ),
+        ],
+      };
+    }
+  }
 
   if (subtitle.isImageBased) {
     if (client.subtitles.imageBasedExternal) {
@@ -449,6 +540,12 @@ function clientSupportsDirectContainer(
   client: ClientCapabilities,
   container: string,
 ): boolean {
+  const nativePlayer = getNativePlayer(client);
+
+  if (nativePlayer) {
+    return nativeListSupports(nativePlayer.supportedContainers, container);
+  }
+
   return client.directFileContainers
     .map((value) => value.toLowerCase())
     .includes(container.toLowerCase());
@@ -494,9 +591,10 @@ export function decidePlaybackPlan({
   );
   const audioCompatibility = evaluateAudioCompatibility(client, audio);
   const subtitleDecision = evaluateSubtitleAction(client, subtitle);
-  const directContainerSupported =
-    media.container.isBrowserDirectPlayableContainer &&
-    clientSupportsDirectContainer(client, container);
+  const directContainerSupported = getNativePlayer(client)
+    ? clientSupportsDirectContainer(client, container)
+    : media.container.isBrowserDirectPlayableContainer &&
+      clientSupportsDirectContainer(client, container);
   const containerReasons: PlaybackReason[] = directContainerSupported
     ? []
     : [

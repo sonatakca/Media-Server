@@ -21,7 +21,10 @@ import {
   ticksFromSeconds,
 } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
-import { getWatchRouteForItem } from "../../lib/routes";
+import {
+  getMediaOwnerRouteForItem,
+  getWatchRouteForItem,
+} from "../../lib/routes";
 import {
   setDefaultPageTitle,
   setLoadingPageTitle,
@@ -221,11 +224,13 @@ export function DesktopPlayerPage() {
 
   if (!item || playback.isLoading || !playback.activeSource) {
     if (item && playback.error) {
+      const mediaOwnerRoute = getMediaOwnerRouteForItem(item);
+
       return (
         <main className="flex min-h-screen items-center justify-center bg-black p-4 text-white">
           <div className="w-full max-w-2xl">
             <Link
-              to={`/item/${item.Id}`}
+              to={mediaOwnerRoute}
               className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
             >
               <ArrowLeft size={17} />

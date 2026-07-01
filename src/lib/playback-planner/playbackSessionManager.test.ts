@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PlaybackSessionManager,
   PlaybackSessionStartupError,
+  type PlaybackSessionManagerOptions,
 } from "./playbackSessionManager";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
@@ -99,16 +100,43 @@ function hlsPlan(): PlaybackPlan {
   };
 }
 
+function videoTranscodePlan(): PlaybackPlan {
+  return {
+    ...hlsPlan(),
+    mode: "video-transcode",
+    preservesOriginalVideoQuality: false,
+    expectedStartup: "slow",
+    video: {
+      inputCodec: "hevc",
+      outputCodec: "h264",
+      action: "transcode",
+    },
+  };
+}
+
 function createManager(options: {
   child?: FakeChildProcess;
   onSpawn?: (args: string[]) => void;
   startupTimeoutMs?: number;
+  runtimeProfileProvider?: PlaybackSessionManagerOptions["runtimeProfileProvider"];
+  maxConcurrentVideoTranscodes?: number;
 }) {
   const child = options.child ?? createFakeChildProcess();
   const manager = new PlaybackSessionManager({
     hlsStartupTimeoutMs: options.startupTimeoutMs ?? 500,
     hlsStartupPollMs: 10,
     killGraceMs: 1,
+    maxConcurrentVideoTranscodes: options.maxConcurrentVideoTranscodes,
+    runtimeProfileProvider:
+      options.runtimeProfileProvider ??
+      (() =>
+        Promise.resolve({
+          videoEncoder: "libx264",
+          hardwareAccelerated: false,
+          softwareThreads: 2,
+          availableVideoEncoders: ["libx264"],
+          supportsHdrToneMapping: true,
+        })),
     spawnProcess: (_command, args) => {
       options.onSpawn?.(args);
       const outputDir = path.dirname(String(args[args.length - 1]));
@@ -278,5 +306,92 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
     await expect(stat(session.outputDir)).rejects.toThrow();
     expect(manager.getSession(session.sessionId)).toBeUndefined();
+  });
+
+  it("rejects an additional video transcode above the configured limit", async () => {
+    let playlistPath = "";
+    const { manager } = createManager({
+      maxConcurrentVideoTranscodes: 1,
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+    const firstSessionPromise = manager.createSession(
+      videoTranscodePlan(),
+      mediaAnalysis(),
+    );
+
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+    await writeFile(playlistPath, "#EXTM3U\n");
+    const firstSession = await firstSessionPromise;
+
+    await expect(
+      manager.createSession(videoTranscodePlan(), mediaAnalysis()),
+    ).rejects.toMatchObject({
+      code: "TRANSCODE_CAPACITY_REACHED",
+      statusCode: 503,
+    });
+    expect(manager.getRuntimeStatus()).toMatchObject({
+      activeVideoTranscodes: 1,
+      maxConcurrentVideoTranscodes: 1,
+    });
+
+    await manager.stopSession(firstSession.sessionId);
+  });
+
+  it("falls back to bounded software encoding when hardware startup fails", async () => {
+    const hardwareChild = createFakeChildProcess();
+    const softwareChild = createFakeChildProcess();
+    const children = [hardwareChild, softwareChild];
+    let spawnCount = 0;
+    let softwarePlaylistPath = "";
+    const manager = new PlaybackSessionManager({
+      hlsStartupTimeoutMs: 500,
+      hlsStartupPollMs: 10,
+      killGraceMs: 1,
+      runtimeProfileProvider: () =>
+        Promise.resolve({
+          videoEncoder: "h264_videotoolbox",
+          hardwareAccelerated: true,
+          softwareThreads: 2,
+          availableVideoEncoders: ["h264_videotoolbox", "libx264"],
+          supportsHdrToneMapping: true,
+        }),
+      spawnProcess: (_command, args) => {
+        const outputDir = path.dirname(String(args[args.length - 1]));
+
+        outputDirs.push(outputDir);
+        spawnCount += 1;
+
+        if (spawnCount === 2) {
+          softwarePlaylistPath = String(args[args.length - 1]);
+        }
+
+        return children[spawnCount - 1] as never;
+      },
+    });
+    const sessionPromise = manager.createSession(
+      videoTranscodePlan(),
+      mediaAnalysis(),
+    );
+
+    await vi.waitFor(() =>
+      expect(hardwareChild.listenerCount("error")).toBeGreaterThan(0),
+    );
+    hardwareChild.emit("error", new Error("hardware device unavailable"));
+
+    await vi.waitFor(() => expect(softwarePlaylistPath).not.toBe(""));
+    await writeFile(softwarePlaylistPath, "#EXTM3U\n");
+    const session = await sessionPromise;
+
+    expect(spawnCount).toBe(2);
+    expect(hardwareChild.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(session.plan.processing).toMatchObject({
+      videoEncoder: "libx264",
+      hardwareAccelerated: false,
+      softwareThreadLimit: 2,
+    });
+
+    await manager.stopSession(session.sessionId);
   });
 });

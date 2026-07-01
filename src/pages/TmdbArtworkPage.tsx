@@ -17,7 +17,11 @@ import {
 import {
   getAllSeriesEpisodes,
   getAllMovieAndSeriesItems,
+  getBackdropImageUrl,
+  getItem,
+  getLogoImageUrl,
   getPrimaryImageUrl,
+  getThumbImageUrl,
 } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 import {
@@ -142,6 +146,44 @@ function getKindDescription(kind: TmdbArtworkKind, t: Translate): string {
   return t("tmdbArtwork.kind.logoDescription");
 }
 
+function getCurrentArtworkTag(
+  item: JellyfinItem,
+  kind: TmdbArtworkKind,
+): string | null {
+  if (kind === "poster") return item.ImageTags?.Primary ?? null;
+  if (kind === "backdrop") return item.BackdropImageTags?.[0] ?? null;
+  if (kind === "landscape") return item.ImageTags?.Thumb ?? null;
+  return item.ImageTags?.Logo ?? null;
+}
+
+function getCurrentArtworkUrl(
+  item: JellyfinItem,
+  kind: TmdbArtworkKind,
+): string | null {
+  const tag = getCurrentArtworkTag(item, kind);
+
+  if (!tag) {
+    return null;
+  }
+
+  if (kind === "poster") return getPrimaryImageUrl(item.Id, tag, 440);
+  if (kind === "backdrop") return getBackdropImageUrl(item.Id, tag, 900);
+  if (kind === "landscape") return getThumbImageUrl(item.Id, tag, 900);
+  return getLogoImageUrl(item.Id, tag, 700);
+}
+
+function getCurrentArtworkPreviewUrl(
+  url: string | null,
+  refreshToken: number,
+): string | null {
+  if (!url) {
+    return null;
+  }
+
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}preview=${refreshToken}`;
+}
+
 function getLanguageLabel(
   language: TmdbArtworkImage["language"],
   t: Translate,
@@ -251,6 +293,7 @@ export function TmdbArtworkPage() {
     null,
   );
   const [activeKind, setActiveKind] = useState<TmdbArtworkKind>("poster");
+  const [artworkRefreshToken, setArtworkRefreshToken] = useState(0);
   const [imagesByKind, setImagesByKind] = useState<
     Partial<Record<TmdbArtworkKind, TmdbArtworkImage[]>>
   >({});
@@ -356,6 +399,13 @@ export function TmdbArtworkPage() {
 
   const activeImages = imagesByKind[activeKind] ?? [];
   const activeSelectedImage = selectedImages[activeKind] ?? null;
+  const currentArtworkTag = selectedItem
+    ? getCurrentArtworkTag(selectedItem, activeKind)
+    : null;
+  const currentArtworkUrl = getCurrentArtworkPreviewUrl(
+    selectedItem ? getCurrentArtworkUrl(selectedItem, activeKind) : null,
+    artworkRefreshToken,
+  );
   const episodeSeasonNumbers = useMemo(
     () =>
       Array.from(
@@ -537,6 +587,7 @@ export function TmdbArtworkPage() {
     setSelectedTmdb(providerResult);
     setImagesByKind({});
     setSelectedImages({});
+    setArtworkRefreshToken(0);
     setSearchState(createEmptyResult());
     setImagesState(createEmptyResult());
     setApplyState(createEmptyResult());
@@ -634,6 +685,20 @@ export function TmdbArtworkPage() {
           file: result.targetFileName,
         }),
       });
+      setArtworkRefreshToken(Date.now());
+
+      try {
+        const refreshedItem = await getItem(selectedItem.Id);
+
+        setSelectedItem(refreshedItem);
+        setItems((currentItems) =>
+          currentItems.map((item) =>
+            item.Id === refreshedItem.Id ? refreshedItem : item,
+          ),
+        );
+      } catch {
+        // The file save succeeded; a later page refresh will pick up image tags.
+      }
     } catch (error) {
       setApplyState({
         state: "error",
@@ -846,8 +911,8 @@ export function TmdbArtworkPage() {
         </div>
       </section>
 
-      <section className="grid gap-5 xl:grid-cols-[0.9fr_1.35fr]">
-        <section className="rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+      <section className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.35fr)]">
+        <section className="min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
@@ -952,8 +1017,8 @@ export function TmdbArtworkPage() {
           </div>
         </section>
 
-        <section className="space-y-5">
-          <section className="rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+        <section className="min-w-0 space-y-5">
+          <section className="min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
@@ -977,9 +1042,9 @@ export function TmdbArtworkPage() {
 
             <form
               onSubmit={(event) => void handleSearchTmdb(event)}
-              className="mt-5 grid gap-3 lg:grid-cols-[1fr_8rem_9rem_auto]"
+              className="mt-5 grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,8rem)_minmax(0,9rem)_auto]"
             >
-              <label className="block">
+              <label className="block min-w-0">
                 <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                   {t("tmdbArtwork.searchQuery")}
                 </span>
@@ -992,7 +1057,7 @@ export function TmdbArtworkPage() {
                 />
               </label>
 
-              <label className="block">
+              <label className="block min-w-0">
                 <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                   {t("common.year")}
                 </span>
@@ -1006,7 +1071,7 @@ export function TmdbArtworkPage() {
                 />
               </label>
 
-              <label className="block">
+              <label className="block min-w-0">
                 <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                   {t("common.type")}
                 </span>
@@ -1052,7 +1117,7 @@ export function TmdbArtworkPage() {
             ) : null}
 
             {tmdbResults.length > 0 ? (
-              <div className="mt-5 grid gap-3 md:grid-cols-2">
+              <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-[repeat(2,minmax(0,1fr))]">
                 {tmdbResults.map((result) => {
                   const isSelected =
                     selectedTmdb?.id === result.id &&
@@ -1063,7 +1128,7 @@ export function TmdbArtworkPage() {
                       key={`${result.mediaType}-${result.id}`}
                       type="button"
                       onClick={() => selectTmdbResult(result)}
-                      className={`overflow-hidden rounded-3xl border text-left transition ${
+                      className={`min-w-0 overflow-hidden rounded-3xl border text-left transition ${
                         isSelected
                           ? "border-[var(--accent)]/45 bg-[var(--accent)]/12"
                           : "border-white/10 bg-white/[0.045] hover:border-[var(--accent)]/30 hover:bg-white/[0.07]"
@@ -1086,7 +1151,7 @@ export function TmdbArtworkPage() {
 
                         <div className="min-w-0 flex-1 py-1">
                           <div className="flex items-start justify-between gap-3">
-                            <p className="text-base font-black text-white">
+                            <p className="min-w-0 truncate text-base font-black text-white">
                               {result.title}
                             </p>
                             {isSelected ? (
@@ -1112,9 +1177,9 @@ export function TmdbArtworkPage() {
             ) : null}
           </section>
 
-          <section className="rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+          <section className="min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div>
+              <div className="min-w-0">
                 <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                   <Images size={15} />
                   {t("tmdbArtwork.artworkSelection")}
@@ -1149,7 +1214,7 @@ export function TmdbArtworkPage() {
               </button>
             </div>
 
-            <div className="mt-5 grid gap-2 sm:grid-cols-4">
+            <div className="mt-5 grid min-w-0 gap-2 sm:grid-cols-[repeat(4,minmax(0,1fr))]">
               {ARTWORK_KINDS.map((kind) => {
                 const isActive = activeKind === kind;
                 const selectedImage = selectedImages[kind];
@@ -1159,7 +1224,7 @@ export function TmdbArtworkPage() {
                     key={kind}
                     type="button"
                     onClick={() => setActiveKind(kind)}
-                    className={`rounded-2xl border px-3 py-3 text-left transition ${
+                    className={`min-w-0 rounded-2xl border px-3 py-3 text-left transition ${
                       isActive
                         ? "border-[var(--accent)]/45 bg-[var(--accent)] text-black"
                         : "border-white/10 bg-white/[0.055] text-white/56 hover:border-white/20 hover:text-white"
@@ -1179,6 +1244,67 @@ export function TmdbArtworkPage() {
                 );
               })}
             </div>
+
+            {selectedItem ? (
+              <div className="mt-5 grid min-w-0 gap-4 rounded-3xl border border-[var(--accent)]/22 bg-[var(--accent)]/[0.055] p-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
+                {currentArtworkUrl ? (
+                  <div
+                    className={`overflow-hidden rounded-2xl border border-white/10 bg-black/35 ${
+                      activeKind === "poster"
+                        ? "mx-auto aspect-[2/3] w-32 sm:mx-0 sm:w-full"
+                        : "aspect-video w-full"
+                    }`}
+                  >
+                    <img
+                      src={currentArtworkUrl}
+                      alt=""
+                      className={`h-full w-full ${
+                        activeKind === "logo"
+                          ? "object-contain p-5"
+                          : "object-cover"
+                      }`}
+                    />
+                  </div>
+                ) : (
+                  <div
+                    className={`flex items-center justify-center rounded-2xl border border-dashed border-white/12 bg-white/[0.035] text-white/26 ${
+                      activeKind === "poster"
+                        ? "mx-auto aspect-[2/3] w-32 sm:mx-0 sm:w-full"
+                        : "aspect-video w-full"
+                    }`}
+                  >
+                    <ImageIcon size={24} />
+                  </div>
+                )}
+
+                <div className="min-w-0 self-center">
+                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+                    {t("tmdbArtwork.currentArtwork")}
+                  </p>
+                  <h3 className="mt-2 truncate text-lg font-black text-white">
+                    {getKindLabel(activeKind, t)}{" "}
+                    <span className="text-white/45">
+                      / {TARGET_FILE_BY_KIND[activeKind]}
+                    </span>
+                  </h3>
+                  <p className="mt-1 text-sm font-semibold leading-6 text-white/50">
+                    {currentArtworkUrl
+                      ? formatTemplate(
+                          t("tmdbArtwork.currentArtworkDescription"),
+                          {
+                            target: TARGET_FILE_BY_KIND[activeKind],
+                          },
+                        )
+                      : t("tmdbArtwork.noCurrentArtwork")}
+                  </p>
+                  {currentArtworkTag ? (
+                    <p className="mt-3 truncate rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/42">
+                      {currentArtworkTag}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
 
             {imagesState.message ? (
               <p
@@ -1226,10 +1352,10 @@ export function TmdbArtworkPage() {
               </div>
             ) : activeImages.length > 0 ? (
               <div
-                className={`mt-5 grid gap-3 ${
+                className={`mt-5 grid min-w-0 gap-3 ${
                   activeKind === "poster"
-                    ? "sm:grid-cols-3 xl:grid-cols-4"
-                    : "md:grid-cols-2 xl:grid-cols-3"
+                    ? "sm:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(4,minmax(0,1fr))]"
+                    : "md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(3,minmax(0,1fr))]"
                 }`}
               >
                 {activeImages.map((image) => {
@@ -1246,7 +1372,7 @@ export function TmdbArtworkPage() {
                           [activeKind]: image,
                         }))
                       }
-                      className={`overflow-hidden rounded-3xl border text-left transition ${
+                      className={`min-w-0 overflow-hidden rounded-3xl border text-left transition ${
                         isSelected
                           ? "border-[var(--accent)]/55 bg-[var(--accent)]/12"
                           : "border-white/10 bg-white/[0.045] hover:border-[var(--accent)]/30 hover:bg-white/[0.07]"
@@ -1312,9 +1438,9 @@ export function TmdbArtworkPage() {
           </section>
 
           {selectedItem?.Type === "Series" ? (
-            <section className="rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+            <section className="min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
               <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                <div>
+                <div className="min-w-0">
                   <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
                     <Languages size={15} />
                     {t("tmdbArtwork.episodeMetadata")}
@@ -1345,7 +1471,7 @@ export function TmdbArtworkPage() {
                 </button>
               </div>
 
-              <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(16rem,22rem)_minmax(26rem,1fr)_auto] xl:items-end">
+              <div className="mt-5 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,12rem)_minmax(0,1fr)] lg:items-end xl:grid-cols-[minmax(0,12rem)_minmax(0,1fr)_minmax(0,12rem)]">
                 <label className="block min-w-0">
                   <span className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
                     {t("common.season")}
@@ -1396,7 +1522,7 @@ export function TmdbArtworkPage() {
                             setEpisodeMetadataState(createEmptyResult());
                             setEpisodeSaveState(createEmptyResult());
                           }}
-                          className={`inline-flex min-h-11 min-w-0 items-center justify-center whitespace-nowrap rounded-xl px-3 py-2 text-center text-sm font-black transition ${
+                          className={`inline-flex min-h-11 min-w-0 items-center justify-center rounded-xl px-3 py-2 text-center text-sm font-black leading-tight transition ${
                             isSelected
                               ? "bg-[var(--accent)] text-black"
                               : "text-white/56 hover:bg-white/[0.06] hover:text-white"
@@ -1419,7 +1545,7 @@ export function TmdbArtworkPage() {
                     seriesEpisodes.length === 0 ||
                     episodeMetadataState.state === "loading"
                   }
-                  className="inline-flex min-h-12 w-full items-center justify-center gap-2 whitespace-nowrap rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 xl:w-auto"
+                  className="inline-flex min-h-12 min-w-0 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-center text-sm font-black leading-tight text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55 lg:col-span-2 xl:col-span-1"
                 >
                   {episodeMetadataState.state === "loading" ? (
                     <Loader2 size={18} className="animate-spin" />
