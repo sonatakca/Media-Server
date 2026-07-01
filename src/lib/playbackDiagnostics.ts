@@ -344,7 +344,9 @@ function getPlaybackUrlDebugParams(playbackUrl: string) {
       AllowVideoStreamCopy: getParam("AllowVideoStreamCopy"),
       AllowAudioStreamCopy: getParam("AllowAudioStreamCopy"),
       EnableAutoStreamCopy: getParam("EnableAutoStreamCopy"),
-      EnableAdaptiveBitrateStreaming: getParam("EnableAdaptiveBitrateStreaming"),
+      EnableAdaptiveBitrateStreaming: getParam(
+        "EnableAdaptiveBitrateStreaming",
+      ),
       AudioStreamIndex: getParam("AudioStreamIndex"),
       MaxHeight: getParam("MaxHeight"),
       MaxStreamingBitrate: getParam("MaxStreamingBitrate"),
@@ -411,6 +413,7 @@ export function getSanitizedDebugPayload(
       ErrorCode: source.playbackInfo?.ErrorCode,
       MediaSources: source.playbackInfo?.MediaSources?.length ?? 0,
     },
+    playbackDiagnostics: source.playbackDiagnostics,
     videoError,
   };
 }

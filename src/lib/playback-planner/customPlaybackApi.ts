@@ -31,6 +31,10 @@ function getBackendUrl(): string | null {
   return rawUrl.replace(/\/+$/, "");
 }
 
+export function getCustomPlaybackBackendUrl(): string | null {
+  return getBackendUrl();
+}
+
 function buildPlaybackEndpoint(baseUrl: string): string {
   if (baseUrl.endsWith("/api/playback")) {
     return `${baseUrl}/request`;
@@ -174,6 +178,7 @@ function planToPlaybackCandidate(
     hlsKind: mapHlsKind(plan),
     label: `Custom ${plan.mode}`,
     mediaSource: buildSyntheticMediaSource(plan),
+    playbackDiagnostics: plan.diagnostics,
     reason,
     transcodeReasons: plan.reasons.map((item) => item.code),
     priority: 0,

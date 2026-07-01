@@ -502,6 +502,10 @@ export const translations = {
     "devtools.card.playbackAudit.description":
       "Scan Jellyfin media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
     "devtools.card.playbackAudit.tag": "Diagnostics",
+    "devtools.card.playbackHealth.title": "Playback Health",
+    "devtools.card.playbackHealth.description":
+      "Check frontend origin, Jellyfin, backend, CORS, range, and HLS segment readiness.",
+    "devtools.card.playbackHealth.tag": "Network",
     "devtools.card.libraryMaintenance.title": "Library Maintenance",
     "devtools.card.libraryMaintenance.description":
       "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
@@ -1419,6 +1423,10 @@ export const translations = {
     "devtools.card.playbackAudit.description":
       "Jellyfin medyasını tarayıp Doğrudan Oynatma, Doğrudan Akış, Dönüştürme ve dönüştürme nedenlerini belgele.",
     "devtools.card.playbackAudit.tag": "Tanılama",
+    "devtools.card.playbackHealth.title": "Oynatma Sağlığı",
+    "devtools.card.playbackHealth.description":
+      "Frontend origin, Jellyfin, backend, CORS, range ve HLS segment hazır olma durumunu kontrol et.",
+    "devtools.card.playbackHealth.tag": "Ağ",
     "devtools.card.libraryMaintenance.title": "Kütüphane Bakımı",
     "devtools.card.libraryMaintenance.description":
       "Jellyfin kütüphanelerini tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",

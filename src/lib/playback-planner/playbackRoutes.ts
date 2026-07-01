@@ -1,13 +1,14 @@
 import { createReadStream } from "node:fs";
-import { access, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { extname, join, resolve, sep } from "node:path";
+import { basename, extname, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { decidePlaybackPlan } from "./playbackDecision";
 import type { PlaybackSessionManager } from "./playbackSessionManager";
 import type {
   ClientCapabilities,
   MediaAnalysis,
+  PlaybackDiagnostics,
   PlaybackPlan,
   PlaybackQualityLimit,
 } from "./types";
@@ -355,17 +356,24 @@ async function waitForFile(
   filePath: string,
   sessionProcessExited: () => boolean,
 ): Promise<"ready" | "process-exited" | "timeout"> {
-  for (let attempt = 0; attempt < 20; attempt += 1) {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
     try {
-      await access(filePath);
-      return "ready";
+      const fileStats = await stat(filePath);
+
+      if (fileStats.isFile() && fileStats.size > 0) {
+        return "ready";
+      }
     } catch {
       if (sessionProcessExited()) {
         return "process-exited";
       }
-
-      await delay(150);
     }
+
+    if (sessionProcessExited()) {
+      return "process-exited";
+    }
+
+    await delay(125);
   }
 
   return "timeout";
@@ -464,6 +472,41 @@ function withDirectDelivery(
   };
 }
 
+function createPlaybackDiagnostics(
+  media: MediaAnalysis,
+  clientCapabilities: ClientCapabilities,
+  plan: PlaybackPlan,
+): PlaybackDiagnostics {
+  const { filePath, ...mediaWithoutPath } = media;
+  const blockingReasons = plan.reasons.filter(
+    (reason) => reason.severity === "blocking",
+  );
+
+  return {
+    clientCapabilities,
+    media: {
+      ...mediaWithoutPath,
+      fileName: basename(filePath),
+    },
+    decision: {
+      directPlaySupported: plan.mode === "direct-play",
+      mode: plan.mode,
+      requiresFfmpeg: plan.requiresFfmpeg,
+      preservesOriginalVideoQuality: plan.preservesOriginalVideoQuality,
+      expectedStartup: plan.expectedStartup,
+      containerAction: plan.container.action,
+      videoAction: plan.video.action,
+      audioAction: plan.audio.action,
+      subtitleAction: plan.subtitles.action,
+      selectedVideoStreamIndex: plan.selected.videoStreamIndex,
+      selectedAudioStreamIndex: plan.selected.audioStreamIndex,
+      selectedSubtitleStreamIndex: plan.selected.subtitleStreamIndex,
+      reasons: plan.reasons,
+      blockingReasons,
+    },
+  };
+}
+
 async function handlePlaybackRequest(
   body: PlaybackRequestBody,
   dependencies: PlaybackRouteDependencies,
@@ -486,12 +529,27 @@ async function handlePlaybackRequest(
     selectedSubtitleStreamIndex: validBody.selectedSubtitleStreamIndex,
     forceQualityLimit: validBody.forceQualityLimit,
   });
+  const planWithDiagnostics: PlaybackPlan = {
+    ...plan,
+    diagnostics: createPlaybackDiagnostics(
+      media,
+      validBody.clientCapabilities,
+      plan,
+    ),
+  };
 
-  if (!plan.requiresFfmpeg) {
-    return withDirectDelivery(plan, dependencies, resolvedMedia.mediaId);
+  if (!planWithDiagnostics.requiresFfmpeg) {
+    return withDirectDelivery(
+      planWithDiagnostics,
+      dependencies,
+      resolvedMedia.mediaId,
+    );
   }
 
-  const session = await dependencies.sessionManager.createSession(plan, media);
+  const session = await dependencies.sessionManager.createSession(
+    planWithDiagnostics,
+    media,
+  );
   return session.plan;
 }
 

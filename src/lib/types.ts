@@ -1,3 +1,5 @@
+import type { PlaybackDiagnostics } from "./playback-planner/types";
+
 export interface AuthSession {
   serverUrl: string;
   accessToken: string;
@@ -289,6 +291,7 @@ export interface PlaybackSourceCandidate {
   label: string;
   mediaSource: JellyfinMediaSource;
   playbackInfo?: JellyfinPlaybackInfoResponse;
+  playbackDiagnostics?: PlaybackDiagnostics;
   reason: string;
   transcodeReasons?: string[];
   directPlayError?: string;

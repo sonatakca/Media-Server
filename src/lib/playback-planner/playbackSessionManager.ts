@@ -4,7 +4,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
@@ -53,6 +53,7 @@ const DEFAULT_TEMP_PREFIX = "seyirlik-playback-";
 const DEFAULT_SESSION_ROUTE_BASE = "/api/playback/sessions";
 const DEFAULT_MAX_CONCURRENT_VIDEO_TRANSCODES = 1;
 const STDERR_TAIL_LIMIT = 8_000;
+const HLS_MAP_URI_PATTERN = /\bURI="([^"]+)"/g;
 
 export class PlaybackSessionStartupError extends Error {
   code = "FFMPEG_STARTUP_FAILED";
@@ -118,6 +119,61 @@ function waitForExit(
 
     process.once("exit", onExit);
   });
+}
+
+function getLocalHlsFileName(uri: string): string | null {
+  const cleanUri = uri.trim().split(/[?#]/, 1)[0];
+
+  if (!cleanUri || cleanUri.includes("://") || cleanUri.startsWith("//")) {
+    return null;
+  }
+
+  const fileName = cleanUri.split("/").filter(Boolean).pop();
+  return fileName || null;
+}
+
+function getReferencedHlsFileNames(playlist: string): string[] {
+  const fileNames = new Set<string>();
+
+  for (const line of playlist.split(/\r?\n/)) {
+    const trimmedLine = line.trim();
+
+    if (!trimmedLine) {
+      continue;
+    }
+
+    if (trimmedLine.startsWith("#EXT-X-MAP")) {
+      for (const match of trimmedLine.matchAll(HLS_MAP_URI_PATTERN)) {
+        const fileName = getLocalHlsFileName(match[1]);
+
+        if (fileName) {
+          fileNames.add(fileName);
+        }
+      }
+      continue;
+    }
+
+    if (trimmedLine.startsWith("#")) {
+      continue;
+    }
+
+    const fileName = getLocalHlsFileName(trimmedLine);
+
+    if (fileName) {
+      fileNames.add(fileName);
+    }
+  }
+
+  return Array.from(fileNames);
+}
+
+async function hasNonEmptyFile(filePath: string): Promise<boolean> {
+  try {
+    const fileStats = await stat(filePath);
+    return fileStats.isFile() && fileStats.size > 0;
+  } catch {
+    return false;
+  }
 }
 
 export class PlaybackSessionManager {
@@ -443,6 +499,23 @@ export class PlaybackSessionManager {
           const playlistStat = await stat(playlistPath);
 
           if (playlistStat.isFile() && playlistStat.size > 0) {
+            const playlist = await readFile(playlistPath, "utf8");
+            const referencedFiles = getReferencedHlsFileNames(playlist);
+            const referencedFilesReady =
+              referencedFiles.length > 0 &&
+              (
+                await Promise.all(
+                  referencedFiles.map((fileName) =>
+                    hasNonEmptyFile(join(session.outputDir, fileName)),
+                  ),
+                )
+              ).every(Boolean);
+
+            if (!referencedFilesReady) {
+              pollTimer = setTimeout(poll, this.hlsStartupPollMs);
+              return;
+            }
+
             finish();
             return;
           }

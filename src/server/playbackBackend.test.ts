@@ -19,6 +19,7 @@ import type {
 import type {
   ClientCapabilities,
   MediaAnalysis,
+  PlaybackDiagnostics,
   PlaybackPlan,
 } from "../lib/playback-planner/types";
 
@@ -195,7 +196,20 @@ function createDeferredReadySessionManager(outputDir: string) {
     async (plan: PlaybackPlan, media: MediaAnalysis) => {
       await ready;
       await mkdir(outputDir, { recursive: true });
-      await writeFile(path.join(outputDir, "master.m3u8"), "#EXTM3U\n");
+      await writeFile(
+        path.join(outputDir, "master.m3u8"),
+        [
+          "#EXTM3U",
+          "#EXT-X-VERSION:7",
+          "#EXT-X-TARGETDURATION:4",
+          '#EXT-X-MAP:URI="init.mp4"',
+          "#EXTINF:4.000000,",
+          "segment_00000.m4s",
+          "",
+        ].join("\n"),
+      );
+      await writeFile(path.join(outputDir, "init.mp4"), "init");
+      await writeFile(path.join(outputDir, "segment_00000.m4s"), "segment");
 
       const sessionId = "session-ready";
       const fakeProcess = new EventEmitter() as EventEmitter & {
@@ -394,10 +408,14 @@ describe("playback backend HTTP routes", () => {
     const payload = (await response.json()) as {
       mode: string;
       delivery: { type: string; url: string };
+      diagnostics?: PlaybackDiagnostics;
     };
 
     expect(response.status).toBe(200);
     expect(payload.mode).toBe("direct-play");
+    expect(payload.diagnostics?.decision.directPlaySupported).toBe(true);
+    expect(payload.diagnostics?.media.fileName).toBe("sample.mp4");
+    expect(payload.diagnostics?.media).not.toHaveProperty("filePath");
     expect(payload.delivery.type).toBe("file");
     expect(payload.delivery.url).toMatch(
       /^\/api\/playback\/direct\/[A-Za-z0-9_-]+$/,
@@ -503,10 +521,14 @@ describe("playback backend HTTP routes", () => {
     const payload = (await response.json()) as {
       mode: string;
       delivery: { type: string; sessionId?: string; url?: string };
+      diagnostics?: PlaybackDiagnostics;
     };
 
     expect(response.status).toBe(200);
     expect(payload.mode).toBe("video-transcode");
+    expect(payload.diagnostics?.decision.directPlaySupported).toBe(false);
+    expect(payload.diagnostics?.decision.requiresFfmpeg).toBe(true);
+    expect(payload.diagnostics?.decision.blockingReasons).not.toHaveLength(0);
     expect(payload.delivery).toEqual({
       type: "hls",
       sessionId: "session-1",
@@ -593,7 +615,27 @@ describe("playback backend HTTP routes", () => {
     expect(playlistResponse.headers.get("content-type")).toBe(
       "application/vnd.apple.mpegurl",
     );
-    await expect(playlistResponse.text()).resolves.toContain("#EXTM3U");
+    await expect(playlistResponse.text()).resolves.toContain(
+      '#EXT-X-MAP:URI="init.mp4"',
+    );
+
+    const initResponse = await fetch(
+      `${baseUrl}/api/playback/sessions/${payload.delivery.sessionId}/init.mp4`,
+    );
+
+    expect(initResponse.status).toBe(200);
+    expect(initResponse.headers.get("content-type")).toBe("video/mp4");
+    await expect(initResponse.text()).resolves.toBe("init");
+
+    const segmentResponse = await fetch(
+      `${baseUrl}/api/playback/sessions/${payload.delivery.sessionId}/segment_00000.m4s`,
+    );
+
+    expect(segmentResponse.status).toBe(200);
+    expect(segmentResponse.headers.get("content-type")).toBe(
+      "video/iso.segment",
+    );
+    await expect(segmentResponse.text()).resolves.toBe("segment");
   });
 
   it("streams a full direct response", async () => {

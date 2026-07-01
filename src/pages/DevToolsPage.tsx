@@ -9,6 +9,7 @@ import {
   Languages,
   Lightbulb,
   ListOrdered,
+  ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
@@ -34,6 +35,13 @@ export function DevToolsPage() {
       to: "/dev/playback-audit",
       icon: Activity,
       tag: t("devtools.card.playbackAudit.tag"),
+    },
+    {
+      title: t("devtools.card.playbackHealth.title"),
+      description: t("devtools.card.playbackHealth.description"),
+      to: "/dev/playback-health",
+      icon: ShieldAlert,
+      tag: t("devtools.card.playbackHealth.tag"),
     },
     {
       title: t("devtools.card.libraryMaintenance.title"),

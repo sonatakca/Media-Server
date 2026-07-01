@@ -153,6 +153,25 @@ async function expectMissing(filePath: string) {
   await expect(access(filePath)).rejects.toThrow();
 }
 
+async function writeReadyPlaylist(
+  playlistPath: string,
+  segmentFileName = "segment_00000.m4s",
+) {
+  await writeFile(
+    playlistPath,
+    [
+      "#EXTM3U",
+      "#EXT-X-VERSION:7",
+      '#EXT-X-MAP:URI="init.mp4"',
+      "#EXTINF:4.000000,",
+      segmentFileName,
+      "",
+    ].join("\n"),
+  );
+  await writeFile(path.join(path.dirname(playlistPath), "init.mp4"), "init");
+  await writeFile(path.join(path.dirname(playlistPath), segmentFileName), "seg");
+}
+
 afterEach(async () => {
   const dirs = [...outputDirs];
 
@@ -164,7 +183,7 @@ afterEach(async () => {
 });
 
 describe("PlaybackSessionManager HLS readiness", () => {
-  it("resolves only after master.m3u8 exists with non-zero content", async () => {
+  it("resolves only after master.m3u8 and referenced HLS files are ready", async () => {
     let playlistPath = "";
     const { manager } = createManager({
       onSpawn: (args) => {
@@ -187,6 +206,10 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(resolved).toBe(false);
 
     await writeFile(playlistPath, "#EXTM3U\n");
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(resolved).toBe(false);
+
+    await writeReadyPlaylist(playlistPath);
     const session = await sessionPromise;
 
     expect(resolved).toBe(true);
@@ -278,7 +301,7 @@ describe("PlaybackSessionManager HLS readiness", () => {
 
     await vi.waitFor(() => expect(playlistPath).not.toBe(""));
     child.stderr.emit("data", "x".repeat(9_000));
-    await writeFile(playlistPath, "#EXTM3U\n");
+    await writeReadyPlaylist(playlistPath);
     const session = await sessionPromise;
 
     expect(session.stderrTail).toHaveLength(8_000);
@@ -297,7 +320,7 @@ describe("PlaybackSessionManager HLS readiness", () => {
     const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
 
     await vi.waitFor(() => expect(playlistPath).not.toBe(""));
-    await writeFile(playlistPath, "#EXTM3U\n");
+    await writeReadyPlaylist(playlistPath);
     const session = await sessionPromise;
 
     await expect(readFile(playlistPath, "utf8")).resolves.toContain("#EXTM3U");
@@ -322,7 +345,7 @@ describe("PlaybackSessionManager HLS readiness", () => {
     );
 
     await vi.waitFor(() => expect(playlistPath).not.toBe(""));
-    await writeFile(playlistPath, "#EXTM3U\n");
+    await writeReadyPlaylist(playlistPath);
     const firstSession = await firstSessionPromise;
 
     await expect(
@@ -381,7 +404,7 @@ describe("PlaybackSessionManager HLS readiness", () => {
     hardwareChild.emit("error", new Error("hardware device unavailable"));
 
     await vi.waitFor(() => expect(softwarePlaylistPath).not.toBe(""));
-    await writeFile(softwarePlaylistPath, "#EXTM3U\n");
+    await writeReadyPlaylist(softwarePlaylistPath);
     const session = await sessionPromise;
 
     expect(spawnCount).toBe(2);

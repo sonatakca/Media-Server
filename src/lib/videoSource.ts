@@ -19,6 +19,41 @@ export function isHlsPlaybackUrl(
   );
 }
 
+function getNativeHlsSupport(videoElement: HTMLVideoElement): CanPlayTypeResult {
+  const appleHlsSupport = videoElement.canPlayType(
+    "application/vnd.apple.mpegurl",
+  );
+
+  return appleHlsSupport || videoElement.canPlayType("application/x-mpegURL");
+}
+
+function isAppleNativeHlsRuntime(): boolean {
+  if (typeof navigator === "undefined") {
+    return false;
+  }
+
+  const userAgent = navigator.userAgent;
+
+  if (/iPad|iPhone|iPod/i.test(userAgent)) {
+    return true;
+  }
+
+  return (
+    /Safari/i.test(userAgent) &&
+    !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|SamsungBrowser/i.test(userAgent)
+  );
+}
+
+export function shouldUseNativeHls(videoElement: HTMLVideoElement): boolean {
+  const nativeSupport = getNativeHlsSupport(videoElement);
+
+  if (nativeSupport === "probably") {
+    return true;
+  }
+
+  return nativeSupport === "maybe" && isAppleNativeHlsRuntime();
+}
+
 function getRequestedMaxHeight(playbackUrl: string): number | null {
   try {
     const url = new URL(playbackUrl);
@@ -82,7 +117,7 @@ export function attachSourceToVideo(
   const isHls = isHlsPlaybackUrl(playbackUrl, mimeType);
   const requestedMaxHeight = getRequestedMaxHeight(playbackUrl);
 
-  if (isHls && videoElement.canPlayType("application/vnd.apple.mpegurl")) {
+  if (isHls && shouldUseNativeHls(videoElement)) {
     videoElement.src = playbackUrl;
     return {
       usingHlsJs: false,

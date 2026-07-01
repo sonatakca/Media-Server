@@ -25,6 +25,7 @@ import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { HomeCurationPage } from "./pages/HomeCurationPage";
 import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
 import { TmdbArtworkPage } from "./pages/TmdbArtworkPage";
+import { PlaybackHealthPage } from "./pages/PlaybackHealthPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -228,6 +229,10 @@ export default function App() {
               <Route
                 path="/dev/playback-audit"
                 element={<PlaybackAuditPage />}
+              />
+              <Route
+                path="/dev/playback-health"
+                element={<PlaybackHealthPage />}
               />
               <Route
                 path="/dev/library-maintenance"

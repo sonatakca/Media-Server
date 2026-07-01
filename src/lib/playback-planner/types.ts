@@ -175,6 +175,31 @@ export interface PlaybackReason {
   message: string;
 }
 
+export type PlaybackDiagnosticsMedia = Omit<MediaAnalysis, "filePath"> & {
+  fileName?: string;
+};
+
+export interface PlaybackDiagnostics {
+  clientCapabilities: ClientCapabilities;
+  media: PlaybackDiagnosticsMedia;
+  decision: {
+    directPlaySupported: boolean;
+    mode: PlaybackMode;
+    requiresFfmpeg: boolean;
+    preservesOriginalVideoQuality: boolean;
+    expectedStartup: "instant" | "fast" | "slow";
+    containerAction: ContainerAction;
+    videoAction: StreamAction;
+    audioAction: StreamAction;
+    subtitleAction: SubtitleAction;
+    selectedVideoStreamIndex: number;
+    selectedAudioStreamIndex?: number;
+    selectedSubtitleStreamIndex?: number;
+    reasons: PlaybackReason[];
+    blockingReasons: PlaybackReason[];
+  };
+}
+
 export interface PlaybackPlan {
   mode: PlaybackMode;
   requiresFfmpeg: boolean;
@@ -220,6 +245,7 @@ export interface PlaybackPlan {
     url?: string;
     sessionId?: string;
   };
+  diagnostics?: PlaybackDiagnostics;
 }
 
 export interface PlaybackQualityLimit {

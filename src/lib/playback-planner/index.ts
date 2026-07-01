@@ -7,6 +7,8 @@ export type {
   DecidePlaybackPlanInput,
   MediaAnalysis,
   NativePlayerCapabilities,
+  PlaybackDiagnostics,
+  PlaybackDiagnosticsMedia,
   PlaybackMode,
   PlaybackPlan,
   PlaybackQualityLimit,

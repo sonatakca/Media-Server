@@ -730,7 +730,7 @@ export function MediaCard({
         )}
 
         {progressPercent !== null ? (
-          <div className="absolute inset-x-0 bottom-0 z-30 h-1 sm:h-1.5 bg-white/[0.18]">
+          <div className="absolute inset-x-0 bottom-0 z-30 h-[0.1rem] sm:h-[0.3rem] bg-white/[0.18]">
             <div
               data-testid="media-card-progress-fill"
               className="h-full bg-[var(--accent)]"
