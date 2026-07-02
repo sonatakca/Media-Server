@@ -1,8 +1,5 @@
 import { join } from "node:path";
-import type {
-  FfmpegRuntimeProfile,
-  H264VideoEncoder,
-} from "./ffmpegRuntime";
+import type { FfmpegRuntimeProfile, H264VideoEncoder } from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
 export interface FfmpegCommandInput {
@@ -23,6 +20,10 @@ interface VideoEncoderPreset {
   codec: string;
   args: string[];
 }
+
+const HLS_VIDEO_SEGMENT_SECONDS = 2;
+const HLS_COPY_SEGMENT_SECONDS = 4;
+const DEFAULT_VIDEO_FRAMERATE = 30;
 
 function getTargetVideoBitrate(
   media: MediaAnalysis,
@@ -68,14 +69,50 @@ function getRateControlArgs(
   ];
 }
 
+function getVideoTranscodeGopArgs(
+  media: MediaAnalysis,
+  videoStreamIndex: number,
+): {
+  common: string[];
+  softwareOnly: string[];
+} {
+  const video =
+    media.videoStreams.find((stream) => stream.index === videoStreamIndex) ??
+    media.videoStreams[0];
+
+  const sourceFramerate =
+    typeof video?.framerate === "number" &&
+    Number.isFinite(video.framerate) &&
+    video.framerate > 0
+      ? video.framerate
+      : DEFAULT_VIDEO_FRAMERATE;
+
+  const gopSize = Math.max(
+    1,
+    Math.round(sourceFramerate * HLS_VIDEO_SEGMENT_SECONDS),
+  );
+
+  return {
+    common: [
+      "-g",
+      String(gopSize),
+      "-force_key_frames",
+      `expr:gte(t,n_forced*${HLS_VIDEO_SEGMENT_SECONDS})`,
+      "-pix_fmt",
+      "yuv420p",
+    ],
+    softwareOnly: ["-keyint_min", String(gopSize), "-sc_threshold", "0"],
+  };
+}
+
 function selectVideoEncoder(
   encoder: H264VideoEncoder,
   media: MediaAnalysis,
   videoStreamIndex: number,
   softwareThreads: number,
 ): VideoEncoderPreset {
-  const commonArgs = ["-g", "120", "-pix_fmt", "yuv420p"];
   const rateControlArgs = getRateControlArgs(media, videoStreamIndex);
+  const gopArgs = getVideoTranscodeGopArgs(media, videoStreamIndex);
 
   switch (encoder) {
     case "h264_videotoolbox":
@@ -89,9 +126,10 @@ function selectVideoEncoder(
           "-allow_sw",
           "0",
           ...rateControlArgs,
-          ...commonArgs,
+          ...gopArgs.common,
         ],
       };
+
     case "h264_nvenc":
       return {
         codec: encoder,
@@ -105,9 +143,10 @@ function selectVideoEncoder(
           "-rc",
           "vbr",
           ...rateControlArgs,
-          ...commonArgs,
+          ...gopArgs.common,
         ],
       };
+
     case "h264_qsv":
       return {
         codec: encoder,
@@ -119,9 +158,10 @@ function selectVideoEncoder(
           "-async_depth",
           "4",
           ...rateControlArgs,
-          ...commonArgs,
+          ...gopArgs.common,
         ],
       };
+
     case "h264_amf":
       return {
         codec: encoder,
@@ -135,9 +175,10 @@ function selectVideoEncoder(
           "-rc",
           "vbr_peak",
           ...rateControlArgs,
-          ...commonArgs,
+          ...gopArgs.common,
         ],
       };
+
     case "libx264":
     default:
       return {
@@ -151,11 +192,8 @@ function selectVideoEncoder(
           "zerolatency",
           "-threads",
           String(Math.max(1, softwareThreads)),
-          "-keyint_min",
-          "120",
-          "-sc_threshold",
-          "0",
-          ...commonArgs,
+          ...gopArgs.softwareOnly,
+          ...gopArgs.common,
         ],
       };
   }
@@ -178,20 +216,24 @@ function getHlsSegmentExtension(plan: PlaybackPlan): "m4s" | "ts" {
 
 function buildHlsArgs(plan: PlaybackPlan, outputDir: string): string[] {
   const segmentExtension = getHlsSegmentExtension(plan);
+  const isVideoEncoding =
+    plan.mode === "video-transcode" || plan.mode === "subtitle-burn";
+  const segmentDuration = isVideoEncoding
+    ? HLS_VIDEO_SEGMENT_SECONDS
+    : HLS_COPY_SEGMENT_SECONDS;
+
   const args = [
     "-f",
     "hls",
     "-hls_time",
-    plan.mode === "video-transcode" || plan.mode === "subtitle-burn"
-      ? "2"
-      : "4",
+    String(segmentDuration),
     "-hls_flags",
-    plan.mode === "video-transcode" || plan.mode === "subtitle-burn"
+    isVideoEncoding
       ? "delete_segments+independent_segments"
       : "independent_segments",
   ];
 
-  if (plan.mode === "video-transcode" || plan.mode === "subtitle-burn") {
+  if (isVideoEncoding) {
     args.push("-hls_list_size", "5");
   }
 

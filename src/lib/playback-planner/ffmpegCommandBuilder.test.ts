@@ -64,6 +64,16 @@ function runtime(
   };
 }
 
+function getArgumentValue(args: string[], argumentName: string): string {
+  const index = args.indexOf(argumentName);
+
+  if (index < 0 || index + 1 >= args.length) {
+    throw new Error(`Argument ${argumentName} was not found.`);
+  }
+
+  return args[index + 1];
+}
+
 describe("buildFfmpegCommand", () => {
   it("uses a selected hardware encoder", () => {
     const command = buildFfmpegCommand({
@@ -76,6 +86,124 @@ describe("buildFfmpegCommand", () => {
     expect(command.args).toContain("h264_videotoolbox");
     expect(command.args).toContain("-allow_sw");
     expect(command.args).not.toContain("libx264");
+  });
+
+  it("aligns a 24 fps video GOP with two-second HLS segments", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 1920,
+            height: 1080,
+            framerate: 24,
+          },
+        ],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("h264_qsv"),
+    });
+
+    expect(getArgumentValue(command.args, "-g")).toBe("48");
+    expect(getArgumentValue(command.args, "-hls_time")).toBe("2");
+    expect(getArgumentValue(command.args, "-force_key_frames")).toBe(
+      "expr:gte(t,n_forced*2)",
+    );
+  });
+
+  it("rounds fractional frame rates when calculating the segment GOP", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 1920,
+            height: 1080,
+            framerate: 29.97,
+          },
+        ],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("h264_nvenc"),
+    });
+
+    expect(getArgumentValue(command.args, "-g")).toBe("60");
+    expect(getArgumentValue(command.args, "-hls_time")).toBe("2");
+  });
+
+  it("uses a 30 fps fallback when the source frame rate is unavailable", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 1920,
+            height: 1080,
+          },
+        ],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("h264_qsv"),
+    });
+
+    expect(getArgumentValue(command.args, "-g")).toBe("60");
+    expect(getArgumentValue(command.args, "-hls_time")).toBe("2");
+  });
+
+  it("uses the calculated GOP for libx264 keyint controls", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 1920,
+            height: 1080,
+            framerate: 25,
+          },
+        ],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("libx264"),
+    });
+
+    expect(getArgumentValue(command.args, "-g")).toBe("50");
+    expect(getArgumentValue(command.args, "-keyint_min")).toBe("50");
+    expect(getArgumentValue(command.args, "-sc_threshold")).toBe("0");
+    expect(getArgumentValue(command.args, "-force_key_frames")).toBe(
+      "expr:gte(t,n_forced*2)",
+    );
+  });
+
+  it("does not pass libx264-only GOP options to hardware encoders", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media({
+        videoStreams: [
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 1920,
+            height: 1080,
+            framerate: 30,
+          },
+        ],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("h264_qsv"),
+    });
+
+    expect(command.args).toContain("-g");
+    expect(command.args).toContain("-force_key_frames");
+    expect(command.args).not.toContain("-keyint_min");
+    expect(command.args).not.toContain("-sc_threshold");
   });
 
   it("bounds software encoder and filter threads", () => {
