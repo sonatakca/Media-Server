@@ -237,7 +237,11 @@ function evaluateVideoCompatibility(
     codecKey === "h264" &&
     isMp4FamilyContainer(container) &&
     directContainerSupported &&
-    media.container.isBrowserDirectPlayableContainer;
+    media.container.isBrowserDirectPlayableContainer &&
+    (video.bitDepth === undefined || video.bitDepth <= 8) &&
+    !isHigh10Profile(video) &&
+    !video.isHdr &&
+    !video.hasDolbyVision;
   const capability: CodecCapability | undefined = nativeCodecSupported
     ? {
         supported: true,
@@ -276,22 +280,18 @@ function evaluateVideoCompatibility(
     );
   }
 
-  const tenBitExplicitlyUnsupported = nativePlayer
-    ? nativePlayer.supports10BitVideo === false
-    : capability?.supports10Bit === false;
-
   if (
     capability?.supported &&
     video.profile &&
     codecKey === "h264" &&
     isHigh10Profile(video) &&
-    tenBitExplicitlyUnsupported
+    !capability.supports10Bit
   ) {
     reasons.push(
       reason(
         "video_profile_unsupported",
         "blocking",
-        `Video profile ${video.profile} requires 10-bit H.264 support, which this client explicitly reported as unsupported.`,
+        `Video profile ${video.profile} needs 10-bit H.264 support.`,
       ),
     );
   }
@@ -300,27 +300,23 @@ function evaluateVideoCompatibility(
     capability?.supported &&
     typeof video.bitDepth === "number" &&
     video.bitDepth > 8 &&
-    tenBitExplicitlyUnsupported
+    !capability.supports10Bit
   ) {
     reasons.push(
       reason(
         "video_bit_depth_unsupported",
         "blocking",
-        `Video is ${video.bitDepth}-bit, but this client explicitly reported that ${video.bitDepth}-bit ${video.codecName} playback is unsupported.`,
+        `Video is ${video.bitDepth}-bit, but the client did not report ${video.bitDepth}-bit support for ${video.codecName}.`,
       ),
     );
   }
 
-  const hdrExplicitlyUnsupported = nativePlayer
-    ? nativePlayer.supportsHdr === false
-    : capability?.supportsHdr === false;
-
-  if ((video.isHdr || video.hasDolbyVision) && hdrExplicitlyUnsupported) {
+  if ((video.isHdr || video.hasDolbyVision) && !capability?.supportsHdr) {
     reasons.push(
       reason(
         "hdr_tonemap_required",
         "blocking",
-        "Video is HDR or Dolby Vision, but this client explicitly reported HDR playback as unsupported.",
+        "Video is HDR or Dolby Vision and the client did not report HDR support.",
       ),
     );
   }

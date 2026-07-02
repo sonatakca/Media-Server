@@ -241,46 +241,22 @@ async function probeAudioCapability(
   };
 }
 
-function mergeOptionalCapabilityFlag(
-  current: boolean | undefined,
-  next: boolean | undefined,
-): boolean | undefined {
-  if (current === true || next === true) {
-    return true;
-  }
-
-  if (current === false && next === false) {
-    return false;
-  }
-
-  return current ?? next;
-}
-
 function mergeVideoCapability(
   current: CodecCapability | undefined,
   next: CodecCapability,
 ): CodecCapability {
   return {
     supported: Boolean(current?.supported || next.supported),
-    smooth: mergeOptionalCapabilityFlag(current?.smooth, next.smooth),
-    powerEfficient: mergeOptionalCapabilityFlag(
-      current?.powerEfficient,
-      next.powerEfficient,
-    ),
+    smooth: Boolean(current?.smooth || next.smooth),
+    powerEfficient: Boolean(current?.powerEfficient || next.powerEfficient),
     mimeTypesTested: Array.from(
       new Set([
         ...(current?.mimeTypesTested ?? []),
         ...(next.mimeTypesTested ?? []),
       ]),
     ),
-    supports10Bit: mergeOptionalCapabilityFlag(
-      current?.supports10Bit,
-      next.supports10Bit,
-    ),
-    supportsHdr: mergeOptionalCapabilityFlag(
-      current?.supportsHdr,
-      next.supportsHdr,
-    ),
+    supports10Bit: Boolean(current?.supports10Bit || next.supports10Bit),
+    supportsHdr: Boolean(current?.supportsHdr || next.supportsHdr),
   };
 }
 
