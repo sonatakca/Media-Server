@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
 import type { FfmpegRuntimeProfile } from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
+import { join } from "node:path";
 
 function media(overrides: Partial<MediaAnalysis> = {}): MediaAnalysis {
   return {
@@ -179,6 +180,21 @@ describe("buildFfmpegCommand", () => {
     expect(getArgumentValue(command.args, "-sc_threshold")).toBe("0");
     expect(getArgumentValue(command.args, "-force_key_frames")).toBe(
       "expr:gte(t,n_forced*2)",
+    );
+  });
+
+  it("writes the fMP4 init segment inside the session output directory", () => {
+    const outputDir = "/tmp/output";
+
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media(),
+      outputDir,
+      runtimeProfile: runtime("h264_qsv"),
+    });
+
+    expect(getArgumentValue(command.args, "-hls_fmp4_init_filename")).toBe(
+      join(outputDir, "init.mp4"),
     );
   });
 

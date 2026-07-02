@@ -242,7 +242,7 @@ function buildHlsArgs(plan: PlaybackPlan, outputDir: string): string[] {
       "-hls_segment_type",
       "fmp4",
       "-hls_fmp4_init_filename",
-      "init.mp4",
+      join(outputDir, "init.mp4"),
     );
   }
 

@@ -496,6 +496,45 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(manager.getActiveSessionIds()).toEqual([]);
   });
 
+  it("accepts an absolute Windows init-segment path in an fMP4 playlist", async () => {
+    let playlistPath = "";
+
+    const { manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+
+    const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
+
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+
+    const outputDir = path.dirname(playlistPath);
+    const initPath = path.join(outputDir, "init.mp4");
+    const segmentPath = path.join(outputDir, "segment_00000.m4s");
+
+    await writeFile(
+      playlistPath,
+      [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        `#EXT-X-MAP:URI="${initPath}"`,
+        "#EXTINF:4.000000,",
+        "segment_00000.m4s",
+        "",
+      ].join("\n"),
+    );
+
+    await writeFile(initPath, "init");
+    await writeFile(segmentPath, "segment");
+
+    const session = await sessionPromise;
+
+    expect(manager.getSession(session.sessionId)).toBe(session);
+
+    await manager.stopSession(session.sessionId);
+  });
+
   it("times out, terminates FFmpeg, removes the session, and cleans output", async () => {
     const child = createFakeChildProcess();
     let outputDir = "";

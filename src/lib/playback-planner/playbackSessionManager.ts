@@ -187,7 +187,7 @@ function getLocalHlsFileName(uri: string): string | null {
     return null;
   }
 
-  const fileName = cleanUri.split("/").filter(Boolean).pop();
+  const fileName = cleanUri.split(/[\\/]/).filter(Boolean).pop();
   return fileName || null;
 }
 
