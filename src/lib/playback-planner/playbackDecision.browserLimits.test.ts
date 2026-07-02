@@ -150,6 +150,56 @@ describe("browser playback capability limits", () => {
     ).toBe(false);
   });
 
+  it("does not force transcoding when browser HDR and 10-bit support are unknown", () => {
+    const media = createH264AacMp4({
+      videoStreams: [
+        {
+          index: 0,
+          codecName: "h264",
+          profile: "High 10",
+          level: 51,
+          width: 3840,
+          height: 2160,
+          framerate: 23.976,
+          bitrate: 20_000_000,
+          pixFmt: "yuv420p10le",
+          bitDepth: 10,
+          isHdr: true,
+          hasDolbyVision: false,
+        },
+      ],
+    });
+
+    const client = createBrowserClient({
+      video: {
+        h264: {
+          supported: true,
+          smooth: undefined,
+          powerEfficient: undefined,
+          supports10Bit: undefined,
+          supportsHdr: undefined,
+        },
+      },
+    });
+
+    const result = decidePlaybackPlan({
+      media,
+      client,
+    });
+
+    expect(result.mode).toBe("direct-play");
+    expect(result.requiresFfmpeg).toBe(false);
+
+    expect(
+      result.reasons.some(
+        (entry) =>
+          entry.code === "video_profile_unsupported" ||
+          entry.code === "video_bit_depth_unsupported" ||
+          entry.code === "hdr_tonemap_required",
+      ),
+    ).toBe(false);
+  });
+
   it("still respects an explicit client-wide bitrate limit", () => {
     const media = createH264AacMp4();
 
