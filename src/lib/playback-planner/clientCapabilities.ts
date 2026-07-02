@@ -203,10 +203,6 @@ async function probeVideoCapability(
     smooth,
     powerEfficient,
     mimeTypesTested: tested,
-    maxWidth: supported ? probe.width : undefined,
-    maxHeight: supported ? probe.height : undefined,
-    maxBitrate: supported ? probe.bitrate : undefined,
-    maxFramerate: supported ? probe.framerate : undefined,
     supports10Bit: supported && probe.bitDepth === 10 ? true : undefined,
     supportsHdr: supported && probe.hdr ? true : undefined,
   };
@@ -242,7 +238,6 @@ async function probeAudioCapability(
   return {
     supported,
     mimeTypesTested: [probe.mimeType],
-    maxChannels: supported ? probe.channels : undefined,
   };
 }
 
@@ -252,19 +247,14 @@ function mergeVideoCapability(
 ): CodecCapability {
   return {
     supported: Boolean(current?.supported || next.supported),
-    smooth: current?.smooth || next.smooth,
-    powerEfficient: current?.powerEfficient || next.powerEfficient,
-    mimeTypesTested: [
-      ...(current?.mimeTypesTested ?? []),
-      ...(next.mimeTypesTested ?? []),
-    ],
-    maxWidth: Math.max(current?.maxWidth ?? 0, next.maxWidth ?? 0) || undefined,
-    maxHeight:
-      Math.max(current?.maxHeight ?? 0, next.maxHeight ?? 0) || undefined,
-    maxBitrate:
-      Math.max(current?.maxBitrate ?? 0, next.maxBitrate ?? 0) || undefined,
-    maxFramerate:
-      Math.max(current?.maxFramerate ?? 0, next.maxFramerate ?? 0) || undefined,
+    smooth: Boolean(current?.smooth || next.smooth),
+    powerEfficient: Boolean(current?.powerEfficient || next.powerEfficient),
+    mimeTypesTested: Array.from(
+      new Set([
+        ...(current?.mimeTypesTested ?? []),
+        ...(next.mimeTypesTested ?? []),
+      ]),
+    ),
     supports10Bit: Boolean(current?.supports10Bit || next.supports10Bit),
     supportsHdr: Boolean(current?.supportsHdr || next.supportsHdr),
   };
@@ -276,12 +266,12 @@ function mergeAudioCapability(
 ): AudioCapability {
   return {
     supported: Boolean(current?.supported || next.supported),
-    mimeTypesTested: [
-      ...(current?.mimeTypesTested ?? []),
-      ...(next.mimeTypesTested ?? []),
-    ],
-    maxChannels:
-      Math.max(current?.maxChannels ?? 0, next.maxChannels ?? 0) || undefined,
+    mimeTypesTested: Array.from(
+      new Set([
+        ...(current?.mimeTypesTested ?? []),
+        ...(next.mimeTypesTested ?? []),
+      ]),
+    ),
   };
 }
 

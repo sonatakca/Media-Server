@@ -53,9 +53,7 @@ function nativeListSupports(
 function getNativePlayer(
   client: ClientCapabilities,
 ): NativePlayerCapabilities | undefined {
-  return client.playbackEngine === "native"
-    ? client.nativePlayer
-    : undefined;
+  return client.playbackEngine === "native" ? client.nativePlayer : undefined;
 }
 
 function normalizeContainer(media: MediaAnalysis): string {
@@ -168,13 +166,16 @@ function getMaxResolution(
   client: ClientCapabilities,
   forceQualityLimit: DecidePlaybackPlanInput["forceQualityLimit"],
 ): { maxWidth?: number; maxHeight?: number } {
+  const nativePlayer = getNativePlayer(client);
+
   const widths = [
-    capability?.maxWidth,
+    nativePlayer ? capability?.maxWidth : undefined,
     client.maxResolution?.width,
     forceQualityLimit?.maxWidth,
   ].filter((value): value is number => typeof value === "number" && value > 0);
+
   const heights = [
-    capability?.maxHeight,
+    nativePlayer ? capability?.maxHeight : undefined,
     client.maxResolution?.height,
     forceQualityLimit?.maxHeight,
   ].filter((value): value is number => typeof value === "number" && value > 0);
@@ -190,8 +191,10 @@ function getMaxBitrate(
   client: ClientCapabilities,
   forceQualityLimit: DecidePlaybackPlanInput["forceQualityLimit"],
 ): number | undefined {
+  const nativePlayer = getNativePlayer(client);
+
   const bitrates = [
-    capability?.maxBitrate,
+    nativePlayer ? capability?.maxBitrate : undefined,
     client.maxBitrate,
     forceQualityLimit?.maxBitrate,
   ].filter((value): value is number => typeof value === "number" && value > 0);
@@ -226,10 +229,7 @@ function evaluateVideoCompatibility(
   const nativePlayer = getNativePlayer(client);
   const nativeCodecSupported = Boolean(
     nativePlayer &&
-      nativeListSupports(
-        nativePlayer.supportedVideoCodecs,
-        video.codecName,
-      ),
+    nativeListSupports(nativePlayer.supportedVideoCodecs, video.codecName),
   );
   const browserCapability = codecKey ? client.video[codecKey] : undefined;
   const inferredBrowserH264Support =
@@ -394,10 +394,7 @@ function evaluateAudioCompatibility(
   const nativePlayer = getNativePlayer(client);
   const nativeCodecSupported = Boolean(
     nativePlayer &&
-      nativeListSupports(
-        nativePlayer.supportedAudioCodecs,
-        audio.codecName,
-      ),
+    nativeListSupports(nativePlayer.supportedAudioCodecs, audio.codecName),
   );
   const browserCapability = codecKey ? client.audio[codecKey] : undefined;
   const inferredBrowserAacSupport =
