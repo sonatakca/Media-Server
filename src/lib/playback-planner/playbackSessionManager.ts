@@ -23,6 +23,29 @@ export type PlaybackStartupFailureCode =
   | "playlist-timeout-process-exited"
   | "cancelled";
 
+function getHlsStartupTimeoutMs(
+  plan: PlaybackPlan,
+  overrideMs?: number,
+): number {
+  if (
+    typeof overrideMs === "number" &&
+    Number.isFinite(overrideMs) &&
+    overrideMs > 0
+  ) {
+    return overrideMs;
+  }
+
+  if (plan.video.action === "transcode" || plan.subtitles.action === "burn") {
+    return 8_000;
+  }
+
+  if (plan.audio.action === "transcode") {
+    return 3_500;
+  }
+
+  return 2_500;
+}
+
 export interface PlaybackSession {
   sessionId: string;
   mediaId: string;
@@ -55,7 +78,6 @@ export interface PlaybackSessionManagerOptions {
 
 const DEFAULT_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
 const DEFAULT_KILL_GRACE_MS = 1_500;
-const DEFAULT_HLS_STARTUP_TIMEOUT_MS = 10_000;
 const DEFAULT_HLS_STARTUP_POLL_MS = 100;
 const DEFAULT_TEMP_PREFIX = "seyirlik-playback-";
 const DEFAULT_SESSION_ROUTE_BASE = "/api/playback/sessions";
@@ -285,7 +307,7 @@ export class PlaybackSessionManager {
   private ffmpegPath: string;
   private idleTimeoutMs: number;
   private killGraceMs: number;
-  private hlsStartupTimeoutMs: number;
+  private hlsStartupTimeoutMs?: number;
   private hlsStartupPollMs: number;
   private tempPrefix: string;
   private sessionRouteBase: string;
@@ -302,8 +324,7 @@ export class PlaybackSessionManager {
     this.ffmpegPath = options.ffmpegPath ?? "ffmpeg";
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
-    this.hlsStartupTimeoutMs =
-      options.hlsStartupTimeoutMs ?? DEFAULT_HLS_STARTUP_TIMEOUT_MS;
+    this.hlsStartupTimeoutMs = options.hlsStartupTimeoutMs;
     this.hlsStartupPollMs =
       options.hlsStartupPollMs ?? DEFAULT_HLS_STARTUP_POLL_MS;
     this.tempPrefix = options.tempPrefix ?? DEFAULT_TEMP_PREFIX;
@@ -599,6 +620,10 @@ export class PlaybackSessionManager {
     }
 
     const startedAt = Date.now();
+    const startupTimeoutMs = getHlsStartupTimeoutMs(
+      session.plan,
+      this.hlsStartupTimeoutMs,
+    );
 
     return new Promise((resolve, reject) => {
       let settled = false;
@@ -733,7 +758,10 @@ export class PlaybackSessionManager {
           !session.process.killed;
 
         console.warn(
-          `[Seyirlik Playback Backend] FFmpeg HLS playlist was not ready after ${elapsedMs}ms. Process still running: ${processStillRunning}.`,
+          `[Seyirlik Playback Backend] FFmpeg HLS output was not ready after ${elapsedMs}ms ` +
+            `(deadline=${startupTimeoutMs}ms, mode=${session.plan.mode}, ` +
+            `video=${session.plan.video.action}, audio=${session.plan.audio.action}). ` +
+            `Process still running: ${processStillRunning}.`,
         );
 
         finish(
@@ -753,7 +781,7 @@ export class PlaybackSessionManager {
             },
           ),
         );
-      }, this.hlsStartupTimeoutMs);
+      }, startupTimeoutMs);
 
       session.process.once("error", handleError);
       session.process.once("exit", handleExit);
