@@ -12,7 +12,9 @@ import type { MediaAnalysis, PlaybackPlan } from "./types";
 
 interface FakeChildProcess extends EventEmitter {
   stderr: EventEmitter & { setEncoding: ReturnType<typeof vi.fn> };
+  pid: number;
   exitCode: number | null;
+  signalCode: NodeJS.Signals | null;
   killed: boolean;
   kill: ReturnType<typeof vi.fn>;
 }
@@ -25,7 +27,9 @@ function createFakeChildProcess(): FakeChildProcess {
 
   stderr.setEncoding = vi.fn();
   child.stderr = stderr;
+  child.pid = 4321;
   child.exitCode = null;
+  child.signalCode = null;
   child.killed = false;
   child.kill = vi.fn(() => {
     child.killed = true;
@@ -169,7 +173,10 @@ async function writeReadyPlaylist(
     ].join("\n"),
   );
   await writeFile(path.join(path.dirname(playlistPath), "init.mp4"), "init");
-  await writeFile(path.join(path.dirname(playlistPath), segmentFileName), "seg");
+  await writeFile(
+    path.join(path.dirname(playlistPath), segmentFileName),
+    "seg",
+  );
 }
 
 afterEach(async () => {
@@ -183,7 +190,7 @@ afterEach(async () => {
 });
 
 describe("PlaybackSessionManager HLS readiness", () => {
-  it("resolves only after master.m3u8 and referenced HLS files are ready", async () => {
+  it("resolves after the playlist, init file, and first playable segment are ready", async () => {
     let playlistPath = "";
     const { manager } = createManager({
       onSpawn: (args) => {
@@ -217,6 +224,195 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(manager.getSession(session.sessionId)).toBe(session);
   });
 
+  it("does not wait for every segment referenced by the live playlist", async () => {
+    let playlistPath = "";
+
+    const { manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+
+    const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
+
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+
+    await writeFile(
+      playlistPath,
+      [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        '#EXT-X-MAP:URI="init.mp4"',
+        "#EXTINF:2.000000,",
+        "segment_00000.m4s",
+        "#EXTINF:2.000000,",
+        "segment_00001.m4s",
+        "#EXTINF:2.000000,",
+        "segment_00002.m4s",
+        "",
+      ].join("\n"),
+    );
+
+    await writeFile(path.join(path.dirname(playlistPath), "init.mp4"), "init");
+
+    await writeFile(
+      path.join(path.dirname(playlistPath), "segment_00000.m4s"),
+      "first-segment",
+    );
+
+    const session = await sessionPromise;
+
+    expect(manager.getSession(session.sessionId)).toBe(session);
+
+    await expect(
+      access(path.join(path.dirname(playlistPath), "segment_00001.m4s")),
+    ).rejects.toThrow();
+
+    await expect(
+      access(path.join(path.dirname(playlistPath), "segment_00002.m4s")),
+    ).rejects.toThrow();
+
+    await manager.stopSession(session.sessionId);
+  });
+
+  it("waits for the fMP4 init file before marking the session ready", async () => {
+    let playlistPath = "";
+    let resolved = false;
+
+    const { manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+
+    const sessionPromise = manager
+      .createSession(hlsPlan(), mediaAnalysis())
+      .then((session) => {
+        resolved = true;
+        return session;
+      });
+
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+
+    await writeFile(
+      playlistPath,
+      [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        '#EXT-X-MAP:URI="init.mp4"',
+        "#EXTINF:2.000000,",
+        "segment_00000.m4s",
+        "",
+      ].join("\n"),
+    );
+
+    await writeFile(
+      path.join(path.dirname(playlistPath), "segment_00000.m4s"),
+      "segment",
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(resolved).toBe(false);
+
+    await writeFile(path.join(path.dirname(playlistPath), "init.mp4"), "init");
+
+    const session = await sessionPromise;
+
+    expect(resolved).toBe(true);
+
+    await manager.stopSession(session.sessionId);
+  });
+
+  it("does not fall back to software for a generic hardware-process exit", async () => {
+    const hardwareChild = createFakeChildProcess();
+    let spawnCount = 0;
+
+    const manager = new PlaybackSessionManager({
+      hlsStartupTimeoutMs: 500,
+      hlsStartupPollMs: 10,
+      killGraceMs: 1,
+      runtimeProfileProvider: () =>
+        Promise.resolve({
+          videoEncoder: "h264_qsv",
+          hardwareAccelerated: true,
+          softwareThreads: 2,
+          availableVideoEncoders: ["h264_qsv", "libx264"],
+          supportsHdrToneMapping: true,
+        }),
+      spawnProcess: (_command, args) => {
+        const outputDir = path.dirname(String(args[args.length - 1]));
+
+        outputDirs.push(outputDir);
+        spawnCount += 1;
+        return hardwareChild as never;
+      },
+    });
+
+    const sessionPromise = manager.createSession(
+      videoTranscodePlan(),
+      mediaAnalysis(),
+    );
+
+    await vi.waitFor(() =>
+      expect(hardwareChild.listenerCount("exit")).toBeGreaterThan(0),
+    );
+
+    hardwareChild.stderr.emit(
+      "data",
+      "Conversion failed because the input stream ended unexpectedly.\n",
+    );
+    hardwareChild.exitCode = 1;
+    hardwareChild.emit("exit", 1, null);
+
+    await expect(sessionPromise).rejects.toMatchObject({
+      code: "early-exit",
+      details: {
+        exitCode: 1,
+        processStillRunning: false,
+      },
+    });
+
+    expect(spawnCount).toBe(1);
+  });
+
+  it("does not fall back to software when hardware FFmpeg remains alive but HLS times out", async () => {
+    const hardwareChild = createFakeChildProcess();
+    let spawnCount = 0;
+
+    const manager = new PlaybackSessionManager({
+      hlsStartupTimeoutMs: 30,
+      hlsStartupPollMs: 10,
+      killGraceMs: 1,
+      runtimeProfileProvider: () =>
+        Promise.resolve({
+          videoEncoder: "h264_qsv",
+          hardwareAccelerated: true,
+          softwareThreads: 2,
+          availableVideoEncoders: ["h264_qsv", "libx264"],
+          supportsHdrToneMapping: true,
+        }),
+      spawnProcess: (_command, args) => {
+        const outputDir = path.dirname(String(args[args.length - 1]));
+
+        outputDirs.push(outputDir);
+        spawnCount += 1;
+        return hardwareChild as never;
+      },
+    });
+
+    await expect(
+      manager.createSession(videoTranscodePlan(), mediaAnalysis()),
+    ).rejects.toMatchObject({
+      code: "playlist-timeout-process-alive",
+      details: {
+        processStillRunning: true,
+      },
+    });
+
+    expect(spawnCount).toBe(1);
+    expect(hardwareChild.kill).toHaveBeenCalledWith("SIGTERM");
+  });
+
   it("rejects spawn errors and removes the temporary output directory", async () => {
     const child = createFakeChildProcess();
     let outputDir = "";
@@ -233,9 +429,20 @@ describe("PlaybackSessionManager HLS readiness", () => {
     );
     child.emit("error", new Error("spawn ENOENT"));
 
-    await expect(sessionPromise).rejects.toBeInstanceOf(
-      PlaybackSessionStartupError,
-    );
+    await expect(sessionPromise).rejects.toMatchObject({
+      code: "spawn-failure",
+      statusCode: 409,
+      details: {
+        command: "ffmpeg",
+        outputDir,
+        args: expect.arrayContaining([
+          "-hide_banner",
+          "-i",
+          "/safe/media/movie.mp4",
+        ]),
+        stderrTail: expect.stringContaining("spawn ENOENT"),
+      },
+    });
     expect(child.kill).toHaveBeenCalled();
     await expectMissing(outputDir);
     expect(manager.getActiveSessionIds()).toEqual([]);
@@ -255,12 +462,35 @@ describe("PlaybackSessionManager HLS readiness", () => {
     await vi.waitFor(() =>
       expect(child.listenerCount("exit")).toBeGreaterThan(0),
     );
+    await writeFile(
+      path.join(outputDir, "partial-segment.m4s"),
+      "partially-written-data",
+    );
+
     child.exitCode = 1;
     child.emit("exit", 1, null);
 
     await expect(sessionPromise).rejects.toMatchObject({
-      code: "FFMPEG_STARTUP_FAILED",
+      code: "early-exit",
       statusCode: 409,
+      details: {
+        exitCode: 1,
+        processStillRunning: false,
+        pid: 4321,
+        command: "ffmpeg",
+        outputDir,
+        args: expect.arrayContaining([
+          "-hide_banner",
+          "-i",
+          "/safe/media/movie.mp4",
+        ]),
+        outputFiles: expect.arrayContaining([
+          {
+            name: "partial-segment.m4s",
+            size: Buffer.byteLength("partially-written-data"),
+          },
+        ]),
+      },
     });
     await expectMissing(outputDir);
     expect(manager.getActiveSessionIds()).toEqual([]);
@@ -280,8 +510,11 @@ describe("PlaybackSessionManager HLS readiness", () => {
     await expect(
       manager.createSession(hlsPlan(), mediaAnalysis()),
     ).rejects.toMatchObject({
-      code: "FFMPEG_STARTUP_FAILED",
+      code: "playlist-timeout-process-alive",
       statusCode: 409,
+      details: {
+        processStillRunning: true,
+      },
     });
     expect(child.kill).toHaveBeenCalledWith("SIGTERM");
     await expectMissing(outputDir);
@@ -362,7 +595,7 @@ describe("PlaybackSessionManager HLS readiness", () => {
     await manager.stopSession(firstSession.sessionId);
   });
 
-  it("falls back to bounded software encoding when hardware startup fails", async () => {
+  it("falls back exactly once when a confirmed hardware encoder initialization failure occurs", async () => {
     const hardwareChild = createFakeChildProcess();
     const softwareChild = createFakeChildProcess();
     const children = [hardwareChild, softwareChild];
@@ -374,10 +607,10 @@ describe("PlaybackSessionManager HLS readiness", () => {
       killGraceMs: 1,
       runtimeProfileProvider: () =>
         Promise.resolve({
-          videoEncoder: "h264_videotoolbox",
+          videoEncoder: "h264_qsv",
           hardwareAccelerated: true,
           softwareThreads: 2,
-          availableVideoEncoders: ["h264_videotoolbox", "libx264"],
+          availableVideoEncoders: ["h264_qsv", "libx264"],
           supportsHdrToneMapping: true,
         }),
       spawnProcess: (_command, args) => {
@@ -398,17 +631,26 @@ describe("PlaybackSessionManager HLS readiness", () => {
       mediaAnalysis(),
     );
 
+    void sessionPromise.catch(() => undefined);
+
     await vi.waitFor(() =>
-      expect(hardwareChild.listenerCount("error")).toBeGreaterThan(0),
+      expect(hardwareChild.listenerCount("exit")).toBeGreaterThan(0),
     );
-    hardwareChild.emit("error", new Error("hardware device unavailable"));
+
+    hardwareChild.stderr.emit(
+      "data",
+      "Error initializing an internal MFX session\n",
+    );
+
+    hardwareChild.exitCode = 1;
+    hardwareChild.emit("exit", 1, null);
 
     await vi.waitFor(() => expect(softwarePlaylistPath).not.toBe(""));
     await writeReadyPlaylist(softwarePlaylistPath);
     const session = await sessionPromise;
 
     expect(spawnCount).toBe(2);
-    expect(hardwareChild.kill).toHaveBeenCalledWith("SIGTERM");
+    expect(hardwareChild.kill).not.toHaveBeenCalled();
     expect(session.plan.processing).toMatchObject({
       videoEncoder: "libx264",
       hardwareAccelerated: false,

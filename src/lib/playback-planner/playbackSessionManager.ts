@@ -4,7 +4,7 @@ import {
   type SpawnOptions,
 } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
@@ -14,6 +14,14 @@ import {
   type FfmpegRuntimeProfile,
 } from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
+
+export type PlaybackStartupFailureCode =
+  | "spawn-failure"
+  | "early-exit"
+  | "hardware-encoder-failure"
+  | "playlist-timeout-process-alive"
+  | "playlist-timeout-process-exited"
+  | "cancelled";
 
 export interface PlaybackSession {
   sessionId: string;
@@ -55,11 +63,32 @@ const DEFAULT_MAX_CONCURRENT_VIDEO_TRANSCODES = 1;
 const STDERR_TAIL_LIMIT = 8_000;
 const HLS_MAP_URI_PATTERN = /\bURI="([^"]+)"/g;
 
-export class PlaybackSessionStartupError extends Error {
-  code = "FFMPEG_STARTUP_FAILED";
-  statusCode = 409;
+export interface PlaybackOutputFileDiagnostic {
+  name: string;
+  size: number;
+}
 
-  constructor(message: string) {
+export interface PlaybackStartupDiagnostics {
+  exitCode?: number | null;
+  signal?: NodeJS.Signals | null;
+  processStillRunning?: boolean;
+  stderrTail?: string;
+  elapsedMs?: number;
+  command?: string;
+  args?: string[];
+  pid?: number;
+  outputDir?: string;
+  outputFiles?: PlaybackOutputFileDiagnostic[];
+}
+
+export class PlaybackSessionStartupError extends Error {
+  readonly statusCode = 409;
+
+  constructor(
+    message: string,
+    readonly code: PlaybackStartupFailureCode,
+    readonly details: PlaybackStartupDiagnostics = {},
+  ) {
     super(message);
     this.name = "PlaybackSessionStartupError";
   }
@@ -90,6 +119,36 @@ function withSessionDelivery(
       url: `${base}/${encodeURIComponent(sessionId)}/master.m3u8`,
     },
   };
+}
+
+function hasHardwareEncoderFailure(stderr: string): boolean {
+  const normalized = stderr.toLowerCase();
+
+  return [
+    "error initializing an internal mfx session",
+    "error initializing the encoder",
+    "failed to initialise vaapi connection",
+    "failed to initialize vaapi connection",
+    "device creation failed",
+    "no device available for decoder",
+    "unsupported device",
+    "mfx session",
+    "mfx error",
+    "qsv device",
+    "qsv hw device",
+    "error opening encoder",
+  ].some((fragment) => normalized.includes(fragment));
+}
+
+function shouldFallbackToSoftware(
+  error: unknown,
+  hardwareAccelerated: boolean,
+): boolean {
+  return (
+    hardwareAccelerated &&
+    error instanceof PlaybackSessionStartupError &&
+    error.code === "hardware-encoder-failure"
+  );
 }
 
 function waitForExit(
@@ -132,8 +191,14 @@ function getLocalHlsFileName(uri: string): string | null {
   return fileName || null;
 }
 
-function getReferencedHlsFileNames(playlist: string): string[] {
-  const fileNames = new Set<string>();
+interface HlsPlaylistReferences {
+  initFile?: string;
+  mediaSegments: string[];
+}
+
+function getHlsPlaylistReferences(playlist: string): HlsPlaylistReferences {
+  let initFile: string | undefined;
+  const mediaSegments: string[] = [];
 
   for (const line of playlist.split(/\r?\n/)) {
     const trimmedLine = line.trim();
@@ -147,9 +212,11 @@ function getReferencedHlsFileNames(playlist: string): string[] {
         const fileName = getLocalHlsFileName(match[1]);
 
         if (fileName) {
-          fileNames.add(fileName);
+          initFile = fileName;
+          break;
         }
       }
+
       continue;
     }
 
@@ -160,11 +227,14 @@ function getReferencedHlsFileNames(playlist: string): string[] {
     const fileName = getLocalHlsFileName(trimmedLine);
 
     if (fileName) {
-      fileNames.add(fileName);
+      mediaSegments.push(fileName);
     }
   }
 
-  return Array.from(fileNames);
+  return {
+    initFile,
+    mediaSegments,
+  };
 }
 
 async function hasNonEmptyFile(filePath: string): Promise<boolean> {
@@ -173,6 +243,40 @@ async function hasNonEmptyFile(filePath: string): Promise<boolean> {
     return fileStats.isFile() && fileStats.size > 0;
   } catch {
     return false;
+  }
+}
+
+async function inspectOutputDirectory(
+  outputDir: string,
+): Promise<PlaybackOutputFileDiagnostic[]> {
+  try {
+    const entries = await readdir(outputDir, {
+      withFileTypes: true,
+    });
+
+    const files = await Promise.all(
+      entries
+        .filter((entry) => entry.isFile())
+        .map(async (entry) => {
+          try {
+            const fileStats = await stat(join(outputDir, entry.name));
+
+            return {
+              name: entry.name,
+              size: fileStats.size,
+            };
+          } catch {
+            return {
+              name: entry.name,
+              size: -1,
+            };
+          }
+        }),
+    );
+
+    return files.sort((left, right) => left.name.localeCompare(right.name));
+  } catch {
+    return [];
   }
 }
 
@@ -317,11 +421,28 @@ export class PlaybackSessionManager {
       return nextSession;
     } catch (error) {
       this.sessions.delete(sessionId);
+
       if (session) {
         await this.terminateSessionProcess(session);
       }
+
+      const outputFiles = await inspectOutputDirectory(outputDir);
+
+      const enrichedError =
+        error instanceof PlaybackSessionStartupError
+          ? new PlaybackSessionStartupError(error.message, error.code, {
+              ...error.details,
+              command: command.command,
+              args: [...command.args],
+              pid: session?.process.pid,
+              outputDir,
+              outputFiles,
+            })
+          : error;
+
       await rm(outputDir, { recursive: true, force: true });
-      throw error;
+
+      throw enrichedError;
     }
   }
 
@@ -367,19 +488,40 @@ export class PlaybackSessionManager {
           runtimeProfile,
         );
       } catch (error) {
-        if (!runtimeProfile.hardwareAccelerated || !isVideoTranscode) {
+        if (error instanceof PlaybackSessionStartupError) {
+          console.error("[Seyirlik Playback Backend] FFmpeg startup failed:", {
+            code: error.code,
+            message: error.message,
+            exitCode: error.details.exitCode,
+            signal: error.details.signal,
+            processStillRunning: error.details.processStillRunning,
+            elapsedMs: error.details.elapsedMs,
+            pid: error.details.pid,
+            command: error.details.command,
+            args: error.details.args,
+            outputDir: error.details.outputDir,
+            outputFiles: error.details.outputFiles,
+            stderrTail: error.details.stderrTail,
+          });
+        }
+
+        if (
+          !isVideoTranscode ||
+          !shouldFallbackToSoftware(error, runtimeProfile.hardwareAccelerated)
+        ) {
           throw error;
         }
 
         console.warn(
-          `[Seyirlik Playback Backend] ${runtimeProfile.videoEncoder} could not start; retrying with bounded libx264 software encoding.`,
+          `[Seyirlik Playback Backend] Confirmed ${runtimeProfile.videoEncoder} hardware encoder failure; retrying once with bounded libx264 software encoding.`,
         );
+
         const softwareProfile = createSoftwareRuntimeProfile(
           runtimeProfile.softwareThreads,
           runtimeProfile.supportsHdrToneMapping,
         );
 
-        return await this.startSessionAttempt(
+        return this.startSessionAttempt(
           sessionId,
           planWithSession,
           media,
@@ -448,6 +590,11 @@ export class PlaybackSessionManager {
     if (!playlistPath) {
       throw new PlaybackSessionStartupError(
         "FFmpeg did not provide an HLS playlist path.",
+        "early-exit",
+        {
+          processStillRunning: false,
+          stderrTail: session.stderrTail,
+        },
       );
     }
 
@@ -500,18 +647,26 @@ export class PlaybackSessionManager {
 
           if (playlistStat.isFile() && playlistStat.size > 0) {
             const playlist = await readFile(playlistPath, "utf8");
-            const referencedFiles = getReferencedHlsFileNames(playlist);
-            const referencedFilesReady =
-              referencedFiles.length > 0 &&
-              (
-                await Promise.all(
-                  referencedFiles.map((fileName) =>
-                    hasNonEmptyFile(join(session.outputDir, fileName)),
-                  ),
-                )
-              ).every(Boolean);
+            const references = getHlsPlaylistReferences(playlist);
 
-            if (!referencedFilesReady) {
+            const initFileReady =
+              !references.initFile ||
+              (await hasNonEmptyFile(
+                join(session.outputDir, references.initFile),
+              ));
+
+            let playableSegmentReady = false;
+
+            for (const segmentFileName of references.mediaSegments) {
+              if (
+                await hasNonEmptyFile(join(session.outputDir, segmentFileName))
+              ) {
+                playableSegmentReady = true;
+                break;
+              }
+            }
+
+            if (!initFileReady || !playableSegmentReady) {
               pollTimer = setTimeout(poll, this.hlsStartupPollMs);
               return;
             }
@@ -528,30 +683,74 @@ export class PlaybackSessionManager {
         }
       };
 
-      const handleError = () => {
-        finish(new PlaybackSessionStartupError("FFmpeg could not be started."));
+      const handleError = (error: Error) => {
+        finish(
+          new PlaybackSessionStartupError(
+            "FFmpeg could not be started.",
+            "spawn-failure",
+            {
+              exitCode: session.process.exitCode,
+              signal: session.process.signalCode,
+              processStillRunning: false,
+              stderrTail: [session.stderrTail, error.message]
+                .filter(Boolean)
+                .join("\n"),
+              elapsedMs: Date.now() - startedAt,
+            },
+          ),
+        );
       };
 
       const handleExit = () => {
+        const hardwareFailure =
+          session.plan.processing?.hardwareAccelerated === true &&
+          hasHardwareEncoderFailure(session.stderrTail);
+
         console.warn(
-          "[Seyirlik Playback Backend] FFmpeg exited before HLS playlist was ready.",
+          "[Seyirlik Playback Backend] FFmpeg exited before playable HLS output was ready.",
         );
+
         finish(
           new PlaybackSessionStartupError(
-            "FFmpeg exited before the HLS playlist was ready.",
+            "FFmpeg exited before playable HLS output was ready.",
+            hardwareFailure ? "hardware-encoder-failure" : "early-exit",
+            {
+              exitCode: session.process.exitCode,
+              signal: session.process.signalCode,
+              processStillRunning: false,
+              stderrTail: session.stderrTail,
+              elapsedMs: Date.now() - startedAt,
+            },
           ),
         );
       };
 
       timeoutTimer = setTimeout(() => {
+        const elapsedMs = Date.now() - startedAt;
+        const processStillRunning =
+          session.process.exitCode === null &&
+          session.process.signalCode === null &&
+          !session.process.killed;
+
         console.warn(
-          `[Seyirlik Playback Backend] FFmpeg HLS playlist was not ready after ${
-            Date.now() - startedAt
-          }ms.`,
+          `[Seyirlik Playback Backend] FFmpeg HLS playlist was not ready after ${elapsedMs}ms. Process still running: ${processStillRunning}.`,
         );
+
         finish(
           new PlaybackSessionStartupError(
-            "FFmpeg did not produce an HLS playlist before startup timeout.",
+            processStillRunning
+              ? "FFmpeg remained alive but did not produce playable HLS output before the startup timeout."
+              : "FFmpeg exited before playable HLS output became ready.",
+            processStillRunning
+              ? "playlist-timeout-process-alive"
+              : "playlist-timeout-process-exited",
+            {
+              exitCode: session.process.exitCode,
+              signal: session.process.signalCode,
+              processStillRunning,
+              stderrTail: session.stderrTail,
+              elapsedMs,
+            },
           ),
         );
       }, this.hlsStartupTimeoutMs);
