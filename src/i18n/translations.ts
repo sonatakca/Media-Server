@@ -152,7 +152,7 @@ export const translations = {
       "Playback failed while asking Jellyfin for PlaybackInfo.",
     "player.playbackFailurePossibleCauses":
       "Playback failed. This may be a codec, CORS, token, or transcoding issue.",
-    "player.preparing": "Preparing Jellyfin playback",
+    "player.preparing": "Preparing player",
     "player.issue": "Playback issue",
     "player.tryTranscoded": "Try transcoded playback",
     "player.technicalDetails": "Technical details",
@@ -1068,7 +1068,7 @@ export const translations = {
       "PlaybackInfo için Jellyfin'e istek atılırken oynatma başarısız oldu.",
     "player.playbackFailurePossibleCauses":
       "Oynatma başarısız. Codec, CORS, token veya dönüştürme kaynaklı olabilir.",
-    "player.preparing": "Jellyfin oynatma hazırlanıyor",
+    "player.preparing": "Oynatma hazırlanıyor",
     "player.issue": "Oynatma sorunu",
     "player.tryTranscoded": "Dönüştürülmüş oynatmayı dene",
     "player.technicalDetails": "Teknik detaylar",

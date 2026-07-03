@@ -142,7 +142,7 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
     return (
       <main className="flex min-h-screen items-center justify-center px-4 text-white">
         <div className="text-center">
-          <LoadingSpinner />
+          <LoadingSpinner label="" />
           <p className="mt-4 text-sm text-white/58">
             {t("app.connectingDefaultServer")}
           </p>

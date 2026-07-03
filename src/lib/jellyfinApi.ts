@@ -90,6 +90,8 @@ const DEFAULT_ITEM_FIELDS = [
   "UserData",
   "ImageTags",
   "BackdropImageTags",
+  "ParentBackdropItemId",
+  "ParentBackdropImageTags",
   "ParentLogoItemId",
   "ParentLogoImageTag",
   "ParentId",

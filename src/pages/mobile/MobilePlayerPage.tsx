@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ArrowLeft } from "lucide-react";
 import {
   Link,
@@ -14,6 +15,7 @@ import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
+  getBackdropImageUrl,
   getItem,
   reportPlaybackProgress,
   reportPlaybackStart,
@@ -39,6 +41,7 @@ export function MobilePlayerPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const [item, setItem] = useState<JellyfinItem | null>(() =>
     itemId ? readPreloadedPlaybackItem(itemId) : null,
   );
@@ -202,6 +205,21 @@ export function MobilePlayerPage() {
     [navigate],
   );
 
+  const loadingBackdropItemId = item
+    ? (item.ParentBackdropItemId ?? item.SeriesId ?? item.Id)
+    : null;
+
+  const loadingBackdropTag = item
+    ? (item.ParentBackdropImageTags?.[0] ?? item.BackdropImageTags?.[0])
+    : undefined;
+
+  const loadingBackdropUrl = loadingBackdropItemId
+    ? getBackdropImageUrl(loadingBackdropItemId, loadingBackdropTag, 1920)
+    : "";
+
+  const isPreparingPlayback =
+    !item || playback.isLoading || !playback.activeSource;
+
   if (itemError) {
     return (
       <main className="min-h-screen bg-black p-4 text-white">
@@ -247,8 +265,29 @@ export function MobilePlayerPage() {
     }
 
     return (
-      <main className="min-h-screen bg-black text-white">
-        <LoadingSpinner label={t("player.preparing")} />
+      <main className="relative min-h-screen overflow-hidden bg-black text-white">
+        {loadingBackdropUrl ? (
+          <>
+            <img
+              src={loadingBackdropUrl}
+              alt=""
+              aria-hidden="true"
+              draggable={false}
+              className="absolute inset-0 h-full w-full scale-[1.02] object-cover"
+            />
+
+            <div aria-hidden="true" className="absolute inset-0 bg-black/45" />
+
+            <div
+              aria-hidden="true"
+              className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/45"
+            />
+          </>
+        ) : null}
+
+        <div className="relative z-10 flex min-h-screen items-center justify-center">
+          <LoadingSpinner label="" />
+        </div>
       </main>
     );
   }

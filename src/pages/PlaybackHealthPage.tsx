@@ -433,7 +433,9 @@ export function PlaybackHealthPage() {
           />
           <InfoPill
             label="Service worker"
-            value={context.serviceWorkerAvailable ? "available" : "not available"}
+            value={
+              context.serviceWorkerAvailable ? "available" : "not available"
+            }
           />
           <InfoPill
             label="Jellyfin"
@@ -442,7 +444,9 @@ export function PlaybackHealthPage() {
           />
           <InfoPill
             label="Custom backend"
-            value={context.customPlaybackBackend.redactedUrl ?? "Not configured"}
+            value={
+              context.customPlaybackBackend.redactedUrl ?? "Not configured"
+            }
             tone={
               context.customPlaybackBackend.mixedContentRisk ? "bad" : undefined
             }
@@ -460,8 +464,14 @@ export function PlaybackHealthPage() {
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <SourceSummary title="Jellyfin selected source" source={report?.jellyfinSource} />
-        <SourceSummary title="Custom backend selected source" source={report?.customSource} />
+        <SourceSummary
+          title="Jellyfin selected source"
+          source={report?.jellyfinSource}
+        />
+        <SourceSummary
+          title="Custom backend selected source"
+          source={report?.customSource}
+        />
       </section>
 
       <section className="space-y-3">
@@ -472,14 +482,15 @@ export function PlaybackHealthPage() {
           <div>
             <h2 className="text-xl font-black text-white">Probe Results</h2>
             <p className="text-sm font-semibold text-white/45">
-              CORS failures appear as fetch errors because the browser blocks the response.
+              CORS failures appear as fetch errors because the browser blocks
+              the response.
             </p>
           </div>
         </div>
 
         {isRunning && !report ? (
           <div className="flex min-h-40 items-center justify-center rounded-3xl border border-white/10 bg-white/[0.045]">
-            <LoadingSpinner />
+            <LoadingSpinner label="" />
           </div>
         ) : null}
 
@@ -495,7 +506,9 @@ export function PlaybackHealthPage() {
               <FileJson size={19} />
             </div>
             <div>
-              <h2 className="text-xl font-black text-white">Redacted Payload</h2>
+              <h2 className="text-xl font-black text-white">
+                Redacted Payload
+              </h2>
               <p className="text-sm font-semibold text-white/45">
                 Same object copied by the JSON button.
               </p>
@@ -516,7 +529,6 @@ export function PlaybackHealthPage() {
         <InfoPill label="Media token display" value="redacted" />
         <InfoPill label="Generated" value={report?.generatedAt ?? "Not yet"} />
       </section>
-
     </div>
   );
 }

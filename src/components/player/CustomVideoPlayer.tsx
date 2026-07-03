@@ -202,6 +202,7 @@ export function CustomVideoPlayer({
   onPlaybackProgress,
   onPlaybackStopped,
   onPlaybackBeforeUnload,
+  onPreparingPlaybackChange,
   nextEpisode = null,
   playbackQueue = null,
   enableDefaultNextEpisodeCountdown = false,
@@ -297,9 +298,36 @@ export function CustomVideoPlayer({
   const [checkpointSeconds, setCheckpointSeconds] = useState<number | null>(
     null,
   );
+  const [hasKnownVideoDuration, setHasKnownVideoDuration] = useState(false);
 
   const progress = usePlayerProgress(videoRef);
   const refreshProgress = progress.refresh;
+
+  const hasValidVideoDuration =
+    Number.isFinite(progress.duration) && progress.duration > 0;
+
+  const isTimelinePreparing =
+    !error &&
+    !hasKnownVideoDuration &&
+    progress.currentTime <= 0 &&
+    !hasValidVideoDuration;
+
+  useEffect(() => {
+    if (hasValidVideoDuration) {
+      setHasKnownVideoDuration(true);
+    }
+  }, [hasValidVideoDuration]);
+
+  useEffect(() => {
+    onPreparingPlaybackChange?.(isTimelinePreparing);
+  }, [isTimelinePreparing, onPreparingPlaybackChange]);
+
+  useEffect(() => {
+    return () => {
+      onPreparingPlaybackChange?.(false);
+    };
+  }, [onPreparingPlaybackChange]);
+
   const { segments: mediaSegments, activeSegment } = useMediaSegments(
     item.Id,
     progress.currentTime,
@@ -926,6 +954,7 @@ export function CustomVideoPlayer({
 
   useEffect(() => {
     setLoadedVideoAspectRatio(null);
+    setHasKnownVideoDuration(false);
   }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {

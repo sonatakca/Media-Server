@@ -17,6 +17,7 @@ export interface CustomVideoPlayerProps {
   onPlaybackProgress?: (positionSeconds: number, isPaused: boolean) => void;
   onPlaybackStopped?: (positionSeconds: number) => void;
   onPlaybackBeforeUnload?: (positionSeconds: number) => void;
+  onPreparingPlaybackChange?: (isPreparing: boolean) => void;
   nextEpisode?: JellyfinItem | null;
   playbackQueue?: PlaybackQueue | null;
   enableDefaultNextEpisodeCountdown?: boolean;

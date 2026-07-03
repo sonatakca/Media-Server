@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Link,
   useNavigate,
@@ -13,6 +14,7 @@ import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
+  getBackdropImageUrl,
   getItem,
   reportPlaybackProgress,
   reportPlaybackStart,
@@ -41,10 +43,14 @@ export function DesktopPlayerPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { t } = useLanguage();
+  const shouldReduceMotion = Boolean(useReducedMotion());
   const [item, setItem] = useState<JellyfinItem | null>(() =>
     itemId ? readPreloadedPlaybackItem(itemId) : null,
   );
   const [itemError, setItemError] = useState<string | null>(null);
+  const [isVideoTimelinePreparing, setIsVideoTimelinePreparing] =
+    useState(true);
+
   const playback = usePlaybackSource(itemId);
   const playbackQueue = usePlaybackQueue(item);
 
@@ -88,6 +94,10 @@ export function DesktopPlayerPage() {
       isMounted = false;
     };
   }, [itemId, t]);
+
+  useEffect(() => {
+    setIsVideoTimelinePreparing(true);
+  }, [itemId]);
 
   useEffect(() => {
     const isPageLoading = !item || playback.isLoading;
@@ -208,6 +218,24 @@ export function DesktopPlayerPage() {
     [navigate],
   );
 
+  const loadingBackdropItemId = item
+    ? (item.ParentBackdropItemId ?? item.SeriesId ?? item.Id)
+    : null;
+
+  const loadingBackdropTag = item
+    ? (item.ParentBackdropImageTags?.[0] ?? item.BackdropImageTags?.[0])
+    : undefined;
+
+  const loadingBackdropUrl = loadingBackdropItemId
+    ? getBackdropImageUrl(loadingBackdropItemId, loadingBackdropTag, 1920)
+    : "";
+
+  const isPreparingPlayback =
+    !item ||
+    playback.isLoading ||
+    !playback.activeSource ||
+    isVideoTimelinePreparing;
+
   if (itemError) {
     return (
       <main className="min-h-screen bg-black p-4 text-white">
@@ -226,44 +254,39 @@ export function DesktopPlayerPage() {
     );
   }
 
-  if (!item || playback.isLoading || !playback.activeSource) {
-    if (item && playback.error) {
-      const mediaOwnerRoute = getMediaOwnerRouteForItem(item);
-
-      return (
-        <main className="flex min-h-screen items-center justify-center bg-black p-4 text-white">
-          <div className="w-full max-w-2xl">
-            <Link
-              to={mediaOwnerRoute}
-              replace
-              className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
-            >
-              <ArrowLeft size={17} />
-              {t("common.details")}
-            </Link>
-            <ErrorMessage
-              title={t("player.playbackUnavailable")}
-              message={playback.error.message}
-              details={playback.error.details}
-              onRetry={playback.retry}
-            />
-          </div>
-        </main>
-      );
-    }
+  if (isPreparingPlayback && item && playback.error) {
+    const mediaOwnerRoute = getMediaOwnerRouteForItem(item);
 
     return (
-      <main className="min-h-screen bg-black text-white">
-        <LoadingSpinner label={t("player.preparing")} />
+      <main className="flex min-h-screen items-center justify-center bg-black p-4 text-white">
+        <div className="w-full max-w-2xl">
+          <Link
+            to={mediaOwnerRoute}
+            replace
+            className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+          >
+            <ArrowLeft size={17} />
+            {t("common.details")}
+          </Link>
+          <ErrorMessage
+            title={t("player.playbackUnavailable")}
+            message={playback.error.message}
+            details={playback.error.details}
+            onRetry={playback.retry}
+          />
+        </div>
       </main>
     );
   }
 
+  const resolvedItem = item;
+  const resolvedSource = playback.activeSource;
+
   const shouldStartFromBeginning =
     searchParams.get("start") === "0" || searchParams.get("restart") === "1";
   const savedPlaybackSeconds =
-    typeof item.UserData?.PlaybackPositionTicks === "number"
-      ? item.UserData.PlaybackPositionTicks / 10_000_000
+    typeof resolvedItem?.UserData?.PlaybackPositionTicks === "number"
+      ? resolvedItem.UserData.PlaybackPositionTicks / 10_000_000
       : 0;
 
   const initialStartSeconds = shouldStartFromBeginning
@@ -271,36 +294,115 @@ export function DesktopPlayerPage() {
     : savedPlaybackSeconds;
 
   return (
-    <>
-      {/* <RainbowAnimation
-        startDelay={1}
-        fadeInDuration={2}
-        height="min(30rem, 45vh)"
-        glowTop="10"
-      /> */}
-      <CustomVideoPlayer
-        item={item}
-        source={playback.activeSource}
-        playbackCandidates={playback.candidates}
-        notice={playback.notice}
-        error={playback.error}
-        hasTranscodingFallback={playback.hasTranscodingFallback}
-        onVideoFailure={playback.handleVideoFailure}
-        onTryTranscodedPlayback={playback.tryTranscodedPlayback}
-        onRetryPlayback={playback.retry}
-        initialStartSeconds={initialStartSeconds}
-        onPlaybackStarted={handlePlaybackStarted}
-        onPlaybackProgress={handlePlaybackProgress}
-        onPlaybackStopped={handlePlaybackStopped}
-        onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
-        nextEpisode={
-          item.Type === "Episode" ? (playbackQueue?.nextItem ?? null) : null
-        }
-        playbackQueue={playbackQueue}
-        enableDefaultNextEpisodeCountdown={item.Type === "Episode"}
-        onAutoPlayNextEpisode={handlePlayNextUp}
-        onPlayQueueItem={handlePlayNextUp}
-      />
-    </>
+    <main className="relative min-h-screen overflow-hidden bg-black text-white">
+      {resolvedItem && resolvedSource ? (
+        <CustomVideoPlayer
+          item={resolvedItem}
+          source={resolvedSource}
+          playbackCandidates={playback.candidates}
+          notice={playback.notice}
+          error={playback.error}
+          hasTranscodingFallback={playback.hasTranscodingFallback}
+          onVideoFailure={playback.handleVideoFailure}
+          onTryTranscodedPlayback={playback.tryTranscodedPlayback}
+          onRetryPlayback={playback.retry}
+          initialStartSeconds={initialStartSeconds}
+          onPlaybackStarted={handlePlaybackStarted}
+          onPlaybackProgress={handlePlaybackProgress}
+          onPlaybackStopped={handlePlaybackStopped}
+          onPlaybackBeforeUnload={handlePlaybackBeforeUnload}
+          onPreparingPlaybackChange={setIsVideoTimelinePreparing}
+          nextEpisode={
+            resolvedItem.Type === "Episode"
+              ? (playbackQueue?.nextItem ?? null)
+              : null
+          }
+          playbackQueue={playbackQueue}
+          enableDefaultNextEpisodeCountdown={resolvedItem.Type === "Episode"}
+          onAutoPlayNextEpisode={handlePlayNextUp}
+          onPlayQueueItem={handlePlayNextUp}
+        />
+      ) : null}
+
+      <AnimatePresence>
+        {isPreparingPlayback ? (
+          <motion.div
+            key="playback-loading-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.45,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+            className="fixed inset-0 z-[100] overflow-hidden bg-black"
+          >
+            {loadingBackdropUrl ? (
+              <motion.img
+                src={loadingBackdropUrl}
+                alt=""
+                aria-hidden="true"
+                draggable={false}
+                initial={{
+                  opacity: 0,
+                  scale: shouldReduceMotion ? 1 : 1.035,
+                }}
+                animate={{
+                  opacity: 1,
+                  scale: 1.02,
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: shouldReduceMotion ? 1 : 1.01,
+                }}
+                transition={{
+                  opacity: {
+                    duration: shouldReduceMotion ? 0 : 0.5,
+                  },
+                  scale: {
+                    duration: shouldReduceMotion ? 0 : 1.2,
+                    ease: [0.22, 1, 0.36, 1],
+                  },
+                }}
+                className="absolute inset-0 h-full w-full object-cover"
+              />
+            ) : null}
+
+            <motion.div
+              aria-hidden="true"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.4 }}
+              className="absolute inset-0 bg-black/45"
+            />
+
+            <motion.div
+              aria-hidden="true"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: shouldReduceMotion ? 0 : 0.45 }}
+              className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/45"
+            />
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{
+                duration: shouldReduceMotion ? 0 : 0.35,
+                delay: shouldReduceMotion ? 0 : 0.08,
+              }}
+              className="absolute inset-0 z-10 grid place-items-center"
+            >
+              <div className="flex items-center justify-center">
+                <LoadingSpinner label="" />
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+    </main>
   );
 }
