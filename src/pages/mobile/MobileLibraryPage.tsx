@@ -17,9 +17,11 @@ import type { TranslationKey } from "../../i18n/translations";
 import { getDisplayTitle } from "../../lib/format";
 import {
   getBoxSetItems,
+  getBackdropImageUrl,
   getItem,
   getItemsForLibrary,
   getLogoImageUrl,
+  getPrimaryImageUrl,
   getSeasonEpisodes,
   getSeriesSeasons,
   getTopLevelItemsForLibrary,
@@ -75,6 +77,54 @@ function compareNames(left: JellyfinItem, right: JellyfinItem): number {
     undefined,
     { numeric: true },
   );
+}
+
+function getLibraryBackdropUrl(
+  library: JellyfinItem | undefined,
+  items: JellyfinItem[],
+): string {
+  if (library?.BackdropImageTags?.[0]) {
+    return getBackdropImageUrl(library.Id, library.BackdropImageTags[0], 1000);
+  }
+
+  const itemWithBackdrop = items.find(
+    (item) =>
+      Boolean(item.BackdropImageTags?.[0]) ||
+      Boolean(item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]),
+  );
+
+  if (itemWithBackdrop?.BackdropImageTags?.[0]) {
+    return getBackdropImageUrl(
+      itemWithBackdrop.Id,
+      itemWithBackdrop.BackdropImageTags[0],
+      1000,
+    );
+  }
+
+  if (
+    itemWithBackdrop?.ParentBackdropItemId &&
+    itemWithBackdrop.ParentBackdropImageTags?.[0]
+  ) {
+    return getBackdropImageUrl(
+      itemWithBackdrop.ParentBackdropItemId,
+      itemWithBackdrop.ParentBackdropImageTags[0],
+      1000,
+    );
+  }
+
+  if (library?.ImageTags?.Primary) {
+    return getPrimaryImageUrl(library.Id, library.ImageTags.Primary, 760);
+  }
+
+  const itemWithPrimary = items.find((item) => item.ImageTags?.Primary);
+
+  return itemWithPrimary?.ImageTags?.Primary
+    ? getPrimaryImageUrl(
+        itemWithPrimary.Id,
+        itemWithPrimary.ImageTags.Primary,
+        760,
+      )
+    : "";
 }
 
 function getSortNumber(item: JellyfinItem): number {
@@ -495,6 +545,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
               600,
             )
           : "";
+  const backdropUrl = getLibraryBackdropUrl(data.library, data.items);
   const countText =
     itemType === "Season"
       ? countLabel(
@@ -562,54 +613,71 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     }));
 
   return (
-    <div className="pb-5">
-      <div className="mb-5 flex items-center justify-between gap-3">
-        <BackButton buttonClassName="min-h-9 px-3 text-xs" />
-        <p className="text-xs font-bold text-white/55">{countText}</p>
-      </div>
+    <div className="pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
+      <section className="full-bleed relative -mt-1 mb-5 min-h-[12rem] overflow-hidden border-b border-white/10 bg-zinc-950 px-4 pb-5 pt-3">
+        {backdropUrl ? (
+          <img
+            src={backdropUrl}
+            alt=""
+            aria-hidden="true"
+            className="absolute inset-0 h-full w-full object-cover opacity-52"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,0.11),transparent_44%),linear-gradient(180deg,#111113_0%,#050506_100%)]" />
+        )}
+        <div className="absolute inset-0 bg-gradient-to-b from-black/72 via-black/38 to-[#050506]" />
+        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#050506] to-transparent" />
 
-      <header className="mb-6 text-center">
-        {logoUrl && seasonHeaderLabel ? (
-          <div className="flex min-w-0 items-center justify-center gap-2.5">
+        <div className="relative z-20 flex items-center justify-between gap-3">
+          <BackButton buttonClassName="min-h-9 px-3 text-xs" />
+          <p className="min-w-0 truncate text-right text-xs font-bold text-white/62">
+            {countText}
+          </p>
+        </div>
+
+        <header className="absolute inset-x-4 top-[58%] z-20 -translate-y-1/2 text-center">
+          {logoUrl && seasonHeaderLabel ? (
+            <div className="flex min-w-0 items-center justify-center gap-2.5">
+              <img
+                src={logoUrl}
+                alt={title}
+                className="cinematic-logo-shadow max-h-12 max-w-[min(10rem,42vw)] object-contain"
+              />
+              <div
+                aria-hidden="true"
+                className="h-9 w-px shrink-0 bg-gradient-to-b from-transparent via-white/24 to-transparent"
+              />
+              {seasonPickerOptions.length > 0 ? (
+                <SeasonPicker
+                  activeSeasonId={currentSeasonId}
+                  currentLabel={seasonHeaderLabel}
+                  options={seasonPickerOptions}
+                  selectLabel={t("library.selectSeason")}
+                  variant="mobile"
+                />
+              ) : (
+                <div
+                  className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2`}
+                >
+                  <span className="relative truncate text-sm font-black leading-none text-white">
+                    {seasonHeaderLabel}
+                  </span>
+                </div>
+              )}
+            </div>
+          ) : logoUrl ? (
             <img
               src={logoUrl}
               alt={title}
-              className="cinematic-logo-shadow max-h-12 max-w-[min(10rem,42vw)] object-contain"
+              className="cinematic-logo-shadow mx-auto max-h-16 max-w-[76vw] object-contain"
             />
-            <div
-              aria-hidden="true"
-              className="h-9 w-px shrink-0 bg-gradient-to-b from-transparent via-white/24 to-transparent"
-            />
-            {seasonPickerOptions.length > 0 ? (
-              <SeasonPicker
-                activeSeasonId={currentSeasonId}
-                currentLabel={seasonHeaderLabel}
-                options={seasonPickerOptions}
-                selectLabel={t("library.selectSeason")}
-                variant="mobile"
-              />
-            ) : (
-              <div
-                className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2`}
-              >
-                <span className="relative truncate text-sm font-black leading-none text-white">
-                  {seasonHeaderLabel}
-                </span>
-              </div>
-            )}
-          </div>
-        ) : logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={title}
-            className="cinematic-logo-shadow mx-auto max-h-14 max-w-[75vw] object-contain"
-          />
-        ) : (
-          <h1 className="text-3xl font-black tracking-tight text-white">
-            {title}
-          </h1>
-        )}
-      </header>
+          ) : (
+            <h1 className="mx-auto max-w-[84vw] text-3xl font-black tracking-tight text-white drop-shadow-[0_16px_38px_rgba(0,0,0,0.9)]">
+              {title}
+            </h1>
+          )}
+        </header>
+      </section>
 
       {isLibraryScopeWatched ? (
         <div className="mb-5 flex justify-center">
@@ -715,8 +783,8 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
         <div
           className={
             usesLandscapeCards
-              ? "grid grid-cols-1 gap-3"
-              : "grid grid-cols-2 gap-3"
+              ? "mx-auto grid max-w-sm grid-cols-1 gap-3"
+              : "grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]"
           }
         >
           {filteredItems.map((item) => (

@@ -121,6 +121,42 @@ const EPUB_REVEAL_STYLES = `
 }
 `;
 
+const EPUB_CONTENT_DIVIDER_STYLES = `
+hr {
+  border: 0 !important;
+  height: 1px !important;
+  width: 70% !important;
+  margin: 3em auto 2.2em auto !important;
+  background: linear-gradient(
+    to right,
+    transparent,
+    currentColor,
+    transparent
+  ) !important;
+  opacity: 0.22 !important;
+}
+
+h1::before,
+h2::before {
+  content: "";
+  display: block !important;
+  width: 70% !important;
+  height: 1px !important;
+  margin: 0 auto 2.4em auto !important;
+  background: linear-gradient(
+    to right,
+    transparent,
+    currentColor,
+    transparent
+  ) !important;
+  opacity: 0.22 !important;
+}
+
+h1 + h2::before {
+  display: none !important;
+}
+`;
+
 const READER_THEME_LABEL_KEYS = {
   night: "reader.theme.night",
   paper: "reader.theme.paper",
@@ -152,7 +188,6 @@ const themePalettes: Record<
     controlMutedText: string;
     controlShadow: string;
     controlFlatShadow: string;
-    pageDivider: string;
     accent: string;
   }
 > = {
@@ -173,7 +208,6 @@ const themePalettes: Record<
       "0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3), 0 10px 35px rgba(0,0,0,0.28)",
     controlFlatShadow:
       "0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3)",
-    pageDivider: "rgba(244, 244, 245, 0.18)",
     accent: "#8bd8be",
   },
   paper: {
@@ -194,7 +228,6 @@ const themePalettes: Record<
       "0 0 0 1px rgba(24,24,27,0.12), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(24,24,27,0.06), 0 14px 38px rgba(24,24,27,0.12)",
     controlFlatShadow:
       "0 0 0 1px rgba(24,24,27,0.12), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(24,24,27,0.06)",
-    pageDivider: "rgba(24, 24, 27, 0.16)",
     accent: "#28775d",
   },
   sepia: {
@@ -215,7 +248,6 @@ const themePalettes: Record<
       "0 0 0 1px rgba(45,34,22,0.13), inset 0 1px 0 rgba(255,255,255,0.48), inset 0 -1px 0 rgba(45,34,22,0.06), 0 14px 38px rgba(45,34,22,0.12)",
     controlFlatShadow:
       "0 0 0 1px rgba(45,34,22,0.13), inset 0 1px 0 rgba(255,255,255,0.48), inset 0 -1px 0 rgba(45,34,22,0.06)",
-    pageDivider: "rgba(36, 27, 18, 0.16)",
     accent: "#2d6a50",
   },
 };
@@ -392,11 +424,31 @@ function getEpubThemeRules(
       "font-weight": "800 !important",
       "letter-spacing": "0 !important",
       "line-height": "1.18 !important",
-      margin:
-        "clamp(2rem, 6vh, 4.5rem) auto clamp(1.2rem, 3vh, 2rem) !important",
     },
     a: {
       color: `${palette.accent} !important`,
+    },
+    hr: {
+      border: "0 !important",
+      height: "1px !important",
+      width: "70% !important",
+      margin: "3em auto 2.2em auto !important",
+      background:
+        "linear-gradient(to right, transparent, currentColor, transparent) !important",
+      opacity: "0.22 !important",
+    },
+    "h1::before, h2::before": {
+      content: '""',
+      display: "block !important",
+      width: "70% !important",
+      height: "1px !important",
+      margin: "0 auto 2.4em auto !important",
+      background:
+        "linear-gradient(to right, transparent, currentColor, transparent) !important",
+      opacity: "0.22 !important",
+    },
+    "h1 + h2::before": {
+      display: "none !important",
     },
     img: {
       "max-width": "100% !important",
@@ -638,6 +690,10 @@ function getRenditionContents(rendition: Rendition): EpubContentView[] {
 function injectEpubRevealStyles(rendition: Rendition): void {
   getRenditionContents(rendition).forEach((content) => {
     content.addStylesheetCss(EPUB_REVEAL_STYLES, "seyirlik-reader-reveal");
+    content.addStylesheetCss(
+      EPUB_CONTENT_DIVIDER_STYLES,
+      "seyirlik-reader-content-dividers",
+    );
     content.addClass("seyirlik-reader-reveal");
     getEpubRevealBlocks(content.document).forEach((element, index) => {
       element.classList.add("seyirlik-reader-block");
@@ -660,28 +716,6 @@ function getScrollPageNumber(scrollElement: HTMLElement): number {
     Math.floor(
       scrollElement.scrollTop / Math.max(1, scrollElement.clientHeight),
     ) + 1,
-  );
-}
-
-function syncReaderPageDivider(
-  dividerElement: HTMLElement | null,
-  scrollElement: HTMLElement | null,
-): void {
-  if (!dividerElement || !scrollElement) {
-    return;
-  }
-
-  const pageHeight = Math.max(1, scrollElement.clientHeight);
-  const scrollRemainder = scrollElement.scrollTop % pageHeight;
-  const dividerY =
-    scrollRemainder === 0 ? pageHeight : pageHeight - scrollRemainder;
-  const hasMultiplePages = scrollElement.scrollHeight > pageHeight + 1;
-
-  dividerElement.style.setProperty("--reader-page-height", `${pageHeight}px`);
-  dividerElement.style.setProperty("--reader-page-divider-y", `${dividerY}px`);
-  dividerElement.style.setProperty(
-    "--reader-page-divider-opacity",
-    hasMultiplePages ? "1" : "0",
   );
 }
 
@@ -1000,7 +1034,6 @@ export function BookReaderPage() {
 
   const epubHostRef = useRef<HTMLDivElement | null>(null);
   const scrollHostRef = useRef<HTMLDivElement | null>(null);
-  const pageDividerRef = useRef<HTMLDivElement | null>(null);
   const bookRef = useRef<Book | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
 
@@ -1144,8 +1177,6 @@ export function BookReaderPage() {
     const savedProgress = readReaderProgress(activeItemId);
     let currentCfi = savedProgress?.cfi;
     let epubScrollElement: HTMLElement | null = null;
-    let epubResizeObserver: ResizeObserver | null = null;
-    let removeEpubResizeListener: (() => void) | null = null;
     let pendingProgressFrame = 0;
     let hasGeneratedEpubLocations = false;
 
@@ -1215,7 +1246,6 @@ export function BookReaderPage() {
 
       pendingProgressFrame = window.requestAnimationFrame(() => {
         pendingProgressFrame = 0;
-        syncReaderPageDivider(pageDividerRef.current, epubScrollElement);
         updateEpubLocationProgress();
       });
     };
@@ -1235,23 +1265,6 @@ export function BookReaderPage() {
       epubScrollElement.addEventListener("scroll", handleEpubScroll, {
         passive: true,
       });
-      syncReaderPageDivider(pageDividerRef.current, epubScrollElement);
-
-      if (typeof ResizeObserver !== "undefined") {
-        epubResizeObserver = new ResizeObserver(() => {
-          syncReaderPageDivider(pageDividerRef.current, epubScrollElement);
-        });
-        epubResizeObserver.observe(epubScrollElement);
-      } else {
-        const handleResize = () => {
-          syncReaderPageDivider(pageDividerRef.current, epubScrollElement);
-        };
-        window.addEventListener("resize", handleResize);
-        removeEpubResizeListener = () => {
-          window.removeEventListener("resize", handleResize);
-        };
-      }
-
       updateEpubLocationProgress();
     };
 
@@ -1320,8 +1333,6 @@ export function BookReaderPage() {
         window.cancelAnimationFrame(pendingProgressFrame);
       }
       epubScrollElement?.removeEventListener("scroll", handleEpubScroll);
-      epubResizeObserver?.disconnect();
-      removeEpubResizeListener?.();
       rendition.off("rendered", handleRendered);
       rendition.off("relocated", handleRelocated);
       rendition.destroy();
@@ -1402,14 +1413,9 @@ export function BookReaderPage() {
       return undefined;
     }
 
-    const syncDivider = () => {
-      syncReaderPageDivider(pageDividerRef.current, scrollElement);
-    };
-
     const handleScroll = () => {
       const nextProgress = getScrollProgress(scrollElement);
 
-      syncDivider();
       setScrollProgress(nextProgress);
       setReaderPageNumber(getScrollPageNumber(scrollElement));
       writeReaderProgress(item.Id, {
@@ -1418,26 +1424,10 @@ export function BookReaderPage() {
     };
 
     scrollElement.addEventListener("scroll", handleScroll, { passive: true });
-    let resizeObserver: ResizeObserver | null = null;
-    let removeResizeListener: (() => void) | null = null;
-
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(syncDivider);
-      resizeObserver.observe(scrollElement);
-    } else {
-      window.addEventListener("resize", syncDivider);
-      removeResizeListener = () => {
-        window.removeEventListener("resize", syncDivider);
-      };
-    }
-
-    syncDivider();
     handleScroll();
 
     return () => {
       scrollElement.removeEventListener("scroll", handleScroll);
-      resizeObserver?.disconnect();
-      removeResizeListener?.();
     };
   }, [item, textContent, tracksScrollHost]);
 
@@ -1462,7 +1452,6 @@ export function BookReaderPage() {
         top: Math.max(0, maxScroll * savedScrollRatio),
         behavior: "auto",
       });
-      syncReaderPageDivider(pageDividerRef.current, scrollElement);
     }, 80);
 
     return () => {
@@ -1493,10 +1482,6 @@ export function BookReaderPage() {
     color: palette.controlText,
   };
   const controlDotStyle: CSSProperties = { color: palette.controlText };
-  const pageDividerStyle = {
-    "--reader-page-divider-color": palette.pageDivider,
-    "--reader-page-divider-width": `${settings.width}ch`,
-  } as CSSProperties;
   const isTopBarPinnedOpen = settingsOpen || tocOpen;
   const topControlVisibility = isTopBarPinnedOpen
     ? "pointer-events-auto opacity-100 transition-opacity duration-150 ease will-change-[opacity]"
@@ -1515,15 +1500,6 @@ export function BookReaderPage() {
     : "right-0";
 
   const tocPanelTopOffsetClass = readerTopOffsetClass;
-
-  const renderPageDividerOverlay = () => (
-    <div
-      ref={pageDividerRef}
-      aria-hidden="true"
-      className="seyirlik-reader-page-divider-overlay pointer-events-none absolute inset-0 z-10"
-      style={pageDividerStyle}
-    />
-  );
 
   const renderSettingsPanel = () => {
     return (
@@ -1725,7 +1701,6 @@ export function BookReaderPage() {
               ref={epubHostRef}
               className={`h-full w-full ${epubReady ? "seyirlik-reader-fade-in" : "opacity-0"}`}
             />
-            {epubReady ? renderPageDividerOverlay() : null}
           </div>
         </div>
       );
@@ -1755,7 +1730,6 @@ export function BookReaderPage() {
               />
             </div>
           </div>
-          {renderPageDividerOverlay()}
         </div>
       );
     }
@@ -1810,7 +1784,6 @@ export function BookReaderPage() {
               </article>
             )}
           </div>
-          {textContent ? renderPageDividerOverlay() : null}
         </div>
       );
     }
@@ -1870,7 +1843,6 @@ export function BookReaderPage() {
             </div>
           </div>
         </div>
-        {renderPageDividerOverlay()}
       </div>
     );
   };
@@ -2011,29 +1983,6 @@ export function BookReaderPage() {
       height: 0;
       display: none;
     }
-
-    .seyirlik-reader-page-divider-overlay {
-      --reader-page-divider-y: 100%;
-      --reader-page-divider-opacity: 0;
-    }
-
-    .seyirlik-reader-page-divider-overlay::before {
-      content: "";
-      position: absolute;
-      left: 50%;
-      top: var(--reader-page-divider-y);
-      width: min(var(--reader-page-divider-width), calc(100% - 3rem));
-      height: 1px;
-      transform: translate(-50%, -0.5px);
-      background: linear-gradient(
-        to right,
-        transparent,
-        var(--reader-page-divider-color),
-        transparent
-      );
-      opacity: var(--reader-page-divider-opacity);
-      transition: opacity 180ms ease;
-    }
   `}</style>
 
       <div
@@ -2110,8 +2059,7 @@ export function BookReaderPage() {
       </div>
 
       <div
-        className={`${glassPillButton} pointer-events-none fixed bottom-[calc(0.85rem+var(--safe-area-inset-bottom))] left-1/2 z-30 min-w-10 -translate-x-1/2 px-3 tabular-nums`}
-        style={controlSurfaceStyle}
+        className={`${glassPillButton} pointer-events-none fixed bottom-[calc(0.85rem+var(--safe-area-inset-bottom))] left-1/2 z-30 min-w-10 -translate-x-1/2 px-3 tabular-nums bg-black/0 backdrop-blur-md backdrop-saturate-150`}
       >
         {readerPageNumber}
       </div>

@@ -198,13 +198,13 @@ export function MobileMediaCard({
       className={
         isRow
           ? variant === "landscape"
-            ? "flex w-72 shrink-0 snap-start flex-col sm:w-80"
-            : "flex w-44 shrink-0 snap-start flex-col sm:w-52"
-          : "flex min-w-0 h-full flex-col"
+            ? "flex w-60 shrink-0 snap-start flex-col min-[390px]:w-64 sm:w-80"
+            : "flex w-[9rem] shrink-0 snap-start flex-col min-[390px]:w-[9.5rem] sm:w-52"
+          : "flex h-full min-w-0 flex-col"
       }
     >
       <div
-        className={`flex flex-1 flex-col overflow-hidden rounded-xl border bg-[#141416] shadow-cinematic-card ${
+        className={`flex flex-1 flex-col overflow-hidden rounded-lg border bg-[#141416] shadow-cinematic-card ${
           isWatched
             ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_18px_48px_rgba(16,185,129,0.18)]"
             : "border-white/10"
@@ -252,7 +252,7 @@ export function MobileMediaCard({
           ) : null}
         </div>
 
-        <div className="flex flex-1 flex-col justify-center px-3.5 py-3">
+        <div className="flex flex-1 flex-col justify-center px-3 py-2.5 min-[390px]:px-3.5 min-[390px]:py-3">
           <WatchedIndicator
             item={item}
             className="mb-1.5 self-start px-2 py-0.5 text-[0.52rem] tracking-[0.12em]"
@@ -265,12 +265,14 @@ export function MobileMediaCard({
               alt={mainTitle}
               loading="lazy"
               decoding="async"
-              className="mb-1.5 max-h-7 max-w-full object-contain object-left"
+              className="mb-1.5 max-h-6 max-w-full object-contain object-left min-[390px]:max-h-7"
             />
           ) : (
             <h3
               className={`truncate font-black text-white ${
-                isEpisode ? "text-lg tracking-tight" : "text-xs"
+                isEpisode
+                  ? "text-base tracking-tight min-[390px]:text-lg"
+                  : "text-[0.7rem] min-[390px]:text-xs"
               }`}
             >
               {mainTitle}
