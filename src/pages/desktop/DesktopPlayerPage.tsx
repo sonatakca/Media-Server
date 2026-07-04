@@ -6,7 +6,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
@@ -243,7 +243,7 @@ export function DesktopPlayerPage() {
           to="/home"
           className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
         >
-          <ArrowLeft size={17} />
+          <ChevronLeft size={17} />
           {t("common.home")}
         </Link>
         <ErrorMessage
@@ -265,7 +265,7 @@ export function DesktopPlayerPage() {
             replace
             className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
           >
-            <ArrowLeft size={17} />
+            <ChevronLeft size={17} />
             {t("common.details")}
           </Link>
           <ErrorMessage

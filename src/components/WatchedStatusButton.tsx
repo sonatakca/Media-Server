@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
@@ -23,6 +23,7 @@ interface WatchedStatusButtonProps {
   seriesId?: string;
   seasonId?: string;
   className: string;
+  style?: CSSProperties;
   iconSize?: number;
   label?: string;
   confirm?: boolean;
@@ -36,6 +37,7 @@ export function WatchedStatusButton({
   seriesId,
   seasonId,
   className,
+  style,
   iconSize = 18,
   label,
   confirm = false,
@@ -148,6 +150,8 @@ export function WatchedStatusButton({
         }}
         disabled={isResetting}
         aria-label={buttonLabel}
+        aria-pressed={action === "remove"}
+        style={style}
         className={`${className} disabled:cursor-wait disabled:opacity-65`}
       >
         {isResetting ? (

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft,
+  ChevronLeft,
   Copy,
   Database,
   Download,
@@ -19,7 +19,12 @@ import { LoadingSpinner } from "../components/LoadingSpinner";
 import { Tooltip } from "../components/ui/Tooltip";
 import { getAllContentItems, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
-import { getRouteForItem } from "../lib/routes";
+import {
+  getReadRouteForItem,
+  getRouteForItem,
+  getWatchRouteForItem,
+  shouldOpenReaderForItem,
+} from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -90,12 +95,28 @@ function getRuntimeLabel(item: JellyfinItem): string {
   return formatRuntime(item.RunTimeTicks) ?? "—";
 }
 
-function getPlayableRoute(item: JellyfinItem): string | null {
+function getPrimaryAction(item: JellyfinItem): {
+  route: string;
+  labelKey: "common.play" | "common.read";
+} | null {
+  if (shouldOpenReaderForItem(item)) {
+    return {
+      route: getReadRouteForItem(item),
+      labelKey: "common.read",
+    };
+  }
+
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
     item.MediaType === "Video";
-  return canPlay ? `/watch/${item.Id}` : null;
+
+  return canPlay
+    ? {
+        route: getWatchRouteForItem(item),
+        labelKey: "common.play",
+      }
+    : null;
 }
 
 function copyText(value: string) {
@@ -474,7 +495,7 @@ export function ContentExplorerPage() {
             to="/dev"
             className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
           >
-            <ArrowLeft size={16} />
+            <ChevronLeft size={16} />
             {t("devtools.backToDevtools")}
           </Link>
 
@@ -662,7 +683,7 @@ export function ContentExplorerPage() {
                       ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 160)
                       : "";
                     const detailsRoute = getRouteForItem(item);
-                    const watchRoute = getPlayableRoute(item);
+                    const primaryAction = getPrimaryAction(item);
 
                     return (
                       <tr
@@ -762,12 +783,12 @@ export function ContentExplorerPage() {
                               </Link>
                             </Tooltip>
 
-                            {watchRoute ? (
+                            {primaryAction ? (
                               <Link
-                                to={watchRoute}
+                                to={primaryAction.route}
                                 className="inline-flex h-9 items-center justify-center rounded-full bg-[var(--accent)] px-3 text-xs font-black text-black transition hover:bg-[var(--accent-hover)]"
                               >
-                                {t("common.play")}
+                                {t(primaryAction.labelKey)}
                               </Link>
                             ) : null}
                           </div>

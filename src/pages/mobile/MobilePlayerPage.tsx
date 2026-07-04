@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ArrowLeft } from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import {
   Link,
   useNavigate,
@@ -227,7 +227,7 @@ export function MobilePlayerPage() {
           to="/home"
           className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
         >
-          <ArrowLeft size={17} />
+          <ChevronLeft size={17} />
           {t("common.home")}
         </Link>
         <ErrorMessage
@@ -250,7 +250,7 @@ export function MobilePlayerPage() {
               replace
               className="mb-4 inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
             >
-              <ArrowLeft size={17} />
+              <ChevronLeft size={17} />
               {t("common.details")}
             </Link>
             <ErrorMessage

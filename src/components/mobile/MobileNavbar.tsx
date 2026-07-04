@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { LogOut, Palette } from "lucide-react";
+import { Book, LogOut, Palette } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
@@ -37,6 +37,7 @@ export function MobileNavbar() {
   const [libraryRoutes, setLibraryRoutes] = useState({
     movies: "/movies",
     series: "/series",
+    books: "/books",
   });
 
   useEffect(() => {
@@ -68,6 +69,9 @@ export function MobileNavbar() {
         const seriesLibrary = libraries.find(
           (library) => library.CollectionType === "tvshows",
         );
+        const booksLibrary = libraries.find(
+          (library) => library.CollectionType === "books",
+        );
 
         if (!isMounted) {
           return;
@@ -80,6 +84,7 @@ export function MobileNavbar() {
           series: seriesLibrary?.Id
             ? `/library/${seriesLibrary.Id}`
             : "/series",
+          books: booksLibrary?.Id ? `/library/${booksLibrary.Id}` : "/books",
         });
       } catch (error) {
         console.warn(
@@ -186,6 +191,18 @@ export function MobileNavbar() {
               {isActive ? <ActiveTabBorder /> : null}
               <TbDeviceTv size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.series")}</span>
+            </>
+          )}
+        </NavLink>
+        <NavLink
+          to={libraryRoutes.books}
+          className={({ isActive }) => getTabClassName(isActive)}
+        >
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              <Book size={30} className="relative z-10" />
+              <span className="relative z-10">{t("nav.books")}</span>
             </>
           )}
         </NavLink>

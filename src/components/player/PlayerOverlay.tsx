@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
-  ArrowLeft,
+  ChevronLeft,
   LoaderCircle,
   Pause,
   Play,
@@ -186,7 +186,7 @@ export function PlayerOverlay({
               className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
               aria-label={t("player.backToDetails")}
             >
-              <ArrowLeft
+              <ChevronLeft
                 size={22}
                 strokeWidth={2.2}
                 className="transition-transform duration-300 group-hover:-translate-x-[0rem]"

@@ -12,6 +12,10 @@ import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { LibrarySkeleton } from "../../components/Skeletons";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
+import {
+  glassControlBase,
+  glassInputControl,
+} from "../../components/ui/glassControlStyles";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
@@ -587,7 +591,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
   if (shouldShowSeriesDetails && data.library) {
     return (
       <div className="layout-no-offset flex min-w-0 flex-col">
-        <BackButton className="fixed left-5 top-24 z-[80] min-h-10 bg-black/50 px-4 text-sm shadow-player-controls backdrop-blur-2xl transition hover:bg-black/75 lg:left-8" />
+        <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
 
         <div className="full-bleed relative min-h-[100svh]">
           <HeroSection item={data.library} variant="fixed" />
@@ -601,7 +605,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                 block: "start",
               })
             }
-            className="absolute bottom-6 left-1/2 z-[70] flex h-12 w-12 -translate-x-1/2 items-center justify-center rounded-full border border-white/20 bg-black/45 text-white shadow-player-controls backdrop-blur-xl transition hover:scale-105 hover:bg-gray-700/65 focus:outline-none focus:ring-2 focus:ring-white/70"
+            className={`${glassControlBase} absolute bottom-6 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
           >
             <ChevronDown size={30} strokeWidth={2.4} />
           </button>
@@ -731,7 +735,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
     <div>
       <div className="relative mb-4 flex flex-col gap-3 sm:grid sm:min-h-20 sm:grid-cols-[auto_1fr_auto] sm:items-end sm:gap-4">
         <div className="order-2 flex items-center justify-between gap-3 sm:order-none sm:block sm:justify-self-start sm:pb-1">
-          <BackButton className="min-h-9 px-3 text-xs sm:min-h-10 sm:px-4 sm:text-sm" />
+          <BackButton buttonClassName="min-h-9 px-3 text-xs sm:min-h-10 sm:px-4 sm:text-sm" />
           <p className="min-w-0 truncate text-right text-xs font-bold text-white/[0.62] sm:hidden">
             <AnimatedWidth value={headerCountLabel}>
               <AnimatedText value={headerCountLabel} />
@@ -814,7 +818,9 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                     selectLabel={t("library.selectSeason")}
                   />
                 ) : (
-                  <div className="group/season-label relative max-w-[44vw] overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset sm:max-w-none sm:rounded-2xl sm:px-5 sm:py-3">
+                  <div
+                    className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2 sm:max-w-none sm:min-h-12 sm:px-5 sm:py-3`}
+                  >
                     <div className="relative flex items-center">
                       <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
                         <AnimatedWidth value={seasonHeaderLabel}>
@@ -875,10 +881,10 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
       ) : null}
 
       <MotionReveal
-        className="mb-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between"
+        className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between"
         delay={0.04}
       >
-        <label className="relative flex-1">
+        <label className={`relative flex-1 pl-11 ${glassInputControl}`}>
           <Search
             className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-white/[0.42]"
             size={19}
@@ -889,10 +895,12 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder={t("library.searchPlaceholder")}
             aria-label={t("library.searchLabel")}
-            className="min-h-12 w-full rounded-xl border border-white/10 bg-black/[0.35] py-3 pl-11 pr-4 text-white outline-none transition placeholder:text-white/35 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/20"
+            className="w-full bg-transparent text-white outline-none placeholder:text-white/35"
           />
         </label>
-        <label className="flex min-h-12 items-center gap-2 rounded-xl border border-white/10 bg-black/[0.35] px-3 text-sm font-semibold text-white/[0.72]">
+        <label
+          className={`${glassControlBase} min-h-12 gap-2 px-4 text-sm font-semibold`}
+        >
           <SlidersHorizontal size={18} />
           <select
             value={sortBy}
@@ -916,7 +924,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
             label={t("details.removeWatchedStatusForSeason")}
             confirm
             onReset={handleWatchedStatusReset}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/[0.35] px-4 text-sm font-black text-white/[0.72] transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
+            className={`${glassControlBase} min-h-12 gap-2 px-4 text-sm font-black`}
           />
         ) : null}
         {seasonResetSeriesId && currentSeasonId && hasUnwatchedSeasonItems ? (
@@ -928,7 +936,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
             label={t("details.markWatchedStatusForSeason")}
             confirm
             onReset={handleWatchedStatusReset}
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-300 px-4 text-sm font-black text-black transition hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            className={`${glassControlBase} min-h-12 gap-2 px-4 text-sm font-black`}
           />
         ) : null}
         {showResetSeriesId && hasWatchedShowItems ? (
@@ -944,7 +952,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                 scope: "show",
               })
             }
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-white/10 bg-black/[0.35] px-4 text-sm font-black text-white/[0.72] transition hover:border-white/20 hover:bg-white/[0.09] hover:text-white focus:outline-none focus:ring-2 focus:ring-white/70"
+            className={`${glassControlBase} min-h-12 gap-2 px-4 text-sm font-black`}
           />
         ) : null}
         {showResetSeriesId && hasUnwatchedShowItems ? (
@@ -960,7 +968,7 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
                 scope: "show",
               })
             }
-            className="inline-flex min-h-12 items-center justify-center gap-2 rounded-xl border border-emerald-200/70 bg-emerald-300 px-4 text-sm font-black text-black transition hover:bg-emerald-200 focus:outline-none focus:ring-2 focus:ring-emerald-100"
+            className={`${glassControlBase} min-h-12 gap-2 px-4 text-sm font-black`}
           />
         ) : null}
       </MotionReveal>

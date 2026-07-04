@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   getMediaOwnerRouteForItem,
+  getReadRouteForItem,
   getRouteForItem,
+  shouldOpenReaderForItem,
   shouldOpenPlaybackForItem,
 } from "./routes";
 import type { JellyfinItem } from "./types";
@@ -46,5 +48,34 @@ describe("media routes", () => {
     expect(getRouteForItem(trailer)).toBe("/watch/trailer-1");
     expect(getMediaOwnerRouteForItem(trailer)).toBe("/library/movie-1");
     expect(shouldOpenPlaybackForItem(trailer)).toBe(true);
+  });
+
+  it("routes books to the reader without treating them as watchable media", () => {
+    const book: JellyfinItem = {
+      Id: "book-1",
+      Name: "Book",
+      Type: "Book",
+      MediaType: "Book",
+      ParentId: "books-library",
+    };
+
+    expect(getReadRouteForItem(book)).toBe("/read/book-1");
+    expect(getRouteForItem(book)).toBe("/read/book-1");
+    expect(getMediaOwnerRouteForItem(book)).toBe("/library/books-library");
+    expect(shouldOpenReaderForItem(book)).toBe(true);
+    expect(shouldOpenPlaybackForItem(book)).toBe(false);
+  });
+
+  it("routes document-like book media to the reader", () => {
+    const documentItem: JellyfinItem = {
+      Id: "doc-1",
+      Name: "Document",
+      Type: "File",
+      MediaType: "Document",
+    };
+
+    expect(getRouteForItem(documentItem)).toBe("/read/doc-1");
+    expect(shouldOpenReaderForItem(documentItem)).toBe(true);
+    expect(shouldOpenPlaybackForItem(documentItem)).toBe(false);
   });
 });

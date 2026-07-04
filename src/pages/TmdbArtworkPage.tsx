@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  ArrowLeft,
+  ChevronLeft,
   Check,
   Clapperboard,
   Film,
@@ -871,7 +871,7 @@ export function TmdbArtworkPage() {
             to="/dev"
             className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
           >
-            <ArrowLeft size={16} />
+            <ChevronLeft size={16} />
             {t("devtools.backToDevtools")}
           </Link>
 

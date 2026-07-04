@@ -1,5 +1,9 @@
 import type { JellyfinItem } from "./types";
 
+function getNormalizedItemKind(value?: string): string {
+  return value?.trim().toLowerCase() ?? "";
+}
+
 export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {
   if (item.Type === "Episode") {
     return true;
@@ -18,6 +22,18 @@ export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {
   return item.MediaType === "Video";
 }
 
+export function shouldOpenReaderForItem(item: JellyfinItem): boolean {
+  const type = getNormalizedItemKind(item.Type);
+  const mediaType = getNormalizedItemKind(item.MediaType);
+
+  return (
+    type === "book" ||
+    type === "document" ||
+    mediaType === "book" ||
+    mediaType === "document"
+  );
+}
+
 export function getRouteForItem(item: JellyfinItem): string {
   if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
     return `/library/${item.Id}`;
@@ -31,11 +47,19 @@ export function getRouteForItem(item: JellyfinItem): string {
     return `/library/${item.Id}`;
   }
 
+  if (shouldOpenReaderForItem(item)) {
+    return getReadRouteForItem(item);
+  }
+
   if (shouldOpenPlaybackForItem(item)) {
     return getWatchRouteForItem(item);
   }
 
   return `/library/${item.Id}`;
+}
+
+export function getReadRouteForItem(item: JellyfinItem): string {
+  return `/read/${encodeURIComponent(item.Id)}`;
 }
 
 export function getWatchRouteForItem(item: JellyfinItem): string {
@@ -58,6 +82,10 @@ export function getMediaOwnerRouteForItem(item: JellyfinItem): string {
   }
 
   if (item.MediaType === "Video" && item.ParentId) {
+    return `/library/${item.ParentId}`;
+  }
+
+  if (shouldOpenReaderForItem(item) && item.ParentId) {
     return `/library/${item.ParentId}`;
   }
 

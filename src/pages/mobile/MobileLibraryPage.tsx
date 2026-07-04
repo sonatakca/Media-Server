@@ -8,6 +8,10 @@ import { SeasonPicker } from "../../components/SeasonPicker";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
+import {
+  glassControlBase,
+  glassInputControl,
+} from "../../components/ui/glassControlStyles";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getDisplayTitle } from "../../lib/format";
@@ -560,7 +564,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
   return (
     <div className="pb-5">
       <div className="mb-5 flex items-center justify-between gap-3">
-        <BackButton className="min-h-9 px-3 text-xs" />
+        <BackButton buttonClassName="min-h-9 px-3 text-xs" />
         <p className="text-xs font-bold text-white/55">{countText}</p>
       </div>
 
@@ -585,7 +589,9 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
                 variant="mobile"
               />
             ) : (
-              <div className="relative max-w-[44vw] overflow-hidden rounded-xl border border-white/[0.12] bg-gray-700 px-3 py-2 shadow-soft-inset">
+              <div
+                className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2`}
+              >
                 <span className="relative truncate text-sm font-black leading-none text-white">
                   {seasonHeaderLabel}
                 </span>
@@ -615,8 +621,8 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
         </div>
       ) : null}
 
-      <div className="mb-5 flex gap-2 rounded-2xl border border-white/10 bg-white/[0.05] p-2">
-        <label className="relative min-w-0 flex-1">
+      <div className="mb-5 flex gap-2">
+        <label className={`relative min-w-0 flex-1 pl-9 ${glassInputControl}`}>
           <Search
             size={17}
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
@@ -627,10 +633,12 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
             onChange={(event) => setSearchTerm(event.target.value)}
             placeholder={t("common.search")}
             aria-label={t("library.searchLabel")}
-            className="h-11 w-full rounded-xl border border-white/10 bg-black/35 pl-9 pr-2 text-sm text-white outline-none placeholder:text-white/30 focus:border-[var(--accent)]"
+            className="h-11 w-full bg-transparent text-sm text-white outline-none placeholder:text-white/30"
           />
         </label>
-        <label className="flex h-11 w-[7.4rem] shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-black/35 px-2 text-xs font-semibold text-white/70">
+        <label
+          className={`${glassControlBase} h-12 w-[7.4rem] shrink-0 gap-1.5 px-3 text-xs font-semibold`}
+        >
           <SlidersHorizontal size={15} />
           <select
             value={sortBy}
@@ -653,7 +661,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
             seasonId={currentSeasonId}
             confirm
             onReset={handleWatchedStatusReset}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/35 text-white/70 transition hover:bg-white/[0.09] hover:text-white"
+            className={`${glassControlBase} h-12 w-12 shrink-0`}
             iconSize={16}
           />
         ) : null}
@@ -665,7 +673,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
             seasonId={currentSeasonId}
             confirm
             onReset={handleWatchedStatusReset}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/70 bg-emerald-300 text-black transition hover:bg-emerald-200"
+            className={`${glassControlBase} h-12 w-12 shrink-0`}
             iconSize={16}
           />
         ) : null}
@@ -681,7 +689,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
                 scope: "show",
               })
             }
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-black/35 text-white/70 transition hover:bg-white/[0.09] hover:text-white"
+            className={`${glassControlBase} h-12 w-12 shrink-0`}
             iconSize={16}
           />
         ) : null}
@@ -697,7 +705,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
                 scope: "show",
               })
             }
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-emerald-200/70 bg-emerald-300 text-black transition hover:bg-emerald-200"
+            className={`${glassControlBase} h-12 w-12 shrink-0`}
             iconSize={16}
           />
         ) : null}

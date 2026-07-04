@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Check, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import { glassPillButton } from "./ui/glassControlStyles";
 
 export interface SeasonPickerOption {
   id: string;
@@ -84,13 +85,10 @@ export function SeasonPicker({
         aria-label={`${selectLabel}: ${currentLabel}`}
         onClick={() => setIsOpen((current) => !current)}
         className={[
-          "group/season-label relative flex w-full items-center overflow-hidden border border-white/[0.12] bg-gray-700 shadow-soft-inset transition hover:border-white/[0.24] hover:bg-gray-600 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white/70",
-          isDesktop
-            ? "rounded-xl px-3 py-2 sm:rounded-2xl sm:px-5 sm:py-3"
-            : "rounded-xl px-3 py-2",
+          `group/season-label relative flex w-full items-center overflow-hidden ${glassPillButton}`,
+          isDesktop ? "px-3 py-2 sm:min-h-12 sm:px-5 sm:py-3" : "px-3 py-2",
         ].join(" ")}
       >
-        <span className="pointer-events-none absolute inset-0 bg-[linear-gradient(135deg,var(--accent-soft),transparent_58%)] opacity-70" />
         <span className="relative flex min-w-0 items-center gap-2">
           <span
             className={
@@ -116,7 +114,7 @@ export function SeasonPicker({
           role="menu"
           aria-label={selectLabel}
           className={[
-            "absolute right-0 top-full z-[70] mt-2 max-h-64 min-w-full overflow-y-auto rounded-xl border border-white/[0.14] bg-[#17181c]/95 p-1.5 shadow-2xl backdrop-blur-xl",
+            "absolute right-0 top-full z-[70] mt-2 max-h-64 min-w-full overflow-y-auto rounded-2xl border border-white/10 bg-[#171719]/95 p-1.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.055),inset_0_-1px_0_rgba(0,0,0,0.28),0_10px_35px_rgba(0,0,0,0.28)] backdrop-blur-2xl",
             isDesktop ? "w-max min-w-[11rem]" : "w-max min-w-[9rem]",
           ].join(" ")}
         >
@@ -131,7 +129,7 @@ export function SeasonPicker({
                 aria-current={isActive ? "page" : undefined}
                 onClick={() => handleSelect(option.id)}
                 className={[
-                  "flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm font-bold transition hover:bg-white/[0.12] focus-visible:bg-white/[0.12] focus-visible:outline-none",
+                  "flex w-full items-center justify-between gap-3 rounded-full border border-transparent px-3 py-2 text-left text-sm font-bold transition-[background-color,color,transform] duration-150 ease-out hover:bg-white/[0.09] hover:text-white focus-visible:bg-white/[0.09] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 active:scale-[0.98]",
                   isActive ? "text-white" : "text-white/72",
                 ].join(" ")}
               >

@@ -5,7 +5,12 @@ import { RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
-import { getWatchRouteForItem, shouldOpenPlaybackForItem } from "../lib/routes";
+import {
+  getReadRouteForItem,
+  getWatchRouteForItem,
+  shouldOpenPlaybackForItem,
+  shouldOpenReaderForItem,
+} from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -291,7 +296,17 @@ export function MediaCard({
     item.Type === "Episode" ||
     item.MediaType === "Video";
   const shouldPlayOnCardClick = shouldOpenPlaybackForItem(item);
-  const primaryCardTo = shouldPlayOnCardClick ? getWatchRouteForItem(item) : to;
+  const shouldReadOnCardClick = shouldOpenReaderForItem(item);
+  const primaryActionLabel = shouldPlayOnCardClick
+    ? t("common.play")
+    : shouldReadOnCardClick
+      ? t("common.read")
+      : t("common.details");
+  const primaryCardTo = shouldPlayOnCardClick
+    ? getWatchRouteForItem(item)
+    : shouldReadOnCardClick
+      ? getReadRouteForItem(item)
+      : to;
 
   const isLandscape = variant === "landscape" || isEpisode;
   const isGrid = layout === "grid";
@@ -379,7 +394,7 @@ export function MediaCard({
         >
           <Link
             to={primaryCardTo}
-            aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${title}`}
+            aria-label={`${primaryActionLabel} ${title}`}
             className="absolute inset-0 z-20 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
           />
 
@@ -616,7 +631,7 @@ export function MediaCard({
       >
         <Link
           to={primaryCardTo}
-          aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${title}`}
+          aria-label={`${primaryActionLabel} ${title}`}
           className="absolute inset-0 z-30 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
         />
 

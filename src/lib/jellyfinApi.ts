@@ -51,7 +51,19 @@ interface RequestOptions {
 export const JELLYFIN_SERVER_UNAVAILABLE_EVENT =
   "seyirlik:jellyfin-server-unavailable";
 
-class JellyfinRequestError extends Error {
+export interface JellyfinServerUnavailableEventDetail {
+  serverUrl: string;
+  requestUrl?: string;
+  reason: "network" | "http";
+  status?: number;
+  statusText?: string;
+  message?: string;
+}
+
+export type JellyfinServerUnavailableEvent =
+  CustomEvent<JellyfinServerUnavailableEventDetail>;
+
+export class JellyfinRequestError extends Error {
   status: number;
   statusText: string;
 
@@ -61,6 +73,33 @@ class JellyfinRequestError extends Error {
     this.status = status;
     this.statusText = statusText;
   }
+}
+
+function isServerConnectionStatus(status: number): boolean {
+  return (
+    status === 502 ||
+    status === 503 ||
+    status === 504 ||
+    (status >= 520 && status <= 530)
+  );
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function dispatchServerUnavailable(
+  detail: JellyfinServerUnavailableEventDetail,
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.dispatchEvent(
+    new CustomEvent(JELLYFIN_SERVER_UNAVAILABLE_EVENT, {
+      detail,
+    }),
+  );
 }
 
 const DEFAULT_ITEM_FIELDS = [
@@ -275,8 +314,13 @@ async function requestJson<TResponse>(
       keepalive,
     });
   } catch (error) {
-    if (!serverUrlOverride && typeof window !== "undefined") {
-      window.dispatchEvent(new Event(JELLYFIN_SERVER_UNAVAILABLE_EVENT));
+    if (!serverUrlOverride) {
+      dispatchServerUnavailable({
+        serverUrl,
+        requestUrl: url,
+        reason: "network",
+        message: getErrorMessage(error),
+      });
     }
 
     throw error;
@@ -284,6 +328,18 @@ async function requestJson<TResponse>(
 
   if (!response.ok) {
     const message = await parseErrorMessage(response);
+
+    if (!serverUrlOverride && isServerConnectionStatus(response.status)) {
+      dispatchServerUnavailable({
+        serverUrl,
+        requestUrl: url,
+        reason: "http",
+        status: response.status,
+        statusText: response.statusText,
+        message,
+      });
+    }
+
     throw new JellyfinRequestError(
       response.status,
       response.statusText,
@@ -2686,6 +2742,30 @@ export function getStreamUrl(itemId: string): string {
     {
       static: true,
       deviceId: session.deviceId,
+      api_key: session.accessToken,
+    },
+  );
+}
+
+export function getItemFileUrl(itemId: string): string {
+  const session = requireAuthSession();
+
+  return buildJellyfinUrl(
+    session.serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/File`,
+    {
+      api_key: session.accessToken,
+    },
+  );
+}
+
+export function getItemDownloadUrl(itemId: string): string {
+  const session = requireAuthSession();
+
+  return buildJellyfinUrl(
+    session.serverUrl,
+    `/Items/${encodeURIComponent(itemId)}/Download`,
+    {
       api_key: session.accessToken,
     },
   );

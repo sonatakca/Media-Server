@@ -22,6 +22,7 @@ export function DesktopNavbar() {
   const [libraryRoutes, setLibraryRoutes] = useState({
     movies: "/movies",
     series: "/series",
+    books: "/books",
   });
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);
@@ -55,6 +56,9 @@ export function DesktopNavbar() {
         const seriesLibrary = libraries.find(
           (library) => library.CollectionType === "tvshows",
         );
+        const booksLibrary = libraries.find(
+          (library) => library.CollectionType === "books",
+        );
 
         if (!isMounted) {
           return;
@@ -67,6 +71,7 @@ export function DesktopNavbar() {
           series: seriesLibrary?.Id
             ? `/library/${seriesLibrary.Id}`
             : "/series",
+          books: booksLibrary?.Id ? `/library/${booksLibrary.Id}` : "/books",
         });
       } catch (error) {
         console.warn(
@@ -189,6 +194,19 @@ export function DesktopNavbar() {
           >
             <AnimatedWidth value={t("nav.series")}>
               <AnimatedText value={t("nav.series")} />
+            </AnimatedWidth>
+          </NavLink>
+
+          <NavLink
+            to={libraryRoutes.books}
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
+              }`
+            }
+          >
+            <AnimatedWidth value={t("nav.books")}>
+              <AnimatedText value={t("nav.books")} />
             </AnimatedWidth>
           </NavLink>
         </div>

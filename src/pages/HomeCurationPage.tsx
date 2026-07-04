@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowDownToLine,
-  ArrowLeft,
+  ChevronLeft,
   ArrowUp,
   ArrowUpToLine,
   Check,
@@ -517,7 +517,7 @@ export function HomeCurationPage() {
           to="/dev"
           className="inline-flex items-center gap-2 text-sm font-black text-white/55 transition hover:text-white"
         >
-          <ArrowLeft size={16} />
+          <ChevronLeft size={16} />
           {t("devtools.backToDevtools")}
         </Link>
 

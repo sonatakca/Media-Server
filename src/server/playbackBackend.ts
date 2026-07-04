@@ -56,6 +56,27 @@ const DEFAULT_ALLOWED_ORIGINS = [
   "http://localhost:5174",
   "http://127.0.0.1:5174",
 ];
+const SERVER_DIAGNOSTICS_TIMEOUT_MS = 3500;
+
+interface ServerConnectionProbe {
+  url: string;
+  endpoint?: string;
+  ok: boolean;
+  reachable: boolean;
+  kind:
+    | "jellyfin"
+    | "cloudflare-bad-gateway"
+    | "cloudflare-tunnel-error"
+    | "cloudflare-error"
+    | "http-ok"
+    | "http-error"
+    | "network-error"
+    | "not-configured";
+  status?: number;
+  statusText?: string;
+  message?: string;
+  productName?: string;
+}
 
 function sendJson(
   response: ServerResponse,
@@ -65,6 +86,147 @@ function sendJson(
   response.statusCode = statusCode;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
   response.end(JSON.stringify(payload));
+}
+
+function normalizeDiagnosticServerUrl(rawServerUrl: string): string {
+  const parsedUrl = new URL(rawServerUrl.trim());
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error("Server URL must use http or https.");
+  }
+
+  parsedUrl.search = "";
+  parsedUrl.hash = "";
+  return parsedUrl.toString().replace(/\/+$/, "");
+}
+
+function buildPublicInfoUrl(serverUrl: string): string {
+  const normalizedServerUrl = normalizeDiagnosticServerUrl(serverUrl);
+  const endpoint = new URL("System/Info/Public", `${normalizedServerUrl}/`);
+  endpoint.searchParams.set("seyirlikDiagnostics", String(Date.now()));
+  return endpoint.toString();
+}
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function detectServerProbeKind(
+  status: number,
+  statusText: string,
+  bodyText: string,
+): ServerConnectionProbe["kind"] {
+  const searchableText = `${statusText}\n${bodyText}`;
+
+  if (status === 502 || /bad gateway|error code 502/i.test(searchableText)) {
+    return "cloudflare-bad-gateway";
+  }
+
+  if (
+    status === 530 ||
+    /error 1033|cloudflare tunnel error/i.test(searchableText)
+  ) {
+    return "cloudflare-tunnel-error";
+  }
+
+  if (/cloudflare/i.test(searchableText)) {
+    return "cloudflare-error";
+  }
+
+  return "http-error";
+}
+
+function getJellyfinProductName(bodyText: string): string | undefined {
+  try {
+    const json = JSON.parse(bodyText) as {
+      ProductName?: string;
+      ServerName?: string;
+    };
+
+    return json.ProductName || json.ServerName;
+  } catch {
+    return undefined;
+  }
+}
+
+async function probeServerConnection(
+  rawServerUrl: string | undefined,
+  fetchImpl: typeof fetch,
+): Promise<ServerConnectionProbe | null> {
+  if (!rawServerUrl) {
+    return null;
+  }
+
+  let serverUrl: string;
+  let endpoint: string;
+
+  try {
+    serverUrl = normalizeDiagnosticServerUrl(rawServerUrl);
+    endpoint = buildPublicInfoUrl(serverUrl);
+  } catch (error) {
+    return {
+      url: rawServerUrl,
+      ok: false,
+      reachable: false,
+      kind: "not-configured",
+      message: getErrorMessage(error),
+    };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => {
+    controller.abort();
+  }, SERVER_DIAGNOSTICS_TIMEOUT_MS);
+
+  try {
+    const probeResponse = await fetchImpl(endpoint, {
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json, text/html;q=0.8",
+      },
+    });
+    const bodyText = await probeResponse.text().catch(() => "");
+    const productName = getJellyfinProductName(bodyText);
+
+    if (probeResponse.ok) {
+      return {
+        url: serverUrl,
+        endpoint,
+        ok: true,
+        reachable: true,
+        kind: productName ? "jellyfin" : "http-ok",
+        status: probeResponse.status,
+        statusText: probeResponse.statusText,
+        productName,
+      };
+    }
+
+    return {
+      url: serverUrl,
+      endpoint,
+      ok: false,
+      reachable: true,
+      kind: detectServerProbeKind(
+        probeResponse.status,
+        probeResponse.statusText,
+        bodyText,
+      ),
+      status: probeResponse.status,
+      statusText: probeResponse.statusText,
+      message: bodyText || `${probeResponse.status} ${probeResponse.statusText}`,
+    };
+  } catch (error) {
+    return {
+      url: serverUrl,
+      endpoint,
+      ok: false,
+      reachable: false,
+      kind: "network-error",
+      message: getErrorMessage(error),
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function parseAllowedOrigins(rawOrigins: string | undefined): string[] {
@@ -218,6 +380,40 @@ export async function createPlaybackBackend(
       }
 
       sendJson(response, 200, sessionManager.getRuntimeStatus());
+      return;
+    }
+
+    if (url.pathname === "/api/server-diagnostics") {
+      if (request.method !== "GET") {
+        response.statusCode = 405;
+        response.setHeader("Allow", "GET, OPTIONS");
+        response.end();
+        return;
+      }
+
+      const publicServerUrl = url.searchParams.get("serverUrl") ?? undefined;
+      const fetchImpl = options.fetchImpl ?? fetch;
+      const [publicProbe, localProbe] = await Promise.all([
+        probeServerConnection(publicServerUrl, fetchImpl),
+        probeServerConnection(options.jellyfinServerUrl, fetchImpl),
+      ]);
+
+      if (!publicProbe) {
+        sendJson(response, 400, {
+          error: {
+            code: "SERVER_URL_REQUIRED",
+            message: "serverUrl query parameter is required.",
+          },
+        });
+        return;
+      }
+
+      sendJson(response, 200, {
+        checkedAt: new Date().toISOString(),
+        publicProbe,
+        localProbe,
+        localProbeUrls: localProbe?.url ? [localProbe.url] : [],
+      });
       return;
     }
 

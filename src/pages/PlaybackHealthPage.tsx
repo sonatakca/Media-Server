@@ -3,7 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
-  ArrowLeft,
+  ChevronLeft,
   CheckCircle2,
   Copy,
   FileJson,
@@ -335,7 +335,7 @@ export function PlaybackHealthPage() {
           to="/dev"
           className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 text-sm font-bold text-white/78 transition hover:bg-white/[0.10] hover:text-white"
         >
-          <ArrowLeft size={16} />
+          <ChevronLeft size={16} />
           Devtools
         </Link>
       </div>

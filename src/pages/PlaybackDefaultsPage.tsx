@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   AlertTriangle,
-  ArrowLeft,
+  ChevronLeft,
   CheckCircle2,
   Film,
   Languages,
@@ -529,7 +529,7 @@ export function PlaybackDefaultsPage() {
           to="/dev"
           className="inline-flex items-center gap-2 text-sm font-black text-white/55 transition hover:text-white"
         >
-          <ArrowLeft size={16} />
+          <ChevronLeft size={16} />
           {t("devtools.backToDevtools")}
         </Link>
 

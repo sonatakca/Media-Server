@@ -6,16 +6,20 @@ import { RouteColorTransition } from "./components/RouteColorTransition";
 import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
-import { useLanguage } from "./i18n/LanguageContext";
+import { ServerConnectionErrorPage } from "./components/ServerConnectionErrorPage";
 import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
 import {
+  buildJellyfinUrl,
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+  type JellyfinServerUnavailableEvent,
+  type JellyfinServerUnavailableEventDetail,
   testServerConnection,
 } from "./lib/jellyfinApi";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
+import { ReaderPage } from "./pages/ReaderPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
@@ -57,10 +61,46 @@ function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
   });
 }
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function createConnectionFailureDetail(
+  serverUrl: string,
+  error: unknown,
+): JellyfinServerUnavailableEventDetail {
+  return {
+    serverUrl,
+    requestUrl: buildJellyfinUrl(serverUrl, "/System/Info/Public"),
+    reason: "network",
+    message: getErrorMessage(error),
+  };
+}
+
 function DefaultServerGate({ children }: { children: React.ReactNode }) {
-  const { t } = useLanguage();
   const location = useLocation();
   const [state, setState] = useState<DefaultServerState>("checking");
+  const [renderSpinner, setRenderSpinner] = useState(true);
+  const [isVisible, setIsVisible] = useState(false);
+  const [connectionFailure, setConnectionFailure] =
+    useState<JellyfinServerUnavailableEventDetail | null>(null);
+
+  // Trigger fade-in after initial mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIsVisible(true), 10);
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Handle transition unmounting when state changes from "checking"
+  useEffect(() => {
+    if (state !== "checking") {
+      setIsVisible(false);
+      const timer = setTimeout(() => {
+        setRenderSpinner(false);
+      }, 300); // Wait for the 300ms CSS fade-out transition to complete
+      return () => clearTimeout(timer);
+    }
+  }, [state]);
 
   useEffect(() => {
     if (state !== "checking") {
@@ -105,6 +145,7 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
         console.warn("[Seyirlik] Server connection failed", error);
 
         if (isMounted) {
+          setConnectionFailure(createConnectionFailureDetail(serverUrl, error));
           setState(savedServerUrl ? "ready" : "failed");
         }
       }
@@ -118,9 +159,21 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    function handleServerUnavailable() {
+    function handleServerUnavailable(event: Event) {
+      const detail =
+        "detail" in event
+          ? (event as JellyfinServerUnavailableEvent).detail
+          : null;
+
       console.warn(
         "[Seyirlik] Jellyfin server became temporarily unavailable.",
+      );
+      setConnectionFailure(
+        detail ?? {
+          serverUrl: getServerUrl() ?? DEFAULT_SERVER_URL,
+          reason: "network",
+          message: "Jellyfin server became temporarily unavailable.",
+        },
       );
       setState("ready");
     }
@@ -138,21 +191,47 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  if (state === "checking") {
+  if (renderSpinner) {
     return (
-      <main className="flex min-h-screen items-center justify-center px-4 text-white">
+      <main
+        className={`flex min-h-screen items-center justify-center px-4 text-white transition-opacity duration-300 ease-in-out ${
+          isVisible ? "opacity-100" : "opacity-0"
+        }`}
+      >
         <div className="text-center">
           <LoadingSpinner label="" />
-          <p className="mt-4 text-sm text-white/58">
-            {t("app.connectingDefaultServer")}
-          </p>
         </div>
       </main>
     );
   }
 
+  if (connectionFailure) {
+    return (
+      <ServerConnectionErrorPage
+        serverUrl={connectionFailure.serverUrl}
+        failure={connectionFailure}
+        onRetrySuccess={() => {
+          if (!getServerUrl()) {
+            setServerUrl(connectionFailure.serverUrl);
+          }
+
+          setConnectionFailure(null);
+          setState("ready");
+        }}
+      />
+    );
+  }
+
   if (state === "failed" && !getServerUrl()) {
-    return <Navigate to="/server" replace />;
+    return (
+      <ServerConnectionErrorPage
+        serverUrl={DEFAULT_SERVER_URL}
+        onRetrySuccess={() => {
+          setServerUrl(DEFAULT_SERVER_URL);
+          setState("ready");
+        }}
+      />
+    );
   }
 
   return <>{children}</>;
@@ -272,6 +351,7 @@ export default function App() {
             </Route>
             <Route element={<RouteTransitionOutlet variant="player" />}>
               <Route path="/watch/:itemId" element={<PlayerPage />} />
+              <Route path="/read/:itemId" element={<ReaderPage />} />
             </Route>
           </Route>
         </Route>

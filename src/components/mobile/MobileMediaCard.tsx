@@ -7,8 +7,10 @@ import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences"
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import {
+  getReadRouteForItem,
   getWatchRouteForItem,
   shouldOpenPlaybackForItem,
+  shouldOpenReaderForItem,
 } from "../../lib/routes";
 import type { JellyfinItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
@@ -149,7 +151,17 @@ export function MobileMediaCard({
   }
 
   const shouldPlayOnCardClick = shouldOpenPlaybackForItem(item);
-  const primaryTo = shouldPlayOnCardClick ? getWatchRouteForItem(item) : to;
+  const shouldReadOnCardClick = shouldOpenReaderForItem(item);
+  const primaryActionLabel = shouldPlayOnCardClick
+    ? t("common.play")
+    : shouldReadOnCardClick
+      ? t("common.read")
+      : t("common.details");
+  const primaryTo = shouldPlayOnCardClick
+    ? getWatchRouteForItem(item)
+    : shouldReadOnCardClick
+      ? getReadRouteForItem(item)
+      : to;
 
   // Use Series Poster if it's an episode being shown as a vertical poster
   const imageUrl =
@@ -205,7 +217,7 @@ export function MobileMediaCard({
         >
           <Link
             to={primaryTo}
-            aria-label={`${shouldPlayOnCardClick ? t("common.play") : t("common.details")} ${mainTitle}`}
+            aria-label={`${primaryActionLabel} ${mainTitle}`}
             className="block h-full w-full focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
           >
             {imageUrl ? (
