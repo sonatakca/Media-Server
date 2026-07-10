@@ -6,7 +6,7 @@ import {
   useIsPresent,
   useReducedMotion,
 } from "framer-motion";
-import { Info, Play, Volume2, VolumeX } from "lucide-react";
+import { Info, Play, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { ButtonLink } from "./Button";
 import {
   getBackdropImageUrl,
@@ -30,7 +30,11 @@ import { getSmartContinueWatchingItems } from "../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../lib/watchedStatusActions";
 
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
+const HERO_DEFAULT_SLIDE_DURATION_MS = 12000;
 const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
+const HERO_PREVIEW_FADE_MS = 1200;
+const HERO_POST_TRAILER_VISIBLE_MS = 10000;
+const HERO_TRAILERS_ENABLED_STORAGE_KEY = "seyirlik-hero-trailers-enabled";
 
 type IndicatorsPlacement =
   | "top-center"
@@ -75,6 +79,35 @@ interface HeroImageCandidate {
   url: string;
 }
 
+function readHeroTrailersEnabledPreference(): boolean {
+  if (typeof window === "undefined") {
+    return true;
+  }
+
+  try {
+    return (
+      window.localStorage.getItem(HERO_TRAILERS_ENABLED_STORAGE_KEY) !== "false"
+    );
+  } catch {
+    return true;
+  }
+}
+
+function saveHeroTrailersEnabledPreference(enabled: boolean) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      HERO_TRAILERS_ENABLED_STORAGE_KEY,
+      enabled ? "true" : "false",
+    );
+  } catch {
+    // Ignore storage failures so private browsing never blocks the hero UI.
+  }
+}
+
 function getHeroImageCandidates(item?: JellyfinItem): HeroImageCandidate[] {
   if (!item) {
     return [];
@@ -115,12 +148,16 @@ interface HeroPreviewVideoProps {
   isPreviewMuted: boolean;
   shouldReduceMotion: boolean;
   isPreviewReady: boolean;
+  areTrailersEnabled: boolean;
+  resumeTimeSeconds: number;
   softEase: [number, number, number, number];
   isCarouselPaused: boolean;
   shouldPlay: boolean;
   onDurationChange: (durationMs: number) => void;
+  onPlaybackTimeChange: (timeSeconds: number) => void;
   onCanPlay: () => void;
   onPlay: () => void;
+  onDisabledFadeOutComplete: (timeSeconds: number) => void;
   onEnded: () => void;
   onError: () => void;
   onLoadStart: () => void;
@@ -131,29 +168,109 @@ function HeroPreviewVideo({
   isPreviewMuted,
   shouldReduceMotion,
   isPreviewReady,
+  areTrailersEnabled,
+  resumeTimeSeconds,
   softEase,
   isCarouselPaused,
   shouldPlay,
   onDurationChange,
+  onPlaybackTimeChange,
   onCanPlay,
   onPlay,
+  onDisabledFadeOutComplete,
   onEnded,
   onError,
   onLoadStart,
 }: HeroPreviewVideoProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const disabledFadeFrameRef = useRef<number | null>(null);
+  const disabledFadeTimeoutRef = useRef<number | null>(null);
   const isPresent = useIsPresent();
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !isPresent) return;
 
+    const clearDisabledFade = () => {
+      if (disabledFadeFrameRef.current !== null) {
+        cancelAnimationFrame(disabledFadeFrameRef.current);
+        disabledFadeFrameRef.current = null;
+      }
+
+      if (disabledFadeTimeoutRef.current !== null) {
+        window.clearTimeout(disabledFadeTimeoutRef.current);
+        disabledFadeTimeoutRef.current = null;
+      }
+    };
+
     if (isCarouselPaused || !shouldPlay) {
-      video.pause();
-    } else {
-      video.play().catch(() => {});
+      if (isCarouselPaused || areTrailersEnabled) {
+        clearDisabledFade();
+        video.pause();
+        return;
+      }
+
+      const duration = shouldReduceMotion ? 0 : HERO_PREVIEW_FADE_MS;
+      const initialVolume = video.volume;
+      const shouldFadeAudio =
+        !isPreviewMuted && !video.muted && initialVolume > 0;
+
+      const finishDisabledFade = () => {
+        onPlaybackTimeChange(video.currentTime);
+        video.pause();
+        video.volume = 1;
+        disabledFadeFrameRef.current = null;
+        disabledFadeTimeoutRef.current = null;
+        onDisabledFadeOutComplete(video.currentTime);
+      };
+
+      if (duration <= 0 || video.paused) {
+        finishDisabledFade();
+        return;
+      }
+
+      if (!shouldFadeAudio) {
+        disabledFadeTimeoutRef.current = window.setTimeout(
+          finishDisabledFade,
+          duration,
+        );
+        return () => clearDisabledFade();
+      }
+
+      let start: number;
+
+      const fade = (timestamp: number) => {
+        if (!start) start = timestamp;
+        const progress = timestamp - start;
+        const volumeMultiplier = Math.max(0, 1 - progress / duration);
+        video.volume = initialVolume * volumeMultiplier;
+
+        if (progress < duration) {
+          disabledFadeFrameRef.current = requestAnimationFrame(fade);
+          return;
+        }
+
+        finishDisabledFade();
+      };
+
+      disabledFadeFrameRef.current = requestAnimationFrame(fade);
+      return () => clearDisabledFade();
     }
-  }, [isCarouselPaused, isPresent, shouldPlay]);
+
+    clearDisabledFade();
+    video.volume = 1;
+    video.play().catch(() => {});
+
+    return () => clearDisabledFade();
+  }, [
+    areTrailersEnabled,
+    isCarouselPaused,
+    isPresent,
+    isPreviewMuted,
+    onDisabledFadeOutComplete,
+    shouldPlay,
+    shouldReduceMotion,
+  ]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -195,11 +312,31 @@ function HeroPreviewVideo({
   }, [isPresent, shouldReduceMotion, isPreviewMuted]);
 
   const handleLoadedMetadata = () => {
-    if (videoRef.current) {
-      const dur = videoRef.current.duration;
-      if (!isNaN(dur) && dur > 0) {
+    const video = videoRef.current;
+
+    if (video) {
+      const dur = video.duration;
+      if (!Number.isNaN(dur) && dur > 0) {
         onDurationChange(dur * 1000);
+
+        const safeResumeTime = Math.min(
+          Math.max(resumeTimeSeconds, 0),
+          Math.max(dur - 0.25, 0),
+        );
+
+        if (
+          safeResumeTime > 0 &&
+          Math.abs(video.currentTime - safeResumeTime) > 0.25
+        ) {
+          try {
+            video.currentTime = safeResumeTime;
+          } catch {
+            // Some browsers reject early seeks before enough metadata is ready.
+          }
+        }
       }
+
+      onPlaybackTimeChange(video.currentTime);
     }
   };
 
@@ -216,6 +353,9 @@ function HeroPreviewVideo({
       onLoadStart={onLoadStart}
       onCanPlay={onCanPlay}
       onPlay={onPlay}
+      onTimeUpdate={(event) => {
+        onPlaybackTimeChange(event.currentTarget.currentTime);
+      }}
       onEnded={onEnded}
       onError={onError}
       initial={{
@@ -250,7 +390,7 @@ export function HeroSection({
   variant = "carousel",
   currentIndex = 0,
   totalItems = 0,
-  durationMs = 12000,
+  durationMs = HERO_DEFAULT_SLIDE_DURATION_MS,
   progressStartedAtMs,
   progressResetKey,
   isPaused = false,
@@ -269,12 +409,22 @@ export function HeroSection({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [isPreviewReady, setIsPreviewReady] = useState(false);
   const [hasPreviewEnded, setHasPreviewEnded] = useState(false);
+  const [areTrailersEnabled, setAreTrailersEnabled] = useState(
+    readHeroTrailersEnabledPreference,
+  );
+  const [isPreviewStartDelayDone, setIsPreviewStartDelayDone] = useState(false);
   const [shouldStartPreviewUnmuted, setShouldStartPreviewUnmuted] =
     useState(false);
   const [isPreviewMuted, setIsPreviewMuted] = useState(true);
   const isPreviewReadyRef = useRef(false);
   const isPreviewMutedRef = useRef(true);
+  const areTrailersEnabledRef = useRef(areTrailersEnabled);
   const shouldStartPreviewUnmutedRef = useRef(false);
+  const previewDurationMsRef = useRef<number | null>(null);
+  const previewPlaybackSecondsRef = useRef(0);
+  const postTrailerElapsedMsRef = useRef(0);
+  const disabledPostPhaseStartedAtMsRef = useRef<number | null>(null);
+  const hasPreviewEndedRef = useRef(false);
   const [failedImageUrls, setFailedImageUrls] = useState<string[]>([]);
   const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
@@ -322,7 +472,12 @@ export function HeroSection({
   }, [smartContinueItems]);
 
   const hasPreview = Boolean(previewUrl && !hasPreviewEnded);
-  const shouldPlayPreview = Boolean(hasPreview && isHeroIntroDone);
+  const shouldPlayPreview = Boolean(
+    hasPreview && areTrailersEnabled && isPreviewStartDelayDone,
+  );
+  const shouldRenderPreview = Boolean(
+    hasPreview && (areTrailersEnabled || isPreviewReady),
+  );
   const shouldShowPreviewRef = useRef(shouldPlayPreview);
 
   useEffect(() => {
@@ -336,6 +491,14 @@ export function HeroSection({
   useEffect(() => {
     isPreviewMutedRef.current = isPreviewMuted;
   }, [isPreviewMuted]);
+
+  useEffect(() => {
+    areTrailersEnabledRef.current = areTrailersEnabled;
+  }, [areTrailersEnabled]);
+
+  useEffect(() => {
+    hasPreviewEndedRef.current = hasPreviewEnded;
+  }, [hasPreviewEnded]);
 
   useEffect(() => {
     shouldStartPreviewUnmutedRef.current = shouldStartPreviewUnmuted;
@@ -632,10 +795,38 @@ export function HeroSection({
     setIsLogoLoaded(false);
     setPreviewUrl(null);
     setIsPreviewReady(false);
+    setIsPreviewStartDelayDone(false);
     setHasPreviewEnded(false);
     setIsPreviewMuted(!shouldStartPreviewUnmutedRef.current);
+    previewDurationMsRef.current = null;
+    previewPlaybackSecondsRef.current = 0;
+    postTrailerElapsedMsRef.current = 0;
+    disabledPostPhaseStartedAtMsRef.current = null;
+    hasPreviewEndedRef.current = false;
     onPreviewPlaybackChange?.(false);
-  }, [item?.Id, onPreviewPlaybackChange]);
+
+    if (!areTrailersEnabledRef.current) {
+      onSlideDurationChange?.(
+        HERO_DESCRIPTION_VISIBLE_MS + HERO_POST_TRAILER_VISIBLE_MS,
+      );
+    }
+  }, [item?.Id, onPreviewPlaybackChange, onSlideDurationChange]);
+
+  useEffect(() => {
+    setIsPreviewStartDelayDone(false);
+
+    if (!item?.Id || !areTrailersEnabledRef.current) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsPreviewStartDelayDone(true);
+    }, HERO_DESCRIPTION_VISIBLE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [item?.Id]);
 
   useEffect(() => {
     setIsLogoLoaded(false);
@@ -818,6 +1009,117 @@ export function HeroSection({
     );
   };
 
+  const getSlideElapsedMs = () => {
+    if (typeof progressStartedAtMs !== "number") {
+      return 0;
+    }
+
+    return Math.max(0, Date.now() - progressStartedAtMs);
+  };
+
+  const getPostTrailerElapsedMs = () => {
+    let elapsedMs = postTrailerElapsedMsRef.current;
+    const disabledPostStartedAtMs = disabledPostPhaseStartedAtMsRef.current;
+
+    if (disabledPostStartedAtMs !== null) {
+      elapsedMs += Math.max(0, Date.now() - disabledPostStartedAtMs);
+    }
+
+    const previewDurationMs = previewDurationMsRef.current;
+
+    if (hasPreviewEndedRef.current && previewDurationMs !== null) {
+      elapsedMs = Math.max(
+        elapsedMs,
+        getSlideElapsedMs() - HERO_DESCRIPTION_VISIBLE_MS - previewDurationMs,
+      );
+    }
+
+    return Math.min(Math.max(elapsedMs, 0), HERO_POST_TRAILER_VISIBLE_MS);
+  };
+
+  const getPreviewElapsedMs = () => {
+    const previewDurationMs = previewDurationMsRef.current;
+    const measuredElapsedMs = Math.max(
+      0,
+      previewPlaybackSecondsRef.current * 1000,
+    );
+
+    if (previewDurationMs === null) {
+      return measuredElapsedMs;
+    }
+
+    const derivedElapsedMs = Math.max(
+      0,
+      getSlideElapsedMs() -
+        HERO_DESCRIPTION_VISIBLE_MS -
+        getPostTrailerElapsedMs(),
+    );
+
+    return Math.min(
+      previewDurationMs,
+      Math.max(measuredElapsedMs, derivedElapsedMs),
+    );
+  };
+
+  const updateSlideDurationForPhase = (
+    trailersEnabled: boolean,
+    options: { skipIntro?: boolean } = {},
+  ) => {
+    const elapsedMs = getSlideElapsedMs();
+    const remainingIntroMs =
+      trailersEnabled && (options.skipIntro ?? isPreviewStartDelayDone)
+        ? 0
+        : Math.max(0, HERO_DESCRIPTION_VISIBLE_MS - elapsedMs);
+    const previewDurationMs = previewDurationMsRef.current;
+    const previewElapsedMs = getPreviewElapsedMs();
+    previewPlaybackSecondsRef.current = previewElapsedMs / 1000;
+    const remainingTrailerMs =
+      trailersEnabled &&
+      previewDurationMs !== null &&
+      !hasPreviewEndedRef.current
+        ? Math.max(0, previewDurationMs - previewElapsedMs)
+        : 0;
+    const remainingPostTrailerMs = Math.max(
+      0,
+      HERO_POST_TRAILER_VISIBLE_MS - getPostTrailerElapsedMs(),
+    );
+
+    onSlideDurationChange?.(
+      elapsedMs +
+        remainingIntroMs +
+        remainingTrailerMs +
+        remainingPostTrailerMs,
+    );
+  };
+
+  const handleToggleTrailers = () => {
+    setAreTrailersEnabled((current) => {
+      const nextEnabled = !current;
+      saveHeroTrailersEnabledPreference(nextEnabled);
+      areTrailersEnabledRef.current = nextEnabled;
+
+      postTrailerElapsedMsRef.current = getPostTrailerElapsedMs();
+
+      if (nextEnabled) {
+        disabledPostPhaseStartedAtMsRef.current = null;
+        setIsPreviewStartDelayDone(true);
+        updateSlideDurationForPhase(true, { skipIntro: true });
+      } else {
+        const elapsedMs = getSlideElapsedMs();
+        const remainingIntroMs = Math.max(
+          0,
+          HERO_DESCRIPTION_VISIBLE_MS - elapsedMs,
+        );
+
+        disabledPostPhaseStartedAtMsRef.current = Date.now() + remainingIntroMs;
+        setIsPreviewStartDelayDone(false);
+        updateSlideDurationForPhase(false);
+      }
+
+      return nextEnabled;
+    });
+  };
+
   return (
     <>
       <section
@@ -882,34 +1184,56 @@ export function HeroSection({
           ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {hasPreview ? (
+          {shouldRenderPreview ? (
             <HeroPreviewVideo
               key={`${item?.Id}-hero-preview`}
               previewUrl={previewUrl}
               isPreviewMuted={isPreviewMuted}
               shouldReduceMotion={shouldReduceMotion}
               isPreviewReady={isPreviewReady}
+              areTrailersEnabled={areTrailersEnabled}
+              resumeTimeSeconds={previewPlaybackSecondsRef.current}
               softEase={softEase}
               isCarouselPaused={isPaused}
               shouldPlay={shouldPlayPreview}
               onDurationChange={(durationMs) => {
-                onSlideDurationChange?.(
-                  HERO_DESCRIPTION_VISIBLE_MS + durationMs + 10000,
-                );
+                previewDurationMsRef.current = durationMs;
+                updateSlideDurationForPhase(areTrailersEnabledRef.current);
+              }}
+              onPlaybackTimeChange={(timeSeconds) => {
+                previewPlaybackSecondsRef.current = Math.max(0, timeSeconds);
               }}
               onLoadStart={() => {
-                onPreviewPlaybackChange?.(true);
+                if (shouldPlayPreview) {
+                  onPreviewPlaybackChange?.(true);
+                }
               }}
               onCanPlay={() => setIsPreviewReady(true)}
               onPlay={() => {
                 onPreviewPlaybackChange?.(true);
               }}
+              onDisabledFadeOutComplete={(timeSeconds) => {
+                previewPlaybackSecondsRef.current = Math.max(0, timeSeconds);
+
+                if (areTrailersEnabledRef.current) {
+                  return;
+                }
+
+                setIsPreviewReady(false);
+                onPreviewPlaybackChange?.(false);
+              }}
               onEnded={() => {
+                hasPreviewEndedRef.current = true;
+                if (previewDurationMsRef.current !== null) {
+                  previewPlaybackSecondsRef.current =
+                    previewDurationMsRef.current / 1000;
+                }
                 setHasPreviewEnded(true);
                 setIsPreviewReady(false);
                 onPreviewPlaybackChange?.(false);
               }}
               onError={() => {
+                hasPreviewEndedRef.current = true;
                 setPreviewUrl(null);
                 setIsPreviewReady(false);
                 setHasPreviewEnded(true);
@@ -919,12 +1243,10 @@ export function HeroSection({
           ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {shouldPlayPreview && isPreviewReady ? (
-            <motion.button
-              key="hero-preview-mute-toggle"
-              type="button"
-              aria-label={isPreviewMuted ? "Unmute preview" : "Mute preview"}
-              className="group absolute right-0 top-1/2 z-30 flex h-auto w-24 -translate-y-1/2 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+          {item ? (
+            <motion.div
+              key="hero-preview-controls"
+              className="absolute right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-end gap-2 sm:gap-3"
               initial={{ opacity: 0, x: 38, scale: 0.96 }}
               animate={{ opacity: 1, x: 0, scale: 1 }}
               exit={{ opacity: 0, x: 38, scale: 0.96 }}
@@ -932,54 +1254,145 @@ export function HeroSection({
                 duration: shouldReduceMotion ? 0 : 0.28,
                 ease: softEase,
               }}
-              onClick={() => {
-                setIsPreviewMuted((current) => {
-                  const nextMuted = !current;
-                  setShouldStartPreviewUnmuted(!nextMuted);
-                  return nextMuted;
-                });
-              }}
             >
-              <span className="flex w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
-                <AnimatePresence mode="wait" initial={false}>
-                  {isPreviewMuted ? (
-                    <motion.span
-                      key="muted"
-                      className="flex items-center justify-center"
-                      initial={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                      animate={{ scale: 1 }}
-                      exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                      transition={{
-                        duration: shouldReduceMotion ? 0 : 0.16,
-                        ease: softEase,
-                      }}
-                    >
-                      <VolumeX
-                        className="h-5 w-5 sm:h-5 sm:w-5"
-                        strokeWidth={2.4}
-                      />
-                    </motion.span>
-                  ) : (
-                    <motion.span
-                      key="unmuted"
-                      className="flex items-center justify-center"
-                      initial={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                      animate={{ scale: 1 }}
-                      exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                      transition={{
-                        duration: shouldReduceMotion ? 0 : 0.16,
-                        ease: softEase,
-                      }}
-                    >
-                      <Volume2
-                        className="h-5 w-5 sm:h-5 sm:w-5"
-                        strokeWidth={2.4}
-                      />
-                    </motion.span>
-                  )}
-                </AnimatePresence>
-              </span>
-            </motion.button>
+              <button
+                type="button"
+                aria-label={
+                  areTrailersEnabled
+                    ? t("hero.disableTrailers")
+                    : t("hero.enableTrailers")
+                }
+                title={
+                  areTrailersEnabled
+                    ? t("hero.disableTrailers")
+                    : t("hero.enableTrailers")
+                }
+                className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+                onClick={handleToggleTrailers}
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+                  <AnimatePresence mode="wait" initial={false}>
+                    {areTrailersEnabled ? (
+                      <motion.span
+                        key="trailers-enabled"
+                        className="flex items-center justify-center"
+                        initial={
+                          shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                        }
+                        animate={{ scale: 1 }}
+                        exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                        transition={{
+                          duration: shouldReduceMotion ? 0 : 0.16,
+                          ease: softEase,
+                        }}
+                      >
+                        <VideoOff
+                          className="h-5 w-5 sm:h-5 sm:w-5"
+                          strokeWidth={2.4}
+                        />
+                      </motion.span>
+                    ) : (
+                      <motion.span
+                        key="trailers-disabled"
+                        className="flex items-center justify-center"
+                        initial={
+                          shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                        }
+                        animate={{ scale: 1 }}
+                        exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
+                        transition={{
+                          duration: shouldReduceMotion ? 0 : 0.16,
+                          ease: softEase,
+                        }}
+                      >
+                        <Video
+                          className="h-5 w-5 sm:h-5 sm:w-5"
+                          strokeWidth={2.4}
+                        />
+                      </motion.span>
+                    )}
+                  </AnimatePresence>
+                </span>
+              </button>
+
+              <AnimatePresence>
+                {shouldPlayPreview && isPreviewReady ? (
+                  <motion.button
+                    key="hero-preview-mute-toggle"
+                    type="button"
+                    aria-label={
+                      isPreviewMuted ? t("player.unmute") : t("player.mute")
+                    }
+                    title={
+                      isPreviewMuted ? t("player.unmute") : t("player.mute")
+                    }
+                    className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+                    initial={{ opacity: 0, x: 28, scale: 0.96 }}
+                    animate={{ opacity: 1, x: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: 28, scale: 0.96 }}
+                    transition={{
+                      duration: shouldReduceMotion ? 0 : 0.22,
+                      ease: softEase,
+                    }}
+                    onClick={() => {
+                      setIsPreviewMuted((current) => {
+                        const nextMuted = !current;
+                        setShouldStartPreviewUnmuted(!nextMuted);
+                        return nextMuted;
+                      });
+                    }}
+                  >
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+                      <AnimatePresence mode="wait" initial={false}>
+                        {isPreviewMuted ? (
+                          <motion.span
+                            key="muted"
+                            className="flex items-center justify-center"
+                            initial={
+                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                            }
+                            animate={{ scale: 1 }}
+                            exit={
+                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                            }
+                            transition={{
+                              duration: shouldReduceMotion ? 0 : 0.16,
+                              ease: softEase,
+                            }}
+                          >
+                            <VolumeX
+                              className="h-5 w-5 sm:h-5 sm:w-5"
+                              strokeWidth={2.4}
+                            />
+                          </motion.span>
+                        ) : (
+                          <motion.span
+                            key="unmuted"
+                            className="flex items-center justify-center"
+                            initial={
+                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                            }
+                            animate={{ scale: 1 }}
+                            exit={
+                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                            }
+                            transition={{
+                              duration: shouldReduceMotion ? 0 : 0.16,
+                              ease: softEase,
+                            }}
+                          >
+                            <Volume2
+                              className="h-5 w-5 sm:h-5 sm:w-5"
+                              strokeWidth={2.4}
+                            />
+                          </motion.span>
+                        )}
+                      </AnimatePresence>
+                    </span>
+                  </motion.button>
+                ) : null}
+              </AnimatePresence>
+            </motion.div>
           ) : null}
         </AnimatePresence>
         <motion.div

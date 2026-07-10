@@ -33,6 +33,8 @@ export const translations = {
     "home.couldNotClearHistory": "Could not clear watch history. Try again.",
     "hero.featured": "Featured",
     "hero.nowStreaming": "Now Streaming",
+    "hero.enableTrailers": "Enable trailers",
+    "hero.disableTrailers": "Disable trailers",
     "hero.fallbackDescription":
       "A focused, frontend-only way to browse and watch your existing Jellyfin library.",
     "common.play": "Play",
@@ -981,6 +983,8 @@ export const translations = {
     "home.couldNotClearHistory": "İzleme geçmişi temizlenemedi. Tekrar dene.",
     "hero.featured": "Öne Çıkan",
     "hero.nowStreaming": "Şimdi Yayında",
+    "hero.enableTrailers": "Fragmanları aç",
+    "hero.disableTrailers": "Fragmanları kapat",
     "hero.fallbackDescription":
       "Mevcut Jellyfin kütüphaneni gezmek ve izlemek için sade, tamamen frontend odaklı bir deneyim.",
     "common.play": "Oynat",
