@@ -152,7 +152,14 @@ h2::before {
   opacity: 0.22 !important;
 }
 
-h1 + h2::before {
+.firstHeading::before {
+  display: none !important;
+}
+
+h1 + h1::before,
+h1 + h2::before,
+h2 + h1::before,
+h2 + h2::before {
   display: none !important;
 }
 `;
@@ -447,7 +454,10 @@ function getEpubThemeRules(
         "linear-gradient(to right, transparent, currentColor, transparent) !important",
       opacity: "0.22 !important",
     },
-    "h1 + h2::before": {
+    ".firstHeading::before": {
+      display: "none !important",
+    },
+    "h1 + h1::before, h1 + h2::before, h2 + h1::before, h2 + h2::before": {
       display: "none !important",
     },
     img: {
