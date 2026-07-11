@@ -25,6 +25,7 @@ import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import type { JellyfinItem } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { groupLatestMediaItems } from "../../lib/latestMedia";
+import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -211,6 +212,7 @@ function MobileHomeLoading() {
 
 export function MobileHomePage() {
   const { t } = useLanguage();
+  const forceSkeletons = useDevSkeletonMode();
   const shouldReduceMotion = useReducedMotion();
   const wasHeroPausedBeforeDragRef = useRef(false);
   const mediaFormatLabels = useMemo(
@@ -412,6 +414,10 @@ export function MobileHomePage() {
       goToHeroIndex(heroIndex - 1, -1);
     }
   };
+
+  if (forceSkeletons) {
+    return <MobileHomeLoading />;
+  }
 
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;

@@ -24,6 +24,7 @@ import { ConfettiAnimation } from "../../components/animations/ConfettiAnimation
 import { setSeoMetadata } from "../../lib/seo";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
 import { groupLatestMediaItems } from "../../lib/latestMedia";
+import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
 import {
   consumeLoginConfettiPending,
   markDailyHomeConfettiShown,
@@ -54,6 +55,7 @@ function getErrorMessage(
 
 export function DesktopHomePage() {
   const { t } = useLanguage();
+  const forceSkeletons = useDevSkeletonMode();
   const isWebApp = useStandaloneWebApp();
   const [data, setData] = useState<HomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -294,13 +296,15 @@ export function DesktopHomePage() {
     void refreshSmartContinueWatching();
   };
 
+  if (forceSkeletons) {
+    return <HomeSkeleton />;
+  }
+
   if (error) {
     return <ErrorMessage title={t("home.couldNotLoad")} message={error} />;
   }
 
-  const debugSkeleton = false;
-
-  if (!data || debugSkeleton) {
+  if (!data) {
     return <HomeSkeleton />;
   }
 

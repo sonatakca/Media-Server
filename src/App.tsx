@@ -30,6 +30,7 @@ import { HomeCurationPage } from "./pages/HomeCurationPage";
 import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
 import { TmdbArtworkPage } from "./pages/TmdbArtworkPage";
 import { PlaybackHealthPage } from "./pages/PlaybackHealthPage";
+import { SkeletonLabPage } from "./pages/SkeletonLabPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -320,6 +321,9 @@ export default function App() {
               <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
               <Route path="/dev/content" element={<ContentExplorerPage />} />
               <Route path="/dev/home-curation" element={<HomeCurationPage />} />
+              {import.meta.env.DEV ? (
+                <Route path="/dev/skeleton-lab" element={<SkeletonLabPage />} />
+              ) : null}
               <Route
                 path="/dev/playback-defaults"
                 element={<PlaybackDefaultsPage />}

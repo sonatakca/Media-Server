@@ -1,5 +1,6 @@
 import { Navbar } from "./Navbar";
 import { RouteTransitionOutlet } from "./RouteTransitionOutlet";
+import { DevSkeletonToggle } from "./DevSkeletonToggle";
 
 export function Layout() {
   return (
@@ -8,6 +9,7 @@ export function Layout() {
       <main className="seyirlik-layout-main mx-auto w-full max-w-[95%] px-4 pb-16 pt-20 sm:px-6 lg:px-8">
         <RouteTransitionOutlet />
       </main>
+      <DevSkeletonToggle />
     </div>
   );
 }

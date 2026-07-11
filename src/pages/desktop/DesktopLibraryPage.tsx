@@ -42,6 +42,7 @@ import { AnimatedWidth } from "../../components/AnimatedWidth";
 import { setPageTitle } from "../../lib/pageTitle";
 import type { LibraryPageProps } from "../libraryPageTypes";
 import { preloadPlayerPage } from "../PlayerPage";
+import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -261,6 +262,7 @@ async function loadLibraryItems(
 }
 
 export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
+  const forceSkeletons = useDevSkeletonMode();
   const { libraryId, seriesId, seasonId } = useParams<{
     libraryId?: string;
     seriesId?: string;
@@ -568,6 +570,10 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
       isMounted = false;
     };
   }, [data?.library?.Id, data?.library?.Type, mode]);
+
+  if (forceSkeletons) {
+    return <LibrarySkeleton />;
+  }
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;

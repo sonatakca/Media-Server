@@ -9,6 +9,7 @@ import {
   Languages,
   Lightbulb,
   ListOrdered,
+  PanelsTopLeft,
   ShieldAlert,
   ShieldCheck,
 } from "lucide-react";
@@ -29,6 +30,17 @@ export function DevToolsPage() {
   }, [t]);
 
   const tools = [
+    ...(import.meta.env.DEV
+      ? [
+          {
+            title: t("devtools.card.skeletonLab.title"),
+            description: t("devtools.card.skeletonLab.description"),
+            to: "/dev/skeleton-lab",
+            icon: PanelsTopLeft,
+            tag: t("devtools.card.skeletonLab.tag"),
+          },
+        ]
+      : []),
     {
       title: t("devtools.card.playbackAudit.title"),
       description: t("devtools.card.playbackAudit.description"),

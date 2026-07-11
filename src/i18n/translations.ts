@@ -502,6 +502,20 @@ export const translations = {
     "devtools.title": "Devtools",
     "devtools.pageDescription":
       "Tools for debugging, maintenance, bug tracking, and future planning.",
+    "devtools.card.skeletonLab.title": "Skeleton Lab",
+    "devtools.card.skeletonLab.description":
+      "Freeze and compare loading skeletons against loaded Home and Library layouts without reloading.",
+    "devtools.card.skeletonLab.tag": "UI Development",
+    "devtools.skeletonLab.eyebrow": "UI Development",
+    "devtools.skeletonLab.title": "Skeleton Lab",
+    "devtools.skeletonLab.description":
+      "Force Home and Library skeletons to remain visible. The floating control follows you onto preview pages so you can switch between the skeleton and already-loaded content instantly.",
+    "devtools.skeletonLab.showSkeletons": "Show skeletons",
+    "devtools.skeletonLab.hideSkeletons": "Show loaded content",
+    "devtools.skeletonLab.previewTitle": "Live page comparison",
+    "devtools.skeletonLab.previewDescription":
+      "Open a page below, then use the floating skeleton control. Data remains mounted while the skeleton is visible, so switching back does not reload or fetch it again.",
+    "devtools.skeletonLab.cardPreviewTitle": "Card skeleton sizes",
     "devtools.backToDevtools": "Back to Devtools",
     "devtools.total": "Total",
     "devtools.open": "Open",
@@ -1462,6 +1476,20 @@ export const translations = {
     "devtools.title": "Devtools",
     "devtools.pageDescription":
       "Hata ayıklama, bakım, hata takibi ve gelecek planları için araçlar.",
+    "devtools.card.skeletonLab.title": "İskelet Laboratuvarı",
+    "devtools.card.skeletonLab.description":
+      "Sayfayı yenilemeden yükleme iskeletlerini yüklü Ana Sayfa ve Kütüphane düzenleriyle karşılaştır.",
+    "devtools.card.skeletonLab.tag": "Arayüz Geliştirme",
+    "devtools.skeletonLab.eyebrow": "Arayüz Geliştirme",
+    "devtools.skeletonLab.title": "İskelet Laboratuvarı",
+    "devtools.skeletonLab.description":
+      "Ana Sayfa ve Kütüphane iskeletlerini görünür kalmaya zorla. Yüzen kontrol önizleme sayfalarında seni takip eder; iskelet ile yüklenmiş içerik arasında anında geçiş yapabilirsin.",
+    "devtools.skeletonLab.showSkeletons": "İskeletleri göster",
+    "devtools.skeletonLab.hideSkeletons": "Yüklü içeriği göster",
+    "devtools.skeletonLab.previewTitle": "Canlı sayfa karşılaştırması",
+    "devtools.skeletonLab.previewDescription":
+      "Aşağıdan bir sayfa aç ve yüzen iskelet kontrolünü kullan. İskelet görünürken veriler bağlı kalır; geri geçiş sayfayı yenilemez veya yeniden veri çekmez.",
+    "devtools.skeletonLab.cardPreviewTitle": "Kart iskeleti boyutları",
     "devtools.backToDevtools": "Devtools'a dön",
     "devtools.total": "Toplam",
     "devtools.open": "Açık",

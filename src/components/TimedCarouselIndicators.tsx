@@ -256,7 +256,7 @@ export function TimedCarouselIndicators({
             : undefined
         }
         className={classNames(
-          "relative flex h-9 max-w-full origin-center items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.14] px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] sm:h-11 sm:gap-2.5 sm:px-4",
+          "relative  flex h-9 max-w-full origin-center items-center gap-1.5 rounded-full border border-white/[0.10] bg-white/[0.14] px-2.5 shadow-[0_18px_60px_rgba(0,0,0,0.34),inset_0_1px_0_rgba(255,255,255,0.12)] sm:h-11 sm:gap-2.5 sm:px-4",
           shouldWindowDots
             ? "overflow-hidden"
             : "media-scroll overflow-x-auto overscroll-x-contain",

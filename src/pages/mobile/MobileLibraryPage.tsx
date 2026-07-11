@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
+import { motion } from "framer-motion";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
-import { SeasonPicker } from "../../components/SeasonPicker";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
@@ -38,6 +38,7 @@ import type { JellyfinItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 import { preloadPlayerPage } from "../PlayerPage";
+import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -293,6 +294,7 @@ function MobileLibraryLoading() {
 }
 
 export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
+  const forceSkeletons = useDevSkeletonMode();
   const { libraryId, seriesId, seasonId } = useParams<{
     libraryId?: string;
     seriesId?: string;
@@ -322,6 +324,9 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "year" | "latest">("name");
+  const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
+  const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
+    useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -410,6 +415,81 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     return [...items].sort((left, right) => sortItems(left, right, sortBy));
   }, [data, searchTerm, sortBy]);
 
+  const libraryRotatingLogoUrls = useMemo(() => {
+    if (!data || mode !== "library") {
+      return [];
+    }
+
+    const logoUrls = data.items
+      .map((libraryItem) => {
+        if (libraryItem.ImageTags?.Logo) {
+          return getLogoImageUrl(
+            libraryItem.Id,
+            libraryItem.ImageTags.Logo,
+            900,
+          );
+        }
+
+        if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
+          return getLogoImageUrl(
+            libraryItem.ParentLogoItemId,
+            libraryItem.ParentLogoImageTag,
+            900,
+          );
+        }
+
+        return null;
+      })
+      .filter((url): url is string => Boolean(url));
+
+    return Array.from(new Set(logoUrls));
+  }, [data, mode]);
+
+  useEffect(() => {
+    setRotatingLogoIndex(0);
+    setHasFinishedLogoIntroSweep(false);
+
+    if (mode !== "library" || libraryRotatingLogoUrls.length <= 1) {
+      return undefined;
+    }
+
+    let currentIndex = 0;
+    let hasCompletedInitialSweep = false;
+    let timeoutId: number | undefined;
+    let introCompleteFrameId: number | undefined;
+
+    const advanceLogo = () => {
+      currentIndex = (currentIndex + 1) % libraryRotatingLogoUrls.length;
+
+      setRotatingLogoIndex(currentIndex);
+
+      if (currentIndex === 0) {
+        hasCompletedInitialSweep = true;
+
+        introCompleteFrameId = window.requestAnimationFrame(() => {
+          setHasFinishedLogoIntroSweep(true);
+        });
+      }
+
+      timeoutId = window.setTimeout(
+        advanceLogo,
+        hasCompletedInitialSweep ? 5000 : 100,
+      );
+    };
+
+    timeoutId = window.setTimeout(advanceLogo, 100);
+
+    return () => {
+      if (timeoutId !== undefined) {
+        window.clearTimeout(timeoutId);
+      }
+
+      if (introCompleteFrameId !== undefined) {
+        window.cancelAnimationFrame(introCompleteFrameId);
+      }
+    };
+  }, [libraryRotatingLogoUrls, mode]);
+
   const handleWatchedStatusReset = (
     resetItems: JellyfinItem[],
     options?: { action: "mark" | "remove"; scope: "show" },
@@ -497,6 +577,10 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     };
   }, [data?.library?.Id, data?.library?.Type, mode]);
 
+  if (forceSkeletons) {
+    return <MobileLibraryLoading />;
+  }
+
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;
   }
@@ -528,23 +612,41 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     : fallbackTitle;
   const itemType = data.items.find((item) => item.Type)?.Type;
   const firstEpisodeItem = data.items.find((item) => item.Type === "Episode");
-  const logoUrl =
-    data.library && !data.library.CollectionType && data.library.ImageTags?.Logo
-      ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 600)
-      : data.library?.ParentLogoItemId && data.library.ParentLogoImageTag
+  const firstItemWithLogo = data.items.find(
+    (libraryItem) =>
+      Boolean(libraryItem.ImageTags?.Logo) ||
+      Boolean(libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag),
+  );
+
+  const fallbackLogoUrl = data.library?.ImageTags?.Logo
+    ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 900)
+    : data.library?.ParentLogoItemId && data.library.ParentLogoImageTag
+      ? getLogoImageUrl(
+          data.library.ParentLogoItemId,
+          data.library.ParentLogoImageTag,
+          900,
+        )
+      : firstItemWithLogo?.ImageTags?.Logo
         ? getLogoImageUrl(
-            data.library.ParentLogoItemId,
-            data.library.ParentLogoImageTag,
-            600,
+            firstItemWithLogo.Id,
+            firstItemWithLogo.ImageTags.Logo,
+            900,
           )
-        : firstEpisodeItem?.ParentLogoItemId &&
-            firstEpisodeItem.ParentLogoImageTag
+        : firstItemWithLogo?.ParentLogoItemId &&
+            firstItemWithLogo.ParentLogoImageTag
           ? getLogoImageUrl(
-              firstEpisodeItem.ParentLogoItemId,
-              firstEpisodeItem.ParentLogoImageTag,
-              600,
+              firstItemWithLogo.ParentLogoItemId,
+              firstItemWithLogo.ParentLogoImageTag,
+              900,
             )
           : "";
+
+  const activeLibraryLogoUrl =
+    mode === "library" && libraryRotatingLogoUrls.length > 0
+      ? libraryRotatingLogoUrls[
+          rotatingLogoIndex % libraryRotatingLogoUrls.length
+        ]
+      : fallbackLogoUrl;
   const backdropUrl = getLibraryBackdropUrl(data.library, data.items);
   const countText =
     itemType === "Season"
@@ -563,17 +665,6 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
           )
         : `${data.items.length} ${t("library.itemsAvailable")}`;
   const usesLandscapeCards = itemType === "Episode";
-  const seasonHeaderLabel =
-    itemType === "Episode"
-      ? typeof firstEpisodeItem?.ParentIndexNumber === "number" &&
-        firstEpisodeItem.ParentIndexNumber > 0
-        ? formatTemplate(t("media.seasonNumber"), {
-            number: firstEpisodeItem.ParentIndexNumber,
-          })
-        : data.library?.Name ||
-          firstEpisodeItem?.SeasonName ||
-          t("format.season")
-      : null;
   const currentSeasonId =
     data.library?.Type === "Season"
       ? data.library.Id
@@ -600,21 +691,9 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
   const isLibraryScopeWatched =
     (mode === "series" || mode === "season") &&
     isWholeWatchedScope(data.library, data.items);
-  const seasonPickerOptions = [...data.selectableSeasons]
-    .sort((left, right) => sortItems(left, right, "name"))
-    .map((season) => ({
-      id: season.Id,
-      label:
-        typeof season.IndexNumber === "number" && season.IndexNumber > 0
-          ? formatTemplate(t("media.seasonNumber"), {
-              number: season.IndexNumber,
-            })
-          : season.Name || t("format.season"),
-    }));
-
   return (
     <div className="pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
-      <section className="full-bleed relative -mt-1 mb-5 min-h-[12rem] overflow-hidden border-b border-white/10 bg-zinc-950 px-4 pb-5 pt-3">
+      <section className="full-bleed relative -mt-1 min-h-[11.5rem] overflow-hidden border-b border-white/10 bg-zinc-950 px-4 pb-12 pt-3">
         {backdropUrl ? (
           <img
             src={backdropUrl}
@@ -625,59 +704,62 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
         ) : (
           <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,0.11),transparent_44%),linear-gradient(180deg,#111113_0%,#050506_100%)]" />
         )}
+
         <div className="absolute inset-0 bg-gradient-to-b from-black/72 via-black/38 to-[#050506]" />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-[#050506] to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#050506] to-transparent" />
 
         <div className="relative z-20 flex items-center justify-between gap-3">
           <BackButton buttonClassName="min-h-9 px-3 text-xs" />
+
           <p className="min-w-0 truncate text-right text-xs font-bold text-white/62">
             {countText}
           </p>
         </div>
-
-        <header className="absolute inset-x-4 top-[58%] z-20 -translate-y-1/2 text-center">
-          {logoUrl && seasonHeaderLabel ? (
-            <div className="flex min-w-0 items-center justify-center gap-2.5">
-              <img
-                src={logoUrl}
-                alt={title}
-                className="cinematic-logo-shadow max-h-12 max-w-[min(10rem,42vw)] object-contain"
-              />
-              <div
-                aria-hidden="true"
-                className="h-9 w-px shrink-0 bg-gradient-to-b from-transparent via-white/24 to-transparent"
-              />
-              {seasonPickerOptions.length > 0 ? (
-                <SeasonPicker
-                  activeSeasonId={currentSeasonId}
-                  currentLabel={seasonHeaderLabel}
-                  options={seasonPickerOptions}
-                  selectLabel={t("library.selectSeason")}
-                  variant="mobile"
-                />
-              ) : (
-                <div
-                  className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2`}
-                >
-                  <span className="relative truncate text-sm font-black leading-none text-white">
-                    {seasonHeaderLabel}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={title}
-              className="cinematic-logo-shadow mx-auto max-h-16 max-w-[76vw] object-contain"
-            />
-          ) : (
-            <h1 className="mx-auto max-w-[84vw] text-3xl font-black tracking-tight text-white drop-shadow-[0_16px_38px_rgba(0,0,0,0.9)]">
-              {title}
-            </h1>
-          )}
-        </header>
       </section>
+
+      <div className="relative z-30 -mt-11 mb-5 flex min-h-[5.5rem] items-center justify-center px-4">
+        {activeLibraryLogoUrl ? (
+          <motion.img
+            key={activeLibraryLogoUrl}
+            src={activeLibraryLogoUrl}
+            alt={title}
+            draggable={false}
+            className="cinematic-logo-shadow h-auto max-h-16 max-w-[min(16rem,74vw)] transform-gpu object-contain will-change-transform"
+            initial={
+              hasFinishedLogoIntroSweep
+                ? {
+                    opacity: 0,
+                    y: 6,
+                    scale: 1.2,
+                    filter: "blur(0px)",
+                  }
+                : false
+            }
+            animate={{
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              filter: "blur(0px)",
+            }}
+            transition={{
+              duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+          />
+        ) : (
+          <motion.h1
+            className="mx-auto max-w-[84vw] text-center text-3xl font-black tracking-tight text-white drop-shadow-[0_16px_38px_rgba(0,0,0,0.9)]"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{
+              duration: 0.5,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+          >
+            {title}
+          </motion.h1>
+        )}
+      </div>
 
       {isLibraryScopeWatched ? (
         <div className="mb-5 flex justify-center">

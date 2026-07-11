@@ -572,7 +572,7 @@ export function MediaCard({
     }
 
     return (
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/95 via-black/40 to-transparent">
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
         {logoUrl ? (
           <img
             src={logoUrl}
