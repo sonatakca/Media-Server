@@ -22,6 +22,7 @@ export function DesktopNavbar() {
   const [libraryRoutes, setLibraryRoutes] = useState({
     movies: "/movies",
     series: "/series",
+    collections: "/collections",
     books: "/books",
   });
   const devClickCountRef = useRef(0);
@@ -59,6 +60,9 @@ export function DesktopNavbar() {
         const booksLibrary = libraries.find(
           (library) => library.CollectionType === "books",
         );
+        const collectionsLibrary = libraries.find(
+          (library) => library.CollectionType === "boxsets",
+        );
 
         if (!isMounted) {
           return;
@@ -71,6 +75,9 @@ export function DesktopNavbar() {
           series: seriesLibrary?.Id
             ? `/library/${seriesLibrary.Id}`
             : "/series",
+          collections: collectionsLibrary?.Id
+            ? `/library/${collectionsLibrary.Id}`
+            : "/collections",
           books: booksLibrary?.Id ? `/library/${booksLibrary.Id}` : "/books",
         });
       } catch (error) {
@@ -209,6 +216,19 @@ export function DesktopNavbar() {
               <AnimatedText value={t("nav.books")} />
             </AnimatedWidth>
           </NavLink>
+
+          {/* <NavLink
+            to={libraryRoutes.collections}
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
+              }`
+            }
+          >
+            <AnimatedWidth value={t("nav.collections")}>
+              <AnimatedText value={t("nav.collections")} />
+            </AnimatedWidth>
+          </NavLink> */}
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">

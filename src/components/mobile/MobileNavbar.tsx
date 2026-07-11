@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Book, LogOut, Palette } from "lucide-react";
+import { Book, Boxes, LogOut, Palette } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
@@ -37,6 +37,7 @@ export function MobileNavbar() {
   const [libraryRoutes, setLibraryRoutes] = useState({
     movies: "/movies",
     series: "/series",
+    collections: "/collections",
     books: "/books",
   });
 
@@ -72,6 +73,9 @@ export function MobileNavbar() {
         const booksLibrary = libraries.find(
           (library) => library.CollectionType === "books",
         );
+        const collectionsLibrary = libraries.find(
+          (library) => library.CollectionType === "boxsets",
+        );
 
         if (!isMounted) {
           return;
@@ -84,6 +88,9 @@ export function MobileNavbar() {
           series: seriesLibrary?.Id
             ? `/library/${seriesLibrary.Id}`
             : "/series",
+          collections: collectionsLibrary?.Id
+            ? `/library/${collectionsLibrary.Id}`
+            : "/collections",
           books: booksLibrary?.Id ? `/library/${booksLibrary.Id}` : "/books",
         });
       } catch (error) {
@@ -142,6 +149,16 @@ export function MobileNavbar() {
 
         <div className="flex items-center gap-1">
           <LanguageSwitch />
+          <Tooltip content={t("nav.changeTheme")}>
+            <button
+              type="button"
+              onClick={handleThemeChange}
+              aria-label={t("nav.changeTheme")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
+            >
+              <Palette size={18} />
+            </button>
+          </Tooltip>
           {session ? (
             <Tooltip content={t("nav.logout")}>
               <button
@@ -194,6 +211,7 @@ export function MobileNavbar() {
             </>
           )}
         </NavLink>
+
         <NavLink
           to={libraryRoutes.books}
           className={({ isActive }) => getTabClassName(isActive)}
@@ -206,15 +224,19 @@ export function MobileNavbar() {
             </>
           )}
         </NavLink>
-        <button
-          type="button"
-          onClick={handleThemeChange}
-          aria-label={t("nav.changeTheme")}
-          className={getTabClassName(false)}
+
+        {/* <NavLink
+          to={libraryRoutes.collections}
+          className={({ isActive }) => getTabClassName(isActive)}
         >
-          <Palette size={27} className="relative z-10" />
-          <span className="relative z-10">{t("nav.changeTheme")}</span>
-        </button>
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              <Boxes size={28} className="relative z-10" />
+              <span className="relative z-10">{t("nav.collections")}</span>
+            </>
+          )}
+        </NavLink> */}
       </nav>
     </>
   );

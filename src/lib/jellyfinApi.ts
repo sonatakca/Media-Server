@@ -1107,19 +1107,25 @@ export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
 export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
   const session = requireAuthSession();
 
-  return requestJson<JellyfinItem[]>("/Items/Latest", {
-    params: {
-      userId: session.userId,
-      limit: 24,
-      fields: DEFAULT_ITEM_FIELDS,
-      includeItemTypes: "Movie,Series",
-      enableImages: true,
-      imageTypeLimit: 1,
-      enableImageTypes: "Primary,Backdrop,Logo",
-      enableUserData: true,
-      groupItems: false,
-    },
-  });
+  const latestByType = await Promise.all(
+    ["Movie", "Series", "Book"].map((includeItemTypes) =>
+      requestJson<JellyfinItem[]>("/Items/Latest", {
+        params: {
+          userId: session.userId,
+          limit: 24,
+          fields: DEFAULT_ITEM_FIELDS,
+          includeItemTypes,
+          enableImages: true,
+          imageTypeLimit: 1,
+          enableImageTypes: "Primary,Backdrop,Logo",
+          enableUserData: true,
+          groupItems: false,
+        },
+      }),
+    ),
+  );
+
+  return latestByType.flat();
 }
 
 export async function getAllMovieAndSeriesItems(): Promise<JellyfinItem[]> {

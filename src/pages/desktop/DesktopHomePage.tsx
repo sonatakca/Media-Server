@@ -2,15 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { HeroSection } from "../../components/HeroSection";
-import { LibraryTile } from "../../components/LibraryTile";
 import { MediaRow } from "../../components/MediaRow";
-import { MotionReveal } from "../../components/MotionReveal";
 import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   getAllMovieAndSeriesItems,
   getLatestMediaItems,
-  getUserViews,
 } from "../../lib/jellyfinApi";
 import {
   applyHomeCarouselCuration,
@@ -22,12 +19,11 @@ import {
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { getRouteForItem } from "../../lib/routes";
-import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
-import { AnimatedText } from "../../components/AnimatedText";
-import { AnimatedWidth } from "../../components/AnimatedWidth";
+import type { JellyfinItem } from "../../lib/types";
 import { ConfettiAnimation } from "../../components/animations/ConfettiAnimation";
 import { setSeoMetadata } from "../../lib/seo";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
+import { groupLatestMediaItems } from "../../lib/latestMedia";
 import {
   consumeLoginConfettiPending,
   markDailyHomeConfettiShown,
@@ -39,7 +35,6 @@ type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 const HERO_ROTATION_INTERVAL_MS = 12000;
 
 interface HomeData {
-  libraries: JellyfinLibrary[];
   continueWatching: JellyfinItem[];
   latestMedia: JellyfinItem[];
   heroItems: JellyfinItem[];
@@ -141,21 +136,14 @@ export function DesktopHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [librariesResult, continueResult, latestResult, heroItemsResult] =
+      const [continueResult, latestResult, heroItemsResult] =
         await Promise.allSettled([
-          getUserViews(),
           getSmartContinueWatchingItems(),
           getLatestMediaItems(),
           getAllMovieAndSeriesItems(),
         ]);
 
       if (!isMounted) return;
-
-      if (librariesResult.status === "rejected") {
-        setError(getErrorMessage(librariesResult, t("home.couldNotLoad")));
-        setData(null);
-        return;
-      }
 
       const warnings: RowWarning[] = [];
 
@@ -191,7 +179,6 @@ export function DesktopHomePage() {
           : latestMedia;
 
       setData({
-        libraries: librariesResult.value,
         continueWatching:
           continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia,
@@ -318,6 +305,7 @@ export function DesktopHomePage() {
   }
 
   const showContinueWatchingRow = data.continueWatching.length > 0;
+  const latestMediaGroups = groupLatestMediaItems(data.latestMedia);
 
   return (
     <div
@@ -381,41 +369,25 @@ export function DesktopHomePage() {
         </AnimatePresence>
 
         <MediaRow
-          title={t("home.latestMedia")}
-          items={data.latestMedia}
+          title={t("home.latestAddedMovies")}
+          items={latestMediaGroups.movies}
           getItemTo={getRouteForItem}
+          emptyMessage={t("home.noLatestMovies")}
         />
 
-        <MotionReveal className="group/row relative py-6" direction="up">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
-                <AnimatedWidth value={t("home.browse")}>
-                  <AnimatedText value={t("home.browse")} />
-                </AnimatedWidth>
-              </p>
+        <MediaRow
+          title={t("home.latestAddedShows")}
+          items={latestMediaGroups.shows}
+          getItemTo={getRouteForItem}
+          emptyMessage={t("home.noLatestShows")}
+        />
 
-              <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
-                <AnimatedWidth value={t("home.libraries")}>
-                  <AnimatedText value={t("home.libraries")} />
-                </AnimatedWidth>
-              </h2>
-            </div>
-          </div>
-          {data.libraries.length > 0 ? (
-            <div className="media-scroll -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-5 pt-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-              {data.libraries.map((library) => (
-                <LibraryTile key={library.Id} library={library} />
-              ))}
-            </div>
-          ) : (
-            <p className="rounded-xl border border-white/10 bg-[var(--surface)] p-5 text-sm text-white/[0.62]">
-              <AnimatedWidth value={t("home.noLibraries")}>
-                <AnimatedText value={t("home.noLibraries")} />
-              </AnimatedWidth>
-            </p>
-          )}
-        </MotionReveal>
+        <MediaRow
+          title={t("home.latestAddedBooks")}
+          items={latestMediaGroups.books}
+          getItemTo={getRouteForItem}
+          emptyMessage={t("home.noLatestBooks")}
+        />
       </div>
     </div>
   );

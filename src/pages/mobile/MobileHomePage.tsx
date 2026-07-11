@@ -5,7 +5,6 @@ import { Link } from "react-router-dom";
 import { Play } from "lucide-react";
 import { ButtonLink } from "../../components/Button";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { MobileLibraryTile } from "../../components/mobile/MobileLibraryTile";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { TimedCarouselIndicators } from "../../components/TimedCarouselIndicators";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -15,7 +14,6 @@ import {
   getLatestMediaItems,
   getLogoImageUrl,
   getPrimaryImageUrl,
-  getUserViews,
 } from "../../lib/jellyfinApi";
 import {
   filterLatestMediaItems,
@@ -24,8 +22,9 @@ import {
 import { getRouteForItem } from "../../lib/routes";
 import { setSeoMetadata } from "../../lib/seo";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
-import type { JellyfinItem, JellyfinLibrary } from "../../lib/types";
+import type { JellyfinItem } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
+import { groupLatestMediaItems } from "../../lib/latestMedia";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -35,7 +34,6 @@ const HERO_SWIPE_DISTANCE_THRESHOLD = 70;
 const HERO_SWIPE_VELOCITY_THRESHOLD = 450;
 
 interface MobileHomeData {
-  libraries: JellyfinLibrary[];
   continueWatching: JellyfinItem[];
   latestMedia: JellyfinItem[];
 }
@@ -239,7 +237,12 @@ export function MobileHomePage() {
       return [];
     }
 
-    return getFeaturedItems([...data.continueWatching, ...data.latestMedia]);
+    return getFeaturedItems([
+      ...data.continueWatching,
+      ...data.latestMedia.filter(
+        (item) => item.Type === "Movie" || item.Type === "Series",
+      ),
+    ]);
   }, [data]);
 
   const refreshSmartContinueWatching = useCallback(async () => {
@@ -293,20 +296,12 @@ export function MobileHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [librariesResult, continueResult, latestResult] =
-        await Promise.allSettled([
-          getUserViews(),
-          getSmartContinueWatchingItems(),
-          getLatestMediaItems(),
-        ]);
+      const [continueResult, latestResult] = await Promise.allSettled([
+        getSmartContinueWatchingItems(),
+        getLatestMediaItems(),
+      ]);
 
       if (!isMounted) {
-        return;
-      }
-
-      if (librariesResult.status === "rejected") {
-        setError(getErrorMessage(librariesResult, t("home.couldNotLoad")));
-        setData(null);
         return;
       }
 
@@ -330,7 +325,6 @@ export function MobileHomePage() {
       const homeCurationPreferences = loadHomeCurationPreferences();
 
       setData({
-        libraries: librariesResult.value,
         continueWatching:
           continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia:
@@ -442,6 +436,7 @@ export function MobileHomePage() {
   };
 
   const selectedHeroIndex = heroIndex < heroItems.length ? heroIndex : 0;
+  const latestMediaGroups = groupLatestMediaItems(data.latestMedia);
   const heroItem =
     heroItems[selectedHeroIndex] ??
     getFeaturedItem([...data.continueWatching, ...data.latestMedia]);
@@ -754,32 +749,29 @@ export function MobileHomePage() {
 
         <MotionReveal direction="up">
           <MobileMediaRow
-            title={t("home.latestMedia")}
-            items={data.latestMedia}
+            title={t("home.latestAddedMovies")}
+            items={latestMediaGroups.movies}
             getItemTo={getRouteForItem}
-            emptyMessage={t("home.noLatestMedia")}
+            emptyMessage={t("home.noLatestMovies")}
           />
         </MotionReveal>
 
-        <MotionReveal className="relative py-5" direction="up">
-          <p className="text-xs font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
-            {t("home.browse")}
-          </p>
-          <h2 className="mt-1 text-xl font-black text-white">
-            {t("home.libraries")}
-          </h2>
+        <MotionReveal direction="up">
+          <MobileMediaRow
+            title={t("home.latestAddedShows")}
+            items={latestMediaGroups.shows}
+            getItemTo={getRouteForItem}
+            emptyMessage={t("home.noLatestShows")}
+          />
+        </MotionReveal>
 
-          {data.libraries.length > 0 ? (
-            <div className="media-scroll -mx-4 mt-4 flex snap-x gap-4 overflow-x-auto px-4 pb-4">
-              {data.libraries.map((library) => (
-                <MobileLibraryTile key={library.Id} library={library} />
-              ))}
-            </div>
-          ) : (
-            <p className="mt-4 rounded-xl border border-white/10 bg-[var(--surface)] p-5 text-sm text-white/[0.62]">
-              {t("home.noLibraries")}
-            </p>
-          )}
+        <MotionReveal direction="up">
+          <MobileMediaRow
+            title={t("home.latestAddedBooks")}
+            items={latestMediaGroups.books}
+            getItemTo={getRouteForItem}
+            emptyMessage={t("home.noLatestBooks")}
+          />
         </MotionReveal>
       </div>
     </div>

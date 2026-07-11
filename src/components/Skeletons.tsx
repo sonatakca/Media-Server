@@ -100,35 +100,10 @@ export function HomeSkeleton() {
       </div>
 
       <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8">
-        <MediaRowSkeleton title={t("home.latestMedia")} />
         <MediaRowSkeleton title={t("home.continueWatching")} />
-
-        <section className="group/row relative py-6">
-          <div className="mb-4 flex items-end justify-between gap-4">
-            <div>
-              <p className="text-sm font-bold uppercase tracking-[0.2em] text-[var(--accent)]/82">
-                <AnimatedWidth value={t("home.browse")}>
-                  <AnimatedText value={t("home.browse")} />
-                </AnimatedWidth>
-              </p>
-
-              <h2 className="mt-1 text-xl font-black text-white sm:text-2xl">
-                <AnimatedWidth value={t("home.libraries")}>
-                  <AnimatedText value={t("home.libraries")} />
-                </AnimatedWidth>
-              </h2>
-            </div>
-          </div>
-
-          <div className="media-scroll -mx-4 flex snap-x gap-5 overflow-x-auto px-4 pb-5 pt-1 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-            {Array.from({ length: 5 }, (_, index) => (
-              <div
-                key={index}
-                className="shimmer h-32 w-56 shrink-0 rounded-2xl border border-white/10 bg-white/[0.055] sm:w-64"
-              />
-            ))}
-          </div>
-        </section>
+        <MediaRowSkeleton title={t("home.latestAddedMovies")} />
+        <MediaRowSkeleton title={t("home.latestAddedShows")} />
+        <MediaRowSkeleton title={t("home.latestAddedBooks")} />
       </div>
     </div>
   );
