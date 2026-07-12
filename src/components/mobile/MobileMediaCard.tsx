@@ -241,8 +241,20 @@ export function MobileMediaCard({
             )}
           </Link>
 
+          {logoUrl ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center bg-gradient-to-t from-black/75 via-black/20 to-transparent px-3 pb-3 pt-12 min-[390px]:px-4 min-[390px]:pb-4">
+              <img
+                src={logoUrl}
+                alt={mainTitle}
+                loading="lazy"
+                decoding="async"
+                className="max-h-20 max-w-[82%] object-contain object-left drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] min-[390px]:max-h-[3.75rem]"
+              />
+            </div>
+          ) : null}
+
           {progressPercent !== null ? (
-            <div className="absolute inset-x-0 bottom-0 h-1 bg-white/20">
+            <div className="absolute inset-x-0 bottom-0 z-30 h-1 bg-white/20">
               <div
                 data-testid="media-card-progress-fill"
                 className="h-full bg-[var(--accent)]"
@@ -259,15 +271,7 @@ export function MobileMediaCard({
             iconSize={11}
           />
 
-          {logoUrl ? (
-            <img
-              src={logoUrl}
-              alt={mainTitle}
-              loading="lazy"
-              decoding="async"
-              className="mb-1.5 max-h-6 max-w-full object-contain object-left min-[390px]:max-h-7"
-            />
-          ) : (
+          {!logoUrl ? (
             <h3
               className={`truncate font-black text-white ${
                 isEpisode
@@ -277,7 +281,7 @@ export function MobileMediaCard({
             >
               {mainTitle}
             </h3>
-          )}
+          ) : null}
 
           {secondaryTitle ? (
             <p className="mt-1 truncate text-xs font-semibold text-white/90">

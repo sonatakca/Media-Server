@@ -1,9 +1,14 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ChevronLeft, PanelsTopLeft } from "lucide-react";
+import { ArrowRight, ChevronLeft, Eye, PanelsTopLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MediaCardSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
-import { setDevSkeletonMode, useDevSkeletonMode } from "../lib/devSkeletonMode";
+import {
+  setDevSkeletonControlEnabled,
+  setDevSkeletonMode,
+  useDevSkeletonControlEnabled,
+  useDevSkeletonMode,
+} from "../lib/devSkeletonMode";
 import { getUserViews } from "../lib/jellyfinApi";
 import { setPageTitle } from "../lib/pageTitle";
 
@@ -15,6 +20,7 @@ interface PreviewRoute {
 export function SkeletonLabPage() {
   const { t } = useLanguage();
   const isForced = useDevSkeletonMode();
+  const isControlEnabled = useDevSkeletonControlEnabled();
   const [previewRoutes, setPreviewRoutes] = useState<PreviewRoute[]>([
     { label: t("nav.home"), to: "/home" },
   ]);
@@ -87,20 +93,67 @@ export function SkeletonLabPage() {
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setDevSkeletonMode(!isForced)}
-            aria-pressed={isForced}
-            className={`min-h-14 shrink-0 rounded-2xl border px-6 text-sm font-black transition ${
-              isForced
-                ? "border-amber-300/50 bg-amber-300 text-black hover:bg-amber-200"
-                : "border-white/15 bg-black/40 text-white hover:border-white/30 hover:bg-white/10"
-            }`}
-          >
-            {isForced
-              ? t("devtools.skeletonLab.hideSkeletons")
-              : t("devtools.skeletonLab.showSkeletons")}
-          </button>
+          <div className="w-full shrink-0 space-y-3 lg:w-80">
+            <div className="rounded-2xl border border-white/10 bg-black/30 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 text-sm font-black text-white">
+                    <Eye size={16} className="text-[var(--accent)]" />
+                    {t("devtools.skeletonLab.floatingControl")}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-white/48">
+                    {t("devtools.skeletonLab.floatingControlDescription")}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isControlEnabled}
+                  aria-label={t("devtools.skeletonLab.floatingControl")}
+                  onClick={() =>
+                    setDevSkeletonControlEnabled(!isControlEnabled)
+                  }
+                  className={`relative h-8 w-14 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]/70 ${
+                    isControlEnabled
+                      ? "border-[var(--accent)]/60 bg-[var(--accent)]"
+                      : "border-white/15 bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0 top-1 h-6 w-6 rounded-full bg-white shadow-lg transition-transform ${
+                      isControlEnabled ? "translate-x-6" : "translate-x-1"
+                    }`}
+                  />
+                </button>
+              </div>
+
+              <p
+                className={`mt-3 text-xs font-black uppercase tracking-[0.12em] ${
+                  isControlEnabled ? "text-[var(--accent)]" : "text-white/35"
+                }`}
+              >
+                {isControlEnabled
+                  ? t("devtools.skeletonLab.controlEnabled")
+                  : t("devtools.skeletonLab.controlDisabled")}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setDevSkeletonMode(!isForced)}
+              aria-pressed={isForced}
+              className={`min-h-14 w-full rounded-2xl border px-6 text-sm font-black transition ${
+                isForced
+                  ? "border-amber-300/50 bg-amber-300 text-black hover:bg-amber-200"
+                  : "border-white/15 bg-black/40 text-white hover:border-white/30 hover:bg-white/10"
+              }`}
+            >
+              {isForced
+                ? t("devtools.skeletonLab.hideSkeletons")
+                : t("devtools.skeletonLab.showSkeletons")}
+            </button>
+          </div>
         </div>
       </section>
 

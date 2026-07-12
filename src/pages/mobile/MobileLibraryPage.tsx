@@ -693,18 +693,7 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     isWholeWatchedScope(data.library, data.items);
   return (
     <div className="pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
-      <section className="full-bleed relative -mt-1 min-h-[11.5rem] overflow-hidden border-b border-white/10 bg-zinc-950 px-4 pb-12 pt-3">
-        {backdropUrl ? (
-          <img
-            src={backdropUrl}
-            alt=""
-            aria-hidden="true"
-            className="absolute inset-0 h-full w-full object-cover opacity-52"
-          />
-        ) : (
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_42%,rgba(255,255,255,0.11),transparent_44%),linear-gradient(180deg,#111113_0%,#050506_100%)]" />
-        )}
-
+      <section className="full-bleed relative -mt-1 min-h-[7rem] overflow-hidden border-white/10 bg-zinc-950 px-4 pb-12 pt-3">
         <div className="absolute inset-0 bg-gradient-to-b from-black/72 via-black/38 to-[#050506]" />
         <div className="absolute inset-x-0 bottom-0 h-28 bg-gradient-to-t from-[#050506] to-transparent" />
 

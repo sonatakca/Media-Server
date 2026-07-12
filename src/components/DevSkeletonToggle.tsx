@@ -3,14 +3,16 @@ import { useLanguage } from "../i18n/LanguageContext";
 import {
   isDevSkeletonModeAvailable,
   setDevSkeletonMode,
+  useDevSkeletonControlEnabled,
   useDevSkeletonMode,
 } from "../lib/devSkeletonMode";
 
 export function DevSkeletonToggle() {
   const { t } = useLanguage();
   const isForced = useDevSkeletonMode();
+  const isControlEnabled = useDevSkeletonControlEnabled();
 
-  if (!isDevSkeletonModeAvailable()) return null;
+  if (!isDevSkeletonModeAvailable() || !isControlEnabled) return null;
 
   return (
     <button

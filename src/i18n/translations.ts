@@ -509,7 +509,12 @@ export const translations = {
     "devtools.skeletonLab.eyebrow": "UI Development",
     "devtools.skeletonLab.title": "Skeleton Lab",
     "devtools.skeletonLab.description":
-      "Force Home and Library skeletons to remain visible. The floating control follows you onto preview pages so you can switch between the skeleton and already-loaded content instantly.",
+      "Force Home and Library skeletons to remain visible, and choose whether the floating comparison control appears on preview pages.",
+    "devtools.skeletonLab.floatingControl": "Floating preview control",
+    "devtools.skeletonLab.floatingControlDescription":
+      "Show the skeleton/content switch on preview pages.",
+    "devtools.skeletonLab.controlEnabled": "Control enabled",
+    "devtools.skeletonLab.controlDisabled": "Control disabled",
     "devtools.skeletonLab.showSkeletons": "Show skeletons",
     "devtools.skeletonLab.hideSkeletons": "Show loaded content",
     "devtools.skeletonLab.previewTitle": "Live page comparison",
@@ -1483,7 +1488,12 @@ export const translations = {
     "devtools.skeletonLab.eyebrow": "Arayüz Geliştirme",
     "devtools.skeletonLab.title": "İskelet Laboratuvarı",
     "devtools.skeletonLab.description":
-      "Ana Sayfa ve Kütüphane iskeletlerini görünür kalmaya zorla. Yüzen kontrol önizleme sayfalarında seni takip eder; iskelet ile yüklenmiş içerik arasında anında geçiş yapabilirsin.",
+      "Ana Sayfa ve Kütüphane iskeletlerini görünür kalmaya zorla ve yüzen karşılaştırma kontrolünün önizleme sayfalarında görünüp görünmeyeceğini seç.",
+    "devtools.skeletonLab.floatingControl": "Yüzen önizleme kontrolü",
+    "devtools.skeletonLab.floatingControlDescription":
+      "İskelet/içerik anahtarını önizleme sayfalarında göster.",
+    "devtools.skeletonLab.controlEnabled": "Kontrol etkin",
+    "devtools.skeletonLab.controlDisabled": "Kontrol devre dışı",
     "devtools.skeletonLab.showSkeletons": "İskeletleri göster",
     "devtools.skeletonLab.hideSkeletons": "Yüklü içeriği göster",
     "devtools.skeletonLab.previewTitle": "Canlı sayfa karşılaştırması",
