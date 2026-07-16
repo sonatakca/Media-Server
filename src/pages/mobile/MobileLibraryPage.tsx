@@ -39,6 +39,10 @@ import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 import { preloadPlayerPage } from "../PlayerPage";
 import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
+import {
+  MovieLibrarySkeleton,
+  ShowLibrarySkeleton,
+} from "../../components/Skeletons";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -293,24 +297,43 @@ function MobileLibraryLoading() {
   );
 }
 
-export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
+export function MobileLibraryPage({
+  mode = "library",
+  libraryId: libraryIdOverride,
+  canonicalPath: canonicalPathOverride,
+  libraryRouteKind,
+}: LibraryPageProps) {
   const forceSkeletons = useDevSkeletonMode();
   const { libraryId, seriesId, seasonId } = useParams<{
     libraryId?: string;
     seriesId?: string;
     seasonId?: string;
   }>();
-  const activeId = libraryId ?? seriesId ?? seasonId;
+  const activeId = libraryIdOverride ?? libraryId ?? seriesId ?? seasonId;
   const canonicalPath =
-    mode === "series" && seriesId
-      ? `/series/${seriesId}`
-      : mode === "season" && seriesId && seasonId
-        ? `/series/${seriesId}/season/${seasonId}`
-        : mode === "season" && seasonId
-          ? `/season/${seasonId}`
-          : activeId
-            ? `/library/${activeId}`
-            : "/home";
+    canonicalPathOverride ??
+    (libraryRouteKind === "movie" && activeId
+      ? `/movies/${activeId}`
+      : libraryRouteKind === "collection" && activeId
+        ? `/collections/${activeId}`
+        : libraryRouteKind === "show" && mode === "series" && activeId
+          ? `/shows/${activeId}`
+          : libraryRouteKind === "show" &&
+              mode === "season" &&
+              seriesId &&
+              seasonId
+            ? `/shows/${seriesId}/season/${seasonId}`
+            : libraryRouteKind === "show" && mode === "season" && seasonId
+              ? `/shows/season/${seasonId}`
+              : mode === "series" && seriesId
+                ? `/series/${seriesId}`
+                : mode === "season" && seriesId && seasonId
+                  ? `/series/${seriesId}/season/${seasonId}`
+                  : mode === "season" && seasonId
+                    ? `/season/${seasonId}`
+                    : activeId
+                      ? `/library/${activeId}`
+                      : "/home");
   const { t } = useLanguage();
   const labels = useMemo(
     () => ({
@@ -321,12 +344,14 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     [t],
   );
   const [data, setData] = useState<LibraryData | null>(null);
+  const [loadingItemType, setLoadingItemType] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "year" | "latest">("name");
   const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
   const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
     useState(false);
+  const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
@@ -339,9 +364,11 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
 
       setError(null);
       setData(null);
+      setLoadingItemType(undefined);
 
       try {
         const library = await getItem(activeId).catch(() => undefined);
+        if (isMounted) setLoadingItemType(library?.Type);
         const items = await loadLibraryItems(activeId, mode, library, seriesId);
         const collectionPosterChildrenById =
           await loadCollectionPosterChildrenMap(items, getBoxSetItems);
@@ -577,16 +604,34 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     };
   }, [data?.library?.Id, data?.library?.Type, mode]);
 
-  if (forceSkeletons) {
-    return <MobileLibraryLoading />;
-  }
+  const isAliasLibrary = [
+    "/movies",
+    "/shows",
+    "/books",
+    "/collections",
+  ].includes(canonicalPathOverride ?? "");
+  const loadingSkeleton = isAliasLibrary ? (
+    <MobileLibraryLoading />
+  ) : libraryRouteKind === "show" ||
+    mode === "series" ||
+    mode === "season" ||
+    loadingItemType === "Series" ||
+    loadingItemType === "Season" ? (
+    <ShowLibrarySkeleton mobile />
+  ) : libraryRouteKind === "movie" || loadingItemType === "Movie" ? (
+    <MovieLibrarySkeleton mobile />
+  ) : (
+    <MobileLibraryLoading />
+  );
+
+  if (forceSkeletons) return loadingSkeleton;
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;
   }
 
   if (!data) {
-    return <MobileLibraryLoading />;
+    return loadingSkeleton;
   }
 
   const shouldShowSeriesDetails =
@@ -597,12 +642,33 @@ export function MobileLibraryPage({ mode = "library" }: LibraryPageProps) {
     mode === "season";
 
   if (shouldShowSeriesDetails && data.library) {
+    const isInitialDetailsReady = readyDetailsId === activeId;
+    const initialDetailsSkeleton =
+      data.library.Type === "Movie" || libraryRouteKind === "movie" ? (
+        <MovieLibrarySkeleton mobile />
+      ) : (
+        <ShowLibrarySkeleton mobile />
+      );
+
     return (
-      <SeriesLibraryDetails
-        initialItem={data.library}
-        variant="mobile"
-        canonicalPath={canonicalPath}
-      />
+      <>
+        {!isInitialDetailsReady && initialDetailsSkeleton}
+        <div
+          aria-hidden={isInitialDetailsReady ? undefined : true}
+          className={
+            isInitialDetailsReady
+              ? "contents"
+              : "pointer-events-none fixed inset-0 invisible overflow-hidden"
+          }
+        >
+          <SeriesLibraryDetails
+            initialItem={data.library}
+            variant="mobile"
+            canonicalPath={canonicalPath}
+            onInitialReady={() => setReadyDetailsId(activeId ?? null)}
+          />
+        </div>
+      </>
     );
   }
 

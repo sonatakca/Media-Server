@@ -17,8 +17,8 @@ describe("media routes", () => {
       MediaType: "Video",
     };
 
-    expect(getRouteForItem(movie)).toBe("/library/movie-1");
-    expect(getMediaOwnerRouteForItem(movie)).toBe("/library/movie-1");
+    expect(getRouteForItem(movie)).toBe("/movies/movie-1");
+    expect(getMediaOwnerRouteForItem(movie)).toBe("/movies/movie-1");
     expect(shouldOpenPlaybackForItem(movie)).toBe(false);
   });
 
@@ -32,8 +32,25 @@ describe("media routes", () => {
     };
 
     expect(getRouteForItem(episode)).toBe("/watch/episode-1");
-    expect(getMediaOwnerRouteForItem(episode)).toBe("/library/series-1");
+    expect(getMediaOwnerRouteForItem(episode)).toBe("/shows/series-1");
     expect(shouldOpenPlaybackForItem(episode)).toBe(true);
+  });
+
+  it("routes shows and seasons with an immediate show category hint", () => {
+    const series: JellyfinItem = {
+      Id: "series-1",
+      Name: "Series",
+      Type: "Series",
+    };
+    const season: JellyfinItem = {
+      Id: "season-1",
+      Name: "Season",
+      Type: "Season",
+      SeriesId: "series-1",
+    };
+
+    expect(getRouteForItem(series)).toBe("/shows/series-1");
+    expect(getRouteForItem(season)).toBe("/shows/series-1/season/season-1");
   });
 
   it("routes local trailer playback back to its parent media page", () => {

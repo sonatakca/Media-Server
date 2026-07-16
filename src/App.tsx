@@ -17,6 +17,7 @@ import {
 } from "./lib/jellyfinApi";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
+import { LibraryAliasPage } from "./pages/LibraryAliasPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
 import { ReaderPage } from "./pages/ReaderPage";
@@ -339,6 +340,46 @@ export default function App() {
               <Route
                 path="/library/:libraryId"
                 element={<LibraryPage mode="library" />}
+              />
+              <Route
+                path="/movies"
+                element={<LibraryAliasPage slug="movies" />}
+              />
+              <Route
+                path="/shows"
+                element={<LibraryAliasPage slug="shows" />}
+              />
+              <Route
+                path="/books"
+                element={<LibraryAliasPage slug="books" />}
+              />
+              <Route
+                path="/collections"
+                element={<LibraryAliasPage slug="collections" />}
+              />
+              <Route
+                path="/movies/:libraryId"
+                element={
+                  <LibraryPage mode="library" libraryRouteKind="movie" />
+                }
+              />
+              <Route
+                path="/shows/:seriesId"
+                element={<LibraryPage mode="series" libraryRouteKind="show" />}
+              />
+              <Route
+                path="/shows/:seriesId/season/:seasonId"
+                element={<LibraryPage mode="season" libraryRouteKind="show" />}
+              />
+              <Route
+                path="/shows/season/:seasonId"
+                element={<LibraryPage mode="season" libraryRouteKind="show" />}
+              />
+              <Route
+                path="/collections/:libraryId"
+                element={
+                  <LibraryPage mode="library" libraryRouteKind="collection" />
+                }
               />
               <Route
                 path="/series/:seriesId"

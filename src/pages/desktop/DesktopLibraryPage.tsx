@@ -9,7 +9,11 @@ import { MediaCard } from "../../components/MediaCard";
 import { MotionReveal } from "../../components/MotionReveal";
 import { SeasonPicker } from "../../components/SeasonPicker";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
-import { LibrarySkeleton } from "../../components/Skeletons";
+import {
+  LibrarySkeleton,
+  MovieLibrarySkeleton,
+  ShowLibrarySkeleton,
+} from "../../components/Skeletons";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
 import { WatchedStatusButton } from "../../components/WatchedStatusButton";
 import {
@@ -261,7 +265,12 @@ async function loadLibraryItems(
   return getItemsForLibrary(id);
 }
 
-export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
+export function DesktopLibraryPage({
+  mode = "library",
+  libraryId: libraryIdOverride,
+  canonicalPath: canonicalPathOverride,
+  libraryRouteKind,
+}: LibraryPageProps) {
   const forceSkeletons = useDevSkeletonMode();
   const { libraryId, seriesId, seasonId } = useParams<{
     libraryId?: string;
@@ -269,17 +278,31 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
     seasonId?: string;
   }>();
 
-  const activeId = libraryId ?? seriesId ?? seasonId;
+  const activeId = libraryIdOverride ?? libraryId ?? seriesId ?? seasonId;
   const canonicalPath =
-    mode === "series" && seriesId
-      ? `/series/${seriesId}`
-      : mode === "season" && seriesId && seasonId
-        ? `/series/${seriesId}/season/${seasonId}`
-        : mode === "season" && seasonId
-          ? `/season/${seasonId}`
-          : activeId
-            ? `/library/${activeId}`
-            : "/home";
+    canonicalPathOverride ??
+    (libraryRouteKind === "movie" && activeId
+      ? `/movies/${activeId}`
+      : libraryRouteKind === "collection" && activeId
+        ? `/collections/${activeId}`
+        : libraryRouteKind === "show" && mode === "series" && activeId
+          ? `/shows/${activeId}`
+          : libraryRouteKind === "show" &&
+              mode === "season" &&
+              seriesId &&
+              seasonId
+            ? `/shows/${seriesId}/season/${seasonId}`
+            : libraryRouteKind === "show" && mode === "season" && seasonId
+              ? `/shows/season/${seasonId}`
+              : mode === "series" && seriesId
+                ? `/series/${seriesId}`
+                : mode === "season" && seriesId && seasonId
+                  ? `/series/${seriesId}/season/${seasonId}`
+                  : mode === "season" && seasonId
+                    ? `/season/${seasonId}`
+                    : activeId
+                      ? `/library/${activeId}`
+                      : "/home");
   const { t } = useLanguage();
   const mediaFormatLabels = useMemo(
     () => ({
@@ -290,12 +313,14 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
     [t],
   );
   const [data, setData] = useState<LibraryData | null>(null);
+  const [loadingItemType, setLoadingItemType] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState<"name" | "year" | "latest">("name");
   const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
   const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
     useState(false);
+  const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
   const seriesDetailsRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -309,9 +334,11 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
 
       setError(null);
       setData(null);
+      setLoadingItemType(undefined);
 
       try {
         const libraryResult = await getItem(activeId).catch(() => undefined);
+        if (isMounted) setLoadingItemType(libraryResult?.Type);
         const items = await loadLibraryItems(
           activeId,
           mode,
@@ -571,16 +598,34 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
     };
   }, [data?.library?.Id, data?.library?.Type, mode]);
 
-  if (forceSkeletons) {
-    return <LibrarySkeleton />;
-  }
+  const isAliasLibrary = [
+    "/movies",
+    "/shows",
+    "/books",
+    "/collections",
+  ].includes(canonicalPathOverride ?? "");
+  const loadingSkeleton = isAliasLibrary ? (
+    <LibrarySkeleton />
+  ) : libraryRouteKind === "show" ||
+    mode === "series" ||
+    mode === "season" ||
+    loadingItemType === "Series" ||
+    loadingItemType === "Season" ? (
+    <ShowLibrarySkeleton />
+  ) : libraryRouteKind === "movie" || loadingItemType === "Movie" ? (
+    <MovieLibrarySkeleton />
+  ) : (
+    <LibrarySkeleton />
+  );
+
+  if (forceSkeletons) return loadingSkeleton;
 
   if (error) {
     return <ErrorMessage title={t("library.unavailable")} message={error} />;
   }
 
   if (!data) {
-    return <LibrarySkeleton />;
+    return loadingSkeleton;
   }
 
   const shouldShowSeriesDetails =
@@ -595,39 +640,60 @@ export function DesktopLibraryPage({ mode = "library" }: LibraryPageProps) {
       : t("library.selectSeason");
 
   if (shouldShowSeriesDetails && data.library) {
+    const isInitialDetailsReady = readyDetailsId === activeId;
+    const initialDetailsSkeleton =
+      data.library.Type === "Movie" || libraryRouteKind === "movie" ? (
+        <MovieLibrarySkeleton />
+      ) : (
+        <ShowLibrarySkeleton />
+      );
+
     return (
-      <div className="layout-no-offset flex min-w-0 flex-col">
-        <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
-
-        <div className="full-bleed relative min-h-[100svh]">
-          <HeroSection item={data.library} variant="fixed" />
-
-          <button
-            type="button"
-            aria-label={detailsScrollLabel}
-            onClick={() =>
-              seriesDetailsRef.current?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              })
-            }
-            className={`${glassControlBase} absolute bottom-6 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
-          >
-            <ChevronDown size={30} strokeWidth={2.4} />
-          </button>
-        </div>
-
+      <>
+        {!isInitialDetailsReady && initialDetailsSkeleton}
         <div
-          ref={seriesDetailsRef}
-          className="mx-auto w-full max-w-[1600px] scroll-mt-24 px-4 sm:px-6 lg:px-8"
+          aria-hidden={isInitialDetailsReady ? undefined : true}
+          className={
+            isInitialDetailsReady
+              ? "contents"
+              : "pointer-events-none fixed inset-0 invisible overflow-hidden"
+          }
         >
-          <SeriesLibraryDetails
-            initialItem={data.library}
-            variant="desktop"
-            canonicalPath={canonicalPath}
-          />
+          <div className="layout-no-offset flex min-w-0 flex-col">
+            <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
+
+            <div className="full-bleed relative min-h-[100svh]">
+              <HeroSection item={data.library} variant="fixed" />
+
+              <button
+                type="button"
+                aria-label={detailsScrollLabel}
+                onClick={() =>
+                  seriesDetailsRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  })
+                }
+                className={`${glassControlBase} absolute bottom-6 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
+              >
+                <ChevronDown size={30} strokeWidth={2.4} />
+              </button>
+            </div>
+
+            <div
+              ref={seriesDetailsRef}
+              className="mx-auto w-full max-w-[1600px] scroll-mt-24 px-4 sm:px-6 lg:px-8"
+            >
+              <SeriesLibraryDetails
+                initialItem={data.library}
+                variant="desktop"
+                canonicalPath={canonicalPath}
+                onInitialReady={() => setReadyDetailsId(activeId ?? null)}
+              />
+            </div>
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 

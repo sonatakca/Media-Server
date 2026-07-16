@@ -7,7 +7,6 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { clearAuthSession, getAuthSession } from "../../lib/authStorage";
-import { getUserViews } from "../../lib/jellyfinApi";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { Tooltip } from "../ui/Tooltip";
@@ -34,12 +33,12 @@ export function MobileNavbar() {
   const { t } = useLanguage();
   const [logoFailed, setLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
-  const [libraryRoutes, setLibraryRoutes] = useState({
+  const libraryRoutes = {
     movies: "/movies",
-    series: "/series",
+    series: "/shows",
     collections: "/collections",
     books: "/books",
-  });
+  };
 
   useEffect(() => {
     const updateScrolledState = () => {
@@ -53,60 +52,6 @@ export function MobileNavbar() {
       window.removeEventListener("scroll", updateScrolledState);
     };
   }, []);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadLibraryRoutes = async () => {
-      if (!session) {
-        return;
-      }
-
-      try {
-        const libraries = await getUserViews();
-        const moviesLibrary = libraries.find(
-          (library) => library.CollectionType === "movies",
-        );
-        const seriesLibrary = libraries.find(
-          (library) => library.CollectionType === "tvshows",
-        );
-        const booksLibrary = libraries.find(
-          (library) => library.CollectionType === "books",
-        );
-        const collectionsLibrary = libraries.find(
-          (library) => library.CollectionType === "boxsets",
-        );
-
-        if (!isMounted) {
-          return;
-        }
-
-        setLibraryRoutes({
-          movies: moviesLibrary?.Id
-            ? `/library/${moviesLibrary.Id}`
-            : "/movies",
-          series: seriesLibrary?.Id
-            ? `/library/${seriesLibrary.Id}`
-            : "/series",
-          collections: collectionsLibrary?.Id
-            ? `/library/${collectionsLibrary.Id}`
-            : "/collections",
-          books: booksLibrary?.Id ? `/library/${booksLibrary.Id}` : "/books",
-        });
-      } catch (error) {
-        console.warn(
-          "[Seyirlik Navbar] Could not load Jellyfin library routes",
-          error,
-        );
-      }
-    };
-
-    void loadLibraryRoutes();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [session?.userId]);
 
   const handleLogout = () => {
     clearAuthSession();

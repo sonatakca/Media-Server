@@ -50,7 +50,11 @@ export function SkeletonLabPage() {
           const library = libraries.find(
             (candidate) => candidate.CollectionType === collectionType,
           );
-          if (library) routes.push({ label, to: `/library/${library.Id}` });
+          if (library) {
+            const alias =
+              collectionType === "tvshows" ? "shows" : collectionType;
+            routes.push({ label, to: `/${alias}` });
+          }
         });
 
         setPreviewRoutes(routes);

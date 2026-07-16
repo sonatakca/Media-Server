@@ -29,6 +29,7 @@ interface MediaCardProps {
   layout?: "row" | "grid";
   index?: number;
   animateIn?: boolean;
+  hideTags?: boolean;
   showPlayFromBeginning?: boolean;
   showRestartWatching?: boolean;
   collectionItems?: JellyfinItem[];
@@ -208,6 +209,7 @@ export function MediaCard({
   layout = "row",
   index = 0,
   animateIn = false,
+  hideTags = false,
   showPlayFromBeginning = false,
   showRestartWatching = false,
   collectionItems,
@@ -386,9 +388,9 @@ export function MediaCard({
         {...motionProps}
       >
         <div
-          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
             isWatched
-              ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.28),0_22px_60px_rgba(16,185,129,0.2)]"
+              ? "border-emerald-300/70 ring-2 ring-emerald-300/45"
               : "border-white/10"
           }`}
         >
@@ -578,32 +580,36 @@ export function MediaCard({
             src={logoUrl}
             alt={displayTitle}
             // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
-            className="mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24"
+            className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
+              hideTags ? "relative -bottom-2" : ""
+            }`}
           />
         ) : (
           <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
             {displayTitle}
           </h3>
         )}
-        <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {item.ProductionYear && (
-              <span className="rounded-full bg-white/10 px-2 py-0.5">
-                {item.ProductionYear}
+        {!hideTags ? (
+          <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+              {item.ProductionYear && (
+                <span className="rounded-full bg-white/10 px-2 py-0.5">
+                  {item.ProductionYear}
+                </span>
+              )}
+              {item.OfficialRating && (
+                <span className="rounded-full bg-white/10 px-2 py-0.5">
+                  {item.OfficialRating}
+                </span>
+              )}
+            </div>
+            {posterCountBubbleLabel ? (
+              <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
+                {posterCountBubbleLabel}
               </span>
-            )}
-            {item.OfficialRating && (
-              <span className="rounded-full bg-white/10 px-2 py-0.5">
-                {item.OfficialRating}
-              </span>
-            )}
+            ) : null}
           </div>
-          {posterCountBubbleLabel ? (
-            <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
-              {posterCountBubbleLabel}
-            </span>
-          ) : null}
-        </div>
+        ) : null}
       </div>
     );
   };

@@ -16,6 +16,7 @@ interface MediaRowProps {
   variant?: "poster" | "landscape";
   emptyMessage?: string;
   viewAllTo?: string;
+  hideTags?: boolean;
   showRestartWatching?: boolean;
   onClearContinueWatching?: (item: JellyfinItem) => void;
 }
@@ -37,6 +38,7 @@ export function MediaRow({
   variant = "poster",
   emptyMessage,
   viewAllTo,
+  hideTags = false,
   showRestartWatching = false,
   onClearContinueWatching,
 }: MediaRowProps) {
@@ -155,6 +157,7 @@ export function MediaRow({
                     variant={variant}
                     index={index}
                     animateIn
+                    hideTags={hideTags}
                     showRestartWatching={showRestartWatching}
                     onClearContinueWatching={onClearContinueWatching}
                   />

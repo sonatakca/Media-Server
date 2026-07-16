@@ -84,6 +84,7 @@ interface SeriesLibraryDetailsProps {
   initialItem: JellyfinItem;
   variant: "desktop" | "mobile";
   canonicalPath: string;
+  onInitialReady?: () => void;
 }
 
 interface MediaShelfProps {
@@ -262,6 +263,7 @@ export function SeriesLibraryDetails({
   initialItem,
   variant,
   canonicalPath,
+  onInitialReady,
 }: SeriesLibraryDetailsProps) {
   const { language, t } = useLanguage();
   const [series, setSeries] = useState<SeriesDetailsItem | null>(null);
@@ -272,7 +274,10 @@ export function SeriesLibraryDetails({
   const [similarItems, setSimilarItems] = useState<JellyfinItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
+  const [resolvedEpisodeSelectionKey, setResolvedEpisodeSelectionKey] =
+    useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const reportedReadyItemIdRef = useRef<string | null>(null);
 
   const isDesktop = variant === "desktop";
   const isMovie = initialItem.Type === "Movie";
@@ -375,14 +380,18 @@ export function SeriesLibraryDetails({
 
   useEffect(() => {
     let cancelled = false;
+    const selectionKey =
+      seriesId && selectedSeasonId ? `${seriesId}:${selectedSeasonId}` : null;
 
     async function loadEpisodes() {
       if (!seriesId || !selectedSeasonId) {
         setEpisodes([]);
+        setResolvedEpisodeSelectionKey(null);
         return;
       }
 
       setIsLoadingEpisodes(true);
+      setResolvedEpisodeSelectionKey(null);
 
       try {
         const episodeResults = await getSeasonEpisodes(
@@ -405,6 +414,7 @@ export function SeriesLibraryDetails({
       } finally {
         if (!cancelled) {
           setIsLoadingEpisodes(false);
+          setResolvedEpisodeSelectionKey(selectionKey);
         }
       }
     }
@@ -415,6 +425,35 @@ export function SeriesLibraryDetails({
       cancelled = true;
     };
   }, [selectedSeasonId, seriesId]);
+
+  useEffect(() => {
+    const selectionKey =
+      seriesId && selectedSeasonId ? `${seriesId}:${selectedSeasonId}` : null;
+    const initialEpisodesReady =
+      isMovie || !selectionKey || resolvedEpisodeSelectionKey === selectionKey;
+    const initialDetailsReady =
+      !isLoading && !isLoadingEpisodes && (Boolean(series) || Boolean(error));
+
+    if (
+      initialDetailsReady &&
+      initialEpisodesReady &&
+      reportedReadyItemIdRef.current !== initialItem.Id
+    ) {
+      reportedReadyItemIdRef.current = initialItem.Id;
+      onInitialReady?.();
+    }
+  }, [
+    error,
+    initialItem.Id,
+    isLoading,
+    isLoadingEpisodes,
+    isMovie,
+    onInitialReady,
+    resolvedEpisodeSelectionKey,
+    selectedSeasonId,
+    series,
+    seriesId,
+  ]);
 
   const title = useMemo(() => {
     if (!series) {

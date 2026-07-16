@@ -51,7 +51,10 @@
   --border: rgba(255, 255, 255, 0.12);
   --shadow-cinematic-card:
     0 30px 90px rgba(0, 0, 0, 0.42), 0 10px 28px rgba(0, 0, 0, 0.34),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 0 34px transparent, inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --shadow-media-card-rest:
+    0 30px 90px rgba(0, 0, 0, 0), 0 10px 28px rgba(0, 0, 0, 0),
+    0 0 34px transparent, inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --shadow-cinematic-card-hover:
     0 38px 120px rgba(0, 0, 0, 0.58), 0 16px 38px rgba(0, 0, 0, 0.42),
     0 0 34px color-mix(in srgb, var(--accent) 12%, transparent),
@@ -251,6 +254,13 @@ img {
 
 .shadow-cinematic-card {
   box-shadow: var(--shadow-cinematic-card);
+}
+
+.media-card-cinematic {
+  box-shadow: var(--shadow-media-card-rest);
+  transition-duration: 300ms, 450ms, 300ms;
+  transition-property: border-color, box-shadow, transform;
+  transition-timing-function: ease, ease-out, ease;
 }
 
 .shadow-cinematic-card-hover,
@@ -1209,33 +1219,45 @@ img {
 }
 
 .shimmer {
-  position: relative;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.055);
-}
+  --shimmer-color: 255 255 255;
+  --shimmer-base: rgb(var(--shimmer-color) / 5%);
+  --shimmer-mid: rgb(var(--shimmer-color) / 12%);
+  --shimmer-peak: rgb(var(--shimmer-color) / 20%);
+  --shimmer-duration: 3s;
 
-.shimmer::after {
-  content: "";
-  position: absolute;
-  inset: -20%;
-  transform: translateX(-160%);
-  background: linear-gradient(
-    110deg,
-    transparent 0%,
-    rgba(255, 255, 255, 0.02) 28%,
-    var(--accent-soft) 55%,
-    rgba(255, 255, 255, 0.02) 72%,
-    transparent 100%
+  background-color: var(--shimmer-base);
+  background-image: linear-gradient(
+    105deg,
+    transparent 15%,
+    var(--shimmer-mid) 35%,
+    var(--shimmer-peak) 50%,
+    var(--shimmer-mid) 65%,
+    transparent 85%
   );
-  filter: blur(10px);
-  opacity: 1;
-  animation: shimmer 1.5s linear infinite;
-  will-change: transform;
+  background-repeat: no-repeat;
+  background-size: 300% 100%;
+  background-position: 150% 0;
+
+  animation: shimmer-sweep var(--shimmer-duration) linear infinite;
+  will-change: background-position;
 }
 
-@keyframes shimmer {
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 150% 0;
+  }
+  33% {
+    background-position: -150% 0;
+  }
   100% {
-    transform: translateX(160%);
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background-position: center;
   }
 }
 

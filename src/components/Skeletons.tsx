@@ -3,8 +3,34 @@ import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
 export function BackButtonSkeleton({ className = "" }: { className?: string }) {
+  const mask =
+    "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)";
+
   return (
-    <div className={`shimmer h-10 w-[5.25rem] rounded-full ${className}`} />
+    <div className={`relative isolate h-12 w-[6rem] ${className}`}>
+      <div
+        aria-hidden="true"
+        className="
+          pointer-events-none
+          absolute
+          -inset-px
+          z-0
+          rounded-full
+          bg-gradient-to-b
+          from-white/20
+          to-transparent
+          p-px
+        "
+        style={{
+          mask,
+          maskComposite: "exclude",
+          WebkitMask: mask,
+          WebkitMaskComposite: "xor",
+        }}
+      />
+
+      <div className="shimmer relative z-10 h-full w-full rounded-full" />
+    </div>
   );
 }
 
@@ -12,21 +38,23 @@ export function MediaCardSkeleton({
   variant = "poster",
   showEpisodeCount = false,
   hideTags = false,
+  fluid = false,
 }: {
   variant?: "poster" | "landscape";
   showEpisodeCount?: boolean;
   hideTags?: boolean;
+  fluid?: boolean;
 }) {
   const isLandscape = variant === "landscape";
 
+  const widthClasses = fluid
+    ? "w-full min-w-0"
+    : isLandscape
+      ? "w-72 shrink-0 sm:w-80 lg:w-96"
+      : "w-44 shrink-0 sm:w-52 lg:w-60";
+
   return (
-    <div
-      className={
-        isLandscape
-          ? "w-72 shrink-0 sm:w-80 lg:w-96"
-          : "w-44 shrink-0 sm:w-52 lg:w-60"
-      }
-    >
+    <div className={widthClasses}>
       <div
         className={`relative overflow-hidden rounded-xl border border-white/10 bg-white/[0.055] ${
           isLandscape ? "aspect-video" : "aspect-[2/3]"
@@ -37,7 +65,7 @@ export function MediaCardSkeleton({
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/2 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
 
         <div
-          className={`shimmer !absolute left-1/2 z-20 -translate-x-1/2 overflow-hidden rounded-lg ${
+          className={`shimmer !absolute left-1/2 z-[20] -translate-x-1/2 overflow-hidden rounded-lg ${
             isLandscape
               ? "bottom-12 h-10 w-1/2"
               : ` ${!hideTags ? "h-20 bottom-14" : "h-28 bottom-3"} w-11/12`
@@ -79,9 +107,11 @@ export function ContinueWatchingCardSkeleton() {
   return (
     <div className="w-80 shrink-0 sm:w-[24rem] lg:w-[30rem]">
       <div className="relative aspect-[4/3] overflow-hidden rounded-xl bg-white/[0.055]">
-        <div className="shimmer absolute inset-0" />
+        <div className=" absolute inset-0" />
         <div className="absolute inset-y-0 right-0 w-1/2 bg-black/20" />
         <div className="pointer-events-none absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-gradient-to-t from-transparent via-white/30 to-transparent" />
+
+        <div className="shimmer !absolute inset-y-0 right-1/2 left-0 flex flex-col p-3 sm:p-4"></div>
         <div className="absolute inset-y-0 left-1/2 right-0 flex flex-col p-3 sm:p-4">
           <div className="flex items-center justify-between gap-3">
             <div className="shimmer h-4 w-20 mt-3 rounded-md" />
@@ -198,15 +228,15 @@ export function HomeSkeleton() {
     <div className="layout-no-offset">
       <div className="min-h-[100svh] full-bleed">
         <section className="relative min-h-[100svh] w-full overflow-hidden bg-zinc-950">
-          <div className="shimmer absolute inset-0" />
+          <div className="absolute inset-0" />
           <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
           <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
           <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-[var(--background)] to-transparent" />
 
-          <div className="relative z-20 mx-auto flex min-h-[100svh] w-full max-w-[1600px] flex-col justify-end px-4 pb-[clamp(2rem,6vh,4rem)] pt-28 sm:px-6 lg:px-8">
-            <div className="max-w-3xl">
+          <div className="shimmer relative z-20 mx-auto flex min-h-[100svh] w-full flex-col justify-end px-4 pb-[clamp(2rem,6vh,4rem)] pt-28 sm:px-6 lg:px-8">
+            <div className="relative z-10 max-w-3xl ml-16">
               <div className="shimmer h-32 w-[min(45rem,72vw)] rounded-lg sm:h-40 lg:h-60" />
-              <div className="flex gap-1 mt-2 max-w-2xl origin-left text-xs font-semibold leading-5 tracking-[0.01em] text-white/[0.84] drop-shadow-[0_2px_8px_rgba(0,0,0,0.9)] sm:mt-3 sm:text-sm sm:leading-6">
+              <div className="flex gap-1 mt-2 max-w-2xl origin-left text-xs font-semibold leading-5 tracking-[0.01em] text-white/[0.84] sm:mt-3 sm:text-sm sm:leading-6">
                 <div className="shimmer mt-2 h-5 w-[10%] max-w-2xl rounded-md" />
                 .
                 <div className="shimmer mt-2 h-5 w-[15%] max-w-2xl rounded-md" />
@@ -306,33 +336,232 @@ export function DetailsSkeleton() {
 export function LibrarySkeleton() {
   return (
     <div>
-      <section className="relative -mx-4 -mt-6 mb-8 overflow-hidden rounded-b-3xl px-4 pb-8 pt-8 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="absolute inset-0 bg-[linear-gradient(145deg,#18181b,#050506)]" />
-        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/[0.62] to-black/30" />
+      <section className="relative -mx-4 overflow-hidden rounded-b-3xl px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
+        <div className="mx-auto grid max-w-[1600px] grid-cols-[1fr_auto_1fr] items-center gap-4">
+          <BackButtonSkeleton className="my-7 justify-self-start" />
 
-        <div className="relative mx-auto max-w-[1600px]">
-          <BackButtonSkeleton className="mb-14" />
+          <div className="shimmer h-20 w-72 -top-2 overflow-hidden rounded-lg" />
 
-          <div className="max-w-4xl">
-            <div className="shimmer h-5 w-32 rounded-full" />
-            <div className="shimmer mt-2 h-14 w-72 rounded-xl sm:h-16 sm:w-96" />
-            <div className="shimmer mt-4 h-5 w-36 rounded-full" />
-          </div>
+          <div
+            aria-hidden="true"
+            className="shimmer !absolute right-7 bottom-7 rounded-full w-32 h-5"
+          />
         </div>
       </section>
 
-      <div className="mb-7 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.055] p-3 backdrop-blur md:flex-row md:items-center md:justify-between">
-        <div className="shimmer min-h-12 flex-1 rounded-xl" />
-        <div className="shimmer min-h-12 w-full rounded-xl md:w-32" />
+      <div className="mb-3 -translate-y-2 flex flex-col gap-3 rounded-full p-1 md:flex-row md:items-center md:justify-between">
+        <div className="shimmer min-h-12 flex-1 rounded-full" />
+        <div className="shimmer min-h-12 w-full rounded-full md:w-40" />
       </div>
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
         {Array.from({ length: 12 }, (_, index) => (
-          <div key={index} className="w-full">
-            <MediaCardSkeleton variant="poster" />
-          </div>
+          <MediaCardSkeleton key={index} variant="poster" fluid />
         ))}
       </div>
     </div>
   );
+}
+
+function LibraryHeroSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <div className="full-bleed min-h-[100svh]">
+      <section className="relative min-h-[100svh] w-full overflow-hidden bg-zinc-950">
+        <div className="shimmer absolute inset-0" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
+        <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[var(--background)] to-transparent" />
+
+        <div
+          className={`absolute inset-x-0 z-30 mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8 ${
+            mobile ? "top-20" : "top-20 sm:top-24"
+          }`}
+        >
+          <BackButtonSkeleton className="left-3" />
+        </div>
+
+        <div className="shimmer relative z-20 mx-auto flex min-h-[100svh] w-full flex-col justify-end px-4 pb-[clamp(2rem,6vh,4rem)] pt-28 sm:px-6 lg:px-8">
+          <div className="relative z-10 max-w-3xl ml-16">
+            <div className="shimmer h-32 w-[min(45rem,72vw)] rounded-lg sm:h-40 lg:h-60" />
+            <div className="flex gap-1 mt-2 max-w-2xl origin-left text-xs font-semibold leading-5 tracking-[0.01em] text-white/[0.84] sm:mt-3 sm:text-sm sm:leading-6">
+              <div className="shimmer mt-2 h-5 w-[10%] max-w-2xl rounded-md" />
+              .
+              <div className="shimmer mt-2 h-5 w-[15%] max-w-2xl rounded-md" />
+              .
+              <div className="shimmer mt-2 h-5 w-[12.5%] max-w-2xl rounded-md" />
+            </div>
+            <div className="mt-10 space-y-2">
+              <div className="shimmer h-5 w-10/12 max-w-2xl rounded-md" />
+              <div className="shimmer h-5 w-full max-w-2xl rounded-md" />
+              <div className="shimmer h-5 w-full max-w-xl rounded-md" />
+            </div>
+
+            <div className="mt-5 flex flex-wrap gap-2">
+              <div className="shimmer h-8 w-20 rounded-full" />
+              <div className="shimmer h-8 w-24 rounded-full" />
+              <div className="shimmer h-8 w-20 rounded-full" />
+            </div>
+
+            <div className="mt-5 flex gap-3">
+              <div className="shimmer h-16 w-48 rounded-xl" />
+              <div className="shimmer h-16 w-48 rounded-xl" />
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function EpisodeShelfSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <section className={mobile ? "py-3" : "py-5"}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="shimmer h-10 w-32 rounded-xl" />
+        {!mobile && <div className="shimmer h-9 w-20 rounded-full" />}
+      </div>
+      <div className="flex gap-4 overflow-hidden pb-5">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div
+            key={index}
+            className={`shrink-0 overflow-hidden rounded-xl border border-white/10 ${
+              mobile ? "w-[78vw]" : "w-60 sm:w-80 lg:w-96"
+            }`}
+          >
+            <div className="shimmer aspect-video w-full [--shimmer-base:rgb(var(--shimmer-color)/1.5%)]" />
+            <div className="min-h-[8.5rem] space-y-2 p-4 sm:min-h-[9.75rem] sm:p-5">
+              <div className="shimmer h-3 w-20 rounded-md" />
+              <div className="shimmer h-5 w-3/5 rounded-md" />
+              <div className="shimmer h-3 w-full rounded-md" />
+              <div className="shimmer h-3 w-4/5 rounded-md" />
+              <div className="shimmer mt-4 h-3 w-14 rounded-md" />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function TrailerShelfSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <section className={mobile ? "py-3" : "py-5"}>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="shimmer h-7 w-28 rounded-lg" />
+        {!mobile && <div className="shimmer h-9 w-20 rounded-full" />}
+      </div>
+      <div
+        className={`shimmer aspect-video rounded-xl ${
+          mobile ? "w-[78vw]" : "w-60 sm:w-80"
+        }`}
+      />
+    </section>
+  );
+}
+
+function CastSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <section className={mobile ? "py-4" : "py-6"}>
+      <div className="shimmer mb-5 h-7 w-44 rounded-lg" />
+      <div className="flex gap-4 overflow-hidden pb-3 sm:gap-5">
+        {Array.from({ length: 12 }, (_, index) => (
+          <div
+            key={index}
+            className={mobile ? "w-24 shrink-0" : "w-28 shrink-0"}
+          >
+            <div
+              className={`shimmer mx-auto rounded-full ${
+                mobile ? "h-20 w-20" : "h-24 w-24"
+              }`}
+            />
+            <div className="shimmer mx-auto mt-2 h-3 w-20 rounded-md" />
+            <div className="shimmer mx-auto mt-1 h-3 w-16 rounded-md" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AboutSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <section className={mobile ? "pt-4" : "pt-6"}>
+      <div className="shimmer mb-5 h-7 w-28 rounded-lg" />
+      <div
+        className={
+          mobile ? "space-y-3" : "grid grid-cols-[minmax(0,1fr)_15rem] gap-4"
+        }
+      >
+        <div className="rounded-2xl border border-white/10 bg-white/[0.045] p-5 sm:p-6">
+          <div className="shimmer h-5 w-32 rounded-md" />
+          <div className="shimmer mt-3 h-3 w-64 max-w-full rounded-md" />
+          <div className="mt-4 space-y-2">
+            <div className="shimmer h-4 w-full rounded-md" />
+            <div className="shimmer h-4 w-11/12 rounded-md" />
+            <div className="shimmer h-4 w-4/5 rounded-md" />
+          </div>
+        </div>
+        <div className="flex min-h-40 flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.045] p-5">
+          <div className="shimmer h-3 w-16 rounded-md" />
+          <div className="shimmer mt-4 h-10 w-24 rounded-lg" />
+          <div className="shimmer mt-4 h-3 w-20 rounded-md" />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function InformationSkeleton({ mobile }: { mobile: boolean }) {
+  return (
+    <section className={mobile ? "mt-6" : "mt-8"}>
+      <div className="shimmer mb-4 h-7 w-28 rounded-lg" />
+      <div
+        className={
+          mobile
+            ? "grid grid-cols-2 gap-x-5 gap-y-4"
+            : "grid max-w-3xl grid-cols-3 gap-x-8 gap-y-5"
+        }
+      >
+        {Array.from({ length: 3 }, (_, index) => (
+          <div key={index}>
+            <div className="shimmer h-3 w-20 rounded-md" />
+            <div className="shimmer mt-2 h-4 w-28 rounded-md" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function HeroLibrarySkeleton({
+  kind,
+  mobile = false,
+}: {
+  kind: "movie" | "show";
+  mobile?: boolean;
+}) {
+  return (
+    <div className="layout-no-offset min-w-0 pb-7">
+      <LibraryHeroSkeleton mobile={mobile} />
+      <div
+        className={`mx-auto w-full max-w-[1600px] ${
+          mobile ? "px-4" : "px-4 sm:px-6 lg:px-8"
+        }`}
+      >
+        {kind === "show" && <EpisodeShelfSkeleton mobile={mobile} />}
+        <TrailerShelfSkeleton mobile={mobile} />
+        <CastSkeleton mobile={mobile} />
+        <AboutSkeleton mobile={mobile} />
+        <InformationSkeleton mobile={mobile} />
+      </div>
+    </div>
+  );
+}
+
+export function MovieLibrarySkeleton({ mobile = false }: { mobile?: boolean }) {
+  return <HeroLibrarySkeleton kind="movie" mobile={mobile} />;
+}
+
+export function ShowLibrarySkeleton({ mobile = false }: { mobile?: boolean }) {
+  return <HeroLibrarySkeleton kind="show" mobile={mobile} />;
 }

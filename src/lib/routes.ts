@@ -36,15 +36,21 @@ export function shouldOpenReaderForItem(item: JellyfinItem): boolean {
 
 export function getRouteForItem(item: JellyfinItem): string {
   if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
-    return `/library/${item.Id}`;
+    return `/collections/${encodeURIComponent(item.Id)}`;
   }
 
-  if (item.Type === "Series" || item.Type === "Movie") {
-    return `/library/${item.Id}`;
+  if (item.Type === "Movie") {
+    return `/movies/${encodeURIComponent(item.Id)}`;
+  }
+
+  if (item.Type === "Series") {
+    return `/shows/${encodeURIComponent(item.Id)}`;
   }
 
   if (item.Type === "Season") {
-    return `/library/${item.Id}`;
+    return item.SeriesId
+      ? `/shows/${encodeURIComponent(item.SeriesId)}/season/${encodeURIComponent(item.Id)}`
+      : `/shows/season/${encodeURIComponent(item.Id)}`;
   }
 
   if (shouldOpenReaderForItem(item)) {
@@ -55,7 +61,7 @@ export function getRouteForItem(item: JellyfinItem): string {
     return getWatchRouteForItem(item);
   }
 
-  return `/library/${item.Id}`;
+  return `/library/${encodeURIComponent(item.Id)}`;
 }
 
 export function getReadRouteForItem(item: JellyfinItem): string {
@@ -71,7 +77,7 @@ export function getMediaOwnerRouteForItem(item: JellyfinItem): string {
     const seriesId = item.SeriesId ?? item.ParentLogoItemId;
 
     if (seriesId) {
-      return `/library/${seriesId}`;
+      return `/shows/${encodeURIComponent(seriesId)}`;
     }
 
     const seasonId = item.SeasonId ?? item.ParentId;
@@ -94,7 +100,7 @@ export function getMediaOwnerRouteForItem(item: JellyfinItem): string {
     item.Type === "Series" ||
     item.Type === "Season"
   ) {
-    return `/library/${item.Id}`;
+    return getRouteForItem(item);
   }
 
   return getRouteForItem(item);

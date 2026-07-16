@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -89,6 +89,7 @@ describe("SeriesLibraryDetails", () => {
   });
 
   it("renders movie details without the series-only season and episode shelf", async () => {
+    const onInitialReady = vi.fn();
     const movie: JellyfinItem = {
       Id: "movie-1",
       Name: "Example Movie",
@@ -112,6 +113,7 @@ describe("SeriesLibraryDetails", () => {
           initialItem={movie}
           variant="desktop"
           canonicalPath="/library/movie-1"
+          onInitialReady={onInitialReady}
         />
       </MemoryRouter>,
     );
@@ -134,5 +136,6 @@ describe("SeriesLibraryDetails", () => {
     expect(
       screen.queryByText("No episodes were found for this season."),
     ).not.toBeInTheDocument();
+    await waitFor(() => expect(onInitialReady).toHaveBeenCalledTimes(1));
   });
 });

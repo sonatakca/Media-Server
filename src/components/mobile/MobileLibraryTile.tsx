@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getBackdropImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import type { JellyfinLibrary } from "../../lib/types";
+import { getLibraryRoute } from "../../lib/libraryRoutes";
 
 function getLibraryImage(library: JellyfinLibrary): string {
   if (library.BackdropImageTags?.[0]) {
@@ -29,7 +30,7 @@ export function MobileLibraryTile({ library }: { library: JellyfinLibrary }) {
 
   return (
     <Link
-      to={`/library/${library.Id}`}
+      to={getLibraryRoute(library)}
       className="relative block w-[14.75rem] shrink-0 snap-start overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] min-[390px]:w-[15.5rem]"
     >
       <div className="aspect-[16/9] bg-zinc-900">

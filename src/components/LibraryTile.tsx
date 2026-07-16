@@ -3,6 +3,7 @@ import { ChevronRight, Film, Tv } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getBackdropImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import type { JellyfinLibrary } from "../lib/types";
+import { getLibraryRoute } from "../lib/libraryRoutes";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
@@ -37,7 +38,7 @@ export function LibraryTile({ library }: LibraryTileProps) {
 
   return (
     <Link
-      to={`/library/${library.Id}`}
+      to={getLibraryRoute(library)}
       className="group relative block w-72 shrink-0 snap-start overflow-hidden rounded-2xl border border-white/10 bg-[var(--surface)] shadow-[0_20px_70px_rgba(0,0,0,0.36)] transition duration-300 hover:-translate-y-1 hover:border-white/20 hover:shadow-[0_24px_90px_rgba(0,0,0,0.52)] sm:w-96"
     >
       <div className="aspect-[16/9] bg-zinc-900">

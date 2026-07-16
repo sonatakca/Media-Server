@@ -1,4 +1,9 @@
 import { lazy, Suspense } from "react";
+import {
+  LibrarySkeleton,
+  MovieLibrarySkeleton,
+  ShowLibrarySkeleton,
+} from "../components/Skeletons";
 import { useIsMobileView } from "../hooks/useIsMobileView";
 import type { LibraryPageProps } from "./libraryPageTypes";
 
@@ -13,8 +18,20 @@ const MobileLibraryPage = lazy(() =>
   })),
 );
 
-function LibraryPageLoading() {
-  return <div className="shimmer h-72 rounded-2xl" />;
+function LibraryPageLoading({
+  isMobile,
+  mode,
+  libraryRouteKind,
+}: LibraryPageProps & { isMobile: boolean }) {
+  if (libraryRouteKind === "movie") {
+    return <MovieLibrarySkeleton mobile={isMobile} />;
+  }
+
+  if (libraryRouteKind === "show" || mode === "series" || mode === "season") {
+    return <ShowLibrarySkeleton mobile={isMobile} />;
+  }
+
+  return <LibrarySkeleton />;
 }
 
 export function LibraryPage(props: LibraryPageProps) {
@@ -22,14 +39,14 @@ export function LibraryPage(props: LibraryPageProps) {
 
   if (isMobile) {
     return (
-      <Suspense fallback={<LibraryPageLoading />}>
+      <Suspense fallback={<LibraryPageLoading {...props} isMobile />}>
         <MobileLibraryPage {...props} />
       </Suspense>
     );
   }
 
   return (
-    <Suspense fallback={<LibraryPageLoading />}>
+    <Suspense fallback={<LibraryPageLoading {...props} isMobile={false} />}>
       <DesktopLibraryPage {...props} />
     </Suspense>
   );
