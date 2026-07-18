@@ -1220,7 +1220,7 @@ img {
 
 .shimmer {
   --shimmer-color: var(--accent);
-  --shimmer-base: rgb(255 255 255 / 2%);
+  --shimmer-base: rgb(255 255 255 / 3%);
   --shimmer-mid: color-mix(in srgb, var(--shimmer-color) 12%, transparent);
   --shimmer-peak: color-mix(in srgb, var(--shimmer-color) 20%, transparent);
   --shimmer-duration: 2s;
