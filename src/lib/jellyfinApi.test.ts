@@ -2,8 +2,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setAuthSession } from "./authStorage";
 import { clearContinueWatchingHistory } from "./continueWatchingActions";
 import {
+  getBackdropImageUrl,
+  getLogoImageUrl,
   getMediaSegments,
   getNextEpisodeInSeason,
+  getPrimaryImageUrl,
+  getThumbImageUrl,
   getUserViews,
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
   markItemWatchedStatus,
@@ -134,6 +138,34 @@ describe("getMediaSegments", () => {
       JELLYFIN_SERVER_UNAVAILABLE_EVENT,
       unavailableHandler,
     );
+  });
+});
+
+describe("Jellyfin image URLs", () => {
+  beforeEach(() => {
+    setAuthSession({
+      serverUrl: "http://jellyfin.local",
+      accessToken: "mock-token",
+      userId: "user-1",
+      username: "Test User",
+      deviceId: "device-1",
+    });
+  });
+
+  it.each([
+    [getPrimaryImageUrl, "Primary", "82"],
+    [getLogoImageUrl, "Logo", "90"],
+    [getBackdropImageUrl, "Backdrop", "82"],
+    [getThumbImageUrl, "Thumb", "82"],
+  ])("requests cached WebP artwork", (builder, imageType, quality) => {
+    const url = new URL(builder("item-1", "image-tag", 640));
+
+    expect(url.pathname).toBe(`/Items/item-1/Images/${imageType}`);
+    expect(url.searchParams.get("maxWidth")).toBe("640");
+    expect(url.searchParams.get("quality")).toBe(quality);
+    expect(url.searchParams.get("format")).toBe("Webp");
+    expect(url.searchParams.get("tag")).toBe("image-tag");
+    expect(url.searchParams.get("api_key")).toBe("mock-token");
   });
 });
 

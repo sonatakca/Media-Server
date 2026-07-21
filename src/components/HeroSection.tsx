@@ -1132,6 +1132,9 @@ export function HeroSection({
             <motion.img
               key={selectedImage.url}
               src={selectedImage.url}
+              loading="eager"
+              fetchPriority="high"
+              decoding="async"
               alt=""
               className={`seyirlik-hero-artwork absolute inset-0 z-0 h-full w-full object-cover ${
                 selectedImage.type === "primary" ? "blur-2xl" : ""

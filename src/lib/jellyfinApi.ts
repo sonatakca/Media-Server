@@ -2660,7 +2660,8 @@ export function getPrimaryImageUrl(
     `/Items/${encodeURIComponent(itemId)}/Images/Primary`,
     {
       maxWidth,
-      quality: 90,
+      quality: 82,
+      format: "Webp",
       tag,
       api_key: getTokenForUrl(),
     },
@@ -2683,7 +2684,8 @@ export function getLogoImageUrl(
     `/Items/${encodeURIComponent(itemId)}/Images/Logo`,
     {
       maxWidth,
-      quality: 95,
+      quality: 90,
+      format: "Webp",
       tag,
       api_key: getTokenForUrl(),
     },
@@ -2706,7 +2708,8 @@ export function getBackdropImageUrl(
     `/Items/${encodeURIComponent(itemId)}/Images/Backdrop`,
     {
       maxWidth,
-      quality: 88,
+      quality: 82,
+      format: "Webp",
       imageIndex: 0,
       tag,
       api_key: getTokenForUrl(),
@@ -2730,7 +2733,8 @@ export function getThumbImageUrl(
     `/Items/${encodeURIComponent(itemId)}/Images/Thumb`,
     {
       maxWidth,
-      quality: 90,
+      quality: 82,
+      format: "Webp",
       tag,
       api_key: getTokenForUrl(),
     },

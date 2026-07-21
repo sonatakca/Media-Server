@@ -268,12 +268,12 @@ export function MediaCard({
       ? getPrimaryImageUrl(
           item.Id,
           item.ImageTags.Primary,
-          variant === "poster" ? 720 : 1100,
+          variant === "poster" ? 600 : 900,
         )
       : "");
   const showPrimaryImageUrl =
     item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag
-      ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 720)
+      ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 600)
       : "";
   const displayImageUrl =
     shouldUseShowPrimaryImage && showPrimaryImageUrl
@@ -282,15 +282,15 @@ export function MediaCard({
   const continueCoverImageUrl = isEpisode
     ? showPrimaryImageUrl
     : item.ImageTags?.Primary
-      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 720)
+      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 600)
       : displayImageUrl;
   const logoUrl =
     item.Type === "Episode" && isSeasonEpisodeGrid
       ? ""
       : item.ImageTags?.Logo
-        ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 700)
+        ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 520)
         : item.ParentLogoItemId && item.ParentLogoImageTag
-          ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 700)
+          ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 520)
           : "";
 
   const canPlay =

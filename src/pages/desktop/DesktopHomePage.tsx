@@ -138,12 +138,10 @@ export function DesktopHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [continueResult, latestResult, heroItemsResult] =
-        await Promise.allSettled([
-          getSmartContinueWatchingItems(),
-          getLatestMediaItems(),
-          getAllMovieAndSeriesItems(),
-        ]);
+      const [continueResult, latestResult] = await Promise.allSettled([
+        getSmartContinueWatchingItems(),
+        getLatestMediaItems(),
+      ]);
 
       if (!isMounted) return;
 
@@ -174,18 +172,25 @@ export function DesktopHomePage() {
               nextHomeCurationPreferences,
             )
           : [];
-      const heroItems =
-        heroItemsResult.status === "fulfilled" &&
-        Array.isArray(heroItemsResult.value)
-          ? heroItemsResult.value
-          : latestMedia;
-
       setData({
         continueWatching:
           continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia,
-        heroItems,
+        heroItems: latestMedia,
       });
+
+      // Render the useful first screen as soon as the small, critical queries
+      // finish. The complete catalog only improves carousel variety and must
+      // not keep the whole home page behind a skeleton.
+      void getAllMovieAndSeriesItems()
+        .then((heroItems) => {
+          if (!isMounted || heroItems.length === 0) return;
+
+          setData((currentData) =>
+            currentData ? { ...currentData, heroItems } : currentData,
+          );
+        })
+        .catch(() => undefined);
     }
     void loadHome();
     return () => {
