@@ -34,7 +34,7 @@ export function PlaybackInfoButton({
         aria-label={t("playback.details")}
       >
         <Info size={14} className="shrink-0" />
-        <span className="seyirlik-playback-info-label">
+        <span className="seyirlik-playback-info-label hidden sm:inline">
           {label}
           {suffix}
         </span>
