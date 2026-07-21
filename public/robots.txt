@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://www.seyirlik.sonatakca.com/sitemap.xml
+Sitemap: https://www.seyirlik.org/sitemap.xml

@@ -53,10 +53,10 @@ page:
   so crawlers see noindex before React renders route metadata.
 - `robots.txt` is served at `/robots.txt`.
 - `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
-- The canonical site URL is `https://www.seyirlik.sonatakca.com/`.
+- The canonical site URL is `https://www.seyirlik.org/`.
 
-After deployment, submit `https://www.seyirlik.sonatakca.com/sitemap.xml` in
-Google Search Console and inspect `https://www.seyirlik.sonatakca.com/`.
+After deployment, submit `https://www.seyirlik.org/sitemap.xml` in Google
+Search Console and inspect `https://www.seyirlik.org/`.
 
 ## Jellyfin Server URL
 
