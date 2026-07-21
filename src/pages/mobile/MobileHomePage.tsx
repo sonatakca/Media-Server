@@ -535,6 +535,9 @@ export function MobileHomePage() {
               <img
                 src={heroThemeImageUrl}
                 alt=""
+                loading="eager"
+                fetchPriority="high"
+                decoding="async"
                 className="h-full w-full scale-125 object-cover opacity-72 blur-3xl saturate-150"
               />
               <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_36%,rgba(255,255,255,0.12),transparent_42%)] mix-blend-overlay" />
@@ -592,6 +595,9 @@ export function MobileHomePage() {
                         key={heroPosterUrl || heroImageUrl}
                         src={heroPosterUrl || heroImageUrl}
                         alt={heroTitle}
+                        loading="eager"
+                        fetchPriority="high"
+                        decoding="async"
                         className="absolute inset-0 h-full w-full object-cover"
                         initial={{
                           opacity: 0,

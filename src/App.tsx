@@ -81,17 +81,24 @@ function createConnectionFailureDetail(
 
 function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const [state, setState] = useState<DefaultServerState>("checking");
-  const [renderSpinner, setRenderSpinner] = useState(true);
+  const [shouldCheckDefaultServer] = useState(() => !getServerUrl());
+  const [state, setState] = useState<DefaultServerState>(() =>
+    shouldCheckDefaultServer ? "checking" : "ready",
+  );
+  const [renderSpinner, setRenderSpinner] = useState(
+    shouldCheckDefaultServer,
+  );
   const [isVisible, setIsVisible] = useState(false);
   const [connectionFailure, setConnectionFailure] =
     useState<JellyfinServerUnavailableEventDetail | null>(null);
 
   // Trigger fade-in after initial mount
   useEffect(() => {
+    if (!renderSpinner) return;
+
     const timer = setTimeout(() => setIsVisible(true), 10);
     return () => clearTimeout(timer);
-  }, []);
+  }, [renderSpinner]);
 
   // Handle transition unmounting when state changes from "checking"
   useEffect(() => {
@@ -124,6 +131,8 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
   }, [location.pathname, state]);
 
   useEffect(() => {
+    if (!shouldCheckDefaultServer) return;
+
     let isMounted = true;
 
     async function prepareDefaultServer() {
@@ -158,7 +167,7 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [shouldCheckDefaultServer]);
 
   useEffect(() => {
     function handleServerUnavailable(event: Event) {

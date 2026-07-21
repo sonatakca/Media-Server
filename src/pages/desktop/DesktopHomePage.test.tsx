@@ -75,6 +75,20 @@ describe("DesktopHomePage confetti", () => {
     vi.mocked(shouldShowDailyHomeConfetti).mockReturnValue(false);
   });
 
+  it("does not block the first screen on the full catalog query", async () => {
+    vi.mocked(getAllMovieAndSeriesItems).mockReturnValue(
+      new Promise(() => undefined),
+    );
+
+    render(<DesktopHomePage />);
+
+    expect(
+      await screen.findByRole("button", {
+        name: "hero-ready",
+      }),
+    ).toBeInTheDocument();
+  });
+
   it("waits until the hero is ready before showing daily confetti", async () => {
     vi.mocked(shouldShowDailyHomeConfetti).mockReturnValue(true);
 
