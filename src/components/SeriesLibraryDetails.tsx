@@ -549,7 +549,7 @@ export function SeriesLibraryDetails({
           className={
             isDesktop
               ? "h-10 rounded-xl bg-transparent px-3 pr-9 text-sm font-black text-white outline-none transition hover:bg-white/[0.12] cursor-pointer focus:border-white/30"
-              : "h-9 max-w-[46vw] rounded-lg border border-white/12 bg-white/[0.08] px-2 pr-8 text-xs font-black text-white outline-none"
+              : "h-9 max-w-[46vw] rounded-lg border border-white/10 bg-white/[0.08] px-2 pr-8 text-xs font-black text-white outline-none"
           }
         >
           {seasons.map((season) => (

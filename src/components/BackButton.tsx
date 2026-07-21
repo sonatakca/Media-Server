@@ -136,7 +136,7 @@ export function BackButton({
         } ${buttonClassName}`}
         aria-label={hasLabel ? trimmedLabel : fallbackLabel}
       >
-        <ChevronLeft size={17} className="shrink-0" />
+        <ChevronLeft size={18} className="shrink-0" />
         {hasLabel ? (
           <AnimatedWidth value={trimmedLabel}>
             <AnimatedText value={trimmedLabel} />

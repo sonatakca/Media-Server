@@ -152,6 +152,8 @@ export function MobileMediaCard({
 
   const shouldPlayOnCardClick = shouldOpenPlaybackForItem(item);
   const shouldReadOnCardClick = shouldOpenReaderForItem(item);
+  const usesArtworkOnlyLayout =
+    shouldReadOnCardClick || item.Type === "Movie" || item.Type === "Series";
   const primaryActionLabel = shouldPlayOnCardClick
     ? t("common.play")
     : shouldReadOnCardClick
@@ -254,7 +256,7 @@ export function MobileMediaCard({
           ) : null}
 
           {progressPercent !== null ? (
-            <div className="absolute inset-x-0 bottom-0 z-30 h-1 bg-white/20">
+            <div className="absolute inset-x-0 bottom-0 z-30 h-0.5 bg-[#343438]">
               <div
                 data-testid="media-card-progress-fill"
                 className="h-full bg-[var(--accent)]"
@@ -264,50 +266,52 @@ export function MobileMediaCard({
           ) : null}
         </div>
 
-        <div className="flex flex-1 flex-col justify-center px-3 py-2.5 min-[390px]:px-3.5 min-[390px]:py-3">
-          <WatchedIndicator
-            item={item}
-            className="mb-1.5 self-start px-2 py-0.5 text-[0.52rem] tracking-[0.12em]"
-            iconSize={11}
-          />
+        {!usesArtworkOnlyLayout ? (
+          <div className="flex flex-1 flex-col justify-center px-3 py-2.5 min-[390px]:px-3.5 min-[390px]:py-3">
+            <WatchedIndicator
+              item={item}
+              className="mb-1.5 self-start px-2 py-0.5 text-[0.52rem] tracking-[0.12em]"
+              iconSize={11}
+            />
 
-          {!logoUrl ? (
-            <h3
-              className={`truncate font-black text-white ${
-                isEpisode
-                  ? "text-base tracking-tight min-[390px]:text-lg"
-                  : "text-[0.7rem] min-[390px]:text-xs"
-              }`}
-            >
-              {mainTitle}
-            </h3>
-          ) : null}
+            {!logoUrl ? (
+              <h3
+                className={`truncate font-black text-white ${
+                  isEpisode
+                    ? "text-base tracking-tight min-[390px]:text-lg"
+                    : "text-[0.7rem] min-[390px]:text-xs"
+                }`}
+              >
+                {mainTitle}
+              </h3>
+            ) : null}
 
-          {secondaryTitle ? (
-            <p className="mt-1 truncate text-xs font-semibold text-white/90">
-              {secondaryTitle}
-            </p>
-          ) : null}
+            {secondaryTitle ? (
+              <p className="mt-1 truncate text-xs font-semibold text-white/90">
+                {secondaryTitle}
+              </p>
+            ) : null}
 
-          {tertiaryInfo ? (
-            <div className="mt-1.5 flex items-center gap-2">
-              {isEpisode ? (
-                tertiaryInfo.split("  ").map((infoChunk, idx) => (
-                  <span
-                    key={idx}
-                    className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.62rem] font-bold text-white/55"
-                  >
-                    {infoChunk}
-                  </span>
-                ))
-              ) : (
-                <p className="truncate text-[0.68rem] font-medium text-white/52">
-                  {tertiaryInfo}
-                </p>
-              )}
-            </div>
-          ) : null}
-        </div>
+            {tertiaryInfo ? (
+              <div className="mt-1.5 flex items-center gap-2">
+                {isEpisode ? (
+                  tertiaryInfo.split("  ").map((infoChunk, idx) => (
+                    <span
+                      key={idx}
+                      className="rounded border border-white/10 bg-white/[0.04] px-1.5 py-0.5 text-[0.62rem] font-bold text-white/55"
+                    >
+                      {infoChunk}
+                    </span>
+                  ))
+                ) : (
+                  <p className="truncate text-[0.68rem] font-medium text-white/52">
+                    {tertiaryInfo}
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </motion.article>
   );

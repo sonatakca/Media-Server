@@ -12,18 +12,39 @@ import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { Tooltip } from "../ui/Tooltip";
 
 function ActiveTabBorder() {
+  const mask =
+    "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)";
+
   return (
-    <div className="pointer-events-none absolute inset-0 rounded-2xl bg-gradient-to-b from-white/50 via-white/20 to-transparent p-px opacity-50">
-      <div className="h-full w-full rounded-2xl bg-black/50" />
-    </div>
+    <div
+      aria-hidden="true"
+      className="pointer-events-none absolute inset-0 rounded-2xl p-px"
+      style={{
+        background:
+          "conic-gradient(from 305deg, rgb(255 255 255 / 30%) 0deg, transparent 90deg, rgb(255 255 255 / 30%) 180deg, transparent 270deg, rgb(255 255 255 / 30%) 360deg)",
+        mask,
+        maskComposite: "exclude",
+        WebkitMask: mask,
+        WebkitMaskComposite: "xor",
+      }}
+    />
+  );
+}
+
+function ActiveTabDot() {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute -bottom-1.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-white/75"
+    />
   );
 }
 
 function getTabClassName(isActive: boolean): string {
   const colorClass = isActive ? "text-white" : "text-white/52";
-  const backgroundClass = isActive ? "bg-white/[0.08]" : "bg-transparent";
+  const sizeClass = isActive ? "mt-0 min-h-[3.75rem]" : "mt-1 min-h-14";
 
-  return `relative mx-0.5 mt-1 flex min-h-14 min-w-0 flex-1 overflow-hidden flex-col items-center justify-center gap-1 rounded-2xl text-[0.68rem] font-bold transition-[background-color,color] ${colorClass} ${backgroundClass}`;
+  return `relative mx-0.5 flex min-w-0 flex-1 overflow-visible flex-col items-center justify-center gap-1 rounded-2xl bg-transparent text-[0.68rem] font-bold transition-[color,height,margin] duration-200 ${colorClass} ${sizeClass}`;
 }
 
 export function MobileNavbar() {
@@ -127,6 +148,7 @@ export function MobileNavbar() {
           {({ isActive }) => (
             <>
               {isActive ? <ActiveTabBorder /> : null}
+              {isActive ? <ActiveTabDot /> : null}
               <GoHomeFill size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.home")}</span>
             </>
@@ -139,6 +161,7 @@ export function MobileNavbar() {
           {({ isActive }) => (
             <>
               {isActive ? <ActiveTabBorder /> : null}
+              {isActive ? <ActiveTabDot /> : null}
               <RiMovie2Fill size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.movies")}</span>
             </>
@@ -151,6 +174,7 @@ export function MobileNavbar() {
           {({ isActive }) => (
             <>
               {isActive ? <ActiveTabBorder /> : null}
+              {isActive ? <ActiveTabDot /> : null}
               <TbDeviceTv size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.series")}</span>
             </>
@@ -164,6 +188,7 @@ export function MobileNavbar() {
           {({ isActive }) => (
             <>
               {isActive ? <ActiveTabBorder /> : null}
+              {isActive ? <ActiveTabDot /> : null}
               <Book size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.books")}</span>
             </>

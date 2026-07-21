@@ -533,6 +533,148 @@ function InformationSkeleton({ mobile }: { mobile: boolean }) {
   );
 }
 
+function MobileEpisodeCardSkeleton() {
+  return (
+    <div className="flex h-[14.6875rem] w-60 shrink-0 flex-col overflow-hidden rounded-lg border border-white/10 bg-[#141416] min-[390px]:h-[15.234375rem] min-[390px]:w-64">
+      <div className="shimmer aspect-video w-full shrink-0" />
+      <div className="flex flex-1 flex-col justify-center px-3 py-2.5 min-[390px]:px-3.5 min-[390px]:py-3">
+        <div className="shimmer h-7 w-24 rounded-md" />
+        <div className="shimmer mt-1 h-4 w-32 rounded-md" />
+        <div className="mt-1.5 flex gap-2">
+          <div className="shimmer h-5 w-10 rounded border border-white/10" />
+          <div className="shimmer h-5 w-14 rounded border border-white/10" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MobilePosterCardSkeleton() {
+  return (
+    <div className="shimmer h-[13.4375rem] w-[9rem] shrink-0 overflow-hidden rounded-lg border border-white/10 min-[390px]:h-[14.1875rem] min-[390px]:w-[9.5rem]" />
+  );
+}
+
+function MobileEpisodeShelfSkeleton() {
+  return (
+    <section className="py-3">
+      <div className="mb-3 flex h-9 items-center justify-between gap-3">
+        <div className="shimmer h-9 w-[7.25rem] rounded-lg border border-white/10" />
+      </div>
+      <div className="flex gap-3 overflow-hidden pb-5 pt-1">
+        {Array.from({ length: 3 }, (_, index) => (
+          <MobileEpisodeCardSkeleton key={index} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MobileTrailerShelfSkeleton() {
+  return (
+    <section className="py-3">
+      <div className="mb-3 flex items-center justify-between gap-3" />
+      <div className="flex gap-3 overflow-hidden pb-5 pt-1">
+        <div className="shimmer aspect-video w-[78vw] shrink-0 rounded-xl border border-white/10" />
+      </div>
+    </section>
+  );
+}
+
+function MobileSimilarShelfSkeleton() {
+  return (
+    <section className="py-3">
+      <div className="mb-3 flex items-center justify-between gap-3" />
+      <div className="flex gap-3 overflow-hidden pb-5 pt-1">
+        {Array.from({ length: 4 }, (_, index) => (
+          <MobilePosterCardSkeleton key={index} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MobileCastSkeleton() {
+  return (
+    <section className="py-4">
+      <div className="shimmer mb-4 h-7 w-44 rounded-lg" />
+      <div className="flex gap-4 overflow-hidden pb-3">
+        {Array.from({ length: 5 }, (_, index) => (
+          <div key={index} className="h-[9.6875rem] w-24 shrink-0 text-center">
+            <div className="shimmer mx-auto h-20 w-20 rounded-full border border-white/10" />
+            <div className="shimmer mx-auto mt-2 h-4 w-20 rounded-md" />
+            <div className="shimmer mx-auto mt-1 h-8 w-16 rounded-md" />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MobileAboutInformationSkeleton({ kind }: { kind: "movie" | "show" }) {
+  const isMovie = kind === "movie";
+
+  return (
+    <section className="pt-4">
+      <div className="shimmer mb-4 h-7 w-28 rounded-lg" />
+      <div className="space-y-3">
+        <div
+          className={`rounded-2xl border border-white/10 bg-white/[0.055] p-5 ${
+            isMovie ? "h-[15.375rem]" : "h-[13.875rem]"
+          }`}
+        >
+          <div className="shimmer h-5 w-32 rounded-md" />
+          <div className="shimmer mt-2 h-3 w-48 rounded-md" />
+          <div className="mt-3 space-y-2">
+            <div className="shimmer h-4 w-full rounded-md" />
+            <div className="shimmer h-4 w-full rounded-md" />
+            <div className="shimmer h-4 w-11/12 rounded-md" />
+            <div className="shimmer h-4 w-4/5 rounded-md" />
+            {isMovie ? <div className="shimmer h-4 w-3/5 rounded-md" /> : null}
+          </div>
+        </div>
+
+        <div className="flex h-40 flex-col items-center justify-center rounded-2xl border border-white/10 bg-white/[0.055] p-5 text-center">
+          <div className="shimmer h-3 w-16 rounded-md" />
+          <div className="shimmer mt-3 h-10 w-24 rounded-lg" />
+          <div className="shimmer mt-3 h-3 w-20 rounded-md" />
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <div className="shimmer mb-3 h-7 w-28 rounded-lg" />
+        <div className="grid grid-cols-2 gap-x-5 gap-y-4">
+          {Array.from({ length: 3 }, (_, index) => (
+            <div key={index}>
+              <div className="shimmer h-3 w-20 rounded-md" />
+              <div
+                className={`shimmer mt-2 w-28 rounded-md ${
+                  isMovie && index === 0 ? "h-[3.75rem]" : "h-5"
+                }`}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function MobileDetailsSkeleton({ kind }: { kind: "movie" | "show" }) {
+  return (
+    <div className="pb-7">
+      {kind === "show" ? (
+        <MobileEpisodeShelfSkeleton />
+      ) : (
+        <MobileTrailerShelfSkeleton />
+      )}
+      <MobileSimilarShelfSkeleton />
+      <MobileCastSkeleton />
+      <MobileAboutInformationSkeleton kind={kind} />
+    </div>
+  );
+}
+
 function HeroLibrarySkeleton({
   kind,
   mobile = false,
@@ -540,6 +682,10 @@ function HeroLibrarySkeleton({
   kind: "movie" | "show";
   mobile?: boolean;
 }) {
+  if (mobile) {
+    return <MobileDetailsSkeleton kind={kind} />;
+  }
+
   return (
     <div className="layout-no-offset min-w-0 pb-7">
       <LibraryHeroSkeleton mobile={mobile} />

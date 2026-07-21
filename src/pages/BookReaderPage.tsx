@@ -50,7 +50,7 @@ import {
 } from "../components/ui/glassControlStyles";
 
 type ReaderFormat = "epub" | "pdf" | "text" | "html" | "image" | "fallback";
-type ReaderTheme = "night" | "paper" | "sepia";
+type ReaderTheme = "night" | "sepia";
 
 interface ReaderSettings {
   theme: ReaderTheme;
@@ -166,7 +166,6 @@ h2 + h2::before {
 
 const READER_THEME_LABEL_KEYS = {
   night: "reader.theme.night",
-  paper: "reader.theme.paper",
   sepia: "reader.theme.sepia",
 } as const;
 
@@ -216,26 +215,6 @@ const themePalettes: Record<
     controlFlatShadow:
       "0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3)",
     accent: "#8bd8be",
-  },
-  paper: {
-    shell: "bg-[#f9f7ef] text-[#18181b]",
-    panel:
-      "border-zinc-950/10 bg-[#f9f7ef] text-[#18181b] shadow-[0_24px_80px_rgba(24,24,27,0.12)]",
-    page: "#f9f7ef",
-    pageBorder: "border-zinc-950/10",
-    text: "#18181b",
-    muted: "text-zinc-700",
-    control: glassPillButton,
-    activeControl: `${glassPillButton} bg-white/[0.11] text-white`,
-    controlBackground: "rgba(249, 247, 239, 0.82)",
-    controlActiveBackground: "rgba(24, 24, 27, 0.1)",
-    controlText: "#18181b",
-    controlMutedText: "rgba(24, 24, 27, 0.62)",
-    controlShadow:
-      "0 0 0 1px rgba(24,24,27,0.12), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(24,24,27,0.06), 0 14px 38px rgba(24,24,27,0.12)",
-    controlFlatShadow:
-      "0 0 0 1px rgba(24,24,27,0.12), inset 0 1px 0 rgba(255,255,255,0.72), inset 0 -1px 0 rgba(24,24,27,0.06)",
-    accent: "#28775d",
   },
   sepia: {
     shell: "bg-[#f4ead7] text-[#241b12]",
@@ -293,7 +272,7 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 function isReaderTheme(value: unknown): value is ReaderTheme {
-  return value === "night" || value === "paper" || value === "sepia";
+  return value === "night" || value === "sepia";
 }
 
 function readJsonStorage<T>(key: string, fallback: T): T {
@@ -1498,12 +1477,12 @@ export function BookReaderPage() {
     : "pointer-events-auto opacity-100 transition-opacity duration-150 ease will-change-[opacity] sm:pointer-events-none sm:opacity-0 sm:group-hover/reader-nav:pointer-events-auto sm:group-hover/reader-nav:opacity-100";
   const topControlClass = controlClass;
   const readerTopOffsetClass = settingsOpen
-    ? "top-[calc(21rem+var(--safe-area-inset-top))] md:top-[calc(10rem+var(--safe-area-inset-top))]"
+    ? "top-[calc(30rem+var(--safe-area-inset-top))] min-[380px]:top-[calc(16.5rem+var(--safe-area-inset-top))] md:top-[calc(10.5rem+var(--safe-area-inset-top))]"
     : "top-[calc(3.1rem+var(--safe-area-inset-top))]";
 
   const readerNavHeightClass = settingsOpen
-    ? "h-[calc(21rem+var(--safe-area-inset-top))] md:h-[calc(10rem+var(--safe-area-inset-top))]"
-    : "h-[calc(3.1rem+var(--safe-area-inset-top))]";
+    ? "h-[calc(30rem+var(--safe-area-inset-top))] min-[380px]:h-[calc(16.5rem+var(--safe-area-inset-top))] md:h-[calc(10.5rem+var(--safe-area-inset-top))]"
+    : "h-[calc(4rem+var(--safe-area-inset-top))]";
 
   const readerContentRightOffsetClass = tocOpen
     ? "right-0 md:right-96"
@@ -1521,7 +1500,7 @@ export function BookReaderPage() {
             : "pointer-events-none -translate-y-16 opacity-0"
         }`}
       >
-        <div className="mx-auto grid max-w-6xl gap-4 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
+        <div className="mx-auto grid max-w-6xl gap-4 min-[380px]:grid-cols-2 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
           <div className="flex flex-col items-center">
             <p
               className={`mb-2 w-full text-center text-xs font-black uppercase ${palette.muted}`}
@@ -1530,7 +1509,7 @@ export function BookReaderPage() {
               {t("reader.theme")}
             </p>
             <div className="flex flex-wrap justify-center gap-2">
-              {(["night", "paper", "sepia"] as ReaderTheme[]).map((theme) => {
+              {(["night", "sepia"] as ReaderTheme[]).map((theme) => {
                 const previewPalette = themePalettes[theme];
                 const isActiveTheme = settings.theme === theme;
 
@@ -1905,6 +1884,7 @@ export function BookReaderPage() {
             label: t("reader.chapters"),
             icon: <ListTree />,
             active: tocOpen,
+            className: "hidden sm:inline-flex",
             onClick: () => {
               setTocOpen((isOpen) => !isOpen);
             },
@@ -1918,6 +1898,7 @@ export function BookReaderPage() {
         ? t("details.removeWatchedStatus")
         : t("reader.markFinished"),
       active: isCompleted,
+      className: "hidden sm:inline-flex",
       render: (className, style) => (
         <WatchedStatusButton
           scope="item"
@@ -1957,7 +1938,6 @@ export function BookReaderPage() {
       label: t("reader.downloadBook"),
       href: downloadUrl,
       icon: <Download />,
-      className: "hidden sm:inline-flex",
     },
     {
       id: "settings",
@@ -2016,18 +1996,30 @@ export function BookReaderPage() {
           className={`group/reader-nav pointer-events-auto fixed inset-x-0 top-0 z-[60] overflow-visible pt-[calc(0.35rem+var(--safe-area-inset-top))] transition-[height] duration-200 ease ${readerNavHeightClass} ${palette.pageBorder}`}
           style={{ backgroundColor: palette.page, color: palette.text }}
         >
-          <header className="relative grid h-10 w-full grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,1fr)] items-center gap-2 px-2 sm:px-3">
+          <header className="relative grid h-10 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,1fr)] sm:px-3">
             <div
               className={`flex min-w-0 items-center gap-2 ${topControlVisibility}`}
             >
               <BackButton
                 fallbackTo={ownerRoute}
-                className="shrink-0 p-0.5"
+                className="shrink-0 p-[0.05rem]"
                 style={controlSurfaceStyle}
                 buttonStyle={controlTextStyle}
                 label=""
                 noYShift
               />
+              {tocItems.length > 0 ? (
+                <ReaderIconButton
+                  label={t("reader.chapters")}
+                  className={`${glassIconButton} sm:hidden`}
+                  style={
+                    tocOpen ? activeControlSurfaceStyle : controlSurfaceStyle
+                  }
+                  onClick={() => setTocOpen((isOpen) => !isOpen)}
+                >
+                  <ListTree size={18} />
+                </ReaderIconButton>
+              ) : null}
               <Link
                 to={ownerRoute}
                 className={`${topControlClass} hidden shrink-0 sm:inline-flex`}
@@ -2038,7 +2030,7 @@ export function BookReaderPage() {
             </div>
 
             <h1
-              className={`pointer-events-none min-w-0 truncate px-3 text-center text-sm font-black transition-[opacity,transform] duration-250 ease sm:text-base ${
+              className={`pointer-events-none absolute left-1/2 w-full max-w-24 -translate-x-1/2 truncate px-1 text-center text-sm font-black transition-[opacity,transform] duration-250 ease sm:static sm:max-w-none sm:translate-x-0 sm:px-3 sm:text-base ${
                 isReaderContentReady
                   ? "translate-y-0 opacity-70 sm:group-hover/reader-nav:opacity-100"
                   : "translate-y-1 opacity-0"
@@ -2069,7 +2061,9 @@ export function BookReaderPage() {
       </div>
 
       <div
-        className={`${glassPillButton} pointer-events-none fixed bottom-[calc(0.85rem+var(--safe-area-inset-bottom))] left-1/2 z-30 min-w-10 -translate-x-1/2 px-3 tabular-nums bg-black/0 backdrop-blur-md backdrop-saturate-150`}
+        className={`${glassPillButton} pointer-events-none fixed bottom-[calc(0.85rem+var(--safe-area-inset-bottom))] left-1/2 z-30 min-w-10 -translate-x-1/2 px-3 tabular-nums backdrop-blur-sm backdrop-saturate-150 ${
+          settings.theme === "night" ? "bg-black/20" : "bg-white/20"
+        }`}
       >
         {readerPageNumber}
       </div>
