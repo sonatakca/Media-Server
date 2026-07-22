@@ -282,7 +282,9 @@ function createDeferredReadySessionManager(outputDir: string) {
   return { createSession, manager, markReady: markReady! };
 }
 
-async function createFixtureBackend() {
+async function createFixtureBackend(
+  allowedOrigins: string[] | null = ["http://allowed.test"],
+) {
   const mediaRoot = await mkdtemp(path.join(tmpdir(), "seyirlik-http-media-"));
 
   await mkdir(path.join(mediaRoot, "Movies"), { recursive: true });
@@ -299,7 +301,7 @@ async function createFixtureBackend() {
     port: 0,
     mediaRegistry,
     mediaStore,
-    allowedOrigins: ["http://allowed.test"],
+    allowedOrigins: allowedOrigins ?? undefined,
     cleanupIntervalMs: 1_000,
   });
 
@@ -380,6 +382,19 @@ describe("playback backend HTTP routes", () => {
     );
     expect(response.headers.get("vary")).toBe("Origin");
   });
+
+  it.each(["https://www.seyirlik.org", "https://seyirlik.org"])(
+    "allows the production origin %s by default",
+    async (origin) => {
+      const { baseUrl } = await createFixtureBackend(null);
+      const response = await fetch(`${baseUrl}/health`, {
+        headers: { Origin: origin },
+      });
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("access-control-allow-origin")).toBe(origin);
+    },
+  );
 
   it("rejects disallowed CORS origins", async () => {
     const { baseUrl } = await createFixtureBackend();

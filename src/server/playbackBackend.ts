@@ -51,6 +51,8 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 43110;
 const DEFAULT_CLEANUP_INTERVAL_MS = 60_000;
 const DEFAULT_ALLOWED_ORIGINS = [
+  "https://www.seyirlik.org",
+  "https://seyirlik.org",
   "http://localhost:5173",
   "http://127.0.0.1:5173",
   "http://localhost:5174",

@@ -1,4 +1,4 @@
-export const SITE_URL = "https://www.seyirlik.sonatakca.com/";
+export const SITE_URL = "https://www.seyirlik.org/";
 
 export const DEFAULT_SEO_TITLE =
   "Seyirlik | Kişisel Film ve Dizi İzleme Deneyimi";
