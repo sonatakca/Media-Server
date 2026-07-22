@@ -257,8 +257,9 @@ img {
 }
 
 .media-card-cinematic {
+  z-index: 0;
   box-shadow: var(--shadow-media-card-rest);
-  transition-duration: 300ms, 450ms, 300ms;
+  transition-duration: 300ms, 800ms, 300ms;
   transition-property: border-color, box-shadow, transform;
   transition-timing-function: ease, ease-out, ease;
 }
@@ -266,7 +267,9 @@ img {
 .shadow-cinematic-card-hover,
 .media-card-cinematic:hover,
 .media-card-cinematic:focus-within {
+  z-index: 10;
   box-shadow: var(--shadow-cinematic-card-hover);
+  transition-duration: 300ms, 450ms, 300ms;
 }
 
 .shadow-floating-panel {

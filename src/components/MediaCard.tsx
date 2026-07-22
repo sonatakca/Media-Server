@@ -388,7 +388,7 @@ export function MediaCard({
         {...motionProps}
       >
         <div
-          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
             isWatched
               ? "border-emerald-300/70 ring-2 ring-emerald-300/45"
               : "border-white/10"
@@ -625,7 +625,7 @@ export function MediaCard({
       {...motionProps}
     >
       <div
-        className={`media-card-cinematic group relative h-full w-full min-w-0 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:z-10 hover:border-white/20 hover:shadow-cinematic-card-hover motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+        className={`media-card-cinematic group relative h-full w-full min-w-0 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
           isEpisode
             ? "flex flex-col hover:-translate-y-1"
             : `block ${aspectClass} hover:-translate-y-1.5 hover:scale-[1.025]`
