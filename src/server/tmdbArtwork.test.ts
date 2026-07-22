@@ -53,6 +53,7 @@ async function writeMediaFile(
 async function startBackend(options: {
   mediaRoot: string;
   fetchImpl: typeof fetch;
+  authorizeAdmin?: boolean;
 }) {
   const mediaRegistry = await createMediaRegistry(options.mediaRoot);
   const backend = await createPlaybackBackend({
@@ -69,6 +70,14 @@ async function startBackend(options: {
     jellyfinServerUrl: "http://jellyfin.test",
     jellyfinApiKey: "jellyfin-key",
     fetchImpl: options.fetchImpl,
+    adminAuthorizer:
+      options.authorizeAdmin === false
+        ? undefined
+        : async () => ({
+            authorized: true,
+            uid: "admin-uid",
+            email: "sonatakcaa@gmail.com",
+          }),
   });
 
   await new Promise<void>((resolveListen) => {
@@ -98,6 +107,24 @@ afterEach(async () => {
 });
 
 describe("TMDB artwork backend", () => {
+  it("denies direct access when Firebase administrator auth is unavailable", async () => {
+    const mediaRoot = await createTempDir();
+    const baseUrl = await startBackend({
+      mediaRoot,
+      fetchImpl: vi.fn(),
+      authorizeAdmin: false,
+    });
+
+    const response = await fetch(
+      `${baseUrl}/api/tmdb-artwork/search?mediaType=movie&query=test&language=en`,
+    );
+
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "ADMIN_AUTH_NOT_CONFIGURED" },
+    });
+  });
+
   it("loads only English, Turkish, and no-language images", async () => {
     const mediaRoot = await createTempDir();
     const requests: URL[] = [];

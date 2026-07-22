@@ -18,3 +18,5 @@ vite.config.d.ts
 .FileContents
 .ProjectStructure.txt
 .FileContents.txt
+firebase-service-account*.json
+service-account*.json

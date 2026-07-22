@@ -88,6 +88,14 @@ export const translations = {
     "auth.noPasswordPlaceholder": "Leave blank if this user has no password",
     "auth.changeServer": "Change Server",
     "auth.changeServerUrl": "Change server URL",
+    "adminAuth.title": "Administrator authentication",
+    "adminAuth.description":
+      "This page is restricted to the configured Google administrator account.",
+    "adminAuth.checking": "Checking administrator authentication...",
+    "adminAuth.denied":
+      "This Google account is signed in, but it is not authorized for administrator tools.",
+    "adminAuth.signIn": "Continue with Google",
+    "adminAuth.useAnotherAccount": "Use another Google account",
     "auth.signInToJellyfin": "Sign in",
     "auth.failedTitle": "Authentication failed",
     "auth.failedMessagePrefix":
@@ -1063,6 +1071,14 @@ export const translations = {
     "auth.noPasswordPlaceholder": "Bu kullanıcısının şifresi yoksa boş bırak",
     "auth.changeServer": "Sunucuyu Değiştir",
     "auth.changeServerUrl": "Sunucu adresini değiştir",
+    "adminAuth.title": "Yönetici doğrulaması",
+    "adminAuth.description":
+      "Bu sayfa yalnızca yapılandırılmış Google yönetici hesabına açıktır.",
+    "adminAuth.checking": "Yönetici doğrulaması kontrol ediliyor...",
+    "adminAuth.denied":
+      "Bu Google hesabıyla oturum açıldı ancak yönetici araçları için yetkili değil.",
+    "adminAuth.signIn": "Google ile devam et",
+    "adminAuth.useAnotherAccount": "Başka bir Google hesabı kullan",
     "auth.signInToJellyfin": "Giriş yap",
     "auth.failedTitle": "Kimlik doğrulama başarısız",
     "auth.failedMessagePrefix":

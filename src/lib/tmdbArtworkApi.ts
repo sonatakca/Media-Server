@@ -186,10 +186,14 @@ async function requestArtworkJson<TResponse>(
   let response: Response;
 
   try {
+    const { getAdminIdToken } = await import("./firebaseAdminAuth");
+    const adminIdToken = await getAdminIdToken();
+
     response = await fetch(endpoint, {
       method: options.method ?? "GET",
       headers: {
         Accept: "application/json",
+        Authorization: `Bearer ${adminIdToken}`,
         ...(options.body === undefined
           ? {}
           : { "Content-Type": "application/json" }),

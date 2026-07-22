@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SeriesLibraryDetails } from "./SeriesLibraryDetails";
+import { getAllSeriesEpisodes } from "../lib/jellyfinApi";
 import type { JellyfinItem } from "../lib/types";
 
 vi.mock("../lib/jellyfinApi", () => ({
@@ -40,6 +41,11 @@ vi.mock("../lib/pageTitle", () => ({
 vi.mock("../i18n/LanguageContext", () => {
   const messages: Record<string, string> = {
     "details.noOverview": "No overview.",
+    "details.markWatchedStatus": "Mark as watched",
+    "details.markWatchedStatusForShow": "Mark whole show as watched",
+    "details.removeWatchedStatus": "Remove watched status",
+    "details.removeWatchedStatusForShow":
+      "Remove watched status for whole show",
     "format.hourShort": "h",
     "format.minuteShort": "m",
     "media.episodeCardTitle": "Episode {number}",
@@ -128,6 +134,9 @@ describe("SeriesLibraryDetails", () => {
     expect(screen.getByText("About")).toBeInTheDocument();
     expect(screen.getByText("Movie overview")).toBeInTheDocument();
     expect(screen.getByText("Example Actor")).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Mark as watched" }),
+    ).toBeInTheDocument();
 
     expect(
       screen.queryByRole("button", { name: "Scroll Episodes left" }),
@@ -137,5 +146,40 @@ describe("SeriesLibraryDetails", () => {
       screen.queryByText("No episodes were found for this season."),
     ).not.toBeInTheDocument();
     await waitFor(() => expect(onInitialReady).toHaveBeenCalledTimes(1));
+  });
+
+  it("places the watched-status action on show details", async () => {
+    vi.mocked(getAllSeriesEpisodes).mockResolvedValueOnce([
+      {
+        Id: "episode-1",
+        Name: "Episode 1",
+        Type: "Episode",
+        SeriesId: "series-1",
+        UserData: { Played: false },
+      },
+    ]);
+
+    const series: JellyfinItem = {
+      Id: "series-1",
+      Name: "Example Show",
+      Type: "Series",
+      Overview: "Show overview",
+    };
+
+    render(
+      <MemoryRouter>
+        <SeriesLibraryDetails
+          initialItem={series}
+          variant="desktop"
+          canonicalPath="/shows/series-1"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      await screen.findByRole("button", {
+        name: "Mark whole show as watched",
+      }),
+    ).toBeInTheDocument();
   });
 });

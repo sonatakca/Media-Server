@@ -6,6 +6,7 @@ import { ErrorMessage } from "./ErrorMessage";
 import { MediaCard } from "./MediaCard";
 import { MobileMediaCard } from "./mobile/MobileMediaCard";
 import { MotionReveal } from "./MotionReveal";
+import { WatchedStatusButton } from "./WatchedStatusButton";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   getAllSeriesEpisodes,
@@ -21,6 +22,7 @@ import { getDisplayTitle } from "../lib/format";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
+import { isItemCompleted } from "../lib/watchStatus";
 import defaultProfileImage from "../assets/Default_pfp.jpg";
 
 interface JellyfinPerson {
@@ -270,6 +272,7 @@ export function SeriesLibraryDetails({
   const [seasons, setSeasons] = useState<JellyfinItem[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
   const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<JellyfinItem[]>([]);
   const [trailers, setTrailers] = useState<JellyfinItem[]>([]);
   const [similarItems, setSimilarItems] = useState<JellyfinItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -307,6 +310,7 @@ export function SeriesLibraryDetails({
 
       setIsLoading(true);
       setError(null);
+      setSeriesEpisodes([]);
 
       try {
         const [
@@ -348,6 +352,7 @@ export function SeriesLibraryDetails({
           ...seriesResult,
           People: mergeSeriesPeople(seriesResult.People, seriesEpisodeResults),
         });
+        setSeriesEpisodes(seriesEpisodeResults);
         setSeasons(orderedSeasons);
         setTrailers(trailerResults);
         setSimilarItems(
@@ -508,6 +513,43 @@ export function SeriesLibraryDetails({
     typeof series.CommunityRating === "number"
       ? Math.round(series.CommunityRating * 10)
       : null;
+  const isDetailsItemWatched = isMovie
+    ? isItemCompleted(series)
+    : seriesEpisodes.length > 0
+      ? seriesEpisodes.every((episode) => isItemCompleted(episode))
+      : isItemCompleted(series);
+  const canChangeWatchedStatus = isMovie || seriesEpisodes.length > 0;
+  const handleWatchedStatusChange = (changedItems: JellyfinItem[]) => {
+    const changedItemsById = new Map(
+      changedItems.map((changedItem) => [changedItem.Id, changedItem]),
+    );
+
+    if (isMovie) {
+      const changedMovie = changedItemsById.get(series.Id);
+
+      if (changedMovie) {
+        setSeries((currentSeries) =>
+          currentSeries
+            ? {
+                ...currentSeries,
+                ...changedMovie,
+                People: currentSeries.People,
+                Studios: currentSeries.Studios,
+              }
+            : currentSeries,
+        );
+      }
+
+      return;
+    }
+
+    setSeriesEpisodes(changedItems.filter((item) => item.Type === "Episode"));
+    setEpisodes((currentEpisodes) =>
+      currentEpisodes.map(
+        (episode) => changedItemsById.get(episode.Id) ?? episode,
+      ),
+    );
+  };
   const labels =
     language === "tr"
       ? {
@@ -563,6 +605,40 @@ export function SeriesLibraryDetails({
 
   return (
     <div className={isDesktop ? "pb-14" : "pb-7"}>
+      {canChangeWatchedStatus ? (
+        <div
+          className={
+            isDesktop
+              ? "fixed right-5 top-24 z-[80] lg:right-8"
+              : "fixed right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
+          }
+        >
+          <WatchedStatusButton
+            scope={isMovie ? "item" : "show"}
+            action={isDetailsItemWatched ? "remove" : "mark"}
+            item={isMovie ? series : undefined}
+            seriesId={isMovie ? undefined : series.Id}
+            label={
+              isDetailsItemWatched
+                ? isMovie
+                  ? t("details.removeWatchedStatus")
+                  : t("details.removeWatchedStatusForShow")
+                : isMovie
+                  ? t("details.markWatchedStatus")
+                  : t("details.markWatchedStatusForShow")
+            }
+            showLabel
+            confirm={!isMovie}
+            onReset={handleWatchedStatusChange}
+            className={
+              isDesktop
+                ? "inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-white/12 bg-black/55 px-4 text-sm font-black text-white shadow-player-controls backdrop-blur-2xl transition hover:border-white/20 hover:bg-white/[0.14] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                : "inline-flex min-h-10 items-center justify-center gap-2 rounded-full border border-white/12 bg-black/55 px-3 text-xs font-black text-white shadow-player-controls backdrop-blur-2xl transition active:scale-[0.985] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            }
+          />
+        </div>
+      ) : null}
+
       {!isMovie ? (
         <MediaShelf
           title={labels.episodes}

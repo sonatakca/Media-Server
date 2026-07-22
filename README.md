@@ -150,6 +150,41 @@ the implementation plan, server controls, and the reasoning behind assigning a
 live transcode to one healthy node instead of splitting every stream across
 client and server.
 
+## Firebase Administrator Authentication
+
+All `/dev` pages require Google sign-in through Firebase Authentication. Access
+is restricted to the verified Google account configured by
+`VITE_FIREBASE_ADMIN_EMAIL` (currently `sonatakcaa@gmail.com`). Normal media
+pages continue to use Jellyfin authentication.
+
+The TMDB artwork backend independently verifies the Firebase ID token and the
+same email allowlist before serving any `/api/tmdb-artwork/*` request. The UI
+check is therefore not the security boundary for file-writing operations.
+
+To configure Firebase:
+
+1. Create or select a Firebase project and add a Web app.
+2. Enable **Authentication -> Sign-in method -> Google**.
+3. Add every exact frontend hostname under **Authentication -> Settings ->
+   Authorized domains**, including `seyirlik.org`, `www.seyirlik.org`, and each
+   subdomain that serves this app. Add `localhost` for local development.
+4. Copy the Web app values into the `VITE_FIREBASE_*` variables shown in
+   `.env.example` and configure the same values in the Vercel project.
+5. Download a dedicated Firebase Admin service-account key for the playback
+   backend, store it outside this repository, and set
+   `GOOGLE_APPLICATION_CREDENTIALS` and `SEYIRLIK_FIREBASE_PROJECT_ID`.
+6. Restart both the frontend and playback backend after changing environment
+   variables.
+
+Firebase browser persistence is scoped to one origin. Each subdomain is
+protected by the same project and email allowlist, but the browser may require
+a separate sign-in on each subdomain. A single sign-in shared across all
+subdomains requires a parent-domain server session-cookie service and is not
+provided by this static Vercel frontend.
+
+If Firebase Admin credentials are missing, administrator backend routes fail
+closed with `503 ADMIN_AUTH_NOT_CONFIGURED`.
+
 ## TMDB Artwork Dev Tool
 
 The `/dev/tmdb-artwork` tool uses the local playback backend to search TMDB

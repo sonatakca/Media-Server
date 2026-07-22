@@ -1289,7 +1289,7 @@ export function HeroSection({
                           ease: softEase,
                         }}
                       >
-                        <VideoOff
+                        <Video
                           className="h-5 w-5 sm:h-5 sm:w-5"
                           strokeWidth={2.4}
                         />
@@ -1308,7 +1308,7 @@ export function HeroSection({
                           ease: softEase,
                         }}
                       >
-                        <Video
+                        <VideoOff
                           className="h-5 w-5 sm:h-5 sm:w-5"
                           strokeWidth={2.4}
                         />

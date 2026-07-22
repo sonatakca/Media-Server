@@ -17,6 +17,11 @@ import {
 } from "../lib/playback-planner/playbackRoutes";
 import { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
 import { createTmdbArtworkRequestHandler } from "./tmdbArtwork";
+import {
+  createFirebaseAdminAuthorizerFromEnv,
+  createUnavailableAdminAuthorizer,
+  type AdminRequestAuthorizer,
+} from "./firebaseAdminAuth";
 
 export interface PlaybackBackendOptions {
   host?: string;
@@ -36,6 +41,7 @@ export interface PlaybackBackendOptions {
   preferredVideoEncoder?: string;
   maxConcurrentVideoTranscodes?: number;
   softwareTranscodeThreads?: number;
+  adminAuthorizer?: AdminRequestAuthorizer;
 }
 
 export interface PlaybackBackend {
@@ -215,7 +221,8 @@ async function probeServerConnection(
       ),
       status: probeResponse.status,
       statusText: probeResponse.statusText,
-      message: bodyText || `${probeResponse.status} ${probeResponse.statusText}`,
+      message:
+        bodyText || `${probeResponse.status} ${probeResponse.statusText}`,
     };
   } catch (error) {
     return {
@@ -331,6 +338,8 @@ export async function createPlaybackBackend(
   const allowedOrigins = new Set(
     options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
   );
+  const adminAuthorizer =
+    options.adminAuthorizer ?? createUnavailableAdminAuthorizer();
   const playbackHandler = createPlaybackRequestHandler({
     mediaStore,
     mediaResolver,
@@ -417,6 +426,23 @@ export async function createPlaybackBackend(
         localProbeUrls: localProbe?.url ? [localProbe.url] : [],
       });
       return;
+    }
+
+    if (
+      url.pathname === "/api/tmdb-artwork" ||
+      url.pathname.startsWith("/api/tmdb-artwork/")
+    ) {
+      const authorization = await adminAuthorizer(request);
+
+      if (!authorization.authorized) {
+        sendJson(response, authorization.statusCode, {
+          error: {
+            code: authorization.code,
+            message: authorization.message,
+          },
+        });
+        return;
+      }
     }
 
     const handled =
@@ -522,8 +548,7 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
     jellyfinServerUrl,
     jellyfinApiKey,
     ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH,
-    preferredVideoEncoder:
-      process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
+    preferredVideoEncoder: process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
     maxConcurrentVideoTranscodes: parseOptionalPositiveInteger(
       process.env.SEYIRLIK_MAX_VIDEO_TRANSCODES,
       "SEYIRLIK_MAX_VIDEO_TRANSCODES",
@@ -532,6 +557,7 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
       process.env.SEYIRLIK_SOFTWARE_TRANSCODE_THREADS,
       "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS",
     ),
+    adminAuthorizer: createFirebaseAdminAuthorizerFromEnv(),
   });
 
   await new Promise<void>((resolveListen) => {

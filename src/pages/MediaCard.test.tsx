@@ -106,20 +106,16 @@ describe("MediaCard Component", () => {
     });
   });
 
-  it("offers to mark incomplete playable items as watched", () => {
+  it("does not render watched-status actions on media cards", () => {
     render(
       <MemoryRouter>
-        <MediaCard
-          item={mockMovie}
-          to={`/library/${mockMovie.Id}`}
-          onWatchedStatusReset={vi.fn()}
-        />
+        <MediaCard item={mockMovie} to={`/library/${mockMovie.Id}`} />
       </MemoryRouter>,
     );
 
     expect(
-      screen.getByRole("button", { name: "details.markWatchedStatus" }),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", { name: "details.markWatchedStatus" }),
+    ).not.toBeInTheDocument();
   });
 
   it("renders a collection mosaic when a BoxSet has no primary image", () => {

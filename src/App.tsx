@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./components/Layout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
@@ -46,6 +46,12 @@ const DEFAULT_SERVER_URL =
 
 const DEFAULT_SERVER_CHECK_TIMEOUT_MS = 6000;
 
+const RequireAdminAuth = lazy(async () => {
+  const module = await import("./components/admin/RequireAdminAuth");
+
+  return { default: module.RequireAdminAuth };
+});
+
 type DefaultServerState = "checking" | "ready" | "failed";
 
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -85,9 +91,7 @@ function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<DefaultServerState>(() =>
     shouldCheckDefaultServer ? "checking" : "ready",
   );
-  const [renderSpinner, setRenderSpinner] = useState(
-    shouldCheckDefaultServer,
-  );
+  const [renderSpinner, setRenderSpinner] = useState(shouldCheckDefaultServer);
   const [isVisible, setIsVisible] = useState(false);
   const [connectionFailure, setConnectionFailure] =
     useState<JellyfinServerUnavailableEventDetail | null>(null);
@@ -315,37 +319,57 @@ export default function App() {
           <Route element={<RequireAuth />}>
             <Route element={<Layout />}>
               <Route path="/home" element={<HomePage />} />
-              <Route path="/dev" element={<DevToolsPage />} />
               <Route
-                path="/dev/playback-audit"
-                element={<PlaybackAuditPage />}
-              />
-              <Route
-                path="/dev/playback-health"
-                element={<PlaybackHealthPage />}
-              />
-              <Route
-                path="/dev/library-maintenance"
-                element={<LibraryMaintenancePage />}
-              />
-              <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
-              <Route path="/dev/content" element={<ContentExplorerPage />} />
-              <Route path="/dev/home-curation" element={<HomeCurationPage />} />
-              {import.meta.env.DEV ? (
-                <Route path="/dev/skeleton-lab" element={<SkeletonLabPage />} />
-              ) : null}
-              <Route
-                path="/dev/playback-defaults"
-                element={<PlaybackDefaultsPage />}
-              />
-              <Route
-                path="/dev/known-bugs"
-                element={<DevToolsBoardPage type="bugs" />}
-              />
-              <Route
-                path="/dev/wanted-features"
-                element={<DevToolsBoardPage type="features" />}
-              />
+                element={
+                  <Suspense
+                    fallback={
+                      <main className="flex min-h-[calc(100dvh-8rem)] items-center justify-center">
+                        <LoadingSpinner label="" />
+                      </main>
+                    }
+                  >
+                    <RequireAdminAuth />
+                  </Suspense>
+                }
+              >
+                <Route path="/dev" element={<DevToolsPage />} />
+                <Route
+                  path="/dev/playback-audit"
+                  element={<PlaybackAuditPage />}
+                />
+                <Route
+                  path="/dev/playback-health"
+                  element={<PlaybackHealthPage />}
+                />
+                <Route
+                  path="/dev/library-maintenance"
+                  element={<LibraryMaintenancePage />}
+                />
+                <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
+                <Route path="/dev/content" element={<ContentExplorerPage />} />
+                <Route
+                  path="/dev/home-curation"
+                  element={<HomeCurationPage />}
+                />
+                {import.meta.env.DEV ? (
+                  <Route
+                    path="/dev/skeleton-lab"
+                    element={<SkeletonLabPage />}
+                  />
+                ) : null}
+                <Route
+                  path="/dev/playback-defaults"
+                  element={<PlaybackDefaultsPage />}
+                />
+                <Route
+                  path="/dev/known-bugs"
+                  element={<DevToolsBoardPage type="bugs" />}
+                />
+                <Route
+                  path="/dev/wanted-features"
+                  element={<DevToolsBoardPage type="features" />}
+                />
+              </Route>
               <Route
                 path="/library/:libraryId"
                 element={<LibraryPage mode="library" />}
