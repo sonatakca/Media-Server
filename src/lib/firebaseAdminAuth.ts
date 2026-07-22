@@ -1,17 +1,15 @@
 import { getApps, initializeApp, type FirebaseOptions } from "firebase/app";
 import {
   browserLocalPersistence,
-  getAuth,
+  browserPopupRedirectResolver,
   GoogleAuthProvider,
+  initializeAuth,
   onAuthStateChanged,
-  setPersistence,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   type Auth,
   type User,
 } from "firebase/auth";
-import { FirebaseError } from "firebase/app";
 
 const FIREBASE_APP_NAME = "seyirlik-admin";
 const DEFAULT_ADMIN_EMAIL = "sonatakcaa@gmail.com";
@@ -63,7 +61,10 @@ export function getFirebaseAdminAuth(): Auth {
   const existingApp = getApps().find((app) => app.name === FIREBASE_APP_NAME);
   const app = existingApp ?? initializeApp(firebaseOptions, FIREBASE_APP_NAME);
 
-  authInstance = getAuth(app);
+  authInstance = initializeAuth(app, {
+    persistence: browserLocalPersistence,
+    popupRedirectResolver: browserPopupRedirectResolver,
+  });
   return authInstance;
 }
 
@@ -92,24 +93,7 @@ export async function signInAdminWithGoogle(): Promise<void> {
     prompt: "select_account",
   });
 
-  await setPersistence(auth, browserLocalPersistence);
-
-  try {
-    await signInWithPopup(auth, provider);
-  } catch (error) {
-    if (
-      error instanceof FirebaseError &&
-      [
-        "auth/popup-blocked",
-        "auth/operation-not-supported-in-this-environment",
-      ].includes(error.code)
-    ) {
-      await signInWithRedirect(auth, provider);
-      return;
-    }
-
-    throw error;
-  }
+  await signInWithPopup(auth, provider);
 }
 
 export async function signOutAdmin(): Promise<void> {

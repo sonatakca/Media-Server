@@ -104,6 +104,6 @@ describe("RequireAdminAuth", () => {
     );
 
     expect(adminAuthMock.signOut).toHaveBeenCalledTimes(1);
-    expect(adminAuthMock.signIn).toHaveBeenCalledTimes(1);
+    expect(adminAuthMock.signIn).not.toHaveBeenCalled();
   });
 });

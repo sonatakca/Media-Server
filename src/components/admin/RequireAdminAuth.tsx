@@ -80,7 +80,6 @@ export function RequireAdminAuth() {
 
     try {
       await signOutAdmin();
-      await signInAdminWithGoogle();
     } catch (error) {
       setActionError(error instanceof Error ? error.message : String(error));
     } finally {
