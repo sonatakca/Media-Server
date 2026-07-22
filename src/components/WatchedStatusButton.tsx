@@ -26,6 +26,7 @@ interface WatchedStatusButtonProps {
   style?: CSSProperties;
   iconSize?: number;
   label?: string;
+  showLabel?: boolean;
   confirm?: boolean;
   onReset?: (items: JellyfinItem[]) => void;
 }
@@ -40,6 +41,7 @@ export function WatchedStatusButton({
   style,
   iconSize = 18,
   label,
+  showLabel = false,
   confirm = false,
   onReset,
 }: WatchedStatusButtonProps) {
@@ -161,7 +163,7 @@ export function WatchedStatusButton({
         ) : (
           <EyeOff size={iconSize} />
         )}
-        {/* {label ? <span>{label}</span> : null} */}
+        {showLabel ? <span>{buttonLabel}</span> : null}
       </button>
     </Tooltip>
   );

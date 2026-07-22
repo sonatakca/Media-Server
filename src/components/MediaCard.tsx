@@ -19,7 +19,6 @@ import { ClearWatchingButton } from "./ClearWatchingButton";
 import { CollectionPosterMosaic } from "./CollectionPosterMosaic";
 import { RestartWatchingButton } from "./RestartWatchingButton";
 import { WatchedIndicator } from "./WatchedIndicator";
-import { WatchedStatusButton } from "./WatchedStatusButton";
 import { Tooltip } from "./ui/Tooltip";
 
 interface MediaCardProps {
@@ -34,7 +33,6 @@ interface MediaCardProps {
   showRestartWatching?: boolean;
   collectionItems?: JellyfinItem[];
   onClearContinueWatching?: (item: JellyfinItem) => void;
-  onWatchedStatusReset?: (items: JellyfinItem[]) => void;
 }
 
 function getEpisodeDisplayTitle(
@@ -214,7 +212,6 @@ export function MediaCard({
   showRestartWatching = false,
   collectionItems,
   onClearContinueWatching,
-  onWatchedStatusReset,
 }: MediaCardProps) {
   const { language, t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
@@ -450,15 +447,6 @@ export function MediaCard({
               </div>
 
               <div className="pointer-events-auto relative z-40 flex shrink-0 items-center gap-2">
-                {canPlay && onWatchedStatusReset ? (
-                  <WatchedStatusButton
-                    scope="item"
-                    action={isWatched ? "remove" : "mark"}
-                    item={item}
-                    onReset={onWatchedStatusReset}
-                    className={continueActionButtonClass}
-                  />
-                ) : null}
                 {canPlay && showRestartWatching ? (
                   <RestartWatchingButton
                     item={item}
@@ -766,15 +754,6 @@ export function MediaCard({
               item={item}
               onCleared={onClearContinueWatching}
               className="pointer-events-auto absolute right-3 top-3 flex h-9 w-9 shrink-0 -translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-300 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100"
-            />
-          ) : null}
-          {canPlay && onWatchedStatusReset ? (
-            <WatchedStatusButton
-              scope="item"
-              action={isWatched ? "remove" : "mark"}
-              item={item}
-              onReset={onWatchedStatusReset}
-              className={`pointer-events-auto absolute flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100 ${onClearContinueWatching ? "right-3 top-5" : "left-3 top-5"}`}
             />
           ) : null}
           {canPlay && showRestartWatching ? (

@@ -18,7 +18,6 @@ import { ClearWatchingButton } from "../ClearWatchingButton";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
 import { RestartWatchingButton } from "../RestartWatchingButton";
 import { WatchedIndicator } from "../WatchedIndicator";
-import { WatchedStatusButton } from "../WatchedStatusButton";
 import { Tooltip } from "../ui/Tooltip";
 
 interface MobileMediaCardProps {
@@ -30,7 +29,6 @@ interface MobileMediaCardProps {
   collectionItems?: JellyfinItem[];
   animateRemoval?: boolean;
   onClearContinueWatching?: (item: JellyfinItem) => void;
-  onWatchedStatusReset?: (items: JellyfinItem[]) => void;
 }
 
 function formatTemplate(
@@ -97,7 +95,6 @@ export function MobileMediaCard({
   collectionItems,
   animateRemoval = false,
   onClearContinueWatching,
-  onWatchedStatusReset,
 }: MobileMediaCardProps) {
   const { language, t } = useLanguage();
   const labels = {

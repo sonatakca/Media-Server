@@ -932,7 +932,6 @@ export function MobileLibraryPage({
               layout="grid"
               variant={item.Type === "Episode" ? "landscape" : "poster"}
               collectionItems={data.collectionPosterChildrenById[item.Id]}
-              onWatchedStatusReset={handleWatchedStatusReset}
             />
           ))}
         </div>

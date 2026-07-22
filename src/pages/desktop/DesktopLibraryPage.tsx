@@ -1058,7 +1058,6 @@ export function DesktopLibraryPage({
               animateIn
               showPlayFromBeginning
               collectionItems={data.collectionPosterChildrenById[item.Id]}
-              onWatchedStatusReset={handleWatchedStatusReset}
             />
           ))}
         </div>
