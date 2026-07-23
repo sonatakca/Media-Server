@@ -26,6 +26,11 @@ import type { JellyfinItem } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { groupLatestMediaItems } from "../../lib/latestMedia";
 import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
+import {
+  getHomeLoadErrorMessage,
+  removeContinueWatchingItem,
+  replaceContinueWatchingItems,
+} from "../home/homeModel";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -42,13 +47,6 @@ interface MobileHomeData {
 interface RowWarning {
   labelKey: HomeRowLabelKey;
   message: string;
-}
-
-function getErrorMessage(
-  result: PromiseRejectedResult,
-  fallback: string,
-): string {
-  return result.reason instanceof Error ? result.reason.message : fallback;
 }
 
 function getHeroImage(item?: JellyfinItem): string {
@@ -251,12 +249,7 @@ export function MobileHomePage() {
     const smartContinueItems = await getSmartContinueWatchingItems();
 
     setData((currentData) =>
-      currentData
-        ? {
-            ...currentData,
-            continueWatching: smartContinueItems,
-          }
-        : currentData,
+      replaceContinueWatchingItems(currentData, smartContinueItems),
     );
   }, []);
 
@@ -312,14 +305,20 @@ export function MobileHomePage() {
       if (continueResult.status === "rejected") {
         warnings.push({
           labelKey: "home.continueWatching",
-          message: getErrorMessage(continueResult, t("home.someDataFailed")),
+          message: getHomeLoadErrorMessage(
+            continueResult,
+            t("home.someDataFailed"),
+          ),
         });
       }
 
       if (latestResult.status === "rejected") {
         warnings.push({
           labelKey: "home.latestMedia",
-          message: getErrorMessage(latestResult, t("home.someDataFailed")),
+          message: getHomeLoadErrorMessage(
+            latestResult,
+            t("home.someDataFailed"),
+          ),
         });
       }
 
@@ -429,14 +428,7 @@ export function MobileHomePage() {
 
   const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
     setData((currentData) =>
-      currentData
-        ? {
-            ...currentData,
-            continueWatching: currentData.continueWatching.filter(
-              (item) => item.Id !== clearedItem.Id,
-            ),
-          }
-        : currentData,
+      removeContinueWatchingItem(currentData, clearedItem.Id),
     );
     void refreshSmartContinueWatching();
   };

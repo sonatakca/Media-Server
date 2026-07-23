@@ -1,0 +1,42 @@
+.shimmer {
+  --shimmer-color: var(--accent);
+  --shimmer-base: rgb(255 255 255 / 3%);
+  --shimmer-mid: color-mix(in srgb, var(--shimmer-color) 12%, transparent);
+  --shimmer-peak: color-mix(in srgb, var(--shimmer-color) 20%, transparent);
+  --shimmer-duration: 2s;
+
+  background-color: var(--shimmer-base);
+  background-image: linear-gradient(
+    105deg,
+    transparent 15%,
+    var(--shimmer-mid) 35%,
+    var(--shimmer-peak) 50%,
+    var(--shimmer-mid) 65%,
+    transparent 85%
+  );
+  background-repeat: no-repeat;
+  background-size: 300% 100%;
+  background-position: 150% 0;
+
+  animation: shimmer-sweep var(--shimmer-duration) linear infinite;
+  will-change: background-position;
+}
+
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 150% 0;
+  }
+  45% {
+    background-position: -150% 0;
+  }
+  100% {
+    background-position: -150% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer {
+    animation: none;
+    background-position: center;
+  }
+}

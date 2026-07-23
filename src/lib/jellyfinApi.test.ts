@@ -8,9 +8,14 @@ import {
   getNextEpisodeInSeason,
   getPrimaryImageUrl,
   getThumbImageUrl,
+  getUsers,
   getUserViews,
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
   markItemWatchedStatus,
+  createUser,
+  updateUser,
+  updateUserPassword,
+  updateUserPolicy,
 } from "./jellyfinApi";
 
 describe("getMediaSegments", () => {
@@ -166,6 +171,126 @@ describe("Jellyfin image URLs", () => {
     expect(url.searchParams.get("format")).toBe("Webp");
     expect(url.searchParams.get("tag")).toBe("image-tag");
     expect(url.searchParams.get("api_key")).toBe("mock-token");
+  });
+});
+
+describe("Jellyfin user management", () => {
+  const fetchMock = vi.fn();
+
+  beforeEach(() => {
+    const storage = new Map<string, string>();
+    const localStorageMock: Storage = {
+      get length() {
+        return storage.size;
+      },
+      clear: () => storage.clear(),
+      getItem: (key: string) => storage.get(key) ?? null,
+      key: (index: number) => Array.from(storage.keys())[index] ?? null,
+      removeItem: (key: string) => {
+        storage.delete(key);
+      },
+      setItem: (key: string, value: string) => {
+        storage.set(key, value);
+      },
+    };
+
+    fetchMock.mockReset();
+    vi.stubGlobal("localStorage", localStorageMock);
+    vi.stubGlobal("fetch", fetchMock);
+    setAuthSession({
+      serverUrl: "http://jellyfin.local",
+      accessToken: "mock-token",
+      userId: "admin-1",
+      username: "Admin",
+      deviceId: "device-1",
+    });
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("lists and creates users through Jellyfin's admin endpoints", async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([{ Id: "user-1", Name: "Viewer" }]), {
+          status: 200,
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ Id: "user-2", Name: "New Viewer" }), {
+          status: 200,
+        }),
+      );
+
+    await expect(getUsers()).resolves.toEqual([
+      { Id: "user-1", Name: "Viewer" },
+    ]);
+    await expect(createUser("New Viewer", "secret")).resolves.toEqual({
+      Id: "user-2",
+      Name: "New Viewer",
+    });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://jellyfin.local/Users/New",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          Name: "New Viewer",
+          Password: "secret",
+        }),
+      }),
+    );
+  });
+
+  it("updates a user, policy, and password without dropping policy fields", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
+    const user = {
+      Id: "user-1",
+      Name: "Renamed",
+      Policy: {
+        AuthenticationProviderId:
+          "Jellyfin.Server.Implementations.Users.DefaultAuthenticationProvider",
+        PasswordResetProviderId:
+          "Jellyfin.Server.Implementations.Users.DefaultPasswordResetProvider",
+        IsAdministrator: false,
+      },
+    };
+
+    await updateUser(user);
+    await updateUserPolicy("user-1", {
+      ...user.Policy,
+      IsDisabled: true,
+    });
+    await updateUserPassword("user-1", { newPassword: "new-secret" });
+
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      1,
+      "http://jellyfin.local/Users?userId=user-1",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify(user),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "http://jellyfin.local/Users/user-1/Policy",
+      expect.objectContaining({
+        body: expect.stringContaining('"AuthenticationProviderId"'),
+      }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "http://jellyfin.local/Users/Password?userId=user-1",
+      expect.objectContaining({
+        body: JSON.stringify({
+          NewPw: "new-secret",
+          ResetPassword: false,
+        }),
+      }),
+    );
   });
 });
 

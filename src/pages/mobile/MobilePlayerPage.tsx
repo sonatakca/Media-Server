@@ -14,15 +14,7 @@ import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
 import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
-import {
-  getBackdropImageUrl,
-  getItem,
-  reportPlaybackProgress,
-  reportPlaybackStart,
-  reportPlaybackStopped,
-  reportPlaybackStoppedBeforeUnload,
-  ticksFromSeconds,
-} from "../../lib/jellyfinApi";
+import { getItem } from "../../lib/jellyfinApi";
 import {
   setDefaultPageTitle,
   setLoadingPageTitle,
@@ -35,6 +27,11 @@ import {
 import { readPreloadedPlaybackItem } from "../../lib/playbackPreload";
 import { setSeoMetadata } from "../../lib/seo";
 import type { JellyfinItem } from "../../lib/types";
+import { usePlaybackReporting } from "../player/usePlaybackReporting";
+import {
+  getInitialPlaybackSeconds,
+  getPlayerLoadingBackdropUrl,
+} from "../player/playerPageModel";
 
 export function MobilePlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -119,84 +116,12 @@ export function MobilePlayerPage() {
     };
   }, [item, itemId, playback.isLoading, t]);
 
-  const handlePlaybackStarted = useCallback(
-    (positionSeconds: number) => {
-      const source = playback.activeSource;
-
-      if (!source) {
-        return;
-      }
-
-      void reportPlaybackStart(source, ticksFromSeconds(positionSeconds)).catch(
-        (error) => {
-          console.warn(
-            "[Seyirlik Playback] Could not report playback start",
-            error,
-          );
-        },
-      );
-    },
-    [playback.activeSource],
-  );
-
-  const handlePlaybackProgress = useCallback(
-    (positionSeconds: number, isPaused: boolean) => {
-      const source = playback.activeSource;
-
-      if (!source) {
-        return;
-      }
-
-      void reportPlaybackProgress(
-        source,
-        ticksFromSeconds(positionSeconds),
-        isPaused,
-      ).catch((error) => {
-        console.warn(
-          "[Seyirlik Playback] Could not report playback progress",
-          error,
-        );
-      });
-    },
-    [playback.activeSource],
-  );
-
-  const handlePlaybackStopped = useCallback(
-    (positionSeconds: number) => {
-      const source = playback.activeSource;
-
-      if (!source) {
-        return;
-      }
-
-      void reportPlaybackStopped(
-        source,
-        ticksFromSeconds(positionSeconds),
-      ).catch((error) => {
-        console.warn(
-          "[Seyirlik Playback] Could not report playback stopped",
-          error,
-        );
-      });
-    },
-    [playback.activeSource],
-  );
-
-  const handlePlaybackBeforeUnload = useCallback(
-    (positionSeconds: number) => {
-      const source = playback.activeSource;
-
-      if (!source) {
-        return;
-      }
-
-      reportPlaybackStoppedBeforeUnload(
-        source,
-        ticksFromSeconds(positionSeconds),
-      );
-    },
-    [playback.activeSource],
-  );
+  const {
+    handlePlaybackBeforeUnload,
+    handlePlaybackProgress,
+    handlePlaybackStarted,
+    handlePlaybackStopped,
+  } = usePlaybackReporting(playback.activeSource);
 
   const handlePlayNextUp = useCallback(
     (nextItem: JellyfinItem) => {
@@ -205,17 +130,7 @@ export function MobilePlayerPage() {
     [navigate],
   );
 
-  const loadingBackdropItemId = item
-    ? (item.ParentBackdropItemId ?? item.SeriesId ?? item.Id)
-    : null;
-
-  const loadingBackdropTag = item
-    ? (item.ParentBackdropImageTags?.[0] ?? item.BackdropImageTags?.[0])
-    : undefined;
-
-  const loadingBackdropUrl = loadingBackdropItemId
-    ? getBackdropImageUrl(loadingBackdropItemId, loadingBackdropTag, 1920)
-    : "";
+  const loadingBackdropUrl = getPlayerLoadingBackdropUrl(item);
 
   const isPreparingPlayback =
     !item || playback.isLoading || !playback.activeSource;
@@ -294,11 +209,7 @@ export function MobilePlayerPage() {
 
   const restartPlayback =
     searchParams.get("start") === "0" || searchParams.get("restart") === "1";
-  const savedPlaybackSeconds =
-    typeof item.UserData?.PlaybackPositionTicks === "number"
-      ? item.UserData.PlaybackPositionTicks / 10_000_000
-      : 0;
-  const initialStartSeconds = restartPlayback ? 0 : savedPlaybackSeconds;
+  const initialStartSeconds = getInitialPlaybackSeconds(item, restartPlayback);
 
   return (
     <>

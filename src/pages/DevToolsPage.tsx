@@ -12,6 +12,7 @@ import {
   PanelsTopLeft,
   ShieldAlert,
   ShieldCheck,
+  Users,
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
 import { useEffect } from "react";
@@ -54,6 +55,13 @@ export function DevToolsPage() {
       to: "/dev/playback-health",
       icon: ShieldAlert,
       tag: t("devtools.card.playbackHealth.tag"),
+    },
+    {
+      title: t("devtools.card.userManagement.title"),
+      description: t("devtools.card.userManagement.description"),
+      to: "/dev/users",
+      icon: Users,
+      tag: t("devtools.card.userManagement.tag"),
     },
     {
       title: t("devtools.card.libraryMaintenance.title"),

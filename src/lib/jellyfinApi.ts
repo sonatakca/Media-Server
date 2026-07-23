@@ -19,6 +19,8 @@ import type {
   JellyfinPublicSystemInfo,
   JellyfinSessionInfo,
   JellyfinTranscodingInfo,
+  JellyfinUser,
+  JellyfinUserPolicy,
   NormalizedMediaSegment,
   PlaybackQualityOption,
   PlaybackMode,
@@ -26,16 +28,10 @@ import type {
   PlaybackSourceSettings,
   SegmentKind,
 } from "./types";
+import { buildJellyfinImageUrl } from "./jellyfin/imageUrls";
+import { buildJellyfinUrl, type QueryParams } from "./jellyfin/url";
+export { buildJellyfinUrl } from "./jellyfin/url";
 
-type QueryValue =
-  | string
-  | number
-  | boolean
-  | null
-  | undefined
-  | Array<string | number | boolean>;
-
-type QueryParams = Record<string, QueryValue>;
 type BuiltHlsKind = "stream-copy" | "forced-transcode" | "audio-transcode";
 
 interface RequestOptions {
@@ -141,35 +137,6 @@ const DEFAULT_ITEM_FIELDS = [
 ].join(",");
 
 const MAX_STREAMING_BITRATE = 120_000_000;
-
-function appendQueryParams(url: URL, params: QueryParams = {}): void {
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === "") {
-      return;
-    }
-
-    if (Array.isArray(value)) {
-      if (value.length > 0) {
-        url.searchParams.set(key, value.join(","));
-      }
-      return;
-    }
-
-    url.searchParams.set(key, String(value));
-  });
-}
-
-export function buildJellyfinUrl(
-  serverUrl: string,
-  path: string,
-  params: QueryParams = {},
-): string {
-  const normalizedServerUrl = normalizeServerUrl(serverUrl);
-  const normalizedPath = path.replace(/^\/+/, "");
-  const url = new URL(`${normalizedServerUrl}/${normalizedPath}`);
-  appendQueryParams(url, params);
-  return url.toString();
-}
 
 function appendAuthTokenToMediaUrl(mediaUrl: string, token: string): string {
   const url = new URL(mediaUrl);
@@ -375,6 +342,63 @@ export async function authenticateByName(
     body: {
       Username: username,
       Pw: password,
+    },
+  });
+}
+
+export async function getUsers(): Promise<JellyfinUser[]> {
+  return requestJson<JellyfinUser[]>("/Users");
+}
+
+export async function getUserById(userId: string): Promise<JellyfinUser> {
+  return requestJson<JellyfinUser>(`/Users/${encodeURIComponent(userId)}`);
+}
+
+export async function createUser(
+  name: string,
+  password: string,
+): Promise<JellyfinUser> {
+  return requestJson<JellyfinUser>("/Users/New", {
+    method: "POST",
+    body: {
+      Name: name,
+      Password: password || undefined,
+    },
+  });
+}
+
+export async function updateUser(user: JellyfinUser): Promise<void> {
+  await requestJson<void>("/Users", {
+    method: "POST",
+    params: {
+      userId: user.Id,
+    },
+    body: user,
+  });
+}
+
+export async function updateUserPolicy(
+  userId: string,
+  policy: JellyfinUserPolicy,
+): Promise<void> {
+  await requestJson<void>(`/Users/${encodeURIComponent(userId)}/Policy`, {
+    method: "POST",
+    body: policy,
+  });
+}
+
+export async function updateUserPassword(
+  userId: string,
+  options: { newPassword?: string; resetPassword?: boolean },
+): Promise<void> {
+  await requestJson<void>("/Users/Password", {
+    method: "POST",
+    params: {
+      userId,
+    },
+    body: {
+      NewPw: options.newPassword,
+      ResetPassword: options.resetPassword ?? false,
     },
   });
 }
@@ -2649,23 +2673,14 @@ export function getPrimaryImageUrl(
   tag?: string,
   maxWidth = 500,
 ): string {
-  const serverUrl = getServerUrl();
-
-  if (!serverUrl) {
-    return "";
-  }
-
-  return buildJellyfinUrl(
-    serverUrl,
-    `/Items/${encodeURIComponent(itemId)}/Images/Primary`,
-    {
-      maxWidth,
-      quality: 82,
-      format: "Webp",
-      tag,
-      api_key: getTokenForUrl(),
-    },
-  );
+  return buildJellyfinImageUrl({
+    serverUrl: getServerUrl(),
+    accessToken: getTokenForUrl(),
+    itemId,
+    kind: "Primary",
+    tag,
+    maxWidth,
+  });
 }
 
 export function getLogoImageUrl(
@@ -2673,23 +2688,14 @@ export function getLogoImageUrl(
   tag?: string,
   maxWidth = 900,
 ): string {
-  const serverUrl = getServerUrl();
-
-  if (!serverUrl) {
-    return "";
-  }
-
-  return buildJellyfinUrl(
-    serverUrl,
-    `/Items/${encodeURIComponent(itemId)}/Images/Logo`,
-    {
-      maxWidth,
-      quality: 90,
-      format: "Webp",
-      tag,
-      api_key: getTokenForUrl(),
-    },
-  );
+  return buildJellyfinImageUrl({
+    serverUrl: getServerUrl(),
+    accessToken: getTokenForUrl(),
+    itemId,
+    kind: "Logo",
+    tag,
+    maxWidth,
+  });
 }
 
 export function getBackdropImageUrl(
@@ -2697,24 +2703,14 @@ export function getBackdropImageUrl(
   tag?: string,
   maxWidth = 1600,
 ): string {
-  const serverUrl = getServerUrl();
-
-  if (!serverUrl) {
-    return "";
-  }
-
-  return buildJellyfinUrl(
-    serverUrl,
-    `/Items/${encodeURIComponent(itemId)}/Images/Backdrop`,
-    {
-      maxWidth,
-      quality: 82,
-      format: "Webp",
-      imageIndex: 0,
-      tag,
-      api_key: getTokenForUrl(),
-    },
-  );
+  return buildJellyfinImageUrl({
+    serverUrl: getServerUrl(),
+    accessToken: getTokenForUrl(),
+    itemId,
+    kind: "Backdrop",
+    tag,
+    maxWidth,
+  });
 }
 
 export function getThumbImageUrl(
@@ -2722,23 +2718,14 @@ export function getThumbImageUrl(
   tag?: string,
   maxWidth = 900,
 ): string {
-  const serverUrl = getServerUrl();
-
-  if (!serverUrl) {
-    return "";
-  }
-
-  return buildJellyfinUrl(
-    serverUrl,
-    `/Items/${encodeURIComponent(itemId)}/Images/Thumb`,
-    {
-      maxWidth,
-      quality: 82,
-      format: "Webp",
-      tag,
-      api_key: getTokenForUrl(),
-    },
-  );
+  return buildJellyfinImageUrl({
+    serverUrl: getServerUrl(),
+    accessToken: getTokenForUrl(),
+    itemId,
+    kind: "Thumb",
+    tag,
+    maxWidth,
+  });
 }
 
 export function getStreamUrl(itemId: string): string {

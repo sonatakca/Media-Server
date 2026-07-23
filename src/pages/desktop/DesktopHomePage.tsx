@@ -30,6 +30,11 @@ import {
   markDailyHomeConfettiShown,
   shouldShowDailyHomeConfetti,
 } from "../../lib/homeConfetti";
+import {
+  getHomeLoadErrorMessage,
+  removeContinueWatchingItem,
+  replaceContinueWatchingItems,
+} from "../home/homeModel";
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
@@ -44,13 +49,6 @@ interface HomeData {
 interface RowWarning {
   labelKey: HomeRowLabelKey;
   message: string;
-}
-
-function getErrorMessage(
-  result: PromiseRejectedResult,
-  fallback: string,
-): string {
-  return result.reason instanceof Error ? result.reason.message : fallback;
 }
 
 export function DesktopHomePage() {
@@ -102,9 +100,7 @@ export function DesktopHomePage() {
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
     setData((currentData) =>
-      currentData
-        ? { ...currentData, continueWatching: smartContinueItems }
-        : currentData,
+      replaceContinueWatchingItems(currentData, smartContinueItems),
     );
   }, []);
 
@@ -150,14 +146,20 @@ export function DesktopHomePage() {
       if (continueResult.status === "rejected") {
         warnings.push({
           labelKey: "home.continueWatching",
-          message: getErrorMessage(continueResult, t("home.someDataFailed")),
+          message: getHomeLoadErrorMessage(
+            continueResult,
+            t("home.someDataFailed"),
+          ),
         });
       }
 
       if (latestResult.status === "rejected") {
         warnings.push({
           labelKey: "home.latestMedia",
-          message: getErrorMessage(latestResult, t("home.someDataFailed")),
+          message: getHomeLoadErrorMessage(
+            latestResult,
+            t("home.someDataFailed"),
+          ),
         });
       }
 
@@ -289,14 +291,7 @@ export function DesktopHomePage() {
 
   const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
     setData((currentData) =>
-      currentData
-        ? {
-            ...currentData,
-            continueWatching: currentData.continueWatching.filter(
-              (item) => item.Id !== clearedItem.Id,
-            ),
-          }
-        : currentData,
+      removeContinueWatchingItem(currentData, clearedItem.Id),
     );
     void refreshSmartContinueWatching();
   };

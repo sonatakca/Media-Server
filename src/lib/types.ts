@@ -12,12 +12,29 @@ export interface JellyfinUser {
   Id: string;
   Name: string;
   ServerId?: string;
+  ServerName?: string;
+  PrimaryImageTag?: string;
   HasPassword?: boolean;
   HasConfiguredPassword?: boolean;
   HasConfiguredEasyPassword?: boolean;
   EnableAutoLogin?: boolean;
   LastLoginDate?: string;
   LastActivityDate?: string;
+  Configuration?: Record<string, unknown>;
+  Policy?: JellyfinUserPolicy;
+  PrimaryImageAspectRatio?: number;
+}
+
+export interface JellyfinUserPolicy extends Record<string, unknown> {
+  IsAdministrator?: boolean;
+  IsHidden?: boolean;
+  IsDisabled?: boolean;
+  EnableRemoteAccess?: boolean;
+  EnableMediaPlayback?: boolean;
+  EnableContentDownloading?: boolean;
+  EnableAllFolders?: boolean;
+  AuthenticationProviderId?: string;
+  PasswordResetProviderId?: string;
 }
 
 export interface JellyfinAuthResponse {

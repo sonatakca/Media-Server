@@ -1,0 +1,54 @@
+import { describe, expect, it, vi } from "vitest";
+import type { JellyfinItem } from "../../lib/types";
+import {
+  getInitialPlaybackSeconds,
+  getPlayerLoadingBackdropUrl,
+} from "./playerPageModel";
+
+vi.mock("../../lib/jellyfinApi", () => ({
+  getBackdropImageUrl: vi.fn(
+    (itemId: string, tag: string | undefined, width: number) =>
+      `${itemId}:${tag ?? ""}:${width}`,
+  ),
+}));
+
+describe("playerPageModel", () => {
+  it("preserves loading-backdrop owner and tag precedence", () => {
+    expect(
+      getPlayerLoadingBackdropUrl({
+        Id: "episode",
+        Name: "Episode",
+        SeriesId: "series",
+        ParentBackdropItemId: "parent",
+        ParentBackdropImageTags: ["parent-tag"],
+        BackdropImageTags: ["item-tag"],
+      } as JellyfinItem),
+    ).toBe("parent:parent-tag:1920");
+
+    expect(
+      getPlayerLoadingBackdropUrl({
+        Id: "movie",
+        Name: "Movie",
+        BackdropImageTags: ["movie-tag"],
+      } as JellyfinItem),
+    ).toBe("movie:movie-tag:1920");
+    expect(getPlayerLoadingBackdropUrl(null)).toBe("");
+  });
+
+  it("preserves resume ticks and explicit restart behavior", () => {
+    const item = {
+      Id: "movie",
+      Name: "Movie",
+      UserData: { PlaybackPositionTicks: 125_000_000 },
+    } as JellyfinItem;
+
+    expect(getInitialPlaybackSeconds(item, false)).toBe(12.5);
+    expect(getInitialPlaybackSeconds(item, true)).toBe(0);
+    expect(
+      getInitialPlaybackSeconds(
+        { Id: "empty", Name: "Empty" } as JellyfinItem,
+        false,
+      ),
+    ).toBe(0);
+  });
+});

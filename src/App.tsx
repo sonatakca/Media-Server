@@ -32,6 +32,7 @@ import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
 import { TmdbArtworkPage } from "./pages/TmdbArtworkPage";
 import { PlaybackHealthPage } from "./pages/PlaybackHealthPage";
 import { SkeletonLabPage } from "./pages/SkeletonLabPage";
+import { UserManagementPage } from "./pages/UserManagementPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -347,6 +348,7 @@ export default function App() {
                 />
                 <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
                 <Route path="/dev/content" element={<ContentExplorerPage />} />
+                <Route path="/dev/users" element={<UserManagementPage />} />
                 <Route
                   path="/dev/home-curation"
                   element={<HomeCurationPage />}

@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
+import { formatTemplate } from "../lib/format";
 import type { JellyfinItem } from "../lib/types";
 import { MediaCard } from "./MediaCard";
 import { AnimatedText } from "./AnimatedText";
@@ -19,16 +20,6 @@ interface MediaRowProps {
   hideTags?: boolean;
   showRestartWatching?: boolean;
   onClearContinueWatching?: (item: JellyfinItem) => void;
-}
-
-function formatTemplate(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
-    template,
-  );
 }
 
 export function MediaRow({

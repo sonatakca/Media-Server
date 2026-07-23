@@ -4,7 +4,11 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
-import { formatRuntime, getDisplayTitle } from "../../lib/format";
+import {
+  formatRuntime,
+  formatTemplate,
+  getDisplayTitle,
+} from "../../lib/format";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
 import {
   getReadRouteForItem,
@@ -29,16 +33,6 @@ interface MobileMediaCardProps {
   collectionItems?: JellyfinItem[];
   animateRemoval?: boolean;
   onClearContinueWatching?: (item: JellyfinItem) => void;
-}
-
-function formatTemplate(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
-    template,
-  );
 }
 
 function countLabel(

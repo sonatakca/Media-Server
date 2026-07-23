@@ -13,7 +13,7 @@ import {
   glassInputControl,
 } from "../../components/ui/glassControlStyles";
 import { useLanguage } from "../../i18n/LanguageContext";
-import type { TranslationKey } from "../../i18n/translations";
+
 import { getDisplayTitle } from "../../lib/format";
 import {
   getBoxSetItems,
@@ -43,6 +43,14 @@ import {
   MovieLibrarySkeleton,
   ShowLibrarySkeleton,
 } from "../../components/Skeletons";
+import {
+  compareNames,
+  countLabel,
+  isWatchableScopeItem,
+  isWholeWatchedScope,
+  resolveLibraryCanonicalPath,
+  withWatchedState,
+} from "../library/libraryModel";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -55,33 +63,6 @@ interface LibraryData {
   items: JellyfinItem[];
   selectableSeasons: JellyfinItem[];
   collectionPosterChildrenById: CollectionPosterChildrenMap;
-}
-
-function formatTemplate(
-  template: string,
-  values: Record<string, string | number>,
-): string {
-  return Object.entries(values).reduce(
-    (result, [key, value]) => result.split(`{${key}}`).join(String(value)),
-    template,
-  );
-}
-
-function countLabel(
-  count: number,
-  singularKey: TranslationKey,
-  pluralKey: TranslationKey,
-  t: (key: TranslationKey) => string,
-): string {
-  return count === 1 ? t(singularKey) : formatTemplate(t(pluralKey), { count });
-}
-
-function compareNames(left: JellyfinItem, right: JellyfinItem): number {
-  return (left.SortName ?? left.Name).localeCompare(
-    right.SortName ?? right.Name,
-    undefined,
-    { numeric: true },
-  );
 }
 
 function getLibraryBackdropUrl(
@@ -176,49 +157,6 @@ function sortItems(
   return compareNames(left, right);
 }
 
-function isWholeWatchedScope(
-  library: JellyfinItem | undefined,
-  items: JellyfinItem[],
-): boolean {
-  if (library && isItemCompleted(library)) {
-    return true;
-  }
-
-  const watchableItems = items.filter(
-    (item) =>
-      item.Type === "Episode" ||
-      item.Type === "Season" ||
-      item.Type === "Movie" ||
-      item.MediaType === "Video",
-  );
-
-  return watchableItems.length > 0 && watchableItems.every(isItemCompleted);
-}
-
-function isWatchableScopeItem(item: JellyfinItem): boolean {
-  return (
-    item.Type === "Episode" ||
-    item.Type === "Season" ||
-    item.Type === "Movie" ||
-    item.MediaType === "Video"
-  );
-}
-
-function withWatchedState(item: JellyfinItem, watched: boolean): JellyfinItem {
-  return {
-    ...item,
-    UserData: {
-      ...(item.UserData ?? {}),
-      PlaybackPositionTicks: watched
-        ? (item.RunTimeTicks ?? item.UserData?.PlaybackPositionTicks ?? 0)
-        : 0,
-      PlayedPercentage: watched ? 100 : 0,
-      Played: watched,
-      LastPlayedDate: watched ? new Date().toISOString() : null,
-    },
-  };
-}
-
 async function loadLibraryItems(
   id: string,
   mode: "library" | "series" | "season",
@@ -310,30 +248,14 @@ export function MobileLibraryPage({
     seasonId?: string;
   }>();
   const activeId = libraryIdOverride ?? libraryId ?? seriesId ?? seasonId;
-  const canonicalPath =
-    canonicalPathOverride ??
-    (libraryRouteKind === "movie" && activeId
-      ? `/movies/${activeId}`
-      : libraryRouteKind === "collection" && activeId
-        ? `/collections/${activeId}`
-        : libraryRouteKind === "show" && mode === "series" && activeId
-          ? `/shows/${activeId}`
-          : libraryRouteKind === "show" &&
-              mode === "season" &&
-              seriesId &&
-              seasonId
-            ? `/shows/${seriesId}/season/${seasonId}`
-            : libraryRouteKind === "show" && mode === "season" && seasonId
-              ? `/shows/season/${seasonId}`
-              : mode === "series" && seriesId
-                ? `/series/${seriesId}`
-                : mode === "season" && seriesId && seasonId
-                  ? `/series/${seriesId}/season/${seasonId}`
-                  : mode === "season" && seasonId
-                    ? `/season/${seasonId}`
-                    : activeId
-                      ? `/library/${activeId}`
-                      : "/home");
+  const canonicalPath = resolveLibraryCanonicalPath({
+    activeId,
+    canonicalPathOverride,
+    libraryRouteKind,
+    mode,
+    seasonId,
+    seriesId,
+  });
   const { t } = useLanguage();
   const labels = useMemo(
     () => ({

@@ -9,10 +9,8 @@ import {
 import { Info, Play, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
 import { ButtonLink } from "./Button";
 import {
-  getBackdropImageUrl,
   getHeroPreviewUrl,
   getLogoImageUrl,
-  getPrimaryImageUrl,
   redactPlaybackUrl,
 } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
@@ -28,13 +26,17 @@ import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 import { useCroppedTransparentImage } from "../hooks/useCroppedTransparentImage";
 import { getSmartContinueWatchingItems } from "../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../lib/watchedStatusActions";
-
+import {
+  getHeroImageCandidates,
+  readHeroTrailersEnabledPreference,
+  saveHeroTrailersEnabledPreference,
+  type HeroImageCandidate,
+} from "./hero/heroModel";
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
 const HERO_DEFAULT_SLIDE_DURATION_MS = 12000;
 const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
 const HERO_PREVIEW_FADE_MS = 1200;
 const HERO_POST_TRAILER_VISIBLE_MS = 10000;
-const HERO_TRAILERS_ENABLED_STORAGE_KEY = "seyirlik-hero-trailers-enabled";
 
 type IndicatorsPlacement =
   | "top-center"
@@ -70,77 +72,6 @@ interface HeroSectionProps {
   onHeroReady?: () => void;
   onPreviewPlaybackChange?: (isPlayingPreview: boolean) => void;
   onSlideDurationChange?: (durationMs: number) => void;
-}
-
-type HeroImageType = "backdrop" | "primary";
-
-interface HeroImageCandidate {
-  type: HeroImageType;
-  url: string;
-}
-
-function readHeroTrailersEnabledPreference(): boolean {
-  if (typeof window === "undefined") {
-    return true;
-  }
-
-  try {
-    return (
-      window.localStorage.getItem(HERO_TRAILERS_ENABLED_STORAGE_KEY) !== "false"
-    );
-  } catch {
-    return true;
-  }
-}
-
-function saveHeroTrailersEnabledPreference(enabled: boolean) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.localStorage.setItem(
-      HERO_TRAILERS_ENABLED_STORAGE_KEY,
-      enabled ? "true" : "false",
-    );
-  } catch {
-    // Ignore storage failures so private browsing never blocks the hero UI.
-  }
-}
-
-function getHeroImageCandidates(item?: JellyfinItem): HeroImageCandidate[] {
-  if (!item) {
-    return [];
-  }
-
-  const candidates: HeroImageCandidate[] = [];
-
-  if (item.BackdropImageTags?.[0]) {
-    candidates.push({
-      type: "backdrop",
-      url: getBackdropImageUrl(item.Id, item.BackdropImageTags[0], 2200),
-    });
-  }
-
-  if (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]) {
-    candidates.push({
-      type: "backdrop",
-      url: getBackdropImageUrl(
-        item.ParentBackdropItemId,
-        item.ParentBackdropImageTags[0],
-        2200,
-      ),
-    });
-  }
-
-  if (item.ImageTags?.Primary) {
-    candidates.push({
-      type: "primary",
-      url: getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900),
-    });
-  }
-
-  return candidates;
 }
 
 interface HeroPreviewVideoProps {
@@ -1570,7 +1501,7 @@ export function HeroSection({
               </motion.div>
               {overview ? (
                 <motion.p
-                  className="mt-3 line-clamp-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
+                  className="mt-3 h-[4.5rem] max-w-2xl line-clamp-3 text-sm leading-6 text-white/[0.76] sm:mt-5 sm:h-[5.25rem] sm:text-lg sm:leading-7"
                   initial={false}
                   animate={{
                     opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,
@@ -1597,7 +1528,7 @@ export function HeroSection({
                 </motion.p>
               ) : (
                 <motion.p
-                  className="mt-3 max-w-2xl text-sm leading-6 text-white/[0.76] sm:mt-5 sm:text-lg sm:leading-7"
+                  className="mt-3 h-[4.5rem] max-w-2xl line-clamp-3 text-sm leading-6 text-white/[0.76] sm:mt-5 sm:h-[5.25rem] sm:text-lg sm:leading-7"
                   initial={false}
                   animate={{
                     opacity: heroContentVisible && !isHeroIntroDone ? 1 : 0,

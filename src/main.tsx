@@ -6,6 +6,16 @@ import App from "./App";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import { applyStoredAccentTheme } from "./lib/accentTheme";
 import "./index.css";
+// These styles remain eager, and ordered after Tailwind/global rules, to match
+// the original single-stylesheet first paint and cascade.
+import "./components/player/CustomVideoPlayer.css";
+import "./pages/BookReaderPage.css";
+import "./components/MediaCard.css";
+import "./components/HeroSection.css";
+import "./components/Skeletons.css";
+import "./features/partyWatch/PartyWatch.css";
+import "./components/TimedCarouselIndicators.css";
+import "./components/RouteColorTransition.css";
 
 const userAgent = navigator.userAgent;
 
