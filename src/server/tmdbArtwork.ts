@@ -20,7 +20,6 @@ import {
   LOGO_TARGET_FILE_BY_LANGUAGE,
   LOCAL_URL_PATTERN,
   MAX_IMAGE_BYTES,
-  MAX_LOCAL_LOGO_PREVIEW_BYTES,
   TARGET_FILE_BY_KIND,
   TMDB_ALLOWED_IMAGE_LANGUAGES,
   TMDB_API_BASE_URL,
@@ -811,7 +810,7 @@ async function loadLocalLogoImages(
     if (
       !candidateStat.isFile() ||
       candidateStat.size <= 0 ||
-      candidateStat.size > MAX_LOCAL_LOGO_PREVIEW_BYTES
+      candidateStat.size > MAX_IMAGE_BYTES
     ) {
       continue;
     }

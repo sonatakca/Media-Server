@@ -31,8 +31,8 @@ function imageResponse(contents: string, contentType = "image/jpeg"): Response {
   });
 }
 
-function pngHeader(width: number, height: number): Buffer {
-  const contents = Buffer.alloc(24);
+function pngFixture(width: number, height: number, byteLength = 24): Buffer {
+  const contents = Buffer.alloc(Math.max(24, byteLength));
   Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(contents);
   contents.write("IHDR", 12, "ascii");
   contents.writeUInt32BE(width, 16);
@@ -279,7 +279,7 @@ describe("TMDB artwork backend", () => {
     const mediaDirectory = path.dirname(mediaFile);
     await writeFile(
       path.join(mediaDirectory, "logo-tr.png"),
-      pngHeader(364, 87),
+      pngFixture(364, 87, 2_134_030),
     );
 
     const fetchImpl: typeof fetch = vi.fn(async (input) => {
