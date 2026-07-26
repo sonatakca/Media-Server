@@ -1,6 +1,7 @@
 import { constants } from "node:fs";
 import {
   access,
+  readFile,
   realpath,
   rename,
   rm,
@@ -19,6 +20,7 @@ import {
   LOGO_TARGET_FILE_BY_LANGUAGE,
   LOCAL_URL_PATTERN,
   MAX_IMAGE_BYTES,
+  MAX_LOCAL_LOGO_PREVIEW_BYTES,
   TARGET_FILE_BY_KIND,
   TMDB_ALLOWED_IMAGE_LANGUAGES,
   TMDB_API_BASE_URL,
@@ -738,6 +740,7 @@ function normalizeImages(
       id: `${kind}:${filePath}`,
       kind,
       sourceType,
+      origin: "tmdb",
       filePath,
       previewUrl: buildImageUrl(
         sourceType === "poster" ? "w342" : "w780",
@@ -757,6 +760,89 @@ function normalizeImages(
   return normalizedImages.sort((left, right) =>
     compareImages(kind, left, right),
   );
+}
+
+function getPngDimensions(
+  contents: Buffer,
+): { width: number; height: number } | null {
+  const pngSignature = Buffer.from([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+  ]);
+
+  if (
+    contents.byteLength < 24 ||
+    !contents.subarray(0, pngSignature.byteLength).equals(pngSignature) ||
+    contents.toString("ascii", 12, 16) !== "IHDR"
+  ) {
+    return null;
+  }
+
+  const width = contents.readUInt32BE(16);
+  const height = contents.readUInt32BE(20);
+  return width > 0 && height > 0 ? { width, height } : null;
+}
+
+async function loadLocalLogoImages(
+  directoryPath: string,
+): Promise<NormalizedTmdbImage[]> {
+  const realDirectory = await realpath(directoryPath);
+  const candidates = (["en", "tr"] as const).map((language) => ({
+    language,
+    fileName: LOGO_TARGET_FILE_BY_LANGUAGE[language],
+  }));
+  const images: NormalizedTmdbImage[] = [];
+
+  for (const candidate of candidates) {
+    const candidatePath = path.resolve(realDirectory, candidate.fileName);
+    let realCandidate: string;
+
+    try {
+      realCandidate = await realpath(candidatePath);
+    } catch {
+      continue;
+    }
+
+    if (path.dirname(realCandidate) !== realDirectory) {
+      continue;
+    }
+
+    const candidateStat = await stat(realCandidate);
+
+    if (
+      !candidateStat.isFile() ||
+      candidateStat.size <= 0 ||
+      candidateStat.size > MAX_LOCAL_LOGO_PREVIEW_BYTES
+    ) {
+      continue;
+    }
+
+    const contents = await readFile(realCandidate);
+    const dimensions = getPngDimensions(contents);
+
+    if (!dimensions) {
+      continue;
+    }
+
+    const dataUrl = `data:image/png;base64,${contents.toString("base64")}`;
+    images.push({
+      id: `local-logo:${candidate.language}`,
+      kind: "logo",
+      sourceType: "logo",
+      origin: "local",
+      filePath: candidate.fileName,
+      previewUrl: dataUrl,
+      fullUrl: dataUrl,
+      language: candidate.language,
+      width: dimensions.width,
+      height: dimensions.height,
+      aspectRatio: dimensions.width / dimensions.height,
+      voteAverage: null,
+      voteCount: null,
+      targetFileName: candidate.fileName,
+    });
+  }
+
+  return images;
 }
 
 function compareEpisodeStills(
@@ -1567,7 +1653,32 @@ export function createTmdbArtworkRequestHandler(
           },
           { apiKey, fetchImpl, timeoutMs },
         );
-        const images = normalizeImages(payload, kind);
+        const tmdbImages = normalizeImages(payload, kind);
+        let localImages: NormalizedTmdbImage[] = [];
+
+        if (kind === "logo" && url.searchParams.has("itemId")) {
+          const jellyfinServerUrl = requireJellyfinServerUrl();
+          const jellyfinApiKey = requireJellyfinApiKey();
+          const itemId = validateItemId(url.searchParams.get("itemId"));
+          const item = await fetchJellyfinItem(itemId, {
+            jellyfinServerUrl,
+            apiKey: jellyfinApiKey,
+            fetchImpl,
+            timeoutMs,
+          });
+          const targetDirectory = await resolveArtworkTargetDirectory(
+            item,
+            options.mediaRoot,
+            {
+              jellyfinServerUrl,
+              apiKey: jellyfinApiKey,
+              fetchImpl,
+              timeoutMs,
+            },
+          );
+          localImages = await loadLocalLogoImages(targetDirectory);
+        }
+        const images = [...localImages, ...tmdbImages];
 
         sendJson(response, 200, {
           images,

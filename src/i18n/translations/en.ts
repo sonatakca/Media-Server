@@ -814,6 +814,8 @@ export const en = {
   "tmdbArtwork.logoEnglish": "English logo",
   "tmdbArtwork.logoTurkish": "Turkish logo",
   "tmdbArtwork.logoNotSelected": "No logo selected",
+  "tmdbArtwork.localCustom": "Custom",
+  "tmdbArtwork.localSidecar": "Local sidecar logo",
   "tmdbArtwork.itemMetadata": "Title Metadata",
   "tmdbArtwork.itemLanguages": "Names and descriptions",
   "tmdbArtwork.itemLanguagesDescription":

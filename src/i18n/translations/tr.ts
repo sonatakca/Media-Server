@@ -817,6 +817,8 @@ export const tr = {
   "tmdbArtwork.logoEnglish": "İngilizce logo",
   "tmdbArtwork.logoTurkish": "Türkçe logo",
   "tmdbArtwork.logoNotSelected": "Logo seçilmedi",
+  "tmdbArtwork.localCustom": "Özel",
+  "tmdbArtwork.localSidecar": "Yerel sidecar logosu",
   "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
   "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
   "tmdbArtwork.itemLanguagesDescription":

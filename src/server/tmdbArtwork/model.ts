@@ -128,6 +128,7 @@ export interface NormalizedTmdbImage {
   id: string;
   kind: TmdbArtworkKind;
   sourceType: "poster" | "backdrop" | "logo";
+  origin: "tmdb" | "local";
   filePath: string;
   previewUrl: string;
   fullUrl: string;
@@ -187,6 +188,7 @@ export const ITEM_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 export const TMDB_FILE_PATH_PATTERN = /^\/[A-Za-z0-9][A-Za-z0-9._/-]{0,511}$/;
 export const LOCAL_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 export const MAX_IMAGE_BYTES = 25 * 1024 * 1024;
+export const MAX_LOCAL_LOGO_PREVIEW_BYTES = 1024 * 1024;
 
 export const TARGET_FILE_BY_KIND: Record<TmdbArtworkKind, string> = {
   poster: "folder.jpg",

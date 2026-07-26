@@ -36,6 +36,7 @@ export interface TmdbArtworkImage {
   id: string;
   kind: TmdbArtworkKind;
   sourceType: "poster" | "backdrop" | "logo";
+  origin: "tmdb" | "local";
   filePath: string;
   previewUrl: string;
   fullUrl: string;
@@ -310,6 +311,7 @@ export async function getTmdbLocalizedMetadata(params: {
 }
 
 export async function getTmdbArtworkImages(params: {
+  itemId: string;
   mediaType: TmdbMediaType;
   tmdbId: number;
   kind: TmdbArtworkKind;
@@ -317,6 +319,7 @@ export async function getTmdbArtworkImages(params: {
 }): Promise<TmdbArtworkImage[]> {
   const response = await requestArtworkJson<ImagesResponse>("images", {
     params: {
+      itemId: params.itemId,
       mediaType: params.mediaType,
       tmdbId: params.tmdbId,
       kind: params.kind,

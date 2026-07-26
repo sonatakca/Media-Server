@@ -31,6 +31,15 @@ function imageResponse(contents: string, contentType = "image/jpeg"): Response {
   });
 }
 
+function pngHeader(width: number, height: number): Buffer {
+  const contents = Buffer.alloc(24);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(contents);
+  contents.write("IHDR", 12, "ascii");
+  contents.writeUInt32BE(width, 16);
+  contents.writeUInt32BE(height, 20);
+  return contents;
+}
+
 async function createTempDir(prefix = "seyirlik-tmdb-artwork-") {
   const directory = await mkdtemp(path.join(tmpdir(), prefix));
 
@@ -259,6 +268,83 @@ describe("TMDB artwork backend", () => {
       "/logo-tr.png",
       "/logo-clean.png",
     ]);
+  });
+
+  it("includes manually added local logos in the selectable logo images", async () => {
+    const mediaRoot = await createTempDir();
+    const mediaFile = await writeMediaFile(
+      mediaRoot,
+      "Series/Berlin and the Lady with an Ermine/episode.mkv",
+    );
+    const mediaDirectory = path.dirname(mediaFile);
+    await writeFile(
+      path.join(mediaDirectory, "logo-tr.png"),
+      pngHeader(364, 87),
+    );
+
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "api.themoviedb.org") {
+        return jsonResponse({
+          logos: [
+            {
+              file_path: "/tmdb-logo.png",
+              iso_639_1: "en",
+              width: 886,
+              height: 575,
+              vote_average: 3.3,
+              vote_count: 1,
+            },
+          ],
+        });
+      }
+
+      if (url.hostname === "jellyfin.test") {
+        return jsonResponse({
+          Items: [
+            {
+              Id: "berlin",
+              Type: "Series",
+              Path: mediaDirectory,
+              MediaSources: [],
+            },
+          ],
+        });
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+    const response = await fetch(
+      `${baseUrl}/api/tmdb-artwork/images?itemId=berlin&mediaType=tv&tmdbId=11&kind=logo&language=tr`,
+    );
+    const payload = (await response.json()) as {
+      images: Array<{
+        origin: "tmdb" | "local";
+        filePath: string;
+        previewUrl: string;
+        language: string | null;
+        width: number | null;
+        height: number | null;
+      }>;
+    };
+
+    expect(response.status).toBe(200);
+    expect(payload.images).toHaveLength(2);
+    expect(payload.images[0]).toMatchObject({
+      origin: "local",
+      filePath: "logo-tr.png",
+      language: "tr",
+      width: 364,
+      height: 87,
+    });
+    expect(payload.images[0].previewUrl).toMatch(/^data:image\/png;base64,/);
+    expect(payload.images[1]).toMatchObject({
+      origin: "tmdb",
+      filePath: "/tmdb-logo.png",
+      language: "en",
+    });
   });
 
   it("loads localized movie names and descriptions", async () => {

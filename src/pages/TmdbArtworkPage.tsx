@@ -261,7 +261,11 @@ export function TmdbArtworkPage() {
   ).length;
 
   const loadImagesForKind = useCallback(
-    async (tmdbResult: TmdbSearchResult, kind: TmdbArtworkKind) => {
+    async (
+      tmdbResult: TmdbSearchResult,
+      kind: TmdbArtworkKind,
+      itemId = selectedItem?.Id ?? "",
+    ) => {
       setImagesState({
         state: "loading",
         message: t("tmdbArtwork.loadingImages"),
@@ -269,6 +273,7 @@ export function TmdbArtworkPage() {
 
       try {
         const images = await getTmdbArtworkImages({
+          itemId,
           mediaType: tmdbResult.mediaType,
           tmdbId: tmdbResult.id,
           kind,
@@ -313,7 +318,7 @@ export function TmdbArtworkPage() {
         });
       }
     },
-    [language, t],
+    [language, selectedItem?.Id, t],
   );
 
   useEffect(() => {
@@ -422,7 +427,7 @@ export function TmdbArtworkPage() {
     );
 
     if (providerResult) {
-      void loadImagesForKind(providerResult, activeKind);
+      void loadImagesForKind(providerResult, activeKind, item.Id);
     }
   };
 
@@ -498,6 +503,22 @@ export function TmdbArtworkPage() {
     });
 
     try {
+      if (activeKind === "logo" && activeSelectedImage.origin === "local") {
+        saveItemLogoOverride(
+          selectedItem.Id,
+          activeLogoLanguage,
+          activeSelectedImage.fullUrl,
+        );
+        setApplyState({
+          state: "success",
+          message: formatTemplate(t("tmdbArtwork.artworkSaved"), {
+            file: activeSelectedImage.targetFileName,
+          }),
+        });
+        setArtworkRefreshToken(Date.now());
+        return;
+      }
+
       const result = await applyTmdbArtwork({
         itemId: selectedItem.Id,
         kind: activeKind,
@@ -1433,16 +1454,23 @@ export function TmdbArtworkPage() {
                             <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-white/48">
                               {formatDimensions(image, t)}
                             </span>
+                            {image.origin === "local" ? (
+                              <span className="rounded-full border border-[var(--accent)]/25 bg-[var(--accent)]/10 px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-[var(--accent)]">
+                                {t("tmdbArtwork.localCustom")}
+                              </span>
+                            ) : null}
                           </div>
 
                           <p className="truncate text-sm font-bold text-white/68">
                             {image.filePath}
                           </p>
                           <p className="text-xs font-bold text-white/38">
-                            {formatTemplate(t("tmdbArtwork.voteSummary"), {
-                              rating: image.voteAverage?.toFixed(1) ?? "-",
-                              count: image.voteCount ?? 0,
-                            })}
+                            {image.origin === "local"
+                              ? t("tmdbArtwork.localSidecar")
+                              : formatTemplate(t("tmdbArtwork.voteSummary"), {
+                                  rating: image.voteAverage?.toFixed(1) ?? "-",
+                                  count: image.voteCount ?? 0,
+                                })}
                           </p>
                         </div>
                       </button>
