@@ -123,7 +123,15 @@ function mapHlsKind(
   }
 }
 
+function getTranscodingReasonCodes(plan: PlaybackPlan): string[] {
+  return plan.mode === "direct-play"
+    ? []
+    : plan.reasons.map((reason) => reason.code);
+}
+
 function buildSyntheticMediaSource(plan: PlaybackPlan): JellyfinMediaSource {
+  const transcodeReasons = getTranscodingReasonCodes(plan);
+
   return {
     Id: plan.mediaId,
     Name: plan.mediaId,
@@ -133,7 +141,7 @@ function buildSyntheticMediaSource(plan: PlaybackPlan): JellyfinMediaSource {
       plan.mode === "remux" || plan.mode === "audio-transcode",
     SupportsTranscoding:
       plan.mode === "subtitle-burn" || plan.mode === "video-transcode",
-    TranscodingReasons: plan.reasons.map((reason) => reason.code),
+    TranscodingReasons: transcodeReasons,
     MediaStreams: [
       {
         Index: plan.selected.videoStreamIndex,
@@ -169,6 +177,7 @@ function planToPlaybackCandidate(
 ): PlaybackSourceCandidate {
   const url = makePlanUrlAbsolute(baseUrl, plan.delivery.url);
   const reason = plan.reasons.map((item) => item.message).join(" ");
+  const transcodeReasons = getTranscodingReasonCodes(plan);
 
   return {
     id: `custom-${plan.mode}-${plan.delivery.sessionId ?? "file"}`,
@@ -184,7 +193,7 @@ function planToPlaybackCandidate(
     mediaSource: buildSyntheticMediaSource(plan),
     playbackDiagnostics: plan.diagnostics,
     reason,
-    transcodeReasons: plan.reasons.map((item) => item.code),
+    transcodeReasons,
     priority: 0,
   };
 }

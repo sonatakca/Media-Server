@@ -29,6 +29,9 @@ interface ServerConnectionErrorPageProps {
   serverUrl: string;
   failure?: JellyfinServerUnavailableEventDetail | null;
   onRetrySuccess: () => void;
+  mode?: "jellyfin" | "own-api";
+  diagnoseConnection?: typeof diagnoseServerConnection;
+  testConnection?: (serverUrl: string) => Promise<unknown>;
 }
 
 type DiagnosticState =
@@ -48,6 +51,7 @@ const COPY = {
     changeServer: "Change server",
     cloudflareTunnel: "Tunnel Connection",
     jellyfinServer: "Jellyfin Server",
+    seyirlikServer: "Seyirlik Server",
     publicUrl: "Public URL",
     localProbe: "Local probe",
     checkedByBackend: "Checked by backend diagnostics",
@@ -117,6 +121,7 @@ const COPY = {
     changeServer: "Sunucuyu değiştir",
     cloudflareTunnel: "Tunnel Bağlantısı",
     jellyfinServer: "Jellyfin Sunucusu",
+    seyirlikServer: "Seyirlik Sunucusu",
     publicUrl: "Public adres",
     localProbe: "Yerel kontrol",
     checkedByBackend: "Backend tanısıyla kontrol edildi",
@@ -188,6 +193,7 @@ const COPY = {
     changeServer: string;
     cloudflareTunnel: string;
     jellyfinServer: string;
+    seyirlikServer: string;
     publicUrl: string;
     localProbe: string;
     checkedByBackend: string;
@@ -384,6 +390,9 @@ export function ServerConnectionErrorPage({
   serverUrl,
   failure,
   onRetrySuccess,
+  mode = "jellyfin",
+  diagnoseConnection = diagnoseServerConnection,
+  testConnection = testServerConnection,
 }: ServerConnectionErrorPageProps) {
   const { language } = useLanguage();
   const copy = COPY[language];
@@ -413,7 +422,7 @@ export function ServerConnectionErrorPage({
     setState({ status: "checking" });
 
     try {
-      const diagnosis = await diagnoseServerConnection({ serverUrl, failure });
+      const diagnosis = await diagnoseConnection({ serverUrl, failure });
 
       if (diagnosis.problem === "none") {
         finishWithFadeOut();
@@ -427,7 +436,7 @@ export function ServerConnectionErrorPage({
         message: getErrorMessage(error),
       });
     }
-  }, [failure, finishWithFadeOut, serverUrl]);
+  }, [diagnoseConnection, failure, finishWithFadeOut, serverUrl]);
 
   useEffect(() => {
     void runDiagnostics();
@@ -437,7 +446,7 @@ export function ServerConnectionErrorPage({
     setIsRetrying(true);
 
     try {
-      await testServerConnection(serverUrl);
+      await testConnection(serverUrl);
       finishWithFadeOut();
       return;
     } catch {
@@ -445,7 +454,7 @@ export function ServerConnectionErrorPage({
     } finally {
       setIsRetrying(false);
     }
-  }, [finishWithFadeOut, runDiagnostics, serverUrl]);
+  }, [finishWithFadeOut, runDiagnostics, serverUrl, testConnection]);
 
   const fallbackDiagnosis = useMemo<ServerConnectionDiagnosis | null>(() => {
     if (state.status !== "failed") {
@@ -502,6 +511,9 @@ export function ServerConnectionErrorPage({
     diagnosis.source === "backend"
       ? copy.checkedByBackend
       : copy.checkedByBrowser;
+  const nativeServerState: ServiceState = probeIsOnline(diagnosis.publicProbe)
+    ? "online"
+    : "offline";
 
   return (
     <main className="min-h-screen bg-[#050505] px-5 py-10 text-white sm:px-8 lg:px-12">
@@ -528,20 +540,32 @@ export function ServerConnectionErrorPage({
                   : "translate-y-4 opacity-0 delay-0"
               }`}
             >
-              <ServiceStatusCard
-                icon={tunnelIcon}
-                title={copy.cloudflareTunnel}
-                status={tunnelState}
-                statusLabel={copy[tunnelState]}
-                detail=""
-              />
-              <ServiceStatusCard
-                icon={jellyfinIcon}
-                title={copy.jellyfinServer}
-                status={jellyfinState}
-                statusLabel={copy[jellyfinState]}
-                detail=""
-              />
+              {mode === "own-api" ? (
+                <ServiceStatusCard
+                  icon={nativeServerState === "online" ? Server : ServerCrash}
+                  title={copy.seyirlikServer}
+                  status={nativeServerState}
+                  statusLabel={copy[nativeServerState]}
+                  detail=""
+                />
+              ) : (
+                <>
+                  <ServiceStatusCard
+                    icon={tunnelIcon}
+                    title={copy.cloudflareTunnel}
+                    status={tunnelState}
+                    statusLabel={copy[tunnelState]}
+                    detail=""
+                  />
+                  <ServiceStatusCard
+                    icon={jellyfinIcon}
+                    title={copy.jellyfinServer}
+                    status={jellyfinState}
+                    statusLabel={copy[jellyfinState]}
+                    detail=""
+                  />
+                </>
+              )}
             </aside>
 
             <div

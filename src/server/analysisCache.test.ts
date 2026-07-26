@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { InMemoryAnalysisCache } from "./analysisCache";
 import type { ResolvedMedia } from "./mediaRegistry";
 import type { MediaAnalysis } from "../lib/playback-planner/types";
@@ -46,6 +46,19 @@ function analysis(mediaId = "movie.mp4"): MediaAnalysis {
 }
 
 describe("InMemoryAnalysisCache", () => {
+  it("passes the configured ffprobe binary to media analysis", async () => {
+    const analyse = vi.fn(async () => analysis());
+    const cache = new InMemoryAnalysisCache(analyse, "/configured/bin/ffprobe");
+
+    await cache.getOrAnalyse(media());
+
+    expect(analyse).toHaveBeenCalledWith(
+      "/media/movie.mp4",
+      "movie.mp4",
+      "/configured/bin/ffprobe",
+    );
+  });
+
   it("returns a cache hit for unchanged file identity", async () => {
     let calls = 0;
     const cache = new InMemoryAnalysisCache(async () => {

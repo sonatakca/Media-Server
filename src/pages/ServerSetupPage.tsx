@@ -37,13 +37,14 @@ function getServerUrlErrorMessage(
     return t("server.enterUrl");
   }
 
-  if (error.message === "Enter a valid URL that starts with http:// or https://.") {
+  if (
+    error.message === "Enter a valid URL that starts with http:// or https://."
+  ) {
     return t("server.enterValidUrl");
   }
 
   if (
-    error.message ===
-    "Jellyfin server URL must start with http:// or https://."
+    error.message === "Jellyfin server URL must start with http:// or https://."
   ) {
     return t("server.urlMustStartHttp");
   }
@@ -88,7 +89,9 @@ export function ServerSetupPage() {
         state: { serverUrl: normalizedServerUrl },
       });
     } catch (submitError) {
-      setError(getServerUrlErrorMessage(submitError, t, t("server.saveFailed")));
+      setError(
+        getServerUrlErrorMessage(submitError, t, t("server.saveFailed")),
+      );
     }
   };
 

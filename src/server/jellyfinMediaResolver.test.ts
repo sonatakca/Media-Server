@@ -12,7 +12,7 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createJellyfinMediaResolver,
   normalizeJellyfinServerUrl,
@@ -112,6 +112,127 @@ describe("jellyfin media resolver", () => {
       await realpath(filePath),
     );
     expect(media.size).toBe(5);
+  });
+
+  it("reuses a resolved local file across direct range requests", async () => {
+    const mediaRoot = await createTempDir();
+    const filePath = await writeMediaFile(mediaRoot, "Movies/cached.mp4");
+    const fetchImpl = vi.fn(
+      fetchItem(
+        itemQueryResponse({
+          Type: "Movie",
+          MediaSources: [{ Protocol: "File", Path: filePath }],
+        }),
+      ),
+    );
+    const resolver = await createResolver(mediaRoot, {}, { fetchImpl });
+
+    const first = await resolver.resolveMedia("cached-movie");
+    const second = await resolver.resolveMedia("cached-movie");
+
+    expect(second).toEqual(first);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("coalesces simultaneous direct range resolutions", async () => {
+    const mediaRoot = await createTempDir();
+    const filePath = await writeMediaFile(mediaRoot, "Movies/coalesced.mp4");
+    let releaseFetch: (() => void) | undefined;
+    const fetchGate = new Promise<void>((resolve) => {
+      releaseFetch = resolve;
+    });
+    const fetchImpl = vi.fn(async () => {
+      await fetchGate;
+      return jsonResponse(
+        itemQueryResponse({
+          Type: "Movie",
+          MediaSources: [{ Protocol: "File", Path: filePath }],
+        }),
+      );
+    });
+    const resolver = await createResolver(mediaRoot, {}, { fetchImpl });
+
+    const first = resolver.resolveMedia("coalesced-movie");
+    const second = resolver.resolveMedia("coalesced-movie");
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    releaseFetch?.();
+    await expect(Promise.all([first, second])).resolves.toHaveLength(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("bounds the resolved-media cache", async () => {
+    const mediaRoot = await createTempDir();
+    const filePath = await writeMediaFile(mediaRoot, "Movies/bounded.mp4");
+    const fetchImpl = vi.fn(
+      fetchItem(
+        itemQueryResponse({
+          Type: "Movie",
+          MediaSources: [{ Protocol: "File", Path: filePath }],
+        }),
+      ),
+    );
+    const resolver = await createResolver(mediaRoot, {}, { fetchImpl });
+
+    for (let index = 0; index <= 256; index += 1) {
+      await resolver.resolveMedia(`bounded-movie-${index}`);
+    }
+    await resolver.resolveMedia("bounded-movie-0");
+
+    expect(fetchImpl).toHaveBeenCalledTimes(258);
+  });
+
+  it("revalidates cached file metadata without another Jellyfin lookup", async () => {
+    const mediaRoot = await createTempDir();
+    const filePath = await writeMediaFile(mediaRoot, "Movies/changing.mp4");
+    const fetchImpl = vi.fn(
+      fetchItem(
+        itemQueryResponse({
+          Type: "Movie",
+          MediaSources: [{ Protocol: "File", Path: filePath }],
+        }),
+      ),
+    );
+    const resolver = await createResolver(mediaRoot, {}, { fetchImpl });
+
+    const first = await resolver.resolveMedia("changing-movie");
+    await writeFile(filePath, "media-with-a-different-size");
+    const second = await resolver.resolveMedia("changing-movie");
+
+    expect(second.size).not.toBe(first.size);
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a cached path replaced by a symlink outside the media root", async () => {
+    const mediaRoot = await createTempDir();
+    const outsideRoot = await createTempDir("seyirlik-jellyfin-outside-");
+    const filePath = await writeMediaFile(mediaRoot, "Movies/replaced.mp4");
+    const outsideFile = await writeMediaFile(outsideRoot, "outside.mp4");
+    const fetchImpl = vi.fn(
+      fetchItem(
+        itemQueryResponse({
+          Type: "Movie",
+          MediaSources: [{ Protocol: "File", Path: filePath }],
+        }),
+      ),
+    );
+    const resolver = await createResolver(mediaRoot, {}, { fetchImpl });
+
+    await resolver.resolveMedia("replaced-movie");
+    await rm(filePath);
+
+    try {
+      await symlink(outsideFile, filePath);
+    } catch {
+      return;
+    }
+
+    await expect(resolver.resolveMedia("replaced-movie")).rejects.toMatchObject(
+      {
+        code: "JELLYFIN_LOCAL_PATH_REJECTED",
+        statusCode: 403,
+      },
+    );
   });
 
   it("resolves an episode through the item-level path fallback", async () => {

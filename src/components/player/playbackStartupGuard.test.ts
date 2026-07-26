@@ -8,6 +8,7 @@ import {
   markStartupWatchdogCancelled,
   recordHlsEvent,
   recordSuccessfulPlaybackEvent,
+  shouldExtendStartupWatchdog,
   type PlaybackVideoSnapshot,
 } from "./playbackStartupGuard";
 
@@ -187,6 +188,32 @@ describe("playback startup guard", () => {
       suppress: false,
       reason: null,
     });
+  });
+
+  it("keeps waiting while a direct source is still actively loading", () => {
+    const attempt = createPlaybackAttemptState(1, source(), 1_000);
+
+    expect(
+      shouldExtendStartupWatchdog(
+        attempt,
+        snapshot({ networkState: 2 }),
+        13_000,
+      ),
+    ).toBe(true);
+    expect(
+      shouldExtendStartupWatchdog(
+        attempt,
+        snapshot({ networkState: 2 }),
+        61_001,
+      ),
+    ).toBe(false);
+    expect(
+      shouldExtendStartupWatchdog(
+        attempt,
+        snapshot({ networkState: 3 }),
+        13_000,
+      ),
+    ).toBe(false);
   });
 
   it("lets a successful retry clear the previous fatal state", () => {

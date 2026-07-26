@@ -11,6 +11,7 @@ export interface AnalysisCache {
 type AnalyseMediaFile = (
   filePath: string,
   mediaId: string,
+  ffprobePath?: string,
 ) => Promise<MediaAnalysis>;
 
 interface CachedAnalysis {
@@ -27,9 +28,14 @@ export class InMemoryAnalysisCache implements AnalysisCache {
   private entries = new Map<string, CachedAnalysis>();
   private inFlight = new Map<string, Promise<MediaAnalysis>>();
   private analyse: AnalyseMediaFile;
+  private ffprobePath: string;
 
-  constructor(analyse: AnalyseMediaFile = analyseMediaFile) {
+  constructor(
+    analyse: AnalyseMediaFile = analyseMediaFile,
+    ffprobePath = "ffprobe",
+  ) {
     this.analyse = analyse;
+    this.ffprobePath = ffprobePath;
   }
 
   getOrAnalyse(media: ResolvedMedia): Promise<MediaAnalysis> {
@@ -47,7 +53,11 @@ export class InMemoryAnalysisCache implements AnalysisCache {
     }
 
     // TODO: Replace the in-memory analysis cache with a persistent database cache.
-    const pending = this.analyse(media.filePath, media.mediaId)
+    const pending = this.analyse(
+      media.filePath,
+      media.mediaId,
+      this.ffprobePath,
+    )
       .then((analysis) => {
         this.delete(media.mediaId);
         this.entries.set(cacheKey, {

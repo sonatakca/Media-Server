@@ -11,6 +11,7 @@ export interface CustomVideoPlayerProps {
   hasTranscodingFallback: boolean;
   initialStartSeconds?: number;
   onVideoFailure: (details: string) => void;
+  onVideoRecovery: () => void;
   onTryTranscodedPlayback: () => void;
   onRetryPlayback: () => void;
   onPlaybackStarted?: (positionSeconds: number) => void;
@@ -23,6 +24,8 @@ export interface CustomVideoPlayerProps {
   enableDefaultNextEpisodeCountdown?: boolean;
   onAutoPlayNextEpisode?: (nextEpisode: JellyfinItem) => void;
   onPlayQueueItem?: (item: JellyfinItem) => void;
+  preparingBackdropUrl?: string | null;
+  showPreparingArtwork?: boolean;
 }
 
 export interface PendingSourceRestore {

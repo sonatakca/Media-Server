@@ -174,6 +174,13 @@ function makePlaybackUrlAbsolute(
   return appendAuthTokenToMediaUrl(absoluteUrl, token);
 }
 
+function redactCustomPlaybackCapabilityPath(pathname: string): string {
+  return pathname.replace(
+    /(\/api\/playback\/(?:direct|hls|generated)\/)[^/]+/gi,
+    "$1REDACTED",
+  );
+}
+
 export function redactPlaybackUrl(playbackUrl: string): string {
   try {
     const url = new URL(playbackUrl);
@@ -184,9 +191,11 @@ export function redactPlaybackUrl(playbackUrl: string): string {
       }
     }
 
+    url.pathname = redactCustomPlaybackCapabilityPath(url.pathname);
+
     return url.toString();
   } catch {
-    return playbackUrl.replace(
+    return redactCustomPlaybackCapabilityPath(playbackUrl).replace(
       /(api_key|access_token)=([^&]+)/gi,
       "$1=REDACTED",
     );

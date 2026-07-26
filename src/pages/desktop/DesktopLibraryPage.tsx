@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
-import { motion } from "framer-motion";
+import { motion, type Variants } from "framer-motion";
 import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
@@ -202,6 +202,27 @@ async function loadLibraryItems(
 
   return getItemsForLibrary(id);
 }
+
+const centeredBounceVariants: Variants = {
+  bouncing: {
+    y: ["0%", "12.5%", "0%", "-12.5%", "0%"],
+    transition: {
+      duration: 1.15,
+      repeat: Infinity,
+      repeatDelay: 0,
+      times: [0, 0.25, 0.5, 0.75, 1],
+      ease: ["easeOut", "easeIn", "easeOut", "easeIn"],
+    },
+  },
+
+  centered: {
+    y: "0%",
+    transition: {
+      duration: 0.25,
+      ease: [0.22, 1, 0.36, 1],
+    },
+  },
+};
 
 export function DesktopLibraryPage({
   mode = "library",
@@ -587,19 +608,28 @@ export function DesktopLibraryPage({
             <div className="full-bleed relative min-h-[100svh]">
               <HeroSection item={data.library} variant="fixed" />
 
-              <button
+              <motion.button
                 type="button"
                 aria-label={detailsScrollLabel}
+                initial="bouncing"
+                animate="bouncing"
+                whileHover="centered"
+                whileFocus="centered"
                 onClick={() =>
                   seriesDetailsRef.current?.scrollIntoView({
                     behavior: "smooth",
                     block: "start",
                   })
                 }
-                className={`${glassControlBase} absolute bottom-6 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
+                className={`${glassControlBase} group absolute bottom-10 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
               >
-                <ChevronDown size={30} strokeWidth={2.4} />
-              </button>
+                <motion.span
+                  variants={centeredBounceVariants}
+                  className="flex items-center justify-center"
+                >
+                  <ChevronDown size={30} strokeWidth={2.4} />
+                </motion.span>
+              </motion.button>
             </div>
 
             <div

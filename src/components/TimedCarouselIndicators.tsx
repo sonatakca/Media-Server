@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Pause, Play } from "lucide-react";
+import { Tooltip } from "./ui/Tooltip";
+import { useLanguage } from "../i18n/LanguageContext";
 
 interface TimedCarouselIndicatorsProps {
   count: number;
@@ -89,6 +91,7 @@ export function TimedCarouselIndicators({
   isPauseButtonDisabled = false,
   maxVisibleDots,
 }: TimedCarouselIndicatorsProps) {
+  const { t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
   const [isCompactViewport, setIsCompactViewport] = useState(false);
   const [hasCompletedInitialReveal, setHasCompletedInitialReveal] =
@@ -415,72 +418,77 @@ export function TimedCarouselIndicators({
       </motion.div>
 
       {showPauseButton ? (
-        <motion.button
-          type="button"
-          aria-label={isPaused ? "Resume carousel" : "Pause carousel"}
-          className={classNames(
-            "ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11",
-            isPauseButtonDisabled
-              ? "cursor-not-allowed opacity-55"
-              : "hover:bg-white/[0.20] hover:text-white",
-          )}
-          disabled={isPauseButtonDisabled}
-          aria-disabled={isPauseButtonDisabled}
-          initial={
-            shouldReduceMotion
-              ? { opacity: 1 }
-              : {
-                  opacity: 0,
-                  scale: 0.75,
-                  x: -10,
-                  y: 4,
-                }
-          }
-          animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
-          transition={{
-            ...softSpringTransition,
-            delay: shouldReduceMotion
-              ? 0
-              : 0.65 + visibleIndicators.length * 0.045,
-          }}
-          onClick={isPauseButtonDisabled ? undefined : onTogglePaused}
+        <Tooltip
+          content={isPaused ? t("common.play") : t("common.pause")}
+          placement="top"
+          offset="0.8rem"
         >
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.span
-              key={isPaused ? "play" : "pause"}
-              className="flex items-center justify-center"
-              initial={
-                shouldReduceMotion
-                  ? { opacity: 1 }
-                  : { opacity: 1, scale: 0, rotate: -4 }
-              }
-              animate={{ opacity: 1, scale: 1, rotate: 0 }}
-              exit={
-                shouldReduceMotion
-                  ? { opacity: 1 }
-                  : { opacity: 1, scale: 0, rotate: 4 }
-              }
-              transition={{
-                duration: shouldReduceMotion ? 0 : 0.16,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-            >
-              {isPaused ? (
-                <Play
-                  className="ml-0.5 h-[18px] w-[18px]"
-                  fill="currentColor"
-                  strokeWidth={2.5}
-                />
-              ) : (
-                <Pause
-                  className="h-[18px] w-[18px]"
-                  fill="currentColor"
-                  strokeWidth={2.5}
-                />
-              )}
-            </motion.span>
-          </AnimatePresence>
-        </motion.button>
+          <motion.button
+            type="button"
+            className={classNames(
+              "ml-2 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-white/[0.10] bg-white/[0.14] text-white/[0.92] shadow-[0_18px_60px_rgba(0,0,0,0.32),inset_0_1px_0_rgba(255,255,255,0.12)] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:ml-3 sm:h-11 sm:w-11",
+              isPauseButtonDisabled
+                ? "cursor-not-allowed opacity-55"
+                : "hover:bg-white/[0.20] hover:text-white",
+            )}
+            disabled={isPauseButtonDisabled}
+            aria-disabled={isPauseButtonDisabled}
+            initial={
+              shouldReduceMotion
+                ? { opacity: 1 }
+                : {
+                    opacity: 0,
+                    scale: 0.75,
+                    x: -10,
+                    y: 4,
+                  }
+            }
+            animate={{ opacity: 1, scale: 1, x: 0, y: 0 }}
+            transition={{
+              ...softSpringTransition,
+              delay: shouldReduceMotion
+                ? 0
+                : 0.65 + visibleIndicators.length * 0.045,
+            }}
+            onClick={isPauseButtonDisabled ? undefined : onTogglePaused}
+          >
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={isPaused ? "play" : "pause"}
+                className="flex items-center justify-center"
+                initial={
+                  shouldReduceMotion
+                    ? { opacity: 1 }
+                    : { opacity: 1, scale: 0, rotate: -4 }
+                }
+                animate={{ opacity: 1, scale: 1, rotate: 0 }}
+                exit={
+                  shouldReduceMotion
+                    ? { opacity: 1 }
+                    : { opacity: 1, scale: 0, rotate: 4 }
+                }
+                transition={{
+                  duration: shouldReduceMotion ? 0 : 0.16,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+              >
+                {isPaused ? (
+                  <Play
+                    className="ml-0.5 h-[18px] w-[18px]"
+                    fill="currentColor"
+                    strokeWidth={2.5}
+                  />
+                ) : (
+                  <Pause
+                    className="h-[18px] w-[18px]"
+                    fill="currentColor"
+                    strokeWidth={2.5}
+                  />
+                )}
+              </motion.span>
+            </AnimatePresence>
+          </motion.button>
+        </Tooltip>
       ) : null}
     </motion.div>
   );

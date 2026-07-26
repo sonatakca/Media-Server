@@ -181,7 +181,9 @@ describe("custom playback API request deduplication", () => {
 
   it("maps direct MOV backend responses to a native DirectPlay source", async () => {
     const api = await loadApi();
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(directMovPlaybackPlan()));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(jsonResponse(directMovPlaybackPlan()));
 
     vi.stubGlobal("fetch", fetchMock);
 
@@ -196,7 +198,9 @@ describe("custom playback API request deduplication", () => {
       mediaSource: {
         Container: "mov",
         SupportsDirectPlay: true,
+        TranscodingReasons: [],
       },
+      transcodeReasons: [],
     });
   });
 

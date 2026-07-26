@@ -725,9 +725,23 @@ export function PlaybackInfoPanel({
   const [activeTranscodingReasons, setActiveTranscodingReasons] = useState<
     string[]
   >([]);
+  const playbackDiagnostics = source.playbackDiagnostics;
+  const shouldShowTranscodingReasons =
+    source.mode !== "DirectPlay" &&
+    (source.mode === "Transcoding" ||
+      playbackDiagnostics?.decision.videoAction === "transcode" ||
+      playbackDiagnostics?.decision.audioAction === "transcode" ||
+      playbackDiagnostics?.decision.subtitleAction === "burn");
 
   useEffect(() => {
+    setActiveTranscodingReasons([]);
+
+    if (!shouldShowTranscodingReasons) {
+      return;
+    }
+
     let isCancelled = false;
+    let timeoutId: number | null = null;
 
     async function loadActiveTranscodingReasons() {
       try {
@@ -751,29 +765,34 @@ export function PlaybackInfoPanel({
             error,
           );
         }
+      } finally {
+        if (!isCancelled) {
+          timeoutId = window.setTimeout(() => {
+            void loadActiveTranscodingReasons();
+          }, 5000);
+        }
       }
     }
 
     void loadActiveTranscodingReasons();
 
-    const intervalId = window.setInterval(() => {
-      void loadActiveTranscodingReasons();
-    }, 5000);
-
     return () => {
       isCancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [source.itemId, source.playSessionId]);
 
-  const primaryTranscodeReasons =
-    activeTranscodingReasons.length > 0
+      if (timeoutId !== null) {
+        window.clearTimeout(timeoutId);
+      }
+    };
+  }, [shouldShowTranscodingReasons, source.itemId, source.playSessionId]);
+
+  const primaryTranscodeReasons = shouldShowTranscodingReasons
+    ? activeTranscodingReasons.length > 0
       ? activeTranscodingReasons.map((reason) =>
           getReadableTranscodeReason(reason, t),
         )
-      : getPrimaryTranscodeReasons(source, t);
+      : getPrimaryTranscodeReasons(source, t)
+    : [];
   const debugPayload = getSanitizedDebugPayload(source, videoError);
-  const playbackDiagnostics = source.playbackDiagnostics;
   const unknownLabel = t("common.unknown");
 
   return (
@@ -904,7 +923,8 @@ export function PlaybackInfoPanel({
           ) : null}
 
           <section className="mt-6">
-            {mediaSource.TranscodingReasons?.length ? (
+            {shouldShowTranscodingReasons &&
+            mediaSource.TranscodingReasons?.length ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {mediaSource.TranscodingReasons.map((reason) => (
                   <Chip key={reason}>{reason}</Chip>

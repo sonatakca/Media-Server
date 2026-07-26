@@ -52,12 +52,10 @@ export default defineConfig({
           "registerSW.js",
           "assets/**/*.{js,css,svg,png,webp}",
         ],
-        globIgnores: [
-          "**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}",
-          "**/jellyfin/**",
-        ],
+        globIgnores: ["**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}", "**/jellyfin/**"],
         maximumFileSizeToCacheInBytes: 1024 * 1024,
         navigateFallbackDenylist: [
+          /^\/ownAPI\//,
           /^\/api\//,
           /^\/Items\//,
           /^\/Videos\//,
@@ -80,6 +78,16 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/setupTests.ts"],
     globals: true,
+  },
+  server: {
+    proxy: {
+      "/ownAPI": {
+        target:
+          process.env.SEYIRLIK_OWN_API_UPSTREAM?.trim() ||
+          "http://127.0.0.1:43110",
+        changeOrigin: false,
+      },
+    },
   },
   build: {
     chunkSizeWarningLimit: 800,

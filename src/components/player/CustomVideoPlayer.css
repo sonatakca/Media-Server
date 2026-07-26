@@ -108,7 +108,6 @@ body:has(.seyirlik-player-shell) {
 }
 
 .SyncPlay-idInput {
-
   min-height: 40px;
   min-width: 240px;
 }
@@ -608,7 +607,6 @@ body:has(.seyirlik-player-shell) {
   background: var(--accent);
 }
 
-
 .seyirlik-subtitle-resize-handle--tl {
   left: -0.45rem;
   top: -0.45rem;
@@ -757,4 +755,3 @@ body:has(.seyirlik-player-shell) {
   height: 100%;
   max-height: var(--seyirlik-player-stage-height);
 }
-

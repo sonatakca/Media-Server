@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
@@ -36,6 +42,13 @@ export function MediaRow({
   const { t } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const viewportRef = useRef<HTMLDivElement | null>(null);
+  const canScrollLeftRef = useRef(false);
+  const canScrollRightRef = useRef(false);
+  const scrollStateFrameRef = useRef<number | null>(null);
+  const hasAlignedInitialScrollRef = useRef(false);
+  const [rowGutter, setRowGutter] = useState(0);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
@@ -43,15 +56,107 @@ export function MediaRow({
     const scroller = scrollerRef.current;
 
     if (!scroller) {
-      setCanScrollLeft(false);
-      setCanScrollRight(false);
+      if (canScrollLeftRef.current) {
+        canScrollLeftRef.current = false;
+        setCanScrollLeft(false);
+      }
+
+      if (canScrollRightRef.current) {
+        canScrollRightRef.current = false;
+        setCanScrollRight(false);
+      }
+
       return;
     }
 
     const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
-    setCanScrollLeft(scroller.scrollLeft > 2);
-    setCanScrollRight(scroller.scrollLeft < maxScrollLeft - 2);
+    const nextCanScrollLeft = scroller.scrollLeft > 2;
+    const nextCanScrollRight = scroller.scrollLeft < maxScrollLeft - 2;
+
+    if (canScrollLeftRef.current !== nextCanScrollLeft) {
+      canScrollLeftRef.current = nextCanScrollLeft;
+      setCanScrollLeft(nextCanScrollLeft);
+    }
+
+    if (canScrollRightRef.current !== nextCanScrollRight) {
+      canScrollRightRef.current = nextCanScrollRight;
+      setCanScrollRight(nextCanScrollRight);
+    }
   }, []);
+
+  const scheduleScrollStateUpdate = useCallback(() => {
+    if (scrollStateFrameRef.current !== null) {
+      return;
+    }
+
+    scrollStateFrameRef.current = window.requestAnimationFrame(() => {
+      scrollStateFrameRef.current = null;
+      updateScrollState();
+    });
+  }, [updateScrollState]);
+
+  const updateRowGutter = useCallback(() => {
+    const header = headerRef.current;
+    const viewport = viewportRef.current;
+
+    if (!header || !viewport) {
+      return;
+    }
+
+    const headerLeft = header.getBoundingClientRect().left;
+    const viewportLeft = viewport.getBoundingClientRect().left;
+    const nextGutter = Math.max(0, headerLeft - viewportLeft);
+
+    setRowGutter((currentGutter) =>
+      Math.abs(currentGutter - nextGutter) < 0.5 ? currentGutter : nextGutter,
+    );
+  }, []);
+
+  useLayoutEffect(() => {
+    updateRowGutter();
+
+    const header = headerRef.current;
+    const viewport = viewportRef.current;
+
+    if (!header || !viewport) {
+      return undefined;
+    }
+
+    const resizeObserver = new ResizeObserver(updateRowGutter);
+
+    resizeObserver.observe(header);
+    resizeObserver.observe(viewport);
+
+    window.addEventListener("resize", updateRowGutter);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateRowGutter);
+    };
+  }, [updateRowGutter]);
+
+  useLayoutEffect(() => {
+    const scroller = scrollerRef.current;
+
+    if (!scroller || rowGutter <= 0 || hasAlignedInitialScrollRef.current) {
+      return undefined;
+    }
+
+    hasAlignedInitialScrollRef.current = true;
+
+    // Prevent the browser from preserving the first card's old position
+    // after the leading gutter is inserted.
+    scroller.scrollLeft = 0;
+
+    const animationFrame = window.requestAnimationFrame(() => {
+      scroller.scrollLeft = 0;
+      updateScrollState();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+    };
+  }, [rowGutter, updateScrollState]);
 
   useEffect(() => {
     updateScrollState();
@@ -65,12 +170,10 @@ export function MediaRow({
     const resizeObserver = new ResizeObserver(updateScrollState);
     resizeObserver.observe(scroller);
 
-    scroller.addEventListener("scroll", updateScrollState, { passive: true });
     window.addEventListener("resize", updateScrollState);
 
     return () => {
       resizeObserver.disconnect();
-      scroller.removeEventListener("scroll", updateScrollState);
       window.removeEventListener("resize", updateScrollState);
     };
   }, [items.length, updateScrollState, variant]);
@@ -79,25 +182,71 @@ export function MediaRow({
     return null;
   }
 
-  const scrollByCards = (direction: "left" | "right") => {
-    const scroller = scrollerRef.current;
+  const scrollByCards = useCallback(
+    (direction: "left" | "right") => {
+      const scroller = scrollerRef.current;
 
-    if (!scroller) {
-      return;
-    }
+      if (!scroller) {
+        return;
+      }
 
-    scroller.scrollBy({
-      left:
+      const cards = Array.from(
+        scroller.querySelectorAll<HTMLElement>("[data-media-row-card]"),
+      );
+
+      if (cards.length === 0) {
+        return;
+      }
+
+      const scrollerRect = scroller.getBoundingClientRect();
+      const currentScrollLeft = scroller.scrollLeft;
+      const maxScrollLeft = scroller.scrollWidth - scroller.clientWidth;
+
+      const desiredDistance = scroller.clientWidth * 0.82;
+      const approximateTarget =
+        currentScrollLeft +
+        (direction === "left" ? -desiredDistance : desiredDistance);
+
+      const cardTargets = cards.map((card) => {
+        const cardRect = card.getBoundingClientRect();
+
+        const alignedScrollLeft =
+          currentScrollLeft + (cardRect.left - scrollerRect.left) - rowGutter;
+
+        return Math.max(0, Math.min(alignedScrollLeft, maxScrollLeft));
+      });
+
+      const directionalTargets = cardTargets.filter((target) =>
         direction === "left"
-          ? -scroller.clientWidth * 0.82
-          : scroller.clientWidth * 0.82,
-      behavior: "smooth",
-    });
-  };
+          ? target < currentScrollLeft - 2
+          : target > currentScrollLeft + 2,
+      );
+
+      if (directionalTargets.length === 0) {
+        return;
+      }
+
+      const closestTarget = directionalTargets.reduce((closest, target) =>
+        Math.abs(target - approximateTarget) <
+        Math.abs(closest - approximateTarget)
+          ? target
+          : closest,
+      );
+
+      scroller.scrollTo({
+        left: closestTarget,
+        behavior: shouldReduceMotion ? "auto" : "smooth",
+      });
+    },
+    [rowGutter, shouldReduceMotion],
+  );
 
   return (
     <MotionReveal className="py-4 sm:py-6" direction="up">
-      <div className="mb-0 flex items-end justify-between gap-4">
+      <div
+        ref={headerRef}
+        className="mb-0 flex items-end justify-between gap-4"
+      >
         <h2 className="text-lg font-black text-white sm:text-2xl">
           <AnimatedWidth value={title}>
             <AnimatedText value={title} />
@@ -116,62 +265,85 @@ export function MediaRow({
       </div>
       {items.length > 0 ? (
         <div
-          className={`group/viewport media-row-edge-fade relative isolate ${
+          ref={viewportRef}
+          className={`group/viewport media-row-edge-fade relative isolate ml-[calc(50%_-_50dvw)] w-[100dvw] ${
             canScrollLeft ? "media-row-edge-fade--left" : ""
           } ${canScrollRight ? "media-row-edge-fade--right" : ""}`}
         >
           <div
             ref={scrollerRef}
-            onScroll={updateScrollState}
-            className="media-scroll relative z-10 flex snap-x gap-3 overflow-x-auto overflow-y-visible pb-6 pt-4 sm:gap-5 sm:pb-8 sm:pt-6"
+            onScroll={scheduleScrollStateUpdate}
+            className="media-row-scroll media-scroll relative z-10 snap-x snap-mandatory overflow-x-auto overflow-y-visible [overflow-anchor:none]"
+            style={{
+              scrollPaddingInlineStart: `${rowGutter}px`,
+              scrollPaddingInlineEnd: `${rowGutter}px`,
+            }}
           >
-            <AnimatePresence initial={false}>
-              {items.map((item, index) => (
-                <motion.div
-                  key={item.Id}
-                  layout={onClearContinueWatching ? "position" : undefined}
-                  exit={
-                    onClearContinueWatching
-                      ? {
-                          opacity: 0,
-                          x: shouldReduceMotion ? 0 : -36,
-                          scale: shouldReduceMotion ? 1 : 0.96,
-                          filter: shouldReduceMotion ? "none" : "blur(8px)",
-                        }
-                      : undefined
-                  }
-                  className="snap-start"
-                >
-                  <MediaCard
-                    item={item}
-                    to={getItemTo(item)}
-                    variant={variant}
-                    index={index}
-                    animateIn
-                    hideTags={hideTags}
-                    showRestartWatching={showRestartWatching}
-                    onClearContinueWatching={onClearContinueWatching}
-                  />
-                </motion.div>
-              ))}
-            </AnimatePresence>
+            <div className="media-row-scroll-track flex w-max min-w-full pb-6 pt-4 sm:pb-8 sm:pt-6">
+              <div
+                aria-hidden="true"
+                className="flex-none"
+                style={{ width: `${rowGutter}px` }}
+              />
+
+              <div className="flex gap-3 sm:gap-5">
+                <AnimatePresence initial={false}>
+                  {items.map((item, index) => (
+                    <motion.div
+                      key={item.Id}
+                      data-media-row-card
+                      layout={onClearContinueWatching ? "position" : undefined}
+                      exit={
+                        onClearContinueWatching
+                          ? {
+                              opacity: 0,
+                              x: shouldReduceMotion ? 0 : -36,
+                              scale: shouldReduceMotion ? 1 : 0.96,
+                              filter: shouldReduceMotion ? "none" : "blur(8px)",
+                            }
+                          : undefined
+                      }
+                      className="snap-start"
+                    >
+                      <MediaCard
+                        item={item}
+                        to={getItemTo(item)}
+                        variant={variant}
+                        index={index}
+                        animateIn
+                        hideTags={hideTags}
+                        showRestartWatching={showRestartWatching}
+                        onClearContinueWatching={onClearContinueWatching}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
+              </div>
+
+              <div
+                aria-hidden="true"
+                className="flex-none"
+                style={{ width: `${rowGutter}px` }}
+              />
+            </div>
           </div>
           <div
             aria-hidden="true"
-            className={`pointer-events-none absolute inset-y-0 left-0 z-[60] w-24 bg-gradient-to-r from-black/90 via-black/45 to-transparent transition-opacity duration-200 lg:w-32 ${
+            className={`pointer-events-none absolute inset-y-0 left-0 z-[60] w-36 bg-[linear-gradient(to_right,rgba(0,0,0,0.76)_0%,rgba(0,0,0,0.58)_18%,rgba(0,0,0,0.36)_38%,rgba(0,0,0,0.17)_60%,rgba(0,0,0,0.05)_80%,transparent_100%)] transition-opacity duration-300 ease-out lg:w-52 ${
               canScrollLeft ? "opacity-100" : "opacity-0"
             }`}
           />
+
           <div
             aria-hidden="true"
-            className={`pointer-events-none absolute inset-y-0 right-0 z-[60] w-24 bg-gradient-to-l from-black/90 via-black/45 to-transparent transition-opacity duration-200 lg:w-32 ${
+            className={`pointer-events-none absolute inset-y-0 right-0 z-[60] w-36 bg-[linear-gradient(to_left,rgba(0,0,0,0.76)_0%,rgba(0,0,0,0.58)_18%,rgba(0,0,0,0.36)_38%,rgba(0,0,0,0.17)_60%,rgba(0,0,0,0.05)_80%,transparent_100%)] transition-opacity duration-300 ease-out lg:w-52 ${
               canScrollRight ? "opacity-100" : "opacity-0"
             }`}
           />
           <button
             type="button"
             onClick={() => scrollByCards("left")}
-            className={`absolute left-3 top-[calc(50%-0.75rem)] z-[90] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/90 text-white shadow-[0_18px_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
+            className={`absolute left-3 top-[calc(50%-0.75rem)] z-[90] hidden h-20 w-12 -translate-y-1/2 items-center justify-center rounded-full border border-white/10 bg-gray-700/90 text-white shadow-[0_0_70px_rgba(0,0,0,0.72),0_0_0_1px_rgba(255,255,255,0.06)] transition-[opacity,transform,background-color] duration-200 ease-out hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] lg:flex ${
               canScrollLeft
                 ? "pointer-events-auto opacity-0 group-hover/viewport:opacity-100 focus:opacity-100"
                 : "pointer-events-none opacity-0"

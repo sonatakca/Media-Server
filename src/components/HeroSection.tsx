@@ -32,6 +32,7 @@ import {
   saveHeroTrailersEnabledPreference,
   type HeroImageCandidate,
 } from "./hero/heroModel";
+import { Tooltip } from "./ui/Tooltip";
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
 const HERO_DEFAULT_SLIDE_DURATION_MS = 12000;
 const HERO_INDICATOR_AFTER_BANNER_LIMIT_VH = 30;
@@ -1189,141 +1190,145 @@ export function HeroSection({
                 ease: softEase,
               }}
             >
-              <button
-                type="button"
-                aria-label={
+              <Tooltip
+                content={
                   areTrailersEnabled
                     ? t("hero.disableTrailers")
                     : t("hero.enableTrailers")
                 }
-                title={
-                  areTrailersEnabled
-                    ? t("hero.disableTrailers")
-                    : t("hero.enableTrailers")
-                }
-                className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
-                onClick={handleToggleTrailers}
+                placement="left"
               >
-                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
-                  <AnimatePresence mode="wait" initial={false}>
-                    {areTrailersEnabled ? (
-                      <motion.span
-                        key="trailers-enabled"
-                        className="flex items-center justify-center"
-                        initial={
-                          shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                        }
-                        animate={{ scale: 1 }}
-                        exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 0.16,
-                          ease: softEase,
-                        }}
-                      >
-                        <Video
-                          className="h-5 w-5 sm:h-5 sm:w-5"
-                          strokeWidth={2.4}
-                        />
-                      </motion.span>
-                    ) : (
-                      <motion.span
-                        key="trailers-disabled"
-                        className="flex items-center justify-center"
-                        initial={
-                          shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                        }
-                        animate={{ scale: 1 }}
-                        exit={shouldReduceMotion ? { scale: 1 } : { scale: 0 }}
-                        transition={{
-                          duration: shouldReduceMotion ? 0 : 0.16,
-                          ease: softEase,
-                        }}
-                      >
-                        <VideoOff
-                          className="h-5 w-5 sm:h-5 sm:w-5"
-                          strokeWidth={2.4}
-                        />
-                      </motion.span>
-                    )}
-                  </AnimatePresence>
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+                  onClick={handleToggleTrailers}
+                >
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+                    <AnimatePresence mode="wait" initial={false}>
+                      {areTrailersEnabled ? (
+                        <motion.span
+                          key="trailers-enabled"
+                          className="flex items-center justify-center"
+                          initial={
+                            shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                          }
+                          animate={{ scale: 1 }}
+                          exit={
+                            shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                          }
+                          transition={{
+                            duration: shouldReduceMotion ? 0 : 0.16,
+                            ease: softEase,
+                          }}
+                        >
+                          <Video
+                            className="h-5 w-5 sm:h-5 sm:w-5"
+                            strokeWidth={2.4}
+                          />
+                        </motion.span>
+                      ) : (
+                        <motion.span
+                          key="trailers-disabled"
+                          className="flex items-center justify-center"
+                          initial={
+                            shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                          }
+                          animate={{ scale: 1 }}
+                          exit={
+                            shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                          }
+                          transition={{
+                            duration: shouldReduceMotion ? 0 : 0.16,
+                            ease: softEase,
+                          }}
+                        >
+                          <VideoOff
+                            className="h-5 w-5 sm:h-5 sm:w-5"
+                            strokeWidth={2.4}
+                          />
+                        </motion.span>
+                      )}
+                    </AnimatePresence>
+                  </span>
+                </button>
+              </Tooltip>
 
               <AnimatePresence>
                 {shouldPlayPreview && isPreviewReady ? (
-                  <motion.button
-                    key="hero-preview-mute-toggle"
-                    type="button"
-                    aria-label={
+                  <Tooltip
+                    content={
                       isPreviewMuted ? t("player.unmute") : t("player.mute")
                     }
-                    title={
-                      isPreviewMuted ? t("player.unmute") : t("player.mute")
-                    }
-                    className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
-                    initial={{ opacity: 0, x: 28, scale: 0.96 }}
-                    animate={{ opacity: 1, x: 0, scale: 1 }}
-                    exit={{ opacity: 0, x: 28, scale: 0.96 }}
-                    transition={{
-                      duration: shouldReduceMotion ? 0 : 0.22,
-                      ease: softEase,
-                    }}
-                    onClick={() => {
-                      setIsPreviewMuted((current) => {
-                        const nextMuted = !current;
-                        setShouldStartPreviewUnmuted(!nextMuted);
-                        return nextMuted;
-                      });
-                    }}
+                    placement="left"
                   >
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
-                      <AnimatePresence mode="wait" initial={false}>
-                        {isPreviewMuted ? (
-                          <motion.span
-                            key="muted"
-                            className="flex items-center justify-center"
-                            initial={
-                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                            }
-                            animate={{ scale: 1 }}
-                            exit={
-                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                            }
-                            transition={{
-                              duration: shouldReduceMotion ? 0 : 0.16,
-                              ease: softEase,
-                            }}
-                          >
-                            <VolumeX
-                              className="h-5 w-5 sm:h-5 sm:w-5"
-                              strokeWidth={2.4}
-                            />
-                          </motion.span>
-                        ) : (
-                          <motion.span
-                            key="unmuted"
-                            className="flex items-center justify-center"
-                            initial={
-                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                            }
-                            animate={{ scale: 1 }}
-                            exit={
-                              shouldReduceMotion ? { scale: 1 } : { scale: 0 }
-                            }
-                            transition={{
-                              duration: shouldReduceMotion ? 0 : 0.16,
-                              ease: softEase,
-                            }}
-                          >
-                            <Volume2
-                              className="h-5 w-5 sm:h-5 sm:w-5"
-                              strokeWidth={2.4}
-                            />
-                          </motion.span>
-                        )}
-                      </AnimatePresence>
-                    </span>
-                  </motion.button>
+                    <motion.button
+                      key="hero-preview-mute-toggle"
+                      type="button"
+                      className="group flex h-12 w-24 items-center justify-start rounded-l-full border-y border-l border-white/[0.18] bg-white/5 pl-4 pr-3 text-white shadow-[0_22px_80px_rgba(0,0,0,0.48),inset_0_1px_0_rgba(255,255,255,0.12)] backdrop-blur-2xl transition-colors hover:bg-white/[0.18] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/70 focus-visible:ring-offset-2 focus-visible:ring-offset-black sm:h-16 sm:w-28 sm:pl-5 sm:pr-4"
+                      initial={{ opacity: 0, x: 28, scale: 0.96 }}
+                      animate={{ opacity: 1, x: 0, scale: 1 }}
+                      exit={{ opacity: 0, x: 28, scale: 0.96 }}
+                      transition={{
+                        duration: shouldReduceMotion ? 0 : 0.22,
+                        ease: softEase,
+                      }}
+                      onClick={() => {
+                        setIsPreviewMuted((current) => {
+                          const nextMuted = !current;
+                          setShouldStartPreviewUnmuted(!nextMuted);
+                          return nextMuted;
+                        });
+                      }}
+                    >
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full border border-white/[0.18] bg-white/[0.14] shadow-[0_12px_35px_rgba(0,0,0,0.35)] sm:h-11 sm:w-11">
+                        <AnimatePresence mode="wait" initial={false}>
+                          {isPreviewMuted ? (
+                            <motion.span
+                              key="muted"
+                              className="flex items-center justify-center"
+                              initial={
+                                shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                              }
+                              animate={{ scale: 1 }}
+                              exit={
+                                shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                              }
+                              transition={{
+                                duration: shouldReduceMotion ? 0 : 0.16,
+                                ease: softEase,
+                              }}
+                            >
+                              <VolumeX
+                                className="h-5 w-5 sm:h-5 sm:w-5"
+                                strokeWidth={2.4}
+                              />
+                            </motion.span>
+                          ) : (
+                            <motion.span
+                              key="unmuted"
+                              className="flex items-center justify-center"
+                              initial={
+                                shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                              }
+                              animate={{ scale: 1 }}
+                              exit={
+                                shouldReduceMotion ? { scale: 1 } : { scale: 0 }
+                              }
+                              transition={{
+                                duration: shouldReduceMotion ? 0 : 0.16,
+                                ease: softEase,
+                              }}
+                            >
+                              <Volume2
+                                className="h-5 w-5 sm:h-5 sm:w-5"
+                                strokeWidth={2.4}
+                              />
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </span>
+                    </motion.button>
+                  </Tooltip>
                 ) : null}
               </AnimatePresence>
             </motion.div>

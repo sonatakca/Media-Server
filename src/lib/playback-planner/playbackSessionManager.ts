@@ -64,6 +64,7 @@ export interface PlaybackSessionManagerOptions {
   hlsStartupTimeoutMs?: number;
   hlsStartupPollMs?: number;
   tempPrefix?: string;
+  outputRoot?: string;
   sessionRouteBase?: string;
   maxConcurrentVideoTranscodes?: number;
   preferredVideoEncoder?: string;
@@ -303,6 +304,7 @@ async function inspectOutputDirectory(
 }
 
 export class PlaybackSessionManager {
+  readonly outputRoot: string;
   private sessions = new Map<string, PlaybackSession>();
   private ffmpegPath: string;
   private idleTimeoutMs: number;
@@ -321,6 +323,7 @@ export class PlaybackSessionManager {
   >;
 
   constructor(options: PlaybackSessionManagerOptions = {}) {
+    this.outputRoot = options.outputRoot ?? tmpdir();
     this.ffmpegPath = options.ffmpegPath ?? "ffmpeg";
     this.idleTimeoutMs = options.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
     this.killGraceMs = options.killGraceMs ?? DEFAULT_KILL_GRACE_MS;
@@ -379,7 +382,7 @@ export class PlaybackSessionManager {
     media: MediaAnalysis,
     runtimeProfile: FfmpegRuntimeProfile,
   ): Promise<PlaybackSession> {
-    const outputDir = await mkdtemp(join(tmpdir(), this.tempPrefix));
+    const outputDir = await mkdtemp(join(this.outputRoot, this.tempPrefix));
     const planWithRuntime: PlaybackPlan = {
       ...plan,
       processing: {

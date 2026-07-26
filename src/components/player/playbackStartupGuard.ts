@@ -58,6 +58,8 @@ export interface FatalPlaybackSuppression {
 
 const PLAYABLE_BUFFER_SECONDS = 0.1;
 const HAVE_CURRENT_DATA_READY_STATE = 2;
+const NETWORK_LOADING_STATE = 2;
+const MAX_DIRECT_PLAY_STARTUP_WAIT_MS = 60_000;
 
 export function getStartupWatchdogMs(
   source: Pick<PlaybackSourceCandidate, "mode" | "isHls" | "hlsKind">,
@@ -163,6 +165,22 @@ export function isPlaybackStartupHealthy(
     snapshot.readyState >= HAVE_CURRENT_DATA_READY_STATE ||
     hasPlayableBuffer(snapshot) ||
     (!snapshot.paused && snapshot.readyState > 0)
+  );
+}
+
+export function shouldExtendStartupWatchdog(
+  attempt: PlaybackAttemptState,
+  snapshot: PlaybackVideoSnapshot,
+  nowMs = Date.now(),
+): boolean {
+  const isDirectFile =
+    !attempt.source.isHls && attempt.source.mode === "DirectPlay";
+  const elapsedMs = Math.max(0, nowMs - attempt.startedAtMs);
+
+  return (
+    isDirectFile &&
+    snapshot.networkState === NETWORK_LOADING_STATE &&
+    elapsedMs < MAX_DIRECT_PLAY_STARTUP_WAIT_MS
   );
 }
 

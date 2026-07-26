@@ -22,12 +22,7 @@ const FILTER_OUTPUT = `
 describe("FFmpeg runtime selection", () => {
   it("parses video encoder names", () => {
     expect(parseFfmpegVideoEncoders(ENCODER_OUTPUT)).toEqual(
-      new Set([
-        "h264_videotoolbox",
-        "h264_nvenc",
-        "h264_qsv",
-        "libx264",
-      ]),
+      new Set(["h264_videotoolbox", "h264_nvenc", "h264_qsv", "libx264"]),
     );
   });
 

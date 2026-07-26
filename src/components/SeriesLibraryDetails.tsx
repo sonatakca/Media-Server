@@ -156,6 +156,7 @@ function MediaShelf({
   return (
     <MotionReveal className={variant === "desktop" ? "py-5" : "py-3"}>
       <div className="mb-3 flex items-center justify-between gap-3">
+        <h2 className={"text-2xl font-black text-white"}>{title}</h2>
         <div className="flex min-w-0 items-center gap-3">{headerControl}</div>
 
         {variant === "desktop" ? (

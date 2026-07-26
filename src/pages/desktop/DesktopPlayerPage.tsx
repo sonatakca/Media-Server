@@ -196,6 +196,8 @@ export function DesktopPlayerPage() {
 
   const resolvedItem = item;
   const resolvedSource = playback.activeSource;
+  const shouldShowStandalonePreparingOverlay =
+    isPreparingPlayback && (!resolvedItem || !resolvedSource);
 
   const shouldStartFromBeginning =
     searchParams.get("start") === "0" || searchParams.get("restart") === "1";
@@ -215,6 +217,7 @@ export function DesktopPlayerPage() {
           error={playback.error}
           hasTranscodingFallback={playback.hasTranscodingFallback}
           onVideoFailure={playback.handleVideoFailure}
+          onVideoRecovery={playback.handleVideoRecovery}
           onTryTranscodedPlayback={playback.tryTranscodedPlayback}
           onRetryPlayback={playback.retry}
           initialStartSeconds={initialStartSeconds}
@@ -232,11 +235,13 @@ export function DesktopPlayerPage() {
           enableDefaultNextEpisodeCountdown={resolvedItem.Type === "Episode"}
           onAutoPlayNextEpisode={handlePlayNextUp}
           onPlayQueueItem={handlePlayNextUp}
+          showPreparingArtwork={isPreparingPlayback}
+          preparingBackdropUrl={loadingBackdropUrl}
         />
       ) : null}
 
       <AnimatePresence>
-        {isPreparingPlayback ? (
+        {shouldShowStandalonePreparingOverlay ? (
           <motion.div
             key="playback-loading-overlay"
             initial={{ opacity: 0 }}

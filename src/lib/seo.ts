@@ -61,8 +61,9 @@ function setMetaContent(
 }
 
 function ensureCanonicalLink() {
-  const existing =
-    document.head.querySelector<HTMLLinkElement>("link[rel='canonical']");
+  const existing = document.head.querySelector<HTMLLinkElement>(
+    "link[rel='canonical']",
+  );
 
   if (existing) {
     return existing;
@@ -93,7 +94,11 @@ export function setSeoMetadata({
   }
 
   document.title = title;
-  setMetaContent("meta[name='description']", { name: "description" }, description);
+  setMetaContent(
+    "meta[name='description']",
+    { name: "description" },
+    description,
+  );
   setMetaContent("meta[name='robots']", { name: "robots" }, robots);
   ensureCanonicalLink().setAttribute("href", canonicalUrl);
   setMetaContent("meta[property='og:title']", { property: "og:title" }, title);
@@ -109,8 +114,16 @@ export function setSeoMetadata({
     { property: "og:description" },
     description,
   );
-  setMetaContent("meta[property='og:url']", { property: "og:url" }, canonicalUrl);
-  setMetaContent("meta[name='twitter:title']", { name: "twitter:title" }, title);
+  setMetaContent(
+    "meta[property='og:url']",
+    { property: "og:url" },
+    canonicalUrl,
+  );
+  setMetaContent(
+    "meta[name='twitter:title']",
+    { name: "twitter:title" },
+    title,
+  );
   setMetaContent(
     "meta[name='twitter:description']",
     { name: "twitter:description" },

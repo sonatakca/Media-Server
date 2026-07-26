@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import path from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { InMemoryAnalysisCache } from "./analysisCache";
 import { createJellyfinMediaResolver } from "./jellyfinMediaResolver";
@@ -22,12 +23,24 @@ import {
   createUnavailableAdminAuthorizer,
   type AdminRequestAuthorizer,
 } from "./firebaseAdminAuth";
+import {
+  createOwnApiRequestHandler,
+  isOwnApiPath,
+  ownApiRouteTemplate,
+  resolveOwnApiRequestId,
+  type OwnApiHealthService,
+  type OwnApiLogger,
+  type OwnApiRouteHandler,
+} from "./ownApi/ownApiHandler";
+import { createRuntimeHealthService } from "./ownApi/runtimeHealthService";
+import { createNativeIdentityRuntime } from "./ownApi/auth/nativeIdentityRuntime";
 
 export interface PlaybackBackendOptions {
   host?: string;
   port?: number;
   mediaRoot?: string;
   allowedOrigins?: string[];
+  publicOrigin?: string;
   cleanupIntervalMs?: number;
   mediaResolver?: PlaybackMediaResolver & { mediaRoot?: string };
   mediaRegistry?: MediaRegistry;
@@ -38,10 +51,17 @@ export interface PlaybackBackendOptions {
   jellyfinApiKey?: string;
   fetchImpl?: typeof fetch;
   ffmpegPath?: string;
+  ffprobePath?: string;
+  generatedStoragePath?: string;
   preferredVideoEncoder?: string;
   maxConcurrentVideoTranscodes?: number;
   softwareTranscodeThreads?: number;
   adminAuthorizer?: AdminRequestAuthorizer;
+  ownApiHealthService?: OwnApiHealthService;
+  ownApiLogger?: OwnApiLogger;
+  ownApiRouteHandlers?: OwnApiRouteHandler[];
+  ownApiDatabaseCheck?: () => Promise<"available" | "unavailable">;
+  ownApiShutdown?: () => Promise<void>;
 }
 
 export interface PlaybackBackend {
@@ -238,20 +258,63 @@ async function probeServerConnection(
   }
 }
 
-function parseAllowedOrigins(rawOrigins: string | undefined): string[] {
-  const extraOrigins =
-    rawOrigins
-      ?.split(",")
-      .map((origin) => origin.trim())
-      .filter(Boolean) ?? [];
+export function parseAllowedOrigins(
+  rawOrigins: string | undefined,
+  environment = process.env.NODE_ENV,
+): string[] {
+  if (rawOrigins === undefined) {
+    return environment === "production" ? [] : [...DEFAULT_ALLOWED_ORIGINS];
+  }
 
-  return Array.from(new Set([...DEFAULT_ALLOWED_ORIGINS, ...extraOrigins]));
+  const configuredOrigins = rawOrigins
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean)
+    .map(normalizeAllowedOrigin);
+
+  return Array.from(new Set(configuredOrigins));
+}
+
+function parseHttpOrigin(value: string): string | undefined {
+  let parsed: URL;
+
+  try {
+    parsed = new URL(value);
+  } catch {
+    return undefined;
+  }
+
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    parsed.username ||
+    parsed.password ||
+    parsed.pathname !== "/" ||
+    parsed.search ||
+    parsed.hash
+  ) {
+    return undefined;
+  }
+
+  return parsed.origin;
+}
+
+function normalizeAllowedOrigin(value: string): string {
+  const origin = parseHttpOrigin(value);
+
+  if (!origin) {
+    throw new Error(
+      "SEYIRLIK_ALLOWED_ORIGINS must contain only valid HTTP(S) origins without paths.",
+    );
+  }
+
+  return origin;
 }
 
 function applyCors(
   request: IncomingMessage,
   response: ServerResponse,
   allowedOrigins: Set<string>,
+  publicOrigin: string | undefined,
 ): boolean {
   const origin = request.headers.origin;
 
@@ -259,28 +322,78 @@ function applyCors(
     return true;
   }
 
-  if (Array.isArray(origin) || !allowedOrigins.has(origin)) {
+  const isSameOrigin =
+    typeof origin === "string" &&
+    origin === (publicOrigin ?? requestOrigin(request));
+
+  if (Array.isArray(origin) || (!isSameOrigin && !allowedOrigins.has(origin))) {
+    const responseRequestId = response.getHeader("X-Request-Id");
+    const requestId =
+      typeof responseRequestId === "string" ? responseRequestId : undefined;
+
     sendJson(response, 403, {
       error: {
         code: "CORS_ORIGIN_DENIED",
         message: "Origin is not allowed.",
+        ...(requestId ? { requestId } : {}),
       },
     });
     return false;
   }
 
+  if (isSameOrigin) {
+    return true;
+  }
+
   response.setHeader("Access-Control-Allow-Origin", origin);
+  response.setHeader("Access-Control-Allow-Credentials", "true");
   response.setHeader("Vary", "Origin");
-  response.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  response.setHeader(
+    "Access-Control-Allow-Methods",
+    "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
+  );
   response.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Range, Authorization",
+    "Content-Type, Range, Authorization, X-Request-Id, X-CSRF-Token",
   );
   response.setHeader(
     "Access-Control-Expose-Headers",
-    "Content-Length, Content-Range, Accept-Ranges",
+    "Content-Length, Content-Range, Accept-Ranges, X-Request-Id",
   );
   return true;
+}
+
+function requestOrigin(request: IncomingMessage): string | undefined {
+  const host = request.headers.host;
+
+  if (!host) {
+    return undefined;
+  }
+
+  const protocol =
+    "encrypted" in request.socket && request.socket.encrypted
+      ? "https"
+      : "http";
+
+  try {
+    return new URL(`${protocol}://${host}`).origin;
+  } catch {
+    return undefined;
+  }
+}
+
+function normalizePublicOrigin(value: string | undefined): string | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const origin = parseHttpOrigin(value);
+
+  if (!origin) {
+    throw new Error("SEYIRLIK_PUBLIC_ORIGIN must be a valid HTTP(S) origin.");
+  }
+
+  return origin;
 }
 
 async function assertConfiguredMediaRoot(mediaRoot: string): Promise<string> {
@@ -320,24 +433,33 @@ export async function createPlaybackBackend(
         })();
   const mediaResolver =
     providedResolver ?? (await createMediaRegistry(configuredMediaRoot));
-  const analysisCache = new InMemoryAnalysisCache();
+  const analysisCache = new InMemoryAnalysisCache(
+    undefined,
+    options.ffprobePath,
+  );
   const mediaStore: PlaybackMediaStore =
     options.mediaStore ??
     ({
       getMediaAnalysis: (media) => analysisCache.getOrAnalyse(media),
       saveClientCapabilities: () => undefined,
     } satisfies PlaybackMediaStore);
+  const configuredGeneratedStoragePath =
+    options.generatedStoragePath ?? tmpdir();
   const sessionManager =
     options.sessionManager ??
     new PlaybackSessionManager({
       ffmpegPath: options.ffmpegPath,
+      outputRoot: configuredGeneratedStoragePath,
       preferredVideoEncoder: options.preferredVideoEncoder,
       maxConcurrentVideoTranscodes: options.maxConcurrentVideoTranscodes,
       softwareThreads: options.softwareTranscodeThreads,
     });
   const allowedOrigins = new Set(
-    options.allowedOrigins ?? DEFAULT_ALLOWED_ORIGINS,
+    (options.allowedOrigins ?? parseAllowedOrigins(undefined)).map(
+      normalizeAllowedOrigin,
+    ),
   );
+  const publicOrigin = normalizePublicOrigin(options.publicOrigin);
   const adminAuthorizer =
     options.adminAuthorizer ?? createUnavailableAdminAuthorizer();
   const playbackHandler = createPlaybackRequestHandler({
@@ -354,8 +476,53 @@ export async function createPlaybackBackend(
     jellyfinApiKey: options.jellyfinApiKey,
     fetchImpl: options.fetchImpl,
   });
+  const ownApiHealthService =
+    options.ownApiHealthService ??
+    createRuntimeHealthService({
+      ffmpegPath: options.ffmpegPath,
+      ffprobePath: options.ffprobePath,
+      mediaStoragePath: configuredMediaRoot,
+      generatedStoragePath:
+        sessionManager.outputRoot ?? configuredGeneratedStoragePath,
+      databaseCheck: options.ownApiDatabaseCheck,
+    });
+  const ownApiLogger = options.ownApiLogger ?? console;
+  const ownApiHandler = createOwnApiRequestHandler({
+    healthService: ownApiHealthService,
+    logger: ownApiLogger,
+    routeHandlers: options.ownApiRouteHandlers,
+  });
   const server = createServer(async (request, response) => {
-    if (!applyCors(request, response, allowedOrigins)) {
+    const url = new URL(request.url ?? "/", `http://${host}:${port}`);
+    const ownApiPath = isOwnApiPath(url.pathname);
+    const ownApiStartedAt = ownApiPath ? performance.now() : undefined;
+
+    if (ownApiPath) {
+      response.setHeader("X-Request-Id", resolveOwnApiRequestId(request));
+      response.setHeader("Cache-Control", "no-store");
+      response.setHeader("X-Content-Type-Options", "nosniff");
+    }
+
+    if (!applyCors(request, response, allowedOrigins, publicOrigin)) {
+      if (ownApiPath) {
+        ownApiLogger.info("http.request.completed", {
+          requestId: String(response.getHeader("X-Request-Id")),
+          method: request.method ?? "UNKNOWN",
+          path: ownApiRouteTemplate(url.pathname),
+          statusCode: response.statusCode,
+          durationMs: Math.max(
+            0,
+            Math.round(
+              performance.now() - (ownApiStartedAt ?? performance.now()),
+            ),
+          ),
+        });
+      }
+
+      return;
+    }
+
+    if (await ownApiHandler(request, response)) {
       return;
     }
 
@@ -364,8 +531,6 @@ export async function createPlaybackBackend(
       response.end();
       return;
     }
-
-    const url = new URL(request.url ?? "/", `http://${host}:${port}`);
 
     if (url.pathname === "/health") {
       if (request.method !== "GET") {
@@ -479,6 +644,7 @@ export async function createPlaybackBackend(
       clearInterval(cleanupTimer);
       await closeServer(server);
       await sessionManager.stopAllSessions();
+      await options.ownApiShutdown?.();
     },
   };
 }
@@ -538,27 +704,48 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
     apiKey: jellyfinApiKey,
     logger: console,
   });
-  const backend = await createPlaybackBackend({
-    host: process.env.SEYIRLIK_PLAYBACK_BACKEND_HOST ?? DEFAULT_HOST,
-    port: parsePort(process.env.SEYIRLIK_PLAYBACK_BACKEND_PORT),
-    mediaRoot,
-    mediaResolver,
-    allowedOrigins: parseAllowedOrigins(process.env.SEYIRLIK_ALLOWED_ORIGINS),
-    tmdbApiKey,
-    jellyfinServerUrl,
-    jellyfinApiKey,
-    ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH,
-    preferredVideoEncoder: process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
-    maxConcurrentVideoTranscodes: parseOptionalPositiveInteger(
-      process.env.SEYIRLIK_MAX_VIDEO_TRANSCODES,
-      "SEYIRLIK_MAX_VIDEO_TRANSCODES",
-    ),
-    softwareTranscodeThreads: parseOptionalPositiveInteger(
-      process.env.SEYIRLIK_SOFTWARE_TRANSCODE_THREADS,
-      "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS",
-    ),
-    adminAuthorizer: createFirebaseAdminAuthorizerFromEnv(),
+  const publicOrigin = process.env.SEYIRLIK_PUBLIC_ORIGIN?.trim() || undefined;
+  const nativeIdentityRuntime = await createNativeIdentityRuntime({
+    environment: process.env,
+    publicOrigin,
   });
+  let backend: PlaybackBackend;
+
+  try {
+    backend = await createPlaybackBackend({
+      host: process.env.SEYIRLIK_PLAYBACK_BACKEND_HOST ?? DEFAULT_HOST,
+      port: parsePort(process.env.SEYIRLIK_PLAYBACK_BACKEND_PORT),
+      mediaRoot,
+      mediaResolver,
+      allowedOrigins: parseAllowedOrigins(process.env.SEYIRLIK_ALLOWED_ORIGINS),
+      publicOrigin,
+      tmdbApiKey,
+      jellyfinServerUrl,
+      jellyfinApiKey,
+      ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH,
+      ffprobePath: process.env.SEYIRLIK_FFPROBE_PATH,
+      generatedStoragePath: process.env.SEYIRLIK_GENERATED_STORAGE,
+      preferredVideoEncoder:
+        process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
+      maxConcurrentVideoTranscodes: parseOptionalPositiveInteger(
+        process.env.SEYIRLIK_MAX_VIDEO_TRANSCODES,
+        "SEYIRLIK_MAX_VIDEO_TRANSCODES",
+      ),
+      softwareTranscodeThreads: parseOptionalPositiveInteger(
+        process.env.SEYIRLIK_SOFTWARE_TRANSCODE_THREADS,
+        "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS",
+      ),
+      adminAuthorizer: createFirebaseAdminAuthorizerFromEnv(),
+      ownApiRouteHandlers: nativeIdentityRuntime
+        ? [nativeIdentityRuntime.routeHandler]
+        : [],
+      ownApiDatabaseCheck: nativeIdentityRuntime?.databaseCheck,
+      ownApiShutdown: nativeIdentityRuntime?.close,
+    });
+  } catch (error) {
+    await nativeIdentityRuntime?.close().catch(() => undefined);
+    throw error;
+  }
 
   await new Promise<void>((resolveListen) => {
     backend.server.listen(backend.port, backend.host, resolveListen);
@@ -566,6 +753,9 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
 
   console.info(
     `Seyirlik playback backend running at http://${backend.host}:${backend.port}`,
+  );
+  console.info(
+    `Seyirlik own API mounted at http://${backend.host}:${backend.port}/ownAPI/v1`,
   );
   console.info(
     `Playback API mounted at http://${backend.host}:${backend.port}/api/playback`,

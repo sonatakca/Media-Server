@@ -246,7 +246,10 @@ async function assertResolvedMediaInsideRoot(
     ? comparableRoot
     : `${comparableRoot}${sep}`;
 
-  if (comparableFile !== comparableRoot && !comparableFile.startsWith(rootPrefix)) {
+  if (
+    comparableFile !== comparableRoot &&
+    !comparableFile.startsWith(rootPrefix)
+  ) {
     throw new PlaybackRouteError(
       "MEDIA_OUTSIDE_ROOT",
       "The requested media is outside the configured media root.",

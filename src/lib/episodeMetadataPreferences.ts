@@ -99,9 +99,7 @@ function createSeriesEpisodeKey(
   return `${seriesId}:${seasonNumber}:${episodeNumber}`;
 }
 
-function sanitizeTextMap(
-  value: unknown,
-): Partial<Record<Language, string>> {
+function sanitizeTextMap(value: unknown): Partial<Record<Language, string>> {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return {};
   }
@@ -142,9 +140,7 @@ function sanitizeThumbnail(value: unknown): EpisodeThumbnailOverride | null {
   };
 }
 
-function sanitizeStoredEpisode(
-  value: unknown,
-): StoredEpisodeMetadata | null {
+function sanitizeStoredEpisode(value: unknown): StoredEpisodeMetadata | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
   }
@@ -203,11 +199,13 @@ function readStore(): EpisodeMetadataStore {
       parsed.episodeIdBySeriesKey &&
       typeof parsed.episodeIdBySeriesKey === "object"
     ) {
-      Object.entries(parsed.episodeIdBySeriesKey).forEach(([key, episodeId]) => {
-        if (typeof episodeId === "string" && store.episodesById[episodeId]) {
-          store.episodeIdBySeriesKey[key] = episodeId;
-        }
-      });
+      Object.entries(parsed.episodeIdBySeriesKey).forEach(
+        ([key, episodeId]) => {
+          if (typeof episodeId === "string" && store.episodesById[episodeId]) {
+            store.episodeIdBySeriesKey[key] = episodeId;
+          }
+        },
+      );
     }
 
     if (parsed.series && typeof parsed.series === "object") {
@@ -216,7 +214,8 @@ function readStore(): EpisodeMetadataStore {
           return;
         }
 
-        const rawPreference = preference as Partial<SeriesEpisodeMetadataPreference>;
+        const rawPreference =
+          preference as Partial<SeriesEpisodeMetadataPreference>;
         const thumbnailLanguage =
           rawPreference.thumbnailLanguage === "en" ||
           rawPreference.thumbnailLanguage === "tr"
@@ -226,8 +225,7 @@ function readStore(): EpisodeMetadataStore {
         store.series[seriesId] = {
           thumbnailLanguage,
           updatedAt:
-            normalizeText(rawPreference.updatedAt) ??
-            new Date(0).toISOString(),
+            normalizeText(rawPreference.updatedAt) ?? new Date(0).toISOString(),
         };
       });
     }
@@ -267,7 +265,9 @@ export function saveEpisodeMetadataOverrides(
     }
 
     const seriesId =
-      normalizeText(override.seriesId) ?? normalizeText(options.seriesId) ?? null;
+      normalizeText(override.seriesId) ??
+      normalizeText(options.seriesId) ??
+      null;
     const seasonNumber = normalizeNumber(override.seasonNumber);
     const episodeNumber = normalizeNumber(override.episodeNumber);
     const current = store.episodesById[episodeId];
@@ -322,7 +322,9 @@ export function saveEpisodeMetadataOverrides(
 export function getSeriesEpisodeThumbnailLanguage(
   seriesId: string | null | undefined,
 ): TmdbImageLanguage {
-  return getSeriesEpisodeMetadataPreference(seriesId)?.thumbnailLanguage ?? null;
+  return (
+    getSeriesEpisodeMetadataPreference(seriesId)?.thumbnailLanguage ?? null
+  );
 }
 
 export function getSeriesEpisodeMetadataPreference(

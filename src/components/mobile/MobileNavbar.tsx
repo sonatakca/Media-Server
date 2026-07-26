@@ -54,6 +54,7 @@ export function MobileNavbar() {
   const { t } = useLanguage();
   const [logoFailed, setLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [bottomNavBlurred, setBottomNavBlurred] = useState(false);
   const libraryRoutes = {
     movies: "/movies",
     series: "/shows",
@@ -74,6 +75,16 @@ export function MobileNavbar() {
     };
   }, []);
 
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setBottomNavBlurred(true);
+    }, 3000);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, []);
+
   const handleLogout = () => {
     clearAuthSession();
     navigate("/login", { replace: true });
@@ -85,7 +96,7 @@ export function MobileNavbar() {
   const headerOverArtwork = location.pathname === "/home";
   const showHeaderSurface = hasScrolled || !headerOverArtwork;
   const headerSurfaceClass = showHeaderSurface
-    ? "bg-black/50 backdrop-blur-xl"
+    ? "bg-black/75 backdrop-blur-2xl"
     : "bg-transparent";
 
   return (
@@ -140,7 +151,13 @@ export function MobileNavbar() {
         </div>
       </header>
 
-      <nav className="fixed inset-x-0 bottom-0 z-50 flex h-[calc(4.25rem+env(safe-area-inset-bottom))] items-start bg-black/50 px-2 pb-[env(safe-area-inset-bottom)] backdrop-blur-2xl  landscape:hidden">
+      <nav
+        className={`fixed inset-x-0 bottom-0 z-50 flex h-[calc(5rem+env(safe-area-inset-bottom))] items-start px-2 pt-2 pb-[env(safe-area-inset-bottom)] transition-[background-color,backdrop-filter] duration-[1000ms] landscape:hidden ${
+          bottomNavBlurred
+            ? "bg-black/75 backdrop-blur-2xl"
+            : "bg-black backdrop-blur-none"
+        }`}
+      >
         <NavLink
           to="/home"
           className={({ isActive }) => getTabClassName(isActive)}

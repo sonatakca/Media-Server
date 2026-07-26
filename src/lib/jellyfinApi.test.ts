@@ -12,11 +12,27 @@ import {
   getUserViews,
   JELLYFIN_SERVER_UNAVAILABLE_EVENT,
   markItemWatchedStatus,
+  redactPlaybackUrl,
   createUser,
   updateUser,
   updateUserPassword,
   updateUserPolicy,
 } from "./jellyfinApi";
+
+describe("redactPlaybackUrl", () => {
+  it("redacts custom playback capability path segments", () => {
+    expect(
+      redactPlaybackUrl(
+        "http://backend.test/api/playback/direct/private-media-capability?api_key=private-api-key",
+      ),
+    ).toBe("http://backend.test/api/playback/direct/REDACTED?api_key=REDACTED");
+    expect(
+      redactPlaybackUrl(
+        "http://backend.test/api/playback/hls/private-session-capability/master.m3u8",
+      ),
+    ).toBe("http://backend.test/api/playback/hls/REDACTED/master.m3u8");
+  });
+});
 
 describe("getMediaSegments", () => {
   const fetchMock = vi.fn();

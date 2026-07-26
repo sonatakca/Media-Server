@@ -1,5 +1,8 @@
 import { getServerUrl, normalizeServerUrl } from "./authStorage";
-import { buildJellyfinUrl, type JellyfinServerUnavailableEventDetail } from "./jellyfinApi";
+import {
+  buildJellyfinUrl,
+  type JellyfinServerUnavailableEventDetail,
+} from "./jellyfinApi";
 import { getCustomPlaybackBackendUrl } from "./playback-planner/customPlaybackApi";
 
 export type ServerProbeKind =
@@ -224,7 +227,9 @@ function getJellyfinProductName(bodyText: string): string | undefined {
   }
 }
 
-async function probeCorsJellyfinUrl(rawServerUrl: string): Promise<ServerProbe> {
+async function probeCorsJellyfinUrl(
+  rawServerUrl: string,
+): Promise<ServerProbe> {
   const serverUrl = normalizeServerUrl(rawServerUrl);
   const endpoint = buildJellyfinUrl(serverUrl, "/System/Info/Public", {
     seyirlikDiagnostics: Date.now(),
@@ -309,7 +314,9 @@ async function probeOpaqueReachability(
   }
 }
 
-async function probeLocalJellyfinUrl(rawServerUrl: string): Promise<ServerProbe> {
+async function probeLocalJellyfinUrl(
+  rawServerUrl: string,
+): Promise<ServerProbe> {
   const corsProbe = await probeCorsJellyfinUrl(rawServerUrl);
 
   if (corsProbe.ok || corsProbe.reachable) {
@@ -343,8 +350,8 @@ async function findReachableLocalProbe(
 function isProbeOnline(probe: ServerProbe | null | undefined): boolean {
   return Boolean(
     probe &&
-      probe.reachable &&
-      (probe.ok || probe.kind === "opaque-reachable" || probe.kind === "http-ok"),
+    probe.reachable &&
+    (probe.ok || probe.kind === "opaque-reachable" || probe.kind === "http-ok"),
   );
 }
 
@@ -479,7 +486,9 @@ export async function diagnoseServerConnection({
   serverUrl,
   failure,
 }: DiagnoseServerConnectionOptions = {}): Promise<ServerConnectionDiagnosis> {
-  const normalizedServerUrl = normalizeServerUrl(serverUrl ?? getServerUrl() ?? "");
+  const normalizedServerUrl = normalizeServerUrl(
+    serverUrl ?? getServerUrl() ?? "",
+  );
   const backendDiagnosis = await diagnoseViaBackend(normalizedServerUrl);
 
   if (backendDiagnosis) {

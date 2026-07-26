@@ -102,6 +102,7 @@ import {
   markStartupWatchdogCancelled,
   recordHlsEvent,
   recordSuccessfulPlaybackEvent,
+  shouldExtendStartupWatchdog,
   type PlaybackAttemptState,
   type PlaybackVideoSnapshot,
 } from "./playbackStartupGuard";
@@ -143,6 +144,7 @@ import type {
   TouchSeekSide,
 } from "./types";
 import { useSeekFeedback } from "./useSeekFeedback";
+import { LoadingSpinner } from "../LoadingSpinner";
 
 function isHlsStartupSuccessEvent(eventName: string): boolean {
   const normalizedEventName = eventName.toLowerCase();
@@ -196,6 +198,7 @@ export function CustomVideoPlayer({
   hasTranscodingFallback,
   initialStartSeconds = 0,
   onVideoFailure,
+  onVideoRecovery,
   onTryTranscodedPlayback,
   onRetryPlayback,
   onPlaybackStarted,
@@ -208,6 +211,8 @@ export function CustomVideoPlayer({
   enableDefaultNextEpisodeCountdown = false,
   onAutoPlayNextEpisode,
   onPlayQueueItem,
+  preparingBackdropUrl,
+  showPreparingArtwork = false,
 }: CustomVideoPlayerProps) {
   const { language, t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -644,6 +649,20 @@ export function CustomVideoPlayer({
       activeSource.mode === "Transcoding"),
   );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
+  const sourceDefaultAudioStreamIndex = getDefaultAudioStreamIndex(
+    item,
+    source,
+  );
+  const sourceDefaultSubtitleStreamIndex = getDefaultSubtitleStreamIndex(
+    item,
+    source,
+  );
+  const activeSourceDefaultAudioStreamIndex = getDefaultAudioStreamIndex(
+    item,
+    activeSource,
+  );
+  const selectedAudioIndexForActiveSource =
+    selectedAudioStreamIndex ?? activeSourceDefaultAudioStreamIndex;
 
   const initializeSubtitleEditPosition = useCallback(() => {
     const bounds = containerRef.current?.getBoundingClientRect();
@@ -1018,7 +1037,7 @@ export function CustomVideoPlayer({
   }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {
-    const defaultAudioIndex = getDefaultAudioStreamIndex(item, source);
+    const defaultAudioIndex = sourceDefaultAudioStreamIndex;
     let nextSource = source;
 
     if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
@@ -1052,15 +1071,20 @@ export function CustomVideoPlayer({
         ? defaultAudioIndex
         : undefined,
     );
-    setSelectedSubtitleStreamIndex(
-      getDefaultSubtitleStreamIndex(item, nextSource),
-    );
+    setSelectedSubtitleStreamIndex(sourceDefaultSubtitleStreamIndex);
     setLastVideoError(null);
     setLiveTranscodingReasons([]);
     setCheckpointSeconds(null);
     setIsViewModeCursorVisible(true);
     setIsViewModeEnabled(false);
-  }, [item, source.id, source.mediaSourceId, source.url]);
+  }, [
+    item.Id,
+    source.id,
+    source.mediaSourceId,
+    source.url,
+    sourceDefaultAudioStreamIndex,
+    sourceDefaultSubtitleStreamIndex,
+  ]);
   useEffect(() => {
     let isCancelled = false;
     let intervalId: number | null = null;
@@ -1817,9 +1841,7 @@ export function CustomVideoPlayer({
   useEffect(() => {
     const video = videoRef.current;
     const sourceToAttach = activeSource;
-    const selectedAudioIndexForSource =
-      selectedAudioStreamIndex ??
-      getDefaultAudioStreamIndex(item, sourceToAttach);
+    const selectedAudioIndexForSource = selectedAudioIndexForActiveSource;
 
     if (!video) {
       return undefined;
@@ -2335,6 +2357,7 @@ export function CustomVideoPlayer({
     const clearPlaybackErrorIfHealthy = (snapshot: PlaybackVideoSnapshot) => {
       if (isPlaybackStartupHealthy(snapshot)) {
         setLastVideoError(null);
+        onVideoRecovery();
       }
     };
 
@@ -2433,6 +2456,7 @@ export function CustomVideoPlayer({
       recordSuccessfulPlaybackEvent(playbackAttempt, eventName);
       clearStartupWatchdog();
       setLastVideoError(null);
+      onVideoRecovery();
     };
 
     const handleStartupTimeUpdate = () => {
@@ -2522,6 +2546,21 @@ export function CustomVideoPlayer({
               : "startup-watchdog-playback-healthy",
           );
           clearPlaybackErrorIfHealthy(snapshot);
+          return;
+        }
+
+        if (shouldExtendStartupWatchdog(playbackAttempt, snapshot)) {
+          console.info(
+            "[Seyirlik Playback] Startup watchdog extended while direct media is still loading",
+            {
+              attemptId: playbackAttempt.id,
+              elapsedStartupMs: Date.now() - playbackAttempt.startedAtMs,
+              readyState: snapshot.readyState,
+              networkState: snapshot.networkState,
+              bufferedRanges: snapshot.bufferedRanges,
+            },
+          );
+          startStartupWatchdog();
           return;
         }
 
@@ -2745,10 +2784,11 @@ export function CustomVideoPlayer({
     activeSource.url,
     clearAudioTranscodeReadinessTimer,
     initialStartSeconds,
-    item,
     onVideoFailure,
+    onVideoRecovery,
     partyWatch.shouldDeferAutoplay,
     refreshProgress,
+    selectedAudioIndexForActiveSource,
   ]);
 
   useEffect(() => {
@@ -3585,6 +3625,61 @@ export function CustomVideoPlayer({
         }}
       />
 
+      <AnimatePresence initial={false}>
+        {showPreparingArtwork ? (
+          <motion.div
+            key="player-preparing-artwork"
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 z-[12] overflow-hidden bg-black"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{
+              duration: shouldReduceMotion ? 0 : 0.45,
+              ease: [0.22, 1, 0.36, 1],
+            }}
+          >
+            {preparingBackdropUrl ? (
+              <motion.img
+                src={preparingBackdropUrl}
+                alt=""
+                draggable={false}
+                className="absolute inset-0 h-full w-full object-cover"
+                initial={{
+                  opacity: 0,
+                  scale: shouldReduceMotion ? 1 : 1.035,
+                }}
+                animate={{
+                  opacity: 1,
+                  scale: 1.02,
+                }}
+                exit={{
+                  opacity: 0,
+                  scale: shouldReduceMotion ? 1 : 1.01,
+                }}
+                transition={{
+                  opacity: {
+                    duration: shouldReduceMotion ? 0 : 0.5,
+                  },
+                  scale: {
+                    duration: shouldReduceMotion ? 0 : 1.2,
+                    ease: [0.22, 1, 0.36, 1],
+                  },
+                }}
+              />
+            ) : null}
+
+            <div className="absolute inset-0 bg-black/45" />
+
+            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/45" />
+
+            <div className="absolute inset-0 z-10 grid place-items-center">
+              <LoadingSpinner label="" />
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
       {!isViewModeEnabled ? (
         <>
           <div
@@ -3742,7 +3837,7 @@ export function CustomVideoPlayer({
             episodeName={playerEpisodeName}
             subtitle={playerHeaderSubtitle}
             backTo={getMediaOwnerRouteForItem(item)}
-            visible={shouldRenderPlayerChrome}
+            visible={shouldRenderPlayerChrome || isTimelinePreparing}
             isPlaying={progress.isPlaying}
             isPlayPausePending={
               partyWatch.isInGroup && partyWatch.isPlayPausePending

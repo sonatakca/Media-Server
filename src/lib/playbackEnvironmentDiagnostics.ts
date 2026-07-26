@@ -1,8 +1,4 @@
-import {
-  getAuthHeaders,
-  getAuthSession,
-  getServerUrl,
-} from "./authStorage";
+import { getAuthHeaders, getAuthSession, getServerUrl } from "./authStorage";
 import {
   buildJellyfinUrl,
   buildPlaybackCandidates,
@@ -186,9 +182,9 @@ export function hasMixedContentRisk(
 
   return Boolean(
     page?.protocol === "https:" &&
-      target?.protocol === "http:" &&
-      target.hostname !== "localhost" &&
-      target.hostname !== "127.0.0.1",
+    target?.protocol === "http:" &&
+    target.hostname !== "localhost" &&
+    target.hostname !== "127.0.0.1",
   );
 }
 
@@ -355,9 +351,8 @@ function getStreamCodec(
   source: PlaybackSourceCandidate,
   type: "Video" | "Audio",
 ): string | undefined {
-  return source.mediaSource.MediaStreams?.find(
-    (stream) => stream.Type === type,
-  )?.Codec;
+  return source.mediaSource.MediaStreams?.find((stream) => stream.Type === type)
+    ?.Codec;
 }
 
 function summarizeSource(

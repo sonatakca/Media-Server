@@ -5,7 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPlaybackBackend, type PlaybackBackend } from "./playbackBackend";
+import {
+  createPlaybackBackend,
+  parseAllowedOrigins,
+  type PlaybackBackend,
+  type PlaybackBackendOptions,
+} from "./playbackBackend";
 import { createMediaRegistry } from "./mediaRegistry";
 import type {
   PlaybackMediaResolver,
@@ -22,6 +27,11 @@ import type {
   PlaybackDiagnostics,
   PlaybackPlan,
 } from "../lib/playback-planner/types";
+import {
+  createStaticHealthService,
+  sendOwnApiJson,
+  type OwnApiRouteHandler,
+} from "./ownApi/ownApiHandler";
 
 let backends: PlaybackBackend[] = [];
 let mediaRoots: string[] = [];
@@ -284,6 +294,10 @@ function createDeferredReadySessionManager(outputDir: string) {
 
 async function createFixtureBackend(
   allowedOrigins: string[] | null = ["http://allowed.test"],
+  options: Pick<
+    PlaybackBackendOptions,
+    "ownApiLogger" | "publicOrigin" | "ownApiRouteHandlers" | "ownApiShutdown"
+  > = {},
 ) {
   const mediaRoot = await mkdtemp(path.join(tmpdir(), "seyirlik-http-media-"));
 
@@ -303,6 +317,15 @@ async function createFixtureBackend(
     mediaStore,
     allowedOrigins: allowedOrigins ?? undefined,
     cleanupIntervalMs: 1_000,
+    ownApiHealthService: createStaticHealthService({
+      database: "unavailable",
+      jobs: "disabled",
+      ffmpeg: "available",
+      ffprobe: "available",
+      mediaStorage: "available",
+      generatedStorage: "writable",
+    }),
+    ...options,
   });
 
   await new Promise<void>((resolveListen) => {
@@ -348,7 +371,113 @@ afterEach(async () => {
   );
 });
 
+describe("playback backend origin configuration", () => {
+  it("lets an explicit environment value replace defaults, including empty", () => {
+    expect(parseAllowedOrigins(undefined, "test")).toContain(
+      "http://localhost:5173",
+    );
+    expect(parseAllowedOrigins(undefined, "production")).toEqual([]);
+    expect(parseAllowedOrigins("https://app.example")).toEqual([
+      "https://app.example",
+    ]);
+    expect(parseAllowedOrigins("")).toEqual([]);
+  });
+
+  it("normalizes configured origins and rejects unsafe CORS values", () => {
+    expect(
+      parseAllowedOrigins("https://APP.example:443/,http://LOCALHOST:80"),
+    ).toEqual(["https://app.example", "http://localhost"]);
+    expect(() => parseAllowedOrigins("*")).toThrow(
+      "SEYIRLIK_ALLOWED_ORIGINS must contain only valid HTTP(S) origins",
+    );
+    expect(() => parseAllowedOrigins("null")).toThrow(
+      "SEYIRLIK_ALLOWED_ORIGINS must contain only valid HTTP(S) origins",
+    );
+    expect(() => parseAllowedOrigins("https://app.example/private")).toThrow(
+      "SEYIRLIK_ALLOWED_ORIGINS must contain only valid HTTP(S) origins",
+    );
+  });
+});
+
 describe("playback backend HTTP routes", () => {
+  it("allows an Origin-bearing same-origin request with an empty production allowlist", async () => {
+    const { baseUrl } = await createFixtureBackend([]);
+
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`, {
+      headers: { Origin: baseUrl },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("uses the configured public origin behind a trusted TLS reverse proxy", async () => {
+    const { baseUrl } = await createFixtureBackend([], {
+      publicOrigin: "https://app.example",
+    });
+
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`, {
+      headers: { Origin: "https://app.example" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("does not trust forwarded headers to establish the effective origin", async () => {
+    const { baseUrl } = await createFixtureBackend([]);
+
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`, {
+      headers: {
+        Origin: "https://attacker-selected.example",
+        "X-Forwarded-Host": "attacker-selected.example",
+        "X-Forwarded-Proto": "https",
+      },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("allows the native CSRF header on explicitly allowed credentialed preflights", async () => {
+    const { baseUrl } = await createFixtureBackend(["http://allowed.test"]);
+
+    const response = await fetch(`${baseUrl}/ownAPI/v1/auth/refresh`, {
+      method: "OPTIONS",
+      headers: {
+        Origin: "http://allowed.test",
+        "Access-Control-Request-Method": "POST",
+        "Access-Control-Request-Headers": "x-csrf-token",
+      },
+    });
+
+    expect(response.status).toBe(204);
+    expect(response.headers.get("access-control-allow-origin")).toBe(
+      "http://allowed.test",
+    );
+    expect(response.headers.get("access-control-allow-headers")).toContain(
+      "X-CSRF-Token",
+    );
+  });
+
+  it("uses the configured generated-storage directory for playback sessions", async () => {
+    const mediaRoot = await mkdtemp(path.join(tmpdir(), "seyirlik-media-"));
+    const generatedStoragePath = await mkdtemp(
+      path.join(tmpdir(), "seyirlik-generated-"),
+    );
+    const backend = await createPlaybackBackend({
+      mediaRoot,
+      generatedStoragePath,
+    });
+    backends.push(backend);
+    mediaRoots.push(mediaRoot, generatedStoragePath);
+    const baseUrl = await listenBackend(backend);
+
+    expect(backend.sessionManager.outputRoot).toBe(generatedStoragePath);
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`);
+    const payload = await response.json();
+    expect(payload.data.checks.generatedStorage).toBe("writable");
+  });
   it("serves the health route", async () => {
     const { baseUrl } = await createFixtureBackend();
     const response = await fetch(`${baseUrl}/health`);
@@ -357,6 +486,77 @@ describe("playback backend HTTP routes", () => {
       status: "ok",
       service: "seyirlik-playback-backend",
     });
+  });
+
+  it("mounts the native API health route without disturbing the legacy route", async () => {
+    const { baseUrl } = await createFixtureBackend();
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`, {
+      headers: { "X-Request-Id": "backend-integration-request" },
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBe(
+      "backend-integration-request",
+    );
+    await expect(response.json()).resolves.toEqual({
+      data: {
+        status: "ok",
+        alive: true,
+        ready: false,
+        checks: {
+          database: "unavailable",
+          jobs: "disabled",
+          ffmpeg: "available",
+          ffprobe: "available",
+          mediaStorage: "available",
+          generatedStorage: "writable",
+        },
+      },
+      requestId: "backend-integration-request",
+    });
+  });
+
+  it("mounts provider-gated own-API route handlers with request correlation", async () => {
+    const routeHandler: OwnApiRouteHandler = async (
+      _request,
+      response,
+      { requestId, url },
+    ) => {
+      if (url.pathname !== "/ownAPI/v1/auth/me") return false;
+      sendOwnApiJson(response, 401, {
+        error: {
+          code: "AUTH_REQUIRED",
+          message: "Authentication is required.",
+          requestId,
+        },
+      });
+      return true;
+    };
+    const { baseUrl } = await createFixtureBackend(undefined, {
+      ownApiRouteHandlers: [routeHandler],
+    });
+
+    const response = await fetch(`${baseUrl}/ownAPI/v1/auth/me`, {
+      headers: { "X-Request-Id": "auth-me-request" },
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect(response.headers.get("x-request-id")).toBe("auth-me-request");
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "AUTH_REQUIRED", requestId: "auth-me-request" },
+    });
+  });
+
+  it("closes native identity resources during graceful shutdown", async () => {
+    const ownApiShutdown = vi.fn(async () => undefined);
+    const { backend } = await createFixtureBackend(undefined, {
+      ownApiShutdown,
+    });
+
+    await backend.close();
+
+    expect(ownApiShutdown).toHaveBeenCalledTimes(1);
   });
 
   it("reports bounded transcode runtime status", async () => {
@@ -381,6 +581,9 @@ describe("playback backend HTTP routes", () => {
       "http://allowed.test",
     );
     expect(response.headers.get("vary")).toBe("Origin");
+    expect(response.headers.get("access-control-allow-credentials")).toBe(
+      "true",
+    );
   });
 
   it.each(["https://www.seyirlik.org", "https://seyirlik.org"])(
@@ -404,6 +607,38 @@ describe("playback backend HTTP routes", () => {
 
     expect(response.status).toBe(403);
     expect(response.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("correlates denied own API CORS responses without reflecting the origin", async () => {
+    const info = vi.fn();
+    const { baseUrl } = await createFixtureBackend(undefined, {
+      ownApiLogger: { info },
+    });
+    const response = await fetch(`${baseUrl}/ownAPI/v1/health`, {
+      headers: {
+        Origin: "http://evil.test",
+        "X-Request-Id": "denied-cors-request",
+      },
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.headers.get("access-control-allow-origin")).toBeNull();
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-request-id")).toBe("denied-cors-request");
+    expect(info).toHaveBeenCalledWith("http.request.completed", {
+      requestId: "denied-cors-request",
+      method: "GET",
+      path: "/ownAPI/v1/health",
+      statusCode: 403,
+      durationMs: expect.any(Number),
+    });
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "CORS_ORIGIN_DENIED",
+        message: "Origin is not allowed.",
+        requestId: "denied-cors-request",
+      },
+    });
   });
 
   it("handles valid OPTIONS preflight", async () => {

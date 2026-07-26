@@ -47,6 +47,7 @@ export interface JellyfinMediaResolverOptions {
   mediaRoot: string;
   fetchImpl?: FetchLike;
   timeoutMs?: number;
+  cacheTtlMs?: number;
   logger?: JellyfinMediaResolverLogger;
 }
 
@@ -63,6 +64,8 @@ export class JellyfinMediaResolverError extends Error {
 }
 
 const DEFAULT_TIMEOUT_MS = 8_000;
+const DEFAULT_CACHE_TTL_MS = 2 * 60 * 1000;
+const MAX_RESOLVED_MEDIA_CACHE_ENTRIES = 256;
 const ITEM_ID_PATTERN = /^[A-Za-z0-9._:-]{1,256}$/;
 const LOCAL_URL_PATTERN = /^[a-z][a-z0-9+.-]*:\/\//i;
 const VIDEO_TYPES = new Set([
@@ -247,6 +250,15 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
   private readonly timeoutMs: number;
   private readonly tokenRegistry: MediaTokenRegistry;
   private readonly logger?: JellyfinMediaResolverLogger;
+  private readonly cacheTtlMs: number;
+  private readonly resolvedMediaCache = new Map<
+    string,
+    { media: PlaybackResolvedMedia; expiresAtMs: number }
+  >();
+  private readonly pendingResolutions = new Map<
+    string,
+    Promise<PlaybackResolvedMedia>
+  >();
 
   constructor(
     options: JellyfinMediaResolverOptions & {
@@ -259,6 +271,7 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
     this.apiKey = options.apiKey;
     this.fetchImpl = options.fetchImpl ?? fetch;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+    this.cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;
     this.tokenRegistry = createMediaTokenRegistry();
     this.logger = options.logger;
   }
@@ -273,6 +286,80 @@ export class JellyfinMediaResolver implements PlaybackMediaResolver {
 
   async resolveMedia(mediaId: string): Promise<PlaybackResolvedMedia> {
     const itemId = validateItemId(mediaId);
+    const now = Date.now();
+    this.pruneResolvedMediaCache(now);
+    const cached = this.resolvedMediaCache.get(itemId);
+
+    if (cached && cached.expiresAtMs > now) {
+      try {
+        const file = await resolveTrustedFileInRoot(
+          this.mediaRoot,
+          cached.media.filePath,
+        );
+        const media = {
+          ...cached.media,
+          filePath: file.filePath,
+          size: file.size,
+          mtimeMs: file.mtimeMs,
+        };
+
+        cached.media = media;
+        return media;
+      } catch {
+        this.resolvedMediaCache.delete(itemId);
+      }
+    }
+
+    if (cached) {
+      this.resolvedMediaCache.delete(itemId);
+    }
+
+    const pending = this.pendingResolutions.get(itemId);
+
+    if (pending) {
+      return pending;
+    }
+
+    const resolution = this.resolveMediaUncached(itemId)
+      .then((media) => {
+        this.resolvedMediaCache.set(itemId, {
+          media,
+          expiresAtMs: Date.now() + this.cacheTtlMs,
+        });
+        this.pruneResolvedMediaCache(Date.now());
+        return media;
+      })
+      .finally(() => {
+        if (this.pendingResolutions.get(itemId) === resolution) {
+          this.pendingResolutions.delete(itemId);
+        }
+      });
+
+    this.pendingResolutions.set(itemId, resolution);
+    return resolution;
+  }
+
+  private pruneResolvedMediaCache(nowMs: number): void {
+    for (const [itemId, cached] of this.resolvedMediaCache.entries()) {
+      if (cached.expiresAtMs <= nowMs) {
+        this.resolvedMediaCache.delete(itemId);
+      }
+    }
+
+    while (this.resolvedMediaCache.size > MAX_RESOLVED_MEDIA_CACHE_ENTRIES) {
+      const oldest = this.resolvedMediaCache.keys().next();
+
+      if (oldest.done) {
+        break;
+      }
+
+      this.resolvedMediaCache.delete(oldest.value);
+    }
+  }
+
+  private async resolveMediaUncached(
+    itemId: string,
+  ): Promise<PlaybackResolvedMedia> {
     const startedAt = Date.now();
     const item = await this.fetchItem(itemId);
 

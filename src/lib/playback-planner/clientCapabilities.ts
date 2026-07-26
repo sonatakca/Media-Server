@@ -323,15 +323,24 @@ export async function buildClientCapabilities(): Promise<ClientCapabilities> {
   const video: ClientCapabilities["video"] = {};
   const audio: ClientCapabilities["audio"] = {};
 
-  for (const probe of VIDEO_PROBES) {
-    const capability = await probeVideoCapability(videoElement, probe);
-    video[probe.key] = mergeVideoCapability(video[probe.key], capability);
-  }
+  const [videoCapabilities, audioCapabilities] = await Promise.all([
+    Promise.all(
+      VIDEO_PROBES.map((probe) => probeVideoCapability(videoElement, probe)),
+    ),
+    Promise.all(
+      AUDIO_PROBES.map((probe) => probeAudioCapability(audioElement, probe)),
+    ),
+  ]);
 
-  for (const probe of AUDIO_PROBES) {
-    const capability = await probeAudioCapability(audioElement, probe);
+  VIDEO_PROBES.forEach((probe, index) => {
+    const capability = videoCapabilities[index];
+    video[probe.key] = mergeVideoCapability(video[probe.key], capability);
+  });
+
+  AUDIO_PROBES.forEach((probe, index) => {
+    const capability = audioCapabilities[index];
     audio[probe.key] = mergeAudioCapability(audio[probe.key], capability);
-  }
+  });
 
   return {
     deviceId: getOrCreateDeviceId(),

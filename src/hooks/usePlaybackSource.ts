@@ -252,6 +252,12 @@ export function usePlaybackSource(itemId?: string) {
     [sourceIndex, state.candidates, switchToSource, t],
   );
 
+  const handleVideoRecovery = useCallback(() => {
+    setState((currentState) =>
+      currentState.error ? { ...currentState, error: null } : currentState,
+    );
+  }, []);
+
   const hasTranscodingFallback = useMemo(
     () =>
       state.candidates.some(
@@ -266,6 +272,7 @@ export function usePlaybackSource(itemId?: string) {
     activeSource,
     retry: () => loadPlaybackInfo({ force: true }),
     handleVideoFailure,
+    handleVideoRecovery,
     tryTranscodedPlayback,
     hasTranscodingFallback,
   };

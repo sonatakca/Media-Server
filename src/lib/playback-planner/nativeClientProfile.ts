@@ -1,7 +1,4 @@
-import type {
-  ClientCapabilities,
-  NativePlayerCapabilities,
-} from "./types";
+import type { ClientCapabilities, NativePlayerCapabilities } from "./types";
 
 const DEFAULT_NATIVE_CONTAINERS = [
   "mp4",

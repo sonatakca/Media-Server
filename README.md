@@ -32,6 +32,81 @@ npm run dev
 
 Open the Vite URL shown in the terminal.
 
+### Experimental native bootstrap probe
+
+The default bootstrap provider remains `jellyfin`. To exercise only the native
+server-reachability slice, run Vite with the explicit provider flag while the
+playback backend is available:
+
+```bash
+VITE_SERVER_BOOTSTRAP_PROVIDER=own-api npm run dev
+```
+
+Vite proxies `/ownAPI/*` to `http://127.0.0.1:43110` by default. Override the
+development upstream with `SEYIRLIK_OWN_API_UPSTREAM` when the backend is at a
+different origin. Native mode does not silently retry Jellyfin when its health
+probe fails; switching the flag back to `jellyfin` is the rollback.
+
+Production must route `/ownAPI/*` to the persistent Node backend at the same
+public origin before enabling this flag. The current Vercel SPA catch-all is
+preceded by an explicit JSON `503` routing guard, not a backend proxy, so native
+bootstrap must remain disabled there until the persistent reverse-proxy
+destination is provisioned and smoke-tested.
+
+### Durable native identity foundation (disabled by default)
+
+PostgreSQL-backed native users and opaque sessions now exist under
+`/ownAPI/v1/auth`, but they are deliberately provider-gated. Jellyfin remains
+the default identity provider and the current Jellyfin login UI is unchanged.
+
+1. Create a PostgreSQL database and set backend-only `DATABASE_URL`. Optionally
+   bound the pool with `SEYIRLIK_DATABASE_POOL_MAX` (default 10, maximum 20).
+2. Run the checksum-tracked migrations repeatedly and safely:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+3. Provision the first administrator. The normal mode prompts twice without
+   echoing the password; non-interactive protected automation can send exactly
+   one password line on standard input:
+
+   ```bash
+   npm run admin:provision -- --username administrator --display-name "Administrator"
+   # protected automation only:
+   # secret-command | npm run admin:provision -- --username administrator --display-name "Administrator" --password-stdin
+   ```
+
+   Provisioning takes a PostgreSQL advisory lock, refuses to create another
+   administrator once an enabled administrator exists, and never prints the
+   password or Argon2id hash.
+
+4. Configure two independent backend-only secrets of at least 32 bytes:
+   `SEYIRLIK_SESSION_HASH_SECRET` and `SEYIRLIK_CSRF_SECRET`. Do not use the
+   database password for either value and do not expose them through `VITE_*`.
+5. For local testing only, explicitly set
+   `SEYIRLIK_IDENTITY_PROVIDER=native` on the persistent backend and
+   `VITE_IDENTITY_PROVIDER=native` in Vite. Switching both back to `jellyfin`
+   is the explicit rollback. There is no automatic native-to-Jellyfin fallback.
+
+The backend refuses native startup when PostgreSQL, required migrations, or
+secrets are unavailable. Database availability participates in readiness but
+not process liveness. Native login uses Argon2id; sessions use a 256-bit opaque
+token whose keyed hash alone is stored. Production cookies are `Secure`,
+`HttpOnly` for the session, `SameSite=Lax`, and scoped to
+`/ownAPI/v1/auth`. Mutations use a session-bound signed CSRF double-submit token
+plus strict direct-origin validation. Login and refresh also have bounded
+process-local rate limits; these are not distributed protection.
+
+The static Vercel deployment still has no confirmed route to the persistent
+Node backend. `/ownAPI/v1/*` is reserved ahead of the SPA catch-all and returns
+correlated JSON `503 PRODUCTION_ROUTING_UNAVAILABLE`, so it cannot masquerade as
+`index.html`; this guard is not an authentication service. Replace that rewrite
+with a same-origin reverse proxy to the persistent backend and smoke-test JSON,
+cookies, request IDs, and PostgreSQL durability before enabling native identity
+in production. PostgreSQL credentials and auth secrets must remain only on the
+persistent backend.
+
 ## Build
 
 ```bash

@@ -772,9 +772,7 @@ export function TimedMediaGallery({
                   ) : null}
 
                   {activeOverview ? (
-                    <p className="apple-gallery__overview">
-                      {activeOverview}
-                    </p>
+                    <p className="apple-gallery__overview">{activeOverview}</p>
                   ) : null}
 
                   <div className="apple-gallery__actions">

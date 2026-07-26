@@ -227,6 +227,7 @@ export function MobilePlayerPage() {
         error={playback.error}
         hasTranscodingFallback={playback.hasTranscodingFallback}
         onVideoFailure={playback.handleVideoFailure}
+        onVideoRecovery={playback.handleVideoRecovery}
         onTryTranscodedPlayback={playback.tryTranscodedPlayback}
         onRetryPlayback={playback.retry}
         initialStartSeconds={initialStartSeconds}

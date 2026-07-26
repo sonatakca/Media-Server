@@ -229,9 +229,12 @@ function mapSubtitleStream(stream: FfprobeStream): SubtitleStreamAnalysis {
   };
 }
 
-function runFfprobe(filePath: string): Promise<FfprobeOutput> {
+function runFfprobe(
+  filePath: string,
+  ffprobePath: string,
+): Promise<FfprobeOutput> {
   return new Promise((resolve, reject) => {
-    const child = spawn("ffprobe", [
+    const child = spawn(ffprobePath, [
       "-v",
       "error",
       "-show_format",
@@ -275,8 +278,9 @@ function runFfprobe(filePath: string): Promise<FfprobeOutput> {
 export async function analyseMediaFile(
   filePath: string,
   mediaId: string,
+  ffprobePath = "ffprobe",
 ): Promise<MediaAnalysis> {
-  const ffprobe = await runFfprobe(filePath);
+  const ffprobe = await runFfprobe(filePath, ffprobePath);
   const streams = ffprobe.streams ?? [];
   const formatName = ffprobe.format?.format_name ?? "unknown";
   const extension = normalizeExtension(filePath);
