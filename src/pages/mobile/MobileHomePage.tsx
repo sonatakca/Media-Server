@@ -9,7 +9,10 @@ import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { TimedCarouselIndicators } from "../../components/TimedCarouselIndicators";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
-import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrlById,
+} from "../../lib/itemMetadataPreferences";
 import {
   getBackdropImageUrl,
   getLatestMediaItems,
@@ -446,7 +449,7 @@ export function MobileHomePage() {
     ? (getItemDisplayMetadata(heroItem, language).title ??
       getDisplayTitle(heroItem, mediaFormatLabels))
     : "Seyirlik";
-  const logoUrl = heroItem?.ImageTags?.Logo
+  const fallbackLogoUrl = heroItem?.ImageTags?.Logo
     ? getLogoImageUrl(heroItem.Id, heroItem.ImageTags.Logo, 620)
     : heroItem?.ParentLogoItemId && heroItem.ParentLogoImageTag
       ? getLogoImageUrl(
@@ -455,6 +458,13 @@ export function MobileHomePage() {
           620,
         )
       : "";
+  const logoUrl = getItemLogoUrlById(
+    heroItem?.Type === "Episode"
+      ? (heroItem.SeriesId ?? heroItem.ParentLogoItemId)
+      : heroItem?.Id,
+    language,
+    fallbackLogoUrl,
+  );
   const mediaTypeLabel =
     heroItem?.Type === "Movie"
       ? t("common.movie")

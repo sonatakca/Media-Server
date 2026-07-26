@@ -16,6 +16,7 @@ interface StoredItemMetadata {
   itemId: string;
   titles: LocalizedText;
   overviews: LocalizedText;
+  logos: LocalizedText;
   updatedAt: string;
 }
 
@@ -98,6 +99,7 @@ function readStore(): ItemMetadataStore {
         itemId: normalizedItemId,
         titles: sanitizeTextMap(item.titles),
         overviews: sanitizeTextMap(item.overviews),
+        logos: sanitizeTextMap(item.logos),
         updatedAt: normalizeText(item.updatedAt) ?? new Date(0).toISOString(),
       };
     });
@@ -122,13 +124,62 @@ export function saveItemMetadataOverride(
   }
 
   const store = readStore();
+  const current = store.itemsById[itemId];
   store.itemsById[itemId] = {
     itemId,
     titles: sanitizeTextMap(override.titles),
     overviews: sanitizeTextMap(override.overviews),
+    logos: current?.logos ?? {},
     updatedAt: new Date().toISOString(),
   };
   writeStore(store);
+}
+
+export function saveItemLogoOverride(
+  itemIdValue: string,
+  language: Language,
+  urlValue: string,
+): void {
+  const itemId = normalizeText(itemIdValue);
+  const url = normalizeText(urlValue);
+
+  if (!itemId || !url) {
+    return;
+  }
+
+  const store = readStore();
+  const current = store.itemsById[itemId];
+
+  store.itemsById[itemId] = {
+    itemId,
+    titles: current?.titles ?? {},
+    overviews: current?.overviews ?? {},
+    logos: {
+      ...(current?.logos ?? {}),
+      [language]: url,
+    },
+    updatedAt: new Date().toISOString(),
+  };
+  writeStore(store);
+}
+
+export function getItemLogoUrl(
+  item: JellyfinItem,
+  language: Language,
+  fallbackUrl: string,
+): string {
+  return getItemLogoUrlById(item.Id, language, fallbackUrl);
+}
+
+export function getItemLogoUrlById(
+  itemId: string | null | undefined,
+  language: Language,
+  fallbackUrl: string,
+): string {
+  return (
+    (itemId ? readStore().itemsById[itemId]?.logos[language] : null) ??
+    fallbackUrl
+  );
 }
 
 export function getItemDisplayMetadata(

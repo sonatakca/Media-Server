@@ -22,6 +22,7 @@ import {
 } from "../../components/ui/glassControlStyles";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
+import { getItemLogoUrlById } from "../../lib/itemMetadataPreferences";
 import {
   getBoxSetItems,
   getItem,
@@ -246,7 +247,7 @@ export function DesktopLibraryPage({
     seasonId,
     seriesId,
   });
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -410,18 +411,22 @@ export function DesktopLibraryPage({
     const logoUrls = data.items
       .map((libraryItem) => {
         if (libraryItem.ImageTags?.Logo) {
-          return getLogoImageUrl(
+          return getItemLogoUrlById(
             libraryItem.Id,
-            libraryItem.ImageTags.Logo,
-            1100,
+            language,
+            getLogoImageUrl(libraryItem.Id, libraryItem.ImageTags.Logo, 1100),
           );
         }
 
         if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
-          return getLogoImageUrl(
+          return getItemLogoUrlById(
             libraryItem.ParentLogoItemId,
-            libraryItem.ParentLogoImageTag,
-            1100,
+            language,
+            getLogoImageUrl(
+              libraryItem.ParentLogoItemId,
+              libraryItem.ParentLogoImageTag,
+              1100,
+            ),
           );
         }
 
@@ -430,7 +435,7 @@ export function DesktopLibraryPage({
       .filter((url): url is string => Boolean(url));
 
     return Array.from(new Set(logoUrls));
-  }, [data, mode]);
+  }, [data, language, mode]);
 
   useEffect(() => {
     setRotatingLogoIndex(0);
@@ -660,7 +665,7 @@ export function DesktopLibraryPage({
       Boolean(libraryItem.ImageTags?.Logo) ||
       Boolean(libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag),
   );
-  const libraryLogoUrl = data.library?.ImageTags?.Logo
+  const fallbackLibraryLogoUrl = data.library?.ImageTags?.Logo
     ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 1100)
     : data.library?.ParentLogoItemId && data.library.ParentLogoImageTag
       ? getLogoImageUrl(
@@ -682,6 +687,13 @@ export function DesktopLibraryPage({
               1100,
             )
           : "";
+  const libraryLogoUrl = getItemLogoUrlById(
+    data.library?.Id ??
+      firstItemWithLogo?.ParentLogoItemId ??
+      firstItemWithLogo?.Id,
+    language,
+    fallbackLibraryLogoUrl,
+  );
   const activeLibraryLogoUrl =
     mode === "library" && libraryRotatingLogoUrls.length > 0
       ? libraryRotatingLogoUrls[

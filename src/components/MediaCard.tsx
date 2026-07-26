@@ -5,7 +5,10 @@ import { RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, formatTemplate, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
-import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrlById,
+} from "../lib/itemMetadataPreferences";
 import {
   getReadRouteForItem,
   getWatchRouteForItem,
@@ -276,7 +279,7 @@ export function MediaCard({
     : item.ImageTags?.Primary
       ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 600)
       : displayImageUrl;
-  const logoUrl =
+  const fallbackLogoUrl =
     item.Type === "Episode" && isSeasonEpisodeGrid
       ? ""
       : item.ImageTags?.Logo
@@ -284,6 +287,13 @@ export function MediaCard({
         : item.ParentLogoItemId && item.ParentLogoImageTag
           ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 520)
           : "";
+  const logoUrl = getItemLogoUrlById(
+    item.Type === "Episode"
+      ? (item.SeriesId ?? item.ParentLogoItemId)
+      : item.Id,
+    language,
+    fallbackLogoUrl,
+  );
 
   const canPlay =
     item.Type === "Movie" ||

@@ -33,7 +33,10 @@ import {
 } from "../../lib/format";
 import { getMediaOwnerRouteForItem } from "../../lib/routes";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
-import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrlById,
+} from "../../lib/itemMetadataPreferences";
 import { getVideoErrorDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
@@ -3549,12 +3552,17 @@ export function CustomVideoPlayer({
   const playerSeriesLogoItemId = isEpisodeItem
     ? (item.ParentLogoItemId ?? item.SeriesId ?? null)
     : null;
-  const titleLogoUrl =
+  const fallbackTitleLogoUrl =
     playerSeriesLogoItemId && item.ParentLogoImageTag
       ? getLogoImageUrl(playerSeriesLogoItemId, item.ParentLogoImageTag, 900)
       : item.ImageTags?.Logo
         ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900)
         : "";
+  const titleLogoUrl = getItemLogoUrlById(
+    playerSeriesLogoItemId ?? item.Id,
+    language,
+    fallbackTitleLogoUrl,
+  );
   const playerHeaderSubtitle = isEpisodeItem
     ? (playerEpisodeName ?? subtitle)
     : subtitle;

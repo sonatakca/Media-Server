@@ -810,6 +810,9 @@ export const en = {
   "tmdbArtwork.kind.landscapeDescription":
     "Landscape choices replace landscape.jpg.",
   "tmdbArtwork.kind.logoDescription": "Logo choices replace logo.png.",
+  "tmdbArtwork.logoEnglish": "English logo",
+  "tmdbArtwork.logoTurkish": "Turkish logo",
+  "tmdbArtwork.logoNotSelected": "No logo selected",
   "tmdbArtwork.itemMetadata": "Title Metadata",
   "tmdbArtwork.itemLanguages": "Names and descriptions",
   "tmdbArtwork.itemLanguagesDescription":

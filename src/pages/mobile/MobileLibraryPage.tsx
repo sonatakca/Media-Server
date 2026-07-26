@@ -15,6 +15,7 @@ import {
 import { useLanguage } from "../../i18n/LanguageContext";
 
 import { getDisplayTitle } from "../../lib/format";
+import { getItemLogoUrlById } from "../../lib/itemMetadataPreferences";
 import {
   getBoxSetItems,
   getBackdropImageUrl,
@@ -256,7 +257,7 @@ export function MobileLibraryPage({
     seasonId,
     seriesId,
   });
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const labels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -372,18 +373,22 @@ export function MobileLibraryPage({
     const logoUrls = data.items
       .map((libraryItem) => {
         if (libraryItem.ImageTags?.Logo) {
-          return getLogoImageUrl(
+          return getItemLogoUrlById(
             libraryItem.Id,
-            libraryItem.ImageTags.Logo,
-            900,
+            language,
+            getLogoImageUrl(libraryItem.Id, libraryItem.ImageTags.Logo, 900),
           );
         }
 
         if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
-          return getLogoImageUrl(
+          return getItemLogoUrlById(
             libraryItem.ParentLogoItemId,
-            libraryItem.ParentLogoImageTag,
-            900,
+            language,
+            getLogoImageUrl(
+              libraryItem.ParentLogoItemId,
+              libraryItem.ParentLogoImageTag,
+              900,
+            ),
           );
         }
 
@@ -392,7 +397,7 @@ export function MobileLibraryPage({
       .filter((url): url is string => Boolean(url));
 
     return Array.from(new Set(logoUrls));
-  }, [data, mode]);
+  }, [data, language, mode]);
 
   useEffect(() => {
     setRotatingLogoIndex(0);
@@ -628,13 +633,20 @@ export function MobileLibraryPage({
               900,
             )
           : "";
+  const localizedFallbackLogoUrl = getItemLogoUrlById(
+    data.library?.Id ??
+      firstItemWithLogo?.ParentLogoItemId ??
+      firstItemWithLogo?.Id,
+    language,
+    fallbackLogoUrl,
+  );
 
   const activeLibraryLogoUrl =
     mode === "library" && libraryRotatingLogoUrls.length > 0
       ? libraryRotatingLogoUrls[
           rotatingLogoIndex % libraryRotatingLogoUrls.length
         ]
-      : fallbackLogoUrl;
+      : localizedFallbackLogoUrl;
   const backdropUrl = getLibraryBackdropUrl(data.library, data.items);
   const countText =
     itemType === "Season"

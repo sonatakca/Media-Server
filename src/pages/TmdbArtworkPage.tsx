@@ -25,7 +25,11 @@ import {
   getSeriesEpisodeMetadataPreference,
   saveEpisodeMetadataOverrides,
 } from "../lib/episodeMetadataPreferences";
-import { saveItemMetadataOverride } from "../lib/itemMetadataPreferences";
+import {
+  getItemLogoUrl,
+  saveItemLogoOverride,
+  saveItemMetadataOverride,
+} from "../lib/itemMetadataPreferences";
 import {
   getDisplayTitle,
   getItemSubtitle,
@@ -94,6 +98,12 @@ export function TmdbArtworkPage() {
   >({});
   const [selectedImages, setSelectedImages] = useState<
     Partial<Record<TmdbArtworkKind, TmdbArtworkImage>>
+  >({});
+  const [activeLogoLanguage, setActiveLogoLanguage] = useState<"en" | "tr">(
+    "en",
+  );
+  const [selectedLogoImages, setSelectedLogoImages] = useState<
+    Partial<Record<"en" | "tr", TmdbArtworkImage>>
   >({});
   const [seriesEpisodes, setSeriesEpisodes] = useState<JellyfinItem[]>([]);
   const [episodeSeasonFilter, setEpisodeSeasonFilter] =
@@ -201,7 +211,10 @@ export function TmdbArtworkPage() {
   }, [items, itemSearch]);
 
   const activeImages = imagesByKind[activeKind] ?? [];
-  const activeSelectedImage = selectedImages[activeKind] ?? null;
+  const activeSelectedImage =
+    activeKind === "logo"
+      ? (selectedLogoImages[activeLogoLanguage] ?? null)
+      : (selectedImages[activeKind] ?? null);
   const episodeSeasonNumbers = useMemo(
     () =>
       Array.from(
@@ -270,6 +283,12 @@ export function TmdbArtworkPage() {
           ...current,
           [kind]: current[kind] ?? images[0],
         }));
+        if (kind === "logo") {
+          setSelectedLogoImages((current) => ({
+            en: current.en ?? images.find((image) => image.language === "en"),
+            tr: current.tr ?? images.find((image) => image.language === "tr"),
+          }));
+        }
         setImagesState({
           state: images.length > 0 ? "success" : "idle",
           message:
@@ -383,6 +402,8 @@ export function TmdbArtworkPage() {
     setSelectedTmdb(providerResult);
     setImagesByKind({});
     setSelectedImages({});
+    setSelectedLogoImages({});
+    setActiveLogoLanguage("en");
     setArtworkRefreshToken(0);
     setSearchState(createEmptyResult());
     setImagesState(createEmptyResult());
@@ -456,6 +477,8 @@ export function TmdbArtworkPage() {
     setSelectedTmdb(result);
     setImagesByKind({});
     setSelectedImages({});
+    setSelectedLogoImages({});
+    setActiveLogoLanguage("en");
     setApplyState(createEmptyResult());
     setEpisodeMetadataByKey({});
     setEpisodeMetadataState(createEmptyResult());
@@ -487,6 +510,13 @@ export function TmdbArtworkPage() {
           file: result.targetFileName,
         }),
       });
+      if (activeKind === "logo") {
+        saveItemLogoOverride(
+          selectedItem.Id,
+          activeLogoLanguage,
+          activeSelectedImage.fullUrl,
+        );
+      }
       setArtworkRefreshToken(Date.now());
 
       try {
@@ -1107,12 +1137,20 @@ export function TmdbArtworkPage() {
                 const currentArtworkTag = selectedItem
                   ? getCurrentArtworkTag(selectedItem, kind)
                   : null;
-                const currentArtworkUrl = getCurrentArtworkPreviewUrl(
+                const jellyfinArtworkUrl = getCurrentArtworkPreviewUrl(
                   selectedItem
                     ? getCurrentArtworkUrl(selectedItem, kind)
                     : null,
                   artworkRefreshToken,
                 );
+                const currentArtworkUrl =
+                  kind === "logo" && selectedItem
+                    ? getItemLogoUrl(
+                        selectedItem,
+                        language,
+                        jellyfinArtworkUrl ?? "",
+                      )
+                    : jellyfinArtworkUrl;
 
                 return (
                   <div
@@ -1171,7 +1209,10 @@ export function TmdbArtworkPage() {
             <div className="mt-5 grid min-w-0 gap-2 sm:grid-cols-3">
               {ARTWORK_KINDS.map((kind) => {
                 const isActive = activeKind === kind;
-                const selectedImage = selectedImages[kind];
+                const selectedImage =
+                  kind === "logo"
+                    ? selectedLogoImages[activeLogoLanguage]
+                    : selectedImages[kind];
 
                 return (
                   <button
@@ -1198,6 +1239,45 @@ export function TmdbArtworkPage() {
                 );
               })}
             </div>
+
+            {activeKind === "logo" ? (
+              <div className="mt-4 grid grid-cols-2 gap-1 rounded-2xl border border-white/10 bg-white/[0.035] p-1">
+                {(["en", "tr"] as const).map((logoLanguage) => {
+                  const isSelected = activeLogoLanguage === logoLanguage;
+                  const selectedLogo = selectedLogoImages[logoLanguage];
+
+                  return (
+                    <button
+                      key={logoLanguage}
+                      type="button"
+                      onClick={() => {
+                        setActiveLogoLanguage(logoLanguage);
+                        setApplyState(createEmptyResult());
+                      }}
+                      className={`min-w-0 rounded-xl px-4 py-3 text-sm font-black transition ${
+                        isSelected
+                          ? "bg-[var(--accent)] text-black"
+                          : "text-white/56 hover:bg-white/[0.06] hover:text-white"
+                      }`}
+                    >
+                      <span className="block">
+                        {logoLanguage === "en"
+                          ? t("tmdbArtwork.logoEnglish")
+                          : t("tmdbArtwork.logoTurkish")}
+                      </span>
+                      <span
+                        className={`mt-1 block truncate text-xs ${
+                          isSelected ? "text-black/60" : "text-white/35"
+                        }`}
+                      >
+                        {selectedLogo?.filePath ??
+                          t("tmdbArtwork.logoNotSelected")}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
 
             {imagesState.message ? (
               <p
@@ -1260,12 +1340,20 @@ export function TmdbArtworkPage() {
                       <button
                         key={image.id}
                         type="button"
-                        onClick={() =>
+                        onClick={() => {
+                          if (activeKind === "logo") {
+                            setSelectedLogoImages((current) => ({
+                              ...current,
+                              [activeLogoLanguage]: image,
+                            }));
+                            return;
+                          }
+
                           setSelectedImages((current) => ({
                             ...current,
                             [activeKind]: image,
-                          }))
-                        }
+                          }));
+                        }}
                         className={`min-w-0 overflow-hidden rounded-3xl border text-left transition ${
                           isSelected
                             ? "border-[var(--accent)]/55 bg-[var(--accent)]/12"

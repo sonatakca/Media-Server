@@ -4,7 +4,10 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
-import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrlById,
+} from "../../lib/itemMetadataPreferences";
 import {
   formatRuntime,
   formatTemplate,
@@ -175,7 +178,7 @@ export function MobileMediaCard({
             )
           : "";
 
-  const logoUrl =
+  const fallbackLogoUrl =
     !isEpisode && !isSeason && item.ImageTags?.Logo
       ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 420)
       : !isEpisode &&
@@ -184,6 +187,13 @@ export function MobileMediaCard({
           item.ParentLogoImageTag
         ? getLogoImageUrl(item.ParentLogoItemId, item.ParentLogoImageTag, 420)
         : "";
+  const logoUrl = getItemLogoUrlById(
+    item.Type === "Episode"
+      ? (item.SeriesId ?? item.ParentLogoItemId)
+      : item.Id,
+    language,
+    fallbackLogoUrl,
+  );
 
   return (
     <motion.article

@@ -14,7 +14,10 @@ import {
 } from "../lib/jellyfinApi";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
-import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrl,
+} from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -118,8 +121,11 @@ export function TimedMediaGallery({
   const activePosterUrl =
     activeEpisodeMetadata?.thumbnailUrl ??
     (activeItem ? getPoster(activeItem) : "");
-  const activeLogoUrl = activeItem?.ImageTags?.Logo
+  const activeFallbackLogoUrl = activeItem?.ImageTags?.Logo
     ? getLogoImageUrl(activeItem.Id, activeItem.ImageTags.Logo, 950)
+    : "";
+  const activeLogoUrl = activeItem
+    ? getItemLogoUrl(activeItem, language, activeFallbackLogoUrl)
     : "";
   const activeTitle = activeItem
     ? (activeEpisodeMetadata?.title ??

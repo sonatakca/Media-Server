@@ -15,7 +15,10 @@ import {
 } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
-import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrl,
+} from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import { getPlayTargetForItem } from "../lib/playTarget";
 import { useNavigate } from "react-router-dom";
@@ -503,9 +506,10 @@ export function HeroSection({
   const primaryPosterUrl =
     imageCandidates.find((candidate) => candidate.type === "primary")?.url ??
     "";
-  const logoUrl = item?.ImageTags?.Logo
+  const fallbackLogoUrl = item?.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
     : "";
+  const logoUrl = item ? getItemLogoUrl(item, language, fallbackLogoUrl) : "";
 
   const croppedLogoUrl = useCroppedTransparentImage(logoUrl);
 

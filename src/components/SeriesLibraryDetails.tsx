@@ -19,7 +19,10 @@ import {
   getSimilarItems,
 } from "../lib/jellyfinApi";
 import { getDisplayTitle } from "../lib/format";
-import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
+import {
+  getItemDisplayMetadata,
+  getItemLogoUrl,
+} from "../lib/itemMetadataPreferences";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
@@ -504,9 +507,10 @@ export function SeriesLibraryDetails({
     );
   }
 
-  const logoUrl = series.ImageTags?.Logo
+  const fallbackLogoUrl = series.ImageTags?.Logo
     ? getLogoImageUrl(series.Id, series.ImageTags.Logo, isDesktop ? 1100 : 700)
     : "";
+  const logoUrl = getItemLogoUrl(series, language, fallbackLogoUrl);
   const itemDisplayMetadata = getItemDisplayMetadata(series, language);
   const selectedSeason = seasons.find(
     (season) => season.Id === selectedSeasonId,
