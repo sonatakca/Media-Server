@@ -272,7 +272,7 @@ export function TmdbArtworkPage() {
       });
 
       try {
-        const images = await getTmdbArtworkImages({
+        const { images, localLogoStatus } = await getTmdbArtworkImages({
           itemId,
           mediaType: tmdbResult.mediaType,
           tmdbId: tmdbResult.id,
@@ -298,10 +298,18 @@ export function TmdbArtworkPage() {
           state: images.length > 0 ? "success" : "idle",
           message:
             images.length > 0
-              ? formatTemplate(t("tmdbArtwork.loadedImages"), {
+              ? `${formatTemplate(t("tmdbArtwork.loadedImages"), {
                   count: images.length,
                   target: TARGET_FILE_BY_KIND[kind],
-                })
+                })}${
+                  kind === "logo" && localLogoStatus !== "found"
+                    ? ` ${t(
+                        localLogoStatus === "unavailable"
+                          ? "tmdbArtwork.localLogoUnavailable"
+                          : "tmdbArtwork.localLogoNotFound",
+                      )}`
+                    : ""
+                }`
               : t("tmdbArtwork.noImages"),
         });
       } catch (error) {

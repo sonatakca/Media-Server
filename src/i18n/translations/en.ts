@@ -816,6 +816,10 @@ export const en = {
   "tmdbArtwork.logoNotSelected": "No logo selected",
   "tmdbArtwork.localCustom": "Custom",
   "tmdbArtwork.localSidecar": "Local sidecar logo",
+  "tmdbArtwork.localLogoNotFound":
+    "No local logo.png or logo-tr.png was found in the resolved media folder.",
+  "tmdbArtwork.localLogoUnavailable":
+    "The backend could not inspect local logo sidecars.",
   "tmdbArtwork.itemMetadata": "Title Metadata",
   "tmdbArtwork.itemLanguages": "Names and descriptions",
   "tmdbArtwork.itemLanguagesDescription":

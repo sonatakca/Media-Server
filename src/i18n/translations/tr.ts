@@ -819,6 +819,10 @@ export const tr = {
   "tmdbArtwork.logoNotSelected": "Logo seçilmedi",
   "tmdbArtwork.localCustom": "Özel",
   "tmdbArtwork.localSidecar": "Yerel sidecar logosu",
+  "tmdbArtwork.localLogoNotFound":
+    "Çözümlenen medya klasöründe yerel logo.png veya logo-tr.png bulunamadı.",
+  "tmdbArtwork.localLogoUnavailable":
+    "Backend yerel logo sidecar dosyalarını inceleyemedi.",
   "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
   "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
   "tmdbArtwork.itemLanguagesDescription":

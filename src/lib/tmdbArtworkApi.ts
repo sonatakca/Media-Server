@@ -2,6 +2,7 @@ export type TmdbArtworkKind = "poster" | "backdrop" | "landscape" | "logo";
 export type TmdbMediaType = "movie" | "tv";
 export type TmdbImageLanguage = "en" | "tr" | null;
 export type TmdbEpisodeThumbnailLanguage = TmdbImageLanguage;
+export type LocalLogoStatus = "found" | "not-found" | "unavailable";
 
 export interface TmdbSearchResult {
   id: number;
@@ -58,6 +59,11 @@ export interface TmdbArtworkApplyResult {
   bytes: number;
 }
 
+export interface TmdbArtworkImagesResult {
+  images: TmdbArtworkImage[];
+  localLogoStatus?: LocalLogoStatus;
+}
+
 export interface TmdbEpisodeThumbnail {
   id: string;
   filePath: string;
@@ -87,6 +93,7 @@ interface ImagesResponse {
   images?: TmdbArtworkImage[];
   languageFilter?: Array<"en" | "tr" | null>;
   targetFileName?: string;
+  localLogoStatus?: LocalLogoStatus;
 }
 
 interface EpisodeMetadataResponse {
@@ -316,7 +323,7 @@ export async function getTmdbArtworkImages(params: {
   tmdbId: number;
   kind: TmdbArtworkKind;
   language: "en" | "tr";
-}): Promise<TmdbArtworkImage[]> {
+}): Promise<TmdbArtworkImagesResult> {
   const response = await requestArtworkJson<ImagesResponse>("images", {
     params: {
       itemId: params.itemId,
@@ -327,7 +334,10 @@ export async function getTmdbArtworkImages(params: {
     },
   });
 
-  return response.images ?? [];
+  return {
+    images: response.images ?? [],
+    localLogoStatus: response.localLogoStatus,
+  };
 }
 
 export async function getTmdbEpisodeMetadata(params: {

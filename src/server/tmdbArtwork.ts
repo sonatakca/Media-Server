@@ -577,6 +577,89 @@ async function fetchJellyfinItem(
   return item as JellyfinItemResponse;
 }
 
+async function fetchJellyfinItemByTmdbId(
+  tmdbId: number,
+  mediaType: TmdbMediaType,
+  options: JellyfinLookupOptions,
+): Promise<JellyfinItemResponse | null> {
+  const requestUrl = new URL(
+    "Items",
+    `${normalizeJellyfinServerUrl(options.jellyfinServerUrl)}/`,
+  );
+
+  requestUrl.searchParams.set(
+    "Fields",
+    "Path,MediaSources,ProviderIds,ParentId,SeriesId,ExtraType",
+  );
+  requestUrl.searchParams.set(
+    "IncludeItemTypes",
+    mediaType === "movie" ? "Movie" : "Series",
+  );
+  requestUrl.searchParams.set("Recursive", "true");
+  requestUrl.searchParams.set("HasTmdbId", "true");
+  requestUrl.searchParams.set("EnableTotalRecordCount", "false");
+  requestUrl.searchParams.set("Limit", "10000");
+
+  const response = await fetchWithTimeout(
+    options.fetchImpl,
+    requestUrl,
+    {
+      headers: {
+        Accept: "application/json",
+        "X-Emby-Token": options.apiKey,
+      },
+    },
+    options.timeoutMs,
+  );
+
+  if (response.status === 401 || response.status === 403) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_AUTH_FAILED",
+      "Jellyfin rejected the configured backend API key.",
+      502,
+    );
+  }
+
+  if (!response.ok) {
+    throw new TmdbArtworkRouteError(
+      "JELLYFIN_UNAVAILABLE",
+      "Jellyfin TMDB provider lookup failed.",
+      502,
+    );
+  }
+
+  const payload = (await response.json()) as JellyfinItemsResponse;
+  const targetTmdbId = String(tmdbId);
+
+  if (!Array.isArray(payload.Items)) {
+    return null;
+  }
+
+  return (
+    (payload.Items.find((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return false;
+      }
+
+      const providerIds = (item as JellyfinItemResponse).ProviderIds;
+
+      if (
+        !providerIds ||
+        typeof providerIds !== "object" ||
+        Array.isArray(providerIds)
+      ) {
+        return false;
+      }
+
+      return Object.entries(providerIds).some(
+        ([provider, value]) =>
+          provider.toLocaleLowerCase("en-US") === "tmdb" &&
+          String(value) === targetTmdbId,
+      );
+    }) as JellyfinItemResponse | undefined) ?? null
+  );
+}
+
 function normalizeSearchResult(
   mediaType: TmdbMediaType,
   value: unknown,
@@ -801,7 +884,7 @@ async function loadLocalLogoImages(
       continue;
     }
 
-    if (path.dirname(realCandidate) !== realDirectory) {
+    if (!isPathInsideOrEqualRoot(realDirectory, realCandidate)) {
       continue;
     }
 
@@ -818,10 +901,6 @@ async function loadLocalLogoImages(
     const contents = await readFile(realCandidate);
     const dimensions = getPngDimensions(contents);
 
-    if (!dimensions) {
-      continue;
-    }
-
     const dataUrl = `data:image/png;base64,${contents.toString("base64")}`;
     images.push({
       id: `local-logo:${candidate.language}`,
@@ -832,9 +911,12 @@ async function loadLocalLogoImages(
       previewUrl: dataUrl,
       fullUrl: dataUrl,
       language: candidate.language,
-      width: dimensions.width,
-      height: dimensions.height,
-      aspectRatio: dimensions.width / dimensions.height,
+      width: dimensions?.width ?? null,
+      height: dimensions?.height ?? null,
+      aspectRatio:
+        dimensions && dimensions.height > 0
+          ? dimensions.width / dimensions.height
+          : null,
       voteAverage: null,
       voteCount: null,
       targetFileName: candidate.fileName,
@@ -1654,28 +1736,66 @@ export function createTmdbArtworkRequestHandler(
         );
         const tmdbImages = normalizeImages(payload, kind);
         let localImages: NormalizedTmdbImage[] = [];
+        let localLogoStatus: "found" | "not-found" | "unavailable" | undefined;
 
-        if (kind === "logo" && url.searchParams.has("itemId")) {
-          const jellyfinServerUrl = requireJellyfinServerUrl();
-          const jellyfinApiKey = requireJellyfinApiKey();
-          const itemId = validateItemId(url.searchParams.get("itemId"));
-          const item = await fetchJellyfinItem(itemId, {
-            jellyfinServerUrl,
-            apiKey: jellyfinApiKey,
-            fetchImpl,
-            timeoutMs,
-          });
-          const targetDirectory = await resolveArtworkTargetDirectory(
-            item,
-            options.mediaRoot,
-            {
+        if (kind === "logo") {
+          const rawItemId = url.searchParams.get("itemId");
+          const requestedItemId = rawItemId ? validateItemId(rawItemId) : null;
+
+          try {
+            const jellyfinServerUrl = requireJellyfinServerUrl();
+            const jellyfinApiKey = requireJellyfinApiKey();
+            const lookupOptions = {
               jellyfinServerUrl,
               apiKey: jellyfinApiKey,
               fetchImpl,
               timeoutMs,
-            },
-          );
-          localImages = await loadLocalLogoImages(targetDirectory);
+            };
+            const checkedItemIds = new Set<string>();
+
+            const checkItem = async (item: JellyfinItemResponse | null) => {
+              if (!item) {
+                return;
+              }
+
+              const resolvedItemId = getString(item.Id);
+
+              if (resolvedItemId && checkedItemIds.has(resolvedItemId)) {
+                return;
+              }
+
+              if (resolvedItemId) {
+                checkedItemIds.add(resolvedItemId);
+              }
+
+              const targetDirectory = await resolveArtworkTargetDirectory(
+                item,
+                options.mediaRoot,
+                lookupOptions,
+              );
+              localImages = await loadLocalLogoImages(targetDirectory);
+            };
+
+            if (requestedItemId) {
+              await checkItem(
+                await fetchJellyfinItem(requestedItemId, lookupOptions),
+              );
+            }
+
+            if (localImages.length === 0) {
+              await checkItem(
+                await fetchJellyfinItemByTmdbId(
+                  tmdbId,
+                  mediaType,
+                  lookupOptions,
+                ),
+              );
+            }
+
+            localLogoStatus = localImages.length > 0 ? "found" : "not-found";
+          } catch {
+            localLogoStatus = "unavailable";
+          }
         }
         const images = [...localImages, ...tmdbImages];
 
@@ -1683,6 +1803,7 @@ export function createTmdbArtworkRequestHandler(
           images,
           languageFilter: ["en", "tr", null],
           targetFileName: getTargetFileName(kind),
+          ...(localLogoStatus ? { localLogoStatus } : {}),
         });
         return true;
       }

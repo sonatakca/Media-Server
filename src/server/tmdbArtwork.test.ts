@@ -262,7 +262,10 @@ describe("TMDB artwork backend", () => {
     );
     const logoPayload = (await logoResponse.json()) as {
       images: Array<{ filePath: string }>;
+      localLogoStatus: string;
     };
+    expect(logoResponse.status).toBe(200);
+    expect(logoPayload.localLogoStatus).toBe("unavailable");
     expect(logoPayload.images.map((image) => image.filePath)).toEqual([
       "/logo-en.png",
       "/logo-tr.png",
@@ -308,6 +311,9 @@ describe("TMDB artwork backend", () => {
               Type: "Series",
               Path: mediaDirectory,
               MediaSources: [],
+              ProviderIds: {
+                Tmdb: "11",
+              },
             },
           ],
         });
@@ -317,9 +323,10 @@ describe("TMDB artwork backend", () => {
     });
     const baseUrl = await startBackend({ mediaRoot, fetchImpl });
     const response = await fetch(
-      `${baseUrl}/api/tmdb-artwork/images?itemId=berlin&mediaType=tv&tmdbId=11&kind=logo&language=tr`,
+      `${baseUrl}/api/tmdb-artwork/images?mediaType=tv&tmdbId=11&kind=logo&language=tr`,
     );
     const payload = (await response.json()) as {
+      localLogoStatus: string;
       images: Array<{
         origin: "tmdb" | "local";
         filePath: string;
@@ -331,6 +338,7 @@ describe("TMDB artwork backend", () => {
     };
 
     expect(response.status).toBe(200);
+    expect(payload.localLogoStatus).toBe("found");
     expect(payload.images).toHaveLength(2);
     expect(payload.images[0]).toMatchObject({
       origin: "local",
