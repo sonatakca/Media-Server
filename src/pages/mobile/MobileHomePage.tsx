@@ -9,6 +9,7 @@ import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { TimedCarouselIndicators } from "../../components/TimedCarouselIndicators";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { formatRuntime, getDisplayTitle } from "../../lib/format";
+import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import {
   getBackdropImageUrl,
   getLatestMediaItems,
@@ -209,7 +210,7 @@ function MobileHomeLoading() {
 }
 
 export function MobileHomePage() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
   const forceSkeletons = useDevSkeletonMode();
   const shouldReduceMotion = useReducedMotion();
   const wasHeroPausedBeforeDragRef = useRef(false);
@@ -442,7 +443,8 @@ export function MobileHomePage() {
   const heroImageUrl = getHeroImage(heroItem);
   const heroPosterUrl = getHeroPosterImage(heroItem);
   const heroTitle = heroItem
-    ? getDisplayTitle(heroItem, mediaFormatLabels)
+    ? (getItemDisplayMetadata(heroItem, language).title ??
+      getDisplayTitle(heroItem, mediaFormatLabels))
     : "Seyirlik";
   const logoUrl = heroItem?.ImageTags?.Logo
     ? getLogoImageUrl(heroItem.Id, heroItem.ImageTags.Logo, 620)

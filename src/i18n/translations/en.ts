@@ -810,6 +810,23 @@ export const en = {
   "tmdbArtwork.kind.landscapeDescription":
     "Landscape choices replace landscape.jpg.",
   "tmdbArtwork.kind.logoDescription": "Logo choices replace logo.png.",
+  "tmdbArtwork.itemMetadata": "Title Metadata",
+  "tmdbArtwork.itemLanguages": "Names and descriptions",
+  "tmdbArtwork.itemLanguagesDescription":
+    "Loads the English and Turkish title and description together. Once saved, Seyirlik switches them automatically with the website language.",
+  "tmdbArtwork.loadItemMetadata": "Load title metadata",
+  "tmdbArtwork.saveItemDisplay": "Save title display",
+  "tmdbArtwork.loadingItemMetadata": "Loading title metadata...",
+  "tmdbArtwork.itemMetadataLoaded":
+    "Loaded English and Turkish title metadata.",
+  "tmdbArtwork.itemMetadataUnavailable":
+    "No title metadata was returned by TMDB.",
+  "tmdbArtwork.couldNotLoadItemMetadata": "Could not load title metadata.",
+  "tmdbArtwork.itemMetadataRequiresMatch":
+    "Select a TMDB match before loading title metadata.",
+  "tmdbArtwork.savingItemMetadata": "Saving title display choices...",
+  "tmdbArtwork.itemMetadataSaved":
+    "Saved language-based name and description choices.",
   "tmdbArtwork.language.english": "English",
   "tmdbArtwork.language.turkish": "Turkish",
   "tmdbArtwork.language.none": "No language",

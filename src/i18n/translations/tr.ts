@@ -814,6 +814,23 @@ export const tr = {
     "Landscape seçenekleri landscape.jpg dosyasını değiştirir.",
   "tmdbArtwork.kind.logoDescription":
     "Logo seçenekleri logo.png dosyasını değiştirir.",
+  "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
+  "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
+  "tmdbArtwork.itemLanguagesDescription":
+    "İngilizce ve Türkçe içerik adını ve açıklamasını birlikte yükler. Kaydedildikten sonra Seyirlik site diline göre aralarında otomatik geçiş yapar.",
+  "tmdbArtwork.loadItemMetadata": "İçerik metadata'sını yükle",
+  "tmdbArtwork.saveItemDisplay": "İçerik görünümünü kaydet",
+  "tmdbArtwork.loadingItemMetadata": "İçerik metadata'sı yükleniyor...",
+  "tmdbArtwork.itemMetadataLoaded":
+    "İngilizce ve Türkçe içerik metadata'sı yüklendi.",
+  "tmdbArtwork.itemMetadataUnavailable": "TMDB içerik metadata'sı döndürmedi.",
+  "tmdbArtwork.couldNotLoadItemMetadata": "İçerik metadata'sı yüklenemedi.",
+  "tmdbArtwork.itemMetadataRequiresMatch":
+    "İçerik metadata'sını yüklemeden önce bir TMDB eşleşmesi seç.",
+  "tmdbArtwork.savingItemMetadata":
+    "İçerik görüntüleme seçimleri kaydediliyor...",
+  "tmdbArtwork.itemMetadataSaved":
+    "Dile göre ad ve açıklama seçimleri kaydedildi.",
   "tmdbArtwork.language.english": "İngilizce",
   "tmdbArtwork.language.turkish": "Türkçe",
   "tmdbArtwork.language.none": "Dilsiz",

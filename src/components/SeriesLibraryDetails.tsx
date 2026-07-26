@@ -19,6 +19,7 @@ import {
   getSimilarItems,
 } from "../lib/jellyfinApi";
 import { getDisplayTitle } from "../lib/format";
+import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
@@ -466,12 +467,18 @@ export function SeriesLibraryDetails({
       return initialItem.Name;
     }
 
+    const localizedTitle = getItemDisplayMetadata(series, language).title;
+
+    if (localizedTitle) {
+      return localizedTitle;
+    }
+
     return getDisplayTitle(series, {
       season: t("media.seasonNumber"),
       hourShort: t("format.hourShort"),
       minuteShort: t("format.minuteShort"),
     });
-  }, [initialItem.Name, series, t]);
+  }, [initialItem.Name, language, series, t]);
 
   useEffect(() => {
     if (!title) {
@@ -500,6 +507,7 @@ export function SeriesLibraryDetails({
   const logoUrl = series.ImageTags?.Logo
     ? getLogoImageUrl(series.Id, series.ImageTags.Logo, isDesktop ? 1100 : 700)
     : "";
+  const itemDisplayMetadata = getItemDisplayMetadata(series, language);
   const selectedSeason = seasons.find(
     (season) => season.Id === selectedSeasonId,
   );
@@ -839,7 +847,7 @@ export function SeriesLibraryDetails({
               </p>
             ) : null}
             <p className="mt-3 max-w-3xl text-sm leading-6 text-white/65">
-              {series.Overview || t("details.noOverview")}
+              {itemDisplayMetadata.overview || t("details.noOverview")}
             </p>
           </div>
 

@@ -33,6 +33,7 @@ import {
 } from "../../lib/format";
 import { getMediaOwnerRouteForItem } from "../../lib/routes";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
+import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import { getVideoErrorDetails } from "../../hooks/usePlaybackSource";
 import { useAutoHideControls } from "../../hooks/useAutoHideControls";
 import { useKeyboardShortcuts } from "../../hooks/useKeyboardShortcuts";
@@ -289,7 +290,11 @@ export function CustomVideoPlayer({
     }),
     [t],
   );
-  const title = getDisplayTitle(item, mediaFormatLabels);
+  const itemMetadata = getItemDisplayMetadata(item, language);
+  const title =
+    item.Type === "Episode"
+      ? getDisplayTitle(item, mediaFormatLabels)
+      : (itemMetadata.title ?? getDisplayTitle(item, mediaFormatLabels));
 
   const [isPlaybackInfoOpen, setIsPlaybackInfoOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);

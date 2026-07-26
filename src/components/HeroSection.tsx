@@ -15,6 +15,7 @@ import {
 } from "../lib/jellyfinApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
+import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import { getPlayTargetForItem } from "../lib/playTarget";
 import { useNavigate } from "react-router-dom";
@@ -470,6 +471,10 @@ export function HeroSection({
   const [isCompactHeroViewport, setIsCompactHeroViewport] = useState(false);
   const episodeMetadata =
     item?.Type === "Episode" ? getEpisodeDisplayMetadata(item, language) : null;
+  const itemMetadata =
+    item && item.Type !== "Episode"
+      ? getItemDisplayMetadata(item, language)
+      : null;
   const imageCandidates = useMemo(() => {
     const candidates = getHeroImageCandidates(item);
 
@@ -508,7 +513,9 @@ export function HeroSection({
     primaryPosterUrl && selectedImage?.type === "primary",
   );
   const title = item
-    ? (episodeMetadata?.title ?? getDisplayTitle(item, mediaFormatLabels))
+    ? (episodeMetadata?.title ??
+      itemMetadata?.title ??
+      getDisplayTitle(item, mediaFormatLabels))
     : "Seyirlik";
   const runtime = item
     ? formatRuntime(item.RunTimeTicks, mediaFormatLabels)
@@ -526,7 +533,11 @@ export function HeroSection({
   );
   const heroGenres = item?.Genres?.filter(Boolean).slice(0, 3) ?? [];
   const heroGenreLabel = heroGenres.join(" · ");
-  const overview = episodeMetadata?.overview ?? item?.Overview ?? null;
+  const overview =
+    episodeMetadata?.overview ??
+    itemMetadata?.overview ??
+    item?.Overview ??
+    null;
   const subtitle = item ? getItemSubtitle(item, mediaFormatLabels) : null;
   const effectiveSmartContinueItems =
     smartContinueItems ?? fallbackSmartContinueItems;

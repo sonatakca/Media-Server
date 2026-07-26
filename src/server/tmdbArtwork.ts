@@ -606,6 +606,37 @@ function normalizeSearchResult(
   };
 }
 
+function normalizeLocalizedMetadata(
+  tmdbId: number,
+  mediaType: TmdbMediaType,
+  language: "en" | "tr",
+  value: unknown,
+) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const item = value as Record<string, unknown>;
+  const rawGenres = Array.isArray(item.genres) ? item.genres : [];
+  const genres = rawGenres.flatMap((genre) => {
+    if (!genre || typeof genre !== "object" || Array.isArray(genre)) {
+      return [];
+    }
+
+    const name = getString((genre as Record<string, unknown>).name);
+    return name ? [name] : [];
+  });
+
+  return {
+    tmdbId,
+    mediaType,
+    language,
+    title: getString(mediaType === "movie" ? item.title : item.name),
+    overview: getString(item.overview),
+    genres,
+  };
+}
+
 function compareImages(
   kind: TmdbArtworkKind,
   left: NormalizedTmdbImage,
@@ -1520,6 +1551,35 @@ export function createTmdbArtworkRequestHandler(
           images,
           languageFilter: ["en", "tr", null],
           targetFileName: getTargetFileName(kind),
+        });
+        return true;
+      }
+
+      if (url.pathname === `${basePath}/metadata`) {
+        if (request.method !== "GET") {
+          sendMethodNotAllowed(response, ["GET", "OPTIONS"]);
+          return true;
+        }
+
+        const apiKey = requireTmdbApiKey();
+        const mediaType = validateMediaType(url.searchParams.get("mediaType"));
+        const tmdbId = validateTmdbId(url.searchParams.get("tmdbId"));
+        const language = normalizePreferredLanguage(
+          url.searchParams.get("language"),
+        );
+        const payload = await requestTmdbJson<Record<string, unknown>>(
+          `/${mediaType}/${tmdbId}`,
+          { language: toTmdbLocale(language) },
+          { apiKey, fetchImpl, timeoutMs },
+        );
+
+        sendJson(response, 200, {
+          metadata: normalizeLocalizedMetadata(
+            tmdbId,
+            mediaType,
+            language,
+            payload,
+          ),
         });
         return true;
       }

@@ -261,6 +261,54 @@ describe("TMDB artwork backend", () => {
     ]);
   });
 
+  it("loads localized movie names and descriptions", async () => {
+    const mediaRoot = await createTempDir();
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "api.themoviedb.org") {
+        const isTurkish = url.searchParams.get("language") === "tr-TR";
+
+        return jsonResponse({
+          id: 11,
+          title: isTurkish ? "Türkçe Film" : "English Movie",
+          overview: isTurkish
+            ? "Türkçe film açıklaması."
+            : "English movie description.",
+          genres: [{ id: 18, name: isTurkish ? "Dram" : "Drama" }],
+        });
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+    const englishResponse = await fetch(
+      `${baseUrl}/api/tmdb-artwork/metadata?mediaType=movie&tmdbId=11&language=en`,
+    );
+    const turkishResponse = await fetch(
+      `${baseUrl}/api/tmdb-artwork/metadata?mediaType=movie&tmdbId=11&language=tr`,
+    );
+
+    await expect(englishResponse.json()).resolves.toMatchObject({
+      metadata: {
+        tmdbId: 11,
+        mediaType: "movie",
+        language: "en",
+        title: "English Movie",
+        overview: "English movie description.",
+        genres: ["Drama"],
+      },
+    });
+    await expect(turkishResponse.json()).resolves.toMatchObject({
+      metadata: {
+        language: "tr",
+        title: "Türkçe Film",
+        overview: "Türkçe film açıklaması.",
+        genres: ["Dram"],
+      },
+    });
+  });
+
   it("replaces the selected sidecar artwork next to a Jellyfin media file", async () => {
     const mediaRoot = await createTempDir();
     const mediaFile = await writeMediaFile(

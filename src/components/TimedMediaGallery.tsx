@@ -14,6 +14,7 @@ import {
 } from "../lib/jellyfinApi";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
+import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import type { JellyfinItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -107,6 +108,10 @@ export function TimedMediaGallery({
     activeItem?.Type === "Episode"
       ? getEpisodeDisplayMetadata(activeItem, language)
       : null;
+  const activeItemMetadata =
+    activeItem && activeItem.Type !== "Episode"
+      ? getItemDisplayMetadata(activeItem, language)
+      : null;
   const activeImageUrl =
     activeEpisodeMetadata?.thumbnailUrl ??
     (activeItem ? getBackdrop(activeItem) : "");
@@ -117,11 +122,16 @@ export function TimedMediaGallery({
     ? getLogoImageUrl(activeItem.Id, activeItem.ImageTags.Logo, 950)
     : "";
   const activeTitle = activeItem
-    ? (activeEpisodeMetadata?.title ?? getDisplayTitle(activeItem))
+    ? (activeEpisodeMetadata?.title ??
+      activeItemMetadata?.title ??
+      getDisplayTitle(activeItem))
     : "";
   const activeSubtitle = activeItem ? getItemSubtitle(activeItem) : null;
   const activeOverview =
-    activeEpisodeMetadata?.overview ?? activeItem?.Overview ?? null;
+    activeEpisodeMetadata?.overview ??
+    activeItemMetadata?.overview ??
+    activeItem?.Overview ??
+    null;
   const activeHref = activeItem ? getRouteForItem(activeItem) : "#";
   const canPlay = activeItem ? canPlayItem(activeItem) : false;
 

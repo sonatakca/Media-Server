@@ -25,6 +25,7 @@ import {
   getSeriesEpisodeMetadataPreference,
   saveEpisodeMetadataOverrides,
 } from "../lib/episodeMetadataPreferences";
+import { saveItemMetadataOverride } from "../lib/itemMetadataPreferences";
 import {
   getDisplayTitle,
   getItemSubtitle,
@@ -36,12 +37,14 @@ import {
   applyTmdbArtwork,
   getTmdbEpisodeMetadata,
   getTmdbArtworkImages,
+  getTmdbLocalizedMetadata,
   isTmdbArtworkBackendConfigured,
   searchTmdbArtwork,
   type TmdbArtworkImage,
   type TmdbArtworkKind,
   type TmdbEpisodeMetadata,
   type TmdbEpisodeThumbnailLanguage,
+  type TmdbLocalizedMetadata,
   type TmdbMediaType,
   type TmdbSearchResult,
 } from "../lib/tmdbArtworkApi";
@@ -100,6 +103,9 @@ export function TmdbArtworkPage() {
   const [episodeMetadataByKey, setEpisodeMetadataByKey] = useState<
     Record<string, TmdbEpisodeMetadata>
   >({});
+  const [itemMetadataByLanguage, setItemMetadataByLanguage] = useState<
+    Partial<Record<"en" | "tr", TmdbLocalizedMetadata>>
+  >({});
   const [loadState, setLoadState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
@@ -120,6 +126,11 @@ export function TmdbArtworkPage() {
   const [episodeSaveState, setEpisodeSaveState] = useState<ActionResult>(() =>
     createEmptyResult(),
   );
+  const [itemMetadataState, setItemMetadataState] = useState<ActionResult>(() =>
+    createEmptyResult(),
+  );
+  const [itemMetadataSaveState, setItemMetadataSaveState] =
+    useState<ActionResult>(() => createEmptyResult());
 
   const backendConfigured = isTmdbArtworkBackendConfigured();
 
@@ -379,6 +390,9 @@ export function TmdbArtworkPage() {
     setEpisodeMetadataByKey({});
     setEpisodeMetadataState(createEmptyResult());
     setEpisodeSaveState(createEmptyResult());
+    setItemMetadataByLanguage({});
+    setItemMetadataState(createEmptyResult());
+    setItemMetadataSaveState(createEmptyResult());
     setEpisodeThumbnailLanguage(
       metadataItem.Type === "Series"
         ? (getSeriesEpisodeMetadataPreference(metadataItem.Id)
@@ -446,6 +460,9 @@ export function TmdbArtworkPage() {
     setEpisodeMetadataByKey({});
     setEpisodeMetadataState(createEmptyResult());
     setEpisodeSaveState(createEmptyResult());
+    setItemMetadataByLanguage({});
+    setItemMetadataState(createEmptyResult());
+    setItemMetadataSaveState(createEmptyResult());
     void loadImagesForKind(result, activeKind);
   };
 
@@ -643,6 +660,88 @@ export function TmdbArtworkPage() {
             : t("tmdbArtwork.couldNotSaveEpisodeMetadata"),
       });
     }
+  };
+
+  const handleLoadItemMetadata = async () => {
+    if (!selectedTmdb) {
+      setItemMetadataState({
+        state: "error",
+        message: t("tmdbArtwork.itemMetadataRequiresMatch"),
+      });
+      return;
+    }
+
+    setItemMetadataState({
+      state: "loading",
+      message: t("tmdbArtwork.loadingItemMetadata"),
+    });
+    setItemMetadataSaveState(createEmptyResult());
+
+    try {
+      const [english, turkish] = await Promise.all([
+        getTmdbLocalizedMetadata({
+          mediaType: selectedTmdb.mediaType,
+          tmdbId: selectedTmdb.id,
+          language: "en",
+        }),
+        getTmdbLocalizedMetadata({
+          mediaType: selectedTmdb.mediaType,
+          tmdbId: selectedTmdb.id,
+          language: "tr",
+        }),
+      ]);
+
+      setItemMetadataByLanguage({
+        ...(english ? { en: english } : {}),
+        ...(turkish ? { tr: turkish } : {}),
+      });
+      setItemMetadataState({
+        state: english || turkish ? "success" : "idle",
+        message:
+          english || turkish
+            ? t("tmdbArtwork.itemMetadataLoaded")
+            : t("tmdbArtwork.itemMetadataUnavailable"),
+      });
+    } catch (error) {
+      setItemMetadataByLanguage({});
+      setItemMetadataState({
+        state: "error",
+        message:
+          error instanceof Error
+            ? error.message
+            : t("tmdbArtwork.couldNotLoadItemMetadata"),
+      });
+    }
+  };
+
+  const handleSaveItemMetadata = () => {
+    if (!selectedItem) return;
+
+    const english = itemMetadataByLanguage.en;
+    const turkish = itemMetadataByLanguage.tr;
+
+    if (!english && !turkish) return;
+
+    setItemMetadataSaveState({
+      state: "loading",
+      message: t("tmdbArtwork.savingItemMetadata"),
+    });
+
+    saveItemMetadataOverride({
+      itemId: selectedItem.Id,
+      titles: {
+        en: english?.title,
+        tr: turkish?.title,
+      },
+      overviews: {
+        en: english?.overview,
+        tr: turkish?.overview,
+      },
+    });
+    setItemMetadataSaveState({
+      state: "success",
+      message: t("tmdbArtwork.itemMetadataSaved"),
+    });
   };
 
   return (
@@ -1466,6 +1565,117 @@ export function TmdbArtworkPage() {
                     ))
                   )}
                 </div>
+              </div>
+            </section>
+          ) : null}
+
+          {selectedItem?.Type === "Movie" || selectedItem?.Type === "Series" ? (
+            <section className="min-w-0 rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="min-w-0">
+                  <p className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.18em] text-[var(--accent)]">
+                    <Languages size={15} />
+                    {t("tmdbArtwork.itemMetadata")}
+                  </p>
+                  <h2 className="mt-2 text-xl font-black text-white">
+                    {t("tmdbArtwork.itemLanguages")}
+                  </h2>
+                  <p className="mt-1 max-w-2xl text-sm font-semibold leading-6 text-white/45">
+                    {t("tmdbArtwork.itemLanguagesDescription")}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <button
+                    type="button"
+                    onClick={() => void handleLoadItemMetadata()}
+                    disabled={
+                      !backendConfigured ||
+                      !selectedTmdb ||
+                      itemMetadataState.state === "loading"
+                    }
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-white/10 bg-white/[0.08] px-5 py-3 text-sm font-black text-white transition hover:border-[var(--accent)]/40 hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-55"
+                  >
+                    {itemMetadataState.state === "loading" ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Search size={18} />
+                    )}
+                    {t("tmdbArtwork.loadItemMetadata")}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveItemMetadata}
+                    disabled={
+                      Object.keys(itemMetadataByLanguage).length === 0 ||
+                      itemMetadataSaveState.state === "loading"
+                    }
+                    className="inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-[var(--accent)] px-5 py-3 text-sm font-black text-black shadow-[0_16px_40px_var(--accent-soft)] transition hover:bg-[var(--accent-hover)] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {itemMetadataSaveState.state === "loading" ? (
+                      <Loader2 size={18} className="animate-spin" />
+                    ) : (
+                      <Save size={18} />
+                    )}
+                    {t("tmdbArtwork.saveItemDisplay")}
+                  </button>
+                </div>
+              </div>
+
+              {itemMetadataState.message ? (
+                <p
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${getStatusClasses(
+                    itemMetadataState.state,
+                  )}`}
+                >
+                  {itemMetadataState.message}
+                </p>
+              ) : null}
+
+              {itemMetadataSaveState.message ? (
+                <p
+                  className={`mt-4 rounded-2xl border px-4 py-3 text-sm font-bold ${getStatusClasses(
+                    itemMetadataSaveState.state,
+                  )}`}
+                >
+                  {itemMetadataSaveState.message}
+                </p>
+              ) : null}
+
+              <div className="mt-5 grid gap-4 md:grid-cols-2">
+                {(["en", "tr"] as const).map((metadataLanguage) => {
+                  const metadata = itemMetadataByLanguage[metadataLanguage];
+
+                  return (
+                    <div
+                      key={metadataLanguage}
+                      className="min-w-0 rounded-3xl border border-white/10 bg-white/[0.035] p-5"
+                    >
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+                        {metadataLanguage === "en"
+                          ? t("tmdbArtwork.englishMetadata")
+                          : t("tmdbArtwork.turkishMetadata")}
+                      </p>
+                      <h3 className="mt-3 text-lg font-black text-white">
+                        {metadata
+                          ? getLoadedMetadataText(
+                              metadata.title,
+                              t("common.unknown"),
+                            )
+                          : t("tmdbArtwork.metadataNotLoaded")}
+                      </h3>
+                      <p className="mt-2 text-sm font-medium leading-6 text-white/50">
+                        {metadata
+                          ? getLoadedMetadataText(
+                              metadata.overview,
+                              t("details.noOverview"),
+                            )
+                          : t("tmdbArtwork.loadMetadataToPreview")}
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           ) : null}

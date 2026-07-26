@@ -5,6 +5,7 @@ import { RotateCcw } from "lucide-react";
 import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
 import { formatRuntime, formatTemplate, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
+import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
 import {
   getReadRouteForItem,
   getWatchRouteForItem,
@@ -216,7 +217,11 @@ export function MediaCard({
   const [shouldUseShowPrimaryImage, setShouldUseShowPrimaryImage] =
     useState(false);
 
-  const title = getDisplayTitle(item, mediaFormatLabels);
+  const itemMetadata = getItemDisplayMetadata(item, language);
+  const title =
+    item.Type === "Episode"
+      ? getDisplayTitle(item, mediaFormatLabels)
+      : (itemMetadata.title ?? getDisplayTitle(item, mediaFormatLabels));
   const isEpisode = item.Type === "Episode";
   const episodeMetadata = isEpisode
     ? getEpisodeDisplayMetadata(item, language)
@@ -243,7 +248,7 @@ export function MediaCard({
     : item.Genres?.filter(Boolean).slice(0, 2).join(" · ") || null;
   const continueDescription = isEpisode
     ? (episodeMetadata?.overview ?? item.Overview)
-    : item.Overview;
+    : (itemMetadata.overview ?? item.Overview);
   const continueFactChips = [
     runtimeLabel,
     getCommunityRatingLabel(item.CommunityRating),

@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
+import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import {
   formatRuntime,
   formatTemplate,
@@ -106,7 +107,11 @@ export function MobileMediaCard({
   const isRow = layout === "row";
   const isWatched = isItemCompleted(item);
 
-  const baseTitle = getDisplayTitle(item, labels);
+  const itemMetadata = getItemDisplayMetadata(item, language);
+  const baseTitle =
+    item.Type === "Episode"
+      ? getDisplayTitle(item, labels)
+      : (itemMetadata.title ?? getDisplayTitle(item, labels));
 
   // === Desktop Matching Logic for Titles ===
   let mainTitle = baseTitle;
