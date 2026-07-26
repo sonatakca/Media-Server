@@ -762,7 +762,7 @@ export const en = {
   "tmdbArtwork.eyebrow": "Sidecar Artwork",
   "tmdbArtwork.title": "TMDB Artwork",
   "tmdbArtwork.description":
-    "Choose exactly which TMDB image replaces each local poster, backdrop, landscape, and logo file.",
+    "Choose exactly which TMDB image replaces each local folder, backdrop, and logo file.",
   "tmdbArtwork.languageFilter": "Images: English, Turkish, or no language",
   "tmdbArtwork.backendMissing":
     "The local backend URL is not configured. Set VITE_SEYIRLIK_PLAYBACK_BACKEND_URL and start the playback backend.",
@@ -800,11 +800,11 @@ export const en = {
   "tmdbArtwork.savingArtwork": "Replacing sidecar artwork...",
   "tmdbArtwork.artworkSaved": "Saved {file}.",
   "tmdbArtwork.couldNotSaveArtwork": "Could not save artwork.",
-  "tmdbArtwork.kind.poster": "Poster",
+  "tmdbArtwork.kind.poster": "Folder",
   "tmdbArtwork.kind.backdrop": "Backdrop",
   "tmdbArtwork.kind.landscape": "Landscape",
   "tmdbArtwork.kind.logo": "Logo",
-  "tmdbArtwork.kind.posterDescription": "Poster choices replace folder.jpg.",
+  "tmdbArtwork.kind.posterDescription": "Folder choices replace folder.jpg.",
   "tmdbArtwork.kind.backdropDescription":
     "Backdrop choices replace backdrop.jpg.",
   "tmdbArtwork.kind.landscapeDescription":

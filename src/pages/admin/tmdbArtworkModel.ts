@@ -18,16 +18,16 @@ import type { JellyfinItem } from "../../lib/types";
 export type ActionState = "idle" | "loading" | "success" | "error";
 export type Translate = (key: TranslationKey) => string;
 export type EpisodeSeasonFilter = "all" | number;
+export type ArtworkPickerKind = Exclude<TmdbArtworkKind, "landscape">;
 
 export interface ActionResult {
   state: ActionState;
   message: string;
 }
 
-export const ARTWORK_KINDS: TmdbArtworkKind[] = [
+export const ARTWORK_KINDS: ArtworkPickerKind[] = [
   "poster",
   "backdrop",
-  "landscape",
   "logo",
 ];
 

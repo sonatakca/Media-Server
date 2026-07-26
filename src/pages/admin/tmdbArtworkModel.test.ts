@@ -21,7 +21,7 @@ vi.mock("../../lib/jellyfinApi", () => ({
 
 describe("tmdbArtworkModel", () => {
   it("preserves artwork kinds, target names, and provider-id parsing", () => {
-    expect(ARTWORK_KINDS).toEqual(["poster", "backdrop", "landscape", "logo"]);
+    expect(ARTWORK_KINDS).toEqual(["poster", "backdrop", "logo"]);
     expect(TARGET_FILE_BY_KIND).toEqual({
       poster: "folder.jpg",
       backdrop: "backdrop.jpg",

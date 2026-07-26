@@ -764,7 +764,7 @@ export const tr = {
   "tmdbArtwork.eyebrow": "Sidecar Görseller",
   "tmdbArtwork.title": "TMDB Görselleri",
   "tmdbArtwork.description":
-    "Her yerel poster, arka plan, landscape ve logo dosyasını tam olarak hangi TMDB görselinin değiştireceğini seç.",
+    "Her yerel klasör, arka plan ve logo dosyasını tam olarak hangi TMDB görselinin değiştireceğini seç.",
   "tmdbArtwork.languageFilter": "Görseller: İngilizce, Türkçe veya dilsiz",
   "tmdbArtwork.backendMissing":
     "Yerel backend adresi ayarlı değil. VITE_SEYIRLIK_PLAYBACK_BACKEND_URL değerini ayarla ve playback backend'i başlat.",
@@ -802,12 +802,12 @@ export const tr = {
   "tmdbArtwork.savingArtwork": "Sidecar görsel değiştiriliyor...",
   "tmdbArtwork.artworkSaved": "{file} kaydedildi.",
   "tmdbArtwork.couldNotSaveArtwork": "Görsel kaydedilemedi.",
-  "tmdbArtwork.kind.poster": "Poster",
+  "tmdbArtwork.kind.poster": "Klasör",
   "tmdbArtwork.kind.backdrop": "Arka plan",
   "tmdbArtwork.kind.landscape": "Landscape",
   "tmdbArtwork.kind.logo": "Logo",
   "tmdbArtwork.kind.posterDescription":
-    "Poster seçenekleri folder.jpg dosyasını değiştirir.",
+    "Klasör seçenekleri folder.jpg dosyasını değiştirir.",
   "tmdbArtwork.kind.backdropDescription":
     "Arka plan seçenekleri backdrop.jpg dosyasını değiştirir.",
   "tmdbArtwork.kind.landscapeDescription":

@@ -607,20 +607,19 @@ function normalizeSearchResult(
 }
 
 function compareImages(
-  preferredLanguage: "en" | "tr",
   kind: TmdbArtworkKind,
   left: NormalizedTmdbImage,
   right: NormalizedTmdbImage,
 ): number {
   const languageRank = (image: NormalizedTmdbImage) => {
-    if (kind === "backdrop" || kind === "landscape") {
-      if (image.language === null) return 0;
-      if (image.language === preferredLanguage) return 1;
+    if (kind === "logo") {
+      if (image.language === "en") return 0;
+      if (image.language === "tr") return 1;
       return 2;
     }
 
-    if (image.language === preferredLanguage) return 0;
-    if (image.language !== null) return 1;
+    if (image.language === null) return 0;
+    if (image.language === "en") return 1;
     return 2;
   };
   const leftLanguageRank = languageRank(left);
@@ -651,7 +650,6 @@ function compareImages(
 function normalizeImages(
   response: TmdbImageResponse,
   kind: TmdbArtworkKind,
-  preferredLanguage: "en" | "tr",
 ): NormalizedTmdbImage[] {
   const sourceType = getSourceTypeForKind(kind);
   const rawList =
@@ -704,7 +702,7 @@ function normalizeImages(
   }
 
   return normalizedImages.sort((left, right) =>
-    compareImages(preferredLanguage, kind, left, right),
+    compareImages(kind, left, right),
   );
 }
 
@@ -1516,7 +1514,7 @@ export function createTmdbArtworkRequestHandler(
           },
           { apiKey, fetchImpl, timeoutMs },
         );
-        const images = normalizeImages(payload, kind, language);
+        const images = normalizeImages(payload, kind);
 
         sendJson(response, 200, {
           images,

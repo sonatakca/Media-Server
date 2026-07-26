@@ -191,13 +191,6 @@ export function TmdbArtworkPage() {
 
   const activeImages = imagesByKind[activeKind] ?? [];
   const activeSelectedImage = selectedImages[activeKind] ?? null;
-  const currentArtworkTag = selectedItem
-    ? getCurrentArtworkTag(selectedItem, activeKind)
-    : null;
-  const currentArtworkUrl = getCurrentArtworkPreviewUrl(
-    selectedItem ? getCurrentArtworkUrl(selectedItem, activeKind) : null,
-    artworkRefreshToken,
-  );
   const episodeSeasonNumbers = useMemo(
     () =>
       Array.from(
@@ -1006,7 +999,73 @@ export function TmdbArtworkPage() {
               </button>
             </div>
 
-            <div className="mt-5 grid min-w-0 gap-2 sm:grid-cols-[repeat(4,minmax(0,1fr))]">
+            <div className="mt-5 grid min-w-0 gap-3 md:grid-cols-3">
+              {ARTWORK_KINDS.map((kind) => {
+                const currentArtworkTag = selectedItem
+                  ? getCurrentArtworkTag(selectedItem, kind)
+                  : null;
+                const currentArtworkUrl = getCurrentArtworkPreviewUrl(
+                  selectedItem
+                    ? getCurrentArtworkUrl(selectedItem, kind)
+                    : null,
+                  artworkRefreshToken,
+                );
+
+                return (
+                  <div
+                    key={kind}
+                    className="min-w-0 overflow-hidden rounded-3xl border border-[var(--accent)]/22 bg-[var(--accent)]/[0.055] p-3"
+                  >
+                    {currentArtworkUrl ? (
+                      <div
+                        className={`overflow-hidden rounded-2xl border border-white/10 bg-black/35 ${
+                          kind === "poster"
+                            ? "mx-auto aspect-[2/3] w-28"
+                            : "aspect-video w-full"
+                        }`}
+                      >
+                        <img
+                          src={currentArtworkUrl}
+                          alt=""
+                          className={`h-full w-full ${
+                            kind === "logo"
+                              ? "object-contain p-4"
+                              : "object-cover"
+                          }`}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`flex items-center justify-center rounded-2xl border border-dashed border-white/12 bg-white/[0.035] text-white/26 ${
+                          kind === "poster"
+                            ? "mx-auto aspect-[2/3] w-28"
+                            : "aspect-video w-full"
+                        }`}
+                      >
+                        <ImageIcon size={24} />
+                      </div>
+                    )}
+
+                    <div className="mt-3 min-w-0">
+                      <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+                        {t("tmdbArtwork.currentArtwork")}
+                      </p>
+                      <h3 className="mt-1 truncate text-base font-black text-white">
+                        {getKindLabel(kind, t)}{" "}
+                        <span className="text-white/45">
+                          / {TARGET_FILE_BY_KIND[kind]}
+                        </span>
+                      </h3>
+                      <p className="mt-1 truncate text-xs font-bold text-white/38">
+                        {currentArtworkTag ?? t("tmdbArtwork.noCurrentArtwork")}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="mt-5 grid min-w-0 gap-2 sm:grid-cols-3">
               {ARTWORK_KINDS.map((kind) => {
                 const isActive = activeKind === kind;
                 const selectedImage = selectedImages[kind];
@@ -1036,67 +1095,6 @@ export function TmdbArtworkPage() {
                 );
               })}
             </div>
-
-            {selectedItem ? (
-              <div className="mt-5 grid min-w-0 gap-4 rounded-3xl border border-[var(--accent)]/22 bg-[var(--accent)]/[0.055] p-4 sm:grid-cols-[9rem_minmax(0,1fr)]">
-                {currentArtworkUrl ? (
-                  <div
-                    className={`overflow-hidden rounded-2xl border border-white/10 bg-black/35 ${
-                      activeKind === "poster"
-                        ? "mx-auto aspect-[2/3] w-32 sm:mx-0 sm:w-full"
-                        : "aspect-video w-full"
-                    }`}
-                  >
-                    <img
-                      src={currentArtworkUrl}
-                      alt=""
-                      className={`h-full w-full ${
-                        activeKind === "logo"
-                          ? "object-contain p-5"
-                          : "object-cover"
-                      }`}
-                    />
-                  </div>
-                ) : (
-                  <div
-                    className={`flex items-center justify-center rounded-2xl border border-dashed border-white/12 bg-white/[0.035] text-white/26 ${
-                      activeKind === "poster"
-                        ? "mx-auto aspect-[2/3] w-32 sm:mx-0 sm:w-full"
-                        : "aspect-video w-full"
-                    }`}
-                  >
-                    <ImageIcon size={24} />
-                  </div>
-                )}
-
-                <div className="min-w-0 self-center">
-                  <p className="text-xs font-black uppercase tracking-[0.16em] text-[var(--accent)]">
-                    {t("tmdbArtwork.currentArtwork")}
-                  </p>
-                  <h3 className="mt-2 truncate text-lg font-black text-white">
-                    {getKindLabel(activeKind, t)}{" "}
-                    <span className="text-white/45">
-                      / {TARGET_FILE_BY_KIND[activeKind]}
-                    </span>
-                  </h3>
-                  <p className="mt-1 text-sm font-semibold leading-6 text-white/50">
-                    {currentArtworkUrl
-                      ? formatTemplate(
-                          t("tmdbArtwork.currentArtworkDescription"),
-                          {
-                            target: TARGET_FILE_BY_KIND[activeKind],
-                          },
-                        )
-                      : t("tmdbArtwork.noCurrentArtwork")}
-                  </p>
-                  {currentArtworkTag ? (
-                    <p className="mt-3 truncate rounded-full border border-white/10 bg-black/25 px-3 py-1.5 text-xs font-bold text-white/42">
-                      {currentArtworkTag}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-            ) : null}
 
             {imagesState.message ? (
               <p
@@ -1143,79 +1141,81 @@ export function TmdbArtworkPage() {
                 </div>
               </div>
             ) : activeImages.length > 0 ? (
-              <div
-                className={`mt-5 grid min-w-0 gap-3 ${
-                  activeKind === "poster"
-                    ? "sm:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(4,minmax(0,1fr))]"
-                    : "md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(3,minmax(0,1fr))]"
-                }`}
-              >
-                {activeImages.map((image) => {
-                  const isSelected =
-                    activeSelectedImage?.filePath === image.filePath;
+              <div className="mt-5 h-[clamp(30rem,68dvh,54rem)] overflow-y-auto overscroll-contain rounded-3xl border border-white/10 bg-black/20 p-3">
+                <div
+                  className={`grid min-w-0 gap-3 ${
+                    activeKind === "poster"
+                      ? "sm:grid-cols-[repeat(3,minmax(0,1fr))] xl:grid-cols-[repeat(4,minmax(0,1fr))]"
+                      : "md:grid-cols-[repeat(2,minmax(0,1fr))] xl:grid-cols-[repeat(3,minmax(0,1fr))]"
+                  }`}
+                >
+                  {activeImages.map((image) => {
+                    const isSelected =
+                      activeSelectedImage?.filePath === image.filePath;
 
-                  return (
-                    <button
-                      key={image.id}
-                      type="button"
-                      onClick={() =>
-                        setSelectedImages((current) => ({
-                          ...current,
-                          [activeKind]: image,
-                        }))
-                      }
-                      className={`min-w-0 overflow-hidden rounded-3xl border text-left transition ${
-                        isSelected
-                          ? "border-[var(--accent)]/55 bg-[var(--accent)]/12"
-                          : "border-white/10 bg-white/[0.045] hover:border-[var(--accent)]/30 hover:bg-white/[0.07]"
-                      }`}
-                    >
-                      <div
-                        className={`relative bg-white/[0.04] ${
-                          activeKind === "poster"
-                            ? "aspect-[2/3]"
-                            : "aspect-video"
+                    return (
+                      <button
+                        key={image.id}
+                        type="button"
+                        onClick={() =>
+                          setSelectedImages((current) => ({
+                            ...current,
+                            [activeKind]: image,
+                          }))
+                        }
+                        className={`min-w-0 overflow-hidden rounded-3xl border text-left transition ${
+                          isSelected
+                            ? "border-[var(--accent)]/55 bg-[var(--accent)]/12"
+                            : "border-white/10 bg-white/[0.045] hover:border-[var(--accent)]/30 hover:bg-white/[0.07]"
                         }`}
                       >
-                        <img
-                          src={image.previewUrl}
-                          alt=""
-                          className={`h-full w-full ${
-                            activeKind === "logo"
-                              ? "object-contain p-6"
-                              : "object-cover"
+                        <div
+                          className={`relative bg-white/[0.04] ${
+                            activeKind === "poster"
+                              ? "aspect-[2/3]"
+                              : "aspect-video"
                           }`}
-                        />
-                        {isSelected ? (
-                          <span className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-black shadow-2xl">
-                            <Check size={16} />
-                          </span>
-                        ) : null}
-                      </div>
-
-                      <div className="space-y-2 p-3">
-                        <div className="flex flex-wrap gap-2">
-                          <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-white/48">
-                            {getLanguageLabel(image.language, t)}
-                          </span>
-                          <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-white/48">
-                            {formatDimensions(image, t)}
-                          </span>
+                        >
+                          <img
+                            src={image.previewUrl}
+                            alt=""
+                            className={`h-full w-full ${
+                              activeKind === "logo"
+                                ? "object-contain p-6"
+                                : "object-cover"
+                            }`}
+                          />
+                          {isSelected ? (
+                            <span className="absolute right-3 top-3 flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-black shadow-2xl">
+                              <Check size={16} />
+                            </span>
+                          ) : null}
                         </div>
 
-                        <p className="truncate text-sm font-bold text-white/68">
-                          {image.filePath}
-                        </p>
-                        <p className="text-xs font-bold text-white/38">
-                          {formatTemplate(t("tmdbArtwork.voteSummary"), {
-                            rating: image.voteAverage?.toFixed(1) ?? "-",
-                            count: image.voteCount ?? 0,
-                          })}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+                        <div className="space-y-2 p-3">
+                          <div className="flex flex-wrap gap-2">
+                            <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-white/48">
+                              {getLanguageLabel(image.language, t)}
+                            </span>
+                            <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.1em] text-white/48">
+                              {formatDimensions(image, t)}
+                            </span>
+                          </div>
+
+                          <p className="truncate text-sm font-bold text-white/68">
+                            {image.filePath}
+                          </p>
+                          <p className="text-xs font-bold text-white/38">
+                            {formatTemplate(t("tmdbArtwork.voteSummary"), {
+                              rating: image.voteAverage?.toFixed(1) ?? "-",
+                              count: image.voteCount ?? 0,
+                            })}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="mt-5 flex min-h-72 items-center justify-center rounded-3xl border border-white/10 bg-white/[0.035] p-6 text-center">

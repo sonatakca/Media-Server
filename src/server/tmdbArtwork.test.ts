@@ -172,8 +172,40 @@ describe("TMDB artwork backend", () => {
               vote_count: 99,
             },
           ],
-          posters: [],
-          logos: [],
+          posters: [
+            {
+              file_path: "/poster-tr.jpg",
+              iso_639_1: "tr",
+              vote_average: 10,
+            },
+            {
+              file_path: "/poster-en.jpg",
+              iso_639_1: "en",
+              vote_average: 5,
+            },
+            {
+              file_path: "/poster-clean.jpg",
+              iso_639_1: null,
+              vote_average: 1,
+            },
+          ],
+          logos: [
+            {
+              file_path: "/logo-clean.png",
+              iso_639_1: null,
+              vote_average: 10,
+            },
+            {
+              file_path: "/logo-tr.png",
+              iso_639_1: "tr",
+              vote_average: 5,
+            },
+            {
+              file_path: "/logo-en.png",
+              iso_639_1: "en",
+              vote_average: 1,
+            },
+          ],
         });
       }
 
@@ -203,6 +235,30 @@ describe("TMDB artwork backend", () => {
     expect(requests[0].searchParams.get("include_image_language")).toBe(
       "en,tr,null",
     );
+
+    const posterResponse = await fetch(
+      `${baseUrl}/api/tmdb-artwork/images?mediaType=movie&tmdbId=11&kind=poster&language=tr`,
+    );
+    const posterPayload = (await posterResponse.json()) as {
+      images: Array<{ filePath: string }>;
+    };
+    expect(posterPayload.images.map((image) => image.filePath)).toEqual([
+      "/poster-clean.jpg",
+      "/poster-en.jpg",
+      "/poster-tr.jpg",
+    ]);
+
+    const logoResponse = await fetch(
+      `${baseUrl}/api/tmdb-artwork/images?mediaType=movie&tmdbId=11&kind=logo&language=tr`,
+    );
+    const logoPayload = (await logoResponse.json()) as {
+      images: Array<{ filePath: string }>;
+    };
+    expect(logoPayload.images.map((image) => image.filePath)).toEqual([
+      "/logo-en.png",
+      "/logo-tr.png",
+      "/logo-clean.png",
+    ]);
   });
 
   it("replaces the selected sidecar artwork next to a Jellyfin media file", async () => {
