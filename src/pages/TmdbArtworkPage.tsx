@@ -1151,13 +1151,58 @@ export function TmdbArtworkPage() {
                         jellyfinArtworkUrl ?? "",
                       )
                     : jellyfinArtworkUrl;
+                const localizedLogoUrls =
+                  kind === "logo" && selectedItem
+                    ? {
+                        en: getItemLogoUrl(
+                          selectedItem,
+                          "en",
+                          jellyfinArtworkUrl ?? "",
+                        ),
+                        tr: getItemLogoUrl(
+                          selectedItem,
+                          "tr",
+                          jellyfinArtworkUrl ?? "",
+                        ),
+                      }
+                    : null;
 
                 return (
                   <div
                     key={kind}
                     className="min-w-0 overflow-hidden rounded-3xl border border-[var(--accent)]/22 bg-[var(--accent)]/[0.055] p-3"
                   >
-                    {currentArtworkUrl ? (
+                    {kind === "logo" ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        {(["en", "tr"] as const).map((logoLanguage) => {
+                          const logoUrl = localizedLogoUrls?.[logoLanguage];
+
+                          return (
+                            <div key={logoLanguage} className="min-w-0">
+                              <div className="flex aspect-video items-center justify-center overflow-hidden rounded-2xl border border-white/10 bg-black/35">
+                                {logoUrl ? (
+                                  <img
+                                    src={logoUrl}
+                                    alt=""
+                                    className="h-full w-full object-contain p-3"
+                                  />
+                                ) : (
+                                  <ImageIcon
+                                    size={20}
+                                    className="text-white/26"
+                                  />
+                                )}
+                              </div>
+                              <p className="mt-2 truncate text-center text-[11px] font-black uppercase tracking-[0.1em] text-white/42">
+                                {logoLanguage === "en"
+                                  ? t("tmdbArtwork.logoEnglish")
+                                  : t("tmdbArtwork.logoTurkish")}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : currentArtworkUrl ? (
                       <div
                         className={`overflow-hidden rounded-2xl border border-white/10 bg-black/35 ${
                           kind === "poster"
@@ -1168,11 +1213,7 @@ export function TmdbArtworkPage() {
                         <img
                           src={currentArtworkUrl}
                           alt=""
-                          className={`h-full w-full ${
-                            kind === "logo"
-                              ? "object-contain p-4"
-                              : "object-cover"
-                          }`}
+                          className="h-full w-full object-cover"
                         />
                       </div>
                     ) : (
