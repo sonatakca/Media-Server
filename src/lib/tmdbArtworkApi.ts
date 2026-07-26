@@ -255,19 +255,51 @@ export async function getTmdbLocalizedMetadata(params: {
   mediaType: TmdbMediaType;
   tmdbId: number;
   language: "en" | "tr";
+  query?: string;
+  year?: number | null;
 }): Promise<TmdbLocalizedMetadata | null> {
-  const response = await requestArtworkJson<LocalizedMetadataResponse>(
-    "metadata",
-    {
-      params: {
-        mediaType: params.mediaType,
-        tmdbId: params.tmdbId,
-        language: params.language,
+  try {
+    const response = await requestArtworkJson<LocalizedMetadataResponse>(
+      "metadata",
+      {
+        params: {
+          mediaType: params.mediaType,
+          tmdbId: params.tmdbId,
+          language: params.language,
+        },
       },
-    },
-  );
+    );
 
-  return response.metadata ?? null;
+    return response.metadata ?? null;
+  } catch (error) {
+    const routeIsUnavailable =
+      error instanceof Error &&
+      error.message.includes("TMDB artwork route not found");
+    const query = params.query?.trim();
+
+    if (!routeIsUnavailable || !query) {
+      throw error;
+    }
+
+    const results = await searchTmdbArtwork({
+      mediaType: params.mediaType,
+      query,
+      year: params.year ?? undefined,
+      language: params.language,
+    });
+    const match = results.find((result) => result.id === params.tmdbId);
+
+    return match
+      ? {
+          tmdbId: match.id,
+          mediaType: match.mediaType,
+          language: params.language,
+          title: match.title,
+          overview: match.overview,
+          genres: [],
+        }
+      : null;
+  }
 }
 
 export async function getTmdbArtworkImages(params: {

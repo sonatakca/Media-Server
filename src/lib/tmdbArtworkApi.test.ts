@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { searchTmdbArtwork } from "./tmdbArtworkApi";
+import { getTmdbLocalizedMetadata, searchTmdbArtwork } from "./tmdbArtworkApi";
 import { getAdminIdToken } from "./firebaseAdminAuth";
 
 vi.mock("./firebaseAdminAuth", () => ({
@@ -56,5 +56,64 @@ describe("TMDB artwork administrator requests", () => {
       }),
     ).rejects.toThrow("Authorized Google administrator sign-in is required.");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("falls back to localized search when the deployed metadata route is unavailable", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              code: "NOT_FOUND",
+              message: "TMDB artwork route not found.",
+            },
+          }),
+          {
+            status: 404,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 550,
+                mediaType: "movie",
+                title: "Dövüş Kulübü",
+                overview: "Türkçe açıklama.",
+                year: 1999,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getTmdbLocalizedMetadata({
+        mediaType: "movie",
+        tmdbId: 550,
+        language: "tr",
+        query: "Fight Club",
+        year: 1999,
+      }),
+    ).resolves.toMatchObject({
+      tmdbId: 550,
+      language: "tr",
+      title: "Dövüş Kulübü",
+      overview: "Türkçe açıklama.",
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(String(fetchMock.mock.calls[1][0])).toContain(
+      "/api/tmdb-artwork/search",
+    );
   });
 });

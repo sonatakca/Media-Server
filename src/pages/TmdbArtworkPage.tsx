@@ -683,11 +683,15 @@ export function TmdbArtworkPage() {
           mediaType: selectedTmdb.mediaType,
           tmdbId: selectedTmdb.id,
           language: "en",
+          query: selectedTmdb.title || tmdbSearch,
+          year: selectedTmdb.year,
         }),
         getTmdbLocalizedMetadata({
           mediaType: selectedTmdb.mediaType,
           tmdbId: selectedTmdb.id,
           language: "tr",
+          query: selectedTmdb.title || tmdbSearch,
+          year: selectedTmdb.year,
         }),
       ]);
 
