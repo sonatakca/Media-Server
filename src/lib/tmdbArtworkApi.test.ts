@@ -116,4 +116,50 @@ describe("TMDB artwork administrator requests", () => {
       "/api/tmdb-artwork/search",
     );
   });
+
+  it("falls back to localized search when the metadata route returns an empty result", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ metadata: null }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                id: 550,
+                mediaType: "movie",
+                title: "Fight Club",
+                overview: "English description.",
+                year: 1999,
+              },
+            ],
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          },
+        ),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      getTmdbLocalizedMetadata({
+        mediaType: "movie",
+        tmdbId: 550,
+        language: "en",
+        query: "Fight Club",
+        year: 1999,
+      }),
+    ).resolves.toMatchObject({
+      tmdbId: 550,
+      title: "Fight Club",
+      overview: "English description.",
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
 });

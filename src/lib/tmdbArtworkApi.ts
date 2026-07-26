@@ -270,36 +270,43 @@ export async function getTmdbLocalizedMetadata(params: {
       },
     );
 
-    return response.metadata ?? null;
+    if (response.metadata) {
+      return response.metadata;
+    }
   } catch (error) {
     const routeIsUnavailable =
       error instanceof Error &&
       error.message.includes("TMDB artwork route not found");
-    const query = params.query?.trim();
 
-    if (!routeIsUnavailable || !query) {
+    if (!routeIsUnavailable) {
       throw error;
     }
-
-    const results = await searchTmdbArtwork({
-      mediaType: params.mediaType,
-      query,
-      year: params.year ?? undefined,
-      language: params.language,
-    });
-    const match = results.find((result) => result.id === params.tmdbId);
-
-    return match
-      ? {
-          tmdbId: match.id,
-          mediaType: match.mediaType,
-          language: params.language,
-          title: match.title,
-          overview: match.overview,
-          genres: [],
-        }
-      : null;
   }
+
+  const query = params.query?.trim();
+
+  if (!query) {
+    return null;
+  }
+
+  const results = await searchTmdbArtwork({
+    mediaType: params.mediaType,
+    query,
+    year: params.year ?? undefined,
+    language: params.language,
+  });
+  const match = results.find((result) => result.id === params.tmdbId);
+
+  return match
+    ? {
+        tmdbId: match.id,
+        mediaType: match.mediaType,
+        language: params.language,
+        title: match.title,
+        overview: match.overview,
+        genres: [],
+      }
+    : null;
 }
 
 export async function getTmdbArtworkImages(params: {
