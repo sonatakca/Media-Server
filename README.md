@@ -275,7 +275,8 @@ SEYIRLIK_TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
 
 The picker only loads TMDB images tagged English, Turkish, or no language. It
 replaces `folder.jpg` for posters, `backdrop.jpg` for backdrops,
-`landscape.jpg` for landscape art, and `logo.png` for logos.
+`landscape.jpg` for landscape art, `logo.png` for English logos, and
+`logo-tr.png` for Turkish logos.
 
 If you open the frontend through a LAN address such as
 `http://192.168.1.186:5173`, add that exact origin to

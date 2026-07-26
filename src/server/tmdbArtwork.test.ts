@@ -366,6 +366,75 @@ describe("TMDB artwork backend", () => {
     );
   });
 
+  it("keeps English and Turkish logo sidecars in separate files", async () => {
+    const mediaRoot = await createTempDir();
+    const mediaFile = await writeMediaFile(
+      mediaRoot,
+      "Movies/Dune (2021)/Dune.mp4",
+    );
+    const fetchImpl: typeof fetch = vi.fn(async (input) => {
+      const url = new URL(String(input));
+
+      if (url.hostname === "jellyfin.test") {
+        return jsonResponse({
+          Items: [
+            {
+              Id: "dune",
+              Type: "Movie",
+              Path: mediaFile,
+              MediaSources: [],
+            },
+          ],
+        });
+      }
+
+      if (url.hostname === "image.tmdb.org") {
+        return imageResponse(
+          url.pathname.endsWith("/english-logo.png")
+            ? "english-logo"
+            : "turkish-logo",
+          "image/png",
+        );
+      }
+
+      return jsonResponse({ error: "unexpected request" }, 500);
+    });
+    const baseUrl = await startBackend({ mediaRoot, fetchImpl });
+
+    const applyLogo = async (language: "en" | "tr", filePath: string) => {
+      const response = await fetch(`${baseUrl}/api/tmdb-artwork/apply`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          itemId: "dune",
+          kind: "logo",
+          filePath,
+          language,
+        }),
+      });
+
+      expect(response.status).toBe(200);
+      return (await response.json()) as {
+        targetFileName: string;
+        targetPath: string;
+      };
+    };
+
+    const english = await applyLogo("en", "/english-logo.png");
+    const turkish = await applyLogo("tr", "/turkish-logo.png");
+
+    expect(english.targetFileName).toBe("logo.png");
+    expect(turkish.targetFileName).toBe("logo-tr.png");
+    await expect(readFile(english.targetPath, "utf8")).resolves.toBe(
+      "english-logo",
+    );
+    await expect(readFile(turkish.targetPath, "utf8")).resolves.toBe(
+      "turkish-logo",
+    );
+  });
+
   it("writes trailer artwork next to the owning Jellyfin parent item", async () => {
     const mediaRoot = await createTempDir();
     const mediaFile = await writeMediaFile(

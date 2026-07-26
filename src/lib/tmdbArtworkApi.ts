@@ -351,6 +351,7 @@ export async function applyTmdbArtwork(params: {
   itemId: string;
   kind: TmdbArtworkKind;
   filePath: string;
+  language?: "en" | "tr";
 }): Promise<TmdbArtworkApplyResult> {
   return requestArtworkJson<TmdbArtworkApplyResult>("apply", {
     method: "POST",

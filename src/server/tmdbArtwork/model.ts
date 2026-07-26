@@ -114,6 +114,7 @@ export interface TmdbArtworkApplyBody {
   itemId?: unknown;
   kind?: unknown;
   filePath?: unknown;
+  language?: unknown;
 }
 
 export interface JellyfinLookupOptions {
@@ -192,6 +193,11 @@ export const TARGET_FILE_BY_KIND: Record<TmdbArtworkKind, string> = {
   backdrop: "backdrop.jpg",
   landscape: "landscape.jpg",
   logo: "logo.png",
+};
+
+export const LOGO_TARGET_FILE_BY_LANGUAGE: Record<"en" | "tr", string> = {
+  en: "logo.png",
+  tr: "logo-tr.png",
 };
 
 export class TmdbArtworkRouteError extends Error {

@@ -16,6 +16,7 @@ import {
   DEFAULT_MAX_JSON_BODY_BYTES,
   DEFAULT_TIMEOUT_MS,
   ITEM_ID_PATTERN,
+  LOGO_TARGET_FILE_BY_LANGUAGE,
   LOCAL_URL_PATTERN,
   MAX_IMAGE_BYTES,
   TARGET_FILE_BY_KIND,
@@ -307,6 +308,22 @@ function validateEpisodeThumbnailLanguage(value: unknown): TmdbImageLanguage {
   );
 }
 
+function validateLogoLanguage(value: unknown): "en" | "tr" {
+  if (value === undefined || value === null || value === "" || value === "en") {
+    return "en";
+  }
+
+  if (value === "tr") {
+    return "tr";
+  }
+
+  throw new TmdbArtworkRouteError(
+    "TMDB_LOGO_LANGUAGE_INVALID",
+    "Logo language must be English or Turkish.",
+    400,
+  );
+}
+
 function toTmdbLocale(language: "en" | "tr"): string {
   return language === "tr" ? "tr-TR" : "en-US";
 }
@@ -366,8 +383,13 @@ function getYear(value: unknown): number | null {
   return Number.isInteger(parsed) ? parsed : null;
 }
 
-function getTargetFileName(kind: TmdbArtworkKind): string {
-  return TARGET_FILE_BY_KIND[kind];
+function getTargetFileName(
+  kind: TmdbArtworkKind,
+  logoLanguage: "en" | "tr" = "en",
+): string {
+  return kind === "logo"
+    ? LOGO_TARGET_FILE_BY_LANGUAGE[logoLanguage]
+    : TARGET_FILE_BY_KIND[kind];
 }
 
 function getSourceTypeForKind(
@@ -1686,6 +1708,8 @@ export function createTmdbArtworkRequestHandler(
         const itemId = validateItemId(body.itemId);
         const kind = validateArtworkKind(body.kind);
         const filePath = validateTmdbFilePath(body.filePath);
+        const logoLanguage =
+          kind === "logo" ? validateLogoLanguage(body.language) : "en";
         const item = await fetchJellyfinItem(itemId, {
           jellyfinServerUrl,
           apiKey: jellyfinApiKey,
@@ -1702,7 +1726,7 @@ export function createTmdbArtworkRequestHandler(
             timeoutMs,
           },
         );
-        const targetFileName = getTargetFileName(kind);
+        const targetFileName = getTargetFileName(kind, logoLanguage);
         const image = await downloadTmdbImage(filePath, kind, {
           fetchImpl,
           timeoutMs,

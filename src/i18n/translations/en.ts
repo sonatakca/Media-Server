@@ -809,7 +809,8 @@ export const en = {
     "Backdrop choices replace backdrop.jpg.",
   "tmdbArtwork.kind.landscapeDescription":
     "Landscape choices replace landscape.jpg.",
-  "tmdbArtwork.kind.logoDescription": "Logo choices replace logo.png.",
+  "tmdbArtwork.kind.logoDescription":
+    "English logos replace logo.png; Turkish logos replace logo-tr.png.",
   "tmdbArtwork.logoEnglish": "English logo",
   "tmdbArtwork.logoTurkish": "Turkish logo",
   "tmdbArtwork.logoNotSelected": "No logo selected",

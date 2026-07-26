@@ -813,7 +813,7 @@ export const tr = {
   "tmdbArtwork.kind.landscapeDescription":
     "Landscape seçenekleri landscape.jpg dosyasını değiştirir.",
   "tmdbArtwork.kind.logoDescription":
-    "Logo seçenekleri logo.png dosyasını değiştirir.",
+    "İngilizce logolar logo.png, Türkçe logolar logo-tr.png dosyasını değiştirir.",
   "tmdbArtwork.logoEnglish": "İngilizce logo",
   "tmdbArtwork.logoTurkish": "Türkçe logo",
   "tmdbArtwork.logoNotSelected": "Logo seçilmedi",

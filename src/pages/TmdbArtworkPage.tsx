@@ -502,6 +502,7 @@ export function TmdbArtworkPage() {
         itemId: selectedItem.Id,
         kind: activeKind,
         filePath: activeSelectedImage.filePath,
+        language: activeKind === "logo" ? activeLogoLanguage : undefined,
       });
 
       setApplyState({

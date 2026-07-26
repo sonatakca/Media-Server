@@ -1,5 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { getTmdbLocalizedMetadata, searchTmdbArtwork } from "./tmdbArtworkApi";
+import {
+  applyTmdbArtwork,
+  getTmdbLocalizedMetadata,
+  searchTmdbArtwork,
+} from "./tmdbArtworkApi";
 import { getAdminIdToken } from "./firebaseAdminAuth";
 
 vi.mock("./firebaseAdminAuth", () => ({
@@ -38,6 +42,41 @@ describe("TMDB artwork administrator requests", () => {
 
     expect(options.headers).toMatchObject({
       Authorization: "Bearer firebase-admin-token",
+    });
+  });
+
+  it("sends the selected logo language when applying artwork", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          itemId: "movie-1",
+          kind: "logo",
+          filePath: "/turkish-logo.png",
+          targetFileName: "logo-tr.png",
+          targetPath: "/media/movie-1/logo-tr.png",
+          bytes: 123,
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        },
+      ),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await applyTmdbArtwork({
+      itemId: "movie-1",
+      kind: "logo",
+      filePath: "/turkish-logo.png",
+      language: "tr",
+    });
+
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(String(options.body))).toMatchObject({
+      itemId: "movie-1",
+      kind: "logo",
+      filePath: "/turkish-logo.png",
+      language: "tr",
     });
   });
 
