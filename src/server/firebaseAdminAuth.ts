@@ -97,9 +97,22 @@ export function createFirebaseAdminAuthorizer(
 
     let decodedToken: DecodedIdToken;
 
-    try {
+        try {
       decodedToken = await verifyIdToken(token);
-    } catch {
+    } catch (error: unknown) {
+      const errorCode =
+        typeof error === "object" && error !== null && "code" in error
+          ? String(error.code)
+          : undefined;
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      console.error("[Firebase Admin] verifyIdToken failed", {
+        code: errorCode,
+        message: errorMessage,
+      });
+
       return {
         authorized: false,
         statusCode: 401,
