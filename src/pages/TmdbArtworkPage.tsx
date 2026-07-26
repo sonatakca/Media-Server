@@ -1173,7 +1173,7 @@ export function TmdbArtworkPage() {
                     className="min-w-0 overflow-hidden rounded-3xl border border-[var(--accent)]/22 bg-[var(--accent)]/[0.055] p-3"
                   >
                     {kind === "logo" ? (
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-3">
                         {(["en", "tr"] as const).map((logoLanguage) => {
                           const logoUrl = localizedLogoUrls?.[logoLanguage];
 
