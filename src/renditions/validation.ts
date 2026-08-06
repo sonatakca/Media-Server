@@ -19,6 +19,10 @@ export interface RenditionFileMetadata {
   file: string;
   sourceAudioStreamIndex: number;
   audioLanguage?: string;
+  /** Which encoder produced the file; recorded for diagnostics only. */
+  videoEncoder?: "libx264" | "h264_qsv";
+  /** True when an HDR master was tone mapped to SDR for this rendition. */
+  tonemappedFromHdr?: boolean;
 }
 
 export interface RenditionMetadata {

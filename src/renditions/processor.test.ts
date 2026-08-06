@@ -5,7 +5,10 @@ import { describe, expect, it } from "vitest";
 import type { RenditionAnalysisItem, RenditionPaths } from "./analysis";
 import { processRenditionItem } from "./processor";
 
-function itemFor(fingerprint = "a".repeat(64)): RenditionAnalysisItem {
+function itemFor(
+  fingerprint = "a".repeat(64),
+  overrides: Partial<RenditionAnalysisItem> = {},
+): RenditionAnalysisItem {
   return {
     mediaId: "11111111-1111-4111-8111-111111111111",
     relativePath: "Movies/Film.mkv",
@@ -23,6 +26,7 @@ function itemFor(fingerprint = "a".repeat(64)): RenditionAnalysisItem {
         height: 1080,
         rotation: 0,
         frameRate: 24,
+        isHdr: false,
       },
       audioTracks: [
         {
@@ -38,6 +42,30 @@ function itemFor(fingerprint = "a".repeat(64)): RenditionAnalysisItem {
     existingHeights: [],
     requiredHeights: [480],
     jobs: [{ qualityHeight: 480, estimatedBytes: 1_000 }],
+    ...overrides,
+  };
+}
+
+/** A 4K letterboxed HDR master needing the full ladder from one decode. */
+function scopeHdrItem(): RenditionAnalysisItem {
+  const item = itemFor();
+  return {
+    ...item,
+    probe: {
+      ...item.probe!,
+      video: {
+        ...item.probe!.video,
+        width: 3840,
+        height: 1604,
+        isHdr: true,
+      },
+    },
+    requiredHeights: [480, 720, 1080],
+    jobs: [
+      { qualityHeight: 480, estimatedBytes: 1_000 },
+      { qualityHeight: 720, estimatedBytes: 1_000 },
+      { qualityHeight: 1080, estimatedBytes: 1_000 },
+    ],
   };
 }
 
@@ -56,9 +84,13 @@ async function fixture() {
 }
 
 async function fakeEncode(_command: string, args: string[]) {
-  const outputPath = args[args.length - 1] as string;
-  await mkdir(path.dirname(outputPath), { recursive: true });
-  await writeFile(outputPath, "complete-standalone-mp4");
+  const outputPaths = args.filter((argument) =>
+    /\.partial\.mp4$/.test(argument),
+  );
+  for (const outputPath of outputPaths) {
+    await mkdir(path.dirname(outputPath), { recursive: true });
+    await writeFile(outputPath, "complete-standalone-mp4");
+  }
 }
 
 const validProbe = async () => ({
@@ -80,6 +112,7 @@ describe("resumable standalone rendition processing", () => {
       ffmpegPath: "ffmpeg",
       reserveBytes: 100,
       verifySourceFingerprint: false,
+      videoEncoder: "libx264" as const,
       driveSpaceProvider: async () => ({
         totalBytes: 10_000,
         freeBytes: 9_000,
@@ -126,6 +159,7 @@ describe("resumable standalone rendition processing", () => {
     const result = await processRenditionItem(itemFor(), paths, {
       reserveBytes: 100,
       verifySourceFingerprint: false,
+      videoEncoder: "libx264" as const,
       driveSpaceProvider: async () => ({
         totalBytes: 10_000,
         freeBytes: 9_000,
@@ -151,6 +185,7 @@ describe("resumable standalone rendition processing", () => {
       ffmpegPath: "ffmpeg",
       reserveBytes: 100,
       verifySourceFingerprint: false,
+      videoEncoder: "libx264" as const,
       driveSpaceProvider: async () => ({
         totalBytes: 10_000,
         freeBytes: 9_000,
@@ -174,12 +209,13 @@ describe("resumable standalone rendition processing", () => {
     ).rejects.toMatchObject({ code: "ENOENT" });
   });
 
-  it("rechecks free space immediately before encoding each complete file", async () => {
+  it("rechecks free space immediately before the encode pass", async () => {
     const paths = await fixture();
     let checks = 0;
     const result = await processRenditionItem(itemFor(), paths, {
       reserveBytes: 100,
       verifySourceFingerprint: false,
+      videoEncoder: "libx264" as const,
       driveSpaceProvider: async () => {
         checks += 1;
         return checks === 1
@@ -194,5 +230,77 @@ describe("resumable standalone rendition processing", () => {
 
     expect(result.status).toBe("deferred-for-storage");
     expect(checks).toBe(2);
+  });
+
+  it("produces the whole ladder from one decode and tone maps HDR once", async () => {
+    const paths = await fixture();
+    const commands: string[][] = [];
+    const sizes: Record<string, { width: number; height: number }> = {
+      "1080p.partial.mp4": { width: 1920, height: 802 },
+      "720p.partial.mp4": { width: 1280, height: 534 },
+      "480p.partial.mp4": { width: 854, height: 356 },
+    };
+
+    const result = await processRenditionItem(scopeHdrItem(), paths, {
+      reserveBytes: 100,
+      verifySourceFingerprint: false,
+      videoEncoder: "libx264" as const,
+      driveSpaceProvider: async () => ({
+        totalBytes: 10_000,
+        freeBytes: 9_000,
+      }),
+      runEncoder: async (command, args) => {
+        commands.push(args);
+        await fakeEncode(command, args);
+      },
+      probeVariant: async (filePath: string) => {
+        const size = sizes[path.basename(filePath)];
+        if (!size) throw new Error(`unexpected variant ${filePath}`);
+        return {
+          durationSeconds: 12,
+          width: size.width,
+          height: size.height,
+          videoCodec: "h264",
+          audioCodec: "aac",
+          audioLanguage: "tur",
+          frameRate: 24,
+          averageBitrate: 1_900_000,
+        };
+      },
+    });
+
+    expect(result.status).toBe("ready");
+    // One FFmpeg invocation, not one per rendition.
+    expect(commands).toHaveLength(1);
+    const [args] = commands;
+    expect(args.filter((argument) => argument === "-i")).toHaveLength(1);
+    expect(args.join(" ")).toContain("split=3");
+    expect(args.join(" ")).toContain("tonemap=tonemap=hable");
+
+    const versionRoot = path.join(
+      paths.renditionRoot,
+      scopeHdrItem().mediaId,
+      result.versionDirectory as string,
+    );
+    const metadata = JSON.parse(
+      await readFile(path.join(versionRoot, "metadata.json"), "utf8"),
+    );
+    expect(
+      metadata.files.map(
+        (file: { qualityHeight: number; width: number; height: number }) => [
+          file.qualityHeight,
+          file.width,
+          file.height,
+        ],
+      ),
+    ).toEqual([
+      [480, 854, 356],
+      [720, 1280, 534],
+      [1080, 1920, 802],
+    ]);
+    expect(metadata.files[0]).toMatchObject({
+      videoEncoder: "libx264",
+      tonemappedFromHdr: true,
+    });
   });
 });

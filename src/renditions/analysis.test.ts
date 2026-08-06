@@ -35,6 +35,7 @@ describe("rendition library analysis", () => {
         height: 2160,
         rotation: 0,
         frameRate: 24,
+        isHdr: false,
       },
       audioTracks: [
         {

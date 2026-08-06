@@ -24,6 +24,7 @@ import {
   saveRenditionRegistry,
   upsertRegistrySource,
 } from "./registry";
+import type { RenditionProgressReporter } from "./progress";
 import { inspectCompletedRendition } from "./validation";
 
 export interface RenditionPaths {
@@ -73,6 +74,7 @@ export interface RenditionAnalysisReport {
     containerOverheadRatio: number;
     audioStrategy: "default-track-only";
     subtitleStrategy: "original-playback-only";
+    hdrStrategy: "tonemapped-to-sdr-bt709";
   };
   summary: {
     totalEligibleVideoCount: number;
@@ -87,6 +89,7 @@ export interface RenditionAnalysisReport {
     staleRenditionCount: number;
     validationFailureCount: number;
     probeFailureCount: number;
+    hdrSourceCount: number;
     missingByHeight: Record<"480" | "720" | "1080", number>;
     sourceBytesByLibrary: Record<string, number>;
     estimatedOutputBytesByLibrary: Record<string, number>;
@@ -115,6 +118,7 @@ export interface RenditionAnalysisOptions {
   probe?: (filePath: string) => Promise<RenditionMediaProbe>;
   saveReport?: boolean;
   reportPath?: string;
+  onEvent?: RenditionProgressReporter;
 }
 
 export function resolveRenditionPaths(
@@ -190,6 +194,7 @@ export async function analyseRenditionLibrary({
   probe = (filePath) => probeMediaFile(filePath, ffprobePath),
   saveReport = true,
   reportPath = path.join(paths.stateRoot, "rendition-analysis.json"),
+  onEvent,
 }: RenditionAnalysisOptions): Promise<RenditionAnalysisReport> {
   await mkdir(paths.stateRoot, { recursive: true });
   const registryPath = path.join(paths.stateRoot, "registry.json");
@@ -209,7 +214,13 @@ export async function analyseRenditionLibrary({
   });
   const items: RenditionAnalysisItem[] = [];
 
-  for (const source of discovered) {
+  for (const [discoveredIndex, source] of discovered.entries()) {
+    onEvent?.({
+      type: "analysis-progress",
+      index: discoveredIndex + 1,
+      total: discovered.length,
+      relativePath: source.relativePath,
+    });
     let fingerprint = "";
     try {
       fingerprint = await computeSourceFingerprint(source.filePath, source);
@@ -331,6 +342,7 @@ export async function analyseRenditionLibrary({
   let staleRenditionCount = 0;
   let validationFailureCount = 0;
   let probeFailureCount = 0;
+  let hdrSourceCount = 0;
   const missingByHeight = { "480": 0, "720": 0, "1080": 0 };
 
   for (const item of items) {
@@ -347,6 +359,7 @@ export async function analyseRenditionLibrary({
     if (!item.probe) {
       probeFailureCount += 1;
     } else {
+      if (item.probe.video.isHdr) hdrSourceCount += 1;
       const qualityHeight = classifyQualityHeight(item.probe.video);
       if (qualityHeight >= 2160) source2160pCount += 1;
       else if (qualityHeight >= 1080) source1080pCount += 1;
@@ -390,6 +403,7 @@ export async function analyseRenditionLibrary({
       containerOverheadRatio: DEFAULT_MP4_CONTAINER_OVERHEAD_RATIO,
       audioStrategy: "default-track-only",
       subtitleStrategy: "original-playback-only",
+      hdrStrategy: "tonemapped-to-sdr-bt709",
     },
     summary: {
       totalEligibleVideoCount: items.length,
@@ -407,6 +421,7 @@ export async function analyseRenditionLibrary({
       staleRenditionCount,
       validationFailureCount,
       probeFailureCount,
+      hdrSourceCount,
       missingByHeight,
       sourceBytesByLibrary,
       estimatedOutputBytesByLibrary,
@@ -445,7 +460,7 @@ export function formatAnalysisReport(report: RenditionAnalysisReport): string {
     `Eligible videos: ${report.summary.totalEligibleVideoCount}`,
     `Movies: ${report.summary.movieCount}; Series episodes: ${report.summary.episodeCount}; Other: ${report.summary.otherEligibleVideoCount}`,
     `Source size: ${formatBytes(report.summary.totalSourceVideoBytes)}`,
-    `Sources: 2160p=${report.summary.source2160pCount}, 1080p=${report.summary.source1080pCount}, lower=${report.summary.lowerResolutionSourceCount}`,
+    `Sources: 2160p=${report.summary.source2160pCount}, 1080p=${report.summary.source1080pCount}, lower=${report.summary.lowerResolutionSourceCount}; HDR needing tone mapping: ${report.summary.hdrSourceCount}`,
     `Missing: 1080p=${report.summary.missingByHeight["1080"]}, 720p=${report.summary.missingByHeight["720"]}, 480p=${report.summary.missingByHeight["480"]}`,
     `Existing valid variants: ${report.summary.existingValidRenditionCount}; stale items: ${report.summary.staleRenditionCount}`,
     `Estimated complete output: ${formatBytes(report.storage.completePlanConservativeFinalBytes)}`,

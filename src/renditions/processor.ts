@@ -17,7 +17,12 @@ import type {
   RenditionPaths,
 } from "./analysis";
 import { getDriveSpace } from "./analysis";
-import { buildRenditionFfmpegArgs } from "./encoding";
+import {
+  buildRenditionFfmpegArgs,
+  resolveVideoEncoder,
+  type RenditionEncoderPreference,
+  type RenditionVideoEncoder,
+} from "./encoding";
 import { acquireDirectoryLock } from "./locks";
 import { DEFAULT_STORAGE_SAFETY_MARGIN } from "./planning";
 import {
@@ -25,8 +30,13 @@ import {
   buildRenditionRequirements,
   classifyQualityHeight,
   getDisplayDimensions,
+  type RenditionRequirement,
 } from "./policy";
 import { probeMediaFile } from "./probe";
+import {
+  parseFfmpegProgressFields,
+  type RenditionProgressReporter,
+} from "./progress";
 import { computeSourceFingerprint } from "./registry";
 import {
   inspectCompletedRendition,
@@ -38,6 +48,8 @@ import {
 } from "./validation";
 
 const MAX_LOG_BYTES = 1024 * 1024;
+
+export type FfmpegProgress = ReturnType<typeof parseFfmpegProgressFields>;
 
 export interface VariantValidationProbe {
   durationSeconds: number;
@@ -53,13 +65,23 @@ export interface VariantValidationProbe {
 export interface RenditionProcessorOptions {
   ffmpegPath?: string;
   ffprobePath?: string;
+  /** `auto` uses QuickSync when a usable device is present, else libx264. */
+  encoderPreference?: RenditionEncoderPreference;
+  /** Pre-resolved encoder, so a batch decides once instead of probing per item. */
+  videoEncoder?: RenditionVideoEncoder;
   reserveBytes: number;
   driveSpaceProvider?: () => Promise<DriveSpace>;
   runEncoder?: (
     command: string,
     args: string[],
-    options: { signal?: AbortSignal; logPath: string },
+    options: {
+      signal?: AbortSignal;
+      logPath: string;
+      onProgress?: (progress: FfmpegProgress) => void;
+    },
   ) => Promise<void>;
+  /** Receives structured progress so callers can render it however they like. */
+  onEvent?: RenditionProgressReporter;
   probeVariant?: (filePath: string) => Promise<VariantValidationProbe>;
   verifySourceFingerprint?: boolean;
   signal?: AbortSignal;
@@ -110,13 +132,21 @@ async function appendBoundedLog(logPath: string, text: string): Promise<void> {
 export async function runFfmpeg(
   command: string,
   args: string[],
-  { signal, logPath }: { signal?: AbortSignal; logPath: string },
+  {
+    signal,
+    logPath,
+    onProgress,
+  }: {
+    signal?: AbortSignal;
+    logPath: string;
+    onProgress?: (progress: FfmpegProgress) => void;
+  },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
       shell: false,
       windowsHide: true,
-      stdio: ["ignore", "ignore", "pipe"],
+      stdio: ["ignore", "pipe", "pipe"],
     });
     let stderrTail = "";
     let settled = false;
@@ -136,6 +166,28 @@ export async function runFfmpeg(
       return;
     }
     signal?.addEventListener("abort", onAbort, { once: true });
+    if (onProgress) {
+      const fields: Record<string, string> = {};
+      let pending = "";
+      child.stdout?.setEncoding("utf8");
+      child.stdout?.on("data", (chunk: string) => {
+        pending += chunk;
+        const lines = pending.split(/\r?\n/);
+        pending = lines.pop() ?? "";
+        for (const line of lines) {
+          const separator = line.indexOf("=");
+          if (separator <= 0) continue;
+          fields[line.slice(0, separator).trim()] = line
+            .slice(separator + 1)
+            .trim();
+          if (line.startsWith("progress=")) {
+            onProgress(parseFfmpegProgressFields(fields));
+          }
+        }
+      });
+    } else {
+      child.stdout?.resume();
+    }
     child.stderr?.setEncoding("utf8");
     child.stderr?.on("data", (chunk: string) => {
       stderrTail = `${stderrTail}${chunk}`.slice(-32_768);
@@ -264,6 +316,9 @@ export async function processRenditionItem(
     probeVariant = (playlistPath) =>
       defaultProbeVariant(playlistPath, ffprobePath),
     verifySourceFingerprint = true,
+    encoderPreference = "auto",
+    videoEncoder,
+    onEvent,
     signal,
     dryRun = false,
   }: RenditionProcessorOptions,
@@ -409,16 +464,21 @@ export async function processRenditionItem(
       throw new Error("Source does not contain the required audio stream.");
     }
 
-    for (const job of [...item.jobs].sort(
+    const plannedJobs = [...item.jobs].sort(
       (left, right) => left.qualityHeight - right.qualityHeight,
-    )) {
-      if (signal?.aborted) {
-        return {
-          mediaId: item.mediaId,
-          relativePath: item.relativePath,
-          status: "interrupted",
-        };
-      }
+    );
+    const pending: Array<{
+      requirement: RenditionRequirement;
+      finalFileName: string;
+      finalFilePath: string;
+      partialFilePath: string;
+      estimatedBytes: number;
+    }> = [];
+
+    // Renditions promoted by an earlier run are reused, so cancelling and
+    // resuming never repeats completed work. Only what is still missing goes
+    // into the single encode pass below.
+    for (const job of plannedJobs) {
       const requirement = requirementsByQuality.get(job.qualityHeight);
       if (!requirement)
         throw new Error(
@@ -430,7 +490,7 @@ export async function processRenditionItem(
         workVersionRoot,
         `${job.qualityHeight}p.partial.mp4`,
       );
-      let variantProbe: VariantValidationProbe | undefined;
+
       try {
         const finalStats = await stat(finalFilePath);
         if (!finalStats.isFile() || finalStats.size <= 0) {
@@ -438,71 +498,168 @@ export async function processRenditionItem(
             "Existing complete rendition file is missing or empty.",
           );
         }
-        variantProbe = await probeVariant(finalFilePath);
+        const existingProbe = await probeVariant(finalFilePath);
         validateVariantProbe(
           item.probe.durationSeconds,
           requirement.width,
           requirement.height,
-          variantProbe,
+          existingProbe,
           sourceAudioTrack.language,
         );
-      } catch {
-        await rm(finalFilePath, { force: true });
-        await rm(partialFilePath, { force: true });
-        const currentDrive = await driveSpaceProvider();
-        const conservativeFileBytes = Math.ceil(
-          job.estimatedBytes * (1 + DEFAULT_STORAGE_SAFETY_MARGIN),
-        );
-        if (currentDrive.freeBytes - conservativeFileBytes < reserveBytes) {
-          return {
-            mediaId: item.mediaId,
-            relativePath: item.relativePath,
-            status: "deferred-for-storage",
-            error: `Free-space check before ${job.qualityHeight}p would breach the configured reserve.`,
-          };
-        }
-        const args = buildRenditionFfmpegArgs({
-          inputPath: sourcePath,
-          outputPath: partialFilePath,
+        files.push({
           qualityHeight: requirement.qualityHeight,
           width: requirement.width,
           height: requirement.height,
-          audioStreamIndex: sourceAudioTrack.streamIndex,
+          bitrate: existingProbe.averageBitrate,
+          fileSize: finalStats.size,
+          videoCodec: "h264",
+          audioCodec: "aac",
+          container: "mp4",
+          frameRate: existingProbe.frameRate,
+          file: finalFileName,
+          sourceAudioStreamIndex: sourceAudioTrack.streamIndex,
           audioLanguage: sourceAudioTrack.language,
         });
-        await runEncoder(ffmpegPath, args, { signal, logPath });
-        const partialStats = await stat(partialFilePath);
+        onEvent?.({
+          type: "quality-ready",
+          mediaId: item.mediaId,
+          qualityHeight: requirement.qualityHeight,
+          width: requirement.width,
+          height: requirement.height,
+          fileSize: finalStats.size,
+          reused: true,
+        });
+      } catch {
+        await rm(finalFilePath, { force: true });
+        await rm(partialFilePath, { force: true });
+        pending.push({
+          requirement,
+          finalFileName,
+          finalFilePath,
+          partialFilePath,
+          estimatedBytes: job.estimatedBytes,
+        });
+      }
+    }
+
+    if (pending.length > 0) {
+      if (signal?.aborted) {
+        return {
+          mediaId: item.mediaId,
+          relativePath: item.relativePath,
+          status: "interrupted",
+        };
+      }
+
+      // One decode feeds every remaining rendition, so free space is checked
+      // once for the whole set rather than per file.
+      const currentDrive = await driveSpaceProvider();
+      const conservativePendingBytes = Math.ceil(
+        pending.reduce((total, entry) => total + entry.estimatedBytes, 0) *
+          (1 + DEFAULT_STORAGE_SAFETY_MARGIN),
+      );
+      if (currentDrive.freeBytes - conservativePendingBytes < reserveBytes) {
+        return {
+          mediaId: item.mediaId,
+          relativePath: item.relativePath,
+          status: "deferred-for-storage",
+          error:
+            "Free-space check before encoding would breach the configured reserve.",
+        };
+      }
+
+      const encoder =
+        videoEncoder ??
+        (await resolveVideoEncoder(encoderPreference, ffmpegPath, signal));
+      onEvent?.({
+        type: "encode-start",
+        mediaId: item.mediaId,
+        qualities: pending.map((entry) => entry.requirement.qualityHeight),
+        encoder,
+        tonemapHdr: item.probe.video.isHdr,
+        durationSeconds: item.probe.durationSeconds,
+      });
+      const args = buildRenditionFfmpegArgs({
+        inputPath: sourcePath,
+        outputs: pending.map((entry) => ({
+          qualityHeight: entry.requirement.qualityHeight,
+          width: entry.requirement.width,
+          height: entry.requirement.height,
+          outputPath: entry.partialFilePath,
+        })),
+        audioStreamIndex: sourceAudioTrack.streamIndex,
+        audioLanguage: sourceAudioTrack.language,
+        encoder,
+        tonemapHdr: item.probe.video.isHdr,
+      });
+
+      try {
+        await runEncoder(ffmpegPath, args, {
+          signal,
+          logPath,
+          onProgress: onEvent
+            ? (progress) =>
+                onEvent({
+                  type: "encode-progress",
+                  mediaId: item.mediaId,
+                  durationSeconds: item.probe?.durationSeconds ?? 0,
+                  ...progress,
+                })
+            : undefined,
+        });
+      } catch (error) {
+        for (const entry of pending) {
+          await rm(entry.partialFilePath, { force: true });
+        }
+        throw error;
+      }
+
+      for (const entry of pending) {
+        const partialStats = await stat(entry.partialFilePath);
         if (!partialStats.isFile() || partialStats.size <= 0) {
           throw new Error(
-            "FFmpeg did not produce a non-empty complete MP4 file.",
+            `FFmpeg did not produce a non-empty ${entry.requirement.qualityHeight}p MP4 file.`,
           );
         }
-        variantProbe = await probeVariant(partialFilePath);
+        const variantProbe = await probeVariant(entry.partialFilePath);
         validateVariantProbe(
           item.probe.durationSeconds,
-          requirement.width,
-          requirement.height,
+          entry.requirement.width,
+          entry.requirement.height,
           variantProbe,
           sourceAudioTrack.language,
         );
-        await rename(partialFilePath, finalFilePath);
+        await rename(entry.partialFilePath, entry.finalFilePath);
+        const finalStats = await stat(entry.finalFilePath);
+        files.push({
+          qualityHeight: entry.requirement.qualityHeight,
+          width: entry.requirement.width,
+          height: entry.requirement.height,
+          bitrate: variantProbe.averageBitrate,
+          fileSize: finalStats.size,
+          videoCodec: "h264",
+          audioCodec: "aac",
+          container: "mp4",
+          frameRate: variantProbe.frameRate,
+          file: entry.finalFileName,
+          sourceAudioStreamIndex: sourceAudioTrack.streamIndex,
+          audioLanguage: sourceAudioTrack.language,
+          videoEncoder: encoder,
+          ...(item.probe.video.isHdr ? { tonemappedFromHdr: true } : {}),
+        });
+        onEvent?.({
+          type: "quality-ready",
+          mediaId: item.mediaId,
+          qualityHeight: entry.requirement.qualityHeight,
+          width: entry.requirement.width,
+          height: entry.requirement.height,
+          fileSize: finalStats.size,
+          reused: false,
+        });
       }
-      const finalStats = await stat(finalFilePath);
-      files.push({
-        qualityHeight: requirement.qualityHeight,
-        width: requirement.width,
-        height: requirement.height,
-        bitrate: variantProbe.averageBitrate,
-        fileSize: finalStats.size,
-        videoCodec: "h264",
-        audioCodec: "aac",
-        container: "mp4",
-        frameRate: variantProbe.frameRate,
-        file: finalFileName,
-        sourceAudioStreamIndex: sourceAudioTrack.streamIndex,
-        audioLanguage: sourceAudioTrack.language,
-      });
     }
+
+    files.sort((left, right) => left.qualityHeight - right.qualityHeight);
 
     const durationToleranceSeconds = Math.max(
       2,
@@ -577,16 +734,33 @@ export interface ProcessReportOptions extends RenditionProcessorOptions {
   maxRetries?: number;
 }
 
+export interface ProcessReportOutcome {
+  videoEncoder: RenditionVideoEncoder;
+  results: RenditionProcessResult[];
+}
+
 export async function processRenditionReport(
   report: RenditionAnalysisReport,
   paths: RenditionPaths,
   options: ProcessReportOptions,
-): Promise<RenditionProcessResult[]> {
+): Promise<ProcessReportOutcome> {
   const processLock = await acquireDirectoryLock(
     path.join(paths.stateRoot, "locks", "processor.lock"),
     "rendition-processor",
   );
   try {
+    // The encoder is probed once for the whole batch rather than per title.
+    const videoEncoder =
+      options.videoEncoder ??
+      (await resolveVideoEncoder(
+        options.encoderPreference ?? "auto",
+        options.ffmpegPath ??
+          process.env.FFMPEG_PATH ??
+          process.env.SEYIRLIK_FFMPEG_PATH ??
+          "ffmpeg",
+        options.signal,
+      ));
+    options.onEvent?.({ type: "encoder-selected", encoder: videoEncoder });
     const selected = new Set(report.selectedMediaIds);
     const candidates = report.items.filter(
       (item) =>
@@ -612,16 +786,50 @@ export async function processRenditionReport(
         nextIndex += 1;
         const item = candidates[index];
         if (!item) return;
+        const startedAt = Date.now();
+        if (item.probe) {
+          options.onEvent?.({
+            type: "item-start",
+            index: index + 1,
+            total: candidates.length,
+            mediaId: item.mediaId,
+            relativePath: item.relativePath,
+            source: {
+              ...getDisplayDimensions(item.probe.video),
+              qualityHeight: classifyQualityHeight(item.probe.video),
+              durationSeconds: item.probe.durationSeconds,
+              videoCodec: item.probe.video.codec,
+              isHdr: item.probe.video.isHdr,
+              audioLanguage: (
+                item.probe.audioTracks.find((track) => track.isDefault) ??
+                item.probe.audioTracks[0]
+              )?.language,
+            },
+            pendingQualities: item.jobs.map((job) => job.qualityHeight),
+            reusedQualities: item.existingHeights,
+          });
+        }
         let result: RenditionProcessResult | undefined;
         for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-          result = await processRenditionItem(item, paths, options);
+          result = await processRenditionItem(item, paths, {
+            ...options,
+            videoEncoder,
+          });
           if (result.status !== "failed") break;
         }
         results[index] = result as RenditionProcessResult;
+        options.onEvent?.({
+          type: "item-complete",
+          mediaId: item.mediaId,
+          relativePath: item.relativePath,
+          status: results[index].status,
+          elapsedMs: Date.now() - startedAt,
+          ...(results[index].error ? { error: results[index].error } : {}),
+        });
       }
     };
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
-    return results.filter(Boolean);
+    return { videoEncoder, results: results.filter(Boolean) };
   } finally {
     await processLock.release();
   }

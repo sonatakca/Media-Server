@@ -106,6 +106,23 @@ describe("rendition policy", () => {
     ).toBe(false);
   });
 
+  it("skips sidecar derivatives written next to originals", () => {
+    const root = "D:\\media";
+    const movie = "D:\\media\\Movies\\Film (1999)\\Film (1999)";
+    expect(isEligibleVideoPath(`${movie}.mp4`, root)).toBe(true);
+    expect(isEligibleVideoPath(`${movie}-1080p-video.mp4`, root)).toBe(false);
+    expect(isEligibleVideoPath(`${movie}-480p-video.tmp.mp4`, root)).toBe(
+      false,
+    );
+    expect(isEligibleVideoPath(`${movie}-orig-video.mp4`, root)).toBe(false);
+    expect(isEligibleVideoPath(`${movie}-audio.mp3`, root)).toBe(false);
+    expect(isEligibleVideoPath(`${movie}.partial.mp4`, root)).toBe(false);
+    // A legitimate title that merely mentions a resolution stays eligible.
+    expect(isEligibleVideoPath(`${movie} (2160p BluRay x265).mp4`, root)).toBe(
+      true,
+    );
+  });
+
   it("skips Jellyfin extras folders while keeping real Specials seasons", () => {
     expect(
       isEligibleVideoPath(

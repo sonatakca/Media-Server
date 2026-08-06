@@ -85,6 +85,23 @@ const EXCLUDED_DIRECTORY_NAMES = new Set([
   "work",
 ]);
 
+/**
+ * Sidecar derivatives written next to originals by external tooling: video-only
+ * ladders, extracted audio, and abandoned temp output. They are not library
+ * titles, and treating them as sources would generate renditions of renditions.
+ */
+const DERIVATIVE_FILE_PATTERNS = [
+  /-\d{3,4}p-video(\.tmp)?\.[^.]+$/i,
+  /-orig-video(\.tmp)?\.[^.]+$/i,
+  /-audio(\.tmp)?\.[^.]+$/i,
+  /\.tmp\.[^.]+$/i,
+  /\.partial\.[^.]+$/i,
+];
+
+export function isDerivativeFileName(fileName: string): boolean {
+  return DERIVATIVE_FILE_PATTERNS.some((pattern) => pattern.test(fileName));
+}
+
 export interface SourceDisplayDimensions {
   width: number;
   height: number;
@@ -231,6 +248,9 @@ export function isEligibleVideoPath(
   ) {
     return false;
   }
+
+  const fileName = pathImpl.basename(filePath);
+  if (isDerivativeFileName(fileName)) return false;
 
   return SUPPORTED_VIDEO_EXTENSIONS.has(
     pathImpl.extname(filePath).toLowerCase(),

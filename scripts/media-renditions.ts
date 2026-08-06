@@ -10,6 +10,13 @@ import {
 import { acquireDirectoryLock } from "../src/renditions/locks";
 import { calculateReserveBytes } from "../src/renditions/planning";
 import { processRenditionReport } from "../src/renditions/processor";
+import { parseEncoderPreference } from "../src/renditions/encoding";
+import {
+  estimateRemainingSeconds,
+  formatBytes,
+  formatDuration,
+  type RenditionProgressEvent,
+} from "../src/renditions/progress";
 import { RENDITION_PROFILE_VERSION } from "../src/renditions/policy";
 import { probeMediaFile } from "../src/renditions/probe";
 import { inspectCompletedRendition } from "../src/renditions/validation";
@@ -256,6 +263,143 @@ async function cleanupWork(
   return actions;
 }
 
+/**
+ * Renders progress events. On a TTY the encode line rewrites itself in place;
+ * otherwise it prints a throttled line so redirected logs stay readable.
+ */
+function createProgressRenderer() {
+  const isTty = Boolean(process.stderr.isTTY);
+  const throttleMs = isTty ? 500 : 30_000;
+  let lastPrintedAt = 0;
+  let activeLine = false;
+  let currentQualities = "";
+
+  const clearLine = () => {
+    if (activeLine && isTty) {
+      process.stderr.write(`\r${" ".repeat(78)}\r`);
+    }
+    activeLine = false;
+  };
+
+  const write = (line: string) => {
+    clearLine();
+    process.stderr.write(`${line}\n`);
+  };
+
+  return (event: RenditionProgressEvent) => {
+    switch (event.type) {
+      case "encoder-selected":
+        write(
+          `Video encoder: ${event.encoder}${
+            event.encoder === "h264_qsv"
+              ? " (Intel QuickSync)"
+              : " (software x264)"
+          }`,
+        );
+        break;
+
+      case "analysis-progress": {
+        const now = Date.now();
+        if (now - lastPrintedAt < throttleMs && event.index !== event.total) {
+          break;
+        }
+        lastPrintedAt = now;
+        const label = `[${event.index}/${event.total}] probing ${event.relativePath}`;
+        if (isTty) {
+          clearLine();
+          process.stderr.write(label.slice(0, 78).padEnd(78));
+          process.stderr.write("\r");
+          activeLine = true;
+        } else {
+          write(label);
+        }
+        break;
+      }
+
+      case "item-start": {
+        const { source } = event;
+        const details = [
+          `${source.width}x${source.height}`,
+          `${source.qualityHeight}p`,
+          source.videoCodec,
+          source.isHdr ? "HDR" : "SDR",
+          formatDuration(source.durationSeconds),
+          source.audioLanguage ? `audio ${source.audioLanguage}` : "audio und",
+        ].join(" · ");
+        write("");
+        write(`[${event.index}/${event.total}] ${event.relativePath}`);
+        write(`    source: ${details}`);
+        if (event.reusedQualities.length > 0) {
+          write(
+            `    reusing: ${event.reusedQualities.map((height) => `${height}p`).join(", ")}`,
+          );
+        }
+        break;
+      }
+
+      case "encode-start":
+        currentQualities = event.qualities
+          .map((height) => `${height}p`)
+          .join("+");
+        write(
+          `    encoding ${currentQualities} with ${event.encoder}${
+            event.tonemapHdr ? " (HDR to SDR tone mapping)" : ""
+          } from a single decode`,
+        );
+        lastPrintedAt = 0;
+        break;
+
+      case "encode-progress": {
+        const now = Date.now();
+        if (now - lastPrintedAt < throttleMs) break;
+        lastPrintedAt = now;
+        const percent =
+          event.durationSeconds > 0
+            ? Math.min(
+                100,
+                (event.processedSeconds / event.durationSeconds) * 100,
+              )
+            : 0;
+        const remaining = estimateRemainingSeconds(
+          event.processedSeconds,
+          event.durationSeconds,
+          event.speed,
+        );
+        const line =
+          `    ${currentQualities} ${percent.toFixed(1).padStart(5)}%` +
+          ` ${formatDuration(event.processedSeconds)}/${formatDuration(event.durationSeconds)}` +
+          `${event.speed ? ` ${event.speed.toFixed(2)}x` : ""}` +
+          `${event.fps ? ` ${Math.round(event.fps)}fps` : ""}` +
+          `${event.writtenBytes ? ` ${formatBytes(event.writtenBytes)}` : ""}` +
+          `${remaining === undefined ? "" : ` eta ${formatDuration(remaining)}`}`;
+        if (isTty) {
+          clearLine();
+          process.stderr.write(line.slice(0, 78).padEnd(78));
+          process.stderr.write("\r");
+          activeLine = true;
+        } else {
+          write(line);
+        }
+        break;
+      }
+
+      case "quality-ready":
+        write(
+          `    ${event.reused ? "reused" : "ready"} ${event.qualityHeight}p` +
+            ` ${event.width}x${event.height} ${formatBytes(event.fileSize)}`,
+        );
+        break;
+
+      case "item-complete":
+        write(
+          `    ${event.status} in ${formatDuration(event.elapsedMs / 1000)}` +
+            `${event.error ? ` — ${event.error}` : ""}`,
+        );
+        break;
+    }
+  };
+}
+
 function usage(): string {
   return [
     "Seyirlik rendition CLI",
@@ -286,6 +430,7 @@ async function main() {
       paths,
       ffprobePath,
       reportPath,
+      onEvent: createProgressRenderer(),
       reserveBytes: process.env.SEYIRLIK_RENDITION_RESERVE_GB
         ? reserveFromEnvironment(0)
         : undefined,
@@ -305,10 +450,13 @@ async function main() {
   }
 
   if (args.command === "process" || args.command === "resume") {
+    const renderProgress = createProgressRenderer();
+    console.error("Analysing the library before processing...");
     const analysis = await analyseRenditionLibrary({
       paths,
       ffprobePath,
       reportPath,
+      onEvent: renderProgress,
       reserveBytes: process.env.SEYIRLIK_RENDITION_RESERVE_GB
         ? reserveFromEnvironment(0)
         : undefined,
@@ -317,6 +465,7 @@ async function main() {
     const reserveBytes = reserveFromEnvironment(
       analysis.storage.driveTotalBytes,
     );
+    const startedAt = Date.now();
     const abortController = new AbortController();
     let signalCount = 0;
     const cancel = () => {
@@ -336,15 +485,24 @@ async function main() {
     process.once("SIGINT", cancel);
     process.once("SIGTERM", cancel);
     try {
-      const results = await processRenditionReport(analysis, paths, {
-        reserveBytes,
-        ffprobePath,
-        library: args.library,
-        mediaId: args.mediaId,
-        workerCount: args.workers,
-        dryRun: args.dryRun,
-        signal: abortController.signal,
-      });
+      const { videoEncoder, results } = await processRenditionReport(
+        analysis,
+        paths,
+        {
+          reserveBytes,
+          ffprobePath,
+          encoderPreference: parseEncoderPreference(
+            process.env.SEYIRLIK_RENDITION_ENCODER,
+          ),
+          onEvent: renderProgress,
+          library: args.library,
+          mediaId: args.mediaId,
+          workerCount: args.workers,
+          dryRun: args.dryRun,
+          signal: abortController.signal,
+        },
+      );
+
       const resultPath = path.join(
         paths.stateRoot,
         "last-process-results.json",
@@ -354,11 +512,29 @@ async function main() {
         `${JSON.stringify(results, null, 2)}\n`,
         "utf8",
       );
+      console.log("");
       for (const result of results) {
         console.log(
           `${result.status}\t${result.mediaId}\t${result.relativePath}${result.error ? `\t${result.error}` : ""}`,
         );
       }
+      const byStatus = results.reduce<Record<string, number>>(
+        (totals, result) => {
+          totals[result.status] = (totals[result.status] ?? 0) + 1;
+          return totals;
+        },
+        {},
+      );
+      console.log(
+        `\nEncoder: ${videoEncoder}; processed ${results.length} title(s) in ${formatDuration(
+          (Date.now() - startedAt) / 1000,
+        )}`,
+      );
+      console.log(
+        Object.entries(byStatus)
+          .map(([status, count]) => `${status}=${count}`)
+          .join(", ") || "nothing to do",
+      );
       if (results.some((result) => result.status === "failed"))
         process.exitCode = 1;
     } finally {

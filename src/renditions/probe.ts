@@ -11,6 +11,9 @@ interface FfprobeStream {
   bit_rate?: string | number;
   bits_per_raw_sample?: string | number;
   pix_fmt?: string;
+  color_transfer?: string;
+  color_primaries?: string;
+  color_space?: string;
   tags?: Record<string, string | undefined>;
   disposition?: Record<string, number | undefined>;
   side_data_list?: Array<Record<string, unknown>>;
@@ -43,6 +46,11 @@ export interface RenditionVideoProbe {
   bitrate?: number;
   bitDepth?: number;
   pixelFormat?: string;
+  colorTransfer?: string;
+  colorPrimaries?: string;
+  colorSpace?: string;
+  /** True for PQ (HDR10) or HLG sources, which need tone mapping for SDR output. */
+  isHdr: boolean;
 }
 
 export interface RenditionAudioTrackProbe {
@@ -112,6 +120,15 @@ function rotationValue(stream: FfprobeStream): number {
     : 0;
 }
 
+/**
+ * PQ (HDR10/HDR10+/Dolby Vision base layer) and HLG both need tone mapping
+ * before they can be encoded as SDR H.264 without washing out.
+ */
+export function isHdrTransfer(colorTransfer: string | undefined): boolean {
+  const transfer = colorTransfer?.trim().toLowerCase();
+  return transfer === "smpte2084" || transfer === "arib-std-b67";
+}
+
 function bitDepthValue(stream: FfprobeStream): number | undefined {
   const explicit = numberValue(stream.bits_per_raw_sample);
   if (explicit && explicit > 0) return explicit;
@@ -154,6 +171,10 @@ export function parseRenditionProbe(
       bitrate: numberValue(videoStream.bit_rate),
       bitDepth: bitDepthValue(videoStream),
       pixelFormat: videoStream.pix_fmt,
+      colorTransfer: videoStream.color_transfer,
+      colorPrimaries: videoStream.color_primaries,
+      colorSpace: videoStream.color_space,
+      isHdr: isHdrTransfer(videoStream.color_transfer),
     },
     audioTracks: streams
       .filter((stream) => stream.codec_type === "audio")
