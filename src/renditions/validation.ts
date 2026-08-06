@@ -12,7 +12,7 @@ export interface RenditionFileMetadata {
   height: number;
   bitrate?: number;
   fileSize: number;
-  videoCodec: "h264";
+  videoCodec: "h264" | "hevc";
   audioCodec: "aac";
   container: "mp4";
   frameRate?: number;
@@ -20,7 +20,9 @@ export interface RenditionFileMetadata {
   sourceAudioStreamIndex: number;
   audioLanguage?: string;
   /** Which encoder produced the file; recorded for diagnostics only. */
-  videoEncoder?: "libx264" | "h264_qsv";
+  videoEncoder?: "libx264" | "h264_qsv" | "libx265" | "hevc_qsv";
+  /** True when the file carries the source HDR10 grade rather than SDR. */
+  hdr?: boolean;
   /** True when an HDR master was tone mapped to SDR for this rendition. */
   tonemappedFromHdr?: boolean;
 }
@@ -122,7 +124,7 @@ function parseFile(value: unknown): RenditionFileMetadata {
     typeof value.fileSize !== "number" ||
     !Number.isSafeInteger(value.fileSize) ||
     value.fileSize <= 0 ||
-    value.videoCodec !== "h264" ||
+    (value.videoCodec !== "h264" && value.videoCodec !== "hevc") ||
     value.audioCodec !== "aac" ||
     value.container !== "mp4" ||
     (value.frameRate !== undefined &&

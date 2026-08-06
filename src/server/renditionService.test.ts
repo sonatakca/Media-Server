@@ -21,6 +21,7 @@ let closeServer: (() => Promise<void>) | undefined;
 async function fixture({
   includeGenerated = true,
   registryStatus = "ready",
+  hdr = false,
 } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "seyirlik-routes-"));
   const mediaRoot = path.join(root, "media");
@@ -87,13 +88,14 @@ async function fixture({
             height: 360,
             bitrate: 2_000_000,
             fileSize: renditionBytes.length,
-            videoCodec: "h264",
+            videoCodec: hdr ? "hevc" : "h264",
             audioCodec: "aac",
             container: "mp4",
             frameRate: 24,
             file: "480p.mp4",
             sourceAudioStreamIndex: 1,
             audioLanguage: "tur",
+            ...(hdr ? { hdr: true } : {}),
           },
         ],
         audioStrategy: "default-track-only",
@@ -279,6 +281,44 @@ describe("complete-file rendition routes", () => {
       ]);
     },
   );
+
+  it("offers an HDR HEVC rendition only to a client that can decode HEVC", async () => {
+    const { service, sourcePath } = await fixture({ hdr: true });
+    const sourceStats = await stat(sourcePath);
+    const media = {
+      mediaId,
+      filePath: sourcePath,
+      size: sourceStats.size,
+      mtimeMs: sourceStats.mtimeMs,
+    };
+    const original = {
+      width: 1920,
+      height: 1080,
+      codec: "hevc",
+      playableUrl: "/api/playback/direct/original",
+    };
+
+    const hevcClient = await service.createManifest(media, original, {
+      hevc: true,
+      h264: true,
+    });
+    expect(
+      hevcClient.qualities.map((quality) => [quality.kind, quality.hdr]),
+    ).toEqual([
+      ["original", undefined],
+      ["generated", true],
+    ]);
+
+    // Without HEVC the file is undecodable, so it must not be offered at all —
+    // playback falls back to the existing transcode path instead.
+    const h264OnlyClient = await service.createManifest(media, original, {
+      hevc: false,
+      h264: true,
+    });
+    expect(h264OnlyClient.qualities).toEqual([
+      expect.objectContaining({ kind: "original" }),
+    ]);
+  });
 
   it("rejects traversal and unregistered files without exposing filesystem paths", async () => {
     const { service, sourcePath, root } = await fixture();

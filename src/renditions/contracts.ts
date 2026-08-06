@@ -15,6 +15,8 @@ export interface AvailableQualityFile {
   videoCodec?: string;
   audioCodec?: string;
   container?: string;
+  /** True when the file carries the source HDR10 grade rather than SDR. */
+  hdr?: boolean;
   playbackUrl: string;
   sourceAudioStreamIndex?: number;
   audioLanguage?: string;

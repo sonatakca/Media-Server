@@ -1,6 +1,10 @@
 import { mkdir, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { getEncodingPolicy } from "./encoding";
+import {
+  getEncodingPolicy,
+  parseHdrPolicy,
+  type RenditionCodecFamily,
+} from "./encoding";
 import { discoverEligibleVideoFiles } from "./inventory";
 import {
   DEFAULT_MP4_CONTAINER_OVERHEAD_RATIO,
@@ -24,6 +28,7 @@ import {
   saveRenditionRegistry,
   upsertRegistrySource,
 } from "./registry";
+import type { RenditionHdrPolicy } from "./encoding";
 import type { RenditionProgressReporter } from "./progress";
 import { inspectCompletedRendition } from "./validation";
 
@@ -74,7 +79,7 @@ export interface RenditionAnalysisReport {
     containerOverheadRatio: number;
     audioStrategy: "default-track-only";
     subtitleStrategy: "original-playback-only";
-    hdrStrategy: "tonemapped-to-sdr-bt709";
+    hdrStrategy: RenditionHdrPolicy;
   };
   summary: {
     totalEligibleVideoCount: number;
@@ -119,6 +124,7 @@ export interface RenditionAnalysisOptions {
   saveReport?: boolean;
   reportPath?: string;
   onEvent?: RenditionProgressReporter;
+  hdrPolicy?: RenditionHdrPolicy;
 }
 
 export function resolveRenditionPaths(
@@ -161,8 +167,9 @@ export async function getDriveSpace(filePath: string): Promise<DriveSpace> {
 function jobEstimate(
   durationSeconds: number,
   qualityHeight: number,
+  family: RenditionCodecFamily,
 ): PlannedRenditionJob {
-  const policy = getEncodingPolicy(qualityHeight);
+  const policy = getEncodingPolicy(qualityHeight, family);
   const estimate = estimateRenditionBytes({
     durationSeconds,
     videoBitrate: policy.expectedVideoBitrate,
@@ -194,6 +201,7 @@ export async function analyseRenditionLibrary({
   probe = (filePath) => probeMediaFile(filePath, ffprobePath),
   saveReport = true,
   reportPath = path.join(paths.stateRoot, "rendition-analysis.json"),
+  hdrPolicy = parseHdrPolicy(process.env.SEYIRLIK_RENDITION_HDR),
   onEvent,
 }: RenditionAnalysisOptions): Promise<RenditionAnalysisReport> {
   await mkdir(paths.stateRoot, { recursive: true });
@@ -234,6 +242,10 @@ export async function analyseRenditionLibrary({
       if (!(mediaProbe.durationSeconds > 0)) {
         throw new Error("FFprobe did not report a positive media duration.");
       }
+      // HDR masters are carried through as HEVC Main 10, which has its own rate
+      // policy, so storage is estimated against the codec each title will use.
+      const codecFamily: RenditionCodecFamily =
+        mediaProbe.video.isHdr && hdrPolicy === "preserve" ? "hevc" : "h264";
       const required = buildRenditionRequirements(mediaProbe.video);
       const existing = await inspectCompletedRendition({
         mediaRoot: path.join(paths.renditionRoot, registryItem.id),
@@ -249,7 +261,7 @@ export async function analyseRenditionLibrary({
       const jobs = requiredHeights
         .filter((qualityHeight) => !existingHeights.includes(qualityHeight))
         .map((qualityHeight) =>
-          jobEstimate(mediaProbe.durationSeconds, qualityHeight),
+          jobEstimate(mediaProbe.durationSeconds, qualityHeight, codecFamily),
         )
         .sort((left, right) => left.qualityHeight - right.qualityHeight);
       const status: RenditionAnalysisItem["status"] =
@@ -403,7 +415,7 @@ export async function analyseRenditionLibrary({
       containerOverheadRatio: DEFAULT_MP4_CONTAINER_OVERHEAD_RATIO,
       audioStrategy: "default-track-only",
       subtitleStrategy: "original-playback-only",
-      hdrStrategy: "tonemapped-to-sdr-bt709",
+      hdrStrategy: hdrPolicy,
     },
     summary: {
       totalEligibleVideoCount: items.length,
@@ -460,7 +472,7 @@ export function formatAnalysisReport(report: RenditionAnalysisReport): string {
     `Eligible videos: ${report.summary.totalEligibleVideoCount}`,
     `Movies: ${report.summary.movieCount}; Series episodes: ${report.summary.episodeCount}; Other: ${report.summary.otherEligibleVideoCount}`,
     `Source size: ${formatBytes(report.summary.totalSourceVideoBytes)}`,
-    `Sources: 2160p=${report.summary.source2160pCount}, 1080p=${report.summary.source1080pCount}, lower=${report.summary.lowerResolutionSourceCount}; HDR needing tone mapping: ${report.summary.hdrSourceCount}`,
+    `Sources: 2160p=${report.summary.source2160pCount}, 1080p=${report.summary.source1080pCount}, lower=${report.summary.lowerResolutionSourceCount}; HDR sources: ${report.summary.hdrSourceCount} (${report.policy.hdrStrategy === "preserve" ? "kept as HEVC Main 10" : "tone mapped to SDR"})`,
     `Missing: 1080p=${report.summary.missingByHeight["1080"]}, 720p=${report.summary.missingByHeight["720"]}, 480p=${report.summary.missingByHeight["480"]}`,
     `Existing valid variants: ${report.summary.existingValidRenditionCount}; stale items: ${report.summary.staleRenditionCount}`,
     `Estimated complete output: ${formatBytes(report.storage.completePlanConservativeFinalBytes)}`,

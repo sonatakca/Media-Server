@@ -54,6 +54,7 @@ export interface PlaybackRouteDependencies {
     media: PlaybackResolvedMedia,
     analysis: MediaAnalysis,
     plan: PlaybackPlan,
+    clientCapabilities: ClientCapabilities,
   ) => Promise<MediaQualityManifest>;
 }
 
@@ -663,6 +664,7 @@ export async function handlePlaybackRequest(
         resolvedMedia,
         media,
         completedPlan,
+        validBody.clientCapabilities,
       );
     }
     return completedPlan;
@@ -673,6 +675,7 @@ export async function handlePlaybackRequest(
       resolvedMedia,
       media,
       plan,
+      validBody.clientCapabilities,
     );
     const generatedQuality = qualityManifest.qualities.find(
       (quality) =>
@@ -694,7 +697,7 @@ export async function handlePlaybackRequest(
           action: "direct",
         },
         video: {
-          inputCodec: "h264",
+          inputCodec: generatedQuality.videoCodec ?? "h264",
           action: "copy",
         },
         audio: {
@@ -708,8 +711,9 @@ export async function handlePlaybackRequest(
           {
             code: "direct_play_supported",
             severity: "info",
-            message:
-              "A validated pre-generated complete MP4 rendition is direct-play compatible.",
+            message: generatedQuality.hdr
+              ? "A validated pre-generated complete HDR MP4 rendition is direct-play compatible."
+              : "A validated pre-generated complete MP4 rendition is direct-play compatible.",
           },
         ],
         delivery: {
@@ -754,6 +758,7 @@ export async function handlePlaybackRequest(
       resolvedMedia,
       media,
       session.plan,
+      validBody.clientCapabilities,
     );
   }
   return session.plan;

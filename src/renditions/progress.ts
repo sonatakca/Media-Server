@@ -11,7 +11,11 @@ export interface RenditionSourceSummary {
 }
 
 export type RenditionProgressEvent =
-  | { type: "encoder-selected"; encoder: RenditionVideoEncoder }
+  | {
+      type: "encoder-selected";
+      encoder: RenditionVideoEncoder;
+      hdrEncoder?: RenditionVideoEncoder;
+    }
   | {
       type: "item-start";
       index: number;
@@ -27,6 +31,7 @@ export type RenditionProgressEvent =
       mediaId: string;
       qualities: number[];
       encoder: RenditionVideoEncoder;
+      hdr: boolean;
       tonemapHdr: boolean;
       durationSeconds: number;
     }

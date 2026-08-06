@@ -10,7 +10,10 @@ import {
 import { acquireDirectoryLock } from "../src/renditions/locks";
 import { calculateReserveBytes } from "../src/renditions/planning";
 import { processRenditionReport } from "../src/renditions/processor";
-import { parseEncoderPreference } from "../src/renditions/encoding";
+import {
+  parseEncoderPreference,
+  parseHdrPolicy,
+} from "../src/renditions/encoding";
 import {
   estimateRemainingSeconds,
   formatBytes,
@@ -168,22 +171,32 @@ async function validateOutputs(
           variantProbe.video.height !== variant.height
         ) {
           throw new Error(
-            `Variant ${variant.height}p dimensions do not match metadata.`,
+            `Variant ${variant.qualityHeight}p dimensions do not match metadata.`,
           );
         }
-        if (variantProbe.video.codec !== "h264") {
-          throw new Error(`Variant ${variant.height}p is not H.264.`);
-        }
-        if (variantProbe.video.pixelFormat !== "yuv420p") {
+        if (variantProbe.video.codec !== variant.videoCodec) {
           throw new Error(
-            `Variant ${variant.height}p pixel format is not yuv420p.`,
+            `Variant ${variant.qualityHeight}p is ${variantProbe.video.codec}, not ${variant.videoCodec}.`,
+          );
+        }
+        const expectedPixelFormat = variant.hdr ? "yuv420p10le" : "yuv420p";
+        if (variantProbe.video.pixelFormat !== expectedPixelFormat) {
+          throw new Error(
+            `Variant ${variant.qualityHeight}p pixel format is ${variantProbe.video.pixelFormat}, not ${expectedPixelFormat}.`,
+          );
+        }
+        if (variant.hdr && !variantProbe.video.isHdr) {
+          throw new Error(
+            `Variant ${variant.qualityHeight}p lost its HDR transfer characteristics.`,
           );
         }
         if (
           !variantProbe.audioTracks[0] ||
           variantProbe.audioTracks[0].codec !== "aac"
         ) {
-          throw new Error(`Variant ${variant.height}p audio is not AAC.`);
+          throw new Error(
+            `Variant ${variant.qualityHeight}p audio is not AAC.`,
+          );
         }
         if (
           variant.audioLanguage &&
@@ -191,7 +204,7 @@ async function validateOutputs(
             variant.audioLanguage.toLowerCase()
         ) {
           throw new Error(
-            `Variant ${variant.height}p audio language metadata changed.`,
+            `Variant ${variant.qualityHeight}p audio language metadata changed.`,
           );
         }
         const tolerance =
@@ -202,7 +215,7 @@ async function validateOutputs(
           ) > tolerance
         ) {
           throw new Error(
-            `Variant ${variant.height}p duration is outside tolerance.`,
+            `Variant ${variant.qualityHeight}p duration is outside tolerance.`,
           );
         }
       }
@@ -267,6 +280,16 @@ async function cleanupWork(
  * Renders progress events. On a TTY the encode line rewrites itself in place;
  * otherwise it prints a throttled line so redirected logs stay readable.
  */
+function describeEncoder(encoder: string): string {
+  const labels: Record<string, string> = {
+    h264_qsv: "h264_qsv (Intel QuickSync, H.264)",
+    libx264: "libx264 (software, H.264)",
+    hevc_qsv: "hevc_qsv (Intel QuickSync, HEVC Main 10)",
+    libx265: "libx265 (software, HEVC Main 10)",
+  };
+  return labels[encoder] ?? encoder;
+}
+
 function createProgressRenderer() {
   const isTty = Boolean(process.stderr.isTTY);
   const throttleMs = isTty ? 500 : 30_000;
@@ -289,13 +312,12 @@ function createProgressRenderer() {
   return (event: RenditionProgressEvent) => {
     switch (event.type) {
       case "encoder-selected":
-        write(
-          `Video encoder: ${event.encoder}${
-            event.encoder === "h264_qsv"
-              ? " (Intel QuickSync)"
-              : " (software x264)"
-          }`,
-        );
+        write(`Video encoder (SDR): ${describeEncoder(event.encoder)}`);
+        if (event.hdrEncoder) {
+          write(
+            `Video encoder (HDR): ${describeEncoder(event.hdrEncoder)} — HDR10 preserved`,
+          );
+        }
         break;
 
       case "analysis-progress": {
@@ -343,7 +365,11 @@ function createProgressRenderer() {
           .join("+");
         write(
           `    encoding ${currentQualities} with ${event.encoder}${
-            event.tonemapHdr ? " (HDR to SDR tone mapping)" : ""
+            event.hdr
+              ? " (HDR10 preserved)"
+              : event.tonemapHdr
+                ? " (HDR to SDR tone mapping)"
+                : ""
           } from a single decode`,
         );
         lastPrintedAt = 0;
@@ -485,23 +511,21 @@ async function main() {
     process.once("SIGINT", cancel);
     process.once("SIGTERM", cancel);
     try {
-      const { videoEncoder, results } = await processRenditionReport(
-        analysis,
-        paths,
-        {
+      const { videoEncoder, hdrVideoEncoder, results } =
+        await processRenditionReport(analysis, paths, {
           reserveBytes,
           ffprobePath,
           encoderPreference: parseEncoderPreference(
             process.env.SEYIRLIK_RENDITION_ENCODER,
           ),
+          hdrPolicy: parseHdrPolicy(process.env.SEYIRLIK_RENDITION_HDR),
           onEvent: renderProgress,
           library: args.library,
           mediaId: args.mediaId,
           workerCount: args.workers,
           dryRun: args.dryRun,
           signal: abortController.signal,
-        },
-      );
+        });
 
       const resultPath = path.join(
         paths.stateRoot,
@@ -526,7 +550,9 @@ async function main() {
         {},
       );
       console.log(
-        `\nEncoder: ${videoEncoder}; processed ${results.length} title(s) in ${formatDuration(
+        `\nEncoder: ${videoEncoder}${
+          hdrVideoEncoder ? ` (HDR: ${hdrVideoEncoder})` : ""
+        }; processed ${results.length} title(s) in ${formatDuration(
           (Date.now() - startedAt) / 1000,
         )}`,
       );

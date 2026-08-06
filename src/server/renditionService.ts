@@ -48,6 +48,25 @@ export interface RenditionOriginalDescriptor {
   playableUrl?: string;
 }
 
+/**
+ * What the requesting browser can actually decode. HDR renditions are HEVC Main
+ * 10, so a client without HEVC must never be offered one — it would be handed a
+ * file it cannot play instead of falling back to the existing transcode path.
+ */
+export interface RenditionClientSupport {
+  hevc?: boolean;
+  h264?: boolean;
+}
+
+function canDecodeRendition(
+  file: { videoCodec: string; hdr?: boolean },
+  client: RenditionClientSupport | undefined,
+): boolean {
+  if (!client) return true;
+  if (file.videoCodec === "hevc") return client.hevc === true;
+  return client.h264 !== false;
+}
+
 interface RenditionAccessFile {
   filePath: string;
   expectedSize: number;
@@ -72,6 +91,7 @@ export interface RenditionService {
   createManifest(
     media: PlaybackResolvedMedia,
     original?: RenditionOriginalDescriptor,
+    client?: RenditionClientSupport,
   ): Promise<MediaQualityManifest>;
   handleRequest(
     request: IncomingMessage,
@@ -265,6 +285,7 @@ export function createRenditionService({
   const createManifest: RenditionService["createManifest"] = async (
     media,
     original,
+    client,
   ) => {
     const playableOriginal = originalQuality(original);
     const emptyManifest: MediaQualityManifest = {
@@ -307,30 +328,33 @@ export function createRenditionService({
 
     const token = mediaResolver.encodeMediaToken(media.mediaId);
     const filesById = new Map<string, RenditionAccessFile>();
-    const generated: AvailableQualityFile[] = inspection.metadata.files.map(
-      (file) => {
-        const fileId = `${file.qualityHeight}-${registryItem.sourceFingerprint.slice(0, 12)}.mp4`;
-        filesById.set(fileId, {
-          filePath: file.file,
-          expectedSize: file.fileSize,
-        });
-        return {
-          id: `generated-${file.qualityHeight}`,
-          label: `${file.qualityHeight}p`,
-          kind: "generated" as const,
-          width: file.width,
-          height: file.qualityHeight,
-          bitrate: file.bitrate,
-          fileSize: file.fileSize,
-          videoCodec: file.videoCodec,
-          audioCodec: file.audioCodec,
-          container: file.container,
-          playbackUrl: `${basePath}/${encodeURIComponent(token)}/${fileId}`,
-          sourceAudioStreamIndex: file.sourceAudioStreamIndex,
-          audioLanguage: file.audioLanguage,
-        };
-      },
+    const playableFiles = inspection.metadata.files.filter((file) =>
+      canDecodeRendition(file, client),
     );
+    if (playableFiles.length === 0) return emptyManifest;
+    const generated: AvailableQualityFile[] = playableFiles.map((file) => {
+      const fileId = `${file.qualityHeight}-${registryItem.sourceFingerprint.slice(0, 12)}.mp4`;
+      filesById.set(fileId, {
+        filePath: file.file,
+        expectedSize: file.fileSize,
+      });
+      return {
+        id: `generated-${file.qualityHeight}`,
+        label: `${file.qualityHeight}p`,
+        kind: "generated" as const,
+        width: file.width,
+        height: file.qualityHeight,
+        bitrate: file.bitrate,
+        fileSize: file.fileSize,
+        videoCodec: file.videoCodec,
+        audioCodec: file.audioCodec,
+        container: file.container,
+        ...(file.hdr ? { hdr: true } : {}),
+        playbackUrl: `${basePath}/${encodeURIComponent(token)}/${fileId}`,
+        sourceAudioStreamIndex: file.sourceAudioStreamIndex,
+        audioLanguage: file.audioLanguage,
+      };
+    });
     const manifest: MediaQualityManifest = {
       ...emptyManifest,
       generatedAt: inspection.metadata.createdAt,

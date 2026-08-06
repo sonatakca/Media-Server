@@ -19,8 +19,12 @@ import type {
 import { getDriveSpace } from "./analysis";
 import {
   buildRenditionFfmpegArgs,
+  codecFamilyForEncoder,
+  type RenditionCodecFamily,
   resolveVideoEncoder,
   type RenditionEncoderPreference,
+  type RenditionHdrPolicy,
+  type RenditionHdrSignal,
   type RenditionVideoEncoder,
 } from "./encoding";
 import { acquireDirectoryLock } from "./locks";
@@ -65,10 +69,14 @@ export interface VariantValidationProbe {
 export interface RenditionProcessorOptions {
   ffmpegPath?: string;
   ffprobePath?: string;
-  /** `auto` uses QuickSync when a usable device is present, else libx264. */
+  /** `auto` uses QuickSync when a usable device is present, else software. */
   encoderPreference?: RenditionEncoderPreference;
-  /** Pre-resolved encoder, so a batch decides once instead of probing per item. */
+  /** Pre-resolved SDR encoder, so a batch decides once instead of probing per item. */
   videoEncoder?: RenditionVideoEncoder;
+  /** Pre-resolved HDR encoder, used for PQ/HLG sources under `preserve`. */
+  hdrVideoEncoder?: RenditionVideoEncoder;
+  /** `preserve` keeps HDR (HEVC Main 10); `tonemap` converts to SDR H.264. */
+  hdrPolicy?: RenditionHdrPolicy;
   reserveBytes: number;
   driveSpaceProvider?: () => Promise<DriveSpace>;
   runEncoder?: (
@@ -230,15 +238,16 @@ function validateVariantProbe(
   expectedHeight: number,
   probe: VariantValidationProbe,
   expectedAudioLanguage?: string,
+  expectedVideoCodec: RenditionCodecFamily = "h264",
 ): void {
   if (probe.width !== expectedWidth || probe.height !== expectedHeight) {
     throw new Error(
       `Validated rendition dimensions ${probe.width}x${probe.height} do not match ${expectedWidth}x${expectedHeight}.`,
     );
   }
-  if (probe.videoCodec.toLowerCase() !== "h264") {
+  if (probe.videoCodec.toLowerCase() !== expectedVideoCodec) {
     throw new Error(
-      `Validated rendition video codec is ${probe.videoCodec}, not H.264.`,
+      `Validated rendition video codec is ${probe.videoCodec}, not ${expectedVideoCodec.toUpperCase()}.`,
     );
   }
   if (probe.audioCodec.toLowerCase() !== "aac") {
@@ -318,6 +327,8 @@ export async function processRenditionItem(
     verifySourceFingerprint = true,
     encoderPreference = "auto",
     videoEncoder,
+    hdrVideoEncoder,
+    hdrPolicy = "preserve",
     onEvent,
     signal,
     dryRun = false,
@@ -456,6 +467,10 @@ export async function processRenditionItem(
         requirement,
       ]),
     );
+    // Reused files from an earlier run must be checked against the codec this
+    // source is meant to produce, or an HDR title would keep stale SDR output.
+    const expectedCodecFamily: RenditionCodecFamily =
+      item.probe.video.isHdr && hdrPolicy === "preserve" ? "hevc" : "h264";
     const files: RenditionFileMetadata[] = [];
     const sourceAudioTrack =
       item.probe.audioTracks.find((track) => track.isDefault) ??
@@ -505,6 +520,7 @@ export async function processRenditionItem(
           requirement.height,
           existingProbe,
           sourceAudioTrack.language,
+          expectedCodecFamily,
         );
         files.push({
           qualityHeight: requirement.qualityHeight,
@@ -568,15 +584,41 @@ export async function processRenditionItem(
         };
       }
 
-      const encoder =
-        videoEncoder ??
-        (await resolveVideoEncoder(encoderPreference, ffmpegPath, signal));
+      // An HDR master keeps its grade, which forces HEVC Main 10 because no
+      // browser decodes 10-bit H.264. Everything else stays on H.264.
+      const preserveHdr = item.probe.video.isHdr && hdrPolicy === "preserve";
+      const hdr: RenditionHdrSignal | undefined = preserveHdr
+        ? {
+            colorPrimaries: item.probe.video.colorPrimaries ?? "bt2020",
+            colorTransfer: item.probe.video.colorTransfer ?? "smpte2084",
+            colorSpace: item.probe.video.colorSpace ?? "bt2020nc",
+          }
+        : undefined;
+      const tonemapHdr = item.probe.video.isHdr && !preserveHdr;
+      const encoder = preserveHdr
+        ? (hdrVideoEncoder ??
+          (await resolveVideoEncoder(
+            encoderPreference,
+            ffmpegPath,
+            "hevc",
+            true,
+            signal,
+          )))
+        : (videoEncoder ??
+          (await resolveVideoEncoder(
+            encoderPreference,
+            ffmpegPath,
+            "h264",
+            false,
+            signal,
+          )));
       onEvent?.({
         type: "encode-start",
         mediaId: item.mediaId,
         qualities: pending.map((entry) => entry.requirement.qualityHeight),
         encoder,
-        tonemapHdr: item.probe.video.isHdr,
+        hdr: preserveHdr,
+        tonemapHdr,
         durationSeconds: item.probe.durationSeconds,
       });
       const args = buildRenditionFfmpegArgs({
@@ -590,7 +632,8 @@ export async function processRenditionItem(
         audioStreamIndex: sourceAudioTrack.streamIndex,
         audioLanguage: sourceAudioTrack.language,
         encoder,
-        tonemapHdr: item.probe.video.isHdr,
+        hdr,
+        tonemapHdr,
       });
 
       try {
@@ -628,6 +671,7 @@ export async function processRenditionItem(
           entry.requirement.height,
           variantProbe,
           sourceAudioTrack.language,
+          codecFamilyForEncoder(encoder),
         );
         await rename(entry.partialFilePath, entry.finalFilePath);
         const finalStats = await stat(entry.finalFilePath);
@@ -637,7 +681,7 @@ export async function processRenditionItem(
           height: entry.requirement.height,
           bitrate: variantProbe.averageBitrate,
           fileSize: finalStats.size,
-          videoCodec: "h264",
+          videoCodec: codecFamilyForEncoder(encoder),
           audioCodec: "aac",
           container: "mp4",
           frameRate: variantProbe.frameRate,
@@ -645,7 +689,8 @@ export async function processRenditionItem(
           sourceAudioStreamIndex: sourceAudioTrack.streamIndex,
           audioLanguage: sourceAudioTrack.language,
           videoEncoder: encoder,
-          ...(item.probe.video.isHdr ? { tonemappedFromHdr: true } : {}),
+          ...(preserveHdr ? { hdr: true } : {}),
+          ...(tonemapHdr ? { tonemappedFromHdr: true } : {}),
         });
         onEvent?.({
           type: "quality-ready",
@@ -736,6 +781,7 @@ export interface ProcessReportOptions extends RenditionProcessorOptions {
 
 export interface ProcessReportOutcome {
   videoEncoder: RenditionVideoEncoder;
+  hdrVideoEncoder?: RenditionVideoEncoder;
   results: RenditionProcessResult[];
 }
 
@@ -749,18 +795,42 @@ export async function processRenditionReport(
     "rendition-processor",
   );
   try {
-    // The encoder is probed once for the whole batch rather than per title.
+    // Encoders are probed once for the whole batch rather than per title.
+    const ffmpegPath =
+      options.ffmpegPath ??
+      process.env.FFMPEG_PATH ??
+      process.env.SEYIRLIK_FFMPEG_PATH ??
+      "ffmpeg";
+    const preference = options.encoderPreference ?? "auto";
+    const hdrPolicy = options.hdrPolicy ?? "preserve";
     const videoEncoder =
       options.videoEncoder ??
       (await resolveVideoEncoder(
-        options.encoderPreference ?? "auto",
-        options.ffmpegPath ??
-          process.env.FFMPEG_PATH ??
-          process.env.SEYIRLIK_FFMPEG_PATH ??
-          "ffmpeg",
+        preference,
+        ffmpegPath,
+        "h264",
+        false,
         options.signal,
       ));
-    options.onEvent?.({ type: "encoder-selected", encoder: videoEncoder });
+    const needsHdrEncoder =
+      hdrPolicy === "preserve" &&
+      report.items.some((item) => item.probe?.video.isHdr);
+    const hdrVideoEncoder =
+      options.hdrVideoEncoder ??
+      (needsHdrEncoder
+        ? await resolveVideoEncoder(
+            preference,
+            ffmpegPath,
+            "hevc",
+            true,
+            options.signal,
+          )
+        : undefined);
+    options.onEvent?.({
+      type: "encoder-selected",
+      encoder: videoEncoder,
+      ...(hdrVideoEncoder ? { hdrEncoder: hdrVideoEncoder } : {}),
+    });
     const selected = new Set(report.selectedMediaIds);
     const candidates = report.items.filter(
       (item) =>
@@ -814,6 +884,8 @@ export async function processRenditionReport(
           result = await processRenditionItem(item, paths, {
             ...options,
             videoEncoder,
+            hdrVideoEncoder,
+            hdrPolicy,
           });
           if (result.status !== "failed") break;
         }
@@ -829,7 +901,11 @@ export async function processRenditionReport(
       }
     };
     await Promise.all(Array.from({ length: workerCount }, () => worker()));
-    return { videoEncoder, results: results.filter(Boolean) };
+    return {
+      videoEncoder,
+      ...(hdrVideoEncoder ? { hdrVideoEncoder } : {}),
+      results: results.filter(Boolean),
+    };
   } finally {
     await processLock.release();
   }

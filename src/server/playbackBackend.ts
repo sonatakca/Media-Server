@@ -487,7 +487,7 @@ export async function createPlaybackBackend(
     basePath: "/api/playback",
     mediaRoot: configuredMediaRoot,
     authorizeRequest: options.playbackAuthorizer,
-    getRenditionManifest: (resolvedMedia, analysis, plan) => {
+    getRenditionManifest: (resolvedMedia, analysis, plan, capabilities) => {
       const video = analysis.videoStreams[0];
       return renditionService.createManifest(
         resolvedMedia,
@@ -502,6 +502,10 @@ export async function createPlaybackBackend(
               playableUrl: plan.delivery.url,
             }
           : undefined,
+        {
+          hevc: capabilities.video.hevc?.supported === true,
+          h264: capabilities.video.h264?.supported !== false,
+        },
       );
     },
   });

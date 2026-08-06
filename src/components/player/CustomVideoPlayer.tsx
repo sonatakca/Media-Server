@@ -738,12 +738,13 @@ export function CustomVideoPlayer({
     () =>
       availableQualityFiles.map((quality) => ({
         id: quality.id,
-        label:
+        label: `${
           quality.kind === "original"
             ? formatTemplate(t("player.qualityOriginalWithHeight"), {
                 height: quality.height,
               })
-            : `${quality.height}p`,
+            : `${quality.height}p`
+        }${quality.hdr ? " HDR" : ""}`,
         subtitle: !isQualityAudioCompatible(quality, selectedAudioStreamIndex)
           ? t("player.qualityAudioMismatch")
           : quality.kind === "original"
@@ -2032,7 +2033,7 @@ export function CustomVideoPlayer({
     return {
       activeMode: fileQualityMode,
       effectiveQualityLabel: activeQualityFile
-        ? `${activeQualityFile.height}p`
+        ? `${activeQualityFile.height}p${activeQualityFile.hdr ? " HDR" : ""}`
         : undefined,
       modeQualityLabels: {
         "low-data": lowDataQualityFile
