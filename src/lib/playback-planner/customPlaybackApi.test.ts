@@ -204,6 +204,59 @@ describe("custom playback API request deduplication", () => {
     });
   });
 
+  it("makes every generated rendition URL absolute against the playback backend", async () => {
+    const api = await loadApi();
+    const plan = directMovPlaybackPlan();
+    plan.qualityManifest = {
+      mediaId: "movie-1",
+      qualities: [
+        {
+          id: "original",
+          label: "Original (1080p)",
+          kind: "original",
+          height: 1080,
+          width: 1920,
+          videoCodec: "hevc",
+          playbackUrl: "/api/playback/direct/original",
+        },
+        {
+          id: "generated-720",
+          label: "720p",
+          kind: "generated",
+          height: 720,
+          width: 1280,
+          bitrate: 4_000_000,
+          videoCodec: "h264",
+          audioCodec: "aac",
+          container: "mp4",
+          playbackUrl: "/api/playback/renditions/token/generated-720.mp4",
+        },
+      ],
+      limitations: {
+        generatedAudio: "default-track-only",
+        generatedSubtitles: "external-or-original-only",
+        switching: "complete-file-rebuffer",
+      },
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(plan)));
+
+    await expect(
+      api.requestCustomPlaybackCandidate("movie-1"),
+    ).resolves.toMatchObject({
+      qualityManifest: {
+        qualities: [
+          {
+            playbackUrl: "http://backend.test/api/playback/direct/original",
+          },
+          {
+            playbackUrl:
+              "http://backend.test/api/playback/renditions/token/generated-720.mp4",
+          },
+        ],
+      },
+    });
+  });
+
   it("allows retry after a failed custom playback request", async () => {
     const api = await loadApi();
     const fetchMock = vi

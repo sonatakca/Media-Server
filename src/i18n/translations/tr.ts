@@ -254,6 +254,30 @@ export const tr = {
   "settings.hlsUpTo": "HLS · en fazla {mbps} Mbps",
   "settings.manualQuality": "Elle kalite",
   "settings.noAlternateQualities": "Alternatif kalite dönmedi",
+  "player.qualityLowData": "Düşük Veri",
+  "player.qualityLowDataDescription": "Daha az veri kullanır",
+  "player.qualityCompleteFile": "Tam dosya",
+  "player.qualityHigherResolution": "Daha Yüksek Çözünürlük",
+  "player.qualityHigherResolutionDescription": "Daha çok veri kullanır",
+  "player.qualityAdvanced": "Gelişmiş",
+  "player.qualityAdvancedDescription": "Oynatmayı tek bir kaliteye sabitler",
+  "player.qualityBackToModes": "Kalite modları",
+  "player.qualityLockedTo": "{quality} sabitlendi",
+  "player.qualityOriginalSource": "Orijinal kaynak",
+  "player.qualityOriginalWithHeight": "Orijinal ({height}p)",
+  "player.qualityActiveResolution": "Şu anda {quality} oynatılıyor",
+  "player.qualityAutoEffective": "Otomatik ({quality})",
+  "player.qualityFileAutoDescription":
+    "Mevcut tam dosyalardan birini otomatik seçer",
+  "player.qualityManualUnavailable":
+    "Kaydedilen kalite dosyası artık kullanılamıyor. Otomatik'i veya listelenen başka bir dosyayı seçin.",
+  "player.qualityAudioMismatch":
+    "Bu üretilen dosyada farklı bir ses parçası var. Geçerli dili korumak için Orijinal'i kullanın veya uyumlu bir kalite seçin.",
+  "player.qualitySwitchFailedReturnAuto":
+    "Seçilen kalite dosyası oynatılamadı. Doğrulanmış kullanılabilir bir dosyaya dönmek için Otomatik'i seçin.",
+  "player.qualityCompleteFileLimitations":
+    "Üretilen kalite dosyaları varsayılan ses parçasını içerir ve gömülü altyazı içermez. Alternatif parçalar için, varsa, Orijinal'i seçin.",
+  "player.returnToAutoQuality": "Otomatik kaliteye dön",
   "settings.audio": "Ses",
   "settings.audioTrack": "Ses parçası {number}",
   "settings.currentAudio": "Geçerli ses",

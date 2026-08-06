@@ -12,6 +12,12 @@
     "audit:jellyfin": "node scripts/audit-jellyfin-runtime.mjs",
     "db:migrate": "tsx scripts/run-own-api-migrations.ts",
     "admin:provision": "tsx scripts/provision-native-admin.ts",
+    "media:renditions:analyse": "tsx scripts/media-renditions.ts analyse",
+    "media:renditions:process": "tsx scripts/media-renditions.ts process",
+    "media:renditions:resume": "tsx scripts/media-renditions.ts resume",
+    "media:renditions:status": "tsx scripts/media-renditions.ts status",
+    "media:renditions:validate": "tsx scripts/media-renditions.ts validate",
+    "media:renditions:cleanup": "tsx scripts/media-renditions.ts cleanup",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\""
   },
   "dependencies": {

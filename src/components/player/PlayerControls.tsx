@@ -21,6 +21,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { Tooltip } from "../ui/Tooltip";
 import { PlayerQueuePanel } from "./PlayerQueuePanel";
+import type { CompleteFileQualityControls } from "./types";
 
 interface PlayerControlsProps {
   visible: boolean;
@@ -39,6 +40,7 @@ interface PlayerControlsProps {
   subtitleDelaySeconds: number;
   canSwitchAudio: boolean;
   canSwitchSubtitles: boolean;
+  completeFileQuality?: CompleteFileQualityControls;
   isSubtitleEditMode?: boolean;
   settingsOpen: boolean;
   playbackQueue?: PlaybackQueue | null;
@@ -105,6 +107,7 @@ export function PlayerControls({
   subtitleDelaySeconds,
   canSwitchAudio,
   canSwitchSubtitles,
+  completeFileQuality,
   isSubtitleEditMode = false,
   settingsOpen,
   playbackQueue = null,
@@ -370,6 +373,7 @@ export function PlayerControls({
                     subtitleDelaySeconds={subtitleDelaySeconds}
                     canSwitchAudio={canSwitchAudio}
                     canSwitchSubtitles={canSwitchSubtitles}
+                    completeFileQuality={completeFileQuality}
                     compact={compactLayout}
                     onSelectAutoQuality={onSelectAutoQuality}
                     onSelectQuality={onSelectQuality}

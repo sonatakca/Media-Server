@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -16,6 +17,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/jellyfinApi";
 import type { JellyfinItem } from "../../lib/types";
 import {
+  getMediaOwnerRouteFromNavigationState,
   getMediaOwnerRouteForItem,
   getWatchRouteForItem,
 } from "../../lib/routes";
@@ -38,6 +40,7 @@ import {
 export function DesktopPlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -144,6 +147,12 @@ export function DesktopPlayerPage() {
   );
 
   const loadingBackdropUrl = getPlayerLoadingBackdropUrl(item);
+  const requestedMediaOwnerRoute = getMediaOwnerRouteFromNavigationState(
+    location.state,
+  );
+  const mediaOwnerRoute = item
+    ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
+    : "/home";
 
   const isPreparingPlayback =
     !item ||
@@ -170,8 +179,6 @@ export function DesktopPlayerPage() {
   }
 
   if (isPreparingPlayback && item && playback.error) {
-    const mediaOwnerRoute = getMediaOwnerRouteForItem(item);
-
     return (
       <main className="flex min-h-screen items-center justify-center bg-black p-4 text-white">
         <div className="w-full max-w-2xl">
@@ -237,6 +244,7 @@ export function DesktopPlayerPage() {
           onPlayQueueItem={handlePlayNextUp}
           showPreparingArtwork={isPreparingPlayback}
           preparingBackdropUrl={loadingBackdropUrl}
+          backTo={mediaOwnerRoute}
         />
       ) : null}
 

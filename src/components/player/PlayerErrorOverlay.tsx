@@ -5,7 +5,9 @@ interface PlayerErrorOverlayProps {
   message: string;
   details?: string;
   canTryTranscoded: boolean;
+  canReturnAuto?: boolean;
   onTryTranscoded: () => void;
+  onReturnAuto?: () => void;
   onRetry: () => void;
 }
 
@@ -13,7 +15,9 @@ export function PlayerErrorOverlay({
   message,
   details,
   canTryTranscoded,
+  canReturnAuto = false,
   onTryTranscoded,
+  onReturnAuto,
   onRetry,
 }: PlayerErrorOverlayProps) {
   const { t } = useLanguage();
@@ -34,6 +38,16 @@ export function PlayerErrorOverlay({
         </div>
 
         <div className="mt-5 flex flex-wrap gap-3">
+          {canReturnAuto && onReturnAuto ? (
+            <button
+              type="button"
+              onClick={onReturnAuto}
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-[var(--accent)] px-4 text-sm font-bold text-black transition hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            >
+              <RefreshCw size={18} />
+              {t("player.returnToAutoQuality")}
+            </button>
+          ) : null}
           {canTryTranscoded ? (
             <button
               type="button"

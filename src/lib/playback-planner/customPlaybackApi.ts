@@ -3,6 +3,7 @@ import type {
   PlaybackMode as JellyfinPlaybackMode,
   PlaybackSourceCandidate,
 } from "../types";
+import { getAuthHeaders } from "../authStorage";
 import { buildClientCapabilities } from "./clientCapabilities";
 import type { PlaybackPlan } from "./types";
 
@@ -178,6 +179,15 @@ function planToPlaybackCandidate(
   const url = makePlanUrlAbsolute(baseUrl, plan.delivery.url);
   const reason = plan.reasons.map((item) => item.message).join(" ");
   const transcodeReasons = getTranscodingReasonCodes(plan);
+  const qualityManifest = plan.qualityManifest
+    ? {
+        ...plan.qualityManifest,
+        qualities: plan.qualityManifest.qualities.map((quality) => ({
+          ...quality,
+          playbackUrl: makePlanUrlAbsolute(baseUrl, quality.playbackUrl),
+        })),
+      }
+    : undefined;
 
   return {
     id: `custom-${plan.mode}-${plan.delivery.sessionId ?? "file"}`,
@@ -192,6 +202,7 @@ function planToPlaybackCandidate(
     label: `Custom ${plan.mode}`,
     mediaSource: buildSyntheticMediaSource(plan),
     playbackDiagnostics: plan.diagnostics,
+    qualityManifest,
     reason,
     transcodeReasons,
     priority: 0,
@@ -263,6 +274,7 @@ export async function requestCustomPlaybackCandidate(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
+        ...getAuthHeaders(),
       },
       body: JSON.stringify({
         mediaId: itemId,

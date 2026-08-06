@@ -77,6 +77,8 @@ interface HeroSectionProps {
   onHeroReady?: () => void;
   onPreviewPlaybackChange?: (isPlayingPreview: boolean) => void;
   onSlideDurationChange?: (durationMs: number) => void;
+  enablePreview?: boolean;
+  keepDetailsVisible?: boolean;
 }
 
 interface HeroPreviewVideoProps {
@@ -337,6 +339,8 @@ export function HeroSection({
   onSelectIndex,
   onHeroReady,
   onSlideDurationChange,
+  enablePreview = true,
+  keepDetailsVisible = false,
 }: HeroSectionProps) {
   const { language, t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -409,10 +413,13 @@ export function HeroSection({
 
   const hasPreview = Boolean(previewUrl && !hasPreviewEnded);
   const shouldPlayPreview = Boolean(
-    hasPreview && areTrailersEnabled && isPreviewStartDelayDone,
+    enablePreview &&
+    hasPreview &&
+    areTrailersEnabled &&
+    isPreviewStartDelayDone,
   );
   const shouldRenderPreview = Boolean(
-    hasPreview && (areTrailersEnabled || isPreviewReady),
+    enablePreview && hasPreview && (areTrailersEnabled || isPreviewReady),
   );
   const shouldShowPreviewRef = useRef(shouldPlayPreview);
 
@@ -441,6 +448,10 @@ export function HeroSection({
   }, [shouldStartPreviewUnmuted]);
 
   useEffect(() => {
+    if (!enablePreview) {
+      return;
+    }
+
     const handleGlobalPointerDown = () => {
       const previewIsShowing = shouldShowPreviewRef.current;
       const previewIsReady = isPreviewReadyRef.current;
@@ -466,7 +477,7 @@ export function HeroSection({
         capture: true,
       });
     };
-  }, []);
+  }, [enablePreview]);
 
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
   const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
@@ -711,7 +722,7 @@ export function HeroSection({
     setPreviewUrl(null);
     setIsPreviewReady(false);
 
-    if (!item) {
+    if (!item || !enablePreview) {
       return;
     }
 
@@ -735,7 +746,7 @@ export function HeroSection({
     return () => {
       cancelled = true;
     };
-  }, [item?.Id]);
+  }, [enablePreview, item?.Id]);
 
   useEffect(() => {
     setFailedImageUrls([]);
@@ -762,7 +773,7 @@ export function HeroSection({
   useEffect(() => {
     setIsPreviewStartDelayDone(false);
 
-    if (!item?.Id || !areTrailersEnabledRef.current) {
+    if (!enablePreview || !item?.Id || !areTrailersEnabledRef.current) {
       return;
     }
 
@@ -773,7 +784,7 @@ export function HeroSection({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [item?.Id]);
+  }, [enablePreview, item?.Id]);
 
   useEffect(() => {
     setIsLogoLoaded(false);
@@ -806,7 +817,7 @@ export function HeroSection({
   useEffect(() => {
     setIsHeroIntroDone(false);
 
-    if (!item?.Id) {
+    if (!item?.Id || keepDetailsVisible) {
       return;
     }
 
@@ -817,7 +828,7 @@ export function HeroSection({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [item?.Id]);
+  }, [item?.Id, keepDetailsVisible]);
 
   useEffect(() => {
     if (!heroContentVisible) {
@@ -1193,7 +1204,7 @@ export function HeroSection({
           ) : null}
         </AnimatePresence>
         <AnimatePresence>
-          {item ? (
+          {item && enablePreview ? (
             <motion.div
               key="hero-preview-controls"
               className="absolute right-0 top-1/2 z-30 flex -translate-y-1/2 flex-col items-end gap-2 sm:gap-3"

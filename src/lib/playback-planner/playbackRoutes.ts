@@ -3,6 +3,7 @@ import { realpath, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { basename, extname, join, resolve, sep } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
+import type { MediaQualityManifest } from "../../renditions/contracts";
 import { decidePlaybackPlan } from "./playbackDecision";
 import type { PlaybackSessionManager } from "./playbackSessionManager";
 import type {
@@ -40,6 +41,20 @@ export interface PlaybackRouteDependencies {
   basePath?: string;
   mediaRoot?: string;
   maxJsonBodyBytes?: number;
+  authorizeRequest?: (request: IncomingMessage) => Promise<
+    | { authorized: true; userId: string }
+    | {
+        authorized: false;
+        statusCode: 401 | 403 | 503;
+        code: string;
+        message: string;
+      }
+  >;
+  getRenditionManifest?: (
+    media: PlaybackResolvedMedia,
+    analysis: MediaAnalysis,
+    plan: PlaybackPlan,
+  ) => Promise<MediaQualityManifest>;
 }
 
 interface PlaybackRequestBody {
@@ -60,7 +75,17 @@ interface ValidatedPlaybackRequestBody {
   forceQualityLimit?: PlaybackQualityLimit;
 }
 
-type ErrorStatusCode = 400 | 403 | 404 | 405 | 409 | 413 | 500 | 502 | 503;
+type ErrorStatusCode =
+  | 400
+  | 401
+  | 403
+  | 404
+  | 405
+  | 409
+  | 413
+  | 500
+  | 502
+  | 503;
 
 const DEFAULT_MAX_JSON_BODY_BYTES = 1024 * 1024;
 const VALID_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
@@ -591,7 +616,7 @@ function createPlaybackDiagnostics(
   };
 }
 
-async function handlePlaybackRequest(
+export async function handlePlaybackRequest(
   body: PlaybackRequestBody,
   dependencies: PlaybackRouteDependencies,
 ): Promise<PlaybackPlan> {
@@ -620,7 +645,7 @@ async function handlePlaybackRequest(
       resolvedMedia.mediaId,
     );
 
-    return {
+    const completedPlan: PlaybackPlan = {
       ...directPlan,
       diagnostics: createPlaybackDiagnostics(
         media,
@@ -633,6 +658,78 @@ async function handlePlaybackRequest(
         },
       ),
     };
+    if (dependencies.getRenditionManifest) {
+      completedPlan.qualityManifest = await dependencies.getRenditionManifest(
+        resolvedMedia,
+        media,
+        completedPlan,
+      );
+    }
+    return completedPlan;
+  }
+
+  if (dependencies.getRenditionManifest) {
+    const qualityManifest = await dependencies.getRenditionManifest(
+      resolvedMedia,
+      media,
+      plan,
+    );
+    const generatedQuality = qualityManifest.qualities.find(
+      (quality) =>
+        quality.kind === "generated" &&
+        (validBody.selectedAudioStreamIndex === undefined ||
+          quality.sourceAudioStreamIndex ===
+            validBody.selectedAudioStreamIndex),
+    );
+    if (generatedQuality) {
+      const generatedPlan: PlaybackPlan = {
+        ...plan,
+        mode: "direct-play",
+        requiresFfmpeg: false,
+        preservesOriginalVideoQuality: false,
+        expectedStartup: "instant",
+        container: {
+          input: "mp4",
+          output: "original",
+          action: "direct",
+        },
+        video: {
+          inputCodec: "h264",
+          action: "copy",
+        },
+        audio: {
+          inputCodec: "aac",
+          action: "copy",
+        },
+        subtitles: {
+          action: plan.subtitles.action === "external" ? "external" : "none",
+        },
+        reasons: [
+          {
+            code: "direct_play_supported",
+            severity: "info",
+            message:
+              "A validated pre-generated complete MP4 rendition is direct-play compatible.",
+          },
+        ],
+        delivery: {
+          type: "file",
+          url: generatedQuality.playbackUrl,
+        },
+        qualityManifest,
+      };
+      generatedPlan.diagnostics = createPlaybackDiagnostics(
+        media,
+        validBody.clientCapabilities,
+        generatedPlan,
+        {
+          byteRangeSupported: true,
+          directMediaUrl: generatedQuality.playbackUrl,
+          ffmpegStarted: false,
+        },
+      );
+      return generatedPlan;
+    }
   }
 
   const planWithDiagnostics: PlaybackPlan = {
@@ -652,7 +749,31 @@ async function handlePlaybackRequest(
     planWithDiagnostics,
     media,
   );
+  if (dependencies.getRenditionManifest) {
+    session.plan.qualityManifest = await dependencies.getRenditionManifest(
+      resolvedMedia,
+      media,
+      session.plan,
+    );
+  }
   return session.plan;
+}
+
+async function requirePlaybackAuthorization(
+  request: IncomingMessage,
+  response: ServerResponse,
+  dependencies: PlaybackRouteDependencies,
+): Promise<boolean> {
+  if (!dependencies.authorizeRequest) return true;
+  const authorization = await dependencies.authorizeRequest(request);
+  if (authorization.authorized) return true;
+  sendJson(response, authorization.statusCode, {
+    error: {
+      code: authorization.code,
+      message: authorization.message,
+    },
+  });
+  return false;
 }
 
 async function routeRequest(
@@ -677,6 +798,12 @@ async function routeRequest(
         return true;
       }
 
+      if (
+        !(await requirePlaybackAuthorization(request, response, dependencies))
+      ) {
+        return true;
+      }
+
       const capabilities = await parseJsonBody<ClientCapabilities>(
         request,
         maxJsonBodyBytes,
@@ -690,6 +817,12 @@ async function routeRequest(
     if (pathname === `${basePath}/request`) {
       if (request.method !== "POST") {
         sendMethodNotAllowed(response, ["POST", "OPTIONS"]);
+        return true;
+      }
+
+      if (
+        !(await requirePlaybackAuthorization(request, response, dependencies))
+      ) {
         return true;
       }
 

@@ -1,7 +1,32 @@
 import type { JellyfinItem } from "./types";
 
+export interface PlayerNavigationState {
+  mediaOwnerRoute: string;
+}
+
 function getNormalizedItemKind(value?: string): string {
   return value?.trim().toLowerCase() ?? "";
+}
+
+export function getMediaOwnerRouteFromNavigationState(
+  state: unknown,
+): string | null {
+  if (!state || typeof state !== "object") {
+    return null;
+  }
+
+  const mediaOwnerRoute = (state as { mediaOwnerRoute?: unknown })
+    .mediaOwnerRoute;
+
+  if (
+    typeof mediaOwnerRoute !== "string" ||
+    !mediaOwnerRoute.startsWith("/") ||
+    mediaOwnerRoute.startsWith("//")
+  ) {
+    return null;
+  }
+
+  return mediaOwnerRoute;
 }
 
 export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {

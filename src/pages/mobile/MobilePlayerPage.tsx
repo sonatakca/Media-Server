@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft } from "lucide-react";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -21,6 +22,7 @@ import {
   setPageTitle,
 } from "../../lib/pageTitle";
 import {
+  getMediaOwnerRouteFromNavigationState,
   getMediaOwnerRouteForItem,
   getWatchRouteForItem,
 } from "../../lib/routes";
@@ -36,6 +38,7 @@ import {
 export function MobilePlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
   const [searchParams] = useSearchParams();
+  const location = useLocation();
   const navigate = useNavigate();
   const { t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
@@ -131,6 +134,12 @@ export function MobilePlayerPage() {
   );
 
   const loadingBackdropUrl = getPlayerLoadingBackdropUrl(item);
+  const requestedMediaOwnerRoute = getMediaOwnerRouteFromNavigationState(
+    location.state,
+  );
+  const mediaOwnerRoute = item
+    ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
+    : "/home";
 
   const isPreparingPlayback =
     !item || playback.isLoading || !playback.activeSource;
@@ -155,8 +164,6 @@ export function MobilePlayerPage() {
 
   if (!item || playback.isLoading || !playback.activeSource) {
     if (item && playback.error) {
-      const mediaOwnerRoute = getMediaOwnerRouteForItem(item);
-
       return (
         <main className="flex min-h-screen items-center justify-center bg-black p-4 text-white">
           <div className="w-full max-w-2xl">
@@ -242,6 +249,7 @@ export function MobilePlayerPage() {
         enableDefaultNextEpisodeCountdown={item.Type === "Episode"}
         onAutoPlayNextEpisode={handlePlayNextUp}
         onPlayQueueItem={handlePlayNextUp}
+        backTo={mediaOwnerRoute}
       />
     </>
   );

@@ -34,6 +34,11 @@ import {
 } from "./ownApi/ownApiHandler";
 import { createRuntimeHealthService } from "./ownApi/runtimeHealthService";
 import { createNativeIdentityRuntime } from "./ownApi/auth/nativeIdentityRuntime";
+import { createRenditionService } from "./renditionService";
+import {
+  createJellyfinPlaybackAuthorizer,
+  type PlaybackRequestAuthorizer,
+} from "./jellyfinPlaybackAuth";
 
 export interface PlaybackBackendOptions {
   host?: string;
@@ -53,10 +58,13 @@ export interface PlaybackBackendOptions {
   ffmpegPath?: string;
   ffprobePath?: string;
   generatedStoragePath?: string;
+  renditionRoot?: string;
+  renditionStateRoot?: string;
   preferredVideoEncoder?: string;
   maxConcurrentVideoTranscodes?: number;
   softwareTranscodeThreads?: number;
   adminAuthorizer?: AdminRequestAuthorizer;
+  playbackAuthorizer?: PlaybackRequestAuthorizer;
   ownApiHealthService?: OwnApiHealthService;
   ownApiLogger?: OwnApiLogger;
   ownApiRouteHandlers?: OwnApiRouteHandler[];
@@ -354,7 +362,7 @@ function applyCors(
   );
   response.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Range, Authorization, X-Request-Id, X-CSRF-Token",
+    "Content-Type, Range, Authorization, X-Emby-Authorization, X-Emby-Token, X-Request-Id, X-CSRF-Token",
   );
   response.setHeader(
     "Access-Control-Expose-Headers",
@@ -462,12 +470,40 @@ export async function createPlaybackBackend(
   const publicOrigin = normalizePublicOrigin(options.publicOrigin);
   const adminAuthorizer =
     options.adminAuthorizer ?? createUnavailableAdminAuthorizer();
+  const renditionService = createRenditionService({
+    mediaRoot: configuredMediaRoot,
+    renditionRoot:
+      options.renditionRoot ??
+      path.join(configuredMediaRoot, ".seyirlik", "renditions"),
+    stateRoot:
+      options.renditionStateRoot ??
+      path.join(configuredMediaRoot, ".seyirlik", "state"),
+    mediaResolver,
+  });
   const playbackHandler = createPlaybackRequestHandler({
     mediaStore,
     mediaResolver,
     sessionManager,
     basePath: "/api/playback",
     mediaRoot: configuredMediaRoot,
+    authorizeRequest: options.playbackAuthorizer,
+    getRenditionManifest: (resolvedMedia, analysis, plan) => {
+      const video = analysis.videoStreams[0];
+      return renditionService.createManifest(
+        resolvedMedia,
+        video && !plan.requiresFfmpeg
+          ? {
+              width: video.width,
+              height: video.height,
+              codec: video.codecName,
+              container:
+                analysis.container.extension ?? analysis.container.formatName,
+              fileSize: resolvedMedia.size,
+              playableUrl: plan.delivery.url,
+            }
+          : undefined,
+      );
+    },
   });
   const tmdbArtworkHandler = createTmdbArtworkRequestHandler({
     mediaRoot: configuredMediaRoot,
@@ -611,6 +647,7 @@ export async function createPlaybackBackend(
     }
 
     const handled =
+      (await renditionService.handleRequest(request, response)) ||
       (await playbackHandler(request, response)) ||
       (await tmdbArtworkHandler(request, response));
 
@@ -680,6 +717,30 @@ function parseOptionalPositiveInteger(
   return value;
 }
 
+/**
+ * Playback requests are authorized against Jellyfin by default because that is
+ * the identity provider this deployment ships with. Deployments that issue their
+ * own session tokens can opt out with SEYIRLIK_PLAYBACK_AUTH=disabled instead of
+ * silently failing every playback request against an unrelated Jellyfin server.
+ */
+function createPlaybackAuthorizerFromEnv(
+  jellyfinServerUrl: string,
+): PlaybackRequestAuthorizer | undefined {
+  const mode = process.env.SEYIRLIK_PLAYBACK_AUTH?.trim().toLowerCase();
+
+  if (mode === "disabled") {
+    return undefined;
+  }
+
+  if (mode && mode !== "jellyfin") {
+    throw new Error(
+      "SEYIRLIK_PLAYBACK_AUTH must be either `jellyfin` or `disabled`.",
+    );
+  }
+
+  return createJellyfinPlaybackAuthorizer({ jellyfinServerUrl });
+}
+
 export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
   const mediaRoot = process.env.SEYIRLIK_MEDIA_ROOT;
   const jellyfinServerUrl = process.env.SEYIRLIK_JELLYFIN_SERVER_URL;
@@ -725,6 +786,8 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
       ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH,
       ffprobePath: process.env.SEYIRLIK_FFPROBE_PATH,
       generatedStoragePath: process.env.SEYIRLIK_GENERATED_STORAGE,
+      renditionRoot: process.env.SEYIRLIK_RENDITION_ROOT,
+      renditionStateRoot: process.env.SEYIRLIK_RENDITION_STATE_ROOT,
       preferredVideoEncoder:
         process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
       maxConcurrentVideoTranscodes: parseOptionalPositiveInteger(
@@ -736,6 +799,7 @@ export async function startPlaybackBackendFromEnv(): Promise<PlaybackBackend> {
         "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS",
       ),
       adminAuthorizer: createFirebaseAdminAuthorizerFromEnv(),
+      playbackAuthorizer: createPlaybackAuthorizerFromEnv(jellyfinServerUrl),
       ownApiRouteHandlers: nativeIdentityRuntime
         ? [nativeIdentityRuntime.routeHandler]
         : [],

@@ -864,7 +864,7 @@ function getPngDimensions(
   return width > 0 && height > 0 ? { width, height } : null;
 }
 
-async function loadLocalLogoImages(
+async function loadLocalLogoImagesFromDirectory(
   directoryPath: string,
 ): Promise<NormalizedTmdbImage[]> {
   const realDirectory = await realpath(directoryPath);
@@ -924,6 +924,35 @@ async function loadLocalLogoImages(
   }
 
   return images;
+}
+
+async function loadLocalLogoImages(
+  directoryPath: string,
+  mediaRoot: string,
+): Promise<NormalizedTmdbImage[]> {
+  const realMediaRoot = await realpath(mediaRoot);
+  let currentDirectory = await realpath(directoryPath);
+
+  while (isPathInsideOrEqualRoot(realMediaRoot, currentDirectory)) {
+    const images = await loadLocalLogoImagesFromDirectory(currentDirectory);
+
+    if (images.length > 0) {
+      return images;
+    }
+
+    const parentDirectory = path.dirname(currentDirectory);
+
+    if (
+      parentDirectory === currentDirectory ||
+      !isPathInsideOrEqualRoot(realMediaRoot, parentDirectory)
+    ) {
+      break;
+    }
+
+    currentDirectory = parentDirectory;
+  }
+
+  return [];
 }
 
 function compareEpisodeStills(
@@ -1773,7 +1802,10 @@ export function createTmdbArtworkRequestHandler(
                 options.mediaRoot,
                 lookupOptions,
               );
-              localImages = await loadLocalLogoImages(targetDirectory);
+              localImages = await loadLocalLogoImages(
+                targetDirectory,
+                options.mediaRoot,
+              );
             };
 
             if (requestedItemId) {

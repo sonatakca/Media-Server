@@ -277,11 +277,12 @@ describe("TMDB artwork backend", () => {
     const mediaRoot = await createTempDir();
     const mediaFile = await writeMediaFile(
       mediaRoot,
-      "Series/Berlin and the Lady with an Ermine/episode.mkv",
+      "Series/Berlin and the Lady with an Ermine/Season 1/episode.mkv",
     );
-    const mediaDirectory = path.dirname(mediaFile);
+    const resolvedItemDirectory = path.dirname(mediaFile);
+    const seriesDirectory = path.dirname(resolvedItemDirectory);
     await writeFile(
-      path.join(mediaDirectory, "logo-tr.png"),
+      path.join(seriesDirectory, "logo-tr.png"),
       pngFixture(364, 87, 2_134_030),
     );
 
@@ -309,7 +310,7 @@ describe("TMDB artwork backend", () => {
             {
               Id: "berlin",
               Type: "Series",
-              Path: mediaDirectory,
+              Path: resolvedItemDirectory,
               MediaSources: [],
               ProviderIds: {
                 Tmdb: "11",

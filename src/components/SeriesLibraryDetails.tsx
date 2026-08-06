@@ -24,6 +24,7 @@ import {
   getItemLogoUrl,
 } from "../lib/itemMetadataPreferences";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
+import type { PlayerNavigationState } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { JellyfinItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
@@ -616,6 +617,48 @@ export function SeriesLibraryDetails({
       </label>
     ) : null;
 
+  const trailerShelf =
+    trailers.length > 0 ? (
+      <MediaShelf title={labels.trailers} variant={variant}>
+        {trailers.map((trailer) => (
+          <Link
+            key={trailer.Id}
+            to={getWatchRouteForItem(trailer)}
+            state={
+              {
+                mediaOwnerRoute: canonicalPath,
+              } satisfies PlayerNavigationState
+            }
+            className={
+              isDesktop
+                ? "group relative aspect-video w-80 shrink-0 snap-start overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
+                : "group relative aspect-video w-[78vw] shrink-0 snap-start overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
+            }
+          >
+            <img
+              src={getPrimaryImageUrl(
+                trailer.Id,
+                trailer.ImageTags?.Primary,
+                isDesktop ? 900 : 650,
+              )}
+              alt={trailer.Name}
+              loading="lazy"
+              className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
+            <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-3 text-white">
+              <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-black">
+                <Play size={15} fill="currentColor" />
+              </span>
+              <span className="line-clamp-1 text-sm font-black">
+                {labels.trailerLabel}
+              </span>
+            </div>
+          </Link>
+        ))}
+      </MediaShelf>
+    ) : null;
+
   return (
     <div className={isDesktop ? "pb-14" : "pb-7"}>
       {canChangeWatchedStatus ? (
@@ -651,6 +694,8 @@ export function SeriesLibraryDetails({
           />
         </div>
       ) : null}
+
+      {!isDesktop ? trailerShelf : null}
 
       {!isMovie ? (
         <MediaShelf
@@ -698,41 +743,7 @@ export function SeriesLibraryDetails({
         </MediaShelf>
       ) : null}
 
-      {trailers.length > 0 ? (
-        <MediaShelf title={labels.trailers} variant={variant}>
-          {trailers.map((trailer) => (
-            <Link
-              key={trailer.Id}
-              to={getWatchRouteForItem(trailer)}
-              className={
-                isDesktop
-                  ? "group relative aspect-video w-80 shrink-0 snap-start overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
-                  : "group relative aspect-video w-[78vw] shrink-0 snap-start overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
-              }
-            >
-              <img
-                src={getPrimaryImageUrl(
-                  trailer.Id,
-                  trailer.ImageTags?.Primary,
-                  isDesktop ? 900 : 650,
-                )}
-                alt={trailer.Name}
-                loading="lazy"
-                className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.04]"
-              />
-              <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/10 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 flex items-center gap-2 p-3 text-white">
-                <span className="grid h-8 w-8 place-items-center rounded-full bg-white text-black">
-                  <Play size={15} fill="currentColor" />
-                </span>
-                <span className="line-clamp-1 text-sm font-black">
-                  {labels.trailerLabel}
-                </span>
-              </div>
-            </Link>
-          ))}
-        </MediaShelf>
-      ) : null}
+      {isDesktop ? trailerShelf : null}
 
       {similarItems.length > 0 ? (
         <MediaShelf title={labels.similar} variant={variant}>

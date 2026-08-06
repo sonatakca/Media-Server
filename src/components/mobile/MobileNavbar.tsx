@@ -93,7 +93,9 @@ export function MobileNavbar() {
   const handleThemeChange = () => {
     window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
   };
-  const headerOverArtwork = location.pathname === "/home";
+  const headerOverArtwork =
+    location.pathname === "/home" ||
+    /^\/(?:movies|shows)\/[^/]+(?:\/season\/[^/]+)?$/.test(location.pathname);
   const showHeaderSurface = hasScrolled || !headerOverArtwork;
   const headerSurfaceClass = showHeaderSurface
     ? "bg-black/75 backdrop-blur-2xl"

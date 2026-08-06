@@ -1,6 +1,35 @@
 import type { PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
 import type { PlaybackQueue } from "../../lib/playbackQueue";
-import type { JellyfinItem, PlaybackSourceCandidate } from "../../lib/types";
+import type {
+  JellyfinItem,
+  PlaybackQualityOption,
+  PlaybackSourceCandidate,
+} from "../../lib/types";
+import type { QualityPreferenceMode } from "../../renditions/contracts";
+
+export type AutomaticQualityMode = Exclude<QualityPreferenceMode, "advanced">;
+
+/**
+ * Describes the complete-file quality controls the player exposes when a media
+ * item has a validated rendition manifest. Every entry is backed by a file that
+ * already exists, so selecting one can never start an encode.
+ */
+export interface CompleteFileQualityControls {
+  /** Active top-level mode: `low-data`, `auto`, `higher-resolution` or `advanced`. */
+  activeMode: QualityPreferenceMode;
+  /** Resolution of the file that is actually playing, for example `1080p`. */
+  effectiveQualityLabel?: string;
+  /** Effective resolution for each automatic mode, keyed by mode. */
+  modeQualityLabels: Partial<Record<AutomaticQualityMode, string>>;
+  /** Every quality the Advanced list may lock onto, highest first. */
+  advancedOptions: PlaybackQualityOption[];
+  /** Identifier of the quality Advanced is currently locked to, when locked. */
+  lockedQualityId?: string;
+  limitationsText?: string;
+  noticeText?: string;
+  onSelectMode: (mode: AutomaticQualityMode) => void;
+  onSelectAdvancedQuality: (qualityId: string) => void;
+}
 
 export interface CustomVideoPlayerProps {
   item: JellyfinItem;
@@ -26,12 +55,18 @@ export interface CustomVideoPlayerProps {
   onPlayQueueItem?: (item: JellyfinItem) => void;
   preparingBackdropUrl?: string | null;
   showPreparingArtwork?: boolean;
+  backTo?: string;
 }
 
 export interface PendingSourceRestore {
   token: number;
   currentTime: number;
   wasPlaying: boolean;
+  volume: number;
+  muted: boolean;
+  playbackRate: number;
+  selectedAudioStreamIndex?: number;
+  selectedSubtitleStreamIndex: number;
 }
 
 export interface PendingAudioTranscodePlay {

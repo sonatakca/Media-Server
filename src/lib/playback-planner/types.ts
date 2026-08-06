@@ -1,3 +1,5 @@
+import type { MediaQualityManifest } from "../../renditions/contracts";
+
 export type PlaybackMode =
   | "direct-play"
   | "remux"
@@ -259,6 +261,7 @@ export interface PlaybackPlan {
     url?: string;
     sessionId?: string;
   };
+  qualityManifest?: MediaQualityManifest;
   diagnostics?: PlaybackDiagnostics;
 }
 

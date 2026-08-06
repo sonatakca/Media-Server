@@ -255,6 +255,30 @@ export const en = {
   "settings.hlsUpTo": "HLS · up to {mbps} Mbps",
   "settings.manualQuality": "Manual quality",
   "settings.noAlternateQualities": "No alternate qualities returned",
+  "player.qualityLowData": "Low Data",
+  "player.qualityLowDataDescription": "Uses less data",
+  "player.qualityCompleteFile": "Complete file",
+  "player.qualityHigherResolution": "Higher Resolution",
+  "player.qualityHigherResolutionDescription": "Uses more data",
+  "player.qualityAdvanced": "Advanced",
+  "player.qualityAdvancedDescription": "Lock playback to one available quality",
+  "player.qualityBackToModes": "Quality modes",
+  "player.qualityLockedTo": "Locked to {quality}",
+  "player.qualityOriginalSource": "Original source",
+  "player.qualityOriginalWithHeight": "Original ({height}p)",
+  "player.qualityActiveResolution": "Now playing {quality}",
+  "player.qualityAutoEffective": "Auto ({quality})",
+  "player.qualityFileAutoDescription":
+    "Automatically chooses an existing complete file",
+  "player.qualityManualUnavailable":
+    "That saved quality file is no longer available. Choose Auto or another listed file.",
+  "player.qualityAudioMismatch":
+    "This generated file contains a different audio track. Keep Original or select a compatible quality to preserve the current language.",
+  "player.qualitySwitchFailedReturnAuto":
+    "The selected quality file could not be played. Choose Auto to return to a verified available file.",
+  "player.qualityCompleteFileLimitations":
+    "Generated quality files contain the default audio track and no embedded subtitles. Choose Original, when available, for alternate tracks.",
+  "player.returnToAutoQuality": "Return to Auto quality",
   "settings.audio": "Audio",
   "settings.audioTrack": "Audio track {number}",
   "settings.currentAudio": "Current audio",

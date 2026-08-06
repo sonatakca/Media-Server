@@ -1,4 +1,5 @@
 import type { PlaybackDiagnostics } from "./playback-planner/types";
+import type { MediaQualityManifest } from "../renditions/contracts";
 
 export interface AuthSession {
   serverUrl: string;
@@ -309,6 +310,7 @@ export interface PlaybackSourceCandidate {
   mediaSource: JellyfinMediaSource;
   playbackInfo?: JellyfinPlaybackInfoResponse;
   playbackDiagnostics?: PlaybackDiagnostics;
+  qualityManifest?: MediaQualityManifest;
   reason: string;
   transcodeReasons?: string[];
   directPlayError?: string;

@@ -1,11 +1,19 @@
 import {
   Check,
+  ChevronLeft,
   ChevronRight,
   SlidersHorizontal,
   Volume2,
   Subtitles,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type {
   JellyfinMediaStream,
@@ -17,8 +25,12 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
+import type {
+  AutomaticQualityMode,
+  CompleteFileQualityControls,
+} from "./types";
 
-const HIDE_QUALITY_SETTINGS = true;
+const HIDE_QUALITY_SETTINGS = false;
 const HIDE_AUDIO_SETTINGS = false;
 const DISABLE_AUDIO_SELECTION = false;
 const SUBTITLE_DELAY_MIN_SECONDS = -40;
@@ -188,6 +200,7 @@ interface PlayerSettingsPanelProps {
   subtitleDelaySeconds: number;
   canSwitchAudio: boolean;
   canSwitchSubtitles: boolean;
+  completeFileQuality?: CompleteFileQualityControls;
   onSelectAutoQuality: () => void;
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
@@ -390,6 +403,8 @@ function SettingsButton({
   disabled,
   hasSubmenu,
   compact,
+  buttonRef,
+  ariaExpanded,
   onClick,
 }: {
   title: string;
@@ -399,12 +414,16 @@ function SettingsButton({
   disabled?: boolean;
   hasSubmenu?: boolean;
   compact?: boolean;
+  buttonRef?: RefObject<HTMLButtonElement>;
+  ariaExpanded?: boolean;
   onClick?: () => void;
 }) {
   return (
     <button
       type="button"
+      ref={buttonRef}
       disabled={disabled}
+      aria-expanded={ariaExpanded}
       onClick={onClick}
       className={`flex w-full items-center justify-between gap-3 rounded-xl px-3 py-2.5 text-left transition ${
         disabled
@@ -446,6 +465,174 @@ function SettingsButton({
   );
 }
 
+const AUTOMATIC_QUALITY_MODES: Array<{
+  mode: AutomaticQualityMode;
+  labelKey: TranslationKey;
+  descriptionKey: TranslationKey;
+}> = [
+  {
+    mode: "low-data",
+    labelKey: "player.qualityLowData",
+    descriptionKey: "player.qualityLowDataDescription",
+  },
+  {
+    mode: "auto",
+    labelKey: "settings.auto",
+    descriptionKey: "player.qualityFileAutoDescription",
+  },
+  {
+    mode: "higher-resolution",
+    labelKey: "player.qualityHigherResolution",
+    descriptionKey: "player.qualityHigherResolutionDescription",
+  },
+];
+
+/**
+ * The four top-level complete-file quality modes. Advanced opens a submenu that
+ * lists every quality actually backed by a playable original or a validated
+ * generated file — nothing here can request a quality that does not exist yet.
+ */
+function CompleteFileQualitySection({
+  controls,
+  compact,
+  isAdvancedOpen,
+  onToggleAdvanced,
+  source,
+}: {
+  controls: CompleteFileQualityControls;
+  compact: boolean;
+  isAdvancedOpen: boolean;
+  onToggleAdvanced: (open: boolean) => void;
+  source: PlaybackSourceCandidate;
+}) {
+  const { t } = useLanguage();
+  const advancedButtonRef = useRef<HTMLButtonElement>(null);
+  const shouldRestoreAdvancedFocus = useRef(false);
+
+  useEffect(() => {
+    if (isAdvancedOpen || !shouldRestoreAdvancedFocus.current) return;
+    shouldRestoreAdvancedFocus.current = false;
+    advancedButtonRef.current?.focus();
+  }, [isAdvancedOpen]);
+
+  const closeAdvanced = () => {
+    shouldRestoreAdvancedFocus.current = true;
+    onToggleAdvanced(false);
+  };
+
+  const handleAdvancedKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Escape") return;
+    // Escape steps back to the mode list first so the whole settings panel is
+    // not dismissed while the viewer is still choosing a quality.
+    event.stopPropagation();
+    closeAdvanced();
+  };
+
+  const lockedOption = controls.advancedOptions.find(
+    (option) => option.id === controls.lockedQualityId,
+  );
+
+  if (isAdvancedOpen) {
+    return (
+      <div onKeyDown={handleAdvancedKeyDown}>
+        <button
+          type="button"
+          onClick={closeAdvanced}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-bold text-white/70 transition hover:bg-white/[0.09] focus:bg-white/[0.09] focus:outline-none"
+        >
+          <ChevronLeft size={16} />
+          {t("player.qualityBackToModes")}
+        </button>
+
+        {controls.advancedOptions.length > 0 ? (
+          controls.advancedOptions.map((option) => (
+            <SettingsButton
+              key={option.id}
+              title={option.label}
+              subtitle={
+                controls.activeMode === "advanced" &&
+                controls.lockedQualityId === option.id
+                  ? t("settings.currentQuality")
+                  : option.subtitle
+              }
+              active={
+                controls.activeMode === "advanced" &&
+                controls.lockedQualityId === option.id
+              }
+              compact={compact}
+              onClick={() => controls.onSelectAdvancedQuality(option.id)}
+            />
+          ))
+        ) : (
+          <SettingsButton
+            title={t("settings.manualQuality")}
+            subtitle={t("settings.noAlternateQualities")}
+            disabled
+            compact={compact}
+          />
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <SettingsButton
+        title={getPlaybackModeLabel(source.mode, t)}
+        subtitle={
+          source.mediaSource.Container
+            ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
+            : t("settings.currentSource")
+        }
+        active
+        compact={compact}
+      />
+
+      {AUTOMATIC_QUALITY_MODES.map(({ mode, labelKey, descriptionKey }) => {
+        const effectiveLabel = controls.modeQualityLabels[mode];
+
+        return (
+          <SettingsButton
+            key={mode}
+            title={
+              mode === "auto" && effectiveLabel
+                ? formatTemplate(t("player.qualityAutoEffective"), {
+                    quality: effectiveLabel,
+                  })
+                : t(labelKey)
+            }
+            subtitle={
+              effectiveLabel && mode !== "auto"
+                ? `${effectiveLabel} · ${t(descriptionKey)}`
+                : t(descriptionKey)
+            }
+            active={controls.activeMode === mode}
+            compact={compact}
+            onClick={() => controls.onSelectMode(mode)}
+          />
+        );
+      })}
+
+      <SettingsButton
+        title={t("player.qualityAdvanced")}
+        subtitle={
+          controls.activeMode === "advanced" && lockedOption
+            ? formatTemplate(t("player.qualityLockedTo"), {
+                quality: lockedOption.label,
+              })
+            : t("player.qualityAdvancedDescription")
+        }
+        active={controls.activeMode === "advanced"}
+        hasSubmenu
+        compact={compact}
+        buttonRef={advancedButtonRef}
+        ariaExpanded={false}
+        onClick={() => onToggleAdvanced(true)}
+      />
+    </>
+  );
+}
+
 export function PlayerSettingsPanel({
   source,
   qualityOptions,
@@ -455,6 +642,7 @@ export function PlayerSettingsPanel({
   subtitleDelaySeconds,
   canSwitchAudio,
   canSwitchSubtitles,
+  completeFileQuality,
   onSelectAutoQuality,
   onSelectQuality,
   onSelectAudioStream,
@@ -471,6 +659,7 @@ export function PlayerSettingsPanel({
   const [activeSection, setActiveSection] = useState<SettingsSection>(
     getDefaultSettingsSection,
   );
+  const [isAdvancedQualityOpen, setIsAdvancedQualityOpen] = useState(false);
   const canSelectAudio = canSwitchAudio && !DISABLE_AUDIO_SELECTION;
 
   return (
@@ -553,57 +742,95 @@ export function PlayerSettingsPanel({
                 {t("settings.quality")}
               </div>
 
-              <SettingsButton
-                title={getPlaybackModeLabel(source.mode, t)}
-                subtitle={
-                  source.mediaSource.Container
-                    ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
-                    : t("settings.currentSource")
-                }
-                active
-                compact={compact}
-              />
+              {completeFileQuality?.effectiveQualityLabel ? (
+                <p
+                  className="px-3 pb-2 text-xs font-semibold text-white/70"
+                  aria-live="polite"
+                >
+                  {formatTemplate(t("player.qualityActiveResolution"), {
+                    quality: completeFileQuality.effectiveQualityLabel,
+                  })}
+                </p>
+              ) : null}
 
-              <SettingsButton
-                title={t("settings.auto")}
-                subtitle={
-                  selectedQualityId === "auto"
-                    ? t("settings.bestJellyfinSource")
-                    : t("settings.useBestJellyfinSource")
-                }
-                active={selectedQualityId === "auto"}
-                compact={compact}
-                onClick={onSelectAutoQuality}
-              />
+              {completeFileQuality?.noticeText ? (
+                <p
+                  role="status"
+                  className="mx-2 mb-2 rounded-xl bg-white/[0.05] px-3 py-2 text-[11px] leading-relaxed text-white/70"
+                >
+                  {completeFileQuality.noticeText}
+                </p>
+              ) : null}
 
-              {qualityOptions.length > 0 ? (
-                qualityOptions.map((quality) => (
-                  <SettingsButton
-                    key={quality.id}
-                    title={quality.label}
-                    subtitle={
-                      selectedQualityId === quality.id
-                        ? t("settings.currentQuality")
-                        : formatTemplate(t("settings.hlsUpTo"), {
-                            mbps: Math.round(
-                              quality.maxStreamingBitrate / 1_000_000,
-                            ),
-                          })
-                    }
-                    active={selectedQualityId === quality.id}
-                    compact={compact}
-                    onClick={() => onSelectQuality(quality)}
-                  />
-                ))
-              ) : (
-                <SettingsButton
-                  title={t("settings.manualQuality")}
-                  subtitle={t("settings.noAlternateQualities")}
-                  disabled
-                  hasSubmenu
+              {completeFileQuality ? (
+                <CompleteFileQualitySection
+                  controls={completeFileQuality}
                   compact={compact}
+                  isAdvancedOpen={isAdvancedQualityOpen}
+                  onToggleAdvanced={setIsAdvancedQualityOpen}
+                  source={source}
                 />
+              ) : (
+                <>
+                  <SettingsButton
+                    title={getPlaybackModeLabel(source.mode, t)}
+                    subtitle={
+                      source.mediaSource.Container
+                        ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
+                        : t("settings.currentSource")
+                    }
+                    active
+                    compact={compact}
+                  />
+
+                  <SettingsButton
+                    title={t("settings.auto")}
+                    subtitle={
+                      selectedQualityId === "auto"
+                        ? t("settings.bestJellyfinSource")
+                        : t("settings.useBestJellyfinSource")
+                    }
+                    active={selectedQualityId === "auto"}
+                    compact={compact}
+                    onClick={onSelectAutoQuality}
+                  />
+
+                  {qualityOptions.length > 0 ? (
+                    qualityOptions.map((quality) => (
+                      <SettingsButton
+                        key={quality.id}
+                        title={quality.label}
+                        subtitle={
+                          selectedQualityId === quality.id
+                            ? t("settings.currentQuality")
+                            : formatTemplate(t("settings.hlsUpTo"), {
+                                mbps: Math.round(
+                                  quality.maxStreamingBitrate / 1_000_000,
+                                ),
+                              })
+                        }
+                        active={selectedQualityId === quality.id}
+                        compact={compact}
+                        onClick={() => onSelectQuality(quality)}
+                      />
+                    ))
+                  ) : (
+                    <SettingsButton
+                      title={t("settings.manualQuality")}
+                      subtitle={t("settings.noAlternateQualities")}
+                      disabled
+                      hasSubmenu
+                      compact={compact}
+                    />
+                  )}
+                </>
               )}
+
+              {completeFileQuality?.limitationsText ? (
+                <p className="px-3 pb-1 pt-2 text-[11px] leading-relaxed text-white/45">
+                  {completeFileQuality.limitationsText}
+                </p>
+              ) : null}
             </motion.div>
           ) : null}
 

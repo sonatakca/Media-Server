@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getMediaOwnerRouteFromNavigationState,
   getMediaOwnerRouteForItem,
   getReadRouteForItem,
   getRouteForItem,
@@ -65,6 +66,29 @@ describe("media routes", () => {
     expect(getRouteForItem(trailer)).toBe("/watch/trailer-1");
     expect(getMediaOwnerRouteForItem(trailer)).toBe("/library/movie-1");
     expect(shouldOpenPlaybackForItem(trailer)).toBe(true);
+  });
+
+  it("preserves an exact details route passed into player navigation", () => {
+    expect(
+      getMediaOwnerRouteFromNavigationState({
+        mediaOwnerRoute: "/movies/movie-1",
+      }),
+    ).toBe("/movies/movie-1");
+    expect(
+      getMediaOwnerRouteFromNavigationState({
+        mediaOwnerRoute: "/shows/show-1",
+      }),
+    ).toBe("/shows/show-1");
+    expect(
+      getMediaOwnerRouteFromNavigationState({
+        mediaOwnerRoute: "https://example.com",
+      }),
+    ).toBeNull();
+    expect(
+      getMediaOwnerRouteFromNavigationState({
+        mediaOwnerRoute: "//example.com",
+      }),
+    ).toBeNull();
   });
 
   it("routes books to the reader without treating them as watchable media", () => {

@@ -167,6 +167,17 @@ export function PlayerOverlay({
 
   return (
     <>
+      <Tooltip content={t("player.backToDetails")} offset="1rem">
+        <Link
+          to={backTo}
+          replace
+          className="seyirlik-player-back-button pointer-events-auto absolute left-[max(0.65rem,env(safe-area-inset-left))] top-[max(0.55rem,env(safe-area-inset-top))] z-40 flex h-10 w-10 items-center justify-center rounded-full bg-black/35 text-white shadow-player-controls backdrop-blur-md transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:hidden"
+          aria-label={t("player.backToDetails")}
+        >
+          <ChevronLeft size={22} strokeWidth={2.2} />
+        </Link>
+      </Tooltip>
+
       <div
         className={`seyirlik-player-top-chrome pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
           visible ? "translate-y-0 opacity-100" : "-translate-y-16 opacity-0"
@@ -183,7 +194,7 @@ export function PlayerOverlay({
             <Link
               to={backTo}
               replace
-              className="seyirlik-player-back-button group hidden h-11 w-11 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              className="seyirlik-player-back-button group hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-[background-color,backdrop-filter] duration-500 hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
               aria-label={t("player.backToDetails")}
             >
               <ChevronLeft

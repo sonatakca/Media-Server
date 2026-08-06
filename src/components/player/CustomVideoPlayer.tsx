@@ -26,6 +26,11 @@ import {
 } from "../../lib/playback-planner/customPlaybackSessionLease";
 import { attachSourceToVideo } from "../../lib/videoSource";
 import type { AttachedVideoSource } from "../../lib/videoSource";
+import type {
+  AvailableQualityFile,
+  QualityPreferenceMode,
+} from "../../renditions/contracts";
+import { getAuthSession } from "../../lib/authStorage";
 import {
   formatTemplate,
   getDisplayTitle,
@@ -136,6 +141,7 @@ import {
   parseSubtitleCues,
 } from "./subtitleUtils";
 import type {
+  CompleteFileQualityControls,
   CustomVideoPlayerProps,
   PendingAudioTranscodePlay,
   PendingSourceRestore,
@@ -149,6 +155,44 @@ import type {
 } from "./types";
 import { useSeekFeedback } from "./useSeekFeedback";
 import { LoadingSpinner } from "../LoadingSpinner";
+import {
+  isQualityAudioCompatible,
+  loadQualityPreference,
+  saveQualityPreference,
+  selectAutoQuality,
+  selectHigherResolutionQuality,
+  selectLowDataQuality,
+  selectManualQuality,
+  shouldSwitchFileQuality,
+  type QualityPreference,
+} from "./qualityPreference";
+
+function getFileQualitySelectionContext(
+  playerHeight: number,
+  recentStallCount = 0,
+) {
+  const connection =
+    typeof navigator === "undefined"
+      ? undefined
+      : (
+          navigator as Navigator & {
+            connection?: {
+              saveData?: boolean;
+              effectiveType?: string;
+              downlink?: number;
+            };
+          }
+        ).connection;
+  return {
+    playerHeight: Math.max(1, playerHeight),
+    devicePixelRatio:
+      typeof window === "undefined" ? 1 : window.devicePixelRatio,
+    saveData: connection?.saveData,
+    effectiveType: connection?.effectiveType,
+    downlinkMbps: connection?.downlink,
+    recentStallCount,
+  };
+}
 
 function isHlsStartupSuccessEvent(eventName: string): boolean {
   const normalizedEventName = eventName.toLowerCase();
@@ -217,6 +261,7 @@ export function CustomVideoPlayer({
   onPlayQueueItem,
   preparingBackdropUrl,
   showPreparingArtwork = false,
+  backTo,
 }: CustomVideoPlayerProps) {
   const { language, t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -603,6 +648,18 @@ export function CustomVideoPlayer({
 
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
+  const qualityUserId = getAuthSession()?.userId ?? "anonymous";
+  const qualityPreferenceRef = useRef<QualityPreference>(
+    loadQualityPreference(qualityUserId),
+  );
+  const [activeQualityFileId, setActiveQualityFileId] = useState<string | null>(
+    null,
+  );
+  const [fileQualityMode, setFileQualityMode] = useState<QualityPreferenceMode>(
+    () => qualityPreferenceRef.current.mode,
+  );
+  const lastQualitySwitchAtRef = useRef(0);
+  const recentQualityStallsRef = useRef<number[]>([]);
   const [loadedVideoAspectRatio, setLoadedVideoAspectRatio] = useState<
     number | null
   >(null);
@@ -625,6 +682,9 @@ export function CustomVideoPlayer({
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
     useState<number>(() => getDefaultSubtitleStreamIndex(item, source));
   const [lastVideoError, setLastVideoError] = useState<string | null>(null);
+  const [qualitySelectionNotice, setQualitySelectionNotice] = useState<
+    string | null
+  >(null);
   const [isWaitingForAudioTranscodeReady, setIsWaitingForAudioTranscodeReady] =
     useState(false);
   const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<
@@ -642,9 +702,99 @@ export function CustomVideoPlayer({
   const [isResizingSubtitle, setIsResizingSubtitle] = useState(false);
   const availablePlaybackCandidates =
     playbackCandidates.length > 0 ? playbackCandidates : [source];
+  const qualityManifest =
+    activeSource.qualityManifest ?? source.qualityManifest;
+  const availableQualityFiles = useMemo(
+    () =>
+      [...(qualityManifest?.qualities ?? [])].sort(
+        (left, right) => right.height - left.height,
+      ),
+    [qualityManifest],
+  );
+  const hasFileQualities = availableQualityFiles.length > 0;
+  const activeQualityFile = availableQualityFiles.find(
+    (quality) => quality.id === activeQualityFileId,
+  );
+  const audioCompatibleQualityFiles = useMemo(
+    () =>
+      availableQualityFiles.filter((quality) =>
+        isQualityAudioCompatible(quality, selectedAudioStreamIndex),
+      ),
+    [availableQualityFiles, selectedAudioStreamIndex],
+  );
+  const lowDataQualityFile = useMemo(
+    () => selectLowDataQuality(audioCompatibleQualityFiles),
+    [audioCompatibleQualityFiles],
+  );
+  const higherResolutionQualityFile = useMemo(
+    () => selectHigherResolutionQuality(audioCompatibleQualityFiles),
+    [audioCompatibleQualityFiles],
+  );
   const qualityOptions = useMemo(
     () => getManualQualityOptions(activeSource.mediaSource),
     [activeSource.mediaSource],
+  );
+  const advancedQualityOptions = useMemo<PlaybackQualityOption[]>(
+    () =>
+      availableQualityFiles.map((quality) => ({
+        id: quality.id,
+        label:
+          quality.kind === "original"
+            ? formatTemplate(t("player.qualityOriginalWithHeight"), {
+                height: quality.height,
+              })
+            : `${quality.height}p`,
+        subtitle: !isQualityAudioCompatible(quality, selectedAudioStreamIndex)
+          ? t("player.qualityAudioMismatch")
+          : quality.kind === "original"
+            ? t("player.qualityOriginalSource")
+            : t("player.qualityCompleteFile"),
+        maxHeight: quality.height,
+        maxWidth: quality.width,
+        maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
+      })),
+    [availableQualityFiles, selectedAudioStreamIndex, t],
+  );
+  /**
+   * The original is served by whichever plan the backend already produced, so it
+   * is returned untouched: rewriting it into a synthetic direct-play candidate
+   * would drop the session id, transcode capability flags and audio-switching
+   * fallbacks that original playback still depends on. Only generated complete
+   * files become new candidates.
+   */
+  const buildQualityFileSource = useCallback(
+    (quality: AvailableQualityFile): PlaybackSourceCandidate =>
+      quality.kind === "original"
+        ? source
+        : {
+            ...source,
+            id: `quality-file-${quality.id}`,
+            playSessionId: undefined,
+            mode: "DirectPlay",
+            url: quality.playbackUrl,
+            mimeType: quality.container === "mp4" ? "video/mp4" : undefined,
+            isHls: false,
+            hlsKind: undefined,
+            label: quality.label,
+            qualityManifest,
+            reason: "Validated pre-generated complete rendition file.",
+            transcodeReasons: [],
+            mediaSource: {
+              ...source.mediaSource,
+              Container: quality.container ?? source.mediaSource.Container,
+              SupportsDirectPlay: true,
+              SupportsDirectStream: false,
+              SupportsTranscoding: false,
+            },
+          },
+    [qualityManifest, source],
+  );
+  const persistQualityPreference = useCallback(
+    (preference: QualityPreference) => {
+      qualityPreferenceRef.current = preference;
+      saveQualityPreference(preference, qualityUserId);
+    },
+    [qualityUserId],
   );
   const audioStreams = useMemo(
     () => getStreamsOfType(activeSource, "Audio"),
@@ -652,6 +802,7 @@ export function CustomVideoPlayer({
   );
   const canSwitchAudio = Boolean(
     audioStreams.some((stream) => stream.Index !== undefined) &&
+    !activeSource.id.startsWith("quality-file-generated-") &&
     (isDirectBrowserPlaybackSource(activeSource) ||
       activeSource.mediaSource.SupportsTranscoding ||
       activeSource.mode === "Transcoding"),
@@ -1046,7 +1197,9 @@ export function CustomVideoPlayer({
 
   useEffect(() => {
     const defaultAudioIndex = sourceDefaultAudioStreamIndex;
+    const storedPreference = loadQualityPreference(qualityUserId);
     let nextSource = source;
+    let manualQualityUnavailable = false;
 
     if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
       try {
@@ -1064,13 +1217,41 @@ export function CustomVideoPlayer({
       }
     }
 
+    if (hasFileQualities) {
+      const initialQualityFiles = availableQualityFiles.filter((quality) =>
+        isQualityAudioCompatible(quality, defaultAudioIndex),
+      );
+      const playerHeight =
+        containerRef.current?.clientHeight ??
+        (typeof window === "undefined" ? 720 : window.innerHeight * 0.7);
+      const selectedFile =
+        storedPreference.mode === "low-data"
+          ? selectLowDataQuality(initialQualityFiles)
+          : storedPreference.mode === "higher-resolution"
+            ? selectHigherResolutionQuality(initialQualityFiles)
+            : storedPreference.mode === "advanced"
+              ? selectManualQuality(initialQualityFiles, storedPreference)
+              : selectAutoQuality(
+                  initialQualityFiles,
+                  getFileQualitySelectionContext(playerHeight),
+                );
+      if (selectedFile) {
+        nextSource = buildQualityFileSource(selectedFile);
+        setActiveQualityFileId(selectedFile.id);
+      } else if (storedPreference.mode === "advanced") {
+        manualQualityUnavailable = true;
+      }
+    }
+
     playbackAttemptIdRef.current += 1;
     playbackAttemptRef.current = null;
     pendingSourceRestoreRef.current = null;
     latestPlaybackPositionRef.current = 0;
     hasReportedStoppedRef.current = false;
     hasAutoPlayedNextRef.current = false;
+    qualityPreferenceRef.current = storedPreference;
     setActiveSource(nextSource);
+    setFileQualityMode(storedPreference.mode);
     setSelectedQualityId(AUTO_QUALITY_ID);
     setSelectedAudioStreamIndex(defaultAudioIndex);
     setActiveAudioStreamIndex(
@@ -1080,18 +1261,26 @@ export function CustomVideoPlayer({
         : undefined,
     );
     setSelectedSubtitleStreamIndex(sourceDefaultSubtitleStreamIndex);
+    setQualitySelectionNotice(
+      manualQualityUnavailable ? t("player.qualityManualUnavailable") : null,
+    );
     setLastVideoError(null);
     setLiveTranscodingReasons([]);
     setCheckpointSeconds(null);
     setIsViewModeCursorVisible(true);
     setIsViewModeEnabled(false);
   }, [
+    availableQualityFiles,
+    buildQualityFileSource,
+    hasFileQualities,
     item.Id,
+    qualityUserId,
     source.id,
     source.mediaSourceId,
     source.url,
     sourceDefaultAudioStreamIndex,
     sourceDefaultSubtitleStreamIndex,
+    t,
   ]);
   useEffect(() => {
     let isCancelled = false;
@@ -1454,6 +1643,7 @@ export function CustomVideoPlayer({
       }
 
       sourceSwitchTokenRef.current += 1;
+      const switchToken = sourceSwitchTokenRef.current;
       playbackAttemptIdRef.current += 1;
       playbackAttemptRef.current = null;
 
@@ -1463,9 +1653,14 @@ export function CustomVideoPlayer({
         : progress.isPlaying;
 
       pendingSourceRestoreRef.current = {
-        token: sourceSwitchTokenRef.current,
+        token: switchToken,
         currentTime,
         wasPlaying,
+        volume: video?.volume ?? 1,
+        muted: video?.muted ?? false,
+        playbackRate: video?.playbackRate ?? 1,
+        selectedAudioStreamIndex,
+        selectedSubtitleStreamIndex,
       };
       pendingAudioTranscodePlayRef.current = null;
       clearAudioTranscodeReadinessTimer();
@@ -1475,13 +1670,14 @@ export function CustomVideoPlayer({
       revealPlayerChrome();
 
       await stopCurrentPlaybackForSourceSwitch(activeSource);
+      if (sourceSwitchTokenRef.current !== switchToken) return;
 
       const cacheBustedUrl = (() => {
         try {
           const url = new URL(nextSource.url);
           url.searchParams.set(
             "seyirlikRestart",
-            `${Date.now()}-${sourceSwitchTokenRef.current}`,
+            `${Date.now()}-${switchToken}`,
           );
           return url.toString();
         } catch {
@@ -1499,6 +1695,8 @@ export function CustomVideoPlayer({
       clearAudioTranscodeReadinessTimer,
       progress.currentTime,
       progress.isPlaying,
+      selectedAudioStreamIndex,
+      selectedSubtitleStreamIndex,
       revealPlayerChrome,
       stopCurrentPlaybackForSourceSwitch,
     ],
@@ -1527,7 +1725,107 @@ export function CustomVideoPlayer({
     [selectedAudioStreamIndex],
   );
 
+  /**
+   * Applies a quality that is already backed by a complete file. Nothing here can
+   * start an encode: the file either exists in the validated manifest or it is
+   * not offered at all.
+   */
+  const applyQualityFile = useCallback(
+    (selectedFile: AvailableQualityFile, preference: QualityPreference) => {
+      setQualitySelectionNotice(null);
+      persistQualityPreference(preference);
+      setFileQualityMode(preference.mode);
+      // The Jellyfin quality list is not rendered while complete files drive the
+      // picker, so its selection stays on Auto.
+      setSelectedQualityId(AUTO_QUALITY_ID);
+      setActiveQualityFileId(selectedFile.id);
+      lastQualitySwitchAtRef.current = Date.now();
+
+      const nextSource = buildQualityFileSource(selectedFile);
+
+      if (activeSource.id === nextSource.id) {
+        return;
+      }
+
+      void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+        console.warn(
+          "[Seyirlik Playback] Complete-file quality switch failed",
+          switchError,
+        );
+        setLastVideoError(t("player.qualitySwitchFailedReturnAuto"));
+      });
+    },
+    [
+      activeSource.id,
+      buildQualityFileSource,
+      persistQualityPreference,
+      switchPlayerSource,
+      t,
+    ],
+  );
+
+  const handleSelectQualityMode = useCallback(
+    (mode: Exclude<QualityPreferenceMode, "advanced">) => {
+      const selectedFile =
+        mode === "low-data"
+          ? lowDataQualityFile
+          : mode === "higher-resolution"
+            ? higherResolutionQualityFile
+            : selectAutoQuality(
+                audioCompatibleQualityFiles,
+                getFileQualitySelectionContext(
+                  containerRef.current?.clientHeight ?? 720,
+                  recentQualityStallsRef.current.length,
+                ),
+              );
+
+      if (!selectedFile) {
+        setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+        return;
+      }
+
+      applyQualityFile(selectedFile, { mode });
+    },
+    [
+      applyQualityFile,
+      audioCompatibleQualityFiles,
+      higherResolutionQualityFile,
+      lowDataQualityFile,
+      t,
+    ],
+  );
+
+  const handleSelectAdvancedQuality = useCallback(
+    (qualityId: string) => {
+      const selectedFile = availableQualityFiles.find(
+        (candidate) => candidate.id === qualityId,
+      );
+
+      if (!selectedFile) {
+        setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+        return;
+      }
+
+      if (!isQualityAudioCompatible(selectedFile, selectedAudioStreamIndex)) {
+        setQualitySelectionNotice(t("player.qualityAudioMismatch"));
+        return;
+      }
+
+      applyQualityFile(selectedFile, {
+        mode: "advanced",
+        preferredHeight: selectedFile.height,
+        preferredQualityId: selectedFile.id,
+        preferOriginal: selectedFile.kind === "original",
+      });
+    },
+    [applyQualityFile, availableQualityFiles, selectedAudioStreamIndex, t],
+  );
+
   const handleSelectAutoQuality = useCallback(() => {
+    if (hasFileQualities) {
+      handleSelectQualityMode("auto");
+      return;
+    }
     const bestSource = availablePlaybackCandidates[0] ?? source;
     const defaultAudioIndex = getDefaultAudioStreamIndex(item, bestSource);
     let nextSource = bestSource;
@@ -1572,6 +1870,8 @@ export function CustomVideoPlayer({
   }, [
     availablePlaybackCandidates,
     buildConfiguredSource,
+    handleSelectQualityMode,
+    hasFileQualities,
     item,
     source,
     switchPlayerSource,
@@ -1608,6 +1908,172 @@ export function CustomVideoPlayer({
       switchPlayerSource,
     ],
   );
+
+  useEffect(() => {
+    if (!hasFileQualities || !activeQualityFile) return undefined;
+    const video = videoRef.current;
+    const container = containerRef.current;
+    let resizeTimer: number | undefined;
+
+    const reconsiderQuality = (recentStallCount: number) => {
+      const preference = qualityPreferenceRef.current;
+      let candidate: AvailableQualityFile | undefined;
+      if (preference.mode === "auto") {
+        candidate = selectAutoQuality(
+          audioCompatibleQualityFiles,
+          getFileQualitySelectionContext(
+            container?.clientHeight ?? video?.clientHeight ?? 720,
+            recentStallCount,
+          ),
+        );
+      } else if (preference.mode === "higher-resolution") {
+        // Higher resolution steps down while playback keeps stalling and climbs
+        // back to the best available file once playback has been stable through
+        // the switch cooldown. It is never a permanent manual lock.
+        candidate =
+          recentStallCount >= 2
+            ? selectHigherResolutionQuality(
+                audioCompatibleQualityFiles.filter(
+                  (quality) => quality.height < activeQualityFile.height,
+                ),
+              )
+            : higherResolutionQualityFile;
+      } else if (preference.mode === "low-data") {
+        // Low data stays on the cheapest available file, but recovers if the
+        // manifest changed underneath it.
+        candidate = lowDataQualityFile;
+      }
+      if (!candidate || candidate.id === activeQualityFile.id) return;
+      const now = Date.now();
+      if (
+        !shouldSwitchFileQuality({
+          currentHeight: activeQualityFile.height,
+          candidateHeight: candidate.height,
+          now,
+          lastSwitchAt: lastQualitySwitchAtRef.current,
+          recentStallCount,
+        })
+      ) {
+        return;
+      }
+      lastQualitySwitchAtRef.current = now;
+      setActiveQualityFileId(candidate.id);
+      void switchPlayerSource(buildQualityFileSource(candidate)).catch(
+        (switchError: unknown) => {
+          console.warn(
+            "[Seyirlik Playback] Automatic complete-file quality switch failed",
+            switchError,
+          );
+          setLastVideoError(t("player.qualitySwitchFailedReturnAuto"));
+        },
+      );
+    };
+
+    const pruneStalls = () => {
+      const cutoff = Date.now() - 60_000;
+      recentQualityStallsRef.current = recentQualityStallsRef.current.filter(
+        (timestamp) => timestamp >= cutoff,
+      );
+      return recentQualityStallsRef.current.length;
+    };
+    const handleWaiting = () => {
+      if (!video || video.paused || video.currentTime <= 0) return;
+      recentQualityStallsRef.current.push(Date.now());
+      reconsiderQuality(pruneStalls());
+    };
+    const handleResize = () => {
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(
+        () => reconsiderQuality(pruneStalls()),
+        350,
+      );
+    };
+
+    video?.addEventListener("waiting", handleWaiting);
+    const resizeObserver =
+      container && typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(handleResize)
+        : undefined;
+    if (container) resizeObserver?.observe(container);
+    const recoveryInterval = window.setInterval(
+      () => reconsiderQuality(pruneStalls()),
+      30_000,
+    );
+    return () => {
+      video?.removeEventListener("waiting", handleWaiting);
+      resizeObserver?.disconnect();
+      window.clearInterval(recoveryInterval);
+      if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
+    };
+  }, [
+    activeQualityFile,
+    audioCompatibleQualityFiles,
+    buildQualityFileSource,
+    hasFileQualities,
+    higherResolutionQualityFile,
+    lowDataQualityFile,
+    switchPlayerSource,
+    t,
+  ]);
+
+  const completeFileQualityControls = useMemo<
+    CompleteFileQualityControls | undefined
+  >(() => {
+    if (!hasFileQualities) return undefined;
+
+    const autoQualityFile = selectAutoQuality(
+      audioCompatibleQualityFiles,
+      getFileQualitySelectionContext(
+        containerRef.current?.clientHeight ?? 720,
+        recentQualityStallsRef.current.length,
+      ),
+    );
+
+    return {
+      activeMode: fileQualityMode,
+      effectiveQualityLabel: activeQualityFile
+        ? `${activeQualityFile.height}p`
+        : undefined,
+      modeQualityLabels: {
+        "low-data": lowDataQualityFile
+          ? `${lowDataQualityFile.height}p`
+          : undefined,
+        auto:
+          fileQualityMode === "auto" && activeQualityFile
+            ? `${activeQualityFile.height}p`
+            : autoQualityFile
+              ? `${autoQualityFile.height}p`
+              : undefined,
+        "higher-resolution": higherResolutionQualityFile
+          ? `${higherResolutionQualityFile.height}p`
+          : undefined,
+      },
+      advancedOptions: advancedQualityOptions,
+      lockedQualityId:
+        fileQualityMode === "advanced" && activeQualityFile
+          ? activeQualityFile.id
+          : undefined,
+      limitationsText:
+        activeQualityFile?.kind === "generated"
+          ? t("player.qualityCompleteFileLimitations")
+          : undefined,
+      noticeText: qualitySelectionNotice ?? undefined,
+      onSelectMode: handleSelectQualityMode,
+      onSelectAdvancedQuality: handleSelectAdvancedQuality,
+    };
+  }, [
+    activeQualityFile,
+    advancedQualityOptions,
+    audioCompatibleQualityFiles,
+    fileQualityMode,
+    handleSelectAdvancedQuality,
+    handleSelectQualityMode,
+    hasFileQualities,
+    higherResolutionQualityFile,
+    lowDataQualityFile,
+    qualitySelectionNotice,
+    t,
+  ]);
 
   const handleSelectAudioStream = useCallback(
     (streamIndex: number) => {
@@ -1855,8 +2321,10 @@ export function CustomVideoPlayer({
       return undefined;
     }
 
-    hasStartedRef.current = false;
-    lastProgressReportRef.current = 0;
+    if (!pendingSourceRestoreRef.current) {
+      hasStartedRef.current = false;
+      lastProgressReportRef.current = 0;
+    }
 
     let attachment: AttachedVideoSource | undefined;
     let didRestore = false;
@@ -2141,6 +2609,13 @@ export function CustomVideoPlayer({
       didRestore = true;
 
       try {
+        video.volume = pendingRestore.volume;
+        video.muted = pendingRestore.muted;
+        video.playbackRate = pendingRestore.playbackRate;
+        setSelectedAudioStreamIndex(pendingRestore.selectedAudioStreamIndex);
+        setSelectedSubtitleStreamIndex(
+          pendingRestore.selectedSubtitleStreamIndex,
+        );
         if (pendingRestore.currentTime > 0) {
           const maxTime =
             Number.isFinite(video.duration) && video.duration > 0
@@ -3849,7 +4324,7 @@ export function CustomVideoPlayer({
             episodeLabel={playerEpisodeLabel}
             episodeName={playerEpisodeName}
             subtitle={playerHeaderSubtitle}
-            backTo={getMediaOwnerRouteForItem(item)}
+            backTo={backTo ?? getMediaOwnerRouteForItem(item)}
             visible={shouldRenderPlayerChrome || isTimelinePreparing}
             isPlaying={progress.isPlaying}
             isPlayPausePending={
@@ -4045,6 +4520,7 @@ export function CustomVideoPlayer({
             subtitleDelaySeconds={subtitleDelaySeconds}
             canSwitchAudio={canSwitchAudio}
             canSwitchSubtitles={canSwitchSubtitles}
+            completeFileQuality={completeFileQualityControls}
             isSubtitleEditMode={isSubtitleEditMode}
             settingsOpen={isSettingsOpen}
             onSelectAutoQuality={handleSelectAutoQuality}
@@ -4118,7 +4594,9 @@ export function CustomVideoPlayer({
           message={error.message}
           details={error.details}
           canTryTranscoded={hasTranscodingFallback}
+          canReturnAuto={hasFileQualities}
           onTryTranscoded={onTryTranscodedPlayback}
+          onReturnAuto={handleSelectAutoQuality}
           onRetry={onRetryPlayback}
         />
       ) : null}

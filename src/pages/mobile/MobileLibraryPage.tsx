@@ -4,6 +4,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
+import { HeroSection } from "../../components/HeroSection";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
@@ -588,12 +589,29 @@ export function MobileLibraryPage({
               : "pointer-events-none fixed inset-0 invisible overflow-hidden"
           }
         >
-          <SeriesLibraryDetails
-            initialItem={data.library}
-            variant="mobile"
-            canonicalPath={canonicalPath}
-            onInitialReady={() => setReadyDetailsId(activeId ?? null)}
-          />
+          <div className="layout-no-offset flex min-w-0 flex-col">
+            <BackButton
+              fallbackTo={data.library.Type === "Movie" ? "/movies" : "/shows"}
+              label=""
+              className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
+            />
+
+            <div className="full-bleed relative">
+              <HeroSection
+                item={data.library}
+                variant="fixed"
+                enablePreview={false}
+                keepDetailsVisible
+              />
+            </div>
+
+            <SeriesLibraryDetails
+              initialItem={data.library}
+              variant="mobile"
+              canonicalPath={canonicalPath}
+              onInitialReady={() => setReadyDetailsId(activeId ?? null)}
+            />
+          </div>
         </div>
       </>
     );
