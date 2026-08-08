@@ -291,6 +291,8 @@ function describeEncoder(encoder: string): string {
 }
 
 function createProgressRenderer() {
+  // `npm run` on Windows does not always present stderr as a TTY, so the
+  // in-place mode is only used when rewriting is actually possible.
   const isTty = Boolean(process.stderr.isTTY);
   const throttleMs = isTty ? 500 : 30_000;
   let lastPrintedAt = 0;
@@ -309,7 +311,7 @@ function createProgressRenderer() {
     process.stderr.write(`${line}\n`);
   };
 
-  return (event: RenditionProgressEvent) => {
+  const handle = (event: RenditionProgressEvent) => {
     switch (event.type) {
       case "encoder-selected":
         write(`Video encoder (SDR): ${describeEncoder(event.encoder)}`);
@@ -424,6 +426,10 @@ function createProgressRenderer() {
         break;
     }
   };
+
+  // Anything printed after progress must start on a fresh line, or it lands on
+  // top of the in-place progress line and appears to have vanished.
+  return { handle, finish: clearLine };
 }
 
 function usage(): string {
@@ -452,15 +458,18 @@ async function main() {
   const reportPath = path.join(paths.stateRoot, "rendition-analysis.json");
 
   if (args.command === "analyse") {
+    const analyseProgress = createProgressRenderer();
+    console.error("Analysing the library; probing every eligible video...");
     const report = await analyseRenditionLibrary({
       paths,
       ffprobePath,
       reportPath,
-      onEvent: createProgressRenderer(),
+      onEvent: analyseProgress.handle,
       reserveBytes: process.env.SEYIRLIK_RENDITION_RESERVE_GB
         ? reserveFromEnvironment(0)
         : undefined,
     });
+    analyseProgress.finish();
     console.log(formatAnalysisReport(report));
     console.log(`JSON report: ${reportPath}`);
     return;
@@ -476,7 +485,8 @@ async function main() {
   }
 
   if (args.command === "process" || args.command === "resume") {
-    const renderProgress = createProgressRenderer();
+    const progress = createProgressRenderer();
+    const renderProgress = progress.handle;
     console.error("Analysing the library before processing...");
     const analysis = await analyseRenditionLibrary({
       paths,
@@ -536,6 +546,7 @@ async function main() {
         `${JSON.stringify(results, null, 2)}\n`,
         "utf8",
       );
+      progress.finish();
       console.log("");
       for (const result of results) {
         console.log(

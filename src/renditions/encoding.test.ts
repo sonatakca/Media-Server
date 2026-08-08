@@ -76,6 +76,42 @@ describe("standalone rendition encoding commands", () => {
     expect(filter.match(/tonemap=tonemap/g)).toHaveLength(1);
   });
 
+  it("labels tone mapped output as BT.709 instead of inheriting source HDR tags", () => {
+    const args = buildRenditionFfmpegArgs({
+      inputPath: "D:\\media\\Movies\\Film.mkv",
+      outputs: outputs(),
+      audioStreamIndex: 1,
+      tonemapHdr: true,
+    });
+
+    // Without these a tone mapped picture keeps PQ/BT.2020 tags and players
+    // tone map it a second time, which looks washed out.
+    expect(args).toContain("-color_trc");
+    expect(
+      args.filter((argument) => argument === "bt709").length,
+    ).toBeGreaterThan(0);
+    expect(args).not.toContain("smpte2084");
+    expect(args).not.toContain("bt2020");
+  });
+
+  it("keeps source HDR signalling when the grade is preserved", () => {
+    const args = buildRenditionFfmpegArgs({
+      inputPath: "D:\\media\\Movies\\Film.mkv",
+      outputs: outputs(),
+      audioStreamIndex: 1,
+      encoder: "hevc_qsv",
+      hdr: {
+        colorPrimaries: "bt2020",
+        colorTransfer: "smpte2084",
+        colorSpace: "bt2020nc",
+      },
+    });
+
+    expect(args).toContain("smpte2084");
+    expect(args).toContain("bt2020");
+    expect(args).not.toContain("bt709");
+  });
+
   it("emits QuickSync rate control and nv12 frames when QSV is selected", () => {
     const args = buildRenditionFfmpegArgs({
       inputPath: "D:\\media\\Movies\\Film.mkv",

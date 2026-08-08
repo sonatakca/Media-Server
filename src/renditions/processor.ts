@@ -454,10 +454,13 @@ export async function processRenditionItem(
       }
     }
 
+    // The work directory is unique per run. A previous run whose FFmpeg was
+    // orphaned must never be able to write into this one: that is exactly how a
+    // stale encode overwrote validated output after its metadata was written.
     const workVersionRoot = path.join(
       paths.workRoot,
       item.mediaId,
-      `${versionDirectory}.partial`,
+      `${versionDirectory}.${process.pid}-${randomUUID().slice(0, 8)}.partial`,
     );
     const logPath = path.join(paths.logsRoot, `${item.mediaId}.log`);
     await mkdir(workVersionRoot, { recursive: true });
@@ -745,6 +748,15 @@ export async function processRenditionItem(
 
     await mkdir(mediaRoot, { recursive: true });
     await rename(workVersionRoot, finalVersionRoot);
+    // Re-validate after promotion. If anything altered the files between the
+    // work-directory check and publication, the pointer must not be written —
+    // otherwise playback would be offered output that no longer matches.
+    await validateCompletedVersion({
+      versionRoot: finalVersionRoot,
+      mediaId: item.mediaId,
+      sourceFingerprint: item.sourceFingerprint,
+      profileVersion: RENDITION_PROFILE_VERSION,
+    });
     await writeCurrentPointer(
       mediaRoot,
       versionDirectory,

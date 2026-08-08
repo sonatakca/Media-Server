@@ -161,6 +161,7 @@ function videoEncoderArgs(
   qualityHeight: number,
   preset: string,
   hdr: RenditionHdrSignal | undefined,
+  tonemappedToSdr = false,
 ): string[] {
   const family = codecFamilyForEncoder(encoder);
   const policy = getEncodingPolicy(qualityHeight, family);
@@ -170,8 +171,9 @@ function videoEncoderArgs(
     "-bufsize",
     String(policy.maxVideoBitrate * 2),
   ];
-  // HDR10 signalling has to be written explicitly; the filter graph does not
-  // carry colour properties through to the encoder on its own.
+  // Colour properties have to be written explicitly. Without this a tone mapped
+  // stream inherits the source's PQ/BT.2020 tags, so players tone map the
+  // already-tone-mapped picture a second time and it looks washed out.
   const colour = hdr
     ? [
         "-color_primaries",
@@ -181,7 +183,16 @@ function videoEncoderArgs(
         "-colorspace",
         hdr.colorSpace,
       ]
-    : [];
+    : tonemappedToSdr
+      ? [
+          "-color_primaries",
+          "bt709",
+          "-color_trc",
+          "bt709",
+          "-colorspace",
+          "bt709",
+        ]
+      : [];
 
   if (encoder === "hevc_qsv") {
     return [
@@ -218,6 +229,7 @@ function videoEncoderArgs(
 
   const shared = [
     ...rateCap,
+    ...colour,
     "-profile:v",
     "high",
     "-level:v",
@@ -345,7 +357,13 @@ export function buildRenditionFfmpegArgs({
       `0:${audioStreamIndex}`,
       "-sn",
       "-dn",
-      ...videoEncoderArgs(encoder, output.qualityHeight, preset, hdr),
+      ...videoEncoderArgs(
+        encoder,
+        output.qualityHeight,
+        preset,
+        hdr,
+        tonemapHdr,
+      ),
       "-metadata:s:v:0",
       "rotate=0",
       "-c:a",
