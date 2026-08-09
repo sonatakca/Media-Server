@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { analyseRenditionLibrary } from "./analysis";
+import { analyseRenditionLibrary, findRootsInsideMediaRoot } from "./analysis";
 import type { RenditionMediaProbe } from "./probe";
 
 describe("rendition library analysis", () => {
@@ -79,5 +79,23 @@ describe("rendition library analysis", () => {
         ?.jobs.map((job) => job.qualityHeight),
     ).toEqual([480, 720, 1080]);
     expect(report.storage.completePlanFits).toBe(true);
+  });
+
+  it("flags generated output that library automation could reach", () => {
+    const inside = {
+      mediaRoot: path.join("D:", "media"),
+      renditionRoot: path.join("D:", "media", ".seyirlik", "renditions"),
+      workRoot: path.join("D:", "media", ".seyirlik", "work"),
+      stateRoot: path.join("D:", "media", ".seyirlik", "state"),
+      logsRoot: path.join("D:", "media", ".seyirlik", "logs"),
+    };
+    expect(findRootsInsideMediaRoot(inside)).toHaveLength(2);
+
+    const outside = {
+      ...inside,
+      renditionRoot: path.join("D:", "seyirlik", "renditions"),
+      workRoot: path.join("D:", "seyirlik", "work"),
+    };
+    expect(findRootsInsideMediaRoot(outside)).toEqual([]);
   });
 });

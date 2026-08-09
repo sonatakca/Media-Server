@@ -178,6 +178,15 @@ export function selectManualQuality(
   return undefined;
 }
 
+/** Resolution the display can actually make use of, with a sane pixel-ratio cap. */
+export function displayTargetHeight(
+  playerHeight: number,
+  devicePixelRatio: number | undefined,
+): number {
+  const pixelRatio = Math.min(Math.max(devicePixelRatio ?? 1, 1), 2);
+  return Math.max(1, playerHeight) * pixelRatio;
+}
+
 export function selectAutoQuality(
   qualities: readonly AvailableQualityFile[],
   context: FileQualitySelectionContext,
@@ -191,15 +200,20 @@ export function selectAutoQuality(
     (context.recentStallCount ?? 0) >= 2;
   if (constrainedConnection) return sorted[0];
 
-  const pixelRatio = Math.min(Math.max(context.devicePixelRatio ?? 1, 1), 2);
-  let targetHeight = Math.max(1, context.playerHeight) * pixelRatio;
+  let targetHeight = displayTargetHeight(
+    context.playerHeight,
+    context.devicePixelRatio,
+  );
   if (
     context.effectiveType === "3g" ||
     (context.downlinkMbps !== undefined && context.downlinkMbps < 6)
   ) {
     targetHeight = Math.min(targetHeight, 720);
   } else if (context.downlinkMbps === undefined) {
-    targetHeight = Math.min(targetHeight, 720);
+    // Safari and Firefox do not implement `navigator.connection`, so the old
+    // 720p cap here left Auto permanently stuck at 720p on those browsers.
+    // 1080p is a safe opening bid; measured buffer health moves it from there.
+    targetHeight = Math.min(targetHeight, 1080);
   } else if (context.downlinkMbps < 12) {
     targetHeight = Math.min(targetHeight, 1080);
   }

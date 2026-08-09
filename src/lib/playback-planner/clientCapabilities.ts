@@ -45,6 +45,19 @@ const VIDEO_PROBES: VideoProbe[] = [
     bitDepth: 8,
   },
   {
+    // High 10 carries 10-bit and HDR H.264 masters. Without this probe a client
+    // that can decode them is still told it cannot, so every such original is
+    // classed as needing FFmpeg and never offered as a playable quality.
+    key: "h264",
+    mimeType: 'video/mp4; codecs="avc1.6E0034, mp4a.40.2"',
+    width: 3840,
+    height: 2160,
+    bitrate: 40_000_000,
+    framerate: 60,
+    bitDepth: 10,
+    hdr: true,
+  },
+  {
     key: "hevc",
     mimeType: 'video/mp4; codecs="hvc1.1.6.L120.B0, mp4a.40.2"',
     width: 1920,

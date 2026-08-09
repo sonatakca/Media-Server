@@ -156,6 +156,7 @@ import type {
 import { useSeekFeedback } from "./useSeekFeedback";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
+  displayTargetHeight,
   isQualityAudioCompatible,
   loadQualityPreference,
   saveQualityPreference,
@@ -166,6 +167,41 @@ import {
   shouldSwitchFileQuality,
   type QualityPreference,
 } from "./qualityPreference";
+
+/** How often Auto re-examines conditions while playback continues. */
+const QUALITY_REVIEW_INTERVAL_MS = 15_000;
+/** Longest wait for the next quality to buffer before switching regardless. */
+const QUALITY_PRELOAD_BUDGET_MS = 20_000;
+/** Buffered seconds ahead of the playhead that count as comfortable headroom. */
+const HEALTHY_BUFFER_SECONDS = 12;
+
+/** Seconds of media buffered ahead of the playhead, 0 when nothing is ready. */
+function bufferedSecondsAhead(video: HTMLVideoElement | null): number {
+  if (!video) return 0;
+  const { buffered, currentTime } = video;
+  for (let index = buffered.length - 1; index >= 0; index -= 1) {
+    if (
+      buffered.start(index) <= currentTime &&
+      buffered.end(index) > currentTime
+    ) {
+      return buffered.end(index) - currentTime;
+    }
+  }
+  return 0;
+}
+
+function measuredPlayerHeight(
+  container: HTMLElement | null,
+  video: HTMLVideoElement | null,
+): number {
+  const measured = container?.clientHeight || video?.clientHeight || 0;
+  if (measured > 0) return measured;
+  // Before first layout both are 0, and `?? ` does not catch that. Falling
+  // through to 1px made Auto target the smallest rendition on every cold start.
+  return typeof window === "undefined"
+    ? 720
+    : Math.round(window.innerHeight * 0.8);
+}
 
 function getFileQualitySelectionContext(
   playerHeight: number,
@@ -659,6 +695,15 @@ export function CustomVideoPlayer({
     () => qualityPreferenceRef.current.mode,
   );
   const lastQualitySwitchAtRef = useRef(0);
+  const reconsiderQualityRef = useRef<(recentStallCount: number) => void>(
+    () => {},
+  );
+  const applyQualityFileRef = useRef<
+    (file: AvailableQualityFile, preference: QualityPreference) => Promise<void>
+  >(async () => {});
+  const preloadVideoRef = useRef<HTMLVideoElement | null>(null);
+  const preloadTokenRef = useRef(0);
+  const [isPreparingQuality, setIsPreparingQuality] = useState(false);
   const recentQualityStallsRef = useRef<number[]>([]);
   const [loadedVideoAspectRatio, setLoadedVideoAspectRatio] = useState<
     number | null
@@ -745,11 +790,11 @@ export function CustomVideoPlayer({
               })
             : `${quality.height}p`
         }${quality.hdr ? " HDR" : ""}`,
-        subtitle: !isQualityAudioCompatible(quality, selectedAudioStreamIndex)
-          ? t("player.qualityAudioMismatch")
-          : quality.kind === "original"
-            ? t("player.qualityOriginalSource")
-            : t("player.qualityCompleteFile"),
+        // Only carry a subtitle when it says something the label does not; the
+        // check mark already marks the active entry.
+        subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
+          ? ""
+          : t("player.qualityAudioMismatch"),
         maxHeight: quality.height,
         maxWidth: quality.width,
         maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
@@ -1731,8 +1776,64 @@ export function CustomVideoPlayer({
    * start an encode: the file either exists in the validated manifest or it is
    * not offered at all.
    */
+  /**
+   * Buffers the target file in a detached element at the current position while
+   * the existing quality keeps playing, then swaps. Without this the element is
+   * torn down first and the viewer stares at a spinner for the whole fetch.
+   * Resolves either when enough media is ready or when the budget expires, so a
+   * slow link degrades to the old behaviour instead of hanging.
+   */
+  const warmQualityBeforeSwitch = useCallback(
+    (url: string, positionSeconds: number, token: number) =>
+      new Promise<void>((resolve) => {
+        const preload = preloadVideoRef.current;
+        if (!preload) {
+          resolve();
+          return;
+        }
+
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          window.clearTimeout(budget);
+          preload.removeEventListener("canplaythrough", finish);
+          preload.removeEventListener("error", finish);
+          resolve();
+        };
+        const budget = window.setTimeout(finish, QUALITY_PRELOAD_BUDGET_MS);
+
+        preload.addEventListener("canplaythrough", finish, { once: true });
+        preload.addEventListener("error", finish, { once: true });
+        preload.preload = "auto";
+        preload.muted = true;
+        preload.src = url;
+        try {
+          preload.currentTime = Math.max(0, positionSeconds);
+        } catch {
+          // Seeking before metadata is fine; the load still warms the cache.
+        }
+        preload.load();
+
+        // A newer selection supersedes this warm-up immediately.
+        const supersede = window.setInterval(() => {
+          if (preloadTokenRef.current !== token) {
+            window.clearInterval(supersede);
+            finish();
+          }
+        }, 200);
+        void Promise.resolve().then(() => {
+          if (settled) window.clearInterval(supersede);
+        });
+      }),
+    [],
+  );
+
   const applyQualityFile = useCallback(
-    (selectedFile: AvailableQualityFile, preference: QualityPreference) => {
+    async (
+      selectedFile: AvailableQualityFile,
+      preference: QualityPreference,
+    ) => {
       setQualitySelectionNotice(null);
       persistQualityPreference(preference);
       setFileQualityMode(preference.mode);
@@ -1748,22 +1849,46 @@ export function CustomVideoPlayer({
         return;
       }
 
-      void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+      const token = (preloadTokenRef.current += 1);
+      setIsPreparingQuality(true);
+      try {
+        await warmQualityBeforeSwitch(
+          nextSource.url,
+          videoRef.current?.currentTime ?? progress.currentTime,
+          token,
+        );
+        // A newer selection landed while this one was buffering.
+        if (preloadTokenRef.current !== token) return;
+        await switchPlayerSource(nextSource);
+      } catch (switchError: unknown) {
         console.warn(
           "[Seyirlik Playback] Complete-file quality switch failed",
           switchError,
         );
         setLastVideoError(t("player.qualitySwitchFailedReturnAuto"));
-      });
+      } finally {
+        if (preloadTokenRef.current === token) setIsPreparingQuality(false);
+        const preload = preloadVideoRef.current;
+        if (preload) {
+          preload.removeAttribute("src");
+          preload.load();
+        }
+      }
     },
     [
       activeSource.id,
       buildQualityFileSource,
       persistQualityPreference,
+      progress.currentTime,
       switchPlayerSource,
       t,
+      warmQualityBeforeSwitch,
     ],
   );
+
+  useEffect(() => {
+    applyQualityFileRef.current = applyQualityFile;
+  });
 
   const handleSelectQualityMode = useCallback(
     (mode: Exclude<QualityPreferenceMode, "advanced">) => {
@@ -1785,7 +1910,7 @@ export function CustomVideoPlayer({
         return;
       }
 
-      applyQualityFile(selectedFile, { mode });
+      void applyQualityFile(selectedFile, { mode });
     },
     [
       applyQualityFile,
@@ -1812,7 +1937,7 @@ export function CustomVideoPlayer({
         return;
       }
 
-      applyQualityFile(selectedFile, {
+      void applyQualityFile(selectedFile, {
         mode: "advanced",
         preferredHeight: selectedFile.height,
         preferredQualityId: selectedFile.id,
@@ -1910,40 +2035,68 @@ export function CustomVideoPlayer({
     ],
   );
 
+  /**
+   * Chooses the rendition Auto should be on. Kept in a ref so the listener
+   * effect stays stable, and driven by measured buffer health because Safari
+   * and Firefox do not implement `navigator.connection` — relying on it capped
+   * Auto at 720p forever on those browsers.
+   */
   useEffect(() => {
-    if (!hasFileQualities || !activeQualityFile) return undefined;
-    const video = videoRef.current;
-    const container = containerRef.current;
-    let resizeTimer: number | undefined;
-
-    const reconsiderQuality = (recentStallCount: number) => {
+    reconsiderQualityRef.current = (recentStallCount: number) => {
+      if (!activeQualityFile) return;
       const preference = qualityPreferenceRef.current;
+      const video = videoRef.current;
+      const ladder = [...audioCompatibleQualityFiles].sort(
+        (left, right) => left.height - right.height,
+      );
+      const currentIndex = ladder.findIndex(
+        (quality) => quality.id === activeQualityFile.id,
+      );
+      const struggling = recentStallCount >= 2;
+      const comfortable =
+        !struggling &&
+        recentStallCount === 0 &&
+        bufferedSecondsAhead(video) >= HEALTHY_BUFFER_SECONDS;
       let candidate: AvailableQualityFile | undefined;
+
       if (preference.mode === "auto") {
-        candidate = selectAutoQuality(
+        const sizeTarget = selectAutoQuality(
           audioCompatibleQualityFiles,
           getFileQualitySelectionContext(
-            container?.clientHeight ?? video?.clientHeight ?? 720,
+            measuredPlayerHeight(containerRef.current, video),
             recentStallCount,
           ),
         );
+        if (struggling && currentIndex > 0) {
+          // Repeated stalls: drop one rung rather than all the way down.
+          candidate = ladder[currentIndex - 1];
+        } else if (
+          comfortable &&
+          currentIndex >= 0 &&
+          currentIndex < ladder.length - 1 &&
+          ladder[currentIndex + 1].height <=
+            displayTargetHeight(
+              measuredPlayerHeight(containerRef.current, video),
+              typeof window === "undefined" ? 1 : window.devicePixelRatio,
+            ) *
+              1.35
+        ) {
+          // Healthy buffer and the display can still use more detail: step up
+          // one rung and let the next review decide whether to keep climbing.
+          candidate = ladder[currentIndex + 1];
+        } else {
+          candidate = sizeTarget;
+        }
       } else if (preference.mode === "higher-resolution") {
-        // Higher resolution steps down while playback keeps stalling and climbs
-        // back to the best available file once playback has been stable through
-        // the switch cooldown. It is never a permanent manual lock.
-        candidate =
-          recentStallCount >= 2
-            ? selectHigherResolutionQuality(
-                audioCompatibleQualityFiles.filter(
-                  (quality) => quality.height < activeQualityFile.height,
-                ),
-              )
-            : higherResolutionQualityFile;
+        candidate = struggling
+          ? currentIndex > 0
+            ? ladder[currentIndex - 1]
+            : undefined
+          : higherResolutionQualityFile;
       } else if (preference.mode === "low-data") {
-        // Low data stays on the cheapest available file, but recovers if the
-        // manifest changed underneath it.
         candidate = lowDataQualityFile;
       }
+
       if (!candidate || candidate.id === activeQualityFile.id) return;
       const now = Date.now();
       if (
@@ -1958,17 +2111,15 @@ export function CustomVideoPlayer({
         return;
       }
       lastQualitySwitchAtRef.current = now;
-      setActiveQualityFileId(candidate.id);
-      void switchPlayerSource(buildQualityFileSource(candidate)).catch(
-        (switchError: unknown) => {
-          console.warn(
-            "[Seyirlik Playback] Automatic complete-file quality switch failed",
-            switchError,
-          );
-          setLastVideoError(t("player.qualitySwitchFailedReturnAuto"));
-        },
-      );
+      void applyQualityFileRef.current(candidate, preference);
     };
+  });
+
+  useEffect(() => {
+    if (!hasFileQualities) return undefined;
+    const video = videoRef.current;
+    const container = containerRef.current;
+    let resizeTimer: number | undefined;
 
     const pruneStalls = () => {
       const cutoff = Date.now() - 60_000;
@@ -1977,17 +2128,19 @@ export function CustomVideoPlayer({
       );
       return recentQualityStallsRef.current.length;
     };
+    // The callback is read through a ref so this effect never depends on
+    // `switchPlayerSource`, whose identity changes on every progress tick. When
+    // it did, the recovery interval was torn down and rebuilt several times a
+    // second and could never actually reach its delay, so Auto never upgraded.
+    const run = () => reconsiderQualityRef.current(pruneStalls());
     const handleWaiting = () => {
       if (!video || video.paused || video.currentTime <= 0) return;
       recentQualityStallsRef.current.push(Date.now());
-      reconsiderQuality(pruneStalls());
+      run();
     };
     const handleResize = () => {
       if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
-      resizeTimer = window.setTimeout(
-        () => reconsiderQuality(pruneStalls()),
-        350,
-      );
+      resizeTimer = window.setTimeout(run, 350);
     };
 
     video?.addEventListener("waiting", handleWaiting);
@@ -1997,8 +2150,8 @@ export function CustomVideoPlayer({
         : undefined;
     if (container) resizeObserver?.observe(container);
     const recoveryInterval = window.setInterval(
-      () => reconsiderQuality(pruneStalls()),
-      30_000,
+      run,
+      QUALITY_REVIEW_INTERVAL_MS,
     );
     return () => {
       video?.removeEventListener("waiting", handleWaiting);
@@ -2006,16 +2159,7 @@ export function CustomVideoPlayer({
       window.clearInterval(recoveryInterval);
       if (resizeTimer !== undefined) window.clearTimeout(resizeTimer);
     };
-  }, [
-    activeQualityFile,
-    audioCompatibleQualityFiles,
-    buildQualityFileSource,
-    hasFileQualities,
-    higherResolutionQualityFile,
-    lowDataQualityFile,
-    switchPlayerSource,
-    t,
-  ]);
+  }, [hasFileQualities]);
 
   const completeFileQualityControls = useMemo<
     CompleteFileQualityControls | undefined
@@ -4112,6 +4256,20 @@ export function CustomVideoPlayer({
           reportStoppedOnce(false);
           handleDefaultNextEpisodePlay();
         }}
+      />
+
+      {/*
+        Buffers the next quality while the current one keeps playing. Muted and
+        removed from the accessibility tree so it never competes with playback.
+      */}
+      <video
+        ref={preloadVideoRef}
+        aria-hidden="true"
+        tabIndex={-1}
+        muted
+        playsInline
+        preload="none"
+        className="pointer-events-none absolute h-px w-px opacity-0"
       />
 
       <AnimatePresence initial={false}>

@@ -3,6 +3,7 @@ import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   analyseRenditionLibrary,
+  findRootsInsideMediaRoot,
   formatAnalysisReport,
   resolveRenditionPaths,
   type RenditionAnalysisReport,
@@ -453,6 +454,16 @@ async function main() {
     return;
   }
   const paths = resolveRenditionPaths();
+  const exposedRoots = findRootsInsideMediaRoot(paths);
+  if (exposedRoots.length > 0) {
+    console.error(
+      `Warning: ${exposedRoots.join(" and ")} sits inside SEYIRLIK_MEDIA_ROOT.\n` +
+        "  Library automation that scans the media root can re-encode or delete generated\n" +
+        "  renditions in place, which makes them fail validation and disappear from the\n" +
+        "  player. Set SEYIRLIK_RENDITION_ROOT and SEYIRLIK_RENDITION_WORK_ROOT to a\n" +
+        "  location on the same volume but outside the media root.",
+    );
+  }
   const ffprobePath =
     process.env.FFPROBE_PATH ?? process.env.SEYIRLIK_FFPROBE_PATH;
   const reportPath = path.join(paths.stateRoot, "rendition-analysis.json");

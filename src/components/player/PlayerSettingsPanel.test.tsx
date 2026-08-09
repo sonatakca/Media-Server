@@ -24,15 +24,11 @@ vi.mock("../../i18n/LanguageContext", () => ({
         "player.qualityHigherResolution": "Higher Resolution",
         "player.qualityHigherResolutionDescription": "Uses more data",
         "player.qualityAdvanced": "Advanced",
-        "player.qualityAdvancedDescription":
-          "Lock playback to one available quality",
         "player.qualityBackToModes": "Quality modes",
         "player.qualityLockedTo": "Locked to {quality}",
-        "player.qualityActiveResolution": "Now playing {quality}",
         "player.qualityAutoEffective": "Auto ({quality})",
         "player.qualityFileAutoDescription":
           "Automatically chooses an existing file",
-        "player.qualityCompleteFile": "Complete file",
         "player.qualityCompleteFileLimitations":
           "Generated files carry the default audio track only.",
       })[key] ?? key,
@@ -78,7 +74,7 @@ function renderPanel(overrides: Partial<CompleteFileQualityControls> = {}) {
           {
             id: "original",
             label: "Original (2160p)",
-            subtitle: "Original source",
+            subtitle: "",
             maxHeight: 2160,
             maxWidth: 3840,
             maxStreamingBitrate: 80_000_000,
@@ -86,7 +82,7 @@ function renderPanel(overrides: Partial<CompleteFileQualityControls> = {}) {
           {
             id: "generated-720",
             label: "720p",
-            subtitle: "Complete file",
+            subtitle: "",
             maxHeight: 720,
             maxWidth: 1280,
             maxStreamingBitrate: 4_000_000,
@@ -126,7 +122,10 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
       screen.getByRole("button", { name: /Advanced/ }),
     ).toBeInTheDocument();
 
-    expect(screen.getByText("Now playing 720p")).toBeInTheDocument();
+    // Nothing repeats the current source or the effective quality twice.
+    expect(
+      screen.queryByText(/Current source|Now playing/),
+    ).not.toBeInTheDocument();
     // The individual quality files stay behind the Advanced submenu.
     expect(screen.queryByText("Original (2160p)")).not.toBeInTheDocument();
     expect(screen.queryByText(/HLS/)).not.toBeInTheDocument();
@@ -148,6 +147,9 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
     expect(screen.getByText("Original (2160p)")).toBeInTheDocument();
     expect(screen.getByText("720p")).toBeInTheDocument();
     expect(screen.queryByText("480p")).not.toBeInTheDocument();
+    // Entries carry no repeated boilerplate; the check mark marks the active one.
+    expect(screen.queryByText("Complete file")).not.toBeInTheDocument();
+    expect(screen.queryByText("Current quality")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Original \(2160p\)/ }));
 

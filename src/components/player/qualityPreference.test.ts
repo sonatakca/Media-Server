@@ -5,6 +5,7 @@ import {
   isQualityAudioCompatible,
   resolveManualHeight,
   saveQualityPreference,
+  displayTargetHeight,
   selectAutoQuality,
   selectHigherResolutionQuality,
   selectLowDataQuality,
@@ -148,6 +149,14 @@ describe("complete-file quality selection", () => {
         devicePixelRatio: 1,
       })?.height,
     ).toBe(720);
+    // Safari and Firefox report no connection info. Auto used to cap at 720p
+    // there no matter how large the player was, so it could never climb.
+    expect(
+      selectAutoQuality(qualities, {
+        playerHeight: 1000,
+        devicePixelRatio: 2,
+      })?.height,
+    ).toBe(1080);
     expect(
       selectAutoQuality(qualities, {
         playerHeight: 900,
@@ -205,6 +214,14 @@ describe("complete-file quality selection", () => {
         preferredQualityId: "generated-1440",
       }),
     ).toBeUndefined();
+  });
+
+  it("reports what the display can use, with the pixel ratio capped at 2", () => {
+    expect(displayTargetHeight(1000, 2)).toBe(2000);
+    expect(displayTargetHeight(1000, 4)).toBe(2000);
+    expect(displayTargetHeight(1000, undefined)).toBe(1000);
+    // A container measured before layout must not collapse the target to zero.
+    expect(displayTargetHeight(0, 2)).toBe(2);
   });
 
   it("uses cooldown and hysteresis while allowing repeated-stall downgrades", () => {

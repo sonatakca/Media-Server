@@ -154,6 +154,32 @@ export function resolveRenditionPaths(
   };
 }
 
+/**
+ * Generated output living inside the media root is reachable by any tool that
+ * watches the library. Media automation re-encodes or deletes the renditions in
+ * place, validation then rejects them, and the player silently loses its quality
+ * options. Keep the output on the same volume but outside the watched tree.
+ */
+export function findRootsInsideMediaRoot(paths: RenditionPaths): string[] {
+  const mediaRoot = path.resolve(paths.mediaRoot);
+  const prefix = mediaRoot.endsWith(path.sep)
+    ? mediaRoot
+    : `${mediaRoot}${path.sep}`;
+  const comparable = (value: string) =>
+    process.platform === "win32" ? value.toLowerCase() : value;
+
+  return (
+    [
+      ["rendition output", paths.renditionRoot],
+      ["work", paths.workRoot],
+    ] as const
+  )
+    .filter(([, root]) =>
+      comparable(path.resolve(root)).startsWith(comparable(prefix)),
+    )
+    .map(([label, root]) => `${label} (${root})`);
+}
+
 export async function getDriveSpace(filePath: string): Promise<DriveSpace> {
   const result = await statfs(filePath, { bigint: true });
   const totalBytes = Number(result.bsize * result.blocks);

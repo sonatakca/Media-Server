@@ -549,12 +549,7 @@ function CompleteFileQualitySection({
             <SettingsButton
               key={option.id}
               title={option.label}
-              subtitle={
-                controls.activeMode === "advanced" &&
-                controls.lockedQualityId === option.id
-                  ? t("settings.currentQuality")
-                  : option.subtitle
-              }
+              subtitle={option.subtitle}
               active={
                 controls.activeMode === "advanced" &&
                 controls.lockedQualityId === option.id
@@ -577,17 +572,6 @@ function CompleteFileQualitySection({
 
   return (
     <>
-      <SettingsButton
-        title={getPlaybackModeLabel(source.mode, t)}
-        subtitle={
-          source.mediaSource.Container
-            ? `${source.mediaSource.Container.toUpperCase()} · ${t("settings.currentSource")}`
-            : t("settings.currentSource")
-        }
-        active
-        compact={compact}
-      />
-
       {AUTOMATIC_QUALITY_MODES.map(({ mode, labelKey, descriptionKey }) => {
         const effectiveLabel = controls.modeQualityLabels[mode];
 
@@ -602,9 +586,9 @@ function CompleteFileQualitySection({
                 : t(labelKey)
             }
             subtitle={
-              effectiveLabel && mode !== "auto"
-                ? `${effectiveLabel} · ${t(descriptionKey)}`
-                : t(descriptionKey)
+              mode === "auto"
+                ? undefined
+                : (effectiveLabel ?? t(descriptionKey))
             }
             active={controls.activeMode === mode}
             compact={compact}
@@ -620,7 +604,7 @@ function CompleteFileQualitySection({
             ? formatTemplate(t("player.qualityLockedTo"), {
                 quality: lockedOption.label,
               })
-            : t("player.qualityAdvancedDescription")
+            : undefined
         }
         active={controls.activeMode === "advanced"}
         hasSubmenu
@@ -741,17 +725,6 @@ export function PlayerSettingsPanel({
               <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
                 {t("settings.quality")}
               </div>
-
-              {completeFileQuality?.effectiveQualityLabel ? (
-                <p
-                  className="px-3 pb-2 text-xs font-semibold text-white/70"
-                  aria-live="polite"
-                >
-                  {formatTemplate(t("player.qualityActiveResolution"), {
-                    quality: completeFileQuality.effectiveQualityLabel,
-                  })}
-                </p>
-              ) : null}
 
               {completeFileQuality?.noticeText ? (
                 <p
