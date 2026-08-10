@@ -43,6 +43,7 @@ import {
   hasStoredArtwork,
   isArtworkEligible,
   isKindLocked,
+  countCandidates,
   selectCandidates,
   type ActionStatus,
   type ImageLanguageFilter,
@@ -551,6 +552,11 @@ export default function TmdbArtworkPage() {
                       kind,
                       languageFilter,
                     );
+                    const available = countCandidates(
+                      artwork.candidates,
+                      kind,
+                      languageFilter,
+                    );
                     const locked = isKindLocked(artwork.lockedTypes, kind);
                     const stored = hasStoredArtwork(artwork.current, kind);
 
@@ -572,6 +578,14 @@ export default function TmdbArtworkPage() {
                               {t(getKindDescriptionKey(kind))}
                               {locked ? ` ${t("tmdbArtwork.lockedExplanation")}` : ""}
                             </p>
+                            {available > candidates.length ? (
+                              <p className="mt-1 text-xs font-bold text-white/30">
+                                {formatTemplate(t("tmdbArtwork.showingTopChoices"), {
+                                  shown: candidates.length,
+                                  total: available,
+                                })}
+                              </p>
+                            ) : null}
                             {!stored ? (
                               <p className="mt-1 text-xs font-bold text-white/30">
                                 {t("tmdbArtwork.noCurrentArtwork")}

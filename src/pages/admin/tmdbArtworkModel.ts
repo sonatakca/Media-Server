@@ -71,15 +71,38 @@ export function matchesLanguageFilter(
   return candidate.language === filter;
 }
 
+/**
+ * A popular film can have several hundred posters, which is a grid nobody
+ * scrolls and several megabytes of thumbnails nobody looks at. The server ranks
+ * candidates by provider vote, so taking the first few keeps the ones worth
+ * seeing; the language filter re-draws from the whole set rather than from what
+ * survived the cap.
+ */
+export const MAX_VISIBLE_PER_KIND = 24;
+
 export function selectCandidates(
   candidates: ArtworkCandidate[],
   kind: ArtworkKind,
   filter: ImageLanguageFilter,
+  limit: number = MAX_VISIBLE_PER_KIND,
 ): ArtworkCandidate[] {
+  return candidates
+    .filter(
+      (candidate) =>
+        candidate.kind === kind && matchesLanguageFilter(candidate, filter),
+    )
+    .slice(0, limit);
+}
+
+export function countCandidates(
+  candidates: ArtworkCandidate[],
+  kind: ArtworkKind,
+  filter: ImageLanguageFilter,
+): number {
   return candidates.filter(
     (candidate) =>
       candidate.kind === kind && matchesLanguageFilter(candidate, filter),
-  );
+  ).length;
 }
 
 export function isKindLocked(

@@ -849,6 +849,8 @@ export const tr = {
   "tmdbArtwork.language.turkish": "Türkçe",
   "tmdbArtwork.language.none": "Dilsiz",
   "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
+  "tmdbArtwork.showingTopChoices":
+    "{total} görselin en yüksek puanlı {shown} tanesi gösteriliyor. Diğerleri için dile göre süzün.",
   "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
   "tmdbArtwork.lockedExplanation":
     "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",

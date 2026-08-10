@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ArtworkCandidate } from "../../lib/artworkApi";
 import type { MediaItem } from "../../lib/types";
 import {
+  MAX_VISIBLE_PER_KIND,
+  countCandidates,
   filterTitles,
   formatDimensions,
   getArtworkErrorKey,
@@ -80,6 +82,20 @@ describe("candidate filtering", () => {
       selectCandidates(candidates, "backdrop", "all").map((entry) => entry.filePath),
     ).toEqual(["/wide.jpg"]);
     expect(selectCandidates(candidates, "logo", "all")).toEqual([]);
+  });
+
+  it("caps a long set at the best rated while still reporting the true total", () => {
+    // Dune has 453 posters on TMDB. Rendering all of them is a grid nobody
+    // scrolls and megabytes of thumbnails nobody looks at.
+    const many = Array.from({ length: 40 }, (_, index) =>
+      candidate({ filePath: `/p${index}.jpg`, voteAverage: 40 - index }),
+    );
+
+    expect(selectCandidates(many, "poster", "all")).toHaveLength(
+      MAX_VISIBLE_PER_KIND,
+    );
+    expect(selectCandidates(many, "poster", "all")[0]?.filePath).toBe("/p0.jpg");
+    expect(countCandidates(many, "poster", "all")).toBe(40);
   });
 
   it("treats artwork with no text as its own filter rather than a missing value", () => {

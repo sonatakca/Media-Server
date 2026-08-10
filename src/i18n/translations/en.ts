@@ -847,6 +847,8 @@ export const en = {
   "tmdbArtwork.language.turkish": "Turkish",
   "tmdbArtwork.language.none": "No language",
   "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
+  "tmdbArtwork.showingTopChoices":
+    "Showing the {shown} best rated of {total}. Narrow by language to see others.",
   "tmdbArtwork.lockedBadge": "Chosen by you",
   "tmdbArtwork.lockedExplanation":
     "A metadata refresh will not replace an image you chose.",
