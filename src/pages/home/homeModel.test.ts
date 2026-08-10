@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   getHomeLoadErrorMessage,
   removeContinueWatchingItem,
@@ -7,8 +7,8 @@ import {
 } from "./homeModel";
 
 describe("homeModel", () => {
-  const first = { Id: "first", Name: "First" } as JellyfinItem;
-  const second = { Id: "second", Name: "Second" } as JellyfinItem;
+  const first = { Id: "first", Name: "First" } as MediaItem;
+  const second = { Id: "second", Name: "Second" } as MediaItem;
   const data = {
     continueWatching: [first, second],
     latestMedia: [second],

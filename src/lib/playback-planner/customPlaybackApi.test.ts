@@ -257,6 +257,80 @@ describe("custom playback API request deduplication", () => {
     });
   });
 
+  it("exposes every source track so subtitles survive a rendition switch", async () => {
+    const api = await loadApi();
+    const plan = directMovPlaybackPlan();
+    // A generated rendition carries one audio track and no embedded subtitles,
+    // so the picker has to offer the source's tracks from the probe instead.
+    plan.diagnostics = {
+      media: {
+        mediaId: "movie-1",
+        fileName: "Film.mp4",
+        container: {
+          formatName: "mov,mp4",
+          extension: "mp4",
+          isBrowserDirectPlayableContainer: true,
+        },
+        durationSeconds: 120,
+        videoStreams: [
+          { index: 0, codecName: "h264", width: 1920, height: 1080 },
+        ],
+        audioStreams: [
+          {
+            index: 1,
+            codecName: "aac",
+            channels: 6,
+            language: "eng",
+            isDefault: true,
+          },
+          { index: 2, codecName: "aac", channels: 2, language: "tur" },
+        ],
+        subtitleStreams: [
+          {
+            index: 3,
+            codecName: "mov_text",
+            language: "eng",
+            isImageBased: false,
+          },
+          {
+            index: 4,
+            codecName: "mov_text",
+            language: "tur",
+            isImageBased: false,
+          },
+          {
+            index: 5,
+            codecName: "hdmv_pgs_subtitle",
+            language: "eng",
+            isImageBased: true,
+          },
+        ],
+        analysedAt: "2026-08-09T00:00:00.000Z",
+      },
+    } as unknown as PlaybackPlan["diagnostics"];
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse(plan)));
+
+    const candidate = await api.requestCustomPlaybackCandidate("movie-1");
+    const streams = candidate?.mediaSource.MediaStreams ?? [];
+
+    expect(
+      streams
+        .filter((stream) => stream.Type === "Audio")
+        .map((s) => s.Language),
+    ).toEqual(["eng", "tur"]);
+    // Both text subtitle tracks are offered; the image-based one is not, because
+    // it cannot be delivered as WebVTT and would never load.
+    expect(
+      streams
+        .filter((stream) => stream.Type === "Subtitle")
+        .map((stream) => [stream.Index, stream.Language]),
+    ).toEqual([
+      [3, "eng"],
+      [4, "tur"],
+    ]);
+    expect(candidate?.mediaSource.DefaultAudioStreamIndex).toBe(1);
+  });
+
   it("allows retry after a failed custom playback request", async () => {
     const api = await loadApi();
     const fetchMock = vi

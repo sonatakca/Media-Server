@@ -1,8 +1,8 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export const DEFAULT_COMPLETION_THRESHOLD = 0.9;
 
-function getPlayedRatio(item: JellyfinItem): number {
+function getPlayedRatio(item: MediaItem): number {
   const playedPercentage = item.UserData?.PlayedPercentage;
 
   if (
@@ -27,7 +27,7 @@ function getPlayedRatio(item: JellyfinItem): number {
 }
 
 export function isItemCompleted(
-  item: JellyfinItem,
+  item: MediaItem,
   completionThreshold = DEFAULT_COMPLETION_THRESHOLD,
 ): boolean {
   return Boolean(
@@ -35,7 +35,7 @@ export function isItemCompleted(
   );
 }
 
-export function getItemProgressPercent(item: JellyfinItem): number | null {
+export function getItemProgressPercent(item: MediaItem): number | null {
   if (isItemCompleted(item)) {
     return 100;
   }

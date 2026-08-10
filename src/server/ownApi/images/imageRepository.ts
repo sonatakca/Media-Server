@@ -1,0 +1,207 @@
+import { randomUUID } from "node:crypto";
+import type { DatabasePool } from "../database/databasePool";
+import type { ImageRecord } from "../catalogue/itemDto";
+
+export interface StoredImage extends ImageRecord {
+  contentType: string;
+  storageKey: string;
+  sizeBytes: number;
+}
+
+export interface ImageRepository {
+  listForItems(itemIds: string[]): Promise<ImageRecord[]>;
+  /**
+   * Artwork of the items' series and seasons, so an episode card can fall back
+   * to series poster and backdrops without a second round trip.
+   */
+  listInheritedForItems(itemIds: string[]): Promise<Map<string, ImageRecord[]>>;
+  getById(imageId: string): Promise<StoredImage | null>;
+  /** The item an image belongs to, for the authorization check on delivery. */
+  getOwningItemId(imageId: string): Promise<string | null>;
+  findByItemAndType(
+    itemId: string,
+    imageType: string,
+    imageIndex: number,
+  ): Promise<StoredImage | null>;
+  upsert(input: {
+    itemId: string;
+    imageType: string;
+    imageIndex: number;
+    contentHash: string;
+    contentType: string;
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    storageKey: string;
+    source: string;
+    sourceUrl: string | null;
+  }): Promise<string>;
+  deleteForItem(itemId: string, imageType?: string): Promise<void>;
+}
+
+interface RawImageRow {
+  id: string;
+  item_id: string;
+  image_type: string;
+  image_index: number;
+  content_hash: string;
+  content_type: string;
+  width: number | null;
+  height: number | null;
+  size_bytes: string;
+  storage_key: string;
+}
+
+function toRecord(row: RawImageRow): ImageRecord {
+  return {
+    id: row.id,
+    itemId: row.item_id,
+    imageType: row.image_type,
+    imageIndex: row.image_index,
+    contentHash: row.content_hash,
+    width: row.width,
+    height: row.height,
+  };
+}
+
+function toStored(row: RawImageRow): StoredImage {
+  return {
+    ...toRecord(row),
+    contentType: row.content_type,
+    storageKey: row.storage_key,
+    sizeBytes: Number(row.size_bytes),
+  };
+}
+
+const IMAGE_COLUMNS = `
+  id, item_id, image_type, image_index, content_hash, content_type,
+  width, height, size_bytes, storage_key
+`;
+
+export function createImageRepository(pool: DatabasePool): ImageRepository {
+  return {
+    listForItems: async (itemIds) => {
+      if (itemIds.length === 0) return [];
+      const result = await pool.query<RawImageRow>(
+        `SELECT ${IMAGE_COLUMNS} FROM item_images
+         WHERE item_id = ANY($1)
+         ORDER BY item_id, image_type, image_index`,
+        [itemIds],
+      );
+      return result.rows.map(toRecord);
+    },
+
+    listInheritedForItems: async (itemIds) => {
+      const inherited = new Map<string, ImageRecord[]>();
+      if (itemIds.length === 0) return inherited;
+
+      const result = await pool.query<RawImageRow & { for_item_id: string }>(
+        `SELECT child.id AS for_item_id, ${IMAGE_COLUMNS}
+         FROM items child
+         JOIN item_images ON item_images.item_id IN (child.series_id, child.parent_id)
+         WHERE child.id = ANY($1)
+         ORDER BY child.id, item_images.image_type, item_images.image_index`,
+        [itemIds],
+      );
+
+      for (const row of result.rows) {
+        const existing = inherited.get(row.for_item_id);
+        const record = toRecord(row);
+        if (existing) existing.push(record);
+        else inherited.set(row.for_item_id, [record]);
+      }
+      return inherited;
+    },
+
+    getById: async (imageId) => {
+      const result = await pool.query<RawImageRow>(
+        `SELECT ${IMAGE_COLUMNS} FROM item_images WHERE id = $1`,
+        [imageId],
+      );
+      const row = result.rows[0];
+      return row ? toStored(row) : null;
+    },
+
+    getOwningItemId: async (imageId) => {
+      const result = await pool.query<{ item_id: string }>(
+        `SELECT item_id FROM item_images WHERE id = $1`,
+        [imageId],
+      );
+      return result.rows[0]?.item_id ?? null;
+    },
+
+    findByItemAndType: async (itemId, imageType, imageIndex) => {
+      const result = await pool.query<RawImageRow>(
+        `SELECT ${IMAGE_COLUMNS} FROM item_images
+         WHERE item_id = $1 AND image_type = $2 AND image_index = $3`,
+        [itemId, imageType, imageIndex],
+      );
+      const row = result.rows[0];
+      return row ? toStored(row) : null;
+    },
+
+    upsert: async (input) => {
+      const result = await pool.query<{ id: string }>(
+        `INSERT INTO item_images (
+           id, item_id, image_type, image_index, content_hash, content_type,
+           width, height, size_bytes, storage_key, source, source_url
+         )
+         VALUES ($12, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         ON CONFLICT (item_id, image_type, image_index) DO UPDATE SET
+           content_hash = EXCLUDED.content_hash,
+           content_type = EXCLUDED.content_type,
+           width = EXCLUDED.width,
+           height = EXCLUDED.height,
+           size_bytes = EXCLUDED.size_bytes,
+           storage_key = EXCLUDED.storage_key,
+           source = EXCLUDED.source,
+           source_url = EXCLUDED.source_url
+         -- A locked image was chosen deliberately by an administrator and must
+         -- survive an automated refresh.
+         WHERE item_images.is_locked = false
+         RETURNING id`,
+        [
+          input.itemId,
+          input.imageType,
+          input.imageIndex,
+          input.contentHash,
+          input.contentType,
+          input.width,
+          input.height,
+          input.sizeBytes,
+          input.storageKey,
+          input.source,
+          input.sourceUrl,
+          randomUUID(),
+        ],
+      );
+
+      const inserted = result.rows[0]?.id;
+      if (inserted) return inserted;
+
+      // The upsert was suppressed by the lock; return the existing id.
+      const existing = await pool.query<{ id: string }>(
+        `SELECT id FROM item_images
+         WHERE item_id = $1 AND image_type = $2 AND image_index = $3`,
+        [input.itemId, input.imageType, input.imageIndex],
+      );
+      const row = existing.rows[0];
+      if (!row) throw new Error("Image upsert returned no row.");
+      return row.id;
+    },
+
+    deleteForItem: async (itemId, imageType) => {
+      if (imageType) {
+        await pool.query(
+          `DELETE FROM item_images WHERE item_id = $1 AND image_type = $2 AND is_locked = false`,
+          [itemId, imageType],
+        );
+        return;
+      }
+      await pool.query(
+        `DELETE FROM item_images WHERE item_id = $1 AND is_locked = false`,
+        [itemId],
+      );
+    },
+  };
+}

@@ -30,9 +30,9 @@ import {
   TmdbArtworkRouteError,
   type FetchLike,
   type JellyfinItemResponse,
-  type JellyfinItemsResponse,
+  type MediaItemsResponse,
   type JellyfinLookupOptions,
-  type JellyfinMediaSource,
+  type MediaSource,
   type NormalizedTmdbEpisodeStill,
   type NormalizedTmdbEpisodeTranslations,
   type NormalizedTmdbImage,
@@ -554,7 +554,7 @@ async function fetchJellyfinItem(
     );
   }
 
-  const payload = (await response.json()) as JellyfinItemsResponse;
+  const payload = (await response.json()) as MediaItemsResponse;
 
   if (!Array.isArray(payload.Items) || payload.Items.length === 0) {
     throw new TmdbArtworkRouteError(
@@ -628,7 +628,7 @@ async function fetchJellyfinItemByTmdbId(
     );
   }
 
-  const payload = (await response.json()) as JellyfinItemsResponse;
+  const payload = (await response.json()) as MediaItemsResponse;
   const targetTmdbId = String(tmdbId);
 
   if (!Array.isArray(payload.Items)) {
@@ -1311,7 +1311,7 @@ function getFileMediaSourcePaths(item: JellyfinItemResponse): string[] {
       return [];
     }
 
-    const mediaSource = source as JellyfinMediaSource;
+    const mediaSource = source as MediaSource;
     const protocol =
       typeof mediaSource.Protocol === "string"
         ? mediaSource.Protocol.toLowerCase()

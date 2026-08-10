@@ -32,7 +32,7 @@ import {
 import { setPageTitle } from "../lib/pageTitle";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
-import type { JellyfinItem, JellyfinMediaStream } from "../lib/types";
+import type { MediaItem, MediaStream } from "../lib/types";
 
 type ActionState = "idle" | "loading" | "success" | "error";
 type Translate = (key: TranslationKey) => string;
@@ -51,7 +51,7 @@ interface SaveResult {
 
 interface StreamDefaultOption {
   index: number;
-  stream: JellyfinMediaStream;
+  stream: MediaStream;
   itemCount: number;
 }
 
@@ -75,7 +75,7 @@ function formatTemplate(
   );
 }
 
-function getItemArtworkUrl(item: JellyfinItem): string {
+function getItemArtworkUrl(item: MediaItem): string {
   if (item.ImageTags?.Primary) {
     return getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 360);
   }
@@ -95,14 +95,14 @@ function getItemArtworkUrl(item: JellyfinItem): string {
   return "";
 }
 
-function getItemTypeLabel(item: JellyfinItem, t: Translate): string {
+function getItemTypeLabel(item: MediaItem, t: Translate): string {
   if (item.Type === "Movie") return t("common.movie");
   if (item.Type === "Series") return t("common.series");
   return item.Type ?? t("common.item");
 }
 
 function itemMatchesQuery(
-  item: JellyfinItem,
+  item: MediaItem,
   query: string,
   t: Translate,
 ): boolean {
@@ -128,9 +128,9 @@ function itemMatchesQuery(
 }
 
 function getStreamsOfType(
-  item: JellyfinItem,
+  item: MediaItem,
   type: "Audio" | "Subtitle",
-): JellyfinMediaStream[] {
+): MediaStream[] {
   return (
     item.MediaSources?.[0]?.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
@@ -139,7 +139,7 @@ function getStreamsOfType(
 }
 
 function getStreamOptions(
-  items: JellyfinItem[],
+  items: MediaItem[],
   type: "Audio" | "Subtitle",
 ): StreamDefaultOption[] {
   const optionsByIndex = new Map<number, StreamDefaultOption>();
@@ -172,8 +172,8 @@ function getStreamOptions(
 }
 
 function getCommonDefaultIndex(
-  items: JellyfinItem[],
-  getDefaultIndex: (item: JellyfinItem) => number | undefined,
+  items: MediaItem[],
+  getDefaultIndex: (item: MediaItem) => number | undefined,
 ): number | undefined {
   if (items.length === 0) return undefined;
 
@@ -185,7 +185,7 @@ function getCommonDefaultIndex(
 }
 
 function getStreamLabel(
-  stream: JellyfinMediaStream,
+  stream: MediaStream,
   fallback: string,
   t: Translate,
 ): string {
@@ -215,7 +215,7 @@ function getStreamLabel(
 function getOptionCountLabel(
   option: StreamDefaultOption,
   totalItems: number,
-  selectedItem: JellyfinItem | null,
+  selectedItem: MediaItem | null,
   t: Translate,
 ): string | null {
   if (!selectedItem || selectedItem.Type !== "Series" || totalItems <= 1) {
@@ -251,9 +251,9 @@ function formatSelectedStreamIndex(
 export function PlaybackDefaultsPage() {
   const { t } = useLanguage();
   const loadTargetsRequestIdRef = useRef(0);
-  const [items, setItems] = useState<JellyfinItem[] | null>(null);
-  const [selectedItem, setSelectedItem] = useState<JellyfinItem | null>(null);
-  const [targetItems, setTargetItems] = useState<JellyfinItem[]>([]);
+  const [items, setItems] = useState<MediaItem[] | null>(null);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
+  const [targetItems, setTargetItems] = useState<MediaItem[]>([]);
   const [selectedAudioStreamIndex, setSelectedAudioStreamIndex] =
     useState<number>(NO_AUDIO_STREAM_INDEX);
   const [selectedSubtitleStreamIndex, setSelectedSubtitleStreamIndex] =
@@ -361,7 +361,7 @@ export function PlaybackDefaultsPage() {
     ),
   });
 
-  const selectItem = async (item: JellyfinItem) => {
+  const selectItem = async (item: MediaItem) => {
     const requestId = loadTargetsRequestIdRef.current + 1;
     loadTargetsRequestIdRef.current = requestId;
 

@@ -3,9 +3,9 @@ import {
   buildSmartContinueWatchingItems,
   isSmartContinueCompleted,
 } from "./smartContinueWatching";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
-function item(id: string, values: Partial<JellyfinItem> = {}): JellyfinItem {
+function item(id: string, values: Partial<MediaItem> = {}): MediaItem {
   return {
     Id: id,
     Name: id,
@@ -18,8 +18,8 @@ function episode(
   id: string,
   season: number,
   episodeNumber: number,
-  values: Partial<JellyfinItem> = {},
-): JellyfinItem {
+  values: Partial<MediaItem> = {},
+): MediaItem {
   return item(id, {
     Type: "Episode",
     SeriesId: "series-1",

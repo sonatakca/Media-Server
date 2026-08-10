@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import {
   DEFAULT_READER_SETTINGS,
   EPUB_PREPARATION_TIMEOUT_MS,
@@ -47,13 +47,13 @@ describe("readerModel", () => {
         Name: "book.pdf",
         Path: "/books/book.txt",
         MediaSources: [{ Container: "epub", Path: "/books/book.html" }],
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBe("epub");
     expect(
-      getReaderFormat({ Id: "image", Name: "cover.JPG?x=1" } as JellyfinItem),
+      getReaderFormat({ Id: "image", Name: "cover.JPG?x=1" } as MediaItem),
     ).toBe("image");
     expect(
-      getReaderFormat({ Id: "unknown", Name: "README" } as JellyfinItem),
+      getReaderFormat({ Id: "unknown", Name: "README" } as MediaItem),
     ).toBe("fallback");
   });
 

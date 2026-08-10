@@ -5,11 +5,11 @@ import {
   markItemWatchedStatus,
   resetItemWatchedStatus,
 } from "./jellyfinApi";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export const WATCH_STATUS_CHANGED_EVENT = "seyirlik:watch-status-changed";
 
-function withResetUserData(item: JellyfinItem): JellyfinItem {
+function withResetUserData(item: MediaItem): MediaItem {
   return {
     ...item,
     UserData: {
@@ -21,7 +21,7 @@ function withResetUserData(item: JellyfinItem): JellyfinItem {
   };
 }
 
-function withWatchedUserData(item: JellyfinItem): JellyfinItem {
+function withWatchedUserData(item: MediaItem): MediaItem {
   return {
     ...item,
     UserData: {
@@ -35,7 +35,7 @@ function withWatchedUserData(item: JellyfinItem): JellyfinItem {
   };
 }
 
-function emitWatchStatusChanged(items: JellyfinItem[]): void {
+function emitWatchStatusChanged(items: MediaItem[]): void {
   if (typeof window === "undefined") {
     return;
   }
@@ -49,7 +49,7 @@ function emitWatchStatusChanged(items: JellyfinItem[]): void {
   );
 }
 
-async function resetItems(items: JellyfinItem[]): Promise<JellyfinItem[]> {
+async function resetItems(items: MediaItem[]): Promise<MediaItem[]> {
   await Promise.all(items.map((item) => resetItemWatchedStatus(item.Id)));
 
   const resetItems = items.map(withResetUserData);
@@ -57,7 +57,7 @@ async function resetItems(items: JellyfinItem[]): Promise<JellyfinItem[]> {
   return resetItems;
 }
 
-async function markItems(items: JellyfinItem[]): Promise<JellyfinItem[]> {
+async function markItems(items: MediaItem[]): Promise<MediaItem[]> {
   await Promise.all(items.map((item) => markItemWatchedStatus(item.Id)));
 
   const watchedItems = items.map(withWatchedUserData);
@@ -66,49 +66,49 @@ async function markItems(items: JellyfinItem[]): Promise<JellyfinItem[]> {
 }
 
 export async function removeWatchedStatusForItem(
-  item: JellyfinItem,
-): Promise<JellyfinItem[]> {
+  item: MediaItem,
+): Promise<MediaItem[]> {
   return resetItems([item]);
 }
 
 export async function removeWatchedStatusForSeason(
   seriesId: string,
   seasonId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const episodes = await getSeasonEpisodes(seriesId, seasonId);
   return resetItems(episodes.filter((item) => item.Type === "Episode"));
 }
 
 export async function removeWatchedStatusForShow(
   seriesId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const episodes = await getAllSeriesEpisodes(seriesId);
   return resetItems(episodes.filter((item) => item.Type === "Episode"));
 }
 
 export async function markWatchedStatusForItem(
-  item: JellyfinItem,
-): Promise<JellyfinItem[]> {
+  item: MediaItem,
+): Promise<MediaItem[]> {
   return markItems([item]);
 }
 
 export async function markWatchedStatusForSeason(
   seriesId: string,
   seasonId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const episodes = await getSeasonEpisodes(seriesId, seasonId);
   return markItems(episodes.filter((item) => item.Type === "Episode"));
 }
 
 export async function markWatchedStatusForShow(
   seriesId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const episodes = await getAllSeriesEpisodes(seriesId);
   return markItems(episodes.filter((item) => item.Type === "Episode"));
 }
 
 export async function reloadItemAfterWatchedStatusChange(
-  item: JellyfinItem,
-): Promise<JellyfinItem> {
+  item: MediaItem,
+): Promise<MediaItem> {
   return getItem(item.Id).catch(() => withResetUserData(item));
 }

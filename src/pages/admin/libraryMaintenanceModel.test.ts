@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   MIXED_SUBTITLE_PREFERENCE_INDEX,
   createDraftFromItem,
@@ -22,7 +22,7 @@ describe("libraryMaintenanceModel", () => {
         ProductionYear: 2026,
         CommunityRating: 8.25,
         Genres: ["Drama", "Crime"],
-      } as JellyfinItem),
+      } as MediaItem),
     ).toEqual({
       name: "Movie",
       sortName: "Movie, The",
@@ -47,7 +47,7 @@ describe("libraryMaintenanceModel", () => {
           MediaStreams: [{ Type: "Subtitle", Index: 2, Language: "tr" }],
         },
       ],
-    } as JellyfinItem;
+    } as MediaItem;
     const second = {
       Id: "second",
       Name: "Second",
@@ -57,7 +57,7 @@ describe("libraryMaintenanceModel", () => {
           MediaStreams: [{ Type: "subtitle", Index: 2, Language: "en" }],
         },
       ],
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(getCommonSubtitlePreferenceIndex([first, second])).toBe(
       MIXED_SUBTITLE_PREFERENCE_INDEX,

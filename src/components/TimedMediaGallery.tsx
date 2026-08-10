@@ -19,7 +19,7 @@ import {
   getItemLogoUrl,
 } from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
@@ -27,12 +27,12 @@ import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 
 interface TimedMediaGalleryProps {
   title: string;
-  items: JellyfinItem[];
+  items: MediaItem[];
   durationMs?: number;
   maxItems?: number;
 }
 
-function getBackdrop(item: JellyfinItem): string {
+function getBackdrop(item: MediaItem): string {
   if (item.BackdropImageTags?.[0]) {
     return getBackdropImageUrl(item.Id, item.BackdropImageTags[0], 1900);
   }
@@ -52,13 +52,13 @@ function getBackdrop(item: JellyfinItem): string {
   return "";
 }
 
-function getPoster(item: JellyfinItem): string {
+function getPoster(item: MediaItem): string {
   return item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 900)
     : "";
 }
 
-function canPlayItem(item: JellyfinItem): boolean {
+function canPlayItem(item: MediaItem): boolean {
   return (
     item.Type === "Movie" ||
     item.Type === "Episode" ||
@@ -67,9 +67,9 @@ function canPlayItem(item: JellyfinItem): boolean {
 }
 
 function getGalleryItems(
-  items: JellyfinItem[],
+  items: MediaItem[],
   maxItems: number,
-): JellyfinItem[] {
+): MediaItem[] {
   const seenIds = new Set<string>();
 
   return items

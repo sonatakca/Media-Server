@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   ARTWORK_KINDS,
   TARGET_FILE_BY_KIND,
@@ -33,14 +33,14 @@ describe("tmdbArtworkModel", () => {
         Id: "movie",
         Name: "Movie",
         ProviderIds: { tmdb: "42" },
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBe(42);
     expect(
       getTmdbIdFromItem({
         Id: "movie",
         Name: "Movie",
         ProviderIds: { Tmdb: "0" },
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBeNull();
   });
 
@@ -51,7 +51,7 @@ describe("tmdbArtworkModel", () => {
       Type: "Series",
       ProviderIds: { TMDB: "7" },
       ProductionYear: 2026,
-    } as JellyfinItem;
+    } as MediaItem;
     expect(getMediaTypeForItem(item)).toBe("tv");
     expect(createTmdbResultFromProvider(item)).toMatchObject({
       id: 7,
@@ -75,7 +75,7 @@ describe("tmdbArtworkModel", () => {
         Id: "movie",
         Name: "The Movie",
         Genres: ["Science Fiction"],
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBe("the movie science fiction");
   });
 });

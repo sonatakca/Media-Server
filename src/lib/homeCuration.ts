@@ -1,4 +1,4 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export const HOME_CURATION_STORAGE_KEY = "seyirlik-home-curation-v1";
 
@@ -16,18 +16,18 @@ export const DEFAULT_HOME_CURATION_PREFERENCES: HomeCurationPreferences = {
   latestExcludedIds: [],
 };
 
-function hasBackdrop(item: JellyfinItem): boolean {
+function hasBackdrop(item: MediaItem): boolean {
   return Boolean(
     item.BackdropImageTags?.[0] ||
     (item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]),
   );
 }
 
-function hasPrimaryImage(item: JellyfinItem): boolean {
+function hasPrimaryImage(item: MediaItem): boolean {
   return Boolean(item.ImageTags?.Primary);
 }
 
-function removeDuplicateItems(items: JellyfinItem[]): JellyfinItem[] {
+function removeDuplicateItems(items: MediaItem[]): MediaItem[] {
   const seenItemIds = new Set<string>();
 
   return items.filter((item) => {
@@ -40,11 +40,11 @@ function removeDuplicateItems(items: JellyfinItem[]): JellyfinItem[] {
   });
 }
 
-function isHomeCarouselItem(item: JellyfinItem): boolean {
+function isHomeCarouselItem(item: MediaItem): boolean {
   return item.Type === "Movie" || item.Type === "Series";
 }
 
-function scoreHomeCarouselItem(item: JellyfinItem): number {
+function scoreHomeCarouselItem(item: MediaItem): number {
   let score = 0;
 
   if (hasBackdrop(item)) {
@@ -174,7 +174,7 @@ export function clearHomeCurationPreferences(): void {
   storage.removeItem(HOME_CURATION_STORAGE_KEY);
 }
 
-export function buildHomeCarouselPool(items: JellyfinItem[]): JellyfinItem[] {
+export function buildHomeCarouselPool(items: MediaItem[]): MediaItem[] {
   return removeDuplicateItems(items.filter(isHomeCarouselItem))
     .map((item, index) => ({
       item,
@@ -190,20 +190,20 @@ export function buildHomeCarouselPool(items: JellyfinItem[]): JellyfinItem[] {
 }
 
 export function orderHomeCarouselItemsForEditor(
-  items: JellyfinItem[],
+  items: MediaItem[],
   preferences: HomeCurationPreferences,
-): JellyfinItem[] {
+): MediaItem[] {
   return orderItemsForEditor(items, preferences.carouselOrderIds);
 }
 
 function orderItemsForEditor(
-  items: JellyfinItem[],
+  items: MediaItem[],
   orderIds: string[],
-): JellyfinItem[] {
+): MediaItem[] {
   const itemById = new Map(items.map((item) => [item.Id, item]));
   const orderedItems = orderIds
     .map((itemId) => itemById.get(itemId))
-    .filter((item): item is JellyfinItem => Boolean(item));
+    .filter((item): item is MediaItem => Boolean(item));
   const orderedIds = new Set(orderedItems.map((item) => item.Id));
   const remainingItems = items.filter((item) => !orderedIds.has(item.Id));
 
@@ -211,16 +211,16 @@ function orderItemsForEditor(
 }
 
 export function orderLatestMediaItemsForEditor(
-  items: JellyfinItem[],
+  items: MediaItem[],
   preferences: HomeCurationPreferences,
-): JellyfinItem[] {
+): MediaItem[] {
   return orderItemsForEditor(items, preferences.latestOrderIds);
 }
 
 export function applyHomeCarouselCuration(
-  items: JellyfinItem[],
+  items: MediaItem[],
   preferences: HomeCurationPreferences,
-): JellyfinItem[] {
+): MediaItem[] {
   const excludedIds = new Set(preferences.carouselExcludedIds);
 
   return orderHomeCarouselItemsForEditor(items, preferences).filter(
@@ -229,9 +229,9 @@ export function applyHomeCarouselCuration(
 }
 
 export function filterLatestMediaItems(
-  items: JellyfinItem[],
+  items: MediaItem[],
   preferences: HomeCurationPreferences,
-): JellyfinItem[] {
+): MediaItem[] {
   const excludedIds = new Set(preferences.latestExcludedIds);
 
   return orderLatestMediaItemsForEditor(items, preferences).filter(

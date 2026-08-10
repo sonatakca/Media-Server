@@ -26,7 +26,7 @@ import {
   updateUserPolicy,
 } from "../lib/jellyfinApi";
 import { setPageTitle } from "../lib/pageTitle";
-import type { JellyfinUser, JellyfinUserPolicy } from "../lib/types";
+import type { MediaUser, MediaUserPolicy } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 
@@ -78,7 +78,7 @@ function createEmptyDraft(): UserDraft {
   };
 }
 
-function createDraftFromUser(user: JellyfinUser): UserDraft {
+function createDraftFromUser(user: MediaUser): UserDraft {
   const policy = user.Policy ?? {};
 
   return {
@@ -96,9 +96,9 @@ function createDraftFromUser(user: JellyfinUser): UserDraft {
 }
 
 function applyDraftToPolicy(
-  policy: JellyfinUserPolicy,
+  policy: MediaUserPolicy,
   draft: UserDraft,
-): JellyfinUserPolicy {
+): MediaUserPolicy {
   return {
     ...policy,
     IsAdministrator: draft.isAdministrator,
@@ -167,7 +167,7 @@ function ToggleField({
 export function UserManagementPage() {
   const { t } = useLanguage();
   const currentUserId = getAuthSession()?.userId ?? null;
-  const [users, setUsers] = useState<JellyfinUser[]>([]);
+  const [users, setUsers] = useState<MediaUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState<UserDraft>(createEmptyDraft);
   const [search, setSearch] = useState("");
@@ -270,7 +270,7 @@ export function UserManagementPage() {
     setSaveState({ status: "idle", message: "" });
   };
 
-  const beginEditing = (user: JellyfinUser) => {
+  const beginEditing = (user: MediaUser) => {
     setSelectedUserId(user.Id);
     setDraft(createDraftFromUser(user));
     setSaveState({ status: "idle", message: "" });

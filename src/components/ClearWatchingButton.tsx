@@ -3,14 +3,14 @@ import { X } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import { getDisplayTitle } from "../lib/format";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { Tooltip } from "./ui/Tooltip";
 
 interface ClearWatchingButtonProps {
-  item: JellyfinItem;
+  item: MediaItem;
   className: string;
   iconSize?: number;
-  onCleared: (item: JellyfinItem) => void;
+  onCleared: (item: MediaItem) => void;
 }
 
 export function ClearWatchingButton({

@@ -15,7 +15,7 @@ import {
   shouldOpenPlaybackForItem,
   shouldOpenReaderForItem,
 } from "../lib/routes";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -26,7 +26,7 @@ import { WatchedIndicator } from "./WatchedIndicator";
 import { Tooltip } from "./ui/Tooltip";
 
 interface MediaCardProps {
-  item: JellyfinItem;
+  item: MediaItem;
   to: string;
   variant?: "poster" | "landscape";
   layout?: "row" | "grid";
@@ -35,12 +35,12 @@ interface MediaCardProps {
   hideTags?: boolean;
   showPlayFromBeginning?: boolean;
   showRestartWatching?: boolean;
-  collectionItems?: JellyfinItem[];
-  onClearContinueWatching?: (item: JellyfinItem) => void;
+  collectionItems?: MediaItem[];
+  onClearContinueWatching?: (item: MediaItem) => void;
 }
 
 function getEpisodeDisplayTitle(
-  item: JellyfinItem,
+  item: MediaItem,
   t: (key: TranslationKey) => string,
 ): string | null {
   if (item.Type !== "Episode") {
@@ -66,7 +66,7 @@ function countLabel(
 }
 
 function getCountLabel(
-  item: JellyfinItem,
+  item: MediaItem,
   t: (key: TranslationKey) => string,
 ): string | null {
   if (item.Type === "Series") {
@@ -132,7 +132,7 @@ function getCountLabel(
 }
 
 function getPosterCountBubbleLabel(
-  item: JellyfinItem,
+  item: MediaItem,
   itemCounts: string | null,
   t: (key: TranslationKey) => string,
 ): string | null {
@@ -156,7 +156,7 @@ function getPosterCountBubbleLabel(
 }
 
 function getEpisodeSeasonLabel(
-  item: JellyfinItem,
+  item: MediaItem,
   t: (key: TranslationKey) => string,
 ): string | null {
   if (item.Type !== "Episode") {

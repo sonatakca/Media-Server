@@ -7,11 +7,11 @@ import {
   shouldOpenReaderForItem,
   shouldOpenPlaybackForItem,
 } from "./routes";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 describe("media routes", () => {
   it("routes movie details through library pages", () => {
-    const movie: JellyfinItem = {
+    const movie: MediaItem = {
       Id: "movie-1",
       Name: "Movie",
       Type: "Movie",
@@ -24,7 +24,7 @@ describe("media routes", () => {
   });
 
   it("routes episodes to playback but returns to the series page", () => {
-    const episode: JellyfinItem = {
+    const episode: MediaItem = {
       Id: "episode-1",
       Name: "Episode",
       Type: "Episode",
@@ -38,12 +38,12 @@ describe("media routes", () => {
   });
 
   it("routes shows and seasons with an immediate show category hint", () => {
-    const series: JellyfinItem = {
+    const series: MediaItem = {
       Id: "series-1",
       Name: "Series",
       Type: "Series",
     };
-    const season: JellyfinItem = {
+    const season: MediaItem = {
       Id: "season-1",
       Name: "Season",
       Type: "Season",
@@ -55,7 +55,7 @@ describe("media routes", () => {
   });
 
   it("routes local trailer playback back to its parent media page", () => {
-    const trailer: JellyfinItem = {
+    const trailer: MediaItem = {
       Id: "trailer-1",
       Name: "Trailer",
       Type: "Video",
@@ -92,7 +92,7 @@ describe("media routes", () => {
   });
 
   it("routes books to the reader without treating them as watchable media", () => {
-    const book: JellyfinItem = {
+    const book: MediaItem = {
       Id: "book-1",
       Name: "Book",
       Type: "Book",
@@ -108,7 +108,7 @@ describe("media routes", () => {
   });
 
   it("routes document-like book media to the reader", () => {
-    const documentItem: JellyfinItem = {
+    const documentItem: MediaItem = {
       Id: "doc-1",
       Name: "Document",
       Type: "File",

@@ -20,7 +20,7 @@ import {
   getItem,
   getPrimaryImageUrl,
 } from "../lib/jellyfinApi";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import {
   getSeriesEpisodeMetadataPreference,
   saveEpisodeMetadataOverrides,
@@ -81,8 +81,8 @@ import {
 
 export function TmdbArtworkPage() {
   const { language, t } = useLanguage();
-  const [items, setItems] = useState<JellyfinItem[]>([]);
-  const [selectedItem, setSelectedItem] = useState<JellyfinItem | null>(null);
+  const [items, setItems] = useState<MediaItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [itemSearch, setItemSearch] = useState("");
   const [tmdbSearch, setTmdbSearch] = useState("");
   const [tmdbYear, setTmdbYear] = useState("");
@@ -105,7 +105,7 @@ export function TmdbArtworkPage() {
   const [selectedLogoImages, setSelectedLogoImages] = useState<
     Partial<Record<"en" | "tr", TmdbArtworkImage>>
   >({});
-  const [seriesEpisodes, setSeriesEpisodes] = useState<JellyfinItem[]>([]);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<MediaItem[]>([]);
   const [episodeSeasonFilter, setEpisodeSeasonFilter] =
     useState<EpisodeSeasonFilter>("all");
   const [episodeThumbnailLanguage, setEpisodeThumbnailLanguage] =
@@ -402,7 +402,7 @@ export function TmdbArtworkPage() {
     };
   }, [selectedItem, t]);
 
-  const selectItem = async (item: JellyfinItem) => {
+  const selectItem = async (item: MediaItem) => {
     const resolvedTarget = await resolveMetadataTarget(item);
     const metadataItem = resolvedTarget.metadataItem;
     const providerResult = createTmdbResultFromProvider(metadataItem);

@@ -1,4 +1,4 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 const ROMAN_VALUES: Record<string, number> = {
   i: 1,
@@ -10,7 +10,7 @@ const ROMAN_VALUES: Record<string, number> = {
   m: 1000,
 };
 
-export function isCollectionItem(item: JellyfinItem): boolean {
+export function isCollectionItem(item: MediaItem): boolean {
   return item.Type === "BoxSet" || item.CollectionType === "boxsets";
 }
 
@@ -23,7 +23,7 @@ function parseDateTime(value?: string): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-function getReleaseYear(item: JellyfinItem): number | null {
+function getReleaseYear(item: MediaItem): number | null {
   if (typeof item.ProductionYear === "number") {
     return item.ProductionYear;
   }
@@ -107,7 +107,7 @@ function extractTitleOrderNumber(title?: string): number | null {
   return null;
 }
 
-function getSequelOrderNumber(item: JellyfinItem): number | null {
+function getSequelOrderNumber(item: MediaItem): number | null {
   return (
     extractTitleOrderNumber(item.OriginalTitle) ??
     extractTitleOrderNumber(item.SortName) ??
@@ -115,7 +115,7 @@ function getSequelOrderNumber(item: JellyfinItem): number | null {
   );
 }
 
-function compareText(left: JellyfinItem, right: JellyfinItem): number {
+function compareText(left: MediaItem, right: MediaItem): number {
   return (left.SortName ?? left.Name).localeCompare(
     right.SortName ?? right.Name,
     undefined,
@@ -142,7 +142,7 @@ function compareMaybeNumber(
   return 0;
 }
 
-function compareSequelOrder(left: JellyfinItem, right: JellyfinItem): number {
+function compareSequelOrder(left: MediaItem, right: MediaItem): number {
   const leftOrder = getSequelOrderNumber(left);
   const rightOrder = getSequelOrderNumber(right);
 
@@ -161,7 +161,7 @@ function compareSequelOrder(left: JellyfinItem, right: JellyfinItem): number {
   return 0;
 }
 
-function compareCollectionItems(left: JellyfinItem, right: JellyfinItem) {
+function compareCollectionItems(left: MediaItem, right: MediaItem) {
   const leftPremiereTime = parseDateTime(left.PremiereDate);
   const rightPremiereTime = parseDateTime(right.PremiereDate);
 
@@ -196,8 +196,8 @@ function compareCollectionItems(left: JellyfinItem, right: JellyfinItem) {
 }
 
 export function sortCollectionItemsForWatching(
-  items: JellyfinItem[],
-): JellyfinItem[] {
+  items: MediaItem[],
+): MediaItem[] {
   return items
     .map((item, index) => ({ item, index }))
     .sort((left, right) => {

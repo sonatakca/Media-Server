@@ -1,0 +1,290 @@
+import type { ScanResult, ScannedItem, ScannedSubtitle } from "./libraryScan";
+
+/**
+ * Reconciliation turns a scan snapshot into durable catalogue state.
+ *
+ * Two invariants drive the design:
+ *
+ * 1. It is idempotent. Rescanning an unchanged library performs no writes that
+ *    change observable state, so a scheduled scan is safe to run continuously.
+ * 2. Disappearance is never immediately destructive. An unmounted volume makes
+ *    every file "missing" at once; items are only deleted after they have been
+ *    missing for a grace period, so a mount failure cannot erase watch history.
+ */
+
+export interface ExistingItemRow {
+  id: string;
+  sourceKey: string;
+  kind: string;
+  lockedFields: string[];
+  missingSince: Date | null;
+}
+
+export interface ExistingFileRow {
+  id: string;
+  itemId: string;
+  relativePath: string;
+  fingerprint: string;
+  missingSince: Date | null;
+}
+
+export interface UpsertItemInput {
+  libraryId: string;
+  sourceKey: string;
+  kind: string;
+  title: string;
+  sortTitle: string;
+  year: number | undefined;
+  indexNumber: number | undefined;
+  parentIndexNumber: number | undefined;
+  /** Field names the reconciler must not overwrite because an admin edited them. */
+  lockedFields: string[];
+}
+
+export interface UpsertFileInput {
+  itemId: string;
+  relativePath: string;
+  container: string;
+  size: number;
+  mtimeMs: number;
+  fingerprint: string;
+  isPrimary: boolean;
+}
+
+export interface CatalogueScanStore {
+  listItems(libraryId: string): Promise<ExistingItemRow[]>;
+  listFiles(libraryId: string): Promise<ExistingFileRow[]>;
+  upsertItem(input: UpsertItemInput): Promise<string>;
+  setItemRelations(
+    itemId: string,
+    relations: { parentId: string | null; seriesId: string | null },
+  ): Promise<void>;
+  /** Returns true when the file content changed and must be re-probed. */
+  upsertFile(input: UpsertFileInput): Promise<{ id: string; changed: boolean }>;
+  replaceExternalSubtitles(
+    itemId: string,
+    subtitles: ScannedSubtitle[],
+  ): Promise<void>;
+  markItemsSeen(itemIds: string[]): Promise<void>;
+  markFilesSeen(fileIds: string[]): Promise<void>;
+  markItemsMissing(itemIds: string[], missingSince: Date): Promise<void>;
+  markFilesMissing(fileIds: string[], missingSince: Date): Promise<void>;
+  deleteItems(itemIds: string[]): Promise<void>;
+  deleteFiles(fileIds: string[]): Promise<void>;
+  queueProbe(fileIds: string[]): Promise<void>;
+  refreshItemCounts(libraryId: string): Promise<void>;
+}
+
+export interface ReconcileOptions {
+  store: CatalogueScanStore;
+  libraryId: string;
+  scan: ScanResult;
+  /** How long a vanished item is retained before deletion. */
+  missingGraceMs?: number;
+  /**
+   * Fraction of the library that may disappear in one scan before the run is
+   * treated as a mount failure and no removals are applied at all.
+   */
+  massDisappearanceRatio?: number;
+  /**
+   * Set by an administrator who really did delete most of a library, to run the
+   * removal pass that the mass-disappearance guard would otherwise suppress.
+   */
+  allowMassRemoval?: boolean;
+  now?: () => Date;
+}
+
+export interface ReconcileSummary {
+  itemsCreated: number;
+  itemsUpdated: number;
+  itemsMarkedMissing: number;
+  itemsDeleted: number;
+  filesCreated: number;
+  filesChanged: number;
+  filesMarkedMissing: number;
+  filesDeleted: number;
+  probesQueued: number;
+  /** True when removals were suppressed because too much vanished at once. */
+  removalsSuppressed: boolean;
+}
+
+const DEFAULT_MISSING_GRACE_MS = 7 * 24 * 60 * 60 * 1_000;
+const DEFAULT_MASS_DISAPPEARANCE_RATIO = 0.5;
+
+function orderByDependency(items: ScannedItem[]): ScannedItem[] {
+  // Parents must exist before children can reference them.
+  const rank: Record<string, number> = {
+    series: 0,
+    season: 1,
+    movie: 0,
+    book: 0,
+    episode: 2,
+    trailer: 2,
+    collection: 3,
+  };
+  return [...items].sort(
+    (left, right) => (rank[left.kind] ?? 9) - (rank[right.kind] ?? 9),
+  );
+}
+
+export async function reconcileLibraryScan({
+  store,
+  libraryId,
+  scan,
+  missingGraceMs = DEFAULT_MISSING_GRACE_MS,
+  massDisappearanceRatio = DEFAULT_MASS_DISAPPEARANCE_RATIO,
+  allowMassRemoval = false,
+  now = () => new Date(),
+}: ReconcileOptions): Promise<ReconcileSummary> {
+  const summary: ReconcileSummary = {
+    itemsCreated: 0,
+    itemsUpdated: 0,
+    itemsMarkedMissing: 0,
+    itemsDeleted: 0,
+    filesCreated: 0,
+    filesChanged: 0,
+    filesMarkedMissing: 0,
+    filesDeleted: 0,
+    probesQueued: 0,
+    removalsSuppressed: false,
+  };
+
+  const currentTime = now();
+  const existingItems = await store.listItems(libraryId);
+  const existingFiles = await store.listFiles(libraryId);
+  const existingItemsByKey = new Map(
+    existingItems.map((item) => [item.sourceKey, item]),
+  );
+  const existingFilesByPath = new Map(
+    existingFiles.map((file) => [file.relativePath, file]),
+  );
+
+  const itemIdBySourceKey = new Map<string, string>();
+  const seenItemIds: string[] = [];
+  const seenFileIds: string[] = [];
+  const probeFileIds: string[] = [];
+
+  for (const scanned of orderByDependency(scan.items)) {
+    const existing = existingItemsByKey.get(scanned.sourceKey);
+    const itemId = await store.upsertItem({
+      libraryId,
+      sourceKey: scanned.sourceKey,
+      kind: scanned.kind,
+      title: scanned.title,
+      sortTitle: scanned.sortTitle,
+      year: scanned.year,
+      indexNumber: scanned.indexNumber,
+      parentIndexNumber: scanned.parentIndexNumber,
+      lockedFields: existing?.lockedFields ?? [],
+    });
+
+    itemIdBySourceKey.set(scanned.sourceKey, itemId);
+    seenItemIds.push(itemId);
+    if (existing) summary.itemsUpdated += 1;
+    else summary.itemsCreated += 1;
+
+    for (const [index, file] of scanned.files.entries()) {
+      const previous = existingFilesByPath.get(file.relativePath);
+      const { id, changed } = await store.upsertFile({
+        itemId,
+        relativePath: file.relativePath,
+        container: file.container,
+        size: file.size,
+        mtimeMs: file.mtimeMs,
+        fingerprint: file.fingerprint,
+        isPrimary: index === 0,
+      });
+
+      seenFileIds.push(id);
+      // `changed` comes from the store rather than from a comparison against the
+      // pre-scan snapshot, which the store is free to have mutated by now.
+      if (!previous) summary.filesCreated += 1;
+      else if (changed) summary.filesChanged += 1;
+
+      // A new file, or one whose bytes changed, needs a fresh technical probe.
+      if (changed) probeFileIds.push(id);
+    }
+
+    if (scanned.files.length > 0 || scanned.subtitles.length > 0) {
+      await store.replaceExternalSubtitles(itemId, scanned.subtitles);
+    }
+  }
+
+  for (const scanned of scan.items) {
+    const itemId = itemIdBySourceKey.get(scanned.sourceKey);
+    if (!itemId) continue;
+
+    const parentId = scanned.parentSourceKey
+      ? (itemIdBySourceKey.get(scanned.parentSourceKey) ?? null)
+      : null;
+    const seriesId = scanned.seriesSourceKey
+      ? (itemIdBySourceKey.get(scanned.seriesSourceKey) ?? null)
+      : null;
+
+    await store.setItemRelations(itemId, { parentId, seriesId });
+  }
+
+  await store.markItemsSeen(seenItemIds);
+  await store.markFilesSeen(seenFileIds);
+
+  if (probeFileIds.length > 0) {
+    await store.queueProbe(probeFileIds);
+    summary.probesQueued = probeFileIds.length;
+  }
+
+  const seenItemIdSet = new Set(seenItemIds);
+  const seenFileIdSet = new Set(seenFileIds);
+  const vanishedItems = existingItems.filter(
+    (item) => !seenItemIdSet.has(item.id),
+  );
+  const vanishedFiles = existingFiles.filter(
+    (file) => !seenFileIdSet.has(file.id),
+  );
+
+  // A scan that finds almost nothing is far more likely to be a storage failure
+  // than a real deletion, so it must not propagate into the catalogue.
+  const disappearanceRatio =
+    existingFiles.length === 0
+      ? 0
+      : vanishedFiles.length / existingFiles.length;
+  if (!allowMassRemoval && disappearanceRatio > massDisappearanceRatio) {
+    summary.removalsSuppressed = true;
+    await store.refreshItemCounts(libraryId);
+    return summary;
+  }
+
+  const graceCutoff = new Date(currentTime.getTime() - missingGraceMs);
+
+  const filesToMark = vanishedFiles
+    .filter((file) => file.missingSince === null)
+    .map((file) => file.id);
+  const filesToDelete = vanishedFiles
+    .filter((file) => file.missingSince !== null && file.missingSince <= graceCutoff)
+    .map((file) => file.id);
+  const itemsToMark = vanishedItems
+    .filter((item) => item.missingSince === null)
+    .map((item) => item.id);
+  const itemsToDelete = vanishedItems
+    .filter((item) => item.missingSince !== null && item.missingSince <= graceCutoff)
+    .map((item) => item.id);
+
+  if (filesToMark.length > 0) {
+    await store.markFilesMissing(filesToMark, currentTime);
+    summary.filesMarkedMissing = filesToMark.length;
+  }
+  if (itemsToMark.length > 0) {
+    await store.markItemsMissing(itemsToMark, currentTime);
+    summary.itemsMarkedMissing = itemsToMark.length;
+  }
+  if (filesToDelete.length > 0) {
+    await store.deleteFiles(filesToDelete);
+    summary.filesDeleted = filesToDelete.length;
+  }
+  if (itemsToDelete.length > 0) {
+    await store.deleteItems(itemsToDelete);
+    summary.itemsDeleted = itemsToDelete.length;
+  }
+
+  await store.refreshItemCounts(libraryId);
+  return summary;
+}

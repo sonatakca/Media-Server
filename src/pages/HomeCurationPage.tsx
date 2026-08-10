@@ -36,13 +36,13 @@ import {
   getPrimaryImageUrl,
 } from "../lib/jellyfinApi";
 import { setPageTitle } from "../lib/pageTitle";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 
 type CurationSection = "carousel" | "latest";
 
 interface HomeCurationData {
-  carouselItems: JellyfinItem[];
-  latestItems: JellyfinItem[];
+  carouselItems: MediaItem[];
+  latestItems: MediaItem[];
 }
 
 function formatTemplate(
@@ -55,7 +55,7 @@ function formatTemplate(
   );
 }
 
-function getItemArtworkUrl(item: JellyfinItem): string {
+function getItemArtworkUrl(item: MediaItem): string {
   if (item.ImageTags?.Primary) {
     return getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 360);
   }
@@ -76,7 +76,7 @@ function getItemArtworkUrl(item: JellyfinItem): string {
 }
 
 function getItemTypeLabel(
-  item: JellyfinItem,
+  item: MediaItem,
   t: ReturnType<typeof useLanguage>["t"],
 ): string {
   if (item.Type === "Movie") {
@@ -91,7 +91,7 @@ function getItemTypeLabel(
 }
 
 function itemMatchesQuery(
-  item: JellyfinItem,
+  item: MediaItem,
   query: string,
   t: ReturnType<typeof useLanguage>["t"],
 ): boolean {
@@ -165,7 +165,7 @@ function moveItemIdToIndex(
 }
 
 interface CurationItemRowProps {
-  item: JellyfinItem;
+  item: MediaItem;
   enabled: boolean;
   enabledLabel: string;
   disabledLabel: string;

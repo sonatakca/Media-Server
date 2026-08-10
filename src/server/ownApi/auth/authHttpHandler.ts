@@ -5,6 +5,17 @@ import {
   sendOwnApiJson,
   type OwnApiRouteHandler,
 } from "../ownApiHandler";
+import {
+  appendSetCookie,
+  headerValue,
+  methodNotAllowed,
+  parseCookies,
+  readJsonBody,
+  remoteAddress,
+  requireMutationOrigin,
+  serializeCookie as serializeApiCookie,
+  uniqueCookie,
+} from "../api/http";
 import type {
   NativeAuthService,
   NativeAuthenticatedSession,
@@ -18,8 +29,24 @@ import {
 } from "./rateLimiter";
 
 const AUTH_BASE_PATH = `${OWN_API_V1_BASE_PATH}/auth`;
-const COOKIE_PATH = `${AUTH_BASE_PATH}`;
+// Session and CSRF cookies are scoped to the whole versioned API: every
+// catalogue, image, media and WebSocket request is authorized by the same
+// session, so a `/auth`-scoped cookie would never be sent to them.
+const COOKIE_PATH = OWN_API_V1_BASE_PATH;
 const MAX_JSON_BODY_BYTES = 16 * 1_024;
+
+function serializeCookie(
+  name: string,
+  value: string,
+  options: {
+    httpOnly: boolean;
+    secure: boolean;
+    expires: Date;
+    maxAgeSeconds: number;
+  },
+): string {
+  return serializeApiCookie(name, value, { ...options, path: COOKIE_PATH });
+}
 const MAX_USERNAME_INPUT_LENGTH = 128;
 const MAX_PASSWORD_INPUT_BYTES = 256;
 const MAX_DEVICE_DESCRIPTION_LENGTH = 200;
@@ -40,117 +67,6 @@ interface LoginBody {
   username: string;
   password: string;
   deviceDescription?: string;
-}
-
-function methodNotAllowed(response: ServerResponse, allow: string): never {
-  response.setHeader("Allow", allow);
-  throw new OwnApiError(
-    "METHOD_NOT_ALLOWED",
-    "HTTP method is not allowed for this route.",
-    405,
-  );
-}
-
-function directRequestOrigin(request: IncomingMessage): string | undefined {
-  const host = request.headers.host;
-  if (!host) return undefined;
-  const protocol =
-    "encrypted" in request.socket && request.socket.encrypted
-      ? "https"
-      : "http";
-  try {
-    return new URL(`${protocol}://${host}`).origin;
-  } catch {
-    return undefined;
-  }
-}
-
-function headerValue(value: string | string[] | undefined): string | undefined {
-  return typeof value === "string" ? value : undefined;
-}
-
-function requireMutationOrigin(
-  request: IncomingMessage,
-  publicOrigin: string | undefined,
-): void {
-  const expectedOrigin = publicOrigin ?? directRequestOrigin(request);
-  const origin = headerValue(request.headers.origin);
-  const referer = headerValue(request.headers.referer);
-  let suppliedOrigin = origin;
-
-  if (!suppliedOrigin && referer) {
-    try {
-      suppliedOrigin = new URL(referer).origin;
-    } catch {
-      suppliedOrigin = undefined;
-    }
-  }
-
-  if (!expectedOrigin || suppliedOrigin !== expectedOrigin) {
-    throw new OwnApiError(
-      "CSRF_REJECTED",
-      "The request could not be verified.",
-      403,
-    );
-  }
-}
-
-function parseCookies(request: IncomingMessage): Map<string, string[]> {
-  const cookies = new Map<string, string[]>();
-  const header = headerValue(request.headers.cookie);
-  if (!header) return cookies;
-
-  for (const part of header.split(";")) {
-    const separator = part.indexOf("=");
-    if (separator <= 0) continue;
-    const name = part.slice(0, separator).trim();
-    const value = part.slice(separator + 1).trim();
-    const existing = cookies.get(name) ?? [];
-    existing.push(value);
-    cookies.set(name, existing);
-  }
-  return cookies;
-}
-
-function uniqueCookie(
-  cookies: Map<string, string[]>,
-  name: string,
-): string | undefined {
-  const values = cookies.get(name);
-  return values?.length === 1 ? values[0] : undefined;
-}
-
-function serializeCookie(
-  name: string,
-  value: string,
-  options: {
-    httpOnly: boolean;
-    secure: boolean;
-    expires: Date;
-    maxAgeSeconds: number;
-  },
-): string {
-  return [
-    `${name}=${value}`,
-    `Path=${COOKIE_PATH}`,
-    `Expires=${options.expires.toUTCString()}`,
-    `Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds))}`,
-    "SameSite=Lax",
-    options.secure ? "Secure" : "",
-    options.httpOnly ? "HttpOnly" : "",
-  ]
-    .filter(Boolean)
-    .join("; ");
-}
-
-function appendSetCookie(response: ServerResponse, cookies: string[]): void {
-  const existing = response.getHeader("Set-Cookie");
-  const current = Array.isArray(existing)
-    ? existing.map(String)
-    : existing
-      ? [String(existing)]
-      : [];
-  response.setHeader("Set-Cookie", [...current, ...cookies]);
 }
 
 function setSessionCookies(
@@ -205,54 +121,6 @@ function clearSessionCookies(
   ]);
 }
 
-async function readJsonBody(request: IncomingMessage): Promise<unknown> {
-  const mediaType = headerValue(request.headers["content-type"])
-    ?.split(";", 1)[0]
-    ?.trim()
-    .toLowerCase();
-  if (mediaType !== "application/json") {
-    throw new OwnApiError(
-      "UNSUPPORTED_MEDIA_TYPE",
-      "Content-Type must be application/json.",
-      415,
-    );
-  }
-
-  const declaredLength = Number(request.headers["content-length"] ?? 0);
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_JSON_BODY_BYTES) {
-    throw new OwnApiError(
-      "REQUEST_BODY_TOO_LARGE",
-      "The request body is too large.",
-      413,
-    );
-  }
-
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  for await (const chunk of request) {
-    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-    totalBytes += buffer.length;
-    if (totalBytes > MAX_JSON_BODY_BYTES) {
-      throw new OwnApiError(
-        "REQUEST_BODY_TOO_LARGE",
-        "The request body is too large.",
-        413,
-      );
-    }
-    chunks.push(buffer);
-  }
-
-  try {
-    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  } catch {
-    throw new OwnApiError(
-      "INVALID_JSON",
-      "The request body is not valid JSON.",
-      400,
-    );
-  }
-}
-
 function parseLoginBody(value: unknown): LoginBody {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new OwnApiError(
@@ -291,10 +159,6 @@ function parseLoginBody(value: unknown): LoginBody {
       ? { deviceDescription: candidate.deviceDescription }
       : {}),
   };
-}
-
-function remoteAddress(request: IncomingMessage): string {
-  return request.socket.remoteAddress ?? "unknown";
 }
 
 function mapAuthError(error: unknown): OwnApiError {
@@ -391,7 +255,7 @@ export function createNativeAuthHttpHandler(
       if (request.method !== "POST")
         methodNotAllowed(response, "POST, OPTIONS");
       requireMutationOrigin(request, options.publicOrigin);
-      const body = parseLoginBody(await readJsonBody(request));
+      const body = parseLoginBody(await readJsonBody(request, MAX_JSON_BODY_BYTES));
       const limiterKey = `${remoteAddress(request)}|${normalizeLoginUsername(body.username).slice(0, 64)}`;
       const decision = loginLimiter.consume(limiterKey);
       if (!decision.allowed) {

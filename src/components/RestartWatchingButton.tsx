@@ -5,11 +5,11 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import { getDisplayTitle } from "../lib/format";
 import { getWatchRouteForItem } from "../lib/routes";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { Tooltip } from "./ui/Tooltip";
 
 interface RestartWatchingButtonProps {
-  item: JellyfinItem;
+  item: MediaItem;
   className: string;
   iconSize?: number;
 }

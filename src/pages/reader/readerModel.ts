@@ -1,7 +1,7 @@
 import type { CSSProperties } from "react";
 import type { NavItem } from "epubjs";
 import { glassPillButton } from "../../components/ui/glassControlStyles";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 
 export type ReaderFormat =
   | "epub"
@@ -314,7 +314,7 @@ export function getNormalizedExtension(value?: string): string | null {
   return normalizedExtension || null;
 }
 
-export function getReaderFormat(item: JellyfinItem): ReaderFormat {
+export function getReaderFormat(item: MediaItem): ReaderFormat {
   const candidates = [
     item.MediaSources?.find((source) => source.Container)?.Container,
     item.MediaSources?.find((source) => source.Path)?.Path,

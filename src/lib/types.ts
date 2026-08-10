@@ -1,3 +1,12 @@
+/**
+ * View models rendered by the UI.
+ *
+ * These are Seyirlik's own shapes. Durations are ticks (100ns) because that is
+ * what the player's arithmetic uses throughout; the native API speaks
+ * milliseconds and `src/api/ownApi/adapters.ts` is the only place that
+ * converts between the two.
+ */
+
 import type { PlaybackDiagnostics } from "./playback-planner/types";
 import type { MediaQualityManifest } from "../renditions/contracts";
 
@@ -9,7 +18,7 @@ export interface AuthSession {
   deviceId: string;
 }
 
-export interface JellyfinUser {
+export interface MediaUser {
   Id: string;
   Name: string;
   ServerId?: string;
@@ -22,11 +31,11 @@ export interface JellyfinUser {
   LastLoginDate?: string;
   LastActivityDate?: string;
   Configuration?: Record<string, unknown>;
-  Policy?: JellyfinUserPolicy;
+  Policy?: MediaUserPolicy;
   PrimaryImageAspectRatio?: number;
 }
 
-export interface JellyfinUserPolicy extends Record<string, unknown> {
+export interface MediaUserPolicy extends Record<string, unknown> {
   IsAdministrator?: boolean;
   IsHidden?: boolean;
   IsDisabled?: boolean;
@@ -38,8 +47,8 @@ export interface JellyfinUserPolicy extends Record<string, unknown> {
   PasswordResetProviderId?: string;
 }
 
-export interface JellyfinAuthResponse {
-  User: JellyfinUser;
+export interface AuthResponse {
+  User: MediaUser;
   SessionInfo?: {
     Id?: string;
     DeviceId?: string;
@@ -50,7 +59,7 @@ export interface JellyfinAuthResponse {
   ServerId?: string;
 }
 
-export interface JellyfinImageTags {
+export interface MediaImageTags {
   Primary?: string;
   Logo?: string;
   Thumb?: string;
@@ -58,7 +67,7 @@ export interface JellyfinImageTags {
   [key: string]: string | undefined;
 }
 
-export interface JellyfinUserData {
+export interface MediaUserData {
   PlaybackPositionTicks?: number;
   PlayCount?: number;
   IsFavorite?: boolean;
@@ -71,7 +80,7 @@ export interface JellyfinUserData {
   ItemId?: string;
 }
 
-export interface JellyfinMediaStream {
+export interface MediaStream {
   Index?: number;
   Type?: "Audio" | "Video" | "Subtitle" | string;
   Codec?: string;
@@ -99,7 +108,7 @@ export interface JellyfinMediaStream {
   ColorSpace?: string;
 }
 
-export interface JellyfinMediaSource {
+export interface MediaSource {
   Protocol?: string;
   Id?: string;
   Name?: string;
@@ -123,10 +132,10 @@ export interface JellyfinMediaSource {
   DefaultAudioStreamIndex?: number;
   DefaultSubtitleStreamIndex?: number;
   RequiredHttpHeaders?: Record<string, string>;
-  MediaStreams?: JellyfinMediaStream[];
+  MediaStreams?: MediaStream[];
 }
 
-export interface JellyfinChapter {
+export interface MediaChapter {
   StartPositionTicks?: number;
   Name?: string;
   ImageTag?: string;
@@ -140,7 +149,7 @@ export type SegmentKind =
   | "Commercial"
   | string;
 
-export interface JellyfinMediaSegment {
+export interface MediaSegment {
   Id?: string;
   ItemId?: string;
   Type?: SegmentKind;
@@ -159,7 +168,7 @@ export interface NormalizedMediaSegment {
   endSeconds: number;
 }
 
-export interface JellyfinItem {
+export interface MediaItem {
   Id: string;
   Name: string;
   Path?: string;
@@ -183,8 +192,8 @@ export interface JellyfinItem {
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;
-  Chapters?: JellyfinChapter[];
-  ImageTags?: JellyfinImageTags;
+  Chapters?: MediaChapter[];
+  ImageTags?: MediaImageTags;
   BackdropImageTags?: string[];
   ParentBackdropItemId?: string;
   ParentBackdropImageTags?: string[];
@@ -192,8 +201,8 @@ export interface JellyfinItem {
   SeasonName?: string;
   IndexNumber?: number;
   ParentIndexNumber?: number;
-  UserData?: JellyfinUserData;
-  MediaSources?: JellyfinMediaSource[];
+  UserData?: MediaUserData;
+  MediaSources?: MediaSource[];
   ParentLogoItemId?: string;
   ParentLogoImageTag?: string;
   SeriesId?: string;
@@ -202,17 +211,17 @@ export interface JellyfinItem {
   ParentId?: string;
 }
 
-export interface JellyfinLibrary extends JellyfinItem {
+export interface MediaLibrary extends MediaItem {
   CollectionType?: string;
 }
 
-export interface JellyfinItemsResponse<TItem = JellyfinItem> {
+export interface MediaItemsResponse<TItem = MediaItem> {
   Items?: TItem[];
   TotalRecordCount?: number;
   StartIndex?: number;
 }
 
-export interface JellyfinPublicSystemInfo {
+export interface ServerInfo {
   LocalAddress?: string;
   ServerName?: string;
   Version?: string;
@@ -221,13 +230,13 @@ export interface JellyfinPublicSystemInfo {
   Id?: string;
 }
 
-export interface JellyfinPlaybackInfoResponse {
-  MediaSources?: JellyfinMediaSource[];
+export interface PlaybackInfoResponse {
+  MediaSources?: MediaSource[];
   PlaySessionId?: string;
   ErrorCode?: string;
 }
 
-export interface JellyfinTranscodingInfo {
+export interface TranscodingInfo {
   AudioCodec?: string;
   VideoCodec?: string;
   Container?: string;
@@ -245,7 +254,7 @@ export interface JellyfinTranscodingInfo {
   PlaySessionId?: string;
 }
 
-export interface JellyfinSessionInfo {
+export interface PlaybackSessionInfo {
   Id?: string;
   PlayState?: {
     PlaySessionId?: string;
@@ -256,14 +265,14 @@ export interface JellyfinSessionInfo {
     Id?: string;
     Name?: string;
   };
-  TranscodingInfo?: JellyfinTranscodingInfo;
+  TranscodingInfo?: TranscodingInfo;
 }
 
-export type JellyfinMetadataRefreshMode = "Default" | "FullRefresh" | "None";
+export type MetadataRefreshMode = "Default" | "FullRefresh" | "None";
 
-export interface JellyfinMetadataRefreshOptions {
-  metadataRefreshMode?: JellyfinMetadataRefreshMode;
-  imageRefreshMode?: JellyfinMetadataRefreshMode;
+export interface MetadataRefreshOptions {
+  metadataRefreshMode?: MetadataRefreshMode;
+  imageRefreshMode?: MetadataRefreshMode;
   replaceAllMetadata?: boolean;
   replaceAllImages?: boolean;
 }
@@ -307,8 +316,8 @@ export interface PlaybackSourceCandidate {
     | "direct";
   usingHlsJs?: boolean;
   label: string;
-  mediaSource: JellyfinMediaSource;
-  playbackInfo?: JellyfinPlaybackInfoResponse;
+  mediaSource: MediaSource;
+  playbackInfo?: PlaybackInfoResponse;
   playbackDiagnostics?: PlaybackDiagnostics;
   qualityManifest?: MediaQualityManifest;
   reason: string;

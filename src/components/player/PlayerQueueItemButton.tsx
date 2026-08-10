@@ -5,7 +5,7 @@ import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
 import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import { Tooltip } from "../ui/Tooltip";
 import { WatchedStatusButton } from "../WatchedStatusButton";
@@ -14,14 +14,14 @@ export type PlayerQueueTranslate = (key: TranslationKey) => string;
 export type QueueItemVariant = "episode" | "collection";
 
 interface QueueItemButtonProps {
-  item: JellyfinItem;
+  item: MediaItem;
   isCurrent: boolean;
   variant: QueueItemVariant;
   t: PlayerQueueTranslate;
-  onPlayItem?: (item: JellyfinItem) => void;
+  onPlayItem?: (item: MediaItem) => void;
 }
 
-function getReleaseYear(item: JellyfinItem): number | null {
+function getReleaseYear(item: MediaItem): number | null {
   if (typeof item.ProductionYear === "number") {
     return item.ProductionYear;
   }
@@ -36,19 +36,19 @@ function getReleaseYear(item: JellyfinItem): number | null {
   return Number.isFinite(releaseYear) ? releaseYear : null;
 }
 
-function getThumbnailUrl(item: JellyfinItem): string {
+function getThumbnailUrl(item: MediaItem): string {
   return item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 400)
     : "";
 }
 
-function getPosterUrl(item: JellyfinItem): string {
+function getPosterUrl(item: MediaItem): string {
   return item.ImageTags?.Primary
     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 500)
     : "";
 }
 
-function getEpisodeLabel(item: JellyfinItem, t: PlayerQueueTranslate) {
+function getEpisodeLabel(item: MediaItem, t: PlayerQueueTranslate) {
   if (
     typeof item.ParentIndexNumber === "number" &&
     typeof item.IndexNumber === "number"

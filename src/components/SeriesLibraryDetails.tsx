@@ -26,7 +26,7 @@ import {
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import type { PlayerNavigationState } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
 import defaultProfileImage from "../assets/Default_pfp.jpg";
 
@@ -43,14 +43,14 @@ interface JellyfinStudio {
   Name?: string;
 }
 
-type SeriesDetailsItem = JellyfinItem & {
+type SeriesDetailsItem = MediaItem & {
   People?: JellyfinPerson[];
   Studios?: JellyfinStudio[];
 };
 
 function mergeSeriesPeople(
   seriesPeople: JellyfinPerson[] | undefined,
-  episodeItems: JellyfinItem[],
+  episodeItems: MediaItem[],
 ): JellyfinPerson[] {
   const mergedPeople: JellyfinPerson[] = [];
   const seenPeople = new Set<string>();
@@ -88,7 +88,7 @@ function mergeSeriesPeople(
 }
 
 interface SeriesLibraryDetailsProps {
-  initialItem: JellyfinItem;
+  initialItem: MediaItem;
   variant: "desktop" | "mobile";
   canonicalPath: string;
   onInitialReady?: () => void;
@@ -241,7 +241,7 @@ function formatDate(value: string | undefined, language: "en" | "tr") {
   }).format(date);
 }
 
-function getSeasonLabel(season: JellyfinItem, language: "en" | "tr"): string {
+function getSeasonLabel(season: MediaItem, language: "en" | "tr"): string {
   if (typeof season.IndexNumber === "number" && season.IndexNumber >= 0) {
     return language === "tr"
       ? `${season.IndexNumber}. Sezon`
@@ -251,7 +251,7 @@ function getSeasonLabel(season: JellyfinItem, language: "en" | "tr"): string {
   return season.Name;
 }
 
-function sortSeasons(left: JellyfinItem, right: JellyfinItem) {
+function sortSeasons(left: MediaItem, right: MediaItem) {
   return (
     (left.IndexNumber ?? Number.MAX_SAFE_INTEGER) -
       (right.IndexNumber ?? Number.MAX_SAFE_INTEGER) ||
@@ -259,7 +259,7 @@ function sortSeasons(left: JellyfinItem, right: JellyfinItem) {
   );
 }
 
-function sortEpisodes(left: JellyfinItem, right: JellyfinItem) {
+function sortEpisodes(left: MediaItem, right: MediaItem) {
   return (
     (left.IndexNumber ?? Number.MAX_SAFE_INTEGER) -
       (right.IndexNumber ?? Number.MAX_SAFE_INTEGER) ||
@@ -275,12 +275,12 @@ export function SeriesLibraryDetails({
 }: SeriesLibraryDetailsProps) {
   const { language, t } = useLanguage();
   const [series, setSeries] = useState<SeriesDetailsItem | null>(null);
-  const [seasons, setSeasons] = useState<JellyfinItem[]>([]);
+  const [seasons, setSeasons] = useState<MediaItem[]>([]);
   const [selectedSeasonId, setSelectedSeasonId] = useState<string | null>(null);
-  const [episodes, setEpisodes] = useState<JellyfinItem[]>([]);
-  const [seriesEpisodes, setSeriesEpisodes] = useState<JellyfinItem[]>([]);
-  const [trailers, setTrailers] = useState<JellyfinItem[]>([]);
-  const [similarItems, setSimilarItems] = useState<JellyfinItem[]>([]);
+  const [episodes, setEpisodes] = useState<MediaItem[]>([]);
+  const [seriesEpisodes, setSeriesEpisodes] = useState<MediaItem[]>([]);
+  const [trailers, setTrailers] = useState<MediaItem[]>([]);
+  const [similarItems, setSimilarItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
   const [resolvedEpisodeSelectionKey, setResolvedEpisodeSelectionKey] =
@@ -331,7 +331,7 @@ export function SeriesLibraryDetails({
             : getItem(detailsItemId).then((item) => item as SeriesDetailsItem),
 
           isMovie
-            ? Promise.resolve([] as JellyfinItem[])
+            ? Promise.resolve([] as MediaItem[])
             : getSeriesSeasons(detailsItemId),
 
           getLocalTrailers(detailsItemId).catch(() => []),
@@ -339,7 +339,7 @@ export function SeriesLibraryDetails({
           getSimilarItems(detailsItemId, 18).catch(() => []),
 
           isMovie
-            ? Promise.resolve([] as JellyfinItem[])
+            ? Promise.resolve([] as MediaItem[])
             : getAllSeriesEpisodes(detailsItemId).catch(() => []),
         ]);
 
@@ -533,7 +533,7 @@ export function SeriesLibraryDetails({
       ? seriesEpisodes.every((episode) => isItemCompleted(episode))
       : isItemCompleted(series);
   const canChangeWatchedStatus = isMovie || seriesEpisodes.length > 0;
-  const handleWatchedStatusChange = (changedItems: JellyfinItem[]) => {
+  const handleWatchedStatusChange = (changedItems: MediaItem[]) => {
     const changedItemsById = new Map(
       changedItems.map((changedItem) => [changedItem.Id, changedItem]),
     );

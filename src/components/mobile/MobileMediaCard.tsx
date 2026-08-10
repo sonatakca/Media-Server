@@ -20,7 +20,7 @@ import {
   shouldOpenPlaybackForItem,
   shouldOpenReaderForItem,
 } from "../../lib/routes";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
 import { ClearWatchingButton } from "../ClearWatchingButton";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
@@ -29,14 +29,14 @@ import { WatchedIndicator } from "../WatchedIndicator";
 import { Tooltip } from "../ui/Tooltip";
 
 interface MobileMediaCardProps {
-  item: JellyfinItem;
+  item: MediaItem;
   to: string;
   variant?: "poster" | "landscape";
   layout?: "row" | "grid";
   showRestartWatching?: boolean;
-  collectionItems?: JellyfinItem[];
+  collectionItems?: MediaItem[];
   animateRemoval?: boolean;
-  onClearContinueWatching?: (item: JellyfinItem) => void;
+  onClearContinueWatching?: (item: MediaItem) => void;
 }
 
 function countLabel(
@@ -49,7 +49,7 @@ function countLabel(
 }
 
 function getSeriesCount(
-  item: JellyfinItem,
+  item: MediaItem,
   t: (key: TranslationKey) => string,
 ): string | null {
   const seasonCount = item.ChildCount;

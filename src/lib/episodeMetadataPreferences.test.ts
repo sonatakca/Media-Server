@@ -5,7 +5,7 @@ import {
   getSeriesEpisodeThumbnailLanguage,
   saveEpisodeMetadataOverrides,
 } from "./episodeMetadataPreferences";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 function createMemoryStorage(): Storage {
   const values = new Map<string, string>();
@@ -32,7 +32,7 @@ function createMemoryStorage(): Storage {
   };
 }
 
-function createEpisode(overrides: Partial<JellyfinItem> = {}): JellyfinItem {
+function createEpisode(overrides: Partial<MediaItem> = {}): MediaItem {
   return {
     Id: "episode-1",
     Name: "Jellyfin name",

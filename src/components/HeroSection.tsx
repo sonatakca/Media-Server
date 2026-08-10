@@ -23,7 +23,7 @@ import { getRouteForItem } from "../lib/routes";
 import { getPlayTargetForItem } from "../lib/playTarget";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
@@ -62,8 +62,8 @@ interface HeroSectionProps {
    * allowing its backdrop and preview trailer to play.
    */
   variant?: "carousel" | "fixed";
-  item?: JellyfinItem;
-  smartContinueItems?: JellyfinItem[];
+  item?: MediaItem;
+  smartContinueItems?: MediaItem[];
   currentIndex?: number;
   totalItems?: number;
   durationMs?: number;
@@ -371,7 +371,7 @@ export function HeroSection({
   const [isHeroIntroDone, setIsHeroIntroDone] = useState(false);
 
   const [fallbackSmartContinueItems, setFallbackSmartContinueItems] = useState<
-    JellyfinItem[]
+    MediaItem[]
   >([]);
 
   useEffect(() => {
@@ -383,7 +383,7 @@ export function HeroSection({
 
     const loadSmartContinueItems = async () => {
       const items = await getSmartContinueWatchingItems().catch(
-        () => [] as JellyfinItem[],
+        () => [] as MediaItem[],
       );
 
       if (!cancelled) {

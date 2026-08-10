@@ -1,5 +1,5 @@
 import type { Language } from "../i18n/translations";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 const ITEM_METADATA_STORAGE_KEY = "seyirlik-item-metadata-overrides";
 const STORE_VERSION = 1;
@@ -164,7 +164,7 @@ export function saveItemLogoOverride(
 }
 
 export function getItemLogoUrl(
-  item: JellyfinItem,
+  item: MediaItem,
   language: Language,
   fallbackUrl: string,
 ): string {
@@ -183,7 +183,7 @@ export function getItemLogoUrlById(
 }
 
 export function getItemDisplayMetadata(
-  item: JellyfinItem,
+  item: MediaItem,
   language: Language,
 ): ItemDisplayMetadata {
   const stored = readStore().itemsById[item.Id];

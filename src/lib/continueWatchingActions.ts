@@ -3,11 +3,11 @@ import {
   getItem,
   resetItemWatchedStatus,
 } from "./jellyfinApi";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 import { WATCH_STATUS_CHANGED_EVENT } from "./watchedStatusActions";
 
 interface IndexedEpisode {
-  item: JellyfinItem;
+  item: MediaItem;
   index: number;
 }
 
@@ -56,7 +56,7 @@ function compareEpisodeOrder(
   return left.index - right.index;
 }
 
-async function getEpisodeSeriesId(item: JellyfinItem): Promise<string | null> {
+async function getEpisodeSeriesId(item: MediaItem): Promise<string | null> {
   if (item.SeriesId) {
     return item.SeriesId;
   }
@@ -78,7 +78,7 @@ async function getEpisodeSeriesId(item: JellyfinItem): Promise<string | null> {
   return parent.SeriesId ?? parent.ParentId ?? null;
 }
 
-async function getItemsToClear(item: JellyfinItem): Promise<JellyfinItem[]> {
+async function getItemsToClear(item: MediaItem): Promise<MediaItem[]> {
   if (item.Type !== "Episode") {
     return [item];
   }
@@ -89,7 +89,7 @@ async function getItemsToClear(item: JellyfinItem): Promise<JellyfinItem[]> {
     throw new Error("Could not determine the series to clear.");
   }
 
-  const episodes = new Map<string, JellyfinItem>();
+  const episodes = new Map<string, MediaItem>();
 
   for (const episode of await getAllSeriesEpisodes(seriesId)) {
     if (episode.Type === "Episode") {
@@ -112,8 +112,8 @@ async function getItemsToClear(item: JellyfinItem): Promise<JellyfinItem[]> {
 }
 
 export async function clearContinueWatchingHistory(
-  item: JellyfinItem,
-): Promise<JellyfinItem> {
+  item: MediaItem,
+): Promise<MediaItem> {
   const itemsToClear = await getItemsToClear(item);
 
   await Promise.all(

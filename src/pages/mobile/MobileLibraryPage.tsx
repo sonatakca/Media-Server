@@ -36,7 +36,7 @@ import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { setPageTitle } from "../../lib/pageTitle";
 import { preloadMediaPlayback } from "../../lib/playbackPreload";
 import { getRouteForItem } from "../../lib/routes";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 import { preloadPlayerPage } from "../PlayerPage";
@@ -60,16 +60,16 @@ type LibraryFallbackTitleKey =
   | "library.library";
 
 interface LibraryData {
-  library?: JellyfinItem;
+  library?: MediaItem;
   fallbackTitleKey?: LibraryFallbackTitleKey;
-  items: JellyfinItem[];
-  selectableSeasons: JellyfinItem[];
+  items: MediaItem[];
+  selectableSeasons: MediaItem[];
   collectionPosterChildrenById: CollectionPosterChildrenMap;
 }
 
 function getLibraryBackdropUrl(
-  library: JellyfinItem | undefined,
-  items: JellyfinItem[],
+  library: MediaItem | undefined,
+  items: MediaItem[],
 ): string {
   if (library?.BackdropImageTags?.[0]) {
     return getBackdropImageUrl(library.Id, library.BackdropImageTags[0], 1000);
@@ -115,7 +115,7 @@ function getLibraryBackdropUrl(
     : "";
 }
 
-function getSortNumber(item: JellyfinItem): number {
+function getSortNumber(item: MediaItem): number {
   return item.IndexNumber ?? item.ProductionYear ?? 9999;
 }
 
@@ -126,8 +126,8 @@ function compareDates(leftDate?: string, rightDate?: string): number {
 }
 
 function sortItems(
-  left: JellyfinItem,
-  right: JellyfinItem,
+  left: MediaItem,
+  right: MediaItem,
   sortBy: "name" | "year" | "latest",
 ): number {
   if (left.Type === "Season" && right.Type === "Season") {
@@ -162,9 +162,9 @@ function sortItems(
 async function loadLibraryItems(
   id: string,
   mode: "library" | "series" | "season",
-  library?: JellyfinItem,
+  library?: MediaItem,
   seriesId?: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   if (mode === "library") {
     if (
       library?.CollectionType === "tvshows" ||
@@ -446,7 +446,7 @@ export function MobileLibraryPage({
   }, [libraryRotatingLogoUrls, mode]);
 
   const handleWatchedStatusReset = (
-    resetItems: JellyfinItem[],
+    resetItems: MediaItem[],
     options?: { action: "mark" | "remove"; scope: "show" },
   ) => {
     const resetItemsById = new Map(

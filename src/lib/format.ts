@@ -1,4 +1,4 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 const TICKS_PER_MINUTE = 600_000_000;
 
@@ -36,7 +36,7 @@ export function formatRuntime(
 }
 
 export function getDisplayTitle(
-  item: JellyfinItem,
+  item: MediaItem,
   labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
 ): string {
   if (item.Type === "Season") {
@@ -61,7 +61,7 @@ export function getDisplayTitle(
 }
 
 export function getItemSubtitle(
-  item: JellyfinItem,
+  item: MediaItem,
   labels: MediaFormatLabels = DEFAULT_MEDIA_FORMAT_LABELS,
 ): string | null {
   if (item.Type === "Season") {

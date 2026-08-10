@@ -23,13 +23,13 @@ interface JellyfinItemResponse {
   MediaSources?: unknown;
 }
 
-interface JellyfinItemsResponse {
+interface MediaItemsResponse {
   Items?: unknown;
   TotalRecordCount?: unknown;
   StartIndex?: unknown;
 }
 
-interface JellyfinMediaSource {
+interface MediaSource {
   Id?: unknown;
   Protocol?: unknown;
   Path?: unknown;
@@ -152,7 +152,7 @@ function extractSingleJellyfinItem(value: unknown): JellyfinItemResponse {
     );
   }
 
-  const response = value as JellyfinItemsResponse;
+  const response = value as MediaItemsResponse;
 
   if (!Array.isArray(response.Items)) {
     throw new JellyfinMediaResolverError(
@@ -201,17 +201,17 @@ function getPathValue(value: unknown): string | null {
 
 function getFileMediaSources(
   item: JellyfinItemResponse,
-): JellyfinMediaSource[] {
+): MediaSource[] {
   if (!Array.isArray(item.MediaSources)) {
     return [];
   }
 
-  return item.MediaSources.filter((source): source is JellyfinMediaSource => {
+  return item.MediaSources.filter((source): source is MediaSource => {
     if (!source || typeof source !== "object" || Array.isArray(source)) {
       return false;
     }
 
-    const protocol = (source as JellyfinMediaSource).Protocol;
+    const protocol = (source as MediaSource).Protocol;
 
     return typeof protocol === "string" && protocol.toLowerCase() === "file";
   });

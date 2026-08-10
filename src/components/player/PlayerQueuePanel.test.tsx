@@ -1,7 +1,7 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { PlaybackQueue } from "../../lib/playbackQueue";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { PlayerQueuePanel } from "./PlayerQueuePanel";
 
 vi.mock("../../i18n/LanguageContext", () => ({
@@ -26,7 +26,7 @@ function episode(
   name: string,
   episodeNumber: number,
   played = false,
-): JellyfinItem {
+): MediaItem {
   return {
     Id: id,
     Name: name,
@@ -49,7 +49,7 @@ function movie(
   name: string,
   productionYear: number,
   played = false,
-): JellyfinItem {
+): MediaItem {
   return {
     Id: id,
     Name: name,

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   compareNames,
   countLabel,
@@ -140,12 +140,12 @@ describe("libraryModel", () => {
       Type: "Movie",
       RunTimeTicks: 7_200_000_000,
       UserData: { Played: false, PlaybackPositionTicks: 15 },
-    } as JellyfinItem;
+    } as MediaItem;
     const folder = {
       Id: "folder-1",
       Name: "Folder",
       Type: "Folder",
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(isWatchableScopeItem(movie)).toBe(true);
     expect(isWatchableScopeItem(folder)).toBe(false);
@@ -175,12 +175,12 @@ describe("libraryModel", () => {
       Id: "2",
       Name: "Movie 10",
       SortName: "Movie 2",
-    } as JellyfinItem;
+    } as MediaItem;
     const second = {
       Id: "1",
       Name: "Movie 1",
       SortName: "Movie 10",
-    } as JellyfinItem;
+    } as MediaItem;
     const translate = (key: string) =>
       ({ singular: "One item", plural: "{count} items" })[key] ?? key;
 

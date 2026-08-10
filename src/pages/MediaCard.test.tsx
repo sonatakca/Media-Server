@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { MediaCard } from "../components/MediaCard";
 import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 
 // 1. Mock the Jellyfin API URL builders
 vi.mock("../lib/jellyfinApi", () => ({
@@ -51,7 +51,7 @@ vi.mock("framer-motion", () => ({
   useReducedMotion: () => true,
 }));
 
-const mockMovie: JellyfinItem = {
+const mockMovie: MediaItem = {
   Id: "movie-123",
   Name: "The Matrix",
   Type: "Movie",
@@ -119,12 +119,12 @@ describe("MediaCard Component", () => {
   });
 
   it("renders a collection mosaic when a BoxSet has no primary image", () => {
-    const collection: JellyfinItem = {
+    const collection: MediaItem = {
       Id: "collection-1",
       Name: "Example Collection",
       Type: "BoxSet",
     };
-    const collectionItems: JellyfinItem[] = [
+    const collectionItems: MediaItem[] = [
       {
         Id: "movie-1",
         Name: "Example",
@@ -172,7 +172,7 @@ describe("MediaCard Component", () => {
   });
 
   it("uses the series poster for continue-watching episodes", () => {
-    const episode: JellyfinItem = {
+    const episode: MediaItem = {
       Id: "episode-123",
       Name: "Let Him Go",
       Type: "Episode",

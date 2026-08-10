@@ -1,7 +1,7 @@
 import { render } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { MediaRow } from "./MediaRow";
 
 vi.mock("framer-motion", () => ({
@@ -35,7 +35,7 @@ vi.mock("./MotionReveal", () => ({
 }));
 
 vi.mock("./MediaCard", () => ({
-  MediaCard: ({ item }: { item: JellyfinItem }) => (
+  MediaCard: ({ item }: { item: MediaItem }) => (
     <div data-testid="media-card">{item.Name}</div>
   ),
 }));
@@ -51,7 +51,7 @@ beforeAll(() => {
 
 describe("MediaRow", () => {
   it("keeps the hover paint gutter on a track inside the scroller", () => {
-    const item: JellyfinItem = {
+    const item: MediaItem = {
       Id: "movie-1",
       Name: "Movie",
       Type: "Movie",

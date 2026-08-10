@@ -4,9 +4,9 @@ import {
   getLibraryRoute,
   getLibrarySlug,
 } from "./libraryRoutes";
-import type { JellyfinLibrary } from "./types";
+import type { MediaLibrary } from "./types";
 
-const library = (overrides: Partial<JellyfinLibrary>): JellyfinLibrary => ({
+const library = (overrides: Partial<MediaLibrary>): MediaLibrary => ({
   Id: "library-id",
   Name: "Library",
   Type: "CollectionFolder",

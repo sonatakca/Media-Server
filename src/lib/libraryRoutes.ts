@@ -1,6 +1,6 @@
 import { getAuthSession } from "./authStorage";
 import { getUserViews } from "./jellyfinApi";
-import type { JellyfinLibrary } from "./types";
+import type { MediaLibrary } from "./types";
 
 export type LibrarySlug = "movies" | "shows" | "books" | "collections";
 
@@ -30,7 +30,7 @@ function storageKey(): string | null {
 }
 
 export function getLibrarySlug(
-  library: Pick<JellyfinLibrary, "Name" | "CollectionType">,
+  library: Pick<MediaLibrary, "Name" | "CollectionType">,
 ): LibrarySlug | null {
   const collectionType = library.CollectionType?.trim().toLowerCase() ?? "";
   const directMatch = slugByCollectionType[collectionType];
@@ -43,7 +43,7 @@ export function getLibrarySlug(
 }
 
 export function createLibraryRouteRegistry(
-  libraries: JellyfinLibrary[],
+  libraries: MediaLibrary[],
 ): LibraryRouteRegistry {
   const registry: LibraryRouteRegistry = {};
 
@@ -83,7 +83,7 @@ export async function refreshLibraryRoutes(): Promise<LibraryRouteRegistry> {
   return registry;
 }
 
-export function getLibraryRoute(library: JellyfinLibrary): string {
+export function getLibraryRoute(library: MediaLibrary): string {
   const slug = getLibrarySlug(library);
   return slug ? `/${slug}` : `/library/${library.Id}`;
 }

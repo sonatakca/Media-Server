@@ -2,10 +2,10 @@ import { ChevronRight, Film, Tv } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getBackdropImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
-import type { JellyfinLibrary } from "../../lib/types";
+import type { MediaLibrary } from "../../lib/types";
 import { getLibraryRoute } from "../../lib/libraryRoutes";
 
-function getLibraryImage(library: JellyfinLibrary): string {
+function getLibraryImage(library: MediaLibrary): string {
   if (library.BackdropImageTags?.[0]) {
     return getBackdropImageUrl(library.Id, library.BackdropImageTags[0], 720);
   }
@@ -17,7 +17,7 @@ function getLibraryImage(library: JellyfinLibrary): string {
   return "";
 }
 
-export function MobileLibraryTile({ library }: { library: JellyfinLibrary }) {
+export function MobileLibraryTile({ library }: { library: MediaLibrary }) {
   const { t } = useLanguage();
   const imageUrl = getLibraryImage(library);
   const Icon = library.CollectionType === "tvshows" ? Tv : Film;

@@ -38,7 +38,7 @@ import {
   getMediaOwnerRouteForItem,
   shouldOpenReaderForItem,
 } from "../lib/routes";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
 import {
   SegmentedIconToolbar,
@@ -694,7 +694,7 @@ function ReaderIconButton({
 export function BookReaderPage() {
   const { itemId } = useParams<{ itemId?: string }>();
   const { t } = useLanguage();
-  const [item, setItem] = useState<JellyfinItem | null>(null);
+  const [item, setItem] = useState<MediaItem | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
   const [settings, setSettings] = useState<ReaderSettings>(
     readStoredReaderSettings,

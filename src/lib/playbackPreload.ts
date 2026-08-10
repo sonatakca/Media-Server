@@ -11,8 +11,8 @@ import {
 import { releaseCustomPlaybackSession } from "./playback-planner/customPlaybackSessionLease";
 import { getPlayTargetItemForItem } from "./playTarget";
 import type {
-  JellyfinItem,
-  JellyfinPlaybackInfoResponse,
+  MediaItem,
+  PlaybackInfoResponse,
   PlaybackSourceCandidate,
 } from "./types";
 
@@ -26,7 +26,7 @@ export interface PreloadedPlaybackSource {
 }
 
 interface CachedPlaybackItem {
-  item: JellyfinItem;
+  item: MediaItem;
   createdAtMs: number;
 }
 
@@ -38,9 +38,9 @@ const playbackSourcePromises = new Map<
 const playbackItemCache = new Map<string, CachedPlaybackItem>();
 
 export class NoPlayablePlaybackSourceError extends Error {
-  playbackInfo: JellyfinPlaybackInfoResponse;
+  playbackInfo: PlaybackInfoResponse;
 
-  constructor(playbackInfo: JellyfinPlaybackInfoResponse) {
+  constructor(playbackInfo: PlaybackInfoResponse) {
     super("No playable source returned.");
     this.name = "NoPlayablePlaybackSourceError";
     this.playbackInfo = playbackInfo;
@@ -82,14 +82,14 @@ export function readCachedPlaybackSource(
   return cached;
 }
 
-export function writePreloadedPlaybackItem(item: JellyfinItem): void {
+export function writePreloadedPlaybackItem(item: MediaItem): void {
   playbackItemCache.set(item.Id, {
     item,
     createdAtMs: Date.now(),
   });
 }
 
-export function readPreloadedPlaybackItem(itemId: string): JellyfinItem | null {
+export function readPreloadedPlaybackItem(itemId: string): MediaItem | null {
   const cached = playbackItemCache.get(itemId);
 
   if (!cached) {
@@ -201,9 +201,9 @@ export function preloadPlaybackSource(
 }
 
 export async function preloadMediaPlayback(
-  item: JellyfinItem,
+  item: MediaItem,
   options?: { preloadPlayer?: () => void | Promise<unknown> },
-): Promise<JellyfinItem | null> {
+): Promise<MediaItem | null> {
   try {
     void Promise.resolve(options?.preloadPlayer?.()).catch((error) => {
       console.debug("[Seyirlik Playback] Player chunk preload skipped", error);

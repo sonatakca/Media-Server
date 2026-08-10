@@ -196,7 +196,7 @@ describe("native authentication HTTP endpoints", () => {
     expect(sessionCookie).toContain("HttpOnly");
     expect(sessionCookie).toContain("Secure");
     expect(sessionCookie).toContain("SameSite=Lax");
-    expect(sessionCookie).toContain("Path=/ownAPI/v1/auth");
+    expect(sessionCookie).toContain("Path=/ownAPI/v1;");
     expect(sessionCookie).toContain("Expires=");
     expect(csrfCookie).toContain("Secure");
     expect(csrfCookie).not.toContain("HttpOnly");

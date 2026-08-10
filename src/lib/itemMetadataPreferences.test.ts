@@ -6,7 +6,7 @@ import {
   saveItemLogoOverride,
   saveItemMetadataOverride,
 } from "./itemMetadataPreferences";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 beforeEach(() => {
   window.localStorage.clear();
@@ -28,7 +28,7 @@ describe("item metadata preferences", () => {
       Name: "Jellyfin title",
       Overview: "Jellyfin description.",
       Type: "Movie",
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(getItemDisplayMetadata(item, "en")).toEqual({
       title: "English title",
@@ -46,7 +46,7 @@ describe("item metadata preferences", () => {
       Name: "Jellyfin show",
       Overview: "Jellyfin overview.",
       Type: "Series",
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(getItemDisplayMetadata(item, "tr")).toEqual({
       title: "Jellyfin show",
@@ -66,7 +66,7 @@ describe("item metadata preferences", () => {
       Id: "movie-1",
       Name: "Movie",
       Type: "Movie",
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(getItemLogoUrl(item, "en", "/fallback.png")).toBe(
       "https://image/en-logo.png",

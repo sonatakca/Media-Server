@@ -2,27 +2,27 @@ import {
   isCollectionItem,
   sortCollectionItemsForWatching,
 } from "./collectionUtils";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
-export type CollectionPosterChildrenMap = Record<string, JellyfinItem[]>;
+export type CollectionPosterChildrenMap = Record<string, MediaItem[]>;
 
-type LoadCollectionItems = (collectionId: string) => Promise<JellyfinItem[]>;
+type LoadCollectionItems = (collectionId: string) => Promise<MediaItem[]>;
 
-export function shouldUseCollectionFallbackPoster(item: JellyfinItem): boolean {
+export function shouldUseCollectionFallbackPoster(item: MediaItem): boolean {
   return isCollectionItem(item) && !item.ImageTags?.Primary;
 }
 
 export function getCollectionPosterItems(
-  collectionItems: JellyfinItem[],
+  collectionItems: MediaItem[],
   limit = 4,
-): JellyfinItem[] {
+): MediaItem[] {
   return sortCollectionItemsForWatching(collectionItems)
     .filter((item) => Boolean(item.ImageTags?.Primary))
     .slice(0, limit);
 }
 
 export async function loadCollectionPosterChildrenMap(
-  items: JellyfinItem[],
+  items: MediaItem[],
   loadCollectionItems: LoadCollectionItems,
 ): Promise<CollectionPosterChildrenMap> {
   const collectionsNeedingPoster = items.filter(

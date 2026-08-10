@@ -1,6 +1,6 @@
 import type { TranslationKey } from "../../i18n/translations";
 import { formatTemplate } from "../../lib/format";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 
@@ -25,7 +25,7 @@ export function countLabel(
   return count === 1 ? t(singularKey) : formatTemplate(t(pluralKey), { count });
 }
 
-export function compareNames(left: JellyfinItem, right: JellyfinItem): number {
+export function compareNames(left: MediaItem, right: MediaItem): number {
   return (left.SortName ?? left.Name).localeCompare(
     right.SortName ?? right.Name,
     undefined,
@@ -68,7 +68,7 @@ export function resolveLibraryCanonicalPath({
   );
 }
 
-export function isWatchableScopeItem(item: JellyfinItem): boolean {
+export function isWatchableScopeItem(item: MediaItem): boolean {
   return (
     item.Type === "Episode" ||
     item.Type === "Season" ||
@@ -78,8 +78,8 @@ export function isWatchableScopeItem(item: JellyfinItem): boolean {
 }
 
 export function isWholeWatchedScope(
-  library: JellyfinItem | undefined,
-  items: JellyfinItem[],
+  library: MediaItem | undefined,
+  items: MediaItem[],
 ): boolean {
   if (library && isItemCompleted(library)) {
     return true;
@@ -91,9 +91,9 @@ export function isWholeWatchedScope(
 }
 
 export function withWatchedState(
-  item: JellyfinItem,
+  item: MediaItem,
   watched: boolean,
-): JellyfinItem {
+): MediaItem {
   return {
     ...item,
     UserData: {

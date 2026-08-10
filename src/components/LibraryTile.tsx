@@ -2,16 +2,16 @@ import { Link } from "react-router-dom";
 import { ChevronRight, Film, Tv } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { getBackdropImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
-import type { JellyfinLibrary } from "../lib/types";
+import type { MediaLibrary } from "../lib/types";
 import { getLibraryRoute } from "../lib/libraryRoutes";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
 interface LibraryTileProps {
-  library: JellyfinLibrary;
+  library: MediaLibrary;
 }
 
-function getLibraryImage(library: JellyfinLibrary): string {
+function getLibraryImage(library: MediaLibrary): string {
   if (library.BackdropImageTags?.[0]) {
     return getBackdropImageUrl(library.Id, library.BackdropImageTags[0], 1100);
   }

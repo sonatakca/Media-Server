@@ -369,6 +369,237 @@ Provider behavior is closed and explicit: absent flags remain Jellyfin; malforme
 
 Production remains disabled. The Vercel guard proves `/ownAPI/v1/health` and `/ownAPI/v1/auth/me` cannot fall through to SPA HTML, but it deliberately returns JSON 503 and does not host PostgreSQL or authentication. Replace it with a same-origin route to the persistent Node backend and repeat cookie, CSRF, correlation, restart, and database durability smoke tests before changing production provider flags.
 
+## Phase 4-6 foundation — native catalogue schema, router, scanner, probe inventory (2026-08-10)
+
+Scope of this pass: the durable catalogue substrate that every remaining native
+slice depends on. No production flag changed; Jellyfin remains the default
+provider and no frontend module was rewired yet.
+
+Delivered and covered by tests:
+
+- `002_catalogue.sql` and `003_user_state_and_operations.sql`: libraries and
+  roots, per-user library permissions, logical items separated from
+  `media_files`, normalized `media_streams`, chapters, genres, people, cached
+  images, segments, trickplay sets, user item state, settings, devices, a durable
+  job queue with leases, activity, playback sessions, and SyncPlay groups.
+- `ownApi/api/`: path-parameter router with per-route access levels, strict
+  Origin plus session-bound CSRF on every mutation, fixed route templates for
+  logging, success/collection/accepted envelopes, and opaque keyset cursors.
+- `ownApi/scanner/`: pure name parsing (movies, series, seasons, episodes,
+  multi-episode ranges, specials, books, trailers, external subtitle suffixes),
+  an injectable-filesystem tree walker, and an idempotent reconciler.
+- `ownApi/probe/`: pure ffprobe-to-row mapping plus a batch probe service that
+  persists streams, chapters and runtime and stores only sanitized errors.
+- `ownApi/catalogue/`: read repository with library visibility enforced inside
+  SQL, and a separate scan-write store that preserves locked metadata fields.
+
+Behavioural decisions worth recording:
+
+- Session and CSRF cookies moved from `Path=/ownAPI/v1/auth` to `Path=/ownAPI/v1`.
+  Catalogue, image, media and WebSocket requests are authorized by the same
+  cookie, so the narrower scope would never have sent it.
+- Item identity is derived from on-disk location, not from the title, so a
+  re-encode or a container change re-attaches to the existing item and its watch
+  history instead of creating a duplicate.
+- Reconciliation never deletes immediately. A vanished item is marked missing and
+  removed only after a grace period, and a scan in which more than half the known
+  files disappear suppresses removals entirely unless an administrator forces it.
+  An unmounted volume therefore cannot erase watch history.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vitest run:
+  86 files passed; 3 failed; 4 skipped
+  539 tests passed; 4 documented baseline tests failed; 14 database tests skipped
+```
+
+The four failures are exactly the documented baseline set (two stale next-episode
+expectations in `jellyfinApi.test.ts`, one stale series route expectation in
+`playTarget.test.ts`, one translated watched-label expectation in
+`PlayerQueuePanel.test.tsx`). No new failure was introduced.
+
+Known limitations of this pass: the SQL in `catalogueScanStore.ts`,
+`catalogueRepository.ts` and `probeService.ts` is unit-typed but not yet
+integration-verified, because this pass ran on a host with neither a PostgreSQL
+instance nor the media volume. Those files need a live-database run before their
+parity rows may be marked verified. No catalogue HTTP route, metadata provider,
+image endpoint, playback authority, trickplay, SyncPlay or frontend cutover is
+implemented yet.
+
+## Phase 6-10 — native catalogue API, playback authority, durable jobs (2026-08-10)
+
+Second pass of the same session. The backend is now able to run with Jellyfin
+stopped; the frontend has not been cut over yet, so the shipped app still uses
+the Jellyfin client.
+
+Delivered:
+
+- `ownApi/catalogue/`: native `ItemDto` (camelCase, millisecond runtimes, RFC
+  3339 dates, opaque ids, no filesystem paths), batched artwork and user-state
+  enrichment, keyset pagination, and routes for libraries, items, streams,
+  chapters, segments, trailers, movies, series, seasons, episodes, next episode,
+  first-unwatched, home aggregate, continue-watching, next-up, latest, search,
+  genres, favourites and collections.
+- `ownApi/progress/`: sequence-protected progress writes, played/unplayed,
+  favourites, and Seyirlik's recursive reset/mark-watched behaviour preserved as
+  single endpoints rather than N client requests.
+- `ownApi/playback/`: `/playback/plan` and `/playback/sessions` over the stored
+  ffprobe inventory, native `DIRECT_PLAY`/`REMUX`/`DIRECT_STREAM`/`TRANSCODE`
+  modes with stable reason codes, durable session rows, byte-range file
+  delivery, HLS playlist and segment delivery, and idle session expiry that
+  stops the FFmpeg process rather than only marking the row ended.
+- `ownApi/tasks/`: PostgreSQL job queue with leases, `SKIP LOCKED` claiming,
+  dedupe keys, cooperative cancellation, backoff, a draining worker, scan and
+  probe handlers, and admin task routes.
+- `ownApi/libraries/`: JSON-declared libraries provisioned idempotently at
+  startup, with root paths validated as relative before anything reads them.
+- `src/server/mediaServer.ts` and `src/server/mediaWorker.ts`: entry points that
+  require no Jellyfin variable at all (`npm run server`, `npm run worker`).
+
+Decisions worth recording:
+
+- Playback authorization happens during item resolution, per user, not in a
+  shared resolver. Possession of an item or media-file id can never be traded
+  for bytes from a library the caller cannot see.
+- The router now prefers literal path segments over parameters. The HLS playlist
+  references segments by bare filename, so they arrive at
+  `/playback/sessions/:id/<name>`; without specificity ordering, registration
+  order would silently decide whether that shadowed `/file` and `/master.m3u8`.
+- Absent and forbidden are deliberately indistinguishable (404 both ways) so an
+  item id cannot be used to probe what exists in a hidden library.
+- Reconciliation derives "this file changed" from the store's return value
+  rather than from a pre-scan snapshot the store is free to have mutated.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vitest run:
+  91 files passed; 3 failed; 4 skipped
+  592 tests passed; 4 documented baseline tests failed; 14 database tests skipped
+```
+
+The four failures remain exactly the documented baseline set; no new failure was
+introduced by this phase.
+
+Known limitations: the same SQL-not-yet-integration-verified caveat applies to
+every repository added here. `src/server/playbackBackend.ts` and its Jellyfin
+resolver still exist and are still what the shipped frontend talks to; they are
+removed in the cutover phase, not this one. Metadata/TMDB, native image
+delivery, trickplay, subtitle extraction, SyncPlay and the frontend cutover are
+not implemented.
+
+## Phase 5 — TMDB metadata and native image cache (2026-08-10)
+
+Delivered:
+
+- `ownApi/metadata/matcher.ts`: pure provider-match selection. Token-overlap
+  similarity (release titles differ by whole words, not characters), year
+  proximity with a one-year tolerance, popularity only as a tie-breaker, and a
+  decisiveness gate.
+- `ownApi/metadata/tmdbClient.ts`: TMDB v3 access with the key sent as a bearer
+  token rather than a query parameter, a bounded timeout, and typed
+  not-found/rate-limited/unavailable errors. No URL or key reaches an error
+  message.
+- `ownApi/metadata/metadataRepository.ts`: per-field lock guards expressed
+  inside the UPDATE, so an operator edit made during an in-flight refresh cannot
+  be clobbered by a read-modify-write race. Genres and people are replaced
+  transactionally.
+- `ownApi/metadata/metadataService.ts`: identification, metadata application,
+  episode-level application for series, and best-effort artwork.
+- `ownApi/images/imageStorage.ts`: content-addressed artwork storage with magic
+  byte verification, HTTPS-only fetching, size limits, and atomic
+  write-then-rename.
+- `ownApi/images/imageRoutes.ts`: authorized delivery with the content hash as
+  the ETag, `private` caching, and episode-to-season-to-series artwork fallback.
+- `ownApi/metadata/metadataRoutes.ts`: candidate listing, explicit identify,
+  refresh, and field-locking edits.
+- Metadata scan and refresh job types wired into the worker and queued
+  automatically after a scan creates items.
+
+Decisions worth recording:
+
+- A low-confidence or near-tied match is recorded as `unmatched`, never applied.
+  Metadata that silently renames the wrong film is worse than missing metadata.
+- Editing a field through the admin route locks it implicitly. An operator who
+  typed a title does not expect the next refresh to replace it. The write is
+  applied before the lock is placed, because the lock would otherwise make the
+  operator's own edit a no-op.
+- An item with a locked identity is moved out of the `pending` metadata state.
+  Leaving it pending made the batch scan reselect it forever; a seen-set
+  termination guard in the job handler covers the general case.
+- Artwork whose content hash is unchanged is not rewritten, so ETags stay stable
+  and clients keep their cached copies across refreshes.
+- Metadata is optional. With no `SEYIRLIK_TMDB_API_KEY` the metadata routes are
+  not mounted and the catalogue still scans, probes and plays.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vitest run:
+  94 files passed; 3 failed; 4 skipped
+  626 tests passed; 4 documented baseline tests failed; 14 database tests skipped
+```
+
+Known limitations: no live TMDB call was made from this host, so the client's
+response mapping is covered by unit fakes rather than by recorded provider
+fixtures. Trickplay, subtitle extraction, SyncPlay and the frontend cutover
+remain unimplemented.
+
+## Phase 14 (partial) — view-model rename and native client adapters (2026-08-10)
+
+First, additive half of the frontend cutover. Nothing was deleted and no module
+changed which backend it talks to; the shipped app still reaches Jellyfin.
+
+Delivered:
+
+- `src/lib/types.ts`: the de-facto view models were renamed off the provider
+  (`JellyfinItem` to `MediaItem`, `JellyfinMediaSource` to `MediaSource`, and so
+  on for eighteen types) and given a header explaining why they keep tick-based
+  durations. Field names were deliberately left alone so no component or player
+  arithmetic changed. 89 files updated mechanically; `tsc` clean.
+- `src/api/ownApi/dto.ts`: the native wire shapes, mirroring the server exactly.
+- `src/api/ownApi/adapters.ts`: the single bridge between the two. Converts
+  millisecond durations to ticks, maps native kinds to the `Type` strings the UI
+  switches on, and projects native artwork references onto the image-tag fields
+  the cards already read, including series-inherited artwork for episodes.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vitest run:
+  94 files passed; 3 failed; 4 skipped
+  626 tests passed; 4 documented baseline tests failed; 14 database tests skipped
+```
+
+Remaining before the cutover can complete, in dependency order:
+
+1. `/admin/users` CRUD and `/items/:itemId/trickplay` do not exist yet, and the
+   frontend's user-management and seek-bar code needs them. They are gaps in
+   phases 10 and 9 respectively, not in the cutover.
+2. `src/lib/mediaApi.ts` implementing the 63 symbols the app imports from
+   `jellyfinApi.ts`, over the native client and adapters.
+3. The mechanical import rewrite across the 56 consuming modules.
+4. Deletion of `jellyfinApi.ts`, `authStorage.ts`'s token handling, the SyncPlay
+   client and socket, `jellyfinMediaResolver.ts`, `jellyfinPlaybackAuth.ts`,
+   `playbackBackend.ts`, the Jellyfin PWA exclusions and the Jellyfin
+   environment variables.
+
+Writing `mediaApi.ts` before item 1 would mean shipping functions that call
+endpoints which do not exist, so the order above is deliberate.
+
 ## Subsequent phases
 
 Add a dated section for every completed vertical slice with:

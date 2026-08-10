@@ -1,7 +1,7 @@
 import type {
-  JellyfinItem,
-  JellyfinMediaSource,
-  JellyfinMediaStream,
+  MediaItem,
+  MediaSource,
+  MediaStream,
   PlaybackSourceCandidate,
 } from "./types";
 
@@ -91,9 +91,9 @@ function writeLegacySubtitlePreferenceMap(
 }
 
 function getStreamsOfType(
-  mediaSource: JellyfinMediaSource | undefined,
+  mediaSource: MediaSource | undefined,
   type: "Audio" | "Subtitle",
-): JellyfinMediaStream[] {
+): MediaStream[] {
   return (
     mediaSource?.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
@@ -102,7 +102,7 @@ function getStreamsOfType(
 }
 
 function getFallbackDefaultAudioStreamIndex(
-  mediaSource: JellyfinMediaSource | undefined,
+  mediaSource: MediaSource | undefined,
 ): number | undefined {
   const audioStreams = getStreamsOfType(mediaSource, "Audio");
 
@@ -114,7 +114,7 @@ function getFallbackDefaultAudioStreamIndex(
 }
 
 export function getStoredItemPlaybackDefaults(
-  item: JellyfinItem | undefined,
+  item: MediaItem | undefined,
 ): ItemPlaybackDefaults {
   if (!item?.ProviderIds) {
     return {};
@@ -145,7 +145,7 @@ export function getStoredDefaultSubtitleStreamIndex(
 }
 
 export function getDefaultAudioStreamIndexForItem(
-  item: JellyfinItem,
+  item: MediaItem,
 ): number | undefined {
   const storedDefaults = getStoredItemPlaybackDefaults(item);
 
@@ -156,7 +156,7 @@ export function getDefaultAudioStreamIndexForItem(
 }
 
 export function getDefaultAudioStreamIndexForSource(
-  item: JellyfinItem,
+  item: MediaItem,
   source: PlaybackSourceCandidate,
 ): number | undefined {
   const storedDefaults = getStoredItemPlaybackDefaults(item);
@@ -168,7 +168,7 @@ export function getDefaultAudioStreamIndexForSource(
 }
 
 export function getDefaultSubtitleStreamIndexForItem(
-  item: JellyfinItem,
+  item: MediaItem,
 ): number {
   const storedDefaults = getStoredItemPlaybackDefaults(item);
 
@@ -181,7 +181,7 @@ export function getDefaultSubtitleStreamIndexForItem(
 }
 
 export function getDefaultSubtitleStreamIndexForSource(
-  item: JellyfinItem,
+  item: MediaItem,
   source: PlaybackSourceCandidate,
 ): number {
   const storedDefaults = getStoredItemPlaybackDefaults(item);
@@ -195,9 +195,9 @@ export function getDefaultSubtitleStreamIndexForSource(
 }
 
 export function buildItemWithPlaybackDefaults(
-  item: JellyfinItem,
+  item: MediaItem,
   defaults: ItemPlaybackDefaults,
-): JellyfinItem {
+): MediaItem {
   const providerIds = { ...(item.ProviderIds ?? {}) };
 
   if (defaults.audioStreamIndex === undefined) {

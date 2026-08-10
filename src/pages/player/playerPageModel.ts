@@ -1,7 +1,7 @@
 import { getBackdropImageUrl } from "../../lib/jellyfinApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 
-export function getPlayerLoadingBackdropUrl(item: JellyfinItem | null): string {
+export function getPlayerLoadingBackdropUrl(item: MediaItem | null): string {
   const itemId = item
     ? (item.ParentBackdropItemId ?? item.SeriesId ?? item.Id)
     : null;
@@ -13,7 +13,7 @@ export function getPlayerLoadingBackdropUrl(item: JellyfinItem | null): string {
 }
 
 export function getInitialPlaybackSeconds(
-  item: JellyfinItem | null,
+  item: MediaItem | null,
   shouldStartFromBeginning: boolean,
 ): number {
   const savedPlaybackSeconds =

@@ -29,9 +29,9 @@ import {
   getTrickplayImageUrl,
 } from "../lib/jellyfinApi";
 import type {
-  JellyfinItem,
-  JellyfinLibrary,
-  JellyfinMetadataRefreshMode,
+  MediaItem,
+  MediaLibrary,
+  MetadataRefreshMode,
 } from "../lib/types";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
@@ -104,12 +104,12 @@ async function withLibraryLoadTimeout<T>(
 
 export function LibraryMaintenancePage() {
   const { t } = useLanguage();
-  const [libraries, setLibraries] = useState<JellyfinLibrary[]>([]);
-  const [items, setItems] = useState<JellyfinItem[]>([]);
+  const [libraries, setLibraries] = useState<MediaLibrary[]>([]);
+  const [items, setItems] = useState<MediaItem[]>([]);
   const [itemLibraryById, setItemLibraryById] = useState<Map<string, string>>(
     () => new Map(),
   );
-  const [selectedItem, setSelectedItem] = useState<JellyfinItem | null>(null);
+  const [selectedItem, setSelectedItem] = useState<MediaItem | null>(null);
   const [draft, setDraft] = useState<MetadataDraft | null>(null);
   const [trickplayStatus, setTrickplayStatus] = useState<
     "unknown" | "loading" | "available" | "missing"
@@ -123,7 +123,7 @@ export function LibraryMaintenancePage() {
 
   const selectedLibraryId = selectedEpisodeLibraryId ?? libraryId;
   const [metadataRefreshMode, setMetadataRefreshMode] =
-    useState<JellyfinMetadataRefreshMode>("Default");
+    useState<MetadataRefreshMode>("Default");
   const [replaceAllMetadata, setReplaceAllMetadata] = useState(false);
   const [replaceAllImages, setReplaceAllImages] = useState(false);
 
@@ -142,7 +142,7 @@ export function LibraryMaintenancePage() {
   const [selectedDefaultSubtitleIndex, setSelectedDefaultSubtitleIndex] =
     useState(-1);
   const [seriesSubtitleEpisodes, setSeriesSubtitleEpisodes] = useState<
-    JellyfinItem[]
+    MediaItem[]
   >([]);
   const [isLoadingSeriesSubtitleEpisodes, setIsLoadingSeriesSubtitleEpisodes] =
     useState(false);
@@ -194,7 +194,7 @@ export function LibraryMaintenancePage() {
         if (!isMounted) return;
 
         const nextItemLibraryById = new Map<string, string>();
-        const uniqueItemsById = new Map<string, JellyfinItem>();
+        const uniqueItemsById = new Map<string, MediaItem>();
         const failedLibraries: string[] = [];
 
         for (const result of libraryItemResults) {
@@ -346,7 +346,7 @@ export function LibraryMaintenancePage() {
     [subtitlePreferenceTargetItems],
   );
 
-  const loadSubtitlePreferenceTargets = async (item: JellyfinItem) => {
+  const loadSubtitlePreferenceTargets = async (item: MediaItem) => {
     const requestId = subtitlePreferenceRequestIdRef.current + 1;
     subtitlePreferenceRequestIdRef.current = requestId;
 
@@ -389,7 +389,7 @@ export function LibraryMaintenancePage() {
     }
   };
 
-  const selectItem = async (item: JellyfinItem) => {
+  const selectItem = async (item: MediaItem) => {
     setSelectedItem(item);
     setDraft(createDraftFromItem(item));
     setSelectedDefaultSubtitleIndex(
@@ -541,7 +541,7 @@ export function LibraryMaintenancePage() {
     });
 
     try {
-      const updatedItem: JellyfinItem = {
+      const updatedItem: MediaItem = {
         ...selectedItem,
         Name: name,
         SortName: draft.sortName.trim() || undefined,
@@ -920,7 +920,7 @@ export function LibraryMaintenancePage() {
                     value={metadataRefreshMode}
                     onChange={(event) =>
                       setMetadataRefreshMode(
-                        event.target.value as JellyfinMetadataRefreshMode,
+                        event.target.value as MetadataRefreshMode,
                       )
                     }
                     className="mt-2 w-full rounded-2xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm font-bold text-white outline-none transition focus:border-[var(--accent)]/50"

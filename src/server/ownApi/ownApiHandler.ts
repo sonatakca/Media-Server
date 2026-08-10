@@ -57,6 +57,12 @@ export interface OwnApiRequestHandlerOptions {
   authenticator?: OwnApiAuthenticator;
   logger?: OwnApiLogger;
   routeHandlers?: OwnApiRouteHandler[];
+  /**
+   * Maps a request path to the fixed route template used in structured logs.
+   * Falls back to the coarse `/ownAPI/v1/*` template when a route is unknown, so
+   * a caller-controlled path segment can never reach the log stream.
+   */
+  routeTemplateResolver?: (pathname: string) => string | undefined;
 }
 
 export interface OwnApiRouteContext {
@@ -222,6 +228,7 @@ export function createOwnApiRequestHandler({
   authenticator: _authenticator = async () => null,
   logger,
   routeHandlers = [],
+  routeTemplateResolver,
 }: OwnApiRequestHandlerOptions): (
   request: IncomingMessage,
   response: ServerResponse,
@@ -234,7 +241,8 @@ export function createOwnApiRequestHandler({
     }
 
     const startedAt = performance.now();
-    const routeTemplate = ownApiRouteTemplate(url.pathname);
+    const routeTemplate =
+      routeTemplateResolver?.(url.pathname) ?? ownApiRouteTemplate(url.pathname);
     const requestId = resolveOwnApiRequestId(
       request,
       requestIdFactory,

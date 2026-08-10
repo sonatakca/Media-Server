@@ -13,7 +13,7 @@ import type {
   TmdbMediaType,
   TmdbSearchResult,
 } from "../../lib/tmdbArtworkApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 
 export type ActionState = "idle" | "loading" | "success" | "error";
 export type Translate = (key: TranslationKey) => string;
@@ -51,17 +51,17 @@ export function createEmptyResult(): ActionResult {
   };
 }
 
-export function getTypeLabel(item: JellyfinItem, t: Translate) {
+export function getTypeLabel(item: MediaItem, t: Translate) {
   if (item.Type === "Movie") return t("common.movie");
   if (item.Type === "Series") return t("common.series");
   return item.Type ?? t("common.item");
 }
 
-export function getMediaTypeForItem(item: JellyfinItem): TmdbMediaType {
+export function getMediaTypeForItem(item: MediaItem): TmdbMediaType {
   return item.Type === "Series" ? "tv" : "movie";
 }
 
-export function getTmdbIdFromItem(item: JellyfinItem): number | null {
+export function getTmdbIdFromItem(item: MediaItem): number | null {
   const providerIds = item.ProviderIds ?? {};
   const rawTmdbId =
     providerIds.Tmdb ?? providerIds.TMDB ?? providerIds.tmdb ?? null;
@@ -71,7 +71,7 @@ export function getTmdbIdFromItem(item: JellyfinItem): number | null {
 }
 
 export function createTmdbResultFromProvider(
-  item: JellyfinItem,
+  item: MediaItem,
 ): TmdbSearchResult | null {
   const tmdbId = getTmdbIdFromItem(item);
 
@@ -114,7 +114,7 @@ export function getKindDescription(
 }
 
 export function getCurrentArtworkTag(
-  item: JellyfinItem,
+  item: MediaItem,
   kind: TmdbArtworkKind,
 ): string | null {
   if (kind === "poster") return item.ImageTags?.Primary ?? null;
@@ -124,7 +124,7 @@ export function getCurrentArtworkTag(
 }
 
 export function getCurrentArtworkUrl(
-  item: JellyfinItem,
+  item: MediaItem,
   kind: TmdbArtworkKind,
 ): string | null {
   const tag = getCurrentArtworkTag(item, kind);
@@ -187,7 +187,7 @@ export function getEpisodeMetadataKey(
   return `${seasonNumber}:${episodeNumber}`;
 }
 
-export function getEpisodeLabel(item: JellyfinItem, t: Translate): string {
+export function getEpisodeLabel(item: MediaItem, t: Translate): string {
   if (
     typeof item.ParentIndexNumber === "number" &&
     typeof item.IndexNumber === "number"
@@ -239,7 +239,7 @@ export function getStatusClasses(state: ActionState): string {
   return "border-white/10 bg-white/[0.06] text-white/62";
 }
 
-export function getSearchableText(item: JellyfinItem): string {
+export function getSearchableText(item: MediaItem): string {
   return [
     item.Name,
     item.SortName,

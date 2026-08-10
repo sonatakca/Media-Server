@@ -40,7 +40,7 @@ import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { formatTemplate, getDisplayTitle } from "../../lib/format";
 import { preloadMediaPlayback } from "../../lib/playbackPreload";
 import { getRouteForItem } from "../../lib/routes";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import { AnimatedText } from "../../components/AnimatedText";
 import { AnimatedWidth } from "../../components/AnimatedWidth";
@@ -63,14 +63,14 @@ type LibraryFallbackTitleKey =
   | "library.library";
 
 interface LibraryData {
-  library?: JellyfinItem;
+  library?: MediaItem;
   fallbackTitleKey?: LibraryFallbackTitleKey;
-  items: JellyfinItem[];
-  selectableSeasons: JellyfinItem[];
+  items: MediaItem[];
+  selectableSeasons: MediaItem[];
   collectionPosterChildrenById: CollectionPosterChildrenMap;
 }
 
-function getSortNumber(item: JellyfinItem): number {
+function getSortNumber(item: MediaItem): number {
   if (item.Type === "Season") {
     return item.IndexNumber ?? item.ProductionYear ?? 9999;
   }
@@ -89,8 +89,8 @@ function compareDates(leftDate?: string, rightDate?: string): number {
 }
 
 function sortJellyfinItems(
-  left: JellyfinItem,
-  right: JellyfinItem,
+  left: MediaItem,
+  right: MediaItem,
   sortBy: "name" | "year" | "latest",
 ): number {
   if (left.Type === "Season" && right.Type === "Season") {
@@ -133,9 +133,9 @@ function sortJellyfinItems(
 async function loadLibraryItems(
   id: string,
   mode: "library" | "series" | "season",
-  library?: JellyfinItem,
+  library?: MediaItem,
   seriesIdFromRoute?: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   if (mode === "library") {
     if (
       library?.CollectionType === "tvshows" ||
@@ -373,7 +373,7 @@ export function DesktopLibraryPage({
   }, [data, searchTerm, sortBy]);
 
   const handleWatchedStatusReset = (
-    resetItems: JellyfinItem[],
+    resetItems: MediaItem[],
     options?: { action: "mark" | "remove"; scope: "show" },
   ) => {
     const resetItemsById = new Map(

@@ -1,5 +1,5 @@
 import { getBackdropImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 
 export const HERO_TRAILERS_ENABLED_STORAGE_KEY =
   "seyirlik-hero-trailers-enabled";
@@ -41,7 +41,7 @@ export function saveHeroTrailersEnabledPreference(enabled: boolean) {
 }
 
 export function getHeroImageCandidates(
-  item?: JellyfinItem,
+  item?: MediaItem,
 ): HeroImageCandidate[] {
   if (!item) {
     return [];

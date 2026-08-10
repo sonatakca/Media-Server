@@ -1,13 +1,13 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export interface LatestMediaGroups {
-  movies: JellyfinItem[];
-  shows: JellyfinItem[];
-  books: JellyfinItem[];
+  movies: MediaItem[];
+  shows: MediaItem[];
+  books: MediaItem[];
 }
 
 export function groupLatestMediaItems(
-  items: JellyfinItem[],
+  items: MediaItem[],
 ): LatestMediaGroups {
   return {
     movies: items.filter((item) => item.Type === "Movie"),

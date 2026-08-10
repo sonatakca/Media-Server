@@ -6,7 +6,7 @@ import type {
   PlaybackQueue,
   PlaybackQueueSeason,
 } from "../../lib/playbackQueue";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   QueueItemButton,
   type PlayerQueueTranslate,
@@ -15,7 +15,7 @@ import {
 interface PlayerQueuePanelProps {
   queue: PlaybackQueue;
   compact?: boolean;
-  onPlayItem?: (item: JellyfinItem) => void;
+  onPlayItem?: (item: MediaItem) => void;
 }
 
 function getSeasonLabel(season: PlaybackQueueSeason, t: PlayerQueueTranslate) {

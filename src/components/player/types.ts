@@ -1,7 +1,7 @@
 import type { PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
 import type { PlaybackQueue } from "../../lib/playbackQueue";
 import type {
-  JellyfinItem,
+  MediaItem,
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
@@ -32,7 +32,7 @@ export interface CompleteFileQualityControls {
 }
 
 export interface CustomVideoPlayerProps {
-  item: JellyfinItem;
+  item: MediaItem;
   source: PlaybackSourceCandidate;
   playbackCandidates?: PlaybackSourceCandidate[];
   notice?: string | null;
@@ -48,11 +48,11 @@ export interface CustomVideoPlayerProps {
   onPlaybackStopped?: (positionSeconds: number) => void;
   onPlaybackBeforeUnload?: (positionSeconds: number) => void;
   onPreparingPlaybackChange?: (isPreparing: boolean) => void;
-  nextEpisode?: JellyfinItem | null;
+  nextEpisode?: MediaItem | null;
   playbackQueue?: PlaybackQueue | null;
   enableDefaultNextEpisodeCountdown?: boolean;
-  onAutoPlayNextEpisode?: (nextEpisode: JellyfinItem) => void;
-  onPlayQueueItem?: (item: JellyfinItem) => void;
+  onAutoPlayNextEpisode?: (nextEpisode: MediaItem) => void;
+  onPlayQueueItem?: (item: MediaItem) => void;
   preparingBackdropUrl?: string | null;
   showPreparingArtwork?: boolean;
   backTo?: string;

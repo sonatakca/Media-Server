@@ -1,4 +1,4 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export interface PlayerNavigationState {
   mediaOwnerRoute: string;
@@ -29,7 +29,7 @@ export function getMediaOwnerRouteFromNavigationState(
   return mediaOwnerRoute;
 }
 
-export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {
+export function shouldOpenPlaybackForItem(item: MediaItem): boolean {
   if (item.Type === "Episode") {
     return true;
   }
@@ -47,7 +47,7 @@ export function shouldOpenPlaybackForItem(item: JellyfinItem): boolean {
   return item.MediaType === "Video";
 }
 
-export function shouldOpenReaderForItem(item: JellyfinItem): boolean {
+export function shouldOpenReaderForItem(item: MediaItem): boolean {
   const type = getNormalizedItemKind(item.Type);
   const mediaType = getNormalizedItemKind(item.MediaType);
 
@@ -59,7 +59,7 @@ export function shouldOpenReaderForItem(item: JellyfinItem): boolean {
   );
 }
 
-export function getRouteForItem(item: JellyfinItem): string {
+export function getRouteForItem(item: MediaItem): string {
   if (item.Type === "BoxSet" || item.CollectionType === "boxsets") {
     return `/collections/${encodeURIComponent(item.Id)}`;
   }
@@ -89,15 +89,15 @@ export function getRouteForItem(item: JellyfinItem): string {
   return `/library/${encodeURIComponent(item.Id)}`;
 }
 
-export function getReadRouteForItem(item: JellyfinItem): string {
+export function getReadRouteForItem(item: MediaItem): string {
   return `/read/${encodeURIComponent(item.Id)}`;
 }
 
-export function getWatchRouteForItem(item: JellyfinItem): string {
+export function getWatchRouteForItem(item: MediaItem): string {
   return `/watch/${encodeURIComponent(item.Id)}`;
 }
 
-export function getMediaOwnerRouteForItem(item: JellyfinItem): string {
+export function getMediaOwnerRouteForItem(item: MediaItem): string {
   if (item.Type === "Episode") {
     const seriesId = item.SeriesId ?? item.ParentLogoItemId;
 

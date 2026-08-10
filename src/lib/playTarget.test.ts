@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getAllSeriesEpisodes } from "./jellyfinApi";
 import { getPlayTargetForItem, getPlayTargetItemForItem } from "./playTarget";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 vi.mock("./jellyfinApi", () => ({
   getAllSeriesEpisodes: vi.fn(),
@@ -15,7 +15,7 @@ describe("play target resolver", () => {
   });
 
   it("uses movie items as direct playback targets from details pages", async () => {
-    const movie: JellyfinItem = {
+    const movie: MediaItem = {
       Id: "movie-1",
       Name: "Movie",
       Type: "Movie",
@@ -27,12 +27,12 @@ describe("play target resolver", () => {
   });
 
   it("uses the in-progress series episode as the playback target", async () => {
-    const series: JellyfinItem = {
+    const series: MediaItem = {
       Id: "series-1",
       Name: "Series",
       Type: "Series",
     };
-    const firstEpisode: JellyfinItem = {
+    const firstEpisode: MediaItem = {
       Id: "episode-1",
       Name: "Episode 1",
       Type: "Episode",
@@ -40,7 +40,7 @@ describe("play target resolver", () => {
       IndexNumber: 1,
       UserData: { Played: false, PlaybackPositionTicks: 0 },
     };
-    const inProgressEpisode: JellyfinItem = {
+    const inProgressEpisode: MediaItem = {
       Id: "episode-2",
       Name: "Episode 2",
       Type: "Episode",
@@ -63,7 +63,7 @@ describe("play target resolver", () => {
   });
 
   it("falls back to the series library route when a show has no episodes", async () => {
-    const series: JellyfinItem = {
+    const series: MediaItem = {
       Id: "series-1",
       Name: "Series",
       Type: "Series",

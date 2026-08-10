@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { getPlaybackQueue, type PlaybackQueue } from "../lib/playbackQueue";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 
 export function usePlaybackQueue(
-  item: JellyfinItem | null,
+  item: MediaItem | null,
 ): PlaybackQueue | null {
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueue | null>(
     null,

@@ -1,13 +1,13 @@
 import { getDisplayTitle } from "./format";
 import { getAllMovieAndSeriesItems, getItem } from "./jellyfinApi";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export interface ResolvedMetadataTarget {
-  item: JellyfinItem;
+  item: MediaItem;
   isExtra: boolean;
-  ownerItem?: JellyfinItem;
-  metadataItem: JellyfinItem;
-  artworkItem: JellyfinItem;
+  ownerItem?: MediaItem;
+  metadataItem: MediaItem;
+  artworkItem: MediaItem;
   tmdbTitle: string;
   tmdbYear?: number;
   tmdbId?: string;
@@ -65,12 +65,12 @@ function parseFolderTitleAndYear(folderName: string): {
   };
 }
 
-function getTmdbProviderIdFromItem(item: JellyfinItem): string | undefined {
+function getTmdbProviderIdFromItem(item: MediaItem): string | undefined {
   const providerIds = item.ProviderIds ?? {};
   return providerIds.Tmdb ?? providerIds.TMDB ?? providerIds.tmdb ?? undefined;
 }
 
-export function isJellyfinExtraItem(item: JellyfinItem): boolean {
+export function isJellyfinExtraItem(item: MediaItem): boolean {
   if (typeof item.ExtraType === "string" && item.ExtraType.trim()) {
     return true;
   }
@@ -83,8 +83,8 @@ export function isJellyfinExtraItem(item: JellyfinItem): boolean {
 }
 
 function isUsableMetadataOwner(
-  item: JellyfinItem,
-  childItem: JellyfinItem,
+  item: MediaItem,
+  childItem: MediaItem,
 ): boolean {
   if (item.Id === childItem.Id || isJellyfinExtraItem(item)) {
     return false;
@@ -94,8 +94,8 @@ function isUsableMetadataOwner(
 }
 
 async function resolveOwnerFromRelationships(
-  item: JellyfinItem,
-): Promise<JellyfinItem | undefined> {
+  item: MediaItem,
+): Promise<MediaItem | undefined> {
   const candidateIds = Array.from(
     new Set([item.ParentId, item.SeriesId].filter(Boolean)),
   ) as string[];
@@ -117,8 +117,8 @@ async function resolveOwnerFromRelationships(
 }
 
 async function resolveOwnerFromTrailerPath(
-  item: JellyfinItem,
-): Promise<JellyfinItem | undefined> {
+  item: MediaItem,
+): Promise<MediaItem | undefined> {
   const ownerFolderName = getTrailerOwnerFolderName(item.Path);
 
   if (!ownerFolderName) {
@@ -161,7 +161,7 @@ async function resolveOwnerFromTrailerPath(
 }
 
 export async function resolveMetadataTarget(
-  item: JellyfinItem,
+  item: MediaItem,
 ): Promise<ResolvedMetadataTarget> {
   const isExtra = isJellyfinExtraItem(item);
   const ownerItem = isExtra

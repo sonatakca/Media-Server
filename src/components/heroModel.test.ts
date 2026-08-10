@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import {
   HERO_TRAILERS_ENABLED_STORAGE_KEY,
   getHeroImageCandidates,
@@ -41,7 +41,7 @@ describe("heroModel", () => {
         ParentBackdropItemId: "series",
         ParentBackdropImageTags: ["parent"],
         ImageTags: { Primary: "poster" },
-      } as JellyfinItem),
+      } as MediaItem),
     ).toEqual([
       { type: "backdrop", url: "backdrop:episode:own:2200" },
       { type: "backdrop", url: "backdrop:series:parent:2200" },

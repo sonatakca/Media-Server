@@ -3,8 +3,8 @@ import {
   getDefaultSubtitleStreamIndexForSource,
 } from "../../lib/playbackDefaults";
 import type {
-  JellyfinItem,
-  JellyfinMediaStream,
+  MediaItem,
+  MediaStream,
   PlaybackQualityOption,
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
@@ -13,7 +13,7 @@ import type {
 export function getStreamsOfType(
   source: PlaybackSourceCandidate,
   type: "Audio" | "Subtitle",
-): JellyfinMediaStream[] {
+): MediaStream[] {
   return (
     source.mediaSource.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
@@ -22,7 +22,7 @@ export function getStreamsOfType(
 }
 
 export function getDefaultAudioStreamIndex(
-  item: JellyfinItem,
+  item: MediaItem,
   source: PlaybackSourceCandidate,
 ): number | undefined {
   return getDefaultAudioStreamIndexForSource(item, source);
@@ -89,7 +89,7 @@ export function isVideoReadyForAudioTranscodePlayback(
 }
 
 export function getDefaultSubtitleStreamIndex(
-  item: JellyfinItem,
+  item: MediaItem,
   source: PlaybackSourceCandidate,
 ): number {
   return getDefaultSubtitleStreamIndexForSource(item, source);
@@ -149,7 +149,7 @@ export function getStreamByIndex(
   source: PlaybackSourceCandidate,
   type: "Audio" | "Subtitle",
   streamIndex: number,
-): JellyfinMediaStream | undefined {
+): MediaStream | undefined {
   return getStreamsOfType(source, type).find(
     (stream) => stream.Index === streamIndex,
   );

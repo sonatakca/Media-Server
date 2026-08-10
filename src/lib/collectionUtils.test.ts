@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { sortCollectionItemsForWatching } from "./collectionUtils";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 function movie(
   id: string,
   name: string,
-  overrides: Partial<JellyfinItem> = {},
-): JellyfinItem {
+  overrides: Partial<MediaItem> = {},
+): MediaItem {
   return {
     Id: id,
     Name: name,

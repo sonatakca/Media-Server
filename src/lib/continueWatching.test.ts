@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { getLatestContinueWatchingItems } from "./continueWatching";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 function createItem(
   id: string,
-  values: Partial<JellyfinItem> = {},
-): JellyfinItem {
+  values: Partial<MediaItem> = {},
+): MediaItem {
   return {
     Id: id,
     Name: id,

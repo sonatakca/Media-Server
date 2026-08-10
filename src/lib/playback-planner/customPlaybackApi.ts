@@ -1,5 +1,6 @@
 import type {
-  JellyfinMediaSource,
+  MediaSource,
+  MediaStream,
   PlaybackMode as JellyfinPlaybackMode,
   PlaybackSourceCandidate,
 } from "../types";
@@ -130,8 +131,89 @@ function getTranscodingReasonCodes(plan: PlaybackPlan): string[] {
     : plan.reasons.map((reason) => reason.code);
 }
 
-function buildSyntheticMediaSource(plan: PlaybackPlan): JellyfinMediaSource {
+/**
+ * Rebuilds a Jellyfin-shaped media source from the plan. The full probe result
+ * rides along in `plan.diagnostics.media`, so every audio and subtitle track of
+ * the source is listed even when the delivered file is a generated rendition
+ * that carries only one audio track and no embedded subtitles: the picker offers
+ * the source's tracks and the player fetches subtitle text from Jellyfin by
+ * stream index. Listing only the selected streams left the subtitle menu empty.
+ */
+function buildSyntheticMediaSource(plan: PlaybackPlan): MediaSource {
   const transcodeReasons = getTranscodingReasonCodes(plan);
+  const analysis = plan.diagnostics?.media;
+
+  const analysedStreams: MediaStream[] = analysis
+    ? [
+        ...analysis.videoStreams.map((stream) => ({
+          Index: stream.index,
+          Type: "Video" as const,
+          Codec: stream.codecName,
+          Profile: stream.profile,
+          Width: stream.width,
+          Height: stream.height,
+          BitRate: stream.bitrate,
+        })),
+        ...analysis.audioStreams.map((stream) => ({
+          Index: stream.index,
+          Type: "Audio" as const,
+          Codec: stream.codecName,
+          Language: stream.language,
+          Title: stream.title,
+          Channels: stream.channels,
+          BitRate: stream.bitrate,
+          IsDefault: stream.isDefault,
+        })),
+        // Image-based subtitles (PGS, VOBSUB) cannot be delivered as WebVTT
+        // text, and the player renders text cues only, so listing them would
+        // offer tracks that can never load.
+        ...analysis.subtitleStreams
+          .filter((stream) => !stream.isImageBased)
+          .map((stream) => ({
+            Index: stream.index,
+            Type: "Subtitle" as const,
+            Codec: stream.codecName,
+            Language: stream.language,
+            Title: stream.title,
+            IsDefault: stream.isDefault,
+            IsForced: stream.isForced,
+            IsExternal: false,
+            IsTextSubtitleStream: true,
+          })),
+      ]
+    : [];
+
+  const fallbackStreams: MediaStream[] = [
+    {
+      Index: plan.selected.videoStreamIndex,
+      Type: "Video",
+      Codec: plan.video.outputCodec ?? plan.video.inputCodec,
+    },
+    ...(plan.selected.audioStreamIndex !== undefined
+      ? [
+          {
+            Index: plan.selected.audioStreamIndex,
+            Type: "Audio" as const,
+            Codec: plan.audio.outputCodec ?? plan.audio.inputCodec,
+          },
+        ]
+      : []),
+    ...(plan.selected.subtitleStreamIndex !== undefined
+      ? [
+          {
+            Index: plan.selected.subtitleStreamIndex,
+            Type: "Subtitle" as const,
+            Codec: plan.subtitles.inputCodec,
+          },
+        ]
+      : []),
+  ];
+
+  const mediaStreams =
+    analysedStreams.length > 0 ? analysedStreams : fallbackStreams;
+  const defaultAudio = analysis?.audioStreams.find(
+    (stream) => stream.isDefault,
+  );
 
   return {
     Id: plan.mediaId,
@@ -143,31 +225,8 @@ function buildSyntheticMediaSource(plan: PlaybackPlan): JellyfinMediaSource {
     SupportsTranscoding:
       plan.mode === "subtitle-burn" || plan.mode === "video-transcode",
     TranscodingReasons: transcodeReasons,
-    MediaStreams: [
-      {
-        Index: plan.selected.videoStreamIndex,
-        Type: "Video",
-        Codec: plan.video.outputCodec ?? plan.video.inputCodec,
-      },
-      ...(plan.selected.audioStreamIndex !== undefined
-        ? [
-            {
-              Index: plan.selected.audioStreamIndex,
-              Type: "Audio" as const,
-              Codec: plan.audio.outputCodec ?? plan.audio.inputCodec,
-            },
-          ]
-        : []),
-      ...(plan.selected.subtitleStreamIndex !== undefined
-        ? [
-            {
-              Index: plan.selected.subtitleStreamIndex,
-              Type: "Subtitle" as const,
-              Codec: plan.subtitles.inputCodec,
-            },
-          ]
-        : []),
-    ],
+    ...(defaultAudio ? { DefaultAudioStreamIndex: defaultAudio.index } : {}),
+    MediaStreams: mediaStreams,
   };
 }
 

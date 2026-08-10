@@ -1,8 +1,8 @@
 import { redactPlaybackUrl } from "./jellyfinApi";
 import type { TranslationKey } from "../i18n/translations";
 import type {
-  JellyfinMediaSource,
-  JellyfinMediaStream,
+  MediaSource,
+  MediaStream,
   PlaybackSourceCandidate,
 } from "./types";
 
@@ -35,17 +35,17 @@ export function getPlaybackModeTone(mode?: string): string {
 }
 
 export function getStreamOfType(
-  mediaSource: JellyfinMediaSource | undefined,
+  mediaSource: MediaSource | undefined,
   type: "Video" | "Audio",
-): JellyfinMediaStream | undefined {
+): MediaStream | undefined {
   return mediaSource?.MediaStreams?.find(
     (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
   );
 }
 
 export function getSubtitleStreams(
-  mediaSource: JellyfinMediaSource | undefined,
-): JellyfinMediaStream[] {
+  mediaSource: MediaSource | undefined,
+): MediaStream[] {
   return (
     mediaSource?.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === "subtitle",

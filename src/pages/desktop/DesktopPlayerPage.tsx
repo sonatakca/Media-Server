@@ -15,7 +15,7 @@ import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/jellyfinApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   getMediaOwnerRouteFromNavigationState,
   getMediaOwnerRouteForItem,
@@ -44,7 +44,7 @@ export function DesktopPlayerPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
   const shouldReduceMotion = Boolean(useReducedMotion());
-  const [item, setItem] = useState<JellyfinItem | null>(() =>
+  const [item, setItem] = useState<MediaItem | null>(() =>
     itemId ? readPreloadedPlaybackItem(itemId) : null,
   );
   const [itemError, setItemError] = useState<string | null>(null);
@@ -140,7 +140,7 @@ export function DesktopPlayerPage() {
   } = usePlaybackReporting(playback.activeSource);
 
   const handlePlayNextUp = useCallback(
-    (nextItem: JellyfinItem) => {
+    (nextItem: MediaItem) => {
       navigate(getWatchRouteForItem(nextItem));
     },
     [navigate],

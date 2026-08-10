@@ -16,7 +16,7 @@ import {
 } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import type {
-  JellyfinMediaStream,
+  MediaStream,
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
@@ -213,7 +213,7 @@ interface PlayerSettingsPanelProps {
 function getStreamsOfType(
   source: PlaybackSourceCandidate,
   type: "Audio" | "Subtitle",
-): JellyfinMediaStream[] {
+): MediaStream[] {
   return (
     source.mediaSource.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
@@ -222,8 +222,8 @@ function getStreamsOfType(
 }
 
 function getUniqueStreams(
-  streams: JellyfinMediaStream[],
-): JellyfinMediaStream[] {
+  streams: MediaStream[],
+): MediaStream[] {
   const seenKeys = new Set<string>();
 
   return streams.filter((stream, index) => {
@@ -260,7 +260,7 @@ function formatTemplate(
 }
 
 function getStreamLabel(
-  stream: JellyfinMediaStream,
+  stream: MediaStream,
   fallback: string,
   t: (key: TranslationKey) => string,
 ): string {
@@ -338,14 +338,14 @@ function getFlagCountryCode(value?: string): string | undefined {
 }
 
 function getStreamFlagCountryCode(
-  stream: JellyfinMediaStream,
+  stream: MediaStream,
 ): string | undefined {
   return [stream.Language, stream.DisplayTitle, stream.Title]
     .map(getFlagCountryCode)
     .find(Boolean);
 }
 
-function StreamFlag({ stream }: { stream: JellyfinMediaStream }) {
+function StreamFlag({ stream }: { stream: MediaStream }) {
   const countryCode = getStreamFlagCountryCode(stream);
 
   if (!countryCode) {

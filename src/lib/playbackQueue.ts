@@ -5,26 +5,26 @@ import {
   getBoxSetItems,
 } from "./jellyfinApi";
 import { sortCollectionItemsForWatching } from "./collectionUtils";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 export interface PlaybackQueueSeason {
   id: string;
   name?: string;
   seasonNumber: number | null;
-  episodes: JellyfinItem[];
+  episodes: MediaItem[];
 }
 
 export interface PlaybackQueue {
   kind: "series" | "collection";
   currentItemId: string;
   title?: string;
-  items: JellyfinItem[];
+  items: MediaItem[];
   seasons?: PlaybackQueueSeason[];
   currentSeasonId?: string;
-  nextItem: JellyfinItem | null;
+  nextItem: MediaItem | null;
 }
 
-function getTmdbCollectionIds(item: JellyfinItem): string[] {
+function getTmdbCollectionIds(item: MediaItem): string[] {
   const providerIds = item.ProviderIds ?? {};
 
   return Object.entries(providerIds)
@@ -49,21 +49,21 @@ function parseDateTime(value?: string): number | null {
   return Number.isNaN(time) ? null : time;
 }
 
-function getSortNumber(item: JellyfinItem): number {
+function getSortNumber(item: MediaItem): number {
   return typeof item.IndexNumber === "number" &&
     Number.isFinite(item.IndexNumber)
     ? item.IndexNumber
     : Number.POSITIVE_INFINITY;
 }
 
-function getSeasonSortNumber(item: JellyfinItem): number {
+function getSeasonSortNumber(item: MediaItem): number {
   return typeof item.ParentIndexNumber === "number" &&
     Number.isFinite(item.ParentIndexNumber)
     ? item.ParentIndexNumber
     : Number.POSITIVE_INFINITY;
 }
 
-function compareEpisodeOrder(left: JellyfinItem, right: JellyfinItem): number {
+function compareEpisodeOrder(left: MediaItem, right: MediaItem): number {
   const seasonCompare = getSeasonSortNumber(left) - getSeasonSortNumber(right);
 
   if (seasonCompare !== 0) {
@@ -91,7 +91,7 @@ function compareEpisodeOrder(left: JellyfinItem, right: JellyfinItem): number {
   );
 }
 
-function getSeasonGroupId(item: JellyfinItem): string {
+function getSeasonGroupId(item: MediaItem): string {
   return (
     item.SeasonId ??
     item.ParentId ??
@@ -102,9 +102,9 @@ function getSeasonGroupId(item: JellyfinItem): string {
 }
 
 function getNextItem(
-  items: JellyfinItem[],
+  items: MediaItem[],
   currentItemId: string,
-): JellyfinItem | null {
+): MediaItem | null {
   const currentIndex = items.findIndex((item) => item.Id === currentItemId);
 
   if (currentIndex < 0) {
@@ -114,7 +114,7 @@ function getNextItem(
   return items[currentIndex + 1] ?? null;
 }
 
-function buildSeriesSeasons(episodes: JellyfinItem[]): PlaybackQueueSeason[] {
+function buildSeriesSeasons(episodes: MediaItem[]): PlaybackQueueSeason[] {
   const seasonsById = new Map<string, PlaybackQueueSeason>();
 
   episodes.forEach((episode) => {
@@ -160,7 +160,7 @@ function buildSeriesSeasons(episodes: JellyfinItem[]): PlaybackQueueSeason[] {
 }
 
 async function getSeriesPlaybackQueue(
-  currentEpisode: JellyfinItem,
+  currentEpisode: MediaItem,
 ): Promise<PlaybackQueue | null> {
   if (!currentEpisode.SeriesId) {
     return null;
@@ -192,8 +192,8 @@ async function getSeriesPlaybackQueue(
 }
 
 function buildMoviePlaybackQueue(
-  movie: JellyfinItem,
-  collectionItems: JellyfinItem[],
+  movie: MediaItem,
+  collectionItems: MediaItem[],
 ): PlaybackQueue | null {
   const orderedMovies = sortCollectionItemsForWatching(
     collectionItems.filter((item) => item.Type === "Movie"),
@@ -216,7 +216,7 @@ function buildMoviePlaybackQueue(
 }
 
 async function getMovieQueueFromTmdbCollection(
-  movie: JellyfinItem,
+  movie: MediaItem,
 ): Promise<PlaybackQueue | null> {
   const tmdbCollectionIds = getTmdbCollectionIds(movie);
 
@@ -236,7 +236,7 @@ async function getMovieQueueFromTmdbCollection(
 }
 
 async function getMovieQueueFromBoxSet(
-  movie: JellyfinItem,
+  movie: MediaItem,
 ): Promise<PlaybackQueue | null> {
   const boxSets = await getAllBoxSetItems().catch(() => []);
 
@@ -261,7 +261,7 @@ async function getMovieQueueFromBoxSet(
 }
 
 export async function getPlaybackQueue(
-  item: JellyfinItem,
+  item: MediaItem,
 ): Promise<PlaybackQueue | null> {
   if (item.Type === "Episode") {
     return getSeriesPlaybackQueue(item);

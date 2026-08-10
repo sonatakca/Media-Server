@@ -1,10 +1,10 @@
 import { getContinueWatchingItems, getNextUpEpisodes } from "./jellyfinApi";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 import { DEFAULT_COMPLETION_THRESHOLD, isItemCompleted } from "./watchStatus";
 
 export { DEFAULT_COMPLETION_THRESHOLD };
 
-function getActivityTimestamp(item: JellyfinItem): number {
+function getActivityTimestamp(item: MediaItem): number {
   const dates = [
     item.UserData?.LastPlayedDate,
     item.LastPlayedDate,
@@ -29,9 +29,9 @@ function getActivityTimestamp(item: JellyfinItem): number {
 }
 
 function pushUniqueItem(
-  items: JellyfinItem[],
+  items: MediaItem[],
   seenItemIds: Set<string>,
-  item: JellyfinItem,
+  item: MediaItem,
 ): void {
   if (seenItemIds.has(item.Id)) {
     return;
@@ -42,23 +42,23 @@ function pushUniqueItem(
 }
 
 export function isSmartContinueCompleted(
-  item: JellyfinItem,
+  item: MediaItem,
   completionThreshold = DEFAULT_COMPLETION_THRESHOLD,
 ): boolean {
   return isItemCompleted(item, completionThreshold);
 }
 
 export function buildSmartContinueWatchingItems(
-  resumeItems: JellyfinItem[],
-  nextUpItems: JellyfinItem[],
+  resumeItems: MediaItem[],
+  nextUpItems: MediaItem[],
   options?: { completionThreshold?: number },
-): JellyfinItem[] {
+): MediaItem[] {
   const completionThreshold =
     options?.completionThreshold ?? DEFAULT_COMPLETION_THRESHOLD;
 
   const seenItemIds = new Set<string>();
   const seenSeriesIds = new Set<string>();
-  const smartItems: JellyfinItem[] = [];
+  const smartItems: MediaItem[] = [];
 
   for (const item of nextUpItems) {
     if (item.Type !== "Episode" || !item.SeriesId) {
@@ -107,10 +107,10 @@ export function buildSmartContinueWatchingItems(
 
 export async function getSmartContinueWatchingItems(options?: {
   completionThreshold?: number;
-}): Promise<JellyfinItem[]> {
+}): Promise<MediaItem[]> {
   const [resumeItems, nextUpItems] = await Promise.all([
-    getContinueWatchingItems().catch(() => [] as JellyfinItem[]),
-    getNextUpEpisodes().catch(() => [] as JellyfinItem[]),
+    getContinueWatchingItems().catch(() => [] as MediaItem[]),
+    getNextUpEpisodes().catch(() => [] as MediaItem[]),
   ]);
 
   return buildSmartContinueWatchingItems(resumeItems, nextUpItems, options);

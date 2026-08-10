@@ -10,7 +10,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import { formatTemplate } from "../lib/format";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { MediaCard } from "./MediaCard";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
@@ -18,14 +18,14 @@ import { MotionReveal } from "./MotionReveal";
 
 interface MediaRowProps {
   title: string;
-  items: JellyfinItem[];
-  getItemTo: (item: JellyfinItem) => string;
+  items: MediaItem[];
+  getItemTo: (item: MediaItem) => string;
   variant?: "poster" | "landscape";
   emptyMessage?: string;
   viewAllTo?: string;
   hideTags?: boolean;
   showRestartWatching?: boolean;
-  onClearContinueWatching?: (item: JellyfinItem) => void;
+  onClearContinueWatching?: (item: MediaItem) => void;
 }
 
 export function MediaRow({

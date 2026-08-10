@@ -1,0 +1,298 @@
+import path from "node:path";
+import type { IncomingMessage } from "node:http";
+import type { OwnApiRouteHandler } from "./ownApiHandler";
+import {
+  createDatabasePool,
+  checkDatabaseReadiness,
+  validateDatabaseConnection,
+  validateNativeIdentitySchema,
+  type DatabasePool,
+} from "./database/databasePool";
+import { parseDatabaseConfig } from "./database/databaseConfig";
+import { validateMigrationsCurrent } from "./database/migrationRunner";
+import { createUserRepository } from "./users/userRepository";
+import { createSessionRepository } from "./auth/sessionRepository";
+import { createArgon2PasswordHasher } from "./auth/passwords";
+import { createNativeAuthService } from "./auth/authService";
+import { parseNativeAuthConfig } from "./auth/authConfig";
+import { createNativeAuthHttpHandler } from "./auth/authHttpHandler";
+import {
+  createOwnApiRouter,
+  type RoutePrincipal,
+  type RouteDefinition,
+} from "./api/router";
+import { parseCookies, uniqueCookie } from "./api/http";
+import { createCatalogueRepository } from "./catalogue/catalogueRepository";
+import { createCatalogueScanStore } from "./catalogue/catalogueScanStore";
+import { createHomeRepository } from "./catalogue/homeRepository";
+import { createCatalogueService } from "./catalogue/catalogueService";
+import { createCatalogueRoutes } from "./catalogue/catalogueRoutes";
+import { createImageRepository } from "./images/imageRepository";
+import { createImageStorage } from "./images/imageStorage";
+import { createImageRoutes } from "./images/imageRoutes";
+import { createMetadataRepository } from "./metadata/metadataRepository";
+import { createMetadataService } from "./metadata/metadataService";
+import { createMetadataRoutes } from "./metadata/metadataRoutes";
+import { createTmdbClient } from "./metadata/tmdbClient";
+import { createUserStateRepository } from "./progress/userStateRepository";
+import { createProgressRoutes } from "./progress/progressRoutes";
+import { createPlaybackSessionStore } from "./playback/playbackSessionStore";
+import { createPlaybackRoutes } from "./playback/playbackRoutes";
+import {
+  createLibraryRepository,
+  parseLibraryDefinitions,
+} from "./libraries/libraryRepository";
+import { createJobQueue } from "./tasks/jobQueue";
+import { createWorker } from "./tasks/worker";
+import { createJobHandlers } from "./tasks/jobHandlers";
+import { createTaskRoutes } from "./tasks/taskRoutes";
+import { createProbeService } from "./probe/probeService";
+import { createNodeScannerFileSystem } from "./scanner/nodeFileSystem";
+import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
+
+type Environment = Record<string, string | undefined>;
+
+export interface NativeRuntime {
+  routeHandler: OwnApiRouteHandler;
+  resolveRouteTemplate(pathname: string): string | undefined;
+  databaseCheck(): Promise<"available" | "unavailable">;
+  jobsCheck(): Promise<"available" | "unavailable">;
+  close(): Promise<void>;
+}
+
+export interface CreateNativeRuntimeOptions {
+  environment?: Environment;
+  publicOrigin?: string;
+  mediaRoot: string;
+  sessionManager: PlaybackSessionManager;
+  ffprobePath?: string;
+  /** Where cached artwork is written; defaults to the generated-storage volume. */
+  generatedStoragePath: string;
+  /** Set false in tests and in a dedicated worker process. */
+  runWorker?: boolean;
+}
+
+const EXPIRED_SESSION_CLEANUP_INTERVAL_MS = 15 * 60_000;
+const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
+
+/**
+ * Builds the complete native API: identity, catalogue, playback, and background
+ * work, all backed by one PostgreSQL pool.
+ *
+ * There is no Jellyfin adapter and no fallback path. If the database or the
+ * migrations are not in the expected state the process refuses to start rather
+ * than serving a partially-native surface.
+ */
+export async function createNativeRuntime({
+  environment = process.env,
+  publicOrigin,
+  mediaRoot,
+  sessionManager,
+  ffprobePath,
+  generatedStoragePath,
+  runWorker = true,
+}: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
+  const databaseConfig = parseDatabaseConfig(environment);
+  const authConfig = parseNativeAuthConfig(environment);
+  if (!databaseConfig) {
+    throw new Error("DATABASE_URL is required.");
+  }
+  if (!authConfig) {
+    throw new Error(
+      "SEYIRLIK_SESSION_HASH_SECRET and SEYIRLIK_CSRF_SECRET are required.",
+    );
+  }
+
+  const pool: DatabasePool = createDatabasePool(databaseConfig);
+  try {
+    await validateDatabaseConnection(pool);
+    await validateNativeIdentitySchema(pool);
+    await validateMigrationsCurrent(pool);
+  } catch (error) {
+    await pool.end().catch(() => undefined);
+    throw new Error(
+      error instanceof Error && error.message.includes("migrations")
+        ? "The database schema is not current. Run `npm run db:migrate`."
+        : "The database is unavailable.",
+    );
+  }
+
+  const users = createUserRepository(pool);
+  const sessions = createSessionRepository(pool);
+  const auth = await createNativeAuthService({
+    users,
+    sessions,
+    passwords: createArgon2PasswordHasher(),
+    sessionHashSecret: authConfig.sessionHashSecret,
+  });
+
+  const libraries = createLibraryRepository(pool);
+  const definitions = parseLibraryDefinitions(environment.SEYIRLIK_LIBRARIES);
+  if (definitions.length > 0) {
+    await libraries.provision(definitions);
+  }
+
+  const catalogue = createCatalogueRepository(pool);
+  const scanStore = createCatalogueScanStore(pool);
+  const home = createHomeRepository(pool);
+  const images = createImageRepository(pool);
+  const userState = createUserStateRepository(pool);
+  const playbackSessions = createPlaybackSessionStore(pool);
+  const queue = createJobQueue(pool);
+
+  const imageStorage = createImageStorage({
+    imageRoot: path.join(generatedStoragePath, "images"),
+  });
+  const metadataRepository = createMetadataRepository(pool);
+
+  // Metadata is optional: without a provider key the catalogue still scans,
+  // probes and plays, it just shows the titles taken from disk.
+  const tmdbApiKey = environment.SEYIRLIK_TMDB_API_KEY?.trim();
+  const tmdb = tmdbApiKey ? createTmdbClient({ apiKey: tmdbApiKey }) : undefined;
+  const metadataService = tmdb
+    ? createMetadataService({
+        metadata: metadataRepository,
+        images,
+        imageStorage,
+        tmdb,
+      })
+    : undefined;
+
+  const catalogueService = createCatalogueService({
+    catalogue,
+    home,
+    images,
+    userState,
+  });
+
+  const probeService = createProbeService({
+    pool,
+    mediaRoot,
+    ...(ffprobePath ? { ffprobePath } : {}),
+  });
+
+  const worker = createWorker({
+    queue,
+    handlers: createJobHandlers({
+      libraries,
+      scanStore,
+      fileSystem: createNodeScannerFileSystem(mediaRoot),
+      probeService,
+      queue,
+      ...(metadataService ? { metadataService } : {}),
+    }),
+    logger: console,
+  });
+  if (runWorker) worker.start();
+
+  /**
+   * Bridges the cookie session to the router's principal. Resolving it here,
+   * once per request, keeps every route free of cookie handling and guarantees
+   * a disabled user or revoked session is rejected uniformly.
+   */
+  const resolveSession = async (
+    request: IncomingMessage,
+  ): Promise<RoutePrincipal | null> => {
+    const token = uniqueCookie(
+      parseCookies(request),
+      authConfig.sessionCookieName,
+    );
+    if (!token) return null;
+
+    try {
+      const session = await auth.getCurrentSession(token);
+      return {
+        userId: session.user.id,
+        username: session.user.username,
+        displayName: session.user.displayName,
+        isAdministrator: session.user.isAdministrator,
+        sessionId: session.sessionId,
+        sessionTokenHash: session.tokenHash,
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  const routes: RouteDefinition[] = [
+    ...createCatalogueRoutes({ service: catalogueService, catalogue }),
+    ...createProgressRoutes({ userState, catalogue }),
+    ...createPlaybackRoutes({
+      catalogue,
+      sessions: playbackSessions,
+      sessionManager,
+      mediaRoot,
+    }),
+    ...createImageRoutes({ images, imageStorage, catalogue }),
+    ...createTaskRoutes({ queue, libraries }),
+    ...(tmdb
+      ? createMetadataRoutes({ metadata: metadataRepository, tmdb, queue })
+      : []),
+  ];
+
+  const router = createOwnApiRouter({
+    routes,
+    resolveSession,
+    csrfSecret: authConfig.csrfSecret,
+    csrfCookieName: authConfig.csrfCookieName,
+    ...(publicOrigin ? { publicOrigin } : {}),
+  });
+
+  const authHandler = createNativeAuthHttpHandler({
+    auth,
+    csrfSecret: authConfig.csrfSecret,
+    secureCookies: authConfig.secureCookies,
+    sessionCookieName: authConfig.sessionCookieName,
+    csrfCookieName: authConfig.csrfCookieName,
+    ...(publicOrigin ? { publicOrigin } : {}),
+  });
+
+  const sessionCleanupTimer = setInterval(() => {
+    void auth.cleanupExpiredSessions().catch(() => undefined);
+  }, EXPIRED_SESSION_CLEANUP_INTERVAL_MS);
+  sessionCleanupTimer.unref();
+
+  const playbackCleanupTimer = setInterval(() => {
+    void playbackSessions
+      .expireIdle(PLAYBACK_SESSION_IDLE_MS)
+      .then(async (runtimeKeys) => {
+        // Stopping the FFmpeg process is what actually frees the machine; the
+        // row is only the record of it.
+        for (const key of runtimeKeys) {
+          await sessionManager.stopSession(key).catch(() => undefined);
+        }
+      })
+      .catch(() => undefined);
+  }, 60_000);
+  playbackCleanupTimer.unref();
+
+  let closed = false;
+
+  return {
+    routeHandler: async (request, response, context) =>
+      (await authHandler(request, response, context)) ||
+      (await router.handler(request, response, context)),
+
+    resolveRouteTemplate: router.resolveTemplate,
+
+    databaseCheck: () => checkDatabaseReadiness(pool),
+
+    jobsCheck: async () => {
+      try {
+        await pool.query("SELECT 1 FROM jobs LIMIT 1");
+        return "available";
+      } catch {
+        return "unavailable";
+      }
+    },
+
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      clearInterval(sessionCleanupTimer);
+      clearInterval(playbackCleanupTimer);
+      await worker.stop();
+      await pool.end();
+    },
+  };
+}

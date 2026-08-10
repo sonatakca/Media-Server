@@ -29,7 +29,7 @@ import {
 } from "../lib/playbackDiagnostics";
 import { useLanguage } from "../i18n/LanguageContext";
 import type {
-  JellyfinItem,
+  MediaItem,
   PlaybackMode,
   PlaybackSourceCandidate,
 } from "../lib/types";
@@ -255,7 +255,7 @@ function getBestSource(
 
 function enrichRowWithItem(
   row: PlaybackAuditRow,
-  item: JellyfinItem,
+  item: MediaItem,
 ): PlaybackAuditRow {
   return {
     ...row,

@@ -4,9 +4,9 @@ import {
   getWatchRouteForItem,
   shouldOpenPlaybackForItem,
 } from "./routes";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
-function getEpisodeOrderValue(item: JellyfinItem): number {
+function getEpisodeOrderValue(item: MediaItem): number {
   const seasonNumber = item.ParentIndexNumber ?? 0;
   const episodeNumber = item.IndexNumber ?? 0;
 
@@ -14,8 +14,8 @@ function getEpisodeOrderValue(item: JellyfinItem): number {
 }
 
 function getNextEpisodeForSeries(
-  episodes: JellyfinItem[],
-): JellyfinItem | null {
+  episodes: MediaItem[],
+): MediaItem | null {
   const sortedEpisodes = [...episodes].sort(
     (left, right) => getEpisodeOrderValue(left) - getEpisodeOrderValue(right),
   );
@@ -38,7 +38,7 @@ function getNextEpisodeForSeries(
 }
 
 export async function getPlayTargetForItem(
-  item: JellyfinItem,
+  item: MediaItem,
 ): Promise<string> {
   const targetItem = await getPlayTargetItemForItem(item);
 
@@ -46,8 +46,8 @@ export async function getPlayTargetForItem(
 }
 
 export async function getPlayTargetItemForItem(
-  item: JellyfinItem,
-): Promise<JellyfinItem | null> {
+  item: MediaItem,
+): Promise<MediaItem | null> {
   if (item.Type !== "Series") {
     return item.Type === "Movie" || shouldOpenPlaybackForItem(item)
       ? item

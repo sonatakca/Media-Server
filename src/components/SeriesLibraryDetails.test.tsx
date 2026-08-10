@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SeriesLibraryDetails } from "./SeriesLibraryDetails";
 import { getAllSeriesEpisodes } from "../lib/jellyfinApi";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 
 vi.mock("../lib/jellyfinApi", () => ({
   getAllSeriesEpisodes: vi.fn(() => Promise.resolve([])),
@@ -75,11 +75,11 @@ vi.mock("./MotionReveal", () => ({
 }));
 
 vi.mock("./MediaCard", () => ({
-  MediaCard: ({ item }: { item: JellyfinItem }) => <div>{item.Name}</div>,
+  MediaCard: ({ item }: { item: MediaItem }) => <div>{item.Name}</div>,
 }));
 
 vi.mock("./mobile/MobileMediaCard", () => ({
-  MobileMediaCard: ({ item }: { item: JellyfinItem }) => <div>{item.Name}</div>,
+  MobileMediaCard: ({ item }: { item: MediaItem }) => <div>{item.Name}</div>,
 }));
 
 describe("SeriesLibraryDetails", () => {
@@ -96,7 +96,7 @@ describe("SeriesLibraryDetails", () => {
 
   it("renders movie details without the series-only season and episode shelf", async () => {
     const onInitialReady = vi.fn();
-    const movie: JellyfinItem = {
+    const movie: MediaItem = {
       Id: "movie-1",
       Name: "Example Movie",
       Type: "Movie",
@@ -111,7 +111,7 @@ describe("SeriesLibraryDetails", () => {
           Type: "Actor",
         },
       ],
-    } as JellyfinItem;
+    } as MediaItem;
 
     render(
       <MemoryRouter>
@@ -159,7 +159,7 @@ describe("SeriesLibraryDetails", () => {
       },
     ]);
 
-    const series: JellyfinItem = {
+    const series: MediaItem = {
       Id: "series-1",
       Name: "Example Show",
       Type: "Series",

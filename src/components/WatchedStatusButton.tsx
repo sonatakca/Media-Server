@@ -9,7 +9,7 @@ import {
   removeWatchedStatusForSeason,
   removeWatchedStatusForShow,
 } from "../lib/watchedStatusActions";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
 import { Tooltip } from "./ui/Tooltip";
 
@@ -19,7 +19,7 @@ type WatchedStatusAction = "mark" | "remove";
 interface WatchedStatusButtonProps {
   scope: WatchedStatusScope;
   action?: WatchedStatusAction;
-  item?: JellyfinItem;
+  item?: MediaItem;
   seriesId?: string;
   seasonId?: string;
   className: string;
@@ -28,7 +28,7 @@ interface WatchedStatusButtonProps {
   label?: string;
   showLabel?: boolean;
   confirm?: boolean;
-  onReset?: (items: JellyfinItem[]) => void;
+  onReset?: (items: MediaItem[]) => void;
 }
 
 export function WatchedStatusButton({
@@ -100,7 +100,7 @@ export function WatchedStatusButton({
     setDidResetFail(false);
 
     try {
-      let changedItems: JellyfinItem[];
+      let changedItems: MediaItem[];
 
       if (action === "mark" && scope === "item" && item) {
         changedItems = await markWatchedStatusForItem(item);

@@ -27,11 +27,11 @@ export interface JellyfinItemResponse {
   SeriesId?: unknown;
 }
 
-export interface JellyfinItemsResponse {
+export interface MediaItemsResponse {
   Items?: unknown;
 }
 
-export interface JellyfinMediaSource {
+export interface MediaSource {
   Protocol?: unknown;
   Path?: unknown;
 }

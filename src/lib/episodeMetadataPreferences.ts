@@ -1,6 +1,6 @@
 import type { Language } from "../i18n/translations";
 import type { TmdbImageLanguage } from "./tmdbArtworkApi";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 const EPISODE_METADATA_STORAGE_KEY = "seyirlik-episode-metadata-overrides";
 const STORE_VERSION = 1;
@@ -337,7 +337,7 @@ export function getSeriesEpisodeMetadataPreference(
   return readStore().series[seriesId] ?? null;
 }
 
-function getStoredEpisode(item: JellyfinItem): StoredEpisodeMetadata | null {
+function getStoredEpisode(item: MediaItem): StoredEpisodeMetadata | null {
   const store = readStore();
   const directMatch = store.episodesById[item.Id];
 
@@ -358,7 +358,7 @@ function getStoredEpisode(item: JellyfinItem): StoredEpisodeMetadata | null {
 }
 
 export function getEpisodeDisplayMetadata(
-  item: JellyfinItem,
+  item: MediaItem,
   language: Language,
 ): EpisodeDisplayMetadata {
   if (item.Type !== "Episode") {

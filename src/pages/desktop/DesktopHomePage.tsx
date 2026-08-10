@@ -19,7 +19,7 @@ import {
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { getRouteForItem } from "../../lib/routes";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { ConfettiAnimation } from "../../components/animations/ConfettiAnimation";
 import { setSeoMetadata } from "../../lib/seo";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
@@ -41,9 +41,9 @@ type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 const HERO_ROTATION_INTERVAL_MS = 12000;
 
 interface HomeData {
-  continueWatching: JellyfinItem[];
-  latestMedia: JellyfinItem[];
-  heroItems: JellyfinItem[];
+  continueWatching: MediaItem[];
+  latestMedia: MediaItem[];
+  heroItems: MediaItem[];
 }
 
 interface RowWarning {
@@ -289,7 +289,7 @@ export function DesktopHomePage() {
     setIsHeroPaused((current) => !current);
   };
 
-  const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
+  const handleClearContinueWatching = (clearedItem: MediaItem) => {
     setData((currentData) =>
       removeContinueWatchingItem(currentData, clearedItem.Id),
     );

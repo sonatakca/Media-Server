@@ -1,15 +1,15 @@
 import { AnimatePresence } from "framer-motion";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { MobileMediaCard } from "./MobileMediaCard";
 
 interface MobileMediaRowProps {
   title: string;
-  items: JellyfinItem[];
-  getItemTo: (item: JellyfinItem) => string;
+  items: MediaItem[];
+  getItemTo: (item: MediaItem) => string;
   variant?: "poster" | "landscape";
   emptyMessage?: string;
   showRestartWatching?: boolean;
-  onClearContinueWatching?: (item: JellyfinItem) => void;
+  onClearContinueWatching?: (item: MediaItem) => void;
 }
 
 export function MobileMediaRow({

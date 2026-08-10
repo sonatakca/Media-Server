@@ -26,7 +26,7 @@ import {
 import { getRouteForItem } from "../../lib/routes";
 import { setSeoMetadata } from "../../lib/seo";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { groupLatestMediaItems } from "../../lib/latestMedia";
 import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
@@ -44,8 +44,8 @@ const HERO_SWIPE_DISTANCE_THRESHOLD = 70;
 const HERO_SWIPE_VELOCITY_THRESHOLD = 450;
 
 interface MobileHomeData {
-  continueWatching: JellyfinItem[];
-  latestMedia: JellyfinItem[];
+  continueWatching: MediaItem[];
+  latestMedia: MediaItem[];
 }
 
 interface RowWarning {
@@ -53,7 +53,7 @@ interface RowWarning {
   message: string;
 }
 
-function getHeroImage(item?: JellyfinItem): string {
+function getHeroImage(item?: MediaItem): string {
   if (!item) {
     return "";
   }
@@ -77,7 +77,7 @@ function getHeroImage(item?: JellyfinItem): string {
   return "";
 }
 
-function getHeroPosterImage(item?: JellyfinItem): string {
+function getHeroPosterImage(item?: MediaItem): string {
   if (!item) {
     return "";
   }
@@ -105,7 +105,7 @@ function getHeroPosterImage(item?: JellyfinItem): string {
   return "";
 }
 
-function scoreHeroItem(item: JellyfinItem): number {
+function scoreHeroItem(item: MediaItem): number {
   let score = 0;
 
   if (item.BackdropImageTags?.[0] || item.ParentBackdropImageTags?.[0]) {
@@ -123,7 +123,7 @@ function scoreHeroItem(item: JellyfinItem): number {
   return score;
 }
 
-function getFeaturedItem(items: JellyfinItem[]): JellyfinItem | undefined {
+function getFeaturedItem(items: MediaItem[]): MediaItem | undefined {
   const seenIds = new Set<string>();
 
   return [...items]
@@ -138,7 +138,7 @@ function getFeaturedItem(items: JellyfinItem[]): JellyfinItem | undefined {
     .sort((left, right) => scoreHeroItem(right) - scoreHeroItem(left))[0];
 }
 
-function getFeaturedItems(items: JellyfinItem[]): JellyfinItem[] {
+function getFeaturedItems(items: MediaItem[]): MediaItem[] {
   const seenIds = new Set<string>();
 
   return [...items]
@@ -430,7 +430,7 @@ export function MobileHomePage() {
     return <MobileHomeLoading />;
   }
 
-  const handleClearContinueWatching = (clearedItem: JellyfinItem) => {
+  const handleClearContinueWatching = (clearedItem: MediaItem) => {
     setData((currentData) =>
       removeContinueWatchingItem(currentData, clearedItem.Id),
     );

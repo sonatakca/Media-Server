@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import {
   getInitialPlaybackSeconds,
   getPlayerLoadingBackdropUrl,
@@ -22,7 +22,7 @@ describe("playerPageModel", () => {
         ParentBackdropItemId: "parent",
         ParentBackdropImageTags: ["parent-tag"],
         BackdropImageTags: ["item-tag"],
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBe("parent:parent-tag:1920");
 
     expect(
@@ -30,7 +30,7 @@ describe("playerPageModel", () => {
         Id: "movie",
         Name: "Movie",
         BackdropImageTags: ["movie-tag"],
-      } as JellyfinItem),
+      } as MediaItem),
     ).toBe("movie:movie-tag:1920");
     expect(getPlayerLoadingBackdropUrl(null)).toBe("");
   });
@@ -40,13 +40,13 @@ describe("playerPageModel", () => {
       Id: "movie",
       Name: "Movie",
       UserData: { PlaybackPositionTicks: 125_000_000 },
-    } as JellyfinItem;
+    } as MediaItem;
 
     expect(getInitialPlaybackSeconds(item, false)).toBe(12.5);
     expect(getInitialPlaybackSeconds(item, true)).toBe(0);
     expect(
       getInitialPlaybackSeconds(
-        { Id: "empty", Name: "Empty" } as JellyfinItem,
+        { Id: "empty", Name: "Empty" } as MediaItem,
         false,
       ),
     ).toBe(0);

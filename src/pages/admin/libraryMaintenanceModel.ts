@@ -1,6 +1,6 @@
 import type { TranslationKey } from "../../i18n/translations";
 import { getDefaultSubtitleStreamIndexForItem } from "../../lib/subtitlePreferences";
-import type { JellyfinItem, JellyfinMediaStream } from "../../lib/types";
+import type { MediaItem, MediaStream } from "../../lib/types";
 
 export type ActionState = "idle" | "loading" | "success" | "error";
 export type Translate = (key: TranslationKey) => string;
@@ -22,7 +22,7 @@ export interface MetadataDraft {
 
 export interface SubtitlePreferenceOption {
   index: number;
-  stream: JellyfinMediaStream;
+  stream: MediaStream;
   itemCount: number;
 }
 
@@ -35,7 +35,7 @@ export function createEmptyResult(): ActionResult {
   };
 }
 
-export function createDraftFromItem(item: JellyfinItem): MetadataDraft {
+export function createDraftFromItem(item: MediaItem): MetadataDraft {
   return {
     name: item.Name ?? "",
     sortName: item.SortName ?? "",
@@ -50,13 +50,13 @@ export function createDraftFromItem(item: JellyfinItem): MetadataDraft {
   };
 }
 
-export function getDefaultSubtitlePreferenceIndex(item: JellyfinItem): number {
+export function getDefaultSubtitlePreferenceIndex(item: MediaItem): number {
   return getDefaultSubtitleStreamIndexForItem(item);
 }
 
 export function getSubtitleStreams(
-  item: JellyfinItem | null,
-): JellyfinMediaStream[] {
+  item: MediaItem | null,
+): MediaStream[] {
   return (
     item?.MediaSources?.[0]?.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === "subtitle",
@@ -65,7 +65,7 @@ export function getSubtitleStreams(
 }
 
 export function getSubtitleStreamLabel(
-  stream: JellyfinMediaStream,
+  stream: MediaStream,
   fallback: string,
   t: Translate,
 ): string {
@@ -88,7 +88,7 @@ export function getSubtitleStreamLabel(
 }
 
 export function getCommonSubtitlePreferenceIndex(
-  items: JellyfinItem[],
+  items: MediaItem[],
 ): number {
   if (items.length === 0) return -1;
 
@@ -102,7 +102,7 @@ export function getCommonSubtitlePreferenceIndex(
 }
 
 export function getSubtitlePreferenceOptions(
-  items: JellyfinItem[],
+  items: MediaItem[],
 ): SubtitlePreferenceOption[] {
   const optionsByIndex = new Map<number, SubtitlePreferenceOption>();
 
@@ -134,9 +134,9 @@ export function getSubtitlePreferenceOptions(
 }
 
 export function getSubtitlePreferenceTargetItems(
-  selectedItem: JellyfinItem | null,
-  seriesEpisodes: JellyfinItem[],
-): JellyfinItem[] {
+  selectedItem: MediaItem | null,
+  seriesEpisodes: MediaItem[],
+): MediaItem[] {
   if (!selectedItem) return [];
   if (selectedItem.Type === "Series") return seriesEpisodes;
   return [selectedItem];
@@ -152,7 +152,7 @@ export function formatTemplate(
   );
 }
 
-export function getTypeLabel(item: JellyfinItem, t: Translate) {
+export function getTypeLabel(item: MediaItem, t: Translate) {
   if (item.Type === "Movie") return t("common.movie");
   if (item.Type === "Episode") return t("common.episode");
   if (item.Type === "Series") return t("common.series");

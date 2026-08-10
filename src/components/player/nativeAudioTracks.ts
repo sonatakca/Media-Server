@@ -1,5 +1,5 @@
 import type {
-  JellyfinMediaStream,
+  MediaStream,
   PlaybackSourceCandidate,
 } from "../../lib/types";
 import type {
@@ -79,7 +79,7 @@ function normalizeLanguage(value?: string): string {
   return languageAliases[normalized] ?? normalized;
 }
 
-function getStreamMatchText(stream: JellyfinMediaStream): string {
+function getStreamMatchText(stream: MediaStream): string {
   return [stream.Language, stream.DisplayTitle, stream.Title, stream.Codec]
     .map(normalizeMatchText)
     .filter(Boolean)

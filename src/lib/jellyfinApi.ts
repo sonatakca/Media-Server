@@ -7,20 +7,20 @@ import {
 } from "./authStorage";
 import { sortCollectionItemsForWatching } from "./collectionUtils";
 import type {
-  JellyfinAuthResponse,
-  JellyfinItem,
-  JellyfinItemsResponse,
-  JellyfinLibrary,
-  JellyfinMediaSegment,
-  JellyfinMediaSource,
-  JellyfinMediaStream,
-  JellyfinMetadataRefreshOptions,
-  JellyfinPlaybackInfoResponse,
-  JellyfinPublicSystemInfo,
-  JellyfinSessionInfo,
-  JellyfinTranscodingInfo,
-  JellyfinUser,
-  JellyfinUserPolicy,
+  AuthResponse,
+  MediaItem,
+  MediaItemsResponse,
+  MediaLibrary,
+  MediaSegment,
+  MediaSource,
+  MediaStream,
+  MetadataRefreshOptions,
+  PlaybackInfoResponse,
+  ServerInfo,
+  PlaybackSessionInfo,
+  TranscodingInfo,
+  MediaUser,
+  MediaUserPolicy,
   NormalizedMediaSegment,
   PlaybackQualityOption,
   PlaybackMode,
@@ -333,8 +333,8 @@ async function requestJson<TResponse>(
 
 export async function testServerConnection(
   serverUrl: string,
-): Promise<JellyfinPublicSystemInfo> {
-  return requestJson<JellyfinPublicSystemInfo>("/System/Info/Public", {
+): Promise<ServerInfo> {
+  return requestJson<ServerInfo>("/System/Info/Public", {
     auth: false,
     serverUrlOverride: serverUrl,
   });
@@ -343,8 +343,8 @@ export async function testServerConnection(
 export async function authenticateByName(
   username: string,
   password: string,
-): Promise<JellyfinAuthResponse> {
-  return requestJson<JellyfinAuthResponse>("/Users/AuthenticateByName", {
+): Promise<AuthResponse> {
+  return requestJson<AuthResponse>("/Users/AuthenticateByName", {
     method: "POST",
     auth: false,
     deviceAuth: true,
@@ -355,19 +355,19 @@ export async function authenticateByName(
   });
 }
 
-export async function getUsers(): Promise<JellyfinUser[]> {
-  return requestJson<JellyfinUser[]>("/Users");
+export async function getUsers(): Promise<MediaUser[]> {
+  return requestJson<MediaUser[]>("/Users");
 }
 
-export async function getUserById(userId: string): Promise<JellyfinUser> {
-  return requestJson<JellyfinUser>(`/Users/${encodeURIComponent(userId)}`);
+export async function getUserById(userId: string): Promise<MediaUser> {
+  return requestJson<MediaUser>(`/Users/${encodeURIComponent(userId)}`);
 }
 
 export async function createUser(
   name: string,
   password: string,
-): Promise<JellyfinUser> {
-  return requestJson<JellyfinUser>("/Users/New", {
+): Promise<MediaUser> {
+  return requestJson<MediaUser>("/Users/New", {
     method: "POST",
     body: {
       Name: name,
@@ -376,7 +376,7 @@ export async function createUser(
   });
 }
 
-export async function updateUser(user: JellyfinUser): Promise<void> {
+export async function updateUser(user: MediaUser): Promise<void> {
   await requestJson<void>("/Users", {
     method: "POST",
     params: {
@@ -388,7 +388,7 @@ export async function updateUser(user: JellyfinUser): Promise<void> {
 
 export async function updateUserPolicy(
   userId: string,
-  policy: JellyfinUserPolicy,
+  policy: MediaUserPolicy,
 ): Promise<void> {
   await requestJson<void>(`/Users/${encodeURIComponent(userId)}/Policy`, {
     method: "POST",
@@ -412,10 +412,10 @@ export async function updateUserPassword(
   });
 }
 
-export async function getUserViews(): Promise<JellyfinLibrary[]> {
+export async function getUserViews(): Promise<MediaLibrary[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinLibrary>>(
+  const response = await requestJson<MediaItemsResponse<MediaLibrary>>(
     "/UserViews",
     {
       params: {
@@ -431,10 +431,10 @@ export async function getUserViews(): Promise<JellyfinLibrary[]> {
 
 export async function getItemsForLibrary(
   libraryId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/Items",
     {
       params: {
@@ -454,10 +454,10 @@ export async function getItemsForLibrary(
   return response.Items ?? [];
 }
 
-export async function getNextUpEpisodes(): Promise<JellyfinItem[]> {
+export async function getNextUpEpisodes(): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/Shows/NextUp",
     {
       params: {
@@ -478,7 +478,7 @@ export async function getNextUpEpisodes(): Promise<JellyfinItem[]> {
 export async function getTopLevelItemsForLibrary(
   libraryId: string,
   collectionType?: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
   const includeItemTypes =
@@ -488,7 +488,7 @@ export async function getTopLevelItemsForLibrary(
         ? "Movie"
         : undefined;
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/Items",
     {
       params: {
@@ -511,10 +511,10 @@ export async function getTopLevelItemsForLibrary(
 
 export async function getSeriesSeasons(
   seriesId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     `/Shows/${encodeURIComponent(seriesId)}/Seasons`,
     {
       params: {
@@ -534,10 +534,10 @@ export async function getSeriesSeasons(
 export async function getSeasonEpisodes(
   seriesId: string,
   seasonId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     `/Shows/${encodeURIComponent(seriesId)}/Episodes`,
     {
       params: {
@@ -557,11 +557,11 @@ export async function getSeasonEpisodes(
   return response.Items ?? [];
 }
 
-function getEpisodeSeasonId(item: JellyfinItem): string | null {
+function getEpisodeSeasonId(item: MediaItem): string | null {
   return item.SeasonId ?? item.ParentId ?? null;
 }
 
-function getEpisodeCandidateTexts(item: JellyfinItem): string[] {
+function getEpisodeCandidateTexts(item: MediaItem): string[] {
   return [item.Name, item.SortName, item.SeriesName, item.SeasonName].filter(
     (value): value is string => Boolean(value?.trim()),
   );
@@ -614,7 +614,7 @@ function parseSeasonNumberFromText(text: string): number | null {
   return null;
 }
 
-function getEpisodeIndexNumber(item: JellyfinItem): number | null {
+function getEpisodeIndexNumber(item: MediaItem): number | null {
   const indexNumber = item.IndexNumber;
 
   if (typeof indexNumber === "number" && Number.isFinite(indexNumber)) {
@@ -632,7 +632,7 @@ function getEpisodeIndexNumber(item: JellyfinItem): number | null {
   return null;
 }
 
-function getEpisodeSeasonNumber(item: JellyfinItem): number | null {
+function getEpisodeSeasonNumber(item: MediaItem): number | null {
   const parentIndexNumber = item.ParentIndexNumber;
 
   if (
@@ -654,7 +654,7 @@ function getEpisodeSeasonNumber(item: JellyfinItem): number | null {
 }
 
 function getNextEpisodeDebugPayload(
-  item: JellyfinItem,
+  item: MediaItem,
 ): Record<string, unknown> {
   return {
     id: item.Id,
@@ -670,7 +670,7 @@ function getNextEpisodeDebugPayload(
   };
 }
 
-function compareEpisodeOrder(left: JellyfinItem, right: JellyfinItem): number {
+function compareEpisodeOrder(left: MediaItem, right: MediaItem): number {
   const leftIndex = getEpisodeIndexNumber(left);
   const rightIndex = getEpisodeIndexNumber(right);
 
@@ -714,10 +714,10 @@ function compareEpisodeOrder(left: JellyfinItem, right: JellyfinItem): number {
 
 async function getEpisodesBySeasonParentId(
   seasonId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/Items",
     {
       params: {
@@ -739,8 +739,8 @@ async function getEpisodesBySeasonParentId(
 }
 
 export async function getNextEpisodeInSeason(
-  currentEpisode: JellyfinItem,
-): Promise<JellyfinItem | null> {
+  currentEpisode: MediaItem,
+): Promise<MediaItem | null> {
   if (currentEpisode.Type !== "Episode") {
     console.debug(
       "[Seyirlik Next Episode] Skipping next episode lookup for non-episode item",
@@ -767,7 +767,7 @@ export async function getNextEpisodeInSeason(
     );
   }
 
-  let episodes: JellyfinItem[] = [];
+  let episodes: MediaItem[] = [];
 
   if (currentEpisode.SeriesId) {
     try {
@@ -857,10 +857,10 @@ export async function getNextEpisodeInSeason(
 
 export async function getAllSeriesEpisodes(
   seriesId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     `/Shows/${encodeURIComponent(seriesId)}/Episodes`,
     {
       params: {
@@ -881,15 +881,15 @@ export async function getAllSeriesEpisodes(
 
 async function getAllItemsByType(
   includeItemTypes: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
-  const allItems: JellyfinItem[] = [];
+  const allItems: MediaItem[] = [];
   const limit = 200;
   let startIndex = 0;
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       "/Items",
       {
         params: {
@@ -924,20 +924,20 @@ async function getAllItemsByType(
   return allItems;
 }
 
-export async function getAllMovieItems(): Promise<JellyfinItem[]> {
+export async function getAllMovieItems(): Promise<MediaItem[]> {
   return getAllItemsByType("Movie");
 }
 
-export async function getAllBoxSetItems(): Promise<JellyfinItem[]> {
+export async function getAllBoxSetItems(): Promise<MediaItem[]> {
   return getAllItemsByType("BoxSet");
 }
 
 export async function getBoxSetItems(
   boxSetId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/Items",
     {
       params: {
@@ -1015,11 +1015,11 @@ export async function markItemPlayed(itemId: string): Promise<void> {
 
 export async function updateItemUserData(
   itemId: string,
-  userData: Partial<NonNullable<JellyfinItem["UserData"]>>,
-): Promise<NonNullable<JellyfinItem["UserData"]>> {
+  userData: Partial<NonNullable<MediaItem["UserData"]>>,
+): Promise<NonNullable<MediaItem["UserData"]>> {
   const session = requireAuthSession();
 
-  return requestJson<NonNullable<JellyfinItem["UserData"]>>(
+  return requestJson<NonNullable<MediaItem["UserData"]>>(
     `/UserItems/${encodeURIComponent(itemId)}/UserData`,
     {
       method: "POST",
@@ -1082,7 +1082,7 @@ export async function markItemWatchedStatus(itemId: string): Promise<void> {
   await markItemPlayed(itemId);
 }
 
-export async function getItem(itemId: string): Promise<JellyfinItem> {
+export async function getItem(itemId: string): Promise<MediaItem> {
   const session = requireAuthSession();
 
   const params = {
@@ -1094,7 +1094,7 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
   };
 
   try {
-    return await requestJson<JellyfinItem>(
+    return await requestJson<MediaItem>(
       `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(itemId)}`,
       {
         params,
@@ -1102,7 +1102,7 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
     );
   } catch (userScopedError) {
     try {
-      return await requestJson<JellyfinItem>(
+      return await requestJson<MediaItem>(
         `/Items/${encodeURIComponent(itemId)}`,
         {
           params,
@@ -1114,10 +1114,10 @@ export async function getItem(itemId: string): Promise<JellyfinItem> {
   }
 }
 
-export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
+export async function getContinueWatchingItems(): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
-  const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+  const response = await requestJson<MediaItemsResponse<MediaItem>>(
     "/UserItems/Resume",
     {
       params: {
@@ -1137,12 +1137,12 @@ export async function getContinueWatchingItems(): Promise<JellyfinItem[]> {
   return response.Items ?? [];
 }
 
-export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
+export async function getLatestMediaItems(): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
   const latestByType = await Promise.all(
     ["Movie", "Series", "Book"].map((includeItemTypes) =>
-      requestJson<JellyfinItem[]>("/Items/Latest", {
+      requestJson<MediaItem[]>("/Items/Latest", {
         params: {
           userId: session.userId,
           limit: 24,
@@ -1161,15 +1161,15 @@ export async function getLatestMediaItems(): Promise<JellyfinItem[]> {
   return latestByType.flat();
 }
 
-export async function getAllMovieAndSeriesItems(): Promise<JellyfinItem[]> {
+export async function getAllMovieAndSeriesItems(): Promise<MediaItem[]> {
   const session = requireAuthSession();
-  const allItems: JellyfinItem[] = [];
+  const allItems: MediaItem[] = [];
   const limit = 200;
   let startIndex = 0;
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       "/Items",
       {
         params: {
@@ -1204,15 +1204,15 @@ export async function getAllMovieAndSeriesItems(): Promise<JellyfinItem[]> {
   return allItems;
 }
 
-export async function getAllVideoItems(): Promise<JellyfinItem[]> {
+export async function getAllVideoItems(): Promise<MediaItem[]> {
   const session = requireAuthSession();
-  const allItems: JellyfinItem[] = [];
+  const allItems: MediaItem[] = [];
   const limit = 200;
   let startIndex = 0;
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       "/Items",
       {
         params: {
@@ -1247,15 +1247,15 @@ export async function getAllVideoItems(): Promise<JellyfinItem[]> {
 
 export async function getVideoItemsForLibrary(
   libraryId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
-  const allItems: JellyfinItem[] = [];
+  const allItems: MediaItem[] = [];
   const limit = 200;
   let startIndex = 0;
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       "/Items",
       {
         params: {
@@ -1290,15 +1290,15 @@ export async function getVideoItemsForLibrary(
   return allItems;
 }
 
-export async function getAllContentItems(): Promise<JellyfinItem[]> {
+export async function getAllContentItems(): Promise<MediaItem[]> {
   const session = requireAuthSession();
-  const allItems: JellyfinItem[] = [];
+  const allItems: MediaItem[] = [];
   const limit = 200;
   let startIndex = 0;
   let totalRecordCount = Number.POSITIVE_INFINITY;
 
   while (startIndex < totalRecordCount) {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       "/Items",
       {
         params: {
@@ -1352,7 +1352,7 @@ export async function refreshLibraryMetadata(libraryId: string): Promise<void> {
 
 export async function refreshItemMetadata(
   itemId: string,
-  options: JellyfinMetadataRefreshOptions = {},
+  options: MetadataRefreshOptions = {},
 ): Promise<void> {
   await requestJson<void>(`/Items/${encodeURIComponent(itemId)}/Refresh`, {
     method: "POST",
@@ -1368,7 +1368,7 @@ export async function refreshItemMetadata(
 
 export async function updateItemMetadata(
   itemId: string,
-  item: JellyfinItem,
+  item: MediaItem,
 ): Promise<void> {
   await requestJson<void>(`/Items/${encodeURIComponent(itemId)}`, {
     method: "POST",
@@ -1454,10 +1454,10 @@ function getBrowserDeviceProfile(): Record<string, unknown> {
 
 export async function getPlaybackInfo(
   itemId: string,
-): Promise<JellyfinPlaybackInfoResponse> {
+): Promise<PlaybackInfoResponse> {
   const session = requireAuthSession();
 
-  return requestJson<JellyfinPlaybackInfoResponse>(
+  return requestJson<PlaybackInfoResponse>(
     `/Items/${encodeURIComponent(itemId)}/PlaybackInfo`,
     {
       method: "POST",
@@ -1632,7 +1632,7 @@ export async function getMediaSegments(
 ): Promise<NormalizedMediaSegment[]> {
   try {
     const response = await requestJson<
-      JellyfinMediaSegment[] | Record<string, unknown>
+      MediaSegment[] | Record<string, unknown>
     >(`/MediaSegments/${encodeURIComponent(itemId)}`);
 
     return getMediaSegmentEntries(response)
@@ -1678,8 +1678,8 @@ export async function getMediaSegments(
 export async function getActiveTranscodingInfo(
   itemId: string,
   playSessionId?: string,
-): Promise<JellyfinTranscodingInfo | null> {
-  const sessions = await requestJson<JellyfinSessionInfo[]>("/Sessions", {
+): Promise<TranscodingInfo | null> {
+  const sessions = await requestJson<PlaybackSessionInfo[]>("/Sessions", {
     params: {
       activeWithinSeconds: 30,
     },
@@ -1723,16 +1723,16 @@ export async function getActiveTranscodingReasons(
 }
 
 function getMediaStream(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   type: "Video" | "Audio",
-): JellyfinMediaStream | undefined {
+): MediaStream | undefined {
   return mediaSource.MediaStreams?.find(
     (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
   );
 }
 
 function getDefaultAudioStreamIndex(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
 ): number | undefined {
   if (mediaSource.DefaultAudioStreamIndex !== undefined) {
     return mediaSource.DefaultAudioStreamIndex;
@@ -1761,11 +1761,11 @@ function normalizeContainer(container?: string): string {
     .replace("quicktime", "mov");
 }
 
-function getVideoCodecForMediaSource(mediaSource: JellyfinMediaSource): string {
+function getVideoCodecForMediaSource(mediaSource: MediaSource): string {
   return normalizeCodec(getMediaStream(mediaSource, "Video")?.Codec);
 }
 
-function getAudioCodecForMediaSource(mediaSource: JellyfinMediaSource): string {
+function getAudioCodecForMediaSource(mediaSource: MediaSource): string {
   return normalizeCodec(getMediaStream(mediaSource, "Audio")?.Codec);
 }
 
@@ -1777,7 +1777,7 @@ function isAv1Codec(codec: string): boolean {
   return codec === "av1";
 }
 
-function shouldPreferFmp4Hls(mediaSource: JellyfinMediaSource): boolean {
+function shouldPreferFmp4Hls(mediaSource: MediaSource): boolean {
   const videoCodec = getVideoCodecForMediaSource(mediaSource);
 
   // Mirrors Jellyfin's "Prefer fMP4-HLS Media Container" behavior: fMP4 HLS
@@ -1789,7 +1789,7 @@ function isBrowserMp4FamilyContainer(container: string): boolean {
   return ["mp4", "m4v", "mov"].includes(container);
 }
 
-function isSdrVideoStream(stream?: JellyfinMediaStream): boolean {
+function isSdrVideoStream(stream?: MediaStream): boolean {
   const videoRange = stream?.VideoRange?.toLowerCase() ?? "";
   const videoRangeType = stream?.VideoRangeType?.toLowerCase() ?? "";
 
@@ -1801,7 +1801,7 @@ function isSdrVideoStream(stream?: JellyfinMediaStream): boolean {
 }
 
 function shouldOfferAudioTranscodeHls(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
 ): boolean {
   const container = normalizeContainer(mediaSource.Container);
   const videoStream = getMediaStream(mediaSource, "Video");
@@ -1835,7 +1835,7 @@ function isAppleBrowser(): boolean {
   );
 }
 
-function getH264Avc1Codec(stream?: JellyfinMediaStream): string {
+function getH264Avc1Codec(stream?: MediaStream): string {
   const profile = (stream?.Profile ?? "").toLowerCase();
   const level = stream?.Level;
 
@@ -1862,7 +1862,7 @@ function getH264Avc1Codec(stream?: JellyfinMediaStream): string {
 }
 
 function getMimeTypeForMediaSource(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
 ): string | undefined {
   const container = normalizeContainer(mediaSource.Container);
   const videoStream = getMediaStream(mediaSource, "Video");
@@ -1915,7 +1915,7 @@ function getMimeTypeForMediaSource(
   return undefined;
 }
 
-function getBrowserCanPlayResult(mediaSource: JellyfinMediaSource): {
+function getBrowserCanPlayResult(mediaSource: MediaSource): {
   mimeType?: string;
   support: "" | "maybe" | "probably";
   browserCanPlay: boolean;
@@ -1995,7 +1995,7 @@ function getBrowserCanPlayResult(mediaSource: JellyfinMediaSource): {
 
 function buildDirectStreamUrl(
   itemId: string,
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   playSessionId: string | undefined,
 ): string {
   const session = requireAuthSession();
@@ -2014,7 +2014,7 @@ function buildDirectStreamUrl(
 }
 
 function getHlsDebugInfo(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   url: string,
   segmentContainer: "mp4" | "ts",
   kind: BuiltHlsKind,
@@ -2031,7 +2031,7 @@ function getHlsDebugInfo(
 }
 
 function logHlsCandidateUrl(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   url: string,
   segmentContainer: "mp4" | "ts",
   kind: BuiltHlsKind,
@@ -2044,7 +2044,7 @@ function logHlsCandidateUrl(
 
 function buildStreamCopyHlsUrl(
   itemId: string,
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   playSessionId: string | undefined,
   settings: PlaybackSourceSettings = {},
 ): string {
@@ -2083,7 +2083,7 @@ function buildStreamCopyHlsUrl(
 
 function buildAudioTranscodeHlsUrl(
   itemId: string,
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   playSessionId: string | undefined,
   settings: PlaybackSourceSettings = {},
 ): string {
@@ -2125,7 +2125,7 @@ function buildAudioTranscodeHlsUrl(
 
 function buildForcedTranscodeHlsUrl(
   itemId: string,
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   playSessionId: string | undefined,
   settings: PlaybackSourceSettings = {},
 ): string {
@@ -2313,7 +2313,7 @@ export function buildSubtitleStreamUrl(
 }
 
 export function getManualQualityOptions(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
 ): PlaybackQualityOption[] {
   if (!mediaSource.SupportsTranscoding) {
     return [];
@@ -2386,7 +2386,7 @@ export function getManualQualityOptions(
 }
 
 function resolveTranscodingUrl(
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
 ): string | null {
   const session = requireAuthSession();
 
@@ -2403,7 +2403,7 @@ function resolveTranscodingUrl(
 
 function isHlsUrl(
   playbackUrl: string,
-  mediaSource?: JellyfinMediaSource,
+  mediaSource?: MediaSource,
 ): boolean {
   const transcodingContainer = mediaSource?.TranscodingContainer?.toLowerCase();
 
@@ -2417,14 +2417,14 @@ function isHlsUrl(
 
 function createPlaybackCandidate(
   itemId: string,
-  mediaSource: JellyfinMediaSource,
+  mediaSource: MediaSource,
   mode: PlaybackMode,
   url: string,
   playSessionId: string | undefined,
   priority: number,
   reason: string,
   mimeType: string | undefined,
-  playbackInfo: JellyfinPlaybackInfoResponse,
+  playbackInfo: PlaybackInfoResponse,
   hlsKind?: PlaybackSourceCandidate["hlsKind"],
 ): PlaybackSourceCandidate {
   return {
@@ -2488,7 +2488,7 @@ function getPlaybackCandidateDebug(candidate: PlaybackSourceCandidate) {
 
 export function buildPlaybackCandidates(
   itemId: string,
-  playbackInfo: JellyfinPlaybackInfoResponse,
+  playbackInfo: PlaybackInfoResponse,
 ): PlaybackSourceCandidate[] {
   const sources = playbackInfo.MediaSources ?? [];
   const candidates: PlaybackSourceCandidate[] = [];
@@ -2777,11 +2777,11 @@ export function getItemDownloadUrl(itemId: string): string {
   );
 }
 
-function normalizePreviewName(item: JellyfinItem): string {
+function normalizePreviewName(item: MediaItem): string {
   return `${item.Name ?? ""} ${item.SortName ?? ""}`.toLowerCase();
 }
 
-function sortHeroPreviewTrailers(left: JellyfinItem, right: JellyfinItem) {
+function sortHeroPreviewTrailers(left: MediaItem, right: MediaItem) {
   const leftName = normalizePreviewName(left);
   const rightName = normalizePreviewName(right);
 
@@ -2802,12 +2802,12 @@ function sortHeroPreviewTrailers(left: JellyfinItem, right: JellyfinItem) {
 
 export async function getLocalTrailers(
   itemId: string,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
   try {
     const response = await requestJson<
-      JellyfinItemsResponse<JellyfinItem> | JellyfinItem[]
+      MediaItemsResponse<MediaItem> | MediaItem[]
     >(
       `/Users/${encodeURIComponent(session.userId)}/Items/${encodeURIComponent(
         itemId,
@@ -2841,11 +2841,11 @@ export async function getLocalTrailers(
 export async function getSimilarItems(
   itemId: string,
   limit = 18,
-): Promise<JellyfinItem[]> {
+): Promise<MediaItem[]> {
   const session = requireAuthSession();
 
   try {
-    const response = await requestJson<JellyfinItemsResponse<JellyfinItem>>(
+    const response = await requestJson<MediaItemsResponse<MediaItem>>(
       `/Items/${encodeURIComponent(itemId)}/Similar`,
       {
         params: {
@@ -2876,7 +2876,7 @@ export async function getSimilarItems(
 }
 
 export async function getHeroPreviewUrl(
-  item: JellyfinItem,
+  item: MediaItem,
 ): Promise<string | null> {
   const previewSourceItemId =
     item.Type === "Episode" && item.SeriesId ? item.SeriesId : item.Id;

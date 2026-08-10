@@ -3,9 +3,9 @@ import {
   getCollectionPosterItems,
   shouldUseCollectionFallbackPoster,
 } from "./collectionPoster";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
-function item(id: string, overrides: Partial<JellyfinItem>): JellyfinItem {
+function item(id: string, overrides: Partial<MediaItem>): MediaItem {
   return {
     Id: id,
     Name: id,

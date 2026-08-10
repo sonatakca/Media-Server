@@ -4,11 +4,11 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
 import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 import { Tooltip } from "../ui/Tooltip";
 
 interface NextEpisodeCountdownOverlayProps {
-  nextEpisode: JellyfinItem;
+  nextEpisode: MediaItem;
   secondsRemaining: number;
   shouldReduceMotion: boolean;
   onPlayNow: () => void;

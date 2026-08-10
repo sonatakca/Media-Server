@@ -1,7 +1,7 @@
-import type { JellyfinItem } from "../../lib/types";
+import type { MediaItem } from "../../lib/types";
 
 interface HomeDataWithContinueWatching {
-  continueWatching: JellyfinItem[];
+  continueWatching: MediaItem[];
 }
 
 export function getHomeLoadErrorMessage(
@@ -13,7 +13,7 @@ export function getHomeLoadErrorMessage(
 
 export function replaceContinueWatchingItems<
   T extends HomeDataWithContinueWatching,
->(currentData: T | null, items: JellyfinItem[]): T | null {
+>(currentData: T | null, items: MediaItem[]): T | null {
   return currentData
     ? {
         ...currentData,

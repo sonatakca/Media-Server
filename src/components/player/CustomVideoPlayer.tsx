@@ -842,9 +842,39 @@ export function CustomVideoPlayer({
     },
     [qualityUserId],
   );
+  /**
+   * Track list for the pickers. The custom playback backend probes the container
+   * with ffprobe, which cannot see sidecar subtitle files (`Film.tr.srt`) and
+   * numbers streams differently from the library. The library's own list carries
+   * external subtitles and uses the indices its subtitle endpoint expects, so it
+   * wins whenever it is available; generated renditions inherit it because they
+   * keep the same `mediaSourceId`.
+   */
+  const libraryMediaStreams = useMemo(() => {
+    const librarySource =
+      item.MediaSources?.find(
+        (candidate) => candidate.Id === activeSource.mediaSourceId,
+      ) ?? item.MediaSources?.[0];
+    return librarySource?.MediaStreams;
+  }, [item, activeSource.mediaSourceId]);
+
+  const activeSourceWithLibraryStreams = useMemo<PlaybackSourceCandidate>(
+    () =>
+      libraryMediaStreams && libraryMediaStreams.length > 0
+        ? {
+            ...activeSource,
+            mediaSource: {
+              ...activeSource.mediaSource,
+              MediaStreams: libraryMediaStreams,
+            },
+          }
+        : activeSource,
+    [activeSource, libraryMediaStreams],
+  );
+
   const audioStreams = useMemo(
-    () => getStreamsOfType(activeSource, "Audio"),
-    [activeSource],
+    () => getStreamsOfType(activeSourceWithLibraryStreams, "Audio"),
+    [activeSourceWithLibraryStreams],
   );
   const canSwitchAudio = Boolean(
     audioStreams.some((stream) => stream.Index !== undefined) &&
@@ -932,7 +962,7 @@ export function CustomVideoPlayer({
   const sourceWithLiveTranscodingReasons =
     useMemo<PlaybackSourceCandidate>(() => {
       if (liveTranscodingReasons.length === 0) {
-        return activeSource;
+        return activeSourceWithLibraryStreams;
       }
 
       const mergedTranscodeReasons = Array.from(
@@ -946,14 +976,14 @@ export function CustomVideoPlayer({
       );
 
       return {
-        ...activeSource,
+        ...activeSourceWithLibraryStreams,
         transcodeReasons: mergedTranscodeReasons,
         mediaSource: {
-          ...activeSource.mediaSource,
+          ...activeSourceWithLibraryStreams.mediaSource,
           TranscodingReasons: mergedTranscodeReasons,
         },
       };
-    }, [activeSource, liveTranscodingReasons]);
+    }, [activeSourceWithLibraryStreams, liveTranscodingReasons]);
 
   useCustomPlaybackSessionLease(activeSource);
 
@@ -3512,7 +3542,7 @@ export function CustomVideoPlayer({
     }
 
     const subtitleStream = getStreamByIndex(
-      activeSource,
+      activeSourceWithLibraryStreams,
       "Subtitle",
       selectedSubtitleStreamIndex,
     );

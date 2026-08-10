@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { groupLatestMediaItems } from "./latestMedia";
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 describe("groupLatestMediaItems", () => {
   it("separates the latest movies, shows, and books", () => {
-    const items: JellyfinItem[] = [
+    const items: MediaItem[] = [
       { Id: "movie", Name: "Movie", Type: "Movie" },
       { Id: "show", Name: "Show", Type: "Series" },
       { Id: "book", Name: "Book", Type: "Book" },

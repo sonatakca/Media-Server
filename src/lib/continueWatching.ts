@@ -1,12 +1,12 @@
-import type { JellyfinItem } from "./types";
+import type { MediaItem } from "./types";
 
 interface ContinueWatchingCandidate {
-  item: JellyfinItem;
+  item: MediaItem;
   index: number;
   watchedAt?: number;
 }
 
-function getWatchedTimestamp(item: JellyfinItem): number | undefined {
+function getWatchedTimestamp(item: MediaItem): number | undefined {
   const dates = [
     item.UserData?.LastPlayedDate,
     item.LastPlayedDate,
@@ -36,7 +36,7 @@ function getIdentityValue(value?: string): string | undefined {
   return identity || undefined;
 }
 
-function getEpisodeSeriesKey(item: JellyfinItem): string {
+function getEpisodeSeriesKey(item: MediaItem): string {
   const seriesId = getIdentityValue(item.SeriesId);
   const seriesName = getIdentityValue(item.SeriesName);
   const parentId = getIdentityValue(item.ParentId);
@@ -99,8 +99,8 @@ function compareCandidates(
 }
 
 export function getLatestContinueWatchingItems(
-  items: JellyfinItem[],
-): JellyfinItem[] {
+  items: MediaItem[],
+): MediaItem[] {
   const distinctItems = new Map<string, ContinueWatchingCandidate>();
 
   items.forEach((item, index) => {

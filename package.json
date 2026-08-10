@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite",
     "playback:backend": "node --env-file=.env --import tsx src/server/playbackBackend.ts",
+    "server": "node --env-file=.env --import tsx src/server/mediaServer.ts",
+    "worker": "node --env-file=.env --import tsx src/server/mediaWorker.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest",

@@ -1,11 +1,11 @@
 import { motion, useReducedMotion } from "framer-motion";
 import { CheckCircle2 } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
 
 interface WatchedIndicatorProps {
-  item?: JellyfinItem;
+  item?: MediaItem;
   isWatched?: boolean;
   className?: string;
   iconSize?: number;

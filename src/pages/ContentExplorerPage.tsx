@@ -26,7 +26,7 @@ import {
   shouldOpenReaderForItem,
 } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 
@@ -52,7 +52,7 @@ function formatTemplate(
   );
 }
 
-function getContentBucket(item: JellyfinItem): ContentFilter {
+function getContentBucket(item: MediaItem): ContentFilter {
   if (item.Type === "Movie") return "movie";
   if (item.Type === "Series") return "series";
   if (item.Type === "Season") return "season";
@@ -62,7 +62,7 @@ function getContentBucket(item: JellyfinItem): ContentFilter {
   return "other";
 }
 
-function getContentTypeLabel(item: JellyfinItem, t: Translate): string {
+function getContentTypeLabel(item: MediaItem, t: Translate): string {
   if (item.CollectionType) {
     return formatTemplate(t("content.libraryType"), {
       type: item.CollectionType,
@@ -80,22 +80,22 @@ function getContentTypeLabel(item: JellyfinItem, t: Translate): string {
   return t("common.unknown");
 }
 
-function getContentIcon(item: JellyfinItem) {
+function getContentIcon(item: MediaItem) {
   if (item.Type === "Movie") return Film;
   if (item.Type === "Series") return Tv;
   if (item.Type === "Episode") return Video;
   return Grid2X2;
 }
 
-function getYearLabel(item: JellyfinItem): string {
+function getYearLabel(item: MediaItem): string {
   return item.ProductionYear ? String(item.ProductionYear) : "—";
 }
 
-function getRuntimeLabel(item: JellyfinItem): string {
+function getRuntimeLabel(item: MediaItem): string {
   return formatRuntime(item.RunTimeTicks) ?? "—";
 }
 
-function getPrimaryAction(item: JellyfinItem): {
+function getPrimaryAction(item: MediaItem): {
   route: string;
   labelKey: "common.play" | "common.read";
 } | null {
@@ -171,7 +171,7 @@ function escapeCsvValue(value: unknown): string {
   return stringValue;
 }
 
-function buildCsv(items: JellyfinItem[]): string {
+function buildCsv(items: MediaItem[]): string {
   const headers = [
     "Id",
     "Name",
@@ -249,7 +249,7 @@ function buildCsv(items: JellyfinItem[]): string {
   ].join("\n");
 }
 
-function buildAiFriendlyJson(items: JellyfinItem[]) {
+function buildAiFriendlyJson(items: MediaItem[]) {
   return {
     exportedAt: new Date().toISOString(),
     source: "Seyirlik Content Explorer",
@@ -347,7 +347,7 @@ function buildAiFriendlyJson(items: JellyfinItem[]) {
 
 export function ContentExplorerPage() {
   const { t } = useLanguage();
-  const [items, setItems] = useState<JellyfinItem[]>([]);
+  const [items, setItems] = useState<MediaItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");

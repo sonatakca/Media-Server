@@ -1,11 +1,11 @@
 import type { CSSProperties } from "react";
 import { getCollectionPosterItems } from "../lib/collectionPoster";
 import { getPrimaryImageUrl } from "../lib/jellyfinApi";
-import type { JellyfinItem } from "../lib/types";
+import type { MediaItem } from "../lib/types";
 
 interface CollectionPosterMosaicProps {
   title: string;
-  items: JellyfinItem[];
+  items: MediaItem[];
   imageSize?: number;
 }
 
