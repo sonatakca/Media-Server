@@ -272,6 +272,7 @@ export async function createNativeRuntime({
     secureCookies: authConfig.secureCookies,
     sessionCookieName: authConfig.sessionCookieName,
     csrfCookieName: authConfig.csrfCookieName,
+    ...(authConfig.cookieDomain ? { cookieDomain: authConfig.cookieDomain } : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
     ...(trustedOrigins ? { trustedOrigins } : {}),
   });

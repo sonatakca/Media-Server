@@ -54,11 +54,13 @@ export function serializeCookie(
     expires: Date;
     maxAgeSeconds: number;
     path?: string;
+    domain?: string;
   },
 ): string {
   return [
     `${name}=${value}`,
     `Path=${options.path ?? OWN_API_COOKIE_PATH}`,
+    options.domain ? `Domain=${options.domain}` : "",
     `Expires=${options.expires.toUTCString()}`,
     `Max-Age=${Math.max(0, Math.floor(options.maxAgeSeconds))}`,
     "SameSite=Lax",

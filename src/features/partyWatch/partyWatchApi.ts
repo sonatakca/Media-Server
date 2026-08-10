@@ -1,4 +1,4 @@
-import { ownApiClient } from "../../api/ownApi/client";
+import { ownApiClient, ownApiUrl } from "../../api/ownApi/client";
 
 /**
  * Native Party Watch client.
@@ -209,7 +209,7 @@ export function connectPartyWatchStream(
   handlers: PartyWatchStreamHandlers,
 ): PartyWatchStream {
   const source = new EventSource(
-    `/ownAPI/v1/syncplay/groups/${encodeURIComponent(groupId)}/events`,
+    ownApiUrl(`/ownAPI/v1/syncplay/groups/${encodeURIComponent(groupId)}/events`),
     { withCredentials: true },
   );
 

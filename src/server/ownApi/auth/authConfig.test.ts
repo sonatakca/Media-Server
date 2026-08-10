@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { parseNativeAuthConfig } from "./authConfig";
+import { parseCookieDomain, parseNativeAuthConfig } from "./authConfig";
 
 describe("native authentication runtime configuration", () => {
   it("requires its secrets by default, since native identity is the only mode", () => {
@@ -56,5 +56,34 @@ describe("native authentication runtime configuration", () => {
       sessionCookieName: "seyirlik_session",
       csrfCookieName: "seyirlik_csrf",
     });
+  });
+});
+
+describe("cookie domain", () => {
+  it("is absent unless configured, keeping cookies host-only", () => {
+    expect(parseCookieDomain(undefined)).toBeUndefined();
+    expect(parseCookieDomain("  ")).toBeUndefined();
+  });
+
+  /**
+   * Needed when the app and the API sit on different hosts of one registrable
+   * domain: the app has to be able to read the CSRF token the API issued.
+   */
+  it("accepts a parent domain with or without the leading dot", () => {
+    expect(parseCookieDomain("seyirlik.org")).toBe("seyirlik.org");
+    expect(parseCookieDomain(".seyirlik.org")).toBe("seyirlik.org");
+    expect(parseCookieDomain("  .Seyirlik.ORG ")).toBe("seyirlik.org");
+  });
+
+  it("refuses a value that would scope the session far too widely", () => {
+    // A single label is either a public suffix or meaningless to a browser.
+    expect(() => parseCookieDomain("org")).toThrow(/at least two labels/);
+    expect(() => parseCookieDomain("localhost")).toThrow(/at least two labels/);
+  });
+
+  it("refuses anything that is not a domain", () => {
+    expect(() => parseCookieDomain("https://seyirlik.org")).toThrow();
+    expect(() => parseCookieDomain("seyirlik.org/path")).toThrow();
+    expect(() => parseCookieDomain("seyirlik..org")).toThrow();
   });
 });

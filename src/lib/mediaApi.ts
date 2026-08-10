@@ -1,4 +1,4 @@
-import { ownApiClient } from "../api/ownApi/client";
+import { ownApiClient, ownApiUrl } from "../api/ownApi/client";
 import {
   toMediaItem,
   toMediaItems,
@@ -100,9 +100,11 @@ function imageUrl(
   if (tag) query.set("tag", tag);
   if (maxWidth) query.set("maxWidth", String(maxWidth));
   const suffix = query.toString();
-  return `/ownAPI/v1/items/${encodeURIComponent(itemId)}/images/${imageType}${
-    suffix ? `?${suffix}` : ""
-  }`;
+  return ownApiUrl(
+    `/ownAPI/v1/items/${encodeURIComponent(itemId)}/images/${imageType}${
+      suffix ? `?${suffix}` : ""
+    }`,
+  );
 }
 
 export function getPrimaryImageUrl(
@@ -453,7 +455,7 @@ export function reportPlaybackStoppedBeforeUnload(
     sequence: progressSequence,
   });
   navigator.sendBeacon(
-    `/ownAPI/v1/progress/${encodeURIComponent(source.itemId)}`,
+    ownApiUrl(`/ownAPI/v1/progress/${encodeURIComponent(source.itemId)}`),
     new Blob([payload], { type: "application/json" }),
   );
 }
@@ -537,10 +539,10 @@ export async function getPlaybackInfo(
     TranscodingReasons: session.plan.reasonCodes,
     ...(session.delivery.type === "hls"
       ? {
-          TranscodingUrl: session.delivery.url,
+          TranscodingUrl: ownApiUrl(session.delivery.url),
           TranscodingSubProtocol: "hls",
         }
-      : { DirectStreamUrl: session.delivery.url }),
+      : { DirectStreamUrl: ownApiUrl(session.delivery.url) }),
   };
 
   return {
@@ -642,13 +644,17 @@ export function buildSubtitleStreamUrl(
   sessionId: string,
   subtitleStreamIndex: number,
 ): string {
-  return `/ownAPI/v1/playback/sessions/${encodeURIComponent(
-    sessionId,
-  )}/subtitles/${subtitleStreamIndex}.vtt`;
+  return ownApiUrl(
+    `/ownAPI/v1/playback/sessions/${encodeURIComponent(
+      sessionId,
+    )}/subtitles/${subtitleStreamIndex}.vtt`,
+  );
 }
 
 export function getItemFileUrl(sessionId: string): string {
-  return `/ownAPI/v1/playback/sessions/${encodeURIComponent(sessionId)}/file`;
+  return ownApiUrl(
+    `/ownAPI/v1/playback/sessions/${encodeURIComponent(sessionId)}/file`,
+  );
 }
 
 export function getItemDownloadUrl(sessionId: string): string {
@@ -719,7 +725,9 @@ export function getTrickplayImageUrl(
   setId: string,
   spriteIndex: number,
 ): string {
-  return `/ownAPI/v1/trickplay/${encodeURIComponent(setId)}/sprites/${spriteIndex}`;
+  return ownApiUrl(
+    `/ownAPI/v1/trickplay/${encodeURIComponent(setId)}/sprites/${spriteIndex}`,
+  );
 }
 
 /**
@@ -730,7 +738,9 @@ export function getItemTrickplayImageUrl(
   itemId: string,
   spriteIndex: number,
 ): string {
-  return `/ownAPI/v1/items/${encodeURIComponent(itemId)}/trickplay/sprites/${spriteIndex}`;
+  return ownApiUrl(
+    `/ownAPI/v1/items/${encodeURIComponent(itemId)}/trickplay/sprites/${spriteIndex}`,
+  );
 }
 
 // ------------------------------------------------------------------ admin

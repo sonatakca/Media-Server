@@ -208,6 +208,8 @@ describe("native authentication HTTP endpoints", () => {
     // The CSRF cookie must be readable by script from any page in the app, so
     // it is scoped to the site root rather than to the API namespace.
     expect(csrfCookie).toContain("Path=/;");
+    // Host-only unless a deployment splits app and API across hosts.
+    expect(sessionCookie).not.toContain("Domain=");
     expect(sessionCookie).toContain("Expires=");
     expect(csrfCookie).toContain("Secure");
     expect(csrfCookie).not.toContain("HttpOnly");

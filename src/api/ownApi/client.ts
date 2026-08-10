@@ -1,5 +1,24 @@
 export const OWN_API_V1_BASE_PATH = "/ownAPI/v1";
 
+/**
+ * Where the API lives.
+ *
+ * Same-origin by default. A deployment that serves the app from one host and
+ * the API from another — a static host in front, this server behind — sets
+ * `VITE_OWN_API_BASE_URL` to the API origin. Both hosts must share a
+ * registrable domain, so requests between them stay same-site and the session
+ * cookie is still sent.
+ */
+export const OWN_API_ORIGIN = (
+  (import.meta.env?.VITE_OWN_API_BASE_URL as string | undefined)?.trim() ?? ""
+).replace(/\/+$/, "");
+
+/** Absolute URL for an own-API path, for `<img>`, `<video>` and EventSource. */
+export function ownApiUrl(path: string): string {
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return `${OWN_API_ORIGIN}${suffix}`;
+}
+
 type FetchLike = (
   input: RequestInfo | URL,
   init?: RequestInit,
@@ -131,7 +150,9 @@ function normalizeBasePath(basePath: string): string {
     );
   }
 
-  return trimmed;
+  // The configured origin is prefixed here rather than folded into the base
+  // path, so path validation keeps rejecting absolute and traversing input.
+  return `${OWN_API_ORIGIN}${trimmed}`;
 }
 
 function validateApiPath(apiPath: string): string {

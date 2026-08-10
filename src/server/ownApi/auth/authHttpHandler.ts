@@ -51,6 +51,7 @@ function serializeCookie(
     expires: Date;
     maxAgeSeconds: number;
     path: string;
+    domain?: string;
   },
 ): string {
   return serializeApiCookie(name, value, options);
@@ -65,6 +66,7 @@ export interface NativeAuthHttpHandlerOptions {
   secureCookies: boolean;
   sessionCookieName: string;
   csrfCookieName: string;
+  cookieDomain?: string;
   publicOrigin?: string;
   trustedOrigins?: ReadonlySet<string>;
   loginLimiter?: BoundedRateLimiter;
@@ -100,6 +102,7 @@ function setSessionCookies(
       expires: session.expiresAt,
       maxAgeSeconds,
       path: SESSION_COOKIE_PATH,
+      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
     }),
     serializeCookie(options.csrfCookieName, csrfToken, {
       httpOnly: false,
@@ -107,6 +110,7 @@ function setSessionCookies(
       expires: session.expiresAt,
       maxAgeSeconds,
       path: CSRF_COOKIE_PATH,
+      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
     }),
     // A CSRF cookie written at the API path by an earlier build is a distinct
     // cookie from the one above, and the browser would send both. Duplicate
@@ -118,6 +122,7 @@ function setSessionCookies(
       expires: new Date(0),
       maxAgeSeconds: 0,
       path: SESSION_COOKIE_PATH,
+      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
     }),
   ]);
 }
@@ -134,6 +139,7 @@ function clearSessionCookies(
       expires: expired,
       maxAgeSeconds: 0,
       path: SESSION_COOKIE_PATH,
+      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
     }),
     serializeCookie(options.csrfCookieName, "", {
       httpOnly: false,
@@ -141,6 +147,7 @@ function clearSessionCookies(
       expires: expired,
       maxAgeSeconds: 0,
       path: CSRF_COOKIE_PATH,
+      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
     }),
   ]);
 }
@@ -339,6 +346,7 @@ export function createNativeAuthHttpHandler(
           expires: session.expiresAt,
           maxAgeSeconds,
           path: CSRF_COOKIE_PATH,
+          ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
         }),
       ]);
       sendOwnApiJson(response, 200, {

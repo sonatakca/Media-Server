@@ -6,6 +6,12 @@ export interface NativeAuthConfig {
   secureCookies: boolean;
   sessionCookieName: string;
   csrfCookieName: string;
+  /**
+   * Set when the app and the API are served from different hosts under one
+   * registrable domain. Widening the cookie to the parent domain is what lets
+   * the app read the CSRF token the API issued.
+   */
+  cookieDomain?: string;
 }
 
 type Environment = Record<string, string | undefined>;
@@ -35,6 +41,7 @@ export function parseNativeAuthConfig(
   }
 
   const secureCookies = environment.NODE_ENV === "production";
+  const cookieDomain = parseCookieDomain(environment.SEYIRLIK_COOKIE_DOMAIN);
   const sessionHashSecret = requiredSecret(
     environment,
     "SEYIRLIK_SESSION_HASH_SECRET",
@@ -54,5 +61,30 @@ export function parseNativeAuthConfig(
       ? "__Secure-seyirlik_session"
       : "seyirlik_session",
     csrfCookieName: secureCookies ? "__Secure-seyirlik_csrf" : "seyirlik_csrf",
+    ...(cookieDomain ? { cookieDomain } : {}),
   };
+}
+
+/**
+ * A cookie domain widens which hosts receive the session, so it is validated
+ * rather than passed through: a public suffix or a bare label here would either
+ * be rejected by the browser or scope the session far wider than intended.
+ */
+export function parseCookieDomain(value: string | undefined): string | undefined {
+  const trimmed = value?.trim().toLowerCase();
+  if (!trimmed) return undefined;
+
+  const domain = trimmed.startsWith(".") ? trimmed.slice(1) : trimmed;
+  const labels = domain.split(".");
+
+  if (
+    labels.length < 2 ||
+    labels.some((label) => !/^[a-z0-9]([a-z0-9-]*[a-z0-9])?$/.test(label))
+  ) {
+    throw new Error(
+      "SEYIRLIK_COOKIE_DOMAIN must be a domain with at least two labels.",
+    );
+  }
+
+  return domain;
 }
