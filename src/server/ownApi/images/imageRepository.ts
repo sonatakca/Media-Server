@@ -73,9 +73,13 @@ function toStored(row: RawImageRow): StoredImage {
   };
 }
 
+// Table-qualified throughout: the inherited-artwork query joins `items`, which
+// also has an `id`, and an unqualified list makes that reference ambiguous.
 const IMAGE_COLUMNS = `
-  id, item_id, image_type, image_index, content_hash, content_type,
-  width, height, size_bytes, storage_key
+  item_images.id, item_images.item_id, item_images.image_type,
+  item_images.image_index, item_images.content_hash, item_images.content_type,
+  item_images.width, item_images.height, item_images.size_bytes,
+  item_images.storage_key
 `;
 
 export function createImageRepository(pool: DatabasePool): ImageRepository {
