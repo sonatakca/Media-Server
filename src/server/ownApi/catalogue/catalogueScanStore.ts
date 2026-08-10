@@ -244,24 +244,28 @@ export function createCatalogueScanStore(
     },
 
     refreshItemCounts: async (libraryId) => {
-      // Scalar subqueries rather than grouped joins: a season with zero present
-      // episodes must be reset to 0, and a grouped join produces no row for it.
+      // A LATERAL subquery in UPDATE ... FROM cannot reference the update
+      // target, so the counts are computed over the whole library first and
+      // joined back by id. The LEFT JOIN is what makes an emptied season reset
+      // to zero: a plain grouped join would produce no row for it at all.
       await pool.query(
         `UPDATE items season SET
-           child_count = episodes.total,
-           recursive_item_count = episodes.total,
+           child_count = counts.total,
+           recursive_item_count = counts.total,
            updated_at = now()
-         FROM LATERAL (
-           SELECT count(*)::int AS total
-           FROM items episode
-           WHERE episode.parent_id = season.id
-             AND episode.kind = 'episode'
-             AND episode.missing_since IS NULL
-         ) episodes
-         WHERE season.kind = 'season'
-           AND season.library_id = $1
+         FROM (
+           SELECT parent.id, count(episode.id)::int AS total
+           FROM items parent
+           LEFT JOIN items episode
+             ON episode.parent_id = parent.id
+            AND episode.kind = 'episode'
+            AND episode.missing_since IS NULL
+           WHERE parent.kind = 'season' AND parent.library_id = $1
+           GROUP BY parent.id
+         ) counts
+         WHERE season.id = counts.id
            AND (season.child_count, season.recursive_item_count)
-               IS DISTINCT FROM (episodes.total, episodes.total)`,
+               IS DISTINCT FROM (counts.total, counts.total)`,
         [libraryId],
       );
 
@@ -270,19 +274,24 @@ export function createCatalogueScanStore(
            child_count = counts.season_total,
            recursive_item_count = counts.episode_total,
            updated_at = now()
-         FROM LATERAL (
+         FROM (
            SELECT
-             (SELECT count(*)::int FROM items season
-              WHERE season.parent_id = series.id
-                AND season.kind = 'season'
-                AND season.missing_since IS NULL) AS season_total,
-             (SELECT count(*)::int FROM items episode
-              WHERE episode.series_id = series.id
-                AND episode.kind = 'episode'
-                AND episode.missing_since IS NULL) AS episode_total
+             parent.id,
+             count(DISTINCT season.id)::int AS season_total,
+             count(DISTINCT episode.id)::int AS episode_total
+           FROM items parent
+           LEFT JOIN items season
+             ON season.parent_id = parent.id
+            AND season.kind = 'season'
+            AND season.missing_since IS NULL
+           LEFT JOIN items episode
+             ON episode.series_id = parent.id
+            AND episode.kind = 'episode'
+            AND episode.missing_since IS NULL
+           WHERE parent.kind = 'series' AND parent.library_id = $1
+           GROUP BY parent.id
          ) counts
-         WHERE series.kind = 'series'
-           AND series.library_id = $1
+         WHERE series.id = counts.id
            AND (series.child_count, series.recursive_item_count)
                IS DISTINCT FROM (counts.season_total, counts.episode_total)`,
         [libraryId],
