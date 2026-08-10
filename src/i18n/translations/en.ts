@@ -849,8 +849,7 @@ export const en = {
   "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
   "tmdbArtwork.showingTopChoices": 
     "Showing {shown} of {total}, best rated first.",
-  "tmdbArtwork.showAllChoices": "Show all {total}",
-  "tmdbArtwork.showFewerChoices": "Show fewer",
+  "tmdbArtwork.loadMoreChoices": "Load {count} more",
   "tmdbArtwork.lockedBadge": "Chosen by you",
   "tmdbArtwork.lockedExplanation":
     "A metadata refresh will not replace an image you chose.",

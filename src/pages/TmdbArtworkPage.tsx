@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import {
   ChevronDown,
   ChevronLeft,
-  ChevronUp,
   Check,
   ImageIcon,
   Images,
@@ -35,7 +34,7 @@ import { setPageTitle } from "../lib/pageTitle";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   ARTWORK_KINDS,
-  INITIAL_VISIBLE_PER_KIND,
+  ARTWORK_PAGE_SIZE,
   filterTitles,
   formatDimensions,
   getArtworkErrorKey,
@@ -47,6 +46,7 @@ import {
   isArtworkEligible,
   isKindLocked,
   countCandidates,
+  nextVisibleCount,
   selectCandidates,
   type ActionStatus,
   type ImageLanguageFilter,
@@ -84,7 +84,9 @@ export default function TmdbArtworkPage() {
   const [languageFilter, setLanguageFilter] =
     useState<ImageLanguageFilter>("all");
   const [busyKind, setBusyKind] = useState<ArtworkKind | null>(null);
-  const [expandedKinds, setExpandedKinds] = useState<ArtworkKind[]>([]);
+  const [visibleCounts, setVisibleCounts] = useState<
+    Partial<Record<ArtworkKind, number>>
+  >({});
 
   const [tmdbQuery, setTmdbQuery] = useState("");
   const [matches, setMatches] = useState<MetadataCandidate[]>([]);
@@ -152,7 +154,7 @@ export default function TmdbArtworkPage() {
       try {
         const overview = await getItemArtwork(itemId);
         setArtwork(overview);
-        setExpandedKinds([]);
+        setVisibleCounts({});
         setArtworkStatus({
           tone: "success",
           message: formatTemplate(t("tmdbArtwork.loadedImages"), {
@@ -523,9 +525,9 @@ export default function TmdbArtworkPage() {
                     value={languageFilter}
                     onChange={(event) => {
                       setLanguageFilter(event.target.value as ImageLanguageFilter);
-                      // A new filter draws a new pool, so an expansion from the
-                      // previous one no longer means anything.
-                      setExpandedKinds([]);
+                      // A new filter draws a new pool, so how far the previous
+                      // one had been paged through no longer means anything.
+                      setVisibleCounts({});
                     }}
                     className="rounded-2xl border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-bold outline-none"
                   >
@@ -555,12 +557,12 @@ export default function TmdbArtworkPage() {
               ) : (
                 <div className="mt-5 space-y-8">
                   {ARTWORK_KINDS.map((kind) => {
-                    const expanded = expandedKinds.includes(kind);
+                    const visible = visibleCounts[kind] ?? ARTWORK_PAGE_SIZE;
                     const candidates = selectCandidates(
                       artwork.candidates,
                       kind,
                       languageFilter,
-                      expanded ? Number.POSITIVE_INFINITY : undefined,
+                      visible,
                     );
                     const available = countCandidates(
                       artwork.candidates,
@@ -588,37 +590,12 @@ export default function TmdbArtworkPage() {
                               {t(getKindDescriptionKey(kind))}
                               {locked ? ` ${t("tmdbArtwork.lockedExplanation")}` : ""}
                             </p>
-                            {available > INITIAL_VISIBLE_PER_KIND ? (
-                              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs font-bold text-white/30">
-                                <span>
-                                  {formatTemplate(
-                                    t("tmdbArtwork.showingTopChoices"),
-                                    { shown: candidates.length, total: available },
-                                  )}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    setExpandedKinds((current) =>
-                                      expanded
-                                        ? current.filter((entry) => entry !== kind)
-                                        : [...current, kind],
-                                    )
-                                  }
-                                  className="inline-flex items-center gap-1 rounded-full border border-white/15 px-2 py-0.5 font-black text-white/70 transition hover:border-sky-300/40 hover:text-white"
-                                >
-                                  {expanded ? (
-                                    <ChevronUp className="h-3 w-3" />
-                                  ) : (
-                                    <ChevronDown className="h-3 w-3" />
-                                  )}
-                                  {expanded
-                                    ? t("tmdbArtwork.showFewerChoices")
-                                    : formatTemplate(
-                                        t("tmdbArtwork.showAllChoices"),
-                                        { total: available },
-                                      )}
-                                </button>
+                            {available > candidates.length ? (
+                              <p className="mt-1 text-xs font-bold text-white/30">
+                                {formatTemplate(
+                                  t("tmdbArtwork.showingTopChoices"),
+                                  { shown: candidates.length, total: available },
+                                )}
                               </p>
                             ) : null}
                             {!stored ? (
@@ -692,6 +669,27 @@ export default function TmdbArtworkPage() {
                             ))}
                           </ul>
                         )}
+
+                        {available > candidates.length ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setVisibleCounts((current) => ({
+                                ...current,
+                                [kind]: nextVisibleCount(visible, available),
+                              }))
+                            }
+                            className="mt-3 inline-flex items-center gap-2 rounded-2xl border border-white/15 px-4 py-2 text-xs font-black text-white/70 transition hover:border-sky-300/40 hover:text-white"
+                          >
+                            <ChevronDown className="h-3.5 w-3.5" />
+                            {formatTemplate(t("tmdbArtwork.loadMoreChoices"), {
+                              count: Math.min(
+                                ARTWORK_PAGE_SIZE,
+                                available - candidates.length,
+                              ),
+                            })}
+                          </button>
+                        ) : null}
                       </div>
                     );
                   })}

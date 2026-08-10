@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ArtworkCandidate } from "../../lib/artworkApi";
 import type { MediaItem } from "../../lib/types";
 import {
-  INITIAL_VISIBLE_PER_KIND,
+  ARTWORK_PAGE_SIZE,
   countCandidates,
   filterTitles,
   formatDimensions,
@@ -11,6 +11,7 @@ import {
   hasStoredArtwork,
   isArtworkEligible,
   isKindLocked,
+  nextVisibleCount,
   selectCandidates,
 } from "./tmdbArtworkModel";
 
@@ -84,19 +85,29 @@ describe("candidate filtering", () => {
     expect(selectCandidates(candidates, "logo", "all")).toEqual([]);
   });
 
-  it("shows the best rated first but hands over the whole set on request", () => {
-    // Dune has 453 posters on TMDB, so opening on all of them is megabytes of
+  it("shows the best rated first and reveals the rest a page at a time", () => {
+    // Dune has 453 posters on TMDB, so drawing them all at once is megabytes of
     // thumbnails nobody asked for — but the rest must stay reachable.
     const many = Array.from({ length: 40 }, (_, index) =>
       candidate({ filePath: `/p${index}.jpg`, voteAverage: 40 - index }),
     );
 
     expect(selectCandidates(many, "poster", "all")).toHaveLength(
-      INITIAL_VISIBLE_PER_KIND,
+      ARTWORK_PAGE_SIZE,
     );
     expect(selectCandidates(many, "poster", "all")[0]?.filePath).toBe("/p0.jpg");
-    expect(selectCandidates(many, "poster", "all", Infinity)).toHaveLength(40);
     expect(countCandidates(many, "poster", "all")).toBe(40);
+
+    const second = nextVisibleCount(ARTWORK_PAGE_SIZE, 40);
+    expect(second).toBe(40);
+    expect(selectCandidates(many, "poster", "all", second)).toHaveLength(40);
+  });
+
+  it("never pages past the end of a set", () => {
+    // Otherwise "load more" would offer to load images that do not exist.
+    expect(nextVisibleCount(ARTWORK_PAGE_SIZE, 30)).toBe(30);
+    expect(nextVisibleCount(30, 30)).toBe(30);
+    expect(nextVisibleCount(ARTWORK_PAGE_SIZE, 453)).toBe(ARTWORK_PAGE_SIZE * 2);
   });
 
   it("treats artwork with no text as its own filter rather than a missing value", () => {

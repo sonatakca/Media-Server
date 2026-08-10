@@ -851,8 +851,7 @@ export const tr = {
   "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
   "tmdbArtwork.showingTopChoices": 
     "{total} görselin {shown} tanesi gösteriliyor, en yüksek puanlıdan başlayarak.",
-  "tmdbArtwork.showAllChoices": "{total} görselin tümünü göster",
-  "tmdbArtwork.showFewerChoices": "Daha az göster",
+  "tmdbArtwork.loadMoreChoices": "{count} tane daha yükle",
   "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
   "tmdbArtwork.lockedExplanation":
     "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",

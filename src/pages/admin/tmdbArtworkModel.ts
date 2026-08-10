@@ -72,20 +72,29 @@ export function matchesLanguageFilter(
 }
 
 /**
- * How many candidates a set shows before it is expanded.
+ * How many candidates a set shows at first, and how many each "load more" adds.
  *
- * A popular film can have several hundred posters, and opening the page on all
- * of them is megabytes of thumbnails nobody asked for. The server ranks by
- * provider vote, so the first screenful is the part worth seeing — but the rest
- * stays one click away rather than being unreachable.
+ * A popular film can have several hundred posters, and drawing them all at once
+ * is megabytes of thumbnails nobody asked for. The server ranks by provider
+ * vote, so the first page is the part worth seeing; the rest arrives a page at
+ * a time rather than all at once or not at all.
  */
-export const INITIAL_VISIBLE_PER_KIND = 24;
+export const ARTWORK_PAGE_SIZE = 24;
+
+/**
+ * The next page boundary, never past the end. Clamping here rather than at the
+ * call site is what keeps "load more" from claiming to have loaded images that
+ * do not exist.
+ */
+export function nextVisibleCount(current: number, total: number): number {
+  return Math.min(current + ARTWORK_PAGE_SIZE, total);
+}
 
 export function selectCandidates(
   candidates: ArtworkCandidate[],
   kind: ArtworkKind,
   filter: ImageLanguageFilter,
-  limit: number = INITIAL_VISIBLE_PER_KIND,
+  limit: number = ARTWORK_PAGE_SIZE,
 ): ArtworkCandidate[] {
   return candidates
     .filter(
