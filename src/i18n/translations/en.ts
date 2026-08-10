@@ -854,8 +854,8 @@ export const en = {
     "A metadata refresh will not replace an image you chose.",
   "tmdbArtwork.revertToAutomatic": "Revert to automatic",
   "tmdbArtwork.revertingArtwork": "Handing this image back to TMDB...",
-  "tmdbArtwork.artworkReverted":
-    "Reverted. The next metadata refresh will pick this image again.",
+  "tmdbArtwork.artworkReverted": 
+    "Reverted. TMDB's own choice is being fetched again in the background.",
   "tmdbArtwork.couldNotRevertArtwork": "Could not revert this image.",
   "tmdbArtwork.identifying": "Recording the TMDB match...",
   "tmdbArtwork.identifySaved":

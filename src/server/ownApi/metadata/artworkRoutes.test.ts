@@ -10,6 +10,7 @@ import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
 import type { TmdbArtworkCandidate, TmdbClient } from "./tmdbClient";
 import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
+import type { JobQueue } from "../tasks/jobQueue";
 
 const CSRF_SECRET = "s".repeat(32);
 const SESSION_HASH = createHmac("sha256", "k").update("session").digest();
@@ -129,10 +130,26 @@ function fakeTmdb(overrides: Partial<TmdbClient> = {}): TmdbClient {
   };
 }
 
+function fakeQueue(overrides: Partial<JobQueue> = {}): JobQueue {
+  return {
+    enqueue: async () => "task-1",
+    claim: async () => null,
+    complete: async () => undefined,
+    fail: async () => undefined,
+    heartbeat: async () => true,
+    get: async () => null,
+    list: async () => [],
+    cancel: async () => false,
+    releaseExpiredLeases: async () => 0,
+    ...overrides,
+  } as JobQueue;
+}
+
 function buildRouter(parts: {
   images?: ImageRepository;
   imageStorage?: ImageStorage;
   tmdb?: TmdbClient;
+  queue?: JobQueue;
 } = {}) {
   return createOwnApiRouter({
     csrfSecret: CSRF_SECRET,
@@ -151,6 +168,7 @@ function buildRouter(parts: {
       images: parts.images ?? fakeImages(),
       imageStorage: parts.imageStorage ?? fakeStorage(),
       tmdb: parts.tmdb ?? fakeTmdb(),
+      queue: parts.queue ?? fakeQueue(),
     }),
   });
 }
@@ -341,9 +359,13 @@ describe("artwork routes", () => {
     expect(error.message).not.toContain("api_key");
   });
 
-  it("hands a type back to the automatic pass by removing the stored row", async () => {
+  it("hands a type back to the automatic pass and refreshes so artwork returns", async () => {
     const clear = vi.fn(async () => true);
-    const router = buildRouter({ images: fakeImages({ clear }) });
+    const enqueue = vi.fn<JobQueue["enqueue"]>(async () => "task-9");
+    const router = buildRouter({
+      images: fakeImages({ clear }),
+      queue: fakeQueue({ enqueue }),
+    });
 
     const result = await call(
       router,
@@ -352,7 +374,33 @@ describe("artwork routes", () => {
     );
 
     expect(clear).toHaveBeenCalledWith(MOVIE, "logo", 0);
-    expect(result.json?.data).toMatchObject({ imageType: "logo", cleared: true });
+    // Without the refresh the title would sit with no logo at all, which reads
+    // as breakage rather than as a revert.
+    expect(enqueue.mock.calls[0]?.[0]).toMatchObject({
+      payload: { itemId: MOVIE },
+    });
+    expect(result.json?.data).toMatchObject({
+      imageType: "logo",
+      cleared: true,
+      taskId: "task-9",
+    });
+  });
+
+  it("does not queue a refresh when there was nothing stored to revert", async () => {
+    const enqueue = vi.fn(async () => "task-9");
+    const router = buildRouter({
+      images: fakeImages({ clear: async () => false }),
+      queue: fakeQueue({ enqueue }),
+    });
+
+    const result = await call(
+      router,
+      "DELETE",
+      `/ownAPI/v1/admin/items/${MOVIE}/artwork/poster`,
+    );
+
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result.json?.data).toMatchObject({ cleared: false, taskId: null });
   });
 
   it("previews a title in another language without writing anything", async () => {
@@ -384,6 +432,7 @@ describe("artwork routes", () => {
         images: fakeImages(),
         imageStorage: fakeStorage(),
         tmdb: fakeTmdb({ getMovie }),
+        queue: fakeQueue(),
       }),
     });
 

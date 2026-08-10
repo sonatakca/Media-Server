@@ -856,8 +856,8 @@ export const tr = {
     "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",
   "tmdbArtwork.revertToAutomatic": "Otomatiğe döndür",
   "tmdbArtwork.revertingArtwork": "Görsel TMDB'ye geri bırakılıyor...",
-  "tmdbArtwork.artworkReverted":
-    "Geri alındı. Bir sonraki veri yenilemesinde görsel yeniden seçilecek.",
+  "tmdbArtwork.artworkReverted": 
+    "Geri alındı. TMDB'nin kendi seçimi arka planda yeniden indiriliyor.",
   "tmdbArtwork.couldNotRevertArtwork": "Bu görsel geri alınamadı.",
   "tmdbArtwork.identifying": "TMDB eşleşmesi kaydediliyor...",
   "tmdbArtwork.identifySaved":

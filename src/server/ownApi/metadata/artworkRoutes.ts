@@ -4,6 +4,8 @@ import type { RouteDefinition } from "../api/router";
 import { asObjectBody, requireUuid } from "../api/validation";
 import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
+import type { JobQueue } from "../tasks/jobQueue";
+import { JOB_TYPES } from "../tasks/jobHandlers";
 import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
 import {
   TMDB_IMAGE_BASE_URL,
@@ -16,6 +18,7 @@ export interface ArtworkRoutesOptions {
   images: ImageRepository;
   imageStorage: ImageStorage;
   tmdb: TmdbClient;
+  queue: JobQueue;
 }
 
 /**
@@ -127,6 +130,7 @@ export function createArtworkRoutes({
   images,
   imageStorage,
   tmdb,
+  queue,
 }: ArtworkRoutesOptions): RouteDefinition[] {
   async function requireTarget(itemId: string): Promise<MetadataTarget> {
     const target = await metadata.getTarget(itemId);
@@ -241,9 +245,21 @@ export function createArtworkRoutes({
           0,
         );
 
+        // Reverting would otherwise leave the title with no artwork of this
+        // kind until something else happened to refresh it, which reads as
+        // breakage rather than as a revert.
+        const taskId = cleared
+          ? await queue.enqueue({
+              jobType: JOB_TYPES.metadataRefresh,
+              payload: { itemId },
+              dedupeKey: `${JOB_TYPES.metadataRefresh}:${itemId}`,
+            })
+          : null;
+
         sendData(context.response, context.requestId, {
           imageType: ARTWORK_TARGETS[kind].imageType,
           cleared,
+          taskId,
         });
       },
     },

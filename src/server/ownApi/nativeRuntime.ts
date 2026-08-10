@@ -261,6 +261,7 @@ export async function createNativeRuntime({
             images,
             imageStorage,
             tmdb,
+            queue,
           }),
         ]
       : []),
