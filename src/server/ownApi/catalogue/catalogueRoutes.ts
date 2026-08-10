@@ -195,6 +195,29 @@ export function createCatalogueRoutes({
       },
     },
     {
+      /**
+       * Children of any item, whatever its kind.
+       *
+       * A detail page asks for the children of whatever it is showing without
+       * knowing in advance whether that is a collection, a season or a single
+       * film. A leaf simply has none, which is an empty list rather than an
+       * error — the alternative is every caller having to special-case kind.
+       */
+      method: "GET",
+      path: "/items/:itemId/children",
+      access: "authenticated",
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const itemId = requireUuid(context.params.itemId, "itemId");
+        if (!(await catalogue.canUserAccessItem(principal.userId, itemId))) {
+          throw notFound();
+        }
+
+        await listByKinds(context, [], { parentId: itemId });
+      },
+    },
+
+    {
       method: "GET",
       path: "/items/:itemId/streams",
       access: "authenticated",
