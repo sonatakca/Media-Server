@@ -337,6 +337,25 @@ export function createOwnApiClient({
 }: OwnApiClientOptions = {}): OwnApiClient {
   const normalizedBasePath = normalizeBasePath(basePath);
 
+  /**
+   * A CSRF token is reissued on demand when the browser holds a session but no
+   * readable token — after a cookie-path change, or once the token outlives its
+   * usefulness. Without this the only recovery is for the user to sign out and
+   * back in, which is not a thing an app should ask for.
+   */
+  async function reissueCsrfToken(): Promise<string | undefined> {
+    try {
+      const response = await fetchImpl(
+        `${normalizedBasePath}/auth/csrf`,
+        { credentials: "include", headers: { Accept: "application/json" } },
+      );
+      if (!response.ok) return undefined;
+      return csrfTokenProvider();
+    } catch {
+      return undefined;
+    }
+  }
+
   async function requestEnvelope<T>(
     path: string,
     {
@@ -344,7 +363,9 @@ export function createOwnApiClient({
       body,
       signal,
       headers: additionalHeaders = {},
-      csrf = false,
+      // Every unsafe method needs CSRF evidence. Making this opt-in meant each
+      // new mutation had to remember, and every one of them forgot.
+      csrf = method !== "GET",
     }: OwnApiRequestOptions = {},
   ): Promise<ParsedOwnApiResponse<T>> {
     const safePath = validateApiPath(path);
@@ -374,7 +395,7 @@ export function createOwnApiClient({
     headers["X-Request-Id"] = requestId;
 
     if (csrf) {
-      const csrfToken = csrfTokenProvider();
+      const csrfToken = csrfTokenProvider() ?? (await reissueCsrfToken());
       if (!csrfToken) {
         throw new OwnApiClientError({
           status: 0,

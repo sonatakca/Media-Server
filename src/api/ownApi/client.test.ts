@@ -33,6 +33,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "identity-request",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getCurrentUser()).resolves.toEqual({
@@ -71,6 +72,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "unsafe-identity-request",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getCurrentUser()).rejects.toMatchObject({
@@ -166,6 +168,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "browser-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     const health = await client.getHealth();
@@ -201,6 +204,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "req-1",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await client.request<{ ok: boolean }>("/auth/login", {
@@ -277,6 +281,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "header-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getHealth()).rejects.toMatchObject({
@@ -301,6 +306,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "response-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getHealth()).rejects.toMatchObject({
@@ -343,6 +349,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "health-validation-request",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getHealth()).rejects.toMatchObject({
@@ -373,6 +380,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "collection-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(
@@ -404,6 +412,7 @@ describe("own API browser client", () => {
     const invalidClient = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => `invalid ${"x".repeat(200)}`,
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(invalidClient.request("/health")).rejects.toMatchObject({
@@ -415,6 +424,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "safe-client-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
     await client.request("/health", {
       headers: { "x-request-id": "attacker-override" },
@@ -442,6 +452,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "network-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(client.getHealth()).rejects.toMatchObject({
@@ -513,6 +524,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "serialization-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
     const circularBody: Record<string, unknown> = {};
     circularBody.self = circularBody;
@@ -527,6 +539,93 @@ describe("own API browser client", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("attaches CSRF evidence to every unsafe method without being asked", async () => {
+    const seen: Array<{ method: string; csrf: string | undefined }> = [];
+    const fetchImpl = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      seen.push({
+        method: init?.method ?? "GET",
+        csrf: headers.get("X-CSRF-Token") ?? undefined,
+      });
+      return new Response(null, {
+        status: 204,
+        headers: { "X-Request-Id": "unsafe-request" },
+      });
+    });
+    const client = createOwnApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestIdFactory: () => "unsafe-request",
+      csrfTokenProvider: () => "csrf-token",
+    });
+
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"] as const) {
+      await client.request<void>("/items/x/played", { method });
+    }
+
+    expect(seen).toHaveLength(4);
+    expect(seen.every((call) => call.csrf === "csrf-token")).toBe(true);
+  });
+
+  it("does not attach CSRF evidence to a read", async () => {
+    let csrfHeader: string | null = "unset";
+    const fetchImpl = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      csrfHeader = new Headers(init?.headers).get("X-CSRF-Token");
+      return new Response(JSON.stringify({ data: [], requestId: "read" }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Request-Id": "read",
+        },
+      });
+    });
+    const client = createOwnApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestIdFactory: () => "read",
+      csrfTokenProvider: () => "csrf-token",
+    });
+
+    await client.request("/libraries");
+    expect(csrfHeader).toBeNull();
+  });
+
+  it("reissues a CSRF token when the browser holds a session but no readable one", async () => {
+    const calls: string[] = [];
+    let hasToken = false;
+    const fetchImpl = vi.fn(async (input: unknown) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.endsWith("/auth/csrf")) {
+        // Standing in for the Set-Cookie the browser would store.
+        hasToken = true;
+        return new Response(
+          JSON.stringify({ data: { csrfToken: "fresh" }, requestId: "csrf" }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Request-Id": "csrf",
+            },
+          },
+        );
+      }
+      return new Response(null, {
+        status: 204,
+        headers: { "X-Request-Id": "mutation" },
+      });
+    });
+
+    const client = createOwnApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestIdFactory: () => "mutation",
+      csrfTokenProvider: () => (hasToken ? "fresh" : undefined),
+    });
+
+    await expect(
+      client.request<void>("/items/x/played", { method: "POST" }),
+    ).resolves.toBeUndefined();
+    expect(calls.some((url) => url.endsWith("/auth/csrf"))).toBe(true);
+  });
+
   it("accepts a 204 response only when its request ID matches", async () => {
     const fetchImpl = vi.fn(
       async () =>
@@ -538,6 +637,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "no-content-request-id",
+      csrfTokenProvider: () => "csrf-token",
     });
 
     await expect(
@@ -560,6 +660,7 @@ describe("own API browser client", () => {
       const client = createOwnApiClient({
         fetchImpl,
         requestIdFactory: () => "no-content-request-id",
+        csrfTokenProvider: () => "csrf-token",
       });
 
       await expect(
@@ -604,6 +705,7 @@ describe("own API browser client", () => {
     const client = createOwnApiClient({
       fetchImpl,
       requestIdFactory: () => "req-1",
+      csrfTokenProvider: () => "csrf-token",
     });
     const controller = new AbortController();
 
