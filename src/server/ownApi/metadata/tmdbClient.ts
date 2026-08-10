@@ -63,17 +63,57 @@ export interface TmdbEpisodeDetails {
   stillPath?: string;
 }
 
+/** The three artwork sets TMDB keeps for a title. */
+export type TmdbArtworkKind = "poster" | "backdrop" | "logo";
+
+export interface TmdbArtworkCandidate {
+  kind: TmdbArtworkKind;
+  filePath: string;
+  /** ISO 639-1, or null for artwork with no text and therefore no language. */
+  language: string | null;
+  width: number | null;
+  height: number | null;
+  aspectRatio: number | null;
+  voteAverage: number;
+  voteCount: number;
+}
+
 export interface TmdbClient {
   searchMovies(title: string, year?: number): Promise<MatchCandidate[]>;
   searchSeries(title: string, year?: number): Promise<MatchCandidate[]>;
-  getMovie(providerId: string): Promise<TmdbTitleDetails>;
-  getSeries(providerId: string): Promise<TmdbTitleDetails>;
+  getMovie(providerId: string, language?: string): Promise<TmdbTitleDetails>;
+  getSeries(providerId: string, language?: string): Promise<TmdbTitleDetails>;
+  /**
+   * Every artwork candidate the provider holds for a title, in every language,
+   * for an operator to choose from. The automatic pass takes the provider's
+   * first choice; this is what makes disagreeing with it possible.
+   */
+  listArtwork(
+    kind: "movie" | "tv",
+    providerId: string,
+  ): Promise<TmdbArtworkCandidate[]>;
   getSeasonEpisodes(
     providerId: string,
     seasonNumber: number,
   ): Promise<TmdbEpisodeDetails[]>;
   /** Absolute artwork URL for a stored provider path. */
   buildImageUrl(imagePath: string, size: string): string;
+}
+
+interface TmdbImageEntry {
+  file_path?: string;
+  iso_639_1?: string | null;
+  width?: number;
+  height?: number;
+  aspect_ratio?: number;
+  vote_average?: number;
+  vote_count?: number;
+}
+
+interface TmdbImagesResponse {
+  posters?: TmdbImageEntry[];
+  backdrops?: TmdbImageEntry[];
+  logos?: TmdbImageEntry[];
 }
 
 interface TmdbSearchResponse {
@@ -132,9 +172,16 @@ export function createTmdbClient({
   async function request<T>(
     endpoint: string,
     params: Record<string, string> = {},
+    // `null` omits the parameter entirely, which is how TMDB is asked for every
+    // language at once rather than one filtered set.
+    languageOverride: string | null | undefined = undefined,
   ): Promise<T> {
     const url = new URL(`${TMDB_API_BASE_URL}${endpoint}`);
-    url.searchParams.set("language", language);
+    const requestLanguage =
+      languageOverride === undefined ? language : languageOverride;
+    if (requestLanguage !== null) {
+      url.searchParams.set("language", requestLanguage);
+    }
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
     }
@@ -243,6 +290,33 @@ export function createTmdbClient({
     return people;
   }
 
+  function toArtworkCandidates(
+    images: TmdbImageEntry[] | undefined,
+    kind: TmdbArtworkKind,
+  ): TmdbArtworkCandidate[] {
+    return (images ?? [])
+      .filter((image) => typeof image.file_path === "string")
+      .map((image) => ({
+        kind,
+        filePath: image.file_path as string,
+        // TMDB writes an empty string for language-neutral artwork; that is a
+        // meaningful category, not a missing value.
+        language: image.iso_639_1 ? image.iso_639_1 : null,
+        width: typeof image.width === "number" ? image.width : null,
+        height: typeof image.height === "number" ? image.height : null,
+        aspectRatio:
+          typeof image.aspect_ratio === "number" ? image.aspect_ratio : null,
+        voteAverage:
+          typeof image.vote_average === "number" ? image.vote_average : 0,
+        voteCount: typeof image.vote_count === "number" ? image.vote_count : 0,
+      }))
+      .sort(
+        (left, right) =>
+          right.voteAverage - left.voteAverage ||
+          right.voteCount - left.voteCount,
+      );
+  }
+
   function extractLogoPath(images: unknown): string | undefined {
     if (!images || typeof images !== "object") return undefined;
     const logos = (images as { logos?: Array<{ file_path?: string }> }).logos;
@@ -265,15 +339,18 @@ export function createTmdbClient({
   async function getTitle(
     kind: "movie" | "tv",
     providerId: string,
+    languageOverride?: string,
   ): Promise<TmdbTitleDetails> {
+    const effectiveLanguage = languageOverride ?? language;
     const details = await request<Record<string, unknown>>(
       `/${kind}/${encodeURIComponent(providerId)}`,
       {
         append_to_response: "credits,images,release_dates,content_ratings",
         // Language-neutral artwork is included so a logo exists even when the
         // localized set is empty.
-        include_image_language: `${language.slice(0, 2)},en,null`,
+        include_image_language: `${effectiveLanguage.slice(0, 2)},en,null`,
       },
+      effectiveLanguage,
     );
 
     const title =
@@ -359,8 +436,26 @@ export function createTmdbClient({
         "tv",
       ),
 
-    getMovie: (providerId) => getTitle("movie", providerId),
-    getSeries: (providerId) => getTitle("tv", providerId),
+    getMovie: (providerId, titleLanguage) =>
+      getTitle("movie", providerId, titleLanguage),
+    getSeries: (providerId, titleLanguage) =>
+      getTitle("tv", providerId, titleLanguage),
+
+    listArtwork: async (kind, providerId) => {
+      // No `language` at all: the point of the picker is to show the Turkish
+      // poster next to the English one, so filtering here would defeat it.
+      const images = await request<TmdbImagesResponse>(
+        `/${kind}/${encodeURIComponent(providerId)}/images`,
+        {},
+        null,
+      );
+
+      return [
+        ...toArtworkCandidates(images.posters, "poster"),
+        ...toArtworkCandidates(images.backdrops, "backdrop"),
+        ...toArtworkCandidates(images.logos, "logo"),
+      ];
+    },
 
     getSeasonEpisodes: async (providerId, seasonNumber) => {
       const season = await request<{

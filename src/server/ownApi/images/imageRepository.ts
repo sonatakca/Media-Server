@@ -37,6 +37,36 @@ export interface ImageRepository {
     sourceUrl: string | null;
   }): Promise<string>;
   deleteForItem(itemId: string, imageType?: string): Promise<void>;
+  /**
+   * Stores an image an administrator chose and locks it.
+   *
+   * Separate from {@link upsert} because that one refuses to overwrite a locked
+   * row — which is right for an automatic refresh and wrong for the operator
+   * who owns the lock in the first place.
+   */
+  replaceLocked(input: {
+    itemId: string;
+    imageType: string;
+    imageIndex: number;
+    contentHash: string;
+    contentType: string;
+    width: number | null;
+    height: number | null;
+    sizeBytes: number;
+    storageKey: string;
+    source: string;
+    sourceUrl: string | null;
+  }): Promise<string>;
+  /**
+   * Drops an image whether or not it is locked, returning whether a row went.
+   * This is how a type is handed back to the automatic pass.
+   */
+  clear(
+    itemId: string,
+    imageType: string,
+    imageIndex: number,
+  ): Promise<boolean>;
+  listLockedTypes(itemId: string): Promise<string[]>;
 }
 
 interface RawImageRow {
@@ -192,6 +222,64 @@ export function createImageRepository(pool: DatabasePool): ImageRepository {
       const row = existing.rows[0];
       if (!row) throw new Error("Image upsert returned no row.");
       return row.id;
+    },
+
+    replaceLocked: async (input) => {
+      const result = await pool.query<{ id: string }>(
+        `INSERT INTO item_images (
+           id, item_id, image_type, image_index, content_hash, content_type,
+           width, height, size_bytes, storage_key, source, source_url, is_locked
+         )
+         VALUES ($12, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, true)
+         ON CONFLICT (item_id, image_type, image_index) DO UPDATE SET
+           content_hash = EXCLUDED.content_hash,
+           content_type = EXCLUDED.content_type,
+           width = EXCLUDED.width,
+           height = EXCLUDED.height,
+           size_bytes = EXCLUDED.size_bytes,
+           storage_key = EXCLUDED.storage_key,
+           source = EXCLUDED.source,
+           source_url = EXCLUDED.source_url,
+           is_locked = true
+         RETURNING id`,
+        [
+          input.itemId,
+          input.imageType,
+          input.imageIndex,
+          input.contentHash,
+          input.contentType,
+          input.width,
+          input.height,
+          input.sizeBytes,
+          input.storageKey,
+          input.source,
+          input.sourceUrl,
+          randomUUID(),
+        ],
+      );
+
+      const row = result.rows[0];
+      if (!row) throw new Error("Locked image upsert returned no row.");
+      return row.id;
+    },
+
+    clear: async (itemId, imageType, imageIndex) => {
+      const result = await pool.query(
+        `DELETE FROM item_images
+         WHERE item_id = $1 AND image_type = $2 AND image_index = $3`,
+        [itemId, imageType, imageIndex],
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    listLockedTypes: async (itemId) => {
+      const result = await pool.query<{ image_type: string }>(
+        `SELECT DISTINCT image_type FROM item_images
+         WHERE item_id = $1 AND is_locked = true
+         ORDER BY image_type`,
+        [itemId],
+      );
+      return result.rows.map((row) => row.image_type);
     },
 
     deleteForItem: async (itemId, imageType) => {

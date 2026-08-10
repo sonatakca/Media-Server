@@ -33,6 +33,7 @@ import { createImageRoutes } from "./images/imageRoutes";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
 import { createMetadataRoutes } from "./metadata/metadataRoutes";
+import { createArtworkRoutes } from "./metadata/artworkRoutes";
 import { createTmdbClient } from "./metadata/tmdbClient";
 import { createUserStateRepository } from "./progress/userStateRepository";
 import { createProgressRoutes } from "./progress/progressRoutes";
@@ -253,7 +254,15 @@ export async function createNativeRuntime({
     }),
     ...createTaskRoutes({ queue, libraries }),
     ...(tmdb
-      ? createMetadataRoutes({ metadata: metadataRepository, tmdb, queue })
+      ? [
+          ...createMetadataRoutes({ metadata: metadataRepository, tmdb, queue }),
+          ...createArtworkRoutes({
+            metadata: metadataRepository,
+            images,
+            imageStorage,
+            tmdb,
+          }),
+        ]
       : []),
   ];
 

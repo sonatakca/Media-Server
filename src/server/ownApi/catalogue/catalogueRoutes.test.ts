@@ -125,6 +125,9 @@ function fakeImages(): ImageRepository {
     getOwningItemId: async () => null,
     findByItemAndType: async () => null,
     upsert: async () => "image-1",
+    replaceLocked: async () => "locked-image",
+    clear: async () => true,
+    listLockedTypes: async () => [],
     deleteForItem: async () => undefined,
   };
 }

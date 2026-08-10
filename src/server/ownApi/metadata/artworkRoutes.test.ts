@@ -1,0 +1,414 @@
+import { createHmac } from "node:crypto";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
+import { describe, expect, it, vi } from "vitest";
+import { createOwnApiRouter, type RoutePrincipal } from "../api/router";
+import { createCsrfToken } from "../auth/csrf";
+import { OwnApiError } from "../ownApiHandler";
+import { createArtworkRoutes } from "./artworkRoutes";
+import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
+import type { TmdbArtworkCandidate, TmdbClient } from "./tmdbClient";
+import type { ImageRepository } from "../images/imageRepository";
+import type { ImageStorage } from "../images/imageStorage";
+
+const CSRF_SECRET = "s".repeat(32);
+const SESSION_HASH = createHmac("sha256", "k").update("session").digest();
+const MOVIE = "aaaaaaaa-1111-4111-8111-111111111111";
+const UNIDENTIFIED = "bbbbbbbb-2222-4222-8222-222222222222";
+const EPISODE = "cccccccc-3333-4333-8333-333333333333";
+
+function target(overrides: Partial<MetadataTarget> = {}): MetadataTarget {
+  return {
+    id: MOVIE,
+    kind: "movie",
+    title: "Dune",
+    productionYear: 2021,
+    providerIds: { tmdb: "438631" },
+    lockedFields: [],
+    seriesId: null,
+    indexNumber: null,
+    parentIndexNumber: null,
+    ...overrides,
+  };
+}
+
+const TARGETS: Record<string, MetadataTarget> = {
+  [MOVIE]: target(),
+  [UNIDENTIFIED]: target({ id: UNIDENTIFIED, providerIds: {} }),
+  [EPISODE]: target({ id: EPISODE, kind: "episode" }),
+};
+
+function candidate(
+  overrides: Partial<TmdbArtworkCandidate> = {},
+): TmdbArtworkCandidate {
+  return {
+    kind: "poster",
+    filePath: "/poster.jpg",
+    language: "en",
+    width: 2000,
+    height: 3000,
+    aspectRatio: 0.667,
+    voteAverage: 8,
+    voteCount: 40,
+    ...overrides,
+  };
+}
+
+function fakeMetadata(): MetadataRepository {
+  return {
+    listPendingItems: async () => [],
+    getTarget: async (itemId) => TARGETS[itemId] ?? null,
+    listSeasonsForSeries: async () => [],
+    listEpisodesForSeries: async () => [],
+    applyTitleMetadata: async () => undefined,
+    replaceGenres: async () => undefined,
+    replacePeople: async () => undefined,
+    markFailed: async () => undefined,
+    lockFields: async () => undefined,
+  };
+}
+
+function fakeImages(overrides: Partial<ImageRepository> = {}): ImageRepository {
+  return {
+    listForItems: async () => [],
+    listInheritedForItems: async () => new Map(),
+    getById: async () => null,
+    getOwningItemId: async () => null,
+    findByItemAndType: async () => null,
+    upsert: async () => "image-1",
+    replaceLocked: async () => "locked-image",
+    clear: async () => true,
+    listLockedTypes: async () => [],
+    deleteForItem: async () => undefined,
+    ...overrides,
+  };
+}
+
+function fakeStorage(overrides: Partial<ImageStorage> = {}): ImageStorage {
+  return {
+    resolve: (key) => `/generated/${key}`,
+    store: async () => ({
+      contentHash: "hash",
+      contentType: "image/jpeg",
+      sizeBytes: 10,
+      storageKey: "aa/bb/hash.jpg",
+    }),
+    fetchAndStore: async () => ({
+      contentHash: "hash",
+      contentType: "image/jpeg",
+      sizeBytes: 10,
+      storageKey: "aa/bb/hash.jpg",
+    }),
+    remove: async () => undefined,
+    ...overrides,
+  };
+}
+
+function fakeTmdb(overrides: Partial<TmdbClient> = {}): TmdbClient {
+  return {
+    searchMovies: async () => [],
+    searchSeries: async () => [],
+    getMovie: async () => ({
+      providerId: "438631",
+      title: "Dune",
+      genres: [],
+      people: [],
+      backdropPaths: [],
+    }),
+    getSeries: async () => ({
+      providerId: "438631",
+      title: "Dune",
+      genres: [],
+      people: [],
+      backdropPaths: [],
+    }),
+    getSeasonEpisodes: async () => [],
+    listArtwork: async () => [candidate()],
+    buildImageUrl: (path, size) => `https://image.tmdb.org/t/p/${size}${path}`,
+    ...overrides,
+  };
+}
+
+function buildRouter(parts: {
+  images?: ImageRepository;
+  imageStorage?: ImageStorage;
+  tmdb?: TmdbClient;
+} = {}) {
+  return createOwnApiRouter({
+    csrfSecret: CSRF_SECRET,
+    csrfCookieName: "seyirlik_csrf",
+    publicOrigin: "https://seyirlik.test",
+    resolveSession: async (): Promise<RoutePrincipal> => ({
+      userId: "dddddddd-4444-4444-8444-444444444444",
+      username: "root",
+      displayName: "Root",
+      isAdministrator: true,
+      sessionId: "eeeeeeee-5555-4555-8555-555555555555",
+      sessionTokenHash: SESSION_HASH,
+    }),
+    routes: createArtworkRoutes({
+      metadata: fakeMetadata(),
+      images: parts.images ?? fakeImages(),
+      imageStorage: parts.imageStorage ?? fakeStorage(),
+      tmdb: parts.tmdb ?? fakeTmdb(),
+    }),
+  });
+}
+
+async function call(
+  router: ReturnType<typeof buildRouter>,
+  method: string,
+  path: string,
+  body?: unknown,
+) {
+  const payload = body === undefined ? undefined : JSON.stringify(body);
+  const csrfToken = createCsrfToken(SESSION_HASH, CSRF_SECRET);
+  const request = Object.assign(
+    Readable.from(payload === undefined ? [] : [Buffer.from(payload)]),
+    {
+      method,
+      url: path,
+      headers: {
+        host: "seyirlik.test",
+        origin: "https://seyirlik.test",
+        cookie: `seyirlik_csrf=${csrfToken}`,
+        "x-csrf-token": csrfToken,
+        ...(payload === undefined
+          ? {}
+          : { "content-type": "application/json" }),
+      },
+      socket: { remoteAddress: "127.0.0.1" },
+    },
+  ) as unknown as IncomingMessage;
+
+  const sent = { statusCode: 200, body: "" };
+  const response = {
+    get statusCode() {
+      return sent.statusCode;
+    },
+    set statusCode(value: number) {
+      sent.statusCode = value;
+    },
+    setHeader() {},
+    getHeader() {
+      return undefined;
+    },
+    end(chunk?: string) {
+      sent.body = chunk ?? "";
+    },
+  } as unknown as ServerResponse;
+
+  let error: unknown;
+  try {
+    await router.handler(request, response, {
+      requestId: "req-1",
+      url: new URL(path, "https://seyirlik.test"),
+    });
+  } catch (caught) {
+    error = caught;
+  }
+
+  return {
+    sent,
+    error,
+    json: sent.body ? (JSON.parse(sent.body) as Record<string, unknown>) : null,
+  };
+}
+
+describe("artwork routes", () => {
+  it("lists provider candidates alongside the types an operator has taken over", async () => {
+    const router = buildRouter({
+      images: fakeImages({ listLockedTypes: async () => ["primary"] }),
+    });
+
+    const result = await call(router, "GET", `/ownAPI/v1/admin/items/${MOVIE}/artwork`);
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(result.json?.data).toMatchObject({
+      item: { id: MOVIE, providerId: "438631" },
+      lockedTypes: ["primary"],
+    });
+    // The page groups by stored type, not by the provider's own vocabulary.
+    expect(
+      (result.json?.data as { candidates: Array<Record<string, unknown>> })
+        .candidates[0],
+    ).toMatchObject({
+      kind: "poster",
+      imageType: "primary",
+      previewUrl: "https://image.tmdb.org/t/p/w342/poster.jpg",
+    });
+  });
+
+  it("refuses to guess artwork for a title that was never identified", async () => {
+    const router = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${UNIDENTIFIED}/artwork`,
+    );
+
+    expect((result.error as OwnApiError).statusCode).toBe(409);
+    expect((result.error as OwnApiError).code).toBe("PROVIDER_ID_MISSING");
+  });
+
+  it("reports an episode as out of scope rather than showing series artwork as its own", async () => {
+    const router = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${EPISODE}/artwork`,
+    );
+
+    expect((result.error as OwnApiError).code).toBe("ARTWORK_NOT_APPLICABLE");
+  });
+
+  it("downloads the chosen file at the same size as the automatic pass and locks it", async () => {
+    const fetchAndStore = vi.fn(async () => ({
+      contentHash: "hash",
+      contentType: "image/jpeg",
+      sizeBytes: 10,
+      storageKey: "aa/bb/hash.jpg",
+    }));
+    const replaceLocked = vi.fn<ImageRepository["replaceLocked"]>(
+      async () => "locked-image",
+    );
+    const router = buildRouter({
+      images: fakeImages({ replaceLocked }),
+      imageStorage: fakeStorage({ fetchAndStore }),
+    });
+
+    const result = await call(
+      router,
+      "POST",
+      `/ownAPI/v1/admin/items/${MOVIE}/artwork`,
+      { kind: "backdrop", filePath: "/wide.jpg" },
+    );
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(fetchAndStore).toHaveBeenCalledWith(
+      "https://image.tmdb.org/t/p/w1280/wide.jpg",
+    );
+    // The lock is the entire point: an ordinary upsert would be undone by the
+    // next automatic refresh.
+    expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
+      itemId: MOVIE,
+      imageType: "backdrop",
+      source: "tmdb",
+    });
+    expect(result.json?.data).toMatchObject({ isLocked: true });
+  });
+
+  it("rejects a file path that is not a provider image path", async () => {
+    const fetchAndStore = vi.fn();
+    const router = buildRouter({ imageStorage: fakeStorage({ fetchAndStore }) });
+
+    for (const filePath of [
+      "https://evil.test/x.jpg",
+      "/../secret.jpg",
+      "/poster.svg",
+    ]) {
+      const result = await call(
+        router,
+        "POST",
+        `/ownAPI/v1/admin/items/${MOVIE}/artwork`,
+        { kind: "poster", filePath },
+      );
+      expect((result.error as OwnApiError).statusCode).toBe(422);
+    }
+    expect(fetchAndStore).not.toHaveBeenCalled();
+  });
+
+  it("does not leak the provider request URL when a download fails", async () => {
+    // With a v3 credential the key rides in the query string, so the underlying
+    // message is never the one that reaches the browser.
+    const router = buildRouter({
+      imageStorage: fakeStorage({
+        fetchAndStore: async () => {
+          throw new Error("connect ETIMEDOUT https://api.themoviedb.org/?api_key=secret");
+        },
+      }),
+    });
+
+    const result = await call(
+      router,
+      "POST",
+      `/ownAPI/v1/admin/items/${MOVIE}/artwork`,
+      { kind: "poster", filePath: "/poster.jpg" },
+    );
+
+    const error = result.error as OwnApiError;
+    expect(error.statusCode).toBe(502);
+    expect(error.message).not.toContain("api_key");
+  });
+
+  it("hands a type back to the automatic pass by removing the stored row", async () => {
+    const clear = vi.fn(async () => true);
+    const router = buildRouter({ images: fakeImages({ clear }) });
+
+    const result = await call(
+      router,
+      "DELETE",
+      `/ownAPI/v1/admin/items/${MOVIE}/artwork/logo`,
+    );
+
+    expect(clear).toHaveBeenCalledWith(MOVIE, "logo", 0);
+    expect(result.json?.data).toMatchObject({ imageType: "logo", cleared: true });
+  });
+
+  it("previews a title in another language without writing anything", async () => {
+    const applyTitleMetadata = vi.fn();
+    const metadata = { ...fakeMetadata(), applyTitleMetadata };
+    const getMovie = vi.fn(async () => ({
+      providerId: "438631",
+      title: "Çöl Gezegeni",
+      overview: "Bir kehanet.",
+      genres: [],
+      people: [],
+      backdropPaths: [],
+    }));
+
+    const router = createOwnApiRouter({
+      csrfSecret: CSRF_SECRET,
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async (): Promise<RoutePrincipal> => ({
+        userId: "dddddddd-4444-4444-8444-444444444444",
+        username: "root",
+        displayName: "Root",
+        isAdministrator: true,
+        sessionId: "eeeeeeee-5555-4555-8555-555555555555",
+        sessionTokenHash: SESSION_HASH,
+      }),
+      routes: createArtworkRoutes({
+        metadata,
+        images: fakeImages(),
+        imageStorage: fakeStorage(),
+        tmdb: fakeTmdb({ getMovie }),
+      }),
+    });
+
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${MOVIE}/metadata/preview?language=tr-TR`,
+    );
+
+    expect(getMovie).toHaveBeenCalledWith("438631", "tr-TR");
+    expect(result.json?.data).toMatchObject({
+      language: "tr-TR",
+      title: "Çöl Gezegeni",
+      tagline: null,
+    });
+    expect(applyTitleMetadata).not.toHaveBeenCalled();
+  });
+
+  it("rejects a language that is not a tag", async () => {
+    const router = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${MOVIE}/metadata/preview?language=tr-TR%2Cen`,
+    );
+    expect((result.error as OwnApiError).statusCode).toBe(422);
+  });
+});

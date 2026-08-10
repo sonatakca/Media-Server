@@ -83,6 +83,9 @@ function fakeImages(): ImageRepository & { upserts: unknown[] } {
       upserts.push(input);
       return "image-1";
     },
+    replaceLocked: async () => "locked-image",
+    clear: async () => true,
+    listLockedTypes: async () => [],
     deleteForItem: async () => undefined,
   };
 }
@@ -115,6 +118,7 @@ function fakeTmdb(overrides: Partial<TmdbClient> = {}): TmdbClient {
     getMovie: async () => details(),
     getSeries: async () => details(),
     getSeasonEpisodes: async () => [],
+    listArtwork: async () => [],
     buildImageUrl: (path, size) => `https://image.tmdb.org/t/p/${size}${path}`,
     ...overrides,
   };
