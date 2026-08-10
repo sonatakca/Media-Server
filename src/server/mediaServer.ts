@@ -5,6 +5,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import path from "node:path";
+import { mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { assertMediaRootDirectory } from "./pathSecurity";
@@ -175,6 +176,11 @@ export async function createMediaServer(
   const port = options.port ?? DEFAULT_PORT;
   const mediaRoot = await assertMediaRootDirectory(options.mediaRoot);
   const generatedStoragePath = options.generatedStoragePath ?? tmpdir();
+
+  // Generated storage belongs to Seyirlik, unlike the media root, which must
+  // already exist and is never created on our behalf. Creating it here means a
+  // fresh deployment reaches `ready` without an operator running mkdir first.
+  await mkdir(generatedStoragePath, { recursive: true });
 
   const sessionManager = new PlaybackSessionManager({
     ...(options.ffmpegPath ? { ffmpegPath: options.ffmpegPath } : {}),
