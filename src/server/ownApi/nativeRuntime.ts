@@ -69,6 +69,8 @@ export interface NativeRuntime {
 export interface CreateNativeRuntimeOptions {
   environment?: Environment;
   publicOrigin?: string;
+  /** Explicitly allowed browser origins; trusted for mutations as well as CORS. */
+  trustedOrigins?: ReadonlySet<string>;
   mediaRoot: string;
   sessionManager: PlaybackSessionManager;
   ffprobePath?: string;
@@ -92,6 +94,7 @@ const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
 export async function createNativeRuntime({
   environment = process.env,
   publicOrigin,
+  trustedOrigins,
   mediaRoot,
   sessionManager,
   ffprobePath,
@@ -260,6 +263,7 @@ export async function createNativeRuntime({
     csrfSecret: authConfig.csrfSecret,
     csrfCookieName: authConfig.csrfCookieName,
     ...(publicOrigin ? { publicOrigin } : {}),
+    ...(trustedOrigins ? { trustedOrigins } : {}),
   });
 
   const authHandler = createNativeAuthHttpHandler({
@@ -269,6 +273,7 @@ export async function createNativeRuntime({
     sessionCookieName: authConfig.sessionCookieName,
     csrfCookieName: authConfig.csrfCookieName,
     ...(publicOrigin ? { publicOrigin } : {}),
+    ...(trustedOrigins ? { trustedOrigins } : {}),
   });
 
   const sessionCleanupTimer = setInterval(() => {

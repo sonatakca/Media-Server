@@ -102,10 +102,16 @@ export function directRequestOrigin(
  * Strict Origin/Referer validation for every state-changing request. Forwarded
  * headers are not consulted; a TLS-terminating proxy declares the canonical
  * origin through `SEYIRLIK_PUBLIC_ORIGIN` instead.
+ *
+ * Explicitly allowed origins are accepted too. They already receive credentialed
+ * CORS, so refusing them here only produced an inconsistency — a deployment that
+ * declared its public origin could no longer be driven from the development
+ * origin it had also been told to trust.
  */
 export function requireMutationOrigin(
   request: IncomingMessage,
   publicOrigin: string | undefined,
+  trustedOrigins: ReadonlySet<string> = new Set(),
 ): void {
   const expectedOrigin = publicOrigin ?? directRequestOrigin(request);
   const origin = headerValue(request.headers.origin);
@@ -120,7 +126,11 @@ export function requireMutationOrigin(
     }
   }
 
-  if (!expectedOrigin || suppliedOrigin !== expectedOrigin) {
+  const isTrusted =
+    suppliedOrigin !== undefined &&
+    (suppliedOrigin === expectedOrigin || trustedOrigins.has(suppliedOrigin));
+
+  if (!isTrusted) {
     throw new OwnApiError(
       "CSRF_REJECTED",
       "The request could not be verified.",

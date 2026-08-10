@@ -66,6 +66,7 @@ export interface NativeAuthHttpHandlerOptions {
   sessionCookieName: string;
   csrfCookieName: string;
   publicOrigin?: string;
+  trustedOrigins?: ReadonlySet<string>;
   loginLimiter?: BoundedRateLimiter;
   refreshLimiter?: BoundedRateLimiter;
   now?: () => Date;
@@ -277,7 +278,7 @@ export function createNativeAuthHttpHandler(
     if (url.pathname === `${AUTH_BASE_PATH}/login`) {
       if (request.method !== "POST")
         methodNotAllowed(response, "POST, OPTIONS");
-      requireMutationOrigin(request, options.publicOrigin);
+      requireMutationOrigin(request, options.publicOrigin, options.trustedOrigins);
       const body = parseLoginBody(await readJsonBody(request, MAX_JSON_BODY_BYTES));
       const limiterKey = `${remoteAddress(request)}|${normalizeLoginUsername(body.username).slice(0, 64)}`;
       const decision = loginLimiter.consume(limiterKey);
@@ -350,7 +351,7 @@ export function createNativeAuthHttpHandler(
     if (url.pathname === `${AUTH_BASE_PATH}/refresh`) {
       if (request.method !== "POST")
         methodNotAllowed(response, "POST, OPTIONS");
-      requireMutationOrigin(request, options.publicOrigin);
+      requireMutationOrigin(request, options.publicOrigin, options.trustedOrigins);
       const limiterKey = `${remoteAddress(request)}|refresh`;
       const decision = refreshLimiter.consume(limiterKey);
       if (!decision.allowed) {
@@ -382,7 +383,7 @@ export function createNativeAuthHttpHandler(
     if (url.pathname === `${AUTH_BASE_PATH}/logout`) {
       if (request.method !== "POST")
         methodNotAllowed(response, "POST, OPTIONS");
-      requireMutationOrigin(request, options.publicOrigin);
+      requireMutationOrigin(request, options.publicOrigin, options.trustedOrigins);
       if (sessionToken) {
         try {
           const current = await currentSession(options.auth, sessionToken);
@@ -402,7 +403,7 @@ export function createNativeAuthHttpHandler(
     if (url.pathname === `${AUTH_BASE_PATH}/logout-all`) {
       if (request.method !== "POST")
         methodNotAllowed(response, "POST, OPTIONS");
-      requireMutationOrigin(request, options.publicOrigin);
+      requireMutationOrigin(request, options.publicOrigin, options.trustedOrigins);
       const current = await currentSession(options.auth, sessionToken);
       requireCsrf(request, cookies, current, options);
       try {

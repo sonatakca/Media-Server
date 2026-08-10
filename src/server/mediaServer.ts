@@ -290,9 +290,14 @@ export async function createMediaServer(
       : {}),
   });
 
+  const configuredOrigins = new Set(
+    options.allowedOrigins ?? parseAllowedOrigins(undefined),
+  );
+
   const runtime: NativeRuntime = await createNativeRuntime({
     ...(options.environment ? { environment: options.environment } : {}),
     ...(options.publicOrigin ? { publicOrigin: options.publicOrigin } : {}),
+    trustedOrigins: configuredOrigins,
     mediaRoot,
     sessionManager,
     generatedStoragePath,
@@ -310,9 +315,7 @@ export async function createMediaServer(
   });
 
   const logger = options.logger ?? console;
-  const allowedOrigins = new Set(
-    options.allowedOrigins ?? parseAllowedOrigins(undefined),
-  );
+  const allowedOrigins = configuredOrigins;
   const publicOrigin = options.publicOrigin
     ? parseHttpOrigin(options.publicOrigin)
     : undefined;

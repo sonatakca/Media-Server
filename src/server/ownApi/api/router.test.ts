@@ -58,12 +58,16 @@ function createRequest(
   return { request, response, sent };
 }
 
-function buildRouter(session: RoutePrincipal | null) {
+function buildRouter(
+  session: RoutePrincipal | null,
+  trustedOrigins?: ReadonlySet<string>,
+) {
   const seen: Array<Record<string, string>> = [];
   const router = createOwnApiRouter({
     csrfSecret: CSRF_SECRET,
     csrfCookieName: "seyirlik_csrf",
     publicOrigin: "https://seyirlik.test",
+    ...(trustedOrigins ? { trustedOrigins } : {}),
     resolveSession: async () => session,
     routes: [
       {
@@ -192,6 +196,36 @@ describe("own API router", () => {
     });
     expect(accepted.handled).toBe(true);
     expect(accepted.sent.statusCode).toBe(204);
+  });
+
+  it("accepts a mutation from an explicitly allowed origin", async () => {
+    // CORS already grants these origins credentialed access, so refusing them
+    // here would only mean a deployment could not be driven from the
+    // development origin it was told to trust.
+    const { router } = buildRouter(principal(), new Set(["http://localhost:5173"]));
+    const csrfToken = createCsrfToken(SESSION_TOKEN_HASH, CSRF_SECRET);
+
+    const result = await run(router, "POST", "/ownAPI/v1/items/x/played", {
+      origin: "http://localhost:5173",
+      cookie: `seyirlik_csrf=${csrfToken}`,
+      "x-csrf-token": csrfToken,
+    });
+
+    expect(result.handled).toBe(true);
+    expect(result.sent.statusCode).toBe(204);
+  });
+
+  it("still rejects an origin that was never allowed", async () => {
+    const { router } = buildRouter(principal(), new Set(["http://localhost:5173"]));
+    const csrfToken = createCsrfToken(SESSION_TOKEN_HASH, CSRF_SECRET);
+
+    const result = await run(router, "POST", "/ownAPI/v1/items/x/played", {
+      origin: "https://evil.test",
+      cookie: `seyirlik_csrf=${csrfToken}`,
+      "x-csrf-token": csrfToken,
+    });
+
+    expect((result.error as OwnApiError).code).toBe("CSRF_REJECTED");
   });
 
   it("rejects a CSRF token that is not bound to the active session", async () => {

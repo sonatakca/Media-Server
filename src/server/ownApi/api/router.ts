@@ -62,6 +62,8 @@ export interface CreateRouterOptions {
   csrfSecret: string;
   csrfCookieName: string;
   publicOrigin?: string;
+  /** Origins explicitly configured as allowed, trusted for mutations too. */
+  trustedOrigins?: ReadonlySet<string>;
 }
 
 interface CompiledRoute extends RouteDefinition {
@@ -147,6 +149,7 @@ export function createOwnApiRouter({
   csrfSecret,
   csrfCookieName,
   publicOrigin,
+  trustedOrigins,
 }: CreateRouterOptions): OwnApiRouter {
   const compiled = routes
     .map(compile)
@@ -223,7 +226,7 @@ export function createOwnApiRouter({
     }
 
     if (!SAFE_METHODS.has(method)) {
-      requireMutationOrigin(request, publicOrigin);
+      requireMutationOrigin(request, publicOrigin, trustedOrigins);
 
       if (principal) {
         const cookies = parseCookies(request);
