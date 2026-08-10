@@ -600,6 +600,66 @@ Remaining before the cutover can complete, in dependency order:
 Writing `mediaApi.ts` before item 1 would mean shipping functions that call
 endpoints which do not exist, so the order above is deliberate.
 
+## Phase 9-10 completion and the native client surface (2026-08-10)
+
+Closed the two endpoint gaps that blocked the cutover, then wrote the client
+surface the frontend will switch onto.
+
+Delivered:
+
+- `/admin/users` CRUD plus per-user library permissions and password reset. Three
+  safety rules are enforced server-side: the last eligible administrator cannot
+  be demoted, disabled or deleted; disabling a user or changing their password
+  revokes their sessions immediately rather than waiting for expiry; and an
+  administrator cannot delete their own account.
+- `ownApi/trickplay/`: pure sprite geometry (`trickplayLayout.ts`), a one-pass
+  FFmpeg generator that decodes the source once instead of seeking thousands of
+  times, authorized sprite delivery, and a regeneration job.
+- `src/lib/mediaApi.ts`: the complete 63-symbol surface the application imports,
+  implemented over the native client and adapters.
+
+Decisions worth recording:
+
+- Sprite sheets inherit the visibility of the item whose file produced them;
+  holding a set id is not authorization.
+- The password strength rule is imported from the hasher module rather than
+  restated in the admin route, so provisioning, self-service and administration
+  cannot drift apart.
+- Native playback changes quality by creating a new session, so
+  `buildConfiguredHlsPlaybackSource` is asynchronous where its predecessor
+  rewrote a URL synchronously. That is a deliberate call-site change, not an
+  accidental one.
+- Audit reporting is a no-op: native progress already records everything the
+  audit page reads, and a second reporting channel would be a second source of
+  truth.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vitest run:
+  95 files passed; 3 failed; 4 skipped
+  639 tests passed; 4 documented baseline tests failed; 14 database tests skipped
+```
+
+Remaining for the cutover, in order:
+
+1. Rewrite the imports of the 56 consuming modules from `jellyfinApi` to
+   `mediaApi`, and fix the call sites whose signatures deliberately changed:
+   `testServerConnection` takes no server URL, `getTrickplayImageUrl` takes a set
+   id and sprite index, `buildSubtitleStreamUrl`/`getItemFileUrl` take a session
+   id, `getHeroPreviewUrl` takes no item, `buildConfiguredHlsPlaybackSource` is
+   async, and the unavailable-server event was renamed.
+2. Native SyncPlay (phase 13), which Party Watch still depends on.
+3. Replace `authStorage.ts`'s server-URL and token handling with the cookie
+   session.
+4. Delete `jellyfinApi.ts`, the SyncPlay client and socket,
+   `jellyfinMediaResolver.ts`, `jellyfinPlaybackAuth.ts`, `playbackBackend.ts`,
+   the Jellyfin PWA exclusions, the Jellyfin environment variables and the
+   obsolete tests.
+
 ## Subsequent phases
 
 Add a dated section for every completed vertical slice with:

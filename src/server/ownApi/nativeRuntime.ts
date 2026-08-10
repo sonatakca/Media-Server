@@ -47,6 +47,9 @@ import { createWorker } from "./tasks/worker";
 import { createJobHandlers } from "./tasks/jobHandlers";
 import { createTaskRoutes } from "./tasks/taskRoutes";
 import { createProbeService } from "./probe/probeService";
+import { createTrickplayService } from "./trickplay/trickplayService";
+import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
+import { createUserRoutes } from "./users/userRoutes";
 import { createNodeScannerFileSystem } from "./scanner/nodeFileSystem";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
 
@@ -165,6 +168,13 @@ export async function createNativeRuntime({
     userState,
   });
 
+  const trickplay = createTrickplayService({
+    pool,
+    catalogue,
+    mediaRoot,
+    generatedStoragePath,
+  });
+
   const probeService = createProbeService({
     pool,
     mediaRoot,
@@ -180,6 +190,7 @@ export async function createNativeRuntime({
       probeService,
       queue,
       ...(metadataService ? { metadataService } : {}),
+      trickplayService: trickplay,
     }),
     logger: console,
   });
@@ -224,6 +235,12 @@ export async function createNativeRuntime({
       mediaRoot,
     }),
     ...createImageRoutes({ images, imageStorage, catalogue }),
+    ...createTrickplayRoutes({ trickplay, catalogue, queue }),
+    ...createUserRoutes({
+      users,
+      sessions,
+      passwords: createArgon2PasswordHasher(),
+    }),
     ...createTaskRoutes({ queue, libraries }),
     ...(tmdb
       ? createMetadataRoutes({ metadata: metadataRepository, tmdb, queue })

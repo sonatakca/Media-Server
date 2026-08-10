@@ -8,12 +8,14 @@ import { scanLibraryTree, type ScanResult } from "../scanner/libraryScan";
 import type { ScannerFileSystem } from "../scanner/libraryScan";
 import type { createProbeService } from "../probe/probeService";
 import type { MetadataService } from "../metadata/metadataService";
+import type { TrickplayService } from "../trickplay/trickplayService";
 
 export const JOB_TYPES = {
   libraryScan: "library.scan",
   mediaProbe: "media.probe",
   metadataScan: "metadata.scan",
   metadataRefresh: "metadata.refresh",
+  trickplayGenerate: "trickplay.generate",
 } as const;
 
 export interface JobHandlerOptions {
@@ -24,6 +26,7 @@ export interface JobHandlerOptions {
   queue: JobQueue;
   /** Absent when no TMDB key is configured; metadata jobs then no-op. */
   metadataService?: MetadataService;
+  trickplayService?: TrickplayService;
 }
 
 /**
@@ -54,6 +57,7 @@ export function createJobHandlers({
   probeService,
   queue,
   metadataService,
+  trickplayService,
 }: JobHandlerOptions): Record<string, JobHandler> {
   const libraryScan: JobHandler = async ({ job, reportProgress, isCancelled }) => {
     const libraryId = job.payload.libraryId;
@@ -197,8 +201,28 @@ export function createJobHandlers({
     return { ...result };
   };
 
+  const trickplayGenerate: JobHandler = async ({ job }) => {
+    if (!trickplayService) {
+      throw new PermanentJobError("Trickplay generation is not available.");
+    }
+    const itemId = job.payload.itemId;
+    if (typeof itemId !== "string") {
+      throw new PermanentJobError("The task payload is missing an item.");
+    }
+
+    if (job.payload.force === true) {
+      await trickplayService.deleteForItem(itemId);
+    }
+
+    const set = await trickplayService.generateForItem(itemId);
+    return set
+      ? { generated: true, spriteCount: set.spriteCount }
+      : { generated: false };
+  };
+
   return {
     [JOB_TYPES.libraryScan]: libraryScan,
+    [JOB_TYPES.trickplayGenerate]: trickplayGenerate,
     [JOB_TYPES.mediaProbe]: mediaProbe,
     [JOB_TYPES.metadataScan]: metadataScan,
     [JOB_TYPES.metadataRefresh]: metadataRefresh,

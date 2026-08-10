@@ -49,12 +49,33 @@ function mapUser(row: UserRow): NativeUserRecord {
   };
 }
 
+export interface UpdateNativeUserInput {
+  displayName?: string;
+  isAdministrator?: boolean;
+  isDisabled?: boolean;
+  allowPlayback?: boolean;
+  allowDownloads?: boolean;
+  allowAllLibraries?: boolean;
+}
+
 export interface UserRepository {
   create(input: CreateNativeUserInput): Promise<NativeUserRecord>;
   findById(id: string): Promise<NativeUserRecord | null>;
   findByNormalizedUsername(username: string): Promise<NativeUserRecord | null>;
   countEligibleAdministrators(): Promise<number>;
   recordSuccessfulLogin(id: string, at: Date): Promise<void>;
+  list(): Promise<NativeUserRecord[]>;
+  update(
+    id: string,
+    input: UpdateNativeUserInput,
+  ): Promise<NativeUserRecord | null>;
+  setPasswordHash(id: string, passwordHash: string): Promise<void>;
+  delete(id: string): Promise<boolean>;
+  listLibraryPermissions(userId: string): Promise<string[]>;
+  replaceLibraryPermissions(
+    userId: string,
+    libraryIds: string[],
+  ): Promise<void>;
 }
 
 export function createUserRepository(
@@ -110,6 +131,79 @@ export function createUserRepository(
          WHERE id = $1`,
         [id, at],
       );
+    },
+
+    async list() {
+      const result = await database.query<UserRow>(
+        "SELECT * FROM native_users ORDER BY normalized_username",
+      );
+      return result.rows.map(mapUser);
+    },
+
+    async update(id, input) {
+      // COALESCE per column so a partial update leaves untouched fields alone
+      // without a read-modify-write that could race a concurrent change.
+      const result = await database.query<UserRow>(
+        `UPDATE native_users SET
+           display_name = COALESCE($2, display_name),
+           is_administrator = COALESCE($3, is_administrator),
+           is_disabled = COALESCE($4, is_disabled),
+           allow_playback = COALESCE($5, allow_playback),
+           allow_downloads = COALESCE($6, allow_downloads),
+           allow_all_libraries = COALESCE($7, allow_all_libraries),
+           updated_at = now()
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          input.displayName ?? null,
+          input.isAdministrator ?? null,
+          input.isDisabled ?? null,
+          input.allowPlayback ?? null,
+          input.allowDownloads ?? null,
+          input.allowAllLibraries ?? null,
+        ],
+      );
+      return result.rows[0] ? mapUser(result.rows[0]) : null;
+    },
+
+    async setPasswordHash(id, passwordHash) {
+      await database.query(
+        `UPDATE native_users
+         SET password_hash = $2, password_changed_at = now(), updated_at = now()
+         WHERE id = $1`,
+        [id, passwordHash],
+      );
+    },
+
+    async delete(id) {
+      const result = await database.query(
+        "DELETE FROM native_users WHERE id = $1",
+        [id],
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    async listLibraryPermissions(userId) {
+      const result = await database.query<{ library_id: string }>(
+        "SELECT library_id FROM user_library_permissions WHERE user_id = $1",
+        [userId],
+      );
+      return result.rows.map((row) => row.library_id);
+    },
+
+    async replaceLibraryPermissions(userId, libraryIds) {
+      await database.query(
+        "DELETE FROM user_library_permissions WHERE user_id = $1",
+        [userId],
+      );
+      for (const libraryId of libraryIds) {
+        await database.query(
+          `INSERT INTO user_library_permissions (user_id, library_id)
+           VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+          [userId, libraryId],
+        );
+      }
     },
   };
 }
