@@ -5,7 +5,8 @@ import {
   type ServerResponse,
 } from "node:http";
 import path from "node:path";
-import { mkdir } from "node:fs/promises";
+import { createReadStream } from "node:fs";
+import { mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { assertMediaRootDirectory } from "./pathSecurity";
@@ -46,6 +47,13 @@ export interface MediaServerOptions {
   environment?: Record<string, string | undefined>;
   logger?: OwnApiLogger;
   runWorker?: boolean;
+  /**
+   * Directory of the built frontend. When set, this process serves the whole
+   * site — the app and its API from one origin — so a browser needs no CORS
+   * exception and media bytes travel straight from here rather than through a
+   * proxy that would have to carry every stream.
+   */
+  staticRoot?: string;
 }
 
 export interface MediaServer {
@@ -55,6 +63,22 @@ export interface MediaServer {
   mediaRoot: string;
   close(): Promise<void>;
 }
+
+const STATIC_CONTENT_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".ico": "image/x-icon",
+  ".woff2": "font/woff2",
+  ".txt": "text/plain; charset=utf-8",
+};
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 43110;
@@ -169,6 +193,73 @@ function applyCors(
   return true;
 }
 
+/**
+ * Serves the built frontend, falling back to index.html for client routes.
+ *
+ * Hashed asset filenames are immutable and cached hard; everything else must be
+ * revalidated so a deploy is picked up rather than pinned by a stale cache.
+ */
+export function createStaticHandler(staticRoot: string) {
+  const root = path.resolve(staticRoot);
+
+  return async function serveStatic(
+    request: IncomingMessage,
+    response: ServerResponse,
+    pathname: string,
+  ): Promise<boolean> {
+    if (request.method !== "GET" && request.method !== "HEAD") return false;
+
+    const relative = decodeURIComponent(pathname).replace(/^\/+/, "");
+    const segments = relative.split("/").filter((segment) => segment.length > 0);
+
+    // A traversal attempt falls through to the SPA rather than escaping the
+    // build directory.
+    const requested =
+      segments.includes("..") || relative.includes("\0")
+        ? null
+        : path.join(root, ...segments);
+
+    let filePath = requested;
+    let isAppShell = false;
+
+    if (!filePath || !(await stat(filePath).catch(() => null))?.isFile()) {
+      filePath = path.join(root, "index.html");
+      isAppShell = true;
+    }
+
+    const stats = await stat(filePath).catch(() => null);
+    if (!stats?.isFile()) return false;
+
+    const extension = path.extname(filePath).toLowerCase();
+    response.statusCode = 200;
+    response.setHeader(
+      "Content-Type",
+      STATIC_CONTENT_TYPES[extension] ?? "application/octet-stream",
+    );
+    response.setHeader("Content-Length", String(stats.size));
+    response.setHeader("X-Content-Type-Options", "nosniff");
+    response.setHeader(
+      "Cache-Control",
+      !isAppShell && segments[0] === "assets"
+        ? "public, max-age=31536000, immutable"
+        : "no-cache",
+    );
+
+    if (request.method === "HEAD") {
+      response.end();
+      return true;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(filePath as string);
+      response.on("close", () => stream.destroy());
+      stream.on("error", reject);
+      stream.pipe(response).on("finish", resolve).on("error", reject);
+    });
+    return true;
+  };
+}
+
 export async function createMediaServer(
   options: MediaServerOptions,
 ): Promise<MediaServer> {
@@ -229,6 +320,10 @@ export async function createMediaServer(
     throw new Error("SEYIRLIK_PUBLIC_ORIGIN must be a valid HTTP(S) origin.");
   }
 
+  const serveStatic = options.staticRoot
+    ? createStaticHandler(options.staticRoot)
+    : undefined;
+
   const ownApiHandler = createOwnApiRequestHandler({
     healthService,
     logger,
@@ -253,7 +348,12 @@ export async function createMediaServer(
       return;
     }
 
-    // Everything this process serves lives under the versioned namespace.
+    if (serveStatic && (await serveStatic(request, response, url.pathname))) {
+      return;
+    }
+
+    // Without a built frontend, everything this process serves lives under the
+    // versioned namespace.
     response.statusCode = 404;
     response.setHeader("Content-Type", "application/json; charset=utf-8");
     response.end(
@@ -334,6 +434,9 @@ export async function startMediaServerFromEnv(): Promise<MediaServer> {
       : {}),
     ...(process.env.SEYIRLIK_GENERATED_STORAGE
       ? { generatedStoragePath: process.env.SEYIRLIK_GENERATED_STORAGE }
+      : {}),
+    ...(process.env.SEYIRLIK_STATIC_ROOT
+      ? { staticRoot: process.env.SEYIRLIK_STATIC_ROOT }
       : {}),
     preferredVideoEncoder: process.env.SEYIRLIK_FFMPEG_VIDEO_ENCODER ?? "auto",
     ...(maxVideoTranscodes === undefined
