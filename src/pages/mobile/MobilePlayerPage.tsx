@@ -15,7 +15,7 @@ import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
 import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getItem } from "../../lib/jellyfinApi";
+import { getItem } from "../../lib/mediaApi";
 import {
   setDefaultPageTitle,
   setLoadingPageTitle,

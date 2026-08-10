@@ -89,7 +89,6 @@ export const en = {
     "This Google account is signed in, but it is not authorized for administrator tools.",
   "adminAuth.signIn": "Continue with Google",
   "adminAuth.useAnotherAccount": "Use another Google account",
-  "auth.signInToJellyfin": "Sign in",
   "auth.failedTitle": "Authentication failed",
   "auth.failedMessagePrefix":
     "Login failed. Check your username, password, and server URL.",

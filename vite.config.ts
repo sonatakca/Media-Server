@@ -52,17 +52,12 @@ export default defineConfig({
           "registerSW.js",
           "assets/**/*.{js,css,svg,png,webp}",
         ],
-        globIgnores: ["**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}", "**/jellyfin/**"],
+        globIgnores: ["**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}"],
         maximumFileSizeToCacheInBytes: 1024 * 1024,
         navigateFallbackDenylist: [
+          // Everything the server owns lives under the versioned namespace, so
+          // one rule replaces the per-endpoint list this used to carry.
           /^\/ownAPI\//,
-          /^\/api\//,
-          /^\/Items\//,
-          /^\/Videos\//,
-          /^\/Audio\//,
-          /^\/LiveTv\//,
-          /^\/Sessions\//,
-          /^\/SyncPlay\//,
           /\.(?:m3u8|ts|mp4|mkv|webm|vtt|srt|ass)$/i,
         ],
         runtimeCaching: [],

@@ -3,13 +3,13 @@ import {
   OwnApiClientError,
   type OwnApiHealthResponse,
 } from "../api/ownApi/client";
-import { testServerConnection } from "./jellyfinApi";
+import { testServerConnection } from "./mediaApi";
 
 export type ServerBootstrapProvider = "own-api" | "jellyfin";
 
 export interface ServerAvailabilityInput {
   provider: ServerBootstrapProvider;
-  serverUrl: string;
+  serverUrl?: string;
   signal?: AbortSignal;
 }
 
@@ -44,11 +44,13 @@ export function parseServerBootstrapProvider(
 }
 
 export async function checkServerAvailability(
-  { provider, serverUrl, signal }: ServerAvailabilityInput,
+  { provider, serverUrl, signal }: ServerAvailabilityInput = {
+    provider: "own-api",
+  },
   dependencies: ServerAvailabilityDependencies = defaultDependencies,
 ): Promise<{ provider: ServerBootstrapProvider }> {
   if (provider === "jellyfin") {
-    await dependencies.testJellyfinConnection(serverUrl);
+    await dependencies.testJellyfinConnection(serverUrl ?? "");
     return { provider };
   }
 

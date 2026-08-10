@@ -4,7 +4,7 @@ import { MemoryRouter, useNavigate } from "react-router-dom";
 import { LoginPage } from "./LoginPage";
 import * as authStorage from "../lib/authStorage";
 import * as homeConfetti from "../lib/homeConfetti";
-import * as jellyfinApi from "../lib/jellyfinApi";
+import { ownApiClient } from "../api/ownApi/client";
 
 // Mock routing
 vi.mock("react-router-dom", async () => {
@@ -24,9 +24,8 @@ vi.mock("react-router-dom", async () => {
 // Mock API and Storage
 vi.mock("../lib/authStorage");
 vi.mock("../lib/homeConfetti");
-vi.mock("../lib/jellyfinApi");
-vi.mock("../lib/device", () => ({
-  getOrCreateDeviceId: () => "device-id",
+vi.mock("../api/ownApi/client", () => ({
+  ownApiClient: { login: vi.fn() },
 }));
 
 // Mock translations
@@ -42,25 +41,21 @@ describe("LoginPage", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(useNavigate).mockReturnValue(mockNavigate);
-    // Assume the user has a server selected but is not logged in
-    vi.mocked(authStorage.getServerUrl).mockReturnValue(
-      "http://mock-server.local",
-    );
     vi.mocked(authStorage.isAuthenticated).mockReturnValue(false);
   });
 
-  it("redirects to /server if no server URL is set", () => {
-    vi.mocked(authStorage.getServerUrl).mockReturnValue(null);
+  it("redirects home when a session already exists", () => {
+    vi.mocked(authStorage.isAuthenticated).mockReturnValue(true);
     render(
       <MemoryRouter>
         <LoginPage />
       </MemoryRouter>,
     );
-    expect(screen.getByTestId("navigate-/server")).toBeInTheDocument();
+    expect(screen.getByTestId("navigate-/home")).toBeInTheDocument();
   });
 
   it("shows an error message when authentication fails", async () => {
-    vi.mocked(jellyfinApi.authenticateByName).mockRejectedValue(
+    vi.mocked(ownApiClient.login).mockRejectedValue(
       new Error("Invalid credentials"),
     );
 
@@ -96,12 +91,11 @@ describe("LoginPage", () => {
   });
 
   it("marks login confetti pending before navigating home on success", async () => {
-    vi.mocked(jellyfinApi.authenticateByName).mockResolvedValue({
-      AccessToken: "access-token",
-      User: {
-        Id: "user-id",
-        Name: "testuser",
-      },
+    vi.mocked(ownApiClient.login).mockResolvedValue({
+      id: "user-id",
+      username: "testuser",
+      displayName: "Test User",
+      isAdministrator: false,
     });
 
     render(

@@ -7,13 +7,8 @@ import { ErrorMessage } from "../components/ErrorMessage";
 import { AnimatedText } from "../components/AnimatedText";
 import { AnimatedWidth } from "../components/AnimatedWidth";
 import { useLanguage } from "../i18n/LanguageContext";
-import { getOrCreateDeviceId } from "../lib/device";
-import { authenticateByName } from "../lib/jellyfinApi";
-import {
-  getServerUrl,
-  isAuthenticated,
-  setAuthSession,
-} from "../lib/authStorage";
+import { ownApiClient } from "../api/ownApi/client";
+import { isAuthenticated, setAuthSession } from "../lib/authStorage";
 import { markLoginConfettiPending } from "../lib/homeConfetti";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
@@ -21,7 +16,6 @@ import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 export function LoginPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const serverUrl = getServerUrl();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -34,10 +28,6 @@ export function LoginPage() {
     });
   }, [t]);
 
-  if (!serverUrl) {
-    return <Navigate to="/server" replace />;
-  }
-
   if (isAuthenticated()) {
     return <Navigate to="/home" replace />;
   }
@@ -48,13 +38,14 @@ export function LoginPage() {
     setIsSubmitting(true);
 
     try {
-      const authResponse = await authenticateByName(username, password);
+      // The session itself is an HttpOnly cookie the server sets; what is kept
+      // here is only enough to render the shell before `/auth/me` resolves.
+      const user = await ownApiClient.login({ username, password });
       setAuthSession({
-        serverUrl,
-        accessToken: authResponse.AccessToken,
-        userId: authResponse.User.Id,
-        username: authResponse.User.Name || username,
-        deviceId: getOrCreateDeviceId(),
+        userId: user.id,
+        username: user.username,
+        displayName: user.displayName,
+        isAdministrator: user.isAdministrator,
       });
       markLoginConfettiPending();
       navigate("/home", { replace: true });
@@ -193,8 +184,7 @@ export function LoginPage() {
           <p className="mt-4 text-sm font-semibold text-[var(--accent)]">
             Seyirlik
           </p>
-          <h1 className="text-3xl font-black">{t("auth.signInToJellyfin")}</h1>
-          <p className="mt-3 break-all text-sm text-zinc-400">{serverUrl}</p>
+          <h1 className="text-3xl font-black">{t("auth.signIn")}</h1>
         </div>
 
         <form
@@ -261,18 +251,6 @@ export function LoginPage() {
               </span>
             </AnimatedWidth>
           </Button>
-
-          <Link
-            to="/server"
-            className="mt-4 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-lg text-sm font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
-          >
-            <Server size={17} />
-            <AnimatedWidth value={t("auth.changeServerUrl")}>
-              <span className="inline-flex py-1 leading-normal">
-                <AnimatedText value={t("auth.changeServerUrl")} />
-              </span>
-            </AnimatedWidth>
-          </Link>
         </form>
       </section>
     </main>

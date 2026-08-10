@@ -44,7 +44,7 @@ export function parseIdentityProvider(
 }
 
 export async function bootstrapIdentity(
-  { provider }: { provider: IdentityProvider },
+  { provider }: { provider: IdentityProvider } = { provider: "native" },
   dependencies: IdentityBootstrapDependencies = defaultDependencies,
 ): Promise<IdentityBootstrapResult> {
   if (provider === "jellyfin") {

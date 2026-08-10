@@ -9,7 +9,7 @@ import {
   useDevSkeletonControlEnabled,
   useDevSkeletonMode,
 } from "../lib/devSkeletonMode";
-import { getUserViews } from "../lib/jellyfinApi";
+import { getUserViews } from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
 
 interface PreviewRoute {

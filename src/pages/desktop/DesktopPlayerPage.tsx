@@ -14,7 +14,7 @@ import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getItem } from "../../lib/jellyfinApi";
+import { getItem } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import {
   getMediaOwnerRouteFromNavigationState,

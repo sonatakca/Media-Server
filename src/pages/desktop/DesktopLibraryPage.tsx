@@ -31,7 +31,7 @@ import {
   getSeasonEpisodes,
   getSeriesSeasons,
   getTopLevelItemsForLibrary,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import {
   loadCollectionPosterChildrenMap,
   type CollectionPosterChildrenMap,

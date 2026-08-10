@@ -24,7 +24,7 @@ import {
   updateUser,
   updateUserPassword,
   updateUserPolicy,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
 import type { MediaUser, MediaUserPolicy } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -328,7 +328,7 @@ export function UserManagementPage() {
         );
 
         if (nextDraft.resetPassword) {
-          await updateUserPassword(selectedUser.Id, { resetPassword: true });
+          await updateUserPassword(selectedUser.Id, { newPassword: "", resetPassword: true });
         } else if (nextDraft.password) {
           await updateUserPassword(selectedUser.Id, {
             newPassword: nextDraft.password,

@@ -15,7 +15,7 @@ import { Link } from "react-router-dom";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { Language } from "../i18n/translations";
-import type { JellyfinServerUnavailableEventDetail } from "../lib/jellyfinApi";
+import type { ServerUnavailableEventDetail } from "../lib/mediaApi";
 import {
   diagnoseServerConnection,
   probeIsOnline,
@@ -23,11 +23,12 @@ import {
   type ServerConnectionProblem,
   type ServerProbe,
 } from "../lib/serverConnectionDiagnostics";
-import { testServerConnection } from "../lib/jellyfinApi";
+import { testServerConnection } from "../lib/mediaApi";
 
 interface ServerConnectionErrorPageProps {
-  serverUrl: string;
-  failure?: JellyfinServerUnavailableEventDetail | null;
+  /** Retained only for the diagnostics copy; there is one server, at this origin. */
+  serverUrl?: string;
+  failure?: ServerUnavailableEventDetail | null;
   onRetrySuccess: () => void;
   mode?: "jellyfin" | "own-api";
   diagnoseConnection?: typeof diagnoseServerConnection;
@@ -446,7 +447,7 @@ export function ServerConnectionErrorPage({
     setIsRetrying(true);
 
     try {
-      await testConnection(serverUrl);
+      await testConnection(serverUrl ?? "");
       finishWithFadeOut();
       return;
     } catch {
@@ -463,11 +464,11 @@ export function ServerConnectionErrorPage({
 
     return {
       problem: "unknown",
-      serverUrl,
+      serverUrl: serverUrl ?? "",
       checkedAt: new Date().toISOString(),
       source: "browser",
       publicProbe: {
-        url: serverUrl,
+        url: serverUrl ?? "",
         ok: false,
         reachable: false,
         kind: "network-error",
@@ -587,13 +588,6 @@ export function ServerConnectionErrorPage({
                 />
                 {isRetrying ? copy.retrying : copy.retry}
               </button>
-
-              <Link
-                to="/server"
-                className="inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-white/12 bg-white/[0.07] px-5 text-center text-sm font-black text-white/86 transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-              >
-                {copy.changeServer}
-              </Link>
             </div>
           </div>
         </div>

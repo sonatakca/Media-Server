@@ -17,7 +17,7 @@ import {
   getSeasonEpisodes,
   getSeriesSeasons,
   getSimilarItems,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { getDisplayTitle } from "../lib/format";
 import {
   getItemDisplayMetadata,
@@ -30,7 +30,7 @@ import type { MediaItem } from "../lib/types";
 import { isItemCompleted } from "../lib/watchStatus";
 import defaultProfileImage from "../assets/Default_pfp.jpg";
 
-interface JellyfinPerson {
+interface MediaPerson {
   Id?: string;
   Name?: string;
   Role?: string;
@@ -38,24 +38,24 @@ interface JellyfinPerson {
   PrimaryImageTag?: string;
 }
 
-interface JellyfinStudio {
+interface MediaStudio {
   Id?: string;
   Name?: string;
 }
 
 type SeriesDetailsItem = MediaItem & {
-  People?: JellyfinPerson[];
-  Studios?: JellyfinStudio[];
+  People?: MediaPerson[];
+  Studios?: MediaStudio[];
 };
 
 function mergeSeriesPeople(
-  seriesPeople: JellyfinPerson[] | undefined,
+  seriesPeople: MediaPerson[] | undefined,
   episodeItems: MediaItem[],
-): JellyfinPerson[] {
-  const mergedPeople: JellyfinPerson[] = [];
+): MediaPerson[] {
+  const mergedPeople: MediaPerson[] = [];
   const seenPeople = new Set<string>();
 
-  const addPerson = (person: JellyfinPerson) => {
+  const addPerson = (person: MediaPerson) => {
     if (!person.Name) {
       return;
     }

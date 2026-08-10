@@ -1,12 +1,13 @@
 /// <reference types="vite/client" />
 
+/**
+ * Browser-visible configuration.
+ *
+ * Seyirlik's API is served from the page's own origin, so there is no server URL
+ * to configure and no provider to select. What remains is Firebase, used only by
+ * the developer tools.
+ */
 interface ImportMetaEnv {
-  readonly VITE_DEFAULT_JELLYFIN_SERVER_URL?: string;
-  readonly VITE_LOCAL_JELLYFIN_SERVER_URL?: string;
-  readonly VITE_JELLYFIN_LOCAL_PROBE_URLS?: string;
-  readonly VITE_SEYIRLIK_PLAYBACK_BACKEND_URL?: string;
-  readonly VITE_SERVER_BOOTSTRAP_PROVIDER?: "jellyfin" | "own-api";
-  readonly VITE_IDENTITY_PROVIDER?: "jellyfin" | "native";
   readonly VITE_FIREBASE_API_KEY?: string;
   readonly VITE_FIREBASE_AUTH_DOMAIN?: string;
   readonly VITE_FIREBASE_PROJECT_ID?: string;

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { RotateCcw } from "lucide-react";
-import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/mediaApi";
 import { formatRuntime, formatTemplate, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import {

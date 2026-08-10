@@ -4,7 +4,7 @@ import {
   preloadPlaybackSource,
   readCachedPlaybackSource,
 } from "../lib/playbackPreload";
-import { redactPlaybackUrl } from "../lib/jellyfinApi";
+import { redactPlaybackUrl } from "../lib/mediaApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
 
@@ -214,7 +214,7 @@ export function usePlaybackSource(itemId?: string) {
         nextIndex = state.candidates.findIndex(
           (candidate, index) =>
             index > sourceIndex &&
-            (candidate.hlsKind === "jellyfin-transcoding-url" ||
+            (candidate.hlsKind === "server-transcoding-url" ||
               candidate.hlsKind === "forced-transcode"),
         );
       }

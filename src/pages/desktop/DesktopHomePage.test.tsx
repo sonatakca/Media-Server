@@ -10,11 +10,11 @@ import {
   getAllMovieAndSeriesItems,
   getLatestMediaItems,
   getUserViews,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { DesktopHomePage } from "./DesktopHomePage";
 
-vi.mock("../../lib/jellyfinApi");
+vi.mock("../../lib/mediaApi");
 vi.mock("../../lib/smartContinueWatching");
 vi.mock("../../lib/homeConfetti");
 vi.mock("../../lib/seo");

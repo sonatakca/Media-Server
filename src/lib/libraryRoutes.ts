@@ -1,5 +1,5 @@
 import { getAuthSession } from "./authStorage";
-import { getUserViews } from "./jellyfinApi";
+import { getUserViews } from "./mediaApi";
 import type { MediaLibrary } from "./types";
 
 export type LibrarySlug = "movies" | "shows" | "books" | "collections";

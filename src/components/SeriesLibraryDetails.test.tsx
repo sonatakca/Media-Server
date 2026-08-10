@@ -3,10 +3,10 @@ import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SeriesLibraryDetails } from "./SeriesLibraryDetails";
-import { getAllSeriesEpisodes } from "../lib/jellyfinApi";
+import { getAllSeriesEpisodes } from "../lib/mediaApi";
 import type { MediaItem } from "../lib/types";
 
-vi.mock("../lib/jellyfinApi", () => ({
+vi.mock("../lib/mediaApi", () => ({
   getAllSeriesEpisodes: vi.fn(() => Promise.resolve([])),
   getItem: vi.fn(),
   getLocalTrailers: vi.fn(() =>

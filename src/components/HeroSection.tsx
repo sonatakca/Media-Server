@@ -12,7 +12,7 @@ import {
   getHeroPreviewUrl,
   getLogoImageUrl,
   redactPlaybackUrl,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import {

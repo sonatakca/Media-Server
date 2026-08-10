@@ -88,7 +88,6 @@ export const tr = {
     "Bu Google hesabıyla oturum açıldı ancak admin araçları için yetkili değil.",
   "adminAuth.signIn": "Google ile devam et",
   "adminAuth.useAnotherAccount": "Başka bir Google hesabı kullan",
-  "auth.signInToJellyfin": "Giriş yap",
   "auth.failedTitle": "Kimlik doğrulama başarısız",
   "auth.failedMessagePrefix":
     "Giriş başarısız. Kullanıcı adını, şifreni ve sunucu adresini kontrol et.",

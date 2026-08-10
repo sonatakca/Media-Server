@@ -73,7 +73,7 @@ export function getStartupWatchdogMs(
     (source.mode === "Transcoding" ||
       source.hlsKind === "audio-transcode" ||
       source.hlsKind === "forced-transcode" ||
-      source.hlsKind === "jellyfin-transcoding-url")
+      source.hlsKind === "server-transcoding-url")
   ) {
     return HLS_TRANSCODE_STARTUP_WATCHDOG_MS;
   }

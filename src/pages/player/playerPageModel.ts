@@ -1,4 +1,4 @@
-import { getBackdropImageUrl } from "../../lib/jellyfinApi";
+import { getBackdropImageUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 
 export function getPlayerLoadingBackdropUrl(item: MediaItem | null): string {

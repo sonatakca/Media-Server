@@ -11,7 +11,7 @@ import {
   getBackdropImageUrl,
   getLogoImageUrl,
   getPrimaryImageUrl,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import {

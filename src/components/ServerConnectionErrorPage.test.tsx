@@ -23,7 +23,6 @@ describe("ServerConnectionErrorPage provider mode", () => {
             mode="own-api"
             serverUrl="https://fallback.example"
             failure={{
-              serverUrl: "https://fallback.example",
               requestUrl: "/ownAPI/v1/health",
               reason: "network",
               message: "native health unavailable",

@@ -4,7 +4,6 @@ import type {
   PlaybackMode as JellyfinPlaybackMode,
   PlaybackSourceCandidate,
 } from "../types";
-import { getAuthHeaders } from "../authStorage";
 import { buildClientCapabilities } from "./clientCapabilities";
 import type { PlaybackPlan } from "./types";
 
@@ -333,8 +332,7 @@ export async function requestCustomPlaybackCandidate(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        ...getAuthHeaders(),
-      },
+              },
       body: JSON.stringify({
         mediaId: itemId,
         clientCapabilities,

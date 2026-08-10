@@ -3,7 +3,7 @@ import {
   getItem,
   getPlaybackInfo,
   redactPlaybackUrl,
-} from "./jellyfinApi";
+} from "./mediaApi";
 import {
   isCustomPlaybackBackendConfigured,
   requestCustomPlaybackCandidate,

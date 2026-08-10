@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { getAllSeriesEpisodes } from "./jellyfinApi";
+import { getAllSeriesEpisodes } from "./mediaApi";
 import { getPlayTargetForItem, getPlayTargetItemForItem } from "./playTarget";
 import type { MediaItem } from "./types";
 
-vi.mock("./jellyfinApi", () => ({
+vi.mock("./mediaApi", () => ({
   getAllSeriesEpisodes: vi.fn(),
 }));
 

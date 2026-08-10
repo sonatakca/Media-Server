@@ -2,7 +2,7 @@ import {
   getAllSeriesEpisodes,
   getItem,
   resetItemWatchedStatus,
-} from "./jellyfinApi";
+} from "./mediaApi";
 import type { MediaItem } from "./types";
 import { WATCH_STATUS_CHANGED_EVENT } from "./watchedStatusActions";
 

@@ -3,7 +3,7 @@ import { ChevronsRight, X } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
-import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
+import { getPrimaryImageUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import { Tooltip } from "../ui/Tooltip";
 

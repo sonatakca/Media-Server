@@ -7,7 +7,7 @@ import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import type { MediaItem } from "../lib/types";
 
 // 1. Mock the Jellyfin API URL builders
-vi.mock("../lib/jellyfinApi", () => ({
+vi.mock("../lib/mediaApi", () => ({
   getPrimaryImageUrl: vi.fn((id) => `/mock-primary-${id}.jpg`),
   getLogoImageUrl: vi.fn((id) => `/mock-logo-${id}.png`),
 }));

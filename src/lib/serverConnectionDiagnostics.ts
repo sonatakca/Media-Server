@@ -1,8 +1,31 @@
-import { getServerUrl, normalizeServerUrl } from "./authStorage";
-import {
-  buildJellyfinUrl,
-  type JellyfinServerUnavailableEventDetail,
-} from "./jellyfinApi";
+import { type ServerUnavailableEventDetail } from "./mediaApi";
+
+/**
+ * Seyirlik serves its own API from the page's origin, so "the server" is always
+ * this origin and there is nothing to normalize or configure.
+ */
+function getServerUrl(): string {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
+function normalizeServerUrl(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
+
+function buildJellyfinUrl(
+  base: string,
+  path: string,
+  query?: Record<string, string | undefined>,
+): string {
+  const url = new URL(
+    path.startsWith("/") ? path : `/${path}`,
+    normalizeServerUrl(base) || "http://localhost",
+  );
+  for (const [key, value] of Object.entries(query ?? {})) {
+    if (value !== undefined) url.searchParams.set(key, value);
+  }
+  return url.toString();
+}
 import { getCustomPlaybackBackendUrl } from "./playback-planner/customPlaybackApi";
 
 export type ServerProbeKind =
@@ -55,7 +78,7 @@ interface BackendDiagnosticsResponse {
 
 interface DiagnoseServerConnectionOptions {
   serverUrl?: string | null;
-  failure?: JellyfinServerUnavailableEventDetail | null;
+  failure?: ServerUnavailableEventDetail | null;
 }
 
 const DIAGNOSTIC_TIMEOUT_MS = 3500;
@@ -232,7 +255,7 @@ async function probeCorsJellyfinUrl(
 ): Promise<ServerProbe> {
   const serverUrl = normalizeServerUrl(rawServerUrl);
   const endpoint = buildJellyfinUrl(serverUrl, "/System/Info/Public", {
-    seyirlikDiagnostics: Date.now(),
+    seyirlikDiagnostics: String(Date.now()),
   });
 
   try {
@@ -284,7 +307,7 @@ async function probeOpaqueReachability(
 ): Promise<ServerProbe> {
   const serverUrl = normalizeServerUrl(rawServerUrl);
   const endpoint = buildJellyfinUrl(serverUrl, "/System/Info/Public", {
-    seyirlikDiagnostics: Date.now(),
+    seyirlikDiagnostics: String(Date.now()),
   });
 
   try {
@@ -357,14 +380,14 @@ function isProbeOnline(probe: ServerProbe | null | undefined): boolean {
 
 function getProbeFromFailure(
   serverUrl: string,
-  failure: JellyfinServerUnavailableEventDetail | null | undefined,
+  failure: ServerUnavailableEventDetail | null | undefined,
 ): ServerProbe | null {
   if (!failure?.status) {
     return null;
   }
 
   return {
-    url: failure.serverUrl || serverUrl,
+    url: serverUrl,
     endpoint: failure.requestUrl,
     ok: false,
     reachable: true,

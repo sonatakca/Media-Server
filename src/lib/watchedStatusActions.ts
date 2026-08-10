@@ -4,7 +4,7 @@ import {
   getSeasonEpisodes,
   markItemWatchedStatus,
   resetItemWatchedStatus,
-} from "./jellyfinApi";
+} from "./mediaApi";
 import type { MediaItem } from "./types";
 
 export const WATCH_STATUS_CHANGED_EVENT = "seyirlik:watch-status-changed";

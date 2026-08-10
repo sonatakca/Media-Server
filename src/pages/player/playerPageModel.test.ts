@@ -5,7 +5,7 @@ import {
   getPlayerLoadingBackdropUrl,
 } from "./playerPageModel";
 
-vi.mock("../../lib/jellyfinApi", () => ({
+vi.mock("../../lib/mediaApi", () => ({
   getBackdropImageUrl: vi.fn(
     (itemId: string, tag: string | undefined, width: number) =>
       `${itemId}:${tag ?? ""}:${width}`,

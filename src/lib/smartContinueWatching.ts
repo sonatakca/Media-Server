@@ -1,4 +1,4 @@
-import { getContinueWatchingItems, getNextUpEpisodes } from "./jellyfinApi";
+import { getContinueWatchingItems, getNextUpEpisodes } from "./mediaApi";
 import type { MediaItem } from "./types";
 import { DEFAULT_COMPLETION_THRESHOLD, isItemCompleted } from "./watchStatus";
 

@@ -1,5 +1,5 @@
 import { getDisplayTitle } from "./format";
-import { getAllMovieAndSeriesItems, getItem } from "./jellyfinApi";
+import { getAllMovieAndSeriesItems, getItem } from "./mediaApi";
 import type { MediaItem } from "./types";
 
 export interface ResolvedMetadataTarget {

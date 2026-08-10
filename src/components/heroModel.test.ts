@@ -7,7 +7,7 @@ import {
   saveHeroTrailersEnabledPreference,
 } from "./hero/heroModel";
 
-vi.mock("../lib/jellyfinApi", () => ({
+vi.mock("../lib/mediaApi", () => ({
   getBackdropImageUrl: vi.fn(
     (id: string, tag: string, width: number) =>
       `backdrop:${id}:${tag}:${width}`,

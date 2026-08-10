@@ -3,7 +3,7 @@ import {
   getAllMovieItems,
   getAllSeriesEpisodes,
   getBoxSetItems,
-} from "./jellyfinApi";
+} from "./mediaApi";
 import { sortCollectionItemsForWatching } from "./collectionUtils";
 import type { MediaItem } from "./types";
 

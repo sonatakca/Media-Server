@@ -18,7 +18,7 @@ import {
   reportAuditPlaybackStart,
   reportAuditPlaybackStopped,
   stopActiveTranscodeSession,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import {
   formatBitrate,
   formatBytes,

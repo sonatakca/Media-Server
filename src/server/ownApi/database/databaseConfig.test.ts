@@ -3,31 +3,24 @@ import { describe, expect, it } from "vitest";
 import { parseDatabaseConfig, parseIdentityProvider } from "./databaseConfig";
 
 describe("native identity database configuration", () => {
-  it("keeps Jellyfin as the default identity provider", () => {
-    expect(parseIdentityProvider(undefined)).toBe("jellyfin");
-    expect(parseIdentityProvider("  ")).toBe("jellyfin");
+  it("defaults to native identity, the only provider there is", () => {
+    expect(parseIdentityProvider(undefined)).toBe("native");
+    expect(parseIdentityProvider("  ")).toBe("native");
+    expect(parseIdentityProvider("native")).toBe("native");
   });
 
-  it("requires an explicit native identity provider selection", () => {
-    expect(parseIdentityProvider("native")).toBe("native");
+  it("rejects any other provider rather than silently ignoring it", () => {
+    expect(() => parseIdentityProvider("jellyfin")).toThrow(
+      "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
+    );
     expect(() => parseIdentityProvider("own-api")).toThrow(
-      "SEYIRLIK_IDENTITY_PROVIDER must be either jellyfin or native.",
+      "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
     );
   });
 
-  it("requires PostgreSQL only when native identity is enabled", () => {
-    expect(
-      parseDatabaseConfig({
-        NODE_ENV: "production",
-        SEYIRLIK_IDENTITY_PROVIDER: "jellyfin",
-      }),
-    ).toBeNull();
-
+  it("requires PostgreSQL, because there is no other place to keep state", () => {
     expect(() =>
-      parseDatabaseConfig({
-        NODE_ENV: "production",
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
-      }),
+      parseDatabaseConfig({ NODE_ENV: "production" }),
     ).toThrow("DATABASE_URL is required when native identity is enabled.");
   });
 

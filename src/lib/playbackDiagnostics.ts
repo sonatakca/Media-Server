@@ -1,4 +1,4 @@
-import { redactPlaybackUrl } from "./jellyfinApi";
+import { redactPlaybackUrl } from "./mediaApi";
 import type { TranslationKey } from "../i18n/translations";
 import type {
   MediaSource,

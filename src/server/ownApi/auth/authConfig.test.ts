@@ -3,11 +3,10 @@ import { describe, expect, it } from "vitest";
 import { parseNativeAuthConfig } from "./authConfig";
 
 describe("native authentication runtime configuration", () => {
-  it("is disabled by default and when Jellyfin is selected", () => {
-    expect(parseNativeAuthConfig({})).toBeNull();
-    expect(
-      parseNativeAuthConfig({ SEYIRLIK_IDENTITY_PROVIDER: "jellyfin" }),
-    ).toBeNull();
+  it("requires its secrets by default, since native identity is the only mode", () => {
+    expect(() => parseNativeAuthConfig({})).toThrow(
+      "SEYIRLIK_SESSION_HASH_SECRET is required",
+    );
   });
 
   it("fails clearly when native secrets are missing or weak", () => {

@@ -9,9 +9,9 @@ const { getActiveTranscodingReasonsMock } = vi.hoisted(() => ({
   getActiveTranscodingReasonsMock: vi.fn(),
 }));
 
-vi.mock("../../lib/jellyfinApi", async (importOriginal) => {
+vi.mock("../../lib/mediaApi", async (importOriginal) => {
   const original =
-    await importOriginal<typeof import("../../lib/jellyfinApi")>();
+    await importOriginal<typeof import("../../lib/mediaApi")>();
 
   return {
     ...original,

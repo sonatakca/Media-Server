@@ -14,11 +14,11 @@ import {
   buildSubtitleStreamUrl,
   getLogoImageUrl,
   getManualQualityOptions,
-  getTrickplayImageUrl,
+  getItemTrickplayImageUrl,
   getActiveTranscodingReasons,
   redactPlaybackUrl,
   stopActiveTranscodeSession,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import { isCustomPlaybackCandidate } from "../../lib/playback-planner/customPlaybackApi";
 import {
   stopCustomPlaybackSessionImmediately,
@@ -1144,12 +1144,7 @@ export function CustomVideoPlayer({
     const row = Math.floor(tileIndexOnSheet / TRICKPLAY_COLUMNS);
 
     return {
-      imageUrl: getTrickplayImageUrl(
-        activeSource.itemId,
-        activeSource.mediaSourceId,
-        TRICKPLAY_RESOLUTION,
-        sheetIndex,
-      ),
+      imageUrl: getItemTrickplayImageUrl(activeSource.itemId, sheetIndex),
       column,
       row,
     };
@@ -1272,79 +1267,85 @@ export function CustomVideoPlayer({
   }, [activeSource.id, activeSource.url]);
 
   useEffect(() => {
-    const defaultAudioIndex = sourceDefaultAudioStreamIndex;
-    const storedPreference = loadQualityPreference(qualityUserId);
-    let nextSource = source;
-    let manualQualityUnavailable = false;
+    // Selecting the initial quality now creates a server session, so the
+    // work is asynchronous; an effect callback cannot be.
+    const applyInitialQuality = async () => {
+      const defaultAudioIndex = sourceDefaultAudioStreamIndex;
+      const storedPreference = loadQualityPreference(qualityUserId);
+      let nextSource = source;
+      let manualQualityUnavailable = false;
 
-    if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
-      try {
-        nextSource = buildConfiguredHlsPlaybackSource(
-          source,
-          { audioStreamIndex: defaultAudioIndex },
-          "Auto HLS",
-          "Built a Jellyfin HLS URL using the file's default audio track.",
-        );
-      } catch (switchError) {
-        console.warn(
-          "[Seyirlik Playback] Could not force default audio stream for initial playback",
-          switchError,
-        );
+      if (canInjectDefaultAudioIntoStreamCopy(source, defaultAudioIndex)) {
+        try {
+          nextSource =
+            (await buildConfiguredHlsPlaybackSource(
+              source,
+              { audioStreamIndex: defaultAudioIndex },
+              "Auto HLS",
+            )) ?? nextSource;
+        } catch (switchError) {
+          console.warn(
+            "[Seyirlik Playback] Could not force default audio stream for initial playback",
+            switchError,
+          );
+        }
       }
-    }
 
-    if (hasFileQualities) {
-      const initialQualityFiles = availableQualityFiles.filter((quality) =>
-        isQualityAudioCompatible(quality, defaultAudioIndex),
+      if (hasFileQualities) {
+        const initialQualityFiles = availableQualityFiles.filter((quality) =>
+          isQualityAudioCompatible(quality, defaultAudioIndex),
+        );
+        const playerHeight =
+          containerRef.current?.clientHeight ??
+          (typeof window === "undefined" ? 720 : window.innerHeight * 0.7);
+        const selectedFile =
+          storedPreference.mode === "low-data"
+            ? selectLowDataQuality(initialQualityFiles)
+            : storedPreference.mode === "higher-resolution"
+              ? selectHigherResolutionQuality(initialQualityFiles)
+              : storedPreference.mode === "advanced"
+                ? selectManualQuality(initialQualityFiles, storedPreference)
+                : selectAutoQuality(
+                    initialQualityFiles,
+                    getFileQualitySelectionContext(playerHeight),
+                  );
+        if (selectedFile) {
+          nextSource = buildQualityFileSource(selectedFile);
+          setActiveQualityFileId(selectedFile.id);
+        } else if (storedPreference.mode === "advanced") {
+          manualQualityUnavailable = true;
+        }
+      }
+
+      playbackAttemptIdRef.current += 1;
+      playbackAttemptRef.current = null;
+      pendingSourceRestoreRef.current = null;
+      latestPlaybackPositionRef.current = 0;
+      hasReportedStoppedRef.current = false;
+      hasAutoPlayedNextRef.current = false;
+      qualityPreferenceRef.current = storedPreference;
+      setActiveSource(nextSource);
+      setFileQualityMode(storedPreference.mode);
+      setSelectedQualityId(AUTO_QUALITY_ID);
+      setSelectedAudioStreamIndex(defaultAudioIndex);
+      setActiveAudioStreamIndex(
+        shouldForceDefaultAudioInPlaybackUrl(nextSource) ||
+          getStreamsOfType(nextSource, "Audio").length <= 1
+          ? defaultAudioIndex
+          : undefined,
       );
-      const playerHeight =
-        containerRef.current?.clientHeight ??
-        (typeof window === "undefined" ? 720 : window.innerHeight * 0.7);
-      const selectedFile =
-        storedPreference.mode === "low-data"
-          ? selectLowDataQuality(initialQualityFiles)
-          : storedPreference.mode === "higher-resolution"
-            ? selectHigherResolutionQuality(initialQualityFiles)
-            : storedPreference.mode === "advanced"
-              ? selectManualQuality(initialQualityFiles, storedPreference)
-              : selectAutoQuality(
-                  initialQualityFiles,
-                  getFileQualitySelectionContext(playerHeight),
-                );
-      if (selectedFile) {
-        nextSource = buildQualityFileSource(selectedFile);
-        setActiveQualityFileId(selectedFile.id);
-      } else if (storedPreference.mode === "advanced") {
-        manualQualityUnavailable = true;
-      }
-    }
+      setSelectedSubtitleStreamIndex(sourceDefaultSubtitleStreamIndex);
+      setQualitySelectionNotice(
+        manualQualityUnavailable ? t("player.qualityManualUnavailable") : null,
+      );
+      setLastVideoError(null);
+      setLiveTranscodingReasons([]);
+      setCheckpointSeconds(null);
+      setIsViewModeCursorVisible(true);
+      setIsViewModeEnabled(false);
+    };
 
-    playbackAttemptIdRef.current += 1;
-    playbackAttemptRef.current = null;
-    pendingSourceRestoreRef.current = null;
-    latestPlaybackPositionRef.current = 0;
-    hasReportedStoppedRef.current = false;
-    hasAutoPlayedNextRef.current = false;
-    qualityPreferenceRef.current = storedPreference;
-    setActiveSource(nextSource);
-    setFileQualityMode(storedPreference.mode);
-    setSelectedQualityId(AUTO_QUALITY_ID);
-    setSelectedAudioStreamIndex(defaultAudioIndex);
-    setActiveAudioStreamIndex(
-      shouldForceDefaultAudioInPlaybackUrl(nextSource) ||
-        getStreamsOfType(nextSource, "Audio").length <= 1
-        ? defaultAudioIndex
-        : undefined,
-    );
-    setSelectedSubtitleStreamIndex(sourceDefaultSubtitleStreamIndex);
-    setQualitySelectionNotice(
-      manualQualityUnavailable ? t("player.qualityManualUnavailable") : null,
-    );
-    setLastVideoError(null);
-    setLiveTranscodingReasons([]);
-    setCheckpointSeconds(null);
-    setIsViewModeCursorVisible(true);
-    setIsViewModeEnabled(false);
+    void applyInitialQuality();
   }, [
     availableQualityFiles,
     buildQualityFileSource,
@@ -1778,25 +1779,34 @@ export function CustomVideoPlayer({
     ],
   );
 
+  /**
+   * Re-plans the current title under a quality or audio selection.
+   *
+   * Asynchronous because native playback changes quality by creating a new
+   * server session rather than by rewriting a URL. A null result means the
+   * server declined the request; callers treat that as "keep what is playing".
+   */
   const buildConfiguredSource = useCallback(
-    (
+    async (
       baseSource: PlaybackSourceCandidate,
       quality?: PlaybackQualityOption,
       audioStreamIndex = selectedAudioStreamIndex,
-    ) => {
+    ): Promise<PlaybackSourceCandidate> => {
       const settings: PlaybackSourceSettings = {
         ...getQualitySettings(quality),
         audioStreamIndex,
       };
 
-      return buildConfiguredHlsPlaybackSource(
+      const configured = await buildConfiguredHlsPlaybackSource(
         baseSource,
         settings,
         quality ? `${quality.label} HLS` : "Auto HLS",
-        quality
-          ? `Built a Jellyfin HLS URL capped at ${quality.label}.`
-          : "Built a Jellyfin HLS URL for the selected audio track.",
       );
+
+      if (!configured) {
+        throw new Error("The server could not prepare that quality.");
+      }
+      return configured;
     },
     [selectedAudioStreamIndex],
   );
@@ -1977,7 +1987,7 @@ export function CustomVideoPlayer({
     [applyQualityFile, availableQualityFiles, selectedAudioStreamIndex, t],
   );
 
-  const handleSelectAutoQuality = useCallback(() => {
+  const handleSelectAutoQuality = useCallback(async () => {
     if (hasFileQualities) {
       handleSelectQualityMode("auto");
       return;
@@ -1988,7 +1998,7 @@ export function CustomVideoPlayer({
 
     if (canInjectDefaultAudioIntoStreamCopy(bestSource, defaultAudioIndex)) {
       try {
-        nextSource = buildConfiguredSource(
+        nextSource = await buildConfiguredSource(
           bestSource,
           undefined,
           defaultAudioIndex,
@@ -2034,11 +2044,11 @@ export function CustomVideoPlayer({
   ]);
 
   const handleSelectQuality = useCallback(
-    (quality: PlaybackQualityOption) => {
+    async (quality: PlaybackQualityOption) => {
       let nextSource: PlaybackSourceCandidate;
 
       try {
-        nextSource = buildConfiguredSource(activeSource, quality);
+        nextSource = await buildConfiguredSource(activeSource, quality);
       } catch (switchError) {
         console.warn(
           "[Seyirlik Playback] Could not build quality source",
@@ -2251,7 +2261,7 @@ export function CustomVideoPlayer({
   ]);
 
   const handleSelectAudioStream = useCallback(
-    (streamIndex: number) => {
+    async (streamIndex: number) => {
       if (!canSwitchAudio) {
         return;
       }
@@ -2332,7 +2342,7 @@ export function CustomVideoPlayer({
       let nextSource: PlaybackSourceCandidate;
 
       try {
-        nextSource = buildConfiguredSource(
+        nextSource = await buildConfiguredSource(
           fallbackBaseSource,
           selectedQuality,
           streamIndex,
@@ -2822,7 +2832,7 @@ export function CustomVideoPlayer({
       refreshProgress();
     };
 
-    const requestHlsAudioFallback = (reason: string) => {
+    const requestHlsAudioFallback = async (reason: string) => {
       const fallbackBaseSource = getAudioFallbackSource(
         sourceToAttach,
         availablePlaybackCandidates,
@@ -2843,7 +2853,7 @@ export function CustomVideoPlayer({
       let fallbackSource: PlaybackSourceCandidate;
 
       try {
-        fallbackSource = buildConfiguredSource(
+        fallbackSource = await buildConfiguredSource(
           fallbackBaseSource,
           selectedQuality,
           selectedAudioIndexForSource,
@@ -3553,8 +3563,7 @@ export function CustomVideoPlayer({
 
     const abortController = new AbortController();
     const subtitleUrl = buildSubtitleStreamUrl(
-      activeSource.itemId,
-      activeSource.mediaSourceId,
+      activeSource.playSessionId ?? "",
       selectedSubtitleStreamIndex,
     );
 

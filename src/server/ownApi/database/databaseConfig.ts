@@ -1,4 +1,4 @@
-export type IdentityProvider = "jellyfin" | "native";
+export type IdentityProvider = "native";
 
 export interface DatabaseConfig {
   connectionString: string;
@@ -16,15 +16,15 @@ export function parseIdentityProvider(
   const normalized = value?.trim().toLowerCase();
 
   if (!normalized) {
-    return "jellyfin";
+    return "native";
   }
 
-  if (normalized === "jellyfin" || normalized === "native") {
+  if (normalized === "native") {
     return normalized;
   }
 
   throw new Error(
-    "SEYIRLIK_IDENTITY_PROVIDER must be either jellyfin or native.",
+    "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
   );
 }
 

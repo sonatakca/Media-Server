@@ -26,8 +26,8 @@ import {
   getBackdropImageUrl,
   getLogoImageUrl,
   getPrimaryImageUrl,
-  getTrickplayImageUrl,
-} from "../lib/jellyfinApi";
+  getItemTrickplayImageUrl,
+} from "../lib/mediaApi";
 import type {
   MediaItem,
   MediaLibrary,
@@ -425,7 +425,7 @@ export function LibraryMaintenancePage() {
     const probeImage = new Image();
     probeImage.onload = () => setTrickplayStatus("available");
     probeImage.onerror = () => setTrickplayStatus("missing");
-    probeImage.src = getTrickplayImageUrl(item.Id, mediaSourceId, 320, 0);
+    probeImage.src = getItemTrickplayImageUrl(item.Id, 0);
   };
 
   const handleScanAll = async () => {
@@ -1186,12 +1186,7 @@ export function LibraryMaintenancePage() {
                     <div className="aspect-video bg-white/[0.04]">
                       {selectedItem.MediaSources?.[0]?.Id ? (
                         <img
-                          src={getTrickplayImageUrl(
-                            selectedItem.Id,
-                            selectedItem.MediaSources[0].Id,
-                            320,
-                            0,
-                          )}
+                          src={getItemTrickplayImageUrl(selectedItem.Id, 0)}
                           alt={`${getDisplayTitle(selectedItem)} trickplay sample`}
                           className="h-full w-full object-cover"
                         />

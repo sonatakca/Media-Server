@@ -6,7 +6,7 @@ import {
   type PointerEvent,
 } from "react";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { getTrickplayImageUrl } from "../../lib/jellyfinApi";
+import { getItemTrickplayImageUrl } from "../../lib/mediaApi";
 
 interface SeekBarProps {
   currentTime: number;
@@ -243,12 +243,7 @@ export function SeekBar({
     const row = Math.floor(tileIndexOnSheet / TRICKPLAY_COLUMNS);
 
     return {
-      imageUrl: getTrickplayImageUrl(
-        itemId,
-        mediaSourceId,
-        TRICKPLAY_RESOLUTION,
-        sheetIndex,
-      ),
+      imageUrl: getItemTrickplayImageUrl(itemId, sheetIndex),
       column,
       row,
     };

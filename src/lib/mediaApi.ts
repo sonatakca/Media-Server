@@ -43,9 +43,18 @@ import type {
 
 export const SERVER_UNAVAILABLE_EVENT = "seyirlik:server-unavailable";
 
+/**
+ * Emitted when the API cannot be reached. There is no server URL: Seyirlik now
+ * talks to its own backend at the same origin, so the only useful diagnostics
+ * are what the failed request reported.
+ */
 export interface ServerUnavailableEventDetail {
+  reason?: string;
   status?: number;
+  statusText?: string;
   code?: string;
+  message?: string;
+  requestUrl?: string;
 }
 
 export type ServerUnavailableEvent = CustomEvent<ServerUnavailableEventDetail>;
@@ -57,18 +66,23 @@ export function ticksFromSeconds(seconds: number): number {
 }
 
 /**
- * Playback URLs are session-bound rather than token-bearing, but they are still
- * kept out of logs and diagnostics panels: a session id is a capability.
+ * Hides the session id in a playback URL while keeping the rest intact.
+ *
+ * A session id is a capability, so it must not reach a log or a diagnostics
+ * panel — but the origin, path and remaining query are exactly what makes those
+ * panels useful, so they are preserved.
  */
 export function redactPlaybackUrl(playbackUrl: string): string {
-  try {
-    const url = new URL(playbackUrl, window.location.origin);
-    return url.pathname.replace(
-      /\/playback\/sessions\/[^/]+/,
+  const redactSession = (value: string): string =>
+    value.replace(
+      /\/playback\/sessions\/[^/?#]+/g,
       "/playback/sessions/[redacted]",
     );
+
+  try {
+    return redactSession(new URL(playbackUrl, window.location.origin).toString());
   } catch {
-    return "[unparseable-url]";
+    return redactSession(playbackUrl);
   }
 }
 
@@ -125,7 +139,11 @@ export function getThumbImageUrl(
 
 // -------------------------------------------------------------- catalogue
 
-export async function testServerConnection(): Promise<ServerInfo> {
+export async function testServerConnection(
+  // Kept for call-site compatibility during the cutover; Seyirlik serves its own
+  // API from the page's origin, so there is no server URL to test against.
+  _serverUrl?: string,
+): Promise<ServerInfo> {
   const health = await ownApiClient.getHealth();
   return {
     ProductName: "Seyirlik",
@@ -175,6 +193,9 @@ export async function getItemsForLibrary(
 
 export async function getTopLevelItemsForLibrary(
   libraryId: string,
+  // The native library endpoint already returns the top-level kinds, so the
+  // collection type the caller passes is no longer needed to choose a query.
+  _collectionType?: string,
 ): Promise<MediaItem[]> {
   return getItemsForLibrary(libraryId);
 }
@@ -401,6 +422,9 @@ export async function reportPlaybackStart(
 export async function reportPlaybackProgress(
   source: PlaybackSourceCandidate,
   positionTicks: number,
+  // Pause state is not part of native progress: the resume position is what
+  // matters, and the player already knows whether it is paused.
+  _isPaused?: boolean,
 ): Promise<void> {
   await writeProgress(source.itemId, positionTicks);
 }
@@ -437,9 +461,15 @@ export function reportPlaybackStoppedBeforeUnload(
 // Audit reporting used to be a separate Jellyfin session channel. Native
 // progress already records everything the audit page reads, so these remain as
 // no-ops to keep the player's call sites unchanged.
-export async function reportAuditPlaybackStart(): Promise<void> {}
-export async function reportAuditPlaybackProgress(): Promise<void> {}
-export async function reportAuditPlaybackStopped(): Promise<void> {}
+export async function reportAuditPlaybackStart(
+  _source?: PlaybackSourceCandidate,
+): Promise<void> {}
+export async function reportAuditPlaybackProgress(
+  _source?: PlaybackSourceCandidate,
+): Promise<void> {}
+export async function reportAuditPlaybackStopped(
+  _source?: PlaybackSourceCandidate,
+): Promise<void> {}
 
 // --------------------------------------------------------------- playback
 
@@ -625,7 +655,9 @@ export function getItemDownloadUrl(sessionId: string): string {
   return getItemFileUrl(sessionId);
 }
 
-export async function getHeroPreviewUrl(): Promise<string | null> {
+export async function getHeroPreviewUrl(
+  _item?: MediaItem,
+): Promise<string | null> {
   // Hero preview clips are not part of the native catalogue yet; the hero falls
   // back to its backdrop rather than silently playing the feature.
   return null;
@@ -688,6 +720,17 @@ export function getTrickplayImageUrl(
   spriteIndex: number,
 ): string {
   return `/ownAPI/v1/trickplay/${encodeURIComponent(setId)}/sprites/${spriteIndex}`;
+}
+
+/**
+ * Sprite URL addressed by item rather than by set. The seek bar knows an item,
+ * and this URL stays valid when sheets are regenerated under a new set id.
+ */
+export function getItemTrickplayImageUrl(
+  itemId: string,
+  spriteIndex: number,
+): string {
+  return `/ownAPI/v1/items/${encodeURIComponent(itemId)}/trickplay/sprites/${spriteIndex}`;
 }
 
 // ------------------------------------------------------------------ admin
@@ -776,7 +819,7 @@ export async function updateUserPolicy(
 
 export async function updateUserPassword(
   userId: string,
-  options: { newPassword: string },
+  options: { newPassword: string; resetPassword?: boolean },
 ): Promise<void> {
   await ownApiClient.request<void>(
     `/admin/users/${encodeURIComponent(userId)}/password`,

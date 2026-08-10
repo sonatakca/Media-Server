@@ -1,4 +1,4 @@
-import { getAllSeriesEpisodes } from "./jellyfinApi";
+import { getAllSeriesEpisodes } from "./mediaApi";
 import {
   getRouteForItem,
   getWatchRouteForItem,

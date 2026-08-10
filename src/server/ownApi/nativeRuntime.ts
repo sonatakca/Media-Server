@@ -50,6 +50,9 @@ import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
 import { createUserRoutes } from "./users/userRoutes";
+import { createSyncplayRepository } from "./syncplay/syncplayRepository";
+import { createSyncplayRoutes } from "./syncplay/syncplayRoutes";
+import { createSyncplayEventBus } from "./syncplay/eventBus";
 import { createNodeScannerFileSystem } from "./scanner/nodeFileSystem";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
 
@@ -168,6 +171,9 @@ export async function createNativeRuntime({
     userState,
   });
 
+  const syncplay = createSyncplayRepository(pool);
+  const syncplayEvents = createSyncplayEventBus();
+
   const trickplay = createTrickplayService({
     pool,
     catalogue,
@@ -236,6 +242,7 @@ export async function createNativeRuntime({
     }),
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
+    ...createSyncplayRoutes({ syncplay, catalogue, events: syncplayEvents }),
     ...createUserRoutes({
       users,
       sessions,
@@ -283,6 +290,18 @@ export async function createNativeRuntime({
   }, 60_000);
   playbackCleanupTimer.unref();
 
+  const syncplayCleanupTimer = setInterval(() => {
+    void syncplay
+      .closeEmptyGroups()
+      .then((closedIds) => {
+        for (const groupId of closedIds) {
+          syncplayEvents.publish({ type: "closed", groupId, data: {} });
+        }
+      })
+      .catch(() => undefined);
+  }, 60_000);
+  syncplayCleanupTimer.unref();
+
   let closed = false;
 
   return {
@@ -308,6 +327,7 @@ export async function createNativeRuntime({
       closed = true;
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
+      clearInterval(syncplayCleanupTimer);
       await worker.stop();
       await pool.end();
     },

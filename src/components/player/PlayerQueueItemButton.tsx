@@ -4,7 +4,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
-import { getPrimaryImageUrl } from "../../lib/jellyfinApi";
+import { getPrimaryImageUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import { Tooltip } from "../ui/Tooltip";

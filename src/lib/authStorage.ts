@@ -1,121 +1,115 @@
-import { getDeviceName, getOrCreateDeviceId } from "./device";
 import type { AuthSession } from "./types";
 
-const SERVER_URL_KEY = "seyirlik.serverUrl";
-const AUTH_SESSION_KEY = "seyirlik.authSession";
+/**
+ * Browser-side session state.
+ *
+ * Seyirlik authenticates with an `HttpOnly` cookie the page cannot read, so
+ * nothing secret is stored here. What remains is a cache of who is signed in,
+ * used to render the shell before `/auth/me` resolves and to decide whether to
+ * show the login route at all.
+ *
+ * There is no server URL and no access token: the API is served from the page's
+ * own origin, and the session cookie is the only credential.
+ */
 
-export const JELLYFIN_CLIENT_NAME = "Seyirlik Web";
-export const JELLYFIN_CLIENT_VERSION = "0.1.0";
+const SESSION_STORAGE_KEY = "seyirlik.session";
 
-export function normalizeServerUrl(rawServerUrl: string): string {
-  const trimmed = rawServerUrl.trim();
+interface CachedSession {
+  userId: string;
+  username: string;
+  displayName: string;
+  isAdministrator: boolean;
+}
 
-  if (!trimmed) {
-    throw new Error("Enter your Jellyfin server URL.");
-  }
-
-  let parsed: URL;
-
+function readStorage(): Storage | null {
   try {
-    parsed = new URL(trimmed);
+    return typeof window === "undefined" ? null : window.localStorage;
   } catch {
-    throw new Error("Enter a valid URL that starts with http:// or https://.");
-  }
-
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error("Jellyfin server URL must start with http:// or https://.");
-  }
-
-  parsed.hash = "";
-  parsed.search = "";
-
-  return parsed.toString().replace(/\/+$/, "");
-}
-
-export function saveNormalizedServerUrl(normalizedServerUrl: string): string {
-  const safeServerUrl = normalizeServerUrl(normalizedServerUrl);
-  localStorage.setItem(SERVER_URL_KEY, safeServerUrl);
-  return safeServerUrl;
-}
-
-export function getServerUrl(): string | null {
-  return localStorage.getItem(SERVER_URL_KEY);
-}
-
-export function setServerUrl(serverUrl: string): string {
-  const normalizedServerUrl = normalizeServerUrl(serverUrl);
-  localStorage.setItem(SERVER_URL_KEY, normalizedServerUrl);
-  return normalizedServerUrl;
-}
-
-export function clearServerUrl(): void {
-  localStorage.removeItem(SERVER_URL_KEY);
-}
-
-export function getAuthSession(): AuthSession | null {
-  const rawSession = localStorage.getItem(AUTH_SESSION_KEY);
-
-  if (!rawSession) {
+    // Private-mode browsers can throw on access; the app still works, it just
+    // has to wait for `/auth/me` on every load.
     return null;
   }
+}
+
+export function getCachedSession(): CachedSession | null {
+  const storage = readStorage();
+  if (!storage) return null;
 
   try {
-    const session = JSON.parse(rawSession) as Partial<AuthSession>;
+    const raw = storage.getItem(SESSION_STORAGE_KEY);
+    if (!raw) return null;
 
+    const parsed = JSON.parse(raw) as Partial<CachedSession>;
     if (
-      typeof session.serverUrl !== "string" ||
-      typeof session.accessToken !== "string" ||
-      typeof session.userId !== "string" ||
-      typeof session.username !== "string" ||
-      typeof session.deviceId !== "string"
+      typeof parsed.userId !== "string" ||
+      typeof parsed.username !== "string"
     ) {
       return null;
     }
 
-    return session as AuthSession;
+    return {
+      userId: parsed.userId,
+      username: parsed.username,
+      displayName: parsed.displayName ?? parsed.username,
+      isAdministrator: parsed.isAdministrator === true,
+    };
   } catch {
     return null;
   }
 }
 
-export function setAuthSession(session: AuthSession): void {
-  const normalizedSession: AuthSession = {
-    ...session,
-    serverUrl: normalizeServerUrl(session.serverUrl),
-    deviceId: session.deviceId || getOrCreateDeviceId(),
-  };
+export function setCachedSession(session: CachedSession): void {
+  readStorage()?.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+}
 
-  localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(normalizedSession));
-  localStorage.setItem(SERVER_URL_KEY, normalizedSession.serverUrl);
+export function clearCachedSession(): void {
+  readStorage()?.removeItem(SESSION_STORAGE_KEY);
+}
+
+/**
+ * Compatibility shim for components still typed against the old session shape.
+ * The token and server URL are intentionally empty: nothing may depend on them.
+ */
+export function getAuthSession(): AuthSession | null {
+  const cached = getCachedSession();
+  if (!cached) return null;
+
+  return {
+    serverUrl: "",
+    accessToken: "",
+    userId: cached.userId,
+    username: cached.username,
+    deviceId: "",
+  };
+}
+
+export function setAuthSession(session: {
+  userId: string;
+  username: string;
+  displayName?: string;
+  isAdministrator?: boolean;
+}): void {
+  setCachedSession({
+    userId: session.userId,
+    username: session.username,
+    displayName: session.displayName ?? session.username,
+    isAdministrator: session.isAdministrator === true,
+  });
 }
 
 export function clearAuthSession(): void {
-  localStorage.removeItem(AUTH_SESSION_KEY);
+  clearCachedSession();
 }
 
+/**
+ * Whether the browser believes it has a session. This is a hint for routing
+ * only — the server re-checks the cookie on every request, so a stale cache
+ * results in a 401 and a redirect, never in unauthorized access.
+ */
 export function isAuthenticated(): boolean {
-  const session = getAuthSession();
-  return Boolean(session?.accessToken && session.userId);
+  return getCachedSession() !== null;
 }
 
-export function createJellyfinAuthorizationHeader(token?: string): string {
-  const tokenPart = token ? `, Token="${token}"` : "";
-
-  return `MediaBrowser Client="${JELLYFIN_CLIENT_NAME}", Device="${getDeviceName()}", DeviceId="${getOrCreateDeviceId()}", Version="${JELLYFIN_CLIENT_VERSION}"${tokenPart}`;
-}
-
-export function getAuthHeaders(): Record<string, string> {
-  const session = getAuthSession();
-
-  if (!session?.accessToken) {
-    return {};
-  }
-
-  return {
-    Authorization: createJellyfinAuthorizationHeader(session.accessToken),
-    "X-Emby-Authorization": createJellyfinAuthorizationHeader(
-      session.accessToken,
-    ),
-    "X-Emby-Token": session.accessToken,
-  };
+export function isAdministrator(): boolean {
+  return getCachedSession()?.isAdministrator === true;
 }

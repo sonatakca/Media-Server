@@ -6,13 +6,21 @@ import {
 } from "./playbackEnvironmentDiagnostics";
 
 describe("playback environment diagnostics", () => {
-  it("redacts sensitive playback URL tokens", () => {
+  it("redacts sensitive query values but keeps the endpoint readable", () => {
     expect(
       redactDiagnosticsUrl(
-        "https://media.test/Videos/1/stream?api_key=secret&ApiKey=secret2&foo=bar",
+        "https://media.test/stream?api_key=secret&ApiKey=secret2&foo=bar",
+      ),
+    ).toBe("https://media.test/stream?api_key=REDACTED&ApiKey=REDACTED&foo=bar");
+  });
+
+  it("hides the playback session id, which is itself a capability", () => {
+    expect(
+      redactDiagnosticsUrl(
+        "https://seyirlik.test/ownAPI/v1/playback/sessions/abc-123/master.m3u8",
       ),
     ).toBe(
-      "https://media.test/Videos/1/stream?api_key=REDACTED&ApiKey=REDACTED&foo=bar",
+      "https://seyirlik.test/ownAPI/v1/playback/sessions/[redacted]/master.m3u8",
     );
   });
 

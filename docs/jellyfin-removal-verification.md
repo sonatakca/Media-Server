@@ -660,6 +660,88 @@ Remaining for the cutover, in order:
    the Jellyfin PWA exclusions, the Jellyfin environment variables and the
    obsolete tests.
 
+## Phase 11-17 — SyncPlay, frontend cutover, Jellyfin removal (2026-08-10)
+
+Jellyfin is gone from the runtime. The application talks only to Seyirlik's own
+API, and the process that served the old integration no longer exists.
+
+Delivered:
+
+- `ownApi/syncplay/`: authoritative Party Watch state. Commands are ordered by a
+  monotonic sequence and applied under a `sequence < $n` guard in SQL, so two
+  simultaneous commands cannot both win. Position is stored as an anchor and
+  extrapolated, so a joiner lands in the right place without the server
+  broadcasting on a timer. Members who have gone silent stop blocking the group.
+- `features/partyWatch/partyWatchApi.ts` and a rewritten controller: 1278 lines
+  became roughly 380, because the native protocol sends complete state rather
+  than a taxonomy of updates to reduce.
+- `src/lib/mediaApi.ts` wired into all 58 consuming modules.
+- `/admin/users` CRUD and trickplay generation/delivery, which the frontend
+  needed before the cutover could complete.
+- Native `authStorage`: no server URL, no access token. The session is an
+  `HttpOnly` cookie the page cannot read; what is cached is only enough to render
+  the shell before `/auth/me` resolves.
+
+Removed: `jellyfinApi.ts`, `jellyfin/url.ts`, `jellyfin/imageUrls.ts`, the
+SyncPlay client and socket, `jellyfinMediaResolver.ts`,
+`jellyfinPlaybackAuth.ts`, `playbackBackend.ts`, `tmdbArtwork.ts` and its admin
+page, `ServerSetupPage.tsx`, the Jellyfin PWA exclusions, the audit script, and
+every `*JELLYFIN*` environment variable.
+
+Deliberate behaviour changes, recorded because they are visible:
+
+- **Transport choice.** SyncPlay uses server-sent events, not a WebSocket. The
+  traffic is one-way — commands already have an authenticated, CSRF-protected
+  REST surface — so SSE needs no new dependency, no hand-rolled RFC 6455
+  framing, and survives proxies that refuse upgrades. This deviates from the
+  `/syncplay/ws` line in the contract document.
+- **Quality switching is asynchronous.** Native playback changes quality by
+  creating a new session rather than rewriting a URL, so
+  `buildConfiguredHlsPlaybackSource` and the player callbacks that use it now
+  await.
+- **Hero preview clips are gone.** Jellyfin served them; the native catalogue has
+  no equivalent, so the hero falls back to its backdrop.
+- **The TMDB artwork admin page is gone.** Its job is now done by the metadata
+  service, which applies artwork to catalogue items with field locks instead of
+  writing sidecar files. The server capability is present; the admin UI for
+  choosing a specific match is `/admin/items/:itemId/metadata/candidates` and
+  has no page yet.
+- **The server-setup route is gone.** There is one backend, at the page's origin.
+
+Verification:
+
+```text
+npx tsc --noEmit -p tsconfig.json:
+  exit 0
+
+npx vite build:
+  built in 4.43s; PWA precache 177 entries
+
+npx vitest run:
+  91 files passed; 2 failed; 4 skipped
+  550 tests passed; 2 documented baseline tests failed; 14 database tests skipped
+```
+
+Two of the four documented baseline failures disappeared with `jellyfinApi.test.ts`.
+The two that remain are the same pre-existing ones: a stale series-route
+expectation in `playTarget.test.ts` and a translated watched-label expectation in
+`PlayerQueuePanel.test.tsx`. Neither was introduced by this work.
+
+Remaining, and not yet done:
+
+1. **No end-to-end run has happened.** Every repository's SQL typechecks and the
+   pure logic is unit-tested, but nothing in this cutover has been exercised
+   against a real PostgreSQL instance or a real media volume. That is the next
+   gate, and no parity row may be marked verified until it passes.
+2. `ServerConnectionErrorPage` still carries Jellyfin-era diagnostic copy
+   ("Start the Jellyfin server, then retry"). The page works; the words are
+   wrong.
+3. Subtitle extraction is not implemented, so `buildSubtitleStreamUrl` points at
+   a route that does not exist yet.
+4. `vercel.json` still returns the `PRODUCTION_ROUTING_UNAVAILABLE` guard. It
+   must be replaced with a same-origin reverse proxy to the persistent Node
+   process before production can use any of this.
+
 ## Subsequent phases
 
 Add a dated section for every completed vertical slice with:

@@ -18,7 +18,7 @@ import {
   getLatestMediaItems,
   getLogoImageUrl,
   getPrimaryImageUrl,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import {
   filterLatestMediaItems,
   loadHomeCurationPreferences,

@@ -312,7 +312,7 @@ export interface PlaybackSourceCandidate {
     | "stream-copy"
     | "audio-transcode"
     | "forced-transcode"
-    | "jellyfin-transcoding-url"
+    | "server-transcoding-url"
     | "direct";
   usingHlsJs?: boolean;
   label: string;

@@ -5,13 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "playback:backend": "node --env-file=.env --import tsx src/server/playbackBackend.ts",
     "server": "node --env-file=.env --import tsx src/server/mediaServer.ts",
     "worker": "node --env-file=.env --import tsx src/server/mediaWorker.ts",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest",
-    "audit:jellyfin": "node scripts/audit-jellyfin-runtime.mjs",
     "db:migrate": "tsx scripts/run-own-api-migrations.ts",
     "admin:provision": "tsx scripts/provision-native-admin.ts",
     "media:renditions:analyse": "tsx scripts/media-renditions.ts analyse",

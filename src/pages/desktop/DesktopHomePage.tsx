@@ -8,7 +8,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import {
   getAllMovieAndSeriesItems,
   getLatestMediaItems,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import {
   applyHomeCarouselCuration,
   buildHomeCarouselPool,

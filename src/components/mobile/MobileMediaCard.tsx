@@ -13,7 +13,7 @@ import {
   formatTemplate,
   getDisplayTitle,
 } from "../../lib/format";
-import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
+import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/mediaApi";
 import {
   getReadRouteForItem,
   getWatchRouteForItem,

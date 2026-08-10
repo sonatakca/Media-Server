@@ -1,20 +1,20 @@
 import type { TranslationKey } from "../../i18n/translations";
 
-export type JellyfinSyncPlayGroupState =
+export type SyncPlayGroupState =
   | "Idle"
   | "Waiting"
   | "Paused"
   | "Playing"
   | string;
 
-export type JellyfinSyncPlayCommandType =
+export type SyncPlayCommandType =
   | "Unpause"
   | "Pause"
   | "Stop"
   | "Seek"
   | string;
 
-export type JellyfinSyncPlayGroupUpdateType =
+export type SyncPlayGroupUpdateType =
   | "UserJoined"
   | "UserLeft"
   | "GroupJoined"
@@ -26,7 +26,7 @@ export type JellyfinSyncPlayGroupUpdateType =
   | "LibraryAccessDenied"
   | string;
 
-export type JellyfinSyncPlaySocketStatus =
+export type SyncPlaySocketStatus =
   | "connecting"
   | "connected"
   | "disconnected"
@@ -34,7 +34,7 @@ export type JellyfinSyncPlaySocketStatus =
 
 export type PartyWatchRole = "host" | "member";
 
-export interface JellyfinSyncPlayParticipant {
+export interface SyncPlayParticipant {
   UserId?: string;
   UserName?: string;
   Username?: string;
@@ -42,55 +42,55 @@ export interface JellyfinSyncPlayParticipant {
   DeviceName?: string;
 }
 
-export interface JellyfinSyncPlayGroupInfo {
+export interface SyncPlayGroupInfo {
   GroupId?: string;
   GroupName?: string;
-  State?: JellyfinSyncPlayGroupState;
-  Participants?: Array<JellyfinSyncPlayParticipant | string>;
+  State?: SyncPlayGroupState;
+  Participants?: Array<SyncPlayParticipant | string>;
   LastUpdatedAt?: string;
 }
 
-export interface JellyfinSyncPlayQueueItem {
+export interface SyncPlayQueueItem {
   ItemId?: string;
   PlaylistItemId?: string;
 }
 
-export interface JellyfinSyncPlayPlayQueueUpdate {
+export interface SyncPlayPlayQueueUpdate {
   Reason?: string;
   LastUpdate?: string;
-  Playlist?: JellyfinSyncPlayQueueItem[];
+  Playlist?: SyncPlayQueueItem[];
   PlayingItemIndex?: number;
   StartPositionTicks?: number;
   IsPlaying?: boolean;
 }
 
-export interface JellyfinSyncPlayGroupStateUpdate {
-  State?: JellyfinSyncPlayGroupState;
+export interface SyncPlayGroupStateUpdate {
+  State?: SyncPlayGroupState;
   Reason?: string;
 }
 
-export interface JellyfinSyncPlayGroupUpdate {
-  Type?: JellyfinSyncPlayGroupUpdateType;
+export interface SyncPlayGroupUpdate {
+  Type?: SyncPlayGroupUpdateType;
   GroupId?: string;
   Data?: unknown;
 }
 
-export interface JellyfinSyncPlaySendCommand {
+export interface SyncPlaySendCommand {
   GroupId?: string;
   PlaylistItemId?: string;
   When?: string;
   PositionTicks?: number | null;
-  Command?: JellyfinSyncPlayCommandType;
+  Command?: SyncPlayCommandType;
   EmittedAt?: string;
 }
 
-export interface JellyfinSyncPlaySocketMessage {
+export interface SyncPlaySocketMessage {
   MessageId?: string;
   MessageType?: string;
   Data?: unknown;
 }
 
-export interface JellyfinSyncPlayPlayerStatus {
+export interface SyncPlayPlayerStatus {
   when?: string;
   positionTicks: number;
   isPlaying: boolean;
@@ -107,7 +107,7 @@ export interface PartyWatchController {
   shouldDeferAutoplay: boolean;
   groupId: string | null;
   groupName: string | null;
-  groupState: JellyfinSyncPlayGroupState | null;
+  groupState: SyncPlayGroupState | null;
   joinInput: string;
   inviteUrl: string | null;
   participantCount: number | null;
@@ -115,7 +115,7 @@ export interface PartyWatchController {
   partyEventMessage: string | null;
   role: PartyWatchRole | null;
   canControl: boolean;
-  socketStatus: JellyfinSyncPlaySocketStatus;
+  socketStatus: SyncPlaySocketStatus;
   statusKey: TranslationKey | null;
   errorKey: TranslationKey | null;
   copyStatusKey: TranslationKey | null;

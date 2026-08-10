@@ -1,10 +1,33 @@
-import { getAuthHeaders, getAuthSession, getServerUrl } from "./authStorage";
+import { getAuthSession } from "./authStorage";
 import {
-  buildJellyfinUrl,
   buildPlaybackCandidates,
   getPlaybackInfo,
   redactPlaybackUrl,
-} from "./jellyfinApi";
+} from "./mediaApi";
+
+/** Cookie sessions carry themselves; no header has to be attached. */
+function getAuthHeaders(): Record<string, string> {
+  return {};
+}
+
+function getServerUrl(): string {
+  return typeof window === "undefined" ? "" : window.location.origin;
+}
+
+function buildJellyfinUrl(
+  base: string,
+  path: string,
+  query?: Record<string, string | undefined>,
+): string {
+  const url = new URL(
+    path.startsWith("/") ? path : `/${path}`,
+    base.replace(/\/+$/, "") || "http://localhost",
+  );
+  for (const [key, value] of Object.entries(query ?? {})) {
+    if (value !== undefined) url.searchParams.set(key, value);
+  }
+  return url.toString();
+}
 import type { PlaybackSourceCandidate } from "./types";
 import { buildClientCapabilities } from "./playback-planner/clientCapabilities";
 import {
@@ -600,13 +623,9 @@ export async function runPlaybackEnvironmentHealthCheck(
   if (jellyfinBaseUrl && session?.userId && session.accessToken) {
     probes.push(
       await probeFetch(
-        "jellyfinAuthenticated",
-        "Authenticated Jellyfin API",
-        buildJellyfinUrl(
-          jellyfinBaseUrl,
-          `/Users/${encodeURIComponent(session.userId)}/Items`,
-          { Limit: 1 },
-        ),
+        "authenticatedApi",
+        "Authenticated Seyirlik API",
+        buildJellyfinUrl(jellyfinBaseUrl, "/ownAPI/v1/auth/me"),
         {
           headers: {
             Accept: "application/json",

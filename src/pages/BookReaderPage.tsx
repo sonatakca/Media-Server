@@ -32,7 +32,7 @@ import {
   getItemDownloadUrl,
   getItemFileUrl,
   getPrimaryImageUrl,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
 import {
   getMediaOwnerRouteForItem,

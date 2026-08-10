@@ -7,13 +7,12 @@ import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { ServerConnectionErrorPage } from "./components/ServerConnectionErrorPage";
-import { getServerUrl, isAuthenticated, setServerUrl } from "./lib/authStorage";
+import { isAuthenticated } from "./lib/authStorage";
 import {
-  buildJellyfinUrl,
-  JELLYFIN_SERVER_UNAVAILABLE_EVENT,
-  type JellyfinServerUnavailableEvent,
-  type JellyfinServerUnavailableEventDetail,
-} from "./lib/jellyfinApi";
+  SERVER_UNAVAILABLE_EVENT,
+  type ServerUnavailableEvent,
+  type ServerUnavailableEventDetail,
+} from "./lib/mediaApi";
 import {
   checkServerAvailability,
   parseServerBootstrapProvider,
@@ -32,12 +31,10 @@ import { ReaderPage } from "./pages/ReaderPage";
 import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
-import { ServerSetupPage } from "./pages/ServerSetupPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { HomeCurationPage } from "./pages/HomeCurationPage";
 import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
-import { TmdbArtworkPage } from "./pages/TmdbArtworkPage";
 import { PlaybackHealthPage } from "./pages/PlaybackHealthPage";
 import { SkeletonLabPage } from "./pages/SkeletonLabPage";
 import { UserManagementPage } from "./pages/UserManagementPage";
@@ -93,17 +90,11 @@ function getErrorMessage(error: unknown): string {
 }
 
 function createConnectionFailureDetail(
-  serverUrl: string,
   error: unknown,
-  requestUrl?: string,
-): JellyfinServerUnavailableEventDetail {
+  requestUrl = "/ownAPI/v1/health",
+): ServerUnavailableEventDetail {
   return {
-    serverUrl,
-    requestUrl:
-      requestUrl ??
-      (SERVER_BOOTSTRAP_PROVIDER === "own-api"
-        ? "/ownAPI/v1/health"
-        : buildJellyfinUrl(serverUrl, "/System/Info/Public")),
+    requestUrl,
     reason: "network",
     message: getErrorMessage(error),
   };
@@ -133,19 +124,16 @@ function NativeIdentityFoundationGate({
 
 export function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  const [shouldCheckDefaultServer] = useState(
-    () =>
-      IDENTITY_PROVIDER === "native" ||
-      SERVER_BOOTSTRAP_PROVIDER === "own-api" ||
-      !getServerUrl(),
-  );
+  // Seyirlik serves its own API from this origin, so the bootstrap check is
+  // unconditional: there is no saved server that could let it be skipped.
+  const [shouldCheckDefaultServer] = useState(true);
   const [state, setState] = useState<DefaultServerState>(() =>
     shouldCheckDefaultServer ? "checking" : "ready",
   );
   const [renderSpinner, setRenderSpinner] = useState(shouldCheckDefaultServer);
   const [isVisible, setIsVisible] = useState(false);
   const [connectionFailure, setConnectionFailure] =
-    useState<JellyfinServerUnavailableEventDetail | null>(null);
+    useState<ServerUnavailableEventDetail | null>(null);
   const [nativeIdentity, setNativeIdentity] =
     useState<IdentityBootstrapResult | null>(null);
 
@@ -193,30 +181,18 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     let isMounted = true;
 
     async function prepareDefaultServer() {
-      const savedServerUrl = getServerUrl();
-      const serverUrl = savedServerUrl ?? DEFAULT_SERVER_URL;
-      let requestUrl =
-        SERVER_BOOTSTRAP_PROVIDER === "own-api"
-          ? "/ownAPI/v1/health"
-          : buildJellyfinUrl(serverUrl, "/System/Info/Public");
+      let requestUrl = "/ownAPI/v1/health";
 
       try {
         await withTimeout(
-          checkServerAvailability({
-            provider: SERVER_BOOTSTRAP_PROVIDER,
-            serverUrl,
-          }),
+          checkServerAvailability(),
           DEFAULT_SERVER_CHECK_TIMEOUT_MS,
         );
         requestUrl = "/ownAPI/v1/auth/me";
         const identity = await withTimeout(
-          bootstrapIdentity({ provider: IDENTITY_PROVIDER }),
+          bootstrapIdentity(),
           DEFAULT_SERVER_CHECK_TIMEOUT_MS,
         );
-
-        if (!savedServerUrl && IDENTITY_PROVIDER !== "native") {
-          setServerUrl(DEFAULT_SERVER_URL);
-        }
 
         if (isMounted) {
           setNativeIdentity(identity);
@@ -226,14 +202,8 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
         console.warn("[Seyirlik] Bootstrap server connection failed", error);
 
         if (isMounted) {
-          setConnectionFailure(
-            createConnectionFailureDetail(serverUrl, error, requestUrl),
-          );
-          setState(
-            IDENTITY_PROVIDER === "native" || !savedServerUrl
-              ? "failed"
-              : "ready",
-          );
+          setConnectionFailure(createConnectionFailureDetail(error, requestUrl));
+          setState("failed");
         }
       }
     }
@@ -251,30 +221,27 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     function handleServerUnavailable(event: Event) {
       const detail =
         "detail" in event
-          ? (event as JellyfinServerUnavailableEvent).detail
+          ? (event as ServerUnavailableEvent).detail
           : null;
 
-      console.warn(
-        "[Seyirlik] Jellyfin server became temporarily unavailable.",
-      );
+      console.warn("[Seyirlik] The server became temporarily unavailable.");
       setConnectionFailure(
         detail ?? {
-          serverUrl: getServerUrl() ?? DEFAULT_SERVER_URL,
           reason: "network",
-          message: "Jellyfin server became temporarily unavailable.",
+          message: "The server became temporarily unavailable.",
         },
       );
       setState("ready");
     }
 
     window.addEventListener(
-      JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+      SERVER_UNAVAILABLE_EVENT,
       handleServerUnavailable,
     );
 
     return () => {
       window.removeEventListener(
-        JELLYFIN_SERVER_UNAVAILABLE_EVENT,
+        SERVER_UNAVAILABLE_EVENT,
         handleServerUnavailable,
       );
     };
@@ -306,25 +273,9 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
   if (connectionFailure) {
     return (
       <ServerConnectionErrorPage
-        serverUrl={connectionFailure.serverUrl}
         failure={connectionFailure}
-        mode={SERVER_BOOTSTRAP_PROVIDER}
-        diagnoseConnection={
-          SERVER_BOOTSTRAP_PROVIDER === "own-api"
-            ? async (options) => {
-                throw new Error(
-                  options?.failure?.message ??
-                    "Seyirlik's native server is unavailable.",
-                );
-              }
-            : undefined
-        }
         testConnection={testConfiguredConnection}
         onRetrySuccess={() => {
-          if (!getServerUrl() && IDENTITY_PROVIDER !== "native") {
-            setServerUrl(connectionFailure.serverUrl);
-          }
-
           setConnectionFailure(null);
           setState("ready");
         }}
@@ -332,23 +283,11 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (state === "failed" && !getServerUrl()) {
+  if (state === "failed") {
     return (
       <ServerConnectionErrorPage
-        serverUrl={DEFAULT_SERVER_URL}
-        mode={SERVER_BOOTSTRAP_PROVIDER}
-        diagnoseConnection={
-          SERVER_BOOTSTRAP_PROVIDER === "own-api"
-            ? async () => {
-                throw new Error("Seyirlik's native server is unavailable.");
-              }
-            : undefined
-        }
         testConnection={testConfiguredConnection}
         onRetrySuccess={() => {
-          if (IDENTITY_PROVIDER !== "native") {
-            setServerUrl(DEFAULT_SERVER_URL);
-          }
           setState("ready");
         }}
       />
@@ -380,10 +319,6 @@ function RootRedirect() {
     });
   }, [location.pathname]);
 
-  if (!getServerUrl()) {
-    return <Navigate to="/server" replace />;
-  }
-
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
@@ -392,10 +327,6 @@ function RootRedirect() {
 }
 
 function RequireAuth() {
-  if (!getServerUrl()) {
-    return <Navigate to="/server" replace />;
-  }
-
   if (!isAuthenticated()) {
     return <Navigate to="/login" replace />;
   }
@@ -412,7 +343,6 @@ export default function App() {
       <RouteColorTransition />
       <Routes>
         <Route element={<RouteTransitionOutlet />}>
-          <Route path="/server" element={<ServerSetupPage />} />
           <Route path="/login" element={<LoginPage />} />
         </Route>
 
@@ -455,7 +385,6 @@ export default function App() {
                   path="/dev/library-maintenance"
                   element={<LibraryMaintenancePage />}
                 />
-                <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
                 <Route path="/dev/content" element={<ContentExplorerPage />} />
                 <Route path="/dev/users" element={<UserManagementPage />} />
                 <Route

@@ -17,7 +17,7 @@ import {
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 import { Tooltip } from "../components/ui/Tooltip";
-import { getAllContentItems, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getAllContentItems, getPrimaryImageUrl } from "../lib/mediaApi";
 import { formatRuntime, getDisplayTitle, getItemSubtitle } from "../lib/format";
 import {
   getReadRouteForItem,

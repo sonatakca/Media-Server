@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getActiveTranscodingReasons } from "../../lib/jellyfinApi";
+import { getActiveTranscodingReasons } from "../../lib/mediaApi";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -647,7 +647,7 @@ function getUrlType(source: PlaybackSourceCandidate, t: Translate): string {
   if (url.includes("/master.m3u8")) return t("playback.urlType.masterHls");
   if (url.includes("/main.m3u8"))
     return t("playback.urlType.mainForcedTranscode");
-  if (source.hlsKind === "jellyfin-transcoding-url") {
+  if (source.hlsKind === "server-transcoding-url") {
     return t("playback.urlType.jellyfinTranscodingUrl");
   }
 
@@ -666,7 +666,7 @@ function getOutputVideoLabel(
     return t("playback.output.streamCopyOriginal");
   }
 
-  if (source.hlsKind === "jellyfin-transcoding-url") {
+  if (source.hlsKind === "server-transcoding-url") {
     return t("playback.output.jellyfinDecision");
   }
 
@@ -695,7 +695,7 @@ function getOutputAudioLabel(
     return "AAC";
   }
 
-  if (source.hlsKind === "jellyfin-transcoding-url") {
+  if (source.hlsKind === "server-transcoding-url") {
     return t("playback.output.jellyfinDecision");
   }
 

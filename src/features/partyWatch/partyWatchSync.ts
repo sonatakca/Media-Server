@@ -1,6 +1,6 @@
-import type { JellyfinSyncPlaySendCommand } from "./partyWatchTypes";
+import type { SyncPlaySendCommand } from "./partyWatchTypes";
 
-export const JELLYFIN_TICKS_PER_SECOND = 10_000_000;
+export const TICKS_PER_SECOND = 10_000_000;
 export const SYNCPLAY_DRIFT_CORRECTION_THRESHOLD_SECONDS = 1.25;
 
 export function ticksFromSeconds(seconds: number): number {
@@ -8,7 +8,7 @@ export function ticksFromSeconds(seconds: number): number {
     return 0;
   }
 
-  return Math.max(0, Math.floor(seconds * JELLYFIN_TICKS_PER_SECOND));
+  return Math.max(0, Math.floor(seconds * TICKS_PER_SECOND));
 }
 
 export function secondsFromTicks(ticks?: number | null): number | null {
@@ -16,11 +16,11 @@ export function secondsFromTicks(ticks?: number | null): number | null {
     return null;
   }
 
-  return Math.max(0, ticks / JELLYFIN_TICKS_PER_SECOND);
+  return Math.max(0, ticks / TICKS_PER_SECOND);
 }
 
 export function getCommandDelayMs(
-  command: JellyfinSyncPlaySendCommand,
+  command: SyncPlaySendCommand,
   now = Date.now(),
 ): number {
   if (!command.When) {
@@ -37,7 +37,7 @@ export function getCommandDelayMs(
 }
 
 export function getExpectedCommandPositionSeconds(
-  command: JellyfinSyncPlaySendCommand,
+  command: SyncPlaySendCommand,
   now = Date.now(),
 ): number | null {
   const positionSeconds = secondsFromTicks(command.PositionTicks);

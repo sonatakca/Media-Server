@@ -23,7 +23,7 @@ import {
   getItem,
   getPrimaryImageUrl,
   updateItemMetadata,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import {
   buildItemWithPlaybackDefaults,
   getDefaultAudioStreamIndexForItem,

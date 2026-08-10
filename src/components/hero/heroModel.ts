@@ -1,4 +1,4 @@
-import { getBackdropImageUrl, getPrimaryImageUrl } from "../../lib/jellyfinApi";
+import { getBackdropImageUrl, getPrimaryImageUrl } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 
 export const HERO_TRAILERS_ENABLED_STORAGE_KEY =

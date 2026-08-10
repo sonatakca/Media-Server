@@ -1,4 +1,4 @@
-import { redactPlaybackUrl } from "../../lib/jellyfinApi";
+import { redactPlaybackUrl } from "../../lib/mediaApi";
 import type { PlaybackSourceCandidate } from "../../lib/types";
 import { getNativeAudioTrackSnapshot } from "./nativeAudioTracks";
 import { getStreamsOfType } from "./streamUtils";
@@ -92,7 +92,7 @@ export function logAudioSourceDebug(
   console.info(`[Seyirlik Playback] ${label}`, {
     selectedAudioStreamIndex,
     defaultAudioStreamIndex: source.mediaSource.DefaultAudioStreamIndex,
-    jellyfinAudioStreams: getDebugAudioStreams(source),
+    audioStreams: getDebugAudioStreams(source),
     nativeAudioTracks: getNativeAudioTrackSnapshot(video),
     activeSource: {
       mode: source.mode,

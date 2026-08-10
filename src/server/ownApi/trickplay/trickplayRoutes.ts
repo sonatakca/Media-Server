@@ -29,6 +29,46 @@ export function createTrickplayRoutes({
   catalogue,
   queue,
 }: TrickplayRoutesOptions): RouteDefinition[] {
+  async function serveSprite(
+    context: Parameters<RouteDefinition["handle"]>[0],
+    set: Awaited<ReturnType<TrickplayService["findById"]>>,
+    rawIndex: string,
+  ): Promise<void> {
+    if (!set) throw notFound();
+    if (!/^\d{1,4}$/.test(rawIndex)) {
+      throw validationError("The sprite index is invalid.");
+    }
+
+    const spriteIndex = Number(rawIndex);
+    if (spriteIndex >= set.spriteCount || tilesInSprite(set, spriteIndex) === 0) {
+      throw notFound();
+    }
+
+    const absolutePath = trickplay.spritePath(set, spriteIndex);
+    const stats = await stat(absolutePath).catch(() => null);
+    if (!stats?.isFile()) throw notFound();
+
+    // Sheets are immutable once generated, so they can be cached hard.
+    context.response.statusCode = 200;
+    context.response.setHeader("Content-Type", set.contentType);
+    context.response.setHeader("Content-Length", String(stats.size));
+    context.response.setHeader("Cache-Control", "private, max-age=604800");
+    context.response.setHeader("X-Content-Type-Options", "nosniff");
+    context.response.setHeader("ETag", `"${set.id}-${spriteIndex}"`);
+
+    if (context.method === "HEAD") {
+      context.response.end();
+      return;
+    }
+
+    await new Promise<void>((resolve, reject) => {
+      const stream = createReadStream(absolutePath);
+      context.response.on("close", () => stream.destroy());
+      stream.on("error", reject);
+      stream.pipe(context.response).on("finish", resolve).on("error", reject);
+    });
+  }
+
   return [
     {
       method: "GET",
@@ -61,6 +101,30 @@ export function createTrickplayRoutes({
     },
 
     {
+      /**
+       * Per-item sprite access. The seek bar knows an item, not a set, and the
+       * set id changes whenever sheets are regenerated — so resolving it here
+       * keeps client URLs stable across regeneration.
+       */
+      method: "GET",
+      path: "/items/:itemId/trickplay/sprites/:spriteIndex",
+      access: "authenticated",
+      skipCsrf: true,
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const itemId = requireUuid(context.params.itemId, "itemId");
+        if (!(await catalogue.canUserAccessItem(principal.userId, itemId))) {
+          throw notFound();
+        }
+
+        const set = await trickplay.findForItem(itemId);
+        if (!set) throw notFound();
+
+        await serveSprite(context, set, context.params.spriteIndex ?? "");
+      },
+    },
+
+    {
       method: "GET",
       path: "/trickplay/:setId/sprites/:spriteIndex",
       access: "authenticated",
@@ -69,21 +133,11 @@ export function createTrickplayRoutes({
       handle: async (context) => {
         const principal = context.requirePrincipal();
         const setId = requireUuid(context.params.setId, "setId");
-
-        const rawIndex = context.params.spriteIndex ?? "";
-        if (!/^\d{1,4}$/.test(rawIndex)) {
-          throw validationError("The sprite index is invalid.");
-        }
-        const spriteIndex = Number(rawIndex);
-
         const set = await trickplay.findById(setId);
         if (!set) throw notFound();
-        if (spriteIndex >= set.spriteCount || tilesInSprite(set, spriteIndex) === 0) {
-          throw notFound();
-        }
 
-        // Sprites inherit the visibility of the item whose file they were
-        // generated from; holding a set id is not authorization.
+        // Sprites inherit the visibility of the item whose file produced them;
+        // holding a set id is not authorization.
         const owningFile = await catalogue.getFileById(set.mediaFileId);
         if (
           !owningFile ||
@@ -92,32 +146,7 @@ export function createTrickplayRoutes({
           throw notFound();
         }
 
-        const absolutePath = trickplay.spritePath(set, spriteIndex);
-        const stats = await stat(absolutePath).catch(() => null);
-        if (!stats?.isFile()) throw notFound();
-
-        // Sheets are immutable once generated, so they can be cached hard.
-        context.response.statusCode = 200;
-        context.response.setHeader("Content-Type", set.contentType);
-        context.response.setHeader("Content-Length", String(stats.size));
-        context.response.setHeader("Cache-Control", "private, max-age=604800");
-        context.response.setHeader("X-Content-Type-Options", "nosniff");
-        context.response.setHeader("ETag", `"${set.id}-${spriteIndex}"`);
-
-        if (context.method === "HEAD") {
-          context.response.end();
-          return;
-        }
-
-        await new Promise<void>((resolve, reject) => {
-          const stream = createReadStream(absolutePath);
-          context.response.on("close", () => stream.destroy());
-          stream.on("error", reject);
-          stream
-            .pipe(context.response)
-            .on("finish", resolve)
-            .on("error", reject);
-        });
+        await serveSprite(context, set, context.params.spriteIndex ?? "");
       },
     },
 

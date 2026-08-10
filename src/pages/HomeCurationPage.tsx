@@ -34,7 +34,7 @@ import {
   getBackdropImageUrl,
   getLatestMediaItems,
   getPrimaryImageUrl,
-} from "../lib/jellyfinApi";
+} from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
 import type { MediaItem } from "../lib/types";
 

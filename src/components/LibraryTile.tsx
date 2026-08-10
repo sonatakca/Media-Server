@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { ChevronRight, Film, Tv } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
-import { getBackdropImageUrl, getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getBackdropImageUrl, getPrimaryImageUrl } from "../lib/mediaApi";
 import type { MediaLibrary } from "../lib/types";
 import { getLibraryRoute } from "../lib/libraryRoutes";
 import { AnimatedText } from "./AnimatedText";

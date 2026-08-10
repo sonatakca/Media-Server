@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { getCollectionPosterItems } from "../lib/collectionPoster";
-import { getPrimaryImageUrl } from "../lib/jellyfinApi";
+import { getPrimaryImageUrl } from "../lib/mediaApi";
 import type { MediaItem } from "../lib/types";
 
 interface CollectionPosterMosaicProps {

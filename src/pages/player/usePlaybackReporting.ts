@@ -5,7 +5,7 @@ import {
   reportPlaybackStopped,
   reportPlaybackStoppedBeforeUnload,
   ticksFromSeconds,
-} from "../../lib/jellyfinApi";
+} from "../../lib/mediaApi";
 import type { PlaybackSourceCandidate } from "../../lib/types";
 
 export function usePlaybackReporting(

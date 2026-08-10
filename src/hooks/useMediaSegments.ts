@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getMediaSegments } from "../lib/jellyfinApi";
+import { getMediaSegments } from "../lib/mediaApi";
 import type { NormalizedMediaSegment } from "../lib/types";
 
 interface MediaSegmentsState {

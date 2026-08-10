@@ -15,7 +15,7 @@ const {
   reportPlaybackStoppedBeforeUnload: vi.fn(),
 }));
 
-vi.mock("../../lib/jellyfinApi", () => ({
+vi.mock("../../lib/mediaApi", () => ({
   reportPlaybackProgress,
   reportPlaybackStart,
   reportPlaybackStopped,
