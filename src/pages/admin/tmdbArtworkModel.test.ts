@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ArtworkCandidate } from "../../lib/artworkApi";
 import type { MediaItem } from "../../lib/types";
 import {
-  MAX_VISIBLE_PER_KIND,
+  INITIAL_VISIBLE_PER_KIND,
   countCandidates,
   filterTitles,
   formatDimensions,
@@ -84,17 +84,18 @@ describe("candidate filtering", () => {
     expect(selectCandidates(candidates, "logo", "all")).toEqual([]);
   });
 
-  it("caps a long set at the best rated while still reporting the true total", () => {
-    // Dune has 453 posters on TMDB. Rendering all of them is a grid nobody
-    // scrolls and megabytes of thumbnails nobody looks at.
+  it("shows the best rated first but hands over the whole set on request", () => {
+    // Dune has 453 posters on TMDB, so opening on all of them is megabytes of
+    // thumbnails nobody asked for — but the rest must stay reachable.
     const many = Array.from({ length: 40 }, (_, index) =>
       candidate({ filePath: `/p${index}.jpg`, voteAverage: 40 - index }),
     );
 
     expect(selectCandidates(many, "poster", "all")).toHaveLength(
-      MAX_VISIBLE_PER_KIND,
+      INITIAL_VISIBLE_PER_KIND,
     );
     expect(selectCandidates(many, "poster", "all")[0]?.filePath).toBe("/p0.jpg");
+    expect(selectCandidates(many, "poster", "all", Infinity)).toHaveLength(40);
     expect(countCandidates(many, "poster", "all")).toBe(40);
   });
 

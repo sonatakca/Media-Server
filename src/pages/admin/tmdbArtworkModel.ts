@@ -72,19 +72,20 @@ export function matchesLanguageFilter(
 }
 
 /**
- * A popular film can have several hundred posters, which is a grid nobody
- * scrolls and several megabytes of thumbnails nobody looks at. The server ranks
- * candidates by provider vote, so taking the first few keeps the ones worth
- * seeing; the language filter re-draws from the whole set rather than from what
- * survived the cap.
+ * How many candidates a set shows before it is expanded.
+ *
+ * A popular film can have several hundred posters, and opening the page on all
+ * of them is megabytes of thumbnails nobody asked for. The server ranks by
+ * provider vote, so the first screenful is the part worth seeing — but the rest
+ * stays one click away rather than being unreachable.
  */
-export const MAX_VISIBLE_PER_KIND = 24;
+export const INITIAL_VISIBLE_PER_KIND = 24;
 
 export function selectCandidates(
   candidates: ArtworkCandidate[],
   kind: ArtworkKind,
   filter: ImageLanguageFilter,
-  limit: number = MAX_VISIBLE_PER_KIND,
+  limit: number = INITIAL_VISIBLE_PER_KIND,
 ): ArtworkCandidate[] {
   return candidates
     .filter(
