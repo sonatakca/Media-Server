@@ -264,6 +264,7 @@ function parsePagination(value: unknown): OwnApiPagination | undefined {
     limit < 1 ||
     (nextCursor !== null && typeof nextCursor !== "string") ||
     (total !== undefined &&
+      total !== null &&
       (typeof total !== "number" || !Number.isInteger(total) || total < 0))
   ) {
     return undefined;

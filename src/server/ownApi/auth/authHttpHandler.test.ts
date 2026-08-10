@@ -139,15 +139,23 @@ function setCookies(response: Response): string[] {
   );
 }
 
+/**
+ * Models what a browser would send back. An expired cookie is a deletion, not a
+ * value to replay — the server emits one to clear a CSRF cookie left at the old
+ * path by an earlier build.
+ */
 function cookieHeader(cookies: string[]): string {
-  return cookies.map((cookie) => cookie.split(";", 1)[0]).join("; ");
+  return cookies
+    .map((cookie) => cookie.split(";", 1)[0] ?? "")
+    .filter((pair) => !pair.endsWith("="))
+    .join("; ");
 }
 
 function cookieValue(cookies: string[], name: string): string {
   const prefix = `${name}=`;
   const pair = cookies
     .map((cookie) => cookie.split(";", 1)[0] ?? "")
-    .find((cookie) => cookie.startsWith(prefix));
+    .find((cookie) => cookie.startsWith(prefix) && cookie !== prefix);
   return pair?.slice(prefix.length) ?? "";
 }
 
@@ -197,6 +205,9 @@ describe("native authentication HTTP endpoints", () => {
     expect(sessionCookie).toContain("Secure");
     expect(sessionCookie).toContain("SameSite=Lax");
     expect(sessionCookie).toContain("Path=/ownAPI/v1;");
+    // The CSRF cookie must be readable by script from any page in the app, so
+    // it is scoped to the site root rather than to the API namespace.
+    expect(csrfCookie).toContain("Path=/;");
     expect(sessionCookie).toContain("Expires=");
     expect(csrfCookie).toContain("Secure");
     expect(csrfCookie).not.toContain("HttpOnly");

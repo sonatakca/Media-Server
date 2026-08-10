@@ -29,10 +29,17 @@ import {
 } from "./rateLimiter";
 
 const AUTH_BASE_PATH = `${OWN_API_V1_BASE_PATH}/auth`;
-// Session and CSRF cookies are scoped to the whole versioned API: every
-// catalogue, image, media and WebSocket request is authorized by the same
-// session, so a `/auth`-scoped cookie would never be sent to them.
-const COOKIE_PATH = OWN_API_V1_BASE_PATH;
+// The session cookie is scoped to the versioned API: every catalogue, image and
+// media request is authorized by it, and nothing outside that namespace needs
+// it. Being HttpOnly, it only ever has to be *sent*.
+const SESSION_COOKIE_PATH = OWN_API_V1_BASE_PATH;
+
+// The CSRF cookie is different. It is a double-submit token the browser must be
+// able to *read* in order to echo it back in a header, and `document.cookie`
+// only exposes cookies whose path matches the current page. Scoping it to the
+// API namespace made it invisible to every page in the app, so no mutation
+// could ever be verified.
+const CSRF_COOKIE_PATH = "/";
 const MAX_JSON_BODY_BYTES = 16 * 1_024;
 
 function serializeCookie(
@@ -43,9 +50,10 @@ function serializeCookie(
     secure: boolean;
     expires: Date;
     maxAgeSeconds: number;
+    path: string;
   },
 ): string {
-  return serializeApiCookie(name, value, { ...options, path: COOKIE_PATH });
+  return serializeApiCookie(name, value, options);
 }
 const MAX_USERNAME_INPUT_LENGTH = 128;
 const MAX_PASSWORD_INPUT_BYTES = 256;
@@ -90,12 +98,25 @@ function setSessionCookies(
       secure: options.secureCookies,
       expires: session.expiresAt,
       maxAgeSeconds,
+      path: SESSION_COOKIE_PATH,
     }),
     serializeCookie(options.csrfCookieName, csrfToken, {
       httpOnly: false,
       secure: options.secureCookies,
       expires: session.expiresAt,
       maxAgeSeconds,
+      path: CSRF_COOKIE_PATH,
+    }),
+    // A CSRF cookie written at the API path by an earlier build is a distinct
+    // cookie from the one above, and the browser would send both. Duplicate
+    // names are treated as absent, so the stale one has to be expired or every
+    // mutation keeps failing after the upgrade.
+    serializeCookie(options.csrfCookieName, "", {
+      httpOnly: false,
+      secure: options.secureCookies,
+      expires: new Date(0),
+      maxAgeSeconds: 0,
+      path: SESSION_COOKIE_PATH,
     }),
   ]);
 }
@@ -111,12 +132,14 @@ function clearSessionCookies(
       secure: options.secureCookies,
       expires: expired,
       maxAgeSeconds: 0,
+      path: SESSION_COOKIE_PATH,
     }),
     serializeCookie(options.csrfCookieName, "", {
       httpOnly: false,
       secure: options.secureCookies,
       expires: expired,
       maxAgeSeconds: 0,
+      path: CSRF_COOKIE_PATH,
     }),
   ]);
 }
@@ -314,6 +337,7 @@ export function createNativeAuthHttpHandler(
           secure: options.secureCookies,
           expires: session.expiresAt,
           maxAgeSeconds,
+          path: CSRF_COOKIE_PATH,
         }),
       ]);
       sendOwnApiJson(response, 200, {
