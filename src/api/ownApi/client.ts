@@ -579,7 +579,14 @@ export function createOwnApiClient({
   }
 
   const login: OwnApiClient["login"] = (input) =>
-    requestNativeUser("/auth/login", { method: "POST", body: input });
+    // Login is the one mutation with no session to bind a CSRF token to, so the
+    // server verifies it by strict origin alone. Demanding a token here would
+    // make signing in impossible: there is nothing to have issued one yet.
+    requestNativeUser("/auth/login", {
+      method: "POST",
+      body: input,
+      csrf: false,
+    });
   const getCurrentUser: OwnApiClient["getCurrentUser"] = (options) =>
     requestNativeUser("/auth/me", { signal: options?.signal });
   const refreshSession: OwnApiClient["refreshSession"] = () =>

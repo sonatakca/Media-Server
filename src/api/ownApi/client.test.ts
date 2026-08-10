@@ -539,6 +539,48 @@ describe("own API browser client", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("does not demand a CSRF token to sign in", async () => {
+    // There is no session yet, so nothing could have issued one; the server
+    // verifies login by strict origin instead.
+    let csrfHeader: string | null = "unset";
+    const fetchImpl = vi.fn(async (_input: unknown, init?: RequestInit) => {
+      csrfHeader = new Headers(init?.headers).get("X-CSRF-Token");
+      return new Response(
+        JSON.stringify({
+          data: {
+            user: {
+              id: "user-1",
+              username: "person",
+              displayName: "Person",
+              isAdministrator: false,
+            },
+          },
+          requestId: "login",
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+            "X-Request-Id": "login",
+          },
+        },
+      );
+    });
+
+    const client = createOwnApiClient({
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+      requestIdFactory: () => "login",
+      // No readable cookie, as on a fresh browser.
+      csrfTokenProvider: () => undefined,
+    });
+
+    await expect(
+      client.login({ username: "person", password: "secret" }),
+    ).resolves.toMatchObject({ id: "user-1" });
+    expect(csrfHeader).toBeNull();
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
   it("attaches CSRF evidence to every unsafe method without being asked", async () => {
     const seen: Array<{ method: string; csrf: string | undefined }> = [];
     const fetchImpl = vi.fn(async (_input: unknown, init?: RequestInit) => {
