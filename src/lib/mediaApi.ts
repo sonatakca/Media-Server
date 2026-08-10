@@ -193,6 +193,17 @@ export async function getItemsForLibrary(
   return collectAll(`/libraries/${encodeURIComponent(libraryId)}/items`);
 }
 
+/**
+ * Children of an item of any kind.
+ *
+ * Distinct from {@link getItemsForLibrary}: a library is not an item, and an
+ * item is not a library. A leaf such as a film has no children, which this
+ * reports as an empty list rather than a missing-item error.
+ */
+export async function getItemChildren(itemId: string): Promise<MediaItem[]> {
+  return collectAll(`/items/${encodeURIComponent(itemId)}/children`);
+}
+
 export async function getTopLevelItemsForLibrary(
   libraryId: string,
   // The native library endpoint already returns the top-level kinds, so the
@@ -242,7 +253,7 @@ export async function getAllBoxSetItems(): Promise<MediaItem[]> {
 }
 
 export async function getBoxSetItems(boxSetId: string): Promise<MediaItem[]> {
-  return collectAll(`/libraries/${encodeURIComponent(boxSetId)}/items`);
+  return getItemChildren(boxSetId);
 }
 
 export async function getSeriesSeasons(seriesId: string): Promise<MediaItem[]> {

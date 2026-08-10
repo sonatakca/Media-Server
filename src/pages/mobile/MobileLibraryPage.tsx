@@ -26,7 +26,7 @@ import {
   getPrimaryImageUrl,
   getSeasonEpisodes,
   getSeriesSeasons,
-  getTopLevelItemsForLibrary,
+  getItemChildren,
 } from "../../lib/mediaApi";
 import {
   loadCollectionPosterChildrenMap,
@@ -166,17 +166,18 @@ async function loadLibraryItems(
   seriesId?: string,
 ): Promise<MediaItem[]> {
   if (mode === "library") {
-    if (
-      library?.CollectionType === "tvshows" ||
-      library?.CollectionType === "movies"
-    ) {
-      return getTopLevelItemsForLibrary(id, library.CollectionType);
+    // The two id spaces are disjoint: a library is not an item. `library` is
+    // set only when the route id resolved as an item, which is how a shared
+    // route such as /movies/:id serves both the shelf and a single film. A
+    // film resolves to itself and simply has no children.
+    if (library) {
+      const children = await getItemChildren(id);
+      return library.Type === "BoxSet"
+        ? sortCollectionItemsForWatching(children)
+        : children;
     }
 
-    const items = await getItemsForLibrary(id);
-    return library?.Type === "BoxSet"
-      ? sortCollectionItemsForWatching(items)
-      : items;
+    return getItemsForLibrary(id);
   }
 
   if (mode === "series") {

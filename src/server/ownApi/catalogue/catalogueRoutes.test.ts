@@ -19,8 +19,13 @@ const SESSION_HASH = createHmac("sha256", "k").update("session").digest();
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const VISIBLE_ITEM = "aaaaaaaa-1111-4111-8111-111111111111";
 const HIDDEN_ITEM = "bbbbbbbb-2222-4222-8222-222222222222";
+const PARENT_ITEM = "aaaaaaaa-2222-4222-8222-222222222222";
 
-function itemRow(id: string, title: string): CatalogueItemRow {
+function itemRow(
+  id: string,
+  title: string,
+  overrides: Partial<CatalogueItemRow> = {},
+): CatalogueItemRow {
   return {
     id,
     libraryId: "cccccccc-3333-4333-8333-333333333333",
@@ -47,31 +52,45 @@ function itemRow(id: string, title: string): CatalogueItemRow {
     seriesTitle: null,
     seasonTitle: null,
     genres: [],
+    ...overrides,
   };
 }
 
 const VISIBLE_ROWS = [
   itemRow(VISIBLE_ITEM, "Alpha"),
-  itemRow("aaaaaaaa-2222-4222-8222-222222222222", "Beta"),
+  itemRow(PARENT_ITEM, "Beta"),
   itemRow("aaaaaaaa-3333-4333-8333-333333333333", "Gamma"),
 ];
 
+/** Only reachable through their parent, the way an episode or a season is. */
+const CHILD_ROWS = [
+  itemRow("dddddddd-1111-4111-8111-111111111111", "Beta Part One", {
+    parentId: PARENT_ITEM,
+    kind: "episode",
+  }),
+];
+
+const ALL_ROWS = [...VISIBLE_ROWS, ...CHILD_ROWS];
+
 function fakeCatalogue(): CatalogueRepository {
   const visible = (itemId: string) =>
-    VISIBLE_ROWS.some((row) => row.id === itemId);
+    ALL_ROWS.some((row) => row.id === itemId);
 
   return {
     listLibraries: async () => [],
     getLibrary: async () => null,
     getItem: async (_userId, itemId) =>
-      VISIBLE_ROWS.find((row) => row.id === itemId) ?? null,
+      ALL_ROWS.find((row) => row.id === itemId) ?? null,
     getItemsByIds: async (_userId, itemIds) =>
-      VISIBLE_ROWS.filter((row) => itemIds.includes(row.id)),
-    listItems: async ({ limit, cursor }) => {
+      ALL_ROWS.filter((row) => itemIds.includes(row.id)),
+    listItems: async ({ limit, cursor, parentId }) => {
+      const rows = parentId
+        ? ALL_ROWS.filter((row) => row.parentId === parentId)
+        : VISIBLE_ROWS;
       const start = cursor
-        ? VISIBLE_ROWS.findIndex((row) => row.id === cursor.id) + 1
+        ? rows.findIndex((row) => row.id === cursor.id) + 1
         : 0;
-      return VISIBLE_ROWS.slice(start, start + limit);
+      return rows.slice(start, start + limit);
     },
     listChildren: async () => [],
     listSeriesEpisodes: async () => [],
@@ -297,6 +316,43 @@ describe("catalogue routes", () => {
     };
     expect(secondPage.data.map((item) => item.title)).toEqual(["Gamma"]);
     expect(secondPage.pagination.nextCursor).toBeNull();
+  });
+
+  it("lists the children of an item and reports a leaf as childless", async () => {
+    // A detail page shares its route with a shelf, so it asks for children
+    // without knowing whether the id it was given has any. Having none is an
+    // ordinary empty page, not the not-found that asking a library would give.
+    const { router } = buildRouter();
+
+    const parent = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${PARENT_ITEM}/children`,
+    );
+    expect(parent.sent.statusCode).toBe(200);
+    expect(
+      (parent.json as { data: Array<{ title: string }> }).data.map(
+        (child) => child.title,
+      ),
+    ).toEqual(["Beta Part One"]);
+
+    const leaf = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${VISIBLE_ITEM}/children`,
+    );
+    expect(leaf.sent.statusCode).toBe(200);
+    expect((leaf.json as { data: unknown[] }).data).toEqual([]);
+  });
+
+  it("refuses to list the children of an item the viewer cannot see", async () => {
+    const { router } = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${HIDDEN_ITEM}/children`,
+    );
+    expect((result.error as OwnApiError).statusCode).toBe(404);
   });
 
   it("rejects a malformed cursor", async () => {
