@@ -588,8 +588,8 @@ export const en = {
     "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
   "devtools.card.libraryMaintenance.tag": "Maintenance",
   "devtools.card.tmdbArtwork.title": "TMDB Artwork",
-  "devtools.card.tmdbArtwork.description":
-    "Choose TMDB poster, backdrop, landscape, and logo sidecar images for each movie or series.",
+  "devtools.card.tmdbArtwork.description": 
+    "Pick the TMDB poster, backdrop, and logo for a film or series instead of taking the provider's first choice.",
   "devtools.card.tmdbArtwork.tag": "Artwork",
   "devtools.card.contentExplorer.title": "Content Explorer",
   "devtools.card.contentExplorer.description":
@@ -778,17 +778,15 @@ export const en = {
     "Jellyfin may reject the save unless the signed-in account can edit item metadata. Once saved, Seyirlik uses these defaults for all users.",
   "playbackDefaults.results": "Results",
   "playbackDefaults.resultSummary": "{success} saved · {failed} failed",
-  "tmdbArtwork.eyebrow": "Sidecar Artwork",
+  "tmdbArtwork.eyebrow": "Artwork Override",
   "tmdbArtwork.title": "TMDB Artwork",
-  "tmdbArtwork.description":
-    "Choose exactly which TMDB image replaces each local folder, backdrop, and logo file.",
-  "tmdbArtwork.languageFilter": "Images: English, Turkish, or no language",
-  "tmdbArtwork.backendMissing":
-    "The local backend URL is not configured. Set VITE_SEYIRLIK_PLAYBACK_BACKEND_URL and start the playback backend.",
+  "tmdbArtwork.description": 
+    "Choose exactly which TMDB image Seyirlik stores as the poster, backdrop, and logo for a title.",
+  "tmdbArtwork.languageFilter": "Filter by image language",
   "tmdbArtwork.loadingItems": "Loading movies and series...",
   "tmdbArtwork.loadedItems": "Loaded {count} titles.",
   "tmdbArtwork.couldNotLoadItems": "Could not load movies and series.",
-  "tmdbArtwork.jellyfinTitles": "Jellyfin Titles",
+  "tmdbArtwork.jellyfinTitles": "Library Titles",
   "tmdbArtwork.visibleItems": "{count} visible titles",
   "tmdbArtwork.itemSearchPlaceholder": "Search movie, series, year, or ID...",
   "tmdbArtwork.tmdbMatch": "TMDB Match",
@@ -808,41 +806,30 @@ export const en = {
   "tmdbArtwork.noTmdbSelectedDescription":
     "Select a TMDB match to load artwork choices.",
   "tmdbArtwork.currentArtwork": "Currently applied",
-  "tmdbArtwork.currentArtworkDescription":
-    "This is the image Jellyfin currently exposes for {target}.",
+  "tmdbArtwork.currentArtworkDescription": 
+    "This is the image Seyirlik currently serves for {target}.",
   "tmdbArtwork.noCurrentArtwork": "No current image found for this slot.",
   "tmdbArtwork.loadingImages": "Loading TMDB images...",
   "tmdbArtwork.loadedImages": "{count} choices for {target}",
   "tmdbArtwork.noImages": "No images matched this language filter.",
   "tmdbArtwork.couldNotLoadImages": "Could not load TMDB images.",
-  "tmdbArtwork.replaceFile": "Replace file",
-  "tmdbArtwork.savingArtwork": "Replacing sidecar artwork...",
-  "tmdbArtwork.artworkSaved": "Saved {file}.",
+  "tmdbArtwork.replaceFile": "Use this image",
+  "tmdbArtwork.savingArtwork": "Storing the chosen image...",
+  "tmdbArtwork.artworkSaved": "Saved. {file} is now used for this title.",
   "tmdbArtwork.couldNotSaveArtwork": "Could not save artwork.",
-  "tmdbArtwork.kind.poster": "Folder",
+  "tmdbArtwork.kind.poster": "Poster",
   "tmdbArtwork.kind.backdrop": "Backdrop",
-  "tmdbArtwork.kind.landscape": "Landscape",
   "tmdbArtwork.kind.logo": "Logo",
-  "tmdbArtwork.kind.posterDescription": "Folder choices replace folder.jpg.",
-  "tmdbArtwork.kind.backdropDescription":
-    "Backdrop choices replace backdrop.jpg.",
-  "tmdbArtwork.kind.landscapeDescription":
-    "Landscape choices replace landscape.jpg.",
-  "tmdbArtwork.kind.logoDescription":
-    "English logos replace logo.png; Turkish logos replace logo-tr.png.",
-  "tmdbArtwork.logoEnglish": "English logo",
-  "tmdbArtwork.logoTurkish": "Turkish logo",
-  "tmdbArtwork.logoNotSelected": "No logo selected",
-  "tmdbArtwork.localCustom": "Custom",
-  "tmdbArtwork.localSidecar": "Local sidecar logo",
-  "tmdbArtwork.localLogoNotFound":
-    "No local logo.png or logo-tr.png was found in the resolved media folder.",
-  "tmdbArtwork.localLogoUnavailable":
-    "The backend could not inspect local logo sidecars.",
+  "tmdbArtwork.kind.posterDescription": 
+    "The upright image shown on cards and shelves.",
+  "tmdbArtwork.kind.backdropDescription": 
+    "The wide image behind a detail page.",
+  "tmdbArtwork.kind.logoDescription": 
+    "The title treatment drawn over the backdrop.",
   "tmdbArtwork.itemMetadata": "Title Metadata",
   "tmdbArtwork.itemLanguages": "Names and descriptions",
-  "tmdbArtwork.itemLanguagesDescription":
-    "Loads the English and Turkish title and description together. Once saved, Seyirlik switches them automatically with the website language.",
+  "tmdbArtwork.itemLanguagesDescription": 
+    "Loads the title and description as TMDB writes them in one language, so you can compare before overwriting what is stored.",
   "tmdbArtwork.loadItemMetadata": "Load title metadata",
   "tmdbArtwork.saveItemDisplay": "Save title display",
   "tmdbArtwork.loadingItemMetadata": "Loading title metadata...",
@@ -851,8 +838,8 @@ export const en = {
   "tmdbArtwork.itemMetadataUnavailable":
     "No title metadata was returned by TMDB.",
   "tmdbArtwork.couldNotLoadItemMetadata": "Could not load title metadata.",
-  "tmdbArtwork.itemMetadataRequiresMatch":
-    "Select a TMDB match before loading title metadata.",
+  "tmdbArtwork.itemMetadataRequiresMatch": 
+    "Match this title to TMDB before loading its metadata.",
   "tmdbArtwork.savingItemMetadata": "Saving title display choices...",
   "tmdbArtwork.itemMetadataSaved":
     "Saved language-based name and description choices.",
@@ -860,41 +847,20 @@ export const en = {
   "tmdbArtwork.language.turkish": "Turkish",
   "tmdbArtwork.language.none": "No language",
   "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
-  "tmdbArtwork.episodeMetadata": "Episode Metadata",
-  "tmdbArtwork.episodeLanguages": "Episode names and descriptions",
-  "tmdbArtwork.episodeLanguagesDescription":
-    "Loads English and Turkish episode names/descriptions together, then Seyirlik switches between the saved values instantly with the website language. The thumbnail language is selected separately for every episode in the series.",
-  "tmdbArtwork.saveEpisodeDisplay": "Save display choices",
-  "tmdbArtwork.loadingSeriesEpisodes": "Loading Jellyfin episodes...",
-  "tmdbArtwork.loadedSeriesEpisodes": "Loaded {count} Jellyfin episodes.",
-  "tmdbArtwork.noSeriesEpisodes": "No Jellyfin episodes were found.",
-  "tmdbArtwork.couldNotLoadSeriesEpisodes":
-    "Could not load this series' episodes.",
-  "tmdbArtwork.episodeMetadataRequiresSeries":
-    "Select a series and a TV TMDB match first.",
-  "tmdbArtwork.loadingEpisodeMetadata": "Loading TMDB episode metadata...",
-  "tmdbArtwork.loadingEpisodeMetadataSeason":
-    "Loading episode metadata {current} / {total}...",
-  "tmdbArtwork.couldNotLoadEpisodeMetadata":
-    "Could not load TMDB episode metadata.",
-  "tmdbArtwork.episodeMetadataLoaded":
-    "Loaded TMDB metadata for {count} episodes.",
-  "tmdbArtwork.episodeMetadataLoadedPartial":
-    "Loaded {count} episodes; {failed} season requests failed.",
-  "tmdbArtwork.savingEpisodeMetadata": "Saving episode display choices...",
-  "tmdbArtwork.episodeMetadataSaved":
-    "Saved display choices for {count} episodes.",
-  "tmdbArtwork.couldNotSaveEpisodeMetadata":
-    "Could not save episode display choices.",
-  "tmdbArtwork.allSeasons": "All seasons",
-  "tmdbArtwork.thumbnailLanguage": "Episode thumbnail language",
-  "tmdbArtwork.loadEpisodeMetadata": "Load episode metadata",
-  "tmdbArtwork.thumbnail": "Thumbnail",
-  "tmdbArtwork.englishMetadata": "English",
-  "tmdbArtwork.turkishMetadata": "Turkish",
-  "tmdbArtwork.metadataNotLoaded": "Not loaded",
-  "tmdbArtwork.loadMetadataToPreview":
-    "Load TMDB metadata to preview this language.",
+  "tmdbArtwork.lockedBadge": "Chosen by you",
+  "tmdbArtwork.lockedExplanation":
+    "A metadata refresh will not replace an image you chose.",
+  "tmdbArtwork.revertToAutomatic": "Revert to automatic",
+  "tmdbArtwork.revertingArtwork": "Handing this image back to TMDB...",
+  "tmdbArtwork.artworkReverted":
+    "Reverted. The next metadata refresh will pick this image again.",
+  "tmdbArtwork.couldNotRevertArtwork": "Could not revert this image.",
+  "tmdbArtwork.identifying": "Recording the TMDB match...",
+  "tmdbArtwork.identifySaved":
+    "Matched. Metadata and artwork are refreshing in the background.",
+  "tmdbArtwork.couldNotIdentify": "Could not record the TMDB match.",
+  "tmdbArtwork.artworkNotApplicable":
+    "Artwork can only be chosen for a film or a series.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Playback Audit",
   "audit.description":

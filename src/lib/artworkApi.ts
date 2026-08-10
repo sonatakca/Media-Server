@@ -1,0 +1,157 @@
+import { ownApiClient } from "../api/ownApi/client";
+
+/**
+ * Administrator artwork surface.
+ *
+ * The automatic metadata pass already stores a poster, a backdrop and a logo
+ * for every identified title. This is the override: it shows what the provider
+ * actually holds so a person can disagree, and marks whatever they pick as
+ * theirs so a later refresh leaves it alone.
+ */
+
+export type ArtworkKind = "poster" | "backdrop" | "logo";
+
+/** The stored image type each provider set is written to. */
+export type StoredImageType = "primary" | "backdrop" | "logo";
+
+export interface ArtworkCandidate {
+  kind: ArtworkKind;
+  imageType: StoredImageType;
+  filePath: string;
+  /** ISO 639-1, or null for artwork with no text and so no language. */
+  language: string | null;
+  width: number | null;
+  height: number | null;
+  aspectRatio: number | null;
+  voteAverage: number;
+  voteCount: number;
+  previewUrl: string;
+}
+
+export interface StoredArtwork {
+  id: string;
+  itemId: string;
+  imageType: string;
+  imageIndex: number;
+  contentHash: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface ArtworkOverview {
+  item: {
+    id: string;
+    title: string;
+    kind: string;
+    providerId: string;
+  };
+  /** Stored types an administrator has taken over from the automatic pass. */
+  lockedTypes: string[];
+  current: StoredArtwork[];
+  candidates: ArtworkCandidate[];
+}
+
+export interface LocalizedMetadataPreview {
+  language: string;
+  title: string;
+  originalTitle: string | null;
+  overview: string | null;
+  tagline: string | null;
+}
+
+export async function getItemArtwork(
+  itemId: string,
+): Promise<ArtworkOverview> {
+  return ownApiClient.request<ArtworkOverview>(
+    `/admin/items/${encodeURIComponent(itemId)}/artwork`,
+  );
+}
+
+export async function applyItemArtwork(
+  itemId: string,
+  choice: { kind: ArtworkKind; filePath: string },
+): Promise<{ imageId: string; imageType: string; isLocked: boolean }> {
+  return ownApiClient.request<{
+    imageId: string;
+    imageType: string;
+    isLocked: boolean;
+  }>(`/admin/items/${encodeURIComponent(itemId)}/artwork`, {
+    method: "POST",
+    body: choice,
+  });
+}
+
+/** Hands one artwork type back to the automatic pass. */
+export async function clearItemArtwork(
+  itemId: string,
+  kind: ArtworkKind,
+): Promise<{ imageType: string; cleared: boolean }> {
+  return ownApiClient.request<{ imageType: string; cleared: boolean }>(
+    `/admin/items/${encodeURIComponent(itemId)}/artwork/${kind}`,
+    { method: "DELETE" },
+  );
+}
+
+export async function getLocalizedMetadataPreview(
+  itemId: string,
+  language: string,
+): Promise<LocalizedMetadataPreview> {
+  return ownApiClient.request<LocalizedMetadataPreview>(
+    `/admin/items/${encodeURIComponent(itemId)}/metadata/preview?language=${encodeURIComponent(
+      language,
+    )}`,
+  );
+}
+
+export interface MetadataCandidate {
+  providerId: string;
+  title: string;
+  originalTitle?: string;
+  year?: number;
+  popularity?: number;
+}
+
+export interface MetadataCandidatesResult {
+  candidates: MetadataCandidate[];
+  suggested: { providerId: string; confidence: string } | null;
+}
+
+export async function searchMetadataCandidates(
+  itemId: string,
+  query?: string,
+): Promise<MetadataCandidatesResult> {
+  const search = query?.trim() ? `?q=${encodeURIComponent(query.trim())}` : "";
+  return ownApiClient.request<MetadataCandidatesResult>(
+    `/admin/items/${encodeURIComponent(itemId)}/metadata/candidates${search}`,
+  );
+}
+
+/**
+ * Records an operator's identity choice. The server locks the identity so a
+ * later automatic pass cannot quietly re-match the title to something else.
+ */
+export async function identifyItem(
+  itemId: string,
+  providerId: string,
+): Promise<void> {
+  await ownApiClient.request<{ taskId: string }>(
+    `/admin/items/${encodeURIComponent(itemId)}/identify`,
+    { method: "POST", body: { providerId } },
+  );
+}
+
+export async function saveItemDisplayMetadata(
+  itemId: string,
+  update: {
+    title?: string;
+    originalTitle?: string;
+    overview?: string;
+    tagline?: string;
+    lockFields?: string[];
+  },
+): Promise<void> {
+  await ownApiClient.request<unknown>(
+    `/admin/items/${encodeURIComponent(itemId)}/metadata`,
+    { method: "PATCH", body: update },
+  );
+}

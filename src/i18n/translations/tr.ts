@@ -589,8 +589,8 @@ export const tr = {
     "Jellyfin kütüphanelerini tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "devtools.card.libraryMaintenance.tag": "Bakım",
   "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
-  "devtools.card.tmdbArtwork.description":
-    "Her film veya dizi için TMDB poster, arka plan, landscape ve logo sidecar görsellerini seç.",
+  "devtools.card.tmdbArtwork.description": 
+    "Bir film ya da dizi için TMDB afişini, arka planını ve logosunu sağlayıcının ilk seçimi yerine kendiniz belirleyin.",
   "devtools.card.tmdbArtwork.tag": "Görsel",
   "devtools.card.contentExplorer.title": "İçerik Gezgini",
   "devtools.card.contentExplorer.description":
@@ -780,17 +780,15 @@ export const tr = {
     "Oturum açmış hesap içerik metadata'sını düzenleyemiyorsa Jellyfin kaydı reddedebilir. Kaydedildikten sonra Seyirlik bu varsayılanları tüm kullanıcılar için kullanır.",
   "playbackDefaults.results": "Sonuçlar",
   "playbackDefaults.resultSummary": "{success} kaydedildi · {failed} başarısız",
-  "tmdbArtwork.eyebrow": "Sidecar Görseller",
+  "tmdbArtwork.eyebrow": "Görsel Tercihi",
   "tmdbArtwork.title": "TMDB Görselleri",
-  "tmdbArtwork.description":
-    "Her yerel klasör, arka plan ve logo dosyasını tam olarak hangi TMDB görselinin değiştireceğini seç.",
-  "tmdbArtwork.languageFilter": "Görseller: İngilizce, Türkçe veya dilsiz",
-  "tmdbArtwork.backendMissing":
-    "Yerel backend adresi ayarlı değil. VITE_SEYIRLIK_PLAYBACK_BACKEND_URL değerini ayarla ve playback backend'i başlat.",
+  "tmdbArtwork.description": 
+    "Bir yapım için Seyirlik'in hangi TMDB görselini afiş, arka plan ve logo olarak saklayacağını siz seçin.",
+  "tmdbArtwork.languageFilter": "Görsel diline göre süz",
   "tmdbArtwork.loadingItems": "Film ve diziler yükleniyor...",
   "tmdbArtwork.loadedItems": "{count} içerik yüklendi.",
   "tmdbArtwork.couldNotLoadItems": "Film ve diziler yüklenemedi.",
-  "tmdbArtwork.jellyfinTitles": "Jellyfin İçerikleri",
+  "tmdbArtwork.jellyfinTitles": "Kütüphane Yapımları",
   "tmdbArtwork.visibleItems": "{count} görünen içerik",
   "tmdbArtwork.itemSearchPlaceholder": "Film, dizi, yıl veya ID ara...",
   "tmdbArtwork.tmdbMatch": "TMDB Eşleşmesi",
@@ -810,42 +808,30 @@ export const tr = {
   "tmdbArtwork.noTmdbSelectedDescription":
     "Görsel seçeneklerini yüklemek için bir TMDB eşleşmesi seç.",
   "tmdbArtwork.currentArtwork": "Şu anda uygulanan",
-  "tmdbArtwork.currentArtworkDescription":
-    "Jellyfin'in şu anda {target} için gösterdiği görsel.",
+  "tmdbArtwork.currentArtworkDescription": 
+    "Seyirlik şu anda {target} için bu görseli sunuyor.",
   "tmdbArtwork.noCurrentArtwork": "Bu alan için mevcut görsel bulunamadı.",
   "tmdbArtwork.loadingImages": "TMDB görselleri yükleniyor...",
   "tmdbArtwork.loadedImages": "{target} için {count} seçenek",
   "tmdbArtwork.noImages": "Bu dil filtresine uyan görsel yok.",
   "tmdbArtwork.couldNotLoadImages": "TMDB görselleri yüklenemedi.",
-  "tmdbArtwork.replaceFile": "Dosyayı değiştir",
-  "tmdbArtwork.savingArtwork": "Sidecar görsel değiştiriliyor...",
-  "tmdbArtwork.artworkSaved": "{file} kaydedildi.",
+  "tmdbArtwork.replaceFile": "Bu görseli kullan",
+  "tmdbArtwork.savingArtwork": "Seçilen görsel kaydediliyor...",
+  "tmdbArtwork.artworkSaved": "Kaydedildi. {file} artık bu yapım için kullanılıyor.",
   "tmdbArtwork.couldNotSaveArtwork": "Görsel kaydedilemedi.",
-  "tmdbArtwork.kind.poster": "Klasör",
+  "tmdbArtwork.kind.poster": "Afiş",
   "tmdbArtwork.kind.backdrop": "Arka plan",
-  "tmdbArtwork.kind.landscape": "Landscape",
   "tmdbArtwork.kind.logo": "Logo",
-  "tmdbArtwork.kind.posterDescription":
-    "Klasör seçenekleri folder.jpg dosyasını değiştirir.",
-  "tmdbArtwork.kind.backdropDescription":
-    "Arka plan seçenekleri backdrop.jpg dosyasını değiştirir.",
-  "tmdbArtwork.kind.landscapeDescription":
-    "Landscape seçenekleri landscape.jpg dosyasını değiştirir.",
-  "tmdbArtwork.kind.logoDescription":
-    "İngilizce logolar logo.png, Türkçe logolar logo-tr.png dosyasını değiştirir.",
-  "tmdbArtwork.logoEnglish": "İngilizce logo",
-  "tmdbArtwork.logoTurkish": "Türkçe logo",
-  "tmdbArtwork.logoNotSelected": "Logo seçilmedi",
-  "tmdbArtwork.localCustom": "Özel",
-  "tmdbArtwork.localSidecar": "Yerel sidecar logosu",
-  "tmdbArtwork.localLogoNotFound":
-    "Çözümlenen medya klasöründe yerel logo.png veya logo-tr.png bulunamadı.",
-  "tmdbArtwork.localLogoUnavailable":
-    "Backend yerel logo sidecar dosyalarını inceleyemedi.",
+  "tmdbArtwork.kind.posterDescription": 
+    "Kartlarda ve raflarda görünen dikey görsel.",
+  "tmdbArtwork.kind.backdropDescription": 
+    "Detay sayfasının arkasındaki geniş görsel.",
+  "tmdbArtwork.kind.logoDescription": 
+    "Arka planın üzerine çizilen başlık görseli.",
   "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
   "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
-  "tmdbArtwork.itemLanguagesDescription":
-    "İngilizce ve Türkçe içerik adını ve açıklamasını birlikte yükler. Kaydedildikten sonra Seyirlik site diline göre aralarında otomatik geçiş yapar.",
+  "tmdbArtwork.itemLanguagesDescription": 
+    "Başlığı ve açıklamayı TMDB'nin o dilde yazdığı haliyle yükler; kayıtlı olanın üzerine yazmadan önce karşılaştırabilirsiniz.",
   "tmdbArtwork.loadItemMetadata": "İçerik metadata'sını yükle",
   "tmdbArtwork.saveItemDisplay": "İçerik görünümünü kaydet",
   "tmdbArtwork.loadingItemMetadata": "İçerik metadata'sı yükleniyor...",
@@ -853,8 +839,8 @@ export const tr = {
     "İngilizce ve Türkçe içerik metadata'sı yüklendi.",
   "tmdbArtwork.itemMetadataUnavailable": "TMDB içerik metadata'sı döndürmedi.",
   "tmdbArtwork.couldNotLoadItemMetadata": "İçerik metadata'sı yüklenemedi.",
-  "tmdbArtwork.itemMetadataRequiresMatch":
-    "İçerik metadata'sını yüklemeden önce bir TMDB eşleşmesi seç.",
+  "tmdbArtwork.itemMetadataRequiresMatch": 
+    "Bu yapımın verilerini yüklemeden önce TMDB eşleşmesini seçin.",
   "tmdbArtwork.savingItemMetadata":
     "İçerik görüntüleme seçimleri kaydediliyor...",
   "tmdbArtwork.itemMetadataSaved":
@@ -863,41 +849,20 @@ export const tr = {
   "tmdbArtwork.language.turkish": "Türkçe",
   "tmdbArtwork.language.none": "Dilsiz",
   "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
-  "tmdbArtwork.episodeMetadata": "Bölüm Metadata'sı",
-  "tmdbArtwork.episodeLanguages": "Bölüm adları ve açıklamaları",
-  "tmdbArtwork.episodeLanguagesDescription":
-    "İngilizce ve Türkçe bölüm adlarını/açıklamalarını birlikte yükler; sonra Seyirlik kayıtlı değerler arasında site diline göre anında geçiş yapar. Thumbnail dili dizideki tüm bölümler için ayrıca seçilir.",
-  "tmdbArtwork.saveEpisodeDisplay": "Görüntüleme seçimini kaydet",
-  "tmdbArtwork.loadingSeriesEpisodes": "Jellyfin bölümleri yükleniyor...",
-  "tmdbArtwork.loadedSeriesEpisodes": "{count} Jellyfin bölümü yüklendi.",
-  "tmdbArtwork.noSeriesEpisodes": "Jellyfin bölümü bulunamadı.",
-  "tmdbArtwork.couldNotLoadSeriesEpisodes": "Bu dizinin bölümleri yüklenemedi.",
-  "tmdbArtwork.episodeMetadataRequiresSeries":
-    "Önce bir dizi ve TV türünde TMDB eşleşmesi seç.",
-  "tmdbArtwork.loadingEpisodeMetadata": "TMDB bölüm metadata'sı yükleniyor...",
-  "tmdbArtwork.loadingEpisodeMetadataSeason":
-    "Bölüm metadata'sı yükleniyor {current} / {total}...",
-  "tmdbArtwork.couldNotLoadEpisodeMetadata":
-    "TMDB bölüm metadata'sı yüklenemedi.",
-  "tmdbArtwork.episodeMetadataLoaded":
-    "{count} bölüm için TMDB metadata'sı yüklendi.",
-  "tmdbArtwork.episodeMetadataLoadedPartial":
-    "{count} bölüm yüklendi; {failed} sezon isteği başarısız oldu.",
-  "tmdbArtwork.savingEpisodeMetadata":
-    "Bölüm görüntüleme seçimleri kaydediliyor...",
-  "tmdbArtwork.episodeMetadataSaved":
-    "{count} bölüm için görüntüleme seçimi kaydedildi.",
-  "tmdbArtwork.couldNotSaveEpisodeMetadata":
-    "Bölüm görüntüleme seçimleri kaydedilemedi.",
-  "tmdbArtwork.allSeasons": "Tüm sezonlar",
-  "tmdbArtwork.thumbnailLanguage": "Bölüm thumbnail dili",
-  "tmdbArtwork.loadEpisodeMetadata": "Bölüm metadata'sını yükle",
-  "tmdbArtwork.thumbnail": "Thumbnail",
-  "tmdbArtwork.englishMetadata": "İngilizce",
-  "tmdbArtwork.turkishMetadata": "Türkçe",
-  "tmdbArtwork.metadataNotLoaded": "Yüklenmedi",
-  "tmdbArtwork.loadMetadataToPreview":
-    "Bu dili görmek için TMDB metadata'sını yükle.",
+  "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
+  "tmdbArtwork.lockedExplanation":
+    "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",
+  "tmdbArtwork.revertToAutomatic": "Otomatiğe döndür",
+  "tmdbArtwork.revertingArtwork": "Görsel TMDB'ye geri bırakılıyor...",
+  "tmdbArtwork.artworkReverted":
+    "Geri alındı. Bir sonraki veri yenilemesinde görsel yeniden seçilecek.",
+  "tmdbArtwork.couldNotRevertArtwork": "Bu görsel geri alınamadı.",
+  "tmdbArtwork.identifying": "TMDB eşleşmesi kaydediliyor...",
+  "tmdbArtwork.identifySaved":
+    "Eşleştirildi. Veriler ve görseller arka planda yenileniyor.",
+  "tmdbArtwork.couldNotIdentify": "TMDB eşleşmesi kaydedilemedi.",
+  "tmdbArtwork.artworkNotApplicable":
+    "Görsel yalnızca bir film ya da dizi için seçilebilir.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Oynatma Denetimi",
   "audit.description":

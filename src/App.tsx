@@ -32,6 +32,7 @@ import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
+import TmdbArtworkPage from "./pages/TmdbArtworkPage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { HomeCurationPage } from "./pages/HomeCurationPage";
 import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
@@ -384,6 +385,10 @@ export default function App() {
                 <Route
                   path="/dev/library-maintenance"
                   element={<LibraryMaintenancePage />}
+                />
+                <Route
+                  path="/dev/tmdb-artwork"
+                  element={<TmdbArtworkPage />}
                 />
                 <Route path="/dev/content" element={<ContentExplorerPage />} />
                 <Route path="/dev/users" element={<UserManagementPage />} />
