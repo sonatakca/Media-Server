@@ -1,109 +1,107 @@
-import { act, render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import type { User } from "firebase/auth";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { RequireAdminAuth } from "./RequireAdminAuth";
 
-const adminAuthMock = vi.hoisted(() => ({
-  onChange: null as ((user: User | null) => void) | null,
-  signIn: vi.fn(),
-  signOut: vi.fn(),
+vi.mock("../../api/ownApi/client", () => ({
+  ownApiClient: { getCurrentUser: vi.fn() },
+}));
+
+vi.mock("../../lib/authStorage", () => ({
+  setAuthSession: vi.fn(),
 }));
 
 vi.mock("../../i18n/LanguageContext", () => ({
-  useLanguage: () => ({
-    t: (key: string) =>
-      ({
-        "adminAuth.title": "Administrator access",
-        "adminAuth.description": "Sign in with the authorized Google account.",
-        "adminAuth.checking": "Checking administrator access...",
-        "adminAuth.denied": "This Google account is not authorized.",
-        "adminAuth.signIn": "Continue with Google",
-        "adminAuth.useAnotherAccount": "Use another Google account",
-      })[key] ?? key,
-  }),
+  useLanguage: () => ({ t: (key: string) => key }),
 }));
 
-vi.mock("../../lib/firebaseAdminAuth", () => ({
-  getConfiguredAdminEmail: () => "sonatakcaa@gmail.com",
-  getFirebaseAdminConfigurationError: () => null,
-  isAuthorizedAdminUser: (user: User | null) =>
-    user?.email === "sonatakcaa@gmail.com" && user.emailVerified,
-  observeAdminAuthState: (onChange: (user: User | null) => void) => {
-    adminAuthMock.onChange = onChange;
-    return vi.fn();
-  },
-  signInAdminWithGoogle: adminAuthMock.signIn,
-  signOutAdmin: adminAuthMock.signOut,
-}));
+import { ownApiClient } from "../../api/ownApi/client";
+import { setAuthSession } from "../../lib/authStorage";
 
-function renderAdminRoute() {
+function renderGate() {
   return render(
-    <MemoryRouter initialEntries={["/dev"]}>
+    <MemoryRouter initialEntries={["/dev/tools"]}>
       <Routes>
         <Route element={<RequireAdminAuth />}>
-          <Route path="/dev" element={<p>Private administrator tools</p>} />
+          <Route path="/dev/tools" element={<div>admin content</div>} />
         </Route>
+        <Route path="/login" element={<div>login page</div>} />
       </Routes>
     </MemoryRouter>,
   );
 }
 
-function publishUser(user: Partial<User> | null) {
-  act(() => {
-    adminAuthMock.onChange?.(user as User | null);
-  });
-}
-
 describe("RequireAdminAuth", () => {
   beforeEach(() => {
-    adminAuthMock.onChange = null;
-    adminAuthMock.signIn.mockReset();
-    adminAuthMock.signOut.mockReset();
+    vi.clearAllMocks();
   });
 
-  it("keeps administrator content hidden until the authorized account signs in", () => {
-    renderAdminRoute();
-
-    expect(screen.queryByText("Private administrator tools")).toBeNull();
-
-    publishUser({
-      email: "sonatakcaa@gmail.com",
-      emailVerified: true,
+  it("shows administrator content to an administrator", async () => {
+    vi.mocked(ownApiClient.getCurrentUser).mockResolvedValue({
+      id: "user-1",
+      username: "sonat",
+      displayName: "Sonat",
+      isAdministrator: true,
     });
 
-    expect(screen.getByText("Private administrator tools")).toBeInTheDocument();
+    renderGate();
+
+    expect(await screen.findByText("admin content")).toBeInTheDocument();
   });
 
-  it("offers Google sign-in when no account is signed in", () => {
-    renderAdminRoute();
-    publishUser(null);
+  it("refuses a signed-in account that is not an administrator", async () => {
+    vi.mocked(ownApiClient.getCurrentUser).mockResolvedValue({
+      id: "user-2",
+      username: "viewer",
+      displayName: "Viewer",
+      isAdministrator: false,
+    });
 
-    expect(
-      screen.getByRole("button", { name: "Continue with Google" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Private administrator tools")).toBeNull();
+    renderGate();
+
+    expect(await screen.findByText("adminAuth.denied")).toBeInTheDocument();
+    expect(screen.queryByText("admin content")).not.toBeInTheDocument();
   });
 
-  it("rejects another Google account and lets the user switch accounts", async () => {
-    const user = userEvent.setup();
-    renderAdminRoute();
-    publishUser({ email: "someone@example.com", emailVerified: true });
-
-    expect(
-      screen.getByText("This Google account is not authorized."),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("button", { name: "Use another Google account" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Private administrator tools")).toBeNull();
-
-    await user.click(
-      screen.getByRole("button", { name: "Use another Google account" }),
+  it("sends an unauthenticated visitor to the login page", async () => {
+    vi.mocked(ownApiClient.getCurrentUser).mockRejectedValue(
+      new Error("AUTH_REQUIRED"),
     );
 
-    expect(adminAuthMock.signOut).toHaveBeenCalledTimes(1);
-    expect(adminAuthMock.signIn).not.toHaveBeenCalled();
+    renderGate();
+
+    expect(await screen.findByText("login page")).toBeInTheDocument();
+    expect(screen.queryByText("admin content")).not.toBeInTheDocument();
+  });
+
+  it("hides content while the check is still in flight", () => {
+    vi.mocked(ownApiClient.getCurrentUser).mockReturnValue(
+      new Promise(() => undefined),
+    );
+
+    renderGate();
+
+    expect(screen.getByText("adminAuth.checking")).toBeInTheDocument();
+    expect(screen.queryByText("admin content")).not.toBeInTheDocument();
+  });
+
+  it("refreshes the cached session from what the server reported", async () => {
+    vi.mocked(ownApiClient.getCurrentUser).mockResolvedValue({
+      id: "user-1",
+      username: "sonat",
+      displayName: "Sonat",
+      isAdministrator: true,
+    });
+
+    renderGate();
+
+    await waitFor(() =>
+      expect(setAuthSession).toHaveBeenCalledWith({
+        userId: "user-1",
+        username: "sonat",
+        displayName: "Sonat",
+        isAdministrator: true,
+      }),
+    );
   });
 });

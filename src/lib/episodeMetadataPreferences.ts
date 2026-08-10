@@ -1,5 +1,10 @@
 import type { Language } from "../i18n/translations";
-import type { TmdbImageLanguage } from "./tmdbArtworkApi";
+/**
+ * Artwork language preference. Kept here because this is now its only consumer:
+ * the TMDB artwork admin client it used to live in talked to a backend that the
+ * native metadata service replaced.
+ */
+export type TmdbImageLanguage = "en" | "tr" | null;
 import type { MediaItem } from "./types";
 
 const EPISODE_METADATA_STORAGE_KEY = "seyirlik-episode-metadata-overrides";

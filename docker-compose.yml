@@ -1,0 +1,37 @@
+# PostgreSQL for Seyirlik.
+#
+# The media server keeps its catalogue, watch state, sessions and job queue here,
+# so this has to be running before `npm run server` will start. Everything else
+# Seyirlik needs (FFmpeg, the media volume, generated storage) lives on the host.
+#
+#   docker compose up -d
+#
+# The password below is only ever reachable from this machine: the port is bound
+# to the loopback address, so nothing on the LAN can connect to the database even
+# though the media server itself listens on all interfaces.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: seyirlik-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: seyirlik
+      POSTGRES_DB: seyirlik
+      # Must match the password in DATABASE_URL.
+      POSTGRES_PASSWORD: ${SEYIRLIK_DB_PASSWORD:-seyirlik-local-only}
+      # Deterministic collation, so sort order cannot shift under a base-image
+      # upgrade and silently reorder every library listing.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=und-x-icu"
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - seyirlik-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seyirlik -d seyirlik"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  seyirlik-postgres-data:

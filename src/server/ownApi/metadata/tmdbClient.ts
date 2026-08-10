@@ -107,6 +107,17 @@ export interface CreateTmdbClientOptions {
   fetchImpl?: typeof fetch;
 }
 
+/**
+ * TMDB has two credential formats and they authenticate differently:
+ * a v4 read access token is a JWT sent as a bearer token, while a v3 key is a
+ * 32-character hex string that must travel as the `api_key` query parameter.
+ * Sending one as the other returns 401 on every request, so the format is
+ * detected rather than assumed.
+ */
+export function isV4ReadAccessToken(apiKey: string): boolean {
+  return apiKey.trim().startsWith("eyJ");
+}
+
 export function createTmdbClient({
   apiKey,
   language = "en-US",
@@ -115,6 +126,8 @@ export function createTmdbClient({
   if (!apiKey.trim()) {
     throw new Error("SEYIRLIK_TMDB_API_KEY is required for metadata lookups.");
   }
+
+  const usesBearerToken = isV4ReadAccessToken(apiKey);
 
   async function request<T>(
     endpoint: string,
@@ -125,6 +138,9 @@ export function createTmdbClient({
     for (const [key, value] of Object.entries(params)) {
       url.searchParams.set(key, value);
     }
+    if (!usesBearerToken) {
+      url.searchParams.set("api_key", apiKey);
+    }
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -133,9 +149,9 @@ export function createTmdbClient({
       const response = await fetchImpl(url, {
         signal: controller.signal,
         headers: {
-          // The key travels as a bearer token rather than a query parameter so
-          // it cannot leak through a proxy access log.
-          Authorization: `Bearer ${apiKey}`,
+          // A v4 token travels as a header so it cannot leak through a proxy
+          // access log; a v3 key has no such option and rides in the query.
+          ...(usesBearerToken ? { Authorization: `Bearer ${apiKey}` } : {}),
           Accept: "application/json",
         },
       });
@@ -153,8 +169,8 @@ export function createTmdbClient({
       return (await response.json()) as T;
     } catch (error) {
       if (error instanceof TmdbError) throw error;
-      // Deliberately does not include the URL: it carries the query and, on a
-      // misconfiguration, could carry the key.
+      // Deliberately does not include the URL: with a v3 key the query string
+      // carries the credential.
       throw new TmdbError("unavailable", "The provider could not be reached.");
     } finally {
       clearTimeout(timeout);
