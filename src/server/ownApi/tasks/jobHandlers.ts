@@ -110,7 +110,11 @@ export function createJobHandlers({
         priority: 200,
       });
     }
-    if (metadataService && summary.itemsCreated > 0) {
+    // Not gated on itemsCreated: a scan that failed after reconciling leaves the
+    // items already created, so the retry would report zero and never ask for
+    // metadata. The job is deduped and exits immediately when nothing is
+    // pending, so queueing it unconditionally costs nothing.
+    if (metadataService) {
       await queue.enqueue({
         jobType: JOB_TYPES.metadataScan,
         payload: { libraryId },

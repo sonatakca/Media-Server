@@ -180,6 +180,10 @@ describe("file classification", () => {
     expect(isExtraDirectory("Extras")).toBe(true);
     expect(isExtraDirectory("behind the scenes")).toBe(true);
     expect(isExtraDirectory("Season 01")).toBe(false);
+    // Media managers write video backdrops and theme clips beside a title;
+    // these hold real .mp4 files and would otherwise scan as separate movies.
+    expect(isExtraDirectory("Backdrops")).toBe(true);
+    expect(isExtraDirectory("extrafanart")).toBe(true);
     expect(isTrailerFile("The Matrix-trailer")).toBe(true);
     expect(isTrailerFile("The Trailer Park Boys")).toBe(false);
   });

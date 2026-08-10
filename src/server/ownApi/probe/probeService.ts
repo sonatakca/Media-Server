@@ -26,17 +26,32 @@ interface PendingFile {
 }
 
 /**
- * Failure messages are stored for operators but must never carry a filesystem
- * path or an ffprobe argument list, both of which routinely appear in stderr.
+ * Reasons an analysis can fail, recognised by exact phrase.
+ *
+ * FFmpeg reports failures as "<the full input path>: <reason>", and the path
+ * routinely contains spaces — so no amount of stripping can reliably separate
+ * the two. Matching an allowlist of known reasons and discarding everything
+ * else is the only version of this that cannot leak the library layout.
  */
-function sanitizeProbeError(error: unknown): string {
+const KNOWN_PROBE_FAILURES = [
+  "Invalid data found when processing input",
+  "No such file or directory",
+  "Permission denied",
+  "moov atom not found",
+  "Invalid argument",
+  "End of file",
+  "Protocol not found",
+  "Decoder not found",
+  "Unknown decoder",
+  "Server returned 404 Not Found",
+] as const;
+
+export function classifyProbeFailure(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  const firstLine = message.split("\n", 1)[0] ?? "";
-  return firstLine
-    .replace(/(^|\s)(?:[A-Za-z]:)?[\\/][^\s]*/g, " ")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-    .slice(0, 480) || "The media file could not be analysed.";
+  const matched = KNOWN_PROBE_FAILURES.find((reason) =>
+    message.includes(reason),
+  );
+  return matched ?? "The media file could not be analysed.";
 }
 
 export function createProbeService({
@@ -191,7 +206,7 @@ export function createProbeService({
             `UPDATE media_files
              SET probe_state = 'failed', probe_error = $2, probed_at = now(), updated_at = now()
              WHERE id = $1`,
-            [file.id, sanitizeProbeError(error)],
+            [file.id, classifyProbeFailure(error)],
           );
         }
       }

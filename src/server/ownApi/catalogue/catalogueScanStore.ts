@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DatabasePool } from "../database/databasePool";
+import { BOOK_EXTENSIONS } from "../scanner/nameParser";
 import type { ScannedSubtitle } from "../scanner/libraryScan";
 import type {
   CatalogueScanStore,
@@ -114,12 +115,20 @@ export function createCatalogueScanStore(
     },
 
     upsertFile: async (input: UpsertFileInput) => {
+      // ffprobe cannot read an epub, and asking it to only produces a failed
+      // row and a log line. A book is complete the moment it is catalogued.
+      const initialProbeState = BOOK_EXTENSIONS.has(
+        (input.container ?? "").toLowerCase(),
+      )
+        ? "probed"
+        : "pending";
+
       const result = await pool.query<{ id: string; changed: boolean }>(
         `INSERT INTO media_files (
            id, item_id, relative_path, container, size_bytes, mtime_ms,
            fingerprint, is_primary, probe_state, last_seen_at, missing_since
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', now(), NULL)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, now(), NULL)
          ON CONFLICT (relative_path) DO UPDATE SET
            item_id = EXCLUDED.item_id,
            container = EXCLUDED.container,
@@ -129,7 +138,7 @@ export function createCatalogueScanStore(
            is_primary = EXCLUDED.is_primary,
            -- Only a genuine content change invalidates the stored probe.
            probe_state = CASE WHEN media_files.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint
-                              THEN 'pending' ELSE media_files.probe_state END,
+                              THEN EXCLUDED.probe_state ELSE media_files.probe_state END,
            last_seen_at = now(),
            missing_since = NULL,
            updated_at = now()
@@ -143,6 +152,7 @@ export function createCatalogueScanStore(
           Math.trunc(input.mtimeMs),
           input.fingerprint,
           input.isPrimary,
+          initialProbeState,
         ],
       );
       const row = result.rows[0];
@@ -236,10 +246,12 @@ export function createCatalogueScanStore(
 
     queueProbe: async (fileIds) => {
       if (fileIds.length === 0) return;
+      // A book is reported as changed like any other file, but there is still
+      // nothing for ffprobe to read, so it must not be put back into the queue.
       await pool.query(
         `UPDATE media_files SET probe_state = 'pending', probe_error = NULL
-         WHERE id = ANY($1)`,
-        [fileIds],
+         WHERE id = ANY($1) AND lower(COALESCE(container, '')) <> ALL($2)`,
+        [fileIds, [...BOOK_EXTENSIONS]],
       );
     },
 

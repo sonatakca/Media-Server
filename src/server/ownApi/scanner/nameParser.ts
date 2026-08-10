@@ -182,6 +182,15 @@ export function isIgnoredEntry(name: string): boolean {
 }
 
 const EXTRA_DIRECTORY_NAMES = new Set([
+  // Media managers write video backdrops and theme clips beside a title. They
+  // contain real video files, so without this they scan as separate movies.
+  "backdrops",
+  "backdrop",
+  "theme-music",
+  "theme videos",
+  "extrafanart",
+  "extrathumbs",
+  ".actors",
   "extras",
   "featurettes",
   "behind the scenes",

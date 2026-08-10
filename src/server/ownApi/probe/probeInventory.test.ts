@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { toPersistedProbe } from "./probeInventory";
+import { classifyProbeFailure } from "./probeService";
 import type { MediaAnalysis } from "../../../lib/playback-planner/types";
 
 function analysis(overrides: Partial<MediaAnalysis> = {}): MediaAnalysis {
@@ -146,5 +147,37 @@ describe("toPersistedProbe", () => {
       { chapterIndex: 1, startMs: 120_000, name: "Second" },
       { chapterIndex: 2, startMs: 240_000, name: null },
     ]);
+  });
+});
+
+describe("classifyProbeFailure", () => {
+  it("keeps a recognised reason", () => {
+    expect(
+      classifyProbeFailure(
+        new Error("ffprobe failed with exit code 1: Invalid data found when processing input"),
+      ),
+    ).toBe("Invalid data found when processing input");
+  });
+
+  /**
+   * FFmpeg reports "<input path>: <reason>", and library paths contain spaces,
+   * so the path cannot be stripped out reliably. Only the recognised reason is
+   * kept; everything else is discarded.
+   */
+  it("does not leak the filesystem path that FFmpeg echoes back", () => {
+    const message =
+      "ffprobe failed with exit code 1: Yeni Dunya\\Cesur Yeni Dunya.epub: Invalid data found when processing input";
+
+    const classified = classifyProbeFailure(new Error(message));
+
+    expect(classified).toBe("Invalid data found when processing input");
+    expect(classified).not.toContain("epub");
+    expect(classified).not.toContain("\\");
+  });
+
+  it("falls back to a generic message for anything unrecognised", () => {
+    expect(
+      classifyProbeFailure(new Error("D:/media/Movies/Secret (2024)/x.mkv weird failure")),
+    ).toBe("The media file could not be analysed.");
   });
 });
