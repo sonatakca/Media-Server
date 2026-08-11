@@ -1,4 +1,5 @@
 import { ownApiClient, ownApiUrl } from "../api/ownApi/client";
+import { nextProgressSequence } from "./progressSequence";
 import {
   toMediaItem,
   toMediaItems,
@@ -388,17 +389,10 @@ export async function setItemFavourite(
   );
 }
 
-/**
- * Progress writes carry a monotonic sequence so a delayed retry from a
- * backgrounded tab can never rewind a position the user has since passed.
- */
-let progressSequence = 0;
-
 async function writeProgress(
   itemId: string,
   positionTicks: number,
 ): Promise<void> {
-  progressSequence += 1;
   try {
     await ownApiClient.request<unknown>(
       `/progress/${encodeURIComponent(itemId)}`,
@@ -406,7 +400,7 @@ async function writeProgress(
         method: "PUT",
         body: {
           positionMs: ticksToMs(positionTicks),
-          sequence: progressSequence,
+          sequence: nextProgressSequence(),
         },
       },
     );
@@ -460,10 +454,9 @@ export function reportPlaybackStoppedBeforeUnload(
 ): void {
   if (typeof navigator === "undefined" || !navigator.sendBeacon) return;
 
-  progressSequence += 1;
   const payload = JSON.stringify({
     positionMs: ticksToMs(positionTicks),
-    sequence: progressSequence,
+    sequence: nextProgressSequence(),
   });
   navigator.sendBeacon(
     ownApiUrl(`/ownAPI/v1/progress/${encodeURIComponent(source.itemId)}`),
