@@ -17,14 +17,23 @@ vi.mock("framer-motion", () => ({
     div: ({
       children,
       // Motion-only props must not reach the DOM or React warns about each one.
+      // They are surfaced as data attributes instead, so a test can assert that
+      // a fade was actually asked for rather than trusting that it was.
       layout: _layout,
-      initial: _initial,
-      animate: _animate,
-      exit: _exit,
+      initial,
+      animate,
+      exit,
       transition: _transition,
       ...props
     }: Record<string, unknown> & { children?: React.ReactNode }) => (
-      <div {...(props as object)}>{children}</div>
+      <div
+        data-initial-opacity={String((initial as { opacity?: number })?.opacity)}
+        data-animate-opacity={String((animate as { opacity?: number })?.opacity)}
+        data-exit-opacity={String((exit as { opacity?: number })?.opacity)}
+        {...(props as object)}
+      >
+        {children}
+      </div>
     ),
   },
   useReducedMotion: () => true,
@@ -161,6 +170,19 @@ describe("notification host", () => {
     expect(screen.queryByText("Saved again")).toBeNull();
   });
 
+  it("fades in and out rather than appearing and vanishing", () => {
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Saved", tone: "success" });
+    });
+
+    const card = screen.getByText("Saved").closest("[data-initial-opacity]");
+    expect(card?.getAttribute("data-initial-opacity")).toBe("0");
+    expect(card?.getAttribute("data-animate-opacity")).toBe("1");
+    // Without an exit the card would be gone the instant the store drops it.
+    expect(card?.getAttribute("data-exit-opacity")).toBe("0");
+  });
+
   it("shows how many are hidden once the pile is deep", () => {
     render(<NotificationHost />);
     act(() => {
@@ -170,6 +192,122 @@ describe("notification host", () => {
     });
 
     expect(screen.getByText("notifications.more")).toBeInTheDocument();
+  });
+
+  it("opens the pile so the buried ones can actually be read", () => {
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 9; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "error" });
+      }
+    });
+
+    // Only the peeking few are rendered while it is closed.
+    expect(screen.queryByText("Entry 0")).toBeNull();
+
+    act(() => {
+      screen.getByText("notifications.more").click();
+    });
+
+    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+    expect(screen.getByText("Entry 8")).toBeInTheDocument();
+  });
+
+  it("opens the pile when a collapsed card itself is clicked", () => {
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 6; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "error" });
+      }
+    });
+
+    // The fourth card is the first collapsed one.
+    act(() => {
+      screen.getByText("Entry 2").click();
+    });
+
+    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+  });
+
+  it("closes again", () => {
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 9; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "error" });
+      }
+    });
+
+    act(() => {
+      screen.getByText("notifications.more").click();
+    });
+    act(() => {
+      screen.getByText("notifications.showLess").click();
+    });
+
+    expect(screen.queryByText("Entry 0")).toBeNull();
+  });
+
+  it("stops the clock while the pile is open", () => {
+    // Reading takes longer than four seconds, and cards disappearing from under
+    // the cursor would make the pile unreadable exactly when it is being read.
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 6; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "success" });
+      }
+    });
+
+    act(() => {
+      screen.getByText("notifications.more").click();
+    });
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+  });
+
+  it("clears everything at once when asked", () => {
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 6; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "error" });
+      }
+    });
+
+    act(() => {
+      screen.getByText("notifications.more").click();
+    });
+    act(() => {
+      screen.getByText("notifications.dismissAll").click();
+    });
+
+    expect(getNotifications()).toHaveLength(0);
+  });
+
+  it("dismissing one card does not open the pile underneath it", () => {
+    render(<NotificationHost />);
+    act(() => {
+      for (let index = 0; index < 6; index += 1) {
+        notify({ title: `Entry ${index}`, tone: "error" });
+      }
+    });
+
+    act(() => {
+      // The dismiss control of a collapsed card sits inside its clickable body.
+      const collapsed = screen.getByText("Entry 2").closest("div")
+        ?.parentElement as HTMLElement;
+      collapsed
+        .querySelector<HTMLButtonElement>('button[aria-label="notifications.dismiss"]')
+        ?.click();
+    });
+
+    // Asserting on visibility would prove nothing: the pile shrinks by one, so
+    // the next card surfaces either way. Whether it opened is the question.
+    expect(
+      screen.getByText("notifications.more").closest("button"),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(getNotifications()).toHaveLength(5);
   });
 
   it("hides the description of a collapsed card, which is only a depth cue", () => {

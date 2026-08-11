@@ -888,6 +888,8 @@ export const tr = {
   "logoLayout.noLogo": "Bu yapımın henüz yerleştirilecek bir logosu yok.",
   "notifications.dismiss": "Kapat",
   "notifications.more": "+{count} tane daha",
+  "notifications.showLess": "Daha az göster",
+  "notifications.dismissAll": "Tümünü temizle",
   "tasks.libraryScan": "Kütüphane taraması",
   "tasks.metadataScan": "Veri araması",
   "tasks.metadataRefresh": "Veri yenileme",

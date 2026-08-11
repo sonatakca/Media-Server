@@ -886,6 +886,8 @@ export const en = {
   "logoLayout.noLogo": "This title has no logo to place yet.",
   "notifications.dismiss": "Dismiss",
   "notifications.more": "+{count} more",
+  "notifications.showLess": "Show less",
+  "notifications.dismissAll": "Clear all",
   "tasks.libraryScan": "Library scan",
   "tasks.metadataScan": "Metadata lookup",
   "tasks.metadataRefresh": "Metadata refresh",

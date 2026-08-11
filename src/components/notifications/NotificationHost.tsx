@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Info,
   Loader2,
   X,
@@ -10,13 +12,17 @@ import {
 } from "lucide-react";
 import {
   NOTIFICATION_LIFETIMES_MS,
+  dismissAllNotifications,
   dismissNotification,
   getNotifications,
   subscribeToNotifications,
   type NotificationTone,
   type SeyirlikNotification,
 } from "../../lib/notifications/notificationStore";
-import { planNotificationStack } from "../../lib/notifications/notificationStack";
+import {
+  MAX_EXPANDED_NOTIFICATIONS,
+  planNotificationStack,
+} from "../../lib/notifications/notificationStack";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 const TONE_ICONS: Record<
@@ -44,11 +50,11 @@ const TONE_ACCENTS: Record<NotificationTone, string> = {
  * A timer per card rather than one sweep, so a card that arrives while another
  * is halfway through its life still gets its full time.
  */
-function useExpiry(notification: SeyirlikNotification): void {
+function useExpiry(notification: SeyirlikNotification, isPaused: boolean): void {
   const { id, life, createdAt } = notification;
 
   useEffect(() => {
-    if (life === "persistent") return undefined;
+    if (life === "persistent" || isPaused) return undefined;
 
     const elapsed = Date.now() - createdAt;
     const remaining = NOTIFICATION_LIFETIMES_MS[life] - elapsed;
@@ -59,18 +65,20 @@ function useExpiry(notification: SeyirlikNotification): void {
     return () => window.clearTimeout(timer);
     // `createdAt` is included so a keyed notification that is replaced in place
     // restarts its life rather than expiring on the original schedule.
-  }, [createdAt, id, life]);
+  }, [createdAt, id, isPaused, life]);
 }
 
 function NotificationCard({
   notification,
   isCollapsed,
+  isPaused,
 }: {
   notification: SeyirlikNotification;
   isCollapsed: boolean;
+  isPaused: boolean;
 }) {
   const { t } = useLanguage();
-  useExpiry(notification);
+  useExpiry(notification, isPaused);
 
   const Icon = TONE_ICONS[notification.tone];
   const accent = TONE_ACCENTS[notification.tone];
@@ -79,7 +87,7 @@ function NotificationCard({
     Number.isFinite(notification.progress);
 
   return (
-    <div className="pointer-events-auto w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0b0b10]/90 shadow-[0_24px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+    <div className="w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/[0.12] bg-[#0b0b10]/90 shadow-[0_24px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
       <div className="flex items-start gap-3 p-3.5">
         <Icon
           className={`mt-0.5 h-4 w-4 shrink-0 ${accent} ${
@@ -92,7 +100,7 @@ function NotificationCard({
             {notification.title}
           </p>
           {/* A collapsed card is a depth cue, not something to read, so it
-              carries only its title. */}
+              carries only its title until the pile is opened. */}
           {notification.description && !isCollapsed ? (
             <p className="mt-0.5 text-xs font-semibold leading-5 text-white/50">
               {notification.description}
@@ -113,7 +121,11 @@ function NotificationCard({
 
         <button
           type="button"
-          onClick={() => dismissNotification(notification.id)}
+          onClick={(event) => {
+            // Dismissing must not also toggle the pile it sits in.
+            event.stopPropagation();
+            dismissNotification(notification.id);
+          }}
           aria-label={t("notifications.dismiss")}
           className="-m-1 shrink-0 rounded-full p-1 text-white/35 transition hover:bg-white/10 hover:text-white/80"
         >
@@ -138,53 +150,125 @@ export function NotificationHost() {
     getNotifications,
     getNotifications,
   );
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const overflowCount = Math.max(
+    0,
+    notifications.length - MAX_EXPANDED_NOTIFICATIONS,
+  );
+
+  // Nothing left to open means nothing left to close; otherwise the control
+  // would linger after the pile it belonged to had drained away.
+  useEffect(() => {
+    if (overflowCount === 0 && isExpanded) setIsExpanded(false);
+  }, [isExpanded, overflowCount]);
 
   const stack = useMemo(
-    () => planNotificationStack(notifications),
-    [notifications],
+    () =>
+      planNotificationStack(
+        notifications,
+        isExpanded ? notifications.length : MAX_EXPANDED_NOTIFICATIONS,
+      ),
+    [isExpanded, notifications],
   );
+
+  // Reading the pile takes longer than four seconds, so nothing expires while
+  // it is open — otherwise cards would vanish from under the cursor.
+  const isPaused = isExpanded;
 
   return (
     <div
       aria-live="polite"
-      className="pointer-events-none fixed right-4 top-4 z-[200] flex flex-col items-end gap-2 sm:right-6 sm:top-6"
+      className="pointer-events-none fixed right-4 top-4 z-[200] flex max-h-[calc(100vh-2rem)] flex-col items-end gap-2 sm:right-6 sm:top-6"
     >
-      <AnimatePresence initial={false}>
-        {stack.entries.map((entry) => (
-          <motion.div
-            key={entry.notification.id}
-            layout={!shouldReduceMotion}
-            style={{ zIndex: entry.zIndex }}
-            initial={{ opacity: 0, y: -12, scale: 0.96 }}
-            animate={{
-              opacity: entry.opacity,
-              y: entry.offsetY,
-              scale: entry.scale,
-              // Collapsed cards overlap the one in front instead of taking a
-              // row of their own.
-              marginTop: entry.isCollapsed ? -52 : 0,
-            }}
-            exit={{ opacity: 0, y: -8, scale: 0.96 }}
-            transition={{
-              duration: shouldReduceMotion ? 0 : 0.24,
-              ease: [0.22, 1, 0.36, 1],
-            }}
-          >
-            <NotificationCard
-              notification={entry.notification}
-              isCollapsed={entry.isCollapsed}
-            />
-          </motion.div>
-        ))}
-      </AnimatePresence>
+      <div
+        className={`flex flex-col items-end gap-2 ${
+          isExpanded
+            ? "pointer-events-auto overflow-y-auto overscroll-contain pr-1"
+            : ""
+        }`}
+      >
+        <AnimatePresence initial={false}>
+          {stack.entries.map((entry) => (
+            <motion.div
+              key={entry.notification.id}
+              layout={!shouldReduceMotion}
+              style={{ zIndex: entry.zIndex }}
+              className="pointer-events-auto"
+              onClick={
+                entry.isCollapsed ? () => setIsExpanded(true) : undefined
+              }
+              // Movement is skipped when motion is reduced, but the fade stays:
+              // appearing and disappearing without one is what reads as a
+              // glitch rather than as a change.
+              initial={{
+                opacity: 0,
+                y: shouldReduceMotion ? 0 : -16,
+                scale: shouldReduceMotion ? 1 : 0.94,
+              }}
+              animate={{
+                opacity: entry.opacity,
+                y: entry.offsetY,
+                scale: shouldReduceMotion ? 1 : entry.scale,
+                // Collapsed cards overlap the one in front instead of taking a
+                // row of their own.
+                marginTop: entry.isCollapsed ? -52 : 0,
+              }}
+              exit={{
+                opacity: 0,
+                y: shouldReduceMotion ? 0 : -10,
+                scale: shouldReduceMotion ? 1 : 0.94,
+              }}
+              transition={{
+                duration: shouldReduceMotion ? 0.18 : 0.34,
+                ease: [0.22, 1, 0.36, 1],
+                opacity: { duration: shouldReduceMotion ? 0.18 : 0.28 },
+              }}
+            >
+              <NotificationCard
+                notification={entry.notification}
+                isCollapsed={entry.isCollapsed}
+                isPaused={isPaused}
+              />
+            </motion.div>
+          ))}
+        </AnimatePresence>
+      </div>
 
-      {stack.hiddenCount > 0 ? (
-        <span className="pointer-events-none rounded-full border border-white/10 bg-black/60 px-2.5 py-1 text-[0.68rem] font-black text-white/50 backdrop-blur">
-          {t("notifications.more").replace(
-            "{count}",
-            String(stack.hiddenCount),
-          )}
-        </span>
+      {overflowCount > 0 || isExpanded ? (
+        <div className="pointer-events-auto flex items-center gap-1.5">
+          {isExpanded ? (
+            <button
+              type="button"
+              onClick={dismissAllNotifications}
+              className="rounded-full border border-white/10 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white/50 backdrop-blur transition hover:border-white/25 hover:text-white/85"
+            >
+              {t("notifications.dismissAll")}
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={() => setIsExpanded((current) => !current)}
+            aria-expanded={isExpanded}
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-black/70 px-2.5 py-1 text-[0.68rem] font-black text-white/55 backdrop-blur transition hover:border-white/25 hover:text-white/90"
+          >
+            {isExpanded ? (
+              <>
+                <ChevronUp className="h-3 w-3" />
+                {t("notifications.showLess")}
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3 w-3" />
+                {t("notifications.more").replace(
+                  "{count}",
+                  String(overflowCount),
+                )}
+              </>
+            )}
+          </button>
+        </div>
       ) : null}
     </div>
   );
