@@ -284,8 +284,50 @@ export function usePartyWatchController({
     [],
   );
 
+  /**
+   * Solo playback: there is no group to command, so the element is driven
+   * directly.
+   *
+   * Every player control routes through this controller, so without these the
+   * pause and seek buttons do nothing at all whenever the viewer is not in a
+   * party — which is nearly always.
+   */
+  const toggleLocalPlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused || video.ended) {
+      void video.play().catch(() => undefined);
+    } else {
+      video.pause();
+    }
+  }, [videoRef]);
+
+  const seekLocalTo = useCallback(
+    (seconds: number) => {
+      const video = videoRef.current;
+      if (!video) return;
+
+      // `duration` is NaN until metadata arrives; clamping against it then
+      // would put the position at NaN and lose the viewer's place.
+      const duration = video.duration;
+      const upperBound =
+        Number.isFinite(duration) && duration > 0 ? duration - 0.25 : undefined;
+      const target = Math.max(
+        0,
+        upperBound === undefined ? seconds : Math.min(seconds, upperBound),
+      );
+      video.currentTime = target;
+      refreshProgress();
+    },
+    [refreshProgress, videoRef],
+  );
+
   const togglePlay = useCallback(() => {
-    if (!groupId || isRemoteApplyInFlight()) return;
+    if (isRemoteApplyInFlight()) return;
+    if (!groupId) {
+      toggleLocalPlay();
+      return;
+    }
 
     const positionMs = Math.round(currentTimeRef.current * 1_000);
     void (
@@ -297,18 +339,23 @@ export function usePartyWatchController({
         if (next) setGroup(next);
       })
       .catch(() => setErrorKey("party.syncPlayUnavailable"));
-  }, [groupId, isRemoteApplyInFlight]);
+  }, [groupId, isRemoteApplyInFlight, toggleLocalPlay]);
 
   const seekTo = useCallback(
     (seconds: number) => {
-      if (!groupId || isRemoteApplyInFlight()) return;
+      if (isRemoteApplyInFlight()) return;
+      if (!groupId) {
+        seekLocalTo(seconds);
+        return;
+      }
+
       void sendPartyWatchSeek(groupId, Math.max(0, Math.round(seconds * 1_000)))
         .then((next) => {
           if (next) setGroup(next);
         })
         .catch(() => setErrorKey("party.syncPlayUnavailable"));
     },
-    [groupId, isRemoteApplyInFlight],
+    [groupId, isRemoteApplyInFlight, seekLocalTo],
   );
 
   const seekBy = useCallback(
