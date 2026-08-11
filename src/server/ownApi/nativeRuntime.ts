@@ -38,7 +38,11 @@ import { createTmdbClient } from "./metadata/tmdbClient";
 import { createUserStateRepository } from "./progress/userStateRepository";
 import { createProgressRoutes } from "./progress/progressRoutes";
 import { createPlaybackSessionStore } from "./playback/playbackSessionStore";
-import { createPlaybackRoutes } from "./playback/playbackRoutes";
+import {
+  PLAYBACK_RENDITION_ROUTE_BASE,
+  createPlaybackRoutes,
+} from "./playback/playbackRoutes";
+import { createRenditionService } from "../renditionService";
 import {
   createLibraryRepository,
   parseLibraryDefinitions,
@@ -178,6 +182,31 @@ export async function createNativeRuntime({
   const syncplay = createSyncplayRepository(pool);
   const syncplayEvents = createSyncplayEventBus();
 
+  /**
+   * Pre-encoded renditions produced by the offline CLI.
+   *
+   * The media id is the media file's own id: the registry is keyed by path and
+   * the serving route re-checks library visibility, so nothing here needs a
+   * second opaque identifier to hand around.
+   */
+  const renditions = createRenditionService({
+    mediaRoot,
+    renditionRoot:
+      environment.SEYIRLIK_RENDITION_ROOT?.trim() ||
+      path.join(mediaRoot, ".seyirlik", "renditions"),
+    stateRoot:
+      environment.SEYIRLIK_RENDITION_STATE_ROOT?.trim() ||
+      path.join(mediaRoot, ".seyirlik", "state"),
+    mediaResolver: {
+      resolveMedia: () => {
+        throw new Error("The native playback routes resolve media themselves.");
+      },
+      encodeMediaToken: (mediaId) => mediaId,
+      decodeMediaToken: (token) => token,
+    },
+    basePath: PLAYBACK_RENDITION_ROUTE_BASE,
+  });
+
   const trickplay = createTrickplayService({
     pool,
     catalogue,
@@ -243,6 +272,7 @@ export async function createNativeRuntime({
       sessions: playbackSessions,
       sessionManager,
       mediaRoot,
+      renditions,
     }),
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),

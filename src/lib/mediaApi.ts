@@ -559,6 +559,20 @@ export async function getPlaybackInfo(
   return {
     MediaSources: [mediaSource],
     PlaySessionId: session.sessionId,
+    // Rendition URLs are server-relative for the same reason the delivery URL
+    // is: a deployment that serves the app and the API from different hosts has
+    // to send the browser to the API's origin, not its own.
+    ...(session.qualityManifest
+      ? {
+          qualityManifest: {
+            ...session.qualityManifest,
+            qualities: session.qualityManifest.qualities.map((quality) => ({
+              ...quality,
+              playbackUrl: ownApiUrl(quality.playbackUrl),
+            })),
+          },
+        }
+      : {}),
   };
 }
 
@@ -597,6 +611,9 @@ export function buildPlaybackCandidates(
       label: isHls ? "Adaptive stream" : "Original file",
       mediaSource,
       playbackInfo,
+      ...(playbackInfo.qualityManifest
+        ? { qualityManifest: playbackInfo.qualityManifest }
+        : {}),
       reason: isHls
         ? "The server is repackaging this title for your browser."
         : "Your browser can play this file directly.",

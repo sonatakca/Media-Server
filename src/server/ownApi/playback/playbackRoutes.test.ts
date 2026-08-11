@@ -2,7 +2,11 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { describe, expect, it } from "vitest";
 import { createOwnApiRouter, type RouteContext } from "../api/router";
 import { sendOwnApiJson } from "../ownApiHandler";
-import { toNativeMode, toReasonCodes } from "./playbackRoutes";
+import {
+  createPlaybackRoutes,
+  toNativeMode,
+  toReasonCodes,
+} from "./playbackRoutes";
 import type { PlaybackPlan } from "../../../lib/playback-planner/types";
 
 function plan(overrides: Partial<PlaybackPlan> = {}): PlaybackPlan {
@@ -173,5 +177,138 @@ describe("route precedence for session delivery", () => {
     expect(
       router.resolveTemplate("/ownAPI/v1/playback/sessions/abc/segment_1.ts"),
     ).toBe("/ownAPI/v1/playback/sessions/:sessionId/:segmentName");
+  });
+});
+
+describe("rendition delivery", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const FILE = "22222222-2222-4222-8222-222222222222";
+  const HIDDEN_FILE = "33333333-3333-4333-8333-333333333333";
+
+  function buildRenditionRouter(options: { served: string[] }) {
+    const catalogue = {
+      getFileById: async (id: string) =>
+        id === FILE
+          ? { id: FILE, itemId: "item-visible", missingSince: null }
+          : id === HIDDEN_FILE
+            ? { id: HIDDEN_FILE, itemId: "item-hidden", missingSince: null }
+            : null,
+      canUserAccessItem: async (_userId: string, itemId: string) =>
+        itemId === "item-visible",
+    } as unknown as Parameters<typeof createPlaybackRoutes>[0]["catalogue"];
+
+    const renditions = {
+      createManifest: async () => ({ mediaId: FILE, qualities: [] }),
+      handleRequest: async (request: IncomingMessage) => {
+        options.served.push(request.url ?? "");
+        return true;
+      },
+    } as unknown as NonNullable<
+      Parameters<typeof createPlaybackRoutes>[0]["renditions"]
+    >;
+
+    return createOwnApiRouter({
+      csrfSecret: "s".repeat(32),
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async () => ({
+        userId: VIEWER,
+        username: "viewer",
+        displayName: "Viewer",
+        isAdministrator: false,
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionTokenHash: Buffer.alloc(32),
+      }),
+      routes: createPlaybackRoutes({
+        catalogue,
+        sessions: {} as never,
+        sessionManager: {} as never,
+        mediaRoot: "/media",
+        renditions,
+      }),
+    });
+  }
+
+  async function get(
+    router: ReturnType<typeof buildRenditionRouter>,
+    pathname: string,
+  ) {
+    const request = {
+      method: "GET",
+      url: pathname,
+      headers: { host: "seyirlik.test" },
+      socket: { remoteAddress: "127.0.0.1" },
+    } as unknown as IncomingMessage;
+    const response = {
+      statusCode: 200,
+      setHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end() {},
+    } as unknown as ServerResponse;
+
+    let error: unknown;
+    let handled = false;
+    try {
+      handled = await router.handler(request, response, {
+        requestId: "req-1",
+        url: new URL(pathname, "https://seyirlik.test"),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    return { error, handled };
+  }
+
+  it("serves a rendition for a file the viewer can see", async () => {
+    const served: string[] = [];
+    const router = buildRenditionRouter({ served });
+
+    const { error } = await get(
+      router,
+      `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`,
+    );
+
+    expect(error).toBeUndefined();
+    expect(served).toEqual([
+      `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`,
+    ]);
+  });
+
+  it("refuses a rendition of a file in a library the viewer cannot see", async () => {
+    // The token is minted from the media file id, so it is guessable. Access has
+    // to be re-checked on every request rather than inferred from possession.
+    const served: string[] = [];
+    const router = buildRenditionRouter({ served });
+
+    const { error } = await get(
+      router,
+      `/ownAPI/v1/playback/renditions/${HIDDEN_FILE}/720-abcdef123456.mp4`,
+    );
+
+    expect((error as { statusCode?: number }).statusCode).toBe(404);
+    expect(served).toEqual([]);
+  });
+
+  it("rejects a token that is not a media file id before touching the service", async () => {
+    const served: string[] = [];
+    const router = buildRenditionRouter({ served });
+
+    // An encoded separator never reaches a handler at all; a well-formed but
+    // non-UUID token is refused by validation. Neither may reach the service.
+    const traversal = await get(
+      router,
+      "/ownAPI/v1/playback/renditions/..%2F..%2Fsecret/720-abcdef123456.mp4",
+    );
+    expect(traversal.handled).toBe(false);
+
+    const notAUuid = await get(
+      router,
+      "/ownAPI/v1/playback/renditions/not-a-uuid/720-abcdef123456.mp4",
+    );
+    expect((notAUuid.error as { statusCode?: number }).statusCode).toBe(422);
+
+    expect(served).toEqual([]);
   });
 });

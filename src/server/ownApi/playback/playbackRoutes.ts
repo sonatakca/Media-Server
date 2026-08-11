@@ -22,14 +22,29 @@ import type {
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import { buildAnalysisFromInventory } from "../probe/analysisFromInventory";
 import type { PlaybackSessionStore } from "./playbackSessionStore";
+import type { RenditionService } from "../../renditionService";
+import type { MediaQualityManifest } from "../../../renditions/contracts";
 
 export const PLAYBACK_SESSION_ROUTE_BASE = "/ownAPI/v1/playback/sessions";
+
+/**
+ * Where pre-encoded renditions are served from. Inside the API namespace, so a
+ * rendition is behind the same session cookie as everything else rather than on
+ * a second, separately-authorized surface.
+ */
+export const PLAYBACK_RENDITION_ROUTE_BASE =
+  "/ownAPI/v1/playback/renditions";
 
 export interface PlaybackRoutesOptions {
   catalogue: CatalogueRepository;
   sessions: PlaybackSessionStore;
   sessionManager: PlaybackSessionManager;
   mediaRoot: string;
+  /**
+   * Absent when no rendition root is configured, in which case playback still
+   * works — it just has nothing but the original and live transcodes to offer.
+   */
+  renditions?: RenditionService;
 }
 
 /** Native plan modes; the browser never sees a Jellyfin transcode reason again. */
@@ -187,6 +202,7 @@ export function createPlaybackRoutes({
   sessions,
   sessionManager,
   mediaRoot,
+  renditions,
 }: PlaybackRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
 
@@ -331,6 +347,59 @@ export function createPlaybackRoutes({
     };
   }
 
+  /**
+   * The pre-encoded ladder for this file, if the offline processor produced one.
+   *
+   * The original is offered alongside the renditions only when it can be played
+   * as-is: a plan that already needs ffmpeg has no direct file to hand over, and
+   * listing one would send the browser to bytes it cannot decode.
+   */
+  async function buildQualityManifest(
+    file: Awaited<ReturnType<typeof catalogue.getFileById>>,
+    analysis: ReturnType<typeof buildAnalysisFromInventory>,
+    plan: PlaybackPlan,
+    capabilities: ClientCapabilities,
+    deliveryUrl: string,
+  ): Promise<MediaQualityManifest | undefined> {
+    if (!renditions || !file) return undefined;
+
+    const absolutePath = path.resolve(
+      resolvedMediaRoot,
+      ...file.relativePath.split("/"),
+    );
+    const video = analysis.videoStreams[0];
+
+    try {
+      return await renditions.createManifest(
+        {
+          mediaId: file.id,
+          filePath: absolutePath,
+          size: Number(file.sizeBytes),
+          mtimeMs: Number(file.mtimeMs),
+        },
+        video && !plan.requiresFfmpeg
+          ? {
+              width: video.width,
+              height: video.height,
+              codec: video.codecName,
+              container:
+                analysis.container.extension ?? analysis.container.formatName,
+              fileSize: Number(file.sizeBytes),
+              playableUrl: deliveryUrl,
+            }
+          : undefined,
+        {
+          hevc: capabilities.video.hevc?.supported === true,
+          h264: capabilities.video.h264?.supported !== false,
+        },
+      );
+    } catch {
+      // A missing or unreadable registry must not stop playback; it only means
+      // there is nothing pre-encoded to offer.
+      return undefined;
+    }
+  }
+
   async function requireOwnedSession(userId: string, sessionId: string) {
     const session = await sessions.get(sessionId);
     if (!session || session.userId !== userId || session.status !== "active") {
@@ -414,12 +483,21 @@ export function createPlaybackRoutes({
           reasonCodes: toReasonCodes(plan),
         });
 
+        const qualityManifest = await buildQualityManifest(
+          file,
+          analysis,
+          plan,
+          request.clientCapabilities,
+          deliveryUrl,
+        );
+
         sendData(context.response, context.requestId, {
           sessionId,
           itemId: request.itemId,
           mediaFileId: file.id,
           plan: planDto(plan),
           delivery: { type: deliveryType, url: deliveryUrl },
+          ...(qualityManifest ? { qualityManifest } : {}),
         });
       },
     },
@@ -514,6 +592,49 @@ export function createPlaybackRoutes({
         );
       },
     },
+
+    ...(renditions
+      ? [
+          {
+            /**
+             * A pre-encoded rendition.
+             *
+             * The token is the media file id, so it is re-authorized here on
+             * every request rather than trusted because it was minted earlier:
+             * an authenticated user must still be able to see the item the file
+             * belongs to. The rendition service then owns the byte serving,
+             * including the walk back to the validated output root.
+             */
+            method: "GET",
+            path: "/playback/renditions/:token/:fileId",
+            access: "authenticated",
+            // Served to a <video> element, which cannot attach a CSRF header.
+            skipCsrf: true,
+            handle: async (context) => {
+              const principal = context.requirePrincipal();
+              const mediaFileId = requireUuid(context.params.token, "token");
+
+              const file = await catalogue.getFileById(mediaFileId);
+              if (
+                !file ||
+                file.missingSince !== null ||
+                !(await catalogue.canUserAccessItem(
+                  principal.userId,
+                  file.itemId,
+                ))
+              ) {
+                throw new OwnApiError(
+                  "MEDIA_NOT_FOUND",
+                  "The requested media could not be found.",
+                  404,
+                );
+              }
+
+              await renditions.handleRequest(context.request, context.response);
+            },
+          } satisfies RouteDefinition,
+        ]
+      : []),
 
     {
       method: "GET",

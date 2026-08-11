@@ -1,3 +1,5 @@
+import type { MediaQualityManifest } from "../../renditions/contracts";
+
 /**
  * Native API response shapes.
  *
@@ -168,6 +170,8 @@ export interface PlaybackSessionDto {
   mediaFileId: string;
   plan: PlaybackPlanDto;
   delivery: { type: "file" | "hls"; url: string };
+  /** Absent when the offline processor has produced nothing for this file. */
+  qualityManifest?: MediaQualityManifest;
 }
 
 export interface HomeDto {
