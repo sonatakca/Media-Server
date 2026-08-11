@@ -10,7 +10,7 @@ vi.mock("../../i18n/LanguageContext", () => ({
 
 const CARD = { width: 200, height: 300 };
 
-function renderEditor(layout: LogoLayout = { x: 0.5, y: 0.5, width: 0.5 }) {
+function renderEditor(layout: LogoLayout = { x: 0.5, y: 0.5, width: 0.5, shadow: 1 }) {
   const onChange = vi.fn();
   const view = render(
     <LogoLayoutEditor
@@ -79,6 +79,7 @@ describe("logo layout editor", () => {
         x: 0.5,
         y: 0.5,
         width: 0.5,
+        shadow: 1,
       });
       return (
         <LogoLayoutEditor
@@ -127,6 +128,7 @@ describe("logo layout editor", () => {
       x: 0.5,
       y: 0.5,
       width: expect.closeTo(0.7),
+      shadow: 1,
     });
   });
 
@@ -184,7 +186,7 @@ describe("logo layout editor", () => {
         posterUrl="https://media.test/poster.jpg"
         logoUrl="https://media.test/logo.png"
         title="Dune"
-        layout={{ x: 0.5, y: 0.5, width: 0.5 }}
+        layout={{ x: 0.5, y: 0.5, width: 0.5, shadow: 1 }}
         onChange={onChange}
         disabled
       />,

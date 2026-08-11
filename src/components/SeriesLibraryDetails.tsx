@@ -724,7 +724,6 @@ export function SeriesLibraryDetails({
                     variant="landscape"
                     index={index}
                     animateIn
-                    showPlayFromBeginning
                   />
                 ) : (
                   <MobileMediaCard

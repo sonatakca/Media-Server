@@ -61,18 +61,16 @@ function logo(): HTMLImageElement {
 }
 
 describe("media card logo layout", () => {
-  it("keeps an unadjusted logo in the block with the year tag", () => {
-    // This is where every logo already sat, so nothing about a title nobody has
-    // touched may move.
+  it("centres an unadjusted logo near the foot of the card", () => {
     renderCard(movie());
 
-    const container = logo().parentElement;
-    expect(container?.className).toContain("-bottom-0");
-    expect(container?.textContent).toContain("2021");
+    expect(logo().className).toContain("bottom-4");
+    // Nothing else is drawn on the card: no gradient, no year, no rating.
+    expect(screen.queryByText("2021")).toBeNull();
   });
 
   it("places an adjusted logo where the layout puts it", () => {
-    renderCard(movie({ x: 0.25, y: 0.4, width: 0.6 }));
+    renderCard(movie({ x: 0.25, y: 0.4, width: 0.6, shadow: 1 }));
 
     const style = logo().style;
     expect(style.left).toBe("25%");
@@ -82,21 +80,44 @@ describe("media card logo layout", () => {
     expect(style.transform).toBe("translate(-50%, -50%)");
   });
 
-  it("draws an adjusted logo once, outside the tag block", () => {
-    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5 }));
-
+  it("draws the logo once", () => {
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 1 }));
     expect(logos()).toHaveLength(1);
-    // The block at the foot of the card owns the tags and their gradient; an
-    // adjusted logo has to have left it rather than be drawn in both places.
-    const tagBlock = screen.getByText("2021").closest(".-bottom-0");
-    expect(tagBlock).not.toBeNull();
-    expect(tagBlock?.contains(logo())).toBe(false);
   });
 
-  it("still shows the year tag when the logo has moved away from it", () => {
-    // The tags belong at the foot of the card whatever the logo does; moving
-    // the logo must not take them with it.
-    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5 }));
-    expect(screen.getByText("2021")).toBeInTheDocument();
+  it("shadows the logo, since nothing else separates it from the artwork", () => {
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 1 }));
+    expect(logo().style.filter).toContain("drop-shadow");
+  });
+
+  it("draws no shadow at all when it is turned off", () => {
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 0 }));
+    expect(logo().style.filter).toBe("");
+  });
+
+  it("deepens the shadow as the strength rises", () => {
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 2 }));
+    expect(logo().style.filter).toContain("68px");
+  });
+
+  it("falls back to the title when a card has no logo", () => {
+    // A card with neither logo nor title would be unidentifiable.
+    render(
+      <MemoryRouter>
+        <MediaCard
+          item={
+            {
+              Id: "item-2",
+              Name: "Arrival",
+              Type: "Movie",
+              ImageTags: { Primary: "p" },
+            } as MediaItem
+          }
+          to="/movies/item-2"
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Arrival")).toBeInTheDocument();
   });
 });

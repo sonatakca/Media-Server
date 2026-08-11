@@ -37,12 +37,10 @@ export function BackButtonSkeleton({ className = "" }: { className?: string }) {
 export function MediaCardSkeleton({
   variant = "poster",
   showEpisodeCount = false,
-  hideTags = false,
   fluid = false,
 }: {
   variant?: "poster" | "landscape";
   showEpisodeCount?: boolean;
-  hideTags?: boolean;
   fluid?: boolean;
 }) {
   const isLandscape = variant === "landscape";
@@ -62,29 +60,15 @@ export function MediaCardSkeleton({
       >
         <div className="shimmer absolute inset-0" />
 
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-1/2 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-
         <div
           className={`shimmer !absolute left-1/2 z-[20] -translate-x-1/2 overflow-hidden rounded-lg ${
             isLandscape
               ? "bottom-12 h-10 w-1/2"
-              : ` ${!hideTags ? "h-20 bottom-14" : "h-28 bottom-3"} w-11/12`
+              : " h-28 bottom-3 w-11/12"
           }`}
         >
           <div className="shimmer absolute inset-0" />
         </div>
-        {!hideTags && (
-          <div className="absolute inset-x-4 bottom-4 z-30 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="shimmer h-5 w-14 rounded-full" />
-              <div className="shimmer h-5 w-12 rounded-full" />
-            </div>
-
-            {showEpisodeCount && (
-              <div className="shimmer h-5 w-16 rounded-full" />
-            )}
-          </div>
-        )}
       </div>
     </div>
   );
@@ -195,7 +179,7 @@ export function BookRowSkeleton({ title }: { title: string }) {
   return (
     <SkeletonRow title={title}>
       {Array.from({ length: 7 }, (_, index) => (
-        <MediaCardSkeleton key={index} hideTags />
+        <MediaCardSkeleton key={index} />
       ))}
     </SkeletonRow>
   );

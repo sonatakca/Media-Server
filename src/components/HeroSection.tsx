@@ -6,7 +6,15 @@ import {
   useIsPresent,
   useReducedMotion,
 } from "framer-motion";
-import { Info, Play, Video, VideoOff, Volume2, VolumeX } from "lucide-react";
+import {
+  Info,
+  Play,
+  RotateCcw,
+  Video,
+  VideoOff,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { ButtonLink } from "./Button";
 import {
   getHeroPreviewUrl,
@@ -28,6 +36,23 @@ import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 import { useCroppedTransparentImage } from "../hooks/useCroppedTransparentImage";
+import { getItemProgressPercent } from "../lib/watchStatus";
+
+/** Below this, "resume" and "start over" land in the same place. */
+export const HERO_START_OVER_MIN_PERCENT = 5;
+
+/**
+ * Whether starting over is a real choice for this title.
+ *
+ * A film barely begun resumes to almost the same place, so the second button
+ * would only be clutter; one already finished has no progress to keep. Both are
+ * excluded, which is what makes the button mean something when it appears.
+ */
+export function canStartOverFromHero(item: MediaItem | undefined): boolean {
+  if (!item) return false;
+  const progress = getItemProgressPercent(item);
+  return progress !== null && progress >= HERO_START_OVER_MIN_PERCENT;
+}
 import { getSmartContinueWatchingItems } from "../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../lib/watchedStatusActions";
 import {
@@ -546,6 +571,13 @@ export function HeroSection({
   const metadata = [item?.ProductionYear, runtime, mediaTypeLabel].filter(
     Boolean,
   );
+  /**
+   * The facts that stay put once the intro is over: what it is and when it is
+   * from. The pill row above them is part of the intro and fades with it.
+   */
+  const heroFacts = [item?.ProductionYear, runtime]
+    .filter(Boolean)
+    .join(" · ");
   const heroGenres = item?.Genres?.filter(Boolean).slice(0, 3) ?? [];
   const heroGenreLabel = heroGenres.join(" · ");
   const overview =
@@ -593,6 +625,7 @@ export function HeroSection({
           )
           .replace("{episodeNumber}", String(smartContinueTarget.IndexNumber))
       : null;
+  const canStartOver = canStartOverFromHero(effectivePlayItem);
   const playButtonLabel = smartEpisodeLabel
     ? `${
         hasResumeProgress ? t("details.continueWatching") : t("common.play")
@@ -1661,6 +1694,26 @@ export function HeroSection({
                         <Play size={30} fill="currentColor" />
                         <AnimatedWidth value={playButtonLabel}>
                           <AnimatedText value={playButtonLabel} />
+                        </AnimatedWidth>
+                      </ButtonLink>
+                    ) : null}
+                    {heroFacts ? (
+                      // The metadata pills above fade out as the intro settles,
+                      // so the year was only ever visible for a moment. This
+                      // sits with the actions, which stay.
+                      <span className="inline-flex min-h-10 items-center rounded-full border border-white/[0.14] bg-black/[0.34] px-4 text-sm font-semibold text-white/[0.82] backdrop-blur sm:min-h-16 sm:px-6 sm:text-base">
+                        {heroFacts}
+                      </span>
+                    ) : null}
+                    {canPlay && canStartOver ? (
+                      <ButtonLink
+                        to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
+                        variant="secondary"
+                        className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 sm:min-h-16 sm:px-8 sm:text-base"
+                      >
+                        <RotateCcw size={26} />
+                        <AnimatedWidth value={t("details.playFromBeginning")}>
+                          <AnimatedText value={t("details.playFromBeginning")} />
                         </AnimatedWidth>
                       </ButtonLink>
                     ) : null}

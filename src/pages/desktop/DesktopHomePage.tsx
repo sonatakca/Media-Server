@@ -391,7 +391,6 @@ export function DesktopHomePage() {
           items={latestMediaGroups.books}
           getItemTo={getRouteForItem}
           emptyMessage={t("home.noLatestBooks")}
-          hideTags
         />
       </div>
     </div>

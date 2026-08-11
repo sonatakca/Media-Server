@@ -193,7 +193,7 @@ export interface MediaItem {
    * Fine placement of this title's logo on its card, in fractions of the card.
    * Absent means never adjusted, which draws the card as it always was.
    */
-  LogoLayout?: { x: number; y: number; width: number } | null;
+  LogoLayout?: { x: number; y: number; width: number; shadow: number } | null;
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;

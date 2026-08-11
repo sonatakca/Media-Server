@@ -875,6 +875,10 @@ export const tr = {
   "logoLayout.horizontal": "Yatay",
   "logoLayout.vertical": "Dikey",
   "logoLayout.size": "Boyut",
+  "logoLayout.shadow": "Gölge",
+  "logoLayout.shadowStrength": "Gölge gücü",
+  "logoLayout.shadowHint":
+    "Logonun arkasında başka bir şey yok; onu görselden ayıran tek şey bu. %0 tamamen kapatır.",
   "logoLayout.save": "Konumu kaydet",
   "logoLayout.reset": "Varsayılana dön",
   "logoLayout.saving": "Konum kaydediliyor...",

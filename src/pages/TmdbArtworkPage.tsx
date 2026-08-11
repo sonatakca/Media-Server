@@ -39,6 +39,9 @@ import { getDisplayTitle, formatTemplate } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
 import {
   INITIAL_LOGO_LAYOUT,
+  MAX_LOGO_SHADOW,
+  MIN_LOGO_SHADOW,
+  clampLogoLayout,
   getLogoLayout,
   type LogoLayout,
 } from "../lib/logoLayout";
@@ -786,12 +789,16 @@ export default function TmdbArtworkPage() {
                       {t("logoLayout.instructions")}
                     </p>
 
-                    <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+                    <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
                       {(
                         [
                           ["logoLayout.horizontal", (layout ?? INITIAL_LOGO_LAYOUT).x],
                           ["logoLayout.vertical", (layout ?? INITIAL_LOGO_LAYOUT).y],
                           ["logoLayout.size", (layout ?? INITIAL_LOGO_LAYOUT).width],
+                          [
+                            "logoLayout.shadow",
+                            (layout ?? INITIAL_LOGO_LAYOUT).shadow / MAX_LOGO_SHADOW,
+                          ],
                         ] as const
                       ).map(([labelKey, value]) => (
                         <div
@@ -807,6 +814,32 @@ export default function TmdbArtworkPage() {
                         </div>
                       ))}
                     </dl>
+
+                    <label className="mt-4 block">
+                      <span className="text-[0.62rem] font-black uppercase tracking-[0.1em] text-white/35">
+                        {t("logoLayout.shadowStrength")}
+                      </span>
+                      <input
+                        type="range"
+                        min={MIN_LOGO_SHADOW}
+                        max={MAX_LOGO_SHADOW}
+                        step={0.05}
+                        value={(layout ?? INITIAL_LOGO_LAYOUT).shadow}
+                        disabled={layoutStatus.tone === "busy"}
+                        onChange={(event) =>
+                          setLayout(
+                            clampLogoLayout({
+                              ...(layout ?? INITIAL_LOGO_LAYOUT),
+                              shadow: Number(event.target.value),
+                            }),
+                          )
+                        }
+                        className="mt-1 w-full accent-sky-300"
+                      />
+                      <span className="text-[0.68rem] font-semibold text-white/40">
+                        {t("logoLayout.shadowHint")}
+                      </span>
+                    </label>
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       <button

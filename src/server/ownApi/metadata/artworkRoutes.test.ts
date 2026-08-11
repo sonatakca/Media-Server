@@ -485,16 +485,17 @@ describe("artwork routes", () => {
       router,
       "PUT",
       `/ownAPI/v1/admin/items/${UNIDENTIFIED}/logo-layout`,
-      { layout: { x: 0.25, y: 0.75, width: 0.5 } },
+      { layout: { x: 0.25, y: 0.75, width: 0.5, shadow: 1.4 } },
     );
 
     expect(setLogoLayoutFake).toHaveBeenCalledWith(UNIDENTIFIED, {
       x: 0.25,
       y: 0.75,
       width: 0.5,
+      shadow: 1.4,
     });
     expect(result.json?.data).toMatchObject({
-      layout: { x: 0.25, y: 0.75, width: 0.5 },
+      layout: { x: 0.25, y: 0.75, width: 0.5, shadow: 1.4 },
     });
   });
 
@@ -519,13 +520,15 @@ describe("artwork routes", () => {
     const router = buildRouter();
 
     for (const layout of [
-      { x: -0.1, y: 0.5, width: 0.5 },
-      { x: 1.2, y: 0.5, width: 0.5 },
-      { x: 0.5, y: 0.5, width: 0.05 },
-      { x: 0.5, y: 0.5, width: 1.5 },
-      { x: "0.5", y: 0.5, width: 0.5 },
-      { x: 0.5, y: 0.5 },
-      { x: 0.5, y: 0.5, width: 0.5, scale: 2 },
+      { x: -0.1, y: 0.5, width: 0.5, shadow: 1 },
+      { x: 1.2, y: 0.5, width: 0.5, shadow: 1 },
+      { x: 0.5, y: 0.5, width: 0.05, shadow: 1 },
+      { x: 0.5, y: 0.5, width: 1.5, shadow: 1 },
+      { x: "0.5", y: 0.5, width: 0.5, shadow: 1 },
+      { x: 0.5, y: 0.5, width: 0.5 },
+      { x: 0.5, y: 0.5, width: 0.5, shadow: 3 },
+      { x: 0.5, y: 0.5, width: 0.5, shadow: -1 },
+      { x: 0.5, y: 0.5, width: 0.5, shadow: 1, scale: 2 },
     ]) {
       const result = await call(
         router,
@@ -544,7 +547,7 @@ describe("artwork routes", () => {
       router,
       "PUT",
       `/ownAPI/v1/admin/items/${MOVIE}/logo-layout`,
-      { layout: { x: 0.5, y: 0.5, width: 0.5 } },
+      { layout: { x: 0.5, y: 0.5, width: 0.5, shadow: 1 } },
     );
 
     expect((result.error as OwnApiError).code).toBe("ITEM_NOT_FOUND");

@@ -82,15 +82,18 @@ export interface LogoLayout {
   x: number;
   y: number;
   width: number;
+  shadow: number;
 }
 
-/** Matches the range the column's constraint enforces. */
+/** Matches the ranges the columns' constraints enforce. */
 const MIN_LOGO_WIDTH = 0.15;
+const MAX_LOGO_SHADOW = 2;
 
 function requireFraction(
   value: unknown,
   field: string,
   minimum: number,
+  maximum = 1,
 ): number {
   if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new OwnApiError(
@@ -99,10 +102,10 @@ function requireFraction(
       422,
     );
   }
-  if (value < minimum || value > 1) {
+  if (value < minimum || value > maximum) {
     throw new OwnApiError(
       "VALIDATION_FAILED",
-      `${field} must be between ${minimum} and 1.`,
+      `${field} must be between ${minimum} and ${maximum}.`,
       422,
     );
   }
@@ -127,7 +130,7 @@ function parseLogoLayout(value: unknown): LogoLayout | null {
 
   const layout = value as Record<string, unknown>;
   for (const key of Object.keys(layout)) {
-    if (!["x", "y", "width"].includes(key)) {
+    if (!["x", "y", "width", "shadow"].includes(key)) {
       throw new OwnApiError(
         "VALIDATION_FAILED",
         `layout has an unknown field: ${key}.`,
@@ -140,6 +143,7 @@ function parseLogoLayout(value: unknown): LogoLayout | null {
     x: requireFraction(layout.x, "layout.x", 0),
     y: requireFraction(layout.y, "layout.y", 0),
     width: requireFraction(layout.width, "layout.width", MIN_LOGO_WIDTH),
+    shadow: requireFraction(layout.shadow, "layout.shadow", 0, MAX_LOGO_SHADOW),
   };
 }
 

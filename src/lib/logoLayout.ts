@@ -15,6 +15,11 @@ export interface LogoLayout {
   x: number;
   y: number;
   width: number;
+  /**
+   * Shadow strength. 0 turns it off, 1 matches the hero's treatment, and above
+   * that deepens it for a logo sitting on bright artwork.
+   */
+  shadow: number;
 }
 
 /**
@@ -24,13 +29,22 @@ export interface LogoLayout {
 export const MIN_LOGO_WIDTH = 0.15;
 export const MAX_LOGO_WIDTH = 1;
 
+export const MIN_LOGO_SHADOW = 0;
+export const MAX_LOGO_SHADOW = 2;
+export const DEFAULT_LOGO_SHADOW = 1;
+
 /**
  * The layout an editor opens on when a title has never been adjusted.
  *
  * Deliberately close to where the untouched card already draws its logo, so
  * picking the title up and putting it down again changes as little as possible.
  */
-export const INITIAL_LOGO_LAYOUT: LogoLayout = { x: 0.5, y: 0.8, width: 0.74 };
+export const INITIAL_LOGO_LAYOUT: LogoLayout = {
+  x: 0.5,
+  y: 0.8,
+  width: 0.74,
+  shadow: DEFAULT_LOGO_SHADOW,
+};
 
 function clampUnit(value: number): number {
   if (!Number.isFinite(value)) return 0;
@@ -42,7 +56,11 @@ export function clampLogoLayout(layout: LogoLayout): LogoLayout {
     ? Math.min(MAX_LOGO_WIDTH, Math.max(MIN_LOGO_WIDTH, layout.width))
     : INITIAL_LOGO_LAYOUT.width;
 
-  return { x: clampUnit(layout.x), y: clampUnit(layout.y), width };
+  const shadow = Number.isFinite(layout.shadow)
+    ? Math.min(MAX_LOGO_SHADOW, Math.max(MIN_LOGO_SHADOW, layout.shadow))
+    : DEFAULT_LOGO_SHADOW;
+
+  return { x: clampUnit(layout.x), y: clampUnit(layout.y), width, shadow };
 }
 
 /**
@@ -139,3 +157,28 @@ export function resizeLogoLayout(
 
 /** One arrow-key press, as a fraction of the card. */
 export const LOGO_NUDGE_STEP = 0.01;
+
+/**
+ * The card logo's shadow, scaled.
+ *
+ * Two stacked drop-shadows like the hero's: a long soft one that lifts the logo
+ * off the artwork, and a tight one that keeps its edges readable. Both scale
+ * together, so a single control covers "barely there" to "over a white sky".
+ *
+ * Returns undefined at zero rather than a no-op filter, so a logo that needs no
+ * shadow does not pay for one being composited.
+ */
+export function getLogoShadowFilter(shadow: number): string | undefined {
+  const strength = Number.isFinite(shadow)
+    ? Math.min(MAX_LOGO_SHADOW, Math.max(MIN_LOGO_SHADOW, shadow))
+    : DEFAULT_LOGO_SHADOW;
+  if (strength <= 0) return undefined;
+
+  const spread = Math.round(34 * strength);
+  const glow = Math.round(18 * strength);
+  const drop = Math.round(14 * strength);
+  const far = Math.min(0.9, 0.9 * strength).toFixed(2);
+  const near = Math.min(0.65, 0.65 * strength).toFixed(2);
+
+  return `drop-shadow(0 ${drop}px ${spread}px rgba(0, 0, 0, ${far})) drop-shadow(0 0 ${glow}px rgba(0, 0, 0, ${near}))`;
+}

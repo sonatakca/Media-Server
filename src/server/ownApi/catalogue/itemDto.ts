@@ -79,7 +79,7 @@ export interface ItemDto {
   /** True while the source files are absent but inside the retention window. */
   isMissing: boolean;
   /** Fine logo placement on the card, or null when never adjusted. */
-  logoLayout: { x: number; y: number; width: number } | null;
+  logoLayout: { x: number; y: number; width: number; shadow: number } | null;
   images: ItemImagesDto;
   userState?: UserItemStateDto;
 }

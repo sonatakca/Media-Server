@@ -873,6 +873,10 @@ export const en = {
   "logoLayout.horizontal": "Across",
   "logoLayout.vertical": "Down",
   "logoLayout.size": "Size",
+  "logoLayout.shadow": "Shadow",
+  "logoLayout.shadowStrength": "Shadow strength",
+  "logoLayout.shadowHint":
+    "Nothing sits behind the logo, so this is what separates it from the artwork. 0% turns it off.",
   "logoLayout.save": "Save placement",
   "logoLayout.reset": "Back to default",
   "logoLayout.saving": "Saving placement...",

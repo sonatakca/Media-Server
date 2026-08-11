@@ -111,7 +111,7 @@ export async function getLocalizedMetadataPreview(
  */
 export async function setLogoLayout(
   itemId: string,
-  layout: { x: number; y: number; width: number } | null,
+  layout: { x: number; y: number; width: number; shadow: number } | null,
 ): Promise<void> {
   await ownApiClient.request<{ layout: unknown }>(
     `/admin/items/${encodeURIComponent(itemId)}/logo-layout`,

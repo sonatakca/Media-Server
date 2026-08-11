@@ -1021,7 +1021,6 @@ export function DesktopLibraryPage({
               variant={item.Type === "Episode" ? "landscape" : "poster"}
               index={index}
               animateIn
-              showPlayFromBeginning
               collectionItems={data.collectionPosterChildrenById[item.Id]}
             />
           ))}

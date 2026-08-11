@@ -45,7 +45,7 @@ export interface MetadataRepository {
    */
   setLogoLayout(
     itemId: string,
-    layout: { x: number; y: number; width: number } | null,
+    layout: { x: number; y: number; width: number; shadow: number } | null,
   ): Promise<boolean>;
 }
 
@@ -297,9 +297,16 @@ export function createMetadataRepository(
            logo_offset_x = $2::real,
            logo_offset_y = $3::real,
            logo_width = $4::real,
+           logo_shadow = $5::real,
            updated_at = now()
          WHERE id = $1`,
-        [itemId, layout?.x ?? null, layout?.y ?? null, layout?.width ?? null],
+        [
+          itemId,
+          layout?.x ?? null,
+          layout?.y ?? null,
+          layout?.width ?? null,
+          layout?.shadow ?? null,
+        ],
       );
       return (result.rowCount ?? 0) > 0;
     },

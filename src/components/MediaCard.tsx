@@ -17,7 +17,12 @@ import {
 } from "../lib/routes";
 import type { MediaItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
-import { getLogoLayout, getLogoLayoutStyle } from "../lib/logoLayout";
+import {
+  DEFAULT_LOGO_SHADOW,
+  getLogoLayout,
+  getLogoLayoutStyle,
+  getLogoShadowFilter,
+} from "../lib/logoLayout";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import { ClearWatchingButton } from "./ClearWatchingButton";
@@ -33,8 +38,6 @@ interface MediaCardProps {
   layout?: "row" | "grid";
   index?: number;
   animateIn?: boolean;
-  hideTags?: boolean;
-  showPlayFromBeginning?: boolean;
   showRestartWatching?: boolean;
   collectionItems?: MediaItem[];
   onClearContinueWatching?: (item: MediaItem) => void;
@@ -202,8 +205,6 @@ export function MediaCard({
   layout = "row",
   index = 0,
   animateIn = false,
-  hideTags = false,
-  showPlayFromBeginning = false,
   showRestartWatching = false,
   collectionItems,
   onClearContinueWatching,
@@ -253,7 +254,12 @@ export function MediaCard({
   const continueDescription = isEpisode
     ? (episodeMetadata?.overview ?? item.Overview)
     : (itemMetadata.overview ?? item.Overview);
+  // The year and certificate used to ride on the poster overlay. That overlay
+  // is gone, and this card is the one place that is explicitly about details,
+  // so they belong here rather than back on the artwork.
   const continueFactChips = [
+    item.ProductionYear ? String(item.ProductionYear) : null,
+    item.OfficialRating ?? null,
     runtimeLabel,
     getCommunityRatingLabel(item.CommunityRating),
   ].filter((chip): chip is string => Boolean(chip));
@@ -297,6 +303,9 @@ export function MediaCard({
   );
 
   const logoLayout = getLogoLayout(item);
+  const logoShadowFilter = getLogoShadowFilter(
+    logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
+  );
 
   const canPlay =
     item.Type === "Movie" ||
@@ -461,22 +470,6 @@ export function MediaCard({
                     className={continueActionButtonClass}
                   />
                 ) : null}
-                {canPlay &&
-                showPlayFromBeginning &&
-                progressPercent !== null ? (
-                  <Tooltip content={t("details.playFromBeginning")}>
-                    <Link
-                      to={`/watch/${item.Id}?start=0`}
-                      aria-label={formatTemplate(
-                        t("details.playTitleFromBeginning"),
-                        { title },
-                      )}
-                      className={continueActionButtonClass}
-                    >
-                      <RotateCcw size={16} />
-                    </Link>
-                  </Tooltip>
-                ) : null}
                 {canPlay && onClearContinueWatching ? (
                   <ClearWatchingButton
                     item={item}
@@ -571,60 +564,32 @@ export function MediaCard({
 
     return (
       <>
-        {logoUrl && logoLayout ? (
+        {logoUrl ? (
           <img
             src={logoUrl}
             alt={displayTitle}
-            style={getLogoLayoutStyle(logoLayout)}
-            // Placed anywhere on the card, so there is no gradient to rely on:
-            // the logo carries its own shadow to stay legible over a bright
-            // poster. Height follows width so the aspect ratio is preserved.
-            className="pointer-events-none absolute z-20 h-auto object-contain drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]"
+            style={{
+              ...(logoLayout ? getLogoLayoutStyle(logoLayout) : {}),
+              ...(logoShadowFilter ? { filter: logoShadowFilter } : {}),
+            }}
+            // Nothing sits behind the logo any more — no gradient, no tags — so
+            // its own shadow is the only thing separating it from the artwork.
+            // Height follows width so the aspect ratio is preserved.
+            className={
+              logoLayout
+                ? "pointer-events-none absolute z-20 h-auto object-contain"
+                : "pointer-events-none absolute inset-x-0 bottom-4 z-20 mx-auto h-auto max-h-16 w-auto max-w-[80%] object-contain sm:max-h-24"
+            }
           />
-        ) : null}
-
-        <div className="pointer-events-none absolute inset-x-0 -bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
-          {logoUrl ? (
-            // An adjusted logo is drawn in its own layer above, because this
-            // block is glued to the tags and their gradient at the foot of the
-            // card and cannot be moved without taking them along.
-            !logoLayout ? (
-              <img
-                src={logoUrl}
-                alt={displayTitle}
-                // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
-                className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
-                  hideTags ? "relative -bottom-2" : ""
-                }`}
-              />
-            ) : null
-          ) : (
-            <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
+        ) : (
+          // A card with neither logo nor title would be unidentifiable, so the
+          // title stands in — carrying its own shadow for the same reason.
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 p-3 sm:p-4">
+            <h3 className="text-cinematic-title line-clamp-2 text-center text-sm font-bold text-white sm:text-base">
               {displayTitle}
             </h3>
-          )}
-          {!hideTags ? (
-            <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
-              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-                {item.ProductionYear && (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    {item.ProductionYear}
-                  </span>
-                )}
-                {item.OfficialRating && (
-                  <span className="rounded-full bg-white/10 px-2 py-0.5">
-                    {item.OfficialRating}
-                  </span>
-                )}
-              </div>
-              {posterCountBubbleLabel ? (
-                <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
-                  {posterCountBubbleLabel}
-                </span>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+          </div>
+        )}
       </>
     );
   };
@@ -788,20 +753,6 @@ export function MediaCard({
               item={item}
               className="pointer-events-auto absolute right-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
             />
-          ) : null}
-          {canPlay && showPlayFromBeginning && progressPercent !== null ? (
-            <Tooltip content={t("details.playFromBeginning")}>
-              <Link
-                to={`/watch/${item.Id}?start=0`}
-                aria-label={formatTemplate(
-                  t("details.playTitleFromBeginning"),
-                  { title },
-                )}
-                className="pointer-events-auto absolute left-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
-              >
-                <RotateCcw size={16} />
-              </Link>
-            </Tooltip>
           ) : null}
         </div>
       </div>

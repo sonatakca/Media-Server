@@ -33,7 +33,7 @@ export interface CatalogueItemRow {
   dateCreated: Date;
   missingSince: Date | null;
   /** Fine logo placement on the card, or null when never adjusted. */
-  logoLayout: { x: number; y: number; width: number } | null;
+  logoLayout: { x: number; y: number; width: number; shadow: number } | null;
   seriesTitle: string | null;
   seasonTitle: string | null;
   genres: string[];
@@ -65,6 +65,7 @@ const ITEM_COLUMNS = `
   item.logo_offset_x,
   item.logo_offset_y,
   item.logo_width,
+  item.logo_shadow,
   series.title AS series_title,
   season.title AS season_title,
   COALESCE(
@@ -110,6 +111,7 @@ interface RawItemRow extends Record<string, unknown> {
   logo_offset_x: number | null;
   logo_offset_y: number | null;
   logo_width: number | null;
+  logo_shadow: number | null;
   series_title: string | null;
   season_title: string | null;
   genres: string[];
@@ -142,12 +144,14 @@ function toItemRow(row: RawItemRow): CatalogueItemRow {
     logoLayout:
       row.logo_offset_x === null ||
       row.logo_offset_y === null ||
-      row.logo_width === null
+      row.logo_width === null ||
+      row.logo_shadow === null
         ? null
         : {
             x: row.logo_offset_x,
             y: row.logo_offset_y,
             width: row.logo_width,
+            shadow: row.logo_shadow,
           },
     seriesTitle: row.series_title,
     seasonTitle: row.season_title,
