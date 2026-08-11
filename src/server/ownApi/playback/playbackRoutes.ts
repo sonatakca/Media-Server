@@ -630,7 +630,27 @@ export function createPlaybackRoutes({
                 );
               }
 
-              await renditions.handleRequest(context.request, context.response);
+              const resolved = await renditions.resolveFile(
+                mediaFileId,
+                context.params.fileId ?? "",
+              );
+              if (!resolved) {
+                throw new OwnApiError(
+                  "RENDITION_NOT_FOUND",
+                  "The requested rendition is unavailable.",
+                  404,
+                );
+              }
+
+              await serveFile(
+                context.response,
+                resolved.absolutePath,
+                context.request.headers.range as string | undefined,
+                context.method === "HEAD",
+                // Addressed by content fingerprint, so it never changes; still
+                // private, because it is behind a session.
+                "private, max-age=31536000, immutable",
+              );
             },
           } satisfies RouteDefinition,
         ]

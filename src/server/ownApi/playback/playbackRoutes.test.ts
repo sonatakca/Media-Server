@@ -199,9 +199,11 @@ describe("rendition delivery", () => {
 
     const renditions = {
       createManifest: async () => ({ mediaId: FILE, qualities: [] }),
-      handleRequest: async (request: IncomingMessage) => {
-        options.served.push(request.url ?? "");
-        return true;
+      resolveFile: async (token: string, fileId: string) => {
+        options.served.push(`${token}/${fileId}`);
+        // A path that does not exist: the route's job is to authorize and
+        // resolve, and serving the bytes is covered where that code lives.
+        return { absolutePath: "/generated/missing.mp4", sizeBytes: 10 };
       },
     } as unknown as NonNullable<
       Parameters<typeof createPlaybackRoutes>[0]["renditions"]
@@ -265,15 +267,9 @@ describe("rendition delivery", () => {
     const served: string[] = [];
     const router = buildRenditionRouter({ served });
 
-    const { error } = await get(
-      router,
-      `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`,
-    );
+    await get(router, `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`);
 
-    expect(error).toBeUndefined();
-    expect(served).toEqual([
-      `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`,
-    ]);
+    expect(served).toEqual([`${FILE}/720-abcdef123456.mp4`]);
   });
 
   it("refuses a rendition of a file in a library the viewer cannot see", async () => {

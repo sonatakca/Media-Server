@@ -1,6 +1,4 @@
-import { createReadStream } from "node:fs";
 import { realpath, stat } from "node:fs/promises";
-import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import type {
   PlaybackMediaResolver,
@@ -87,27 +85,28 @@ export interface RenditionServiceOptions {
   basePath?: string;
 }
 
+export interface ResolvedRenditionFile {
+  absolutePath: string;
+  sizeBytes: number;
+}
+
 export interface RenditionService {
   createManifest(
     media: PlaybackResolvedMedia,
     original?: RenditionOriginalDescriptor,
     client?: RenditionClientSupport,
   ): Promise<MediaQualityManifest>;
-  handleRequest(
-    request: IncomingMessage,
-    response: ServerResponse,
-  ): Promise<boolean>;
-}
-
-function sendJson(
-  response: ServerResponse,
-  statusCode: number,
-  payload: unknown,
-) {
-  response.statusCode = statusCode;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("X-Content-Type-Options", "nosniff");
-  response.end(JSON.stringify(payload));
+  /**
+   * The validated file behind a rendition URL, or null if there is none.
+   *
+   * Only resolves; the caller streams it. Serving bytes is delicate — aborted
+   * range requests, HEAD, 416 — and there is already one implementation of it
+   * that playback depends on, so this does not add a second.
+   */
+  resolveFile(
+    token: string,
+    fileId: string,
+  ): Promise<ResolvedRenditionFile | null>;
 }
 
 function normalizeForComparison(filePath: string): string {
@@ -130,85 +129,6 @@ function mediaRelativePath(
   if (!relative || relative.startsWith("..") || path.isAbsolute(relative))
     return undefined;
   return relative.split(path.sep).join("/");
-}
-
-function parseRange(
-  value: string | undefined,
-  fileSize: number,
-): { start: number; end: number } | undefined | null {
-  if (!value) return undefined;
-  const match = value.match(/^bytes=(\d*)-(\d*)$/);
-  if (!match) return null;
-  const rawStart = match[1];
-  const rawEnd = match[2];
-  let start: number;
-  let end: number;
-  if (!rawStart) {
-    const suffix = Number(rawEnd);
-    if (!Number.isInteger(suffix) || suffix <= 0) return null;
-    start = Math.max(0, fileSize - suffix);
-    end = fileSize - 1;
-  } else {
-    start = Number(rawStart);
-    end = rawEnd ? Number(rawEnd) : fileSize - 1;
-  }
-  if (
-    !Number.isInteger(start) ||
-    !Number.isInteger(end) ||
-    start < 0 ||
-    end < start ||
-    start >= fileSize
-  ) {
-    return null;
-  }
-  return { start, end: Math.min(end, fileSize - 1) };
-}
-
-async function streamImmutableMp4(
-  request: IncomingMessage,
-  response: ServerResponse,
-  filePath: string,
-  expectedSize: number,
-) {
-  const fileStats = await stat(filePath);
-  if (
-    !fileStats.isFile() ||
-    fileStats.size <= 0 ||
-    fileStats.size !== expectedSize
-  ) {
-    throw new Error(
-      "Generated rendition file is unavailable or no longer valid.",
-    );
-  }
-  const range = parseRange(request.headers.range, fileStats.size);
-  response.setHeader("Content-Type", "video/mp4");
-  response.setHeader("Cache-Control", "public, max-age=31536000, immutable");
-  response.setHeader("Accept-Ranges", "bytes");
-  response.setHeader("X-Content-Type-Options", "nosniff");
-  if (request.headers.range && range === null) {
-    response.statusCode = 416;
-    response.setHeader("Content-Range", `bytes */${fileStats.size}`);
-    response.end();
-    return;
-  }
-  if (range) {
-    response.statusCode = 206;
-    response.setHeader(
-      "Content-Range",
-      `bytes ${range.start}-${range.end}/${fileStats.size}`,
-    );
-    response.setHeader("Content-Length", range.end - range.start + 1);
-  } else {
-    response.statusCode = 200;
-    response.setHeader("Content-Length", fileStats.size);
-  }
-  if (request.method === "HEAD") {
-    response.end();
-    return;
-  }
-  const stream = createReadStream(filePath, range ?? undefined);
-  stream.on("error", () => response.destroy());
-  stream.pipe(response);
 }
 
 function originalQuality(
@@ -377,73 +297,36 @@ export function createRenditionService({
     return manifest;
   };
 
-  const handleRequest: RenditionService["handleRequest"] = async (
-    request,
-    response,
+  const resolveFile: RenditionService["resolveFile"] = async (
+    token,
+    fileId,
   ) => {
-    const url = new URL(request.url ?? "/", "http://localhost");
-    if (!url.pathname.startsWith(`${basePath}/`)) return false;
-    if (request.method !== "GET" && request.method !== "HEAD") {
-      response.statusCode = 405;
-      response.setHeader("Allow", "GET, HEAD, OPTIONS");
-      response.end();
-      return true;
-    }
+    if (!TOKEN_PATTERN.test(token) || !FILE_ID_PATTERN.test(fileId)) return null;
+
+    pruneAccess();
+    const access = accessByToken.get(token);
+    const registered = access?.filesById.get(fileId);
+    if (!access || !registered) return null;
+
     try {
-      const remainder = url.pathname.slice(`${basePath}/`.length);
-      const slashIndex = remainder.indexOf("/");
-      if (slashIndex <= 0) throw new Error("Rendition capability is invalid.");
-      const token = decodeURIComponent(remainder.slice(0, slashIndex));
-      const fileId = decodeURIComponent(remainder.slice(slashIndex + 1));
-      if (!TOKEN_PATTERN.test(token) || !FILE_ID_PATTERN.test(fileId)) {
-        throw new Error("Rendition request is invalid.");
-      }
-      pruneAccess();
-      const access = accessByToken.get(token);
-      if (!access) {
-        sendJson(response, 404, {
-          error: {
-            code: "RENDITION_CAPABILITY_INVALID",
-            message: "Rendition access is unavailable or expired.",
-          },
-        });
-        return true;
-      }
-      const registeredFile = access.filesById.get(fileId);
-      if (!registeredFile) {
-        sendJson(response, 404, {
-          error: {
-            code: "RENDITION_FILE_NOT_FOUND",
-            message: "Rendition file was not found.",
-          },
-        });
-        return true;
-      }
-      const candidate = path.join(access.versionRoot, registeredFile.filePath);
+      const candidate = path.join(access.versionRoot, registered.filePath);
       const [trustedRoot, trustedFile] = await Promise.all([
         realpath(access.versionRoot),
         realpath(candidate),
       ]);
-      if (!isInside(trustedRoot, trustedFile)) {
-        throw new Error("Rendition file escapes the validated output root.");
-      }
-      await streamImmutableMp4(
-        request,
-        response,
-        trustedFile,
-        registeredFile.expectedSize,
-      );
-      return true;
+      if (!isInside(trustedRoot, trustedFile)) return null;
+
+      // The registry records the size the file had when it was validated. A
+      // different one means the output changed underneath us, and serving it
+      // would hand the player bytes nothing has checked.
+      const stats = await stat(trustedFile);
+      if (!stats.isFile() || stats.size !== registered.expectedSize) return null;
+
+      return { absolutePath: trustedFile, sizeBytes: stats.size };
     } catch {
-      sendJson(response, 400, {
-        error: {
-          code: "INVALID_RENDITION_REQUEST",
-          message: "Rendition request is invalid.",
-        },
-      });
-      return true;
+      return null;
     }
   };
 
-  return { createManifest, handleRequest };
+  return { createManifest, resolveFile };
 }

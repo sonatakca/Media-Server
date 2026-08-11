@@ -64,6 +64,30 @@ describe("buildClientCapabilities", () => {
     expect(capabilities.video.h264?.supportsHdr).toBe(true);
   });
 
+  it("believes decodingInfo over canPlayType about High 10", async () => {
+    // Safari answers "probably" for avc1.6E0034 because it matches `avc1`
+    // without reading the profile. Trusting that reported a 10-bit master as
+    // playable, and the element then failed to decode it — a fatal player error
+    // on a title with a perfectly good rendition to fall back to.
+    const decodingInfo = vi.fn(
+      async (configuration: { video?: { contentType?: string } }) => ({
+        supported: !configuration.video?.contentType?.includes("avc1.6E"),
+        smooth: true,
+        powerEfficient: true,
+      }),
+    );
+    Object.defineProperty(navigator, "mediaCapabilities", {
+      configurable: true,
+      value: { decodingInfo },
+    });
+
+    const capabilities = await buildClientCapabilities();
+
+    // canPlayType said "probably" for every probe, including High 10.
+    expect(capabilities.video.h264?.supported).toBe(true);
+    expect(capabilities.video.h264?.supports10Bit).toBe(false);
+  });
+
   it("leaves H.264 as 8-bit only when High 10 is not decodable", async () => {
     Reflect.deleteProperty(navigator, "mediaCapabilities");
     vi.spyOn(HTMLMediaElement.prototype, "canPlayType").mockImplementation(

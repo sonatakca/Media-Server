@@ -201,7 +201,12 @@ async function probeVideoCapability(
         },
       });
 
-      supported = info.supported || supported;
+      // `decodingInfo` is authoritative when the browser implements it.
+      // `canPlayType` is not: Safari answers "probably" for avc1.6E0034 because
+      // it matches `avc1` without reading the profile, so a 10-bit H.264 master
+      // was reported as playable and then failed to decode — a fatal player
+      // error on a title that had a perfectly good rendition to fall back to.
+      supported = info.supported;
       smooth = info.smooth;
       powerEfficient = info.powerEfficient;
     } catch {

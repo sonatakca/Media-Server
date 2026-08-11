@@ -1,14 +1,9 @@
 // @vitest-environment node
-import { createServer } from "node:http";
-import { mkdtemp, mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
-import {
-  createRenditionService,
-  type RenditionService,
-} from "./renditionService";
+import { describe, expect, it } from "vitest";
+import { createRenditionService } from "./renditionService";
 import { RENDITION_PROFILE_VERSION } from "../renditions/policy";
 import type { PlaybackMediaResolver } from "../lib/playback-planner/playbackRoutes";
 
@@ -16,7 +11,6 @@ const mediaId = "jellyfin-item";
 const renditionId = "11111111-1111-4111-8111-111111111111";
 const fingerprint = "a".repeat(64);
 const renditionBytes = Buffer.from("complete-mp4-file-data");
-let closeServer: (() => Promise<void>) | undefined;
 
 async function fixture({
   includeGenerated = true,
@@ -139,28 +133,17 @@ async function fixture({
   return { service, sourcePath, root };
 }
 
-async function listen(service: RenditionService) {
-  const server = createServer(async (request, response) => {
-    if (!(await service.handleRequest(request, response))) {
-      response.statusCode = 404;
-      response.end();
-    }
-  });
-  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
-  closeServer = () =>
-    new Promise((resolve, reject) =>
-      server.close((error) => (error ? reject(error) : resolve())),
-    );
-  return `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+/** Splits a manifest playback URL back into the pair the resolver takes. */
+function addressOf(playbackUrl: string): { token: string; fileId: string } {
+  const parts = playbackUrl.split("/");
+  return {
+    token: decodeURIComponent(parts[parts.length - 2] ?? ""),
+    fileId: decodeURIComponent(parts[parts.length - 1] ?? ""),
+  };
 }
 
-afterEach(async () => {
-  await closeServer?.();
-  closeServer = undefined;
-});
-
 describe("complete-file rendition routes", () => {
-  it("returns only ready complete files and serves MP4 byte ranges", async () => {
+  it("returns only ready complete files and resolves them to real bytes", async () => {
     const { service, sourcePath } = await fixture();
     const sourceStats = await stat(sourcePath);
     const manifest = await service.createManifest(
@@ -193,18 +176,14 @@ describe("complete-file rendition routes", () => {
     expect(JSON.stringify(manifest)).not.toContain(sourcePath);
     expect(JSON.stringify(manifest)).not.toContain("480p.mp4");
 
-    const origin = await listen(service);
-    const response = await fetch(`${origin}${generated?.playbackUrl}`, {
-      headers: { Range: "bytes=0-7" },
-    });
-    expect(response.status).toBe(206);
-    expect(response.headers.get("content-type")).toBe("video/mp4");
-    expect(response.headers.get("accept-ranges")).toBe("bytes");
-    expect(response.headers.get("content-range")).toBe(
-      `bytes 0-7/${renditionBytes.length}`,
+    // Resolution hands back the validated file; the playback route streams it
+    // with the same byte-range implementation the original file uses.
+    const address = addressOf(generated?.playbackUrl ?? "");
+    const resolved = await service.resolveFile(address.token, address.fileId);
+    expect(resolved?.sizeBytes).toBe(renditionBytes.length);
+    expect(await readFile(resolved?.absolutePath ?? "", "utf8")).toBe(
+      renditionBytes.toString("utf8"),
     );
-    expect(response.headers.get("content-length")).toBe("8");
-    expect(await response.text()).toBe("complete");
   });
 
   it("returns an original-only manifest when no validated generated file exists", async () => {
@@ -332,18 +311,16 @@ describe("complete-file rendition routes", () => {
       },
       { width: 1920, height: 1080, codec: "hevc" },
     );
-    const origin = await listen(service);
-
-    const traversal = await fetch(
-      `${origin}/api/playback/renditions/opaque-capability/..%2Fmetadata.mp4`,
-    );
-    expect([400, 404]).toContain(traversal.status);
-    expect(await traversal.text()).not.toContain(root);
-
-    const unregistered = await fetch(
-      `${origin}/api/playback/renditions/opaque-capability/not-registered.mp4`,
-    );
-    expect(unregistered.status).toBe(404);
-    expect(await unregistered.text()).not.toContain("D:\\media");
+    // Nothing outside the validated output root resolves, and neither does a
+    // file that was never registered — possession of the token is not enough.
+    expect(
+      await service.resolveFile("opaque-capability", "../metadata.mp4"),
+    ).toBeNull();
+    expect(
+      await service.resolveFile("opaque-capability", "not-registered.mp4"),
+    ).toBeNull();
+    expect(await service.resolveFile("unknown-token", "480-abc123def456.mp4"))
+      .toBeNull();
+    expect(root).toBeTruthy();
   });
 });
