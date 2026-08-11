@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  AlignVerticalSpaceAround,
   ChevronDown,
   ChevronLeft,
   Check,
@@ -22,6 +23,7 @@ import {
   identifyItem,
   saveItemDisplayMetadata,
   searchMetadataCandidates,
+  setLogoPlacement,
   type ArtworkCandidate,
   type ArtworkKind,
   type ArtworkOverview,
@@ -31,6 +33,13 @@ import { getAllMovieAndSeriesItems, getPrimaryImageUrl } from "../lib/mediaApi";
 import type { MediaItem } from "../lib/types";
 import { getDisplayTitle, formatTemplate } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
+import {
+  DEFAULT_LOGO_PLACEMENT,
+  LOGO_PLACEMENTS,
+  getLogoPlacement,
+  getLogoPlacementLabelKey,
+  type LogoPlacement,
+} from "../lib/logoPlacement";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   ARTWORK_KINDS,
@@ -87,6 +96,13 @@ export default function TmdbArtworkPage() {
   const [visibleCounts, setVisibleCounts] = useState<
     Partial<Record<ArtworkKind, number>>
   >({});
+  const [placement, setPlacement] = useState<LogoPlacement>(
+    DEFAULT_LOGO_PLACEMENT,
+  );
+  const [placementStatus, setPlacementStatus] = useState<ActionStatus>({
+    tone: "idle",
+    message: "",
+  });
 
   const [tmdbQuery, setTmdbQuery] = useState("");
   const [matches, setMatches] = useState<MetadataCandidate[]>([]);
@@ -186,6 +202,8 @@ export default function TmdbArtworkPage() {
         tagline: item.Taglines?.[0] ?? "",
       });
       setDisplayStatus({ tone: "idle", message: "" });
+      setPlacement(getLogoPlacement(item));
+      setPlacementStatus({ tone: "idle", message: "" });
       void loadArtwork(item.Id);
     },
     [loadArtwork],
@@ -317,6 +335,31 @@ export default function TmdbArtworkPage() {
           errorCodeOf(error) === "PROVIDER_ID_MISSING"
             ? t("tmdbArtwork.itemMetadataRequiresMatch")
             : messageOf(error, t("tmdbArtwork.couldNotLoadItemMetadata")),
+      });
+    }
+  }
+
+  async function handlePlacement(next: LogoPlacement) {
+    if (!selectedId) return;
+
+    const previous = placement;
+    // Applied first so the buttons answer immediately; a failure puts it back
+    // rather than leaving the page claiming a placement the server rejected.
+    setPlacement(next);
+    setPlacementStatus({ tone: "busy", message: t("logoPlacement.saving") });
+    try {
+      await setLogoPlacement(selectedId, next);
+      setTitles((current) =>
+        current.map((entry) =>
+          entry.Id === selectedId ? { ...entry, LogoPlacement: next } : entry,
+        ),
+      );
+      setPlacementStatus({ tone: "success", message: t("logoPlacement.saved") });
+    } catch (error) {
+      setPlacement(previous);
+      setPlacementStatus({
+        tone: "error",
+        message: messageOf(error, t("logoPlacement.couldNotSave")),
       });
     }
   }
@@ -695,6 +738,43 @@ export default function TmdbArtworkPage() {
                   })}
                 </div>
               )}
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
+              <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.14em] text-white/70">
+                <AlignVerticalSpaceAround className="h-4 w-4 text-sky-300/70" />
+                {t("logoPlacement.title")}
+              </h2>
+              <p className="mt-1 text-xs font-semibold text-white/40">
+                {t("logoPlacement.description")}
+              </p>
+
+              <div className="mt-3 inline-flex rounded-2xl border border-white/10 bg-black/40 p-1">
+                {LOGO_PLACEMENTS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    disabled={!selectedId || placementStatus.tone === "busy"}
+                    onClick={() => void handlePlacement(option)}
+                    className={`rounded-xl px-4 py-1.5 text-xs font-black transition disabled:opacity-40 ${
+                      placement === option
+                        ? "bg-sky-400/25 text-sky-100"
+                        : "text-white/55 hover:text-white"
+                    }`}
+                  >
+                    {t(getLogoPlacementLabelKey(option))}
+                    {option === DEFAULT_LOGO_PLACEMENT
+                      ? ` · ${t("logoPlacement.default")}`
+                      : ""}
+                  </button>
+                ))}
+              </div>
+
+              {placementStatus.message ? (
+                <p className={`mt-2 text-xs font-bold ${getStatusClasses(placementStatus.tone)}`}>
+                  {placementStatus.message}
+                </p>
+              ) : null}
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">

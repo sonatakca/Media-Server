@@ -73,6 +73,8 @@ export interface ItemDto {
   recursiveItemCount?: number;
   dateCreated: string;
   isMissing: boolean;
+  /** Where the logo is anchored over this title's artwork. */
+  logoPlacement: "top" | "middle" | "bottom";
   images: ItemImagesDto;
   userState?: UserItemStateDto;
 }

@@ -864,6 +864,16 @@ export const en = {
   "tmdbArtwork.couldNotIdentify": "Could not record the TMDB match.",
   "tmdbArtwork.artworkNotApplicable":
     "Artwork can only be chosen for a film or a series.",
+  "logoPlacement.title": "Logo Placement",
+  "logoPlacement.description":
+    "Where this title's logo sits over its artwork. A wide wordmark and a tall stacked logo rarely suit the same anchor.",
+  "logoPlacement.top": "Top",
+  "logoPlacement.middle": "Middle",
+  "logoPlacement.bottom": "Bottom",
+  "logoPlacement.default": "Default",
+  "logoPlacement.saving": "Saving logo placement...",
+  "logoPlacement.saved": "Logo placement saved.",
+  "logoPlacement.couldNotSave": "Could not save the logo placement.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Playback Audit",
   "audit.description":

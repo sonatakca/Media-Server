@@ -49,6 +49,7 @@ function itemRow(
     recursiveItemCount: 0,
     dateCreated: new Date("2026-01-01T00:00:00Z"),
     missingSince: null,
+    logoPlacement: "bottom",
     seriesTitle: null,
     seasonTitle: null,
     genres: [],

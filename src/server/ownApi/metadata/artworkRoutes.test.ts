@@ -66,6 +66,7 @@ function fakeMetadata(): MetadataRepository {
     replacePeople: async () => undefined,
     markFailed: async () => undefined,
     lockFields: async () => undefined,
+    setLogoPlacement: async () => true,
   };
 }
 
@@ -449,6 +450,88 @@ describe("artwork routes", () => {
       tagline: null,
     });
     expect(applyTitleMetadata).not.toHaveBeenCalled();
+  });
+
+  it("saves a logo placement without needing a TMDB match", async () => {
+    // Placement is a layout choice, not a provider one, so demanding an
+    // identified title would block it for exactly the titles that need it most.
+    const setLogoPlacementFake = vi.fn(async () => true);
+    const router = createOwnApiRouter({
+      csrfSecret: CSRF_SECRET,
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async (): Promise<RoutePrincipal> => ({
+        userId: "dddddddd-4444-4444-8444-444444444444",
+        username: "root",
+        displayName: "Root",
+        isAdministrator: true,
+        sessionId: "eeeeeeee-5555-4555-8555-555555555555",
+        sessionTokenHash: SESSION_HASH,
+      }),
+      routes: createArtworkRoutes({
+        metadata: { ...fakeMetadata(), setLogoPlacement: setLogoPlacementFake },
+        images: fakeImages(),
+        imageStorage: fakeStorage(),
+        tmdb: fakeTmdb(),
+        queue: fakeQueue(),
+      }),
+    });
+
+    const result = await call(
+      router,
+      "PUT",
+      `/ownAPI/v1/admin/items/${UNIDENTIFIED}/logo-placement`,
+      { placement: "top" },
+    );
+
+    expect(setLogoPlacementFake).toHaveBeenCalledWith(UNIDENTIFIED, "top");
+    expect(result.json?.data).toMatchObject({ placement: "top" });
+  });
+
+  it("rejects a placement that is not one of the three anchors", async () => {
+    const router = buildRouter();
+
+    for (const placement of ["center", "TOP", "", 3, null]) {
+      const result = await call(
+        router,
+        "PUT",
+        `/ownAPI/v1/admin/items/${MOVIE}/logo-placement`,
+        { placement },
+      );
+      expect((result.error as OwnApiError).statusCode).toBe(422);
+    }
+  });
+
+  it("reports an unknown item rather than silently saving nothing", async () => {
+    const router = createOwnApiRouter({
+      csrfSecret: CSRF_SECRET,
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async (): Promise<RoutePrincipal> => ({
+        userId: "dddddddd-4444-4444-8444-444444444444",
+        username: "root",
+        displayName: "Root",
+        isAdministrator: true,
+        sessionId: "eeeeeeee-5555-4555-8555-555555555555",
+        sessionTokenHash: SESSION_HASH,
+      }),
+      routes: createArtworkRoutes({
+        metadata: { ...fakeMetadata(), setLogoPlacement: async () => false },
+        images: fakeImages(),
+        imageStorage: fakeStorage(),
+        tmdb: fakeTmdb(),
+        queue: fakeQueue(),
+      }),
+    });
+
+    const result = await call(
+      router,
+      "PUT",
+      `/ownAPI/v1/admin/items/${MOVIE}/logo-placement`,
+      { placement: "middle" },
+    );
+
+    expect((result.error as OwnApiError).code).toBe("ITEM_NOT_FOUND");
   });
 
   it("rejects a language that is not a tag", async () => {

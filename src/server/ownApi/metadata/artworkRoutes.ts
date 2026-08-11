@@ -78,6 +78,24 @@ function requireArtworkKind(value: unknown): TmdbArtworkKind {
   return value as TmdbArtworkKind;
 }
 
+const LOGO_PLACEMENTS = ["top", "middle", "bottom"] as const;
+
+export type LogoPlacement = (typeof LOGO_PLACEMENTS)[number];
+
+function requireLogoPlacement(value: unknown): LogoPlacement {
+  if (
+    typeof value !== "string" ||
+    !LOGO_PLACEMENTS.includes(value as LogoPlacement)
+  ) {
+    throw new OwnApiError(
+      "VALIDATION_FAILED",
+      `placement must be one of ${LOGO_PLACEMENTS.join(", ")}.`,
+      422,
+    );
+  }
+  return value as LogoPlacement;
+}
+
 /**
  * A BCP 47 tag, which is all TMDB accepts. Anything else is rejected rather
  * than passed through, so a malformed value cannot reshape the provider query.
@@ -261,6 +279,30 @@ export function createArtworkRoutes({
           cleared,
           taskId,
         });
+      },
+    },
+
+    {
+      /**
+       * Where the logo is anchored over this title's artwork.
+       *
+       * Unlike the artwork itself this is not a provider choice, so it needs no
+       * TMDB match and applies to any item that has a logo to place.
+       */
+      method: "PUT",
+      path: "/admin/items/:itemId/logo-placement",
+      access: "admin",
+      handle: async (context) => {
+        const itemId = requireUuid(context.params.itemId, "itemId");
+
+        const body = asObjectBody(await context.readJson(1_024), ["placement"]);
+        const placement = requireLogoPlacement(body.placement);
+
+        if (!(await metadata.setLogoPlacement(itemId, placement))) {
+          throw itemNotFound();
+        }
+
+        sendData(context.response, context.requestId, { placement });
       },
     },
 

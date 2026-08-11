@@ -28,6 +28,11 @@ import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 import { TimedCarouselIndicators } from "./TimedCarouselIndicators";
 import { useCroppedTransparentImage } from "../hooks/useCroppedTransparentImage";
+import {
+  getLogoAlignmentClass,
+  getLogoPlacement,
+  getLogoTransformOrigin,
+} from "../lib/logoPlacement";
 import { getSmartContinueWatchingItems } from "../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../lib/watchedStatusActions";
 import {
@@ -523,6 +528,7 @@ export function HeroSection({
   const logoUrl = item ? getItemLogoUrl(item, language, fallbackLogoUrl) : "";
 
   const croppedLogoUrl = useCroppedTransparentImage(logoUrl);
+  const logoPlacement = getLogoPlacement(item);
 
   const showSidePoster = Boolean(
     primaryPosterUrl && selectedImage?.type === "primary",
@@ -1461,7 +1467,9 @@ export function HeroSection({
                 }}
               >
                 {logoUrl ? (
-                  <div className="relative flex h-[clamp(6rem,28vw,15rem)] w-[min(24rem,70vw)] items-end justify-start sm:h-[clamp(10rem,26vw,32rem)] sm:w-[min(44rem,72vw)]">
+                  <div
+                    className={`relative flex h-[clamp(6rem,28vw,15rem)] w-[min(24rem,70vw)] justify-start sm:h-[clamp(10rem,26vw,32rem)] sm:w-[min(44rem,72vw)] ${getLogoAlignmentClass(logoPlacement)}`}
+                  >
                     <motion.div
                       className="relative inline-block w-fit max-h-[clamp(6rem,28vw,15rem)] max-w-full leading-none sm:max-h-[clamp(10rem,26vw,32rem)]"
                       initial={false}
@@ -1480,7 +1488,9 @@ export function HeroSection({
                             : 0.9,
                         ease: softEase,
                       }}
-                      style={{ transformOrigin: "left bottom" }}
+                      style={{
+                        transformOrigin: getLogoTransformOrigin(logoPlacement),
+                      }}
                     >
                       <img
                         key={`shadow-${croppedLogoUrl || logoUrl}`}

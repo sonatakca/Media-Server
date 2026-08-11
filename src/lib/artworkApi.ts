@@ -103,6 +103,22 @@ export async function getLocalizedMetadataPreview(
   );
 }
 
+/**
+ * Anchors the logo over this title's artwork.
+ *
+ * Not a provider choice, so unlike the artwork endpoints this needs no TMDB
+ * match and works for any title that has a logo to place.
+ */
+export async function setLogoPlacement(
+  itemId: string,
+  placement: "top" | "middle" | "bottom",
+): Promise<void> {
+  await ownApiClient.request<{ placement: string }>(
+    `/admin/items/${encodeURIComponent(itemId)}/logo-placement`,
+    { method: "PUT", body: { placement } },
+  );
+}
+
 export interface MetadataCandidate {
   providerId: string;
   title: string;

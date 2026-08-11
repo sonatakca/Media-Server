@@ -78,6 +78,8 @@ export interface ItemDto {
   dateCreated: string;
   /** True while the source files are absent but inside the retention window. */
   isMissing: boolean;
+  /** Where the logo is anchored over this title's artwork. */
+  logoPlacement: "top" | "middle" | "bottom";
   images: ItemImagesDto;
   userState?: UserItemStateDto;
 }
@@ -258,6 +260,9 @@ export function toItemDto(
       : {}),
     dateCreated: row.dateCreated.toISOString(),
     isMissing: row.missingSince !== null,
+    logoPlacement: (row.logoPlacement === "top" || row.logoPlacement === "middle"
+      ? row.logoPlacement
+      : "bottom") as "top" | "middle" | "bottom",
     images: buildImages(images, inheritedImages),
     ...(userState === undefined
       ? {}

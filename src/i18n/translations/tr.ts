@@ -866,6 +866,16 @@ export const tr = {
   "tmdbArtwork.couldNotIdentify": "TMDB eşleşmesi kaydedilemedi.",
   "tmdbArtwork.artworkNotApplicable":
     "Görsel yalnızca bir film ya da dizi için seçilebilir.",
+  "logoPlacement.title": "Logo Konumu",
+  "logoPlacement.description":
+    "Bu yapımın logosunun görselin neresinde duracağı. Geniş bir yazı logosu ile uzun bir logo aynı konuma nadiren yakışır.",
+  "logoPlacement.top": "Üst",
+  "logoPlacement.middle": "Orta",
+  "logoPlacement.bottom": "Alt",
+  "logoPlacement.default": "Varsayılan",
+  "logoPlacement.saving": "Logo konumu kaydediliyor...",
+  "logoPlacement.saved": "Logo konumu kaydedildi.",
+  "logoPlacement.couldNotSave": "Logo konumu kaydedilemedi.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Oynatma Denetimi",
   "audit.description":

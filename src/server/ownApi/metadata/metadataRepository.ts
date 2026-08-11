@@ -39,6 +39,11 @@ export interface MetadataRepository {
   replacePeople(itemId: string, people: TmdbPerson[]): Promise<void>;
   markFailed(itemId: string): Promise<void>;
   lockFields(itemId: string, fields: string[]): Promise<void>;
+  /** Anchors the logo over this title's artwork. Returns false for an unknown id. */
+  setLogoPlacement(
+    itemId: string,
+    placement: "top" | "middle" | "bottom",
+  ): Promise<boolean>;
 }
 
 const TARGET_COLUMNS = `
@@ -279,6 +284,14 @@ export function createMetadataRepository(
          WHERE id = $1`,
         [itemId],
       );
+    },
+
+    setLogoPlacement: async (itemId, placement) => {
+      const result = await pool.query(
+        `UPDATE items SET logo_placement = $2, updated_at = now() WHERE id = $1`,
+        [itemId, placement],
+      );
+      return (result.rowCount ?? 0) > 0;
     },
 
     lockFields: async (itemId, fields) => {

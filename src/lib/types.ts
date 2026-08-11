@@ -189,6 +189,11 @@ export interface MediaItem {
   Taglines?: string[];
   Genres?: string[];
   ProviderIds?: Record<string, string>;
+  /**
+   * Where this title's logo is anchored over its artwork. Absent means the
+   * default, which is the bottom edge every logo sat on before it was settable.
+   */
+  LogoPlacement?: "top" | "middle" | "bottom";
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;
