@@ -593,45 +593,45 @@ export function MediaCard({
         ) : null}
 
         <div className="pointer-events-none absolute inset-x-0 -bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
-        {logoUrl ? (
-          // A lifted logo is drawn in its own layer above, because this block is
-          // glued to the tags and their gradient at the foot of the card.
-          !isLogoLifted(logoPlacement) ? (
-            <img
-              src={logoUrl}
-              alt={displayTitle}
-              // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
-              className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
-                hideTags ? "relative -bottom-2" : ""
-              }`}
-            />
-          ) : null
-        ) : (
-          <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
-            {displayTitle}
-          </h3>
-        )}
-        {!hideTags ? (
-          <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
-            <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-              {item.ProductionYear && (
-                <span className="rounded-full bg-white/10 px-2 py-0.5">
-                  {item.ProductionYear}
+          {logoUrl ? (
+            // A lifted logo is drawn in its own layer above, because this block is
+            // glued to the tags and their gradient at the foot of the card.
+            !isLogoLifted(logoPlacement) ? (
+              <img
+                src={logoUrl}
+                alt={displayTitle}
+                // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
+                className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
+                  hideTags ? "relative -bottom-2" : ""
+                }`}
+              />
+            ) : null
+          ) : (
+            <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
+              {displayTitle}
+            </h3>
+          )}
+          {!hideTags ? (
+            <div className="mt-1 flex items-end justify-between gap-2 text-[0.68rem] font-semibold text-white/75 sm:text-xs">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+                {item.ProductionYear && (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5">
+                    {item.ProductionYear}
+                  </span>
+                )}
+                {item.OfficialRating && (
+                  <span className="rounded-full bg-white/10 px-2 py-0.5">
+                    {item.OfficialRating}
+                  </span>
+                )}
+              </div>
+              {posterCountBubbleLabel ? (
+                <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
+                  {posterCountBubbleLabel}
                 </span>
-              )}
-              {item.OfficialRating && (
-                <span className="rounded-full bg-white/10 px-2 py-0.5">
-                  {item.OfficialRating}
-                </span>
-              )}
+              ) : null}
             </div>
-            {posterCountBubbleLabel ? (
-              <span className="ml-auto max-w-[55%] shrink-0 truncate rounded-full bg-white/15 px-2 py-0.5 text-[0.68rem] font-black text-white/88 shadow-[0_10px_28px_rgba(0,0,0,0.3)] backdrop-blur-md sm:text-xs">
-                {posterCountBubbleLabel}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
+          ) : null}
         </div>
       </>
     );
@@ -794,7 +794,7 @@ export function MediaCard({
           {canPlay && showRestartWatching ? (
             <RestartWatchingButton
               item={item}
-              className="pointer-events-auto absolute left-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
+              className="pointer-events-auto absolute right-3 top-3 flex h-10 w-10 shrink-0 translate-y-1 items-center justify-center rounded-full border border-white/15 bg-gray-600/90 text-white opacity-0 shadow-player-controls transition duration-500 hover:bg-gray-500 focus:translate-y-0 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:-translate-y-3 group-hover:opacity-100 group-focus-within:-translate-y-3 group-focus-within:opacity-100"
             />
           ) : null}
           {canPlay && showPlayFromBeginning && progressPercent !== null ? (

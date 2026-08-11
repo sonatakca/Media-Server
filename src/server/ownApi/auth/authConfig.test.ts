@@ -1,6 +1,8 @@
 // @vitest-environment node
+import type { IncomingMessage } from "node:http";
 import { describe, expect, it } from "vitest";
 import { parseCookieDomain, parseNativeAuthConfig } from "./authConfig";
+import { applicableCookieDomain } from "./authHttpHandler";
 
 describe("native authentication runtime configuration", () => {
   it("requires its secrets by default, since native identity is the only mode", () => {
@@ -85,5 +87,54 @@ describe("cookie domain", () => {
     expect(() => parseCookieDomain("https://seyirlik.org")).toThrow();
     expect(() => parseCookieDomain("seyirlik.org/path")).toThrow();
     expect(() => parseCookieDomain("seyirlik..org")).toThrow();
+  });
+});
+
+describe("applicableCookieDomain", () => {
+  function request(host: string | undefined): IncomingMessage {
+    return {
+      headers: host === undefined ? {} : { host },
+    } as unknown as IncomingMessage;
+  }
+
+  it("uses the configured domain for the domain itself and its subdomains", () => {
+    expect(
+      applicableCookieDomain(request("seyirlik.org"), "seyirlik.org"),
+    ).toBe("seyirlik.org");
+    expect(
+      applicableCookieDomain(request("www.seyirlik.org"), "seyirlik.org"),
+    ).toBe("seyirlik.org");
+    expect(
+      applicableCookieDomain(request("playback.seyirlik.org:8443"), "seyirlik.org"),
+    ).toBe("seyirlik.org");
+  });
+
+  it("omits the domain for a host it would not cover", () => {
+    // A browser discards a cookie whose Domain the host does not belong to, so
+    // sending one here means logging in appears to succeed and then does not.
+    // Without the attribute the cookie is scoped to the exact host instead.
+    for (const host of [
+      "localhost",
+      "localhost:5173",
+      "192.168.1.108:5173",
+      "100.86.155.75:5173",
+      "notseyirlik.org",
+      "seyirlik.org.evil.test",
+    ]) {
+      expect(applicableCookieDomain(request(host), "seyirlik.org")).toBeUndefined();
+    }
+  });
+
+  it("has nothing to apply when no domain is configured", () => {
+    expect(
+      applicableCookieDomain(request("www.seyirlik.org"), undefined),
+    ).toBeUndefined();
+    expect(applicableCookieDomain(request(undefined), "seyirlik.org")).toBeUndefined();
+  });
+
+  it("matches case-insensitively and tolerates a leading dot", () => {
+    expect(
+      applicableCookieDomain(request("WWW.Seyirlik.ORG"), ".seyirlik.org"),
+    ).toBe(".seyirlik.org");
   });
 });

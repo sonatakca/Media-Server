@@ -1,3 +1,4 @@
+import { randomUuid } from "../randomId";
 import type {
   AudioCapability,
   ClientCapabilities,
@@ -153,10 +154,7 @@ function getOrCreateDeviceId(): string | undefined {
       return existing;
     }
 
-    const next =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const next = randomUuid();
 
     window.localStorage.setItem(DEVICE_ID_STORAGE_KEY, next);
     return next;

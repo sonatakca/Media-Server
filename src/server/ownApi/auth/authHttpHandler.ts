@@ -80,7 +80,35 @@ interface LoginBody {
   deviceDescription?: string;
 }
 
+/**
+ * The cookie Domain to use for this particular request, if any.
+ *
+ * A Domain attribute the request host does not belong to makes the browser
+ * discard the cookie outright — so a deployment configured to share cookies
+ * across `seyirlik.org` subdomains would silently issue no session at all when
+ * reached as `localhost` or by LAN address, which is exactly how the dev server
+ * is used. Login would answer 200 and the next request would be anonymous.
+ *
+ * Omitting the attribute is the correct fallback: the cookie is then scoped to
+ * the exact host that set it, which is all a single-host origin needs.
+ */
+export function applicableCookieDomain(
+  request: IncomingMessage,
+  cookieDomain: string | undefined,
+): string | undefined {
+  if (!cookieDomain) return undefined;
+
+  const host = request.headers.host?.split(":")[0]?.toLowerCase();
+  if (!host) return undefined;
+
+  const domain = cookieDomain.replace(/^\./, "").toLowerCase();
+  return host === domain || host.endsWith(`.${domain}`)
+    ? cookieDomain
+    : undefined;
+}
+
 function setSessionCookies(
+  request: IncomingMessage,
   response: ServerResponse,
   session: NativeSessionResult,
   authenticated: NativeAuthenticatedSession,
@@ -95,6 +123,7 @@ function setSessionCookies(
     (session.expiresAt.getTime() - (options.now?.() ?? new Date()).getTime()) /
       1_000,
   );
+  const cookieDomain = applicableCookieDomain(request, options.cookieDomain);
   appendSetCookie(response, [
     serializeCookie(options.sessionCookieName, session.token, {
       httpOnly: true,
@@ -102,7 +131,7 @@ function setSessionCookies(
       expires: session.expiresAt,
       maxAgeSeconds,
       path: SESSION_COOKIE_PATH,
-      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     }),
     serializeCookie(options.csrfCookieName, csrfToken, {
       httpOnly: false,
@@ -110,7 +139,7 @@ function setSessionCookies(
       expires: session.expiresAt,
       maxAgeSeconds,
       path: CSRF_COOKIE_PATH,
-      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     }),
     // A CSRF cookie written at the API path by an earlier build is a distinct
     // cookie from the one above, and the browser would send both. Duplicate
@@ -122,16 +151,18 @@ function setSessionCookies(
       expires: new Date(0),
       maxAgeSeconds: 0,
       path: SESSION_COOKIE_PATH,
-      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     }),
   ]);
 }
 
 function clearSessionCookies(
+  request: IncomingMessage,
   response: ServerResponse,
   options: NativeAuthHttpHandlerOptions,
 ): void {
   const expired = new Date(0);
+  const cookieDomain = applicableCookieDomain(request, options.cookieDomain);
   appendSetCookie(response, [
     serializeCookie(options.sessionCookieName, "", {
       httpOnly: true,
@@ -139,7 +170,7 @@ function clearSessionCookies(
       expires: expired,
       maxAgeSeconds: 0,
       path: SESSION_COOKIE_PATH,
-      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     }),
     serializeCookie(options.csrfCookieName, "", {
       httpOnly: false,
@@ -147,7 +178,7 @@ function clearSessionCookies(
       expires: expired,
       maxAgeSeconds: 0,
       path: CSRF_COOKIE_PATH,
-      ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+      ...(cookieDomain ? { domain: cookieDomain } : {}),
     }),
   ]);
 }
@@ -310,7 +341,7 @@ export function createNativeAuthHttpHandler(
         const authenticated = await options.auth.getCurrentSession(
           session.token,
         );
-        setSessionCookies(response, session, authenticated, options);
+        setSessionCookies(request, response, session, authenticated, options);
       } catch (error) {
         await options.auth.logout(session.token).catch(() => undefined);
         throw mapAuthError(error);
@@ -339,6 +370,7 @@ export function createNativeAuthHttpHandler(
           (options.now?.() ?? new Date()).getTime()) /
           1_000,
       );
+      const cookieDomain = applicableCookieDomain(request, options.cookieDomain);
       appendSetCookie(response, [
         serializeCookie(options.csrfCookieName, csrfToken, {
           httpOnly: false,
@@ -346,7 +378,7 @@ export function createNativeAuthHttpHandler(
           expires: session.expiresAt,
           maxAgeSeconds,
           path: CSRF_COOKIE_PATH,
-          ...(options.cookieDomain ? { domain: options.cookieDomain } : {}),
+          ...(cookieDomain ? { domain: cookieDomain } : {}),
         }),
       ]);
       sendOwnApiJson(response, 200, {
@@ -379,10 +411,10 @@ export function createNativeAuthHttpHandler(
           refreshed.token,
         );
         refreshLimiter.reset(limiterKey);
-        setSessionCookies(response, refreshed, authenticated, options);
+        setSessionCookies(request, response, refreshed, authenticated, options);
         sendUser(response, requestId, refreshed.user);
       } catch (error) {
-        clearSessionCookies(response, options);
+        clearSessionCookies(request, response, options);
         throw mapAuthError(error);
       }
       return true;
@@ -402,7 +434,7 @@ export function createNativeAuthHttpHandler(
           if (mapped.code !== "AUTH_REQUIRED") throw mapped;
         }
       }
-      clearSessionCookies(response, options);
+      clearSessionCookies(request, response, options);
       response.statusCode = 204;
       response.end();
       return true;
@@ -419,7 +451,7 @@ export function createNativeAuthHttpHandler(
       } catch (error) {
         throw mapAuthError(error);
       }
-      clearSessionCookies(response, options);
+      clearSessionCookies(request, response, options);
       response.statusCode = 204;
       response.end();
       return true;

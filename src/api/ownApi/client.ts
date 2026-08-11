@@ -1,3 +1,5 @@
+import { randomUuid } from "../../lib/randomId";
+
 export const OWN_API_V1_BASE_PATH = "/ownAPI/v1";
 
 /**
@@ -138,7 +140,7 @@ function invalidResponseError(
 }
 
 function defaultRequestIdFactory(): string {
-  return globalThis.crypto.randomUUID();
+  return randomUuid();
 }
 
 function normalizeBasePath(basePath: string): string {

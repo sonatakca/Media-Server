@@ -1,16 +1,6 @@
+import { randomUuid } from "./randomId";
+
 const DEVICE_ID_KEY = "seyirlik.deviceId";
-
-function createDeviceId(): string {
-  if (crypto.randomUUID) {
-    return crypto.randomUUID();
-  }
-
-  const bytes = new Uint8Array(16);
-  crypto.getRandomValues(bytes);
-  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
-    "",
-  );
-}
 
 export function getOrCreateDeviceId(): string {
   const existing = localStorage.getItem(DEVICE_ID_KEY);
@@ -19,7 +9,7 @@ export function getOrCreateDeviceId(): string {
     return existing;
   }
 
-  const deviceId = createDeviceId();
+  const deviceId = randomUuid();
   localStorage.setItem(DEVICE_ID_KEY, deviceId);
   return deviceId;
 }
