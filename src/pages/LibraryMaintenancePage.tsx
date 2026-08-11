@@ -36,6 +36,7 @@ import type {
 import { getDisplayTitle, getItemSubtitle } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
 import { saveDefaultSubtitleStreamPreferences } from "../lib/subtitlePreferences";
+import { notify } from "../lib/notifications/notificationStore";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   MIXED_SUBTITLE_PREFERENCE_INDEX,
@@ -440,6 +441,10 @@ export function LibraryMaintenancePage() {
         state: "success",
         message: t("maintenance.fullScanStarted"),
       });
+      // Only the request is confirmed here. What the scan then does is reported
+      // by the task watcher, which follows it to completion wherever the
+      // operator happens to be by then.
+      notify({ tone: "info", title: t("feedback.scanRequested") });
     } catch (error) {
       setScanState({
         state: "error",
@@ -447,6 +452,11 @@ export function LibraryMaintenancePage() {
           error instanceof Error
             ? error.message
             : t("maintenance.couldNotStartScan"),
+      });
+      notify({
+        tone: "error",
+        title: t("maintenance.couldNotStartScan"),
+        ...(error instanceof Error ? { description: error.message } : {}),
       });
     }
   };
@@ -468,6 +478,7 @@ export function LibraryMaintenancePage() {
         state: "success",
         message: t("maintenance.selectedScanStarted"),
       });
+      notify({ tone: "info", title: t("feedback.refreshRequested") });
     } catch (error) {
       setScanState({
         state: "error",

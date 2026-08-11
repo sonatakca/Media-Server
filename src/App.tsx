@@ -32,6 +32,8 @@ import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
 import { DevToolsPage } from "./pages/DevToolsPage";
 import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
 import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
+import { NotificationHost } from "./components/notifications/NotificationHost";
+import { useTaskNotifications } from "./hooks/useTaskNotifications";
 import TmdbArtworkPage from "./pages/TmdbArtworkPage";
 import { ContentExplorerPage } from "./pages/ContentExplorerPage";
 import { HomeCurationPage } from "./pages/HomeCurationPage";
@@ -336,10 +338,16 @@ function RequireAuth() {
 }
 
 export default function App() {
+  // Background work is only reported to somebody who is signed in: the task
+  // list is an admin surface, and polling it from the login screen would be a
+  // guaranteed 401 every fifteen seconds.
+  useTaskNotifications(isAuthenticated());
+
   return (
     <>
       <ScrollToTop />
       <NonPlayerHistoryTracker />
+      <NotificationHost />
 
       <RouteColorTransition />
       <Routes>
