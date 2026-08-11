@@ -257,11 +257,6 @@ export default function TmdbArtworkPage() {
         tone: "success",
         message: t("tmdbArtwork.identifySaved"),
       });
-      notify({
-        tone: "success",
-        title: t("feedback.identifySaved"),
-        description: selectedTitle?.Name ?? "",
-      });
       await loadArtwork(selectedId);
     } catch (error) {
       setMatchStatus({
@@ -283,11 +278,6 @@ export default function TmdbArtworkPage() {
         message: formatTemplate(t("tmdbArtwork.artworkSaved"), {
           file: candidate.filePath,
         }),
-      });
-      notify({
-        tone: "success",
-        title: t("feedback.artworkApplied"),
-        description: `${selectedTitle?.Name ?? ""} · ${t(getKindLabelKey(kind))}`,
       });
       await loadArtwork(selectedId);
     } catch (error) {
@@ -318,11 +308,6 @@ export default function TmdbArtworkPage() {
       setArtworkStatus({
         tone: "success",
         message: t("tmdbArtwork.artworkReverted"),
-      });
-      notify({
-        tone: "success",
-        title: t("feedback.artworkReverted"),
-        description: `${selectedTitle?.Name ?? ""} · ${t(getKindLabelKey(kind))}`,
       });
       await loadArtwork(selectedId);
     } catch (error) {
@@ -385,13 +370,6 @@ export default function TmdbArtworkPage() {
         tone: "success",
         message: next ? t("logoLayout.saved") : t("logoLayout.cleared"),
       });
-      notify({
-        tone: "success",
-        title: next
-          ? t("feedback.logoLayoutSaved")
-          : t("feedback.logoLayoutCleared"),
-        description: selectedTitle?.Name ?? "",
-      });
     } catch (error) {
       setLayoutStatus({
         tone: "error",
@@ -423,11 +401,6 @@ export default function TmdbArtworkPage() {
       setDisplayStatus({
         tone: "success",
         message: t("tmdbArtwork.itemMetadataSaved"),
-      });
-      notify({
-        tone: "success",
-        title: t("feedback.metadataSaved"),
-        description: selectedTitle?.Name ?? "",
       });
     } catch (error) {
       setDisplayStatus({

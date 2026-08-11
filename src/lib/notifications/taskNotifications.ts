@@ -28,7 +28,9 @@ const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
   "metadata.scan": "tasks.metadataScan",
   "metadata.refresh": "tasks.metadataRefresh",
   "trickplay.generate": "tasks.trickplayGenerate",
-  "probe.run": "tasks.probeRun",
+  // The queue calls this media.probe; naming it probe.run here meant every
+  // probe reported itself as unspecified "background work".
+  "media.probe": "tasks.probeRun",
 };
 
 export function getTaskTitleKey(type: string): TranslationKey {
@@ -118,6 +120,15 @@ function humanise(name: string): string {
 export function selectChangedTasks(
   tasks: readonly TaskDto[],
   seen: ReadonlyMap<string, string>,
+  /**
+   * The first poll after the page loaded.
+   *
+   * Everything is unseen then, so without this a reload replays the whole
+   * recent history — every scan that ever finished, every failure from days
+   * ago — as though it had just happened. Work still running is the exception:
+   * that is happening now and is the reason to look.
+   */
+  isFirstPoll = false,
 ): { changed: TaskDto[]; next: Map<string, string> } {
   const next = new Map<string, string>();
   const changed: TaskDto[] = [];
@@ -131,7 +142,9 @@ export function selectChangedTasks(
         : task.status;
 
     next.set(task.id, signature);
-    if (seen.get(task.id) !== signature) changed.push(task);
+    if (seen.get(task.id) === signature) continue;
+    if (isFirstPoll && task.status !== "running") continue;
+    changed.push(task);
   }
 
   return { changed, next };

@@ -136,9 +136,21 @@ export function createCatalogueScanStore(
            mtime_ms = EXCLUDED.mtime_ms,
            fingerprint = EXCLUDED.fingerprint,
            is_primary = EXCLUDED.is_primary,
-           -- Only a genuine content change invalidates the stored probe.
-           probe_state = CASE WHEN media_files.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint
-                              THEN EXCLUDED.probe_state ELSE media_files.probe_state END,
+           -- A container that is never probed is settled by definition, so a
+           -- verdict recorded before it was excluded — a book that ffprobe was
+           -- pointed at and predictably rejected — is corrected here. Otherwise
+           -- it would stay failed forever, since only a content change
+           -- invalidates a stored probe and a book's content never changes.
+           probe_state = CASE
+             WHEN EXCLUDED.probe_state = 'probed' THEN 'probed'
+             WHEN media_files.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint
+               THEN EXCLUDED.probe_state
+             ELSE media_files.probe_state END,
+           probe_error = CASE
+             WHEN EXCLUDED.probe_state = 'probed' THEN NULL
+             WHEN media_files.fingerprint IS DISTINCT FROM EXCLUDED.fingerprint
+               THEN NULL
+             ELSE media_files.probe_error END,
            last_seen_at = now(),
            missing_since = NULL,
            updated_at = now()

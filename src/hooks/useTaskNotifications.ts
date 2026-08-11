@@ -26,6 +26,7 @@ const IDLE_POLL_MS = 15_000;
 export function useTaskNotifications(enabled: boolean): void {
   const { t } = useLanguage();
   const seenRef = useRef(new Map<string, string>());
+  const hasPolledRef = useRef(false);
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -40,8 +41,13 @@ export function useTaskNotifications(enabled: boolean): void {
         const tasks = await getTasks();
         if (cancelled) return;
 
-        const { changed, next } = selectChangedTasks(tasks, seenRef.current);
+        const { changed, next } = selectChangedTasks(
+          tasks,
+          seenRef.current,
+          !hasPolledRef.current,
+        );
         seenRef.current = next;
+        hasPolledRef.current = true;
         hasActiveWork = tasks.some((task) => task.status === "running");
 
         for (const task of changed) {

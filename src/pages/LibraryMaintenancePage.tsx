@@ -441,10 +441,6 @@ export function LibraryMaintenancePage() {
         state: "success",
         message: t("maintenance.fullScanStarted"),
       });
-      // Only the request is confirmed here. What the scan then does is reported
-      // by the task watcher, which follows it to completion wherever the
-      // operator happens to be by then.
-      notify({ tone: "info", title: t("feedback.scanRequested") });
     } catch (error) {
       setScanState({
         state: "error",
@@ -478,7 +474,6 @@ export function LibraryMaintenancePage() {
         state: "success",
         message: t("maintenance.selectedScanStarted"),
       });
-      notify({ tone: "info", title: t("feedback.refreshRequested") });
     } catch (error) {
       setScanState({
         state: "error",
