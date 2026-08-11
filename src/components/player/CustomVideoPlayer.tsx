@@ -154,6 +154,7 @@ import type {
   TouchSeekSide,
 } from "./types";
 import { useSeekFeedback } from "./useSeekFeedback";
+import { warmQualityAtPosition } from "./warmQuality";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
   displayTargetHeight,
@@ -172,6 +173,11 @@ import {
 const QUALITY_REVIEW_INTERVAL_MS = 15_000;
 /** Longest wait for the next quality to buffer before switching regardless. */
 const QUALITY_PRELOAD_BUDGET_MS = 20_000;
+/**
+ * How long a held frame may stay up. A source that never starts playing must
+ * not leave a frozen picture on screen with no way out.
+ */
+const FRAME_HOLD_CEILING_MS = 8_000;
 /** Buffered seconds ahead of the playhead that count as comfortable headroom. */
 const HEALTHY_BUFFER_SECONDS = 12;
 
@@ -702,6 +708,17 @@ export function CustomVideoPlayer({
     (file: AvailableQualityFile, preference: QualityPreference) => Promise<void>
   >(async () => {});
   const preloadVideoRef = useRef<HTMLVideoElement | null>(null);
+  /**
+   * The last frame of the outgoing quality, painted over the element while it
+   * reloads.
+   *
+   * Assigning a new `src` tears the element down to black, and there is no way
+   * to hand buffered media from one element to another. Holding the frame the
+   * viewer was already looking at is what makes the change read as a change of
+   * quality rather than an interruption.
+   */
+  const frameHoldCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [isHoldingFrame, setIsHoldingFrame] = useState(false);
   const preloadTokenRef = useRef(0);
   const [isPreparingQuality, setIsPreparingQuality] = useState(false);
   const recentQualityStallsRef = useRef<number[]>([]);
@@ -1709,7 +1726,10 @@ export function CustomVideoPlayer({
   );
 
   const switchPlayerSource = useCallback(
-    async (nextSource: PlaybackSourceCandidate) => {
+    async (
+      nextSource: PlaybackSourceCandidate,
+      options: { preserveCachedBytes?: boolean } = {},
+    ) => {
       const video = videoRef.current;
 
       if (
@@ -1749,18 +1769,25 @@ export function CustomVideoPlayer({
       await stopCurrentPlaybackForSourceSwitch(activeSource);
       if (sourceSwitchTokenRef.current !== switchToken) return;
 
-      const cacheBustedUrl = (() => {
-        try {
-          const url = new URL(nextSource.url);
-          url.searchParams.set(
-            "seyirlikRestart",
-            `${Date.now()}-${switchToken}`,
-          );
-          return url.toString();
-        } catch {
-          return nextSource.url;
-        }
-      })();
+      // A restart of the *same* URL needs a distinct one, or the element
+      // ignores the assignment and nothing reloads. A quality switch is already
+      // a different URL, and busting it there would discard the copy the
+      // warm-up just pulled into the HTTP cache — turning a prepared switch
+      // back into a download from zero.
+      const cacheBustedUrl = options.preserveCachedBytes
+        ? nextSource.url
+        : (() => {
+            try {
+              const url = new URL(nextSource.url);
+              url.searchParams.set(
+                "seyirlikRestart",
+                `${Date.now()}-${switchToken}`,
+              );
+              return url.toString();
+            } catch {
+              return nextSource.url;
+            }
+          })();
 
       setActiveSource({
         ...nextSource,
@@ -1824,50 +1851,51 @@ export function CustomVideoPlayer({
    * slow link degrades to the old behaviour instead of hanging.
    */
   const warmQualityBeforeSwitch = useCallback(
-    (url: string, positionSeconds: number, token: number) =>
-      new Promise<void>((resolve) => {
-        const preload = preloadVideoRef.current;
-        if (!preload) {
-          resolve();
-          return;
-        }
+    (url: string, positionSeconds: number, token: number) => {
+      const preload = preloadVideoRef.current;
+      if (!preload) return Promise.resolve();
 
-        let settled = false;
-        const finish = () => {
-          if (settled) return;
-          settled = true;
-          window.clearTimeout(budget);
-          preload.removeEventListener("canplaythrough", finish);
-          preload.removeEventListener("error", finish);
-          resolve();
-        };
-        const budget = window.setTimeout(finish, QUALITY_PRELOAD_BUDGET_MS);
-
-        preload.addEventListener("canplaythrough", finish, { once: true });
-        preload.addEventListener("error", finish, { once: true });
-        preload.preload = "auto";
-        preload.muted = true;
-        preload.src = url;
-        try {
-          preload.currentTime = Math.max(0, positionSeconds);
-        } catch {
-          // Seeking before metadata is fine; the load still warms the cache.
-        }
-        preload.load();
-
-        // A newer selection supersedes this warm-up immediately.
-        const supersede = window.setInterval(() => {
-          if (preloadTokenRef.current !== token) {
-            window.clearInterval(supersede);
-            finish();
-          }
-        }, 200);
-        void Promise.resolve().then(() => {
-          if (settled) window.clearInterval(supersede);
-        });
-      }),
+      return warmQualityAtPosition({
+        element: preload,
+        url,
+        positionSeconds,
+        budgetMs: QUALITY_PRELOAD_BUDGET_MS,
+        isSuperseded: () => preloadTokenRef.current !== token,
+        setTimeout: (handler, timeout) => window.setTimeout(handler, timeout),
+        clearTimeout: (handle) => window.clearTimeout(handle),
+        setInterval: (handler, timeout) => window.setInterval(handler, timeout),
+        clearInterval: (handle) => window.clearInterval(handle),
+      });
+    },
     [],
   );
+
+  /**
+   * Paints the current frame onto the hold canvas.
+   *
+   * Drawing a cross-origin frame taints the canvas, which only forbids reading
+   * the pixels back — displaying it is fine, and nothing here reads them.
+   */
+  const holdCurrentFrame = useCallback((): boolean => {
+    const video = videoRef.current;
+    const canvas = frameHoldCanvasRef.current;
+    if (!video || !canvas) return false;
+    if (!video.videoWidth || !video.videoHeight) return false;
+
+    const context = canvas.getContext("2d");
+    if (!context) return false;
+
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    try {
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    } catch {
+      return false;
+    }
+
+    setIsHoldingFrame(true);
+    return true;
+  }, []);
 
   const applyQualityFile = useCallback(
     async (
@@ -1899,7 +1927,8 @@ export function CustomVideoPlayer({
         );
         // A newer selection landed while this one was buffering.
         if (preloadTokenRef.current !== token) return;
-        await switchPlayerSource(nextSource);
+        holdCurrentFrame();
+        await switchPlayerSource(nextSource, { preserveCachedBytes: true });
       } catch (switchError: unknown) {
         console.warn(
           "[Seyirlik Playback] Complete-file quality switch failed",
@@ -1918,6 +1947,7 @@ export function CustomVideoPlayer({
     [
       activeSource.id,
       buildQualityFileSource,
+      holdCurrentFrame,
       persistQualityPreference,
       progress.currentTime,
       switchPlayerSource,
@@ -1925,6 +1955,29 @@ export function CustomVideoPlayer({
       warmQualityBeforeSwitch,
     ],
   );
+
+  /**
+   * Releases the held frame once the new quality is painting, with a ceiling so
+   * a source that never plays cannot leave a still image on screen forever.
+   */
+  useEffect(() => {
+    if (!isHoldingFrame) return undefined;
+
+    const video = videoRef.current;
+    const release = () => setIsHoldingFrame(false);
+    const ceiling = window.setTimeout(release, FRAME_HOLD_CEILING_MS);
+
+    video?.addEventListener("playing", release);
+    video?.addEventListener("seeked", release);
+    video?.addEventListener("error", release);
+
+    return () => {
+      window.clearTimeout(ceiling);
+      video?.removeEventListener("playing", release);
+      video?.removeEventListener("seeked", release);
+      video?.removeEventListener("error", release);
+    };
+  }, [isHoldingFrame]);
 
   useEffect(() => {
     applyQualityFileRef.current = applyQualityFile;
@@ -4295,6 +4348,19 @@ export function CustomVideoPlayer({
           reportStoppedOnce(false);
           handleDefaultNextEpisodePlay();
         }}
+      />
+
+      {/*
+        The outgoing frame, held over the element while it reloads at the new
+        quality. `object-contain` matches the video so the picture does not jump
+        as it is handed over.
+      */}
+      <canvas
+        ref={frameHoldCanvasRef}
+        aria-hidden="true"
+        className={`pointer-events-none absolute inset-0 z-[11] h-full w-full bg-black object-contain transition-opacity duration-200 ${
+          isHoldingFrame ? "opacity-100" : "opacity-0"
+        }`}
       />
 
       {/*
