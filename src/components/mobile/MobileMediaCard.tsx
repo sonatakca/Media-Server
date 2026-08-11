@@ -13,7 +13,11 @@ import {
   formatTemplate,
   getDisplayTitle,
 } from "../../lib/format";
-import { getLogoImageUrl, getPrimaryImageUrl } from "../../lib/mediaApi";
+import {
+  getLogoImageUrl,
+  getPrimaryImageUrl,
+  getThumbImageUrl,
+} from "../../lib/mediaApi";
 import {
   getReadRouteForItem,
   getWatchRouteForItem,
@@ -164,19 +168,22 @@ export function MobileMediaCard({
       ? getReadRouteForItem(item)
       : to;
 
-  // Use Series Poster if it's an episode being shown as a vertical poster
+  // A vertical episode card borrows the series poster, because an episode still
+  // is a wide frame and would be cropped to nothing. A wide one uses the still
+  // itself, which the metadata pass stores as a thumb — an episode has no
+  // poster of its own, so looking only for a primary image left every episode
+  // card blank even though the still was sitting in the catalogue.
+  const ownImageWidth = isLandscape ? 680 : 440;
   const imageUrl =
     isEpisode && isLandscape && episodeMetadata?.thumbnailUrl
       ? episodeMetadata.thumbnailUrl
       : isEpisode && !isLandscape && item.SeriesId && item.SeriesPrimaryImageTag
         ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 440)
         : item.ImageTags?.Primary
-          ? getPrimaryImageUrl(
-              item.Id,
-              item.ImageTags.Primary,
-              isLandscape ? 680 : 440,
-            )
-          : "";
+          ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, ownImageWidth)
+          : item.ImageTags?.Thumb
+            ? getThumbImageUrl(item.Id, item.ImageTags.Thumb, ownImageWidth)
+            : "";
 
   const fallbackLogoUrl =
     !isEpisode && !isSeason && item.ImageTags?.Logo

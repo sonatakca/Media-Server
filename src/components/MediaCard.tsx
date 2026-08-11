@@ -2,7 +2,11 @@ import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { RotateCcw } from "lucide-react";
-import { getLogoImageUrl, getPrimaryImageUrl } from "../lib/mediaApi";
+import {
+  getLogoImageUrl,
+  getPrimaryImageUrl,
+  getThumbImageUrl,
+} from "../lib/mediaApi";
 import { formatRuntime, formatTemplate, getDisplayTitle } from "../lib/format";
 import { getEpisodeDisplayMetadata } from "../lib/episodeMetadataPreferences";
 import {
@@ -264,15 +268,19 @@ export function MediaCard({
     getCommunityRatingLabel(item.CommunityRating),
   ].filter((chip): chip is string => Boolean(chip));
 
+  // An episode's own artwork is its still, which the metadata pass stores as a
+  // thumb; an episode never has a poster of its own, and the series poster it
+  // can borrow arrives separately as `SeriesPrimaryImageTag`. Looking only for
+  // a primary image therefore left every episode card blank while the still sat
+  // in the catalogue.
+  const ownImageWidth = variant === "poster" ? 600 : 900;
   const imageUrl =
     episodeMetadata?.thumbnailUrl ??
     (item.ImageTags?.Primary
-      ? getPrimaryImageUrl(
-          item.Id,
-          item.ImageTags.Primary,
-          variant === "poster" ? 600 : 900,
-        )
-      : "");
+      ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, ownImageWidth)
+      : item.ImageTags?.Thumb
+        ? getThumbImageUrl(item.Id, item.ImageTags.Thumb, ownImageWidth)
+        : "");
   const showPrimaryImageUrl =
     item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag
       ? getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, 600)
