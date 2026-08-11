@@ -867,8 +867,8 @@ export const tr = {
   "tmdbArtwork.artworkNotApplicable":
     "Görsel yalnızca bir film ya da dizi için seçilebilir.",
   "logoPlacement.title": "Logo Konumu",
-  "logoPlacement.description":
-    "Bu yapımın logosunun görselin neresinde duracağı. Geniş bir yazı logosu ile uzun bir logo aynı konuma nadiren yakışır.",
+  "logoPlacement.description": 
+    "Bu yapımın logosunun kartında nerede duracağı. Bir afişin altında rahat okunan logo, bir başkasında yüzün üzerine denk gelir.",
   "logoPlacement.top": "Üst",
   "logoPlacement.middle": "Orta",
   "logoPlacement.bottom": "Alt",

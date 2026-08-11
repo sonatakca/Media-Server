@@ -1,11 +1,12 @@
 import type { MediaItem } from "./types";
 
 /**
- * Where a title's logo is anchored over its artwork.
+ * Where a title's logo sits on its media card.
  *
- * Logos are wildly inconsistent in shape — a wide wordmark and a tall stacked
- * crest want different vertical anchors over the same backdrop — so this is a
- * per-title choice rather than one rule for the whole library.
+ * Logos are wildly inconsistent in shape, and the poster underneath varies just
+ * as much: a logo that reads cleanly at the foot of one card lands on a face or
+ * a bright sky on the next. So this is a per-title choice rather than one rule
+ * for the whole library.
  */
 export type LogoPlacement = "top" | "middle" | "bottom";
 
@@ -29,22 +30,23 @@ export function getLogoPlacement(item?: MediaItem | null): LogoPlacement {
     : DEFAULT_LOGO_PLACEMENT;
 }
 
-/** Flex alignment for the box the logo is laid out in. */
-export function getLogoAlignmentClass(placement: LogoPlacement): string {
-  if (placement === "top") return "items-start";
-  if (placement === "middle") return "items-center";
-  return "items-end";
+/**
+ * Whether the logo is drawn in its own layer rather than in the block at the
+ * foot of the card.
+ *
+ * The bottom block also holds the year and rating tags and the gradient they
+ * sit on, so a logo anchored anywhere else has to leave it.
+ */
+export function isLogoLifted(placement: LogoPlacement): boolean {
+  return placement !== "bottom";
 }
 
-/**
- * The hero scales the logo down as its intro settles. The origin has to follow
- * the anchor, otherwise a top-placed logo would shrink away from the edge it
- * was just pinned to.
- */
-export function getLogoTransformOrigin(placement: LogoPlacement): string {
-  if (placement === "top") return "left top";
-  if (placement === "middle") return "left center";
-  return "left bottom";
+/** Vertical anchor for a lifted logo layer, which spans the card. */
+export function getCardLogoAnchorClass(placement: LogoPlacement): string {
+  if (placement === "top") return "top-0";
+  if (placement === "middle") return "top-1/2 -translate-y-1/2";
+  // Bottom never uses this layer; it stays with the tags.
+  return "bottom-0";
 }
 
 export function getLogoPlacementLabelKey(

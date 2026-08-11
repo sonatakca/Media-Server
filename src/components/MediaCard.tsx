@@ -17,6 +17,11 @@ import {
 } from "../lib/routes";
 import type { MediaItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
+import {
+  getCardLogoAnchorClass,
+  getLogoPlacement,
+  isLogoLifted,
+} from "../lib/logoPlacement";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import { ClearWatchingButton } from "./ClearWatchingButton";
@@ -295,6 +300,8 @@ export function MediaCard({
     fallbackLogoUrl,
   );
 
+  const logoPlacement = getLogoPlacement(item);
+
   const canPlay =
     item.Type === "Movie" ||
     item.Type === "Episode" ||
@@ -567,16 +574,38 @@ export function MediaCard({
     }
 
     return (
-      <div className="pointer-events-none absolute inset-x-0 -bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
+      <>
+        {logoUrl && isLogoLifted(logoPlacement) ? (
+          <div
+            className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center p-3 sm:p-4 ${getCardLogoAnchorClass(
+              logoPlacement,
+            )}`}
+          >
+            <img
+              src={logoUrl}
+              alt={displayTitle}
+              // Away from the foot of the card there is no gradient to sit on,
+              // so the logo carries its own shadow to stay legible over a
+              // bright poster.
+              className="h-auto max-h-16 w-auto max-w-full object-contain object-center drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] sm:max-h-24"
+            />
+          </div>
+        ) : null}
+
+        <div className="pointer-events-none absolute inset-x-0 -bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
         {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={displayTitle}
-            // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
-            className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
-              hideTags ? "relative -bottom-2" : ""
-            }`}
-          />
+          // A lifted logo is drawn in its own layer above, because this block is
+          // glued to the tags and their gradient at the foot of the card.
+          !isLogoLifted(logoPlacement) ? (
+            <img
+              src={logoUrl}
+              alt={displayTitle}
+              // className="mb-2 h-auto max-h-16 w-auto object-contain object-left sm:max-h-24"
+              className={`mx-auto mb-2 h-auto max-h-16 max-w-full w-auto object-contain object-center sm:max-h-24 ${
+                hideTags ? "relative -bottom-2" : ""
+              }`}
+            />
+          ) : null
         ) : (
           <h3 className="mb-1 line-clamp-1 text-sm font-bold text-white sm:text-base">
             {displayTitle}
@@ -603,7 +632,8 @@ export function MediaCard({
             ) : null}
           </div>
         ) : null}
-      </div>
+        </div>
+      </>
     );
   };
 

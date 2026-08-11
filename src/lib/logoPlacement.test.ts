@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { MediaItem } from "./types";
 import {
   DEFAULT_LOGO_PLACEMENT,
-  getLogoAlignmentClass,
+  getCardLogoAnchorClass,
   getLogoPlacement,
-  getLogoTransformOrigin,
+  isLogoLifted,
   isLogoPlacement,
 } from "./logoPlacement";
 
@@ -36,17 +36,17 @@ describe("logo placement", () => {
     expect(isLogoPlacement(null)).toBe(false);
   });
 
-  it("moves the scale origin with the anchor", () => {
-    // The hero shrinks the logo as its intro settles. If the origin stayed at
-    // the bottom, a top-placed logo would shrink away from the edge it was
-    // just pinned to.
-    expect(getLogoAlignmentClass("top")).toBe("items-start");
-    expect(getLogoTransformOrigin("top")).toBe("left top");
+  it("lifts the logo out of the tag block for anything but the bottom", () => {
+    // The block at the foot of the card also holds the year and rating tags and
+    // the gradient they sit on, so a logo anchored elsewhere has to leave it —
+    // and the default must stay exactly where it already was.
+    expect(isLogoLifted("top")).toBe(true);
+    expect(isLogoLifted("middle")).toBe(true);
+    expect(isLogoLifted("bottom")).toBe(false);
+  });
 
-    expect(getLogoAlignmentClass("middle")).toBe("items-center");
-    expect(getLogoTransformOrigin("middle")).toBe("left center");
-
-    expect(getLogoAlignmentClass("bottom")).toBe("items-end");
-    expect(getLogoTransformOrigin("bottom")).toBe("left bottom");
+  it("anchors a lifted layer to the top or the centre of the card", () => {
+    expect(getCardLogoAnchorClass("top")).toBe("top-0");
+    expect(getCardLogoAnchorClass("middle")).toBe("top-1/2 -translate-y-1/2");
   });
 });

@@ -865,8 +865,8 @@ export const en = {
   "tmdbArtwork.artworkNotApplicable":
     "Artwork can only be chosen for a film or a series.",
   "logoPlacement.title": "Logo Placement",
-  "logoPlacement.description":
-    "Where this title's logo sits over its artwork. A wide wordmark and a tall stacked logo rarely suit the same anchor.",
+  "logoPlacement.description": 
+    "Where this title's logo sits on its card. A logo that reads cleanly at the foot of one poster lands on a face on the next.",
   "logoPlacement.top": "Top",
   "logoPlacement.middle": "Middle",
   "logoPlacement.bottom": "Bottom",
