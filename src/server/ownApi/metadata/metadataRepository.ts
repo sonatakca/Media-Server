@@ -39,10 +39,13 @@ export interface MetadataRepository {
   replacePeople(itemId: string, people: TmdbPerson[]): Promise<void>;
   markFailed(itemId: string): Promise<void>;
   lockFields(itemId: string, fields: string[]): Promise<void>;
-  /** Anchors the logo over this title's artwork. Returns false for an unknown id. */
-  setLogoPlacement(
+  /**
+   * Places and sizes the logo on this title's card, or clears the adjustment
+   * with null. Returns false for an unknown id.
+   */
+  setLogoLayout(
     itemId: string,
-    placement: "top" | "middle" | "bottom",
+    layout: { x: number; y: number; width: number } | null,
   ): Promise<boolean>;
 }
 
@@ -286,10 +289,17 @@ export function createMetadataRepository(
       );
     },
 
-    setLogoPlacement: async (itemId, placement) => {
+    setLogoLayout: async (itemId, layout) => {
+      // The three columns move together: a half-set layout would fail the
+      // constraint, and a partly-cleared one would be meaningless.
       const result = await pool.query(
-        `UPDATE items SET logo_placement = $2, updated_at = now() WHERE id = $1`,
-        [itemId, placement],
+        `UPDATE items SET
+           logo_offset_x = $2::real,
+           logo_offset_y = $3::real,
+           logo_width = $4::real,
+           updated_at = now()
+         WHERE id = $1`,
+        [itemId, layout?.x ?? null, layout?.y ?? null, layout?.width ?? null],
       );
       return (result.rowCount ?? 0) > 0;
     },

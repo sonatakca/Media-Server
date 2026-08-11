@@ -58,7 +58,7 @@ function fakeMetadata(initial: MetadataTarget) {
       failed = true;
     },
     lockFields: async () => undefined,
-    setLogoPlacement: async () => true,
+    setLogoLayout: async () => true,
   };
 
   return {

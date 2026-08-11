@@ -17,11 +17,7 @@ import {
 } from "../lib/routes";
 import type { MediaItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
-import {
-  getCardLogoAnchorClass,
-  getLogoPlacement,
-  isLogoLifted,
-} from "../lib/logoPlacement";
+import { getLogoLayout, getLogoLayoutStyle } from "../lib/logoLayout";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import { ClearWatchingButton } from "./ClearWatchingButton";
@@ -300,7 +296,7 @@ export function MediaCard({
     fallbackLogoUrl,
   );
 
-  const logoPlacement = getLogoPlacement(item);
+  const logoLayout = getLogoLayout(item);
 
   const canPlay =
     item.Type === "Movie" ||
@@ -575,28 +571,24 @@ export function MediaCard({
 
     return (
       <>
-        {logoUrl && isLogoLifted(logoPlacement) ? (
-          <div
-            className={`pointer-events-none absolute inset-x-0 z-20 flex justify-center p-3 sm:p-4 ${getCardLogoAnchorClass(
-              logoPlacement,
-            )}`}
-          >
-            <img
-              src={logoUrl}
-              alt={displayTitle}
-              // Away from the foot of the card there is no gradient to sit on,
-              // so the logo carries its own shadow to stay legible over a
-              // bright poster.
-              className="h-auto max-h-16 w-auto max-w-full object-contain object-center drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)] sm:max-h-24"
-            />
-          </div>
+        {logoUrl && logoLayout ? (
+          <img
+            src={logoUrl}
+            alt={displayTitle}
+            style={getLogoLayoutStyle(logoLayout)}
+            // Placed anywhere on the card, so there is no gradient to rely on:
+            // the logo carries its own shadow to stay legible over a bright
+            // poster. Height follows width so the aspect ratio is preserved.
+            className="pointer-events-none absolute z-20 h-auto object-contain drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]"
+          />
         ) : null}
 
         <div className="pointer-events-none absolute inset-x-0 -bottom-0 z-20 flex flex-col p-3 sm:p-4 bg-gradient-to-t from-black/75 via-black/72 to-black/0">
           {logoUrl ? (
-            // A lifted logo is drawn in its own layer above, because this block is
-            // glued to the tags and their gradient at the foot of the card.
-            !isLogoLifted(logoPlacement) ? (
+            // An adjusted logo is drawn in its own layer above, because this
+            // block is glued to the tags and their gradient at the foot of the
+            // card and cannot be moved without taking them along.
+            !logoLayout ? (
               <img
                 src={logoUrl}
                 alt={displayTitle}

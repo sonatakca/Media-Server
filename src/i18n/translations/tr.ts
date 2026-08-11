@@ -866,16 +866,22 @@ export const tr = {
   "tmdbArtwork.couldNotIdentify": "TMDB eşleşmesi kaydedilemedi.",
   "tmdbArtwork.artworkNotApplicable":
     "Görsel yalnızca bir film ya da dizi için seçilebilir.",
-  "logoPlacement.title": "Logo Konumu",
-  "logoPlacement.description": 
-    "Bu yapımın logosunun kartında nerede duracağı. Bir afişin altında rahat okunan logo, bir başkasında yüzün üzerine denk gelir.",
-  "logoPlacement.top": "Üst",
-  "logoPlacement.middle": "Orta",
-  "logoPlacement.bottom": "Alt",
-  "logoPlacement.default": "Varsayılan",
-  "logoPlacement.saving": "Logo konumu kaydediliyor...",
-  "logoPlacement.saved": "Logo konumu kaydedildi.",
-  "logoPlacement.couldNotSave": "Logo konumu kaydedilemedi.",
+  "logoLayout.title": "Logo Konumu",
+  "logoLayout.description":
+    "Logoyu sürükleyerek kartta konumlandırın, köşelerinden çekerek boyutlandırın.",
+  "logoLayout.instructions":
+    "Taşımak için sürükleyin, boyutlandırmak için köşeleri çekin. Yön tuşları ince ayar yapar, shift ile daha büyük adımlar, + ve - boyut değiştirir. Kaydedene kadar hiçbir şey saklanmaz.",
+  "logoLayout.dragHandleLabel": "Logo konumu ve boyutu",
+  "logoLayout.horizontal": "Yatay",
+  "logoLayout.vertical": "Dikey",
+  "logoLayout.size": "Boyut",
+  "logoLayout.save": "Konumu kaydet",
+  "logoLayout.reset": "Varsayılana dön",
+  "logoLayout.saving": "Konum kaydediliyor...",
+  "logoLayout.saved": "Konum kaydedildi.",
+  "logoLayout.cleared": "Varsayılan konuma dönüldü.",
+  "logoLayout.couldNotSave": "Konum kaydedilemedi.",
+  "logoLayout.noLogo": "Bu yapımın henüz yerleştirilecek bir logosu yok.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Oynatma Denetimi",
   "audit.description":

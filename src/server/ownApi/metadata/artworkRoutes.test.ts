@@ -66,7 +66,7 @@ function fakeMetadata(): MetadataRepository {
     replacePeople: async () => undefined,
     markFailed: async () => undefined,
     lockFields: async () => undefined,
-    setLogoPlacement: async () => true,
+    setLogoLayout: async () => true,
   };
 }
 
@@ -170,6 +170,29 @@ function buildRouter(parts: {
       imageStorage: parts.imageStorage ?? fakeStorage(),
       tmdb: parts.tmdb ?? fakeTmdb(),
       queue: parts.queue ?? fakeQueue(),
+    }),
+  });
+}
+
+function buildRouterWith(metadataOverrides: Partial<MetadataRepository>) {
+  return createOwnApiRouter({
+    csrfSecret: CSRF_SECRET,
+    csrfCookieName: "seyirlik_csrf",
+    publicOrigin: "https://seyirlik.test",
+    resolveSession: async (): Promise<RoutePrincipal> => ({
+      userId: "dddddddd-4444-4444-8444-444444444444",
+      username: "root",
+      displayName: "Root",
+      isAdministrator: true,
+      sessionId: "eeeeeeee-5555-4555-8555-555555555555",
+      sessionTokenHash: SESSION_HASH,
+    }),
+    routes: createArtworkRoutes({
+      metadata: { ...fakeMetadata(), ...metadataOverrides },
+      images: fakeImages(),
+      imageStorage: fakeStorage(),
+      tmdb: fakeTmdb(),
+      queue: fakeQueue(),
     }),
   });
 }
@@ -452,83 +475,76 @@ describe("artwork routes", () => {
     expect(applyTitleMetadata).not.toHaveBeenCalled();
   });
 
-  it("saves a logo placement without needing a TMDB match", async () => {
+  it("saves a logo layout without needing a TMDB match", async () => {
     // Placement is a layout choice, not a provider one, so demanding an
     // identified title would block it for exactly the titles that need it most.
-    const setLogoPlacementFake = vi.fn(async () => true);
-    const router = createOwnApiRouter({
-      csrfSecret: CSRF_SECRET,
-      csrfCookieName: "seyirlik_csrf",
-      publicOrigin: "https://seyirlik.test",
-      resolveSession: async (): Promise<RoutePrincipal> => ({
-        userId: "dddddddd-4444-4444-8444-444444444444",
-        username: "root",
-        displayName: "Root",
-        isAdministrator: true,
-        sessionId: "eeeeeeee-5555-4555-8555-555555555555",
-        sessionTokenHash: SESSION_HASH,
-      }),
-      routes: createArtworkRoutes({
-        metadata: { ...fakeMetadata(), setLogoPlacement: setLogoPlacementFake },
-        images: fakeImages(),
-        imageStorage: fakeStorage(),
-        tmdb: fakeTmdb(),
-        queue: fakeQueue(),
-      }),
-    });
+    const setLogoLayoutFake = vi.fn(async () => true);
+    const router = buildRouterWith({ setLogoLayout: setLogoLayoutFake });
 
     const result = await call(
       router,
       "PUT",
-      `/ownAPI/v1/admin/items/${UNIDENTIFIED}/logo-placement`,
-      { placement: "top" },
+      `/ownAPI/v1/admin/items/${UNIDENTIFIED}/logo-layout`,
+      { layout: { x: 0.25, y: 0.75, width: 0.5 } },
     );
 
-    expect(setLogoPlacementFake).toHaveBeenCalledWith(UNIDENTIFIED, "top");
-    expect(result.json?.data).toMatchObject({ placement: "top" });
+    expect(setLogoLayoutFake).toHaveBeenCalledWith(UNIDENTIFIED, {
+      x: 0.25,
+      y: 0.75,
+      width: 0.5,
+    });
+    expect(result.json?.data).toMatchObject({
+      layout: { x: 0.25, y: 0.75, width: 0.5 },
+    });
   });
 
-  it("rejects a placement that is not one of the three anchors", async () => {
+  it("clears an adjustment with an explicit null", async () => {
+    // Clearing and not sending one have to be told apart, or a card could never
+    // be handed back to its untouched look.
+    const setLogoLayoutFake = vi.fn(async () => true);
+    const router = buildRouterWith({ setLogoLayout: setLogoLayoutFake });
+
+    const result = await call(
+      router,
+      "PUT",
+      `/ownAPI/v1/admin/items/${MOVIE}/logo-layout`,
+      { layout: null },
+    );
+
+    expect(setLogoLayoutFake).toHaveBeenCalledWith(MOVIE, null);
+    expect(result.json?.data).toMatchObject({ layout: null });
+  });
+
+  it("rejects a layout outside the card or below a legible size", async () => {
     const router = buildRouter();
 
-    for (const placement of ["center", "TOP", "", 3, null]) {
+    for (const layout of [
+      { x: -0.1, y: 0.5, width: 0.5 },
+      { x: 1.2, y: 0.5, width: 0.5 },
+      { x: 0.5, y: 0.5, width: 0.05 },
+      { x: 0.5, y: 0.5, width: 1.5 },
+      { x: "0.5", y: 0.5, width: 0.5 },
+      { x: 0.5, y: 0.5 },
+      { x: 0.5, y: 0.5, width: 0.5, scale: 2 },
+    ]) {
       const result = await call(
         router,
         "PUT",
-        `/ownAPI/v1/admin/items/${MOVIE}/logo-placement`,
-        { placement },
+        `/ownAPI/v1/admin/items/${MOVIE}/logo-layout`,
+        { layout },
       );
       expect((result.error as OwnApiError).statusCode).toBe(422);
     }
   });
 
   it("reports an unknown item rather than silently saving nothing", async () => {
-    const router = createOwnApiRouter({
-      csrfSecret: CSRF_SECRET,
-      csrfCookieName: "seyirlik_csrf",
-      publicOrigin: "https://seyirlik.test",
-      resolveSession: async (): Promise<RoutePrincipal> => ({
-        userId: "dddddddd-4444-4444-8444-444444444444",
-        username: "root",
-        displayName: "Root",
-        isAdministrator: true,
-        sessionId: "eeeeeeee-5555-4555-8555-555555555555",
-        sessionTokenHash: SESSION_HASH,
-      }),
-      routes: createArtworkRoutes({
-        metadata: { ...fakeMetadata(), setLogoPlacement: async () => false },
-        images: fakeImages(),
-        imageStorage: fakeStorage(),
-        tmdb: fakeTmdb(),
-        queue: fakeQueue(),
-      }),
-    });
+    const router = buildRouterWith({ setLogoLayout: async () => false });
 
     const result = await call(
       router,
       "PUT",
-      `/ownAPI/v1/admin/items/${MOVIE}/logo-placement`,
-      { placement: "middle" },
+      `/ownAPI/v1/admin/items/${MOVIE}/logo-layout`,
+      { layout: { x: 0.5, y: 0.5, width: 0.5 } },
     );
 
     expect((result.error as OwnApiError).code).toBe("ITEM_NOT_FOUND");

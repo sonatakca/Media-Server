@@ -864,16 +864,22 @@ export const en = {
   "tmdbArtwork.couldNotIdentify": "Could not record the TMDB match.",
   "tmdbArtwork.artworkNotApplicable":
     "Artwork can only be chosen for a film or a series.",
-  "logoPlacement.title": "Logo Placement",
-  "logoPlacement.description": 
-    "Where this title's logo sits on its card. A logo that reads cleanly at the foot of one poster lands on a face on the next.",
-  "logoPlacement.top": "Top",
-  "logoPlacement.middle": "Middle",
-  "logoPlacement.bottom": "Bottom",
-  "logoPlacement.default": "Default",
-  "logoPlacement.saving": "Saving logo placement...",
-  "logoPlacement.saved": "Logo placement saved.",
-  "logoPlacement.couldNotSave": "Could not save the logo placement.",
+  "logoLayout.title": "Logo Placement",
+  "logoLayout.description":
+    "Drag the logo to place it on the card, and pull a corner to resize it.",
+  "logoLayout.instructions":
+    "Drag to move, corners to resize. Arrow keys nudge, shift for larger steps, + and - resize. Nothing is stored until you save.",
+  "logoLayout.dragHandleLabel": "Logo position and size",
+  "logoLayout.horizontal": "Across",
+  "logoLayout.vertical": "Down",
+  "logoLayout.size": "Size",
+  "logoLayout.save": "Save placement",
+  "logoLayout.reset": "Back to default",
+  "logoLayout.saving": "Saving placement...",
+  "logoLayout.saved": "Placement saved.",
+  "logoLayout.cleared": "Back to the default placement.",
+  "logoLayout.couldNotSave": "Could not save the placement.",
+  "logoLayout.noLogo": "This title has no logo to place yet.",
   "audit.eyebrow": "Devtool",
   "audit.title": "Playback Audit",
   "audit.description":

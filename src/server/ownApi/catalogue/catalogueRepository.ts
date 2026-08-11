@@ -32,8 +32,8 @@ export interface CatalogueItemRow {
   recursiveItemCount: number;
   dateCreated: Date;
   missingSince: Date | null;
-  /** Where the logo sits over this title's artwork: top, middle or bottom. */
-  logoPlacement: string;
+  /** Fine logo placement on the card, or null when never adjusted. */
+  logoLayout: { x: number; y: number; width: number } | null;
   seriesTitle: string | null;
   seasonTitle: string | null;
   genres: string[];
@@ -62,7 +62,9 @@ const ITEM_COLUMNS = `
   item.recursive_item_count,
   item.date_created,
   item.missing_since,
-  item.logo_placement,
+  item.logo_offset_x,
+  item.logo_offset_y,
+  item.logo_width,
   series.title AS series_title,
   season.title AS season_title,
   COALESCE(
@@ -105,7 +107,9 @@ interface RawItemRow extends Record<string, unknown> {
   recursive_item_count: number;
   date_created: Date;
   missing_since: Date | null;
-  logo_placement: string;
+  logo_offset_x: number | null;
+  logo_offset_y: number | null;
+  logo_width: number | null;
   series_title: string | null;
   season_title: string | null;
   genres: string[];
@@ -135,7 +139,16 @@ function toItemRow(row: RawItemRow): CatalogueItemRow {
     recursiveItemCount: row.recursive_item_count,
     dateCreated: row.date_created,
     missingSince: row.missing_since,
-    logoPlacement: row.logo_placement,
+    logoLayout:
+      row.logo_offset_x === null ||
+      row.logo_offset_y === null ||
+      row.logo_width === null
+        ? null
+        : {
+            x: row.logo_offset_x,
+            y: row.logo_offset_y,
+            width: row.logo_width,
+          },
     seriesTitle: row.series_title,
     seasonTitle: row.season_title,
     genres: row.genres ?? [],

@@ -190,10 +190,10 @@ export interface MediaItem {
   Genres?: string[];
   ProviderIds?: Record<string, string>;
   /**
-   * Where this title's logo is anchored over its artwork. Absent means the
-   * default, which is the bottom edge every logo sat on before it was settable.
+   * Fine placement of this title's logo on its card, in fractions of the card.
+   * Absent means never adjusted, which draws the card as it always was.
    */
-  LogoPlacement?: "top" | "middle" | "bottom";
+  LogoLayout?: { x: number; y: number; width: number } | null;
   OfficialRating?: string;
   CommunityRating?: number;
   RunTimeTicks?: number;

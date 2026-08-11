@@ -1,7 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
-  AlignVerticalSpaceAround,
+  Move,
   ChevronDown,
   ChevronLeft,
   Check,
@@ -23,23 +23,26 @@ import {
   identifyItem,
   saveItemDisplayMetadata,
   searchMetadataCandidates,
-  setLogoPlacement,
+  setLogoLayout,
   type ArtworkCandidate,
   type ArtworkKind,
   type ArtworkOverview,
   type MetadataCandidate,
 } from "../lib/artworkApi";
-import { getAllMovieAndSeriesItems, getPrimaryImageUrl } from "../lib/mediaApi";
+import {
+  getAllMovieAndSeriesItems,
+  getLogoImageUrl,
+  getPrimaryImageUrl,
+} from "../lib/mediaApi";
 import type { MediaItem } from "../lib/types";
 import { getDisplayTitle, formatTemplate } from "../lib/format";
 import { setPageTitle } from "../lib/pageTitle";
 import {
-  DEFAULT_LOGO_PLACEMENT,
-  LOGO_PLACEMENTS,
-  getLogoPlacement,
-  getLogoPlacementLabelKey,
-  type LogoPlacement,
-} from "../lib/logoPlacement";
+  INITIAL_LOGO_LAYOUT,
+  getLogoLayout,
+  type LogoLayout,
+} from "../lib/logoLayout";
+import { LogoLayoutEditor } from "./admin/LogoLayoutEditor";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   ARTWORK_KINDS,
@@ -96,10 +99,9 @@ export default function TmdbArtworkPage() {
   const [visibleCounts, setVisibleCounts] = useState<
     Partial<Record<ArtworkKind, number>>
   >({});
-  const [placement, setPlacement] = useState<LogoPlacement>(
-    DEFAULT_LOGO_PLACEMENT,
-  );
-  const [placementStatus, setPlacementStatus] = useState<ActionStatus>({
+  /** Null until the title is adjusted, matching how the card reads it. */
+  const [layout, setLayout] = useState<LogoLayout | null>(null);
+  const [layoutStatus, setLayoutStatus] = useState<ActionStatus>({
     tone: "idle",
     message: "",
   });
@@ -202,8 +204,8 @@ export default function TmdbArtworkPage() {
         tagline: item.Taglines?.[0] ?? "",
       });
       setDisplayStatus({ tone: "idle", message: "" });
-      setPlacement(getLogoPlacement(item));
-      setPlacementStatus({ tone: "idle", message: "" });
+      setLayout(getLogoLayout(item));
+      setLayoutStatus({ tone: "idle", message: "" });
       void loadArtwork(item.Id);
     },
     [loadArtwork],
@@ -339,27 +341,30 @@ export default function TmdbArtworkPage() {
     }
   }
 
-  async function handlePlacement(next: LogoPlacement) {
+  /**
+   * Saves on release rather than on every pointer move: a drag produces
+   * hundreds of positions and only the one it ends on is a decision.
+   */
+  async function handleSaveLayout(next: LogoLayout | null) {
     if (!selectedId) return;
 
-    const previous = placement;
-    // Applied first so the buttons answer immediately; a failure puts it back
-    // rather than leaving the page claiming a placement the server rejected.
-    setPlacement(next);
-    setPlacementStatus({ tone: "busy", message: t("logoPlacement.saving") });
+    setLayoutStatus({ tone: "busy", message: t("logoLayout.saving") });
     try {
-      await setLogoPlacement(selectedId, next);
+      await setLogoLayout(selectedId, next);
+      setLayout(next);
       setTitles((current) =>
         current.map((entry) =>
-          entry.Id === selectedId ? { ...entry, LogoPlacement: next } : entry,
+          entry.Id === selectedId ? { ...entry, LogoLayout: next } : entry,
         ),
       );
-      setPlacementStatus({ tone: "success", message: t("logoPlacement.saved") });
+      setLayoutStatus({
+        tone: "success",
+        message: next ? t("logoLayout.saved") : t("logoLayout.cleared"),
+      });
     } catch (error) {
-      setPlacement(previous);
-      setPlacementStatus({
+      setLayoutStatus({
         tone: "error",
-        message: messageOf(error, t("logoPlacement.couldNotSave")),
+        message: messageOf(error, t("logoLayout.couldNotSave")),
       });
     }
   }
@@ -742,39 +747,101 @@ export default function TmdbArtworkPage() {
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">
               <h2 className="flex items-center gap-2 text-sm font-black uppercase tracking-[0.14em] text-white/70">
-                <AlignVerticalSpaceAround className="h-4 w-4 text-sky-300/70" />
-                {t("logoPlacement.title")}
+                <Move className="h-4 w-4 text-sky-300/70" />
+                {t("logoLayout.title")}
               </h2>
               <p className="mt-1 text-xs font-semibold text-white/40">
-                {t("logoPlacement.description")}
+                {t("logoLayout.description")}
               </p>
 
-              <div className="mt-3 inline-flex rounded-2xl border border-white/10 bg-black/40 p-1">
-                {LOGO_PLACEMENTS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    disabled={!selectedId || placementStatus.tone === "busy"}
-                    onClick={() => void handlePlacement(option)}
-                    className={`rounded-xl px-4 py-1.5 text-xs font-black transition disabled:opacity-40 ${
-                      placement === option
-                        ? "bg-sky-400/25 text-sky-100"
-                        : "text-white/55 hover:text-white"
-                    }`}
-                  >
-                    {t(getLogoPlacementLabelKey(option))}
-                    {option === DEFAULT_LOGO_PLACEMENT
-                      ? ` · ${t("logoPlacement.default")}`
-                      : ""}
-                  </button>
-                ))}
-              </div>
-
-              {placementStatus.message ? (
-                <p className={`mt-2 text-xs font-bold ${getStatusClasses(placementStatus.tone)}`}>
-                  {placementStatus.message}
+              {!selectedTitle ? (
+                <p className="mt-3 text-sm font-bold text-white/40">
+                  {t("tmdbArtwork.noItemSelected")}
                 </p>
-              ) : null}
+              ) : !selectedTitle.ImageTags?.Logo ? (
+                <p className="mt-3 text-sm font-bold text-white/40">
+                  {t("logoLayout.noLogo")}
+                </p>
+              ) : (
+                <div className="mt-4 flex flex-wrap items-start gap-6">
+                  <LogoLayoutEditor
+                    posterUrl={getPrimaryImageUrl(
+                      selectedTitle.Id,
+                      selectedTitle.ImageTags?.Primary,
+                      600,
+                    )}
+                    logoUrl={getLogoImageUrl(
+                      selectedTitle.Id,
+                      selectedTitle.ImageTags.Logo,
+                      520,
+                    )}
+                    title={getDisplayTitle(selectedTitle)}
+                    layout={layout ?? INITIAL_LOGO_LAYOUT}
+                    onChange={setLayout}
+                    disabled={layoutStatus.tone === "busy"}
+                  />
+
+                  <div className="min-w-[16rem] flex-1">
+                    <p className="text-xs font-semibold leading-6 text-white/45">
+                      {t("logoLayout.instructions")}
+                    </p>
+
+                    <dl className="mt-3 grid grid-cols-3 gap-2 text-center">
+                      {(
+                        [
+                          ["logoLayout.horizontal", (layout ?? INITIAL_LOGO_LAYOUT).x],
+                          ["logoLayout.vertical", (layout ?? INITIAL_LOGO_LAYOUT).y],
+                          ["logoLayout.size", (layout ?? INITIAL_LOGO_LAYOUT).width],
+                        ] as const
+                      ).map(([labelKey, value]) => (
+                        <div
+                          key={labelKey}
+                          className="rounded-2xl border border-white/10 bg-black/40 px-2 py-2"
+                        >
+                          <dt className="text-[0.62rem] font-black uppercase tracking-[0.1em] text-white/35">
+                            {t(labelKey)}
+                          </dt>
+                          <dd className="mt-0.5 text-sm font-black text-white/80">
+                            {Math.round(value * 100)}%
+                          </dd>
+                        </div>
+                      ))}
+                    </dl>
+
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={layoutStatus.tone === "busy"}
+                        onClick={() =>
+                          void handleSaveLayout(layout ?? INITIAL_LOGO_LAYOUT)
+                        }
+                        className="inline-flex items-center gap-2 rounded-2xl bg-emerald-400/20 px-4 py-2 text-sm font-black text-emerald-100 transition hover:bg-emerald-400/30 disabled:opacity-40"
+                      >
+                        <Save className="h-4 w-4" />
+                        {t("logoLayout.save")}
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={layoutStatus.tone === "busy" || !layout}
+                        onClick={() => void handleSaveLayout(null)}
+                        className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-4 py-2 text-sm font-black text-white/70 transition hover:border-white/30 hover:text-white disabled:opacity-40"
+                      >
+                        <RotateCcw className="h-4 w-4" />
+                        {t("logoLayout.reset")}
+                      </button>
+                    </div>
+
+                    {layoutStatus.message ? (
+                      <p
+                        className={`mt-2 text-xs font-bold ${getStatusClasses(layoutStatus.tone)}`}
+                      >
+                        {layoutStatus.message}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+              )}
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">

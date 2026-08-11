@@ -161,7 +161,7 @@ export function toMediaItem(item: ItemDto): MediaItem {
     ...(item.seasonTitle ? { SeasonName: item.seasonTitle } : {}),
     Genres: item.genres,
     ProviderIds: item.providerIds,
-    LogoPlacement: item.logoPlacement,
+    ...(item.logoLayout ? { LogoLayout: item.logoLayout } : {}),
     ...(item.childCount === undefined ? {} : { ChildCount: item.childCount }),
     ...(item.recursiveItemCount === undefined
       ? {}

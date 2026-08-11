@@ -78,22 +78,69 @@ function requireArtworkKind(value: unknown): TmdbArtworkKind {
   return value as TmdbArtworkKind;
 }
 
-const LOGO_PLACEMENTS = ["top", "middle", "bottom"] as const;
+export interface LogoLayout {
+  x: number;
+  y: number;
+  width: number;
+}
 
-export type LogoPlacement = (typeof LOGO_PLACEMENTS)[number];
+/** Matches the range the column's constraint enforces. */
+const MIN_LOGO_WIDTH = 0.15;
 
-function requireLogoPlacement(value: unknown): LogoPlacement {
-  if (
-    typeof value !== "string" ||
-    !LOGO_PLACEMENTS.includes(value as LogoPlacement)
-  ) {
+function requireFraction(
+  value: unknown,
+  field: string,
+  minimum: number,
+): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
     throw new OwnApiError(
       "VALIDATION_FAILED",
-      `placement must be one of ${LOGO_PLACEMENTS.join(", ")}.`,
+      `${field} must be a number.`,
       422,
     );
   }
-  return value as LogoPlacement;
+  if (value < minimum || value > 1) {
+    throw new OwnApiError(
+      "VALIDATION_FAILED",
+      `${field} must be between ${minimum} and 1.`,
+      422,
+    );
+  }
+  return value;
+}
+
+/**
+ * A layout, or null to hand the card back to its untouched look.
+ *
+ * Null is a value here rather than an omission: clearing an adjustment and
+ * failing to send one have to be told apart.
+ */
+function parseLogoLayout(value: unknown): LogoLayout | null {
+  if (value === null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new OwnApiError(
+      "VALIDATION_FAILED",
+      "layout must be an object or null.",
+      422,
+    );
+  }
+
+  const layout = value as Record<string, unknown>;
+  for (const key of Object.keys(layout)) {
+    if (!["x", "y", "width"].includes(key)) {
+      throw new OwnApiError(
+        "VALIDATION_FAILED",
+        `layout has an unknown field: ${key}.`,
+        422,
+      );
+    }
+  }
+
+  return {
+    x: requireFraction(layout.x, "layout.x", 0),
+    y: requireFraction(layout.y, "layout.y", 0),
+    width: requireFraction(layout.width, "layout.width", MIN_LOGO_WIDTH),
+  };
 }
 
 /**
@@ -284,25 +331,25 @@ export function createArtworkRoutes({
 
     {
       /**
-       * Where the logo is anchored over this title's artwork.
+       * Where the logo sits on this title's card, and how large it is.
        *
        * Unlike the artwork itself this is not a provider choice, so it needs no
        * TMDB match and applies to any item that has a logo to place.
        */
       method: "PUT",
-      path: "/admin/items/:itemId/logo-placement",
+      path: "/admin/items/:itemId/logo-layout",
       access: "admin",
       handle: async (context) => {
         const itemId = requireUuid(context.params.itemId, "itemId");
 
-        const body = asObjectBody(await context.readJson(1_024), ["placement"]);
-        const placement = requireLogoPlacement(body.placement);
+        const body = asObjectBody(await context.readJson(1_024), ["layout"]);
+        const layout = parseLogoLayout(body.layout ?? null);
 
-        if (!(await metadata.setLogoPlacement(itemId, placement))) {
+        if (!(await metadata.setLogoLayout(itemId, layout))) {
           throw itemNotFound();
         }
 
-        sendData(context.response, context.requestId, { placement });
+        sendData(context.response, context.requestId, { layout });
       },
     },
 

@@ -104,18 +104,18 @@ export async function getLocalizedMetadataPreview(
 }
 
 /**
- * Anchors the logo over this title's artwork.
+ * Places and sizes the logo on this title's card, or clears the adjustment.
  *
  * Not a provider choice, so unlike the artwork endpoints this needs no TMDB
  * match and works for any title that has a logo to place.
  */
-export async function setLogoPlacement(
+export async function setLogoLayout(
   itemId: string,
-  placement: "top" | "middle" | "bottom",
+  layout: { x: number; y: number; width: number } | null,
 ): Promise<void> {
-  await ownApiClient.request<{ placement: string }>(
-    `/admin/items/${encodeURIComponent(itemId)}/logo-placement`,
-    { method: "PUT", body: { placement } },
+  await ownApiClient.request<{ layout: unknown }>(
+    `/admin/items/${encodeURIComponent(itemId)}/logo-layout`,
+    { method: "PUT", body: { layout } },
   );
 }
 

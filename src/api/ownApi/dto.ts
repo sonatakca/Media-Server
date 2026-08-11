@@ -75,8 +75,8 @@ export interface ItemDto {
   recursiveItemCount?: number;
   dateCreated: string;
   isMissing: boolean;
-  /** Where the logo is anchored over this title's artwork. */
-  logoPlacement: "top" | "middle" | "bottom";
+  /** Fine logo placement on the card, or null when never adjusted. */
+  logoLayout: { x: number; y: number; width: number } | null;
   images: ItemImagesDto;
   userState?: UserItemStateDto;
 }

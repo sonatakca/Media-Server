@@ -23,14 +23,14 @@ vi.mock("../lib/mediaApi", () => ({
     `https://media.test/${itemId}/poster.jpg`,
 }));
 
-function movie(placement?: MediaItem["LogoPlacement"]): MediaItem {
+function movie(layout?: MediaItem["LogoLayout"]): MediaItem {
   return {
     Id: "item-1",
     Name: "Dune",
     Type: "Movie",
     ProductionYear: 2021,
     ImageTags: { Primary: "p", Logo: "l" },
-    ...(placement ? { LogoPlacement: placement } : {}),
+    ...(layout ? { LogoLayout: layout } : {}),
   } as MediaItem;
 }
 
@@ -60,8 +60,8 @@ function logo(): HTMLImageElement {
   return found[0] as HTMLImageElement;
 }
 
-describe("media card logo placement", () => {
-  it("keeps an unconfigured logo in the block with the year tag", () => {
+describe("media card logo layout", () => {
+  it("keeps an unadjusted logo in the block with the year tag", () => {
     // This is where every logo already sat, so nothing about a title nobody has
     // touched may move.
     renderCard(movie());
@@ -71,25 +71,32 @@ describe("media card logo placement", () => {
     expect(container?.textContent).toContain("2021");
   });
 
-  it("lifts a top-placed logo into its own layer at the top of the card", () => {
-    renderCard(movie("top"));
+  it("places an adjusted logo where the layout puts it", () => {
+    renderCard(movie({ x: 0.25, y: 0.4, width: 0.6 }));
 
-    const container = logo().parentElement;
-    expect(container?.className).toContain("top-0");
-    // It must leave the tag block behind rather than being drawn twice.
-    expect(container?.textContent).not.toContain("2021");
+    const style = logo().style;
+    expect(style.left).toBe("25%");
+    expect(style.top).toBe("40%");
+    expect(style.width).toBe("60%");
+    // Anchored by its centre, which is what makes dragging track the pointer.
+    expect(style.transform).toBe("translate(-50%, -50%)");
   });
 
-  it("centres a middle-placed logo", () => {
-    renderCard(movie("middle"));
+  it("draws an adjusted logo once, outside the tag block", () => {
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5 }));
 
-    expect(logo().parentElement?.className).toContain("-translate-y-1/2");
+    expect(logos()).toHaveLength(1);
+    // The block at the foot of the card owns the tags and their gradient; an
+    // adjusted logo has to have left it rather than be drawn in both places.
+    const tagBlock = screen.getByText("2021").closest(".-bottom-0");
+    expect(tagBlock).not.toBeNull();
+    expect(tagBlock?.contains(logo())).toBe(false);
   });
 
   it("still shows the year tag when the logo has moved away from it", () => {
     // The tags belong at the foot of the card whatever the logo does; moving
     // the logo must not take them with it.
-    renderCard(movie("top"));
+    renderCard(movie({ x: 0.5, y: 0.2, width: 0.5 }));
     expect(screen.getByText("2021")).toBeInTheDocument();
   });
 });
