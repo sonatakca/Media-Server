@@ -43,6 +43,7 @@ export const tr = {
   "common.details": "Detaylar",
   "common.movie": "Film",
   "common.movies": "Filmler",
+  "common.books": "Kitaplar",
   "common.series": "Dizi",
   "common.trailer": "Fragman",
   "common.boxsets": "Koleksiyonlar",
@@ -589,7 +590,7 @@ export const tr = {
     "Jellyfin kütüphanelerini tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "devtools.card.libraryMaintenance.tag": "Bakım",
   "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
-  "devtools.card.tmdbArtwork.description": 
+  "devtools.card.tmdbArtwork.description":
     "Bir film ya da dizi için TMDB afişini, arka planını ve logosunu sağlayıcının ilk seçimi yerine kendiniz belirleyin.",
   "devtools.card.tmdbArtwork.tag": "Görsel",
   "devtools.card.contentExplorer.title": "İçerik Gezgini",
@@ -782,7 +783,7 @@ export const tr = {
   "playbackDefaults.resultSummary": "{success} kaydedildi · {failed} başarısız",
   "tmdbArtwork.eyebrow": "Görsel Tercihi",
   "tmdbArtwork.title": "TMDB Görselleri",
-  "tmdbArtwork.description": 
+  "tmdbArtwork.description":
     "Bir yapım için Seyirlik'in hangi TMDB görselini afiş, arka plan ve logo olarak saklayacağını siz seçin.",
   "tmdbArtwork.languageFilter": "Görsel diline göre süz",
   "tmdbArtwork.loadingItems": "Film ve diziler yükleniyor...",
@@ -808,7 +809,7 @@ export const tr = {
   "tmdbArtwork.noTmdbSelectedDescription":
     "Görsel seçeneklerini yüklemek için bir TMDB eşleşmesi seç.",
   "tmdbArtwork.currentArtwork": "Şu anda uygulanan",
-  "tmdbArtwork.currentArtworkDescription": 
+  "tmdbArtwork.currentArtworkDescription":
     "Seyirlik şu anda {target} için bu görseli sunuyor.",
   "tmdbArtwork.noCurrentArtwork": "Bu alan için mevcut görsel bulunamadı.",
   "tmdbArtwork.loadingImages": "TMDB görselleri yükleniyor...",
@@ -817,20 +818,21 @@ export const tr = {
   "tmdbArtwork.couldNotLoadImages": "TMDB görselleri yüklenemedi.",
   "tmdbArtwork.replaceFile": "Bu görseli kullan",
   "tmdbArtwork.savingArtwork": "Seçilen görsel kaydediliyor...",
-  "tmdbArtwork.artworkSaved": "Kaydedildi. {file} artık bu yapım için kullanılıyor.",
+  "tmdbArtwork.artworkSaved":
+    "Kaydedildi. {file} artık bu yapım için kullanılıyor.",
   "tmdbArtwork.couldNotSaveArtwork": "Görsel kaydedilemedi.",
   "tmdbArtwork.kind.poster": "Afiş",
   "tmdbArtwork.kind.backdrop": "Arka plan",
   "tmdbArtwork.kind.logo": "Logo",
-  "tmdbArtwork.kind.posterDescription": 
+  "tmdbArtwork.kind.posterDescription":
     "Kartlarda ve raflarda görünen dikey görsel.",
-  "tmdbArtwork.kind.backdropDescription": 
+  "tmdbArtwork.kind.backdropDescription":
     "Detay sayfasının arkasındaki geniş görsel.",
-  "tmdbArtwork.kind.logoDescription": 
+  "tmdbArtwork.kind.logoDescription":
     "Arka planın üzerine çizilen başlık görseli.",
   "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
   "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
-  "tmdbArtwork.itemLanguagesDescription": 
+  "tmdbArtwork.itemLanguagesDescription":
     "Başlığı ve açıklamayı TMDB'nin o dilde yazdığı haliyle yükler; kayıtlı olanın üzerine yazmadan önce karşılaştırabilirsiniz.",
   "tmdbArtwork.loadItemMetadata": "İçerik metadata'sını yükle",
   "tmdbArtwork.saveItemDisplay": "İçerik görünümünü kaydet",
@@ -839,7 +841,7 @@ export const tr = {
     "İngilizce ve Türkçe içerik metadata'sı yüklendi.",
   "tmdbArtwork.itemMetadataUnavailable": "TMDB içerik metadata'sı döndürmedi.",
   "tmdbArtwork.couldNotLoadItemMetadata": "İçerik metadata'sı yüklenemedi.",
-  "tmdbArtwork.itemMetadataRequiresMatch": 
+  "tmdbArtwork.itemMetadataRequiresMatch":
     "Bu yapımın verilerini yüklemeden önce TMDB eşleşmesini seçin.",
   "tmdbArtwork.savingItemMetadata":
     "İçerik görüntüleme seçimleri kaydediliyor...",
@@ -849,7 +851,7 @@ export const tr = {
   "tmdbArtwork.language.turkish": "Türkçe",
   "tmdbArtwork.language.none": "Dilsiz",
   "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
-  "tmdbArtwork.showingTopChoices": 
+  "tmdbArtwork.showingTopChoices":
     "{total} görselin {shown} tanesi gösteriliyor, en yüksek puanlıdan başlayarak.",
   "tmdbArtwork.loadMoreChoices": "{count} tane daha yükle",
   "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
@@ -857,7 +859,7 @@ export const tr = {
     "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",
   "tmdbArtwork.revertToAutomatic": "Otomatiğe döndür",
   "tmdbArtwork.revertingArtwork": "Görsel TMDB'ye geri bırakılıyor...",
-  "tmdbArtwork.artworkReverted": 
+  "tmdbArtwork.artworkReverted":
     "Geri alındı. TMDB'nin kendi seçimi arka planda yeniden indiriliyor.",
   "tmdbArtwork.couldNotRevertArtwork": "Bu görsel geri alınamadı.",
   "tmdbArtwork.identifying": "TMDB eşleşmesi kaydediliyor...",

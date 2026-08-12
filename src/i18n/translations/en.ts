@@ -43,6 +43,7 @@ export const en = {
   "common.details": "Details",
   "common.movie": "Movie",
   "common.movies": "Movies",
+  "common.books": "Books",
   "common.series": "Series",
   "common.trailer": "Trailer",
   "common.boxsets": "Boxsets",
@@ -588,7 +589,7 @@ export const en = {
     "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
   "devtools.card.libraryMaintenance.tag": "Maintenance",
   "devtools.card.tmdbArtwork.title": "TMDB Artwork",
-  "devtools.card.tmdbArtwork.description": 
+  "devtools.card.tmdbArtwork.description":
     "Pick the TMDB poster, backdrop, and logo for a film or series instead of taking the provider's first choice.",
   "devtools.card.tmdbArtwork.tag": "Artwork",
   "devtools.card.contentExplorer.title": "Content Explorer",
@@ -780,7 +781,7 @@ export const en = {
   "playbackDefaults.resultSummary": "{success} saved · {failed} failed",
   "tmdbArtwork.eyebrow": "Artwork Override",
   "tmdbArtwork.title": "TMDB Artwork",
-  "tmdbArtwork.description": 
+  "tmdbArtwork.description":
     "Choose exactly which TMDB image Seyirlik stores as the poster, backdrop, and logo for a title.",
   "tmdbArtwork.languageFilter": "Filter by image language",
   "tmdbArtwork.loadingItems": "Loading movies and series...",
@@ -806,7 +807,7 @@ export const en = {
   "tmdbArtwork.noTmdbSelectedDescription":
     "Select a TMDB match to load artwork choices.",
   "tmdbArtwork.currentArtwork": "Currently applied",
-  "tmdbArtwork.currentArtworkDescription": 
+  "tmdbArtwork.currentArtworkDescription":
     "This is the image Seyirlik currently serves for {target}.",
   "tmdbArtwork.noCurrentArtwork": "No current image found for this slot.",
   "tmdbArtwork.loadingImages": "Loading TMDB images...",
@@ -820,15 +821,15 @@ export const en = {
   "tmdbArtwork.kind.poster": "Poster",
   "tmdbArtwork.kind.backdrop": "Backdrop",
   "tmdbArtwork.kind.logo": "Logo",
-  "tmdbArtwork.kind.posterDescription": 
+  "tmdbArtwork.kind.posterDescription":
     "The upright image shown on cards and shelves.",
-  "tmdbArtwork.kind.backdropDescription": 
+  "tmdbArtwork.kind.backdropDescription":
     "The wide image behind a detail page.",
-  "tmdbArtwork.kind.logoDescription": 
+  "tmdbArtwork.kind.logoDescription":
     "The title treatment drawn over the backdrop.",
   "tmdbArtwork.itemMetadata": "Title Metadata",
   "tmdbArtwork.itemLanguages": "Names and descriptions",
-  "tmdbArtwork.itemLanguagesDescription": 
+  "tmdbArtwork.itemLanguagesDescription":
     "Loads the title and description as TMDB writes them in one language, so you can compare before overwriting what is stored.",
   "tmdbArtwork.loadItemMetadata": "Load title metadata",
   "tmdbArtwork.saveItemDisplay": "Save title display",
@@ -838,7 +839,7 @@ export const en = {
   "tmdbArtwork.itemMetadataUnavailable":
     "No title metadata was returned by TMDB.",
   "tmdbArtwork.couldNotLoadItemMetadata": "Could not load title metadata.",
-  "tmdbArtwork.itemMetadataRequiresMatch": 
+  "tmdbArtwork.itemMetadataRequiresMatch":
     "Match this title to TMDB before loading its metadata.",
   "tmdbArtwork.savingItemMetadata": "Saving title display choices...",
   "tmdbArtwork.itemMetadataSaved":
@@ -847,7 +848,7 @@ export const en = {
   "tmdbArtwork.language.turkish": "Turkish",
   "tmdbArtwork.language.none": "No language",
   "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
-  "tmdbArtwork.showingTopChoices": 
+  "tmdbArtwork.showingTopChoices":
     "Showing {shown} of {total}, best rated first.",
   "tmdbArtwork.loadMoreChoices": "Load {count} more",
   "tmdbArtwork.lockedBadge": "Chosen by you",
@@ -855,7 +856,7 @@ export const en = {
     "A metadata refresh will not replace an image you chose.",
   "tmdbArtwork.revertToAutomatic": "Revert to automatic",
   "tmdbArtwork.revertingArtwork": "Handing this image back to TMDB...",
-  "tmdbArtwork.artworkReverted": 
+  "tmdbArtwork.artworkReverted":
     "Reverted. TMDB's own choice is being fetched again in the background.",
   "tmdbArtwork.couldNotRevertArtwork": "Could not revert this image.",
   "tmdbArtwork.identifying": "Recording the TMDB match...",

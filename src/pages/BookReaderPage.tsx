@@ -1716,7 +1716,7 @@ export function BookReaderPage() {
                 className={`${topControlClass} hidden shrink-0 sm:inline-flex`}
                 style={controlSurfaceStyle}
               >
-                {t("common.details")}
+                {t("common.books")}
               </Link>
             </div>
 
