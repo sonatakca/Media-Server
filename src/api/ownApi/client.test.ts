@@ -230,6 +230,45 @@ describe("own API browser client", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it("sends binary files directly with request correlation and CSRF", async () => {
+    const fetchImpl = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({ data: { ok: true }, requestId: "binary-request" }),
+          {
+            status: 200,
+            headers: {
+              "Content-Type": "application/json",
+              "X-Request-Id": "binary-request",
+            },
+          },
+        ),
+    );
+    const client = createOwnApiClient({
+      fetchImpl,
+      requestIdFactory: () => "binary-request",
+      csrfTokenProvider: () => "csrf-token",
+    });
+    const image = new Blob(["image-bytes"], { type: "image/webp" });
+
+    await client.request("/admin/items/item-1/artwork/upload?kind=poster", {
+      method: "POST",
+      binaryBody: image,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "/ownAPI/v1/admin/items/item-1/artwork/upload?kind=poster",
+      expect.objectContaining({
+        body: image,
+        headers: expect.objectContaining({
+          "Content-Type": "image/webp",
+          "X-CSRF-Token": "csrf-token",
+          "X-Request-Id": "binary-request",
+        }),
+      }),
+    );
+  });
+
   it("normalizes safe structured errors and reports authentication expiry", async () => {
     const onUnauthorized = vi.fn();
     const fetchImpl = vi.fn(

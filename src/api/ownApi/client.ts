@@ -37,6 +37,8 @@ export interface OwnApiClientOptions {
 export interface OwnApiRequestOptions {
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   body?: unknown;
+  /** Sends original file bytes instead of serializing them as JSON. */
+  binaryBody?: Blob;
   signal?: AbortSignal;
   headers?: Record<string, string>;
   csrf?: boolean;
@@ -368,10 +370,10 @@ export function createOwnApiClient({
    */
   async function reissueCsrfToken(): Promise<string | undefined> {
     try {
-      const response = await fetchImpl(
-        `${normalizedBasePath}/auth/csrf`,
-        { credentials: "include", headers: { Accept: "application/json" } },
-      );
+      const response = await fetchImpl(`${normalizedBasePath}/auth/csrf`, {
+        credentials: "include",
+        headers: { Accept: "application/json" },
+      });
       if (!response.ok) return undefined;
       return csrfTokenProvider();
     } catch {
@@ -384,6 +386,7 @@ export function createOwnApiClient({
     {
       method = "GET",
       body,
+      binaryBody,
       signal,
       headers: additionalHeaders = {},
       // Every unsafe method needs CSRF evidence. Making this opt-in meant each
@@ -403,6 +406,14 @@ export function createOwnApiClient({
     }
 
     const headers: Record<string, string> = { Accept: "application/json" };
+
+    if (body !== undefined && binaryBody !== undefined) {
+      throw new OwnApiClientError({
+        status: 0,
+        code: "INVALID_REQUEST_BODY",
+        message: "Seyirlik received two request body formats.",
+      });
+    }
 
     for (const [name, value] of Object.entries(additionalHeaders)) {
       const normalizedName = name.toLowerCase();
@@ -430,11 +441,13 @@ export function createOwnApiClient({
       headers["X-CSRF-Token"] = csrfToken;
     }
 
-    if (body !== undefined) {
+    if (binaryBody !== undefined) {
+      headers["Content-Type"] = binaryBody.type || "application/octet-stream";
+    } else if (body !== undefined) {
       headers["Content-Type"] = "application/json";
     }
 
-    let serializedBody: string | undefined;
+    let serializedBody: BodyInit | undefined = binaryBody;
 
     if (body !== undefined) {
       try {

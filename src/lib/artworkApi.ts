@@ -53,23 +53,6 @@ export interface ArtworkOverview {
 
 export const MAX_CUSTOM_ARTWORK_BYTES = 8 * 1_024 * 1_024;
 
-function fileAsBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () =>
-      reject(new Error("The image file could not be read."));
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== "string" || !result.includes(",")) {
-        reject(new Error("The image file could not be read."));
-        return;
-      }
-      resolve(result.slice(result.indexOf(",") + 1));
-    };
-    reader.readAsDataURL(file);
-  });
-}
-
 /** Uploads an administrator-owned image and locks it against metadata refresh. */
 export async function uploadCustomArtwork(
   itemId: string,
@@ -89,14 +72,10 @@ export async function uploadCustomArtwork(
   }
 
   return ownApiClient.request(
-    `/admin/items/${encodeURIComponent(itemId)}/artwork/upload`,
+    `/admin/items/${encodeURIComponent(itemId)}/artwork/upload?kind=${kind}`,
     {
       method: "POST",
-      body: {
-        kind,
-        contentType: file.type,
-        dataBase64: await fileAsBase64(file),
-      },
+      binaryBody: file,
     },
   );
 }

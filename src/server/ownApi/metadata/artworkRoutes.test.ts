@@ -212,11 +212,14 @@ async function call(
   method: string,
   path: string,
   body?: unknown,
+  binary?: { bytes: Buffer; contentType: string },
 ) {
-  const payload = body === undefined ? undefined : JSON.stringify(body);
+  const payload =
+    binary?.bytes ??
+    (body === undefined ? undefined : Buffer.from(JSON.stringify(body)));
   const csrfToken = createCsrfToken(SESSION_HASH, CSRF_SECRET);
   const request = Object.assign(
-    Readable.from(payload === undefined ? [] : [Buffer.from(payload)]),
+    Readable.from(payload === undefined ? [] : [payload]),
     {
       method,
       url: path,
@@ -227,7 +230,10 @@ async function call(
         "x-csrf-token": csrfToken,
         ...(payload === undefined
           ? {}
-          : { "content-type": "application/json" }),
+          : {
+              "content-type": binary?.contentType ?? "application/json",
+              "content-length": String(payload.length),
+            }),
       },
       socket: { remoteAddress: "127.0.0.1" },
     },
@@ -425,6 +431,39 @@ describe("artwork routes", () => {
     expect(result.json?.data).toMatchObject({
       contentHash: "custom-cover-hash",
       isLocked: true,
+    });
+  });
+
+  it("accepts original image bytes without base64 JSON inflation", async () => {
+    const store = vi.fn<ImageStorage["store"]>(async () => ({
+      contentHash: "binary-cover-hash",
+      contentType: "image/webp",
+      sizeBytes: 16,
+      storageKey: "bi/na/binary-cover-hash.webp",
+    }));
+    const replaceLocked = vi.fn<ImageRepository["replaceLocked"]>(
+      async () => "binary-book-cover",
+    );
+    const router = buildRouter({
+      images: fakeImages({ replaceLocked }),
+      imageStorage: fakeStorage({ store }),
+    });
+    const bytes = Buffer.from("RIFF0000WEBPdata");
+
+    const result = await call(
+      router,
+      "POST",
+      `/ownAPI/v1/admin/items/${BOOK}/artwork/upload?kind=poster`,
+      undefined,
+      { bytes, contentType: "image/webp" },
+    );
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(store).toHaveBeenCalledWith(bytes, "image/webp");
+    expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
+      itemId: BOOK,
+      imageType: "primary",
+      source: "upload",
     });
   });
 

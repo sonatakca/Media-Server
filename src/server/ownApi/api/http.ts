@@ -204,6 +204,60 @@ export async function readJsonBody(
   }
 }
 
+/**
+ * Reads a bounded binary request body.
+ *
+ * Uploads use this instead of base64 JSON so the browser sends the original
+ * bytes without inflating them. A proxy or browser abort is translated into a
+ * safe client error rather than escaping the route as an internal failure.
+ */
+export async function readBinaryBody(
+  request: IncomingMessage,
+  maxBytes: number,
+): Promise<Buffer> {
+  const declaredLength = Number(request.headers["content-length"] ?? 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new OwnApiError(
+      "REQUEST_BODY_TOO_LARGE",
+      "The request body is too large.",
+      413,
+    );
+  }
+
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  try {
+    for await (const chunk of request) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > maxBytes) {
+        throw new OwnApiError(
+          "REQUEST_BODY_TOO_LARGE",
+          "The request body is too large.",
+          413,
+        );
+      }
+      chunks.push(buffer);
+    }
+  } catch (error) {
+    if (error instanceof OwnApiError) throw error;
+    throw new OwnApiError(
+      "INVALID_ARTWORK_FILE",
+      "The image upload was interrupted. Try it again.",
+      400,
+    );
+  }
+
+  if (totalBytes === 0) {
+    throw new OwnApiError(
+      "INVALID_ARTWORK_FILE",
+      "The image upload is empty.",
+      422,
+    );
+  }
+  return Buffer.concat(chunks);
+}
+
 export function methodNotAllowed(
   response: ServerResponse,
   allow: string,

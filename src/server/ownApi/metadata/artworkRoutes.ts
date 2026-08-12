@@ -2,6 +2,7 @@ import { OwnApiError } from "../ownApiHandler";
 import { sendData } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import { asObjectBody, requireUuid } from "../api/validation";
+import { headerValue, readBinaryBody } from "../api/http";
 import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
 import type { JobQueue } from "../tasks/jobQueue";
@@ -345,15 +346,39 @@ export function createArtworkRoutes({
         const target = await requireTarget(itemId);
         requireArtworkTarget(target);
 
-        const body = asObjectBody(
-          await context.readJson(MAX_CUSTOM_IMAGE_JSON_BYTES),
-          ["kind", "contentType", "dataBase64"],
-        );
-        const kind = requireArtworkKind(body.kind);
-        const upload = requireCustomImageBytes(
-          body.contentType,
-          body.dataBase64,
-        );
+        const contentType = headerValue(context.request.headers["content-type"])
+          ?.split(";", 1)[0]
+          ?.trim()
+          .toLowerCase();
+
+        let kind: TmdbArtworkKind;
+        let upload: { bytes: Buffer; contentType: string };
+        if (contentType === "application/json") {
+          // Temporary compatibility for a service worker that still holds the
+          // first upload UI. New clients send the image bytes directly.
+          const body = asObjectBody(
+            await context.readJson(MAX_CUSTOM_IMAGE_JSON_BYTES),
+            ["kind", "contentType", "dataBase64"],
+          );
+          kind = requireArtworkKind(body.kind);
+          upload = requireCustomImageBytes(body.contentType, body.dataBase64);
+        } else {
+          kind = requireArtworkKind(context.url.searchParams.get("kind"));
+          if (!contentType || !CUSTOM_IMAGE_CONTENT_TYPES.has(contentType)) {
+            throw new OwnApiError(
+              "VALIDATION_FAILED",
+              "Content-Type must be image/jpeg, image/png, or image/webp.",
+              422,
+            );
+          }
+          upload = {
+            bytes: await readBinaryBody(
+              context.request,
+              MAX_CUSTOM_IMAGE_BYTES,
+            ),
+            contentType,
+          };
+        }
 
         let stored;
         try {
