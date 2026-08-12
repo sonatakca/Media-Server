@@ -526,11 +526,11 @@ export function MediaCard({
           </div>
 
           {progressPercent !== null ? (
-            <div className="absolute inset-x-0 bottom-0 z-50 h-[0.15rem] bg-gray-600">
+            <div className="absolute inset-x-0 bottom-0 z-50 h-[0.1rem] w-[50%] bg-gray-600">
               <div
                 data-testid="media-card-progress-fill"
                 className="h-full bg-[var(--accent)]"
-                style={{ width: `${progressPercent}%` }}
+                style={{ width: `${progressPercent / 2}%` }}
               />
             </div>
           ) : null}
@@ -739,7 +739,7 @@ export function MediaCard({
         )}
 
         {progressPercent !== null ? (
-          <div className="absolute inset-x-0 bottom-0 z-30 h-[0.1rem] sm:h-[0.3rem] bg-white/[0.18]">
+          <div className="absolute inset-x-0 bottom-0 z-30 h-[0.1rem] sm:h-[0.1rem] bg-white/[0.18]">
             <div
               data-testid="media-card-progress-fill"
               className="h-full bg-[var(--accent)]"
