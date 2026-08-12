@@ -648,7 +648,7 @@ function getUrlType(source: PlaybackSourceCandidate, t: Translate): string {
   if (url.includes("/main.m3u8"))
     return t("playback.urlType.mainForcedTranscode");
   if (source.hlsKind === "server-transcoding-url") {
-    return t("playback.urlType.jellyfinTranscodingUrl");
+    return t("playback.urlType.serverTranscodingUrl");
   }
 
   return t("common.unknown");
@@ -667,7 +667,7 @@ function getOutputVideoLabel(
   }
 
   if (source.hlsKind === "server-transcoding-url") {
-    return t("playback.output.jellyfinDecision");
+    return t("playback.output.serverDecision");
   }
 
   if (source.hlsKind === "stream-copy") {
@@ -679,7 +679,7 @@ function getOutputVideoLabel(
   }
 
   return source.mode === "Transcoding"
-    ? t("playback.output.jellyfinTranscoding")
+    ? t("playback.output.serverTranscoding")
     : t("playback.output.originalCodec");
 }
 
@@ -696,7 +696,7 @@ function getOutputAudioLabel(
   }
 
   if (source.hlsKind === "server-transcoding-url") {
-    return t("playback.output.jellyfinDecision");
+    return t("playback.output.serverDecision");
   }
 
   if (source.hlsKind === "stream-copy") {
@@ -708,7 +708,7 @@ function getOutputAudioLabel(
   }
 
   return source.mode === "Transcoding"
-    ? t("playback.output.jellyfinTranscoding")
+    ? t("playback.output.serverTranscoding")
     : t("playback.output.originalCodec");
 }
 
@@ -753,7 +753,7 @@ export function PlaybackInfoPanel({
         if (!isCancelled) {
           setActiveTranscodingReasons(reasons);
           console.info(
-            "[Seyirlik Playback] Active Jellyfin transcoding reasons",
+            "[Seyirlik Playback] Active transcoding reasons",
             reasons,
           );
         }
@@ -761,7 +761,7 @@ export function PlaybackInfoPanel({
         if (!isCancelled) {
           setActiveTranscodingReasons([]);
           console.warn(
-            "[Seyirlik Playback] Could not load active Jellyfin transcoding reasons",
+            "[Seyirlik Playback] Could not load active transcoding reasons",
             error,
           );
         }

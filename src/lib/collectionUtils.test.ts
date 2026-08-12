@@ -34,7 +34,7 @@ describe("sortCollectionItemsForWatching", () => {
     ).toEqual(["iv", "v", "vi", "i", "ii", "iii", "vii", "viii", "ix"]);
   });
 
-  it("preserves Jellyfin/API order when production years match", () => {
+  it("preserves API order when production years match", () => {
     const items = [
       movie("second-from-api", "Example Part 2", { ProductionYear: 2024 }),
       movie("first-from-api", "Example Part 1", { ProductionYear: 2024 }),

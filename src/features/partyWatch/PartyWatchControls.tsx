@@ -221,7 +221,7 @@ export function PartyWatchControls({
             controller.errorKey ??
               controller.copyStatusKey ??
               controller.statusKey ??
-              "party.syncingWithJellyfinSyncPlay",
+              "party.synced",
           )}
         </p>
       ) : null}

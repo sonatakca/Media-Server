@@ -5,7 +5,6 @@ export const en = {
   "nav.series": "Shows",
   "nav.collections": "Collections",
   "nav.books": "Books",
-  "nav.server": "Server",
   "nav.logout": "Logout",
   "nav.language.switchToTurkish": "Switch to Turkish",
   "nav.language.switchToEnglish": "Switch to English",
@@ -20,9 +19,9 @@ export const en = {
   "home.libraries": "Libraries",
   "home.nothingInProgress": "Nothing in progress yet.",
   "home.browse": "Browse",
-  "home.someDataFailed": "Some Jellyfin data could not load",
-  "home.couldNotLoad": "Could not load Jellyfin",
-  "home.noLibraries": "No Jellyfin libraries were returned for this user.",
+  "home.someDataFailed": "Some data could not load",
+  "home.couldNotLoad": "Could not load your library",
+  "home.noLibraries": "No libraries are available to this user.",
   "home.noLatestMedia": "No recently added media is available.",
   "home.noLatestMovies": "No recently added movies are available.",
   "home.noLatestShows": "No recently added shows are available.",
@@ -36,7 +35,7 @@ export const en = {
   "hero.enableTrailers": "Enable trailers",
   "hero.disableTrailers": "Disable trailers",
   "hero.fallbackDescription":
-    "A focused, frontend-only way to browse and watch your existing Jellyfin library.",
+    "A focused way to browse, watch, and read your own media library.",
   "common.play": "Play",
   "common.read": "Read",
   "common.pause": "Pause",
@@ -61,7 +60,6 @@ export const en = {
   "common.yes": "Yes",
   "common.no": "No",
   "common.somethingWentWrong": "Something went wrong",
-  "app.connectingDefaultServer": "Connecting to Seyirlik server...",
   "format.season": "Season",
   "format.hourShort": "h",
   "format.minuteShort": "m",
@@ -80,8 +78,6 @@ export const en = {
   "auth.username": "Username",
   "auth.password": "Password",
   "auth.noPasswordPlaceholder": "Leave blank if this user has no password",
-  "auth.changeServer": "Change Server",
-  "auth.changeServerUrl": "Change server URL",
   "adminAuth.title": "Administrator authentication",
   "adminAuth.description":
     "This page is restricted to the configured Google administrator account.",
@@ -94,23 +90,6 @@ export const en = {
   "auth.failedMessagePrefix":
     "Login failed. Check your username, password, and server URL.",
   "auth.loginFailed": "Login failed.",
-  "server.connectJellyfin": "Connect",
-  "server.jellyfinServerUrl": "Server URL",
-  "server.test": "Test",
-  "server.testing": "Testing",
-  "server.continueToLogin": "Continue to Login",
-  "server.connectionIssue": "Connection issue",
-  "server.connectedTo": "Connected to",
-  "server.saveFailed": "Could not save this server URL.",
-  "server.couldNotConnect":
-    "Could not connect. Check the URL and network settings.",
-  "server.enterUrl": "Enter your Jellyfin server URL.",
-  "server.enterValidUrl":
-    "Enter a valid URL that starts with http:// or https://.",
-  "server.urlMustStartHttp":
-    "Jellyfin server URL must start with http:// or https://.",
-  "server.localhostNote":
-    "means the current machine. If Jellyfin is running on your Windows PC and you are testing from your Mac, enter the Windows PC local IP address instead.",
   "library.library": "Library",
   "library.unavailable": "Library unavailable",
   "library.itemsAvailable": "items available",
@@ -155,12 +134,11 @@ export const en = {
     "Could not remove watched status. Try again.",
   "player.playbackFailed": "Playback failed",
   "player.playbackUnavailable": "Playback unavailable",
-  "player.missingRouteItemId":
-    "The player route did not receive a Jellyfin item id.",
+  "player.missingRouteItemId": "The player route did not receive an item id.",
   "player.noPlayableSource":
-    "Playback failed. Jellyfin did not return a playable source.",
+    "Playback failed. The server did not return a playable source.",
   "player.playbackInfoRequestFailed":
-    "Playback failed while asking Jellyfin for PlaybackInfo.",
+    "Playback failed while asking the server for a playback plan.",
   "player.playbackFailurePossibleCauses":
     "Playback failed. This may be a codec, CORS, token, or transcoding issue.",
   "player.preparing": "Preparing player",
@@ -214,12 +192,11 @@ export const en = {
   "player.resizeSubtitlesBottomRight": "Resize subtitles from bottom right",
   "player.finishSubtitleEdit": "Done",
   "reader.title": "Reader",
-  "reader.missingItemId":
-    "The reader route did not receive a Jellyfin item id.",
+  "reader.missingItemId": "The reader route did not receive an item id.",
   "reader.couldNotLoadItem": "Could not load this book.",
   "reader.couldNotOpen": "Could not open this book.",
   "reader.epubTimedOut":
-    "The EPUB did not finish preparing. Try opening the original file, or check that Jellyfin allows downloading this book.",
+    "The EPUB did not finish preparing. Try opening the original file, or check that this book is still available.",
   "reader.readerUnavailable": "Reader unavailable",
   "reader.textLoadFailed": "Could not load this text.",
   "reader.notBook": "This item is not a book or document.",
@@ -249,8 +226,8 @@ export const en = {
   "settings.quality": "Quality",
   "settings.currentSource": "Current source",
   "settings.auto": "Auto",
-  "settings.bestJellyfinSource": "Best source",
-  "settings.useBestJellyfinSource": "Use best source",
+  "settings.bestSource": "Best source",
+  "settings.useBestSource": "Use best source",
   "settings.currentQuality": "Current quality",
   "settings.hlsUpTo": "HLS · up to {mbps} Mbps",
   "settings.manualQuality": "Manual quality",
@@ -279,7 +256,7 @@ export const en = {
   "settings.audioTrack": "Audio track {number}",
   "settings.currentAudio": "Current audio",
   "settings.clickToSwitch": "Click to switch",
-  "settings.requiresTranscoding": "Requires Jellyfin transcoding",
+  "settings.requiresTranscoding": "Requires server transcoding",
   "settings.noAudioTracks": "No audio tracks returned.",
   "settings.subtitles": "Subtitles",
   "settings.off": "Off",
@@ -341,12 +318,13 @@ export const en = {
   "playback.urlType.masterStreamCopy": "master.m3u8 stream-copy",
   "playback.urlType.masterHls": "master.m3u8 HLS",
   "playback.urlType.mainForcedTranscode": "main.m3u8 forced transcode",
-  "playback.urlType.jellyfinTranscodingUrl": "Jellyfin returned TranscodingUrl",
+  "playback.urlType.serverTranscodingUrl":
+    "The server returned a transcoding URL",
   "playback.output.streamCopyOriginal": "Stream copy / original codec",
-  "playback.output.jellyfinDecision":
-    "Jellyfin returned transcoding URL; output depends on server decision",
+  "playback.output.serverDecision":
+    "The server returned a transcoding URL; output depends on the server's decision",
   "playback.output.directOriginal": "Direct / original codec",
-  "playback.output.jellyfinTranscoding": "Jellyfin transcoding output",
+  "playback.output.serverTranscoding": "Server transcoding output",
   "playback.output.originalCodec": "Original codec",
   "playback.speed": "Speed",
   "playback.outputVideoH264": "H.264 if using current Seyirlik HLS profile",
@@ -355,7 +333,7 @@ export const en = {
   "playback.speedUnavailable":
     "Speed not available from the current frontend API response.",
   "playback.speedNote":
-    "Accurate transcode speed may require Jellyfin active session or dashboard permissions.",
+    "Accurate transcode speed may require an active playback session.",
   "playback.reason.container":
     "Container not supported by the browser or selected client profile.",
   "playback.reason.videoCodec": "Video codec not supported.",
@@ -365,20 +343,20 @@ export const en = {
   "playback.reason.bitrate": "Bitrate limit requires transcoding.",
   "playback.reason.resolution": "Resolution limit requires transcoding.",
   "playback.reason.audioChannels": "Audio channel limit requires transcoding.",
-  "playback.reason.jellyfinSpecific":
-    "Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.",
-  "playback.reason.jellyfinTranscodingUrl":
-    "Jellyfin returned a transcoding URL from PlaybackInfo.",
+  "playback.reason.serverSpecific":
+    "The server did not give a specific reason. Check the server logs or the playback plan.",
+  "playback.reason.serverTranscodingUrl":
+    "The playback plan returned a transcoding URL.",
   "playback.reason.hlsFallback":
-    "Built a Jellyfin HLS fallback URL from PlaybackInfo media source data.",
+    "Built an HLS fallback URL from the playback plan's media source.",
   "playback.reason.browserCompatible":
     "Container and codecs look browser-compatible.",
   "playback.reason.directRisky":
     "Direct URL kept as a last resort because this container or codec is risky in browsers.",
   "playback.reason.selectedSetting":
-    "Built a Jellyfin HLS URL for the selected player setting.",
+    "Built an HLS URL for the selected player setting.",
   "playback.transcodingReason": "Reason for transcoding",
-  "playback.transcodingReasonTitle": "Jellyfin is transcoding because",
+  "playback.transcodingReasonTitle": "The server is transcoding because",
   "playback.transcodingReasonNote":
     "These are the most important playback diagnostics. Fixing these usually moves the file closer to direct play.",
   "playback.reason.containerNotSupported":
@@ -424,11 +402,11 @@ export const en = {
   "playback.reason.audioBitrateNotSupported":
     "The audio bitrate is not supported or exceeds the limit.",
   "playback.reason.unknownVideoStreamInfo":
-    "Jellyfin could not read enough video stream information.",
+    "The server could not read enough video stream information.",
   "playback.reason.unknownAudioStreamInfo":
-    "Jellyfin could not read enough audio stream information.",
+    "The server could not read enough audio stream information.",
   "playback.reason.directPlayError":
-    "Jellyfin encountered a direct play error.",
+    "The server encountered a direct play error.",
   "playback.reason.videoRangeTypeNotSupported":
     "The video's range type is not supported, usually HDR or Dolby Vision.",
   "playback.reason.videoCodecTagNotSupported":
@@ -470,7 +448,7 @@ export const en = {
   "party.joinedSyncPlayGroup": "Joined SyncPlay group",
   "party.leftSyncPlayGroup": "Left SyncPlay group",
   "party.syncPlayGroupNotFound": "SyncPlay group not found",
-  "party.syncingWithJellyfinSyncPlay": "Synced",
+  "party.synced": "Synced",
   "party.syncPlayHostOnly": "Only the host can control SyncPlay",
   "party.participantsTitle": "Participants",
   "party.participantFallback": "Participant {number}",
@@ -574,19 +552,19 @@ export const en = {
   "devtools.clipboard.created": "Created",
   "devtools.card.playbackAudit.title": "Playback Audit",
   "devtools.card.playbackAudit.description":
-    "Scan Jellyfin media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
+    "Scan media and document Direct Play, Direct Stream, Transcoding, and transcode reasons.",
   "devtools.card.playbackAudit.tag": "Diagnostics",
   "devtools.card.playbackHealth.title": "Playback Health",
   "devtools.card.playbackHealth.description":
-    "Check frontend origin, Jellyfin, backend, CORS, range, and HLS segment readiness.",
+    "Check the page origin, the server, CORS, range requests, and HLS segment readiness.",
   "devtools.card.playbackHealth.tag": "Network",
   "devtools.card.userManagement.title": "User Management",
   "devtools.card.userManagement.description":
-    "Create Jellyfin users and manage their names, passwords, access, and account status.",
+    "Create users and manage their names, passwords, access, and account status.",
   "devtools.card.userManagement.tag": "Accounts",
   "devtools.card.libraryMaintenance.title": "Library Maintenance",
   "devtools.card.libraryMaintenance.description":
-    "Scan Jellyfin libraries, refresh metadata, replace images, and edit common item metadata.",
+    "Scan libraries, refresh metadata, replace images, and edit common item metadata.",
   "devtools.card.libraryMaintenance.tag": "Maintenance",
   "devtools.card.tmdbArtwork.title": "TMDB Artwork",
   "devtools.card.tmdbArtwork.description":
@@ -594,7 +572,7 @@ export const en = {
   "devtools.card.tmdbArtwork.tag": "Artwork",
   "devtools.card.contentExplorer.title": "Content Explorer",
   "devtools.card.contentExplorer.description":
-    "List every Jellyfin item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
+    "List every item available to this user, including movies, series, seasons, episodes, folders, and unknown item types.",
   "devtools.card.contentExplorer.tag": "Inventory",
   "devtools.card.homeCuration.title": "Home Curation",
   "devtools.card.homeCuration.description":
@@ -612,23 +590,23 @@ export const en = {
   "devtools.card.wantedFeatures.description":
     "Collect future improvements like rotating hero templates, better UX ideas, and planned Seyirlik upgrades.",
   "devtools.card.wantedFeatures.tag": "Roadmap",
-  "userManagement.eyebrow": "Jellyfin Accounts",
+  "userManagement.eyebrow": "Accounts",
   "userManagement.title": "User Management",
   "userManagement.description":
-    "Add and edit Jellyfin accounts without leaving Seyirlik. Your signed-in Jellyfin account must have server administration permission.",
+    "Add and edit accounts. Your signed-in account must be an administrator.",
   "userManagement.addUser": "Add user",
   "userManagement.users": "Users",
   "userManagement.userCount": "{count} users",
   "userManagement.refreshUsers": "Refresh users",
   "userManagement.searchPlaceholder": "Search name, role, or ID...",
-  "userManagement.loadFailed": "Could not load Jellyfin users",
+  "userManagement.loadFailed": "Could not load users",
   "userManagement.noUsersFound": "No users matched your search.",
   "userManagement.editUser": "Edit user",
   "userManagement.createUser": "Create user",
-  "userManagement.newUser": "New Jellyfin user",
+  "userManagement.newUser": "New user",
   "userManagement.cancelEditing": "Cancel editing",
   "userManagement.username": "Username",
-  "userManagement.usernamePlaceholder": "Jellyfin username",
+  "userManagement.usernamePlaceholder": "Username",
   "userManagement.password": "Password",
   "userManagement.newPassword": "New password",
   "userManagement.passwordOptional": "Optional",
@@ -640,7 +618,7 @@ export const en = {
   "userManagement.administrator": "Server administrator",
   "userManagement.standardUser": "Standard user",
   "userManagement.administratorDescription":
-    "Allow full access to Jellyfin server management.",
+    "Allow full access to server management.",
   "userManagement.currentAdminProtected":
     "The administrator permission for your active account is protected here.",
   "userManagement.disableUser": "Disable account",
@@ -648,7 +626,7 @@ export const en = {
   "userManagement.disableUserDescription":
     "Block new sign-ins and end this user's active sessions.",
   "userManagement.currentUserProtected":
-    "Your active Jellyfin account cannot be disabled here.",
+    "Your own account cannot be disabled here.",
   "userManagement.hideUser": "Hide on login screen",
   "userManagement.hideUserDescription":
     "Require the username to be entered manually at sign-in.",
@@ -657,7 +635,7 @@ export const en = {
     "Allow this user to connect from outside the local network.",
   "userManagement.allLibraries": "All libraries",
   "userManagement.allLibrariesDescription":
-    "Give this user access to every Jellyfin library.",
+    "Give this user access to every library.",
   "userManagement.mediaPlayback": "Media playback",
   "userManagement.mediaPlaybackDescription":
     "Allow playback from media libraries.",
@@ -665,13 +643,13 @@ export const en = {
   "userManagement.downloadsDescription":
     "Allow this user to download original media files.",
   "userManagement.saveChanges": "Save changes",
-  "userManagement.savingUser": "Saving Jellyfin user...",
-  "userManagement.creatingUser": "Creating Jellyfin user...",
+  "userManagement.savingUser": "Saving user...",
+  "userManagement.creatingUser": "Creating user...",
   "userManagement.userUpdated": "Updated {name}.",
   "userManagement.userCreated": "Created {name}.",
   "userManagement.nameRequired": "Enter a username.",
   "userManagement.policyUnavailable":
-    "Jellyfin did not return this user's policy. Refresh the user list and try again.",
+    "The server did not return this user's permissions. Refresh the user list and try again.",
   "userManagement.never": "Never",
   "userManagement.lastActive": "Last active: {date}",
   "userManagement.you": "You",
@@ -692,7 +670,7 @@ export const en = {
   "devtools.defaultBug.libraryMissingMovies.title":
     "Library is not getting every movie",
   "devtools.defaultBug.libraryMissingMovies.description":
-    "Some movies do not appear in the library view even though they exist in Jellyfin. Need to check whether paging, item type filters, parent IDs, or Jellyfin API query limits are causing missing results.",
+    "Some movies do not appear in the library view even though the scanner catalogued them. Unverified against the native server: check cursor pagination in /libraries/:id/items, the item-kind filter, parent ids, and whether the catalogue query's limit is truncating results.",
   "devtools.defaultBug.sevenNoEnglishAudio.title":
     "Se7en opens with no audio by default",
   "devtools.defaultBug.sevenNoEnglishAudio.description":
@@ -773,10 +751,10 @@ export const en = {
   "playbackDefaults.saveSuccess": "Playback defaults saved for {count} items.",
   "playbackDefaults.savePartial": "{success} saved · {failed} failed",
   "playbackDefaults.applyWarning":
-    "This writes Seyirlik defaults into Jellyfin item metadata.",
+    "This writes Seyirlik defaults into the item's metadata.",
   "playbackDefaults.adminRequiredTitle": "Admin permissions required",
   "playbackDefaults.adminRequired":
-    "Jellyfin may reject the save unless the signed-in account can edit item metadata. Once saved, Seyirlik uses these defaults for all users.",
+    "The save is rejected unless the signed-in account may edit item metadata. Once saved, Seyirlik uses these defaults for all users.",
   "playbackDefaults.results": "Results",
   "playbackDefaults.resultSummary": "{success} saved · {failed} failed",
   "tmdbArtwork.eyebrow": "Artwork Override",
@@ -787,12 +765,12 @@ export const en = {
   "tmdbArtwork.loadingItems": "Loading movies, shows, and books...",
   "tmdbArtwork.loadedItems": "Loaded {count} titles.",
   "tmdbArtwork.couldNotLoadItems": "Could not load movies, shows, and books.",
-  "tmdbArtwork.jellyfinTitles": "Library Titles",
+  "tmdbArtwork.libraryTitles": "Library Titles",
   "tmdbArtwork.visibleItems": "{count} visible titles",
   "tmdbArtwork.itemSearchPlaceholder":
     "Search movie, show, book, year, or ID...",
   "tmdbArtwork.tmdbMatch": "TMDB Match",
-  "tmdbArtwork.noItemSelected": "Select a Jellyfin title",
+  "tmdbArtwork.noItemSelected": "Select a title",
   "tmdbArtwork.selectItemFirst":
     "Pick a title from the list before searching TMDB.",
   "tmdbArtwork.selectedTmdb": "Selected TMDB ID {id}",
@@ -919,7 +897,7 @@ export const en = {
   "audit.eyebrow": "Devtool",
   "audit.title": "Playback Audit",
   "audit.description":
-    "Scans Jellyfin video items with PlaybackInfo and documents the selected mode and source media. Fast scan only marks whether an item transcodes; turning Fast scan off waits for detailed transcoding reasons.",
+    "Scans video items with a playback plan and documents the selected mode and source media. Fast scan only marks whether an item transcodes; turning Fast scan off waits for detailed transcoding reasons.",
   "audit.lastSavedScan": "Last saved scan: {date}",
   "audit.fastScan": "Fast scan",
   "audit.auditing": "Auditing...",
@@ -946,10 +924,10 @@ export const en = {
   "audit.playbackInfoFailed": "PlaybackInfo request failed.",
   "content.unavailable": "Content Explorer unavailable",
   "content.loadFailed": "Could not load content items.",
-  "content.eyebrow": "Jellyfin Inventory",
+  "content.eyebrow": "Library Inventory",
   "content.title": "Content Explorer",
   "content.description":
-    "Lists every item Jellyfin returns for this user, including movies, series, seasons, episodes, folders, libraries, and unknown item types.",
+    "Lists every item available to this user, including movies, series, seasons, episodes, folders, libraries, and unknown item types.",
   "content.searchContent": "Search content",
   "content.searchPlaceholder":
     "Search title, type, series, year, or item ID...",
@@ -974,10 +952,10 @@ export const en = {
     "Try clearing the search or switching the filter back to All.",
   "content.libraryType": "Library · {type}",
   "maintenance.back": "Back to Devtools",
-  "maintenance.eyebrow": "Jellyfin Maintenance",
+  "maintenance.eyebrow": "Library Maintenance",
   "maintenance.title": "Library Scan & Metadata",
   "maintenance.description":
-    "Scan Jellyfin libraries, refresh item metadata, replace images, and edit common item fields.",
+    "Scan libraries, refresh item metadata, replace images, and edit common item fields.",
   "maintenance.scanAllLibraries": "Scan all libraries",
   "maintenance.libraryItems": "Library Items",
   "maintenance.visibleItemSingular": "{count} visible item",
@@ -997,7 +975,7 @@ export const en = {
   "maintenance.previewTitle":
     "Images, trickplay, media source, and raw identifiers",
   "maintenance.previewDescription":
-    "This section is read-only. It shows what Jellyfin currently exposes for this item.",
+    "This section is read-only. It shows what the server currently holds for this item.",
   "maintenance.primaryPoster": "Primary poster",
   "maintenance.backdropBanner": "Backdrop / banner",
   "maintenance.logo": "Logo",
@@ -1072,10 +1050,9 @@ export const en = {
   "maintenance.saveMetadata": "Save metadata",
   "maintenance.selectItem": "Select an item",
   "maintenance.selectItemDescription":
-    "Choose a movie or episode from the left side to refresh its Jellyfin metadata or edit common fields.",
+    "Choose a movie or episode from the left side to refresh its metadata or edit common fields.",
   "maintenance.adminRequired": "Admin permissions may be required",
-  "maintenance.loadingLibraries":
-    "Loading Jellyfin libraries and video items...",
+  "maintenance.loadingLibraries": "Loading libraries and video items...",
   "maintenance.libraryFailedToLoad": "A library failed to load.",
   "maintenance.libraryLoadTimeout": "{label} took too long to load.",
   "maintenance.loadedItemsSingular": "Loaded {count} video item.",
@@ -1085,7 +1062,7 @@ export const en = {
   "maintenance.librarySingular": "library",
   "maintenance.libraryPlural": "libraries",
   "maintenance.couldNotLoadData": "Could not load library data.",
-  "maintenance.startingFullScan": "Starting full Jellyfin library scan...",
+  "maintenance.startingFullScan": "Starting full library scan...",
   "maintenance.fullScanStarted": "Full library scan started.",
   "maintenance.couldNotStartScan": "Could not start library scan.",
   "maintenance.startingSelectedScan": "Starting selected library scan...",

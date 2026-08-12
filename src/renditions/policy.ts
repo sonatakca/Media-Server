@@ -60,10 +60,10 @@ const SUPPORTED_VIDEO_EXTENSIONS = new Set([
 ]);
 
 /**
- * Generated output, non-video libraries, and the Jellyfin extras folders. Extras
+ * Generated output, non-video libraries, and the conventional extras folders. Extras
  * are trailers and promotional clips that the quality picker never plays, so
  * generating a ladder for them only consumes space. `Specials` is deliberately
- * absent: it is a real Jellyfin season folder, not an extras folder.
+ * absent: it is a real season folder, not an extras folder.
  */
 const EXCLUDED_DIRECTORY_NAMES = new Set([
   ".seyirlik",

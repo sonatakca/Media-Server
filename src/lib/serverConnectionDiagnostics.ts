@@ -1,183 +1,138 @@
 import { type ServerUnavailableEventDetail } from "./mediaApi";
 
 /**
- * Seyirlik serves its own API from the page's origin, so "the server" is always
- * this origin and there is nothing to normalize or configure.
+ * Works out why the app cannot reach its own server.
+ *
+ * Seyirlik serves its API from the page's origin, so there is nothing to
+ * configure and nothing to choose: the only question is which layer between
+ * the browser and the server is failing. `/ownAPI/v1/health` answers that in
+ * one request, because it reports liveness, readiness, and the state of each
+ * dependency the server needs.
+ *
+ * Nothing here reports a filesystem path, a connection string, or any other
+ * server detail. The health endpoint deliberately returns coarse states, and
+ * this module passes those through without enriching them.
  */
-function getServerUrl(): string {
-  return typeof window === "undefined" ? "" : window.location.origin;
+
+const HEALTH_ENDPOINT = "/ownAPI/v1/health";
+const DIAGNOSTIC_TIMEOUT_MS = 3500;
+
+/** Mirrors the health payload, minus anything the UI has no use for. */
+export type DependencyState =
+  | "available"
+  | "unavailable"
+  | "writable"
+  | "disabled"
+  | "unknown";
+
+export interface HealthChecks {
+  database: DependencyState;
+  jobs: DependencyState;
+  ffmpeg: DependencyState;
+  ffprobe: DependencyState;
+  mediaStorage: DependencyState;
+  generatedStorage: DependencyState;
 }
 
-function normalizeServerUrl(value: string): string {
-  return value.trim().replace(/\/+$/, "");
-}
-
-function buildJellyfinUrl(
-  base: string,
-  path: string,
-  query?: Record<string, string | undefined>,
-): string {
-  const url = new URL(
-    path.startsWith("/") ? path : `/${path}`,
-    normalizeServerUrl(base) || "http://localhost",
-  );
-  for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, value);
-  }
-  return url.toString();
-}
-import { getCustomPlaybackBackendUrl } from "./playback-planner/customPlaybackApi";
-
-export type ServerProbeKind =
-  | "jellyfin"
-  | "opaque-reachable"
-  | "cloudflare-bad-gateway"
-  | "cloudflare-tunnel-error"
-  | "cloudflare-error"
-  | "http-ok"
+export type HealthProbeKind =
+  /** The server answered with a health payload we understood. */
+  | "healthy"
+  /** Answered, but the body was not the health payload — usually a proxy. */
+  | "malformed-response"
+  /** A gateway answered on the server's behalf: 502, 503, 504. */
+  | "gateway-error"
+  /** Some other HTTP failure. */
   | "http-error"
-  | "network-error"
-  | "not-configured";
+  /** Nothing answered: DNS, TLS, connection refused, timeout, offline. */
+  | "network-error";
 
-export interface ServerProbe {
-  url: string;
-  endpoint?: string;
-  ok: boolean;
+export interface HealthProbe {
+  endpoint: string;
+  kind: HealthProbeKind;
+  /** True when the server answered at all, even with an error. */
   reachable: boolean;
-  kind: ServerProbeKind;
+  alive: boolean;
+  ready: boolean;
   status?: number;
   statusText?: string;
   message?: string;
-  productName?: string;
+  checks?: HealthChecks;
+  /** Correlates this failure with the server's own logs, when it sent one. */
+  requestId?: string;
 }
 
 export type ServerConnectionProblem =
   | "none"
-  | "jellyfin-down"
-  | "cloudflared-down"
-  | "both-down"
-  | "tunnel-origin-error"
+  /** Nothing answered at this origin. */
+  | "unreachable"
+  /** A proxy answered but could not reach the server behind it. */
+  | "proxy-error"
+  /** The server answered but reports it is not alive. */
+  | "not-alive"
+  /** Alive, but a dependency it needs is missing. */
+  | "dependency-unavailable"
+  /** Alive and dependencies fine, but still finishing startup work. */
+  | "starting-up"
+  /** Something answered, but it was not the API. */
+  | "unexpected-response"
   | "unknown";
 
 export interface ServerConnectionDiagnosis {
   problem: ServerConnectionProblem;
-  serverUrl: string;
   checkedAt: string;
-  source: "backend" | "browser";
-  publicProbe: ServerProbe;
-  localProbe: ServerProbe | null;
-  localProbeUrls: string[];
-}
-
-interface BackendDiagnosticsResponse {
-  publicProbe?: ServerProbe;
-  localProbe?: ServerProbe | null;
-  localProbeUrls?: string[];
-  checkedAt?: string;
+  probe: HealthProbe;
+  /** Dependency names that are not in a usable state, for display. */
+  failedDependencies: Array<keyof HealthChecks>;
 }
 
 interface DiagnoseServerConnectionOptions {
-  serverUrl?: string | null;
   failure?: ServerUnavailableEventDetail | null;
+  fetchImpl?: typeof fetch;
 }
-
-const DIAGNOSTIC_TIMEOUT_MS = 3500;
-const JELLYFIN_DEFAULT_PORT = "8096";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function isPrivateIpv4(hostname: string): boolean {
-  const parts = hostname.split(".").map((part) => Number(part));
+function toDependencyState(value: unknown): DependencyState {
+  return value === "available" ||
+    value === "unavailable" ||
+    value === "writable" ||
+    value === "disabled"
+    ? value
+    : "unknown";
+}
 
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return false;
+function toHealthChecks(value: unknown): HealthChecks | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
   }
 
-  const [first, second] = parts;
-  return (
-    first === 10 ||
-    first === 127 ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168)
+  const checks = value as Record<string, unknown>;
+
+  return {
+    database: toDependencyState(checks.database),
+    jobs: toDependencyState(checks.jobs),
+    ffmpeg: toDependencyState(checks.ffmpeg),
+    ffprobe: toDependencyState(checks.ffprobe),
+    mediaStorage: toDependencyState(checks.mediaStorage),
+    generatedStorage: toDependencyState(checks.generatedStorage),
+  };
+}
+
+/** A dependency is a problem only when it is actually missing. */
+function isDependencyUsable(state: DependencyState): boolean {
+  return state === "available" || state === "writable" || state === "disabled";
+}
+
+export function getFailedDependencies(
+  checks: HealthChecks | undefined,
+): Array<keyof HealthChecks> {
+  if (!checks) return [];
+
+  return (Object.keys(checks) as Array<keyof HealthChecks>).filter(
+    (name) => !isDependencyUsable(checks[name]),
   );
-}
-
-function isLocalHostname(hostname: string): boolean {
-  const normalized = hostname.toLowerCase();
-  return (
-    normalized === "localhost" ||
-    normalized.endsWith(".local") ||
-    normalized === "::1" ||
-    isPrivateIpv4(normalized)
-  );
-}
-
-function splitUrlList(rawValue: string | undefined): string[] {
-  return (
-    rawValue
-      ?.split(",")
-      .map((value) => value.trim())
-      .filter(Boolean) ?? []
-  );
-}
-
-function addUrl(urls: string[], rawUrl: string | undefined): void {
-  if (!rawUrl) {
-    return;
-  }
-
-  try {
-    const normalizedUrl = normalizeServerUrl(rawUrl);
-
-    if (!urls.includes(normalizedUrl)) {
-      urls.push(normalizedUrl);
-    }
-  } catch {
-    // Ignore invalid optional diagnostic URLs.
-  }
-}
-
-function getCurrentPageHostname(): string | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  return window.location.hostname || null;
-}
-
-function getLocalProbeUrls(serverUrl: string): string[] {
-  const urls: string[] = [];
-
-  addUrl(urls, import.meta.env.VITE_LOCAL_JELLYFIN_SERVER_URL);
-  splitUrlList(import.meta.env.VITE_JELLYFIN_LOCAL_PROBE_URLS).forEach((url) =>
-    addUrl(urls, url),
-  );
-
-  try {
-    const parsedServerUrl = new URL(serverUrl);
-
-    if (isLocalHostname(parsedServerUrl.hostname)) {
-      addUrl(urls, serverUrl);
-    }
-  } catch {
-    // The caller already normalizes serverUrl. This is only defensive.
-  }
-
-  const currentHostname = getCurrentPageHostname();
-
-  if (currentHostname && isLocalHostname(currentHostname)) {
-    addUrl(urls, `http://${currentHostname}:${JELLYFIN_DEFAULT_PORT}`);
-  }
-
-  addUrl(urls, `http://127.0.0.1:${JELLYFIN_DEFAULT_PORT}`);
-  addUrl(urls, `http://localhost:${JELLYFIN_DEFAULT_PORT}`);
-
-  return urls;
 }
 
 function createAbortController(timeoutMs: number): {
@@ -185,359 +140,190 @@ function createAbortController(timeoutMs: number): {
   cancel: () => void;
 } {
   const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => {
-    controller.abort();
-  }, timeoutMs);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  return {
-    controller,
-    cancel: () => window.clearTimeout(timeoutId),
-  };
+  return { controller, cancel: () => clearTimeout(timeoutId) };
 }
 
-async function fetchWithTimeout(
-  url: string,
-  init: RequestInit,
-  timeoutMs = DIAGNOSTIC_TIMEOUT_MS,
-): Promise<Response> {
-  const { controller, cancel } = createAbortController(timeoutMs);
+function readRequestId(response: Response): string | undefined {
+  return response.headers.get("x-request-id") ?? undefined;
+}
+
+async function probeHealth(fetchImpl: typeof fetch): Promise<HealthProbe> {
+  const endpoint = HEALTH_ENDPOINT;
+  const { controller, cancel } = createAbortController(DIAGNOSTIC_TIMEOUT_MS);
 
   try {
-    return await fetch(url, {
-      ...init,
+    const response = await fetchImpl(endpoint, {
+      cache: "no-store",
+      credentials: "include",
+      headers: { Accept: "application/json" },
       signal: controller.signal,
     });
+    const requestId = readRequestId(response);
+    const bodyText = await response.text().catch(() => "");
+
+    if (!response.ok) {
+      // A gateway status means something in front of the server answered for
+      // it, which is a different fix from the server itself being broken.
+      const isGateway = [502, 503, 504].includes(response.status);
+
+      return {
+        endpoint,
+        kind: isGateway ? "gateway-error" : "http-error",
+        reachable: true,
+        alive: false,
+        ready: false,
+        status: response.status,
+        statusText: response.statusText,
+        ...(requestId ? { requestId } : {}),
+      };
+    }
+
+    let payload: unknown;
+    try {
+      payload = JSON.parse(bodyText);
+    } catch {
+      return {
+        endpoint,
+        kind: "malformed-response",
+        reachable: true,
+        alive: false,
+        ready: false,
+        status: response.status,
+        statusText: response.statusText,
+        ...(requestId ? { requestId } : {}),
+      };
+    }
+
+    const body = payload as {
+      alive?: unknown;
+      ready?: unknown;
+      checks?: unknown;
+    };
+
+    if (typeof body.alive !== "boolean") {
+      // Answered 200 with JSON that is not the health payload. A captive
+      // portal or a misrouted proxy looks exactly like this.
+      return {
+        endpoint,
+        kind: "malformed-response",
+        reachable: true,
+        alive: false,
+        ready: false,
+        status: response.status,
+        ...(requestId ? { requestId } : {}),
+      };
+    }
+
+    return {
+      endpoint,
+      kind: "healthy",
+      reachable: true,
+      alive: body.alive,
+      ready: body.ready === true,
+      status: response.status,
+      ...(toHealthChecks(body.checks)
+        ? { checks: toHealthChecks(body.checks) }
+        : {}),
+      ...(requestId ? { requestId } : {}),
+    };
+  } catch (error) {
+    return {
+      endpoint,
+      kind: "network-error",
+      reachable: false,
+      alive: false,
+      ready: false,
+      message: getErrorMessage(error),
+    };
   } finally {
     cancel();
   }
 }
 
-function detectProbeKind(
-  status: number,
-  statusText: string,
-  bodyText: string,
-): ServerProbeKind {
-  const searchableText = `${statusText}\n${bodyText}`;
-
-  if (status === 502 || /bad gateway|error code 502/i.test(searchableText)) {
-    return "cloudflare-bad-gateway";
-  }
-
-  if (
-    status === 530 ||
-    /error 1033|cloudflare tunnel error/i.test(searchableText)
-  ) {
-    return "cloudflare-tunnel-error";
-  }
-
-  if (/cloudflare/i.test(searchableText)) {
-    return "cloudflare-error";
-  }
-
-  return "http-error";
-}
-
-function getJellyfinProductName(bodyText: string): string | undefined {
-  try {
-    const json = JSON.parse(bodyText) as {
-      ProductName?: string;
-      ServerName?: string;
-    };
-
-    return json.ProductName || json.ServerName;
-  } catch {
-    return undefined;
-  }
-}
-
-async function probeCorsJellyfinUrl(
-  rawServerUrl: string,
-): Promise<ServerProbe> {
-  const serverUrl = normalizeServerUrl(rawServerUrl);
-  const endpoint = buildJellyfinUrl(serverUrl, "/System/Info/Public", {
-    seyirlikDiagnostics: String(Date.now()),
-  });
-
-  try {
-    const response = await fetchWithTimeout(endpoint, {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json, text/html;q=0.8",
-      },
-    });
-    const bodyText = await response.text().catch(() => "");
-
-    if (response.ok) {
-      return {
-        url: serverUrl,
-        endpoint,
-        ok: true,
-        reachable: true,
-        kind: getJellyfinProductName(bodyText) ? "jellyfin" : "http-ok",
-        status: response.status,
-        statusText: response.statusText,
-        productName: getJellyfinProductName(bodyText),
-      };
-    }
-
-    return {
-      url: serverUrl,
-      endpoint,
-      ok: false,
-      reachable: true,
-      kind: detectProbeKind(response.status, response.statusText, bodyText),
-      status: response.status,
-      statusText: response.statusText,
-      message: bodyText || `${response.status} ${response.statusText}`,
-    };
-  } catch (error) {
-    return {
-      url: serverUrl,
-      endpoint,
-      ok: false,
-      reachable: false,
-      kind: "network-error",
-      message: getErrorMessage(error),
-    };
-  }
-}
-
-async function probeOpaqueReachability(
-  rawServerUrl: string,
-): Promise<ServerProbe> {
-  const serverUrl = normalizeServerUrl(rawServerUrl);
-  const endpoint = buildJellyfinUrl(serverUrl, "/System/Info/Public", {
-    seyirlikDiagnostics: String(Date.now()),
-  });
-
-  try {
-    await fetchWithTimeout(endpoint, {
-      cache: "no-store",
-      mode: "no-cors",
-    });
-
-    return {
-      url: serverUrl,
-      endpoint,
-      ok: true,
-      reachable: true,
-      kind: "opaque-reachable",
-      message:
-        "The browser could reach this local endpoint, but CORS hid the response body.",
-    };
-  } catch (error) {
-    return {
-      url: serverUrl,
-      endpoint,
-      ok: false,
-      reachable: false,
-      kind: "network-error",
-      message: getErrorMessage(error),
-    };
-  }
-}
-
-async function probeLocalJellyfinUrl(
-  rawServerUrl: string,
-): Promise<ServerProbe> {
-  const corsProbe = await probeCorsJellyfinUrl(rawServerUrl);
-
-  if (corsProbe.ok || corsProbe.reachable) {
-    return corsProbe;
-  }
-
-  return probeOpaqueReachability(rawServerUrl);
-}
-
-async function findReachableLocalProbe(
-  localProbeUrls: string[],
-): Promise<ServerProbe | null> {
-  if (localProbeUrls.length === 0) {
-    return null;
-  }
-
-  let lastProbe: ServerProbe | null = null;
-
-  for (const url of localProbeUrls) {
-    const probe = await probeLocalJellyfinUrl(url);
-    lastProbe = probe;
-
-    if (isProbeOnline(probe)) {
-      return probe;
-    }
-  }
-
-  return lastProbe;
-}
-
-function isProbeOnline(probe: ServerProbe | null | undefined): boolean {
-  return Boolean(
-    probe &&
-    probe.reachable &&
-    (probe.ok || probe.kind === "opaque-reachable" || probe.kind === "http-ok"),
-  );
-}
-
-function getProbeFromFailure(
-  serverUrl: string,
-  failure: ServerUnavailableEventDetail | null | undefined,
-): ServerProbe | null {
-  if (!failure?.status) {
-    return null;
-  }
-
-  return {
-    url: serverUrl,
-    endpoint: failure.requestUrl,
-    ok: false,
-    reachable: true,
-    kind: detectProbeKind(
-      failure.status,
-      failure.statusText ?? "",
-      failure.message ?? "",
-    ),
-    status: failure.status,
-    statusText: failure.statusText,
-    message: failure.message,
-  };
-}
-
-function classifyServerConnection(
-  publicProbe: ServerProbe,
-  localProbe: ServerProbe | null,
+export function classifyServerConnection(
+  probe: HealthProbe,
+  failedDependencies: Array<keyof HealthChecks>,
 ): ServerConnectionProblem {
-  if (isProbeOnline(publicProbe)) {
-    return "none";
+  switch (probe.kind) {
+    case "network-error":
+      return "unreachable";
+    case "gateway-error":
+      return "proxy-error";
+    case "malformed-response":
+      return "unexpected-response";
+    case "http-error":
+      return "unknown";
+    case "healthy":
+      break;
   }
 
-  const localOnline = isProbeOnline(localProbe);
+  if (!probe.alive) return "not-alive";
+  if (failedDependencies.length > 0) return "dependency-unavailable";
+  // Readiness covers background work. The interface is usable without it, so
+  // this only ever appears alongside a failure the caller already saw.
+  if (!probe.ready) return "starting-up";
 
-  if (publicProbe.kind === "cloudflare-bad-gateway") {
-    return localOnline ? "tunnel-origin-error" : "jellyfin-down";
-  }
-
-  if (localOnline) {
-    return "cloudflared-down";
-  }
-
-  if (
-    publicProbe.kind === "cloudflare-tunnel-error" ||
-    publicProbe.kind === "cloudflare-error" ||
-    publicProbe.kind === "network-error" ||
-    publicProbe.kind === "http-error"
-  ) {
-    return "both-down";
-  }
-
-  return "unknown";
+  return "none";
 }
 
-function normalizeBackendProbe(value: unknown): ServerProbe | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
+/**
+ * Turns a failure the API client already observed into a probe, so a diagnosis
+ * can explain a request that failed a moment ago without re-testing it.
+ */
+function probeFromFailure(
+  failure: ServerUnavailableEventDetail | null | undefined,
+): HealthProbe | null {
+  if (!failure?.status) return null;
 
-  const probe = value as Partial<ServerProbe>;
-
-  if (typeof probe.url !== "string" || typeof probe.kind !== "string") {
-    return null;
-  }
+  const isGateway = [502, 503, 504].includes(failure.status);
 
   return {
-    url: probe.url,
-    endpoint: probe.endpoint,
-    ok: Boolean(probe.ok),
-    reachable: Boolean(probe.reachable),
-    kind: probe.kind as ServerProbeKind,
-    status: probe.status,
-    statusText: probe.statusText,
-    message: probe.message,
-    productName: probe.productName,
+    endpoint: failure.requestUrl ?? HEALTH_ENDPOINT,
+    kind: isGateway ? "gateway-error" : "http-error",
+    reachable: true,
+    alive: false,
+    ready: false,
+    status: failure.status,
+    ...(failure.statusText ? { statusText: failure.statusText } : {}),
   };
-}
-
-async function diagnoseViaBackend(
-  serverUrl: string,
-): Promise<ServerConnectionDiagnosis | null> {
-  const backendUrl = getCustomPlaybackBackendUrl();
-
-  if (!backendUrl) {
-    return null;
-  }
-
-  const endpoint = new URL("/api/server-diagnostics", `${backendUrl}/`);
-  endpoint.searchParams.set("serverUrl", serverUrl);
-
-  try {
-    const response = await fetchWithTimeout(endpoint.toString(), {
-      cache: "no-store",
-      headers: {
-        Accept: "application/json",
-      },
-    });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    const payload = (await response.json()) as BackendDiagnosticsResponse;
-    const publicProbe = normalizeBackendProbe(payload.publicProbe);
-
-    if (!publicProbe) {
-      return null;
-    }
-
-    const localProbe = normalizeBackendProbe(payload.localProbe);
-    const localProbeUrls =
-      payload.localProbeUrls?.filter((url) => typeof url === "string") ?? [];
-
-    return {
-      problem: classifyServerConnection(publicProbe, localProbe),
-      serverUrl,
-      checkedAt: payload.checkedAt ?? new Date().toISOString(),
-      source: "backend",
-      publicProbe,
-      localProbe,
-      localProbeUrls,
-    };
-  } catch {
-    return null;
-  }
 }
 
 export async function diagnoseServerConnection({
-  serverUrl,
   failure,
+  fetchImpl,
 }: DiagnoseServerConnectionOptions = {}): Promise<ServerConnectionDiagnosis> {
-  const normalizedServerUrl = normalizeServerUrl(
-    serverUrl ?? getServerUrl() ?? "",
-  );
-  const backendDiagnosis = await diagnoseViaBackend(normalizedServerUrl);
+  const resolvedFetch =
+    fetchImpl ?? (typeof fetch === "function" ? fetch : undefined);
 
-  if (backendDiagnosis) {
-    return backendDiagnosis;
-  }
+  const probe = resolvedFetch
+    ? await probeHealth(resolvedFetch)
+    : ({
+        endpoint: HEALTH_ENDPOINT,
+        kind: "network-error",
+        reachable: false,
+        alive: false,
+        ready: false,
+        message: "No fetch implementation is available.",
+      } satisfies HealthProbe);
 
-  const failureProbe = getProbeFromFailure(normalizedServerUrl, failure);
-  const [publicProbe, localProbeUrls] = await Promise.all([
-    failureProbe
-      ? Promise.resolve(failureProbe)
-      : probeCorsJellyfinUrl(normalizedServerUrl),
-    Promise.resolve(getLocalProbeUrls(normalizedServerUrl)),
-  ]);
-  const localProbe = await findReachableLocalProbe(localProbeUrls);
+  // A live health check is the better answer. The recorded failure only stands
+  // in when health itself could not be reached.
+  const effectiveProbe =
+    probe.kind === "network-error"
+      ? (probeFromFailure(failure) ?? probe)
+      : probe;
+  const failedDependencies = getFailedDependencies(effectiveProbe.checks);
 
   return {
-    problem: classifyServerConnection(publicProbe, localProbe),
-    serverUrl: normalizedServerUrl,
+    problem: classifyServerConnection(effectiveProbe, failedDependencies),
     checkedAt: new Date().toISOString(),
-    source: "browser",
-    publicProbe,
-    localProbe,
-    localProbeUrls,
+    probe: effectiveProbe,
+    failedDependencies,
   };
 }
 
-export function probeIsOnline(probe: ServerProbe | null | undefined): boolean {
-  return isProbeOnline(probe);
+export function probeIsOnline(probe: HealthProbe | null | undefined): boolean {
+  return Boolean(probe && probe.kind === "healthy" && probe.alive);
 }

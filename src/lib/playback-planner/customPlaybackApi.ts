@@ -1,7 +1,7 @@
 import type {
   MediaSource,
   MediaStream,
-  PlaybackMode as JellyfinPlaybackMode,
+  PlaybackMode as ViewModelPlaybackMode,
   PlaybackSourceCandidate,
 } from "../types";
 import { buildClientCapabilities } from "./clientCapabilities";
@@ -89,7 +89,7 @@ function getMimeType(plan: PlaybackPlan): string {
   }
 }
 
-function mapMode(plan: PlaybackPlan): JellyfinPlaybackMode {
+function mapMode(plan: PlaybackPlan): ViewModelPlaybackMode {
   switch (plan.mode) {
     case "direct-play":
       return "DirectPlay";
@@ -131,12 +131,12 @@ function getTranscodingReasonCodes(plan: PlaybackPlan): string[] {
 }
 
 /**
- * Rebuilds a Jellyfin-shaped media source from the plan. The full probe result
- * rides along in `plan.diagnostics.media`, so every audio and subtitle track of
- * the source is listed even when the delivered file is a generated rendition
- * that carries only one audio track and no embedded subtitles: the picker offers
- * the source's tracks and the player fetches subtitle text from Jellyfin by
- * stream index. Listing only the selected streams left the subtitle menu empty.
+ * Rebuilds a media source in the shape the player's view model expects. The
+ * full probe result rides along in `plan.diagnostics.media`, so every audio and
+ * subtitle track of the source is listed even when the delivered file is a
+ * generated rendition that carries only one audio track and no embedded
+ * subtitles: the picker offers the source's tracks and the player fetches
+ * subtitle text from the API by stream index. Listing only the selected streams left the subtitle menu empty.
  */
 function buildSyntheticMediaSource(plan: PlaybackPlan): MediaSource {
   const transcodeReasons = getTranscodingReasonCodes(plan);

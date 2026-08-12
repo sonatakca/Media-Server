@@ -88,5 +88,7 @@ jobs:
         run: npx tsx scripts/run-own-api-migrations.ts
 
       # These skip without a database, so this job is the only place they run.
+      # Serial on purpose: two of these files reset the schema, and they share
+      # one database.
       - name: Integration tests
-        run: npx vitest run src/server/ownApi
+        run: npx vitest run src/server/ownApi --no-file-parallelism

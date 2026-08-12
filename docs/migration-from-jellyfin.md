@@ -25,7 +25,7 @@ have been worse than having nothing.
 
 ## What the migration left behind
 
-Two things outlived their purpose and were removed later, in a separate pass:
+Three things outlived their purpose and were removed later, in separate passes:
 
 - **Provider switches.** `VITE_IDENTITY_PROVIDER` and
   `VITE_SERVER_BOOTSTRAP_PROVIDER` chose between Jellyfin and native code paths
@@ -38,9 +38,13 @@ Two things outlived their purpose and were removed later, in a separate pass:
   `accessToken`, and `deviceId` long after all three were permanently empty
   strings, which quietly disabled at least one diagnostic probe that was gated
   on a token that could never exist.
+- **Connection diagnostics.** The failure page still probed
+  `/System/Info/Public` and swept `localhost:8096` looking for a server that
+  was no longer there, and classified cloudflared tunnel states. It now asks
+  `/ownAPI/v1/health` once and reports which layer is actually failing.
 
-The lesson worth keeping: a compatibility shim needs an expiry date. Both of
-these read as harmless while they were silently changing behaviour.
+The lesson worth keeping: a compatibility shim needs an expiry date. All three
+read as harmless while they were silently doing nothing useful, or worse.
 
 ## Terminology you may still find
 

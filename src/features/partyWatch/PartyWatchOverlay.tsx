@@ -16,7 +16,7 @@ export function PartyWatchOverlay({ controller }: PartyWatchOverlayProps) {
   const messageKey =
     controller.errorKey ??
     controller.statusKey ??
-    (controller.isInGroup ? "party.syncingWithJellyfinSyncPlay" : null);
+    (controller.isInGroup ? "party.synced" : null);
 
   if (!messageKey) {
     return null;

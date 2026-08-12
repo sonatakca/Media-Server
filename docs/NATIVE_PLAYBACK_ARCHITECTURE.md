@@ -92,5 +92,6 @@ GET /api/playback/runtime
 
 HDR/Dolby Vision sources that require video conversion receive an SDR tone-map
 filter before H.264 output when FFmpeg provides both `zscale` and `tonemap`.
-When that safe filter chain is unavailable, startup fails clearly so the client
-can fall back to Jellyfin instead of receiving incorrectly colored video.
+When that safe filter chain is unavailable, startup fails clearly rather than
+delivering incorrectly coloured video. There is no other server to fall back
+to, so failing loudly is the whole safety mechanism.

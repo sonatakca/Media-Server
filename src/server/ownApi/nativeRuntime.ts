@@ -93,7 +93,7 @@ const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
  * Builds the complete native API: identity, catalogue, playback, and background
  * work, all backed by one PostgreSQL pool.
  *
- * There is no Jellyfin adapter and no fallback path. If the database or the
+ * There is no adapter to another server and no fallback path. If the database or the
  * migrations are not in the expected state the process refuses to start rather
  * than serving a partially-native surface.
  */

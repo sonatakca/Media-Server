@@ -44,7 +44,7 @@ export interface PlaybackRoutesOptions {
   renditions?: RenditionService;
 }
 
-/** Native plan modes; the browser never sees a Jellyfin transcode reason again. */
+/** Native plan modes; the browser never sees an upstream transcode reason again. */
 type NativeMode = "DIRECT_PLAY" | "REMUX" | "DIRECT_STREAM" | "TRANSCODE";
 
 export function toNativeMode(plan: PlaybackPlan): NativeMode {

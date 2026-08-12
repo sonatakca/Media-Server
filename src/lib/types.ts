@@ -233,7 +233,7 @@ export interface PlaybackInfoResponse {
   ErrorCode?: string;
   /**
    * Pre-encoded qualities for this file, when the offline processor has made
-   * any. Carried alongside the Jellyfin-shaped fields because it has no
+   * any. Carried alongside the inherited PascalCase fields because it has no
    * equivalent there.
    */
   qualityManifest?: MediaQualityManifest;

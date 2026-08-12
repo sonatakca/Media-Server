@@ -30,7 +30,6 @@ import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
-  ServerInfo,
 } from "./types";
 
 /**
@@ -146,19 +145,6 @@ export function getThumbImageUrl(
 }
 
 // -------------------------------------------------------------- catalogue
-
-export async function testServerConnection(
-  // Kept for call-site compatibility during the cutover; Seyirlik serves its own
-  // API from the page's origin, so there is no server URL to test against.
-  _serverUrl?: string,
-): Promise<ServerInfo> {
-  const health = await ownApiClient.getHealth();
-  return {
-    ProductName: "Seyirlik",
-    ServerName: "Seyirlik",
-    Version: health.ready ? "ready" : "starting",
-  };
-}
 
 export async function getUserViews(): Promise<MediaLibrary[]> {
   const libraries = await ownApiClient.request<LibraryDto[]>("/libraries");
@@ -509,7 +495,7 @@ export function reportPlaybackStoppedBeforeUnload(
   );
 }
 
-// Audit reporting used to be a separate Jellyfin session channel. Native
+// Audit reporting used to be a separate session channel on the old backend. Native
 // progress already records everything the audit page reads, so these remain as
 // no-ops to keep the player's call sites unchanged.
 export async function reportAuditPlaybackStart(

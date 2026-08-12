@@ -25,8 +25,8 @@ describe("item metadata preferences", () => {
 
     const item = {
       Id: "movie-1",
-      Name: "Jellyfin title",
-      Overview: "Jellyfin description.",
+      Name: "Server title",
+      Overview: "Server description.",
       Type: "Movie",
     } as MediaItem;
 
@@ -40,17 +40,17 @@ describe("item metadata preferences", () => {
     });
   });
 
-  it("falls back to Jellyfin metadata when no localized value is saved", () => {
+  it("falls back to server metadata when no localized value is saved", () => {
     const item = {
       Id: "series-1",
-      Name: "Jellyfin show",
-      Overview: "Jellyfin overview.",
+      Name: "Server show",
+      Overview: "Server overview.",
       Type: "Series",
     } as MediaItem;
 
     expect(getItemDisplayMetadata(item, "tr")).toEqual({
-      title: "Jellyfin show",
-      overview: "Jellyfin overview.",
+      title: "Server show",
+      overview: "Server overview.",
     });
   });
 

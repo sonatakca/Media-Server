@@ -35,12 +35,12 @@ function createMemoryStorage(): Storage {
 function createEpisode(overrides: Partial<MediaItem> = {}): MediaItem {
   return {
     Id: "episode-1",
-    Name: "Jellyfin name",
+    Name: "Server name",
     Type: "Episode",
     SeriesId: "series-1",
     ParentIndexNumber: 1,
     IndexNumber: 1,
-    Overview: "Jellyfin overview",
+    Overview: "Server overview",
     ...overrides,
   };
 }

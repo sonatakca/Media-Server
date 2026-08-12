@@ -4,7 +4,7 @@ import type { CatalogueItemRow, ItemKind } from "./catalogueRepository";
  * The native item representation.
  *
  * Field names are Seyirlik's own: durations are integer milliseconds, dates are
- * RFC 3339 UTC, and identifiers are opaque. No Jellyfin tick, PascalCase key or
+ * RFC 3339 UTC, and identifiers are opaque. No inherited tick, PascalCase key or
  * filesystem path appears here or may be reintroduced — the browser adapts this
  * shape to its view models, never the other way around.
  */

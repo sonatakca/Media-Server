@@ -1714,7 +1714,7 @@ export function CustomVideoPlayer({
           await stopActiveTranscodeSession(currentSource.playSessionId);
         } catch (stopError) {
           console.warn(
-            "[Seyirlik Playback] Could not stop active Jellyfin transcode session",
+            "[Seyirlik Playback] Could not stop active transcode session",
             stopError,
           );
         }
@@ -1903,7 +1903,7 @@ export function CustomVideoPlayer({
       setQualitySelectionNotice(null);
       persistQualityPreference(preference);
       setFileQualityMode(preference.mode);
-      // The Jellyfin quality list is not rendered while complete files drive the
+      // The server quality list is not rendered while complete files drive the
       // picker, so its selection stays on Auto.
       setSelectedQualityId(AUTO_QUALITY_ID);
       setActiveQualityFileId(selectedFile.id);

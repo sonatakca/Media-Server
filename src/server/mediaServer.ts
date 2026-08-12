@@ -28,8 +28,8 @@ import {
  * Seyirlik's own media server.
  *
  * This process is the whole backend: identity, catalogue, artwork, playback and
- * background work all live behind `/ownAPI/v1`. It has no Jellyfin dependency
- * and no fallback to one.
+ * background work all live behind `/ownAPI/v1`. It depends on no other media
+ * server and has no fallback to one.
  */
 
 export interface MediaServerOptions {

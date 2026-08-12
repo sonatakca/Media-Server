@@ -87,7 +87,7 @@ function compareDates(leftDate?: string, rightDate?: string): number {
   return leftTime - rightTime;
 }
 
-function sortJellyfinItems(
+function sortMediaItems(
   left: MediaItem,
   right: MediaItem,
   sortBy: "name" | "year" | "latest",
@@ -368,7 +368,7 @@ export function DesktopLibraryPage({
     }
 
     return [...items].sort((left, right) =>
-      sortJellyfinItems(left, right, sortBy),
+      sortMediaItems(left, right, sortBy),
     );
   }, [data, searchTerm, sortBy]);
 
@@ -756,7 +756,7 @@ export function DesktopLibraryPage({
     (mode === "series" || mode === "season") &&
     isWholeWatchedScope(data.library, data.items);
   const seasonPickerOptions = [...data.selectableSeasons]
-    .sort((left, right) => sortJellyfinItems(left, right, "name"))
+    .sort((left, right) => sortMediaItems(left, right, "name"))
     .map((season) => ({
       id: season.Id,
       label:

@@ -518,10 +518,7 @@ export function PlaybackHealthPage() {
       ) : null}
 
       <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <InfoPill
-          label="Auth transport"
-          value="Authorization / X-Emby headers"
-        />
+        <InfoPill label="Auth transport" value="Session cookie" />
         <InfoPill label="Range probe" value="bytes=0-1023" />
         <InfoPill label="Media token display" value="redacted" />
         <InfoPill label="Generated" value={report?.generatedAt ?? "Not yet"} />

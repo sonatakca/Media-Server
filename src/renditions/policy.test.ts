@@ -123,7 +123,7 @@ describe("rendition policy", () => {
     );
   });
 
-  it("skips Jellyfin extras folders while keeping real Specials seasons", () => {
+  it("skips conventional extras folders while keeping real Specials seasons", () => {
     expect(
       isEligibleVideoPath(
         "D:\\media\\Movies\\Dune (2021)\\trailers\\Dune (2021) - Trailer.mp4",

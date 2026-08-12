@@ -12,26 +12,30 @@ const secrets = {
   SEYIRLIK_CSRF_SECRET: "test-csrf-secret-at-least-thirty-two-bytes",
 };
 
-integration("provider-gated native identity runtime", () => {
+integration("native identity runtime", () => {
   const setupPool = createDatabasePool({
     connectionString: databaseUrl as string,
     maxConnections: 2,
   });
 
   beforeAll(async () => {
-    await setupPool.query("DROP TABLE IF EXISTS native_sessions CASCADE");
-    await setupPool.query("DROP TABLE IF EXISTS native_users CASCADE");
-    await setupPool.query("DROP TABLE IF EXISTS seyirlik_migrations CASCADE");
+    // Whole schema, not a list of tables: leaving the catalogue tables from
+    // later migrations behind made the migration run below fail on a table
+    // that already existed.
+    await setupPool.query("DROP SCHEMA public CASCADE");
+    await setupPool.query("CREATE SCHEMA public");
   });
 
   afterAll(async () => {
     await setupPool.end();
   });
 
-  it("keeps Jellyfin as the default without opening a database", async () => {
+  it("refuses to start without a database rather than degrading", async () => {
+    // There is no other identity source to fall back to, so an unconfigured
+    // runtime has to fail loudly instead of returning a disabled one.
     await expect(
       createNativeIdentityRuntime({ environment: {} }),
-    ).resolves.toBeNull();
+    ).rejects.toThrow();
   });
 
   it("fails startup when native identity migrations are not current", async () => {

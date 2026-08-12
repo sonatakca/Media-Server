@@ -146,7 +146,7 @@ function getSourceReasonKey(reason: string): TranslationKey | null {
   const normalized = reason.toLowerCase();
 
   if (normalized.includes("transcoding url from playbackinfo"))
-    return "playback.reason.jellyfinTranscodingUrl";
+    return "playback.reason.serverTranscodingUrl";
   if (normalized.includes("hls fallback url"))
     return "playback.reason.hlsFallback";
   if (normalized.includes("browser-compatible"))
@@ -227,8 +227,8 @@ export function getPlaybackReasons(
   if (reasons.length === 0) {
     reasons.push(
       t
-        ? t("playback.reason.jellyfinSpecific")
-        : "Jellyfin did not provide a specific reason. Check the server logs or PlaybackInfo response.",
+        ? t("playback.reason.serverSpecific")
+        : "The server did not give a specific reason. Check the server logs or the playback plan.",
     );
   }
 

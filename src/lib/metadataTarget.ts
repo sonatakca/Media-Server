@@ -70,7 +70,7 @@ function getTmdbProviderIdFromItem(item: MediaItem): string | undefined {
   return providerIds.Tmdb ?? providerIds.TMDB ?? providerIds.tmdb ?? undefined;
 }
 
-export function isJellyfinExtraItem(item: MediaItem): boolean {
+export function isExtraItem(item: MediaItem): boolean {
   if (typeof item.ExtraType === "string" && item.ExtraType.trim()) {
     return true;
   }
@@ -83,7 +83,7 @@ export function isJellyfinExtraItem(item: MediaItem): boolean {
 }
 
 function isUsableMetadataOwner(item: MediaItem, childItem: MediaItem): boolean {
-  if (item.Id === childItem.Id || isJellyfinExtraItem(item)) {
+  if (item.Id === childItem.Id || isExtraItem(item)) {
     return false;
   }
 
@@ -160,7 +160,7 @@ async function resolveOwnerFromTrailerPath(
 export async function resolveMetadataTarget(
   item: MediaItem,
 ): Promise<ResolvedMetadataTarget> {
-  const isExtra = isJellyfinExtraItem(item);
+  const isExtra = isExtraItem(item);
   const ownerItem = isExtra
     ? ((await resolveOwnerFromRelationships(item)) ??
       (await resolveOwnerFromTrailerPath(item).catch(() => undefined)))

@@ -125,7 +125,7 @@ describe("PlaybackInfoPanel", () => {
 
     expect(screen.queryByText("Dönüştürme nedeni")).not.toBeInTheDocument();
     expect(
-      screen.queryByText("Jellyfin şu yüzden dönüştürüyor"),
+      screen.queryByText("Sunucu şu yüzden dönüştürüyor"),
     ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(getActiveTranscodingReasonsMock).not.toHaveBeenCalled(),

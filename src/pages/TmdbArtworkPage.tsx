@@ -502,7 +502,7 @@ export default function TmdbArtworkPage() {
         <div className="mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
           <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
             <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white/70">
-              {t("tmdbArtwork.jellyfinTitles")}
+              {t("tmdbArtwork.libraryTitles")}
             </h2>
             <p
               className={`mt-1 text-xs font-bold ${getStatusClasses(titlesStatus.tone)}`}

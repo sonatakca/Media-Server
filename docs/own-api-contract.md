@@ -119,7 +119,7 @@ Common status codes:
 
 ## Authentication and browser security
 
-- Native-mode media users authenticate with Seyirlik credentials; Jellyfin authentication remains the default rollback path until a later cutover.
+- Media users authenticate with Seyirlik credentials held in PostgreSQL. There is no other authentication path and no rollback target.
 - Usernames are normalized with Unicode NFKC, trimmed, and lower-cased with the `en-US` locale before comparison. The normalized value is unique and case-insensitive; display names retain their own presentation form.
 - Password hashes use Argon2id with 64 MiB memory, three iterations, one lane, and a 32-byte output. Parameters and salt are encoded by Argon2 in each hash. Plaintext passwords are never persisted and there is no weak fallback.
 - Browser sessions use an opaque random token in a `HttpOnly`, `Secure` (production), `SameSite=Lax`, path-scoped cookie. Only a keyed hash of the token is stored server-side.
@@ -133,7 +133,7 @@ Common status codes:
 ### Implemented native identity contracts
 
 - `POST /auth/login` accepts only `application/json` with `username`, `password`, and optional `deviceDescription` (maximum 200 characters). Unknown fields, malformed JSON, bodies above 16 KiB, and unsupported media types are rejected. Success returns `{ data: { user }, requestId }` and creates both cookies.
-- `GET /auth/me` returns the same minimal user DTO (`id`, normalized `username`, `displayName`, `isAdministrator`) or `401 AUTH_REQUIRED`. It never queries Jellyfin.
+- `GET /auth/me` returns the same minimal user DTO (`id`, normalized `username`, `displayName`, `isAdministrator`) or `401 AUTH_REQUIRED`.
 - `POST /auth/refresh` requires the session cookie, exact same-origin evidence, and matching `X-CSRF-Token`/CSRF cookie. Success rotates the durable session token and both cookies atomically.
 - `POST /auth/logout` is idempotent, revokes the active session family when present, clears both cookies, and returns `204` with the matching `X-Request-Id` header. `POST /auth/logout-all` additionally revokes every session for the current user.
 - `GET /auth/csrf` requires a valid session and reissues a signed CSRF token in both the response envelope and readable CSRF cookie.
@@ -167,7 +167,7 @@ Public, non-sensitive liveness and dependency summary:
 
 Values are `available`, `unavailable`, or `disabled`. Both database and durable jobs must be `available` before `ready` can be true; `jobs: disabled` is not ready. The endpoint exposes no versions, binary paths, storage paths, credentials, connection strings, hostnames, or error details. Responses use `Cache-Control: no-store`. Dependency probes are cached briefly, concurrent probes are coalesced, and every dependency probe fails closed after a bounded timeout. Process liveness returns HTTP 200; an optional orchestrator-only readiness route may return 503 when mandatory checks fail.
 
-The app bootstrap can select this endpoint with `VITE_SERVER_BOOTSTRAP_PROVIDER=own-api`; omitted configuration retains the legacy provider during staged migration. Native mode validates the complete finite health DTO at runtime, treats `alive: true` as bootstrap success even while `ready` is false, and does not silently fall back to the legacy public-system probe on failure or retry. Local Vite development proxies `/ownAPI/*` to `SEYIRLIK_OWN_API_UPSTREAM` (default `http://127.0.0.1:43110`) and excludes that namespace from service-worker navigation fallback. Production must route `/ownAPI/v1/*` to the persistent backend at the same public origin before enabling native mode; an SPA rewrite is not an API route.
+The app bootstrap always uses this endpoint; there is no provider to select. It validates the health DTO at runtime, treats `alive: true` as bootstrap success even while `ready` is false, and has no other probe to fall back to. Local Vite development proxies `/ownAPI/*` to `SEYIRLIK_OWN_API_UPSTREAM` (default `http://127.0.0.1:43110`) and excludes that namespace from service-worker navigation fallback. Production must route `/ownAPI/v1/*` to the persistent backend at the same public origin before enabling native mode; an SPA rewrite is not an API route.
 
 ## Endpoint catalogue
 
@@ -298,4 +298,4 @@ A playback-plan response uses native enum values `DIRECT_PLAY`, `REMUX`, `DIRECT
 
 ## Compatibility policy
 
-The API contract is native even when frontend adapters temporarily emit existing view-model shapes. Jellyfin field names (`Id`, `RunTimeTicks`, `UserData`, `MediaSources`, etc.) are not part of the long-term public contract. Breaking native changes require `/v2`; additive optional fields may be introduced in `/v1`.
+The API contract is camelCase throughout. The client still renders inherited PascalCase view-model shapes (`Id`, `RunTimeTicks`, `UserData`, `MediaSources`), but those live entirely behind `src/api/ownApi/adapters.ts` and are not part of this contract — see `migration-from-jellyfin.md`. Breaking changes require `/v2`; additive optional fields may be introduced in `/v1`.

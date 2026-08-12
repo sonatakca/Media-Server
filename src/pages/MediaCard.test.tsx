@@ -6,7 +6,7 @@ import { MediaCard } from "../components/MediaCard";
 import { clearContinueWatchingHistory } from "../lib/continueWatchingActions";
 import type { MediaItem } from "../lib/types";
 
-// 1. Mock the Jellyfin API URL builders
+// 1. Mock the media API URL builders
 vi.mock("../lib/mediaApi", () => ({
   getPrimaryImageUrl: vi.fn((id) => `/mock-primary-${id}.jpg`),
   getLogoImageUrl: vi.fn((id) => `/mock-logo-${id}.png`),
@@ -91,7 +91,7 @@ describe("MediaCard Component", () => {
     expect(screen.getByText("details.watched")).toBeInTheDocument();
   });
 
-  it("shows a full progress bar for items Jellyfin marks played", () => {
+  it("shows a full progress bar for items the server marks played", () => {
     render(
       <MemoryRouter>
         <MediaCard

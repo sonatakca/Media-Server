@@ -17,9 +17,11 @@ integration("PostgreSQL native identity persistence", () => {
   const users = createUserRepository(pool);
 
   beforeAll(async () => {
-    await pool.query("DROP TABLE IF EXISTS native_sessions CASCADE");
-    await pool.query("DROP TABLE IF EXISTS native_users CASCADE");
-    await pool.query("DROP TABLE IF EXISTS seyirlik_migrations CASCADE");
+    // Reset the whole schema rather than a list of tables. Dropping only the
+    // identity tables left the catalogue ones from later migrations behind, so
+    // re-running the migrations failed on a table that already existed.
+    await pool.query("DROP SCHEMA public CASCADE");
+    await pool.query("CREATE SCHEMA public");
   });
 
   afterAll(async () => {
@@ -27,15 +29,20 @@ integration("PostgreSQL native identity persistence", () => {
   });
 
   it("runs migrations on a clean database and safely re-runs them", async () => {
-    await expect(runMigrations(pool)).resolves.toEqual({
-      applied: ["001_native_identity"],
-    });
+    // Deliberately not a hard-coded list: this asserted a single migration and
+    // started failing the moment the catalogue migrations were added.
+    const first = await runMigrations(pool);
+    expect(first.applied[0]).toBe("001_native_identity");
+    expect(first.applied.length).toBeGreaterThan(0);
+
     await expect(runMigrations(pool)).resolves.toEqual({ applied: [] });
 
     const migrationRows = await pool.query<{ version: string }>(
       "SELECT version FROM seyirlik_migrations ORDER BY version",
     );
-    expect(migrationRows.rows).toEqual([{ version: "001_native_identity" }]);
+    expect(migrationRows.rows.map((row) => row.version)).toEqual(
+      [...first.applied].sort(),
+    );
     await expect(validateMigrationsCurrent(pool)).resolves.toBeUndefined();
 
     const original = await pool.query<{ checksum: string }>(

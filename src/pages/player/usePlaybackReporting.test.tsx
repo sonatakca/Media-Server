@@ -43,7 +43,7 @@ describe("usePlaybackReporting", () => {
     reportPlaybackStopped.mockResolvedValue(undefined);
   });
 
-  it("reports start, progress, stop, and before-unload with Jellyfin ticks", () => {
+  it("reports start, progress, stop, and before-unload with tick positions", () => {
     const { result } = renderHook(() => usePlaybackReporting(source));
 
     act(() => {

@@ -607,8 +607,8 @@ export function PlayerSettingsPanel({
                     title={t("settings.auto")}
                     subtitle={
                       selectedQualityId === "auto"
-                        ? t("settings.bestJellyfinSource")
-                        : t("settings.useBestJellyfinSource")
+                        ? t("settings.bestSource")
+                        : t("settings.useBestSource")
                     }
                     active={selectedQualityId === "auto"}
                     compact={compact}

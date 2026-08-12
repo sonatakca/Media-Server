@@ -148,7 +148,7 @@ async function loadPlaybackSource(
       }
     } catch (error) {
       console.warn(
-        "[Seyirlik Playback] Custom backend failed; falling back to Jellyfin PlaybackInfo",
+        "[Seyirlik Playback] Custom backend failed; falling back to the server playback plan",
         error,
       );
     }

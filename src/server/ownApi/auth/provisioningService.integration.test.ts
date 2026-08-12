@@ -20,9 +20,10 @@ integration("one-time initial administrator provisioning", () => {
   const passwords = createArgon2PasswordHasher();
 
   beforeAll(async () => {
-    await pool.query("DROP TABLE IF EXISTS native_sessions CASCADE");
-    await pool.query("DROP TABLE IF EXISTS native_users CASCADE");
-    await pool.query("DROP TABLE IF EXISTS seyirlik_migrations CASCADE");
+    // Whole schema, not a list of tables: leaving the catalogue tables from
+    // later migrations behind made runMigrations fail on an existing table.
+    await pool.query("DROP SCHEMA public CASCADE");
+    await pool.query("CREATE SCHEMA public");
     await runMigrations(pool);
   });
 

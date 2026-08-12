@@ -2,36 +2,32 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
-  Cloud,
-  CloudOff,
+  Cog,
+  Database,
+  Film,
+  HardDrive,
   HelpCircle,
   RefreshCw,
   Server,
   ServerCrash,
-  Wrench,
   XCircle,
 } from "lucide-react";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useLanguage } from "../i18n/LanguageContext";
-import type { Language } from "../i18n/translations";
 import type { ServerUnavailableEventDetail } from "../lib/mediaApi";
 import {
   diagnoseServerConnection,
-  probeIsOnline,
+  type HealthChecks,
   type ServerConnectionDiagnosis,
   type ServerConnectionProblem,
-  type ServerProbe,
 } from "../lib/serverConnectionDiagnostics";
-import { testServerConnection } from "../lib/mediaApi";
 
 interface ServerConnectionErrorPageProps {
-  /** Retained only for the diagnostics copy; there is one server, at this origin. */
-  serverUrl?: string;
   failure?: ServerUnavailableEventDetail | null;
   onRetrySuccess: () => void;
-  mode?: "jellyfin" | "own-api";
   diagnoseConnection?: typeof diagnoseServerConnection;
-  testConnection?: (serverUrl: string) => Promise<unknown>;
+  /** Retry action. Resolving means the server is usable again. */
+  testConnection?: () => Promise<unknown>;
 }
 
 type DiagnosticState =
@@ -41,228 +37,147 @@ type DiagnosticState =
 
 type ServiceState = "online" | "offline" | "issue" | "unknown";
 
+/**
+ * Copy lives here rather than in the translation bundle on purpose: this page
+ * is what the user sees when the app is failing, and it must not depend on
+ * anything more than it has to.
+ */
 const COPY = {
   en: {
-    checkingTitle: "Checking the server connection",
-    checkingMessage: "Testing the public tunnel and local Jellyfin separately.",
+    checkingTitle: "Checking the server",
     eyebrow: "Server Connection",
     retry: "Retry",
     retrying: "Checking",
-    changeServer: "Change server",
-    cloudflareTunnel: "Tunnel Connection",
-    jellyfinServer: "Jellyfin Server",
     seyirlikServer: "Seyirlik Server",
-    publicUrl: "Public URL",
-    localProbe: "Local probe",
-    checkedByBackend: "Checked by backend diagnostics",
-    checkedByBrowser: "Checked by browser diagnostics",
     online: "Running",
     offline: "Not running",
     issue: "Needs attention",
     unknown: "Unknown",
-    technicalDetails: "Technical details",
-    noLocalProbe: "No local Jellyfin probe URL was available.",
-    statusLine: "HTTP {status} {statusText}",
-    source: "Source",
-    checked: "Checked",
+    dependencies: {
+      database: "Database",
+      jobs: "Background jobs",
+      ffmpeg: "FFmpeg",
+      ffprobe: "ffprobe",
+      mediaStorage: "Media storage",
+      generatedStorage: "Generated storage",
+    } satisfies Record<keyof HealthChecks, string>,
     problems: {
-      "jellyfin-down": {
-        label: "Problem 1",
-        title: "Cloudflared tunnel is running, but Jellyfin is not running.",
-        message:
-          "Cloudflare is answering through the tunnel, but the tunnel cannot reach Jellyfin.",
-        action: "Start the Jellyfin server, then retry this page.",
+      none: {
+        title: "The server is reachable.",
+        detail: "Retrying should get you back in.",
       },
-      "cloudflared-down": {
-        label: "Problem 2",
-        title:
-          "Jellyfin is running, but the cloudflared tunnel is not running.",
-        message:
-          "The local Jellyfin probe answered, but the public tunnel did not.",
-        action: "Start the cloudflared tunnel, then retry this page.",
+      unreachable: {
+        title: "The server did not answer.",
+        detail:
+          "Nothing responded at this address. The server may be stopped, or this device may be offline.",
       },
-      "both-down": {
-        label: "Problem 3",
-        title: "Cloudflared tunnel and Jellyfin are both not running.",
-        message:
-          "The public tunnel did not answer and Jellyfin could not be reached locally.",
-        action:
-          "Start Jellyfin first, then start the cloudflared tunnel and retry.",
+      "proxy-error": {
+        title: "The reverse proxy cannot reach Seyirlik.",
+        detail:
+          "Something in front of the server answered, but it could not pass the request through. The proxy is running; Seyirlik behind it may not be.",
       },
-      "tunnel-origin-error": {
-        label: "Origin issue",
-        title: "The tunnel is running, but it cannot reach Jellyfin.",
-        message:
-          "Jellyfin answered locally, while Cloudflare returned a gateway error.",
-        action:
-          "Check the cloudflared origin URL, firewall rules, and Jellyfin bind address.",
+      "not-alive": {
+        title: "Seyirlik is running, but reports it is not healthy.",
+        detail: "The server answered and said it cannot serve requests yet.",
+      },
+      "dependency-unavailable": {
+        title: "Seyirlik is missing something it needs.",
+        detail: "The server is running, but a dependency below is unavailable.",
+      },
+      "starting-up": {
+        title: "Seyirlik is still starting up.",
+        detail: "The server is alive and finishing its startup work.",
+      },
+      "unexpected-response": {
+        title: "Something answered, but it was not Seyirlik.",
+        detail:
+          "The address returned a response the app did not recognise. A captive portal or a misconfigured proxy usually causes this.",
       },
       unknown: {
-        label: "Connection issue",
-        title: "Seyirlik could not identify the exact server state.",
-        message:
-          "The browser could not get enough detail from the failed request.",
-        action: "Check Jellyfin and cloudflared, then retry this page.",
+        title: "The server could not be reached.",
+        detail: "The reason was not something the app could identify.",
       },
-      none: {
-        label: "Recovered",
-        title: "The server connection is back.",
-        message: "Jellyfin answered successfully.",
-        action: "Retrying will reopen the current page.",
-      },
-    },
+    } satisfies Record<
+      ServerConnectionProblem,
+      { title: string; detail: string }
+    >,
+    referenceLabel: "Reference",
   },
   tr: {
-    checkingTitle: "Sunucu bağlantısı kontrol ediliyor",
-    checkingMessage: "Public tunnel ve yerel Jellyfin ayrı ayrı test ediliyor.",
+    checkingTitle: "Sunucu kontrol ediliyor",
     eyebrow: "Sunucu Bağlantısı",
     retry: "Tekrar dene",
     retrying: "Kontrol ediliyor",
-    changeServer: "Sunucuyu değiştir",
-    cloudflareTunnel: "Tunnel Bağlantısı",
-    jellyfinServer: "Jellyfin Sunucusu",
     seyirlikServer: "Seyirlik Sunucusu",
-    publicUrl: "Public adres",
-    localProbe: "Yerel kontrol",
-    checkedByBackend: "Backend tanısıyla kontrol edildi",
-    checkedByBrowser: "Tarayıcı tanısıyla kontrol edildi",
-    online: "Aktif",
-    offline: "Aktif Değil",
-    issue: "Kontrol gerekli",
+    online: "Çalışıyor",
+    offline: "Çalışmıyor",
+    issue: "İlgilenilmeli",
     unknown: "Bilinmiyor",
-    technicalDetails: "Teknik detaylar",
-    noLocalProbe: "Yerel Jellyfin kontrol adresi bulunamadı.",
-    statusLine: "HTTP {status} {statusText}",
-    source: "Kaynak",
-    checked: "Kontrol zamanı",
+    dependencies: {
+      database: "Veritabanı",
+      jobs: "Arka plan işleri",
+      ffmpeg: "FFmpeg",
+      ffprobe: "ffprobe",
+      mediaStorage: "Medya deposu",
+      generatedStorage: "Üretilen dosya deposu",
+    } satisfies Record<keyof HealthChecks, string>,
     problems: {
-      "jellyfin-down": {
-        label: "Problem 1",
-        title:
-          "cloudflared tunnel çalışıyor, ama Jellyfin sunucusu çalışmıyor.",
-        message:
-          "Cloudflare tunnel üzerinden cevap veriyor, fakat tunnel Jellyfin'e ulaşamıyor.",
-        action: "Jellyfin sunucusunu başlat, sonra bu sayfayı tekrar dene.",
+      none: {
+        title: "Sunucuya ulaşılabiliyor.",
+        detail: "Tekrar denemek yeterli olacaktır.",
       },
-      "cloudflared-down": {
-        label: "Problem 2",
-        title: "Jellyfin çalışıyor, ama cloudflared tunnel çalışmıyor.",
-        message:
-          "Yerel Jellyfin kontrolü cevap verdi, fakat public tunnel cevap vermedi.",
-        action: "cloudflared tunnel'ı başlat, sonra bu sayfayı tekrar dene.",
+      unreachable: {
+        title: "Sunucu yanıt vermedi.",
+        detail:
+          "Bu adreste hiçbir yanıt alınamadı. Sunucu durmuş olabilir veya bu cihaz çevrimdışı olabilir.",
       },
-      "both-down": {
-        label: "Problem 3",
-        title: "cloudflared tunnel ve Jellyfin ikisi de çalışmıyor.",
-        message:
-          "Public tunnel cevap vermedi ve Jellyfin'e yerel olarak ulaşılamadı.",
-        action:
-          "Önce Jellyfin'i, sonra cloudflared tunnel'ı başlat ve tekrar dene.",
+      "proxy-error": {
+        title: "Ters vekil sunucu Seyirlik'e ulaşamıyor.",
+        detail:
+          "Sunucunun önündeki bir katman yanıt verdi ama isteği iletemedi. Vekil sunucu çalışıyor; arkasındaki Seyirlik çalışmıyor olabilir.",
       },
-      "tunnel-origin-error": {
-        label: "Origin sorunu",
-        title: "Tunnel çalışıyor, ama Jellyfin'e ulaşamıyor.",
-        message:
-          "Jellyfin yerel olarak cevap verdi, fakat Cloudflare gateway hatası döndürdü.",
-        action:
-          "cloudflared origin adresini, güvenlik duvarını ve Jellyfin bind ayarını kontrol et.",
+      "not-alive": {
+        title: "Seyirlik çalışıyor ama sağlıklı olmadığını bildiriyor.",
+        detail:
+          "Sunucu yanıt verdi ve henüz istekleri karşılayamadığını söyledi.",
+      },
+      "dependency-unavailable": {
+        title: "Seyirlik'in ihtiyaç duyduğu bir bileşen eksik.",
+        detail:
+          "Sunucu çalışıyor ancak aşağıdaki bileşenlerden biri kullanılamıyor.",
+      },
+      "starting-up": {
+        title: "Seyirlik hâlâ başlatılıyor.",
+        detail: "Sunucu çalışıyor ve başlangıç işlerini tamamlıyor.",
+      },
+      "unexpected-response": {
+        title: "Bir yanıt geldi ama Seyirlik'ten değil.",
+        detail:
+          "Adres, uygulamanın tanımadığı bir yanıt döndürdü. Genellikle bir ağ giriş sayfası veya yanlış yapılandırılmış vekil sunucu buna yol açar.",
       },
       unknown: {
-        label: "Bağlantı sorunu",
-        title: "Seyirlik sunucunun tam durumunu belirleyemedi.",
-        message: "Tarayıcı başarısız istekten yeterli teknik detay alamadı.",
-        action:
-          "Jellyfin ve cloudflared durumunu kontrol edip bu sayfayı tekrar dene.",
+        title: "Sunucuya ulaşılamadı.",
+        detail: "Nedeni uygulama tarafından belirlenemedi.",
       },
-      none: {
-        label: "Düzeldi",
-        title: "Sunucu bağlantısı geri geldi.",
-        message: "Jellyfin başarıyla cevap verdi.",
-        action: "Tekrar denemek mevcut sayfayı yeniden açar.",
-      },
-    },
-  },
-} satisfies Record<
-  Language,
-  {
-    checkingTitle: string;
-    checkingMessage: string;
-    eyebrow: string;
-    retry: string;
-    retrying: string;
-    changeServer: string;
-    cloudflareTunnel: string;
-    jellyfinServer: string;
-    seyirlikServer: string;
-    publicUrl: string;
-    localProbe: string;
-    checkedByBackend: string;
-    checkedByBrowser: string;
-    online: string;
-    offline: string;
-    issue: string;
-    unknown: string;
-    technicalDetails: string;
-    noLocalProbe: string;
-    statusLine: string;
-    source: string;
-    checked: string;
-    problems: Record<
+    } satisfies Record<
       ServerConnectionProblem,
-      {
-        label: string;
-        title: string;
-        message: string;
-        action: string;
-      }
-    >;
-  }
->;
+      { title: string; detail: string }
+    >,
+    referenceLabel: "Referans",
+  },
+};
+
+const DEPENDENCY_ICONS: Record<keyof HealthChecks, typeof Server> = {
+  database: Database,
+  jobs: Cog,
+  ffmpeg: Film,
+  ffprobe: Film,
+  mediaStorage: HardDrive,
+  generatedStorage: HardDrive,
+};
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function getTunnelState(
-  problem: ServerConnectionProblem,
-  publicProbe: ServerProbe,
-): ServiceState {
-  if (problem === "none" || problem === "jellyfin-down") {
-    return "online";
-  }
-
-  if (problem === "tunnel-origin-error") {
-    return "issue";
-  }
-
-  if (problem === "cloudflared-down" || problem === "both-down") {
-    return "offline";
-  }
-
-  if (publicProbe.kind === "cloudflare-bad-gateway") {
-    return "issue";
-  }
-
-  return "unknown";
-}
-
-function getJellyfinState(
-  problem: ServerConnectionProblem,
-  localProbe: ServerProbe | null,
-): ServiceState {
-  if (
-    problem === "none" ||
-    problem === "cloudflared-down" ||
-    problem === "tunnel-origin-error"
-  ) {
-    return "online";
-  }
-
-  if (problem === "jellyfin-down" || problem === "both-down") {
-    return "offline";
-  }
-
-  return probeIsOnline(localProbe) ? "online" : "unknown";
 }
 
 function statusStyles(status: ServiceState): {
@@ -300,7 +215,7 @@ function ServiceStatusCard({
   statusLabel,
   detail,
 }: {
-  icon: typeof Cloud;
+  icon: typeof Server;
   title: string;
   status: ServiceState;
   statusLabel: string;
@@ -318,9 +233,11 @@ function ServiceStatusCard({
           </span>
           <div className="min-w-0">
             <h2 className="text-base font-black text-white">{title}</h2>
-            <p className="mt-1 break-words text-sm leading-6 text-white/58">
-              {detail}
-            </p>
+            {detail ? (
+              <p className="mt-1 break-words text-sm leading-6 text-white/58">
+                {detail}
+              </p>
+            ) : null}
           </div>
         </div>
         <span
@@ -334,9 +251,13 @@ function ServiceStatusCard({
   );
 }
 
-function LoadingView() {
+function LoadingView({ label }: { label: string }) {
   return (
-    <main className="flex min-h-screen items-center justify-center px-6 transition-opacity duration-300 ease-in-out">
+    <main
+      className="flex min-h-screen items-center justify-center px-6 transition-opacity duration-300 ease-in-out"
+      aria-busy="true"
+      aria-label={label}
+    >
       <div className="text-center">
         <LoadingSpinner label="" />
       </div>
@@ -344,13 +265,28 @@ function LoadingView() {
   );
 }
 
+function getServerState(problem: ServerConnectionProblem): ServiceState {
+  switch (problem) {
+    case "none":
+      return "online";
+    case "unreachable":
+    case "proxy-error":
+    case "not-alive":
+      return "offline";
+    case "dependency-unavailable":
+    case "starting-up":
+      return "issue";
+    case "unexpected-response":
+    case "unknown":
+      return "unknown";
+  }
+}
+
 export function ServerConnectionErrorPage({
-  serverUrl,
   failure,
   onRetrySuccess,
-  mode = "jellyfin",
   diagnoseConnection = diagnoseServerConnection,
-  testConnection = testServerConnection,
+  testConnection,
 }: ServerConnectionErrorPageProps) {
   const { language } = useLanguage();
   const copy = COPY[language];
@@ -380,7 +316,7 @@ export function ServerConnectionErrorPage({
     setState({ status: "checking" });
 
     try {
-      const diagnosis = await diagnoseConnection({ serverUrl, failure });
+      const diagnosis = await diagnoseConnection({ failure });
 
       if (diagnosis.problem === "none") {
         finishWithFadeOut();
@@ -389,12 +325,9 @@ export function ServerConnectionErrorPage({
 
       setState({ status: "ready", diagnosis });
     } catch (error) {
-      setState({
-        status: "failed",
-        message: getErrorMessage(error),
-      });
+      setState({ status: "failed", message: getErrorMessage(error) });
     }
-  }, [diagnoseConnection, failure, finishWithFadeOut, serverUrl]);
+  }, [diagnoseConnection, failure, finishWithFadeOut]);
 
   useEffect(() => {
     void runDiagnostics();
@@ -404,15 +337,19 @@ export function ServerConnectionErrorPage({
     setIsRetrying(true);
 
     try {
-      await testConnection(serverUrl ?? "");
-      finishWithFadeOut();
-      return;
+      if (testConnection) {
+        await testConnection();
+        finishWithFadeOut();
+        return;
+      }
+
+      await runDiagnostics();
     } catch {
       await runDiagnostics();
     } finally {
       setIsRetrying(false);
     }
-  }, [finishWithFadeOut, runDiagnostics, serverUrl, testConnection]);
+  }, [finishWithFadeOut, runDiagnostics, testConnection]);
 
   const fallbackDiagnosis = useMemo<ServerConnectionDiagnosis | null>(() => {
     if (state.status !== "failed") {
@@ -421,52 +358,33 @@ export function ServerConnectionErrorPage({
 
     return {
       problem: "unknown",
-      serverUrl: serverUrl ?? "",
       checkedAt: new Date().toISOString(),
-      source: "browser",
-      publicProbe: {
-        url: serverUrl ?? "",
-        ok: false,
-        reachable: false,
+      probe: {
+        endpoint: "/ownAPI/v1/health",
         kind: "network-error",
+        reachable: false,
+        alive: false,
+        ready: false,
         message: state.message,
       },
-      localProbe: null,
-      localProbeUrls: [],
+      failedDependencies: [],
     };
-  }, [serverUrl, state]);
+  }, [state]);
 
   if (state.status === "checking") {
-    return <LoadingView />;
+    return <LoadingView label={copy.checkingTitle} />;
   }
 
   const diagnosis =
     state.status === "ready" ? state.diagnosis : fallbackDiagnosis;
 
   if (!diagnosis) {
-    return <LoadingView />;
+    return <LoadingView label={copy.checkingTitle} />;
   }
 
-  const tunnelState = getTunnelState(diagnosis.problem, diagnosis.publicProbe);
-  const jellyfinState = getJellyfinState(
-    diagnosis.problem,
-    diagnosis.localProbe,
-  );
-  const tunnelIcon =
-    tunnelState === "offline"
-      ? CloudOff
-      : tunnelState === "issue"
-        ? Wrench
-        : Cloud;
-  const jellyfinIcon =
-    jellyfinState === "offline"
-      ? ServerCrash
-      : jellyfinState === "issue"
-        ? Wrench
-        : Server;
-  const nativeServerState: ServiceState = probeIsOnline(diagnosis.publicProbe)
-    ? "online"
-    : "offline";
+  const serverState = getServerState(diagnosis.problem);
+  const problemCopy = copy.problems[diagnosis.problem];
+  const { requestId } = diagnosis.probe;
 
   return (
     <main className="min-h-screen bg-[#050505] px-5 py-10 text-white sm:px-8 lg:px-12">
@@ -486,6 +404,27 @@ export function ServerConnectionErrorPage({
           </div>
 
           <div className="mx-auto flex w-full max-w-xl flex-col items-center gap-5">
+            {/*
+              Assertive rather than polite: the page has replaced the whole
+              interface, so this is the only thing left to announce.
+            */}
+            <div
+              role="alert"
+              aria-live="assertive"
+              className={`w-full text-center transition-all duration-500 ease-out ${
+                isVisible
+                  ? "translate-y-0 opacity-100 delay-150"
+                  : "translate-y-4 opacity-0 delay-0"
+              }`}
+            >
+              <h1 className="text-xl font-black text-white sm:text-2xl">
+                {problemCopy.title}
+              </h1>
+              <p className="mt-2 text-sm leading-6 text-white/62">
+                {problemCopy.detail}
+              </p>
+            </div>
+
             <aside
               className={`grid w-full gap-3 transition-all duration-500 ease-out ${
                 isVisible
@@ -493,32 +432,29 @@ export function ServerConnectionErrorPage({
                   : "translate-y-4 opacity-0 delay-0"
               }`}
             >
-              {mode === "own-api" ? (
+              <ServiceStatusCard
+                icon={serverState === "online" ? Server : ServerCrash}
+                title={copy.seyirlikServer}
+                status={serverState}
+                statusLabel={copy[serverState]}
+                detail=""
+              />
+
+              {/*
+                Only the dependencies that are actually failing. A healthy list
+                of six is noise on a page whose whole job is to name the one
+                thing that is wrong.
+              */}
+              {diagnosis.failedDependencies.map((name) => (
                 <ServiceStatusCard
-                  icon={nativeServerState === "online" ? Server : ServerCrash}
-                  title={copy.seyirlikServer}
-                  status={nativeServerState}
-                  statusLabel={copy[nativeServerState]}
+                  key={name}
+                  icon={DEPENDENCY_ICONS[name]}
+                  title={copy.dependencies[name]}
+                  status="offline"
+                  statusLabel={copy.offline}
                   detail=""
                 />
-              ) : (
-                <>
-                  <ServiceStatusCard
-                    icon={tunnelIcon}
-                    title={copy.cloudflareTunnel}
-                    status={tunnelState}
-                    statusLabel={copy[tunnelState]}
-                    detail=""
-                  />
-                  <ServiceStatusCard
-                    icon={jellyfinIcon}
-                    title={copy.jellyfinServer}
-                    status={jellyfinState}
-                    statusLabel={copy[jellyfinState]}
-                    detail=""
-                  />
-                </>
-              )}
+              ))}
             </aside>
 
             <div
@@ -541,6 +477,17 @@ export function ServerConnectionErrorPage({
                 {isRetrying ? copy.retrying : copy.retry}
               </button>
             </div>
+
+            {/*
+              The request id is the only thing that ties this failure to a line
+              in the server log. It carries no information about the server.
+            */}
+            {requestId ? (
+              <p className="text-center text-xs font-semibold text-white/35">
+                {copy.referenceLabel}:{" "}
+                <code className="font-mono text-white/50">{requestId}</code>
+              </p>
+            ) : null}
           </div>
         </div>
       </div>

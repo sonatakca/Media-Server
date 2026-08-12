@@ -5,7 +5,6 @@ export const tr = {
   "nav.series": "Diziler",
   "nav.collections": "Koleksiyonlar",
   "nav.books": "Kitaplar",
-  "nav.server": "Sunucu",
   "nav.logout": "Çıkış",
   "nav.language.switchToTurkish": "Türkçeye geç",
   "nav.language.switchToEnglish": "İngilizceye geç",
@@ -20,9 +19,9 @@ export const tr = {
   "home.libraries": "Kütüphaneler",
   "home.nothingInProgress": "Devam eden izleme yok.",
   "home.browse": "Keşfet",
-  "home.someDataFailed": "Bazı Jellyfin verileri yüklenemedi",
-  "home.couldNotLoad": "Jellyfin yüklenemedi",
-  "home.noLibraries": "Bu kullanıcı için Jellyfin kütüphanesi döndürülmedi.",
+  "home.someDataFailed": "Bazı veriler yüklenemedi",
+  "home.couldNotLoad": "Kütüphane yüklenemedi",
+  "home.noLibraries": "Bu kullanıcı için kullanılabilir kütüphane yok.",
   "home.noLatestMedia": "Yakın zamanda eklenen medya bulunmuyor.",
   "home.noLatestMovies": "Yakın zamanda eklenen film bulunmuyor.",
   "home.noLatestShows": "Yakın zamanda eklenen dizi bulunmuyor.",
@@ -36,7 +35,7 @@ export const tr = {
   "hero.enableTrailers": "Fragmanları aç",
   "hero.disableTrailers": "Fragmanları kapat",
   "hero.fallbackDescription":
-    "Mevcut Jellyfin kütüphaneni gezmek ve izlemek için sade, tamamen frontend odaklı bir deneyim.",
+    "Kendi medya kütüphaneni gezmek, izlemek ve okumak için sade bir deneyim.",
   "common.play": "Oynat",
   "common.read": "Oku",
   "common.pause": "Duraklat",
@@ -61,7 +60,6 @@ export const tr = {
   "common.yes": "Evet",
   "common.no": "Hayır",
   "common.somethingWentWrong": "Bir şeyler ters gitti",
-  "app.connectingDefaultServer": "Seyirlik sunucusuna bağlanılıyor...",
   "format.season": "Sezon",
   "format.hourShort": "sa",
   "format.minuteShort": "dk",
@@ -79,8 +77,6 @@ export const tr = {
   "auth.username": "Kullanıcı adı",
   "auth.password": "Şifre",
   "auth.noPasswordPlaceholder": "Bu kullanıcısının şifresi yoksa boş bırak",
-  "auth.changeServer": "Sunucuyu Değiştir",
-  "auth.changeServerUrl": "Sunucu adresini değiştir",
   "adminAuth.title": "Admin doğrulaması",
   "adminAuth.description":
     "Bu sayfa yalnızca yapılandırılmış Google admin hesabına açıktır.",
@@ -93,23 +89,6 @@ export const tr = {
   "auth.failedMessagePrefix":
     "Giriş başarısız. Kullanıcı adını, şifreni ve sunucu adresini kontrol et.",
   "auth.loginFailed": "Giriş başarısız.",
-  "server.connectJellyfin": "Bağlan",
-  "server.jellyfinServerUrl": "Sunucu adresi",
-  "server.test": "Test Et",
-  "server.testing": "Test ediliyor",
-  "server.continueToLogin": "Girişe Devam Et",
-  "server.connectionIssue": "Bağlantı sorunu",
-  "server.connectedTo": "Bağlanıldı:",
-  "server.saveFailed": "Bu sunucu adresi kaydedilemedi.",
-  "server.couldNotConnect":
-    "Bağlanılamadı. Adresi ve ağ ayarlarını kontrol et.",
-  "server.enterUrl": "Jellyfin sunucu adresini gir.",
-  "server.enterValidUrl":
-    "http:// veya https:// ile başlayan geçerli bir adres gir.",
-  "server.urlMustStartHttp":
-    "Jellyfin sunucu adresi http:// veya https:// ile başlamalı.",
-  "server.localhostNote":
-    "geçerli cihaz anlamına gelir. Jellyfin Windows PC'nde çalışıyorsa ve Mac'ten test ediyorsan, Windows PC'nin yerel IP adresini gir.",
   "library.library": "Kütüphane",
   "library.unavailable": "Kütüphane kullanılamıyor",
   "library.itemsAvailable": "içerik mevcut",
@@ -153,11 +132,11 @@ export const tr = {
     "İzlendi durumu kaldırılamadı. Tekrar dene.",
   "player.playbackFailed": "Oynatma başarısız",
   "player.playbackUnavailable": "Oynatma kullanılamıyor",
-  "player.missingRouteItemId": "Oynatıcı rotası Jellyfin içerik ID'si almadı.",
+  "player.missingRouteItemId": "Oynatıcı rotası içerik ID'si almadı.",
   "player.noPlayableSource":
-    "Oynatma başarısız. Jellyfin oynatılabilir bir kaynak döndürmedi.",
+    "Oynatma başarısız. Sunucu oynatılabilir bir kaynak döndürmedi.",
   "player.playbackInfoRequestFailed":
-    "PlaybackInfo için Jellyfin'e istek atılırken oynatma başarısız oldu.",
+    "Sunucudan oynatma planı istenirken oynatma başarısız oldu.",
   "player.playbackFailurePossibleCauses":
     "Oynatma başarısız. Codec, CORS, token veya dönüştürme kaynaklı olabilir.",
   "player.preparing": "Oynatma hazırlanıyor",
@@ -213,11 +192,11 @@ export const tr = {
     "Altyazıyı sağ alttan yeniden boyutlandır",
   "player.finishSubtitleEdit": "Bitti",
   "reader.title": "Okuyucu",
-  "reader.missingItemId": "Okuyucu rotasına Jellyfin içerik ID'si gelmedi.",
+  "reader.missingItemId": "Okuyucu rotasına içerik ID'si gelmedi.",
   "reader.couldNotLoadItem": "Bu kitap yüklenemedi.",
   "reader.couldNotOpen": "Bu kitap açılamadı.",
   "reader.epubTimedOut":
-    "EPUB hazırlanmayı bitirmedi. Orijinal dosyayı açmayı dene veya Jellyfin'in bu kitabı indirmeye izin verdiğini kontrol et.",
+    "EPUB hazırlanmayı bitirmedi. Orijinal dosyayı açmayı dene veya bu kitabın hâlâ kullanılabilir olduğunu kontrol et.",
   "reader.readerUnavailable": "Okuyucu kullanılamıyor",
   "reader.textLoadFailed": "Bu metin yüklenemedi.",
   "reader.notBook": "Bu içerik kitap veya belge değil.",
@@ -248,8 +227,8 @@ export const tr = {
   "settings.quality": "Kalite",
   "settings.currentSource": "Geçerli kaynak",
   "settings.auto": "Otomatik",
-  "settings.bestJellyfinSource": "En iyi kaynak",
-  "settings.useBestJellyfinSource": "En iyi kaynağını kullan",
+  "settings.bestSource": "En iyi kaynak",
+  "settings.useBestSource": "En iyi kaynağını kullan",
   "settings.currentQuality": "Geçerli kalite",
   "settings.hlsUpTo": "HLS · en fazla {mbps} Mbps",
   "settings.manualQuality": "Elle kalite",
@@ -278,7 +257,7 @@ export const tr = {
   "settings.audioTrack": "Ses parçası {number}",
   "settings.currentAudio": "Geçerli ses",
   "settings.clickToSwitch": "Değiştirmek için dokun",
-  "settings.requiresTranscoding": "Jellyfin dönüştürmesi gerekir",
+  "settings.requiresTranscoding": "Sunucu dönüştürmesi gerekir",
   "settings.noAudioTracks": "Ses parçası dönmedi.",
   "settings.subtitles": "Altyazılar",
   "settings.off": "Kapalı",
@@ -340,12 +319,12 @@ export const tr = {
   "playback.urlType.masterStreamCopy": "master.m3u8 akış kopyası",
   "playback.urlType.masterHls": "master.m3u8 HLS",
   "playback.urlType.mainForcedTranscode": "main.m3u8 zorunlu dönüştürme",
-  "playback.urlType.jellyfinTranscodingUrl": "Jellyfin TranscodingUrl döndürdü",
+  "playback.urlType.serverTranscodingUrl": "Sunucu dönüştürme adresi döndürdü",
   "playback.output.streamCopyOriginal": "Akış kopyası / özgün codec",
-  "playback.output.jellyfinDecision":
-    "Jellyfin dönüştürme URL'si döndürdü; çıktı sunucu kararına bağlı",
+  "playback.output.serverDecision":
+    "Sunucu dönüştürme adresi döndürdü; çıktı sunucunun kararına bağlı",
   "playback.output.directOriginal": "Doğrudan / özgün codec",
-  "playback.output.jellyfinTranscoding": "Jellyfin dönüştürme çıktısı",
+  "playback.output.serverTranscoding": "Sunucu dönüştürme çıktısı",
   "playback.output.originalCodec": "Özgün codec",
   "playback.speed": "Hız",
   "playback.outputVideoH264":
@@ -355,7 +334,7 @@ export const tr = {
   "playback.speedUnavailable":
     "Hız bilgisi geçerli frontend API yanıtında yok.",
   "playback.speedNote":
-    "Doğru dönüştürme hızı için Jellyfin aktif oturum veya panel izinleri gerekebilir.",
+    "Doğru dönüştürme hızı için etkin bir oynatma oturumu gerekebilir.",
   "playback.reason.container":
     "Kapsayıcı tarayıcı veya seçili istemci profili tarafından desteklenmiyor.",
   "playback.reason.videoCodec": "Video codec desteklenmiyor.",
@@ -365,20 +344,20 @@ export const tr = {
   "playback.reason.bitrate": "Bit hızı sınırı dönüştürme gerektiriyor.",
   "playback.reason.resolution": "Çözünürlük sınırı dönüştürme gerektiriyor.",
   "playback.reason.audioChannels": "Ses kanal sınırı dönüştürme gerektiriyor.",
-  "playback.reason.jellyfinSpecific":
-    "Jellyfin belirli bir neden döndürmedi. Sunucu günlüklerini veya PlaybackInfo yanıtını kontrol et.",
-  "playback.reason.jellyfinTranscodingUrl":
-    "Jellyfin, PlaybackInfo içinde dönüştürme adresi döndürdü.",
+  "playback.reason.serverSpecific":
+    "Sunucu belirli bir neden döndürmedi. Sunucu günlüklerini veya oynatma planını kontrol et.",
+  "playback.reason.serverTranscodingUrl":
+    "Oynatma planı bir dönüştürme adresi döndürdü.",
   "playback.reason.hlsFallback":
-    "PlaybackInfo medya kaynağı verisinden Jellyfin HLS yedeği oluşturuldu.",
+    "Oynatma planının medya kaynağından HLS yedeği oluşturuldu.",
   "playback.reason.browserCompatible":
     "Kapsayıcı ve codec'ler tarayıcıyla uyumlu görünüyor.",
   "playback.reason.directRisky":
     "Bu kapsayıcı veya codec tarayıcılarda riskli olduğu için doğrudan adres son çare olarak tutuldu.",
   "playback.reason.selectedSetting":
-    "Seçili oynatıcı ayarı için Jellyfin HLS adresi oluşturuldu.",
+    "Seçili oynatıcı ayarı için HLS adresi oluşturuldu.",
   "playback.transcodingReason": "Dönüştürme nedeni",
-  "playback.transcodingReasonTitle": "Jellyfin şu yüzden dönüştürüyor",
+  "playback.transcodingReasonTitle": "Sunucu şu yüzden dönüştürüyor",
   "playback.transcodingReasonNote":
     "Bunlar en önemli oynatma tanılarıdır. Genelde bunları düzeltmek dosyayı doğrudan oynatmaya yaklaştırır.",
   "playback.reason.containerNotSupported":
@@ -424,11 +403,11 @@ export const tr = {
   "playback.reason.audioBitrateNotSupported":
     "Ses bit hızı desteklenmiyor veya sınırı aşıyor.",
   "playback.reason.unknownVideoStreamInfo":
-    "Jellyfin yeterli video akışı bilgisini okuyamadı.",
+    "Sunucu yeterli video akışı bilgisini okuyamadı.",
   "playback.reason.unknownAudioStreamInfo":
-    "Jellyfin yeterli ses akışı bilgisini okuyamadı.",
+    "Sunucu yeterli ses akışı bilgisini okuyamadı.",
   "playback.reason.directPlayError":
-    "Jellyfin doğrudan oynatma hatasıyla karşılaştı.",
+    "Sunucu doğrudan oynatma hatasıyla karşılaştı.",
   "playback.reason.videoRangeTypeNotSupported":
     "Videonun aralık tipi desteklenmiyor; genelde HDR veya Dolby Vision kaynaklıdır.",
   "playback.reason.videoCodecTagNotSupported":
@@ -470,7 +449,7 @@ export const tr = {
   "party.joinedSyncPlayGroup": "SyncPlay grubuna katıldın",
   "party.leftSyncPlayGroup": "SyncPlay grubundan ayrıldın",
   "party.syncPlayGroupNotFound": "SyncPlay grubu bulunamadı",
-  "party.syncingWithJellyfinSyncPlay": "Eşitlendi",
+  "party.synced": "Eşitlendi",
   "party.syncPlayHostOnly": "SyncPlay'i yalnızca ev sahibi kontrol edebilir",
   "party.participantsTitle": "Katılımcılar",
   "party.participantFallback": "Katılımcı {number}",
@@ -575,19 +554,19 @@ export const tr = {
   "devtools.clipboard.created": "Oluşturulma",
   "devtools.card.playbackAudit.title": "Oynatma Denetimi",
   "devtools.card.playbackAudit.description":
-    "Jellyfin medyasını tarayıp Doğrudan Oynatma, Doğrudan Akış, Dönüştürme ve dönüştürme nedenlerini belgele.",
+    "Medyayı tarayıp Doğrudan Oynatma, Doğrudan Akış, Dönüştürme ve dönüştürme nedenlerini belgele.",
   "devtools.card.playbackAudit.tag": "Tanılama",
   "devtools.card.playbackHealth.title": "Oynatma Sağlığı",
   "devtools.card.playbackHealth.description":
-    "Frontend origin, Jellyfin, backend, CORS, range ve HLS segment hazır olma durumunu kontrol et.",
+    "Sayfa kaynağını, sunucuyu, CORS'u, range isteklerini ve HLS segment hazırlığını kontrol et.",
   "devtools.card.playbackHealth.tag": "Ağ",
   "devtools.card.userManagement.title": "Kullanıcı Yönetimi",
   "devtools.card.userManagement.description":
-    "Jellyfin kullanıcıları oluştur; adlarını, parolalarını, erişimlerini ve hesap durumlarını yönet.",
+    "Kullanıcılar oluştur; adlarını, parolalarını, erişimlerini ve hesap durumlarını yönet.",
   "devtools.card.userManagement.tag": "Hesaplar",
   "devtools.card.libraryMaintenance.title": "Kütüphane Bakımı",
   "devtools.card.libraryMaintenance.description":
-    "Jellyfin kütüphanelerini tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
+    "Kütüphaneleri tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "devtools.card.libraryMaintenance.tag": "Bakım",
   "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
   "devtools.card.tmdbArtwork.description":
@@ -595,7 +574,7 @@ export const tr = {
   "devtools.card.tmdbArtwork.tag": "Görsel",
   "devtools.card.contentExplorer.title": "İçerik Gezgini",
   "devtools.card.contentExplorer.description":
-    "Bu kullanıcıya açık tüm Jellyfin içeriklerini; filmler, diziler, sezonlar, bölümler, klasörler ve bilinmeyen türlerle birlikte listele.",
+    "Bu kullanıcıya açık tüm içerikleri; filmler, diziler, sezonlar, bölümler, klasörler ve bilinmeyen türlerle birlikte listele.",
   "devtools.card.contentExplorer.tag": "Envanter",
   "devtools.card.homeCuration.title": "Ana Sayfa Düzeni",
   "devtools.card.homeCuration.description":
@@ -613,23 +592,23 @@ export const tr = {
   "devtools.card.wantedFeatures.description":
     "Dönen hero şablonları, daha iyi UX fikirleri ve planlanan Seyirlik geliştirmeleri gibi gelecekteki iyileştirmeleri topla.",
   "devtools.card.wantedFeatures.tag": "Yol haritası",
-  "userManagement.eyebrow": "Jellyfin Hesapları",
+  "userManagement.eyebrow": "Hesaplar",
   "userManagement.title": "Kullanıcı Yönetimi",
   "userManagement.description":
-    "Seyirlik'ten ayrılmadan Jellyfin hesapları ekle ve düzenle. Oturum açtığın Jellyfin hesabının sunucu yönetimi yetkisi olmalı.",
+    "Hesap ekle ve düzenle. Oturum açtığın hesabın yönetici olması gerekir.",
   "userManagement.addUser": "Kullanıcı ekle",
   "userManagement.users": "Kullanıcılar",
   "userManagement.userCount": "{count} kullanıcı",
   "userManagement.refreshUsers": "Kullanıcıları yenile",
   "userManagement.searchPlaceholder": "Ad, rol veya ID ara...",
-  "userManagement.loadFailed": "Jellyfin kullanıcıları yüklenemedi",
+  "userManagement.loadFailed": "Kullanıcılar yüklenemedi",
   "userManagement.noUsersFound": "Aramayla eşleşen kullanıcı yok.",
   "userManagement.editUser": "Kullanıcıyı düzenle",
   "userManagement.createUser": "Kullanıcı oluştur",
-  "userManagement.newUser": "Yeni Jellyfin kullanıcısı",
+  "userManagement.newUser": "Yeni kullanıcı",
   "userManagement.cancelEditing": "Düzenlemeyi iptal et",
   "userManagement.username": "Kullanıcı adı",
-  "userManagement.usernamePlaceholder": "Jellyfin kullanıcı adı",
+  "userManagement.usernamePlaceholder": "Kullanıcı adı",
   "userManagement.password": "Parola",
   "userManagement.newPassword": "Yeni parola",
   "userManagement.passwordOptional": "İsteğe bağlı",
@@ -641,7 +620,7 @@ export const tr = {
   "userManagement.administrator": "Sunucu yöneticisi",
   "userManagement.standardUser": "Standart kullanıcı",
   "userManagement.administratorDescription":
-    "Jellyfin sunucu yönetimine tam erişim ver.",
+    "Sunucu yönetimine tam erişim ver.",
   "userManagement.currentAdminProtected":
     "Etkin hesabının yönetici yetkisi burada korunur.",
   "userManagement.disableUser": "Hesabı devre dışı bırak",
@@ -649,7 +628,7 @@ export const tr = {
   "userManagement.disableUserDescription":
     "Yeni oturum açmayı engelle ve kullanıcının etkin oturumlarını sonlandır.",
   "userManagement.currentUserProtected":
-    "Etkin Jellyfin hesabını burada devre dışı bırakamazsın.",
+    "Kendi hesabını burada devre dışı bırakamazsın.",
   "userManagement.hideUser": "Giriş ekranında gizle",
   "userManagement.hideUserDescription":
     "Oturum açarken kullanıcı adının elle girilmesini zorunlu kıl.",
@@ -658,7 +637,7 @@ export const tr = {
     "Bu kullanıcının yerel ağ dışından bağlanmasına izin ver.",
   "userManagement.allLibraries": "Tüm kütüphaneler",
   "userManagement.allLibrariesDescription":
-    "Bu kullanıcıya tüm Jellyfin kütüphanelerine erişim ver.",
+    "Bu kullanıcıya tüm kütüphanelere erişim ver.",
   "userManagement.mediaPlayback": "Medya oynatma",
   "userManagement.mediaPlaybackDescription":
     "Medya kütüphanelerinden oynatmaya izin ver.",
@@ -666,13 +645,13 @@ export const tr = {
   "userManagement.downloadsDescription":
     "Bu kullanıcının orijinal medya dosyalarını indirmesine izin ver.",
   "userManagement.saveChanges": "Değişiklikleri kaydet",
-  "userManagement.savingUser": "Jellyfin kullanıcısı kaydediliyor...",
-  "userManagement.creatingUser": "Jellyfin kullanıcısı oluşturuluyor...",
+  "userManagement.savingUser": "Kullanıcı kaydediliyor...",
+  "userManagement.creatingUser": "Kullanıcı oluşturuluyor...",
   "userManagement.userUpdated": "{name} güncellendi.",
   "userManagement.userCreated": "{name} oluşturuldu.",
   "userManagement.nameRequired": "Bir kullanıcı adı gir.",
   "userManagement.policyUnavailable":
-    "Jellyfin bu kullanıcının politikasını döndürmedi. Kullanıcı listesini yenileyip tekrar dene.",
+    "Sunucu bu kullanıcının izinlerini döndürmedi. Kullanıcı listesini yenileyip tekrar dene.",
   "userManagement.never": "Hiçbir zaman",
   "userManagement.lastActive": "Son etkinlik: {date}",
   "userManagement.you": "Sen",
@@ -693,7 +672,7 @@ export const tr = {
   "devtools.defaultBug.libraryMissingMovies.title":
     "Kütüphane tüm filmleri getirmiyor",
   "devtools.defaultBug.libraryMissingMovies.description":
-    "Bazı filmler Jellyfin'de olmasına rağmen kütüphane görünümünde görünmüyor. Sayfalama, içerik türü filtreleri, üst ID'ler veya Jellyfin API sorgu sınırları eksik sonuçlara yol açıyor mu kontrol edilmeli.",
+    "Tarayıcı kataloglamış olmasına rağmen bazı filmler kütüphane görünümünde görünmüyor. Yerel sunucuda doğrulanmadı: /libraries/:id/items imleç sayfalaması, içerik türü filtresi, üst ID'ler ve katalog sorgusunun sınırının sonuçları kesip kesmediği kontrol edilmeli.",
   "devtools.defaultBug.sevenNoEnglishAudio.title":
     "Se7en varsayılan olarak sessiz açılıyor",
   "devtools.defaultBug.sevenNoEnglishAudio.description":
@@ -775,10 +754,10 @@ export const tr = {
     "Oynatma varsayılanları {count} içerik için kaydedildi.",
   "playbackDefaults.savePartial": "{success} kaydedildi · {failed} başarısız",
   "playbackDefaults.applyWarning":
-    "Bu işlem Seyirlik varsayılanlarını Jellyfin içerik metadata'sına yazar.",
+    "Bu işlem Seyirlik varsayılanlarını içerik metadata'sına yazar.",
   "playbackDefaults.adminRequiredTitle": "Admin izni gerekli",
   "playbackDefaults.adminRequired":
-    "Oturum açmış hesap içerik metadata'sını düzenleyemiyorsa Jellyfin kaydı reddedebilir. Kaydedildikten sonra Seyirlik bu varsayılanları tüm kullanıcılar için kullanır.",
+    "Oturum açmış hesap içerik metadata'sını düzenleyemiyorsa kayıt reddedilir. Kaydedildikten sonra Seyirlik bu varsayılanları tüm kullanıcılar için kullanır.",
   "playbackDefaults.results": "Sonuçlar",
   "playbackDefaults.resultSummary": "{success} kaydedildi · {failed} başarısız",
   "tmdbArtwork.eyebrow": "Görsel Tercihi",
@@ -789,11 +768,11 @@ export const tr = {
   "tmdbArtwork.loadingItems": "Film, dizi ve kitaplar yükleniyor...",
   "tmdbArtwork.loadedItems": "{count} içerik yüklendi.",
   "tmdbArtwork.couldNotLoadItems": "Film, dizi ve kitaplar yüklenemedi.",
-  "tmdbArtwork.jellyfinTitles": "Kütüphane Yapımları",
+  "tmdbArtwork.libraryTitles": "Kütüphane Yapımları",
   "tmdbArtwork.visibleItems": "{count} görünen içerik",
   "tmdbArtwork.itemSearchPlaceholder": "Film, dizi, kitap, yıl veya ID ara...",
   "tmdbArtwork.tmdbMatch": "TMDB Eşleşmesi",
-  "tmdbArtwork.noItemSelected": "Bir Jellyfin içeriği seç",
+  "tmdbArtwork.noItemSelected": "Bir içerik seç",
   "tmdbArtwork.selectItemFirst":
     "TMDB'de arama yapmadan önce listeden bir içerik seç.",
   "tmdbArtwork.selectedTmdb": "Seçili TMDB ID {id}",
@@ -922,7 +901,7 @@ export const tr = {
   "audit.eyebrow": "Devtool",
   "audit.title": "Oynatma Denetimi",
   "audit.description":
-    "Jellyfin video içeriklerini PlaybackInfo ile tarar ve seçilen modu ve kaynak medyayı belgeler. Hızlı tarama yalnızca içeriğin dönüştürülüp dönüştürülmediğini işaretler; Hızlı taramayı kapatmak ayrıntılı dönüştürme nedenlerini bekler.",
+    "Video içeriklerini oynatma planıyla tarar ve seçilen modu ve kaynak medyayı belgeler. Hızlı tarama yalnızca içeriğin dönüştürülüp dönüştürülmediğini işaretler; Hızlı taramayı kapatmak ayrıntılı dönüştürme nedenlerini bekler.",
   "audit.lastSavedScan": "Son kaydedilen tarama: {date}",
   "audit.fastScan": "Hızlı tarama",
   "audit.auditing": "Denetleniyor...",
@@ -949,10 +928,10 @@ export const tr = {
   "audit.playbackInfoFailed": "PlaybackInfo isteği başarısız.",
   "content.unavailable": "İçerik Gezgini kullanılamıyor",
   "content.loadFailed": "İçerikler yüklenemedi.",
-  "content.eyebrow": "Jellyfin Envanteri",
+  "content.eyebrow": "Kütüphane Envanteri",
   "content.title": "İçerik Gezgini",
   "content.description":
-    "Jellyfin'in bu kullanıcı için döndürdüğü tüm içerikleri; filmler, diziler, sezonlar, bölümler, klasörler, kütüphaneler ve bilinmeyen türler dahil listeler.",
+    "Bu kullanıcıya açık tüm içerikleri; filmler, diziler, sezonlar, bölümler, klasörler, kütüphaneler ve bilinmeyen türler dahil listeler.",
   "content.searchContent": "İçerik ara",
   "content.searchPlaceholder":
     "Başlık, tür, dizi, yıl veya içerik ID'si ara...",
@@ -977,10 +956,10 @@ export const tr = {
     "Aramayı temizlemeyi veya filtreyi Tümü'ne almayı dene.",
   "content.libraryType": "Kütüphane · {type}",
   "maintenance.back": "Devtools'a dön",
-  "maintenance.eyebrow": "Jellyfin Bakımı",
+  "maintenance.eyebrow": "Kütüphane Bakımı",
   "maintenance.title": "Kütüphane Taraması ve Metadata",
   "maintenance.description":
-    "Jellyfin kütüphanelerini tara, içerik metadata'sını yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
+    "Kütüphaneleri tara, içerik metadata'sını yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "maintenance.scanAllLibraries": "Tüm kütüphaneleri tara",
   "maintenance.libraryItems": "Kütüphane İçerikleri",
   "maintenance.visibleItemSingular": "{count} görünen içerik",
@@ -1000,7 +979,7 @@ export const tr = {
   "maintenance.previewTitle":
     "Görseller, trickplay, medya kaynağı ve ham kimlikler",
   "maintenance.previewDescription":
-    "Bu bölüm salt okunur. Jellyfin'in bu içerik için şu anda sunduğu verileri gösterir.",
+    "Bu bölüm salt okunur. Sunucunun bu içerik için tuttuğu verileri gösterir.",
   "maintenance.primaryPoster": "Ana poster",
   "maintenance.backdropBanner": "Arka plan / banner",
   "maintenance.logo": "Logo",
@@ -1078,7 +1057,7 @@ export const tr = {
     "Metadata'sını yenilemek veya yaygın alanlarını düzenlemek için soldan bir film ya da bölüm seç.",
   "maintenance.adminRequired": "Admin izni gerekebilir",
   "maintenance.loadingLibraries":
-    "Jellyfin kütüphaneleri ve video içerikleri yükleniyor...",
+    "Kütüphaneler ve video içerikleri yükleniyor...",
   "maintenance.libraryFailedToLoad": "Bir kütüphane yüklenemedi.",
   "maintenance.libraryLoadTimeout": "{label} çok uzun sürede yüklendi.",
   "maintenance.loadedItemsSingular": "{count} video içerik yüklendi.",
@@ -1088,8 +1067,7 @@ export const tr = {
   "maintenance.librarySingular": "kütüphane",
   "maintenance.libraryPlural": "kütüphane",
   "maintenance.couldNotLoadData": "Kütüphane verisi yüklenemedi.",
-  "maintenance.startingFullScan":
-    "Tam Jellyfin kütüphane taraması başlatılıyor...",
+  "maintenance.startingFullScan": "Tam kütüphane taraması başlatılıyor...",
   "maintenance.fullScanStarted": "Tam kütüphane taraması başlatıldı.",
   "maintenance.couldNotStartScan": "Kütüphane taraması başlatılamadı.",
   "maintenance.startingSelectedScan":

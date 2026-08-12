@@ -22,10 +22,33 @@ describe("translations facade", () => {
     expect(translations.en[key]).toBe("Home");
     expect(translations.tr[key]).toBe("Ana Sayfa");
     expect(translations.en["home.someDataFailed"]).toBe(
-      "Some Jellyfin data could not load",
+      "Some data could not load",
     );
     expect(translations.tr["home.someDataFailed"]).toBe(
-      "Bazı Jellyfin verileri yüklenemedi",
+      "Bazı veriler yüklenemedi",
     );
+  });
+
+  it("no longer names the previous backend in any user-facing string", () => {
+    // Historical references belong in docs/migration-from-jellyfin.md, not in
+    // anything a user can read.
+    for (const [language, dictionary] of Object.entries(translations)) {
+      for (const [key, value] of Object.entries(dictionary)) {
+        expect(
+          /jellyfin|emby/i.test(value),
+          `${language}.${key} still names the previous backend`,
+        ).toBe(false);
+      }
+    }
+  });
+
+  it("keeps both bundles on exactly the same keys", () => {
+    // A key present in one language and missing from the other renders as a
+    // raw key string to whoever is using that language.
+    const englishKeys = new Set(Object.keys(en));
+    const turkishKeys = new Set(Object.keys(tr));
+
+    expect([...englishKeys].filter((key) => !turkishKeys.has(key))).toEqual([]);
+    expect([...turkishKeys].filter((key) => !englishKeys.has(key))).toEqual([]);
   });
 });

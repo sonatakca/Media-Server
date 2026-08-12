@@ -39,11 +39,11 @@ The service worker precaches the built frontend shell and static frontend
 assets only: HTML, JavaScript, CSS, favicons, PWA icons, and other local image
 assets emitted by the Vite build.
 
-It intentionally does not define runtime caching for Jellyfin API calls,
-remote media images, subtitles, HLS manifests, transport stream segments, or
-video files. Media playback should stay live and dynamic so Jellyfin sessions,
-transcoding, progress reporting, subtitles, and authorization do not become
-stale or accidentally cached.
+It intentionally does not define runtime caching for `/ownAPI/v1` calls,
+artwork, subtitles, HLS manifests, transport stream segments, or video files.
+Playback has to stay live so sessions, transcoding, progress reporting,
+subtitles, and authorization never serve a stale or accidentally cached
+answer.
 
 ## Local Testing
 
@@ -58,7 +58,7 @@ Open the preview URL, then check browser DevTools:
 
 - Application > Manifest shows the Seyirlik manifest and icons.
 - Application > Service Workers shows the generated service worker.
-- Cache Storage contains app-shell/static build files, not Jellyfin media/API
+- Cache Storage contains app-shell and static build files, not media or API
   responses.
 
 ## iPhone Install

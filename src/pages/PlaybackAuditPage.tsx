@@ -381,7 +381,7 @@ async function touchHlsTranscodeUrl(sourceUrl: string): Promise<void> {
   const segmentUrl = resolveManifestUrl(variantOrSegmentUrl, firstSegmentLine);
 
   // This is the important part: requesting the first segment usually forces
-  // Jellyfin to create the real active transcoding session.
+  // the server to create the real active transcoding session.
   await fetch(segmentUrl, {
     method: "GET",
     cache: "no-store",

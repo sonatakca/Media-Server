@@ -28,11 +28,7 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
       .then((registry) => {
         if (!active) return;
         setLibrary(registry[slug] ?? null);
-        setError(
-          registry[slug]
-            ? null
-            : `No Jellyfin library is assigned to /${slug}.`,
-        );
+        setError(registry[slug] ? null : `No library is assigned to /${slug}.`);
       })
       .catch((reason) => {
         if (active && !savedLibrary) {
@@ -53,7 +49,7 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
     return (
       <ErrorMessage
         title="Library unavailable"
-        message={error ?? `No Jellyfin library is assigned to /${slug}.`}
+        message={error ?? `No library is assigned to /${slug}.`}
       />
     );
   }
