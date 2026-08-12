@@ -1,8 +1,58 @@
 /// <reference types="vitest" />
 import { defineConfig } from "vitest/config";
-import { loadEnv } from "vite";
+import { loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { FLAG_COUNTRY_CODES } from "./src/lib/flagCountryCodes";
+
+// flag-icons ships every flag in the world: ~270 CSS rules pulling ~3.5 MB of
+// SVGs, all of which Vite emitted as assets and the PWA precached, for the ~40
+// flags Seyirlik can actually show. This keeps only the rules whose country
+// code appears in FLAG_COUNTRY_CODES; the rest never become assets at all.
+function trimFlagIcons(): Plugin {
+  const keptCodes = new Set(FLAG_COUNTRY_CODES);
+  // Matches `.fi-xx{...}` and `.fi-xx.fi-squared{...}`, capturing the code.
+  const flagRulePattern = /\.fi-([a-z0-9-]+)((?:\.[a-z0-9-]+)*)\{[^}]*\}/g;
+
+  return {
+    name: "seyirlik-trim-flag-icons",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.includes("flag-icons") || !id.endsWith(".css")) {
+        return null;
+      }
+
+      let keptRules = 0;
+      let droppedRules = 0;
+
+      const trimmed = code.replace(
+        flagRulePattern,
+        (rule: string, countryCode: string) => {
+          // Only flag rules carry an image. Anything else under the `.fi-`
+          // prefix is a shared utility (`.fi-squared` and friends) and has to
+          // survive regardless of which flags are kept.
+          if (!rule.includes("background-image")) {
+            return rule;
+          }
+
+          if (keptCodes.has(countryCode)) {
+            keptRules += 1;
+            return rule;
+          }
+
+          droppedRules += 1;
+          return "";
+        },
+      );
+
+      this.info(
+        `flag-icons: kept ${keptRules} rules, dropped ${droppedRules}.`,
+      );
+
+      return { code: trimmed, map: null };
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   // `process.env` is not populated from .env on its own, so an upstream set
@@ -13,6 +63,7 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [
+      trimFlagIcons(),
       react(),
       VitePWA({
         registerType: "autoUpdate",

@@ -20,6 +20,10 @@ import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
+import {
+  COUNTRY_NAME_FLAG_CODES,
+  LANGUAGE_FLAG_COUNTRY_CODES,
+} from "../../lib/flagCountryCodes";
 import { getPlaybackModeLabel } from "../../lib/playbackDiagnostics";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
@@ -38,158 +42,6 @@ const SUBTITLE_DELAY_MAX_SECONDS = 40;
 const SUBTITLE_DELAY_STEP_SECONDS = 0.25;
 
 type SettingsSection = "quality" | "audio" | "subtitles";
-
-const LANGUAGE_FLAG_COUNTRY_CODES: Record<string, string> = {
-  ar: "sa",
-  arabic: "sa",
-  ara: "sa",
-  bg: "bg",
-  bul: "bg",
-  bulgarian: "bg",
-  ca: "es-ct",
-  catalan: "es-ct",
-  chi: "cn",
-  chinese: "cn",
-  cs: "cz",
-  cze: "cz",
-  ces: "cz",
-  czech: "cz",
-  da: "dk",
-  dan: "dk",
-  danish: "dk",
-  de: "de",
-  deu: "de",
-  ger: "de",
-  german: "de",
-  el: "gr",
-  ell: "gr",
-  gre: "gr",
-  greek: "gr",
-  en: "gb",
-  eng: "gb",
-  english: "gb",
-  es: "es",
-  spa: "es",
-  spanish: "es",
-  castellano: "es",
-  castilian: "es",
-  fa: "ir",
-  fas: "ir",
-  per: "ir",
-  persian: "ir",
-  fi: "fi",
-  fin: "fi",
-  finnish: "fi",
-  fr: "fr",
-  fra: "fr",
-  fre: "fr",
-  french: "fr",
-  he: "il",
-  heb: "il",
-  hebrew: "il",
-  hi: "in",
-  hin: "in",
-  hindi: "in",
-  hr: "hr",
-  hrv: "hr",
-  croatian: "hr",
-  hu: "hu",
-  hun: "hu",
-  hungarian: "hu",
-  id: "id",
-  ind: "id",
-  indonesian: "id",
-  is: "is",
-  ice: "is",
-  isl: "is",
-  icelandic: "is",
-  it: "it",
-  ita: "it",
-  italian: "it",
-  ja: "jp",
-  jpn: "jp",
-  japanese: "jp",
-  ko: "kr",
-  kor: "kr",
-  korean: "kr",
-  ms: "my",
-  may: "my",
-  msa: "my",
-  malay: "my",
-  nl: "nl",
-  dut: "nl",
-  nld: "nl",
-  dutch: "nl",
-  no: "no",
-  nor: "no",
-  nb: "no",
-  nn: "no",
-  norwegian: "no",
-  pl: "pl",
-  pol: "pl",
-  polish: "pl",
-  pt: "pt",
-  por: "pt",
-  portuguese: "pt",
-  ro: "ro",
-  rum: "ro",
-  ron: "ro",
-  romanian: "ro",
-  ru: "ru",
-  rus: "ru",
-  russian: "ru",
-  sk: "sk",
-  slo: "sk",
-  slk: "sk",
-  slovak: "sk",
-  sl: "si",
-  slv: "si",
-  slovenian: "si",
-  sr: "rs",
-  srp: "rs",
-  serbian: "rs",
-  sv: "se",
-  swe: "se",
-  swedish: "se",
-  th: "th",
-  tha: "th",
-  thai: "th",
-  tr: "tr",
-  tur: "tr",
-  turkish: "tr",
-  uk: "ua",
-  ukr: "ua",
-  ukrainian: "ua",
-  ur: "pk",
-  urd: "pk",
-  urdu: "pk",
-  vi: "vn",
-  vie: "vn",
-  vietnamese: "vn",
-  zh: "cn",
-  zho: "cn",
-};
-
-const COUNTRY_NAME_FLAG_CODES: Record<string, string> = {
-  brazil: "br",
-  brazilian: "br",
-  canada: "ca",
-  canadian: "ca",
-  china: "cn",
-  france: "fr",
-  germany: "de",
-  japan: "jp",
-  korea: "kr",
-  mexico: "mx",
-  mexican: "mx",
-  portugal: "pt",
-  spain: "es",
-  turkey: "tr",
-  turkiye: "tr",
-  uk: "gb",
-  us: "us",
-  usa: "us",
-};
 
 interface PlayerSettingsPanelProps {
   source: PlaybackSourceCandidate;
@@ -221,9 +73,7 @@ function getStreamsOfType(
   );
 }
 
-function getUniqueStreams(
-  streams: MediaStream[],
-): MediaStream[] {
+function getUniqueStreams(streams: MediaStream[]): MediaStream[] {
   const seenKeys = new Set<string>();
 
   return streams.filter((stream, index) => {
@@ -337,9 +187,7 @@ function getFlagCountryCode(value?: string): string | undefined {
   return languageToken ? LANGUAGE_FLAG_COUNTRY_CODES[languageToken] : undefined;
 }
 
-function getStreamFlagCountryCode(
-  stream: MediaStream,
-): string | undefined {
+function getStreamFlagCountryCode(stream: MediaStream): string | undefined {
   return [stream.Language, stream.DisplayTitle, stream.Title]
     .map(getFlagCountryCode)
     .find(Boolean);
