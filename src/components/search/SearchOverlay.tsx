@@ -10,6 +10,8 @@ import { formatTemplate } from "../../lib/format";
 import {
   DEFAULT_LOGO_SHADOW,
   getLogoLayout,
+  getLogoLayoutStyle,
+  getLogoShadowBackdropStyle,
   getLogoShadowFilter,
 } from "../../lib/logoLayout";
 import { getMediaArtwork } from "../../lib/mediaArtwork";
@@ -60,9 +62,64 @@ function getResultSubtitle(item: MediaItem): string {
 }
 
 /**
- * The artwork tile, composed the way a media card composes it: the poster or
- * episode still with the logo laid over it. Episodes get a 16:9 frame so the
- * still is not cropped into a poster shape it was never framed for.
+ * The logo laid over a poster, honouring the placement stored by the artwork
+ * editor. The layout is expressed in fractions of the artwork, so the same
+ * numbers that position it on a full-size card also position it here.
+ */
+function ResultLogo({ item, logoUrl }: { item: MediaItem; logoUrl: string }) {
+  const logoLayout = getLogoLayout(item);
+  const logoShadowFilter = getLogoShadowFilter(
+    logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
+  );
+
+  if (!logoLayout) {
+    // Never adjusted, so it sits where an untouched card draws it.
+    return (
+      <img
+        src={logoUrl}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
+        className="pointer-events-none absolute inset-x-0 bottom-1.5 mx-auto h-auto max-h-[42%] w-auto max-w-[82%] object-contain"
+      />
+    );
+  }
+
+  const logoShadowBackdropStyle = getLogoShadowBackdropStyle(logoLayout.shadow);
+
+  return (
+    <span
+      data-logo-layout="true"
+      style={getLogoLayoutStyle(logoLayout)}
+      className="pointer-events-none absolute block"
+    >
+      {logoShadowBackdropStyle ? (
+        <span
+          aria-hidden="true"
+          data-logo-shadow-backdrop="true"
+          style={logoShadowBackdropStyle}
+          className="absolute inset-[6%] rounded-[45%]"
+        />
+      ) : null}
+      <img
+        src={logoUrl}
+        alt=""
+        aria-hidden="true"
+        loading="lazy"
+        style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
+        className="relative block h-auto w-full object-contain"
+      />
+    </span>
+  );
+}
+
+/**
+ * The artwork tile, composed the way a media card composes it.
+ *
+ * Episodes get a 16:9 frame so the still is not cropped into a poster shape it
+ * was never framed for, and no logo: the series wordmark says nothing about
+ * which episode this is, and the title sits right beside it anyway.
  */
 function ResultArtwork({
   item,
@@ -76,10 +133,6 @@ function ResultArtwork({
     stillWidth: 440,
     logoWidth: 320,
   });
-  const logoLayout = getLogoLayout(item);
-  const logoShadowFilter = getLogoShadowFilter(
-    logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
-  );
   const isStill = shape === "still";
 
   return (
@@ -100,15 +153,8 @@ function ResultArtwork({
         <span className="absolute inset-0 bg-[linear-gradient(145deg,#27272a,#09090b)]" />
       )}
 
-      {logoUrl ? (
-        <img
-          src={logoUrl}
-          alt=""
-          aria-hidden="true"
-          loading="lazy"
-          style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
-          className="pointer-events-none absolute inset-x-0 bottom-1.5 mx-auto h-auto max-h-[42%] w-auto max-w-[82%] object-contain"
-        />
+      {logoUrl && !isStill ? (
+        <ResultLogo item={item} logoUrl={logoUrl} />
       ) : null}
     </span>
   );

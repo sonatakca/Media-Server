@@ -238,4 +238,88 @@ describe("SearchOverlay", () => {
     expect(episodeArtwork?.parentElement?.className).toContain("aspect-video");
     expect(movieArtwork?.parentElement?.className).toContain("aspect-[2/3]");
   });
+
+  it("keeps logos off episodes", async () => {
+    mockedSearchItems.mockResolvedValue([
+      {
+        ...item("episode-1", "Pilot", "Episode"),
+        SeriesId: "series-1",
+        ImageTags: { Primary: "still-tag", Logo: "logo-tag" },
+      },
+    ]);
+
+    renderOverlay();
+
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "pil" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+
+    await waitFor(() => {
+      expect(screen.getByText("Pilot")).toBeInTheDocument();
+    });
+
+    // A series wordmark says nothing about which episode this is.
+    const images = screen
+      .getByText("Pilot")
+      .closest("button")!
+      .querySelectorAll("img");
+    expect(images).toHaveLength(1);
+    expect(images[0]).toHaveAttribute("src", "primary:episode-1");
+  });
+
+  it("places a logo where the artwork editor put it", async () => {
+    mockedSearchItems.mockResolvedValue([
+      {
+        ...item("movie-1", "Arrival", "Movie"),
+        ImageTags: { Primary: "poster-tag", Logo: "logo-tag" },
+        LogoLayout: { x: 0.25, y: 0.4, width: 0.6, shadow: 1 },
+      },
+    ]);
+
+    renderOverlay();
+
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "arr" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+
+    await waitFor(() => {
+      expect(screen.getByText("Arrival")).toBeInTheDocument();
+    });
+
+    const placement = screen
+      .getByText("Arrival")
+      .closest("button")!
+      .querySelector('[data-logo-layout="true"]') as HTMLElement | null;
+
+    expect(placement).not.toBeNull();
+    expect(placement!.style.left).toBe("25%");
+    expect(placement!.style.top).toBe("40%");
+    expect(placement!.style.width).toBe("60%");
+  });
+
+  it("falls back to the default placement when a title was never adjusted", async () => {
+    mockedSearchItems.mockResolvedValue([
+      {
+        ...item("movie-1", "Arrival", "Movie"),
+        ImageTags: { Primary: "poster-tag", Logo: "logo-tag" },
+      },
+    ]);
+
+    renderOverlay();
+
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "arr" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+
+    await waitFor(() => {
+      expect(screen.getByText("Arrival")).toBeInTheDocument();
+    });
+
+    const row = screen.getByText("Arrival").closest("button")!;
+    expect(row.querySelector('[data-logo-layout="true"]')).toBeNull();
+    expect(row.querySelectorAll("img")).toHaveLength(2);
+  });
 });
