@@ -1,4 +1,5 @@
 import type { DatabasePool } from "../database/databasePool";
+import type { SearchCandidate } from "./searchRanking";
 
 export type ItemKind =
   | "movie"
@@ -261,12 +262,26 @@ export interface CatalogueRepository {
     query: string,
     limit: number,
   ): Promise<CatalogueItemRow[]>;
+  /**
+   * Titles only, for the in-memory fuzzy pass. Deliberately not full item rows:
+   * this runs over the whole visible catalogue, so it has to stay cheap.
+   */
+  listSearchCandidates(
+    userId: string,
+    limit: number,
+  ): Promise<SearchCandidate[]>;
   listFilesForItem(itemId: string): Promise<MediaFileRow[]>;
   getPrimaryFile(itemId: string): Promise<MediaFileRow | null>;
   getFileById(fileId: string): Promise<MediaFileRow | null>;
   listStreams(mediaFileId: string): Promise<MediaStreamRow[]>;
-  listChapters(itemId: string): Promise<Array<{ index: number; startMs: string; name: string | null }>>;
-  listSegments(itemId: string): Promise<Array<{ id: string; type: string; startMs: string; endMs: string }>>;
+  listChapters(
+    itemId: string,
+  ): Promise<Array<{ index: number; startMs: string; name: string | null }>>;
+  listSegments(
+    itemId: string,
+  ): Promise<
+    Array<{ id: string; type: string; startMs: string; endMs: string }>
+  >;
   listPendingProbeFiles(limit: number): Promise<MediaFileRow[]>;
   listGenres(
     userId: string,
@@ -295,7 +310,10 @@ const SORT_COLUMNS: Record<
 > = {
   title: { expression: "item.sort_title", cursorKey: "sort_title" },
   dateCreated: { expression: "item.date_created", cursorKey: "date_created" },
-  premiereDate: { expression: "item.premiere_date", cursorKey: "premiere_date" },
+  premiereDate: {
+    expression: "item.premiere_date",
+    cursorKey: "premiere_date",
+  },
   communityRating: {
     expression: "item.community_rating",
     cursorKey: "community_rating",
@@ -550,6 +568,35 @@ export function createCatalogueRepository(
       );
     },
 
+    listSearchCandidates: async (userId, limit) => {
+      const rows = await query<{
+        id: string;
+        kind: string;
+        title: string;
+        original_title: string | null;
+        series_title: string | null;
+      }>(
+        `SELECT item.id, item.kind, item.title, item.original_title,
+                series.title AS series_title
+         FROM items item
+         LEFT JOIN items series ON series.id = item.series_id
+         WHERE item.kind IN ('movie', 'series', 'episode', 'book')
+           AND item.missing_since IS NULL
+           AND ${LIBRARY_VISIBILITY_PREDICATE}
+         ORDER BY item.sort_title
+         LIMIT ${Math.trunc(limit)}`,
+        [userId],
+      );
+
+      return rows.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        originalTitle: row.original_title,
+        seriesTitle: row.series_title,
+      }));
+    },
+
     listFilesForItem: async (itemId) => {
       const rows = await query<Record<string, never>>(
         `SELECT id, item_id, relative_path, container, size_bytes, mtime_ms,
@@ -722,4 +769,3 @@ function toMediaStreamRow(row: Record<string, unknown>): MediaStreamRow {
     bitDepth: (row.bit_depth as number | null) ?? null,
   };
 }
-

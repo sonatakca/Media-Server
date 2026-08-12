@@ -7,12 +7,15 @@ import type {
 import type { HomeRepository } from "./homeRepository";
 import type { ImageRepository } from "../images/imageRepository";
 import type { UserStateRepository } from "../progress/userStateRepository";
-import {
-  groupImages,
-  itemCursorKey,
-  toItemDto,
-  type ItemDto,
-} from "./itemDto";
+import { groupImages, itemCursorKey, toItemDto, type ItemDto } from "./itemDto";
+import { rankSearchCandidates } from "./searchRanking";
+
+/**
+ * Ceiling on the titles pulled in for the fuzzy pass. Large enough to cover a
+ * personal library whole, small enough that a pathological one cannot turn a
+ * keystroke into an unbounded scan.
+ */
+const SEARCH_CANDIDATE_LIMIT = 20_000;
 
 export interface CatalogueServiceOptions {
   catalogue: CatalogueRepository;
@@ -34,7 +37,12 @@ export interface HomeSection {
 }
 
 export interface HomeDto {
-  libraries: Array<{ id: string; name: string; kind: string; itemCount: number }>;
+  libraries: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    itemCount: number;
+  }>;
   continueWatching: ItemDto[];
   nextUp: ItemDto[];
   latestByLibrary: HomeSection[];
@@ -106,16 +114,17 @@ export function createCatalogueService({
 
     listLibraries: (userId: string) => catalogue.listLibraries(userId),
 
-    getItem: async (userId: string, itemId: string): Promise<ItemDto | null> => {
+    getItem: async (
+      userId: string,
+      itemId: string,
+    ): Promise<ItemDto | null> => {
       const row = await catalogue.getItem(userId, itemId);
       if (!row) return null;
       const [dto] = await enrich(userId, [row]);
       return dto ?? null;
     },
 
-    listItems: async (
-      options: ListItemsOptions,
-    ): Promise<PagedItems> => {
+    listItems: async (options: ListItemsOptions): Promise<PagedItems> => {
       // One extra row tells us whether another page exists without a count(*).
       const rows = await catalogue.listItems({
         ...options,
@@ -127,7 +136,9 @@ export function createCatalogueService({
 
       return {
         items: await enrich(options.userId, page),
-        nextCursorKey: last ? itemCursorKey(last, options.sort ?? "title") : null,
+        nextCursorKey: last
+          ? itemCursorKey(last, options.sort ?? "title")
+          : null,
         nextCursorId: last ? last.id : null,
       };
     },
@@ -145,12 +156,43 @@ export function createCatalogueService({
     ): Promise<ItemDto[]> =>
       enrich(userId, await catalogue.listSeriesEpisodes(userId, seriesId)),
 
+    /**
+     * Substring first, then typo tolerance.
+     *
+     * The SQL pass is exact and cheap and answers most queries on its own. The
+     * fuzzy pass only runs when that came back short — which is precisely the
+     * case where the user mistyped — so the common path costs nothing extra.
+     * Exact hits keep their place at the top; fuzzy results fill in behind.
+     */
     search: async (
       userId: string,
       query: string,
       limit: number,
-    ): Promise<ItemDto[]> =>
-      enrich(userId, await catalogue.searchItems(userId, query, limit)),
+    ): Promise<ItemDto[]> => {
+      const direct = await catalogue.searchItems(userId, query, limit);
+
+      if (direct.length >= limit) return enrich(userId, direct);
+
+      const candidates = await catalogue.listSearchCandidates(
+        userId,
+        SEARCH_CANDIDATE_LIMIT,
+      );
+      const ranked = rankSearchCandidates(query, candidates, limit);
+
+      const orderedIds: string[] = [];
+      const seen = new Set<string>();
+
+      for (const id of [
+        ...direct.map((row) => row.id),
+        ...ranked.map((entry) => entry.id),
+      ]) {
+        if (seen.has(id)) continue;
+        seen.add(id);
+        orderedIds.push(id);
+      }
+
+      return loadByIds(userId, orderedIds.slice(0, limit));
+    },
 
     continueWatching: async (
       userId: string,
@@ -190,7 +232,10 @@ export function createCatalogueService({
       userId: string,
       seriesId: string,
     ): Promise<ItemDto | null> => {
-      const episodeId = await home.findFirstUnwatchedEpisodeId(userId, seriesId);
+      const episodeId = await home.findFirstUnwatchedEpisodeId(
+        userId,
+        seriesId,
+      );
       if (!episodeId) return null;
       const [dto] = await loadByIds(userId, [episodeId]);
       return dto ?? null;
@@ -203,9 +248,12 @@ export function createCatalogueService({
     ): Promise<HomeDto> => {
       const libraries = await catalogue.listLibraries(userId);
       const [continueWatching, nextUp, latestByLibraryIds] = await Promise.all([
-        userState
-          .listResumable(userId, rowSize)
-          .then((entries) => loadByIds(userId, entries.map((e) => e.itemId))),
+        userState.listResumable(userId, rowSize).then((entries) =>
+          loadByIds(
+            userId,
+            entries.map((e) => e.itemId),
+          ),
+        ),
         home
           .listNextUpEpisodeIds(userId, rowSize)
           .then((ids) => loadByIds(userId, ids)),

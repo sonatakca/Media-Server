@@ -105,6 +105,14 @@ function fakeCatalogue(): CatalogueRepository {
     listChildren: async () => [],
     listSeriesEpisodes: async () => [],
     searchItems: async () => [],
+    listSearchCandidates: async () =>
+      ALL_ROWS.map((row) => ({
+        id: row.id,
+        kind: row.kind,
+        title: row.title,
+        originalTitle: row.originalTitle,
+        seriesTitle: null,
+      })),
     listFilesForItem: async () => [],
     getPrimaryFile: async () => null,
     getFileById: async () => null,
@@ -395,6 +403,26 @@ describe("catalogue routes", () => {
     const { router } = buildRouter();
     const result = await call(router, "GET", "/ownAPI/v1/search?q=%20%20");
     expect((result.error as OwnApiError).statusCode).toBe(422);
+  });
+
+  it("still finds a title when the query is misspelled", async () => {
+    // The substring pass returns nothing for a typo, so this only passes if the
+    // fuzzy fallback ran.
+    const { router } = buildRouter();
+    const result = await call(router, "GET", "/ownAPI/v1/search?q=dispossesed");
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(
+      (result.json?.data as Array<{ title: string }>).map((item) => item.title),
+    ).toContain("The Dispossessed");
+  });
+
+  it("does not invent matches for a query nothing resembles", async () => {
+    const { router } = buildRouter();
+    const result = await call(router, "GET", "/ownAPI/v1/search?q=zzzzzzzz");
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(result.json?.data).toEqual([]);
   });
 });
 
