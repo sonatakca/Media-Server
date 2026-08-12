@@ -17,6 +17,7 @@ const SESSION_HASH = createHmac("sha256", "k").update("session").digest();
 const MOVIE = "aaaaaaaa-1111-4111-8111-111111111111";
 const UNIDENTIFIED = "bbbbbbbb-2222-4222-8222-222222222222";
 const EPISODE = "cccccccc-3333-4333-8333-333333333333";
+const BOOK = "ffffffff-6666-4666-8666-666666666666";
 
 function target(overrides: Partial<MetadataTarget> = {}): MetadataTarget {
   return {
@@ -37,6 +38,13 @@ const TARGETS: Record<string, MetadataTarget> = {
   [MOVIE]: target(),
   [UNIDENTIFIED]: target({ id: UNIDENTIFIED, providerIds: {} }),
   [EPISODE]: target({ id: EPISODE, kind: "episode" }),
+  [BOOK]: target({
+    id: BOOK,
+    kind: "book",
+    title: "The Left Hand of Darkness",
+    productionYear: 1969,
+    providerIds: {},
+  }),
 };
 
 function candidate(
@@ -146,12 +154,14 @@ function fakeQueue(overrides: Partial<JobQueue> = {}): JobQueue {
   } as JobQueue;
 }
 
-function buildRouter(parts: {
-  images?: ImageRepository;
-  imageStorage?: ImageStorage;
-  tmdb?: TmdbClient;
-  queue?: JobQueue;
-} = {}) {
+function buildRouter(
+  parts: {
+    images?: ImageRepository;
+    imageStorage?: ImageStorage;
+    tmdb?: TmdbClient;
+    queue?: JobQueue;
+  } = {},
+) {
   return createOwnApiRouter({
     csrfSecret: CSRF_SECRET,
     csrfCookieName: "seyirlik_csrf",
@@ -263,7 +273,11 @@ describe("artwork routes", () => {
       images: fakeImages({ listLockedTypes: async () => ["primary"] }),
     });
 
-    const result = await call(router, "GET", `/ownAPI/v1/admin/items/${MOVIE}/artwork`);
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${MOVIE}/artwork`,
+    );
 
     expect(result.sent.statusCode).toBe(200);
     expect(result.json?.data).toMatchObject({
@@ -281,7 +295,7 @@ describe("artwork routes", () => {
     });
   });
 
-  it("refuses to guess artwork for a title that was never identified", async () => {
+  it("still loads custom artwork slots for a title that was never identified", async () => {
     const router = buildRouter();
     const result = await call(
       router,
@@ -289,8 +303,40 @@ describe("artwork routes", () => {
       `/ownAPI/v1/admin/items/${UNIDENTIFIED}/artwork`,
     );
 
-    expect((result.error as OwnApiError).statusCode).toBe(409);
-    expect((result.error as OwnApiError).code).toBe("PROVIDER_ID_MISSING");
+    expect(result.sent.statusCode).toBe(200);
+    expect(result.json?.data).toMatchObject({
+      item: { id: UNIDENTIFIED, providerId: null },
+      candidates: [],
+    });
+  });
+
+  it("shows books with their current artwork even though TMDB has no book provider", async () => {
+    const listForItems = vi.fn(async () => [
+      {
+        id: "book-cover-image",
+        itemId: BOOK,
+        imageType: "primary",
+        imageIndex: 0,
+        contentHash: "book-cover",
+        width: 780,
+        height: 1200,
+      },
+    ]);
+    const router = buildRouter({ images: fakeImages({ listForItems }) });
+
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/admin/items/${BOOK}/artwork`,
+    );
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(listForItems).toHaveBeenCalledWith([BOOK]);
+    expect(result.json?.data).toMatchObject({
+      item: { id: BOOK, kind: "book", providerId: null },
+      candidates: [],
+      current: [{ contentHash: "book-cover" }],
+    });
   });
 
   it("reports an episode as out of scope rather than showing series artwork as its own", async () => {
@@ -340,9 +386,72 @@ describe("artwork routes", () => {
     expect(result.json?.data).toMatchObject({ isLocked: true });
   });
 
+  it("stores an uploaded book cover and locks it against metadata refreshes", async () => {
+    const store = vi.fn<ImageStorage["store"]>(async () => ({
+      contentHash: "custom-cover-hash",
+      contentType: "image/png",
+      sizeBytes: 16,
+      storageKey: "cu/st/custom-cover-hash.png",
+    }));
+    const replaceLocked = vi.fn<ImageRepository["replaceLocked"]>(
+      async () => "book-cover-image",
+    );
+    const router = buildRouter({
+      images: fakeImages({ replaceLocked }),
+      imageStorage: fakeStorage({ store }),
+    });
+    const bytes = Buffer.from("custom-book-cover");
+
+    const result = await call(
+      router,
+      "POST",
+      `/ownAPI/v1/admin/items/${BOOK}/artwork/upload`,
+      {
+        kind: "poster",
+        contentType: "image/png",
+        dataBase64: bytes.toString("base64"),
+      },
+    );
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(store.mock.calls[0]?.[0]).toEqual(bytes);
+    expect(store.mock.calls[0]?.[1]).toBe("image/png");
+    expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
+      itemId: BOOK,
+      imageType: "primary",
+      source: "upload",
+      sourceUrl: null,
+    });
+    expect(result.json?.data).toMatchObject({
+      contentHash: "custom-cover-hash",
+      isLocked: true,
+    });
+  });
+
+  it("rejects malformed or unsupported custom artwork before storage", async () => {
+    const store = vi.fn<ImageStorage["store"]>();
+    const router = buildRouter({ imageStorage: fakeStorage({ store }) });
+
+    for (const body of [
+      { kind: "poster", contentType: "image/svg+xml", dataBase64: "YWJj" },
+      { kind: "poster", contentType: "image/png", dataBase64: "not base64" },
+    ]) {
+      const result = await call(
+        router,
+        "POST",
+        `/ownAPI/v1/admin/items/${BOOK}/artwork/upload`,
+        body,
+      );
+      expect((result.error as OwnApiError).statusCode).toBe(422);
+    }
+    expect(store).not.toHaveBeenCalled();
+  });
+
   it("rejects a file path that is not a provider image path", async () => {
     const fetchAndStore = vi.fn();
-    const router = buildRouter({ imageStorage: fakeStorage({ fetchAndStore }) });
+    const router = buildRouter({
+      imageStorage: fakeStorage({ fetchAndStore }),
+    });
 
     for (const filePath of [
       "https://evil.test/x.jpg",
@@ -366,7 +475,9 @@ describe("artwork routes", () => {
     const router = buildRouter({
       imageStorage: fakeStorage({
         fetchAndStore: async () => {
-          throw new Error("connect ETIMEDOUT https://api.themoviedb.org/?api_key=secret");
+          throw new Error(
+            "connect ETIMEDOUT https://api.themoviedb.org/?api_key=secret",
+          );
         },
       }),
     });
@@ -427,6 +538,25 @@ describe("artwork routes", () => {
     expect(result.json?.data).toMatchObject({ cleared: false, taskId: null });
   });
 
+  it("removes a custom book image without queueing an unsupported TMDB refresh", async () => {
+    const clear = vi.fn(async () => true);
+    const enqueue = vi.fn<JobQueue["enqueue"]>(async () => "task-9");
+    const router = buildRouter({
+      images: fakeImages({ clear }),
+      queue: fakeQueue({ enqueue }),
+    });
+
+    const result = await call(
+      router,
+      "DELETE",
+      `/ownAPI/v1/admin/items/${BOOK}/artwork/logo`,
+    );
+
+    expect(clear).toHaveBeenCalledWith(BOOK, "logo", 0);
+    expect(enqueue).not.toHaveBeenCalled();
+    expect(result.json?.data).toMatchObject({ cleared: true, taskId: null });
+  });
+
   it("previews a title in another language without writing anything", async () => {
     const applyTitleMetadata = vi.fn();
     const metadata = { ...fakeMetadata(), applyTitleMetadata };
@@ -475,7 +605,7 @@ describe("artwork routes", () => {
     expect(applyTitleMetadata).not.toHaveBeenCalled();
   });
 
-  it("saves a logo layout without needing a TMDB match", async () => {
+  it("saves a book logo layout without needing a TMDB match", async () => {
     // Placement is a layout choice, not a provider one, so demanding an
     // identified title would block it for exactly the titles that need it most.
     const setLogoLayoutFake = vi.fn(async () => true);
@@ -484,11 +614,11 @@ describe("artwork routes", () => {
     const result = await call(
       router,
       "PUT",
-      `/ownAPI/v1/admin/items/${UNIDENTIFIED}/logo-layout`,
+      `/ownAPI/v1/admin/items/${BOOK}/logo-layout`,
       { layout: { x: 0.25, y: 0.75, width: 0.5, shadow: 1.4 } },
     );
 
-    expect(setLogoLayoutFake).toHaveBeenCalledWith(UNIDENTIFIED, {
+    expect(setLogoLayoutFake).toHaveBeenCalledWith(BOOK, {
       x: 0.25,
       y: 0.75,
       width: 0.5,

@@ -14,6 +14,7 @@ import {
   Save,
   Search,
   Sparkles,
+  Upload,
 } from "lucide-react";
 import {
   applyItemArtwork,
@@ -24,13 +25,14 @@ import {
   saveItemDisplayMetadata,
   searchMetadataCandidates,
   setLogoLayout,
+  uploadCustomArtwork,
   type ArtworkCandidate,
   type ArtworkKind,
   type ArtworkOverview,
   type MetadataCandidate,
 } from "../lib/artworkApi";
 import {
-  getAllMovieAndSeriesItems,
+  getAllArtworkItems,
   getLogoImageUrl,
   getPrimaryImageUrl,
 } from "../lib/mediaApi";
@@ -56,11 +58,14 @@ import {
   getArtworkErrorKey,
   getKindDescriptionKey,
   getKindLabelKey,
+  getCustomUploadLabelKey,
   getLanguageLabelKey,
+  getStoredArtworkTag,
   getStatusClasses,
   hasStoredArtwork,
   isArtworkEligible,
   isKindLocked,
+  supportsTmdbArtwork,
   countCandidates,
   nextVisibleCount,
   selectCandidates,
@@ -137,7 +142,7 @@ export default function TmdbArtworkPage() {
 
     void (async () => {
       try {
-        const items = await getAllMovieAndSeriesItems();
+        const items = await getAllArtworkItems();
         if (!isMounted) return;
         const eligible = items.filter(isArtworkEligible);
         setTitles(eligible);
@@ -172,10 +177,26 @@ export default function TmdbArtworkPage() {
 
   const loadArtwork = useCallback(
     async (itemId: string) => {
-      setArtworkStatus({ tone: "busy", message: t("tmdbArtwork.loadingImages") });
+      setArtworkStatus({
+        tone: "busy",
+        message: t("tmdbArtwork.loadingImages"),
+      });
       try {
         const overview = await getItemArtwork(itemId);
         setArtwork(overview);
+        const primaryTag = getStoredArtworkTag(overview.current, "poster");
+        const logoTag = getStoredArtworkTag(overview.current, "logo");
+        setTitles((current) =>
+          current.map((entry) => {
+            if (entry.Id !== itemId) return entry;
+            const nextTags = { ...(entry.ImageTags ?? {}) };
+            delete nextTags.Primary;
+            delete nextTags.Logo;
+            if (primaryTag) nextTags.Primary = primaryTag;
+            if (logoTag) nextTags.Logo = logoTag;
+            return { ...entry, ImageTags: nextTags };
+          }),
+        );
         setVisibleCounts({});
         setArtworkStatus({
           tone: "success",
@@ -198,6 +219,7 @@ export default function TmdbArtworkPage() {
   const selectTitle = useCallback(
     (item: MediaItem) => {
       setSelectedId(item.Id);
+      setArtwork(null);
       setMatches([]);
       setTmdbQuery(item.Name ?? "");
       setMatchStatus({ tone: "idle", message: "" });
@@ -215,14 +237,28 @@ export default function TmdbArtworkPage() {
     [loadArtwork],
   );
 
+  const selectedSupportsTmdb = supportsTmdbArtwork(selectedTitle);
+  const selectedPrimaryTag = artwork
+    ? getStoredArtworkTag(artwork.current, "poster")
+    : selectedTitle?.ImageTags?.Primary;
+  const selectedLogoTag = artwork
+    ? getStoredArtworkTag(artwork.current, "logo")
+    : selectedTitle?.ImageTags?.Logo;
+
   async function handleTmdbSearch(event: FormEvent) {
     event.preventDefault();
     if (!selectedId) {
-      setMatchStatus({ tone: "error", message: t("tmdbArtwork.selectItemFirst") });
+      setMatchStatus({
+        tone: "error",
+        message: t("tmdbArtwork.selectItemFirst"),
+      });
       return;
     }
     if (!tmdbQuery.trim()) {
-      setMatchStatus({ tone: "error", message: t("tmdbArtwork.searchRequired") });
+      setMatchStatus({
+        tone: "error",
+        message: t("tmdbArtwork.searchRequired"),
+      });
       return;
     }
 
@@ -272,7 +308,10 @@ export default function TmdbArtworkPage() {
     setBusyKind(kind);
     setArtworkStatus({ tone: "busy", message: t("tmdbArtwork.savingArtwork") });
     try {
-      await applyItemArtwork(selectedId, { kind, filePath: candidate.filePath });
+      await applyItemArtwork(selectedId, {
+        kind,
+        filePath: candidate.filePath,
+      });
       setArtworkStatus({
         tone: "success",
         message: formatTemplate(t("tmdbArtwork.artworkSaved"), {
@@ -314,6 +353,31 @@ export default function TmdbArtworkPage() {
       setArtworkStatus({
         tone: "error",
         message: messageOf(error, t("tmdbArtwork.couldNotRevertArtwork")),
+      });
+    } finally {
+      setBusyKind(null);
+    }
+  }
+
+  async function handleCustomUpload(kind: ArtworkKind, file: File) {
+    if (!selectedId) return;
+
+    setBusyKind(kind);
+    setArtworkStatus({
+      tone: "busy",
+      message: t("tmdbArtwork.uploadingCustom"),
+    });
+    try {
+      await uploadCustomArtwork(selectedId, kind, file);
+      await loadArtwork(selectedId);
+      setArtworkStatus({
+        tone: "success",
+        message: t("tmdbArtwork.customArtworkSaved"),
+      });
+    } catch (error) {
+      setArtworkStatus({
+        tone: "error",
+        message: messageOf(error, t("tmdbArtwork.customArtworkFailed")),
       });
     } finally {
       setBusyKind(null);
@@ -392,7 +456,9 @@ export default function TmdbArtworkPage() {
         ...(display.originalTitle.trim()
           ? { originalTitle: display.originalTitle.trim() }
           : {}),
-        ...(display.overview.trim() ? { overview: display.overview.trim() } : {}),
+        ...(display.overview.trim()
+          ? { overview: display.overview.trim() }
+          : {}),
         ...(display.tagline.trim() ? { tagline: display.tagline.trim() } : {}),
         // Locking is what makes the edit stick: without it the next refresh
         // writes the provider's own wording back over it.
@@ -438,7 +504,9 @@ export default function TmdbArtworkPage() {
             <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white/70">
               {t("tmdbArtwork.jellyfinTitles")}
             </h2>
-            <p className={`mt-1 text-xs font-bold ${getStatusClasses(titlesStatus.tone)}`}>
+            <p
+              className={`mt-1 text-xs font-bold ${getStatusClasses(titlesStatus.tone)}`}
+            >
               {titlesStatus.message}
             </p>
 
@@ -470,7 +538,11 @@ export default function TmdbArtworkPage() {
                     }`}
                   >
                     <img
-                      src={getPrimaryImageUrl(item.Id, item.ImageTags?.Primary, 80)}
+                      src={getPrimaryImageUrl(
+                        item.Id,
+                        item.ImageTags?.Primary,
+                        80,
+                      )}
                       alt=""
                       loading="lazy"
                       className="h-14 w-10 shrink-0 rounded-lg object-cover"
@@ -502,7 +574,7 @@ export default function TmdbArtworkPage() {
                 </p>
               ) : (
                 <>
-                  {artwork ? (
+                  {artwork?.item.providerId ? (
                     <p className="mt-2 text-xs font-bold text-emerald-300/80">
                       {formatTemplate(t("tmdbArtwork.selectedTmdb"), {
                         id: artwork.item.providerId,
@@ -510,57 +582,72 @@ export default function TmdbArtworkPage() {
                     </p>
                   ) : null}
 
-                  <form onSubmit={handleTmdbSearch} className="mt-3 flex gap-2">
-                    <label className="sr-only" htmlFor="tmdb-query">
-                      {t("tmdbArtwork.searchQuery")}
-                    </label>
-                    <input
-                      id="tmdb-query"
-                      value={tmdbQuery}
-                      onChange={(event) => setTmdbQuery(event.target.value)}
-                      placeholder={t("tmdbArtwork.tmdbSearchPlaceholder")}
-                      className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold outline-none placeholder:text-white/25"
-                    />
-                    <button
-                      type="submit"
-                      className="inline-flex items-center gap-2 rounded-2xl bg-sky-400/20 px-4 py-2 text-sm font-black text-sky-100 transition hover:bg-sky-400/30"
-                    >
-                      <Search className="h-4 w-4" />
-                      {t("tmdbArtwork.searchQuery")}
-                    </button>
-                  </form>
-
-                  {matchStatus.message ? (
-                    <p className={`mt-2 text-xs font-bold ${getStatusClasses(matchStatus.tone)}`}>
-                      {matchStatus.message}
+                  {!selectedSupportsTmdb ? (
+                    <p className="mt-3 text-sm font-bold text-white/40">
+                      {t("tmdbArtwork.tmdbUnavailableForBooks")}
                     </p>
-                  ) : null}
-
-                  <ul className="mt-3 space-y-1">
-                    {matches.map((match) => (
-                      <li key={match.providerId}>
+                  ) : (
+                    <>
+                      <form
+                        onSubmit={handleTmdbSearch}
+                        className="mt-3 flex gap-2"
+                      >
+                        <label className="sr-only" htmlFor="tmdb-query">
+                          {t("tmdbArtwork.searchQuery")}
+                        </label>
+                        <input
+                          id="tmdb-query"
+                          value={tmdbQuery}
+                          onChange={(event) => setTmdbQuery(event.target.value)}
+                          placeholder={t("tmdbArtwork.tmdbSearchPlaceholder")}
+                          className="flex-1 rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold outline-none placeholder:text-white/25"
+                        />
                         <button
-                          type="button"
-                          onClick={() => void handleIdentify(match.providerId)}
-                          className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 px-3 py-2 text-left transition hover:border-sky-300/40 hover:bg-sky-400/10"
+                          type="submit"
+                          className="inline-flex items-center gap-2 rounded-2xl bg-sky-400/20 px-4 py-2 text-sm font-black text-sky-100 transition hover:bg-sky-400/30"
                         >
-                          <span className="min-w-0">
-                            <span className="block truncate text-sm font-bold">
-                              {match.title}
-                              {match.year ? ` (${match.year})` : ""}
-                            </span>
-                            <span className="block text-xs font-semibold text-white/35">
-                              TMDB {match.providerId}
-                              {match.originalTitle
-                                ? ` · ${match.originalTitle}`
-                                : ""}
-                            </span>
-                          </span>
-                          <Check className="h-4 w-4 shrink-0 text-white/30" />
+                          <Search className="h-4 w-4" />
+                          {t("tmdbArtwork.searchQuery")}
                         </button>
-                      </li>
-                    ))}
-                  </ul>
+                      </form>
+
+                      {matchStatus.message ? (
+                        <p
+                          className={`mt-2 text-xs font-bold ${getStatusClasses(matchStatus.tone)}`}
+                        >
+                          {matchStatus.message}
+                        </p>
+                      ) : null}
+
+                      <ul className="mt-3 space-y-1">
+                        {matches.map((match) => (
+                          <li key={match.providerId}>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                void handleIdentify(match.providerId)
+                              }
+                              className="flex w-full items-center justify-between gap-3 rounded-2xl border border-white/10 px-3 py-2 text-left transition hover:border-sky-300/40 hover:bg-sky-400/10"
+                            >
+                              <span className="min-w-0">
+                                <span className="block truncate text-sm font-bold">
+                                  {match.title}
+                                  {match.year ? ` (${match.year})` : ""}
+                                </span>
+                                <span className="block text-xs font-semibold text-white/35">
+                                  TMDB {match.providerId}
+                                  {match.originalTitle
+                                    ? ` · ${match.originalTitle}`
+                                    : ""}
+                                </span>
+                              </span>
+                              <Check className="h-4 w-4 shrink-0 text-white/30" />
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    </>
+                  )}
                 </>
               )}
             </section>
@@ -572,38 +659,44 @@ export default function TmdbArtworkPage() {
                   {t("tmdbArtwork.artworkSelection")}
                 </h2>
 
-                <div className="flex items-center gap-2">
-                  <Languages className="h-4 w-4 text-white/35" />
-                  <label className="sr-only" htmlFor="language-filter">
-                    {t("tmdbArtwork.languageFilter")}
-                  </label>
-                  <select
-                    id="language-filter"
-                    value={languageFilter}
-                    onChange={(event) => {
-                      setLanguageFilter(event.target.value as ImageLanguageFilter);
-                      // A new filter draws a new pool, so how far the previous
-                      // one had been paged through no longer means anything.
-                      setVisibleCounts({});
-                    }}
-                    className="rounded-2xl border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-bold outline-none"
-                  >
-                    {LANGUAGE_FILTERS.map((filter) => (
-                      <option key={filter} value={filter}>
-                        {filter === "all"
-                          ? t("tmdbArtwork.languageFilter")
-                          : t(
-                              getLanguageLabelKey(
-                                filter === "none" ? null : filter,
-                              ),
-                            )}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {selectedSupportsTmdb ? (
+                  <div className="flex items-center gap-2">
+                    <Languages className="h-4 w-4 text-white/35" />
+                    <label className="sr-only" htmlFor="language-filter">
+                      {t("tmdbArtwork.languageFilter")}
+                    </label>
+                    <select
+                      id="language-filter"
+                      value={languageFilter}
+                      onChange={(event) => {
+                        setLanguageFilter(
+                          event.target.value as ImageLanguageFilter,
+                        );
+                        // A new filter draws a new pool, so how far the previous
+                        // one had been paged through no longer means anything.
+                        setVisibleCounts({});
+                      }}
+                      className="rounded-2xl border border-white/10 bg-black/50 px-3 py-1.5 text-xs font-bold outline-none"
+                    >
+                      {LANGUAGE_FILTERS.map((filter) => (
+                        <option key={filter} value={filter}>
+                          {filter === "all"
+                            ? t("tmdbArtwork.languageFilter")
+                            : t(
+                                getLanguageLabelKey(
+                                  filter === "none" ? null : filter,
+                                ),
+                              )}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
               </div>
 
-              <p className={`mt-2 text-xs font-bold ${getStatusClasses(artworkStatus.tone)}`}>
+              <p
+                className={`mt-2 text-xs font-bold ${getStatusClasses(artworkStatus.tone)}`}
+              >
                 {artworkStatus.message}
               </p>
 
@@ -645,13 +738,18 @@ export default function TmdbArtworkPage() {
                             </h3>
                             <p className="mt-1 text-xs font-semibold text-white/40">
                               {t(getKindDescriptionKey(kind))}
-                              {locked ? ` ${t("tmdbArtwork.lockedExplanation")}` : ""}
+                              {locked
+                                ? ` ${t("tmdbArtwork.lockedExplanation")}`
+                                : ""}
                             </p>
                             {available > candidates.length ? (
                               <p className="mt-1 text-xs font-bold text-white/30">
                                 {formatTemplate(
                                   t("tmdbArtwork.showingTopChoices"),
-                                  { shown: candidates.length, total: available },
+                                  {
+                                    shown: candidates.length,
+                                    total: available,
+                                  },
                                 )}
                               </p>
                             ) : null}
@@ -662,26 +760,54 @@ export default function TmdbArtworkPage() {
                             ) : null}
                           </div>
 
-                          {locked ? (
-                            <button
-                              type="button"
-                              disabled={busyKind !== null}
-                              onClick={() => void handleRevert(kind)}
-                              className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-black text-white/70 transition hover:border-white/30 hover:text-white disabled:opacity-40"
+                          <div className="flex flex-wrap gap-2">
+                            <label
+                              className={`inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-sky-400/15 px-3 py-1.5 text-xs font-black text-sky-100 transition hover:bg-sky-400/25 ${
+                                busyKind !== null
+                                  ? "pointer-events-none opacity-40"
+                                  : ""
+                              }`}
                             >
                               {busyKind === kind ? (
                                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               ) : (
-                                <RotateCcw className="h-3.5 w-3.5" />
+                                <Upload className="h-3.5 w-3.5" />
                               )}
-                              {t("tmdbArtwork.revertToAutomatic")}
-                            </button>
-                          ) : null}
+                              {t(getCustomUploadLabelKey(kind))}
+                              <input
+                                type="file"
+                                accept="image/jpeg,image/png,image/webp"
+                                disabled={busyKind !== null}
+                                className="sr-only"
+                                onChange={(event) => {
+                                  const file = event.currentTarget.files?.[0];
+                                  event.currentTarget.value = "";
+                                  if (file) void handleCustomUpload(kind, file);
+                                }}
+                              />
+                            </label>
+
+                            {locked ? (
+                              <button
+                                type="button"
+                                disabled={busyKind !== null}
+                                onClick={() => void handleRevert(kind)}
+                                className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-black text-white/70 transition hover:border-white/30 hover:text-white disabled:opacity-40"
+                              >
+                                <RotateCcw className="h-3.5 w-3.5" />
+                                {t("tmdbArtwork.revertToAutomatic")}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
 
                         {candidates.length === 0 ? (
                           <p className="mt-3 text-sm font-bold text-white/35">
-                            {t("tmdbArtwork.noImages")}
+                            {t(
+                              artwork.item.providerId
+                                ? "tmdbArtwork.noImages"
+                                : "tmdbArtwork.noProviderImages",
+                            )}
                           </p>
                         ) : (
                           <ul className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
@@ -690,7 +816,9 @@ export default function TmdbArtworkPage() {
                                 <button
                                   type="button"
                                   disabled={busyKind !== null}
-                                  onClick={() => void handleApply(kind, candidate)}
+                                  onClick={() =>
+                                    void handleApply(kind, candidate)
+                                  }
                                   className="group w-full overflow-hidden rounded-2xl border border-white/10 bg-black/40 text-left transition hover:border-sky-300/50 disabled:opacity-40"
                                 >
                                   <img
@@ -698,12 +826,16 @@ export default function TmdbArtworkPage() {
                                     alt=""
                                     loading="lazy"
                                     className={`w-full object-contain ${
-                                      kind === "poster" ? "aspect-[2/3]" : "aspect-video"
+                                      kind === "poster"
+                                        ? "aspect-[2/3]"
+                                        : "aspect-video"
                                     } ${kind === "logo" ? "bg-white/5 p-2" : ""}`}
                                   />
                                   <span className="block px-2 py-2">
                                     <span className="block text-[0.68rem] font-black uppercase tracking-[0.1em] text-white/45">
-                                      {t(getLanguageLabelKey(candidate.language))}
+                                      {t(
+                                        getLanguageLabelKey(candidate.language),
+                                      )}
                                     </span>
                                     <span className="block text-[0.68rem] font-semibold text-white/35">
                                       {formatDimensions(
@@ -712,10 +844,14 @@ export default function TmdbArtworkPage() {
                                       )}
                                     </span>
                                     <span className="block text-[0.68rem] font-semibold text-white/35">
-                                      {formatTemplate(t("tmdbArtwork.voteSummary"), {
-                                        rating: candidate.voteAverage.toFixed(1),
-                                        count: candidate.voteCount,
-                                      })}
+                                      {formatTemplate(
+                                        t("tmdbArtwork.voteSummary"),
+                                        {
+                                          rating:
+                                            candidate.voteAverage.toFixed(1),
+                                          count: candidate.voteCount,
+                                        },
+                                      )}
                                     </span>
                                     <span className="mt-1 block text-[0.68rem] font-black text-sky-300/0 transition group-hover:text-sky-300/90">
                                       {t("tmdbArtwork.replaceFile")}
@@ -767,7 +903,7 @@ export default function TmdbArtworkPage() {
                 <p className="mt-3 text-sm font-bold text-white/40">
                   {t("tmdbArtwork.noItemSelected")}
                 </p>
-              ) : !selectedTitle.ImageTags?.Logo ? (
+              ) : !selectedLogoTag ? (
                 <p className="mt-3 text-sm font-bold text-white/40">
                   {t("logoLayout.noLogo")}
                 </p>
@@ -776,12 +912,12 @@ export default function TmdbArtworkPage() {
                   <LogoLayoutEditor
                     posterUrl={getPrimaryImageUrl(
                       selectedTitle.Id,
-                      selectedTitle.ImageTags?.Primary,
+                      selectedPrimaryTag,
                       600,
                     )}
                     logoUrl={getLogoImageUrl(
                       selectedTitle.Id,
-                      selectedTitle.ImageTags.Logo,
+                      selectedLogoTag,
                       520,
                     )}
                     title={getDisplayTitle(selectedTitle)}
@@ -798,12 +934,22 @@ export default function TmdbArtworkPage() {
                     <dl className="mt-3 grid grid-cols-4 gap-2 text-center">
                       {(
                         [
-                          ["logoLayout.horizontal", (layout ?? INITIAL_LOGO_LAYOUT).x],
-                          ["logoLayout.vertical", (layout ?? INITIAL_LOGO_LAYOUT).y],
-                          ["logoLayout.size", (layout ?? INITIAL_LOGO_LAYOUT).width],
+                          [
+                            "logoLayout.horizontal",
+                            (layout ?? INITIAL_LOGO_LAYOUT).x,
+                          ],
+                          [
+                            "logoLayout.vertical",
+                            (layout ?? INITIAL_LOGO_LAYOUT).y,
+                          ],
+                          [
+                            "logoLayout.size",
+                            (layout ?? INITIAL_LOGO_LAYOUT).width,
+                          ],
                           [
                             "logoLayout.shadow",
-                            (layout ?? INITIAL_LOGO_LAYOUT).shadow / MAX_LOGO_SHADOW,
+                            (layout ?? INITIAL_LOGO_LAYOUT).shadow /
+                              MAX_LOGO_SHADOW,
                           ],
                         ] as const
                       ).map(([labelKey, value]) => (
@@ -891,24 +1037,28 @@ export default function TmdbArtworkPage() {
                 {t("tmdbArtwork.itemLanguagesDescription")}
               </p>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {PREVIEW_LANGUAGES.map((language) => (
-                  <button
-                    key={language}
-                    type="button"
-                    disabled={!selectedId}
-                    onClick={() => void handleLoadLocalized(language)}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-black text-white/75 transition hover:border-sky-300/40 hover:text-white disabled:opacity-40"
-                  >
-                    <Languages className="h-3.5 w-3.5" />
-                    {t("tmdbArtwork.loadItemMetadata")} ·{" "}
-                    {t(getLanguageLabelKey(language.slice(0, 2)))}
-                  </button>
-                ))}
-              </div>
+              {selectedSupportsTmdb ? (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {PREVIEW_LANGUAGES.map((language) => (
+                    <button
+                      key={language}
+                      type="button"
+                      disabled={!selectedId}
+                      onClick={() => void handleLoadLocalized(language)}
+                      className="inline-flex items-center gap-2 rounded-2xl border border-white/15 px-3 py-1.5 text-xs font-black text-white/75 transition hover:border-sky-300/40 hover:text-white disabled:opacity-40"
+                    >
+                      <Languages className="h-3.5 w-3.5" />
+                      {t("tmdbArtwork.loadItemMetadata")} ·{" "}
+                      {t(getLanguageLabelKey(language.slice(0, 2)))}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {displayStatus.message ? (
-                <p className={`mt-2 text-xs font-bold ${getStatusClasses(displayStatus.tone)}`}>
+                <p
+                  className={`mt-2 text-xs font-bold ${getStatusClasses(displayStatus.tone)}`}
+                >
                   {displayStatus.message}
                 </p>
               ) : null}
@@ -917,7 +1067,10 @@ export default function TmdbArtworkPage() {
                 <input
                   value={display.title}
                   onChange={(event) =>
-                    setDisplay((current) => ({ ...current, title: event.target.value }))
+                    setDisplay((current) => ({
+                      ...current,
+                      title: event.target.value,
+                    }))
                   }
                   placeholder={t("tmdbArtwork.itemLanguages")}
                   className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-bold outline-none placeholder:text-white/25"
@@ -925,7 +1078,10 @@ export default function TmdbArtworkPage() {
                 <input
                   value={display.tagline}
                   onChange={(event) =>
-                    setDisplay((current) => ({ ...current, tagline: event.target.value }))
+                    setDisplay((current) => ({
+                      ...current,
+                      tagline: event.target.value,
+                    }))
                   }
                   placeholder={t("common.details")}
                   className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold outline-none placeholder:text-white/25"
@@ -933,7 +1089,10 @@ export default function TmdbArtworkPage() {
                 <textarea
                   value={display.overview}
                   onChange={(event) =>
-                    setDisplay((current) => ({ ...current, overview: event.target.value }))
+                    setDisplay((current) => ({
+                      ...current,
+                      overview: event.target.value,
+                    }))
                   }
                   rows={5}
                   className="w-full rounded-2xl border border-white/10 bg-black/40 px-3 py-2 text-sm font-semibold leading-6 outline-none"

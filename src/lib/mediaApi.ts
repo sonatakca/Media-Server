@@ -81,7 +81,9 @@ export function redactPlaybackUrl(playbackUrl: string): string {
     );
 
   try {
-    return redactSession(new URL(playbackUrl, window.location.origin).toString());
+    return redactSession(
+      new URL(playbackUrl, window.location.origin).toString(),
+    );
   } catch {
     return redactSession(playbackUrl);
   }
@@ -250,12 +252,25 @@ export async function getAllSeriesItems(): Promise<MediaItem[]> {
   return collectAll("/series");
 }
 
+export async function getAllBookItems(): Promise<MediaItem[]> {
+  return collectAll("/books");
+}
+
 export async function getAllMovieAndSeriesItems(): Promise<MediaItem[]> {
   const [movies, series] = await Promise.all([
     getAllMovieItems(),
     getAllSeriesItems(),
   ]);
   return [...movies, ...series];
+}
+
+export async function getAllArtworkItems(): Promise<MediaItem[]> {
+  const [movies, series, books] = await Promise.all([
+    getAllMovieItems(),
+    getAllSeriesItems(),
+    getAllBookItems(),
+  ]);
+  return [...movies, ...series, ...books];
 }
 
 export async function getAllVideoItems(): Promise<MediaItem[]> {
@@ -617,7 +632,9 @@ export function buildPlaybackCandidates(
       mode,
       url,
       isHls,
-      ...(isHls ? { hlsKind: "forced-transcode" as const, usingHlsJs: true } : {}),
+      ...(isHls
+        ? { hlsKind: "forced-transcode" as const, usingHlsJs: true }
+        : {}),
       ...(isHls
         ? { mimeType: "application/vnd.apple.mpegurl" }
         : mediaSource.Container
@@ -655,7 +672,11 @@ export async function buildConfiguredHlsPlaybackSource(
   return candidate ? { ...candidate, label } : null;
 }
 
-const QUALITY_LADDER: Array<{ height: number; label: string; bitrate: number }> = [
+const QUALITY_LADDER: Array<{
+  height: number;
+  label: string;
+  bitrate: number;
+}> = [
   { height: 2160, label: "4K", bitrate: 60_000_000 },
   { height: 1080, label: "1080p", bitrate: 12_000_000 },
   { height: 720, label: "720p", bitrate: 6_000_000 },
@@ -729,10 +750,9 @@ export async function stopActiveTranscodeSession(
 ): Promise<void> {
   if (!playSessionId) return;
   await ownApiClient
-    .request<void>(
-      `/playback/sessions/${encodeURIComponent(playSessionId)}`,
-      { method: "DELETE" },
-    )
+    .request<void>(`/playback/sessions/${encodeURIComponent(playSessionId)}`, {
+      method: "DELETE",
+    })
     .catch(() => undefined);
 }
 
@@ -914,9 +934,7 @@ export async function scanLibrary(libraryId: string): Promise<string> {
   return task.taskId;
 }
 
-export async function refreshLibraryMetadata(
-  libraryId: string,
-): Promise<void> {
+export async function refreshLibraryMetadata(libraryId: string): Promise<void> {
   await ownApiClient.request<{ taskId: string }>(
     `/admin/metadata/refresh?libraryId=${encodeURIComponent(libraryId)}`,
     { method: "POST", body: {} },
@@ -946,9 +964,7 @@ export async function updateItemMetadata(
         ...(item.OriginalTitle ? { originalTitle: item.OriginalTitle } : {}),
         ...(item.Overview ? { overview: item.Overview } : {}),
         ...(item.Taglines?.[0] ? { tagline: item.Taglines[0] } : {}),
-        ...(item.OfficialRating
-          ? { officialRating: item.OfficialRating }
-          : {}),
+        ...(item.OfficialRating ? { officialRating: item.OfficialRating } : {}),
       },
     },
   );

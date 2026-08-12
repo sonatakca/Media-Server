@@ -7,12 +7,15 @@ import {
   filterTitles,
   formatDimensions,
   getArtworkErrorKey,
+  getCustomUploadLabelKey,
   getLanguageLabelKey,
+  getStoredArtworkTag,
   hasStoredArtwork,
   isArtworkEligible,
   isKindLocked,
   nextVisibleCount,
   selectCandidates,
+  supportsTmdbArtwork,
 } from "./tmdbArtworkModel";
 
 function candidate(
@@ -49,8 +52,11 @@ describe("title selection", () => {
     // would promise a choice the server refuses to make.
     expect(isArtworkEligible(item())).toBe(true);
     expect(isArtworkEligible(item({ Type: "Series" }))).toBe(true);
+    expect(isArtworkEligible(item({ Type: "Book" }))).toBe(true);
     expect(isArtworkEligible(item({ Type: "Season" }))).toBe(false);
     expect(isArtworkEligible(item({ Type: "Episode" }))).toBe(false);
+    expect(supportsTmdbArtwork(item({ Type: "Book" }))).toBe(false);
+    expect(supportsTmdbArtwork(item({ Type: "Movie" }))).toBe(true);
   });
 
   it("searches title, original title, year and id together", () => {
@@ -60,9 +66,15 @@ describe("title selection", () => {
       item({ Id: "c-8bb2", Name: "Arrival", ProductionYear: 2016 }),
     ];
 
-    expect(filterTitles(titles, "dune").map((entry) => entry.Id)).toEqual(["a"]);
-    expect(filterTitles(titles, "2016").map((entry) => entry.Id)).toEqual(["c-8bb2"]);
-    expect(filterTitles(titles, "c-8bb").map((entry) => entry.Id)).toEqual(["c-8bb2"]);
+    expect(filterTitles(titles, "dune").map((entry) => entry.Id)).toEqual([
+      "a",
+    ]);
+    expect(filterTitles(titles, "2016").map((entry) => entry.Id)).toEqual([
+      "c-8bb2",
+    ]);
+    expect(filterTitles(titles, "c-8bb").map((entry) => entry.Id)).toEqual([
+      "c-8bb2",
+    ]);
     expect(filterTitles(titles, "   ")).toHaveLength(3);
   });
 });
@@ -77,10 +89,14 @@ describe("candidate filtering", () => {
 
   it("keeps each provider set separate", () => {
     expect(
-      selectCandidates(candidates, "poster", "all").map((entry) => entry.filePath),
+      selectCandidates(candidates, "poster", "all").map(
+        (entry) => entry.filePath,
+      ),
     ).toEqual(["/en.jpg", "/tr.jpg", "/neutral.jpg"]);
     expect(
-      selectCandidates(candidates, "backdrop", "all").map((entry) => entry.filePath),
+      selectCandidates(candidates, "backdrop", "all").map(
+        (entry) => entry.filePath,
+      ),
     ).toEqual(["/wide.jpg"]);
     expect(selectCandidates(candidates, "logo", "all")).toEqual([]);
   });
@@ -95,7 +111,9 @@ describe("candidate filtering", () => {
     expect(selectCandidates(many, "poster", "all")).toHaveLength(
       ARTWORK_PAGE_SIZE,
     );
-    expect(selectCandidates(many, "poster", "all")[0]?.filePath).toBe("/p0.jpg");
+    expect(selectCandidates(many, "poster", "all")[0]?.filePath).toBe(
+      "/p0.jpg",
+    );
     expect(countCandidates(many, "poster", "all")).toBe(40);
 
     const second = nextVisibleCount(ARTWORK_PAGE_SIZE, 40);
@@ -107,15 +125,21 @@ describe("candidate filtering", () => {
     // Otherwise "load more" would offer to load images that do not exist.
     expect(nextVisibleCount(ARTWORK_PAGE_SIZE, 30)).toBe(30);
     expect(nextVisibleCount(30, 30)).toBe(30);
-    expect(nextVisibleCount(ARTWORK_PAGE_SIZE, 453)).toBe(ARTWORK_PAGE_SIZE * 2);
+    expect(nextVisibleCount(ARTWORK_PAGE_SIZE, 453)).toBe(
+      ARTWORK_PAGE_SIZE * 2,
+    );
   });
 
   it("treats artwork with no text as its own filter rather than a missing value", () => {
     expect(
-      selectCandidates(candidates, "poster", "none").map((entry) => entry.filePath),
+      selectCandidates(candidates, "poster", "none").map(
+        (entry) => entry.filePath,
+      ),
     ).toEqual(["/neutral.jpg"]);
     expect(
-      selectCandidates(candidates, "poster", "tr").map((entry) => entry.filePath),
+      selectCandidates(candidates, "poster", "tr").map(
+        (entry) => entry.filePath,
+      ),
     ).toEqual(["/tr.jpg"]);
     expect(getLanguageLabelKey(null)).toBe("tmdbArtwork.language.none");
     expect(getLanguageLabelKey("tr")).toBe("tmdbArtwork.language.turkish");
@@ -141,6 +165,30 @@ describe("stored artwork state", () => {
     expect(hasStoredArtwork(current, "logo")).toBe(false);
   });
 
+  it("reads the current content hash used by card previews", () => {
+    const current = [
+      { imageType: "primary", imageIndex: 0, contentHash: "cover-hash" },
+      { imageType: "logo", imageIndex: 0, contentHash: "logo-hash" },
+      { imageType: "logo", imageIndex: 1, contentHash: "extra-logo" },
+    ];
+
+    expect(getStoredArtworkTag(current, "poster")).toBe("cover-hash");
+    expect(getStoredArtworkTag(current, "logo")).toBe("logo-hash");
+    expect(getStoredArtworkTag(current, "backdrop")).toBeUndefined();
+  });
+
+  it("uses a distinct upload label for every artwork slot", () => {
+    expect(getCustomUploadLabelKey("poster")).toBe(
+      "tmdbArtwork.uploadCustom.poster",
+    );
+    expect(getCustomUploadLabelKey("backdrop")).toBe(
+      "tmdbArtwork.uploadCustom.backdrop",
+    );
+    expect(getCustomUploadLabelKey("logo")).toBe(
+      "tmdbArtwork.uploadCustom.logo",
+    );
+  });
+
   it("reads unknown dimensions as a dash rather than an empty product", () => {
     expect(formatDimensions(2000, 3000)).toBe("2000 × 3000");
     expect(formatDimensions(null, 3000)).toBe("—");
@@ -158,6 +206,8 @@ describe("artwork errors", () => {
     expect(getArtworkErrorKey("ARTWORK_NOT_APPLICABLE")).toBe(
       "tmdbArtwork.artworkNotApplicable",
     );
-    expect(getArtworkErrorKey(undefined)).toBe("tmdbArtwork.couldNotLoadImages");
+    expect(getArtworkErrorKey(undefined)).toBe(
+      "tmdbArtwork.couldNotLoadImages",
+    );
   });
 });

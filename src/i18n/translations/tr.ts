@@ -591,7 +591,7 @@ export const tr = {
   "devtools.card.libraryMaintenance.tag": "Bakım",
   "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
   "devtools.card.tmdbArtwork.description":
-    "Bir film ya da dizi için TMDB afişini, arka planını ve logosunu sağlayıcının ilk seçimi yerine kendiniz belirleyin.",
+    "Film, dizi ve kitaplar için TMDB görsellerini seçin veya özel kapak, arka plan ve logo yükleyin.",
   "devtools.card.tmdbArtwork.tag": "Görsel",
   "devtools.card.contentExplorer.title": "İçerik Gezgini",
   "devtools.card.contentExplorer.description":
@@ -784,14 +784,14 @@ export const tr = {
   "tmdbArtwork.eyebrow": "Görsel Tercihi",
   "tmdbArtwork.title": "TMDB Görselleri",
   "tmdbArtwork.description":
-    "Bir yapım için Seyirlik'in hangi TMDB görselini afiş, arka plan ve logo olarak saklayacağını siz seçin.",
+    "Film, dizi ve kitaplar için TMDB görsellerini seçin veya kendi kapak, arka plan ve logonuzu yükleyin.",
   "tmdbArtwork.languageFilter": "Görsel diline göre süz",
-  "tmdbArtwork.loadingItems": "Film ve diziler yükleniyor...",
+  "tmdbArtwork.loadingItems": "Film, dizi ve kitaplar yükleniyor...",
   "tmdbArtwork.loadedItems": "{count} içerik yüklendi.",
-  "tmdbArtwork.couldNotLoadItems": "Film ve diziler yüklenemedi.",
+  "tmdbArtwork.couldNotLoadItems": "Film, dizi ve kitaplar yüklenemedi.",
   "tmdbArtwork.jellyfinTitles": "Kütüphane Yapımları",
   "tmdbArtwork.visibleItems": "{count} görünen içerik",
-  "tmdbArtwork.itemSearchPlaceholder": "Film, dizi, yıl veya ID ara...",
+  "tmdbArtwork.itemSearchPlaceholder": "Film, dizi, kitap, yıl veya ID ara...",
   "tmdbArtwork.tmdbMatch": "TMDB Eşleşmesi",
   "tmdbArtwork.noItemSelected": "Bir Jellyfin içeriği seç",
   "tmdbArtwork.selectItemFirst":
@@ -804,6 +804,8 @@ export const tr = {
   "tmdbArtwork.searchResults": "{count} TMDB eşleşmesi",
   "tmdbArtwork.noSearchResults": "TMDB eşleşmesi bulunamadı.",
   "tmdbArtwork.couldNotSearch": "TMDB aranamadı.",
+  "tmdbArtwork.tmdbUnavailableForBooks":
+    "Kitaplar TMDB ile eşleştirilmez. Aşağıdan özel görsel yükleyebilirsiniz.",
   "tmdbArtwork.artworkSelection": "Görsel Seçimi",
   "tmdbArtwork.noTmdbSelected": "TMDB içeriği seçilmedi",
   "tmdbArtwork.noTmdbSelectedDescription":
@@ -815,12 +817,22 @@ export const tr = {
   "tmdbArtwork.loadingImages": "TMDB görselleri yükleniyor...",
   "tmdbArtwork.loadedImages": "{target} için {count} seçenek",
   "tmdbArtwork.noImages": "Bu dil filtresine uyan görsel yok.",
+  "tmdbArtwork.noProviderImages":
+    "Sağlayıcı görseli bulunmuyor. Yukarıdan kendi görselinizi yükleyebilirsiniz.",
   "tmdbArtwork.couldNotLoadImages": "TMDB görselleri yüklenemedi.",
   "tmdbArtwork.replaceFile": "Bu görseli kullan",
   "tmdbArtwork.savingArtwork": "Seçilen görsel kaydediliyor...",
   "tmdbArtwork.artworkSaved":
     "Kaydedildi. {file} artık bu yapım için kullanılıyor.",
   "tmdbArtwork.couldNotSaveArtwork": "Görsel kaydedilemedi.",
+  "tmdbArtwork.uploadCustom.poster": "Kapak yükle",
+  "tmdbArtwork.uploadCustom.backdrop": "Klasör görseli yükle",
+  "tmdbArtwork.uploadCustom.logo": "Logo yükle",
+  "tmdbArtwork.uploadingCustom": "Görseliniz yükleniyor...",
+  "tmdbArtwork.customArtworkSaved":
+    "Görseliniz artık bu içerikte kullanılıyor.",
+  "tmdbArtwork.customArtworkFailed":
+    "Bu görsel yüklenemedi. En fazla 8 MB boyutunda JPEG, PNG veya WebP kullanın.",
   "tmdbArtwork.kind.poster": "Afiş",
   "tmdbArtwork.kind.backdrop": "Arka plan",
   "tmdbArtwork.kind.logo": "Logo",
@@ -857,17 +869,17 @@ export const tr = {
   "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
   "tmdbArtwork.lockedExplanation":
     "Veri yenileme, sizin seçtiğiniz bir görseli değiştirmez.",
-  "tmdbArtwork.revertToAutomatic": "Otomatiğe döndür",
-  "tmdbArtwork.revertingArtwork": "Görsel TMDB'ye geri bırakılıyor...",
+  "tmdbArtwork.revertToAutomatic": "Özel seçimi kaldır",
+  "tmdbArtwork.revertingArtwork": "Özel seçim kaldırılıyor...",
   "tmdbArtwork.artworkReverted":
-    "Geri alındı. TMDB'nin kendi seçimi arka planda yeniden indiriliyor.",
+    "Kaldırıldı. Sağlayıcı görseli varsa otomatik görsel yeniden gelir.",
   "tmdbArtwork.couldNotRevertArtwork": "Bu görsel geri alınamadı.",
   "tmdbArtwork.identifying": "TMDB eşleşmesi kaydediliyor...",
   "tmdbArtwork.identifySaved":
     "Eşleştirildi. Veriler ve görseller arka planda yenileniyor.",
   "tmdbArtwork.couldNotIdentify": "TMDB eşleşmesi kaydedilemedi.",
   "tmdbArtwork.artworkNotApplicable":
-    "Görsel yalnızca bir film ya da dizi için seçilebilir.",
+    "Görsel yalnızca film, dizi veya kitap için seçilebilir.",
   "logoLayout.title": "Logo Konumu",
   "logoLayout.description":
     "Logoyu sürükleyerek kartta konumlandırın, köşelerinden çekerek boyutlandırın.",

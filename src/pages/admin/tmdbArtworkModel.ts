@@ -27,6 +27,10 @@ export function getKindDescriptionKey(kind: ArtworkKind): TranslationKey {
   return `tmdbArtwork.kind.${kind}Description` as TranslationKey;
 }
 
+export function getCustomUploadLabelKey(kind: ArtworkKind): TranslationKey {
+  return `tmdbArtwork.uploadCustom.${kind}` as TranslationKey;
+}
+
 export function getLanguageLabelKey(language: string | null): TranslationKey {
   if (language === "en") return "tmdbArtwork.language.english";
   if (language === "tr") return "tmdbArtwork.language.turkish";
@@ -38,13 +42,16 @@ export function getLanguageLabelKey(language: string | null): TranslationKey {
  * the series, so offering them here would promise something the server refuses.
  */
 export function isArtworkEligible(item: MediaItem): boolean {
-  return item.Type === "Movie" || item.Type === "Series";
+  return (
+    item.Type === "Movie" || item.Type === "Series" || item.Type === "Book"
+  );
 }
 
-export function filterTitles(
-  items: MediaItem[],
-  search: string,
-): MediaItem[] {
+export function supportsTmdbArtwork(item: MediaItem | undefined): boolean {
+  return item?.Type === "Movie" || item?.Type === "Series";
+}
+
+export function filterTitles(items: MediaItem[], search: string): MediaItem[] {
   const query = search.trim().toLowerCase();
   if (!query) return items;
 
@@ -134,6 +141,20 @@ export function hasStoredArtwork(
     (image) =>
       image.imageType === STORED_TYPE_BY_KIND[kind] && image.imageIndex === 0,
   );
+}
+
+export function getStoredArtworkTag(
+  current: ReadonlyArray<{
+    imageType: string;
+    imageIndex: number;
+    contentHash: string;
+  }>,
+  kind: ArtworkKind,
+): string | undefined {
+  return current.find(
+    (image) =>
+      image.imageType === STORED_TYPE_BY_KIND[kind] && image.imageIndex === 0,
+  )?.contentHash;
 }
 
 export function formatDimensions(

@@ -43,12 +43,62 @@ export interface ArtworkOverview {
     id: string;
     title: string;
     kind: string;
-    providerId: string;
+    providerId: string | null;
   };
   /** Stored types an administrator has taken over from the automatic pass. */
   lockedTypes: string[];
   current: StoredArtwork[];
   candidates: ArtworkCandidate[];
+}
+
+export const MAX_CUSTOM_ARTWORK_BYTES = 8 * 1_024 * 1_024;
+
+function fileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () =>
+      reject(new Error("The image file could not be read."));
+    reader.onload = () => {
+      const result = reader.result;
+      if (typeof result !== "string" || !result.includes(",")) {
+        reject(new Error("The image file could not be read."));
+        return;
+      }
+      resolve(result.slice(result.indexOf(",") + 1));
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+/** Uploads an administrator-owned image and locks it against metadata refresh. */
+export async function uploadCustomArtwork(
+  itemId: string,
+  kind: ArtworkKind,
+  file: File,
+): Promise<{
+  imageId: string;
+  imageType: string;
+  contentHash: string;
+  isLocked: boolean;
+}> {
+  if (file.size === 0 || file.size > MAX_CUSTOM_ARTWORK_BYTES) {
+    throw new Error("Upload an image no larger than 8 MiB.");
+  }
+  if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+    throw new Error("Upload a JPEG, PNG, or WebP image.");
+  }
+
+  return ownApiClient.request(
+    `/admin/items/${encodeURIComponent(itemId)}/artwork/upload`,
+    {
+      method: "POST",
+      body: {
+        kind,
+        contentType: file.type,
+        dataBase64: await fileAsBase64(file),
+      },
+    },
+  );
 }
 
 export interface LocalizedMetadataPreview {
@@ -59,9 +109,7 @@ export interface LocalizedMetadataPreview {
   tagline: string | null;
 }
 
-export async function getItemArtwork(
-  itemId: string,
-): Promise<ArtworkOverview> {
+export async function getItemArtwork(itemId: string): Promise<ArtworkOverview> {
   return ownApiClient.request<ArtworkOverview>(
     `/admin/items/${encodeURIComponent(itemId)}/artwork`,
   );

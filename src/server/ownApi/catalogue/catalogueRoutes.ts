@@ -55,7 +55,10 @@ function readListQuery(context: RouteContext) {
       "order",
     ),
     genre: url.searchParams.get("genre") ?? undefined,
-    libraryId: parseOptionalUuid(url.searchParams.get("libraryId"), "libraryId"),
+    libraryId: parseOptionalUuid(
+      url.searchParams.get("libraryId"),
+      "libraryId",
+    ),
   };
 }
 
@@ -67,9 +70,7 @@ function paginationFor(
 ): Pagination {
   return buildPagination(
     limit,
-    nextCursorId
-      ? [{ cursorKey: nextCursorKey ?? "", id: nextCursorId }]
-      : [],
+    nextCursorId ? [{ cursorKey: nextCursorKey ?? "", id: nextCursorId }] : [],
     nextCursorId !== null,
   );
 }
@@ -81,7 +82,11 @@ export function createCatalogueRoutes({
   async function listByKinds(
     context: RouteContext,
     kinds: ItemKind[],
-    overrides: { libraryId?: string; seriesId?: string; parentId?: string } = {},
+    overrides: {
+      libraryId?: string;
+      seriesId?: string;
+      parentId?: string;
+    } = {},
   ): Promise<void> {
     const principal = context.requirePrincipal();
     const query = readListQuery(context);
@@ -94,7 +99,7 @@ export function createCatalogueRoutes({
       sort: query.sort,
       order: query.order,
       ...(query.genre ? { genre: query.genre } : {}),
-      ...(overrides.libraryId ?? query.libraryId
+      ...((overrides.libraryId ?? query.libraryId)
         ? { libraryId: overrides.libraryId ?? (query.libraryId as string) }
         : {}),
       ...(overrides.seriesId ? { seriesId: overrides.seriesId } : {}),
@@ -174,6 +179,12 @@ export function createCatalogueRoutes({
       path: "/series",
       access: "authenticated",
       handle: (context) => listByKinds(context, ["series"]),
+    },
+    {
+      method: "GET",
+      path: "/books",
+      access: "authenticated",
+      handle: (context) => listByKinds(context, ["book"]),
     },
     {
       method: "GET",
@@ -495,8 +506,16 @@ export function createCatalogueRoutes({
       handle: async (context) => {
         const principal = context.requirePrincipal();
         const searchQuery = parseSearchQuery(context.url.searchParams.get("q"));
-        const limit = parseLimit(context.url.searchParams.get("limit"), 100, 40);
-        const items = await service.search(principal.userId, searchQuery, limit);
+        const limit = parseLimit(
+          context.url.searchParams.get("limit"),
+          100,
+          40,
+        );
+        const items = await service.search(
+          principal.userId,
+          searchQuery,
+          limit,
+        );
         sendCollection(context.response, context.requestId, items, {
           limit,
           nextCursor: null,
@@ -510,7 +529,11 @@ export function createCatalogueRoutes({
       access: "authenticated",
       handle: async (context) => {
         const principal = context.requirePrincipal();
-        const limit = parseLimit(context.url.searchParams.get("limit"), 200, 100);
+        const limit = parseLimit(
+          context.url.searchParams.get("limit"),
+          200,
+          100,
+        );
         const items = await service.favourites(principal.userId, limit);
         sendCollection(context.response, context.requestId, items, {
           limit,

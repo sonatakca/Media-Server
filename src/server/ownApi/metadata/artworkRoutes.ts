@@ -41,7 +41,19 @@ const PREVIEW_SIZE = "w342";
 
 const ARTWORK_KINDS = Object.keys(ARTWORK_TARGETS) as TmdbArtworkKind[];
 
-const APPLICABLE_KINDS = new Set(["movie", "series"]);
+/** Items that own a card/cover rather than inheriting one from a parent. */
+const APPLICABLE_KINDS = new Set(["movie", "series", "book"]);
+const TMDB_KINDS = new Set(["movie", "series"]);
+
+/** Keep admin uploads comfortably below the storage layer's 12 MiB ceiling. */
+const MAX_CUSTOM_IMAGE_BYTES = 8 * 1_024 * 1_024;
+const MAX_CUSTOM_IMAGE_JSON_BYTES =
+  Math.ceil((MAX_CUSTOM_IMAGE_BYTES * 4) / 3) + 4 * 1_024;
+const CUSTOM_IMAGE_CONTENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+]);
 
 function itemNotFound(): OwnApiError {
   return new OwnApiError(
@@ -57,7 +69,10 @@ function itemNotFound(): OwnApiError {
  * slash, one path segment, and a known image extension.
  */
 function requireProviderFilePath(value: unknown): string {
-  if (typeof value !== "string" || !/^\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/.test(value)) {
+  if (
+    typeof value !== "string" ||
+    !/^\/[A-Za-z0-9_-]+\.(jpg|png|webp)$/.test(value)
+  ) {
     throw new OwnApiError(
       "VALIDATION_FAILED",
       "filePath is not a provider image path.",
@@ -76,6 +91,52 @@ function requireArtworkKind(value: unknown): TmdbArtworkKind {
     );
   }
   return value as TmdbArtworkKind;
+}
+
+function requireCustomImageBytes(
+  contentType: unknown,
+  dataBase64: unknown,
+): { bytes: Buffer; contentType: string } {
+  if (
+    typeof contentType !== "string" ||
+    !CUSTOM_IMAGE_CONTENT_TYPES.has(contentType)
+  ) {
+    throw new OwnApiError(
+      "VALIDATION_FAILED",
+      "contentType must be image/jpeg, image/png, or image/webp.",
+      422,
+    );
+  }
+  if (
+    typeof dataBase64 !== "string" ||
+    dataBase64.length === 0 ||
+    dataBase64.length > Math.ceil((MAX_CUSTOM_IMAGE_BYTES * 4) / 3) + 4 ||
+    !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(
+      dataBase64,
+    )
+  ) {
+    throw new OwnApiError(
+      "INVALID_ARTWORK_FILE",
+      "The custom artwork is not a valid image upload.",
+      422,
+    );
+  }
+
+  const bytes = Buffer.from(dataBase64, "base64");
+  if (
+    bytes.length === 0 ||
+    bytes.length > MAX_CUSTOM_IMAGE_BYTES ||
+    bytes.toString("base64").replace(/=+$/, "") !==
+      dataBase64.replace(/=+$/, "")
+  ) {
+    throw new OwnApiError(
+      "INVALID_ARTWORK_FILE",
+      "The custom artwork is not a valid image upload.",
+      422,
+    );
+  }
+
+  return { bytes, contentType };
 }
 
 export interface LogoLayout {
@@ -174,7 +235,7 @@ function resolveProviderTarget(target: MetadataTarget): {
   kind: "movie" | "tv";
   providerId: string;
 } {
-  if (!APPLICABLE_KINDS.has(target.kind)) {
+  if (!TMDB_KINDS.has(target.kind)) {
     throw new OwnApiError(
       "ARTWORK_NOT_APPLICABLE",
       "Artwork can only be chosen for a film or a series.",
@@ -192,6 +253,27 @@ function resolveProviderTarget(target: MetadataTarget): {
   }
 
   return { kind: target.kind === "series" ? "tv" : "movie", providerId };
+}
+
+function requireArtworkTarget(target: MetadataTarget): void {
+  if (!APPLICABLE_KINDS.has(target.kind)) {
+    throw new OwnApiError(
+      "ARTWORK_NOT_APPLICABLE",
+      "Artwork can only be stored for a film, series, or book.",
+      422,
+    );
+  }
+}
+
+function optionalProviderTarget(target: MetadataTarget): {
+  kind: "movie" | "tv";
+  providerId: string;
+} | null {
+  if (!TMDB_KINDS.has(target.kind) || !target.providerIds.tmdb) return null;
+  return {
+    kind: target.kind === "series" ? "tv" : "movie",
+    providerId: target.providerIds.tmdb,
+  };
 }
 
 export function createArtworkRoutes({
@@ -215,10 +297,13 @@ export function createArtworkRoutes({
       handle: async (context) => {
         const itemId = requireUuid(context.params.itemId, "itemId");
         const target = await requireTarget(itemId);
-        const provider = resolveProviderTarget(target);
+        requireArtworkTarget(target);
+        const provider = optionalProviderTarget(target);
 
         const [candidates, lockedTypes, current] = await Promise.all([
-          tmdb.listArtwork(provider.kind, provider.providerId),
+          provider
+            ? tmdb.listArtwork(provider.kind, provider.providerId)
+            : Promise.resolve([]),
           images.listLockedTypes(itemId),
           images.listForItems([itemId]),
         ]);
@@ -228,7 +313,7 @@ export function createArtworkRoutes({
             id: target.id,
             title: target.title,
             kind: target.kind,
-            providerId: provider.providerId,
+            providerId: provider?.providerId ?? null,
           },
           // Which types an operator has taken over, so the page can offer to
           // hand each one back rather than guessing from the artwork alone.
@@ -239,6 +324,68 @@ export function createArtworkRoutes({
             imageType: ARTWORK_TARGETS[candidate.kind].imageType,
             previewUrl: `${TMDB_IMAGE_BASE_URL}/${PREVIEW_SIZE}${candidate.filePath}`,
           })),
+        });
+      },
+    },
+
+    {
+      /**
+       * Stores artwork supplied by the administrator rather than TMDB.
+       *
+       * The image storage verifies magic bytes before anything reaches disk;
+       * the declared MIME type alone is never trusted. The resulting row is
+       * locked for the same reason a hand-picked TMDB image is locked: an
+       * automatic metadata refresh must not undo an explicit choice.
+       */
+      method: "POST",
+      path: "/admin/items/:itemId/artwork/upload",
+      access: "admin",
+      handle: async (context) => {
+        const itemId = requireUuid(context.params.itemId, "itemId");
+        const target = await requireTarget(itemId);
+        requireArtworkTarget(target);
+
+        const body = asObjectBody(
+          await context.readJson(MAX_CUSTOM_IMAGE_JSON_BYTES),
+          ["kind", "contentType", "dataBase64"],
+        );
+        const kind = requireArtworkKind(body.kind);
+        const upload = requireCustomImageBytes(
+          body.contentType,
+          body.dataBase64,
+        );
+
+        let stored;
+        try {
+          stored = await imageStorage.store(upload.bytes, upload.contentType);
+        } catch {
+          throw new OwnApiError(
+            "INVALID_ARTWORK_FILE",
+            "Upload a JPEG, PNG, or WebP image no larger than 8 MiB.",
+            422,
+          );
+        }
+
+        const imageType = ARTWORK_TARGETS[kind].imageType;
+        const imageId = await images.replaceLocked({
+          itemId,
+          imageType,
+          imageIndex: 0,
+          contentHash: stored.contentHash,
+          contentType: stored.contentType,
+          width: null,
+          height: null,
+          sizeBytes: stored.sizeBytes,
+          storageKey: stored.storageKey,
+          source: "upload",
+          sourceUrl: null,
+        });
+
+        sendData(context.response, context.requestId, {
+          imageId,
+          imageType,
+          contentHash: stored.contentHash,
+          isLocked: true,
         });
       },
     },
@@ -302,7 +449,8 @@ export function createArtworkRoutes({
       access: "admin",
       handle: async (context) => {
         const itemId = requireUuid(context.params.itemId, "itemId");
-        await requireTarget(itemId);
+        const target = await requireTarget(itemId);
+        requireArtworkTarget(target);
         const kind = requireArtworkKind(context.params.kind);
 
         // Removing the row rather than only clearing the lock is what hands the
@@ -317,13 +465,14 @@ export function createArtworkRoutes({
         // Reverting would otherwise leave the title with no artwork of this
         // kind until something else happened to refresh it, which reads as
         // breakage rather than as a revert.
-        const taskId = cleared
-          ? await queue.enqueue({
-              jobType: JOB_TYPES.metadataRefresh,
-              payload: { itemId },
-              dedupeKey: `${JOB_TYPES.metadataRefresh}:${itemId}`,
-            })
-          : null;
+        const taskId =
+          cleared && optionalProviderTarget(target)
+            ? await queue.enqueue({
+                jobType: JOB_TYPES.metadataRefresh,
+                payload: { itemId },
+                dedupeKey: `${JOB_TYPES.metadataRefresh}:${itemId}`,
+              })
+            : null;
 
         sendData(context.response, context.requestId, {
           imageType: ARTWORK_TARGETS[kind].imageType,

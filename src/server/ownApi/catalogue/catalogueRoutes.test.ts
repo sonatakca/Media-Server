@@ -8,7 +8,10 @@ import { OwnApiError } from "../ownApiHandler";
 import { createCatalogueRoutes } from "./catalogueRoutes";
 import { createProgressRoutes } from "../progress/progressRoutes";
 import { createCatalogueService } from "./catalogueService";
-import type { CatalogueItemRow, CatalogueRepository } from "./catalogueRepository";
+import type {
+  CatalogueItemRow,
+  CatalogueRepository,
+} from "./catalogueRepository";
 import type { HomeRepository } from "./homeRepository";
 import type { ImageRepository } from "../images/imageRepository";
 import type { UserStateRepository } from "../progress/userStateRepository";
@@ -20,6 +23,7 @@ const VIEWER = "11111111-1111-4111-8111-111111111111";
 const VISIBLE_ITEM = "aaaaaaaa-1111-4111-8111-111111111111";
 const HIDDEN_ITEM = "bbbbbbbb-2222-4222-8222-222222222222";
 const PARENT_ITEM = "aaaaaaaa-2222-4222-8222-222222222222";
+const BOOK_ITEM = "aaaaaaaa-4444-4444-8444-444444444444";
 
 function itemRow(
   id: string,
@@ -61,6 +65,7 @@ const VISIBLE_ROWS = [
   itemRow(VISIBLE_ITEM, "Alpha"),
   itemRow(PARENT_ITEM, "Beta"),
   itemRow("aaaaaaaa-3333-4333-8333-333333333333", "Gamma"),
+  itemRow(BOOK_ITEM, "The Dispossessed", { kind: "book" }),
 ];
 
 /** Only reachable through their parent, the way an episode or a season is. */
@@ -74,8 +79,7 @@ const CHILD_ROWS = [
 const ALL_ROWS = [...VISIBLE_ROWS, ...CHILD_ROWS];
 
 function fakeCatalogue(): CatalogueRepository {
-  const visible = (itemId: string) =>
-    ALL_ROWS.some((row) => row.id === itemId);
+  const visible = (itemId: string) => ALL_ROWS.some((row) => row.id === itemId);
 
   return {
     listLibraries: async () => [],
@@ -84,10 +88,15 @@ function fakeCatalogue(): CatalogueRepository {
       ALL_ROWS.find((row) => row.id === itemId) ?? null,
     getItemsByIds: async (_userId, itemIds) =>
       ALL_ROWS.filter((row) => itemIds.includes(row.id)),
-    listItems: async ({ limit, cursor, parentId }) => {
-      const rows = parentId
+    listItems: async ({ limit, cursor, parentId, kinds }) => {
+      const scoped = parentId
         ? ALL_ROWS.filter((row) => row.parentId === parentId)
         : VISIBLE_ROWS;
+      const requestedKinds = kinds ?? [];
+      const rows =
+        requestedKinds.length === 0
+          ? scoped
+          : scoped.filter((row) => requestedKinds.includes(row.kind));
       const start = cursor
         ? rows.findIndex((row) => row.id === cursor.id) + 1
         : 0;
@@ -133,7 +142,9 @@ function fakeImages(): ImageRepository {
   };
 }
 
-function fakeUserState(): UserStateRepository & { records: Map<string, UserStateRecord> } {
+function fakeUserState(): UserStateRepository & {
+  records: Map<string, UserStateRecord>;
+} {
   const records = new Map<string, UserStateRecord>();
   let sequence = 0;
 
@@ -209,7 +220,8 @@ async function call(
   path: string,
   options: { body?: unknown; headers?: Record<string, string> } = {},
 ) {
-  const payload = options.body === undefined ? undefined : JSON.stringify(options.body);
+  const payload =
+    options.body === undefined ? undefined : JSON.stringify(options.body);
   const csrfToken = createCsrfToken(SESSION_HASH, CSRF_SECRET);
   const headers: Record<string, string> = {
     host: "seyirlik.test",
@@ -273,7 +285,11 @@ async function call(
 describe("catalogue routes", () => {
   it("returns an item the viewer can see, in the native envelope", async () => {
     const { router } = buildRouter();
-    const result = await call(router, "GET", `/ownAPI/v1/items/${VISIBLE_ITEM}`);
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${VISIBLE_ITEM}`,
+    );
 
     expect(result.sent.statusCode).toBe(200);
     expect(result.json).toMatchObject({
@@ -320,6 +336,16 @@ describe("catalogue routes", () => {
     };
     expect(secondPage.data.map((item) => item.title)).toEqual(["Gamma"]);
     expect(secondPage.pagination.nextCursor).toBeNull();
+  });
+
+  it("exposes books as their own catalogue for the artwork manager", async () => {
+    const { router } = buildRouter();
+    const result = await call(router, "GET", "/ownAPI/v1/books");
+
+    expect(result.sent.statusCode).toBe(200);
+    expect(
+      (result.json as { data: Array<{ id: string; kind: string }> }).data,
+    ).toEqual([expect.objectContaining({ id: BOOK_ITEM, kind: "book" })]);
   });
 
   it("lists the children of an item and reports a leaf as childless", async () => {

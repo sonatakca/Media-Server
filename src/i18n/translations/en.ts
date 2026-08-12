@@ -590,7 +590,7 @@ export const en = {
   "devtools.card.libraryMaintenance.tag": "Maintenance",
   "devtools.card.tmdbArtwork.title": "TMDB Artwork",
   "devtools.card.tmdbArtwork.description":
-    "Pick the TMDB poster, backdrop, and logo for a film or series instead of taking the provider's first choice.",
+    "Choose TMDB artwork or upload a custom cover, backdrop, and logo for movies, shows, and books.",
   "devtools.card.tmdbArtwork.tag": "Artwork",
   "devtools.card.contentExplorer.title": "Content Explorer",
   "devtools.card.contentExplorer.description":
@@ -782,14 +782,15 @@ export const en = {
   "tmdbArtwork.eyebrow": "Artwork Override",
   "tmdbArtwork.title": "TMDB Artwork",
   "tmdbArtwork.description":
-    "Choose exactly which TMDB image Seyirlik stores as the poster, backdrop, and logo for a title.",
+    "Choose TMDB artwork or upload your own cover, backdrop, and logo for movies, shows, and books.",
   "tmdbArtwork.languageFilter": "Filter by image language",
-  "tmdbArtwork.loadingItems": "Loading movies and series...",
+  "tmdbArtwork.loadingItems": "Loading movies, shows, and books...",
   "tmdbArtwork.loadedItems": "Loaded {count} titles.",
-  "tmdbArtwork.couldNotLoadItems": "Could not load movies and series.",
+  "tmdbArtwork.couldNotLoadItems": "Could not load movies, shows, and books.",
   "tmdbArtwork.jellyfinTitles": "Library Titles",
   "tmdbArtwork.visibleItems": "{count} visible titles",
-  "tmdbArtwork.itemSearchPlaceholder": "Search movie, series, year, or ID...",
+  "tmdbArtwork.itemSearchPlaceholder":
+    "Search movie, show, book, year, or ID...",
   "tmdbArtwork.tmdbMatch": "TMDB Match",
   "tmdbArtwork.noItemSelected": "Select a Jellyfin title",
   "tmdbArtwork.selectItemFirst":
@@ -802,6 +803,8 @@ export const en = {
   "tmdbArtwork.searchResults": "{count} TMDB matches",
   "tmdbArtwork.noSearchResults": "No TMDB matches found.",
   "tmdbArtwork.couldNotSearch": "Could not search TMDB.",
+  "tmdbArtwork.tmdbUnavailableForBooks":
+    "Books are not matched through TMDB. Upload custom artwork below.",
   "tmdbArtwork.artworkSelection": "Artwork Selection",
   "tmdbArtwork.noTmdbSelected": "No TMDB title selected",
   "tmdbArtwork.noTmdbSelectedDescription":
@@ -813,11 +816,20 @@ export const en = {
   "tmdbArtwork.loadingImages": "Loading TMDB images...",
   "tmdbArtwork.loadedImages": "{count} choices for {target}",
   "tmdbArtwork.noImages": "No images matched this language filter.",
+  "tmdbArtwork.noProviderImages":
+    "No provider images are available. You can upload your own image above.",
   "tmdbArtwork.couldNotLoadImages": "Could not load TMDB images.",
   "tmdbArtwork.replaceFile": "Use this image",
   "tmdbArtwork.savingArtwork": "Storing the chosen image...",
   "tmdbArtwork.artworkSaved": "Saved. {file} is now used for this title.",
   "tmdbArtwork.couldNotSaveArtwork": "Could not save artwork.",
+  "tmdbArtwork.uploadCustom.poster": "Upload cover",
+  "tmdbArtwork.uploadCustom.backdrop": "Upload folder image",
+  "tmdbArtwork.uploadCustom.logo": "Upload logo",
+  "tmdbArtwork.uploadingCustom": "Uploading your image...",
+  "tmdbArtwork.customArtworkSaved": "Your image is now used for this title.",
+  "tmdbArtwork.customArtworkFailed":
+    "Could not upload this image. Use a JPEG, PNG, or WebP file up to 8 MB.",
   "tmdbArtwork.kind.poster": "Poster",
   "tmdbArtwork.kind.backdrop": "Backdrop",
   "tmdbArtwork.kind.logo": "Logo",
@@ -854,17 +866,17 @@ export const en = {
   "tmdbArtwork.lockedBadge": "Chosen by you",
   "tmdbArtwork.lockedExplanation":
     "A metadata refresh will not replace an image you chose.",
-  "tmdbArtwork.revertToAutomatic": "Revert to automatic",
-  "tmdbArtwork.revertingArtwork": "Handing this image back to TMDB...",
+  "tmdbArtwork.revertToAutomatic": "Remove custom choice",
+  "tmdbArtwork.revertingArtwork": "Removing this custom choice...",
   "tmdbArtwork.artworkReverted":
-    "Reverted. TMDB's own choice is being fetched again in the background.",
+    "Removed. Automatic artwork will return when a provider image is available.",
   "tmdbArtwork.couldNotRevertArtwork": "Could not revert this image.",
   "tmdbArtwork.identifying": "Recording the TMDB match...",
   "tmdbArtwork.identifySaved":
     "Matched. Metadata and artwork are refreshing in the background.",
   "tmdbArtwork.couldNotIdentify": "Could not record the TMDB match.",
   "tmdbArtwork.artworkNotApplicable":
-    "Artwork can only be chosen for a film or a series.",
+    "Artwork can only be chosen for a movie, show, or book.",
   "logoLayout.title": "Logo Placement",
   "logoLayout.description":
     "Drag the logo to place it on the card, and pull a corner to resize it.",
