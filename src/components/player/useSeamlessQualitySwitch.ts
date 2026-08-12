@@ -1,0 +1,792 @@
+/**
+ * Dual-deck rendition switching.
+ *
+ * Two full-size video elements share the viewport. One is active — visible,
+ * audible, and the element every control, hook and listener means when it says
+ * "the video". The other is standby: hidden, muted, inert, and loading the next
+ * quality. On a successful handoff the two swap roles, and the element that did
+ * the preparing becomes the one that plays. The prepared bytes and the decoded
+ * frame are never handed to a third element, because they cannot be.
+ *
+ * The old single-element path assigned a new `src` to the playing element. That
+ * discards the decode pipeline, the buffer and the position in one statement,
+ * which is why the viewer saw a black frame, a `00:00 / 00:00` clock and a
+ * second buffering wait. Nothing here ever writes to the active element's
+ * source.
+ */
+
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+
+import {
+  AUTO_RETRY_BACKOFF_MS,
+  HANDOFF_CROSSFADE_MS,
+  MAX_HANDOFF_DRIFT_SECONDS,
+  OTHER_DECK,
+  PREPARE_DEADLINE_MS,
+  RENDEZVOUS_TARGET_SECONDS,
+  STABILIZE_MS,
+  buildSwitchDiagnostics,
+  classifySwitchReason,
+  evaluatePromotionReadiness,
+  initialSwitchState,
+  reduceSwitch,
+  type DeckId,
+  type SwitchDiagnostics,
+  type SwitchEvent,
+  type SwitchOutcome,
+  type SwitchState,
+} from "./deckModel";
+import {
+  bufferedAheadOf,
+  prepareStandbyDeck,
+  releaseDeck,
+  type DeckClock,
+  type DeckMedia,
+} from "./prepareStandbyDeck";
+
+export { HANDOFF_CROSSFADE_MS };
+
+/**
+ * A jump larger than this in the active deck's clock is a seek, not playback,
+ * and invalidates a standby prepared for the old timeline position.
+ */
+const SEEK_DETECTION_SECONDS = 1.5;
+
+/** Longest the rendezvous may be waited for before the switch is abandoned. */
+const RENDEZVOUS_DEADLINE_MS = 8_000;
+
+export interface SeamlessSwitchRequest {
+  url: string;
+  toQualityId: string;
+  toHeight: number;
+  fromQualityId: string | null;
+  fromHeight: number | null;
+  isManual: boolean;
+}
+
+/** The latest user intent, read at the moment of promotion rather than cached. */
+export interface PlaybackIntent {
+  volume: number;
+  muted: boolean;
+  playbackRate: number;
+  wantsToPlay: boolean;
+}
+
+export interface UseSeamlessQualitySwitchOptions {
+  /**
+   * Commits the promoted source. Called once, during a successful handoff, and
+   * never during preparation — which is what keeps the quality label, the
+   * controls and the reporting from moving before the picture does.
+   */
+  onPromoted: (commit: {
+    toQualityId: string;
+    url: string;
+    deckId: DeckId;
+  }) => void;
+  readIntent: () => PlaybackIntent;
+  onDiagnostics?: (diagnostics: SwitchDiagnostics) => void;
+  clock?: DeckClock;
+  /** How long the old deck is retained for rollback after a promotion. */
+  stabiliseMs?: number;
+}
+
+export interface SeamlessQualitySwitchApi {
+  /**
+   * The single authoritative way to reach the logical active video element.
+   *
+   * Repointed synchronously at the instant of a promotion, so a read taken from
+   * anywhere — a control, a hook, an interval — always lands on the deck that
+   * is actually playing.
+   */
+  videoRef: RefObject<HTMLVideoElement>;
+  activeDeckId: DeckId;
+  standbyDeckId: DeckId;
+  /**
+   * Bumped on every promotion. Effects that attach listeners to the active
+   * element depend on this so they rebind to the deck that is now playing
+   * instead of staying bolted to whichever element was active at mount.
+   */
+  deckEpoch: number;
+  setDeckElement: (deckId: DeckId, element: HTMLVideoElement | null) => void;
+  /** Stable `ref` callbacks, one per deck. Must be used as-is in the JSX. */
+  deckRefs: Record<DeckId, (element: HTMLVideoElement | null) => void>;
+  getDeckElement: (deckId: DeckId) => HTMLVideoElement | null;
+  isActiveDeckElement: (element: EventTarget | null) => boolean;
+  requestSwitch: (request: SeamlessSwitchRequest) => Promise<SwitchOutcome>;
+  cancelSwitch: (reason: string) => void;
+  /** Invalidates a standby prepared for a position the viewer has left. */
+  notifyActiveSeek: () => void;
+  isPreparing: boolean;
+  pendingQualityId: string | null;
+  /** True while the old deck is held loaded in case the new one fails. */
+  isRetainedDeckElement: (element: HTMLVideoElement | null) => boolean;
+  isBackedOff: (qualityId: string) => boolean;
+  switchState: SwitchState;
+}
+
+const defaultClock: DeckClock = {
+  now: () =>
+    typeof performance === "undefined" ? Date.now() : performance.now(),
+  setTimeout: (handler, ms) => window.setTimeout(handler, ms),
+  clearTimeout: (handle) => window.clearTimeout(handle),
+  requestAnimationFrame: (callback) =>
+    typeof window.requestAnimationFrame === "function"
+      ? window.requestAnimationFrame(() => callback())
+      : window.setTimeout(callback, 16),
+  cancelAnimationFrame: (handle) => {
+    if (typeof window.cancelAnimationFrame === "function") {
+      window.cancelAnimationFrame(handle);
+    } else {
+      window.clearTimeout(handle);
+    }
+  },
+};
+
+function asDeckMedia(element: HTMLVideoElement): DeckMedia {
+  return element as unknown as DeckMedia;
+}
+
+export function useSeamlessQualitySwitch({
+  onPromoted,
+  readIntent,
+  onDiagnostics,
+  clock = defaultClock,
+  stabiliseMs = STABILIZE_MS,
+}: UseSeamlessQualitySwitchOptions): SeamlessQualitySwitchApi {
+  const deckElementsRef = useRef<Record<DeckId, HTMLVideoElement | null>>({
+    a: null,
+    b: null,
+  });
+
+  /**
+   * The synchronous authority on which deck is active.
+   *
+   * React state drives the rendering, but a promotion has to be true the
+   * instant it happens: the old deck is paused a couple of frames later and
+   * that pause must already be recognisable as the standby's, not the
+   * viewer's.
+   */
+  const activeDeckIdRef = useRef<DeckId>("a");
+  const [activeDeckId, setActiveDeckId] = useState<DeckId>("a");
+  const [deckEpoch, setDeckEpoch] = useState(0);
+  const [switchState, setSwitchState] =
+    useState<SwitchState>(initialSwitchState);
+  const [isPreparing, setIsPreparing] = useState(false);
+  const [pendingQualityId, setPendingQualityId] = useState<string | null>(null);
+
+  const switchStateRef = useRef<SwitchState>(initialSwitchState);
+  const tokenRef = useRef(0);
+  /**
+   * Cancelled and superseded are both "may not promote", but they are not the
+   * same event and the diagnostics have to tell them apart: one is the viewer
+   * moving, the other is Auto changing its mind.
+   */
+  const cancelledTokensRef = useRef(new Set<number>());
+  const supersededTokensRef = useRef(new Set<number>());
+  const retainedDeckRef = useRef<HTMLVideoElement | null>(null);
+  const stabiliseTimerRef = useRef<number | null>(null);
+  const backoffRef = useRef(new Map<string, number>());
+  const isUnmountedRef = useRef(false);
+  const readIntentRef = useRef(readIntent);
+  const onPromotedRef = useRef(onPromoted);
+  const onDiagnosticsRef = useRef(onDiagnostics);
+
+  readIntentRef.current = readIntent;
+  onPromotedRef.current = onPromoted;
+  onDiagnosticsRef.current = onDiagnostics;
+
+  const dispatch = useCallback((event: SwitchEvent) => {
+    const next = reduceSwitch(switchStateRef.current, event);
+    if (next === switchStateRef.current) return next;
+    switchStateRef.current = next;
+    if (!isUnmountedRef.current) setSwitchState(next);
+    return next;
+  }, []);
+
+  const getDeckElement = useCallback(
+    (deckId: DeckId) => deckElementsRef.current[deckId],
+    [],
+  );
+
+  /**
+   * The element every existing `videoRef.current` read in the player resolves
+   * to. Repointed by `syncActiveVideoRef` — which is called from the only three
+   * places the answer can change: a deck mounting, a promotion, and a rollback.
+   */
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const syncActiveVideoRef = useCallback(() => {
+    videoRef.current = deckElementsRef.current[activeDeckIdRef.current];
+  }, []);
+
+  const setDeckElement = useCallback(
+    (deckId: DeckId, element: HTMLVideoElement | null) => {
+      deckElementsRef.current[deckId] = element;
+      syncActiveVideoRef();
+    },
+    [syncActiveVideoRef],
+  );
+
+  /**
+   * Stable per-deck ref callbacks.
+   *
+   * These have to keep their identity across renders. React re-runs a ref
+   * callback whose identity changed by first calling the old one with `null`,
+   * so an inline arrow in the JSX would detach both decks on every render —
+   * including the renders a switch causes — and preparation would be handing
+   * bytes to an element the controller had just been told did not exist.
+   */
+  const deckRefs = useMemo(
+    (): Record<DeckId, (element: HTMLVideoElement | null) => void> => ({
+      a: (element) => setDeckElement("a", element),
+      b: (element) => setDeckElement("b", element),
+    }),
+    [setDeckElement],
+  );
+
+  const isActiveDeckElement = useCallback(
+    (element: EventTarget | null) =>
+      element !== null &&
+      element === deckElementsRef.current[activeDeckIdRef.current],
+    [],
+  );
+
+  const isRetainedDeckElement = useCallback(
+    (element: HTMLVideoElement | null) =>
+      element !== null && element === retainedDeckRef.current,
+    [],
+  );
+
+  const isBackedOff = useCallback((qualityId: string) => {
+    const until = backoffRef.current.get(qualityId);
+    if (until === undefined) return false;
+    if (Date.now() >= until) {
+      backoffRef.current.delete(qualityId);
+      return false;
+    }
+    return true;
+  }, []);
+
+  const isSuperseded = useCallback(
+    (token: number) =>
+      isUnmountedRef.current ||
+      token !== tokenRef.current ||
+      cancelledTokensRef.current.has(token) ||
+      supersededTokensRef.current.has(token),
+    [],
+  );
+
+  const cancelSwitch = useCallback(
+    (reason: string) => {
+      const current = switchStateRef.current.request;
+      if (!current) return;
+      cancelledTokensRef.current.add(current.token);
+      dispatch({ type: "cancel", token: current.token, atMs: clock.now() });
+      void reason;
+    },
+    [clock, dispatch],
+  );
+
+  const notifyActiveSeek = useCallback(() => {
+    // A standby parked for the old position is worthless and must never be
+    // promoted there. Preparation restarts from wherever the viewer landed.
+    if (switchStateRef.current.phase === "idle") return;
+    cancelSwitch("active-deck-seek");
+  }, [cancelSwitch]);
+
+  const clearStabiliseTimer = useCallback(() => {
+    if (stabiliseTimerRef.current !== null) {
+      clock.clearTimeout(stabiliseTimerRef.current);
+      stabiliseTimerRef.current = null;
+    }
+  }, [clock]);
+
+  const emitDiagnostics = useCallback((outcome: SwitchOutcome) => {
+    const diagnostics = buildSwitchDiagnostics(switchStateRef.current, outcome);
+    if (diagnostics) onDiagnosticsRef.current?.(diagnostics);
+  }, []);
+
+  const nextFrame = useCallback(
+    () =>
+      new Promise<void>((resolve) => {
+        clock.requestAnimationFrame(() => resolve());
+      }),
+    [clock],
+  );
+
+  /**
+   * The swap itself.
+   *
+   * Everything that decides *whether* to swap has already happened; this only
+   * moves ownership, and it moves picture and sound together so the two can
+   * never be split across decks.
+   */
+  const performHandoff = useCallback(
+    async (
+      fromDeck: DeckId,
+      toDeck: DeckId,
+      commit: { toQualityId: string; url: string },
+    ) => {
+      const oldElement = deckElementsRef.current[fromDeck];
+      const newElement = deckElementsRef.current[toDeck];
+      if (!oldElement || !newElement) return false;
+
+      const intent = readIntentRef.current();
+
+      // Playback rate and audio settings move first, while the new deck is
+      // still hidden, so nothing is heard or seen mid-transfer.
+      newElement.playbackRate = intent.playbackRate;
+      newElement.volume = intent.volume;
+      newElement.muted = intent.muted;
+
+      // One operation, two decks: the old one gives up audio in the same step
+      // the new one takes it, so both are never audible at once.
+      oldElement.muted = true;
+
+      if (intent.wantsToPlay) {
+        void Promise.resolve(newElement.play()).catch(() => {
+          // A blocked play is handled by the rollback watch below.
+        });
+      } else {
+        newElement.pause();
+      }
+
+      // Promote. The ref moves synchronously — from here on the new element is
+      // what `videoRef.current` means and what the event guards accept — and
+      // the state moves the picture.
+      retainedDeckRef.current = oldElement;
+      activeDeckIdRef.current = toDeck;
+      syncActiveVideoRef();
+      if (!isUnmountedRef.current) {
+        setActiveDeckId(toDeck);
+        setDeckEpoch((epoch) => epoch + 1);
+      }
+
+      onPromotedRef.current({ ...commit, deckId: toDeck });
+
+      // The old deck keeps painting until the new one has actually been
+      // composited. Two frames is the cheapest guarantee that the swap has
+      // reached the screen before the outgoing picture stops.
+      await nextFrame();
+      await nextFrame();
+      oldElement.pause();
+
+      return true;
+    },
+    [nextFrame, syncActiveVideoRef],
+  );
+
+  /**
+   * Holds the old deck loaded briefly, so a target that dies on contact can be
+   * undone without the viewer seeing anything.
+   */
+  const watchForRollback = useCallback(
+    (token: number, fromDeck: DeckId, toDeck: DeckId) => {
+      const promotedElement = deckElementsRef.current[toDeck];
+      const oldElement = deckElementsRef.current[fromDeck];
+      if (!promotedElement) return;
+
+      const newElement: HTMLVideoElement = promotedElement;
+      let settled = false;
+
+      const finish = (rolledBack: boolean, reason?: string) => {
+        if (settled) return;
+        settled = true;
+        newElement.removeEventListener("error", onNewDeckError);
+        clearStabiliseTimer();
+
+        if (rolledBack && oldElement) {
+          const intent = readIntentRef.current();
+          oldElement.muted = intent.muted;
+          oldElement.volume = intent.volume;
+          oldElement.playbackRate = intent.playbackRate;
+          newElement.muted = true;
+          newElement.pause();
+
+          activeDeckIdRef.current = fromDeck;
+          syncActiveVideoRef();
+          if (!isUnmountedRef.current) {
+            setActiveDeckId(fromDeck);
+            setDeckEpoch((epoch) => epoch + 1);
+          }
+          if (intent.wantsToPlay) {
+            void Promise.resolve(oldElement.play()).catch(() => undefined);
+          }
+
+          retainedDeckRef.current = null;
+          releaseDeck(asDeckMedia(newElement));
+          dispatch({
+            type: "rollback",
+            token,
+            atMs: clock.now(),
+            reason: reason ?? "promoted-deck-failed",
+          });
+          emitDiagnostics("rolled-back");
+          return;
+        }
+
+        // Stable. Only now is the old deck cleared, and only so that it can
+        // serve as the next standby.
+        retainedDeckRef.current = null;
+        if (oldElement) releaseDeck(asDeckMedia(oldElement));
+        dispatch({ type: "settled", token, atMs: clock.now() });
+        emitDiagnostics("promoted");
+      };
+
+      function onNewDeckError() {
+        const stillHealthy =
+          oldElement !== null &&
+          oldElement !== undefined &&
+          Number.isFinite(oldElement.duration) &&
+          oldElement.duration > 0 &&
+          Math.abs(oldElement.currentTime - newElement.currentTime) <=
+            MAX_HANDOFF_DRIFT_SECONDS * 8;
+
+        finish(stillHealthy, "promoted-deck-error");
+      }
+
+      newElement.addEventListener("error", onNewDeckError);
+      clearStabiliseTimer();
+      stabiliseTimerRef.current = clock.setTimeout(
+        () => finish(false),
+        stabiliseMs,
+      );
+    },
+    [
+      clearStabiliseTimer,
+      clock,
+      dispatch,
+      emitDiagnostics,
+      stabiliseMs,
+      syncActiveVideoRef,
+    ],
+  );
+
+  /**
+   * Waits at the meeting point until the active deck's clock arrives, then
+   * promotes. Never promotes because time passed — only because the readiness
+   * rules were all satisfied at the same instant.
+   */
+  const awaitRendezvousAndPromote = useCallback(
+    async (
+      token: number,
+      fromDeck: DeckId,
+      toDeck: DeckId,
+      commit: { toQualityId: string; url: string },
+    ): Promise<SwitchOutcome> => {
+      const activeElement = deckElementsRef.current[fromDeck];
+      const standbyElement = deckElementsRef.current[toDeck];
+      if (!activeElement || !standbyElement) return "failed";
+
+      const startedAtMs = clock.now();
+      let lastActivePosition = activeElement.currentTime;
+
+      for (;;) {
+        if (isSuperseded(token)) return "superseded";
+
+        const activePosition = activeElement.currentTime;
+
+        // A discontinuity in the active clock is a seek. The standby is parked
+        // for a position the viewer has left, so this attempt is void.
+        if (
+          Math.abs(activePosition - lastActivePosition) > SEEK_DETECTION_SECONDS
+        ) {
+          cancelledTokensRef.current.add(token);
+          dispatch({ type: "cancel", token, atMs: clock.now() });
+          return "cancelled";
+        }
+        lastActivePosition = activePosition;
+
+        const isActivePaused = activeElement.paused || activeElement.ended;
+        const standbyPosition = standbyElement.currentTime;
+        const readiness = evaluatePromotionReadiness({
+          hasMetadata: standbyElement.readyState >= 1,
+          durationSeconds: standbyElement.duration,
+          readyState: standbyElement.readyState,
+          bufferedAheadSeconds: bufferedAheadOf(
+            asDeckMedia(standbyElement),
+            standbyPosition,
+          ),
+          handoffPointSeconds: standbyPosition,
+          hasDecodedFrame: true,
+          superseded: false,
+          failed: false,
+          activePositionSeconds: activePosition,
+          standbyPositionSeconds: standbyPosition,
+          isActivePaused,
+        });
+
+        if (readiness.promotable) {
+          // Eligible, but the meeting point may still be a few frames away.
+          // While the standby is ahead and playback is closing the gap, waiting
+          // costs a frame or two and buys back most of the drift allowance.
+          if (
+            !isActivePaused &&
+            standbyPosition - activePosition > RENDEZVOUS_TARGET_SECONDS
+          ) {
+            await nextFrame();
+            continue;
+          }
+
+          dispatch({
+            type: "handoff-start",
+            token,
+            atMs: clock.now(),
+            driftAtHandoffSeconds: readiness.driftSeconds,
+          });
+          const promoted = await performHandoff(fromDeck, toDeck, commit);
+          if (!promoted) return "failed";
+          dispatch({ type: "promoted", token, atMs: clock.now() });
+          watchForRollback(token, fromDeck, toDeck);
+          return "promoted";
+        }
+
+        // The viewer paused while the standby was parked ahead. There is no
+        // clock coming to meet it, so it moves back to the held frame instead
+        // and promotes there, paused.
+        if (isActivePaused && standbyPosition > activePosition) {
+          standbyElement.currentTime = activePosition;
+          await nextFrame();
+          await nextFrame();
+          continue;
+        }
+
+        if (clock.now() - startedAtMs > RENDEZVOUS_DEADLINE_MS) {
+          dispatch({
+            type: "fail",
+            token,
+            atMs: clock.now(),
+            reason: "rendezvous-timeout",
+          });
+          return "failed";
+        }
+
+        await nextFrame();
+      }
+    },
+    [
+      clock,
+      dispatch,
+      isSuperseded,
+      nextFrame,
+      performHandoff,
+      watchForRollback,
+    ],
+  );
+
+  const requestSwitch = useCallback(
+    async (request: SeamlessSwitchRequest): Promise<SwitchOutcome> => {
+      const fromDeck = activeDeckIdRef.current;
+      const toDeck = OTHER_DECK[fromDeck];
+      const activeElement = deckElementsRef.current[fromDeck];
+      const standbyElement = deckElementsRef.current[toDeck];
+
+      if (!activeElement || !standbyElement) return "failed";
+
+      // A switch already in flight is superseded rather than queued: only the
+      // newest request may ever reach a promotion.
+      if (switchStateRef.current.request) {
+        supersededTokensRef.current.add(switchStateRef.current.request.token);
+        emitDiagnostics("superseded");
+      }
+      clearStabiliseTimer();
+
+      tokenRef.current += 1;
+      const token = tokenRef.current;
+      const startedAtMs = clock.now();
+
+      dispatch({
+        type: "request",
+        request: {
+          token,
+          reason: classifySwitchReason(
+            request.fromHeight,
+            request.toHeight,
+            request.isManual,
+          ),
+          fromQualityId: request.fromQualityId,
+          toQualityId: request.toQualityId,
+          fromHeight: request.fromHeight,
+          toHeight: request.toHeight,
+          targetDeck: toDeck,
+          startedAtMs,
+        },
+      });
+
+      if (!isUnmountedRef.current) {
+        setIsPreparing(true);
+        setPendingQualityId(request.toQualityId);
+      }
+
+      const finish = (outcome: SwitchOutcome): SwitchOutcome => {
+        if (tokenRef.current === token && !isUnmountedRef.current) {
+          setIsPreparing(false);
+          setPendingQualityId(null);
+        }
+        return outcome;
+      };
+
+      let result: SwitchOutcome;
+
+      try {
+        const prepared = await prepareStandbyDeck({
+          standby: asDeckMedia(standbyElement),
+          url: request.url,
+          clock,
+          readActive: () => ({
+            positionSeconds: activeElement.currentTime,
+            paused: activeElement.paused || activeElement.ended,
+            playbackRate: activeElement.playbackRate,
+          }),
+          isSuperseded: () => isSuperseded(token),
+          onProgress: (event) => {
+            if (event.type === "metadata-ready") {
+              dispatch({ type: "metadata-ready", token, atMs: event.atMs });
+            } else if (event.type === "seek-complete") {
+              dispatch({
+                type: "seek-complete",
+                token,
+                atMs: event.atMs,
+                handoffPointSeconds: event.handoffPointSeconds,
+                rendezvousAttempts: event.rendezvousAttempts,
+              });
+            } else {
+              dispatch({
+                type: "frame-ready",
+                token,
+                atMs: event.atMs,
+                bufferedAheadSeconds: event.bufferedAheadSeconds,
+              });
+            }
+          },
+          deadlineMs: PREPARE_DEADLINE_MS,
+        });
+
+        if (prepared.outcome === "superseded") {
+          // A superseded attempt has already been written up by the request
+          // that displaced it; writing it up again here would report it
+          // against the newer request's state.
+          result = cancelledTokensRef.current.has(token)
+            ? "cancelled"
+            : "superseded";
+          if (result === "cancelled") emitDiagnostics(result);
+        } else if (prepared.outcome === "failed") {
+          dispatch({
+            type: "fail",
+            token,
+            atMs: clock.now(),
+            reason: prepared.reason,
+          });
+          if (!request.isManual) {
+            // Auto must not keep grinding at a rung that will not load.
+            backoffRef.current.set(
+              request.toQualityId,
+              Date.now() + AUTO_RETRY_BACKOFF_MS,
+            );
+          }
+          emitDiagnostics("failed");
+          result = "failed";
+        } else {
+          result = await awaitRendezvousAndPromote(token, fromDeck, toDeck, {
+            toQualityId: request.toQualityId,
+            url: request.url,
+          });
+          if (result !== "promoted") {
+            if (!request.isManual && result === "failed") {
+              backoffRef.current.set(
+                request.toQualityId,
+                Date.now() + AUTO_RETRY_BACKOFF_MS,
+              );
+            }
+            emitDiagnostics(result);
+          }
+        }
+      } catch {
+        dispatch({
+          type: "fail",
+          token,
+          atMs: clock.now(),
+          reason: "unexpected-error",
+        });
+        emitDiagnostics("failed");
+        result = "failed";
+      }
+
+      // Whatever happened, the deck that did not win is returned to a clean
+      // state — but never the retained one, which rollback may still need.
+      if (result !== "promoted") {
+        const abandoned = deckElementsRef.current[toDeck];
+        if (abandoned && abandoned !== retainedDeckRef.current) {
+          releaseDeck(asDeckMedia(abandoned));
+        }
+        if (tokenRef.current === token) {
+          dispatch({ type: "reset" });
+        }
+      }
+
+      return finish(result);
+    },
+    [
+      awaitRendezvousAndPromote,
+      clearStabiliseTimer,
+      clock,
+      dispatch,
+      emitDiagnostics,
+      isSuperseded,
+    ],
+  );
+
+  useEffect(() => {
+    isUnmountedRef.current = false;
+
+    return () => {
+      // Unmount cancels anything in flight and releases both sources; a
+      // preparation left running would keep pulling a rendition for a player
+      // that no longer exists.
+      isUnmountedRef.current = true;
+      const inFlight = switchStateRef.current.request;
+      // Reading these refs at teardown time is the intent, not a mistake: the
+      // decks and the in-flight token as they stand *now* are exactly what has
+      // to be cancelled and released.
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+      if (inFlight) cancelledTokensRef.current.add(inFlight.token);
+      if (stabiliseTimerRef.current !== null) {
+        clock.clearTimeout(stabiliseTimerRef.current);
+        stabiliseTimerRef.current = null;
+      }
+      retainedDeckRef.current = null;
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- see above
+      const decks = deckElementsRef.current;
+      (["a", "b"] as const).forEach((deckId) => {
+        const element = decks[deckId];
+        if (element) releaseDeck(asDeckMedia(element));
+      });
+    };
+  }, [clock]);
+
+  return {
+    videoRef,
+    activeDeckId,
+    standbyDeckId: OTHER_DECK[activeDeckId],
+    deckEpoch,
+    setDeckElement,
+    deckRefs,
+    getDeckElement,
+    isActiveDeckElement,
+    requestSwitch,
+    cancelSwitch,
+    notifyActiveSeek,
+    isPreparing,
+    pendingQualityId,
+    isRetainedDeckElement,
+    isBackedOff,
+    switchState,
+  };
+}

@@ -132,6 +132,10 @@ export default defineConfig(({ mode }) => {
       environment: "jsdom",
       setupFiles: ["./src/setupTests.ts"],
       globals: true,
+      // The dual-deck handoff suite needs a real decoder and runs under
+      // `vitest.browser.config.ts` (`npm run test:browser`). jsdom would load
+      // it and hang waiting for video that never plays.
+      exclude: ["**/node_modules/**", "**/dist/**", "**/*.browser.test.tsx"],
     },
     server: {
       proxy: {

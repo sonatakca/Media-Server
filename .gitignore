@@ -20,3 +20,7 @@ vite.config.d.ts
 .FileContents.txt
 firebase-service-account*.json
 service-account*.json
+
+# Browser-test artefacts (failure screenshots and attachments)
+.vitest-attachments
+**/__screenshots__

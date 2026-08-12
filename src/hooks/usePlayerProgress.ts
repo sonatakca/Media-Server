@@ -71,7 +71,18 @@ function saveStoredVolumeState(volume: number, muted: boolean): void {
   }
 }
 
-export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
+/**
+ * @param videoRef The logical active video element. With a dual-deck player
+ *   this resolves through the deck controller rather than naming one element.
+ * @param deckEpoch Changes whenever the element behind `videoRef` is replaced
+ *   by a promotion. The listener effect depends on it, because a ref alone
+ *   would leave every listener attached to the deck that happened to be active
+ *   when the player mounted.
+ */
+export function usePlayerProgress(
+  videoRef: RefObject<HTMLVideoElement>,
+  deckEpoch = 0,
+) {
   const [state, setState] = useState<PlayerProgressState>(() => ({
     ...initialState,
     ...getStoredVolumeState(),
@@ -134,9 +145,14 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       "ended",
     ];
 
-    const storedVolumeState = getStoredVolumeState();
-    video.volume = storedVolumeState.volume;
-    video.muted = storedVolumeState.muted;
+    // Only a first attachment adopts the stored volume. After a deck promotion
+    // the element already carries the level the handoff transferred to it, and
+    // reapplying storage here would talk over a change the viewer made since.
+    if (deckEpoch === 0) {
+      const storedVolumeState = getStoredVolumeState();
+      video.volume = storedVolumeState.volume;
+      video.muted = storedVolumeState.muted;
+    }
 
     events.forEach((eventName) => {
       video.addEventListener(
@@ -167,7 +183,7 @@ export function usePlayerProgress(videoRef: RefObject<HTMLVideoElement>) {
       video.removeEventListener("canplay", markReady);
       video.removeEventListener("playing", markReady);
     };
-  }, [readVideoState, videoRef]);
+  }, [deckEpoch, readVideoState, videoRef]);
 
   const togglePlay = useCallback(() => {
     const video = videoRef.current;

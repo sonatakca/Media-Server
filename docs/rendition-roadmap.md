@@ -64,17 +64,46 @@ back to the constants where there is no data yet. Accuracy improves with every t
 
 ---
 
-## 3. Gapless quality switching
+## 3. Gapless quality switching — done
 
-Switching preloads the target file in a hidden element while the current quality
-keeps playing, then swaps. That removes the _download_ wait but not the swap itself:
-there is one video element, so the browser re-opens the source at the moment of
-change. Ranges are usually cached (`Cache-Control: immutable`), so it is quick, but
-not a guaranteed zero-frame handover.
+**Was.** Switching preloaded the target file in a hidden element while the current
+quality kept playing, then swapped. That removed the _download_ wait but not the
+swap itself: there was one video element, so assigning the new `src` discarded the
+decode pipeline, the buffer and the position in one statement. The viewer saw
+playback pause, a black frame, `00:00 / 00:00` on the controls, and a second
+buffering wait after the seek back.
 
-**Fix.** Two video elements with roles swapped on switch. A real refactor of the
-~4,600-line `CustomVideoPlayer` — subtitle overlay, PiP, audio sync and progress
-reporting all read `videoRef`. Only worth doing if the residual hitch is noticeable.
+**Now.** Two full-size video elements share the viewport — one active, one standby —
+and roles swap on a successful handoff. The standby loads the target, seeks about a
+second _ahead_ of the playhead, buffers, primes its decoder and waits there with a
+real frame painted until the active deck's clock arrives. Promotion is then an
+opacity and audio change, not a load. The element that prepared the bytes is the
+element that goes on to play them.
+
+- `deckModel.ts` — thresholds, the switch state machine, the promotion gate, the
+  eligibility rules and the diagnostics shape. No DOM, no timers.
+- `prepareStandbyDeck.ts` — the preparation sequence against a structural media
+  interface, so the ordering is testable without a decoder.
+- `useSeamlessQualitySwitch.ts` — deck identities, the switch token, the
+  authoritative active-element ref, the deck epoch that rebinds listeners after a
+  promotion, promotion, rollback and cleanup.
+
+Measured in Chromium against two FFmpeg-generated 10 s renditions (`npm run
+test:browser`): preparation ~16 ms on a local file, ~7 s buffered past the handoff
+point, drift at handoff **0.047 s**, handoff **17 ms**, and a maximum timeline
+discontinuity of **0 s** — the displayed clock never stepped backwards at all.
+
+**Scope.** The dual-deck path is for validated complete files on one timeline. Audio
+changes needing a different encode, HLS sessions, non-seekable sources, codec
+changes and title changes still use controlled source replacement, and
+`evaluateSeamlessEligibility` is what keeps them out of it.
+
+**Still open.** The handoff cuts on a decoded frame, not on a segment boundary, so
+its accuracy depends on both files being seekable to the same instant. That holds
+for this ladder because the encoder writes a fixed GOP with scene detection off, and
+validation already rejects a rendition whose duration drifts from the source. If a
+future rung breaks that assumption, segment-aligned CMAF/HLS with a shared
+presentation timeline is the principled answer — see item 7.
 
 ---
 
@@ -127,6 +156,28 @@ concurrency.
 - **Auto's opening bid.** With no `navigator.connection` (Safari, Firefox) Auto opens
   at 1080p and climbs on measured buffer health. If cold starts feel too conservative
   on fast links, seed the first pick from a short throughput probe instead.
+
+---
+
+## 7. Segment-aligned CMAF/HLS (a later improvement, not a blocker)
+
+The dual-deck handoff meets its target on this ladder, so this is an improvement
+rather than a fix. It would be worth doing if any of the following start to bite:
+
+- **A rung whose keyframes do not line up.** The rendezvous seek lands on the
+  nearest keyframe, so a rung encoded with scene-detected GOPs would meet the
+  playhead less precisely than the measured 0.047 s.
+- **Two decoders at once.** Preparation briefly decodes on both elements. On a
+  weak client that is real CPU and memory that a single MSE pipeline with a
+  segment append would not spend.
+- **Bandwidth spent twice at the switch point.** The overlapping second is
+  fetched from both renditions.
+
+`MediaQualityManifest.limitations.switching` still reads
+`"complete-file-rebuffer"`. That string is now wrong for the seamless path, but
+it is a server-emitted contract field with a validator behind it and nothing in
+the UI reads it, so it was left alone rather than changed as a side effect of a
+player refactor.
 
 ---
 
