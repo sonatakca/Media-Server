@@ -57,6 +57,16 @@ export const WIDTH_STEPS = Array.from(
 
 export const EPUB_PREPARATION_TIMEOUT_MS = 15000;
 
+/**
+ * epub.js uses XMLHttpRequest rather than the application's API client. The
+ * deployed reader and API can live on sibling origins, so its archive request
+ * must opt into sending the session cookie just like OwnApiClient does.
+ *
+ * epub.js' published type incorrectly declares this boolean option as an
+ * object; keeping the cast here isolates that upstream type mismatch.
+ */
+export const EPUB_REQUEST_CREDENTIALS = true as unknown as object;
+
 export const EPUB_REVEAL_STYLES = `
 @keyframes seyirlikReaderBlockFadeIn {
   from {

@@ -3,6 +3,7 @@ import type { MediaItem } from "../lib/types";
 import {
   DEFAULT_READER_SETTINGS,
   EPUB_PREPARATION_TIMEOUT_MS,
+  EPUB_REQUEST_CREDENTIALS,
   READER_PROGRESS_KEY,
   READER_SETTINGS_KEY,
   getReaderFormat,
@@ -21,6 +22,7 @@ describe("readerModel", () => {
     expect(READER_SETTINGS_KEY).toBe("seyirlik.reader.settings");
     expect(READER_PROGRESS_KEY).toBe("seyirlik.reader.progress");
     expect(EPUB_PREPARATION_TIMEOUT_MS).toBe(15000);
+    expect(EPUB_REQUEST_CREDENTIALS).toBe(true);
     expect(readStoredReaderSettings()).toEqual(DEFAULT_READER_SETTINGS);
 
     localStorage.setItem(

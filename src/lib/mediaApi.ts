@@ -188,6 +188,28 @@ export async function getItem(itemId: string): Promise<MediaItem> {
   );
 }
 
+/**
+ * Loads the item together with the source metadata the reader needs to choose
+ * its renderer.
+ *
+ * Catalogue items intentionally do not expose filesystem paths, and a book's
+ * display title normally has no extension. The source endpoint supplies the
+ * safe, path-free container value (for example `epub` or `pdf`) so the reader
+ * does not mistake every book for an unsupported generic file.
+ */
+export async function getReaderItem(itemId: string): Promise<MediaItem> {
+  const encodedItemId = encodeURIComponent(itemId);
+  const [item, streams] = await Promise.all([
+    ownApiClient.request<ItemDto>(`/items/${encodedItemId}`),
+    ownApiClient.request<ItemStreamsDto>(`/items/${encodedItemId}/streams`),
+  ]);
+
+  return {
+    ...toMediaItem(item),
+    MediaSources: streams.sources.map(toMediaSource),
+  };
+}
+
 export async function getItemsForLibrary(
   libraryId: string,
 ): Promise<MediaItem[]> {

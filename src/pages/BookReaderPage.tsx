@@ -28,9 +28,9 @@ import { Tooltip } from "../components/ui/Tooltip";
 import { WatchedStatusButton } from "../components/WatchedStatusButton";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
-  getItem,
   getBookFileUrl,
   getPrimaryImageUrl,
+  getReaderItem,
 } from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
 import {
@@ -50,6 +50,7 @@ import {
 import {
   EPUB_CONTENT_DIVIDER_STYLES,
   EPUB_PREPARATION_TIMEOUT_MS,
+  EPUB_REQUEST_CREDENTIALS,
   EPUB_REVEAL_STYLES,
   FONT_SCALE_STEPS,
   LINE_HEIGHT_STEPS,
@@ -743,7 +744,7 @@ export function BookReaderPage() {
       setReaderError(null);
 
       try {
-        const nextItem = await getItem(itemId);
+        const nextItem = await getReaderItem(itemId);
 
         if (isMounted) {
           setItem(nextItem);
@@ -842,6 +843,7 @@ export function BookReaderPage() {
 
     const book = ePub(fileUrl, {
       openAs: "epub",
+      requestCredentials: EPUB_REQUEST_CREDENTIALS,
     });
     const rendition = book.renderTo(hostElement, {
       manager: "continuous",
