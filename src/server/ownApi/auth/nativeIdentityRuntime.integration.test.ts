@@ -39,7 +39,6 @@ integration("provider-gated native identity runtime", () => {
       createNativeIdentityRuntime({
         environment: {
           ...secrets,
-          SEYIRLIK_IDENTITY_PROVIDER: "native",
           DATABASE_URL: databaseUrl,
         },
       }),
@@ -52,7 +51,6 @@ integration("provider-gated native identity runtime", () => {
       environment: {
         ...secrets,
         NODE_ENV: "development",
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         DATABASE_URL: databaseUrl,
         SEYIRLIK_DATABASE_POOL_MAX: "3",
       },

@@ -1,20 +1,14 @@
-import { getAuthSession } from "./authStorage";
 import {
   buildPlaybackCandidates,
   getPlaybackInfo,
   redactPlaybackUrl,
 } from "./mediaApi";
 
-/** Cookie sessions carry themselves; no header has to be attached. */
-function getAuthHeaders(): Record<string, string> {
-  return {};
-}
-
-function getServerUrl(): string {
+function getPageOrigin(): string {
   return typeof window === "undefined" ? "" : window.location.origin;
 }
 
-function buildJellyfinUrl(
+function buildApiUrl(
   base: string,
   path: string,
   query?: Record<string, string | undefined>,
@@ -68,7 +62,7 @@ export interface PlaybackEnvironmentContext {
   isSecureContext: boolean;
   userAgent: string;
   serviceWorkerAvailable: boolean;
-  jellyfin: PlaybackEndpointInfo;
+  server: PlaybackEndpointInfo;
   customPlaybackBackend: PlaybackEndpointInfo;
   capabilities: {
     hlsNative: boolean;
@@ -107,7 +101,7 @@ export interface PlaybackEnvironmentHealthReport {
   context: PlaybackEnvironmentContext;
   probes: PlaybackHealthProbe[];
   itemId?: string;
-  jellyfinSource?: PlaybackHealthSourceSummary;
+  serverSource?: PlaybackHealthSourceSummary;
   customSource?: PlaybackHealthSourceSummary;
 }
 
@@ -263,7 +257,7 @@ async function collectCapabilities(): Promise<
 export async function buildPlaybackEnvironmentContext(): Promise<PlaybackEnvironmentContext> {
   const pageUrl = getCurrentPageUrl();
   const page = toUrl(pageUrl) ?? new URL("http://localhost/");
-  const jellyfinBaseUrl = getServerUrl();
+  const pageOrigin = getPageOrigin();
   const customPlaybackBackendUrl = getCustomPlaybackBackendUrl();
   const capabilities = await collectCapabilities();
 
@@ -275,7 +269,7 @@ export async function buildPlaybackEnvironmentContext(): Promise<PlaybackEnviron
     isSecureContext: getWindowSecureContext(),
     userAgent: getCurrentUserAgent(),
     serviceWorkerAvailable: getServiceWorkerAvailability(),
-    jellyfin: buildEndpointInfo(jellyfinBaseUrl, pageUrl),
+    server: buildEndpointInfo(pageOrigin, pageUrl),
     customPlaybackBackend: buildEndpointInfo(customPlaybackBackendUrl, pageUrl),
     capabilities,
   };
@@ -501,7 +495,7 @@ async function probeMediaSource(
   );
 }
 
-async function probeJellyfinPlayback(
+async function probeServerPlayback(
   probes: PlaybackHealthProbe[],
   itemId: string,
 ): Promise<PlaybackHealthSourceSummary | undefined> {
@@ -513,8 +507,8 @@ async function probeJellyfinPlayback(
     const source = candidates[0];
 
     probes.push({
-      id: "jellyfinPlaybackInfo",
-      label: "Jellyfin PlaybackInfo",
+      id: "playbackPlan",
+      label: "Playback plan",
       status: source ? "pass" : "fail",
       message: source
         ? `${playbackInfo.MediaSources?.length ?? 0} media source(s), ${candidates.length} candidate(s)`
@@ -526,12 +520,12 @@ async function probeJellyfinPlayback(
       return undefined;
     }
 
-    await probeMediaSource(probes, source, "jellyfin");
+    await probeMediaSource(probes, source, "server");
     return summarizeSource(source);
   } catch (error) {
     probes.push({
-      id: "jellyfinPlaybackInfo",
-      label: "Jellyfin PlaybackInfo",
+      id: "playbackPlan",
+      label: "Playback plan",
       status: "fail",
       message: error instanceof Error ? error.message : String(error),
       durationMs: Date.now() - startedAt,
@@ -592,57 +586,8 @@ export async function runPlaybackEnvironmentHealthCheck(
 ): Promise<PlaybackEnvironmentHealthReport> {
   const context = await buildPlaybackEnvironmentContext();
   const probes: PlaybackHealthProbe[] = [];
-  const session = getAuthSession();
-  const jellyfinBaseUrl = getServerUrl();
   const customBackendUrl = getCustomPlaybackBackendUrl();
   const normalizedItemId = itemId?.trim();
-
-  if (jellyfinBaseUrl) {
-    probes.push(
-      await probeFetch(
-        "jellyfinPublic",
-        "Jellyfin public API",
-        buildJellyfinUrl(jellyfinBaseUrl, "/System/Info/Public"),
-        {
-          headers: {
-            Accept: "application/json",
-          },
-        },
-        { readBody: true },
-      ),
-    );
-  } else {
-    pushSkippedProbe(
-      probes,
-      "jellyfinPublic",
-      "Jellyfin public API",
-      "No Jellyfin server URL is configured.",
-    );
-  }
-
-  if (jellyfinBaseUrl && session?.userId && session.accessToken) {
-    probes.push(
-      await probeFetch(
-        "authenticatedApi",
-        "Authenticated Seyirlik API",
-        buildJellyfinUrl(jellyfinBaseUrl, "/ownAPI/v1/auth/me"),
-        {
-          headers: {
-            Accept: "application/json",
-            ...getAuthHeaders(),
-          },
-        },
-        { readBody: true },
-      ),
-    );
-  } else {
-    pushSkippedProbe(
-      probes,
-      "jellyfinAuthenticated",
-      "Authenticated Jellyfin API",
-      "No authenticated Jellyfin session is available.",
-    );
-  }
 
   if (customBackendUrl) {
     probes.push(
@@ -667,11 +612,11 @@ export async function runPlaybackEnvironmentHealthCheck(
     );
   }
 
-  let jellyfinSource: PlaybackHealthSourceSummary | undefined;
+  let serverSource: PlaybackHealthSourceSummary | undefined;
   let customSource: PlaybackHealthSourceSummary | undefined;
 
   if (normalizedItemId) {
-    jellyfinSource = await probeJellyfinPlayback(probes, normalizedItemId);
+    serverSource = await probeServerPlayback(probes, normalizedItemId);
 
     if (customBackendUrl) {
       customSource = await probeCustomPlayback(probes, normalizedItemId);
@@ -679,8 +624,8 @@ export async function runPlaybackEnvironmentHealthCheck(
   } else {
     pushSkippedProbe(
       probes,
-      "jellyfinPlaybackInfo",
-      "Jellyfin PlaybackInfo",
+      "playbackPlan",
+      "Playback plan",
       "Enter a media item id to test item-specific playback.",
     );
     pushSkippedProbe(
@@ -696,7 +641,7 @@ export async function runPlaybackEnvironmentHealthCheck(
     context,
     probes,
     itemId: normalizedItemId || undefined,
-    jellyfinSource,
+    serverSource,
     customSource,
   };
 }

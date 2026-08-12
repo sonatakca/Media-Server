@@ -7,21 +7,18 @@ import { RouteTransitionOutlet } from "./components/RouteTransitionOutlet";
 import { NonPlayerHistoryTracker } from "./components/BackButton";
 import { ScrollToTop } from "./components/ScrollToTop";
 import { ServerConnectionErrorPage } from "./components/ServerConnectionErrorPage";
-import { isAuthenticated } from "./lib/authStorage";
+import {
+  clearAuthSession,
+  isAuthenticated,
+  setAuthSession,
+} from "./lib/authStorage";
 import {
   SERVER_UNAVAILABLE_EVENT,
   type ServerUnavailableEvent,
   type ServerUnavailableEventDetail,
 } from "./lib/mediaApi";
-import {
-  checkServerAvailability,
-  parseServerBootstrapProvider,
-} from "./lib/serverAvailability";
-import {
-  bootstrapIdentity,
-  parseIdentityProvider,
-  type IdentityBootstrapResult,
-} from "./lib/identityBootstrap";
+import { checkServerAvailability } from "./lib/serverAvailability";
+import { bootstrapIdentity } from "./lib/identityBootstrap";
 import { HomePage } from "./pages/HomePage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { LibraryAliasPage } from "./pages/LibraryAliasPage";
@@ -37,22 +34,7 @@ import {
   setPublicRootSeoMetadata,
 } from "./lib/seo";
 
-const DEFAULT_SERVER_URL =
-  (
-    import.meta.env.VITE_DEFAULT_JELLYFIN_SERVER_URL as string | undefined
-  )?.trim() || "https://izle.sonatakca.com";
-
 const DEFAULT_SERVER_CHECK_TIMEOUT_MS = 6000;
-const CONFIGURED_SERVER_BOOTSTRAP_PROVIDER = parseServerBootstrapProvider(
-  import.meta.env.VITE_SERVER_BOOTSTRAP_PROVIDER as string | undefined,
-);
-const IDENTITY_PROVIDER = parseIdentityProvider(
-  import.meta.env.VITE_IDENTITY_PROVIDER as string | undefined,
-);
-const SERVER_BOOTSTRAP_PROVIDER =
-  IDENTITY_PROVIDER === "native"
-    ? "own-api"
-    : CONFIGURED_SERVER_BOOTSTRAP_PROVIDER;
 
 const RequireAdminAuth = lazy(async () => {
   const module = await import("./components/admin/RequireAdminAuth");
@@ -131,42 +113,15 @@ function createConnectionFailureDetail(
   };
 }
 
-function NativeIdentityFoundationGate({
-  identity,
-}: {
-  identity: IdentityBootstrapResult;
-}) {
-  const message =
-    identity.status === "authenticated"
-      ? "Native identity session verified. The native catalogue is not available in this migration phase."
-      : "Native identity is enabled, but the native sign-in and catalogue UI are not available in this migration phase.";
-
-  return (
-    <main className="flex min-h-screen items-center justify-center px-6 text-white">
-      <p
-        data-testid="native-identity-foundation"
-        className="max-w-xl text-center"
-      >
-        {message}
-      </p>
-    </main>
-  );
-}
-
 export function DefaultServerGate({ children }: { children: React.ReactNode }) {
   const location = useLocation();
-  // Seyirlik serves its own API from this origin, so the bootstrap check is
-  // unconditional: there is no saved server that could let it be skipped.
-  const [shouldCheckDefaultServer] = useState(true);
-  const [state, setState] = useState<DefaultServerState>(() =>
-    shouldCheckDefaultServer ? "checking" : "ready",
-  );
-  const [renderSpinner, setRenderSpinner] = useState(shouldCheckDefaultServer);
+  // Seyirlik serves its own API from this origin, so the startup check is
+  // unconditional: there is no server to configure and none to skip.
+  const [state, setState] = useState<DefaultServerState>("checking");
+  const [renderSpinner, setRenderSpinner] = useState(true);
   const [isVisible, setIsVisible] = useState(false);
   const [connectionFailure, setConnectionFailure] =
     useState<ServerUnavailableEventDetail | null>(null);
-  const [nativeIdentity, setNativeIdentity] =
-    useState<IdentityBootstrapResult | null>(null);
 
   // Trigger fade-in after initial mount
   useEffect(() => {
@@ -207,11 +162,9 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
   }, [location.pathname, state]);
 
   useEffect(() => {
-    if (!shouldCheckDefaultServer) return;
-
     let isMounted = true;
 
-    async function prepareDefaultServer() {
+    async function prepareServer() {
       let requestUrl = "/ownAPI/v1/health";
 
       try {
@@ -225,12 +178,25 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
           DEFAULT_SERVER_CHECK_TIMEOUT_MS,
         );
 
-        if (isMounted) {
-          setNativeIdentity(identity);
-          setState("ready");
+        if (!isMounted) return;
+
+        // The cookie is the real credential and the cache is only a hint, so
+        // the server's answer wins. Reconciling here means an expired session
+        // lands on the login page instead of on a home screen that 401s.
+        if (identity.status === "authenticated") {
+          setAuthSession({
+            userId: identity.user.id,
+            username: identity.user.username,
+            displayName: identity.user.displayName,
+            isAdministrator: identity.user.isAdministrator,
+          });
+        } else {
+          clearAuthSession();
         }
+
+        setState("ready");
       } catch (error) {
-        console.warn("[Seyirlik] Bootstrap server connection failed", error);
+        console.warn("[Seyirlik] Startup server check failed", error);
 
         if (isMounted) {
           setConnectionFailure(
@@ -241,16 +207,14 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
       }
     }
 
-    void prepareDefaultServer();
+    void prepareServer();
 
     return () => {
       isMounted = false;
     };
-  }, [shouldCheckDefaultServer]);
+  }, []);
 
   useEffect(() => {
-    if (IDENTITY_PROVIDER === "native") return;
-
     function handleServerUnavailable(event: Event) {
       const detail =
         "detail" in event ? (event as ServerUnavailableEvent).detail : null;
@@ -275,13 +239,9 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const testConfiguredConnection = async (serverUrl: string) => {
-    await checkServerAvailability({
-      provider: SERVER_BOOTSTRAP_PROVIDER,
-      serverUrl,
-    });
-    const identity = await bootstrapIdentity({ provider: IDENTITY_PROVIDER });
-    setNativeIdentity(identity);
+  const retryConnection = async () => {
+    await checkServerAvailability();
+    await bootstrapIdentity();
   };
 
   if (renderSpinner) {
@@ -302,7 +262,7 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     return (
       <ServerConnectionErrorPage
         failure={connectionFailure}
-        testConnection={testConfiguredConnection}
+        testConnection={retryConnection}
         onRetrySuccess={() => {
           setConnectionFailure(null);
           setState("ready");
@@ -314,16 +274,12 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
   if (state === "failed") {
     return (
       <ServerConnectionErrorPage
-        testConnection={testConfiguredConnection}
+        testConnection={retryConnection}
         onRetrySuccess={() => {
           setState("ready");
         }}
       />
     );
-  }
-
-  if (IDENTITY_PROVIDER === "native" && nativeIdentity) {
-    return <NativeIdentityFoundationGate identity={nativeIdentity} />;
   }
 
   return <>{children}</>;

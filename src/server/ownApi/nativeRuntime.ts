@@ -109,14 +109,6 @@ export async function createNativeRuntime({
 }: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
-  if (!databaseConfig) {
-    throw new Error("DATABASE_URL is required.");
-  }
-  if (!authConfig) {
-    throw new Error(
-      "SEYIRLIK_SESSION_HASH_SECRET and SEYIRLIK_CSRF_SECRET are required.",
-    );
-  }
 
   const pool: DatabasePool = createDatabasePool(databaseConfig);
   try {
@@ -163,7 +155,9 @@ export async function createNativeRuntime({
   // Metadata is optional: without a provider key the catalogue still scans,
   // probes and plays, it just shows the titles taken from disk.
   const tmdbApiKey = environment.SEYIRLIK_TMDB_API_KEY?.trim();
-  const tmdb = tmdbApiKey ? createTmdbClient({ apiKey: tmdbApiKey }) : undefined;
+  const tmdb = tmdbApiKey
+    ? createTmdbClient({ apiKey: tmdbApiKey })
+    : undefined;
   const metadataService = tmdb
     ? createMetadataService({
         metadata: metadataRepository,
@@ -287,7 +281,11 @@ export async function createNativeRuntime({
     ...createTaskRoutes({ queue, libraries }),
     ...(tmdb
       ? [
-          ...createMetadataRoutes({ metadata: metadataRepository, tmdb, queue }),
+          ...createMetadataRoutes({
+            metadata: metadataRepository,
+            tmdb,
+            queue,
+          }),
           ...createArtworkRoutes({
             metadata: metadataRepository,
             images,
@@ -314,7 +312,9 @@ export async function createNativeRuntime({
     secureCookies: authConfig.secureCookies,
     sessionCookieName: authConfig.sessionCookieName,
     csrfCookieName: authConfig.csrfCookieName,
-    ...(authConfig.cookieDomain ? { cookieDomain: authConfig.cookieDomain } : {}),
+    ...(authConfig.cookieDomain
+      ? { cookieDomain: authConfig.cookieDomain }
+      : {}),
     ...(publicOrigin ? { publicOrigin } : {}),
     ...(trustedOrigins ? { trustedOrigins } : {}),
   });

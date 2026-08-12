@@ -3,7 +3,7 @@ import { LogOut, Palette, Search, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { clearAuthSession, getAuthSession } from "../../lib/authStorage";
+import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
@@ -20,7 +20,7 @@ const isMacPlatform =
 
 export function DesktopNavbar() {
   const navigate = useNavigate();
-  const session = getAuthSession();
+  const session = getCachedSession();
   const { t } = useLanguage();
   const isWebApp = useStandaloneWebApp();
   const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);

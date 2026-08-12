@@ -1,5 +1,3 @@
-import type { AuthSession } from "./types";
-
 /**
  * Browser-side session state.
  *
@@ -14,7 +12,7 @@ import type { AuthSession } from "./types";
 
 const SESSION_STORAGE_KEY = "seyirlik.session";
 
-interface CachedSession {
+export interface CachedSession {
   userId: string;
   username: string;
   displayName: string;
@@ -64,23 +62,6 @@ export function setCachedSession(session: CachedSession): void {
 
 export function clearCachedSession(): void {
   readStorage()?.removeItem(SESSION_STORAGE_KEY);
-}
-
-/**
- * Compatibility shim for components still typed against the old session shape.
- * The token and server URL are intentionally empty: nothing may depend on them.
- */
-export function getAuthSession(): AuthSession | null {
-  const cached = getCachedSession();
-  if (!cached) return null;
-
-  return {
-    serverUrl: "",
-    accessToken: "",
-    userId: cached.userId,
-    username: cached.username,
-    deviceId: "",
-  };
 }
 
 export function setAuthSession(session: {

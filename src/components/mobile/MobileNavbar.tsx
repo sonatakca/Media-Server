@@ -6,7 +6,7 @@ import { TbDeviceTv } from "react-icons/tb";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { clearAuthSession, getAuthSession } from "../../lib/authStorage";
+import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
@@ -51,7 +51,7 @@ function getTabClassName(isActive: boolean): string {
 export function MobileNavbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const session = getAuthSession();
+  const session = getCachedSession();
   const { t } = useLanguage();
   const [logoFailed, setLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);

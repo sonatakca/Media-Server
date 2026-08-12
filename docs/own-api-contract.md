@@ -1,6 +1,6 @@
 # Seyirlik Own API Contract
 
-_Status: target contract; implementation status is tracked in `jellyfin-parity-matrix.md`._
+_The router in `src/server/ownApi` is the authority; this document explains intent and conventions._
 
 ## Base path and transport
 
@@ -13,7 +13,14 @@ _Status: target contract; implementation status is tracked in `jellyfin-parity-m
 
 ## Current implementation status
 
-As of 2026-07-24, `GET /ownAPI/v1/health` and the provider-gated native identity foundation are implemented. When `SEYIRLIK_IDENTITY_PROVIDER=native` is selected explicitly, PostgreSQL-backed `/auth/login`, `/auth/refresh`, `/auth/logout`, `/auth/logout-all`, `/auth/me`, and `/auth/csrf` routes are mounted. Jellyfin remains the default identity provider and the current production Vercel deployment returns a correlated JSON `503 PRODUCTION_ROUTING_UNAVAILABLE` guard response for `/ownAPI/v1/*`; it does not yet proxy to the persistent Node backend. Catalogue, media-state, settings, and native playback-authority endpoints below remain target contracts rather than claims of implementation.
+The API is the only backend Seyirlik has: authentication, catalogue, images,
+playback, progress, syncplay, trickplay, tasks, and administration are all
+implemented and served from `/ownAPI/v1` by `src/server/mediaServer.ts`. There
+is no provider gate and no fallback to another server.
+
+Sections below that describe endpoints not present in
+`src/server/ownApi/**/routes.ts` are target contracts rather than claims of
+implementation; the router is the authority.
 
 ## Request correlation
 

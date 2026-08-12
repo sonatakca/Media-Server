@@ -369,7 +369,7 @@ export function PlaybackHealthPage() {
               <input
                 value={itemId}
                 onChange={(event) => setItemId(event.target.value)}
-                placeholder="Optional Jellyfin item id"
+                placeholder="Optional item id"
                 className="h-12 w-full rounded-2xl border border-white/10 bg-black/28 px-4 text-sm font-bold text-white outline-none transition placeholder:text-white/32 focus:border-[var(--accent)]/45"
               />
             </label>
@@ -438,9 +438,9 @@ export function PlaybackHealthPage() {
             }
           />
           <InfoPill
-            label="Jellyfin"
-            value={context.jellyfin.redactedUrl ?? "Not configured"}
-            tone={context.jellyfin.mixedContentRisk ? "bad" : undefined}
+            label="Server"
+            value={context.server.redactedUrl ?? "Not configured"}
+            tone={context.server.mixedContentRisk ? "bad" : undefined}
           />
           <InfoPill
             label="Custom backend"
@@ -464,10 +464,7 @@ export function PlaybackHealthPage() {
       ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <SourceSummary
-          title="Jellyfin selected source"
-          source={report?.jellyfinSource}
-        />
+        <SourceSummary title="Selected source" source={report?.serverSource} />
         <SourceSummary
           title="Custom backend selected source"
           source={report?.customSource}

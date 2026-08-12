@@ -1,4 +1,4 @@
-import { getAuthSession } from "./authStorage";
+import { getCachedSession } from "./authStorage";
 import { getUserViews } from "./mediaApi";
 import type { MediaLibrary } from "./types";
 
@@ -23,10 +23,10 @@ const slugByCollectionType: Record<string, LibrarySlug> = {
 };
 
 function storageKey(): string | null {
-  const session = getAuthSession();
-  return session
-    ? `seyirlik:library-routes:v1:${session.serverUrl}:${session.userId}`
-    : null;
+  const session = getCachedSession();
+  // v2 drops a server-URL segment that was always empty. Old keys are simply
+  // orphaned; the routes refresh from the API on the next load.
+  return session ? `seyirlik:library-routes:v2:${session.userId}` : null;
 }
 
 export function getLibrarySlug(

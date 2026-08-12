@@ -121,7 +121,6 @@ async function main(): Promise<void> {
 
   const config = parseDatabaseConfig({
     ...process.env,
-    SEYIRLIK_IDENTITY_PROVIDER: "native",
   });
   if (!config) {
     throw new Error("Native database configuration is unavailable.");

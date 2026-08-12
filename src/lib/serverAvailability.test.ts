@@ -1,11 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import type { OwnApiHealthResponse } from "../api/ownApi/client";
-import {
-  checkServerAvailability,
-  parseServerBootstrapProvider,
-} from "./serverAvailability";
+import { checkServerAvailability } from "./serverAvailability";
 
-const nativeHealth: OwnApiHealthResponse = {
+const health: OwnApiHealthResponse = {
   status: "ok",
   alive: true,
   ready: false,
@@ -19,59 +16,32 @@ const nativeHealth: OwnApiHealthResponse = {
   },
 };
 
-describe("server availability bootstrap adapter", () => {
-  it("defaults to the Jellyfin provider and validates explicit modes", () => {
-    expect(parseServerBootstrapProvider(undefined)).toBe("jellyfin");
-    expect(parseServerBootstrapProvider("  own-api ")).toBe("own-api");
-    expect(parseServerBootstrapProvider("jellyfin")).toBe("jellyfin");
-    expect(() => parseServerBootstrapProvider("automatic")).toThrow(
-      "VITE_SERVER_BOOTSTRAP_PROVIDER must be either own-api or jellyfin",
-    );
-  });
-
-  it("uses only native health in own-api mode and accepts not-ready liveness", async () => {
-    const getHealth = vi.fn(async () => nativeHealth);
-    const testJellyfinConnection = vi.fn();
+describe("server availability", () => {
+  it("accepts a server that is alive but not yet ready", async () => {
+    // Readiness covers background work such as scanning. The interface is
+    // usable long before that finishes, so liveness is the bar for startup.
+    const getHealth = vi.fn(async () => health);
 
     await expect(
-      checkServerAvailability(
-        { provider: "own-api", serverUrl: "https://media.example" },
-        { getHealth, testJellyfinConnection },
-      ),
-    ).resolves.toEqual({ provider: "own-api" });
-
+      checkServerAvailability({}, { getHealth }),
+    ).resolves.toBeUndefined();
     expect(getHealth).toHaveBeenCalledTimes(1);
-    expect(testJellyfinConnection).not.toHaveBeenCalled();
   });
 
-  it("fails closed without invoking Jellyfin when native liveness is false", async () => {
-    const getHealth = vi.fn(async () => ({ ...nativeHealth, alive: false }));
-    const testJellyfinConnection = vi.fn();
+  it("fails when the server reports it is not alive", async () => {
+    const getHealth = vi.fn(async () => ({ ...health, alive: false }));
 
     await expect(
-      checkServerAvailability(
-        { provider: "own-api", serverUrl: "https://media.example" },
-        { getHealth, testJellyfinConnection },
-      ),
+      checkServerAvailability({}, { getHealth }),
     ).rejects.toMatchObject({ code: "SERVER_NOT_ALIVE" });
-
-    expect(testJellyfinConnection).not.toHaveBeenCalled();
   });
 
-  it("preserves the legacy Jellyfin probe in jellyfin mode", async () => {
-    const getHealth = vi.fn();
-    const testJellyfinConnection = vi.fn(async () => ({ ServerName: "Media" }));
+  it("passes an abort signal through to the health request", async () => {
+    const getHealth = vi.fn(async () => health);
+    const controller = new AbortController();
 
-    await expect(
-      checkServerAvailability(
-        { provider: "jellyfin", serverUrl: "https://media.example" },
-        { getHealth, testJellyfinConnection },
-      ),
-    ).resolves.toEqual({ provider: "jellyfin" });
+    await checkServerAvailability({ signal: controller.signal }, { getHealth });
 
-    expect(testJellyfinConnection).toHaveBeenCalledWith(
-      "https://media.example",
-    );
-    expect(getHealth).not.toHaveBeenCalled();
+    expect(getHealth).toHaveBeenCalledWith({ signal: controller.signal });
   });
 });

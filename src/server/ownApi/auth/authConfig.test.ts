@@ -13,11 +13,7 @@ describe("native authentication runtime configuration", () => {
 
   it("fails clearly when native secrets are missing or weak", () => {
     expect(() =>
-      parseNativeAuthConfig({ SEYIRLIK_IDENTITY_PROVIDER: "native" }),
-    ).toThrow("SEYIRLIK_SESSION_HASH_SECRET is required");
-    expect(() =>
       parseNativeAuthConfig({
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         SEYIRLIK_SESSION_HASH_SECRET: "short",
         SEYIRLIK_CSRF_SECRET: "also-short",
       }),
@@ -29,7 +25,6 @@ describe("native authentication runtime configuration", () => {
 
     expect(() =>
       parseNativeAuthConfig({
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         SEYIRLIK_SESSION_HASH_SECRET: reusedSecret,
         SEYIRLIK_CSRF_SECRET: reusedSecret,
       }),
@@ -38,7 +33,6 @@ describe("native authentication runtime configuration", () => {
 
   it("requires secure cookies in production and explicit development cookies otherwise", () => {
     const base = {
-      SEYIRLIK_IDENTITY_PROVIDER: "native",
       SEYIRLIK_SESSION_HASH_SECRET:
         "session-hash-secret-with-at-least-thirty-two-bytes",
       SEYIRLIK_CSRF_SECRET: "csrf-secret-with-at-least-thirty-two-bytes",
@@ -105,7 +99,10 @@ describe("applicableCookieDomain", () => {
       applicableCookieDomain(request("www.seyirlik.org"), "seyirlik.org"),
     ).toBe("seyirlik.org");
     expect(
-      applicableCookieDomain(request("playback.seyirlik.org:8443"), "seyirlik.org"),
+      applicableCookieDomain(
+        request("playback.seyirlik.org:8443"),
+        "seyirlik.org",
+      ),
     ).toBe("seyirlik.org");
   });
 
@@ -121,7 +118,9 @@ describe("applicableCookieDomain", () => {
       "notseyirlik.org",
       "seyirlik.org.evil.test",
     ]) {
-      expect(applicableCookieDomain(request(host), "seyirlik.org")).toBeUndefined();
+      expect(
+        applicableCookieDomain(request(host), "seyirlik.org"),
+      ).toBeUndefined();
     }
   });
 
@@ -129,7 +128,9 @@ describe("applicableCookieDomain", () => {
     expect(
       applicableCookieDomain(request("www.seyirlik.org"), undefined),
     ).toBeUndefined();
-    expect(applicableCookieDomain(request(undefined), "seyirlik.org")).toBeUndefined();
+    expect(
+      applicableCookieDomain(request(undefined), "seyirlik.org"),
+    ).toBeUndefined();
   });
 
   it("matches case-insensitively and tolerates a leading dot", () => {

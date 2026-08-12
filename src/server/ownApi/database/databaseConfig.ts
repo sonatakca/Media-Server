@@ -1,5 +1,3 @@
-export type IdentityProvider = "native";
-
 export interface DatabaseConfig {
   connectionString: string;
   maxConnections: number;
@@ -9,24 +7,6 @@ type Environment = Record<string, string | undefined>;
 
 const DEFAULT_POOL_MAX = 10;
 const MAX_POOL_SIZE = 20;
-
-export function parseIdentityProvider(
-  value: string | undefined,
-): IdentityProvider {
-  const normalized = value?.trim().toLowerCase();
-
-  if (!normalized) {
-    return "native";
-  }
-
-  if (normalized === "native") {
-    return normalized;
-  }
-
-  throw new Error(
-    "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
-  );
-}
 
 function parsePoolSize(value: string | undefined): number {
   if (value === undefined || value.trim() === "") {
@@ -62,21 +42,11 @@ function validatePostgresUrl(value: string): string {
 
 export function parseDatabaseConfig(
   environment: Environment = process.env,
-): DatabaseConfig | null {
-  const provider = parseIdentityProvider(
-    environment.SEYIRLIK_IDENTITY_PROVIDER,
-  );
-
-  if (provider !== "native") {
-    return null;
-  }
-
+): DatabaseConfig {
   const connectionString = environment.DATABASE_URL?.trim();
 
   if (!connectionString) {
-    throw new Error(
-      "DATABASE_URL is required when native identity is enabled.",
-    );
+    throw new Error("DATABASE_URL is required.");
   }
 
   return {

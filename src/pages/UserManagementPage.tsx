@@ -16,7 +16,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { getAuthSession, setAuthSession } from "../lib/authStorage";
+import { getCachedSession, setAuthSession } from "../lib/authStorage";
 import {
   createUser,
   getUserById,
@@ -166,7 +166,7 @@ function ToggleField({
 
 export function UserManagementPage() {
   const { t } = useLanguage();
-  const currentUserId = getAuthSession()?.userId ?? null;
+  const currentUserId = getCachedSession()?.userId ?? null;
   const [users, setUsers] = useState<MediaUser[]>([]);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [draft, setDraft] = useState<UserDraft>(createEmptyDraft);
@@ -336,7 +336,7 @@ export function UserManagementPage() {
         }
 
         if (isEditingCurrentUser) {
-          const currentSession = getAuthSession();
+          const currentSession = getCachedSession();
           if (currentSession) {
             setAuthSession({ ...currentSession, username: name });
           }

@@ -1,40 +1,29 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { parseDatabaseConfig, parseIdentityProvider } from "./databaseConfig";
+import { parseDatabaseConfig } from "./databaseConfig";
 
-describe("native identity database configuration", () => {
-  it("defaults to native identity, the only provider there is", () => {
-    expect(parseIdentityProvider(undefined)).toBe("native");
-    expect(parseIdentityProvider("  ")).toBe("native");
-    expect(parseIdentityProvider("native")).toBe("native");
-  });
-
-  it("rejects any other provider rather than silently ignoring it", () => {
-    expect(() => parseIdentityProvider("jellyfin")).toThrow(
-      "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
-    );
-    expect(() => parseIdentityProvider("own-api")).toThrow(
-      "SEYIRLIK_IDENTITY_PROVIDER must be `native`.",
-    );
-  });
-
+describe("database configuration", () => {
   it("requires PostgreSQL, because there is no other place to keep state", () => {
-    expect(() =>
-      parseDatabaseConfig({ NODE_ENV: "production" }),
-    ).toThrow("DATABASE_URL is required when native identity is enabled.");
+    expect(() => parseDatabaseConfig({ NODE_ENV: "production" })).toThrow(
+      "DATABASE_URL is required.",
+    );
   });
 
-  it("accepts only PostgreSQL URLs and bounded pool sizes", () => {
+  it("rejects a connection URL for anything other than PostgreSQL", () => {
     expect(() =>
       parseDatabaseConfig({
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         DATABASE_URL: "mysql://database.invalid/seyirlik",
       }),
     ).toThrow("DATABASE_URL must use PostgreSQL.");
 
+    expect(() => parseDatabaseConfig({ DATABASE_URL: "not a url" })).toThrow(
+      "DATABASE_URL must be a valid PostgreSQL connection URL.",
+    );
+  });
+
+  it("bounds the connection pool", () => {
     expect(() =>
       parseDatabaseConfig({
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         DATABASE_URL: "postgresql://database.invalid/seyirlik",
         SEYIRLIK_DATABASE_POOL_MAX: "101",
       }),
@@ -44,10 +33,17 @@ describe("native identity database configuration", () => {
 
     expect(
       parseDatabaseConfig({
-        SEYIRLIK_IDENTITY_PROVIDER: "native",
         DATABASE_URL: "postgresql://database.invalid/seyirlik",
         SEYIRLIK_DATABASE_POOL_MAX: "7",
       }),
     ).toMatchObject({ maxConnections: 7 });
+  });
+
+  it("defaults the pool size when none is configured", () => {
+    expect(
+      parseDatabaseConfig({
+        DATABASE_URL: "postgresql://database.invalid/seyirlik",
+      }),
+    ).toMatchObject({ maxConnections: 10 });
   });
 });

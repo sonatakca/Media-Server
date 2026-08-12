@@ -6,10 +6,7 @@ import {
   validateNativeIdentitySchema,
   type DatabasePool,
 } from "../database/databasePool";
-import {
-  parseDatabaseConfig,
-  parseIdentityProvider,
-} from "../database/databaseConfig";
+import { parseDatabaseConfig } from "../database/databaseConfig";
 import { validateMigrationsCurrent } from "../database/migrationRunner";
 import { createUserRepository } from "../users/userRepository";
 import { createNativeAuthService, type NativeAuthService } from "./authService";
@@ -39,18 +36,9 @@ export async function createNativeIdentityRuntime({
   environment = process.env,
   publicOrigin,
   cleanupIntervalMs = EXPIRED_SESSION_CLEANUP_INTERVAL_MS,
-}: CreateNativeIdentityRuntimeOptions = {}): Promise<NativeIdentityRuntime | null> {
-  if (
-    parseIdentityProvider(environment.SEYIRLIK_IDENTITY_PROVIDER) !== "native"
-  ) {
-    return null;
-  }
-
+}: CreateNativeIdentityRuntimeOptions = {}): Promise<NativeIdentityRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
-  if (!databaseConfig || !authConfig) {
-    throw new Error("Native identity configuration is unavailable.");
-  }
 
   const pool: DatabasePool = createDatabasePool(databaseConfig);
   try {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { bootstrapIdentity, parseIdentityProvider } from "./identityBootstrap";
+import { OwnApiClientError } from "../api/ownApi/client";
+import { bootstrapIdentity } from "./identityBootstrap";
 
 const nativeUser = {
   id: "user-1",
@@ -8,64 +9,61 @@ const nativeUser = {
   isAdministrator: false,
 };
 
-describe("provider-gated identity bootstrap", () => {
-  it("keeps Jellyfin as the default provider", () => {
-    expect(parseIdentityProvider(undefined)).toBe("jellyfin");
-    expect(parseIdentityProvider("")).toBe("jellyfin");
-    expect(() => parseIdentityProvider("own-api")).toThrow(
-      "VITE_IDENTITY_PROVIDER must be either jellyfin or native.",
-    );
+function authRequired(): OwnApiClientError {
+  return new OwnApiClientError({
+    status: 401,
+    code: "AUTH_REQUIRED",
+    message: "Sign in first.",
   });
+}
 
-  it("does not call the native API in default Jellyfin mode", async () => {
-    const getNativeCurrentUser = vi.fn(async () => nativeUser);
-    const getJellyfinIdentity = vi.fn(() => ({ authenticated: true }));
+describe("identity bootstrap", () => {
+  it("reports the signed-in user", async () => {
+    const getCurrentUser = vi.fn(async () => nativeUser);
 
-    await expect(
-      bootstrapIdentity(
-        { provider: "jellyfin" },
-        { getNativeCurrentUser, getJellyfinIdentity },
-      ),
-    ).resolves.toEqual({
-      provider: "jellyfin",
-      status: "authenticated",
-      user: null,
-    });
-    expect(getNativeCurrentUser).not.toHaveBeenCalled();
-    expect(getJellyfinIdentity).toHaveBeenCalledTimes(1);
-  });
-
-  it("retrieves me only from own API in explicit native mode", async () => {
-    const getNativeCurrentUser = vi.fn(async () => nativeUser);
-    const getJellyfinIdentity = vi.fn(() => ({ authenticated: true }));
-
-    await expect(
-      bootstrapIdentity(
-        { provider: "native" },
-        { getNativeCurrentUser, getJellyfinIdentity },
-      ),
-    ).resolves.toEqual({
-      provider: "native",
+    await expect(bootstrapIdentity({ getCurrentUser })).resolves.toEqual({
       status: "authenticated",
       user: nativeUser,
     });
-    expect(getNativeCurrentUser).toHaveBeenCalledTimes(1);
-    expect(getJellyfinIdentity).not.toHaveBeenCalled();
+    expect(getCurrentUser).toHaveBeenCalledTimes(1);
   });
 
-  it("never falls back to Jellyfin when native identity fails", async () => {
-    const failure = new Error("native unavailable");
-    const getNativeCurrentUser = vi.fn(async () => {
+  it("treats an unauthenticated response as an answer, not a failure", async () => {
+    const getCurrentUser = vi.fn(async () => {
+      throw authRequired();
+    });
+
+    await expect(bootstrapIdentity({ getCurrentUser })).resolves.toEqual({
+      status: "anonymous",
+      user: null,
+    });
+  });
+
+  it("rethrows anything that is not a sign-in prompt", async () => {
+    // A server that is down must not be mistaken for a signed-out visitor, or
+    // the app would quietly drop the user's session on every outage.
+    const failure = new OwnApiClientError({
+      status: 503,
+      code: "SERVER_NOT_ALIVE",
+      message: "Unavailable.",
+    });
+    const getCurrentUser = vi.fn(async () => {
       throw failure;
     });
-    const getJellyfinIdentity = vi.fn(() => ({ authenticated: true }));
 
-    await expect(
-      bootstrapIdentity(
-        { provider: "native" },
-        { getNativeCurrentUser, getJellyfinIdentity },
-      ),
-    ).rejects.toBe(failure);
-    expect(getJellyfinIdentity).not.toHaveBeenCalled();
+    await expect(bootstrapIdentity({ getCurrentUser })).rejects.toBe(failure);
+  });
+
+  it("rethrows a 401 that is not AUTH_REQUIRED", async () => {
+    const failure = new OwnApiClientError({
+      status: 401,
+      code: "SESSION_REVOKED",
+      message: "Revoked.",
+    });
+    const getCurrentUser = vi.fn(async () => {
+      throw failure;
+    });
+
+    await expect(bootstrapIdentity({ getCurrentUser })).rejects.toBe(failure);
   });
 });

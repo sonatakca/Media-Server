@@ -30,7 +30,7 @@ import type {
   AvailableQualityFile,
   QualityPreferenceMode,
 } from "../../renditions/contracts";
-import { getAuthSession } from "../../lib/authStorage";
+import { getCachedSession } from "../../lib/authStorage";
 import {
   formatTemplate,
   getDisplayTitle,
@@ -690,7 +690,7 @@ export function CustomVideoPlayer({
 
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
-  const qualityUserId = getAuthSession()?.userId ?? "anonymous";
+  const qualityUserId = getCachedSession()?.userId ?? "anonymous";
   const qualityPreferenceRef = useRef<QualityPreference>(
     loadQualityPreference(qualityUserId),
   );

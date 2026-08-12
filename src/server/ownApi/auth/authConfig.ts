@@ -1,5 +1,3 @@
-import { parseIdentityProvider } from "../database/databaseConfig";
-
 export interface NativeAuthConfig {
   sessionHashSecret: string;
   csrfSecret: string;
@@ -33,13 +31,7 @@ function requiredSecret(
 
 export function parseNativeAuthConfig(
   environment: Environment = process.env,
-): NativeAuthConfig | null {
-  if (
-    parseIdentityProvider(environment.SEYIRLIK_IDENTITY_PROVIDER) !== "native"
-  ) {
-    return null;
-  }
-
+): NativeAuthConfig {
   const secureCookies = environment.NODE_ENV === "production";
   const cookieDomain = parseCookieDomain(environment.SEYIRLIK_COOKIE_DOMAIN);
   const sessionHashSecret = requiredSecret(
@@ -70,7 +62,9 @@ export function parseNativeAuthConfig(
  * rather than passed through: a public suffix or a bare label here would either
  * be rejected by the browser or scope the session far wider than intended.
  */
-export function parseCookieDomain(value: string | undefined): string | undefined {
+export function parseCookieDomain(
+  value: string | undefined,
+): string | undefined {
   const trimmed = value?.trim().toLowerCase();
   if (!trimmed) return undefined;
 

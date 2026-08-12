@@ -10,14 +10,6 @@
 import type { PlaybackDiagnostics } from "./playback-planner/types";
 import type { MediaQualityManifest } from "../renditions/contracts";
 
-export interface AuthSession {
-  serverUrl: string;
-  accessToken: string;
-  userId: string;
-  username: string;
-  deviceId: string;
-}
-
 export interface MediaUser {
   Id: string;
   Name: string;

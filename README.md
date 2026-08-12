@@ -1,307 +1,403 @@
 # Seyirlik
 
-Seyirlik is a custom frontend/client for an existing Jellyfin server.
+A self-hosted media server and web client for a personal film, television, and
+ebook library. Seyirlik owns the whole path: it scans the files on disk, builds
+its own catalogue in PostgreSQL, fetches metadata and artwork, decides how each
+file should be delivered to each browser, and serves the interface that plays
+it.
 
-Jellyfin remains the library/authentication backend. The browser normally talks
-directly to Jellyfin, while an optional local playback backend provides
-capability-based direct file delivery, remuxing, and bounded FFmpeg
-transcoding. Seyirlik does not modify Jellyfin server files.
+Seyirlik began as a frontend for Jellyfin and no longer is one. The client talks
+only to Seyirlik's own API, and nothing in the data path depends on another
+media server being installed.
 
-## Tech Stack
+---
 
-- Vite
-- React
-- TypeScript
-- Tailwind CSS
-- React Router
-- hls.js for HLS playback on browsers without native HLS support
-- Browser `fetch` requests to Jellyfin
-- Optional Node playback backend with FFmpeg/ffprobe
+## Contents
 
-## Install
+- [What it does](#what-it-does)
+- [How it fits together](#how-it-fits-together)
+- [Requirements](#requirements)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Laying out your library](#laying-out-your-library)
+- [Running it](#running-it)
+- [Development](#development)
+- [Renditions](#renditions)
+- [Security model](#security-model)
+- [Further reading](#further-reading)
+
+---
+
+## What it does
+
+**Library**
+
+- Scans movies, series, and ebooks from folders on disk into a PostgreSQL
+  catalogue, keeping track of files that disappear rather than deleting their
+  history.
+- Reads titles, seasons, and episode numbers from names, and refuses to guess:
+  a name it cannot understand becomes a plain title rather than a wrong episode
+  filed under the wrong show.
+- Fetches metadata, posters, backdrops, and logos from TMDB. Optional — without
+  an API key the library still scans, probes, and plays, using the names on
+  disk.
+- Global search over everything, tolerant of typos and reachable with
+  `Cmd/Ctrl+K`.
+- Favourites, a "My List" page, continue-watching, and next-up.
+
+**Playback**
+
+- Chooses per browser between direct file delivery, remuxing, and bounded
+  FFmpeg transcoding, based on what that browser can actually decode.
+- Audio track, subtitle track, and quality selection, with adjustable subtitle
+  delay.
+- Trickplay thumbnails on the scrub bar.
+- Playback queues for series and collections.
+- Skip-segment support for intros and credits.
+- Watch-together: synchronised playback across sessions.
+
+**Reading**
+
+- An EPUB reader for the books in the library.
+
+**Administration**
+
+- User accounts with per-library permissions.
+- An artwork tool for identifying titles against TMDB, replacing artwork, and
+  positioning logos on cards by hand.
+- Background jobs for scanning, probing, and metadata refreshes, with progress
+  reporting.
+
+**Client**
+
+- Installable as a PWA, with separate desktop and mobile interfaces.
+- English and Turkish throughout.
+
+---
+
+## How it fits together
+
+```
+      browser
+         │  HTTPS
+         ▼
+┌─────────────────────┐
+│    mediaServer      │  serves the built client and /ownAPI/v1
+│                     │  auth, catalogue, images, playback, syncplay
+└──────────┬──────────┘
+           │
+     ┌─────┴──────┬──────────────┬──────────────┐
+     ▼            ▼              ▼              ▼
+ PostgreSQL   media root   generated storage   TMDB
+ catalogue,   (read-only   (artwork cache,     (optional
+ users,       source of    trickplay,          metadata)
+ progress     truth)       transcode temp)
+           ▲
+           │
+┌──────────┴──────────┐
+│    mediaWorker      │  optional, same job queue
+│                     │  scanning and probing off the playback box
+└─────────────────────┘
+```
+
+Two entry points share one runtime:
+
+- **`src/server/mediaServer.ts`** — the HTTP server. Serves the API under
+  `/ownAPI/v1`, and the built client from `SEYIRLIK_STATIC_ROOT` when set.
+- **`src/server/mediaWorker.ts`** — an optional second process that drains the
+  same job queue, so scanning and analysis can run somewhere other than the
+  machine serving playback. Not required; the server runs jobs itself.
+
+Three storage locations, with different rules:
+
+- **The media root** is the source of truth and is treated as read-only.
+  Seyirlik never writes into it.
+- **Generated storage** holds everything derived: cached artwork and its
+  resized variants, trickplay sprites, and transcode scratch space. Safe to
+  delete; it will be rebuilt.
+- **PostgreSQL** holds the catalogue, users, sessions, watch progress, and the
+  job queue.
+
+The client is a React app under `src/`, split into `pages/desktop` and
+`pages/mobile` where the two need to differ. Shared logic lives in `src/lib`,
+which both the client and the server import from — the playback planner and the
+artwork sizing rules are used by both sides, and keeping one copy is what stops
+them disagreeing.
+
+---
+
+## Requirements
+
+- **Node 20.6 or newer.** The scripts use `node --env-file`.
+- **PostgreSQL.** Any reasonably current version.
+- **FFmpeg and ffprobe**, for probing, transcoding, and trickplay.
+- **A TMDB API key**, optional, for metadata and artwork.
+
+---
+
+## Getting started
 
 ```bash
 npm install
 ```
 
-## Run Development Server
+Create a `.env` in the project root:
 
 ```bash
-npm run dev
+DATABASE_URL=postgresql://seyirlik:password@127.0.0.1:5432/seyirlik
+SEYIRLIK_MEDIA_ROOT=/srv/media
+SEYIRLIK_GENERATED_STORAGE=/var/lib/seyirlik
+SEYIRLIK_LIBRARIES=[{"slug":"movies","name":"Movies","kind":"movies","roots":["Movies"]},{"slug":"shows","name":"Shows","kind":"series","roots":["Series"]},{"slug":"books","name":"Books","kind":"books","roots":["Books"]}]
+SEYIRLIK_TMDB_API_KEY=your-key
 ```
 
-Open the Vite URL shown in the terminal.
-
-### Experimental native bootstrap probe
-
-The default bootstrap provider remains `jellyfin`. To exercise only the native
-server-reachability slice, run Vite with the explicit provider flag while the
-playback backend is available:
+Create the schema:
 
 ```bash
-VITE_SERVER_BOOTSTRAP_PROVIDER=own-api npm run dev
+npm run db:migrate
 ```
 
-Vite proxies `/ownAPI/*` to `http://127.0.0.1:43110` by default. Override the
-development upstream with `SEYIRLIK_OWN_API_UPSTREAM` when the backend is at a
-different origin. Native mode does not silently retry Jellyfin when its health
-probe fails; switching the flag back to `jellyfin` is the rollback.
+Create the first administrator. The password is read from stdin so it never
+reaches your shell history or the process list:
 
-Production must route `/ownAPI/*` to the persistent Node backend at the same
-public origin before enabling this flag. The current Vercel SPA catch-all is
-preceded by an explicit JSON `503` routing guard, not a backend proxy, so native
-bootstrap must remain disabled there until the persistent reverse-proxy
-destination is provisioned and smoke-tested.
+```bash
+printf '%s' 'your-password' | npm run admin:provision -- --username you --display-name "You" --password-stdin
+```
 
-### Durable native identity foundation (disabled by default)
+Start the server:
 
-PostgreSQL-backed native users and opaque sessions now exist under
-`/ownAPI/v1/auth`, but they are deliberately provider-gated. Jellyfin remains
-the default identity provider and the current Jellyfin login UI is unchanged.
+```bash
+npm run server
+```
 
-1. Create a PostgreSQL database and set backend-only `DATABASE_URL`. Optionally
-   bound the pool with `SEYIRLIK_DATABASE_POOL_MAX` (default 10, maximum 20).
-2. Run the checksum-tracked migrations repeatedly and safely:
+Then sign in and trigger a library scan from the admin tools.
 
-   ```bash
-   npm run db:migrate
-   ```
+---
 
-3. Provision the first administrator. The normal mode prompts twice without
-   echoing the password; non-interactive protected automation can send exactly
-   one password line on standard input:
+## Configuration
 
-   ```bash
-   npm run admin:provision -- --username administrator --display-name "Administrator"
-   # protected automation only:
-   # secret-command | npm run admin:provision -- --username administrator --display-name "Administrator" --password-stdin
-   ```
+Everything is read from the environment. Only `DATABASE_URL` and
+`SEYIRLIK_MEDIA_ROOT` are required.
 
-   Provisioning takes a PostgreSQL advisory lock, refuses to create another
-   administrator once an enabled administrator exists, and never prints the
-   password or Argon2id hash.
+### Core
 
-4. Configure two independent backend-only secrets of at least 32 bytes:
-   `SEYIRLIK_SESSION_HASH_SECRET` and `SEYIRLIK_CSRF_SECRET`. Do not use the
-   database password for either value and do not expose them through `VITE_*`.
-5. For local testing only, explicitly set
-   `SEYIRLIK_IDENTITY_PROVIDER=native` on the persistent backend and
-   `VITE_IDENTITY_PROVIDER=native` in Vite. Switching both back to `jellyfin`
-   is the explicit rollback. There is no automatic native-to-Jellyfin fallback.
+| Variable                     | Default        | Purpose                                                                     |
+| ---------------------------- | -------------- | --------------------------------------------------------------------------- |
+| `DATABASE_URL`               | —              | PostgreSQL connection URL. Required.                                        |
+| `SEYIRLIK_MEDIA_ROOT`        | —              | Absolute path to the media volume. Required, and never written to.          |
+| `SEYIRLIK_GENERATED_STORAGE` | temp dir       | Where derived files are cached. Set this in production.                     |
+| `SEYIRLIK_LIBRARIES`         | none           | JSON array of library definitions. See below.                               |
+| `SEYIRLIK_STATIC_ROOT`       | none           | Directory of the built client to serve. Usually `dist`.                     |
+| `SEYIRLIK_HOST`              | `127.0.0.1`    | Listen address. Set to `0.0.0.0` to accept connections from other machines. |
+| `SEYIRLIK_PORT`              | `43110`        | Listen port.                                                                |
+| `SEYIRLIK_DATABASE_POOL_MAX` | driver default | Maximum pooled connections.                                                 |
 
-The backend refuses native startup when PostgreSQL, required migrations, or
-secrets are unavailable. Database availability participates in readiness but
-not process liveness. Native login uses Argon2id; sessions use a 256-bit opaque
-token whose keyed hash alone is stored. Production cookies are `Secure`,
-`HttpOnly` for the session, `SameSite=Lax`, and scoped to
-`/ownAPI/v1/auth`. Mutations use a session-bound signed CSRF double-submit token
-plus strict direct-origin validation. Login and refresh also have bounded
-process-local rate limits; these are not distributed protection.
+### Networking and cookies
 
-The static Vercel deployment still has no confirmed route to the persistent
-Node backend. `/ownAPI/v1/*` is reserved ahead of the SPA catch-all and returns
-correlated JSON `503 PRODUCTION_ROUTING_UNAVAILABLE`, so it cannot masquerade as
-`index.html`; this guard is not an authentication service. Replace that rewrite
-with a same-origin reverse proxy to the persistent backend and smoke-test JSON,
-cookies, request IDs, and PostgreSQL durability before enabling native identity
-in production. PostgreSQL credentials and auth secrets must remain only on the
-persistent backend.
+| Variable                   | Default   | Purpose                                                             |
+| -------------------------- | --------- | ------------------------------------------------------------------- |
+| `SEYIRLIK_PUBLIC_ORIGIN`   | none      | The origin browsers reach Seyirlik on, behind a reverse proxy.      |
+| `SEYIRLIK_ALLOWED_ORIGINS` | none      | Comma-separated additional origins allowed to call the API.         |
+| `SEYIRLIK_COOKIE_DOMAIN`   | host only | Cookie domain, when the client and API sit on different subdomains. |
 
-## Build
+### Media processing
+
+| Variable                              | Default           | Purpose                                                               |
+| ------------------------------------- | ----------------- | --------------------------------------------------------------------- |
+| `SEYIRLIK_TMDB_API_KEY`               | none              | Enables metadata and artwork. Without it, titles come from filenames. |
+| `SEYIRLIK_FFMPEG_PATH`                | `ffmpeg` on PATH  | FFmpeg binary.                                                        |
+| `SEYIRLIK_FFPROBE_PATH`               | `ffprobe` on PATH | ffprobe binary.                                                       |
+| `SEYIRLIK_FFMPEG_VIDEO_ENCODER`       | auto              | Force a specific video encoder.                                       |
+| `SEYIRLIK_MAX_VIDEO_TRANSCODES`       | bounded           | Concurrent transcode ceiling.                                         |
+| `SEYIRLIK_SOFTWARE_TRANSCODE_THREADS` | auto              | Thread count for software transcoding.                                |
+
+### Libraries
+
+`SEYIRLIK_LIBRARIES` is a JSON array. Each entry needs a `slug` (lowercase
+letters, digits, dashes), a `name`, a `kind`, and one or more `roots` given
+**relative to the media root**:
+
+```json
+[
+  { "slug": "movies", "name": "Movies", "kind": "movies", "roots": ["Movies"] },
+  { "slug": "shows", "name": "Shows", "kind": "series", "roots": ["Series"] },
+  { "slug": "books", "name": "Books", "kind": "books", "roots": ["Books"] }
+]
+```
+
+Valid kinds are `movies`, `series`, `books`, `collections`, and `mixed`.
+
+Roots are validated at startup rather than at scan time, so a configuration
+mistake stops the server with a clear message instead of surfacing later as a
+path traversal attempt from inside the scanner. Absolute paths, drive letters,
+UNC paths, and `..` segments are rejected. A leading slash is stripped, because
+`/Movies` is how people naturally write "the Movies folder in the media root".
+
+---
+
+## Laying out your library
+
+The scanner is deliberately conservative. A name it cannot parse becomes a
+plain title with no season or episode numbers, because a wrong guess silently
+files an episode under the wrong series and that is worse than missing data.
+
+**Movies** — one folder per film, with the year in the folder name:
+
+```
+Movies/
+  Oppenheimer (2023)/
+    Oppenheimer (2023).mkv
+    Oppenheimer (2023).tr.srt
+```
+
+**Series** — a folder per show, then a folder per season:
+
+```
+Series/
+  Severance/
+    Season 1/
+      Severance S01E01.mkv
+      Severance S01E02.mkv
+    Specials/
+```
+
+Season folders may be named `Season 1`, `S01`, or similar. `Specials`, `Season
+0`, `S00`, and `Özel` are all read as season zero.
+
+**Books** — EPUB files, one per book.
+
+Hidden files, macOS and Windows sidecar files, and the directories Seyirlik
+generates are skipped. External subtitles beside a video are picked up
+automatically.
+
+Artwork comes from TMDB, not from the folder. Images sitting next to your media
+— `folder.jpg`, `backdrop.jpg` — are ignored; use the admin artwork tool to
+override what TMDB supplied.
+
+---
+
+## Running it
+
+Build the client and run the server against it:
 
 ```bash
 npm run build
+SEYIRLIK_STATIC_ROOT=dist npm run server
 ```
 
-## SEO / Search Indexing
+The server speaks plain HTTP and expects to sit behind a reverse proxy that
+terminates TLS. Set `SEYIRLIK_PUBLIC_ORIGIN` to the origin browsers actually
+use so cookies and CORS line up.
 
-Seyirlik uses Netflix-style app-entry SEO without a visible marketing landing
-page:
+To move scanning and probing off the machine serving playback, point a second
+process at the same database and media root:
 
-- `/` is the only public indexable canonical URL with Turkish-first metadata.
-- `/` immediately enters the private Jellyfin app flow and redirects users to
-  `/home`, `/login`, or `/server` depending on local app state.
-- `/app` is an alias for the same private app entry flow.
-- `/login`, `/server`, `/home`, media routes, player routes, and developer
-  routes are private/internal and should remain `noindex, nofollow`.
-- Vercel sends `X-Robots-Tag: noindex, nofollow` for private route patterns
-  so crawlers see noindex before React renders route metadata.
-- `robots.txt` is served at `/robots.txt`.
-- `sitemap.xml` is served at `/sitemap.xml` and only includes `/`.
-- The canonical site URL is `https://www.seyirlik.org/`.
-
-After deployment, submit `https://www.seyirlik.org/sitemap.xml` in Google
-Search Console and inspect `https://www.seyirlik.org/`.
-
-## Jellyfin Server URL
-
-On first launch, Seyirlik asks for your Jellyfin server URL and saves the normalized URL in browser `localStorage`. Trailing slashes are removed.
-
-Supported examples:
-
-- `http://localhost:8096`
-- `http://192.168.1.50:8096`
-- `https://jellyfin.mydomain.com`
-- `https://mydomain.com/jellyfin`
-
-### Testing from Mac when Jellyfin is on Windows
-
-`localhost` means the current machine. If you run Seyirlik on your Mac, `http://localhost:8096` means Jellyfin running on your Mac.
-
-If Jellyfin is running on your Windows PC and you are testing from your Mac, enter the Windows PC local IP address:
-
-```text
-http://WINDOWS_PC_LOCAL_IP:8096
+```bash
+npm run worker
 ```
 
-Example:
+### Maintenance commands
 
-```text
-http://192.168.1.50:8096
+```bash
+npm run db:migrate         # apply pending migrations
+npm run admin:provision    # create the first administrator
 ```
 
-### Testing from Windows when Jellyfin is on Windows
+---
 
-If you run Seyirlik directly on the same Windows PC where Jellyfin is installed, this may work:
+## Development
 
-```text
-http://localhost:8096
+```bash
+npm run dev      # Vite dev server, proxies /ownAPI to the API
+npm run server   # the API, in another terminal
+npm test         # vitest, watch mode
+npm run build    # typecheck, then production build
+npm run format   # prettier
 ```
 
-## Jellyfin API Docs
+The dev server proxies `/ownAPI` to `http://127.0.0.1:43110` by default;
+override with `SEYIRLIK_OWN_API_UPSTREAM`.
 
-Jellyfin usually exposes API docs from your own server at:
+### Tests
 
-```text
-serverUrl/api-docs/swagger/index.html
+Around 800 tests run without a database or a media volume. Anything touching
+PostgreSQL is an integration test and skips unless
+`SEYIRLIK_TEST_DATABASE_URL` points at a **disposable** database — those tests
+truncate the tables they use.
+
+```bash
+npx vitest run
 ```
 
-Example:
+### Project layout
 
-```text
-http://192.168.1.50:8096/api-docs/swagger/index.html
+```
+src/
+  api/ownApi/     client for the native API, and DTO adapters
+  components/     shared UI; player/, search/, hero/, admin/
+  pages/          routes, split desktop/ and mobile/ where they differ
+  lib/            logic shared by client and server
+  renditions/     the offline re-encode pipeline
+  server/
+    mediaServer.ts    HTTP entry point
+    mediaWorker.ts    job-queue entry point
+    ownApi/           auth, catalogue, images, playback, scanner,
+                      metadata, progress, syncplay, tasks, users
+scripts/          migrations, admin provisioning, rendition CLI
+docs/             architecture notes
 ```
 
-The current public OpenAPI specs are also listed at:
+---
 
-- <https://api.jellyfin.org/openapi/>
+## Renditions
 
-## Current Limitations
+Separate from live transcoding, Seyirlik can pre-encode a library into
+browser-friendly renditions ahead of time, so awkward files play by direct
+delivery instead of occupying the CPU during playback.
 
-- Playback now uses Jellyfin `PlaybackInfo`, direct sources where browser-safe, and Jellyfin HLS/transcoding fallback where available.
-- Audio track selection, subtitle selection (including subtitle delay), and the
-  quality/bitrate selector are implemented in the player settings panel.
-- Watch-together is implemented; see `src/features/partyWatch`.
-- Playback progress reporting is basic and best effort only.
-- Global search and favourites are exposed by the API but not yet surfaced in
-  the main navigation.
-- EPUB reading progress and appearance settings are stored per browser rather
-  than per user, so they do not follow you between devices.
-- Native mode still stops at a migration gate instead of serving the native
-  catalogue UI.
-- Some files can still fail if Jellyfin transcoding, FFmpeg, permissions, range requests, reverse proxy, or CORS are not configured correctly.
-
-## Playback Testing
-
-Start with a known browser-friendly file:
-
-```text
-MP4 container, H.264 video, AAC audio
+```bash
+npm run media:renditions:analyse    # report what would be re-encoded
+npm run media:renditions:process    # encode
+npm run media:renditions:resume     # continue an interrupted run
+npm run media:renditions:status     # progress
+npm run media:renditions:validate   # verify output
+npm run media:renditions:cleanup    # remove stale output
 ```
 
-Then test a difficult file:
+Configured with `SEYIRLIK_RENDITION_ROOT`, `SEYIRLIK_RENDITION_STATE_ROOT`,
+`SEYIRLIK_RENDITION_ENCODER`, `SEYIRLIK_RENDITION_HDR`, and
+`SEYIRLIK_RENDITION_RESERVE_GB`, which holds back disk space so a long run
+cannot fill the volume.
 
-```text
-MKV container, H.265/HEVC video, OPUS or other non-AAC audio
-```
+Start with `analyse`. It is read-only and tells you the cost before you commit
+to it.
 
-Open the browser console while testing `/watch/:itemId`. Seyirlik logs the selected Jellyfin media source, whether it is using `DirectPlay`, `DirectStream`, or `Transcoding`, and a redacted playback URL.
+---
 
-## Native Desktop Player Direction
+## Security model
 
-The web player remains constrained by browser codec/container support. The
-cross-platform desktop design uses a native libmpv/FFmpeg renderer for Windows,
-Linux, and macOS, with direct play preferred over transcoding. The playback
-planner already accepts native capability profiles, and the server now selects
-available hardware H.264 encoders with bounded software fallback.
+- Passwords are hashed with Argon2. Login is rate limited.
+- Sessions are HTTP-only cookies. State-changing requests carry a CSRF token;
+  `GET` requests for images are exempt, because an `<img>` element cannot send
+  a header, and they remain authorized by the session cookie.
+- Every catalogue read is filtered by the viewer's library permissions. Holding
+  an item id or an image id is not authorization — artwork inherits the
+  visibility of the item it belongs to.
+- Paths from the database and from requests are resolved against the media root
+  before anything is opened, so a crafted relative path cannot escape it.
+- The media root is never written to. Everything generated goes to generated
+  storage.
+- TLS is the reverse proxy's job. Do not expose the server directly.
 
-See [Native playback architecture](docs/NATIVE_PLAYBACK_ARCHITECTURE.md) for
-the implementation plan, server controls, and the reasoning behind assigning a
-live transcode to one healthy node instead of splitting every stream across
-client and server.
+---
 
-## Firebase Administrator Authentication
+## Further reading
 
-All `/dev` pages require Google sign-in through Firebase Authentication. Access
-is restricted to the verified Google account configured by
-`VITE_FIREBASE_ADMIN_EMAIL` (currently `sonatakcaa@gmail.com`). Normal media
-pages continue to use Jellyfin authentication.
-
-The TMDB artwork backend independently verifies the Firebase ID token and the
-same email allowlist before serving any `/api/tmdb-artwork/*` request. The UI
-check is therefore not the security boundary for file-writing operations.
-
-To configure Firebase:
-
-1. Create or select a Firebase project and add a Web app.
-2. Enable **Authentication -> Sign-in method -> Google**.
-3. Add every exact frontend hostname under **Authentication -> Settings ->
-   Authorized domains**, including `seyirlik.org`, `www.seyirlik.org`, and each
-   subdomain that serves this app. Add `localhost` for local development.
-4. Copy the Web app values into the `VITE_FIREBASE_*` variables shown in
-   `.env.example` and configure the same values in the Vercel project.
-5. Download a dedicated Firebase Admin service-account key for the playback
-   backend, store it outside this repository, and set
-   `GOOGLE_APPLICATION_CREDENTIALS` and `SEYIRLIK_FIREBASE_PROJECT_ID`.
-6. Restart both the frontend and playback backend after changing environment
-   variables.
-
-Firebase browser persistence is scoped to one origin. Each subdomain is
-protected by the same project and email allowlist, but the browser may require
-a separate sign-in on each subdomain. A single sign-in shared across all
-subdomains requires a parent-domain server session-cookie service and is not
-provided by this static Vercel frontend.
-
-If Firebase Admin credentials are missing, administrator backend routes fail
-closed with `503 ADMIN_AUTH_NOT_CONFIGURED`.
-
-## TMDB Artwork Dev Tool
-
-The `/dev/tmdb-artwork` tool uses the local playback backend to search TMDB
-and replace local sidecar artwork next to a Jellyfin movie or series. Configure
-these backend variables before starting `npm run playback:backend`:
-
-```text
-SEYIRLIK_MEDIA_ROOT=/absolute/path/to/media
-SEYIRLIK_JELLYFIN_SERVER_URL=http://127.0.0.1:8096
-SEYIRLIK_JELLYFIN_API_KEY=replace-with-a-dedicated-jellyfin-api-key
-SEYIRLIK_TMDB_API_KEY=replace-with-a-tmdb-v3-api-key
-```
-
-The picker only loads TMDB images tagged English, Turkish, or no language. It
-replaces `folder.jpg` for posters, `backdrop.jpg` for backdrops,
-`landscape.jpg` for landscape art, `logo.png` for English logos, and
-`logo-tr.png` for Turkish logos.
-
-If you open the frontend through a LAN address such as
-`http://192.168.1.186:5173`, add that exact origin to
-`SEYIRLIK_ALLOWED_ORIGINS`; otherwise the browser can be blocked from calling
-the local artwork backend even though TMDB works normally in another tab.
-
-If playback still fails, check Jellyfin:
-
-- Transcoding is enabled.
-- FFmpeg is configured and working.
-- The Jellyfin user has playback and transcoding permission.
-- Your reverse proxy supports range requests and streaming responses.
-- CORS allows the frontend origin when Jellyfin is on a different origin.
-
-## CORS And Networking
-
-During development, the frontend may be served from a different origin than Jellyfin. If browser CORS blocks requests, Jellyfin or your reverse proxy may need to allow the Vite development origin, or the app may later need to be served behind the same domain as Jellyfin.
-
-This project intentionally does not solve CORS by adding a backend proxy yet.
-
-## Security Note
-
-Because this is frontend-only, the Jellyfin access token is stored in browser `localStorage`. Treat the browser profile as trusted, and avoid using this app from shared or untrusted browsers.
+- [`docs/own-api-contract.md`](docs/own-api-contract.md) — the API surface.
+- [`docs/NATIVE_PLAYBACK_ARCHITECTURE.md`](docs/NATIVE_PLAYBACK_ARCHITECTURE.md)
+  — how playback decisions are made.
+- [`docs/rendition-roadmap.md`](docs/rendition-roadmap.md) — the rendition
+  pipeline.
+- [`docs/PWA_SETUP.md`](docs/PWA_SETUP.md) — installable-app setup.
+- [`docs/migration-from-jellyfin.md`](docs/migration-from-jellyfin.md) — what
+  Seyirlik used to be, and why some names look the way they do.
