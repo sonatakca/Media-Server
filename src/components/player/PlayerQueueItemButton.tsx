@@ -1,4 +1,11 @@
-import { useEffect, useLayoutEffect, useRef, useState, type Ref } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type Ref,
+} from "react";
 import { Pause } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
@@ -77,14 +84,17 @@ function getEpisodeLabel(item: MediaItem, t: PlayerQueueTranslate) {
 
 function QueueItemTitle({
   title,
+  titleId,
   titleRef,
 }: {
   title: string;
+  titleId: string;
   titleRef: Ref<HTMLSpanElement>;
 }) {
   return (
     <span className="block w-full min-w-0 overflow-hidden">
       <span
+        id={titleId}
         ref={titleRef}
         className="block w-full min-w-0 truncate whitespace-nowrap text-center text-sm font-black text-white"
       >
@@ -133,6 +143,10 @@ export function QueueItemButton({
 
   const titleRef = useRef<HTMLSpanElement | null>(null);
   const [isTitleOverflowing, setIsTitleOverflowing] = useState(false);
+  const queueItemId = useId();
+  const titleId = `${queueItemId}-title`;
+  const subtitleId = `${queueItemId}-subtitle`;
+  const hasSubtitle = Boolean(episodeLabel || releaseYear);
 
   useLayoutEffect(() => {
     const element = titleRef.current;
@@ -176,16 +190,8 @@ export function QueueItemButton({
       offset="0.65rem"
       placement="bottom"
     >
-      <button
-        type="button"
-        onClick={() => {
-          if (!isCurrent) {
-            onPlayItem?.(item);
-          }
-        }}
-        aria-disabled={isCurrent ? "true" : undefined}
-        aria-current={isCurrent ? "true" : undefined}
-        className={`group flex flex-col rounded-xl border p-2 text-center transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+      <div
+        className={`group relative flex flex-col rounded-xl border p-2 text-center transition ${
           isMoviePoster
             ? "min-w-[8.5rem] max-w-[9.5rem] snap-start"
             : isCollection
@@ -193,10 +199,31 @@ export function QueueItemButton({
               : "w-full"
         } ${
           isCurrent
-            ? "cursor-not-allowed border-[var(--accent)]/45 bg-[var(--accent)]/14 hover:bg-white/[0.10]"
+            ? "border-[var(--accent)]/45 bg-[var(--accent)]/14 hover:bg-white/[0.10]"
             : "border-white/10 bg-transparent hover:border-white/20 hover:bg-white/[0.10]"
         }`}
       >
+        {/*
+          The primary action is an overlay button rather than a wrapper around
+          the card, so the watched-status button can sit beside it instead of
+          nested inside it. Nested buttons are invalid HTML and leave the inner
+          control unreachable by keyboard and screen readers.
+        */}
+        <button
+          type="button"
+          onClick={() => {
+            if (!isCurrent) {
+              onPlayItem?.(item);
+            }
+          }}
+          aria-disabled={isCurrent ? "true" : undefined}
+          aria-current={isCurrent ? "true" : undefined}
+          aria-labelledby={hasSubtitle ? `${titleId} ${subtitleId}` : titleId}
+          className={`absolute inset-0 z-10 rounded-xl focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+            isCurrent ? "cursor-not-allowed" : "cursor-pointer"
+          }`}
+        />
+
         <span
           className={`relative mx-auto shrink-0 overflow-hidden rounded-lg bg-white/[0.06] ${
             isMoviePoster
@@ -266,18 +293,28 @@ export function QueueItemButton({
             isCollection ? "" : "mx-auto max-w-[12rem]"
           }`}
         >
-          <QueueItemTitle title={displayTitle} titleRef={titleRef} />
+          <QueueItemTitle
+            title={displayTitle}
+            titleId={titleId}
+            titleRef={titleRef}
+          />
           {episodeLabel ? (
-            <span className="block max-w-full truncate text-center text-[0.68rem] font-black uppercase tracking-[0.12em] text-white/45">
+            <span
+              id={subtitleId}
+              className="block max-w-full truncate text-center text-[0.68rem] font-black uppercase tracking-[0.12em] text-white/45"
+            >
               {episodeLabel}
             </span>
           ) : releaseYear ? (
-            <span className="block text-center text-[0.68rem] font-black uppercase tracking-[0.12em] text-white/45">
+            <span
+              id={subtitleId}
+              className="block text-center text-[0.68rem] font-black uppercase tracking-[0.12em] text-white/45"
+            >
               {releaseYear}
             </span>
           ) : null}
         </span>
-      </button>
+      </div>
     </Tooltip>
   );
 }

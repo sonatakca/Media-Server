@@ -62,7 +62,7 @@ describe("play target resolver", () => {
     );
   });
 
-  it("falls back to the series library route when a show has no episodes", async () => {
+  it("falls back to the series details route when a show has no episodes", async () => {
     const series: MediaItem = {
       Id: "series-1",
       Name: "Series",
@@ -72,8 +72,6 @@ describe("play target resolver", () => {
     mockedGetAllSeriesEpisodes.mockResolvedValue([]);
 
     await expect(getPlayTargetItemForItem(series)).resolves.toBeNull();
-    await expect(getPlayTargetForItem(series)).resolves.toBe(
-      "/library/series-1",
-    );
+    await expect(getPlayTargetForItem(series)).resolves.toBe("/shows/series-1");
   });
 });

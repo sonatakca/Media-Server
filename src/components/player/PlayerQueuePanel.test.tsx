@@ -8,7 +8,7 @@ vi.mock("../../i18n/LanguageContext", () => ({
   useLanguage: () => ({
     t: (key: string) =>
       ({
-        "details.watched": "İzlendi",
+        "details.removeWatchedStatus": "İzlendi",
         "media.episodeNumber": "Episode {number}",
         "media.seasonEpisodeNumber":
           "Season {seasonNumber} · Episode {episodeNumber}",
@@ -81,7 +81,15 @@ describe("PlayerQueuePanel", () => {
     const onPlayItem = renderPanel(queue);
 
     expect(screen.getByText("Bölümler")).toBeInTheDocument();
-    expect(screen.getByText("İzlendi")).toBeInTheDocument();
+
+    const watchedStatusButton = screen.getByRole("button", {
+      name: "İzlendi",
+    });
+    expect(watchedStatusButton).toBeInTheDocument();
+
+    // Nested buttons are invalid HTML and break keyboard/screen-reader access,
+    // so the watched-status control must never sit inside the play button.
+    expect(watchedStatusButton.closest("button")).toBe(watchedStatusButton);
 
     const currentButton = screen.getByRole("button", {
       name: /Current episode/i,
