@@ -1132,5 +1132,6 @@ export const en = {
   "search.groupEpisodes": "Episodes",
   "search.groupBooks": "Books",
   "search.groupOther": "Other",
+  "search.suggestions": "Suggestions",
   "search.resultCount": "{count} results",
 };

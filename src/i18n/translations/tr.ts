@@ -1136,5 +1136,6 @@ export const tr = {
   "search.groupEpisodes": "Bölümler",
   "search.groupBooks": "Kitaplar",
   "search.groupOther": "Diğer",
+  "search.suggestions": "Öneriler",
   "search.resultCount": "{count} sonuç",
 };

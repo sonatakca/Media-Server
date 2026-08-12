@@ -3,8 +3,17 @@ import { createPortal } from "react-dom";
 import { Loader2, Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
+import type { Language } from "../../i18n/translations";
+import { getEpisodeDisplayMetadata } from "../../lib/episodeMetadataPreferences";
+import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import { formatTemplate } from "../../lib/format";
-import { getPrimaryImageUrl, searchItems } from "../../lib/mediaApi";
+import {
+  DEFAULT_LOGO_SHADOW,
+  getLogoLayout,
+  getLogoShadowFilter,
+} from "../../lib/logoLayout";
+import { getMediaArtwork } from "../../lib/mediaArtwork";
+import { getLatestMediaItems, searchItems } from "../../lib/mediaApi";
 import { getRouteForItem } from "../../lib/routes";
 import {
   SEARCH_DEBOUNCE_MS,
@@ -22,6 +31,19 @@ interface SearchOverlayProps {
 
 type SearchStatus = "idle" | "loading" | "ready" | "failed";
 
+/** Enough to fill the panel without turning the overlay into a browse page. */
+const SUGGESTION_COUNT = 12;
+
+/** Prefers the viewer's language, the way cards and detail pages do. */
+function getResultTitle(item: MediaItem, language: Language): string {
+  const localizedTitle =
+    item.Type === "Episode"
+      ? getEpisodeDisplayMetadata(item, language).title
+      : getItemDisplayMetadata(item, language).title;
+
+  return localizedTitle ?? item.Name ?? "";
+}
+
 function getResultSubtitle(item: MediaItem): string {
   if (item.Type === "Episode") {
     const seasonNumber = item.ParentIndexNumber;
@@ -37,19 +59,55 @@ function getResultSubtitle(item: MediaItem): string {
   return item.ProductionYear ? String(item.ProductionYear) : "";
 }
 
-function ResultThumbnail({ item }: { item: MediaItem }) {
-  const imageUrl = item.ImageTags?.Primary
-    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 160)
-    : "";
+/**
+ * The artwork tile, composed the way a media card composes it: the poster or
+ * episode still with the logo laid over it. Episodes get a 16:9 frame so the
+ * still is not cropped into a poster shape it was never framed for.
+ */
+function ResultArtwork({
+  item,
+  language,
+}: {
+  item: MediaItem;
+  language: Language;
+}) {
+  const { shape, imageUrl, logoUrl } = getMediaArtwork(item, language, {
+    posterWidth: 240,
+    stillWidth: 440,
+    logoWidth: 320,
+  });
+  const logoLayout = getLogoLayout(item);
+  const logoShadowFilter = getLogoShadowFilter(
+    logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
+  );
+  const isStill = shape === "still";
 
   return (
-    <span className="relative block h-14 w-10 shrink-0 overflow-hidden rounded-md bg-white/[0.06]">
+    <span
+      className={`relative block shrink-0 overflow-hidden rounded-lg bg-white/[0.06] ${
+        isStill ? "aspect-video w-28 sm:w-36" : "aspect-[2/3] w-14 sm:w-16"
+      }`}
+    >
       {imageUrl ? (
         <img
           src={imageUrl}
           alt=""
           loading="lazy"
-          className="h-full w-full object-cover"
+          decoding="async"
+          className="absolute inset-0 h-full w-full object-cover"
+        />
+      ) : (
+        <span className="absolute inset-0 bg-[linear-gradient(145deg,#27272a,#09090b)]" />
+      )}
+
+      {logoUrl ? (
+        <img
+          src={logoUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
+          className="pointer-events-none absolute inset-x-0 bottom-1.5 mx-auto h-auto max-h-[42%] w-auto max-w-[82%] object-contain"
         />
       ) : null}
     </span>
@@ -57,7 +115,7 @@ function ResultThumbnail({ item }: { item: MediaItem }) {
 }
 
 export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
@@ -66,12 +124,21 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<SearchStatus>("idle");
   const [results, setResults] = useState<MediaItem[]>([]);
+  const [suggestions, setSuggestions] = useState<MediaItem[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
 
-  const groups: SearchGroup[] = useMemo(
-    () => groupSearchResults(results),
-    [results],
-  );
+  const hasQuery = isSearchableQuery(query);
+
+  // Before anything is typed the overlay is a shortcut into the library rather
+  // than an empty box, so recently added titles stand in for results. They stay
+  // one list: splitting a dozen suggestions by kind is noise, not structure.
+  const groups: SearchGroup[] = useMemo(() => {
+    if (hasQuery) return groupSearchResults(results);
+
+    return suggestions.length > 0
+      ? [{ id: "other", labelKey: "search.suggestions", items: suggestions }]
+      : [];
+  }, [hasQuery, results, suggestions]);
   const flatResults = useMemo(() => flattenSearchGroups(groups), [groups]);
 
   useEffect(() => {
@@ -93,6 +160,27 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
       window.cancelAnimationFrame(focusFrame);
     };
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || suggestions.length > 0) {
+      return;
+    }
+
+    let isMounted = true;
+
+    void getLatestMediaItems()
+      .then((items) => {
+        if (isMounted) setSuggestions(items.slice(0, SUGGESTION_COUNT));
+      })
+      // Suggestions are a convenience. Losing them leaves an empty box, which
+      // is exactly what the overlay looked like before, so there is nothing to
+      // report to the user.
+      .catch(() => undefined);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [isOpen, suggestions.length]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -208,7 +296,6 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     return null;
   }
 
-  const hasQuery = isSearchableQuery(query);
   let flatIndex = -1;
 
   return createPortal(
@@ -217,7 +304,7 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
       aria-modal="true"
       aria-label={t("search.title")}
       onKeyDown={handleKeyDown}
-      className="fixed inset-0 z-[200] flex justify-center bg-black/72 p-4 pt-[max(env(safe-area-inset-top),4rem)] backdrop-blur-md"
+      className="fixed inset-0 z-[200] flex justify-center bg-black/72 p-4 pt-[max(env(safe-area-inset-top),4rem)] backdrop-brightness-90"
     >
       {/*
         A sibling backdrop button rather than a click handler on the dialog, so
@@ -248,7 +335,10 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
           />
 
           {status === "loading" ? (
-            <Loader2 size={16} className="shrink-0 animate-spin text-white/45" />
+            <Loader2
+              size={16}
+              className="shrink-0 animate-spin text-white/45"
+            />
           ) : null}
 
           <button
@@ -265,15 +355,15 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
           ref={listRef}
           className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
         >
-          {!hasQuery ? (
+          {!hasQuery && flatResults.length === 0 ? (
             <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
               {t("search.hint")}
             </p>
-          ) : status === "failed" ? (
+          ) : hasQuery && status === "failed" ? (
             <p className="px-3 py-8 text-center text-sm font-semibold text-rose-300">
               {t("search.failed")}
             </p>
-          ) : flatResults.length === 0 && status === "ready" ? (
+          ) : hasQuery && flatResults.length === 0 && status === "ready" ? (
             <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
               {formatTemplate(t("search.noResults"), { query: query.trim() })}
             </p>
@@ -302,11 +392,11 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
                               : "hover:bg-white/[0.08]"
                           }`}
                         >
-                          <ResultThumbnail item={item} />
+                          <ResultArtwork item={item} language={language} />
 
-                          <span className="flex min-w-0 flex-col">
-                            <span className="truncate text-sm font-black text-white">
-                              {item.Name}
+                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                            <span className="truncate text-sm font-black text-white sm:text-base">
+                              {getResultTitle(item, language)}
                             </span>
                             {subtitle ? (
                               <span className="truncate text-[0.7rem] font-bold uppercase tracking-[0.1em] text-white/45">

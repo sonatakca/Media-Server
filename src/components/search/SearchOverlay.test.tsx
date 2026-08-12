@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { searchItems } from "../../lib/mediaApi";
+import { getLatestMediaItems, searchItems } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
 import { SearchOverlay } from "./SearchOverlay";
 
@@ -9,7 +9,10 @@ const navigate = vi.fn();
 
 vi.mock("../../lib/mediaApi", () => ({
   searchItems: vi.fn(),
-  getPrimaryImageUrl: () => "",
+  getLatestMediaItems: vi.fn(),
+  getPrimaryImageUrl: (id: string) => `primary:${id}`,
+  getThumbImageUrl: (id: string) => `thumb:${id}`,
+  getLogoImageUrl: (id: string) => `logo:${id}`,
 }));
 
 vi.mock("react-router-dom", async () => {
@@ -34,11 +37,13 @@ vi.mock("../../i18n/LanguageContext", () => ({
         "search.groupMovies": "Movies",
         "search.groupShows": "Shows",
         "search.groupEpisodes": "Episodes",
+        "search.suggestions": "Suggestions",
       })[key] ?? key,
   }),
 }));
 
 const mockedSearchItems = vi.mocked(searchItems);
+const mockedGetLatestMediaItems = vi.mocked(getLatestMediaItems);
 
 function item(id: string, name: string, type: MediaItem["Type"]): MediaItem {
   return { Id: id, Name: name, Type: type };
@@ -58,6 +63,8 @@ describe("SearchOverlay", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     mockedSearchItems.mockReset();
+    mockedGetLatestMediaItems.mockReset();
+    mockedGetLatestMediaItems.mockResolvedValue([]);
     navigate.mockReset();
   });
 
@@ -109,7 +116,7 @@ describe("SearchOverlay", () => {
     const onClose = renderOverlay();
     const input = screen.getByRole("searchbox");
 
-    fireEvent.change(input, { target: { value: "a" .repeat(3) } });
+    fireEvent.change(input, { target: { value: "a".repeat(3) } });
     await vi.advanceTimersByTimeAsync(400);
 
     await waitFor(() => {
@@ -147,5 +154,88 @@ describe("SearchOverlay", () => {
     });
 
     warn.mockRestore();
+  });
+
+  it("offers recently added titles before anything is typed", async () => {
+    mockedGetLatestMediaItems.mockResolvedValue([
+      item("movie-1", "Arrival", "Movie"),
+      item("series-1", "Severance", "Series"),
+    ]);
+
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Suggestions")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Arrival")).toBeInTheDocument();
+    expect(screen.getByText("Severance")).toBeInTheDocument();
+    // Suggestions are one list, not split by kind.
+    expect(screen.queryByText("Movies")).not.toBeInTheDocument();
+    expect(mockedSearchItems).not.toHaveBeenCalled();
+  });
+
+  it("opens a suggestion with the keyboard", async () => {
+    mockedGetLatestMediaItems.mockResolvedValue([
+      item("movie-1", "Arrival", "Movie"),
+    ]);
+
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Arrival")).toBeInTheDocument();
+    });
+
+    fireEvent.keyDown(screen.getByRole("searchbox"), { key: "Enter" });
+
+    expect(navigate).toHaveBeenCalledWith("/movies/movie-1");
+  });
+
+  it("falls back to the hint when suggestions cannot be loaded", async () => {
+    mockedGetLatestMediaItems.mockRejectedValue(new Error("offline"));
+
+    renderOverlay();
+
+    await waitFor(() => {
+      expect(screen.getByText("Start typing")).toBeInTheDocument();
+    });
+  });
+
+  it("gives an episode its own still, and a movie its poster", async () => {
+    mockedSearchItems.mockResolvedValue([
+      {
+        ...item("movie-1", "Arrival", "Movie"),
+        ImageTags: { Primary: "poster-tag" },
+      },
+      {
+        ...item("episode-1", "Pilot", "Episode"),
+        ImageTags: { Primary: "still-tag" },
+      },
+    ]);
+
+    renderOverlay();
+
+    fireEvent.change(screen.getByRole("searchbox"), {
+      target: { value: "arr" },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+
+    await waitFor(() => {
+      expect(screen.getByText("Pilot")).toBeInTheDocument();
+    });
+
+    const episodeArtwork = screen
+      .getByText("Pilot")
+      .closest("button")
+      ?.querySelector("span > img");
+    const movieArtwork = screen
+      .getByText("Arrival")
+      .closest("button")
+      ?.querySelector("span > img");
+
+    // The episode shows its own frame, not the series poster.
+    expect(episodeArtwork).toHaveAttribute("src", "primary:episode-1");
+    expect(episodeArtwork?.parentElement?.className).toContain("aspect-video");
+    expect(movieArtwork?.parentElement?.className).toContain("aspect-[2/3]");
   });
 });
