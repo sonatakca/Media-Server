@@ -28,19 +28,8 @@ import { LibraryAliasPage } from "./pages/LibraryAliasPage";
 import { LoginPage } from "./pages/LoginPage";
 import { PlayerPage } from "./pages/PlayerPage";
 import { ReaderPage } from "./pages/ReaderPage";
-import { PlaybackAuditPage } from "./pages/PlaybackAuditPage";
-import { DevToolsPage } from "./pages/DevToolsPage";
-import { DevToolsBoardPage } from "./pages/DevToolsBoardPage";
-import { LibraryMaintenancePage } from "./pages/LibraryMaintenancePage";
 import { NotificationHost } from "./components/notifications/NotificationHost";
 import { useTaskNotifications } from "./hooks/useTaskNotifications";
-import TmdbArtworkPage from "./pages/TmdbArtworkPage";
-import { ContentExplorerPage } from "./pages/ContentExplorerPage";
-import { HomeCurationPage } from "./pages/HomeCurationPage";
-import { PlaybackDefaultsPage } from "./pages/PlaybackDefaultsPage";
-import { PlaybackHealthPage } from "./pages/PlaybackHealthPage";
-import { SkeletonLabPage } from "./pages/SkeletonLabPage";
-import { UserManagementPage } from "./pages/UserManagementPage";
 import { setPageTitle } from "./lib/pageTitle";
 import {
   PUBLIC_HOME_CANONICAL_PATH,
@@ -70,6 +59,45 @@ const RequireAdminAuth = lazy(async () => {
 
   return { default: module.RequireAdminAuth };
 });
+
+// Admin/dev pages are only reachable behind RequireAdminAuth, so they stay out
+// of the initial bundle. They resolve inside the Suspense boundary that already
+// wraps RequireAdminAuth.
+const PlaybackAuditPage = lazy(async () => ({
+  default: (await import("./pages/PlaybackAuditPage")).PlaybackAuditPage,
+}));
+const DevToolsPage = lazy(async () => ({
+  default: (await import("./pages/DevToolsPage")).DevToolsPage,
+}));
+const DevToolsBoardPage = lazy(async () => ({
+  default: (await import("./pages/DevToolsBoardPage")).DevToolsBoardPage,
+}));
+const LibraryMaintenancePage = lazy(async () => ({
+  default: (await import("./pages/LibraryMaintenancePage"))
+    .LibraryMaintenancePage,
+}));
+const TmdbArtworkPage = lazy(() => import("./pages/TmdbArtworkPage"));
+const MyListPage = lazy(async () => ({
+  default: (await import("./pages/MyListPage")).MyListPage,
+}));
+const ContentExplorerPage = lazy(async () => ({
+  default: (await import("./pages/ContentExplorerPage")).ContentExplorerPage,
+}));
+const HomeCurationPage = lazy(async () => ({
+  default: (await import("./pages/HomeCurationPage")).HomeCurationPage,
+}));
+const PlaybackDefaultsPage = lazy(async () => ({
+  default: (await import("./pages/PlaybackDefaultsPage")).PlaybackDefaultsPage,
+}));
+const PlaybackHealthPage = lazy(async () => ({
+  default: (await import("./pages/PlaybackHealthPage")).PlaybackHealthPage,
+}));
+const SkeletonLabPage = lazy(async () => ({
+  default: (await import("./pages/SkeletonLabPage")).SkeletonLabPage,
+}));
+const UserManagementPage = lazy(async () => ({
+  default: (await import("./pages/UserManagementPage")).UserManagementPage,
+}));
 
 type DefaultServerState = "checking" | "ready" | "failed";
 
@@ -205,7 +233,9 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
         console.warn("[Seyirlik] Bootstrap server connection failed", error);
 
         if (isMounted) {
-          setConnectionFailure(createConnectionFailureDetail(error, requestUrl));
+          setConnectionFailure(
+            createConnectionFailureDetail(error, requestUrl),
+          );
           setState("failed");
         }
       }
@@ -223,9 +253,7 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
 
     function handleServerUnavailable(event: Event) {
       const detail =
-        "detail" in event
-          ? (event as ServerUnavailableEvent).detail
-          : null;
+        "detail" in event ? (event as ServerUnavailableEvent).detail : null;
 
       console.warn("[Seyirlik] The server became temporarily unavailable.");
       setConnectionFailure(
@@ -237,10 +265,7 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
       setState("ready");
     }
 
-    window.addEventListener(
-      SERVER_UNAVAILABLE_EVENT,
-      handleServerUnavailable,
-    );
+    window.addEventListener(SERVER_UNAVAILABLE_EVENT, handleServerUnavailable);
 
     return () => {
       window.removeEventListener(
@@ -394,10 +419,7 @@ export default function App() {
                   path="/dev/library-maintenance"
                   element={<LibraryMaintenancePage />}
                 />
-                <Route
-                  path="/dev/tmdb-artwork"
-                  element={<TmdbArtworkPage />}
-                />
+                <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
                 <Route path="/dev/content" element={<ContentExplorerPage />} />
                 <Route path="/dev/users" element={<UserManagementPage />} />
                 <Route
@@ -423,6 +445,14 @@ export default function App() {
                   element={<DevToolsBoardPage type="features" />}
                 />
               </Route>
+              <Route
+                path="/my-list"
+                element={
+                  <Suspense fallback={<LoadingSpinner label="" />}>
+                    <MyListPage />
+                  </Suspense>
+                }
+              />
               <Route
                 path="/library/:libraryId"
                 element={<LibraryPage mode="library" />}

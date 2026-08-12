@@ -1,11 +1,14 @@
 import { Navbar } from "./Navbar";
 import { RouteTransitionOutlet } from "./RouteTransitionOutlet";
 import { DevSkeletonToggle } from "./DevSkeletonToggle";
+import { SearchOverlayHost } from "./search/SearchOverlayHost";
 
 export function Layout() {
   return (
     <div className="min-h-screen overflow-x-clip bg-transparent text-white">
       <Navbar />
+
+      <SearchOverlayHost />
 
       <main
         className="

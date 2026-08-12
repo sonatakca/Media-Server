@@ -8,6 +8,7 @@ import {
 } from "../../lib/homeConfetti";
 import {
   getAllMovieAndSeriesItems,
+  getFavouriteItems,
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/mediaApi";
@@ -70,6 +71,7 @@ describe("DesktopHomePage confetti", () => {
     vi.mocked(getUserViews).mockResolvedValue([]);
     vi.mocked(getSmartContinueWatchingItems).mockResolvedValue([]);
     vi.mocked(getLatestMediaItems).mockResolvedValue([]);
+    vi.mocked(getFavouriteItems).mockResolvedValue([]);
     vi.mocked(getAllMovieAndSeriesItems).mockResolvedValue([]);
     vi.mocked(consumeLoginConfettiPending).mockReturnValue(false);
     vi.mocked(shouldShowDailyHomeConfetti).mockReturnValue(false);

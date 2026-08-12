@@ -387,6 +387,11 @@ export async function searchItems(query: string): Promise<MediaItem[]> {
   return toMediaItems(page.data);
 }
 
+export async function getFavouriteItems(): Promise<MediaItem[]> {
+  const page = await ownApiClient.requestCollection<ItemDto>("/favourites");
+  return toMediaItems(page.data);
+}
+
 // ------------------------------------------------------------- user state
 
 export async function markItemPlayed(itemId: string): Promise<void> {

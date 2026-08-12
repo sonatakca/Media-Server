@@ -1110,4 +1110,31 @@ export const tr = {
   "maintenance.couldNotSaveSubtitlePreference":
     "Altyazı tercihi kaydedilemedi.",
   "maintenance.couldNotLoadSeriesEpisodes": "Bu dizinin bölümleri yüklenemedi.",
+  // Listem
+  "myList.title": "Listem",
+  "myList.addToMyList": "Listeme ekle",
+  "myList.removeFromMyList": "Listemden çıkar",
+  "myList.couldNotSave": "Kaydedilemedi. Tekrar deneyin.",
+  "myList.empty": "Listeniz boş.",
+  "myList.emptyHint":
+    "Film, dizi ve kitapları + düğmesiyle ekleyin, burada bulun.",
+  "myList.couldNotLoad": "Listeniz yüklenemedi.",
+
+  // Arama
+  "search.open": "Ara",
+  "search.title": "Arama",
+  "search.placeholder": "Film, dizi, bölüm ve kitap ara",
+  "search.shortcutHint": "ile ara",
+  "search.close": "Aramayı kapat",
+  "search.clear": "Aramayı temizle",
+  "search.noResults": "“{query}” için sonuç yok.",
+  "search.hint": "Kitaplığınızda aramak için yazmaya başlayın.",
+  "search.failed": "Arama başarısız oldu. Tekrar deneyin.",
+  "search.searching": "Aranıyor…",
+  "search.groupMovies": "Filmler",
+  "search.groupShows": "Diziler",
+  "search.groupEpisodes": "Bölümler",
+  "search.groupBooks": "Kitaplar",
+  "search.groupOther": "Diğer",
+  "search.resultCount": "{count} sonuç",
 };

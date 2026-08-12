@@ -15,10 +15,12 @@ import {
 } from "../../lib/itemMetadataPreferences";
 import {
   getBackdropImageUrl,
+  getFavouriteItems,
   getLatestMediaItems,
   getLogoImageUrl,
   getPrimaryImageUrl,
 } from "../../lib/mediaApi";
+import { FAVOURITE_CHANGED_EVENT } from "../../lib/favouriteActions";
 import {
   filterLatestMediaItems,
   loadHomeCurationPreferences,
@@ -46,6 +48,7 @@ const HERO_SWIPE_VELOCITY_THRESHOLD = 450;
 interface MobileHomeData {
   continueWatching: MediaItem[];
   latestMedia: MediaItem[];
+  favourites: MediaItem[];
 }
 
 interface RowWarning {
@@ -295,10 +298,14 @@ export function MobileHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [continueResult, latestResult] = await Promise.allSettled([
-        getSmartContinueWatchingItems(),
-        getLatestMediaItems(),
-      ]);
+      const [continueResult, latestResult, favouritesResult] =
+        await Promise.allSettled([
+          getSmartContinueWatchingItems(),
+          getLatestMediaItems(),
+          // A failed My List row must not take the rest of the home page with
+          // it, so it is settled alongside the others and simply stays empty.
+          getFavouriteItems(),
+        ]);
 
       if (!isMounted) {
         return;
@@ -339,6 +346,8 @@ export function MobileHomePage() {
                 homeCurationPreferences,
               )
             : [],
+        favourites:
+          favouritesResult.status === "fulfilled" ? favouritesResult.value : [],
       });
     }
 
@@ -366,6 +375,27 @@ export function MobileHomePage() {
       );
     };
   }, [refreshSmartContinueWatching]);
+
+  useEffect(() => {
+    const handleFavouriteChanged = () => {
+      void getFavouriteItems()
+        .then((favourites) => {
+          setData((currentData) =>
+            currentData ? { ...currentData, favourites } : currentData,
+          );
+        })
+        .catch(() => undefined);
+    };
+
+    window.addEventListener(FAVOURITE_CHANGED_EVENT, handleFavouriteChanged);
+
+    return () => {
+      window.removeEventListener(
+        FAVOURITE_CHANGED_EVENT,
+        handleFavouriteChanged,
+      );
+    };
+  }, []);
 
   const goToHeroIndex = useCallback(
     (nextIndex: number, direction: 1 | -1) => {
@@ -762,6 +792,16 @@ export function MobileHomePage() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        {data.favourites.length > 0 ? (
+          <MotionReveal direction="up">
+            <MobileMediaRow
+              title={t("myList.title")}
+              items={data.favourites}
+              getItemTo={getRouteForItem}
+            />
+          </MotionReveal>
+        ) : null}
 
         <MotionReveal direction="up">
           <MobileMediaRow

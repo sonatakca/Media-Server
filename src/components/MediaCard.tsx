@@ -32,6 +32,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
 import { ClearWatchingButton } from "./ClearWatchingButton";
 import { CollectionPosterMosaic } from "./CollectionPosterMosaic";
+import { FavouriteButton } from "./FavouriteButton";
 import { RestartWatchingButton } from "./RestartWatchingButton";
 import { WatchedIndicator } from "./WatchedIndicator";
 import { Tooltip } from "./ui/Tooltip";
@@ -692,6 +693,19 @@ export function MediaCard({
             item={item}
             className="px-2 py-0.5 text-[0.56rem] tracking-[0.14em] sm:px-2.5 sm:py-1 sm:text-[0.62rem]"
             iconSize={12}
+          />
+        </div>
+
+        {/*
+          Sits above the full-card link (z-30) so the control is clickable, and
+          on the opposite corner from the watched indicator.
+        */}
+        <div className="absolute left-3 top-3 z-40 sm:left-4 sm:top-4">
+          <FavouriteButton
+            item={item}
+            iconSize={14}
+            tooltipGroup="media-card"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-black/60 text-white opacity-0 shadow-[0_8px_18px_rgba(0,0,0,0.5)] backdrop-blur-sm transition duration-200 hover:scale-105 hover:bg-white hover:text-zinc-950 focus:opacity-100 focus:outline-none focus:ring-2 focus:ring-white/70 group-hover:opacity-100 group-focus-within:opacity-100 aria-pressed:opacity-100 max-sm:opacity-100"
           />
         </div>
 

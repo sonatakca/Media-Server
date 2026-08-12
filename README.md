@@ -189,11 +189,16 @@ The current public OpenAPI specs are also listed at:
 ## Current Limitations
 
 - Playback now uses Jellyfin `PlaybackInfo`, direct sources where browser-safe, and Jellyfin HLS/transcoding fallback where available.
-- Audio track selection is still TODO.
-- Subtitle selection is still TODO.
-- Quality selector and bitrate switching controls are still TODO.
+- Audio track selection, subtitle selection (including subtitle delay), and the
+  quality/bitrate selector are implemented in the player settings panel.
+- Watch-together is implemented; see `src/features/partyWatch`.
 - Playback progress reporting is basic and best effort only.
-- Watch-together and friend/session features are future work.
+- Global search and favourites are exposed by the API but not yet surfaced in
+  the main navigation.
+- EPUB reading progress and appearance settings are stored per browser rather
+  than per user, so they do not follow you between devices.
+- Native mode still stops at a migration gate instead of serving the native
+  catalogue UI.
 - Some files can still fail if Jellyfin transcoding, FFmpeg, permissions, range requests, reverse proxy, or CORS are not configured correctly.
 
 ## Playback Testing

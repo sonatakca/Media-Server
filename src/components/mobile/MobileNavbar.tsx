@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Book, Boxes, LogOut, Palette } from "lucide-react";
+import { Book, Bookmark, Boxes, LogOut, Palette, Search } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
@@ -9,6 +9,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { clearAuthSession, getAuthSession } from "../../lib/authStorage";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
+import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
 
 function ActiveTabBorder() {
@@ -127,6 +128,16 @@ export function MobileNavbar() {
         </Link>
 
         <div className="flex items-center gap-1">
+          <Tooltip content={t("search.open")}>
+            <button
+              type="button"
+              onClick={openSearchOverlay}
+              aria-label={t("search.open")}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
+            >
+              <Search size={18} />
+            </button>
+          </Tooltip>
           <LanguageSwitch />
           <Tooltip content={t("nav.changeTheme")}>
             <button
@@ -210,6 +221,22 @@ export function MobileNavbar() {
               {isActive ? <ActiveTabDot /> : null}
               <Book size={30} className="relative z-10" />
               <span className="relative z-10">{t("nav.books")}</span>
+            </>
+          )}
+        </NavLink>
+
+        <NavLink
+          to="/my-list"
+          className={({ isActive }) => getTabClassName(isActive)}
+        >
+          {({ isActive }) => (
+            <>
+              {isActive ? <ActiveTabBorder /> : null}
+              {isActive ? <ActiveTabDot /> : null}
+              <Bookmark size={30} className="relative z-10" />
+              <span className="relative z-10 truncate max-w-full px-0.5">
+                {t("myList.title")}
+              </span>
             </>
           )}
         </NavLink>

@@ -61,6 +61,7 @@ import {
   saveHeroTrailersEnabledPreference,
   type HeroImageCandidate,
 } from "./hero/heroModel";
+import { FavouriteButton } from "./FavouriteButton";
 import { Tooltip } from "./ui/Tooltip";
 const HERO_DESCRIPTION_VISIBLE_MS = 5000;
 const HERO_DEFAULT_SLIDE_DURATION_MS = 12000;
@@ -1721,6 +1722,11 @@ export function HeroSection({
                         </AnimatedWidth>
                       </ButtonLink>
                     ) : null}
+                    <FavouriteButton
+                      item={item}
+                      iconSize={26}
+                      className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/[0.14] bg-black/[0.34] text-white/[0.82] backdrop-blur transition duration-200 hover:bg-white hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-white/70 sm:min-h-16 sm:w-16"
+                    />
                     {heroFacts ? (
                       // The metadata pills above fade out as the intro settles,
                       // so the year was only ever visible for a moment. This

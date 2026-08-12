@@ -7,8 +7,10 @@ import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   getAllMovieAndSeriesItems,
+  getFavouriteItems,
   getLatestMediaItems,
 } from "../../lib/mediaApi";
+import { FAVOURITE_CHANGED_EVENT } from "../../lib/favouriteActions";
 import {
   applyHomeCarouselCuration,
   buildHomeCarouselPool,
@@ -44,6 +46,7 @@ interface HomeData {
   continueWatching: MediaItem[];
   latestMedia: MediaItem[];
   heroItems: MediaItem[];
+  favourites: MediaItem[];
 }
 
 interface RowWarning {
@@ -134,10 +137,14 @@ export function DesktopHomePage() {
       setError(null);
       setRowWarnings([]);
 
-      const [continueResult, latestResult] = await Promise.allSettled([
-        getSmartContinueWatchingItems(),
-        getLatestMediaItems(),
-      ]);
+      const [continueResult, latestResult, favouritesResult] =
+        await Promise.allSettled([
+          getSmartContinueWatchingItems(),
+          getLatestMediaItems(),
+          // A failed My List row must not take the rest of the home page with
+          // it, so it is settled alongside the others and simply stays empty.
+          getFavouriteItems(),
+        ]);
 
       if (!isMounted) return;
 
@@ -179,6 +186,8 @@ export function DesktopHomePage() {
           continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia,
         heroItems: latestMedia,
+        favourites:
+          favouritesResult.status === "fulfilled" ? favouritesResult.value : [],
       });
 
       // Render the useful first screen as soon as the small, critical queries
@@ -212,6 +221,26 @@ export function DesktopHomePage() {
         handleWatchStatusChanged,
       );
   }, [refreshSmartContinueWatching]);
+
+  useEffect(() => {
+    const handleFavouriteChanged = () => {
+      void getFavouriteItems()
+        .then((favourites) => {
+          setData((currentData) =>
+            currentData ? { ...currentData, favourites } : currentData,
+          );
+        })
+        .catch(() => undefined);
+    };
+
+    window.addEventListener(FAVOURITE_CHANGED_EVENT, handleFavouriteChanged);
+
+    return () =>
+      window.removeEventListener(
+        FAVOURITE_CHANGED_EVENT,
+        handleFavouriteChanged,
+      );
+  }, []);
 
   const advanceSlide = useCallback(() => {
     timerRef.current.startMs = Date.now();
@@ -371,6 +400,15 @@ export function DesktopHomePage() {
             </motion.div>
           ) : null}
         </AnimatePresence>
+
+        {data.favourites.length > 0 ? (
+          <MediaRow
+            title={t("myList.title")}
+            items={data.favourites}
+            getItemTo={getRouteForItem}
+            viewAllTo="/my-list"
+          />
+        ) : null}
 
         <MediaRow
           title={t("home.latestAddedMovies")}

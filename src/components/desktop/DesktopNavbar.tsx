@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Palette, UserRound } from "lucide-react";
+import { LogOut, Palette, Search, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -9,7 +9,14 @@ import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
+import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
+
+// Only affects which modifier the shortcut hint spells out, so a userAgent
+// sniff is enough and never blocks the shortcut itself.
+const isMacPlatform =
+  typeof navigator !== "undefined" &&
+  /Mac|iPhone|iPad/.test(navigator.platform);
 
 export function DesktopNavbar() {
   const navigate = useNavigate();
@@ -162,6 +169,19 @@ export function DesktopNavbar() {
             </AnimatedWidth>
           </NavLink>
 
+          <NavLink
+            to="/my-list"
+            className={({ isActive }) =>
+              `text-sm font-semibold transition-colors duration-200 ${
+                isActive ? "text-white" : "text-white/72 hover:text-white"
+              }`
+            }
+          >
+            <AnimatedWidth value={t("myList.title")}>
+              <AnimatedText value={t("myList.title")} />
+            </AnimatedWidth>
+          </NavLink>
+
           {/* <NavLink
             to={libraryRoutes.collections}
             className={({ isActive }) =>
@@ -177,6 +197,20 @@ export function DesktopNavbar() {
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
+          <Tooltip
+            content={t("search.open")}
+            shortcut={isMacPlatform ? "⌘K" : "Ctrl K"}
+          >
+            <button
+              type="button"
+              onClick={openSearchOverlay}
+              aria-label={t("search.open")}
+              className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
+            >
+              <Search size={18} className="shrink-0" />
+            </button>
+          </Tooltip>
+
           <LanguageSwitch />
 
           <Tooltip content={t("nav.changeTheme")}>

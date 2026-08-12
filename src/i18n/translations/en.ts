@@ -1106,4 +1106,31 @@ export const en = {
     "Could not save subtitle preference.",
   "maintenance.couldNotLoadSeriesEpisodes":
     "Could not load episodes for this series.",
+  // My List
+  "myList.title": "My List",
+  "myList.addToMyList": "Add to My List",
+  "myList.removeFromMyList": "Remove from My List",
+  "myList.couldNotSave": "Could not save. Try again.",
+  "myList.empty": "Your list is empty.",
+  "myList.emptyHint":
+    "Add movies, shows, and books with the + button to find them here.",
+  "myList.couldNotLoad": "Could not load your list.",
+
+  // Search
+  "search.open": "Search",
+  "search.title": "Search",
+  "search.placeholder": "Search movies, shows, episodes, and books",
+  "search.shortcutHint": "to search",
+  "search.close": "Close search",
+  "search.clear": "Clear search",
+  "search.noResults": "No results for “{query}”.",
+  "search.hint": "Start typing to search your library.",
+  "search.failed": "Search failed. Try again.",
+  "search.searching": "Searching…",
+  "search.groupMovies": "Movies",
+  "search.groupShows": "Shows",
+  "search.groupEpisodes": "Episodes",
+  "search.groupBooks": "Books",
+  "search.groupOther": "Other",
+  "search.resultCount": "{count} results",
 };
