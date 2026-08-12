@@ -10,7 +10,9 @@ vi.mock("../../i18n/LanguageContext", () => ({
 
 const CARD = { width: 200, height: 300 };
 
-function renderEditor(layout: LogoLayout = { x: 0.5, y: 0.5, width: 0.5, shadow: 1 }) {
+function renderEditor(
+  layout: LogoLayout = { x: 0.5, y: 0.5, width: 0.5, shadow: 1 },
+) {
   const onChange = vi.fn();
   const view = render(
     <LogoLayoutEditor
@@ -57,6 +59,42 @@ function drag(element: HTMLElement, deltaX: number, deltaY: number) {
 }
 
 describe("logo layout editor", () => {
+  it("previews the selected shadow strength, including opaque custom logos", () => {
+    const view = render(
+      <LogoLayoutEditor
+        posterUrl="https://media.test/poster.jpg"
+        logoUrl="https://media.test/custom-logo.png"
+        title="Dune"
+        layout={{ x: 0.5, y: 0.5, width: 0.5, shadow: 0 }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    const preview = screen.getByAltText("Dune") as HTMLImageElement;
+    expect(preview.style.filter).toBe("");
+    expect(
+      view.container.querySelector("[data-logo-shadow-backdrop]"),
+    ).toBeNull();
+
+    view.rerender(
+      <LogoLayoutEditor
+        posterUrl="https://media.test/poster.jpg"
+        logoUrl="https://media.test/custom-logo.png"
+        title="Dune"
+        layout={{ x: 0.5, y: 0.5, width: 0.5, shadow: 2 }}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(preview.style.filter).toContain("68px");
+    expect(
+      view.container.querySelector<HTMLElement>("[data-logo-shadow-backdrop]"),
+    ).toHaveStyle({
+      backgroundColor: "rgba(0, 0, 0, 0.76)",
+      filter: "blur(36px)",
+    });
+  });
+
   it("moves the logo with the pointer", () => {
     const { onChange, handle } = renderEditor();
 
@@ -64,7 +102,10 @@ describe("logo layout editor", () => {
 
     // 20px across a 200px card is a tenth; 30px up a 300px card is a tenth.
     expect(onChange).toHaveBeenLastCalledWith(
-      expect.objectContaining({ x: expect.closeTo(0.6), y: expect.closeTo(0.4) }),
+      expect.objectContaining({
+        x: expect.closeTo(0.6),
+        y: expect.closeTo(0.4),
+      }),
     );
   });
 
@@ -120,7 +161,9 @@ describe("logo layout editor", () => {
 
   it("resizes from a corner without moving the centre", () => {
     const { onChange, handle } = renderEditor();
-    const corner = handle.querySelectorAll("span")[3] as HTMLElement;
+    const corner = handle.querySelectorAll<HTMLElement>(
+      '[role="presentation"]',
+    )[3] as HTMLElement;
 
     drag(corner, 20, 0);
 
@@ -200,6 +243,6 @@ describe("logo layout editor", () => {
 
     expect(onChange).not.toHaveBeenCalled();
     // The corner handles are gone too, so there is nothing to grab.
-    expect(handle.querySelectorAll("span")).toHaveLength(0);
+    expect(handle.querySelectorAll('[role="presentation"]')).toHaveLength(0);
   });
 });

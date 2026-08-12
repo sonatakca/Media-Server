@@ -182,3 +182,34 @@ export function getLogoShadowFilter(shadow: number): string | undefined {
 
   return `drop-shadow(0 ${drop}px ${spread}px rgba(0, 0, 0, ${far})) drop-shadow(0 0 ${glow}px rgba(0, 0, 0, ${near}))`;
 }
+
+/**
+ * A soft field behind the complete logo image.
+ *
+ * `drop-shadow()` follows transparent pixels, which is ideal for provider
+ * logos but almost invisible when an uploaded logo has an opaque rectangular
+ * background. This field gives those custom images the same adjustable
+ * separation from the artwork without changing the image itself.
+ */
+export function getLogoShadowBackdropStyle(shadow: number):
+  | {
+      backgroundColor: string;
+      filter: string;
+      transform: string;
+    }
+  | undefined {
+  const strength = Number.isFinite(shadow)
+    ? Math.min(MAX_LOGO_SHADOW, Math.max(MIN_LOGO_SHADOW, shadow))
+    : DEFAULT_LOGO_SHADOW;
+  if (strength <= 0) return undefined;
+
+  const opacity = Math.min(0.76, 0.38 * strength).toFixed(2);
+  const blur = Math.round(18 * strength);
+  const scale = (1 + 0.12 * strength).toFixed(2);
+
+  return {
+    backgroundColor: `rgba(0, 0, 0, ${opacity})`,
+    filter: `blur(${blur}px)`,
+    transform: `scale(${scale})`,
+  };
+}

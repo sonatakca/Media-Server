@@ -3,6 +3,8 @@ import {
   LOGO_NUDGE_STEP,
   clampLogoLayout,
   getLogoLayoutStyle,
+  getLogoShadowBackdropStyle,
+  getLogoShadowFilter,
   moveLogoLayout,
   resizeLogoLayout,
   type LogoLayout,
@@ -54,6 +56,8 @@ export function LogoLayoutEditor({
   const [activeGesture, setActiveGesture] = useState<
     "move" | ResizeCorner | null
   >(null);
+  const shadowFilter = getLogoShadowFilter(layout.shadow);
+  const shadowBackdropStyle = getLogoShadowBackdropStyle(layout.shadow);
 
   /**
    * The gesture reads from a ref rather than from props, because a pointer move
@@ -98,7 +102,12 @@ export function LogoLayoutEditor({
       onChange(
         activeGesture === "move"
           ? moveLogoLayout(gesture.layout, deltaX, deltaY, cardBounds())
-          : resizeLogoLayout(gesture.layout, activeGesture, deltaX, cardBounds()),
+          : resizeLogoLayout(
+              gesture.layout,
+              activeGesture,
+              deltaX,
+              cardBounds(),
+            ),
       );
     },
     [activeGesture, cardBounds, onChange],
@@ -182,11 +191,21 @@ export function LogoLayoutEditor({
           disabled ? "cursor-default" : "cursor-move"
         } ${activeGesture ? "ring-2 ring-sky-300" : "ring-1 ring-white/30"}`}
       >
+        {shadowBackdropStyle ? (
+          <span
+            aria-hidden="true"
+            data-logo-shadow-backdrop="true"
+            style={shadowBackdropStyle}
+            className="pointer-events-none absolute inset-[6%] rounded-[45%]"
+          />
+        ) : null}
+
         <img
           src={logoUrl}
           alt={title}
           draggable={false}
-          className="pointer-events-none block h-auto w-full object-contain drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]"
+          style={shadowFilter ? { filter: shadowFilter } : undefined}
+          className="pointer-events-none relative z-10 block h-auto w-full object-contain"
         />
 
         {!disabled
@@ -198,7 +217,7 @@ export function LogoLayoutEditor({
                 onPointerMove={continueGesture}
                 onPointerUp={endGesture}
                 onPointerCancel={endGesture}
-                className={`absolute h-3 w-3 touch-none rounded-full border border-black/60 bg-sky-300 ${CORNER_CLASSES[corner]}`}
+                className={`absolute z-20 h-3 w-3 touch-none rounded-full border border-black/60 bg-sky-300 ${CORNER_CLASSES[corner]}`}
               />
             ))
           : null}

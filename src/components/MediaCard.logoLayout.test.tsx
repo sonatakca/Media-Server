@@ -49,8 +49,9 @@ function renderCard(item: MediaItem) {
 function logos(): HTMLImageElement[] {
   return screen
     .getAllByAltText("Dune")
-    .filter((element): element is HTMLImageElement =>
-      element.getAttribute("src")?.endsWith("logo.png") ?? false,
+    .filter(
+      (element): element is HTMLImageElement =>
+        element.getAttribute("src")?.endsWith("logo.png") ?? false,
     );
 }
 
@@ -58,6 +59,12 @@ function logo(): HTMLImageElement {
   const found = logos();
   expect(found).toHaveLength(1);
   return found[0] as HTMLImageElement;
+}
+
+function logoLayout(): HTMLElement {
+  const layout = logo().closest('[data-logo-layout="true"]');
+  expect(layout).not.toBeNull();
+  return layout as HTMLElement;
 }
 
 describe("media card logo layout", () => {
@@ -72,7 +79,7 @@ describe("media card logo layout", () => {
   it("places an adjusted logo where the layout puts it", () => {
     renderCard(movie({ x: 0.25, y: 0.4, width: 0.6, shadow: 1 }));
 
-    const style = logo().style;
+    const style = logoLayout().style;
     expect(style.left).toBe("25%");
     expect(style.top).toBe("40%");
     expect(style.width).toBe("60%");
@@ -98,6 +105,13 @@ describe("media card logo layout", () => {
   it("deepens the shadow as the strength rises", () => {
     renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 2 }));
     expect(logo().style.filter).toContain("68px");
+    const backdrop = logoLayout().querySelector<HTMLElement>(
+      "[data-logo-shadow-backdrop]",
+    );
+    expect(backdrop).toHaveStyle({
+      backgroundColor: "rgba(0, 0, 0, 0.76)",
+      filter: "blur(36px)",
+    });
   });
 
   it("falls back to the title when a card has no logo", () => {

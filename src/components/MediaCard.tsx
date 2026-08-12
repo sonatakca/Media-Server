@@ -25,6 +25,7 @@ import {
   DEFAULT_LOGO_SHADOW,
   getLogoLayout,
   getLogoLayoutStyle,
+  getLogoShadowBackdropStyle,
   getLogoShadowFilter,
 } from "../lib/logoLayout";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -314,6 +315,9 @@ export function MediaCard({
   const logoShadowFilter = getLogoShadowFilter(
     logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
   );
+  const logoShadowBackdropStyle = logoLayout
+    ? getLogoShadowBackdropStyle(logoLayout.shadow)
+    : undefined;
 
   const canPlay =
     item.Type === "Movie" ||
@@ -572,22 +576,38 @@ export function MediaCard({
 
     return (
       <>
-        {logoUrl ? (
+        {logoUrl && logoLayout ? (
+          <div
+            data-logo-layout="true"
+            style={getLogoLayoutStyle(logoLayout)}
+            className="pointer-events-none absolute z-20"
+          >
+            {logoShadowBackdropStyle ? (
+              <span
+                aria-hidden="true"
+                data-logo-shadow-backdrop="true"
+                style={logoShadowBackdropStyle}
+                className="absolute inset-[6%] rounded-[45%]"
+              />
+            ) : null}
+            <img
+              src={logoUrl}
+              alt={displayTitle}
+              style={
+                logoShadowFilter ? { filter: logoShadowFilter } : undefined
+              }
+              className="relative z-10 block h-auto w-full object-contain"
+            />
+          </div>
+        ) : logoUrl ? (
           <img
             src={logoUrl}
             alt={displayTitle}
-            style={{
-              ...(logoLayout ? getLogoLayoutStyle(logoLayout) : {}),
-              ...(logoShadowFilter ? { filter: logoShadowFilter } : {}),
-            }}
+            style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
             // Nothing sits behind the logo any more — no gradient, no tags — so
             // its own shadow is the only thing separating it from the artwork.
             // Height follows width so the aspect ratio is preserved.
-            className={
-              logoLayout
-                ? "pointer-events-none absolute z-20 h-auto object-contain"
-                : "pointer-events-none absolute inset-x-0 bottom-4 z-20 mx-auto h-auto max-h-16 w-auto max-w-[80%] object-contain sm:max-h-24"
-            }
+            className="pointer-events-none absolute inset-x-0 bottom-4 z-20 mx-auto h-auto max-h-16 w-auto max-w-[80%] object-contain sm:max-h-24"
           />
         ) : (
           // A card with neither logo nor title would be unidentifiable, so the

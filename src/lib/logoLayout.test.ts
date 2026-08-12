@@ -7,6 +7,7 @@ import {
   MAX_LOGO_SHADOW,
   clampLogoLayout,
   getLogoLayout,
+  getLogoShadowBackdropStyle,
   getLogoShadowFilter,
   getLogoLayoutStyle,
   moveLogoLayout,
@@ -30,8 +31,12 @@ describe("reading a stored layout", () => {
 
   it("rejects a partial or non-numeric layout rather than half-applying it", () => {
     expect(getLogoLayout(item({ x: 0.5, y: 0.5 }))).toBeNull();
-    expect(getLogoLayout(item({ x: "0.5", y: 0.5, width: 0.5, shadow: 1 }))).toBeNull();
-    expect(getLogoLayout(item({ x: Number.NaN, y: 0.5, width: 0.5, shadow: 1 }))).toBeNull();
+    expect(
+      getLogoLayout(item({ x: "0.5", y: 0.5, width: 0.5, shadow: 1 })),
+    ).toBeNull();
+    expect(
+      getLogoLayout(item({ x: Number.NaN, y: 0.5, width: 0.5, shadow: 1 })),
+    ).toBeNull();
   });
 
   it("clamps a stored layout that is out of range", () => {
@@ -46,7 +51,9 @@ describe("reading a stored layout", () => {
 
 describe("layout geometry", () => {
   it("anchors by centre so a drag tracks the pointer", () => {
-    expect(getLogoLayoutStyle({ x: 0.25, y: 0.4, width: 0.6, shadow: 1 })).toEqual({
+    expect(
+      getLogoLayoutStyle({ x: 0.25, y: 0.4, width: 0.6, shadow: 1 }),
+    ).toEqual({
       left: "25%",
       top: "40%",
       width: "60%",
@@ -55,9 +62,9 @@ describe("layout geometry", () => {
   });
 
   it("keeps a logo legible and smaller than the card", () => {
-    expect(clampLogoLayout({ x: 0.5, y: 0.5, width: 0.01, shadow: 1 }).width).toBe(
-      MIN_LOGO_WIDTH,
-    );
+    expect(
+      clampLogoLayout({ x: 0.5, y: 0.5, width: 0.01, shadow: 1 }).width,
+    ).toBe(MIN_LOGO_WIDTH);
     expect(clampLogoLayout({ x: 0.5, y: 0.5, width: 9, shadow: 1 }).width).toBe(
       MAX_LOGO_WIDTH,
     );
@@ -76,6 +83,7 @@ describe("shadow", () => {
     // for one being drawn.
     expect(getLogoShadowFilter(0)).toBeUndefined();
     expect(getLogoShadowFilter(-1)).toBeUndefined();
+    expect(getLogoShadowBackdropStyle(0)).toBeUndefined();
   });
 
   it("scales both shadows together", () => {
@@ -87,6 +95,12 @@ describe("shadow", () => {
     // gains separation without the edges going soft.
     expect(strong).toContain("68px");
     expect(strong).toContain("36px");
+
+    const normalBackdrop = getLogoShadowBackdropStyle(1);
+    const strongBackdrop = getLogoShadowBackdropStyle(2);
+    expect(normalBackdrop?.filter).toBe("blur(18px)");
+    expect(strongBackdrop?.filter).toBe("blur(36px)");
+    expect(strongBackdrop?.backgroundColor).toBe("rgba(0, 0, 0, 0.76)");
   });
 
   it("falls back to the default when the strength is not a number", () => {
@@ -112,13 +126,20 @@ describe("dragging", () => {
   });
 
   it("stops at the edges of the card", () => {
-    const moved = moveLogoLayout({ x: 0.9, y: 0.1, width: 0.5, shadow: 1 }, 400, -400, CARD);
+    const moved = moveLogoLayout(
+      { x: 0.9, y: 0.1, width: 0.5, shadow: 1 },
+      400,
+      -400,
+      CARD,
+    );
     expect(moved).toMatchObject({ x: 1, y: 0 });
   });
 
   it("does nothing before the card has been measured", () => {
     const layout = { x: 0.5, y: 0.5, width: 0.5, shadow: 1 };
-    expect(moveLogoLayout(layout, 20, 20, { width: 0, height: 0 })).toBe(layout);
+    expect(moveLogoLayout(layout, 20, 20, { width: 0, height: 0 })).toBe(
+      layout,
+    );
   });
 });
 
