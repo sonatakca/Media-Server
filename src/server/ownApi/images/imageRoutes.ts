@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { OwnApiError } from "../ownApiHandler";
+import { clampArtworkWidth } from "../../../lib/artworkSizes";
 import type { RouteDefinition } from "../api/router";
 import {
   parseEnum,
@@ -94,11 +95,17 @@ export function createImageRoutes({
       storageKey: string;
     },
   ): Promise<void> {
-    const maxWidth = parseOptionalNonNegativeInteger(
+    const requestedWidth = parseOptionalNonNegativeInteger(
       context.url.searchParams.get("maxWidth"),
       "maxWidth",
-      1920,
     );
+    // Clamped rather than rejected: the variant pipeline caps at
+    // MAX_ARTWORK_WIDTH anyway, so a wider request would return identical
+    // bytes. Failing it instead cost the caller the image entirely — which is
+    // how a hero asking for 2200px ended up showing its poster.
+    const maxWidth = requestedWidth
+      ? clampArtworkWidth(requestedWidth)
+      : requestedWidth;
     const requestedImage = maxWidth
       ? await imageStorage.getVariant(image, maxWidth).catch(() => image)
       : image;

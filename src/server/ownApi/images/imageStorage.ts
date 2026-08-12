@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
+import {
+  ARTWORK_VARIANT_WIDTHS,
+  MAX_ARTWORK_WIDTH,
+  clampArtworkWidth,
+} from "../../../lib/artworkSizes";
 
 /**
  * Content-addressed artwork storage on the generated-storage volume.
@@ -85,13 +90,12 @@ export function createImageStorage({
   // number of almost-identical cached files by varying maxWidth one pixel at a
   // time. Each request is rounded up, so the browser never receives less than
   // it asked for.
-  const variantWidths = [
-    80, 160, 240, 320, 440, 520, 680, 900, 1280, 1600, 1920,
-  ];
-
   function normalizedVariantWidth(maxWidth: number): number {
-    const requested = Math.max(1, Math.min(1920, Math.round(maxWidth)));
-    return variantWidths.find((width) => width >= requested) ?? 1920;
+    const requested = clampArtworkWidth(maxWidth);
+    return (
+      ARTWORK_VARIANT_WIDTHS.find((width) => width >= requested) ??
+      MAX_ARTWORK_WIDTH
+    );
   }
 
   function keyFor(contentHash: string, extension: string): string {
