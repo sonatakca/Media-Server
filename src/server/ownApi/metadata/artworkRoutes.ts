@@ -30,11 +30,15 @@ export interface ArtworkRoutesOptions {
  */
 const ARTWORK_TARGETS: Record<
   TmdbArtworkKind,
-  { imageType: string; size: string }
+  { imageType: string; size: string; uploadPreviewWidth: number }
 > = {
-  poster: { imageType: "primary", size: "w780" },
-  backdrop: { imageType: "backdrop", size: "w1280" },
-  logo: { imageType: "logo", size: "w500" },
+  poster: { imageType: "primary", size: "w780", uploadPreviewWidth: 440 },
+  backdrop: {
+    imageType: "backdrop",
+    size: "w1280",
+    uploadPreviewWidth: 1280,
+  },
+  logo: { imageType: "logo", size: "w500", uploadPreviewWidth: 520 },
 };
 
 /** The preview grid wants many images at once, so it asks for small ones. */
@@ -391,7 +395,16 @@ export function createArtworkRoutes({
           );
         }
 
-        const imageType = ARTWORK_TARGETS[kind].imageType;
+        const artworkTarget = ARTWORK_TARGETS[kind];
+        // Pay the conversion cost while the administrator is already waiting
+        // for the upload. Ordinary library visits can then serve the small
+        // cached cover immediately. Older uploads are converted lazily by the
+        // image route the first time they are requested.
+        await imageStorage
+          .getVariant(stored, artworkTarget.uploadPreviewWidth)
+          .catch(() => undefined);
+
+        const imageType = artworkTarget.imageType;
         const imageId = await images.replaceLocked({
           itemId,
           imageType,

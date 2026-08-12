@@ -1,7 +1,8 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import sharp from "sharp";
 import { createImageStorage, detectImageType } from "./imageStorage";
 
 const JPEG = Buffer.concat([
@@ -73,6 +74,59 @@ describe("image storage", () => {
     expect(png.contentHash).not.toBe(jpeg.contentHash);
   });
 
+  it("creates and reuses a small WebP variant for a full-size custom cover", async () => {
+    const storage = createImageStorage({ imageRoot });
+    const fullSizeCover = await sharp({
+      create: {
+        width: 1600,
+        height: 2400,
+        channels: 3,
+        background: "#b45309",
+      },
+    })
+      .png()
+      .toBuffer();
+    const original = await storage.store(fullSizeCover, "image/png");
+
+    const first = await storage.getVariant(original, 440);
+    const second = await storage.getVariant(original, 440);
+    const metadata = await sharp(storage.resolve(first.storageKey)).metadata();
+
+    expect(first).toEqual(second);
+    expect(first.contentType).toBe("image/webp");
+    expect(first.storageKey).toContain("variants/v1/");
+    expect(metadata.width).toBe(440);
+    expect(first.sizeBytes).toBeLessThan(original.sizeBytes);
+    await expect(
+      stat(storage.resolve(first.storageKey)),
+    ).resolves.toMatchObject({
+      size: first.sizeBytes,
+    });
+  });
+
+  it("coalesces nearby requested widths into one bounded cache variant", async () => {
+    const storage = createImageStorage({ imageRoot });
+    const cover = await sharp({
+      create: {
+        width: 1000,
+        height: 1500,
+        channels: 3,
+        background: "#111827",
+      },
+    })
+      .jpeg()
+      .toBuffer();
+    const original = await storage.store(cover, "image/jpeg");
+
+    const first = await storage.getVariant(original, 441);
+    const second = await storage.getVariant(original, 500);
+
+    expect(second.storageKey).toBe(first.storageKey);
+    await expect(
+      sharp(storage.resolve(first.storageKey)).metadata(),
+    ).resolves.toMatchObject({ width: 520, format: "webp" });
+  });
+
   it("refuses content whose bytes are not an image", async () => {
     const storage = createImageStorage({ imageRoot });
     await expect(storage.store(HTML, "image/jpeg")).rejects.toThrow(
@@ -104,7 +158,9 @@ describe("image storage", () => {
         })) as unknown as typeof fetch,
     });
 
-    const stored = await storage.fetchAndStore("https://images.test/poster.jpg");
+    const stored = await storage.fetchAndStore(
+      "https://images.test/poster.jpg",
+    );
     expect(stored.contentType).toBe("image/jpeg");
   });
 

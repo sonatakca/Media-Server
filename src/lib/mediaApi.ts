@@ -102,6 +102,9 @@ function imageUrl(
   // server validates with an ETag regardless.
   if (tag) query.set("tag", tag);
   if (maxWidth) query.set("maxWidth", String(maxWidth));
+  // Separates optimized artwork URLs from the old endpoints that returned the
+  // full original file under the same maxWidth query.
+  if (maxWidth) query.set("variant", "webp-v1");
   const suffix = query.toString();
   return ownApiUrl(
     `/ownAPI/v1/items/${encodeURIComponent(itemId)}/images/${imageType}${

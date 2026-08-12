@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMetadataService } from "./metadataService";
-import { TmdbError, type TmdbClient, type TmdbTitleDetails } from "./tmdbClient";
+import {
+  TmdbError,
+  type TmdbClient,
+  type TmdbTitleDetails,
+} from "./tmdbClient";
 import type {
   MetadataRepository,
   MetadataTarget,
@@ -106,6 +110,11 @@ function fakeStorage(): ImageStorage {
       sizeBytes: 10,
       storageKey: "aa/bb/hash.jpg",
     }),
+    getVariant: async (image) => ({
+      ...image,
+      contentType: "image/webp",
+      sizeBytes: 10,
+    }),
     remove: async () => undefined,
   };
 }
@@ -148,7 +157,9 @@ describe("metadata identification", () => {
   });
 
   it("does not apply an ambiguous match", async () => {
-    const metadata = fakeMetadata(target({ title: "The Killer", productionYear: null }));
+    const metadata = fakeMetadata(
+      target({ title: "The Killer", productionYear: null }),
+    );
     const service = createMetadataService({
       metadata: metadata.repository,
       images: fakeImages(),
@@ -180,7 +191,9 @@ describe("metadata identification", () => {
       tmdb: fakeTmdb({ searchMovies }),
     });
 
-    const result = await service.identify(target({ lockedFields: ["identity"] }));
+    const result = await service.identify(
+      target({ lockedFields: ["identity"] }),
+    );
 
     expect(result.status).toBe("skipped");
     expect(searchMovies).not.toHaveBeenCalled();

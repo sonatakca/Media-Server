@@ -2,7 +2,11 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { OwnApiError } from "../ownApiHandler";
 import type { RouteDefinition } from "../api/router";
-import { parseEnum, parseOptionalNonNegativeInteger, requireUuid } from "../api/validation";
+import {
+  parseEnum,
+  parseOptionalNonNegativeInteger,
+  requireUuid,
+} from "../api/validation";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { ImageRepository } from "./imageRepository";
 import type { ImageStorage } from "./imageStorage";
@@ -38,7 +42,6 @@ export function createImageRoutes({
   async function serveImage(
     context: Parameters<RouteDefinition["handle"]>[0],
     image: {
-      id: string;
       contentHash: string;
       contentType: string;
       storageKey: string;
@@ -54,7 +57,10 @@ export function createImageRoutes({
     // never keep a copy.
     context.response.setHeader("Cache-Control", "private, max-age=604800");
 
-    if (typeof ifNoneMatch === "string" && ifNoneMatch.includes(image.contentHash)) {
+    if (
+      typeof ifNoneMatch === "string" &&
+      ifNoneMatch.includes(image.contentHash)
+    ) {
       context.response.statusCode = 304;
       context.response.end();
       return;
@@ -80,6 +86,25 @@ export function createImageRoutes({
     });
   }
 
+  async function serveRequestedSize(
+    context: Parameters<RouteDefinition["handle"]>[0],
+    image: {
+      contentHash: string;
+      contentType: string;
+      storageKey: string;
+    },
+  ): Promise<void> {
+    const maxWidth = parseOptionalNonNegativeInteger(
+      context.url.searchParams.get("maxWidth"),
+      "maxWidth",
+      1920,
+    );
+    const requestedImage = maxWidth
+      ? await imageStorage.getVariant(image, maxWidth).catch(() => image)
+      : image;
+    await serveImage(context, requestedImage);
+  }
+
   return [
     {
       method: "GET",
@@ -97,11 +122,13 @@ export function createImageRoutes({
 
         // Artwork inherits the visibility of the item it belongs to; holding an
         // image id is not authorization.
-        if (!(await catalogue.canUserAccessItem(principal.userId, image.itemId))) {
+        if (
+          !(await catalogue.canUserAccessItem(principal.userId, image.itemId))
+        ) {
           throw notFound();
         }
 
-        await serveImage(context, image);
+        await serveRequestedSize(context, image);
       },
     },
 
@@ -130,7 +157,11 @@ export function createImageRoutes({
           throw notFound();
         }
 
-        let image = await images.findByItemAndType(itemId, imageType, imageIndex);
+        let image = await images.findByItemAndType(
+          itemId,
+          imageType,
+          imageIndex,
+        );
 
         // An episode with no artwork of its own falls back to its season's and
         // then its series', which is what the card is expected to show.
@@ -140,13 +171,17 @@ export function createImageRoutes({
             (id): id is string => typeof id === "string",
           );
           for (const parentId of parents) {
-            image = await images.findByItemAndType(parentId, imageType, imageIndex);
+            image = await images.findByItemAndType(
+              parentId,
+              imageType,
+              imageIndex,
+            );
             if (image) break;
           }
         }
 
         if (!image) throw notFound();
-        await serveImage(context, image);
+        await serveRequestedSize(context, image);
       },
     },
   ];

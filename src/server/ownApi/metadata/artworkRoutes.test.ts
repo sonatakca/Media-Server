@@ -109,6 +109,11 @@ function fakeStorage(overrides: Partial<ImageStorage> = {}): ImageStorage {
       sizeBytes: 10,
       storageKey: "aa/bb/hash.jpg",
     }),
+    getVariant: async (image) => ({
+      ...image,
+      contentType: "image/webp",
+      sizeBytes: 10,
+    }),
     remove: async () => undefined,
     ...overrides,
   };
@@ -402,9 +407,14 @@ describe("artwork routes", () => {
     const replaceLocked = vi.fn<ImageRepository["replaceLocked"]>(
       async () => "book-cover-image",
     );
+    const getVariant = vi.fn<ImageStorage["getVariant"]>(async (image) => ({
+      ...image,
+      contentType: "image/webp",
+      sizeBytes: 8,
+    }));
     const router = buildRouter({
       images: fakeImages({ replaceLocked }),
-      imageStorage: fakeStorage({ store }),
+      imageStorage: fakeStorage({ store, getVariant }),
     });
     const bytes = Buffer.from("custom-book-cover");
 
@@ -422,6 +432,10 @@ describe("artwork routes", () => {
     expect(result.sent.statusCode).toBe(200);
     expect(store.mock.calls[0]?.[0]).toEqual(bytes);
     expect(store.mock.calls[0]?.[1]).toBe("image/png");
+    expect(getVariant).toHaveBeenCalledWith(
+      expect.objectContaining({ contentHash: "custom-cover-hash" }),
+      440,
+    );
     expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
       itemId: BOOK,
       imageType: "primary",
