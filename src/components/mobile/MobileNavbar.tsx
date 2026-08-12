@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Book, Bookmark, Boxes, LogOut, Palette, Search } from "lucide-react";
+import { Book, Bookmark, LogOut, Palette, Search } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";

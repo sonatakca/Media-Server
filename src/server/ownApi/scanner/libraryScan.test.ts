@@ -77,9 +77,11 @@ describe("scanLibraryTree — movies", () => {
       kind: "movies",
     });
 
-    expect(byKind(result.items, "movie").map((item) => item.title).sort()).toEqual(
-      ["Alien", "Aliens"],
-    );
+    expect(
+      byKind(result.items, "movie")
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["Alien", "Aliens"]);
   });
 
   it("treats each loose file at the library root as its own movie", async () => {
@@ -205,7 +207,10 @@ describe("scanLibraryTree — series", () => {
   it("handles a flat series folder with no season directories", async () => {
     const fileSystem = createFileSystem({
       Shows: ["Firefly/"],
-      "Shows/Firefly": ["Firefly 1x01 Serenity.mkv", "Firefly 1x02 The Train Job.mkv"],
+      "Shows/Firefly": [
+        "Firefly 1x01 Serenity.mkv",
+        "Firefly 1x02 The Train Job.mkv",
+      ],
     });
 
     const result = await scanLibraryTree({
@@ -287,9 +292,11 @@ describe("scanLibraryTree — books and mixed roots", () => {
       kind: "books",
     });
 
-    expect(byKind(result.items, "book").map((item) => item.title).sort()).toEqual(
-      ["Dune", "Loose Book"],
-    );
+    expect(
+      byKind(result.items, "book")
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["Dune", "Loose Book"]);
   });
 
   it("classifies a mixed root by the presence of season folders", async () => {
@@ -308,9 +315,11 @@ describe("scanLibraryTree — books and mixed roots", () => {
 
     expect(byKind(result.items, "series")).toHaveLength(1);
     expect(byKind(result.items, "episode")).toHaveLength(1);
-    expect(byKind(result.items, "movie").map((item) => item.title).sort()).toEqual(
-      ["Loose", "Some Movie"],
-    );
+    expect(
+      byKind(result.items, "movie")
+        .map((item) => item.title)
+        .sort(),
+    ).toEqual(["Loose", "Some Movie"]);
   });
 
   it("records unreadable directories instead of failing the whole scan", async () => {

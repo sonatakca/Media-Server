@@ -259,13 +259,17 @@ export async function reconcileLibraryScan({
     .filter((file) => file.missingSince === null)
     .map((file) => file.id);
   const filesToDelete = vanishedFiles
-    .filter((file) => file.missingSince !== null && file.missingSince <= graceCutoff)
+    .filter(
+      (file) => file.missingSince !== null && file.missingSince <= graceCutoff,
+    )
     .map((file) => file.id);
   const itemsToMark = vanishedItems
     .filter((item) => item.missingSince === null)
     .map((item) => item.id);
   const itemsToDelete = vanishedItems
-    .filter((item) => item.missingSince !== null && item.missingSince <= graceCutoff)
+    .filter(
+      (item) => item.missingSince !== null && item.missingSince <= graceCutoff,
+    )
     .map((item) => item.id);
 
   if (filesToMark.length > 0) {

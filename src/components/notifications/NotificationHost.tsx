@@ -25,16 +25,14 @@ import {
 } from "../../lib/notifications/notificationStack";
 import { useLanguage } from "../../i18n/LanguageContext";
 
-const TONE_ICONS: Record<
-  NotificationTone,
-  typeof Info | typeof CheckCircle2
-> = {
-  info: Info,
-  success: CheckCircle2,
-  warning: AlertTriangle,
-  error: XCircle,
-  progress: Loader2,
-};
+const TONE_ICONS: Record<NotificationTone, typeof Info | typeof CheckCircle2> =
+  {
+    info: Info,
+    success: CheckCircle2,
+    warning: AlertTriangle,
+    error: XCircle,
+    progress: Loader2,
+  };
 
 const TONE_ACCENTS: Record<NotificationTone, string> = {
   info: "text-sky-300",
@@ -50,7 +48,10 @@ const TONE_ACCENTS: Record<NotificationTone, string> = {
  * A timer per card rather than one sweep, so a card that arrives while another
  * is halfway through its life still gets its full time.
  */
-function useExpiry(notification: SeyirlikNotification, isPaused: boolean): void {
+function useExpiry(
+  notification: SeyirlikNotification,
+  isPaused: boolean,
+): void {
   const { id, life, createdAt } = notification;
 
   useEffect(() => {

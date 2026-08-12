@@ -82,10 +82,7 @@ export function isJellyfinExtraItem(item: MediaItem): boolean {
   return false;
 }
 
-function isUsableMetadataOwner(
-  item: MediaItem,
-  childItem: MediaItem,
-): boolean {
+function isUsableMetadataOwner(item: MediaItem, childItem: MediaItem): boolean {
   if (item.Id === childItem.Id || isJellyfinExtraItem(item)) {
     return false;
   }

@@ -59,7 +59,11 @@ export function createJobHandlers({
   metadataService,
   trickplayService,
 }: JobHandlerOptions): Record<string, JobHandler> {
-  const libraryScan: JobHandler = async ({ job, reportProgress, isCancelled }) => {
+  const libraryScan: JobHandler = async ({
+    job,
+    reportProgress,
+    isCancelled,
+  }) => {
     const libraryId = job.payload.libraryId;
     if (typeof libraryId !== "string") {
       throw new PermanentJobError("The task payload is missing a library.");
@@ -151,13 +155,19 @@ export function createJobHandlers({
     return { probed, failed };
   };
 
-  const metadataScan: JobHandler = async ({ job, reportProgress, isCancelled }) => {
+  const metadataScan: JobHandler = async ({
+    job,
+    reportProgress,
+    isCancelled,
+  }) => {
     if (!metadataService) {
       throw new PermanentJobError("No metadata provider is configured.");
     }
 
     const libraryId =
-      typeof job.payload.libraryId === "string" ? job.payload.libraryId : undefined;
+      typeof job.payload.libraryId === "string"
+        ? job.payload.libraryId
+        : undefined;
 
     let matched = 0;
     let ambiguous = 0;

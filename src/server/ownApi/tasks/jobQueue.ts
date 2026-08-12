@@ -9,7 +9,12 @@ import type { DatabasePool } from "../database/databasePool";
  * anyone noticing, and no broker has to be installed next to the media volume.
  */
 
-export type JobStatus = "queued" | "running" | "succeeded" | "failed" | "cancelled";
+export type JobStatus =
+  | "queued"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "cancelled";
 
 export interface JobRecord {
   id: string;
@@ -44,14 +49,26 @@ export interface EnqueueOptions {
 export interface JobQueue {
   enqueue(options: EnqueueOptions): Promise<string>;
   claim(leaseOwner: string, leaseMs: number): Promise<JobRecord | null>;
-  heartbeat(jobId: string, leaseOwner: string, leaseMs: number): Promise<boolean>;
-  reportProgress(jobId: string, progress: number, message?: string): Promise<void>;
+  heartbeat(
+    jobId: string,
+    leaseOwner: string,
+    leaseMs: number,
+  ): Promise<boolean>;
+  reportProgress(
+    jobId: string,
+    progress: number,
+    message?: string,
+  ): Promise<void>;
   complete(jobId: string, result?: Record<string, unknown>): Promise<void>;
   fail(jobId: string, safeError: string, retry: boolean): Promise<void>;
   requestCancellation(jobId: string): Promise<boolean>;
   isCancellationRequested(jobId: string): Promise<boolean>;
   get(jobId: string): Promise<JobRecord | null>;
-  list(options: { jobType?: string; status?: JobStatus; limit: number }): Promise<JobRecord[]>;
+  list(options: {
+    jobType?: string;
+    status?: JobStatus;
+    limit: number;
+  }): Promise<JobRecord[]>;
   /** Returns leases that expired so a crashed worker's jobs are retried. */
   reclaimExpiredLeases(): Promise<number>;
 }
@@ -115,7 +132,15 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
          ON CONFLICT (dedupe_key) WHERE dedupe_key IS NOT NULL AND status IN ('queued', 'running')
          DO NOTHING
          RETURNING id`,
-        [id, jobType, payload, priority, maxAttempts, runAfter ?? null, dedupeKey ?? null],
+        [
+          id,
+          jobType,
+          payload,
+          priority,
+          maxAttempts,
+          runAfter ?? null,
+          dedupeKey ?? null,
+        ],
       );
 
       const inserted = result.rows[0]?.id;
@@ -171,7 +196,11 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
       await pool.query(
         `UPDATE jobs SET progress = $2, progress_message = $3
          WHERE id = $1 AND status = 'running'`,
-        [jobId, Math.min(1, Math.max(0, progress)), message?.slice(0, 300) ?? null],
+        [
+          jobId,
+          Math.min(1, Math.max(0, progress)),
+          message?.slice(0, 300) ?? null,
+        ],
       );
     },
 

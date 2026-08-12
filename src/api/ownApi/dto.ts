@@ -154,8 +154,18 @@ export interface PlaybackPlanDto {
   preservesOriginalVideoQuality: boolean;
   expectedStartup: "instant" | "fast" | "slow";
   container: { input: string; output: string; action: string };
-  video: { inputCodec: string; outputCodec?: string; action: string; reason?: string };
-  audio: { inputCodec?: string; outputCodec?: string; action: string; reason?: string };
+  video: {
+    inputCodec: string;
+    outputCodec?: string;
+    action: string;
+    reason?: string;
+  };
+  audio: {
+    inputCodec?: string;
+    outputCodec?: string;
+    action: string;
+    reason?: string;
+  };
   subtitles: { inputCodec?: string; action: string; reason?: string };
   selected: {
     videoStreamIndex: number;
@@ -175,7 +185,12 @@ export interface PlaybackSessionDto {
 }
 
 export interface HomeDto {
-  libraries: Array<{ id: string; name: string; kind: string; itemCount: number }>;
+  libraries: Array<{
+    id: string;
+    name: string;
+    kind: string;
+    itemCount: number;
+  }>;
   continueWatching: ItemDto[];
   nextUp: ItemDto[];
   latestByLibrary: Array<{ id: string; title: string; items: ItemDto[] }>;

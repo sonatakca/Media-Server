@@ -30,8 +30,7 @@ export const PLAYBACK_SESSION_ROUTE_BASE = "/ownAPI/v1/playback/sessions";
  * rendition is behind the same session cookie as everything else rather than on
  * a second, separately-authorized surface.
  */
-export const PLAYBACK_RENDITION_ROUTE_BASE =
-  "/ownAPI/v1/playback/renditions";
+export const PLAYBACK_RENDITION_ROUTE_BASE = "/ownAPI/v1/playback/renditions";
 
 export interface PlaybackRoutesOptions {
   catalogue: CatalogueRepository;
@@ -64,8 +63,10 @@ export function toNativeMode(plan: PlaybackPlan): NativeMode {
 export function toReasonCodes(plan: PlaybackPlan): string[] {
   const codes: string[] = [];
   if (plan.container.action !== "direct") codes.push("CONTAINER_NOT_SUPPORTED");
-  if (plan.video.action === "transcode") codes.push("VIDEO_CODEC_NOT_SUPPORTED");
-  if (plan.audio.action === "transcode") codes.push("AUDIO_CODEC_NOT_SUPPORTED");
+  if (plan.video.action === "transcode")
+    codes.push("VIDEO_CODEC_NOT_SUPPORTED");
+  if (plan.audio.action === "transcode")
+    codes.push("AUDIO_CODEC_NOT_SUPPORTED");
   if (plan.subtitles.action === "burn") codes.push("SUBTITLE_BURN_IN_REQUIRED");
   return codes;
 }
@@ -105,7 +106,11 @@ export function createPlaybackRoutes({
    * of an item or file id can never be traded for bytes from a library the
    * caller cannot see.
    */
-  async function resolvePlayable(userId: string, itemId: string, mediaFileId?: string) {
+  async function resolvePlayable(
+    userId: string,
+    itemId: string,
+    mediaFileId?: string,
+  ) {
     if (!(await catalogue.canUserAccessItem(userId, itemId))) {
       throw new OwnApiError(
         "ITEM_NOT_FOUND",
@@ -187,7 +192,10 @@ export function createPlaybackRoutes({
         min: 0,
         max: 100_000,
       }),
-      maxHeight: optionalBodyInteger(body, "maxHeight", { min: 144, max: 4_320 }),
+      maxHeight: optionalBodyInteger(body, "maxHeight", {
+        min: 144,
+        max: 4_320,
+      }),
       maxBitrateBps: optionalBodyInteger(body, "maxBitrateBps", {
         min: 100_000,
         max: 400_000_000,
@@ -608,7 +616,10 @@ export function createPlaybackRoutes({
         // as siblings of master.m3u8. The name is re-validated here: it must
         // name a file inside the session's working directory and nothing else.
         const segmentName = context.params.segmentName ?? "";
-        if (!/^[A-Za-z0-9._-]{1,128}$/.test(segmentName) || segmentName.includes("..")) {
+        if (
+          !/^[A-Za-z0-9._-]{1,128}$/.test(segmentName) ||
+          segmentName.includes("..")
+        ) {
           throw validationError("The segment name is invalid.");
         }
 

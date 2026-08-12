@@ -84,7 +84,9 @@ export function extractGroupIdFromInput(value: string): string | null {
   }
 }
 
-function toGroupState(group: PartyWatchGroup | null): SyncPlayGroupState | null {
+function toGroupState(
+  group: PartyWatchGroup | null,
+): SyncPlayGroupState | null {
   if (!group) return null;
   if (group.isWaiting) return "Waiting";
   return group.isPlaying ? "Playing" : "Paused";
@@ -111,10 +113,13 @@ export function usePartyWatchController({
   const [isApplyingRemoteCommand, setIsApplyingRemoteCommand] = useState(false);
   const [streamStatus, setStreamStatus] =
     useState<PartyWatchStreamStatus>("closed");
-  const [errorKey, setErrorKey] = useState<PartyWatchController["errorKey"]>(null);
+  const [errorKey, setErrorKey] =
+    useState<PartyWatchController["errorKey"]>(null);
   const [copyStatusKey, setCopyStatusKey] =
     useState<PartyWatchController["copyStatusKey"]>(null);
-  const [partyEventMessage, setPartyEventMessage] = useState<string | null>(null);
+  const [partyEventMessage, setPartyEventMessage] = useState<string | null>(
+    null,
+  );
 
   const streamRef = useRef<PartyWatchStream | null>(null);
   const remoteGuardRef = useRef(0);
@@ -212,7 +217,8 @@ export function usePartyWatchController({
   const joinGroup = useCallback(
     async (requestedGroupId?: string) => {
       const target =
-        normalizeGroupId(requestedGroupId) ?? extractGroupIdFromInput(joinInput);
+        normalizeGroupId(requestedGroupId) ??
+        extractGroupIdFromInput(joinInput);
       if (!target) {
         setErrorKey("party.syncPlayGroupNotFound");
         return;

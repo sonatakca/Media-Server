@@ -27,8 +27,12 @@ vi.mock("framer-motion", () => ({
       ...props
     }: Record<string, unknown> & { children?: React.ReactNode }) => (
       <div
-        data-initial-opacity={String((initial as { opacity?: number })?.opacity)}
-        data-animate-opacity={String((animate as { opacity?: number })?.opacity)}
+        data-initial-opacity={String(
+          (initial as { opacity?: number })?.opacity,
+        )}
+        data-animate-opacity={String(
+          (animate as { opacity?: number })?.opacity,
+        )}
         data-exit-opacity={String((exit as { opacity?: number })?.opacity)}
         {...(props as object)}
       >
@@ -298,7 +302,9 @@ describe("notification host", () => {
       const collapsed = screen.getByText("Entry 2").closest("div")
         ?.parentElement as HTMLElement;
       collapsed
-        .querySelector<HTMLButtonElement>('button[aria-label="notifications.dismiss"]')
+        .querySelector<HTMLButtonElement>(
+          'button[aria-label="notifications.dismiss"]',
+        )
         ?.click();
     });
 

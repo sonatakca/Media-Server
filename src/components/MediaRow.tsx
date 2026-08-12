@@ -176,10 +176,6 @@ export function MediaRow({
     };
   }, [items.length, updateScrollState, variant]);
 
-  if (items.length === 0 && !emptyMessage) {
-    return null;
-  }
-
   const scrollByCards = useCallback(
     (direction: "left" | "right") => {
       const scroller = scrollerRef.current;
@@ -238,6 +234,13 @@ export function MediaRow({
     },
     [rowGutter, shouldReduceMotion],
   );
+
+  // Below every hook on purpose. A row is empty until its data arrives, so
+  // returning earlier than this changed the number of hooks between renders
+  // the moment the items loaded.
+  if (items.length === 0 && !emptyMessage) {
+    return null;
+  }
 
   return (
     <MotionReveal className="py-4 sm:py-6" direction="up">

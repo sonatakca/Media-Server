@@ -242,7 +242,8 @@ export function createOwnApiRequestHandler({
 
     const startedAt = performance.now();
     const routeTemplate =
-      routeTemplateResolver?.(url.pathname) ?? ownApiRouteTemplate(url.pathname);
+      routeTemplateResolver?.(url.pathname) ??
+      ownApiRouteTemplate(url.pathname);
     const requestId = resolveOwnApiRequestId(
       request,
       requestIdFactory,

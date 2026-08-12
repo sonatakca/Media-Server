@@ -30,11 +30,17 @@ export interface TitleMetadataUpdate {
 }
 
 export interface MetadataRepository {
-  listPendingItems(limit: number, libraryId?: string): Promise<MetadataTarget[]>;
+  listPendingItems(
+    limit: number,
+    libraryId?: string,
+  ): Promise<MetadataTarget[]>;
   getTarget(itemId: string): Promise<MetadataTarget | null>;
   listSeasonsForSeries(seriesId: string): Promise<MetadataTarget[]>;
   listEpisodesForSeries(seriesId: string): Promise<MetadataTarget[]>;
-  applyTitleMetadata(itemId: string, update: TitleMetadataUpdate): Promise<void>;
+  applyTitleMetadata(
+    itemId: string,
+    update: TitleMetadataUpdate,
+  ): Promise<void>;
   replaceGenres(itemId: string, genres: string[]): Promise<void>;
   replacePeople(itemId: string, people: TmdbPerson[]): Promise<void>;
   markFailed(itemId: string): Promise<void>;
@@ -199,7 +205,9 @@ export function createMetadataRepository(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query(`DELETE FROM item_genres WHERE item_id = $1`, [itemId]);
+        await client.query(`DELETE FROM item_genres WHERE item_id = $1`, [
+          itemId,
+        ]);
 
         for (const [index, genre] of genres.entries()) {
           const normalized = normalizeName(genre);
@@ -235,7 +243,9 @@ export function createMetadataRepository(
       const client = await pool.connect();
       try {
         await client.query("BEGIN");
-        await client.query(`DELETE FROM item_people WHERE item_id = $1`, [itemId]);
+        await client.query(`DELETE FROM item_people WHERE item_id = $1`, [
+          itemId,
+        ]);
 
         for (const person of people) {
           const normalized = normalizeName(person.name);

@@ -44,7 +44,11 @@ async function fixture() {
   return { root, catalogue };
 }
 
-async function call(root: string, catalogue: CatalogueRepository, path_: string) {
+async function call(
+  root: string,
+  catalogue: CatalogueRepository,
+  path_: string,
+) {
   const router = createOwnApiRouter({
     csrfSecret: "s".repeat(32),
     csrfCookieName: "seyirlik_csrf",
@@ -69,7 +73,11 @@ async function call(root: string, catalogue: CatalogueRepository, path_: string)
 
   // A real writable, because serveFile pipes a read stream into it — a plain
   // object with an `end` method is not something you can pipe to.
-  const sent = { statusCode: 200, headers: {} as Record<string, unknown>, body: "" };
+  const sent = {
+    statusCode: 200,
+    headers: {} as Record<string, unknown>,
+    body: "",
+  };
   const response = Object.assign(
     new Writable({
       write(chunk, _encoding, callback) {

@@ -8,7 +8,7 @@ import { ErrorMessage } from "../../components/ErrorMessage";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
 import { TimedCarouselIndicators } from "../../components/TimedCarouselIndicators";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { formatRuntime, getDisplayTitle } from "../../lib/format";
+import { getDisplayTitle } from "../../lib/format";
 import {
   getItemDisplayMetadata,
   getItemLogoUrlById,
@@ -495,18 +495,6 @@ export function MobileHomePage() {
     language,
     fallbackLogoUrl,
   );
-  const mediaTypeLabel =
-    heroItem?.Type === "Movie"
-      ? t("common.movie")
-      : heroItem?.Type === "Series"
-        ? t("common.series")
-        : heroItem?.Type;
-  const metadata = [
-    heroItem?.ProductionYear,
-    formatRuntime(heroItem?.RunTimeTicks, mediaFormatLabels),
-    mediaTypeLabel,
-  ].filter(Boolean);
-  const heroGenres = heroItem?.Genres?.slice(0, 3) ?? [];
   const canPlay =
     heroItem?.Type === "Movie" ||
     heroItem?.Type === "Episode" ||

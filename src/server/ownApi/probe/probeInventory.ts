@@ -180,8 +180,11 @@ export function toPersistedProbe(analysis: MediaAnalysis): PersistedProbe {
   return {
     durationMs,
     bitrateBps: toInteger(analysis.overallBitrate),
-    container: analysis.container.extension ?? analysis.container.formatName ?? null,
-    streams: streams.sort((left, right) => left.streamIndex - right.streamIndex),
+    container:
+      analysis.container.extension ?? analysis.container.formatName ?? null,
+    streams: streams.sort(
+      (left, right) => left.streamIndex - right.streamIndex,
+    ),
     chapters,
   };
 }

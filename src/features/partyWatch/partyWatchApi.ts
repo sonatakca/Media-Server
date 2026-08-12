@@ -41,7 +41,9 @@ export interface PartyWatchGroupSummary {
   isPlaying: boolean;
 }
 
-export async function listPartyWatchGroups(): Promise<PartyWatchGroupSummary[]> {
+export async function listPartyWatchGroups(): Promise<
+  PartyWatchGroupSummary[]
+> {
   return ownApiClient.request<PartyWatchGroupSummary[]>("/syncplay/groups");
 }
 
@@ -209,7 +211,9 @@ export function connectPartyWatchStream(
   handlers: PartyWatchStreamHandlers,
 ): PartyWatchStream {
   const source = new EventSource(
-    ownApiUrl(`/ownAPI/v1/syncplay/groups/${encodeURIComponent(groupId)}/events`),
+    ownApiUrl(
+      `/ownAPI/v1/syncplay/groups/${encodeURIComponent(groupId)}/events`,
+    ),
     { withCredentials: true },
   );
 
@@ -221,8 +225,9 @@ export function connectPartyWatchStream(
 
   source.addEventListener("state", (message) => {
     try {
-      const group = JSON.parse((message as MessageEvent<string>).data) as
-        PartyWatchGroup;
+      const group = JSON.parse(
+        (message as MessageEvent<string>).data,
+      ) as PartyWatchGroup;
       observeServerSequence(group.sequence);
       handlers.onState(group);
     } catch {

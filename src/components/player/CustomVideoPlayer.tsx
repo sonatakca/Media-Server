@@ -77,11 +77,9 @@ import {
   PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
   TOUCH_DOUBLE_TAP_THRESHOLD_MS,
   TOUCH_SEEK_SESSION_TIMEOUT_MS,
-  TOUCH_SINGLE_TAP_DELAY_MS,
   TRICKPLAY_COLUMNS,
   TRICKPLAY_IMAGES_PER_SHEET,
   TRICKPLAY_INTERVAL_SECONDS,
-  TRICKPLAY_RESOLUTION,
   TRICKPLAY_ROWS,
   VIEW_MODE_CURSOR_HIDE_MS,
 } from "./constants";
@@ -720,7 +718,7 @@ export function CustomVideoPlayer({
   const frameHoldCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isHoldingFrame, setIsHoldingFrame] = useState(false);
   const preloadTokenRef = useRef(0);
-  const [isPreparingQuality, setIsPreparingQuality] = useState(false);
+  const [_isPreparingQuality, setIsPreparingQuality] = useState(false);
   const recentQualityStallsRef = useRef<number[]>([]);
   const [loadedVideoAspectRatio, setLoadedVideoAspectRatio] = useState<
     number | null
@@ -4315,6 +4313,7 @@ export function CustomVideoPlayer({
     <div
       ref={containerRef}
       className={`seyirlik-player-shell fixed inset-0 select-none ${
+        // eslint-disable-next-line no-constant-condition -- deliberately off
         isCompactPhonePlayer && false ? "seyirlik-player-shell--phone" : "" //TODO - false for now
       } z-50 min-h-0 overflow-hidden bg-black text-white ${
         shouldShowPlayerCursor ? "cursor-default" : "cursor-none"

@@ -312,7 +312,10 @@ export function createSyncplayRoutes({
         const group = await syncplay.findById(groupId);
         if (!group) throw groupNotFound();
 
-        if (group.ownerUserId !== principal.userId && !principal.isAdministrator) {
+        if (
+          group.ownerUserId !== principal.userId &&
+          !principal.isAdministrator
+        ) {
           throw new OwnApiError(
             "FORBIDDEN",
             "Only the group owner can close it.",
@@ -379,7 +382,10 @@ export function createSyncplayRoutes({
           ...(optionalBodyBoolean(body, "isBuffering") === undefined
             ? {}
             : {
-                isBuffering: optionalBodyBoolean(body, "isBuffering") as boolean,
+                isBuffering: optionalBodyBoolean(
+                  body,
+                  "isBuffering",
+                ) as boolean,
               }),
           ...(optionalBodyInteger(body, "positionMs", {
             min: 0,
@@ -421,7 +427,10 @@ export function createSyncplayRoutes({
         const group = await requireMembership(groupId, principal.userId);
 
         context.response.statusCode = 200;
-        context.response.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+        context.response.setHeader(
+          "Content-Type",
+          "text/event-stream; charset=utf-8",
+        );
         context.response.setHeader("Cache-Control", "no-store");
         context.response.setHeader("Connection", "keep-alive");
         context.response.setHeader("X-Accel-Buffering", "no");

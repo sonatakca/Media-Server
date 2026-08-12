@@ -31,7 +31,9 @@ describe("toPersistedProbe", () => {
   });
 
   it("treats a zero or unknown duration as absent rather than as zero runtime", () => {
-    expect(toPersistedProbe(analysis({ durationSeconds: 0 })).durationMs).toBeNull();
+    expect(
+      toPersistedProbe(analysis({ durationSeconds: 0 })).durationMs,
+    ).toBeNull();
     expect(
       toPersistedProbe(analysis({ durationSeconds: Number.NaN })).durationMs,
     ).toBeNull();
@@ -57,7 +59,13 @@ describe("toPersistedProbe", () => {
     const hdr = toPersistedProbe(
       analysis({
         videoStreams: [
-          { index: 0, codecName: "hevc", width: 3840, height: 2160, isHdr: true },
+          {
+            index: 0,
+            codecName: "hevc",
+            width: 3840,
+            height: 2160,
+            isHdr: true,
+          },
         ],
       }),
     );
@@ -124,11 +132,15 @@ describe("toPersistedProbe", () => {
       analysis({
         videoStreams: [{ index: 0, codecName: "h264", width: 1, height: 1 }],
         audioStreams: [{ index: 2, codecName: "aac" }],
-        subtitleStreams: [{ index: 1, codecName: "subrip", isImageBased: false }],
+        subtitleStreams: [
+          { index: 1, codecName: "subrip", isImageBased: false },
+        ],
       }),
     );
 
-    expect(probe.streams.map((stream) => stream.streamIndex)).toEqual([0, 1, 2]);
+    expect(probe.streams.map((stream) => stream.streamIndex)).toEqual([
+      0, 1, 2,
+    ]);
   });
 
   it("renumbers chapters in start order", () => {
@@ -154,7 +166,9 @@ describe("classifyProbeFailure", () => {
   it("keeps a recognised reason", () => {
     expect(
       classifyProbeFailure(
-        new Error("ffprobe failed with exit code 1: Invalid data found when processing input"),
+        new Error(
+          "ffprobe failed with exit code 1: Invalid data found when processing input",
+        ),
       ),
     ).toBe("Invalid data found when processing input");
   });
@@ -177,7 +191,9 @@ describe("classifyProbeFailure", () => {
 
   it("falls back to a generic message for anything unrecognised", () => {
     expect(
-      classifyProbeFailure(new Error("D:/media/Movies/Secret (2024)/x.mkv weird failure")),
+      classifyProbeFailure(
+        new Error("D:/media/Movies/Secret (2024)/x.mkv weird failure"),
+      ),
     ).toBe("The media file could not be analysed.");
   });
 });

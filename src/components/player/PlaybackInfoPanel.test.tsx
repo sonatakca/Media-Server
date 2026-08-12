@@ -10,8 +10,7 @@ const { getActiveTranscodingReasonsMock } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../lib/mediaApi", async (importOriginal) => {
-  const original =
-    await importOriginal<typeof import("../../lib/mediaApi")>();
+  const original = await importOriginal<typeof import("../../lib/mediaApi")>();
 
   return {
     ...original,

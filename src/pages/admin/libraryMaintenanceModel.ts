@@ -54,9 +54,7 @@ export function getDefaultSubtitlePreferenceIndex(item: MediaItem): number {
   return getDefaultSubtitleStreamIndexForItem(item);
 }
 
-export function getSubtitleStreams(
-  item: MediaItem | null,
-): MediaStream[] {
+export function getSubtitleStreams(item: MediaItem | null): MediaStream[] {
   return (
     item?.MediaSources?.[0]?.MediaStreams?.filter(
       (stream) => stream.Type?.toLowerCase() === "subtitle",
@@ -87,9 +85,7 @@ export function getSubtitleStreamLabel(
     : streamPrefix;
 }
 
-export function getCommonSubtitlePreferenceIndex(
-  items: MediaItem[],
-): number {
+export function getCommonSubtitlePreferenceIndex(items: MediaItem[]): number {
   if (items.length === 0) return -1;
 
   const firstPreference = getDefaultSubtitlePreferenceIndex(items[0]);

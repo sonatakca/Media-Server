@@ -126,14 +126,17 @@ export function parseLibraryDefinitions(
   });
 }
 
-export function createLibraryRepository(
-  pool: DatabasePool,
-): LibraryRepository {
-  async function loadRoots(libraryIds: string[]): Promise<Map<string, string[]>> {
+export function createLibraryRepository(pool: DatabasePool): LibraryRepository {
+  async function loadRoots(
+    libraryIds: string[],
+  ): Promise<Map<string, string[]>> {
     const roots = new Map<string, string[]>();
     if (libraryIds.length === 0) return roots;
 
-    const result = await pool.query<{ library_id: string; relative_path: string }>(
+    const result = await pool.query<{
+      library_id: string;
+      relative_path: string;
+    }>(
       `SELECT library_id, relative_path FROM library_roots
        WHERE library_id = ANY($1) ORDER BY relative_path`,
       [libraryIds],
@@ -194,7 +197,8 @@ export function createLibraryRepository(
           ],
         );
         const libraryId = result.rows[0]?.id;
-        if (!libraryId) throw new Error("Library provisioning returned no row.");
+        if (!libraryId)
+          throw new Error("Library provisioning returned no row.");
 
         for (const root of definition.roots) {
           await pool.query(

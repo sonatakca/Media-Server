@@ -19,7 +19,6 @@ import {
   RENDITION_PROFILE_VERSION,
   buildRenditionRequirements,
   classifyQualityHeight,
-  getDisplayDimensions,
 } from "./policy";
 import { probeMediaFile, type RenditionMediaProbe } from "./probe";
 import {

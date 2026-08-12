@@ -36,7 +36,6 @@ export function BackButtonSkeleton({ className = "" }: { className?: string }) {
 
 export function MediaCardSkeleton({
   variant = "poster",
-  showEpisodeCount = false,
   fluid = false,
 }: {
   variant?: "poster" | "landscape";
@@ -62,9 +61,7 @@ export function MediaCardSkeleton({
 
         <div
           className={`shimmer !absolute left-1/2 z-[20] -translate-x-1/2 overflow-hidden rounded-lg ${
-            isLandscape
-              ? "bottom-12 h-10 w-1/2"
-              : " h-28 bottom-3 w-11/12"
+            isLandscape ? "bottom-12 h-10 w-1/2" : " h-28 bottom-3 w-11/12"
           }`}
         >
           <div className="shimmer absolute inset-0" />

@@ -231,7 +231,9 @@ export function createMetadataRoutes({
         // Edited fields are locked implicitly: an operator who bothered to type
         // a title does not expect the next refresh to replace it.
         const impliedLocks = Object.keys(update);
-        const fieldsToLock = [...new Set([...(lockFields ?? []), ...impliedLocks])];
+        const fieldsToLock = [
+          ...new Set([...(lockFields ?? []), ...impliedLocks]),
+        ];
 
         // Order matters: `applyTitleMetadata` refuses to write a locked field,
         // so the operator's value must land before the lock is placed over it.

@@ -17,7 +17,6 @@ import type {
   PlaybackQualityOption,
   PlaybackSourceCandidate,
 } from "../../lib/types";
-import { motion, AnimatePresence } from "framer-motion";
 import { useState } from "react";
 import { Tooltip } from "../ui/Tooltip";
 import { PlayerQueuePanel } from "./PlayerQueuePanel";

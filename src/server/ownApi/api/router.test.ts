@@ -152,7 +152,11 @@ describe("own API router", () => {
 
   it("returns 401 for authenticated routes without a session", async () => {
     const { router } = buildRouter(null);
-    const result = await run(router, "GET", "/ownAPI/v1/items/x/images/primary");
+    const result = await run(
+      router,
+      "GET",
+      "/ownAPI/v1/items/x/images/primary",
+    );
     expect((result.error as OwnApiError).statusCode).toBe(401);
     expect((result.error as OwnApiError).code).toBe("AUTH_REQUIRED");
   });
@@ -202,7 +206,10 @@ describe("own API router", () => {
     // CORS already grants these origins credentialed access, so refusing them
     // here would only mean a deployment could not be driven from the
     // development origin it was told to trust.
-    const { router } = buildRouter(principal(), new Set(["http://localhost:5173"]));
+    const { router } = buildRouter(
+      principal(),
+      new Set(["http://localhost:5173"]),
+    );
     const csrfToken = createCsrfToken(SESSION_TOKEN_HASH, CSRF_SECRET);
 
     const result = await run(router, "POST", "/ownAPI/v1/items/x/played", {
@@ -216,7 +223,10 @@ describe("own API router", () => {
   });
 
   it("still rejects an origin that was never allowed", async () => {
-    const { router } = buildRouter(principal(), new Set(["http://localhost:5173"]));
+    const { router } = buildRouter(
+      principal(),
+      new Set(["http://localhost:5173"]),
+    );
     const csrfToken = createCsrfToken(SESSION_TOKEN_HASH, CSRF_SECRET);
 
     const result = await run(router, "POST", "/ownAPI/v1/items/x/played", {

@@ -8,20 +8,6 @@ function getPageOrigin(): string {
   return typeof window === "undefined" ? "" : window.location.origin;
 }
 
-function buildApiUrl(
-  base: string,
-  path: string,
-  query?: Record<string, string | undefined>,
-): string {
-  const url = new URL(
-    path.startsWith("/") ? path : `/${path}`,
-    base.replace(/\/+$/, "") || "http://localhost",
-  );
-  for (const [key, value] of Object.entries(query ?? {})) {
-    if (value !== undefined) url.searchParams.set(key, value);
-  }
-  return url.toString();
-}
 import type { PlaybackSourceCandidate } from "./types";
 import { buildClientCapabilities } from "./playback-planner/clientCapabilities";
 import {

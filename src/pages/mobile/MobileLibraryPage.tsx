@@ -19,11 +19,9 @@ import { getDisplayTitle } from "../../lib/format";
 import { getItemLogoUrlById } from "../../lib/itemMetadataPreferences";
 import {
   getBoxSetItems,
-  getBackdropImageUrl,
   getItem,
   getItemsForLibrary,
   getLogoImageUrl,
-  getPrimaryImageUrl,
   getSeasonEpisodes,
   getSeriesSeasons,
   getItemChildren,
@@ -65,54 +63,6 @@ interface LibraryData {
   items: MediaItem[];
   selectableSeasons: MediaItem[];
   collectionPosterChildrenById: CollectionPosterChildrenMap;
-}
-
-function getLibraryBackdropUrl(
-  library: MediaItem | undefined,
-  items: MediaItem[],
-): string {
-  if (library?.BackdropImageTags?.[0]) {
-    return getBackdropImageUrl(library.Id, library.BackdropImageTags[0], 1000);
-  }
-
-  const itemWithBackdrop = items.find(
-    (item) =>
-      Boolean(item.BackdropImageTags?.[0]) ||
-      Boolean(item.ParentBackdropItemId && item.ParentBackdropImageTags?.[0]),
-  );
-
-  if (itemWithBackdrop?.BackdropImageTags?.[0]) {
-    return getBackdropImageUrl(
-      itemWithBackdrop.Id,
-      itemWithBackdrop.BackdropImageTags[0],
-      1000,
-    );
-  }
-
-  if (
-    itemWithBackdrop?.ParentBackdropItemId &&
-    itemWithBackdrop.ParentBackdropImageTags?.[0]
-  ) {
-    return getBackdropImageUrl(
-      itemWithBackdrop.ParentBackdropItemId,
-      itemWithBackdrop.ParentBackdropImageTags[0],
-      1000,
-    );
-  }
-
-  if (library?.ImageTags?.Primary) {
-    return getPrimaryImageUrl(library.Id, library.ImageTags.Primary, 760);
-  }
-
-  const itemWithPrimary = items.find((item) => item.ImageTags?.Primary);
-
-  return itemWithPrimary?.ImageTags?.Primary
-    ? getPrimaryImageUrl(
-        itemWithPrimary.Id,
-        itemWithPrimary.ImageTags.Primary,
-        760,
-      )
-    : "";
 }
 
 function getSortNumber(item: MediaItem): number {
@@ -666,7 +616,6 @@ export function MobileLibraryPage({
           rotatingLogoIndex % libraryRotatingLogoUrls.length
         ]
       : localizedFallbackLogoUrl;
-  const backdropUrl = getLibraryBackdropUrl(data.library, data.items);
   const countText =
     itemType === "Season"
       ? countLabel(

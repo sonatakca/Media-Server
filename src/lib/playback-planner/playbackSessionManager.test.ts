@@ -5,7 +5,6 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   PlaybackSessionManager,
-  PlaybackSessionStartupError,
   type PlaybackSessionManagerOptions,
 } from "./playbackSessionManager";
 import type { MediaAnalysis, PlaybackPlan } from "./types";

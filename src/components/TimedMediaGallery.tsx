@@ -66,10 +66,7 @@ function canPlayItem(item: MediaItem): boolean {
   );
 }
 
-function getGalleryItems(
-  items: MediaItem[],
-  maxItems: number,
-): MediaItem[] {
+function getGalleryItems(items: MediaItem[], maxItems: number): MediaItem[] {
   const seenIds = new Set<string>();
 
   return items
@@ -98,7 +95,7 @@ export function TimedMediaGallery({
   );
 
   const [activeIndex, setActiveIndex] = useState(0);
-  const [previousIndex, setPreviousIndex] = useState(0);
+  const [_previousIndex, setPreviousIndex] = useState(0);
   const [direction, setDirection] = useState<1 | -1>(1);
   const [isPlaying, setIsPlaying] = useState(true);
   const [hasFinished, setHasFinished] = useState(false);
@@ -140,10 +137,6 @@ export function TimedMediaGallery({
     null;
   const activeHref = activeItem ? getRouteForItem(activeItem) : "#";
   const canPlay = activeItem ? canPlayItem(activeItem) : false;
-
-  const springTransition: Transition = shouldReduceMotion
-    ? { duration: 0 }
-    : { type: "spring", stiffness: 360, damping: 36, mass: 0.8 };
 
   const softTransition: Transition = shouldReduceMotion
     ? { duration: 0 }

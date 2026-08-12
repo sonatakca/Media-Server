@@ -115,7 +115,8 @@ export function buildAnalysisFromInventory({
     container: {
       formatName: container,
       ...(container ? { extension: container } : {}),
-      isBrowserDirectPlayableContainer: BROWSER_DIRECT_CONTAINERS.has(container),
+      isBrowserDirectPlayableContainer:
+        BROWSER_DIRECT_CONTAINERS.has(container),
     },
     durationSeconds,
     ...(file.bitrateBps === null

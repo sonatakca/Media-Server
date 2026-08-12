@@ -77,15 +77,18 @@ export function applyCommand(
         state: {
           ...base,
           isPlaying: true,
-          positionMs:
-            command.positionMs ?? currentPositionMs(state, now),
+          positionMs: command.positionMs ?? currentPositionMs(state, now),
         },
       };
 
     case "pause":
       return {
         accepted: true,
-        state: { ...base, isPlaying: false, positionMs: Math.max(0, command.positionMs) },
+        state: {
+          ...base,
+          isPlaying: false,
+          positionMs: Math.max(0, command.positionMs),
+        },
       };
 
     case "seek":

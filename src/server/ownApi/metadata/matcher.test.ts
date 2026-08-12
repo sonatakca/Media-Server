@@ -32,7 +32,9 @@ describe("normalizeForMatch", () => {
 
 describe("titleSimilarity", () => {
   it("scores an exact match as 1 regardless of punctuation", () => {
-    expect(titleSimilarity("Spider-Man: No Way Home", "Spider Man No Way Home")).toBe(1);
+    expect(
+      titleSimilarity("Spider-Man: No Way Home", "Spider Man No Way Home"),
+    ).toBe(1);
   });
 
   it("does not treat a prefix as a full match", () => {

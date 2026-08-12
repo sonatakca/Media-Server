@@ -42,7 +42,10 @@ describe("TMDB credential handling", () => {
    */
   it("sends a v3 key as the api_key query parameter and no Authorization header", async () => {
     const { calls, fetchImpl } = captureFetch();
-    await createTmdbClient({ apiKey: V3_KEY, fetchImpl }).searchMovies("Dune", 2021);
+    await createTmdbClient({ apiKey: V3_KEY, fetchImpl }).searchMovies(
+      "Dune",
+      2021,
+    );
 
     const call = calls[0];
     expect(call?.url.searchParams.get("api_key")).toBe(V3_KEY);
@@ -51,7 +54,9 @@ describe("TMDB credential handling", () => {
 
   it("sends a v4 token as a bearer header and keeps it out of the query", async () => {
     const { calls, fetchImpl } = captureFetch();
-    await createTmdbClient({ apiKey: V4_TOKEN, fetchImpl }).searchMovies("Dune");
+    await createTmdbClient({ apiKey: V4_TOKEN, fetchImpl }).searchMovies(
+      "Dune",
+    );
 
     const call = calls[0];
     expect(call?.headers.Authorization).toBe(`Bearer ${V4_TOKEN}`);
@@ -121,12 +126,36 @@ describe("TMDB credential handling", () => {
 describe("artwork listing", () => {
   const IMAGES = {
     posters: [
-      { file_path: "/low.jpg", iso_639_1: "tr", width: 600, height: 900, aspect_ratio: 0.667, vote_average: 5.2, vote_count: 3 },
-      { file_path: "/best.jpg", iso_639_1: "en", width: 2000, height: 3000, aspect_ratio: 0.667, vote_average: 8.1, vote_count: 40 },
+      {
+        file_path: "/low.jpg",
+        iso_639_1: "tr",
+        width: 600,
+        height: 900,
+        aspect_ratio: 0.667,
+        vote_average: 5.2,
+        vote_count: 3,
+      },
+      {
+        file_path: "/best.jpg",
+        iso_639_1: "en",
+        width: 2000,
+        height: 3000,
+        aspect_ratio: 0.667,
+        vote_average: 8.1,
+        vote_count: 40,
+      },
       { file_path: "/broken.jpg" },
     ],
     backdrops: [
-      { file_path: "/wide.jpg", iso_639_1: "", width: 3840, height: 2160, aspect_ratio: 1.778, vote_average: 6, vote_count: 9 },
+      {
+        file_path: "/wide.jpg",
+        iso_639_1: "",
+        width: 3840,
+        height: 2160,
+        aspect_ratio: 1.778,
+        vote_average: 6,
+        vote_count: 9,
+      },
     ],
     logos: [{ file_path: "/logo.png", iso_639_1: "tr" }],
   };
@@ -160,7 +189,11 @@ describe("artwork listing", () => {
       "/low.jpg",
       "/broken.jpg",
     ]);
-    expect(posters[0]).toMatchObject({ language: "en", width: 2000, voteCount: 40 });
+    expect(posters[0]).toMatchObject({
+      language: "en",
+      width: 2000,
+      voteCount: 40,
+    });
 
     // TMDB writes "" for artwork with no text, which is a category of its own
     // and not a missing value.

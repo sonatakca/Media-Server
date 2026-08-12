@@ -4,10 +4,7 @@ import { mkdir, rm } from "node:fs/promises";
 import path from "node:path";
 import type { DatabasePool } from "../database/databasePool";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
-import {
-  buildTrickplayLayout,
-  type TrickplayLayout,
-} from "./trickplayLayout";
+import { buildTrickplayLayout, type TrickplayLayout } from "./trickplayLayout";
 
 export interface TrickplaySet extends TrickplayLayout {
   id: string;
@@ -87,12 +84,16 @@ export function createTrickplayService({
       new Promise<void>((resolve, reject) => {
         // Argument array only — never a shell string, so a filename containing
         // shell metacharacters cannot become a command.
-        const child = spawn(ffmpegPath, args, { stdio: ["ignore", "ignore", "pipe"] });
+        const child = spawn(ffmpegPath, args, {
+          stdio: ["ignore", "ignore", "pipe"],
+        });
         let stderr = "";
         child.stderr?.on("data", (chunk: Buffer) => {
           stderr = (stderr + chunk.toString()).slice(-2_000);
         });
-        child.on("error", () => reject(new Error("FFmpeg could not be started.")));
+        child.on("error", () =>
+          reject(new Error("FFmpeg could not be started.")),
+        );
         child.on("close", (code) => {
           if (code === 0) resolve();
           // The stderr tail carries the source path, so it is deliberately not
@@ -101,7 +102,9 @@ export function createTrickplayService({
         });
       }));
 
-  async function findByMediaFile(mediaFileId: string): Promise<TrickplaySet | null> {
+  async function findByMediaFile(
+    mediaFileId: string,
+  ): Promise<TrickplaySet | null> {
     const result = await pool.query<RawSetRow>(
       `SELECT ${SET_COLUMNS} FROM trickplay_sets WHERE media_file_id = $1 LIMIT 1`,
       [mediaFileId],
@@ -209,7 +212,9 @@ export function createTrickplayService({
       const existing = await findByMediaFile(file.id);
       if (!existing) return;
 
-      await pool.query(`DELETE FROM trickplay_sets WHERE id = $1`, [existing.id]);
+      await pool.query(`DELETE FROM trickplay_sets WHERE id = $1`, [
+        existing.id,
+      ]);
       await rm(path.join(trickplayRoot, existing.storagePrefix), {
         recursive: true,
         force: true,

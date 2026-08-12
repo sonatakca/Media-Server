@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Link } from "react-router-dom";
-import { BackButton } from "./BackButton";
 import { ErrorMessage } from "./ErrorMessage";
 import { MediaCard } from "./MediaCard";
 import { MobileMediaCard } from "./mobile/MobileMediaCard";
@@ -12,17 +11,13 @@ import {
   getAllSeriesEpisodes,
   getItem,
   getLocalTrailers,
-  getLogoImageUrl,
   getPrimaryImageUrl,
   getSeasonEpisodes,
   getSeriesSeasons,
   getSimilarItems,
 } from "../lib/mediaApi";
 import { getDisplayTitle } from "../lib/format";
-import {
-  getItemDisplayMetadata,
-  getItemLogoUrl,
-} from "../lib/itemMetadataPreferences";
+import { getItemDisplayMetadata } from "../lib/itemMetadataPreferences";
 import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import type { PlayerNavigationState } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
@@ -508,14 +503,7 @@ export function SeriesLibraryDetails({
     );
   }
 
-  const fallbackLogoUrl = series.ImageTags?.Logo
-    ? getLogoImageUrl(series.Id, series.ImageTags.Logo, isDesktop ? 1100 : 700)
-    : "";
-  const logoUrl = getItemLogoUrl(series, language, fallbackLogoUrl);
   const itemDisplayMetadata = getItemDisplayMetadata(series, language);
-  const selectedSeason = seasons.find(
-    (season) => season.Id === selectedSeasonId,
-  );
   const cast = (series.People ?? []).filter(
     (person) => person.Name && (person.Type === "Actor" || person.Role),
   );

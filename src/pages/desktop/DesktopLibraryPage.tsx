@@ -50,7 +50,6 @@ import { preloadPlayerPage } from "../PlayerPage";
 import { useDevSkeletonMode } from "../../lib/devSkeletonMode";
 import {
   compareNames,
-  countLabel,
   isWatchableScopeItem,
   isWholeWatchedScope,
   resolveLibraryCanonicalPath,

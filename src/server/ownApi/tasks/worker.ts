@@ -69,15 +69,24 @@ export function createWorker({
   async function runOne(job: JobRecord): Promise<void> {
     const handler = handlers[job.jobType];
     if (!handler) {
-      await queue.fail(job.id, "No handler is registered for this task.", false);
+      await queue.fail(
+        job.id,
+        "No handler is registered for this task.",
+        false,
+      );
       return;
     }
 
     // Keep the lease alive for the length of the job so a long scan is not
     // reclaimed underneath itself.
-    const heartbeat = setInterval(() => {
-      void queue.heartbeat(job.id, leaseOwner, leaseMs).catch(() => undefined);
-    }, Math.max(1_000, Math.floor(leaseMs / 3)));
+    const heartbeat = setInterval(
+      () => {
+        void queue
+          .heartbeat(job.id, leaseOwner, leaseMs)
+          .catch(() => undefined);
+      },
+      Math.max(1_000, Math.floor(leaseMs / 3)),
+    );
     heartbeat.unref();
 
     try {

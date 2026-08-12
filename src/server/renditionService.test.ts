@@ -319,8 +319,9 @@ describe("complete-file rendition routes", () => {
     expect(
       await service.resolveFile("opaque-capability", "not-registered.mp4"),
     ).toBeNull();
-    expect(await service.resolveFile("unknown-token", "480-abc123def456.mp4"))
-      .toBeNull();
+    expect(
+      await service.resolveFile("unknown-token", "480-abc123def456.mp4"),
+    ).toBeNull();
     expect(root).toBeTruthy();
   });
 });

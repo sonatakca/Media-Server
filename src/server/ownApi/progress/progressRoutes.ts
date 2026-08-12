@@ -189,6 +189,5 @@ export function createProgressRoutes({
         sendData(context.response, context.requestId, { affected });
       },
     },
-
   ];
 }

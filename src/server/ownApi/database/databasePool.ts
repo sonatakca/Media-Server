@@ -1,7 +1,7 @@
 import { Pool, type PoolConfig } from "pg";
 import type { DatabaseConfig } from "./databaseConfig";
 
-export interface DatabasePool extends Pool {}
+export type DatabasePool = Pool;
 
 export function createDatabasePool(config: DatabaseConfig): DatabasePool {
   const poolConfig: PoolConfig = {

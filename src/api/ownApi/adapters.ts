@@ -25,7 +25,9 @@ import type {
 /** One tick is 100 nanoseconds, the unit the player and progress code use. */
 const TICKS_PER_MILLISECOND = 10_000;
 
-export function msToTicks(milliseconds: number | undefined): number | undefined {
+export function msToTicks(
+  milliseconds: number | undefined,
+): number | undefined {
   return milliseconds === undefined
     ? undefined
     : Math.round(milliseconds * TICKS_PER_MILLISECOND);
@@ -52,7 +54,9 @@ const KIND_TO_MEDIA_TYPE: Record<string, string> = {
   book: "Book",
 };
 
-function toUserData(state: UserItemStateDto | undefined): MediaUserData | undefined {
+function toUserData(
+  state: UserItemStateDto | undefined,
+): MediaUserData | undefined {
   if (!state) return undefined;
 
   return {
@@ -93,12 +97,18 @@ function toMediaStream(stream: MediaStreamDto): MediaStream {
     ...(stream.bitrateBps === null ? {} : { BitRate: stream.bitrateBps }),
     ...(stream.width === null ? {} : { Width: stream.width }),
     ...(stream.height === null ? {} : { Height: stream.height }),
-    ...(stream.frameRate === null ? {} : { AverageFrameRate: stream.frameRate }),
+    ...(stream.frameRate === null
+      ? {}
+      : { AverageFrameRate: stream.frameRate }),
     ...(stream.videoRange === null ? {} : { VideoRange: stream.videoRange }),
     // Existing player code distinguishes HDR by the display title as well as
     // the range, so the derived label is preserved.
     ...(stream.language || stream.title
-      ? { DisplayTitle: [stream.title, stream.language].filter(Boolean).join(" ") }
+      ? {
+          DisplayTitle: [stream.title, stream.language]
+            .filter(Boolean)
+            .join(" "),
+        }
       : {}),
   };
 }
@@ -184,7 +194,9 @@ export function toMediaItem(item: ItemDto): MediaItem {
           ParentLogoImageTag: images.parentLogo.tag,
         }
       : {}),
-    ...(images.parentBackdrops && images.parentBackdrops.length > 0 && item.seriesId
+    ...(images.parentBackdrops &&
+    images.parentBackdrops.length > 0 &&
+    item.seriesId
       ? {
           ParentBackdropItemId: item.seriesId,
           ParentBackdropImageTags: images.parentBackdrops.map(

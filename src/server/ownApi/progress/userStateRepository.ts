@@ -16,12 +16,19 @@ export interface ProgressUpdate {
 }
 
 export interface UserStateRepository {
-  getMany(userId: string, itemIds: string[]): Promise<Map<string, UserStateRecord>>;
+  getMany(
+    userId: string,
+    itemIds: string[],
+  ): Promise<Map<string, UserStateRecord>>;
   get(userId: string, itemId: string): Promise<UserStateRecord | null>;
   /** Returns false when the write was rejected as stale. */
   updateProgress(update: ProgressUpdate): Promise<boolean>;
   setPlayed(userId: string, itemId: string, played: boolean): Promise<void>;
-  setFavourite(userId: string, itemId: string, isFavourite: boolean): Promise<void>;
+  setFavourite(
+    userId: string,
+    itemId: string,
+    isFavourite: boolean,
+  ): Promise<void>;
   incrementPlayCount(userId: string, itemId: string): Promise<void>;
   /** Clears progress and played state for an item and everything beneath it. */
   resetWatchedRecursively(userId: string, itemId: string): Promise<number>;
@@ -222,7 +229,10 @@ export function createUserStateRepository(
     },
 
     listResumable: async (userId, limit) => {
-      const result = await pool.query<{ item_id: string; last_played_at: Date }>(
+      const result = await pool.query<{
+        item_id: string;
+        last_played_at: Date;
+      }>(
         `SELECT state.item_id, state.last_played_at
          FROM user_item_state state
          JOIN items item ON item.id = state.item_id

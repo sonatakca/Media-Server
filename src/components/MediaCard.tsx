@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { motion, useReducedMotion } from "framer-motion";
 import { Link } from "react-router-dom";
-import { RotateCcw } from "lucide-react";
 import {
   getLogoImageUrl,
   getPrimaryImageUrl,
@@ -35,7 +34,6 @@ import { CollectionPosterMosaic } from "./CollectionPosterMosaic";
 import { FavouriteButton } from "./FavouriteButton";
 import { RestartWatchingButton } from "./RestartWatchingButton";
 import { WatchedIndicator } from "./WatchedIndicator";
-import { Tooltip } from "./ui/Tooltip";
 
 interface MediaCardProps {
   item: MediaItem;
@@ -141,30 +139,6 @@ function getCountLabel(
   return null;
 }
 
-function getPosterCountBubbleLabel(
-  item: MediaItem,
-  itemCounts: string | null,
-  t: (key: TranslationKey) => string,
-): string | null {
-  const episodeCount =
-    item.Type === "Series"
-      ? item.RecursiveItemCount
-      : item.Type === "Season"
-        ? (item.ChildCount ?? item.RecursiveItemCount)
-        : null;
-
-  if (typeof episodeCount === "number" && episodeCount > 0) {
-    return countLabel(
-      episodeCount,
-      "media.episodeSingular",
-      "media.episodePlural",
-      t,
-    );
-  }
-
-  return item.Type === "Series" ? itemCounts : null;
-}
-
 function getEpisodeSeasonLabel(
   item: MediaItem,
   t: (key: TranslationKey) => string,
@@ -248,7 +222,6 @@ export function MediaCard({
   const displayTitle = episodeDisplayTitle ?? title;
 
   const itemCounts = getCountLabel(item, t);
-  const posterCountBubbleLabel = getPosterCountBubbleLabel(item, itemCounts, t);
   const progressPercent = getItemProgressPercent(item);
   const isWatched = isItemCompleted(item);
   const isContinueWatchingCard = Boolean(onClearContinueWatching);

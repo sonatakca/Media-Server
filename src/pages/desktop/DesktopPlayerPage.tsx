@@ -28,9 +28,6 @@ import {
   setPageTitle,
 } from "../../lib/pageTitle";
 import { setSeoMetadata } from "../../lib/seo";
-import { ConfettiAnimation } from "../../components/animations/ConfettiAnimation";
-import { RainbowAnimation } from "../../components/animations/RainbowAnimation";
-import { SparkleAnimation } from "../../components/animations/SparkleAnimation";
 import { usePlaybackReporting } from "../player/usePlaybackReporting";
 import {
   getInitialPlaybackSeconds,
@@ -71,7 +68,7 @@ export function DesktopPlayerPage() {
         const itemDetails = await getItem(itemId);
 
         console.info("[Seyirlik Item] Full item details", itemDetails);
-        console.info("[Seyirlik Item] Chapters", (itemDetails as any).Chapters);
+        console.info("[Seyirlik Item] Chapters", itemDetails.Chapters);
         console.info("[Seyirlik Item] MediaSources", itemDetails.MediaSources);
 
         if (isMounted) {

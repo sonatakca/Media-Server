@@ -52,7 +52,6 @@ import {
   getSubtitlePreferenceOptions,
   getSubtitlePreferenceTargetItems,
   getSubtitleStreamLabel,
-  getSubtitleStreams,
   getTypeLabel,
   parseGenres,
   parseNumberOrUndefined,

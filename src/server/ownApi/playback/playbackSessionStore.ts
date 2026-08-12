@@ -145,7 +145,10 @@ export function createPlaybackSessionStore(
     },
 
     expireIdle: async (idleMs) => {
-      const result = await pool.query<{ id: string; runtime_key: string | null }>(
+      const result = await pool.query<{
+        id: string;
+        runtime_key: string | null;
+      }>(
         `UPDATE playback_sessions
          SET status = 'ended', ended_at = now()
          WHERE status = 'active'

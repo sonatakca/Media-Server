@@ -8,7 +8,6 @@ import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
-import { useStandaloneWebApp } from "../../hooks/useStandaloneWebApp";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
 
@@ -22,7 +21,6 @@ export function DesktopNavbar() {
   const navigate = useNavigate();
   const session = getCachedSession();
   const { t } = useLanguage();
-  const isWebApp = useStandaloneWebApp();
   const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const libraryRoutes = {

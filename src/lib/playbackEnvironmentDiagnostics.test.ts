@@ -11,7 +11,9 @@ describe("playback environment diagnostics", () => {
       redactDiagnosticsUrl(
         "https://media.test/stream?api_key=secret&ApiKey=secret2&foo=bar",
       ),
-    ).toBe("https://media.test/stream?api_key=REDACTED&ApiKey=REDACTED&foo=bar");
+    ).toBe(
+      "https://media.test/stream?api_key=REDACTED&ApiKey=REDACTED&foo=bar",
+    );
   });
 
   it("hides the playback session id, which is itself a capability", () => {

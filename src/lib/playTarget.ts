@@ -13,9 +13,7 @@ function getEpisodeOrderValue(item: MediaItem): number {
   return seasonNumber * 10_000 + episodeNumber;
 }
 
-function getNextEpisodeForSeries(
-  episodes: MediaItem[],
-): MediaItem | null {
+function getNextEpisodeForSeries(episodes: MediaItem[]): MediaItem | null {
   const sortedEpisodes = [...episodes].sort(
     (left, right) => getEpisodeOrderValue(left) - getEpisodeOrderValue(right),
   );
@@ -37,9 +35,7 @@ function getNextEpisodeForSeries(
   return firstUnplayedEpisode ?? sortedEpisodes[0] ?? null;
 }
 
-export async function getPlayTargetForItem(
-  item: MediaItem,
-): Promise<string> {
+export async function getPlayTargetForItem(item: MediaItem): Promise<string> {
   const targetItem = await getPlayTargetItemForItem(item);
 
   return targetItem ? getWatchRouteForItem(targetItem) : getRouteForItem(item);

@@ -125,4 +125,3 @@ export async function serveFile(
     stream.pipe(response).on("finish", resolve).on("error", reject);
   });
 }
-

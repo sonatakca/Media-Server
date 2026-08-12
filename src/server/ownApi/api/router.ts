@@ -82,7 +82,9 @@ const SAFE_METHODS = new Set(["GET", "HEAD"]);
 
 function compile(route: RouteDefinition): CompiledRoute {
   const template = `${OWN_API_V1_BASE_PATH}${route.path}`;
-  const segments = route.path.split("/").filter((segment) => segment.length > 0);
+  const segments = route.path
+    .split("/")
+    .filter((segment) => segment.length > 0);
   const paramNames = segments
     .filter((segment) => segment.startsWith(":"))
     .map((segment) => segment.slice(1));
@@ -193,7 +195,9 @@ export function createOwnApiRouter({
         : undefined);
 
     if (!exact) {
-      const allowed = new Set<string>(matched.map((entry) => entry.route.method));
+      const allowed = new Set<string>(
+        matched.map((entry) => entry.route.method),
+      );
       if (allowed.has("GET")) allowed.add("HEAD");
       allowed.add("OPTIONS");
       response.setHeader("Allow", [...allowed].sort().join(", "));
@@ -275,6 +279,7 @@ export function createOwnApiRouter({
 
   return {
     handler,
-    resolveTemplate: (pathname) => findMatches(pathname).matched[0]?.route.template,
+    resolveTemplate: (pathname) =>
+      findMatches(pathname).matched[0]?.route.template,
   };
 }

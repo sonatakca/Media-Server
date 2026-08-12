@@ -106,7 +106,6 @@ export function TimedCarouselIndicators({
     elapsedMs: number;
   } | null>(null);
   // The carousel owner controls autoplay timing; paused/reduced-motion states use a settled fill instead of tracking fractional progress here.
-  const showSettledProgress = isPaused || shouldReduceMotion;
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 640px)");

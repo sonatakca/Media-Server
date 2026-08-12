@@ -37,7 +37,9 @@ export async function startMediaWorkerFromEnv(): Promise<() => Promise<void>> {
     runWorker: true,
   });
 
-  console.info(`Seyirlik worker running against media root: ${resolvedMediaRoot}`);
+  console.info(
+    `Seyirlik worker running against media root: ${resolvedMediaRoot}`,
+  );
 
   const shutdown = async (signal: NodeJS.Signals) => {
     console.info(`[Seyirlik Worker] ${signal} received; shutting down.`);

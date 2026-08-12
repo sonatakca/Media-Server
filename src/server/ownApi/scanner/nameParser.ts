@@ -238,7 +238,10 @@ function isReleaseToken(token: string): boolean {
   if (!normalized) return false;
   if (RELEASE_TOKENS.has(normalized)) return true;
   // Audio layout and bitrate fragments left over by tokenization: DDP5, 640kbps.
-  return /^\d{2,4}kbps$/.test(normalized) || /^(?:ddp|dd|dts|e?ac3)\d$/.test(normalized);
+  return (
+    /^\d{2,4}kbps$/.test(normalized) ||
+    /^(?:ddp|dd|dts|e?ac3)\d$/.test(normalized)
+  );
 }
 
 function cleanTitleTokens(tokens: string[]): string {
@@ -330,7 +333,9 @@ interface EpisodeMarker {
 function findEpisodeMarker(stem: string): EpisodeMarker | null {
   // S01E02, S01E02E03, S01E02-E03, S01E02-03
   const seasonEpisode =
-    /\bs(\d{1,3})[\s._-]*e(\d{1,4})(?:[\s._-]*(?:e|-)\s*(\d{1,4}))?/i.exec(stem);
+    /\bs(\d{1,3})[\s._-]*e(\d{1,4})(?:[\s._-]*(?:e|-)\s*(\d{1,4}))?/i.exec(
+      stem,
+    );
   if (seasonEpisode) {
     return {
       seasonNumber: Number(seasonEpisode[1]),
@@ -349,9 +354,7 @@ function findEpisodeMarker(stem: string): EpisodeMarker | null {
     return {
       seasonNumber: Number(cross[1]),
       episodeNumber: Number(cross[2]),
-      ...(cross[3] === undefined
-        ? {}
-        : { endEpisodeNumber: Number(cross[3]) }),
+      ...(cross[3] === undefined ? {} : { endEpisodeNumber: Number(cross[3]) }),
       start: cross.index,
       end: cross.index + cross[0].length,
     };
@@ -465,11 +468,7 @@ export function buildSortTitle(title: string): string {
 }
 
 export function normalizeName(value: string): string {
-  return value
-    .normalize("NFKC")
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .trim();
+  return value.normalize("NFKC").toLowerCase().replace(/\s+/g, " ").trim();
 }
 
 /** Language suffix on an external subtitle: `Movie.en.forced.srt`. */

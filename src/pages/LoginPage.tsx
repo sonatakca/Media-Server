@@ -1,6 +1,6 @@
 import { useEffect, FormEvent, useState } from "react";
-import { Lock, Server, User } from "lucide-react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Lock, User } from "lucide-react";
+import { Navigate, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";

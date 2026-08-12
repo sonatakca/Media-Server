@@ -39,7 +39,8 @@ function createStore(): CatalogueScanStore & {
     upsertItem: async (input) => {
       const existing = [...items.values()].find(
         (item) =>
-          item.sourceKey === input.sourceKey && item.libraryId === input.libraryId,
+          item.sourceKey === input.sourceKey &&
+          item.libraryId === input.libraryId,
       );
       if (existing) {
         if (!input.lockedFields.includes("title")) existing.title = input.title;
@@ -314,7 +315,12 @@ describe("reconcileLibraryScan", () => {
       movie("movie:b", "B", "Movies/b.mkv"),
     ]);
 
-    await reconcileLibraryScan({ store, libraryId: LIBRARY, scan: full, now: () => start });
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: full,
+      now: () => start,
+    });
     await reconcileLibraryScan({
       store,
       libraryId: LIBRARY,
@@ -325,7 +331,12 @@ describe("reconcileLibraryScan", () => {
       [...store.items.values()].some((item) => item.missingSince !== null),
     ).toBe(true);
 
-    await reconcileLibraryScan({ store, libraryId: LIBRARY, scan: full, now: () => start });
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: full,
+      now: () => start,
+    });
     expect(
       [...store.items.values()].every((item) => item.missingSince === null),
     ).toBe(true);

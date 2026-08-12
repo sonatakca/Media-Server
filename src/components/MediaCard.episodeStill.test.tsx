@@ -21,7 +21,8 @@ vi.mock("../lib/mediaApi", () => ({
   getLogoImageUrl: (itemId: string) => `https://media.test/${itemId}/logo.png`,
   getPrimaryImageUrl: (itemId: string) =>
     `https://media.test/${itemId}/primary.jpg`,
-  getThumbImageUrl: (itemId: string) => `https://media.test/${itemId}/thumb.jpg`,
+  getThumbImageUrl: (itemId: string) =>
+    `https://media.test/${itemId}/thumb.jpg`,
 }));
 
 function renderCard(item: MediaItem, variant: "poster" | "landscape") {

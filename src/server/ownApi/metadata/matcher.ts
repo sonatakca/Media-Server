@@ -69,7 +69,10 @@ export function titleSimilarity(left: string, right: string): number {
   return (2 * shared) / (leftTokens.length + rightTokens.length);
 }
 
-function yearScore(expected: number | undefined, actual: number | undefined): number {
+function yearScore(
+  expected: number | undefined,
+  actual: number | undefined,
+): number {
   if (expected === undefined || actual === undefined) return 0;
   const distance = Math.abs(expected - actual);
   if (distance === 0) return 1;
@@ -95,7 +98,11 @@ export function scoreCandidate(
   // outrank a better title or year match.
   const popularityBonus = Math.min(0.05, (candidate.popularity ?? 0) / 2_000);
 
-  return titleScore * 0.75 + yearScore(input.year, candidate.year) * 0.25 + popularityBonus;
+  return (
+    titleScore * 0.75 +
+    yearScore(input.year, candidate.year) * 0.25 +
+    popularityBonus
+  );
 }
 
 export function selectBestMatch(
@@ -105,7 +112,10 @@ export function selectBestMatch(
   if (candidates.length === 0) return null;
 
   const scored = candidates
-    .map((candidate) => ({ candidate, score: scoreCandidate(input, candidate) }))
+    .map((candidate) => ({
+      candidate,
+      score: scoreCandidate(input, candidate),
+    }))
     .sort((left, right) => right.score - left.score);
 
   const best = scored[0];
@@ -126,7 +136,10 @@ export function selectBestMatch(
 
   let confidence: MatchResult["confidence"] = "low";
   if (isDecisive) {
-    if (titleScore >= 0.95 && (input.year === undefined || best.score >= 0.85)) {
+    if (
+      titleScore >= 0.95 &&
+      (input.year === undefined || best.score >= 0.85)
+    ) {
       confidence = "high";
     } else if (titleScore >= 0.7 && best.score >= 0.6) {
       confidence = "medium";

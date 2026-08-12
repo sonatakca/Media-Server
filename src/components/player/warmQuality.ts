@@ -14,7 +14,11 @@ export interface WarmableMedia {
   currentTime: number;
   readyState: number;
   load(): void;
-  addEventListener(type: string, listener: () => void, options?: { once?: boolean }): void;
+  addEventListener(
+    type: string,
+    listener: () => void,
+    options?: { once?: boolean },
+  ): void;
   removeEventListener(type: string, listener: () => void): void;
 }
 

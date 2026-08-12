@@ -34,7 +34,6 @@ interface HoverPreviewState {
   displaySeconds: number;
 }
 
-const TRICKPLAY_RESOLUTION = 320;
 const TRICKPLAY_INTERVAL_SECONDS = 10;
 
 const TRICKPLAY_COLUMNS = 10;

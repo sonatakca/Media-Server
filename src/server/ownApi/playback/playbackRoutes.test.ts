@@ -51,7 +51,11 @@ describe("native playback mode mapping", () => {
         plan({
           requiresFfmpeg: true,
           video: { inputCodec: "h264", action: "copy" },
-          audio: { inputCodec: "eac3", outputCodec: "aac", action: "transcode" },
+          audio: {
+            inputCodec: "eac3",
+            outputCodec: "aac",
+            action: "transcode",
+          },
         }),
       ),
     ).toBe("DIRECT_STREAM");
@@ -62,7 +66,11 @@ describe("native playback mode mapping", () => {
       toNativeMode(
         plan({
           requiresFfmpeg: true,
-          video: { inputCodec: "hevc", outputCodec: "h264", action: "transcode" },
+          video: {
+            inputCodec: "hevc",
+            outputCodec: "h264",
+            action: "transcode",
+          },
         }),
       ),
     ).toBe("TRANSCODE");
@@ -84,8 +92,16 @@ describe("native playback mode mapping", () => {
         plan({
           requiresFfmpeg: true,
           container: { input: "mkv", output: "hls-fmp4", action: "hls" },
-          video: { inputCodec: "hevc", outputCodec: "h264", action: "transcode" },
-          audio: { inputCodec: "eac3", outputCodec: "aac", action: "transcode" },
+          video: {
+            inputCodec: "hevc",
+            outputCodec: "h264",
+            action: "transcode",
+          },
+          audio: {
+            inputCodec: "eac3",
+            outputCodec: "aac",
+            action: "transcode",
+          },
           subtitles: { inputCodec: "hdmv_pgs_subtitle", action: "burn" },
         }),
       ),
@@ -267,7 +283,10 @@ describe("rendition delivery", () => {
     const served: string[] = [];
     const router = buildRenditionRouter({ served });
 
-    await get(router, `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`);
+    await get(
+      router,
+      `/ownAPI/v1/playback/renditions/${FILE}/720-abcdef123456.mp4`,
+    );
 
     expect(served).toEqual([`${FILE}/720-abcdef123456.mp4`]);
   });

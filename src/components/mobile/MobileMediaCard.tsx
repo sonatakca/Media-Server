@@ -1,5 +1,4 @@
 import { motion } from "framer-motion";
-import { Info, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
@@ -26,11 +25,8 @@ import {
 } from "../../lib/routes";
 import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
-import { ClearWatchingButton } from "../ClearWatchingButton";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
-import { RestartWatchingButton } from "../RestartWatchingButton";
 import { WatchedIndicator } from "../WatchedIndicator";
-import { Tooltip } from "../ui/Tooltip";
 
 interface MobileMediaCardProps {
   item: MediaItem;
@@ -93,10 +89,8 @@ export function MobileMediaCard({
   to,
   variant = "poster",
   layout = "row",
-  showRestartWatching = false,
   collectionItems,
   animateRemoval = false,
-  onClearContinueWatching,
 }: MobileMediaCardProps) {
   const { language, t } = useLanguage();
   const labels = {

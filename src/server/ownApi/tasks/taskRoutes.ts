@@ -63,15 +63,17 @@ export function createTaskRoutes({
           );
         }
 
-        const body = asObjectBody(await context.readJson(2 * 1_024).catch(() => ({})), [
-          "allowMassRemoval",
-        ]);
+        const body = asObjectBody(
+          await context.readJson(2 * 1_024).catch(() => ({})),
+          ["allowMassRemoval"],
+        );
 
         const taskId = await queue.enqueue({
           jobType: JOB_TYPES.libraryScan,
           payload: {
             libraryId,
-            allowMassRemoval: optionalBodyBoolean(body, "allowMassRemoval") === true,
+            allowMassRemoval:
+              optionalBodyBoolean(body, "allowMassRemoval") === true,
           },
           // Repeated presses of "scan" collapse onto the in-flight scan for
           // this library instead of queueing duplicates.
@@ -107,7 +109,11 @@ export function createTaskRoutes({
       path: "/admin/tasks",
       access: "admin",
       handle: async (context) => {
-        const limit = parseLimit(context.url.searchParams.get("limit"), 200, 50);
+        const limit = parseLimit(
+          context.url.searchParams.get("limit"),
+          200,
+          50,
+        );
         const status = parseOptionalEnum(
           context.url.searchParams.get("status"),
           JOB_STATUSES,
@@ -129,7 +135,9 @@ export function createTaskRoutes({
       path: "/admin/tasks/:taskId",
       access: "admin",
       handle: async (context) => {
-        const job = await queue.get(requireUuid(context.params.taskId, "taskId"));
+        const job = await queue.get(
+          requireUuid(context.params.taskId, "taskId"),
+        );
         if (!job) {
           throw new OwnApiError(
             "TASK_NOT_FOUND",

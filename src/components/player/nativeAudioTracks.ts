@@ -1,7 +1,4 @@
-import type {
-  MediaStream,
-  PlaybackSourceCandidate,
-} from "../../lib/types";
+import type { MediaStream, PlaybackSourceCandidate } from "../../lib/types";
 import type {
   NativeAudioSyncResult,
   NativeAudioTrack,

@@ -90,10 +90,7 @@ export function isWholeWatchedScope(
   return watchableItems.length > 0 && watchableItems.every(isItemCompleted);
 }
 
-export function withWatchedState(
-  item: MediaItem,
-  watched: boolean,
-): MediaItem {
+export function withWatchedState(item: MediaItem, watched: boolean): MediaItem {
   return {
     ...item,
     UserData: {

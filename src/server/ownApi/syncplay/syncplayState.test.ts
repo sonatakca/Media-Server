@@ -11,7 +11,9 @@ import {
 
 const T0 = 1_000_000;
 
-function state(overrides: Partial<SyncplayGroupState> = {}): SyncplayGroupState {
+function state(
+  overrides: Partial<SyncplayGroupState> = {},
+): SyncplayGroupState {
   return {
     sequence: 5,
     isPlaying: false,
@@ -51,7 +53,11 @@ describe("currentPositionMs", () => {
   it("never reports a negative position", () => {
     expect(
       currentPositionMs(
-        state({ isPlaying: true, positionMs: 0, positionUpdatedAt: T0 + 5_000 }),
+        state({
+          isPlaying: true,
+          positionMs: 0,
+          positionUpdatedAt: T0 + 5_000,
+        }),
         T0,
       ),
     ).toBe(0);
@@ -60,14 +66,24 @@ describe("currentPositionMs", () => {
 
 describe("applyCommand ordering", () => {
   it("rejects a command whose sequence has already been used", () => {
-    const result = applyCommand(state(), { type: "pause", positionMs: 0 }, 5, T0);
+    const result = applyCommand(
+      state(),
+      { type: "pause", positionMs: 0 },
+      5,
+      T0,
+    );
     expect(result.accepted).toBe(false);
     expect(result.reason).toBe("stale-sequence");
     expect(result.state.positionMs).toBe(60_000);
   });
 
   it("rejects a command that arrives out of order", () => {
-    const result = applyCommand(state(), { type: "seek", positionMs: 0 }, 3, T0);
+    const result = applyCommand(
+      state(),
+      { type: "seek", positionMs: 0 },
+      3,
+      T0,
+    );
     expect(result.accepted).toBe(false);
   });
 
@@ -133,7 +149,12 @@ describe("applyCommand semantics", () => {
   });
 
   it("clamps a negative seek to the start", () => {
-    const result = applyCommand(state(), { type: "seek", positionMs: -5_000 }, 6, T0);
+    const result = applyCommand(
+      state(),
+      { type: "seek", positionMs: -5_000 },
+      6,
+      T0,
+    );
     expect(result.state.positionMs).toBe(0);
   });
 });
@@ -157,7 +178,10 @@ describe("evaluateReadiness", () => {
   });
 
   it("does not hold when everyone is ready", () => {
-    const decision = evaluateReadiness([member(), member({ userId: "u2" })], T0);
+    const decision = evaluateReadiness(
+      [member(), member({ userId: "u2" })],
+      T0,
+    );
     expect(decision).toEqual({ shouldHold: false, waitingFor: [] });
   });
 

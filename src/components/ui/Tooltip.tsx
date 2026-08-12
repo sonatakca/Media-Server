@@ -50,24 +50,6 @@ function assignRef<TValue>(ref: Ref<TValue> | undefined, value: TValue) {
   (ref as { current: TValue }).current = value;
 }
 
-function removeNativeTitles(root: HTMLElement | null) {
-  if (!root) {
-    return;
-  }
-
-  const elements = [
-    root,
-    ...Array.from(root.querySelectorAll<HTMLElement>("[title]")),
-  ];
-
-  elements.forEach((element) => {
-    if (element.title) {
-      element.dataset.nativeTitle = element.title;
-      element.removeAttribute("title");
-    }
-  });
-}
-
 function getBrowserFullscreenElement(): Element | null {
   if (typeof document === "undefined") {
     return null;

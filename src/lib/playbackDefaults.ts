@@ -167,9 +167,7 @@ export function getDefaultAudioStreamIndexForSource(
   );
 }
 
-export function getDefaultSubtitleStreamIndexForItem(
-  item: MediaItem,
-): number {
+export function getDefaultSubtitleStreamIndexForItem(item: MediaItem): number {
   const storedDefaults = getStoredItemPlaybackDefaults(item);
 
   return (

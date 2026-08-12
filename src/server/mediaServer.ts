@@ -141,7 +141,9 @@ function requestOrigin(request: IncomingMessage): string | undefined {
   const host = request.headers.host;
   if (!host) return undefined;
   const protocol =
-    "encrypted" in request.socket && request.socket.encrypted ? "https" : "http";
+    "encrypted" in request.socket && request.socket.encrypted
+      ? "https"
+      : "http";
   try {
     return new URL(`${protocol}://${host}`).origin;
   } catch {
@@ -167,7 +169,10 @@ function applyCors(
     response.setHeader("Content-Type", "application/json; charset=utf-8");
     response.end(
       JSON.stringify({
-        error: { code: "CORS_ORIGIN_DENIED", message: "Origin is not allowed." },
+        error: {
+          code: "CORS_ORIGIN_DENIED",
+          message: "Origin is not allowed.",
+        },
       }),
     );
     return false;
@@ -210,7 +215,9 @@ export function createStaticHandler(staticRoot: string) {
     if (request.method !== "GET" && request.method !== "HEAD") return false;
 
     const relative = decodeURIComponent(pathname).replace(/^\/+/, "");
-    const segments = relative.split("/").filter((segment) => segment.length > 0);
+    const segments = relative
+      .split("/")
+      .filter((segment) => segment.length > 0);
 
     // A traversal attempt falls through to the SPA rather than escaping the
     // build directory.
@@ -302,7 +309,9 @@ export async function createMediaServer(
     sessionManager,
     generatedStoragePath,
     ...(options.ffprobePath ? { ffprobePath: options.ffprobePath } : {}),
-    ...(options.runWorker === undefined ? {} : { runWorker: options.runWorker }),
+    ...(options.runWorker === undefined
+      ? {}
+      : { runWorker: options.runWorker }),
   });
 
   const healthService = createRuntimeHealthService({

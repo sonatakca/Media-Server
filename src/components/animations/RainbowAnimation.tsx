@@ -215,6 +215,9 @@ export function RainbowAnimation({
 
   zIndex = 9998,
 }: RainbowAnimationProps) {
+  // Above the guard so the hook count cannot depend on the environment.
+  const animationId = useId().replace(/:/g, "");
+
   if (typeof document === "undefined") {
     return null;
   }
@@ -245,7 +248,6 @@ export function RainbowAnimation({
     all: { rotations: [0, 90, 180, -90] },
   };
 
-  const animationId = useId().replace(/:/g, "");
   const layerClass = `devtools-rainbow-layer-${animationId}`;
   const rainbowClass = `devtools-rainbow-${animationId}`;
   const maskClass = `devtools-rainbow__mask-${animationId}`;

@@ -40,7 +40,10 @@ export function createTrickplayRoutes({
     }
 
     const spriteIndex = Number(rawIndex);
-    if (spriteIndex >= set.spriteCount || tilesInSprite(set, spriteIndex) === 0) {
+    if (
+      spriteIndex >= set.spriteCount ||
+      tilesInSprite(set, spriteIndex) === 0
+    ) {
       throw notFound();
     }
 
@@ -141,7 +144,10 @@ export function createTrickplayRoutes({
         const owningFile = await catalogue.getFileById(set.mediaFileId);
         if (
           !owningFile ||
-          !(await catalogue.canUserAccessItem(principal.userId, owningFile.itemId))
+          !(await catalogue.canUserAccessItem(
+            principal.userId,
+            owningFile.itemId,
+          ))
         ) {
           throw notFound();
         }

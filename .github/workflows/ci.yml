@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch makes the older run irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Format, lint, types, tests, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Formatting
+        run: npm run format:check
+
+      - name: Lint
+        run: npm run lint
+
+      # `npm run build` runs tsc --noEmit first, so a type error fails here
+      # rather than producing a bundle nobody should ship.
+      - name: Type-check and build
+        run: npm run build
+
+      - name: Unit tests
+        run: npx vitest run
+
+      - name: Bundle size
+        run: |
+          echo "### Bundle" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          du -sh dist/assets/*.js dist/assets/*.css | sort -h | tail -8 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  database:
+    name: Migrations
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: seyirlik
+          POSTGRES_PASSWORD: seyirlik
+          POSTGRES_DB: seyirlik_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U seyirlik"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://seyirlik:seyirlik@127.0.0.1:5432/seyirlik_test
+      SEYIRLIK_TEST_DATABASE_URL: postgresql://seyirlik:seyirlik@127.0.0.1:5432/seyirlik_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npx tsx scripts/run-own-api-migrations.ts
+
+      # Running them twice proves they are idempotent. A migration that only
+      # works against an empty database fails every real deployment.
+      - name: Re-apply migrations
+        run: npx tsx scripts/run-own-api-migrations.ts
+
+      # These skip without a database, so this job is the only place they run.
+      - name: Integration tests
+        run: npx vitest run src/server/ownApi

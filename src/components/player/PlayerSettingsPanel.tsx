@@ -345,7 +345,6 @@ function CompleteFileQualitySection({
   compact,
   isAdvancedOpen,
   onToggleAdvanced,
-  source,
 }: {
   controls: CompleteFileQualityControls;
   compact: boolean;

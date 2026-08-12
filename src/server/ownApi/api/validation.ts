@@ -122,7 +122,10 @@ export function asObjectBody(
 export function requireBodyString(
   body: Record<string, unknown>,
   field: string,
-  { maxLength = 500, minLength = 1 }: { maxLength?: number; minLength?: number } = {},
+  {
+    maxLength = 500,
+    minLength = 1,
+  }: { maxLength?: number; minLength?: number } = {},
 ): string {
   const value = body[field];
   if (
@@ -163,11 +166,18 @@ export function optionalBodyBoolean(
 export function optionalBodyInteger(
   body: Record<string, unknown>,
   field: string,
-  { min = 0, max = Number.MAX_SAFE_INTEGER }: { min?: number; max?: number } = {},
+  {
+    min = 0,
+    max = Number.MAX_SAFE_INTEGER,
+  }: { min?: number; max?: number } = {},
 ): number | undefined {
   const value = body[field];
   if (value === undefined) return undefined;
-  if (!Number.isInteger(value) || (value as number) < min || (value as number) > max) {
+  if (
+    !Number.isInteger(value) ||
+    (value as number) < min ||
+    (value as number) > max
+  ) {
     throw validationError(`${field} is invalid.`);
   }
   return value as number;
@@ -188,7 +198,10 @@ export function requireBodyInteger(
 export function optionalBodyStringArray(
   body: Record<string, unknown>,
   field: string,
-  { maxItems = 100, maxLength = 200 }: { maxItems?: number; maxLength?: number } = {},
+  {
+    maxItems = 100,
+    maxLength = 200,
+  }: { maxItems?: number; maxLength?: number } = {},
 ): string[] | undefined {
   const value = body[field];
   if (value === undefined) return undefined;
@@ -197,7 +210,9 @@ export function optionalBodyStringArray(
     value.length > maxItems ||
     value.some(
       (entry) =>
-        typeof entry !== "string" || entry.length < 1 || entry.length > maxLength,
+        typeof entry !== "string" ||
+        entry.length < 1 ||
+        entry.length > maxLength,
     )
   ) {
     throw validationError(`${field} is invalid.`);

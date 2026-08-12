@@ -1,10 +1,7 @@
 import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
 import { selectBestMatch, type MatchCandidate } from "./matcher";
-import type {
-  MetadataRepository,
-  MetadataTarget,
-} from "./metadataRepository";
+import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
 import {
   TmdbError,
   type TmdbClient,
@@ -57,7 +54,11 @@ export function createMetadataService({
     size: string,
     imageIndex = 0,
   ): Promise<void> {
-    const existing = await images.findByItemAndType(itemId, imageType, imageIndex);
+    const existing = await images.findByItemAndType(
+      itemId,
+      imageType,
+      imageIndex,
+    );
 
     try {
       const stored = await imageStorage.fetchAndStore(
@@ -93,7 +94,9 @@ export function createMetadataService({
   ): Promise<void> {
     await metadata.applyTitleMetadata(target.id, {
       title: details.title,
-      ...(details.originalTitle ? { originalTitle: details.originalTitle } : {}),
+      ...(details.originalTitle
+        ? { originalTitle: details.originalTitle }
+        : {}),
       ...(details.overview ? { overview: details.overview } : {}),
       ...(details.tagline ? { tagline: details.tagline } : {}),
       ...(details.releaseDate ? { premiereDate: details.releaseDate } : {}),
@@ -153,7 +156,10 @@ export function createMetadataService({
     for (const seasonNumber of seasonNumbers) {
       let providerEpisodes;
       try {
-        providerEpisodes = await tmdb.getSeasonEpisodes(providerId, seasonNumber);
+        providerEpisodes = await tmdb.getSeasonEpisodes(
+          providerId,
+          seasonNumber,
+        );
       } catch (error) {
         // A season the provider does not know about is not a failure of the
         // series refresh.

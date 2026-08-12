@@ -332,7 +332,7 @@ export async function requestCustomPlaybackCandidate(
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-              },
+      },
       body: JSON.stringify({
         mediaId: itemId,
         clientCapabilities,

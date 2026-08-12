@@ -35,7 +35,9 @@ describe("offering to start over from the hero", () => {
   });
 
   it("appears once there is meaningfully something to skip back over", () => {
-    expect(canStartOverFromHero(watched(HERO_START_OVER_MIN_PERCENT))).toBe(true);
+    expect(canStartOverFromHero(watched(HERO_START_OVER_MIN_PERCENT))).toBe(
+      true,
+    );
     expect(canStartOverFromHero(watched(40))).toBe(true);
     expect(canStartOverFromHero(watched(99))).toBe(true);
   });

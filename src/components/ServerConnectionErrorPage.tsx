@@ -11,7 +11,6 @@ import {
   Wrench,
   XCircle,
 } from "lucide-react";
-import { Link } from "react-router-dom";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { Language } from "../i18n/translations";
@@ -220,48 +219,8 @@ const COPY = {
   }
 >;
 
-function formatTemplate(
-  template: string,
-  values: Record<string, string | number | undefined>,
-): string {
-  return Object.entries(values).reduce(
-    (result, [key, value]) =>
-      result.split(`{${key}}`).join(value === undefined ? "" : String(value)),
-    template,
-  );
-}
-
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function trimMessage(message: string | undefined): string | undefined {
-  if (!message) {
-    return undefined;
-  }
-
-  const oneLine = message.replace(/\s+/g, " ").trim();
-  return oneLine.length > 220 ? `${oneLine.slice(0, 220)}...` : oneLine;
-}
-
-function getProbeSummary(
-  probe: ServerProbe | null,
-  language: Language,
-): string {
-  const copy = COPY[language];
-
-  if (!probe) {
-    return copy.noLocalProbe;
-  }
-
-  if (probe.status) {
-    return formatTemplate(copy.statusLine, {
-      status: probe.status,
-      statusText: probe.statusText,
-    });
-  }
-
-  return trimMessage(probe.message) ?? probe.kind;
 }
 
 function getTunnelState(
@@ -375,9 +334,7 @@ function ServiceStatusCard({
   );
 }
 
-function LoadingView({ language }: { language: Language }) {
-  const copy = COPY[language];
-
+function LoadingView() {
   return (
     <main className="flex min-h-screen items-center justify-center px-6 transition-opacity duration-300 ease-in-out">
       <div className="text-center">
@@ -480,17 +437,16 @@ export function ServerConnectionErrorPage({
   }, [serverUrl, state]);
 
   if (state.status === "checking") {
-    return <LoadingView language={language} />;
+    return <LoadingView />;
   }
 
   const diagnosis =
     state.status === "ready" ? state.diagnosis : fallbackDiagnosis;
 
   if (!diagnosis) {
-    return <LoadingView language={language} />;
+    return <LoadingView />;
   }
 
-  const problemCopy = copy.problems[diagnosis.problem];
   const tunnelState = getTunnelState(diagnosis.problem, diagnosis.publicProbe);
   const jellyfinState = getJellyfinState(
     diagnosis.problem,
@@ -508,10 +464,6 @@ export function ServerConnectionErrorPage({
       : jellyfinState === "issue"
         ? Wrench
         : Server;
-  const sourceLabel =
-    diagnosis.source === "backend"
-      ? copy.checkedByBackend
-      : copy.checkedByBrowser;
   const nativeServerState: ServiceState = probeIsOnline(diagnosis.publicProbe)
     ? "online"
     : "offline";

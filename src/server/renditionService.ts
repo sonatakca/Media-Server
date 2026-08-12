@@ -301,7 +301,8 @@ export function createRenditionService({
     token,
     fileId,
   ) => {
-    if (!TOKEN_PATTERN.test(token) || !FILE_ID_PATTERN.test(fileId)) return null;
+    if (!TOKEN_PATTERN.test(token) || !FILE_ID_PATTERN.test(fileId))
+      return null;
 
     pruneAccess();
     const access = accessByToken.get(token);
@@ -320,7 +321,8 @@ export function createRenditionService({
       // different one means the output changed underneath us, and serving it
       // would hand the player bytes nothing has checked.
       const stats = await stat(trustedFile);
-      if (!stats.isFile() || stats.size !== registered.expectedSize) return null;
+      if (!stats.isFile() || stats.size !== registered.expectedSize)
+        return null;
 
       return { absolutePath: trustedFile, sizeBytes: stats.size };
     } catch {

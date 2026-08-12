@@ -15,7 +15,12 @@ import {
   splitExtension,
 } from "./nameParser";
 
-export type LibraryKind = "movies" | "series" | "books" | "collections" | "mixed";
+export type LibraryKind =
+  | "movies"
+  | "series"
+  | "books"
+  | "collections"
+  | "mixed";
 
 export interface ScanDirectoryEntry {
   name: string;
@@ -172,7 +177,8 @@ async function readDirectoryContents(
 
     if (isVideoFile(entry.name)) contents.videoFiles.push(entry.name);
     else if (isBookFile(entry.name)) contents.bookFiles.push(entry.name);
-    else if (isSubtitleFile(entry.name)) contents.subtitleFiles.push(entry.name);
+    else if (isSubtitleFile(entry.name))
+      contents.subtitleFiles.push(entry.name);
     else {
       skipped.push({
         relativePath: joinRelative(relativePath, entry.name),
@@ -390,8 +396,7 @@ async function scanEpisodeFiles(
       season = {
         sourceKey: sourceKey("season", context.seriesKey, seasonNumber),
         kind: "season",
-        title:
-          seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`,
+        title: seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`,
         sortTitle: String(seasonNumber).padStart(4, "0"),
         indexNumber: seasonNumber,
         parentSourceKey: context.seriesKey,
@@ -497,7 +502,9 @@ async function scanSeriesFolder(
       {
         seriesKey,
         seriesTitle: parsed.title,
-        ...(seasonNumber === undefined ? {} : { folderSeasonNumber: seasonNumber }),
+        ...(seasonNumber === undefined
+          ? {}
+          : { folderSeasonNumber: seasonNumber }),
       },
       result,
       seasonKeys,
@@ -620,7 +627,14 @@ export async function scanLibraryTree({
     }
     // Loose files at the mixed root are movies; subdirectories were already
     // classified above, so this pass must not recurse into them again.
-    await scanMovieDirectory(fileSystem, normalizedRoot, 0, result, true, false);
+    await scanMovieDirectory(
+      fileSystem,
+      normalizedRoot,
+      0,
+      result,
+      true,
+      false,
+    );
     return result;
   }
 

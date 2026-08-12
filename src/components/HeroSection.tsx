@@ -59,7 +59,6 @@ import {
   getHeroImageCandidates,
   readHeroTrailersEnabledPreference,
   saveHeroTrailersEnabledPreference,
-  type HeroImageCandidate,
 } from "./hero/heroModel";
 import { FavouriteButton } from "./FavouriteButton";
 import { Tooltip } from "./ui/Tooltip";
@@ -1406,6 +1405,7 @@ export function HeroSection({
         <div className="hero-bottom-fade z-10" />
 
         <div className="seyirlik-hero-content relative z-20 mx-auto flex min-h-[min(100svh,44rem)] w-full max-w-[1600px] flex-col justify-end px-4 pb-[calc(6.75rem+env(safe-area-inset-bottom))] pt-0 sm:min-h-screen sm:px-6 sm:pb-[clamp(3rem,8vh,6rem)] sm:pt-28 lg:px-8">
+          {/* eslint-disable-next-line no-constant-condition -- see TODO below */}
           {showSidePoster && false ? ( //TODO - for now I made it always false because of a bug
             <motion.div
               className="artwork-edge-vignette pointer-events-none absolute bottom-20 right-8 hidden w-[min(26vw,21rem)] overflow-hidden rounded-3xl border border-white/[0.12] bg-black/[0.35] shadow-artwork-glow lg:block"
@@ -1617,6 +1617,7 @@ export function HeroSection({
                   {t("hero.fallbackDescription")}
                 </motion.p>
               )}
+              {/* eslint-disable-next-line no-constant-condition -- see TODO below */}
               {subtitle && false ? (
                 <motion.p
                   className="mt-4 text-lg font-semibold text-white/[0.78]"

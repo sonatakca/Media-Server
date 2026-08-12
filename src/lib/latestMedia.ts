@@ -6,9 +6,7 @@ export interface LatestMediaGroups {
   books: MediaItem[];
 }
 
-export function groupLatestMediaItems(
-  items: MediaItem[],
-): LatestMediaGroups {
+export function groupLatestMediaItems(items: MediaItem[]): LatestMediaGroups {
   return {
     movies: items.filter((item) => item.Type === "Movie"),
     shows: items.filter((item) => item.Type === "Series"),

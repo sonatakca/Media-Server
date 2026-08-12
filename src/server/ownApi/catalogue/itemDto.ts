@@ -114,7 +114,9 @@ function toImageRef(record: ImageRecord): ImageRefDto {
   };
 }
 
-export function groupImages(records: ImageRecord[]): Map<string, ImageRecord[]> {
+export function groupImages(
+  records: ImageRecord[],
+): Map<string, ImageRecord[]> {
   const byItem = new Map<string, ImageRecord[]>();
   for (const record of records) {
     const existing = byItem.get(record.itemId);
@@ -252,7 +254,9 @@ export function toItemDto(
     ...(row.seasonTitle ? { seasonTitle: row.seasonTitle } : {}),
     genres: row.genres,
     providerIds: row.providerIds,
-    ...(row.kind === "series" || row.kind === "season" || row.kind === "collection"
+    ...(row.kind === "series" ||
+    row.kind === "season" ||
+    row.kind === "collection"
       ? {
           childCount: row.childCount,
           recursiveItemCount: row.recursiveItemCount,

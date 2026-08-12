@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useState } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { ChevronLeft } from "lucide-react";
 import {
   Link,
@@ -8,7 +7,6 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { RainbowAnimation } from "../../components/animations/RainbowAnimation";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
@@ -41,7 +39,6 @@ export function MobilePlayerPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { t } = useLanguage();
-  const shouldReduceMotion = Boolean(useReducedMotion());
   const [item, setItem] = useState<MediaItem | null>(() =>
     itemId ? readPreloadedPlaybackItem(itemId) : null,
   );
@@ -140,9 +137,6 @@ export function MobilePlayerPage() {
   const mediaOwnerRoute = item
     ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
     : "/home";
-
-  const isPreparingPlayback =
-    !item || playback.isLoading || !playback.activeSource;
 
   if (itemError) {
     return (

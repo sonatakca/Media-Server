@@ -2,9 +2,7 @@ import { useEffect, useState } from "react";
 import { getPlaybackQueue, type PlaybackQueue } from "../lib/playbackQueue";
 import type { MediaItem } from "../lib/types";
 
-export function usePlaybackQueue(
-  item: MediaItem | null,
-): PlaybackQueue | null {
+export function usePlaybackQueue(item: MediaItem | null): PlaybackQueue | null {
   const [playbackQueue, setPlaybackQueue] = useState<PlaybackQueue | null>(
     null,
   );

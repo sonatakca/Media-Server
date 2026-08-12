@@ -69,8 +69,6 @@ import {
   writeJsonStorage,
   writeReaderProgress,
   type EpubContentView,
-  type ReaderFormat,
-  type ReaderPalette,
   type ReaderSettings,
   type ReaderTheme,
 } from "./reader/readerModel";

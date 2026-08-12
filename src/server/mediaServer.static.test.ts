@@ -77,9 +77,9 @@ describe("static frontend serving", () => {
   });
 
   it("caches hashed assets immutably and revalidates the shell", async () => {
-    expect((await serve("/assets/main-abc123.js")).headers["Cache-Control"]).toBe(
-      "public, max-age=31536000, immutable",
-    );
+    expect(
+      (await serve("/assets/main-abc123.js")).headers["Cache-Control"],
+    ).toBe("public, max-age=31536000, immutable");
     expect((await serve("/home")).headers["Cache-Control"]).toBe("no-cache");
   });
 

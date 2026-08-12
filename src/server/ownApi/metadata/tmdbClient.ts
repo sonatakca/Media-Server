@@ -253,7 +253,12 @@ export function createTmdbClient({
     if (!credits || typeof credits !== "object") return people;
 
     const typed = credits as {
-      cast?: Array<{ id: number; name: string; character?: string; order?: number }>;
+      cast?: Array<{
+        id: number;
+        name: string;
+        character?: string;
+        order?: number;
+      }>;
       crew?: Array<{ id: number; name: string; job?: string }>;
     };
 
@@ -326,8 +331,9 @@ export function createTmdbClient({
   function extractBackdropPaths(images: unknown, fallback?: string): string[] {
     const paths: string[] = [];
     if (images && typeof images === "object") {
-      const backdrops = (images as { backdrops?: Array<{ file_path?: string }> })
-        .backdrops;
+      const backdrops = (
+        images as { backdrops?: Array<{ file_path?: string }> }
+      ).backdrops;
       for (const backdrop of (backdrops ?? []).slice(0, 5)) {
         if (backdrop.file_path) paths.push(backdrop.file_path);
       }
@@ -353,8 +359,7 @@ export function createTmdbClient({
       effectiveLanguage,
     );
 
-    const title =
-      (kind === "movie" ? details.title : details.name) ?? "";
+    const title = (kind === "movie" ? details.title : details.name) ?? "";
     const originalTitle =
       kind === "movie" ? details.original_title : details.original_name;
     const releaseDate =
@@ -429,9 +434,7 @@ export function createTmdbClient({
       toCandidates(
         await request<TmdbSearchResponse>("/search/tv", {
           query: title,
-          ...(year === undefined
-            ? {}
-            : { first_air_date_year: String(year) }),
+          ...(year === undefined ? {} : { first_air_date_year: String(year) }),
         }),
         "tv",
       ),
@@ -486,7 +489,8 @@ export function createTmdbClient({
           ...(minutesToMs(episode.runtime) === undefined
             ? {}
             : { runtimeMs: minutesToMs(episode.runtime) as number }),
-          ...(typeof episode.vote_average === "number" && episode.vote_average > 0
+          ...(typeof episode.vote_average === "number" &&
+          episode.vote_average > 0
             ? { communityRating: episode.vote_average }
             : {}),
           ...(episode.still_path ? { stillPath: episode.still_path } : {}),

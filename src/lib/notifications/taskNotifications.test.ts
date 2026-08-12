@@ -35,7 +35,11 @@ describe("describing a task", () => {
 
   it("reports running work as persistent progress", () => {
     const described = describeTask(
-      task({ status: "running", progress: 42, progressMessage: "Reading disc" }),
+      task({
+        status: "running",
+        progress: 42,
+        progressMessage: "Reading disc",
+      }),
     );
 
     expect(described).toMatchObject({
@@ -148,7 +152,10 @@ describe("noticing what changed since the last poll", () => {
   it("still announces work already running when the page loads", () => {
     // That is happening now, and is the reason somebody would look.
     const { changed } = selectChangedTasks(
-      [task({ id: "a", status: "succeeded" }), task({ id: "b", status: "running" })],
+      [
+        task({ id: "a", status: "succeeded" }),
+        task({ id: "b", status: "running" }),
+      ],
       new Map(),
       true,
     );
@@ -157,7 +164,11 @@ describe("noticing what changed since the last poll", () => {
   });
 
   it("announces a job that finishes after the first poll", () => {
-    const first = selectChangedTasks([task({ status: "running" })], new Map(), true);
+    const first = selectChangedTasks(
+      [task({ status: "running" })],
+      new Map(),
+      true,
+    );
     const second = selectChangedTasks(
       [task({ status: "succeeded" })],
       first.next,
@@ -180,7 +191,10 @@ describe("noticing what changed since the last poll", () => {
   it("announces a finished task once and then lets it be", () => {
     // A finished job stays in the list for a while. Without this its success
     // card would be re-raised on every poll and never expire.
-    const running = selectChangedTasks([task({ status: "running" })], new Map());
+    const running = selectChangedTasks(
+      [task({ status: "running" })],
+      new Map(),
+    );
     const finished = selectChangedTasks(
       [task({ status: "succeeded", progress: 100 })],
       running.next,

@@ -53,10 +53,7 @@ function toUserDto(
   };
 }
 
-function requirePassword(
-  body: Record<string, unknown>,
-  field: string,
-): string {
+function requirePassword(body: Record<string, unknown>, field: string): string {
   const password = requireBodyString(body, field, {
     minLength: 1,
     maxLength: 512,
@@ -165,7 +162,8 @@ export function createUserRoutes({
             optionalBodyString(body, "displayName", { maxLength: 100 }) ??
             rawUsername.trim(),
           passwordHash: await passwords.hash(requirePassword(body, "password")),
-          isAdministrator: optionalBodyBoolean(body, "isAdministrator") === true,
+          isAdministrator:
+            optionalBodyBoolean(body, "isAdministrator") === true,
         });
 
         sendCreated(
@@ -223,7 +221,12 @@ export function createUserRoutes({
           ...(isDisabled === undefined ? {} : { isDisabled }),
           ...(optionalBodyBoolean(body, "allowPlayback") === undefined
             ? {}
-            : { allowPlayback: optionalBodyBoolean(body, "allowPlayback") as boolean }),
+            : {
+                allowPlayback: optionalBodyBoolean(
+                  body,
+                  "allowPlayback",
+                ) as boolean,
+              }),
           ...(optionalBodyBoolean(body, "allowDownloads") === undefined
             ? {}
             : {

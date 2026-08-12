@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
-import { AnimatedText } from "./AnimatedText";
-import { AnimatedWidth } from "./AnimatedWidth";
 import { Tooltip } from "./ui/Tooltip";
 
 export function LanguageSwitch() {

@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { getLatestContinueWatchingItems } from "./continueWatching";
 import type { MediaItem } from "./types";
 
-function createItem(
-  id: string,
-  values: Partial<MediaItem> = {},
-): MediaItem {
+function createItem(id: string, values: Partial<MediaItem> = {}): MediaItem {
   return {
     Id: id,
     Name: id,

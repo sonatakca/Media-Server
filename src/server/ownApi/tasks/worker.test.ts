@@ -147,9 +147,9 @@ describe("job worker", () => {
 
 describe("sanitizeJobError", () => {
   it("strips filesystem paths from an operator-visible message", () => {
-    expect(sanitizeJobError(new Error("cannot open /media/Movies/Secret.mkv"))).toBe(
-      "cannot open",
-    );
+    expect(
+      sanitizeJobError(new Error("cannot open /media/Movies/Secret.mkv")),
+    ).toBe("cannot open");
     expect(
       sanitizeJobError(new Error("failed reading D:\\media\\Shows\\x.mkv")),
     ).toBe("failed reading");
@@ -157,7 +157,9 @@ describe("sanitizeJobError", () => {
 
   it("strips connection strings", () => {
     expect(
-      sanitizeJobError(new Error("connect failed postgresql://user:pw@host/db")),
+      sanitizeJobError(
+        new Error("connect failed postgresql://user:pw@host/db"),
+      ),
     ).toBe("connect failed");
   });
 

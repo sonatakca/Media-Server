@@ -328,7 +328,10 @@ export function UserManagementPage() {
         );
 
         if (nextDraft.resetPassword) {
-          await updateUserPassword(selectedUser.Id, { newPassword: "", resetPassword: true });
+          await updateUserPassword(selectedUser.Id, {
+            newPassword: "",
+            resetPassword: true,
+          });
         } else if (nextDraft.password) {
           await updateUserPassword(selectedUser.Id, {
             newPassword: nextDraft.password,
