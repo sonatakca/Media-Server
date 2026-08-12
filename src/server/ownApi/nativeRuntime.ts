@@ -30,6 +30,7 @@ import { createCatalogueRoutes } from "./catalogue/catalogueRoutes";
 import { createImageRepository } from "./images/imageRepository";
 import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
+import { createBookRoutes } from "./books/bookRoutes";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
 import { createMetadataRoutes } from "./metadata/metadataRoutes";
@@ -275,6 +276,7 @@ export async function createNativeRuntime({
       renditions,
     }),
     ...createImageRoutes({ images, imageStorage, catalogue }),
+    ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ syncplay, catalogue, events: syncplayEvents }),
     ...createUserRoutes({

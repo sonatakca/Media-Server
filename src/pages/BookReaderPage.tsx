@@ -29,8 +29,7 @@ import { WatchedStatusButton } from "../components/WatchedStatusButton";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   getItem,
-  getItemDownloadUrl,
-  getItemFileUrl,
+  getBookFileUrl,
   getPrimaryImageUrl,
 } from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
@@ -772,9 +771,9 @@ export function BookReaderPage() {
     [item],
   );
 
-  const fileUrl = useMemo(() => (item ? getItemFileUrl(item.Id) : ""), [item]);
+  const fileUrl = useMemo(() => (item ? getBookFileUrl(item.Id) : ""), [item]);
   const downloadUrl = useMemo(
-    () => (item ? getItemDownloadUrl(item.Id) : ""),
+    () => (item ? getBookFileUrl(item.Id) : ""),
     [item],
   );
   const ownerRoute = useMemo(() => {

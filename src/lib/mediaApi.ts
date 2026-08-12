@@ -678,6 +678,18 @@ export function getItemFileUrl(sessionId: string): string {
   );
 }
 
+/**
+ * The file behind a book, by item.
+ *
+ * A book has no playback session — there is nothing to plan or transcode — so
+ * it is read straight from the catalogue. The reader was calling
+ * `getItemFileUrl` with an item id, which asks the playback route for a session
+ * that could never exist and gets a 404 for its trouble.
+ */
+export function getBookFileUrl(itemId: string): string {
+  return ownApiUrl(`/ownAPI/v1/items/${encodeURIComponent(itemId)}/file`);
+}
+
 export function getItemDownloadUrl(sessionId: string): string {
   return getItemFileUrl(sessionId);
 }
