@@ -37,9 +37,11 @@ processing.
 2. Generate and validate one representative SDR title:
 
    ```text
-   npm run media:renditions:process -- --profile adaptive --source "Movies/Example/Example.mp4" --dry-run
-   npm run media:renditions:process -- --profile adaptive --source "Movies/Example/Example.mp4"
-   npm run media:renditions:validate -- --profile adaptive --source "Movies/Example/Example.mp4"
+   # Replace this sample with the exact path below SEYIRLIK_MEDIA_ROOT,
+   # including the real filename and extension.
+   npm run media:renditions:process -- --profile adaptive --source "Movies/Title (2026)/Title (2026).mkv" --dry-run
+   npm run media:renditions:process -- --profile adaptive --source "Movies/Title (2026)/Title (2026).mkv"
+   npm run media:renditions:validate -- --profile adaptive --source "Movies/Title (2026)/Title (2026).mkv"
    ```
 
 3. Repeat for an HDR title, a 23.976 fps title, a variable-frame-rate title and a

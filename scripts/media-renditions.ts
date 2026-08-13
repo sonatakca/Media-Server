@@ -142,7 +142,9 @@ function ensureSelectedItem(
     );
     if (!match)
       throw new Error(
-        "The explicitly provided source was not found under the configured media root.",
+        `The explicitly provided source (${args.source}) was not found under the configured media root. ` +
+          "Pass the exact media-root-relative file path, including its real filename and extension " +
+          '(for example, "Movies/Title (2026)/Title (2026).mkv").',
       );
     args.mediaId = match.mediaId;
   }
@@ -581,6 +583,9 @@ async function main() {
         ? reserveFromEnvironment(0)
         : undefined,
     });
+    // Analysis is complete. Clear its in-place progress line before selection
+    // errors or processing output are printed.
+    progress.finish();
     ensureSelectedItem(analysis, args);
     const reserveBytes = reserveFromEnvironment(
       analysis.storage.driveTotalBytes,
