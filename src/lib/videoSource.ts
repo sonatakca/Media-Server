@@ -2,7 +2,14 @@ import Hls from "hls.js";
 
 export interface AttachedVideoSource {
   usingHlsJs: boolean;
+  adaptiveController?: AdaptiveHlsController;
   destroy: () => void;
+}
+
+export interface AdaptiveHlsController {
+  /** `height` locks one level; null returns future fragments to ABR. */
+  setQualityHeight(height: number | null, maxHeight?: number | null): void;
+  setAudioStream(sourceStreamIndex: number): boolean;
 }
 
 export interface HlsPlaybackEvent {
@@ -13,6 +20,7 @@ export interface HlsPlaybackEvent {
 export interface AttachSourceOptions {
   onHlsEvent?: (event: HlsPlaybackEvent) => void;
   onHlsFatalError?: (data: unknown) => void;
+  onAdaptiveLevelChanged?: (height: number) => void;
 }
 
 export function isHlsPlaybackUrl(
@@ -144,51 +152,48 @@ export function attachSourceToVideo(
   if (isHls && Hls.isSupported()) {
     const hls = new Hls({
       enableWorker: true,
-      capLevelToPlayerSize: false,
+      capLevelToPlayerSize: true,
       lowLatencyMode: false,
       startLevel: -1,
-      abrEwmaDefaultEstimate: 35_000_000,
+      abrEwmaDefaultEstimate: 5_000_000,
       maxStarvationDelay: 4,
       maxLoadingDelay: 4,
-      testBandwidth: false,
+      testBandwidth: true,
     });
+    let lockedHeight: number | null = null;
+    let maximumHeight: number | null = requestedMaxHeight;
 
-    const lockInitialBestLevel = () => {
-      const bestLevel = getBestAllowedHlsLevel(hls, requestedMaxHeight);
+    const levelAtOrBelow = (height: number | null): number => {
+      if (height === null) return -1;
+      const allowed = hls.levels
+        .map((level, index) => ({ index, height: level.height || 0 }))
+        .filter((level) => level.height <= height)
+        .sort((left, right) => right.height - left.height);
+      return allowed[0]?.index ?? getBestAllowedHlsLevel(hls, height);
+    };
 
-      if (bestLevel < 0) {
-        return;
-      }
-
-      hls.autoLevelCapping = bestLevel;
-      hls.startLevel = bestLevel;
-      hls.nextLevel = bestLevel;
-      hls.currentLevel = bestLevel;
-
-      window.setTimeout(() => {
-        if (hls.levels.length > 0) {
-          hls.currentLevel = -1;
-          hls.nextLevel = -1;
-          hls.autoLevelCapping = getBestAllowedHlsLevel(
-            hls,
-            requestedMaxHeight,
-          );
-        }
-      }, 18_000);
+    const applyAdaptivePreference = () => {
+      if (hls.levels.length === 0) return;
+      hls.autoLevelCapping = levelAtOrBelow(maximumHeight);
+      // `loadLevel` changes the next fragment without flushing already-decoded
+      // media. Setting `currentLevel` would discard the buffer and recreate the
+      // very pause/black-frame behaviour this package format is meant to avoid.
+      hls.loadLevel = lockedHeight === null ? -1 : levelAtOrBelow(lockedHeight);
     };
 
     hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
       options.onHlsEvent?.({ name: Hls.Events.MANIFEST_PARSED, data });
-      lockInitialBestLevel();
+      applyAdaptivePreference();
     });
     hls.on(Hls.Events.LEVELS_UPDATED, (_event, data) => {
       options.onHlsEvent?.({ name: Hls.Events.LEVELS_UPDATED, data });
-      lockInitialBestLevel();
+      applyAdaptivePreference();
     });
 
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
       options.onHlsEvent?.({ name: Hls.Events.LEVEL_SWITCHED, data });
       const level = hls.levels[data.level];
+      if (level?.height) options.onAdaptiveLevelChanged?.(level.height);
 
       console.info("[Seyirlik Playback] HLS level switched", {
         level: data.level,
@@ -228,6 +233,25 @@ export function attachSourceToVideo(
 
     return {
       usingHlsJs: true,
+      adaptiveController: {
+        setQualityHeight: (height, maxHeight = null) => {
+          lockedHeight = height;
+          maximumHeight = maxHeight;
+          applyAdaptivePreference();
+        },
+        setAudioStream: (sourceStreamIndex) => {
+          const marker = `track-${sourceStreamIndex}`;
+          const index = hls.audioTracks.findIndex((track) => {
+            const candidate = track as typeof track & { url?: string };
+            return (
+              candidate.url?.includes(marker) || candidate.name.includes(marker)
+            );
+          });
+          if (index < 0) return false;
+          hls.audioTrack = index;
+          return true;
+        },
+      },
       destroy: () => {
         hls.destroy();
         videoElement.removeAttribute("src");

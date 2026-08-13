@@ -6,6 +6,10 @@ import { describe, expect, it } from "vitest";
 import { createRenditionService } from "./renditionService";
 import { RENDITION_PROFILE_VERSION } from "../renditions/policy";
 import type { PlaybackMediaResolver } from "../lib/playback-planner/playbackRoutes";
+import {
+  ADAPTIVE_POINTER_FILE,
+  ADAPTIVE_PROFILE_VERSION,
+} from "../renditions/adaptive/profile";
 
 const mediaId = "jellyfin-item";
 const renditionId = "11111111-1111-4111-8111-111111111111";
@@ -16,6 +20,7 @@ async function fixture({
   includeGenerated = true,
   registryStatus = "ready",
   hdr = false,
+  includeAdaptive = false,
 } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "seyirlik-routes-"));
   const mediaRoot = path.join(root, "media");
@@ -45,6 +50,12 @@ async function fixture({
           profileVersion: RENDITION_PROFILE_VERSION,
           lastSeenAt: new Date().toISOString(),
           status: registryStatus,
+          ...(includeAdaptive
+            ? {
+                adaptiveStatus: "ready",
+                adaptiveProfileVersion: ADAPTIVE_PROFILE_VERSION,
+              }
+            : {}),
         },
       ],
     }),
@@ -97,6 +108,129 @@ async function fixture({
         validation: {
           validatedAt: new Date().toISOString(),
           durationToleranceSeconds: 2,
+        },
+      }),
+    );
+  }
+  if (includeAdaptive) {
+    const adaptiveDirectory = `${ADAPTIVE_PROFILE_VERSION}-${fingerprint.slice(0, 16)}`;
+    const adaptiveRoot = path.join(
+      renditionRoot,
+      renditionId,
+      adaptiveDirectory,
+    );
+    const videoBytes = Buffer.from("video-cmaf-bytes");
+    const audioBytes = Buffer.from("audio-cmaf-bytes");
+    await mkdir(path.join(adaptiveRoot, "video", "720p"), {
+      recursive: true,
+    });
+    await mkdir(path.join(adaptiveRoot, "audio", "track-1"), {
+      recursive: true,
+    });
+    await writeFile(path.join(adaptiveRoot, "master.m3u8"), "#EXTM3U\n");
+    await writeFile(
+      path.join(adaptiveRoot, "video", "720p", "playlist.m3u8"),
+      "#EXTM3U\n",
+    );
+    await writeFile(
+      path.join(adaptiveRoot, "audio", "track-1", "playlist.m3u8"),
+      "#EXTM3U\n",
+    );
+    await writeFile(
+      path.join(adaptiveRoot, "video", "720p", "media.m4s"),
+      videoBytes,
+    );
+    await writeFile(
+      path.join(adaptiveRoot, "audio", "track-1", "media.m4s"),
+      audioBytes,
+    );
+    await writeFile(
+      path.join(renditionRoot, renditionId, ADAPTIVE_POINTER_FILE),
+      JSON.stringify({
+        schemaVersion: 1,
+        versionDirectory: adaptiveDirectory,
+        sourceFingerprint: fingerprint,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+      }),
+    );
+    await writeFile(
+      path.join(adaptiveRoot, "metadata.json"),
+      JSON.stringify({
+        schemaVersion: 1,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+        mediaId: renditionId,
+        sourceFingerprint: fingerprint,
+        createdAt: "2026-08-13T10:00:00.000Z",
+        sourceDurationSeconds: 60,
+        source: {
+          width: 1920,
+          height: 1080,
+          qualityHeight: 1080,
+          codec: "h264",
+          frameRate: 24,
+          isHdr: false,
+          isVariableFrameRate: false,
+          rotation: 0,
+        },
+        segmentTargetSeconds: 2,
+        switchingSetDurationSeconds: 60,
+        masterPlaylistPath: "master.m3u8",
+        videoRenditions: [
+          {
+            id: "720p",
+            qualityHeight: 720,
+            width: 1280,
+            height: 720,
+            codec: "h264",
+            codecString: "avc1.64001f",
+            pixelFormat: "yuv420p",
+            hdr: "sdr",
+            frameRate: 24,
+            averageBitrate: 3_000_000,
+            peakBitrate: 3_500_000,
+            durationSeconds: 60,
+            playlistPath: "video/720p/playlist.m3u8",
+            mediaPath: "video/720p/media.m4s",
+            fileSizeBytes: videoBytes.length,
+            keyframeCount: 30,
+            keyframeIntervalSeconds: {
+              target: 2,
+              minimum: 2,
+              maximum: 2,
+              mean: 2,
+            },
+            segmentCount: 30,
+          },
+        ],
+        audioRenditions: [
+          {
+            id: "track-1",
+            sourceStreamIndex: 1,
+            language: "eng",
+            isDefault: true,
+            isForced: false,
+            codec: "aac",
+            codecString: "mp4a.40.2",
+            channels: 2,
+            sampleRate: 48_000,
+            averageBitrate: 192_000,
+            durationSeconds: 60,
+            playlistPath: "audio/track-1/playlist.m3u8",
+            mediaPath: "audio/track-1/media.m4s",
+            fileSizeBytes: audioBytes.length,
+            streamCopied: true,
+          },
+        ],
+        validation: {
+          validatedAt: "2026-08-13T10:00:00.000Z",
+          alignmentToleranceSeconds: 0.05,
+          audioDurationToleranceSeconds: 0.5,
+          checks: ["segment-alignment"],
+        },
+        storage: {
+          videoBytes: videoBytes.length,
+          audioBytes: audioBytes.length,
+          totalBytes: videoBytes.length + audioBytes.length,
         },
       }),
     );
@@ -323,5 +457,48 @@ describe("complete-file rendition routes", () => {
       await service.resolveFile("unknown-token", "480-abc123def456.mp4"),
     ).toBeNull();
     expect(root).toBeTruthy();
+  });
+
+  it("offers and resolves only registered adaptive package assets", async () => {
+    const { service, sourcePath } = await fixture({ includeAdaptive: true });
+    const sourceStats = await stat(sourcePath);
+    const manifest = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      undefined,
+      { h264: true, hevc: false },
+    );
+
+    expect(manifest.adaptive).toMatchObject({
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      switching: "aligned-cmaf-hls",
+      qualities: [{ id: "720p", height: 720 }],
+    });
+    const versionId = fingerprint.slice(0, 12);
+    const master = await service.resolveAdaptiveAsset(
+      "opaque-capability",
+      versionId,
+      "master.m3u8",
+    );
+    const media = await service.resolveAdaptiveAsset(
+      "opaque-capability",
+      versionId,
+      "video/720p/media.m4s",
+    );
+    expect(master?.contentType).toBe("application/vnd.apple.mpegurl");
+    expect(await readFile(media?.absolutePath ?? "", "utf8")).toBe(
+      "video-cmaf-bytes",
+    );
+    await expect(
+      service.resolveAdaptiveAsset(
+        "opaque-capability",
+        versionId,
+        "video/720p/../../metadata.json",
+      ),
+    ).resolves.toBeNull();
   });
 });

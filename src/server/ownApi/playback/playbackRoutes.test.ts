@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import { createOwnApiRouter, type RouteContext } from "../api/router";
 import { sendOwnApiJson } from "../ownApiHandler";
 import {
+  buildAdaptiveRenditionPlan,
   createPlaybackRoutes,
   toNativeMode,
   toReasonCodes,
 } from "./playbackRoutes";
 import type { PlaybackPlan } from "../../../lib/playback-planner/types";
+import type { MediaQualityManifest } from "../../../renditions/contracts";
 
 function plan(overrides: Partial<PlaybackPlan> = {}): PlaybackPlan {
   return {
@@ -118,6 +120,84 @@ describe("native playback mode mapping", () => {
   });
 });
 
+describe("pre-generated adaptive planning", () => {
+  const manifest: MediaQualityManifest = {
+    mediaId: "file-1",
+    qualities: [],
+    adaptive: {
+      profileVersion: "cmaf-hls-aligned-v1",
+      playbackUrl: "/renditions/file/adaptive/abcdef123456/master.m3u8",
+      mimeType: "application/vnd.apple.mpegurl",
+      segmentTargetSeconds: 2,
+      switching: "aligned-cmaf-hls",
+      qualities: [
+        {
+          id: "720p",
+          label: "720p",
+          width: 1280,
+          height: 720,
+          bitrate: 3_000_000,
+          videoCodec: "h264",
+          hdr: false,
+        },
+      ],
+      audioTracks: [
+        {
+          id: "track-1",
+          sourceStreamIndex: 1,
+          label: "English",
+          channels: 2,
+          isDefault: true,
+        },
+      ],
+    },
+    limitations: {
+      generatedAudio: "default-track-only",
+      generatedSubtitles: "external-or-original-only",
+      switching: "complete-file-rebuffer",
+    },
+  };
+
+  it("replaces a live-transcode plan before ffmpeg and preserves a quality ceiling", () => {
+    const selected = buildAdaptiveRenditionPlan(
+      plan({
+        requiresFfmpeg: true,
+        mode: "video-transcode",
+        container: { input: "mkv", output: "hls-fmp4", action: "hls" },
+        video: {
+          inputCodec: "hevc",
+          outputCodec: "h264",
+          action: "transcode",
+        },
+      }),
+      manifest,
+      { selectedAudioStreamIndex: 1, maxHeight: 720 },
+    );
+
+    expect(selected).toMatchObject({
+      mode: "direct-play",
+      requiresFfmpeg: false,
+      delivery: { type: "hls" },
+      video: { action: "copy" },
+    });
+    expect(selected?.delivery.url).toContain("maxHeight=720");
+  });
+
+  it("keeps the normal planner for unavailable audio or burned subtitles", () => {
+    expect(
+      buildAdaptiveRenditionPlan(plan(), manifest, {
+        selectedAudioStreamIndex: 7,
+      }),
+    ).toBeNull();
+    expect(
+      buildAdaptiveRenditionPlan(
+        plan({ subtitles: { inputCodec: "pgs", action: "burn" } }),
+        manifest,
+      ),
+    ).toBeNull();
+  });
+});
+
 describe("route precedence for session delivery", () => {
   /**
    * The HLS playlist references segments by bare filename, so they arrive at
@@ -221,6 +301,14 @@ describe("rendition delivery", () => {
         // resolve, and serving the bytes is covered where that code lives.
         return { absolutePath: "/generated/missing.mp4", sizeBytes: 10 };
       },
+      resolveAdaptiveAsset: async (
+        token: string,
+        versionId: string,
+        assetPath: string,
+      ) => {
+        options.served.push(`${token}/${versionId}/${assetPath}`);
+        return { absolutePath: "/generated/missing.m4s", sizeBytes: 10 };
+      },
     } as unknown as NonNullable<
       Parameters<typeof createPlaybackRoutes>[0]["renditions"]
     >;
@@ -289,6 +377,18 @@ describe("rendition delivery", () => {
     );
 
     expect(served).toEqual([`${FILE}/720-abcdef123456.mp4`]);
+  });
+
+  it("authorizes nested adaptive byte-range assets before resolving them", async () => {
+    const served: string[] = [];
+    const router = buildRenditionRouter({ served });
+
+    await get(
+      router,
+      `/ownAPI/v1/playback/renditions/${FILE}/adaptive/abcdef123456/video/720p/media.m4s`,
+    );
+
+    expect(served).toEqual([`${FILE}/abcdef123456/video/720p/media.m4s`]);
   });
 
   it("refuses a rendition of a file in a library the viewer cannot see", async () => {

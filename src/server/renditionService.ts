@@ -17,6 +17,8 @@ import {
   type RenditionRegistry,
 } from "../renditions/registry";
 import { inspectCompletedRendition } from "../renditions/validation";
+import { inspectAdaptivePackage } from "../renditions/adaptive/inspect";
+import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
 
 // Analysis records "already-valid" when every required height already exists and
 // "pending" while a title is only partially generated. Both still expose the
@@ -31,6 +33,9 @@ const REJECTED_REGISTRY_STATUSES = new Set([
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const FILE_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}\.mp4$/;
+const ADAPTIVE_ASSET_PATTERN =
+  /^(?:master\.m3u8|(?:video|audio)\/(?:\d{2,4}p|track-\d{1,5})\/(?:playlist\.m3u8|media\.m4s))$/;
+const ADAPTIVE_VERSION_PATTERN = /^[0-9a-f]{12}$/;
 const MAX_ACCESS_ENTRIES = 10_000;
 const ACCESS_TTL_MS = 12 * 60 * 60 * 1_000;
 
@@ -67,14 +72,17 @@ function canDecodeRendition(
 
 interface RenditionAccessFile {
   filePath: string;
-  expectedSize: number;
+  expectedSize?: number;
 }
 
 interface RenditionAccess {
   createdAt: number;
   manifest: MediaQualityManifest;
-  versionRoot: string;
+  versionRoot?: string;
   filesById: Map<string, RenditionAccessFile>;
+  adaptiveVersionRoot?: string;
+  adaptiveVersionId?: string;
+  adaptiveFilesByPath: Map<string, RenditionAccessFile>;
 }
 
 export interface RenditionServiceOptions {
@@ -88,6 +96,7 @@ export interface RenditionServiceOptions {
 export interface ResolvedRenditionFile {
   absolutePath: string;
   sizeBytes: number;
+  contentType?: string;
 }
 
 export interface RenditionService {
@@ -106,6 +115,11 @@ export interface RenditionService {
   resolveFile(
     token: string,
     fileId: string,
+  ): Promise<ResolvedRenditionFile | null>;
+  resolveAdaptiveAsset(
+    token: string,
+    versionId: string,
+    assetPath: string,
   ): Promise<ResolvedRenditionFile | null>;
 }
 
@@ -225,33 +239,49 @@ export function createRenditionService({
     );
     if (
       !registryItem ||
-      REJECTED_REGISTRY_STATUSES.has(registryItem.status ?? "") ||
-      registryItem.profileVersion !== RENDITION_PROFILE_VERSION ||
       registryItem.size !== media.size ||
       Math.trunc(registryItem.mtimeMs) !== Math.trunc(media.mtimeMs)
     ) {
       return emptyManifest;
     }
-    const inspection = await inspectCompletedRendition({
-      mediaRoot: path.join(renditionRoot, registryItem.id),
-      mediaId: registryItem.id,
-      sourceFingerprint: registryItem.sourceFingerprint,
-      profileVersion: RENDITION_PROFILE_VERSION,
-    });
-    if (
-      inspection.status !== "ready" ||
-      !inspection.versionRoot ||
-      !inspection.metadata
-    ) {
-      return emptyManifest;
-    }
+    const packageRoot = path.join(renditionRoot, registryItem.id);
+    const [inspection, adaptiveInspection] = await Promise.all([
+      REJECTED_REGISTRY_STATUSES.has(registryItem.status ?? "") ||
+      registryItem.profileVersion !== RENDITION_PROFILE_VERSION
+        ? Promise.resolve({
+            status: "missing" as const,
+            metadata: undefined,
+            versionRoot: undefined,
+          })
+        : inspectCompletedRendition({
+            mediaRoot: packageRoot,
+            mediaId: registryItem.id,
+            sourceFingerprint: registryItem.sourceFingerprint,
+            profileVersion: RENDITION_PROFILE_VERSION,
+          }),
+      registryItem.adaptiveStatus === "ready" &&
+      registryItem.adaptiveProfileVersion === ADAPTIVE_PROFILE_VERSION
+        ? inspectAdaptivePackage({
+            mediaRoot: packageRoot,
+            mediaId: registryItem.id,
+            sourceFingerprint: registryItem.sourceFingerprint,
+            profileVersion: ADAPTIVE_PROFILE_VERSION,
+          })
+        : Promise.resolve({
+            status: "missing" as const,
+            metadata: undefined,
+            versionRoot: undefined,
+          }),
+    ]);
 
     const token = mediaResolver.encodeMediaToken(media.mediaId);
     const filesById = new Map<string, RenditionAccessFile>();
-    const playableFiles = inspection.metadata.files.filter((file) =>
-      canDecodeRendition(file, client),
-    );
-    if (playableFiles.length === 0) return emptyManifest;
+    const playableFiles =
+      inspection.status === "ready" && inspection.metadata
+        ? inspection.metadata.files.filter((file) =>
+            canDecodeRendition(file, client),
+          )
+        : [];
     const generated: AvailableQualityFile[] = playableFiles.map((file) => {
       const fileId = `${file.qualityHeight}-${registryItem.sourceFingerprint.slice(0, 12)}.mp4`;
       filesById.set(fileId, {
@@ -277,7 +307,9 @@ export function createRenditionService({
     });
     const manifest: MediaQualityManifest = {
       ...emptyManifest,
-      generatedAt: inspection.metadata.createdAt,
+      generatedAt:
+        adaptiveInspection.metadata?.createdAt ??
+        inspection.metadata?.createdAt,
       qualities: [
         ...generated,
         ...(playableOriginal ? [playableOriginal] : []),
@@ -287,12 +319,78 @@ export function createRenditionService({
           Number(left.kind === "original") - Number(right.kind === "original"),
       ),
     };
+    const adaptiveFilesByPath = new Map<string, RenditionAccessFile>();
+    const adaptiveMetadata =
+      adaptiveInspection.status === "ready" &&
+      adaptiveInspection.versionRoot &&
+      adaptiveInspection.metadata &&
+      adaptiveInspection.metadata.videoRenditions.every((rendition) =>
+        canDecodeRendition(
+          { videoCodec: rendition.codec, hdr: rendition.hdr !== "sdr" },
+          client,
+        ),
+      )
+        ? adaptiveInspection.metadata
+        : undefined;
+    if (adaptiveMetadata) {
+      adaptiveFilesByPath.set(adaptiveMetadata.masterPlaylistPath, {
+        filePath: adaptiveMetadata.masterPlaylistPath,
+      });
+      for (const rendition of [
+        ...adaptiveMetadata.videoRenditions,
+        ...adaptiveMetadata.audioRenditions,
+      ]) {
+        adaptiveFilesByPath.set(rendition.playlistPath, {
+          filePath: rendition.playlistPath,
+        });
+        adaptiveFilesByPath.set(rendition.mediaPath, {
+          filePath: rendition.mediaPath,
+          expectedSize: rendition.fileSizeBytes,
+        });
+      }
+      manifest.adaptive = {
+        profileVersion: adaptiveMetadata.profileVersion,
+        playbackUrl: `${basePath}/${encodeURIComponent(token)}/adaptive/${registryItem.sourceFingerprint.slice(0, 12)}/master.m3u8`,
+        mimeType: "application/vnd.apple.mpegurl",
+        segmentTargetSeconds: adaptiveMetadata.segmentTargetSeconds,
+        qualities: adaptiveMetadata.videoRenditions
+          .map((rendition) => ({
+            id: rendition.id,
+            label: `${rendition.qualityHeight}p${rendition.hdr === "sdr" ? "" : " HDR"}`,
+            width: rendition.width,
+            height: rendition.qualityHeight,
+            bitrate: rendition.averageBitrate,
+            videoCodec: rendition.codec,
+            hdr: rendition.hdr !== "sdr",
+          }))
+          .sort((left, right) => right.height - left.height),
+        audioTracks: adaptiveMetadata.audioRenditions.map((rendition) => ({
+          id: rendition.id,
+          sourceStreamIndex: rendition.sourceStreamIndex,
+          label: rendition.title ?? rendition.language ?? rendition.id,
+          ...(rendition.language ? { language: rendition.language } : {}),
+          channels: rendition.channels,
+          isDefault: rendition.isDefault,
+        })),
+        switching: "aligned-cmaf-hls",
+      };
+    }
+    if (playableFiles.length === 0 && !manifest.adaptive) return emptyManifest;
     pruneAccess();
     accessByToken.set(token, {
       createdAt: Date.now(),
       manifest,
-      versionRoot: inspection.versionRoot,
+      ...(inspection.versionRoot
+        ? { versionRoot: inspection.versionRoot }
+        : {}),
       filesById,
+      ...(adaptiveInspection.versionRoot
+        ? { adaptiveVersionRoot: adaptiveInspection.versionRoot }
+        : {}),
+      ...(adaptiveMetadata
+        ? { adaptiveVersionId: registryItem.sourceFingerprint.slice(0, 12) }
+        : {}),
+      adaptiveFilesByPath,
     });
     return manifest;
   };
@@ -307,7 +405,7 @@ export function createRenditionService({
     pruneAccess();
     const access = accessByToken.get(token);
     const registered = access?.filesById.get(fileId);
-    if (!access || !registered) return null;
+    if (!access || !registered || !access.versionRoot) return null;
 
     try {
       const candidate = path.join(access.versionRoot, registered.filePath);
@@ -321,7 +419,11 @@ export function createRenditionService({
       // different one means the output changed underneath us, and serving it
       // would hand the player bytes nothing has checked.
       const stats = await stat(trustedFile);
-      if (!stats.isFile() || stats.size !== registered.expectedSize)
+      if (
+        !stats.isFile() ||
+        (registered.expectedSize !== undefined &&
+          stats.size !== registered.expectedSize)
+      )
         return null;
 
       return { absolutePath: trustedFile, sizeBytes: stats.size };
@@ -330,5 +432,58 @@ export function createRenditionService({
     }
   };
 
-  return { createManifest, resolveFile };
+  const resolveAdaptiveAsset: RenditionService["resolveAdaptiveAsset"] = async (
+    token,
+    versionId,
+    assetPath,
+  ) => {
+    if (
+      !TOKEN_PATTERN.test(token) ||
+      !ADAPTIVE_VERSION_PATTERN.test(versionId) ||
+      !ADAPTIVE_ASSET_PATTERN.test(assetPath)
+    ) {
+      return null;
+    }
+    pruneAccess();
+    const access = accessByToken.get(token);
+    const registered = access?.adaptiveFilesByPath.get(assetPath);
+    if (
+      !access?.adaptiveVersionRoot ||
+      access.adaptiveVersionId !== versionId ||
+      !registered
+    ) {
+      return null;
+    }
+
+    try {
+      const candidate = path.join(
+        access.adaptiveVersionRoot,
+        ...registered.filePath.split("/"),
+      );
+      const [trustedRoot, trustedFile] = await Promise.all([
+        realpath(access.adaptiveVersionRoot),
+        realpath(candidate),
+      ]);
+      if (!isInside(trustedRoot, trustedFile)) return null;
+      const stats = await stat(trustedFile);
+      if (
+        !stats.isFile() ||
+        (registered.expectedSize !== undefined &&
+          stats.size !== registered.expectedSize)
+      ) {
+        return null;
+      }
+      return {
+        absolutePath: trustedFile,
+        sizeBytes: stats.size,
+        contentType: assetPath.endsWith(".m3u8")
+          ? "application/vnd.apple.mpegurl"
+          : "video/iso.segment",
+      };
+    } catch {
+      return null;
+    }
+  };
+
+  return { createManifest, resolveFile, resolveAdaptiveAsset };
 }

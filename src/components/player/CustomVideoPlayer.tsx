@@ -794,6 +794,12 @@ export function CustomVideoPlayer({
   const [fileQualityMode, setFileQualityMode] = useState<QualityPreferenceMode>(
     () => qualityPreferenceRef.current.mode,
   );
+  const [adaptiveLockedQualityId, setAdaptiveLockedQualityId] = useState<
+    string | null
+  >(null);
+  const [activeAdaptiveHeight, setActiveAdaptiveHeight] = useState<
+    number | null
+  >(null);
   const lastQualitySwitchAtRef = useRef(0);
   const reconsiderQualityRef = useRef<(recentStallCount: number) => void>(
     () => {},
@@ -864,6 +870,10 @@ export function CustomVideoPlayer({
     playbackCandidates.length > 0 ? playbackCandidates : [source];
   const qualityManifest =
     activeSource.qualityManifest ?? source.qualityManifest;
+  const adaptiveQualityManifest = qualityManifest?.adaptive;
+  const isAdaptiveRenditionPlayback = Boolean(
+    adaptiveQualityManifest && activeSource.hlsKind === "adaptive-rendition",
+  );
   const availableQualityFiles = useMemo(
     () =>
       [...(qualityManifest?.qualities ?? [])].sort(
@@ -871,7 +881,11 @@ export function CustomVideoPlayer({
       ),
     [qualityManifest],
   );
-  const hasFileQualities = availableQualityFiles.length > 0;
+  const hasFileQualities =
+    availableQualityFiles.length > 0 && !isAdaptiveRenditionPlayback;
+  const hasAdaptiveQualities = Boolean(
+    adaptiveQualityManifest && adaptiveQualityManifest.qualities.length > 0,
+  );
   const activeQualityFile = availableQualityFiles.find(
     (quality) => quality.id === activeQualityFileId,
   );
@@ -894,28 +908,62 @@ export function CustomVideoPlayer({
     () => getManualQualityOptions(activeSource.mediaSource),
     [activeSource.mediaSource],
   );
-  const advancedQualityOptions = useMemo<PlaybackQualityOption[]>(
-    () =>
-      availableQualityFiles.map((quality) => ({
-        id: quality.id,
-        label: `${
-          quality.kind === "original"
-            ? formatTemplate(t("player.qualityOriginalWithHeight"), {
-                height: quality.height,
-              })
-            : `${quality.height}p`
-        }${quality.hdr ? " HDR" : ""}`,
-        // Only carry a subtitle when it says something the label does not; the
-        // check mark already marks the active entry.
-        subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
-          ? ""
-          : t("player.qualityAudioMismatch"),
-        maxHeight: quality.height,
-        maxWidth: quality.width,
-        maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
-      })),
-    [availableQualityFiles, selectedAudioStreamIndex, t],
-  );
+  const advancedQualityOptions = useMemo<PlaybackQualityOption[]>(() => {
+    if (hasAdaptiveQualities && adaptiveQualityManifest) {
+      const adaptiveOptions = adaptiveQualityManifest.qualities.map(
+        (quality) => ({
+          id: quality.id,
+          label: quality.label,
+          subtitle: "",
+          maxHeight: quality.height,
+          maxWidth: quality.width,
+          maxStreamingBitrate: quality.bitrate,
+        }),
+      );
+      const original = availableQualityFiles.find(
+        (quality) => quality.kind === "original",
+      );
+      return original
+        ? [
+            ...adaptiveOptions,
+            {
+              id: original.id,
+              label: formatTemplate(t("player.qualityOriginalWithHeight"), {
+                height: original.height,
+              }),
+              subtitle: "",
+              maxHeight: original.height,
+              maxWidth: original.width,
+              maxStreamingBitrate: original.bitrate ?? Number.MAX_SAFE_INTEGER,
+            },
+          ]
+        : adaptiveOptions;
+    }
+    return availableQualityFiles.map((quality) => ({
+      id: quality.id,
+      label: `${
+        quality.kind === "original"
+          ? formatTemplate(t("player.qualityOriginalWithHeight"), {
+              height: quality.height,
+            })
+          : `${quality.height}p`
+      }${quality.hdr ? " HDR" : ""}`,
+      // Only carry a subtitle when it says something the label does not; the
+      // check mark already marks the active entry.
+      subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
+        ? ""
+        : t("player.qualityAudioMismatch"),
+      maxHeight: quality.height,
+      maxWidth: quality.width,
+      maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
+    }));
+  }, [
+    adaptiveQualityManifest,
+    availableQualityFiles,
+    hasAdaptiveQualities,
+    selectedAudioStreamIndex,
+    t,
+  ]);
   /**
    * The original is served by whichever plan the backend already produced, so it
    * is returned untouched: rewriting it into a synthetic direct-play candidate
@@ -926,7 +974,21 @@ export function CustomVideoPlayer({
   const buildQualityFileSource = useCallback(
     (quality: AvailableQualityFile): PlaybackSourceCandidate =>
       quality.kind === "original"
-        ? source
+        ? source.hlsKind === "adaptive-rendition"
+          ? {
+              ...source,
+              id: "quality-file-original",
+              url: quality.playbackUrl,
+              mode: "DirectPlay",
+              isHls: false,
+              hlsKind: "direct",
+              usingHlsJs: false,
+              mimeType: quality.container === "mp4" ? "video/mp4" : undefined,
+              label: quality.label,
+              reason: "Original file outside the adaptive switching set.",
+              transcodeReasons: [],
+            }
+          : source
         : {
             ...source,
             id: `quality-file-${quality.id}`,
@@ -991,13 +1053,19 @@ export function CustomVideoPlayer({
     () => getStreamsOfType(activeSourceWithLibraryStreams, "Audio"),
     [activeSourceWithLibraryStreams],
   );
-  const canSwitchAudio = Boolean(
-    audioStreams.some((stream) => stream.Index !== undefined) &&
-    !activeSource.id.startsWith("quality-file-generated-") &&
-    (isDirectBrowserPlaybackSource(activeSource) ||
-      activeSource.mediaSource.SupportsTranscoding ||
-      activeSource.mode === "Transcoding"),
-  );
+  const canSwitchAudio =
+    Boolean(
+      isAdaptiveRenditionPlayback &&
+      adaptiveQualityManifest &&
+      adaptiveQualityManifest.audioTracks.length > 1,
+    ) ||
+    Boolean(
+      audioStreams.some((stream) => stream.Index !== undefined) &&
+      !activeSource.id.startsWith("quality-file-generated-") &&
+      (isDirectBrowserPlaybackSource(activeSource) ||
+        activeSource.mediaSource.SupportsTranscoding ||
+        activeSource.mode === "Transcoding"),
+    );
   const canSwitchSubtitles = Boolean(activeSource.mediaSourceId);
   const sourceDefaultAudioStreamIndex = getDefaultAudioStreamIndex(
     item,
@@ -1814,7 +1882,10 @@ export function CustomVideoPlayer({
         return;
       }
 
-      if (currentSource.mode === "Transcoding" || currentSource.isHls) {
+      if (
+        (currentSource.mode === "Transcoding" || currentSource.isHls) &&
+        currentSource.hlsKind !== "adaptive-rendition"
+      ) {
         try {
           await stopActiveTranscodeSession(currentSource.playSessionId);
         } catch (stopError) {
@@ -2270,8 +2341,121 @@ export function CustomVideoPlayer({
     applyQualityFileRef.current = applyQualityFile;
   });
 
+  const applyAdaptiveQualityPreference = useCallback(
+    (
+      mode: Exclude<QualityPreferenceMode, "advanced"> | "advanced",
+      qualityId?: string,
+    ) => {
+      if (!adaptiveQualityManifest) return false;
+      if (
+        mode !== "auto" &&
+        isAdaptiveRenditionPlayback &&
+        activeSource.usingHlsJs === false &&
+        !activeAttachmentRef.current?.adaptiveController
+      ) {
+        // Safari's native HLS engine keeps seamless ABR but does not expose a
+        // JavaScript API for exact/capped level selection.
+        return false;
+      }
+      const ordered = [...adaptiveQualityManifest.qualities].sort(
+        (left, right) => left.height - right.height,
+      );
+      const selected = qualityId
+        ? ordered.find((quality) => quality.id === qualityId)
+        : undefined;
+      const preferred =
+        selected ??
+        (qualityPreferenceRef.current.preferredHeight
+          ? ordered.reduce<(typeof ordered)[number] | undefined>(
+              (best, quality) =>
+                Math.abs(
+                  quality.height -
+                    (qualityPreferenceRef.current.preferredHeight ?? 0),
+                ) <
+                Math.abs(
+                  (best?.height ?? Number.POSITIVE_INFINITY) -
+                    (qualityPreferenceRef.current.preferredHeight ?? 0),
+                )
+                  ? quality
+                  : best,
+              undefined,
+            )
+          : undefined);
+      const lowest = ordered[0];
+      const highest = ordered.at(-1);
+      const controller = activeAttachmentRef.current?.adaptiveController;
+
+      if (mode === "advanced" && preferred) {
+        controller?.setQualityHeight(preferred.height, preferred.height);
+        setAdaptiveLockedQualityId(preferred.id);
+        setActiveAdaptiveHeight((current) => current ?? preferred.height);
+        persistQualityPreference({
+          mode: "advanced",
+          preferredHeight: preferred.height,
+          preferredQualityId: preferred.id,
+          preferOriginal: false,
+        });
+      } else {
+        controller?.setQualityHeight(
+          null,
+          mode === "low-data"
+            ? (lowest?.height ?? null)
+            : mode === "higher-resolution"
+              ? (highest?.height ?? null)
+              : null,
+        );
+        setAdaptiveLockedQualityId(null);
+        persistQualityPreference({ mode });
+      }
+      setFileQualityMode(mode);
+      setQualitySelectionNotice(null);
+      return true;
+    },
+    [
+      activeSource.usingHlsJs,
+      adaptiveQualityManifest,
+      isAdaptiveRenditionPlayback,
+      persistQualityPreference,
+    ],
+  );
+
+  // Source attachment is asynchronous. Reapply the saved preference once the
+  // persistent hls.js instance exists; this changes only future fragments and
+  // never replaces the video element or its MediaSource.
+  useEffect(() => {
+    if (!hasAdaptiveQualities || !activeSource.usingHlsJs) return;
+    const saved = qualityPreferenceRef.current;
+    applyAdaptiveQualityPreference(
+      saved.mode,
+      saved.mode === "advanced"
+        ? (adaptiveLockedQualityId ?? saved.preferredQualityId)
+        : undefined,
+    );
+    if (selectedAudioStreamIndex !== undefined) {
+      activeAttachmentRef.current?.adaptiveController?.setAudioStream(
+        selectedAudioStreamIndex,
+      );
+    }
+  }, [
+    activeSource.usingHlsJs,
+    adaptiveLockedQualityId,
+    applyAdaptiveQualityPreference,
+    hasAdaptiveQualities,
+    selectedAudioStreamIndex,
+  ]);
+
   const handleSelectQualityMode = useCallback(
     (mode: Exclude<QualityPreferenceMode, "advanced">) => {
+      if (hasAdaptiveQualities) {
+        if (!applyAdaptiveQualityPreference(mode)) {
+          setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+          return;
+        }
+        if (!isAdaptiveRenditionPlayback) {
+          void switchPlayerSource(source);
+        }
+        return;
+      }
       const selectedFile =
         mode === "low-data"
           ? lowDataQualityFile
@@ -2294,15 +2478,47 @@ export function CustomVideoPlayer({
     },
     [
       applyQualityFile,
+      applyAdaptiveQualityPreference,
       audioCompatibleQualityFiles,
+      hasAdaptiveQualities,
       higherResolutionQualityFile,
+      isAdaptiveRenditionPlayback,
       lowDataQualityFile,
+      source,
+      switchPlayerSource,
       t,
     ],
   );
 
   const handleSelectAdvancedQuality = useCallback(
     (qualityId: string) => {
+      if (hasAdaptiveQualities) {
+        const original = availableQualityFiles.find(
+          (candidate) =>
+            candidate.kind === "original" && candidate.id === qualityId,
+        );
+        if (original) {
+          setAdaptiveLockedQualityId(original.id);
+          void applyQualityFile(
+            original,
+            {
+              mode: "advanced",
+              preferredHeight: original.height,
+              preferredQualityId: original.id,
+              preferOriginal: true,
+            },
+            { isManual: true },
+          );
+          return;
+        }
+        if (!applyAdaptiveQualityPreference("advanced", qualityId)) {
+          setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+        }
+        if (!isAdaptiveRenditionPlayback) {
+          void switchPlayerSource(source);
+        }
+        return;
+      }
       const selectedFile = availableQualityFiles.find(
         (candidate) => candidate.id === qualityId,
       );
@@ -2328,11 +2544,21 @@ export function CustomVideoPlayer({
         { isManual: true },
       );
     },
-    [applyQualityFile, availableQualityFiles, selectedAudioStreamIndex, t],
+    [
+      applyAdaptiveQualityPreference,
+      applyQualityFile,
+      availableQualityFiles,
+      hasAdaptiveQualities,
+      isAdaptiveRenditionPlayback,
+      selectedAudioStreamIndex,
+      source,
+      switchPlayerSource,
+      t,
+    ],
   );
 
   const handleSelectAutoQuality = useCallback(async () => {
-    if (hasFileQualities) {
+    if (hasFileQualities || hasAdaptiveQualities) {
       handleSelectQualityMode("auto");
       return;
     }
@@ -2381,6 +2607,7 @@ export function CustomVideoPlayer({
     availablePlaybackCandidates,
     buildConfiguredSource,
     handleSelectQualityMode,
+    hasAdaptiveQualities,
     hasFileQualities,
     item,
     source,
@@ -2556,7 +2783,45 @@ export function CustomVideoPlayer({
   const completeFileQualityControls = useMemo<
     CompleteFileQualityControls | undefined
   >(() => {
-    if (!hasFileQualities) return undefined;
+    if (!hasFileQualities && !hasAdaptiveQualities) return undefined;
+
+    if (hasAdaptiveQualities && adaptiveQualityManifest) {
+      const ordered = [...adaptiveQualityManifest.qualities].sort(
+        (left, right) => left.height - right.height,
+      );
+      const lowest = ordered[0];
+      const highest = ordered.at(-1);
+      const effective = ordered.find(
+        (quality) => quality.height === activeAdaptiveHeight,
+      );
+      const activeOriginal = !isAdaptiveRenditionPlayback
+        ? availableQualityFiles.find(
+            (quality) =>
+              quality.kind === "original" && quality.id === activeQualityFileId,
+          )
+        : undefined;
+      return {
+        activeMode: fileQualityMode,
+        effectiveQualityLabel:
+          activeOriginal?.label ??
+          effective?.label ??
+          (activeAdaptiveHeight ? `${activeAdaptiveHeight}p` : undefined),
+        modeQualityLabels: {
+          "low-data": lowest?.label,
+          auto:
+            fileQualityMode === "auto" ? (effective?.label ?? "Auto") : "Auto",
+          "higher-resolution": highest?.label,
+        },
+        advancedOptions: advancedQualityOptions,
+        lockedQualityId:
+          fileQualityMode === "advanced"
+            ? (adaptiveLockedQualityId ?? undefined)
+            : undefined,
+        noticeText: qualitySelectionNotice ?? undefined,
+        onSelectMode: handleSelectQualityMode,
+        onSelectAdvancedQuality: handleSelectAdvancedQuality,
+      };
+    }
 
     const autoQualityFile = selectAutoQuality(
       audioCompatibleQualityFiles,
@@ -2606,13 +2871,19 @@ export function CustomVideoPlayer({
     };
   }, [
     activeQualityFile,
+    activeQualityFileId,
+    activeAdaptiveHeight,
+    adaptiveLockedQualityId,
+    adaptiveQualityManifest,
     advancedQualityOptions,
     audioCompatibleQualityFiles,
     fileQualityMode,
     handleSelectAdvancedQuality,
     handleSelectQualityMode,
     hasFileQualities,
+    hasAdaptiveQualities,
     higherResolutionQualityFile,
+    isAdaptiveRenditionPlayback,
     lowDataQualityFile,
     qualitySelectionNotice,
     t,
@@ -2621,6 +2892,22 @@ export function CustomVideoPlayer({
   const handleSelectAudioStream = useCallback(
     async (streamIndex: number) => {
       if (!canSwitchAudio) {
+        return;
+      }
+
+      if (isAdaptiveRenditionPlayback) {
+        const switched =
+          activeAttachmentRef.current?.adaptiveController?.setAudioStream(
+            streamIndex,
+          ) ?? false;
+        if (switched) {
+          setSelectedAudioStreamIndex(streamIndex);
+          setActiveAudioStreamIndex(streamIndex);
+          setQualitySelectionNotice(null);
+          revealPlayerChrome();
+        } else {
+          setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+        }
         return;
       }
 
@@ -2730,11 +3017,13 @@ export function CustomVideoPlayer({
       availablePlaybackCandidates,
       buildConfiguredSource,
       canSwitchAudio,
+      isAdaptiveRenditionPlayback,
       item,
       qualityOptions,
       revealPlayerChrome,
       selectedQualityId,
       switchPlayerSource,
+      t,
     ],
   );
 
@@ -3699,6 +3988,14 @@ export function CustomVideoPlayer({
                   "hls.js reported a fatal playback error.",
                   { hlsError: getSerializableHlsError(data) },
                 );
+              },
+              onAdaptiveLevelChanged: (height) => {
+                if (
+                  isCurrentAttempt() &&
+                  sourceToAttach.hlsKind === "adaptive-rendition"
+                ) {
+                  setActiveAdaptiveHeight(height);
+                }
               },
             },
           );

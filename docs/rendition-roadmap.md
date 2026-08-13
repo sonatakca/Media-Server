@@ -159,25 +159,25 @@ concurrency.
 
 ---
 
-## 7. Segment-aligned CMAF/HLS (a later improvement, not a blocker)
+## 7. Segment-aligned CMAF/HLS — implemented, migration is opt-in
 
-The dual-deck handoff meets its target on this ladder, so this is an improvement
-rather than a fix. It would be worth doing if any of the following start to bite:
+The `cmaf-hls-aligned-v1` profile now generates a two-second aligned switching
+set from one decode, with one byte-range CMAF media file per video rendition and
+one shared AAC media file per selected audio track. A strict validator proves
+playlist structure, random access, cross-rendition boundaries, duration, codec,
+colour/HDR signalling and seekability before `current-adaptive.json` is changed.
 
-- **A rung whose keyframes do not line up.** The rendezvous seek lands on the
-  nearest keyframe, so a rung encoded with scene-detected GOPs would meet the
-  playhead less precisely than the measured 0.047 s.
-- **Two decoders at once.** Preparation briefly decodes on both elements. On a
-  weak client that is real CPU and memory that a single MSE pipeline with a
-  segment append would not spend.
-- **Bandwidth spent twice at the switch point.** The overlapping second is
-  fetched from both renditions.
+The server prefers the adaptive package before starting a live ffmpeg session.
+Chromium/Firefox use one persistent hls.js/MediaSource pipeline; Auto delegates
+to hls.js ABR and a manual lock changes only future fragments. Original remains a
+separate fallback, and the complete-file dual-deck path remains available for
+legacy packages.
 
-`MediaQualityManifest.limitations.switching` still reads
-`"complete-file-rebuffer"`. That string is now wrong for the seamless path, but
-it is a server-emitted contract field with a validator behind it and nothing in
-the UI reads it, so it was left alone rather than changed as a side effect of a
-player refactor.
+Existing completed MP4 renditions are not silently relabelled as aligned CMAF.
+The measured library's files have aligned keyframes but 10.24–10.72 second GOPs;
+stream-copy repackaging would therefore produce coarse segments. Two-second
+switching requires re-encoding those titles with the new profile. See
+`docs/adaptive-renditions.md` for the staged migration procedure.
 
 ---
 

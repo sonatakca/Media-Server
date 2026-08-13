@@ -590,6 +590,16 @@ export async function getPlaybackInfo(
       ? {
           qualityManifest: {
             ...session.qualityManifest,
+            ...(session.qualityManifest.adaptive
+              ? {
+                  adaptive: {
+                    ...session.qualityManifest.adaptive,
+                    playbackUrl: ownApiUrl(
+                      session.qualityManifest.adaptive.playbackUrl,
+                    ),
+                  },
+                }
+              : {}),
             qualities: session.qualityManifest.qualities.map((quality) => ({
               ...quality,
               playbackUrl: ownApiUrl(quality.playbackUrl),
@@ -608,7 +618,13 @@ export function buildPlaybackCandidates(
   if (!mediaSource) return [];
 
   const isHls = Boolean(mediaSource.TranscodingUrl);
-  const url = mediaSource.TranscodingUrl ?? mediaSource.DirectStreamUrl ?? "";
+  const adaptive = playbackInfo.qualityManifest?.adaptive;
+  const url =
+    adaptive?.playbackUrl ??
+    mediaSource.TranscodingUrl ??
+    mediaSource.DirectStreamUrl ??
+    "";
+  const usesAdaptiveRendition = Boolean(adaptive);
   const mode = mediaSource.SupportsDirectPlay
     ? "DirectPlay"
     : mediaSource.SupportsDirectStream
@@ -623,26 +639,37 @@ export function buildPlaybackCandidates(
       ...(playbackInfo.PlaySessionId
         ? { playSessionId: playbackInfo.PlaySessionId }
         : {}),
-      mode,
+      mode: usesAdaptiveRendition ? "DirectPlay" : mode,
       url,
-      isHls,
-      ...(isHls
-        ? { hlsKind: "forced-transcode" as const, usingHlsJs: true }
+      isHls: isHls || usesAdaptiveRendition,
+      ...(isHls || usesAdaptiveRendition
+        ? {
+            hlsKind: usesAdaptiveRendition
+              ? ("adaptive-rendition" as const)
+              : ("forced-transcode" as const),
+            usingHlsJs: true,
+          }
         : {}),
-      ...(isHls
+      ...(isHls || usesAdaptiveRendition
         ? { mimeType: "application/vnd.apple.mpegurl" }
         : mediaSource.Container
           ? { mimeType: `video/${mediaSource.Container}` }
           : {}),
-      label: isHls ? "Adaptive stream" : "Original file",
+      label: usesAdaptiveRendition
+        ? "Pre-generated adaptive stream"
+        : isHls
+          ? "Adaptive stream"
+          : "Original file",
       mediaSource,
       playbackInfo,
       ...(playbackInfo.qualityManifest
         ? { qualityManifest: playbackInfo.qualityManifest }
         : {}),
-      reason: isHls
-        ? "The server is repackaging this title for your browser."
-        : "Your browser can play this file directly.",
+      reason: usesAdaptiveRendition
+        ? "Validated aligned CMAF renditions are available without live transcoding."
+        : isHls
+          ? "The server is repackaging this title for your browser."
+          : "Your browser can play this file directly.",
       ...(mediaSource.TranscodingReasons
         ? { transcodeReasons: mediaSource.TranscodingReasons }
         : {}),

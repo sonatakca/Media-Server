@@ -42,6 +42,16 @@ function itemFor(
     existingHeights: [],
     requiredHeights: [480],
     jobs: [{ qualityHeight: 480, estimatedBytes: 1_000 }],
+    adaptive: {
+      status: "missing",
+      eligible: true,
+      estimatedVideoBytes: 1_000,
+      estimatedAudioBytes: 100,
+      estimatedTotalBytes: 1_100,
+      expectedFileCount: 6,
+      expectedSegmentCount: 12,
+      isHdr: false,
+    },
     ...overrides,
   };
 }

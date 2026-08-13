@@ -24,6 +24,12 @@ import {
 import { RENDITION_PROFILE_VERSION } from "../src/renditions/policy";
 import { probeMediaFile } from "../src/renditions/probe";
 import { inspectCompletedRendition } from "../src/renditions/validation";
+import { inspectAdaptivePackage } from "../src/renditions/adaptive/inspect";
+import { validateAdaptivePackage } from "../src/renditions/adaptive/validation";
+import { processAdaptiveReport } from "../src/renditions/adaptive/processor";
+import { ADAPTIVE_PROFILE_VERSION } from "../src/renditions/adaptive/profile";
+
+type RenditionGeneration = "legacy" | "adaptive" | "all";
 
 interface CliArguments {
   command: string;
@@ -34,6 +40,8 @@ interface CliArguments {
   dryRun: boolean;
   confirmStale: boolean;
   olderThanHours: number;
+  profile: RenditionGeneration;
+  allAudioTracks: boolean;
 }
 
 function parseArguments(argv: string[]): CliArguments {
@@ -43,11 +51,14 @@ function parseArguments(argv: string[]): CliArguments {
     dryRun: false,
     confirmStale: false,
     olderThanHours: 24,
+    profile: "legacy",
+    allAudioTracks: false,
   };
   for (let index = 0; index < rest.length; index += 1) {
     const argument = rest[index];
     const next = rest[index + 1];
     if (argument === "--dry-run") result.dryRun = true;
+    else if (argument === "--all-audio-tracks") result.allAudioTracks = true;
     else if (argument === "--confirm-stale") result.confirmStale = true;
     else if (argument === "--library" && next) {
       result.library = next;
@@ -63,6 +74,16 @@ function parseArguments(argv: string[]): CliArguments {
       index += 1;
     } else if (argument === "--older-than-hours" && next) {
       result.olderThanHours = Number(next);
+      index += 1;
+    } else if (argument === "--profile" && next) {
+      if (
+        !(["legacy", "adaptive", "all"] as const).includes(
+          next as RenditionGeneration,
+        )
+      ) {
+        throw new Error("--profile must be legacy, adaptive, or all.");
+      }
+      result.profile = next as RenditionGeneration;
       index += 1;
     } else {
       throw new Error(`Unknown or incomplete argument: ${argument}`);
@@ -237,6 +258,46 @@ async function validateOutputs(
   return results;
 }
 
+async function validateAdaptiveOutputs(
+  report: RenditionAnalysisReport,
+  renditionRoot: string,
+  ffprobePath?: string,
+) {
+  const results = [];
+  for (const item of report.items) {
+    const inspection = await inspectAdaptivePackage({
+      mediaRoot: path.join(renditionRoot, item.mediaId),
+      mediaId: item.mediaId,
+      sourceFingerprint: item.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+    });
+    if (inspection.status !== "ready" || !inspection.versionRoot) {
+      results.push({
+        mediaId: item.mediaId,
+        relativePath: item.relativePath,
+        status: inspection.status,
+        error: inspection.reason,
+      });
+      continue;
+    }
+    const validation = await validateAdaptivePackage({
+      versionRoot: inspection.versionRoot,
+      mediaId: item.mediaId,
+      sourceFingerprint: item.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      ffprobePath,
+      deep: true,
+    });
+    results.push({
+      mediaId: item.mediaId,
+      relativePath: item.relativePath,
+      status: validation.ok ? "ready" : "validation-failed",
+      ...(!validation.ok ? { error: validation.issues.join("; ") } : {}),
+    });
+  }
+  return results;
+}
+
 async function cleanupWork(
   workRoot: string,
   stateRoot: string,
@@ -254,13 +315,23 @@ async function cleanupWork(
   }
   for (const mediaEntry of mediaEntries) {
     if (!mediaEntry.isDirectory() || mediaEntry.isSymbolicLink()) continue;
-    const lockPath = path.join(stateRoot, "locks", `${mediaEntry.name}.lock`);
-    try {
-      await stat(lockPath);
+    const lockPaths = [
+      path.join(stateRoot, "locks", `${mediaEntry.name}.lock`),
+      path.join(stateRoot, "locks", `${mediaEntry.name}.adaptive.lock`),
+    ];
+    let hasActiveLock = false;
+    for (const lockPath of lockPaths) {
+      try {
+        await stat(lockPath);
+        hasActiveLock = true;
+        break;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
+    }
+    if (hasActiveLock) {
       actions.push({ path: mediaEntry.name, action: "skipped-active-lock" });
       continue;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
     const mediaWorkRoot = path.join(workRoot, mediaEntry.name);
     const mediaStats = await stat(mediaWorkRoot);
@@ -437,10 +508,10 @@ function usage(): string {
   return [
     "Seyirlik rendition CLI",
     "  analyse",
-    "  process [--library Movies|Series] [--media-id UUID] [--source relative/path] [--workers 1] [--dry-run]",
+    "  process [--profile legacy|adaptive|all] [--library Movies|Series] [--media-id UUID] [--source relative/path] [--workers 1] [--all-audio-tracks] [--dry-run]",
     "  resume  [same options as process]",
     "  status",
-    "  validate [--media-id UUID]",
+    "  validate [--profile legacy|adaptive|all] [--media-id UUID] [--source relative/path]",
     "  cleanup [--older-than-hours 24] [--dry-run]",
     "",
     "cleanup removes only abandoned generated work directories. Stale completed output is never removed by this command.",
@@ -490,7 +561,9 @@ async function main() {
     const report = await loadLatestReport(reportPath);
     console.log(formatAnalysisReport(report));
     for (const item of report.items) {
-      console.log(`${item.status}\t${item.mediaId}\t${item.relativePath}`);
+      console.log(
+        `legacy=${item.status}\tadaptive=${item.adaptive.status}${item.adaptive.eligible ? "" : " (incompatible)"}\t${item.mediaId}\t${item.relativePath}`,
+      );
     }
     return;
   }
@@ -532,8 +605,16 @@ async function main() {
     process.once("SIGINT", cancel);
     process.once("SIGTERM", cancel);
     try {
-      const { videoEncoder, hdrVideoEncoder, results } =
-        await processRenditionReport(analysis, paths, {
+      const results: Array<{
+        status: string;
+        mediaId: string;
+        relativePath: string;
+        error?: string;
+      }> = [];
+      let videoEncoder = "not-selected";
+      let hdrVideoEncoder: string | undefined;
+      if (args.profile === "legacy" || args.profile === "all") {
+        const legacy = await processRenditionReport(analysis, paths, {
           reserveBytes,
           ffprobePath,
           encoderPreference: parseEncoderPreference(
@@ -547,6 +628,29 @@ async function main() {
           dryRun: args.dryRun,
           signal: abortController.signal,
         });
+        results.push(...legacy.results);
+        videoEncoder = legacy.videoEncoder;
+        hdrVideoEncoder = legacy.hdrVideoEncoder;
+      }
+      if (args.profile === "adaptive" || args.profile === "all") {
+        const adaptive = await processAdaptiveReport(analysis, paths, {
+          reserveBytes,
+          ffprobePath,
+          encoderPreference: parseEncoderPreference(
+            process.env.SEYIRLIK_RENDITION_ENCODER,
+          ),
+          onEvent: renderProgress,
+          library: args.library,
+          mediaId: args.mediaId,
+          workerCount: args.workers,
+          allAudioTracks: args.allAudioTracks,
+          dryRun: args.dryRun,
+          signal: abortController.signal,
+        });
+        results.push(...adaptive.results);
+        videoEncoder = adaptive.videoEncoder;
+        hdrVideoEncoder ??= adaptive.hdrVideoEncoder;
+      }
 
       const resultPath = path.join(
         paths.stateRoot,
@@ -601,11 +705,22 @@ async function main() {
           items: report.items.filter((item) => item.mediaId === args.mediaId),
         }
       : report;
-    const results = await validateOutputs(
-      filtered,
-      paths.renditionRoot,
-      ffprobePath,
-    );
+    const resultSets = [];
+    if (args.profile === "legacy" || args.profile === "all") {
+      resultSets.push(
+        await validateOutputs(filtered, paths.renditionRoot, ffprobePath),
+      );
+    }
+    if (args.profile === "adaptive" || args.profile === "all") {
+      resultSets.push(
+        await validateAdaptiveOutputs(
+          filtered,
+          paths.renditionRoot,
+          ffprobePath,
+        ),
+      );
+    }
+    const results = resultSets.flat();
     for (const result of results) {
       console.log(
         `${result.status}\t${result.mediaId}\t${result.relativePath}${result.error ? `\t${result.error}` : ""}`,

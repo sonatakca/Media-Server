@@ -43,6 +43,16 @@ export interface RenditionVideoProbe {
   height: number;
   rotation: number;
   frameRate?: number;
+  /**
+   * Highest rate the container advertises (`r_frame_rate`).
+   *
+   * On a variable-frame-rate source this is well above `frameRate`, and the
+   * difference matters when sizing a GOP: `-g` counts frames, so deriving it
+   * from the average rate makes it fire *before* the time-based forced keyframe
+   * and scatters extra random-access points at positions nothing else agrees
+   * on. Sizing from the ceiling keeps `-g` a bound rather than the authority.
+   */
+  maxFrameRate?: number;
   bitrate?: number;
   bitDepth?: number;
   pixelFormat?: string;
@@ -168,6 +178,9 @@ export function parseRenditionProbe(
       frameRate:
         frameRateValue(videoStream.avg_frame_rate) ??
         frameRateValue(videoStream.r_frame_rate),
+      maxFrameRate:
+        frameRateValue(videoStream.r_frame_rate) ??
+        frameRateValue(videoStream.avg_frame_rate),
       bitrate: numberValue(videoStream.bit_rate),
       bitDepth: bitDepthValue(videoStream),
       pixelFormat: videoStream.pix_fmt,

@@ -316,6 +316,7 @@ export interface PlaybackSourceCandidate {
     | "audio-transcode"
     | "forced-transcode"
     | "server-transcoding-url"
+    | "adaptive-rendition"
     | "direct";
   usingHlsJs?: boolean;
   label: string;

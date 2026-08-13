@@ -7,6 +7,27 @@ import { RENDITION_PROFILE_VERSION } from "./policy";
 export const RENDITION_REGISTRY_SCHEMA_VERSION = 1;
 const FINGERPRINT_SAMPLE_BYTES = 64 * 1024;
 
+const ADAPTIVE_REGISTRY_STATUSES = new Set<AdaptiveRegistryStatus>([
+  "pending",
+  "ready",
+  "failed",
+  "validation-failed",
+  "deferred-for-storage",
+  "incompatible",
+  "interrupted",
+  "stale",
+]);
+
+export type AdaptiveRegistryStatus =
+  | "pending"
+  | "ready"
+  | "failed"
+  | "validation-failed"
+  | "deferred-for-storage"
+  | "incompatible"
+  | "interrupted"
+  | "stale";
+
 export interface RenditionRegistryItem {
   id: string;
   relativePath: string;
@@ -26,6 +47,19 @@ export interface RenditionRegistryItem {
     | "interrupted"
     | "validation-failed";
   lastError?: string;
+  /**
+   * State of this title's adaptive package, tracked alongside the legacy one
+   * rather than replacing it.
+   *
+   * The two generations are independent: a title can have a valid legacy
+   * package and no adaptive package, or both, and a failed adaptive run must
+   * never make the legacy package look unusable. Keeping the adaptive fields
+   * separate is what guarantees that — a single shared `status` would have made
+   * the two overwrite each other on every run.
+   */
+  adaptiveStatus?: AdaptiveRegistryStatus;
+  adaptiveProfileVersion?: string;
+  adaptiveLastError?: string;
 }
 
 export interface RenditionRegistry {
@@ -70,7 +104,13 @@ function isRegistryItem(value: unknown): value is RenditionRegistryItem {
     typeof item.sourceFingerprint === "string" &&
     /^[0-9a-f]{64}$/i.test(item.sourceFingerprint) &&
     typeof item.profileVersion === "string" &&
-    typeof item.lastSeenAt === "string"
+    typeof item.lastSeenAt === "string" &&
+    (item.adaptiveStatus === undefined ||
+      ADAPTIVE_REGISTRY_STATUSES.has(item.adaptiveStatus)) &&
+    (item.adaptiveProfileVersion === undefined ||
+      typeof item.adaptiveProfileVersion === "string") &&
+    (item.adaptiveLastError === undefined ||
+      typeof item.adaptiveLastError === "string")
   );
 }
 
@@ -187,9 +227,12 @@ export function upsertRegistrySource(
   const matchIndex =
     pathMatchIndex >= 0 ? pathMatchIndex : fingerprintMatchIndex;
   const previous = matchIndex >= 0 ? registry.items[matchIndex] : undefined;
+  const sourceFingerprintChanged = Boolean(
+    previous && previous.sourceFingerprint !== source.sourceFingerprint,
+  );
   const sourceChanged = Boolean(
     previous &&
-    (previous.sourceFingerprint !== source.sourceFingerprint ||
+    (sourceFingerprintChanged ||
       previous.profileVersion !== registry.profileVersion),
   );
   const next: RenditionRegistryItem = {
@@ -206,6 +249,23 @@ export function upsertRegistrySource(
       : previous?.lastError
         ? { lastError: previous.lastError }
         : {}),
+    // A changed source invalidates both generations, but only the source
+    // changing does: an ordinary re-analysis must carry the adaptive state
+    // forward untouched, or every run would report every adaptive package as
+    // needing regeneration.
+    ...(sourceFingerprintChanged
+      ? {}
+      : {
+          ...(previous?.adaptiveStatus
+            ? { adaptiveStatus: previous.adaptiveStatus }
+            : {}),
+          ...(previous?.adaptiveProfileVersion
+            ? { adaptiveProfileVersion: previous.adaptiveProfileVersion }
+            : {}),
+          ...(previous?.adaptiveLastError
+            ? { adaptiveLastError: previous.adaptiveLastError }
+            : {}),
+        }),
   };
 
   if (matchIndex >= 0) registry.items.splice(matchIndex, 1, next);

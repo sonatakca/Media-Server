@@ -240,6 +240,17 @@ function planToPlaybackCandidate(
   const qualityManifest = plan.qualityManifest
     ? {
         ...plan.qualityManifest,
+        ...(plan.qualityManifest.adaptive
+          ? {
+              adaptive: {
+                ...plan.qualityManifest.adaptive,
+                playbackUrl: makePlanUrlAbsolute(
+                  baseUrl,
+                  plan.qualityManifest.adaptive.playbackUrl,
+                ),
+              },
+            }
+          : {}),
         qualities: plan.qualityManifest.qualities.map((quality) => ({
           ...quality,
           playbackUrl: makePlanUrlAbsolute(baseUrl, quality.playbackUrl),
@@ -247,16 +258,17 @@ function planToPlaybackCandidate(
       }
     : undefined;
 
+  const adaptive = qualityManifest?.adaptive;
   return {
     id: `custom-${plan.mode}-${plan.delivery.sessionId ?? "file"}`,
     itemId,
     mediaSourceId: plan.mediaId,
     playSessionId: plan.delivery.sessionId,
-    mode: mapMode(plan),
-    url,
-    mimeType: getMimeType(plan),
-    isHls: plan.delivery.type === "hls",
-    hlsKind: mapHlsKind(plan),
+    mode: adaptive ? "DirectPlay" : mapMode(plan),
+    url: adaptive?.playbackUrl ?? url,
+    mimeType: adaptive?.mimeType ?? getMimeType(plan),
+    isHls: Boolean(adaptive) || plan.delivery.type === "hls",
+    hlsKind: adaptive ? "adaptive-rendition" : mapHlsKind(plan),
     label: `Custom ${plan.mode}`,
     mediaSource: buildSyntheticMediaSource(plan),
     playbackDiagnostics: plan.diagnostics,

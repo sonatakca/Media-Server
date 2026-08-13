@@ -30,6 +30,16 @@ import {
 import type { RenditionHdrPolicy } from "./encoding";
 import type { RenditionProgressReporter } from "./progress";
 import { inspectCompletedRendition } from "./validation";
+import {
+  estimateAdaptivePackageBytes,
+  planAudioRenditions,
+} from "./adaptive/packager";
+import {
+  inspectAdaptivePackage,
+  type AdaptiveInspectionStatus,
+} from "./adaptive/inspect";
+import { ADAPTIVE_PROFILE_VERSION } from "./adaptive/profile";
+import { SEGMENT_TARGET_SECONDS } from "../lib/playback-planner/gopPolicy";
 
 export interface RenditionPaths {
   mediaRoot: string;
@@ -65,6 +75,26 @@ export interface RenditionAnalysisItem {
   requiredHeights: number[];
   jobs: PlannedRenditionJob[];
   error?: string;
+  /**
+   * The adaptive package's state, reported alongside the legacy one rather than
+   * instead of it. A title with a valid legacy package and no adaptive package
+   * is playable today and a candidate for regeneration — two facts that a
+   * single status field cannot express.
+   */
+  adaptive: {
+    status: AdaptiveInspectionStatus;
+    /** False when the source cannot join an adaptive switching set at all. */
+    eligible: boolean;
+    reason?: string;
+    estimatedVideoBytes: number;
+    estimatedAudioBytes: number;
+    estimatedTotalBytes: number;
+    /** Media files the package will consist of, for the file-count budget. */
+    expectedFileCount: number;
+    /** Two-second segments a full playthrough would request. */
+    expectedSegmentCount: number;
+    isHdr: boolean;
+  };
 }
 
 export interface RenditionAnalysisReport {
@@ -97,6 +127,33 @@ export interface RenditionAnalysisReport {
     missingByHeight: Record<"480" | "720" | "1080", number>;
     sourceBytesByLibrary: Record<string, number>;
     estimatedOutputBytesByLibrary: Record<string, number>;
+  };
+  /**
+   * The migration picture: how much of the library each generation covers, and
+   * what completing the adaptive generation would cost.
+   */
+  adaptive: {
+    profileVersion: string;
+    segmentTargetSeconds: number;
+    legacyValidTitleCount: number;
+    adaptiveValidTitleCount: number;
+    titlesRequiringAdaptiveGeneration: number;
+    incompatibleTitleCount: number;
+    staleAdaptiveTitleCount: number;
+    sdrPackageCount: number;
+    hdrPackageCount: number;
+    estimatedVideoBytes: number;
+    estimatedSharedAudioBytes: number;
+    estimatedTotalBytes: number;
+    /**
+     * Peak extra space while both generations exist. Legacy output is never
+     * deleted implicitly, so a migration needs room for both at once.
+     */
+    temporaryMigrationOverheadBytes: number;
+    expectedPackageCount: number;
+    expectedMediaFileCount: number;
+    expectedSegmentRequestCount: number;
+    titlesDeferredForStorage: number;
   };
   storage: StorageSchedule & {
     driveTotalBytes: number;
@@ -299,7 +356,46 @@ export async function analyseRenditionLibrary({
                 ? "already-valid"
                 : "ready"
               : "pending";
+      const adaptiveInspection = await inspectAdaptivePackage({
+        mediaRoot: path.join(paths.renditionRoot, registryItem.id),
+        mediaId: registryItem.id,
+        sourceFingerprint: fingerprint,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+      });
+      const audioPlan = planAudioRenditions(mediaProbe);
+      const adaptiveEligible =
+        required.length > 0 && audioPlan.outputs.length > 0;
+      const adaptiveReason =
+        required.length === 0
+          ? "The source is not larger than the smallest adaptive rung."
+          : audioPlan.outputs.length === 0
+            ? "The source has no audio stream."
+            : adaptiveInspection.reason;
+      const adaptiveNeedsGeneration =
+        adaptiveEligible && adaptiveInspection.status !== "ready";
+      const adaptiveEstimate = adaptiveNeedsGeneration
+        ? estimateAdaptivePackageBytes({
+            durationSeconds: mediaProbe.durationSeconds,
+            qualityHeights: required.map(
+              (requirement) => requirement.qualityHeight,
+            ),
+            codecFamily,
+            audioTrackCount: audioPlan.outputs.length,
+          })
+        : { videoBytes: 0, audioBytes: 0, totalBytes: 0 };
+      const adaptiveStatus: AdaptiveInspectionStatus = adaptiveEligible
+        ? adaptiveInspection.status
+        : "missing";
+
       registryItem.status = status;
+      registryItem.adaptiveStatus = adaptiveEligible
+        ? adaptiveStatus === "missing"
+          ? "pending"
+          : adaptiveStatus
+        : "incompatible";
+      registryItem.adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION;
+      if (adaptiveReason) registryItem.adaptiveLastError = adaptiveReason;
+      else delete registryItem.adaptiveLastError;
       items.push({
         mediaId: registryItem.id,
         relativePath: source.relativePath,
@@ -313,6 +409,21 @@ export async function analyseRenditionLibrary({
         existingHeights: [...existingHeights].sort((a, b) => a - b),
         requiredHeights: [...requiredHeights].sort((a, b) => a - b),
         jobs,
+        adaptive: {
+          status: adaptiveStatus,
+          eligible: adaptiveEligible,
+          ...(adaptiveReason ? { reason: adaptiveReason } : {}),
+          estimatedVideoBytes: adaptiveEstimate.videoBytes,
+          estimatedAudioBytes: adaptiveEstimate.audioBytes,
+          estimatedTotalBytes: adaptiveEstimate.totalBytes,
+          expectedFileCount: adaptiveEligible
+            ? required.length * 2 + audioPlan.outputs.length * 2 + 2
+            : 0,
+          expectedSegmentCount: adaptiveEligible
+            ? Math.ceil(mediaProbe.durationSeconds / SEGMENT_TARGET_SECONDS) * 2
+            : 0,
+          isHdr: mediaProbe.video.isHdr,
+        },
         ...(existing.reason ? { error: existing.reason } : {}),
       });
     } catch (error) {
@@ -324,6 +435,9 @@ export async function analyseRenditionLibrary({
       });
       registryItem.status = "failed";
       registryItem.lastError = safeErrorMessage(error);
+      registryItem.adaptiveStatus = "incompatible";
+      registryItem.adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION;
+      registryItem.adaptiveLastError = safeErrorMessage(error);
       items.push({
         mediaId: registryItem.id,
         relativePath: source.relativePath,
@@ -335,6 +449,17 @@ export async function analyseRenditionLibrary({
         existingHeights: [],
         requiredHeights: [],
         jobs: [],
+        adaptive: {
+          status: "missing",
+          eligible: false,
+          reason: safeErrorMessage(error),
+          estimatedVideoBytes: 0,
+          estimatedAudioBytes: 0,
+          estimatedTotalBytes: 0,
+          expectedFileCount: 0,
+          expectedSegmentCount: 0,
+          isHdr: false,
+        },
         error: safeErrorMessage(error),
       });
     }
@@ -428,6 +553,38 @@ export async function analyseRenditionLibrary({
   );
   const completePlanPeakRequiredBytes =
     completePlanConservativeFinalBytes + completePlanTemporaryPeakBytes;
+  const adaptiveCandidates = items.filter(
+    (item) => item.adaptive.eligible && item.adaptive.status !== "ready",
+  );
+  const adaptiveEstimatedVideoBytes = adaptiveCandidates.reduce(
+    (total, item) => total + item.adaptive.estimatedVideoBytes,
+    0,
+  );
+  const adaptiveEstimatedSharedAudioBytes = adaptiveCandidates.reduce(
+    (total, item) => total + item.adaptive.estimatedAudioBytes,
+    0,
+  );
+  const adaptiveEstimatedTotalBytes = adaptiveCandidates.reduce(
+    (total, item) => total + item.adaptive.estimatedTotalBytes,
+    0,
+  );
+  let adaptiveBudgetBytes = Math.max(
+    0,
+    actualDriveSpace.freeBytes - configuredReserve,
+  );
+  let titlesDeferredForStorage = 0;
+  for (const item of [...adaptiveCandidates].sort(
+    (left, right) =>
+      left.adaptive.estimatedTotalBytes - right.adaptive.estimatedTotalBytes ||
+      left.relativePath.localeCompare(right.relativePath),
+  )) {
+    const conservative = Math.ceil(
+      item.adaptive.estimatedTotalBytes * (1 + DEFAULT_STORAGE_SAFETY_MARGIN),
+    );
+    if (conservative <= adaptiveBudgetBytes)
+      adaptiveBudgetBytes -= conservative;
+    else titlesDeferredForStorage += 1;
+  }
   const report: RenditionAnalysisReport = {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
@@ -462,6 +619,43 @@ export async function analyseRenditionLibrary({
       missingByHeight,
       sourceBytesByLibrary,
       estimatedOutputBytesByLibrary,
+    },
+    adaptive: {
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      segmentTargetSeconds: SEGMENT_TARGET_SECONDS,
+      legacyValidTitleCount: items.filter((item) =>
+        ["ready", "already-valid"].includes(item.status),
+      ).length,
+      adaptiveValidTitleCount: items.filter(
+        (item) => item.adaptive.status === "ready",
+      ).length,
+      titlesRequiringAdaptiveGeneration: adaptiveCandidates.length,
+      incompatibleTitleCount: items.filter((item) => !item.adaptive.eligible)
+        .length,
+      staleAdaptiveTitleCount: items.filter(
+        (item) => item.adaptive.status === "stale",
+      ).length,
+      sdrPackageCount: items.filter(
+        (item) => item.adaptive.eligible && !item.adaptive.isHdr,
+      ).length,
+      hdrPackageCount: items.filter(
+        (item) => item.adaptive.eligible && item.adaptive.isHdr,
+      ).length,
+      estimatedVideoBytes: adaptiveEstimatedVideoBytes,
+      estimatedSharedAudioBytes: adaptiveEstimatedSharedAudioBytes,
+      estimatedTotalBytes: adaptiveEstimatedTotalBytes,
+      temporaryMigrationOverheadBytes: adaptiveEstimatedTotalBytes,
+      expectedPackageCount: items.filter((item) => item.adaptive.eligible)
+        .length,
+      expectedMediaFileCount: items.reduce(
+        (total, item) => total + item.adaptive.expectedFileCount,
+        0,
+      ),
+      expectedSegmentRequestCount: items.reduce(
+        (total, item) => total + item.adaptive.expectedSegmentCount,
+        0,
+      ),
+      titlesDeferredForStorage,
     },
     storage: {
       ...schedule,
@@ -507,6 +701,10 @@ export function formatAnalysisReport(report: RenditionAnalysisReport): string {
     `Complete plan fits: ${report.storage.completePlanFits ? "yes" : "no"}`,
     `Selected titles: ${report.selectedMediaIds.length}; deferred titles: ${report.deferredMediaIds.length}`,
     `Scheduling policy: ${report.policy.scheduling}`,
+    `Adaptive profile: ${report.adaptive.profileVersion}; aligned ${report.adaptive.segmentTargetSeconds}s CMAF/HLS`,
+    `Adaptive coverage: ${report.adaptive.adaptiveValidTitleCount}/${report.adaptive.expectedPackageCount} eligible titles; generation needed: ${report.adaptive.titlesRequiringAdaptiveGeneration}; incompatible: ${report.adaptive.incompatibleTitleCount}`,
+    `Adaptive migration estimate: ${formatBytes(report.adaptive.estimatedTotalBytes)} (${formatBytes(report.adaptive.estimatedVideoBytes)} video + ${formatBytes(report.adaptive.estimatedSharedAudioBytes)} shared audio)`,
+    `Adaptive storage deferrals: ${report.adaptive.titlesDeferredForStorage}; media files after completion: ${report.adaptive.expectedMediaFileCount}`,
     "No rendition processing was started.",
   ];
   return lines.join("\n");

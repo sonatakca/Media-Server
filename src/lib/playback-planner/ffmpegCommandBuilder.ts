@@ -1,4 +1,9 @@
 import { join } from "node:path";
+import {
+  buildGopArgs,
+  SEGMENT_TARGET_SECONDS,
+  type GopEncoderFamily,
+} from "./gopPolicy";
 import type { FfmpegRuntimeProfile, H264VideoEncoder } from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
@@ -21,9 +26,8 @@ interface VideoEncoderPreset {
   args: string[];
 }
 
-const HLS_VIDEO_SEGMENT_SECONDS = 2;
+const HLS_VIDEO_SEGMENT_SECONDS = SEGMENT_TARGET_SECONDS;
 const HLS_COPY_SEGMENT_SECONDS = 4;
-const DEFAULT_VIDEO_FRAMERATE = 30;
 
 function getTargetVideoBitrate(
   media: MediaAnalysis,
@@ -69,40 +73,32 @@ function getRateControlArgs(
   ];
 }
 
+/**
+ * The two-second random-access policy, taken from the shared definition.
+ *
+ * The live path and the offline packager must cut on the same instants, so the
+ * arithmetic and the encoder-specific flags live in `gopPolicy` rather than
+ * being restated here. `-pix_fmt yuv420p` stays local: it is a live-transcode
+ * compatibility choice, not part of the keyframe policy.
+ */
 function getVideoTranscodeGopArgs(
   media: MediaAnalysis,
   videoStreamIndex: number,
-): {
-  common: string[];
-  softwareOnly: string[];
-} {
+  encoder: H264VideoEncoder,
+): string[] {
   const video =
     media.videoStreams.find((stream) => stream.index === videoStreamIndex) ??
     media.videoStreams[0];
 
-  const sourceFramerate =
-    typeof video?.framerate === "number" &&
-    Number.isFinite(video.framerate) &&
-    video.framerate > 0
-      ? video.framerate
-      : DEFAULT_VIDEO_FRAMERATE;
-
-  const gopSize = Math.max(
-    1,
-    Math.round(sourceFramerate * HLS_VIDEO_SEGMENT_SECONDS),
-  );
-
-  return {
-    common: [
-      "-g",
-      String(gopSize),
-      "-force_key_frames",
-      `expr:gte(t,n_forced*${HLS_VIDEO_SEGMENT_SECONDS})`,
-      "-pix_fmt",
-      "yuv420p",
-    ],
-    softwareOnly: ["-keyint_min", String(gopSize), "-sc_threshold", "0"],
-  };
+  return [
+    ...buildGopArgs({
+      encoder: encoder as GopEncoderFamily,
+      frameRate: video?.framerate,
+      segmentSeconds: HLS_VIDEO_SEGMENT_SECONDS,
+    }),
+    "-pix_fmt",
+    "yuv420p",
+  ];
 }
 
 function selectVideoEncoder(
@@ -112,7 +108,7 @@ function selectVideoEncoder(
   softwareThreads: number,
 ): VideoEncoderPreset {
   const rateControlArgs = getRateControlArgs(media, videoStreamIndex);
-  const gopArgs = getVideoTranscodeGopArgs(media, videoStreamIndex);
+  const gopArgs = getVideoTranscodeGopArgs(media, videoStreamIndex, encoder);
 
   switch (encoder) {
     case "h264_videotoolbox":
@@ -126,7 +122,7 @@ function selectVideoEncoder(
           "-allow_sw",
           "0",
           ...rateControlArgs,
-          ...gopArgs.common,
+          ...gopArgs,
         ],
       };
 
@@ -143,7 +139,7 @@ function selectVideoEncoder(
           "-rc",
           "vbr",
           ...rateControlArgs,
-          ...gopArgs.common,
+          ...gopArgs,
         ],
       };
 
@@ -158,7 +154,7 @@ function selectVideoEncoder(
           "-async_depth",
           "4",
           ...rateControlArgs,
-          ...gopArgs.common,
+          ...gopArgs,
         ],
       };
 
@@ -175,7 +171,7 @@ function selectVideoEncoder(
           "-rc",
           "vbr_peak",
           ...rateControlArgs,
-          ...gopArgs.common,
+          ...gopArgs,
         ],
       };
 
@@ -192,8 +188,7 @@ function selectVideoEncoder(
           "zerolatency",
           "-threads",
           String(Math.max(1, softwareThreads)),
-          ...gopArgs.softwareOnly,
-          ...gopArgs.common,
+          ...gopArgs,
         ],
       };
   }

@@ -7,6 +7,10 @@ const hlsMock = vi.hoisted(() => ({
     destroy: ReturnType<typeof vi.fn>;
     loadSource: ReturnType<typeof vi.fn>;
     on: ReturnType<typeof vi.fn>;
+    autoLevelCapping: number;
+    currentLevel: number;
+    loadLevel: number;
+    levels: Array<{ width: number; height: number; bitrate: number }>;
     trigger: (event: string, data?: unknown) => void;
   }>,
   isSupported: vi.fn(() => true),
@@ -27,9 +31,12 @@ vi.mock("hls.js", () => {
 
     autoLevelCapping = -1;
     currentLevel = -1;
-    levels = [];
+    loadLevel = -1;
+    levels: Array<{ width: number; height: number; bitrate: number }> = [];
     nextLevel = -1;
     startLevel = -1;
+    audioTrack = -1;
+    audioTracks: Array<{ name: string; url?: string }> = [];
     handlers = new Map<
       string,
       Array<(event: string, data?: unknown) => void>
@@ -155,5 +162,37 @@ describe("videoSource", () => {
     const video = createVideo("probably");
 
     expect(shouldUseNativeHls(video)).toBe(true);
+  });
+
+  it("switches only future fragments and returns to ABR without flushing the current level", () => {
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const onAdaptiveLevelChanged = vi.fn();
+    const attachment = attachSourceToVideo(
+      createVideo(""),
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+      { onAdaptiveLevelChanged },
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [
+      { width: 854, height: 480, bitrate: 1_500_000 },
+      { width: 1280, height: 720, bitrate: 3_000_000 },
+      { width: 1920, height: 1080, bitrate: 6_000_000 },
+    ];
+    hls.trigger("manifestParsed", {});
+
+    attachment.adaptiveController?.setQualityHeight(720, 720);
+    expect(hls.loadLevel).toBe(1);
+    expect(hls.autoLevelCapping).toBe(1);
+    expect(hls.currentLevel).toBe(-1);
+
+    hls.trigger("levelSwitched", { level: 1 });
+    expect(onAdaptiveLevelChanged).toHaveBeenCalledWith(720);
+
+    attachment.adaptiveController?.setQualityHeight(null, null);
+    expect(hls.loadLevel).toBe(-1);
+    expect(hls.autoLevelCapping).toBe(-1);
+    expect(hls.currentLevel).toBe(-1);
   });
 });

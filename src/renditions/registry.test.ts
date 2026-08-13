@@ -98,4 +98,29 @@ describe("persistent rendition registry", () => {
     expect(registry.items).toHaveLength(1);
     expect(registry.items[0]?.relativePath).toBe("Movies/moved.mkv");
   });
+
+  it("preserves adaptive readiness when only the legacy profile changes", () => {
+    const registry = createEmptyRenditionRegistry();
+    const fingerprint = "a".repeat(64);
+    const first = upsertRegistrySource(registry, {
+      relativePath: "Movies/film.mkv",
+      size: 10,
+      mtimeMs: 1,
+      sourceFingerprint: fingerprint,
+    });
+    first.adaptiveStatus = "ready";
+    first.adaptiveProfileVersion = "cmaf-hls-aligned-v1";
+    registry.profileVersion = "future-legacy-profile";
+
+    const updated = upsertRegistrySource(registry, {
+      relativePath: "Movies/film.mkv",
+      size: 10,
+      mtimeMs: 1,
+      sourceFingerprint: fingerprint,
+    });
+
+    expect(updated.status).toBe("stale");
+    expect(updated.adaptiveStatus).toBe("ready");
+    expect(updated.adaptiveProfileVersion).toBe("cmaf-hls-aligned-v1");
+  });
 });
