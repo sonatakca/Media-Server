@@ -510,4 +510,49 @@ describe("seamless rendition handoff in a real browser", () => {
     // Only one deck may be audible, and the outgoing one gave audio up.
     expect(before.muted).toBe(true);
   });
+
+  it("keeps a manual handoff alive when Auto reviews during preparation", async () => {
+    const harness = await mountPlayingAt720p();
+    const stopSampling = harness.startSampling();
+
+    // Start the viewer's pick, then simulate an Auto review in the same turn —
+    // before React has even had a chance to render the preparing state. This is
+    // the narrow race that used to supersede the manual request. Its late
+    // cleanup could then pause and clear the deck the replacement promoted.
+    const manual = harness.requestSwitch({
+      url: SOURCES.q1080,
+      toQualityId: "q1080-manual",
+      toHeight: 1080,
+      fromQualityId: "q720",
+      fromHeight: 720,
+      isManual: true,
+    });
+    const auto = await harness.requestSwitch({
+      url: SOURCES.q720,
+      toQualityId: "q720-auto",
+      toHeight: 720,
+      fromQualityId: "q720",
+      fromHeight: 720,
+      isManual: false,
+    });
+    const manualOutcome = await manual;
+
+    await waitFor(() => harness.getActiveVideo()?.videoHeight === 1080);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    stopSampling();
+
+    const active = harness.getActiveVideo();
+    expect(auto).toBe("superseded");
+    expect(manualOutcome, describeOutcome(harness)).toBe("promoted");
+    expect(active?.currentSrc).toContain("1080p.mp4");
+    expect(active?.paused).toBe(false);
+    expect(harness.recording.pauseEvents).toBe(0);
+    expect(harness.recording.emptiedEvents).toBe(0);
+    expect(harness.recording.samples.every((entry) => entry.duration > 0)).toBe(
+      true,
+    );
+    expect(
+      harness.recording.samples.every((entry) => entry.isVisibleFramePainted),
+    ).toBe(true);
+  });
 });

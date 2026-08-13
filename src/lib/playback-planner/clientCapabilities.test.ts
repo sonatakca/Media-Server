@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { buildClientCapabilities } from "./clientCapabilities";
+import {
+  buildClientCapabilities,
+  videoOnlyContentType,
+} from "./clientCapabilities";
 
 const originalMediaCapabilitiesDescriptor = Object.getOwnPropertyDescriptor(
   navigator,
@@ -46,7 +49,9 @@ describe("buildClientCapabilities", () => {
 
     const capabilitiesPromise = buildClientCapabilities();
 
-    expect(decodingInfo).toHaveBeenCalledTimes(13);
+    // Seven video probes, each asked both the combined and the video-only way,
+    // plus six audio probes — all dispatched before the first await resolves.
+    expect(decodingInfo).toHaveBeenCalledTimes(20);
 
     const capabilities = await capabilitiesPromise;
     expect(capabilities.video.h264?.supported).toBe(true);
@@ -103,5 +108,96 @@ describe("buildClientCapabilities", () => {
 
     expect(capabilities.video.h264?.supported).toBe(true);
     expect(capabilities.video.h264?.supports10Bit).toBe(false);
+  });
+});
+
+describe("videoOnlyContentType", () => {
+  it("drops the audio codec from a combined content type", () => {
+    expect(
+      videoOnlyContentType('video/mp4; codecs="avc1.640028, mp4a.40.2"'),
+    ).toBe('video/mp4; codecs="avc1.640028"');
+    expect(
+      videoOnlyContentType('video/mp4; codecs="hvc1.2.4.L153.B0, mp4a.40.2"'),
+    ).toBe('video/mp4; codecs="hvc1.2.4.L153.B0"');
+  });
+
+  it("leaves a type that already names only a video codec alone", () => {
+    expect(videoOnlyContentType('video/mp4; codecs="av01.0.08M.08"')).toBe(
+      'video/mp4; codecs="av01.0.08M.08"',
+    );
+    expect(videoOnlyContentType("video/mp4")).toBe("video/mp4");
+  });
+
+  it("leaves a type naming no recognisable video codec alone", () => {
+    expect(videoOnlyContentType('audio/mp4; codecs="mp4a.40.2"')).toBe(
+      'audio/mp4; codecs="mp4a.40.2"',
+    );
+  });
+});
+
+describe("decodingInfo queries", () => {
+  it("keeps a browser's combined-form answers when it answers them", async () => {
+    // Safari answers the combined form correctly, including refusing 10-bit
+    // H.264 that `canPlayType` wrongly calls playable. Its results must survive
+    // untouched — the Chrome workaround must not become a second source of
+    // truth that overrides a browser that was already right.
+    const decodingInfo = vi.fn(async (config: MediaDecodingConfiguration) => ({
+      supported: !/avc1\.6E/.test(config.video?.contentType ?? ""),
+      smooth: true,
+      powerEfficient: true,
+    }));
+
+    Object.defineProperty(navigator, "mediaCapabilities", {
+      configurable: true,
+      value: { decodingInfo },
+    });
+
+    const capabilities = await buildClientCapabilities();
+
+    expect(capabilities.video.h264?.supported).toBe(true);
+    expect(capabilities.video.hevc?.supported).toBe(true);
+    // 10-bit H.264 was refused by one probe and allowed by the others, so the
+    // merged answer stays true — what matters is that the refusal was heard at
+    // all rather than replaced by the video-only query.
+    const calls = decodingInfo.mock.calls
+      .map(([config]) => config.video?.contentType)
+      .filter((type): type is string => Boolean(type));
+    expect(calls.some((type) => /mp4a/.test(type))).toBe(true);
+  });
+
+  it("falls back to the video-only answer when a browser rejects every combined query", async () => {
+    // Chrome answers `supported: false` for a video content type that also
+    // names an audio codec — for every codec, H.264 included. Because
+    // `decodingInfo` is authoritative here, that reported the client as unable
+    // to decode anything, and the server then withheld every pre-generated
+    // rendition: the quality picker offered only the original in Chrome while
+    // Safari, which is lenient about the combined type, showed the full ladder.
+    const decodingInfo = vi.fn(async (config: MediaDecodingConfiguration) => ({
+      supported: !/mp4a|opus|ac-3|ec-3|flac/.test(
+        config.video?.contentType ?? "",
+      ),
+      smooth: true,
+      powerEfficient: true,
+    }));
+
+    Object.defineProperty(navigator, "mediaCapabilities", {
+      configurable: true,
+      value: { decodingInfo },
+    });
+
+    const capabilities = await buildClientCapabilities();
+
+    // Audio probes call the same API without a video member; only the video
+    // queries are under test here.
+    const videoQueries = decodingInfo.mock.calls
+      .map(([config]) => config.video?.contentType)
+      .filter((contentType): contentType is string => Boolean(contentType));
+
+    // Both forms are asked; the video-only one is what rescues this browser.
+    expect(
+      videoQueries.some((contentType) => !/mp4a|opus/.test(contentType)),
+    ).toBe(true);
+    expect(capabilities.video.h264?.supported).toBe(true);
+    expect(capabilities.video.hevc?.supported).toBe(true);
   });
 });

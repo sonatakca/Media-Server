@@ -25,6 +25,8 @@ export interface CompleteFileQualityControls {
   advancedOptions: PlaybackQualityOption[];
   /** Identifier of the quality Advanced is currently locked to, when locked. */
   lockedQualityId?: string;
+  /** The rendition a switch is currently preparing, if any. */
+  preparingQualityId?: string;
   limitationsText?: string;
   noticeText?: string;
   onSelectMode: (mode: AutomaticQualityMode) => void;

@@ -151,6 +151,7 @@ import type {
   TouchSeekSessionState,
   TouchSeekSide,
 } from "./types";
+import { ActiveSourceBadge } from "./ActiveSourceBadge";
 import { useSeekFeedback } from "./useSeekFeedback";
 import {
   HANDOFF_CROSSFADE_MS,
@@ -341,8 +342,12 @@ export function CustomVideoPlayer({
   const activeDeckElementRef = useRef<() => HTMLVideoElement | null>(
     () => null,
   );
+  const handleDeckRolledBackRef = useRef<
+    (info: { restoredQualityId: string | null; deckId: DeckId }) => void
+  >(() => {});
   const deck = useSeamlessQualitySwitch({
     onPromoted: (commit) => handleDeckPromotedRef.current(commit),
+    onRolledBack: (info) => handleDeckRolledBackRef.current(info),
     /**
      * Read from the element rather than from React state: at the instant of a
      * handoff, state may still be a render behind what the viewer has just
@@ -369,6 +374,26 @@ export function CustomVideoPlayer({
   const videoRef = deck.videoRef;
   const deckEpoch = deck.deckEpoch;
   activeDeckElementRef.current = () => videoRef.current;
+  /**
+   * Pulled out individually because `deck` itself is a fresh object on every
+   * render, and effects here depend on these.
+   *
+   * Depending on `deck` made the source-attach effect tear the element down and
+   * re-attach it on every single render — and since that effect calls
+   * `setActiveSource`, it re-triggered itself forever. The video was reloaded
+   * continuously and never reached metadata. Each of these is a stable
+   * `useCallback` from the controller, so depending on them is honest.
+   */
+  const {
+    deckRefs,
+    getDeckElement,
+    isActiveDeckElement,
+    isRetainedDeckElement,
+    isBackedOff: isQualityBackedOff,
+    requestSwitch: requestDeckSwitch,
+    cancelSwitch: cancelDeckSwitch,
+    notifyActiveSeek,
+  } = deck;
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
   /**
    * Set during a promotion so the source-attach effect recognises that the deck
@@ -1413,7 +1438,7 @@ export function CustomVideoPlayer({
       // A title change is not a rendition handoff. Anything the deck controller
       // had in flight was prepared against the old timeline and must not be
       // allowed to promote onto the new one.
-      deck.cancelSwitch("title-change");
+      cancelDeckSwitch("title-change");
       seamlessAdoptionRef.current = null;
       latestPlaybackPositionRef.current = 0;
       hasReportedStoppedRef.current = false;
@@ -1988,7 +2013,7 @@ export function CustomVideoPlayer({
       selectedFile: AvailableQualityFile,
       nextSource: PlaybackSourceCandidate,
     ) => {
-      const standby = deck.getDeckElement(deck.standbyDeckId);
+      const standby = getDeckElement(deck.standbyDeckId);
       const currentQuality = activeQualityFileId;
       const mimeType = nextSource.mimeType ?? "video/mp4";
 
@@ -2023,7 +2048,8 @@ export function CustomVideoPlayer({
       activeSource.itemId,
       activeSource.mediaSourceId,
       activeSource.mode,
-      deck,
+      deck.standbyDeckId,
+      getDeckElement,
       partyWatch.isApplyingRemoteCommand,
       selectedAudioStreamIndex,
     ],
@@ -2106,7 +2132,7 @@ export function CustomVideoPlayer({
       }
 
       const isManual = options.isManual ?? preference.mode !== "auto";
-      const outcome = await deck.requestSwitch({
+      const outcome = await requestDeckSwitch({
         url: nextSource.url,
         toQualityId: selectedFile.id,
         toHeight: selectedFile.height,
@@ -2130,8 +2156,8 @@ export function CustomVideoPlayer({
       activeSource.id,
       buildQualityFileSource,
       canHandOffSeamlessly,
-      deck,
       persistQualityPreference,
+      requestDeckSwitch,
       replaceSourceForQualityFile,
       t,
     ],
@@ -2174,8 +2200,47 @@ export function CustomVideoPlayer({
     [availableQualityFiles, buildQualityFileSource],
   );
 
+  /**
+   * Puts the committed source back when a promotion is undone.
+   *
+   * The restored deck still holds the previous quality's bytes and is playing
+   * them, so this marks it as adopted: the attach effect then rebinds listeners
+   * instead of re-attaching a URL, exactly as it does for a promotion.
+   */
+  const handleDeckRolledBack = useCallback(
+    ({
+      restoredQualityId,
+      deckId,
+    }: {
+      restoredQualityId: string | null;
+      deckId: DeckId;
+    }) => {
+      const restoredFile = restoredQualityId
+        ? availableQualityFiles.find(
+            (quality) => quality.id === restoredQualityId,
+          )
+        : undefined;
+      const restoredElement = deck.getDeckElement(deckId);
+      const restoredUrl = restoredElement?.currentSrc;
+
+      if (!restoredFile || !restoredUrl) return;
+
+      const restoredSource = buildQualityFileSource(restoredFile);
+      seamlessAdoptionRef.current = {
+        sourceId: restoredSource.id,
+        url: restoredUrl,
+        deckId,
+      };
+      setActiveQualityFileId(restoredQualityId);
+      setActiveSource({ ...restoredSource, url: restoredUrl });
+      setQualitySelectionNotice(t("player.qualitySwitchFailedReturnAuto"));
+    },
+    [availableQualityFiles, buildQualityFileSource, deck, t],
+  );
+
   useEffect(() => {
     handleDeckPromotedRef.current = handleDeckPromoted;
+    handleDeckRolledBackRef.current = handleDeckRolledBack;
   });
 
   /**
@@ -2422,7 +2487,7 @@ export function CustomVideoPlayer({
       if (!candidate || candidate.id === activeQualityFile.id) return;
       // A rung that just failed to prepare is left alone for a while rather
       // than retried on every review tick.
-      if (deck.isBackedOff(candidate.id)) return;
+      if (isQualityBackedOff(candidate.id)) return;
       const now = Date.now();
       if (
         !shouldSwitchFileQuality({
@@ -2521,10 +2586,16 @@ export function CustomVideoPlayer({
           : undefined,
       },
       advancedOptions: advancedQualityOptions,
+      // The tick belongs on what the viewer asked for, not on what happens to
+      // be decoding. A handoff can take a long time on a slow link, and marking
+      // the old rung during it reads as "your click did nothing". While a
+      // switch is preparing the pending rung is ticked; if it fails, the tick
+      // falls back to whatever is actually playing.
       lockedQualityId:
-        fileQualityMode === "advanced" && activeQualityFile
-          ? activeQualityFile.id
+        fileQualityMode === "advanced"
+          ? (deck.pendingQualityId ?? activeQualityFile?.id)
           : undefined,
+      preparingQualityId: deck.pendingQualityId ?? undefined,
       limitationsText:
         activeQualityFile?.kind === "generated"
           ? t("player.qualityCompleteFileLimitations")
@@ -3763,7 +3834,7 @@ export function CustomVideoPlayer({
       // The deck the controller is holding for rollback keeps its source until
       // the promoted deck has proved stable. Clearing it here would remove the
       // only thing a rollback has to fall back to.
-      if (deck.isRetainedDeckElement(video)) {
+      if (isRetainedDeckElement(video)) {
         return;
       }
 
@@ -3784,9 +3855,9 @@ export function CustomVideoPlayer({
     activeSource.mode,
     activeSource.url,
     clearAudioTranscodeReadinessTimer,
-    deck,
     deckEpoch,
     initialStartSeconds,
+    isRetainedDeckElement,
     onVideoFailure,
     onVideoRecovery,
     partyWatch.shouldDeferAutoplay,
@@ -3992,7 +4063,7 @@ export function CustomVideoPlayer({
   type DeckMediaEvent = { currentTarget: EventTarget };
 
   const handleVideoPlay = (event: DeckMediaEvent) => {
-    if (!deck.isActiveDeckElement(event.currentTarget)) return;
+    if (!isActiveDeckElement(event.currentTarget)) return;
 
     if (!hasStartedRef.current) {
       hasStartedRef.current = true;
@@ -4004,28 +4075,28 @@ export function CustomVideoPlayer({
     // The outgoing deck is paused as part of every handoff. By then it is no
     // longer the active deck, so this correctly reads as machinery rather than
     // as the viewer reaching for the space bar.
-    if (!deck.isActiveDeckElement(event.currentTarget)) return;
+    if (!isActiveDeckElement(event.currentTarget)) return;
 
     reportPlaybackProgressCheckpoint(true, true);
   };
 
   const handleVideoSeeked = (event: DeckMediaEvent) => {
-    if (!deck.isActiveDeckElement(event.currentTarget)) return;
+    if (!isActiveDeckElement(event.currentTarget)) return;
 
     // A standby prepared for where the viewer used to be must never be
     // promoted there.
-    deck.notifyActiveSeek();
+    notifyActiveSeek();
     reportPlaybackProgressCheckpoint(videoRef.current?.paused ?? false, true);
   };
 
   const handleTimeUpdate = (event: DeckMediaEvent) => {
-    if (!deck.isActiveDeckElement(event.currentTarget)) return;
+    if (!isActiveDeckElement(event.currentTarget)) return;
 
     reportPlaybackProgressCheckpoint(false);
   };
 
   const handleVideoError = (event: DeckMediaEvent) => {
-    if (!deck.isActiveDeckElement(event.currentTarget)) return;
+    if (!isActiveDeckElement(event.currentTarget)) return;
 
     const video = videoRef.current;
 
@@ -4660,7 +4731,7 @@ export function CustomVideoPlayer({
         return (
           <video
             key={deckId}
-            ref={deck.deckRefs[deckId]}
+            ref={deckRefs[deckId]}
             data-deck={deckId}
             data-deck-role={isActiveDeck ? "active" : "standby"}
             controls={false}
@@ -4685,12 +4756,12 @@ export function CustomVideoPlayer({
             onWaiting={(event) => {
               // Standby buffering is not the viewer waiting, and must not
               // reveal the chrome or count as an Auto-quality stall.
-              if (!deck.isActiveDeckElement(event.currentTarget)) return;
+              if (!isActiveDeckElement(event.currentTarget)) return;
               revealPlayerChrome();
             }}
             onError={handleVideoError}
             onEnded={(event) => {
-              if (!deck.isActiveDeckElement(event.currentTarget)) return;
+              if (!isActiveDeckElement(event.currentTarget)) return;
               const positionSeconds = updateLatestPlaybackPosition();
               onPlaybackProgress?.(positionSeconds, true);
               reportStoppedOnce(false);
@@ -4699,6 +4770,26 @@ export function CustomVideoPlayer({
           />
         );
       })}
+
+      {/*
+        Development-only readout of which media is genuinely on screen. A
+        handoff is invisible by design, so without this there is no way to tell
+        a switch that worked from one that silently declined.
+      */}
+      {import.meta.env.DEV ? (
+        <ActiveSourceBadge
+          videoRef={videoRef}
+          activeDeckId={deck.activeDeckId}
+          deckEpoch={deckEpoch}
+          activeQualityId={activeQualityFileId}
+          activeQualityLabel={
+            activeQualityFile
+              ? `${activeQualityFile.height}p${activeQualityFile.kind === "original" ? " original" : ""}`
+              : undefined
+          }
+          pendingQualityId={deck.pendingQualityId}
+        />
+      ) : null}
 
       {/*
         The outgoing frame, held over the element while it reloads.

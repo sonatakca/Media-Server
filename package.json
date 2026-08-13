@@ -11,6 +11,7 @@
     "preview": "vite preview",
     "test": "vitest",
     "test:browser": "vitest run --config vitest.browser.config.ts",
+    "bench:containers": "bash scripts/build-container-benchmark.sh",
     "lint": "eslint .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\" \"docs/**/*.md\"",
     "db:migrate": "node --env-file=.env --import tsx scripts/run-own-api-migrations.ts",

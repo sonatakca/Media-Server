@@ -22,9 +22,14 @@ import {
  * `Range` would be testing something the production path never sees.
  */
 function serveRenditionFixtures(): Plugin {
-  const allowed = new Set(
-    RENDITION_FIXTURES.map((fixture) => fixture.fileName),
-  );
+  const allowed = new Set([
+    ...RENDITION_FIXTURES.map((fixture) => fixture.fileName),
+    // Container benchmark pair: identical codecs, bitrate, resolution, duration
+    // and GOP, differing only in progressive versus fragmented layout.
+    "bench-progressive.mp4",
+    "bench-fragmented.mp4",
+    "bench-fragmented-sidx.mp4",
+  ]);
 
   return {
     name: "seyirlik-serve-rendition-fixtures",
@@ -100,7 +105,10 @@ export default defineConfig({
       enabled: true,
       provider: playwright(),
       headless: true,
-      instances: [{ browser: "chromium" }],
+      // Chromium covers the Chrome path that originally lost its rendition
+      // ladder. WebKit exercises the Safari media/event fallbacks, where the
+      // capability probe and hidden-deck frame readiness behave differently.
+      instances: [{ browser: "chromium" }, { browser: "webkit" }],
     },
     // Decoding, seeking and a rendezvous take real wall-clock time.
     testTimeout: 60_000,

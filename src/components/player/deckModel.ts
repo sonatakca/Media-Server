@@ -97,17 +97,44 @@ export const MIN_RENDEZVOUS_MARGIN_SECONDS = 0.15;
 export const MAX_RENDEZVOUS_ATTEMPTS = 3;
 
 /**
+ * How far ahead a retry parks, as a multiple of how long the last attempt took.
+ *
+ * A one-second lead assumes preparation costs far less than a second. A large
+ * original over a slow link breaks that badly — a 4K master measured ~9s per
+ * seek — so every attempt finished behind a playhead that had moved on, and the
+ * switch failed as `rendezvous-overrun` however many times it retried. Growing
+ * the lead by what the previous attempt actually cost makes the retry aim
+ * somewhere the playhead has not already passed.
+ */
+export const RENDEZVOUS_LEAD_GROWTH = 1.5;
+
+/** Ceiling on the adaptive lead, so a pathological link cannot park minutes ahead. */
+export const MAX_RENDEZVOUS_LEAD_SECONDS = 30;
+
+/**
  * When the active deck is paused there is no clock to meet, so the standby
  * matches the exact position instead. Frame-accurate for a still picture.
  */
 export const PAUSED_SYNC_TOLERANCE_SECONDS = 0.05;
 
 /**
- * Longest preparation may run before it is abandoned.
+ * Longest an Auto preparation may run before it is abandoned.
  *
  * Reaching it is a *failure*, never a promotion: the old quality keeps playing.
+ * Kept tight because Auto is speculative — a link slow enough to miss this is a
+ * link that should not be asked to carry two renditions at once.
  */
 export const PREPARE_DEADLINE_MS = 25_000;
+
+/**
+ * The same budget for a quality the viewer picked by hand.
+ *
+ * A large original over a slow link needs longer than Auto should ever spend:
+ * a 4K master measured 8.7s to metadata and 16s to complete its seek, so 25s
+ * cannot also cover buffering. Someone who chose that rung explicitly is
+ * willing to wait for it, and the current quality keeps playing while they do.
+ */
+export const MANUAL_PREPARE_DEADLINE_MS = 60_000;
 
 /** How long the old deck is kept loaded after promotion, for rollback. */
 export const STABILIZE_MS = 1_500;
@@ -340,11 +367,34 @@ export interface SwitchTimings {
   settledMs?: number;
 }
 
+/**
+ * What happened while waiting at the meeting point.
+ *
+ * The wait is where a switch on a high-latency source actually dies, and until
+ * these were recorded the only evidence was the word `rendezvous-timeout`.
+ */
+export interface RendezvousWaitRecord {
+  /** Standby minus playhead when the wait began. This is what must be closed. */
+  gapSecondsAtEntry: number;
+  /** How long the wait was allowed, derived from that gap. */
+  budgetMs: number;
+  /** Budget consumed — counted only while the playhead was moving. */
+  budgetSpentMs: number;
+  /** Seconds of media the playhead covered during the wait. */
+  activeAdvancedSeconds: number;
+  /** Standby minus playhead when the wait ended. */
+  gapSecondsAtExit: number;
+  outcome: "promoted" | "timed-out" | "cancelled" | "superseded" | "resynced";
+}
+
 export interface SwitchMeasurements {
   handoffPointSeconds?: number;
   bufferedAheadSeconds?: number;
   driftAtHandoffSeconds?: number;
   rendezvousAttempts?: number;
+  /** One entry per attempt to park the standby. */
+  attempts?: unknown[];
+  rendezvous?: RendezvousWaitRecord;
 }
 
 export interface SwitchState {
@@ -390,6 +440,12 @@ export type SwitchEvent =
   | { type: "fail"; token: number; atMs: number; reason: string }
   | { type: "rollback"; token: number; atMs: number; reason: string }
   | { type: "cancel"; token: number; atMs: number }
+  | {
+      type: "measure";
+      token: number;
+      attempts?: unknown[];
+      rendezvous?: RendezvousWaitRecord;
+    }
   | { type: "reset" };
 
 const ACTIVE_PHASES: ReadonlySet<SwitchPhase> = new Set<SwitchPhase>([
@@ -454,6 +510,18 @@ export function reduceSwitch(
   }
 
   switch (event.type) {
+    case "measure":
+      // Pure bookkeeping: it records what happened without moving the machine,
+      // so a failure can be explained without changing how it behaves.
+      return {
+        ...state,
+        measurements: {
+          ...state.measurements,
+          ...(event.attempts ? { attempts: event.attempts } : {}),
+          ...(event.rendezvous ? { rendezvous: event.rendezvous } : {}),
+        },
+      };
+
     case "cancel":
       return { ...state, phase: "cancelled", outcome: "cancelled" };
 
@@ -482,10 +550,18 @@ export function reduceSwitch(
       };
 
     case "seek-complete":
-      if (PHASE_RANK[state.phase] > PHASE_RANK.seeking) return state;
+      // A retry seeks again from `priming`, and its measurements are the ones
+      // worth keeping — reporting only the first attempt's made a switch that
+      // re-aimed twice look like it had never retried at all, which is exactly
+      // the wrong thing to read while diagnosing a slow link. The phase is only
+      // walked back when it has not yet moved past seeking.
+      if (PHASE_RANK[state.phase] > PHASE_RANK.priming) return state;
       return {
         ...state,
-        phase: "priming",
+        phase:
+          PHASE_RANK[state.phase] > PHASE_RANK.seeking
+            ? state.phase
+            : "priming",
         timings: { ...state.timings, seekCompleteMs: event.atMs },
         measurements: {
           ...state.measurements,
@@ -573,6 +649,9 @@ export interface SwitchDiagnostics {
   preparationDurationMs?: number;
   handoffDurationMs?: number;
   failureReason?: string;
+  /** Per-attempt rendezvous detail; see `RendezvousAttemptRecord`. */
+  attempts?: unknown[];
+  rendezvous?: RendezvousWaitRecord;
 }
 
 function since(startMs: number, atMs?: number): number | undefined {
@@ -606,6 +685,8 @@ export function buildSwitchDiagnostics(
     bufferedSecondsAhead: measurements.bufferedAheadSeconds,
     driftAtHandoffSeconds: measurements.driftAtHandoffSeconds,
     rendezvousAttempts: measurements.rendezvousAttempts,
+    attempts: measurements.attempts,
+    rendezvous: measurements.rendezvous,
     preparationDurationMs: since(start, timings.frameReadyMs),
     handoffDurationMs:
       timings.handoffStartedMs === undefined || timings.promotedMs === undefined

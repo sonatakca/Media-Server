@@ -27,6 +27,7 @@ import {
 import {
   AUTO_RETRY_BACKOFF_MS,
   HANDOFF_CROSSFADE_MS,
+  MANUAL_PREPARE_DEADLINE_MS,
   MAX_HANDOFF_DRIFT_SECONDS,
   OTHER_DECK,
   PREPARE_DEADLINE_MS,
@@ -36,10 +37,12 @@ import {
   classifySwitchReason,
   evaluatePromotionReadiness,
   initialSwitchState,
+  isSwitchInFlight,
   reduceSwitch,
   type DeckId,
   type SwitchDiagnostics,
   type SwitchEvent,
+  type RendezvousWaitRecord,
   type SwitchOutcome,
   type SwitchState,
 } from "./deckModel";
@@ -59,8 +62,61 @@ export { HANDOFF_CROSSFADE_MS };
  */
 const SEEK_DETECTION_SECONDS = 1.5;
 
-/** Longest the rendezvous may be waited for before the switch is abandoned. */
-const RENDEZVOUS_DEADLINE_MS = 8_000;
+/**
+ * Longest the rendezvous may be waited for, measured in time the active deck is
+ * actually *moving*.
+ *
+ * Wall-clock was wrong here. Preparing a second rendition competes for
+ * bandwidth with the one playing, so on a constrained link the active deck
+ * stalls — and a stalled clock can never reach the meeting point. Counting that
+ * against the budget abandoned switches whose standby was fully prepared and
+ * simply waiting, which is the opposite of what should happen: a parked standby
+ * costs nothing to hold. The budget therefore only advances while the playhead
+ * does, and a genuinely stuck rendezvous still fails.
+ */
+const RENDEZVOUS_STALL_BUDGET_MS = 12_000;
+
+/**
+ * How often the rendezvous re-checks the two clocks.
+ *
+ * A timer rather than `requestAnimationFrame`: this is a clock comparison, not
+ * a paint, and rAF is throttled hard under decode load and in background tabs.
+ * The visual side of the handoff still waits on frames — only the decision of
+ * *when* to promote runs here.
+ */
+const RENDEZVOUS_POLL_MS = 50;
+
+/**
+ * Bounds on how far ahead the standby is re-aimed after being overtaken.
+ *
+ * The lead must exceed the media distance the playhead covers between two
+ * consecutive checks, or the new target is skipped over exactly like the old
+ * one and the switch chases itself until the budget expires. It is otherwise
+ * kept small: the re-aim lands inside the buffer the original park pulled, and
+ * every extra second is a second the viewer waits.
+ */
+const RENDEZVOUS_RESYNC_LEAD_SECONDS = 0.4;
+const MAX_RENDEZVOUS_RESYNC_LEAD_SECONDS = 5;
+
+/**
+ * Safety factor on the measured sampling interval.
+ *
+ * Two would be the bare minimum to survive one interval of jitter; three leaves
+ * room for a second consecutive slow sample without another round trip.
+ */
+const RENDEZVOUS_RESYNC_TICK_MULTIPLE = 3;
+
+/**
+ * Samples the sampling-interval estimate remembers.
+ *
+ * A single pause — a GC, a tab switch, a decode stall — must not inflate the
+ * lead for the rest of the wait, so the estimate is the worst of a short recent
+ * window rather than an all-time maximum.
+ */
+const RENDEZVOUS_TICK_WINDOW = 8;
+
+/** Re-aims allowed before the wait gives up, so it cannot chase indefinitely. */
+const MAX_RENDEZVOUS_RESYNCS = 4;
 
 export interface SeamlessSwitchRequest {
   url: string;
@@ -91,6 +147,19 @@ export interface UseSeamlessQualitySwitchOptions {
     deckId: DeckId;
   }) => void;
   readIntent: () => PlaybackIntent;
+  /**
+   * Undoes the commit `onPromoted` made, when the promoted deck turns out to be
+   * unplayable and the old one is put back.
+   *
+   * Without this the committed source and the deck actually on screen disagree:
+   * the source says the new quality, the deck is playing the old one, and the
+   * next time anything re-reads the source it attaches the quality that just
+   * failed onto the healthy deck — which is a black screen.
+   */
+  onRolledBack?: (info: {
+    restoredQualityId: string | null;
+    deckId: DeckId;
+  }) => void;
   onDiagnostics?: (diagnostics: SwitchDiagnostics) => void;
   clock?: DeckClock;
   /** How long the old deck is retained for rollback after a promotion. */
@@ -156,6 +225,7 @@ function asDeckMedia(element: HTMLVideoElement): DeckMedia {
 export function useSeamlessQualitySwitch({
   onPromoted,
   readIntent,
+  onRolledBack,
   onDiagnostics,
   clock = defaultClock,
   stabiliseMs = STABILIZE_MS,
@@ -190,16 +260,30 @@ export function useSeamlessQualitySwitch({
    */
   const cancelledTokensRef = useRef(new Set<number>());
   const supersededTokensRef = useRef(new Set<number>());
+  /**
+   * The request currently allowed to mutate each standby deck.
+   *
+   * Superseded requests finish asynchronously. Without explicit ownership, an
+   * older request can reach its cleanup after its replacement has promoted the
+   * same element, then pause it and remove its source. That presents as a
+   * successful quality change followed immediately by a paused or black player.
+   */
+  const preparationOwnerRef = useRef<Record<DeckId, number | null>>({
+    a: null,
+    b: null,
+  });
   const retainedDeckRef = useRef<HTMLVideoElement | null>(null);
   const stabiliseTimerRef = useRef<number | null>(null);
   const backoffRef = useRef(new Map<string, number>());
   const isUnmountedRef = useRef(false);
   const readIntentRef = useRef(readIntent);
   const onPromotedRef = useRef(onPromoted);
+  const onRolledBackRef = useRef(onRolledBack);
   const onDiagnosticsRef = useRef(onDiagnostics);
 
   readIntentRef.current = readIntent;
   onPromotedRef.current = onPromoted;
+  onRolledBackRef.current = onRolledBack;
   onDiagnosticsRef.current = onDiagnostics;
 
   const dispatch = useCallback((event: SwitchEvent) => {
@@ -313,6 +397,32 @@ export function useSeamlessQualitySwitch({
     if (diagnostics) onDiagnosticsRef.current?.(diagnostics);
   }, []);
 
+  const delay = useCallback(
+    (ms: number) =>
+      new Promise<void>((resolve) => {
+        clock.setTimeout(() => resolve(), ms);
+      }),
+    [clock],
+  );
+
+  /** Resolves when a seek settles, or on the next frame if it never reports. */
+  const waitForSeeked = useCallback(
+    (element: HTMLVideoElement) =>
+      new Promise<void>((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          element.removeEventListener("seeked", finish);
+          clock.clearTimeout(guard);
+          resolve();
+        };
+        const guard = clock.setTimeout(finish, 2_000);
+        element.addEventListener("seeked", finish);
+      }),
+    [clock],
+  );
+
   const nextFrame = useCallback(
     () =>
       new Promise<void>((resolve) => {
@@ -352,7 +462,19 @@ export function useSeamlessQualitySwitch({
 
       if (intent.wantsToPlay) {
         void Promise.resolve(newElement.play()).catch(() => {
-          // A blocked play is handled by the rollback watch below.
+          // A play issued at the instant of promotion can be rejected by work
+          // still settling on the element — an aborted load on a slow link is
+          // the common one. Swallowing that left the viewer looking at a
+          // correctly promoted but permanently paused picture, so it is retried
+          // once the deck says it is ready. The intent is re-read then, because
+          // by that point the viewer may genuinely have pressed pause.
+          const retryWhenReady = () => {
+            newElement.removeEventListener("canplay", retryWhenReady);
+            if (isUnmountedRef.current) return;
+            if (!readIntentRef.current().wantsToPlay) return;
+            void Promise.resolve(newElement.play()).catch(() => undefined);
+          };
+          newElement.addEventListener("canplay", retryWhenReady);
         });
       } else {
         newElement.pause();
@@ -412,6 +534,13 @@ export function useSeamlessQualitySwitch({
 
           activeDeckIdRef.current = fromDeck;
           syncActiveVideoRef();
+          // Ordered before the re-render so the restored source is committed by
+          // the time any effect re-reads it.
+          onRolledBackRef.current?.({
+            restoredQualityId:
+              switchStateRef.current.request?.fromQualityId ?? null,
+            deckId: fromDeck,
+          });
           if (!isUnmountedRef.current) {
             setActiveDeckId(fromDeck);
             setDeckEpoch((epoch) => epoch + 1);
@@ -485,11 +614,62 @@ export function useSeamlessQualitySwitch({
       const standbyElement = deckElementsRef.current[toDeck];
       if (!activeElement || !standbyElement) return "failed";
 
-      const startedAtMs = clock.now();
+      // Budget spent, counted only across ticks where the playhead actually
+      // moved. A stalled deck therefore cannot burn it, and a playing deck that
+      // never reaches the meeting point still runs out.
+      let budgetSpentMs = 0;
+      let lastTickAtMs = clock.now();
+      let resyncsRemaining = MAX_RENDEZVOUS_RESYNCS;
+      /**
+       * Recent sampling intervals, in seconds of media the playhead covers per
+       * check. Derived from monotonic wall time and the playback rate rather
+       * than from observed position deltas, so it stays correct when the deck
+       * is stalled (no movement, but the next tick still costs time) and when
+       * playback is not at 1x.
+       */
+      const recentTickSeconds: number[] = [];
+      /**
+       * The wait has to be long enough to actually reach the meeting point.
+       *
+       * The standby parks ahead deliberately, and on a high-latency link the
+       * adaptive lead can park it a long way ahead. Closing a gap of N seconds
+       * takes N seconds of playback, so a fixed budget shorter than the gap
+       * abandons a standby that is fully prepared and simply waiting — which is
+       * exactly what stopped manual quality changes from ever landing.
+       */
+      const initialGapSeconds = Math.max(
+        0,
+        standbyElement.currentTime - activeElement.currentTime,
+      );
+      const budgetMs = Math.max(
+        RENDEZVOUS_STALL_BUDGET_MS,
+        (initialGapSeconds + 5) * 1_000,
+      );
+      const entryActivePosition = activeElement.currentTime;
+      const recordWait = (
+        outcome: RendezvousWaitRecord["outcome"],
+      ): RendezvousWaitRecord => ({
+        gapSecondsAtEntry: +initialGapSeconds.toFixed(3),
+        budgetMs: Math.round(budgetMs),
+        budgetSpentMs: Math.round(budgetSpentMs),
+        activeAdvancedSeconds: +(
+          activeElement.currentTime - entryActivePosition
+        ).toFixed(3),
+        gapSecondsAtExit: +(
+          standbyElement.currentTime - activeElement.currentTime
+        ).toFixed(3),
+        outcome,
+      });
+      const publishWait = (outcome: RendezvousWaitRecord["outcome"]) => {
+        dispatch({ type: "measure", token, rendezvous: recordWait(outcome) });
+      };
       let lastActivePosition = activeElement.currentTime;
 
       for (;;) {
-        if (isSuperseded(token)) return "superseded";
+        if (isSuperseded(token)) {
+          publishWait("superseded");
+          return "superseded";
+        }
 
         const activePosition = activeElement.currentTime;
 
@@ -499,9 +679,24 @@ export function useSeamlessQualitySwitch({
           Math.abs(activePosition - lastActivePosition) > SEEK_DETECTION_SECONDS
         ) {
           cancelledTokensRef.current.add(token);
+          publishWait("cancelled");
           dispatch({ type: "cancel", token, atMs: clock.now() });
           return "cancelled";
         }
+        const tickAtMs = clock.now();
+        const tickWallMs = tickAtMs - lastTickAtMs;
+        if (activePosition !== lastActivePosition) {
+          budgetSpentMs += tickWallMs;
+        }
+        // Media seconds this interval would cover at the current rate. Rate is
+        // read live because the viewer can change it mid-wait.
+        recentTickSeconds.push(
+          (tickWallMs / 1_000) * (activeElement.playbackRate || 1),
+        );
+        if (recentTickSeconds.length > RENDEZVOUS_TICK_WINDOW) {
+          recentTickSeconds.shift();
+        }
+        lastTickAtMs = tickAtMs;
         lastActivePosition = activePosition;
 
         const isActivePaused = activeElement.paused || activeElement.ended;
@@ -535,6 +730,7 @@ export function useSeamlessQualitySwitch({
             continue;
           }
 
+          publishWait("promoted");
           dispatch({
             type: "handoff-start",
             token,
@@ -552,13 +748,51 @@ export function useSeamlessQualitySwitch({
         // clock coming to meet it, so it moves back to the held frame instead
         // and promotes there, paused.
         if (isActivePaused && standbyPosition > activePosition) {
+          publishWait("resynced");
           standbyElement.currentTime = activePosition;
           await nextFrame();
           await nextFrame();
           continue;
         }
 
-        if (clock.now() - startedAtMs > RENDEZVOUS_DEADLINE_MS) {
+        // The playhead has gone *past* the parked frame. This is the failure
+        // that made switching impossible on a high-latency source: the meeting
+        // point is chosen for a moment that has already been and gone, the
+        // drift gate can never be satisfied again, and waiting only widens the
+        // gap until the budget runs out — the recorded case exited 5.7s beyond
+        // a standby it had been 16.9s short of.
+        //
+        // The playhead cannot be rewound, so the standby is re-aimed at it.
+        // That region is already buffered from the original park, so this is an
+        // in-buffer seek rather than another trip to the server.
+        if (
+          !isActivePaused &&
+          activePosition - standbyPosition > MAX_HANDOFF_DRIFT_SECONDS &&
+          resyncsRemaining > 0
+        ) {
+          resyncsRemaining -= 1;
+          publishWait("resynced");
+          // Aim far enough ahead that the next look cannot already be past it.
+          const worstRecentTickSeconds = recentTickSeconds.length
+            ? Math.max(...recentTickSeconds)
+            : 0;
+          const resyncLeadSeconds = Math.min(
+            MAX_RENDEZVOUS_RESYNC_LEAD_SECONDS,
+            Math.max(
+              RENDEZVOUS_RESYNC_LEAD_SECONDS,
+              worstRecentTickSeconds * RENDEZVOUS_RESYNC_TICK_MULTIPLE,
+            ),
+          );
+          standbyElement.currentTime = activePosition + resyncLeadSeconds;
+          // The re-aim lands inside the buffer the original park already
+          // pulled, so this settles without another trip to the server. Waiting
+          // for it keeps the next drift check honest.
+          await waitForSeeked(standbyElement);
+          continue;
+        }
+
+        if (budgetSpentMs > budgetMs) {
+          publishWait("timed-out");
           dispatch({
             type: "fail",
             token,
@@ -568,15 +802,19 @@ export function useSeamlessQualitySwitch({
           return "failed";
         }
 
-        await nextFrame();
+        // A timer, not a frame: this is a clock comparison and rAF is throttled
+        // hard under decode load, which is what made the earlier re-aim lead
+        // depend on scheduling luck.
+        await delay(RENDEZVOUS_POLL_MS);
       }
     },
     [
       clock,
+      delay,
       dispatch,
       isSuperseded,
-      nextFrame,
       performHandoff,
+      waitForSeeked,
       watchForRollback,
     ],
   );
@@ -590,17 +828,35 @@ export function useSeamlessQualitySwitch({
 
       if (!activeElement || !standbyElement) return "failed";
 
+      const currentRequest = switchStateRef.current.request;
+      if (
+        currentRequest?.reason === "manual" &&
+        isSwitchInFlight(switchStateRef.current) &&
+        !request.isManual
+      ) {
+        // A periodic Auto review is advisory. It must never displace a quality
+        // the viewer explicitly chose and is still waiting for.
+        return "superseded";
+      }
+
       // A switch already in flight is superseded rather than queued: only the
       // newest request may ever reach a promotion.
+      // Only a switch that is still running can be superseded. One that already
+      // promoted and settled has had its own record written, and writing a
+      // second "superseded" one against it reports an outcome that never
+      // happened.
       if (switchStateRef.current.request) {
         supersededTokensRef.current.add(switchStateRef.current.request.token);
-        emitDiagnostics("superseded");
+        if (isSwitchInFlight(switchStateRef.current)) {
+          emitDiagnostics("superseded");
+        }
       }
       clearStabiliseTimer();
 
       tokenRef.current += 1;
       const token = tokenRef.current;
       const startedAtMs = clock.now();
+      preparationOwnerRef.current[toDeck] = token;
 
       dispatch({
         type: "request",
@@ -666,8 +922,12 @@ export function useSeamlessQualitySwitch({
               });
             }
           },
-          deadlineMs: PREPARE_DEADLINE_MS,
+          deadlineMs: request.isManual
+            ? MANUAL_PREPARE_DEADLINE_MS
+            : PREPARE_DEADLINE_MS,
         });
+
+        dispatch({ type: "measure", token, attempts: prepared.attempts });
 
         if (prepared.outcome === "superseded") {
           // A superseded attempt has already been written up by the request
@@ -723,12 +983,21 @@ export function useSeamlessQualitySwitch({
       // state — but never the retained one, which rollback may still need.
       if (result !== "promoted") {
         const abandoned = deckElementsRef.current[toDeck];
-        if (abandoned && abandoned !== retainedDeckRef.current) {
+        if (
+          preparationOwnerRef.current[toDeck] === token &&
+          abandoned &&
+          abandoned !== retainedDeckRef.current &&
+          toDeck !== activeDeckIdRef.current
+        ) {
           releaseDeck(asDeckMedia(abandoned));
         }
         if (tokenRef.current === token) {
           dispatch({ type: "reset" });
         }
+      }
+
+      if (preparationOwnerRef.current[toDeck] === token) {
+        preparationOwnerRef.current[toDeck] = null;
       }
 
       return finish(result);

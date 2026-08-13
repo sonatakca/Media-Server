@@ -396,7 +396,13 @@ function CompleteFileQualitySection({
             <SettingsButton
               key={option.id}
               title={option.label}
-              subtitle={option.subtitle}
+              // A switch can take a while on a slow link, so the row the viewer
+              // picked says so rather than looking inert.
+              subtitle={
+                controls.preparingQualityId === option.id
+                  ? t("player.qualityPreparing")
+                  : option.subtitle
+              }
               active={
                 controls.activeMode === "advanced" &&
                 controls.lockedQualityId === option.id

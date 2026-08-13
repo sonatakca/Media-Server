@@ -15,11 +15,13 @@
 
 import {
   HANDOFF_LEAD_SECONDS,
+  MAX_RENDEZVOUS_LEAD_SECONDS,
   HAVE_CURRENT_DATA,
   HAVE_FUTURE_DATA,
   HAVE_METADATA,
   MAX_RENDEZVOUS_ATTEMPTS,
   MIN_RENDEZVOUS_MARGIN_SECONDS,
+  RENDEZVOUS_LEAD_GROWTH,
   PAUSED_SYNC_TOLERANCE_SECONDS,
   PREPARE_DEADLINE_MS,
   requiredBufferAheadSeconds,
@@ -99,15 +101,53 @@ export interface PrepareStandbyOptions {
   frameWaitMs?: number;
 }
 
+/**
+ * Everything about one attempt to park the standby at a meeting point.
+ *
+ * A rendezvous failure is otherwise almost impossible to reason about from the
+ * outside: the only visible symptom is "nothing happened", and the numbers that
+ * explain it — where the playhead was, where the standby was aimed, where it
+ * actually landed, and how far the playhead had moved by the time it was ready
+ * — all live inside this loop.
+ */
+export interface RendezvousAttemptRecord {
+  attempt: number;
+  /** Seconds ahead of the playhead this attempt aimed. */
+  leadSeconds: number;
+  /** The playhead when the target was chosen. */
+  activePositionSeconds: number;
+  /** Where the standby was asked to seek to. */
+  requestedTargetSeconds: number;
+  /** Where the standby actually landed, which a keyframe can shift. */
+  standbyPositionSeconds?: number;
+  seekOffsetSeconds?: number;
+  bufferedAheadSeconds?: number;
+  standbyReadyState?: number;
+  /** The playhead once the standby was frame-ready. */
+  activePositionAtReadySeconds?: number;
+  /** Standby minus playhead at that moment. Negative means overtaken. */
+  marginSeconds?: number;
+  seekElapsedMs?: number;
+  bufferElapsedMs?: number;
+  frameElapsedMs?: number;
+  totalElapsedMs?: number;
+  outcome: "ready" | "re-seek" | "overrun" | "aborted";
+}
+
 export type PrepareStandbyResult =
   | {
       outcome: "ready";
       handoffPointSeconds: number;
       bufferedAheadSeconds: number;
       rendezvousAttempts: number;
+      attempts: RendezvousAttemptRecord[];
     }
-  | { outcome: "superseded" }
-  | { outcome: "failed"; reason: PrepareFailureReason };
+  | { outcome: "superseded"; attempts: RendezvousAttemptRecord[] }
+  | {
+      outcome: "failed";
+      reason: PrepareFailureReason;
+      attempts: RendezvousAttemptRecord[];
+    };
 
 export type PrepareFailureReason =
   | "metadata-timeout"
@@ -164,6 +204,7 @@ export async function prepareStandbyDeck({
   frameWaitMs = DEFAULT_FRAME_WAIT_MS,
 }: PrepareStandbyOptions): Promise<PrepareStandbyResult> {
   const startedAtMs = clock.now();
+  const attempts: RendezvousAttemptRecord[] = [];
   let mediaFailed = false;
   const onMediaError = () => {
     mediaFailed = true;
@@ -253,8 +294,23 @@ export async function prepareStandbyDeck({
    * lacks it, or that declines to fire it for an element the compositor
    * considers invisible. Whichever is satisfied first settles the wait.
    */
-  const waitForDecodedFrame = (): Promise<void> =>
-    new Promise<void>((resolve, reject) => {
+  interface FrameWatch {
+    promise: Promise<void>;
+    /**
+     * Starts the frame budget.
+     *
+     * The watch has to be *registered* before the seek, but it must not be
+     * *timed* from there: on a slow link the seek alone can outlast the budget,
+     * and preparation then fails with `frame-timeout` for a frame that was
+     * never given a chance to arrive. The clock starts once the seek has landed
+     * and the buffer is in place, which is the point a frame is genuinely owed.
+     */
+    arm: () => void;
+  }
+
+  const startFrameWatch = (): FrameWatch => {
+    let arm = () => {};
+    const promise = new Promise<void>((resolve, reject) => {
       let settled = false;
       // One holder for the same reason as above: the cleanup is written before
       // the handles it cancels exist.
@@ -310,10 +366,13 @@ export async function prepareStandbyDeck({
         });
       }
 
-      timers.deadline = clock.setTimeout(
-        () => finish(new PrepareFailure("frame-timeout")),
-        frameWaitMs,
-      );
+      arm = () => {
+        if (settled || timers.deadline !== undefined) return;
+        timers.deadline = clock.setTimeout(
+          () => finish(new PrepareFailure("frame-timeout")),
+          frameWaitMs,
+        );
+      };
 
       if (typeof standby.requestVideoFrameCallback === "function") {
         timers.frame = standby.requestVideoFrameCallback(() => {
@@ -328,6 +387,9 @@ export async function prepareStandbyDeck({
       standby.addEventListener("timeupdate", fallbackTick);
       fallbackTick();
     });
+
+    return { promise, arm: () => arm() };
+  };
 
   /**
    * Runs the decoder briefly so the first frame after promotion comes from a
@@ -363,7 +425,10 @@ export async function prepareStandbyDeck({
       if (error instanceof Superseded) throw error;
       // A pulse that never got going is not fatal either.
     } finally {
-      standby.pause();
+      // A newer request may already own this same physical deck. Pausing it
+      // from the superseded pulse would pause the replacement's preparation —
+      // or, on a fast target, the deck it has just promoted.
+      if (!isSuperseded()) standby.pause();
     }
   };
 
@@ -395,22 +460,43 @@ export async function prepareStandbyDeck({
       // prepared switch ends up promoting into the past.
       const active = readActive();
       const ceiling = Math.max(0, standby.duration - 0.25);
+      // A retry aims further ahead than the last attempt cost, because the
+      // reason it is retrying is that the playhead outran the previous point.
+      const elapsedSeconds = (clock.now() - startedAtMs) / 1_000;
+      const attemptLeadSeconds =
+        attempt === 1
+          ? leadSeconds
+          : Math.min(
+              MAX_RENDEZVOUS_LEAD_SECONDS,
+              Math.max(leadSeconds, elapsedSeconds * RENDEZVOUS_LEAD_GROWTH),
+            );
       const handoffPointSeconds = Math.min(
         ceiling,
         Math.max(
           0,
           active.paused
             ? active.positionSeconds
-            : active.positionSeconds + leadSeconds,
+            : active.positionSeconds + attemptLeadSeconds,
         ),
       );
 
-      // Started before the seek, because the frame it is waiting for is the
-      // one the seek is about to present.
-      const decodedFrame = waitForDecodedFrame();
+      const attemptStartedAtMs = clock.now();
+      const record: RendezvousAttemptRecord = {
+        attempt,
+        leadSeconds: +attemptLeadSeconds.toFixed(3),
+        activePositionSeconds: +active.positionSeconds.toFixed(3),
+        requestedTargetSeconds: +handoffPointSeconds.toFixed(3),
+        outcome: "aborted",
+      };
+      attempts.push(record);
+
+      // Registered before the seek, because the frame it is waiting for is the
+      // one the seek is about to present. Its budget is armed later, once the
+      // seek and the buffer are done.
+      const frameWatch = startFrameWatch();
       // A rejection that arrives while the seek or buffer wait is still being
       // awaited would otherwise surface as an unhandled rejection.
-      decodedFrame.catch(() => undefined);
+      frameWatch.promise.catch(() => undefined);
 
       standby.currentTime = handoffPointSeconds;
       await waitUntil(
@@ -421,6 +507,11 @@ export async function prepareStandbyDeck({
         deadlineMs,
         "seek-timeout",
       );
+      record.seekElapsedMs = Math.round(clock.now() - attemptStartedAtMs);
+      record.standbyPositionSeconds = +standby.currentTime.toFixed(3);
+      record.seekOffsetSeconds = +(
+        standby.currentTime - handoffPointSeconds
+      ).toFixed(3);
       onProgress?.({
         type: "seek-complete",
         atMs: clock.now(),
@@ -440,16 +531,26 @@ export async function prepareStandbyDeck({
         "buffer-timeout",
       );
 
+      record.bufferElapsedMs = Math.round(clock.now() - attemptStartedAtMs);
+      record.bufferedAheadSeconds = +bufferedAheadOf(
+        standby,
+        standby.currentTime,
+      ).toFixed(3);
+      record.standbyReadyState = standby.readyState;
+
       // Step 5 and 6: warm the decoder, then insist on a real frame.
       //
       // The priming pulse is skipped against a paused deck. There is no clock
       // to meet, so the standby has to hold the viewer's exact frame, and a
       // pulse would nudge it off that frame for no benefit — the seek has
       // already decoded what needs to be painted.
+      // From here a decoded frame is genuinely owed, so the budget starts.
+      frameWatch.arm();
+
       if (!readActive().paused) {
         await primeDecoder();
       }
-      await decodedFrame;
+      await frameWatch.promise;
 
       // Step 7: did the active clock overtake the meeting point while all of
       // that happened? If so this deck is parked in the past and must not be
@@ -457,16 +558,26 @@ export async function prepareStandbyDeck({
       const settledActive = readActive();
       const parkedAtSeconds = standby.currentTime;
       const marginSeconds = parkedAtSeconds - settledActive.positionSeconds;
+
+      record.frameElapsedMs = Math.round(clock.now() - attemptStartedAtMs);
+      record.totalElapsedMs = Math.round(clock.now() - startedAtMs);
+      record.standbyPositionSeconds = +parkedAtSeconds.toFixed(3);
+      record.activePositionAtReadySeconds =
+        +settledActive.positionSeconds.toFixed(3);
+      record.marginSeconds = +marginSeconds.toFixed(3);
       const hasOvertaken = settledActive.paused
         ? Math.abs(marginSeconds) > PAUSED_SYNC_TOLERANCE_SECONDS
         : marginSeconds < MIN_RENDEZVOUS_MARGIN_SECONDS;
 
       if (hasOvertaken && attempt < MAX_RENDEZVOUS_ATTEMPTS) {
+        record.outcome = "re-seek";
         continue;
       }
       if (hasOvertaken) {
-        return { outcome: "failed", reason: "rendezvous-overrun" };
+        record.outcome = "overrun";
+        return { outcome: "failed", reason: "rendezvous-overrun", attempts };
       }
+      record.outcome = "ready";
 
       const bufferedAheadSeconds = bufferedAheadOf(standby, parkedAtSeconds);
       onProgress?.({
@@ -480,16 +591,17 @@ export async function prepareStandbyDeck({
         handoffPointSeconds: parkedAtSeconds,
         bufferedAheadSeconds,
         rendezvousAttempts: attempt,
+        attempts,
       };
     }
 
-    return { outcome: "failed", reason: "rendezvous-overrun" };
+    return { outcome: "failed", reason: "rendezvous-overrun", attempts };
   } catch (error) {
-    if (error instanceof Superseded) return { outcome: "superseded" };
+    if (error instanceof Superseded) return { outcome: "superseded", attempts };
     if (error instanceof PrepareFailure) {
-      return { outcome: "failed", reason: error.reason };
+      return { outcome: "failed", reason: error.reason, attempts };
     }
-    return { outcome: "failed", reason: "media-error" };
+    return { outcome: "failed", reason: "media-error", attempts };
   } finally {
     standby.removeEventListener("error", onMediaError);
   }

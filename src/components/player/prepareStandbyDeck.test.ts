@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { HANDOFF_LEAD_SECONDS, MAX_RENDEZVOUS_ATTEMPTS } from "./deckModel";
+import {
+  HANDOFF_LEAD_SECONDS,
+  MAX_RENDEZVOUS_ATTEMPTS,
+  MAX_RENDEZVOUS_LEAD_SECONDS,
+} from "./deckModel";
 import {
   bufferedAheadOf,
   prepareStandbyDeck,
@@ -379,7 +383,10 @@ describe("prepareStandbyDeck", () => {
 
     const result = await promise;
 
-    expect(result).toEqual({ outcome: "failed", reason: "metadata-timeout" });
+    expect(result).toMatchObject({
+      outcome: "failed",
+      reason: "metadata-timeout",
+    });
     expect(progress).toHaveLength(0);
     expect(standby.seekTargets).toHaveLength(0);
   });
@@ -390,7 +397,7 @@ describe("prepareStandbyDeck", () => {
 
     const result = await prepare(standby, active, { deadlineMs: 150 }).promise;
 
-    expect(result).toEqual({ outcome: "failed", reason: "seek-timeout" });
+    expect(result).toMatchObject({ outcome: "failed", reason: "seek-timeout" });
   });
 
   it("never reports ready on a thin buffer", async () => {
@@ -402,7 +409,10 @@ describe("prepareStandbyDeck", () => {
 
     const result = await promise;
 
-    expect(result).toEqual({ outcome: "failed", reason: "buffer-timeout" });
+    expect(result).toMatchObject({
+      outcome: "failed",
+      reason: "buffer-timeout",
+    });
     expect(progress.map((event) => event.type)).toEqual([
       "metadata-ready",
       "seek-complete",
@@ -419,7 +429,10 @@ describe("prepareStandbyDeck", () => {
 
     const result = await promise;
 
-    expect(result).toEqual({ outcome: "failed", reason: "frame-timeout" });
+    expect(result).toMatchObject({
+      outcome: "failed",
+      reason: "frame-timeout",
+    });
     expect(progress.map((event) => event.type)).not.toContain("frame-ready");
   });
 
@@ -467,7 +480,7 @@ describe("prepareStandbyDeck", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     superseded = true;
 
-    await expect(promise).resolves.toEqual({ outcome: "superseded" });
+    await expect(promise).resolves.toMatchObject({ outcome: "superseded" });
   });
 
   it("fails on a media error instead of promoting anything", async () => {
@@ -478,7 +491,7 @@ describe("prepareStandbyDeck", () => {
     await new Promise((resolve) => setTimeout(resolve, 30));
     standby.fail();
 
-    await expect(promise).resolves.toEqual({
+    await expect(promise).resolves.toMatchObject({
       outcome: "failed",
       reason: "media-error",
     });
@@ -513,6 +526,46 @@ describe("prepareStandbyDeck", () => {
     expect(result.rendezvousAttempts).toBe(2);
   });
 
+  it("aims further ahead on a retry, so a slow target can still be met", async () => {
+    // Each attempt costs real time. A retry that aimed at the same one-second
+    // lead would land behind the playhead again, which is how a large original
+    // over a slow link failed as `rendezvous-overrun` however often it retried.
+    const standby = new FakeDeck();
+    const active = new FakeActiveDeck(420);
+    // The fake completes in milliseconds, so the cost of a slow seek is
+    // simulated by advancing the clock the preparation reads.
+    let elapsedOffsetMs = 0;
+    const slowClock: DeckClock = {
+      ...clock,
+      now: () => Date.now() + elapsedOffsetMs,
+    };
+    const onProgress = (event: PrepareProgressEvent) => {
+      if (event.type === "seek-complete" && active.positionSeconds === 420) {
+        elapsedOffsetMs += 9_000;
+        active.positionSeconds = 428;
+      }
+    };
+
+    const result = await prepareStandbyDeck({
+      standby,
+      url: "https://media.test/renditions/1080p.mp4",
+      clock: slowClock,
+      readActive: active.read,
+      isSuperseded: () => false,
+      onProgress,
+      pollMs: 5,
+      deadlineMs: 60_000,
+    });
+
+    expect(result.outcome).toBe("ready");
+    expect(standby.seekTargets).toHaveLength(2);
+    // A fixed lead would have parked at 429 and been overtaken again.
+    expect(standby.seekTargets[1]).toBeGreaterThan(428 + HANDOFF_LEAD_SECONDS);
+    expect(standby.seekTargets[1]).toBeLessThanOrEqual(
+      428 + MAX_RENDEZVOUS_LEAD_SECONDS,
+    );
+  });
+
   it("fails rather than promoting into the past when it can never catch up", async () => {
     const standby = new FakeDeck();
     const active = new FakeActiveDeck(420);
@@ -532,11 +585,82 @@ describe("prepareStandbyDeck", () => {
       deadlineMs: 5_000,
     });
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outcome: "failed",
       reason: "rendezvous-overrun",
     });
     expect(standby.seekTargets).toHaveLength(MAX_RENDEZVOUS_ATTEMPTS);
+  });
+
+  it("records every attempt in enough detail to explain a rendezvous failure", async () => {
+    // Without these numbers a failure is just the word "rendezvous-overrun":
+    // where the playhead was, where the standby was aimed, where it landed and
+    // how far the playhead had moved by the time it was ready are all invisible
+    // from outside this loop.
+    const standby = new FakeDeck();
+    const active = new FakeActiveDeck(420);
+    let elapsedOffsetMs = 0;
+    const slowClock: DeckClock = {
+      ...clock,
+      now: () => Date.now() + elapsedOffsetMs,
+    };
+    const onProgress = (event: PrepareProgressEvent) => {
+      if (event.type === "seek-complete" && active.positionSeconds === 420) {
+        elapsedOffsetMs += 9_000;
+        active.positionSeconds = 428;
+      }
+    };
+
+    const result = await prepareStandbyDeck({
+      standby,
+      url: "https://media.test/renditions/1080p.mp4",
+      clock: slowClock,
+      readActive: active.read,
+      isSuperseded: () => false,
+      onProgress,
+      pollMs: 5,
+      deadlineMs: 60_000,
+    });
+
+    expect(result.outcome).toBe("ready");
+    expect(result.attempts).toHaveLength(2);
+
+    const [first, second] = result.attempts;
+    // The attempt that was overtaken says so, and by how much.
+    expect(first.outcome).toBe("re-seek");
+    expect(first.activePositionSeconds).toBe(420);
+    expect(first.requestedTargetSeconds).toBeCloseTo(
+      420 + HANDOFF_LEAD_SECONDS,
+      3,
+    );
+    expect(first.marginSeconds).toBeLessThan(0);
+    expect(first.activePositionAtReadySeconds).toBe(428);
+
+    // The retry aims from the new playhead, and reports where it landed.
+    expect(second.outcome).toBe("ready");
+    expect(second.attempt).toBe(2);
+    expect(second.leadSeconds).toBeGreaterThan(HANDOFF_LEAD_SECONDS);
+    expect(second.activePositionSeconds).toBe(428);
+    expect(second.standbyPositionSeconds).toBeGreaterThan(428);
+    expect(second.marginSeconds).toBeGreaterThan(0);
+    expect(second.bufferedAheadSeconds).toBeGreaterThan(0);
+    expect(second.seekElapsedMs).toBeTypeOf("number");
+    expect(second.frameElapsedMs).toBeTypeOf("number");
+  });
+
+  it("keeps the attempt log even when preparation fails outright", async () => {
+    const standby = new FakeDeck({ gates: { seek: false } });
+    const active = new FakeActiveDeck(420);
+
+    const result = await prepare(standby, active, { deadlineMs: 150 }).promise;
+
+    expect(result.outcome).toBe("failed");
+    expect(result.attempts).toHaveLength(1);
+    expect(result.attempts[0]).toMatchObject({
+      attempt: 1,
+      activePositionSeconds: 420,
+      outcome: "aborted",
+    });
   });
 
   it("clamps the meeting point inside the file near the end of a title", async () => {
@@ -558,7 +682,7 @@ describe("prepareStandbyDeck", () => {
 
     const result = await prepare(standby, active).promise;
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({
       outcome: "failed",
       reason: "rendezvous-overrun",
     });

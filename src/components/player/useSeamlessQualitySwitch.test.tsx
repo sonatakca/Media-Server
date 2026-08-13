@@ -200,6 +200,7 @@ interface Harness {
   deckB: FakeVideo;
   intent: PlaybackIntent;
   promotions: Array<{ toQualityId: string; url: string; deckId: string }>;
+  rollbacks: Array<{ restoredQualityId: string | null; deckId: string }>;
   diagnostics: SwitchDiagnostics[];
 }
 
@@ -224,6 +225,7 @@ function setUp(
       ...options.intent,
     },
     promotions: [],
+    rollbacks: [],
     diagnostics: [],
   };
 
@@ -237,6 +239,7 @@ function setUp(
       stabiliseMs: options.stabiliseMs ?? 120,
       readIntent: () => harness.intent,
       onPromoted: (commit) => harness.promotions.push(commit),
+      onRolledBack: (info) => harness.rollbacks.push(info),
       onDiagnostics: (entry) => harness.diagnostics.push(entry),
     }),
   );
@@ -392,6 +395,52 @@ describe("useSeamlessQualitySwitch", () => {
         url: "https://media.test/renditions/480p.mp4",
         deckId: "b",
       },
+    ]);
+    // The superseded request may finish after the replacement has promoted.
+    // Its cleanup must not pause or clear the now-active deck.
+    expect(result.current.activeDeckId).toBe("b");
+    expect(harness.deckB.src).toBe("https://media.test/renditions/480p.mp4");
+    expect(harness.deckB.paused).toBe(false);
+    expect(harness.deckB.removedAttributes).not.toContain("src");
+  });
+
+  it("does not let Auto supersede an in-flight manual selection", async () => {
+    const { result, harness } = setUp({ standbyOptions: { canBuffer: false } });
+    const manualRequest = { ...UPGRADE, isManual: true };
+
+    let manualOutcome: string | undefined;
+    act(() => {
+      void result.current
+        .requestSwitch(manualRequest)
+        .then((outcome) => (manualOutcome = outcome));
+    });
+    await waitFor(() => expect(harness.deckB.loadCount).toBe(1));
+
+    let autoOutcome: string | undefined;
+    await act(async () => {
+      autoOutcome = await result.current.requestSwitch({
+        ...UPGRADE,
+        toQualityId: "q480",
+        toHeight: 480,
+        url: "https://media.test/renditions/480p.mp4",
+      });
+    });
+
+    expect(autoOutcome).toBe("superseded");
+    expect(manualOutcome).toBeUndefined();
+    expect(result.current.pendingQualityId).toBe("q1080");
+    expect(harness.deckB.src).toBe(manualRequest.url);
+
+    harness.deckB.canBuffer = true;
+    harness.deckB.readyState = 3;
+    harness.deckB.emit("progress");
+    await waitFor(() => expect(manualOutcome).toBe("promoted"));
+
+    expect(result.current.activeDeckId).toBe("b");
+    expect(harness.deckB.src).toBe(manualRequest.url);
+    expect(harness.deckB.paused).toBe(false);
+    expect(harness.promotions).toEqual([
+      { toQualityId: "q1080", url: manualRequest.url, deckId: "b" },
     ]);
   });
 
@@ -607,6 +656,32 @@ describe("useSeamlessQualitySwitch", () => {
     });
   });
 
+  it("tells the player to put the old source back when it rolls back", async () => {
+    // The promotion already committed the new quality. If a rollback left that
+    // commit standing, the next thing to re-read the source would attach the
+    // quality that just failed onto the deck that is happily playing — which is
+    // the black screen this callback exists to prevent.
+    const { result, harness } = setUp({ stabiliseMs: 1_000 });
+
+    await act(async () => {
+      await result.current.requestSwitch(UPGRADE);
+    });
+    expect(harness.promotions).toHaveLength(1);
+    expect(harness.rollbacks).toHaveLength(0);
+
+    act(() => {
+      harness.deckB.emit("error");
+    });
+    await waitFor(() => expect(result.current.activeDeckId).toBe("a"));
+
+    expect(harness.rollbacks).toEqual([
+      { restoredQualityId: "q720", deckId: "a" },
+    ]);
+    // And the restored deck is the one still holding its own bytes.
+    expect(harness.deckA.src).toBe("https://media.test/renditions/720p.mp4");
+    expect(harness.deckA.paused).toBe(false);
+  });
+
   it("alternates decks safely across repeated 720p to 1080p to 720p switches", async () => {
     const { result, harness } = setUp({ stabiliseMs: 30 });
 
@@ -686,6 +761,52 @@ describe("useSeamlessQualitySwitch", () => {
     expect(harness.deckA.removedAttributes).toContain("src");
     expect(harness.deckB.removedAttributes).toContain("src");
     expect(harness.promotions).toHaveLength(0);
+  });
+
+  it("keeps every returned function identity stable across re-renders", async () => {
+    // The player destructures these and puts them in effect dependency arrays.
+    // The controller's own return value is a fresh object each render, so if
+    // any of these were re-created per render the effect depending on it would
+    // re-run constantly — which is exactly how the source-attach effect once
+    // ended up tearing the video element down and reloading it on every render,
+    // leaving playback stuck on a loading spinner forever.
+    const { result, harness } = setUp({ stabiliseMs: 30 });
+
+    const functionKeys = [
+      "setDeckElement",
+      "getDeckElement",
+      "isActiveDeckElement",
+      "isRetainedDeckElement",
+      "isBackedOff",
+      "requestSwitch",
+      "cancelSwitch",
+      "notifyActiveSeek",
+    ] as const;
+
+    const before = new Map(
+      functionKeys.map((key) => [key, result.current[key]] as const),
+    );
+    const deckRefsBefore = result.current.deckRefs;
+    const videoRefBefore = result.current.videoRef;
+
+    // Re-render for the ordinary reasons: a switch, and the state it moves.
+    await act(async () => {
+      await result.current.requestSwitch(UPGRADE);
+    });
+    await waitFor(() => expect(harness.deckA.src).toBe(""));
+
+    functionKeys.forEach((key) => {
+      expect(result.current[key], `${key} changed identity`).toBe(
+        before.get(key),
+      );
+    });
+    // The ref callbacks especially: React re-runs a ref callback whose identity
+    // changed by first calling the old one with null, which would detach a deck
+    // mid-switch.
+    expect(result.current.deckRefs).toBe(deckRefsBefore);
+    expect(result.current.deckRefs.a).toBe(deckRefsBefore.a);
+    expect(result.current.deckRefs.b).toBe(deckRefsBefore.b);
+    expect(result.current.videoRef).toBe(videoRefBefore);
   });
 
   it("identifies the active deck element for event guarding", async () => {

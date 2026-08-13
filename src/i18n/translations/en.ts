@@ -247,6 +247,7 @@ export const en = {
     "That saved quality file is no longer available. Choose Auto or another listed file.",
   "player.qualityAudioMismatch":
     "This generated file contains a different audio track. Keep Original or select a compatible quality to preserve the current language.",
+  "player.qualityPreparing": "Preparing…",
   "player.qualitySwitchFailedReturnAuto":
     "The selected quality file could not be played. Choose Auto to return to a verified available file.",
   "player.qualityCompleteFileLimitations":

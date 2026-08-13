@@ -248,6 +248,7 @@ export const tr = {
     "Kaydedilen kalite dosyası artık kullanılamıyor. Otomatik'i veya listelenen başka bir dosyayı seçin.",
   "player.qualityAudioMismatch":
     "Bu üretilen dosyada farklı bir ses parçası var. Geçerli dili korumak için Orijinal'i kullanın veya uyumlu bir kalite seçin.",
+  "player.qualityPreparing": "Hazırlanıyor…",
   "player.qualitySwitchFailedReturnAuto":
     "Seçilen kalite dosyası oynatılamadı. Doğrulanmış kullanılabilir bir dosyaya dönmek için Otomatik'i seçin.",
   "player.qualityCompleteFileLimitations":
