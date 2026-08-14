@@ -39,6 +39,8 @@ export interface ScannerFileSystem {
 
 export interface ScannedSubtitle {
   relativePath: string;
+  codec: string;
+  isText: boolean;
   language?: string;
   isForced: boolean;
   isDefault: boolean;
@@ -202,12 +204,25 @@ function matchSubtitles(
   const matches: ScannedSubtitle[] = [];
 
   for (const subtitleFile of subtitleFiles) {
-    const { stem } = splitExtension(subtitleFile);
+    const { stem, extension } = splitExtension(subtitleFile);
     const parsed = parseSubtitleSuffix(stem);
     if (parsed.baseStem.toLowerCase() !== videoStem.toLowerCase()) continue;
 
+    const format =
+      extension === "srt"
+        ? { codec: "subrip", isText: true }
+        : extension === "vtt"
+          ? { codec: "webvtt", isText: true }
+          : extension === "ass" || extension === "ssa"
+            ? { codec: extension, isText: true }
+            : extension === "sup"
+              ? { codec: "hdmv_pgs_subtitle", isText: false }
+              : { codec: extension, isText: true };
+
     matches.push({
       relativePath: joinRelative(directory, subtitleFile),
+      codec: format.codec,
+      isText: format.isText,
       ...(parsed.language === undefined ? {} : { language: parsed.language }),
       isForced: parsed.isForced,
       isDefault: parsed.isDefault,

@@ -17,6 +17,7 @@ import {
 import type { CatalogueRepository, ItemKind } from "./catalogueRepository";
 import type { CatalogueService } from "./catalogueService";
 import type { ItemDto } from "./itemDto";
+import { isVisibleSubtitleLanguage } from "../../../lib/subtitleLanguages";
 
 export interface CatalogueRoutesOptions {
   service: CatalogueService;
@@ -255,28 +256,36 @@ export function createCatalogueRoutes({
               probeState: file.probeState,
               // The relative path is deliberately absent: a client never needs
               // it, and exposing it would leak the library layout.
-              streams: (await catalogue.listStreams(file.id)).map((stream) => ({
-                index: stream.streamIndex,
-                kind: stream.kind,
-                codec: stream.codec,
-                profile: stream.profile,
-                level: stream.level,
-                language: stream.language,
-                title: stream.title,
-                isDefault: stream.isDefault,
-                isForced: stream.isForced,
-                isExternal: stream.isExternal,
-                isTextSubtitle: stream.isTextSubtitle,
-                channels: stream.channels,
-                sampleRate: stream.sampleRate,
-                bitrateBps:
-                  stream.bitrateBps === null ? null : Number(stream.bitrateBps),
-                width: stream.width,
-                height: stream.height,
-                frameRate: stream.frameRate,
-                videoRange: stream.videoRange,
-                bitDepth: stream.bitDepth,
-              })),
+              streams: (await catalogue.listStreams(file.id))
+                .filter(
+                  (stream) =>
+                    stream.kind !== "subtitle" ||
+                    isVisibleSubtitleLanguage(stream.language),
+                )
+                .map((stream) => ({
+                  index: stream.streamIndex,
+                  kind: stream.kind,
+                  codec: stream.codec,
+                  profile: stream.profile,
+                  level: stream.level,
+                  language: stream.language,
+                  title: stream.title,
+                  isDefault: stream.isDefault,
+                  isForced: stream.isForced,
+                  isExternal: stream.isExternal,
+                  isTextSubtitle: stream.isTextSubtitle,
+                  channels: stream.channels,
+                  sampleRate: stream.sampleRate,
+                  bitrateBps:
+                    stream.bitrateBps === null
+                      ? null
+                      : Number(stream.bitrateBps),
+                  width: stream.width,
+                  height: stream.height,
+                  frameRate: stream.frameRate,
+                  videoRange: stream.videoRange,
+                  bitDepth: stream.bitDepth,
+                })),
             })),
         );
 

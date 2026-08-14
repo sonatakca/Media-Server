@@ -177,15 +177,24 @@ export function createCatalogueScanStore(
       subtitles: ScannedSubtitle[],
     ) => {
       const fileResult = await pool.query<{ id: string }>(
-        `SELECT id FROM media_files WHERE item_id = $1 ORDER BY is_primary DESC LIMIT 1`,
+        `SELECT id FROM media_files
+         WHERE item_id = $1 AND missing_since IS NULL
+         ORDER BY is_primary DESC, size_bytes DESC, id
+         LIMIT 1`,
         [itemId],
       );
       const mediaFileId = fileResult.rows[0]?.id;
       if (!mediaFileId) return;
 
+      // A replacement file can leave the former primary row around during the
+      // missing-file grace period. Remove sidecars from every cut before
+      // attaching them to the currently playable primary; otherwise a rescan
+      // can strand a valid subtitle on a file that no longer exists.
       await pool.query(
-        `DELETE FROM media_streams WHERE media_file_id = $1 AND is_external = true`,
-        [mediaFileId],
+        `DELETE FROM media_streams
+         WHERE is_external = true
+           AND media_file_id IN (SELECT id FROM media_files WHERE item_id = $1)`,
+        [itemId],
       );
 
       // External subtitles occupy a high index range so they cannot collide with
@@ -194,17 +203,19 @@ export function createCatalogueScanStore(
       for (const subtitle of subtitles) {
         await pool.query(
           `INSERT INTO media_streams (
-             media_file_id, stream_index, kind, language, is_default, is_forced,
+             media_file_id, stream_index, kind, codec, language, is_default, is_forced,
              is_external, is_text_subtitle, external_relative_path
            )
-           VALUES ($1, $2, 'subtitle', $3, $4, $5, true, true, $6)
+           VALUES ($1, $2, 'subtitle', $3, $4, $5, $6, true, $7, $8)
            ON CONFLICT (media_file_id, stream_index) DO NOTHING`,
           [
             mediaFileId,
             externalIndex,
+            subtitle.codec,
             subtitle.language ?? null,
             subtitle.isDefault,
             subtitle.isForced,
+            subtitle.isText,
             subtitle.relativePath,
           ],
         );

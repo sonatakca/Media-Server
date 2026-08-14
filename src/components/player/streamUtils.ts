@@ -9,6 +9,7 @@ import type {
   PlaybackSourceCandidate,
   PlaybackSourceSettings,
 } from "../../lib/types";
+import { isVisibleSubtitleLanguage } from "../../lib/subtitleLanguages";
 
 export function getStreamsOfType(
   source: PlaybackSourceCandidate,
@@ -16,7 +17,9 @@ export function getStreamsOfType(
 ): MediaStream[] {
   return (
     source.mediaSource.MediaStreams?.filter(
-      (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
+      (stream) =>
+        stream.Type?.toLowerCase() === type.toLowerCase() &&
+        (type !== "Subtitle" || isVisibleSubtitleLanguage(stream.Language)),
     ) ?? []
   );
 }

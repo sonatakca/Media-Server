@@ -4,6 +4,7 @@ import type {
   MediaStream,
   PlaybackSourceCandidate,
 } from "./types";
+import { isTurkishSubtitleLanguage } from "./subtitleLanguages";
 
 const LEGACY_SUBTITLE_PREFERENCES_STORAGE_KEY =
   "seyirlik.subtitle-default-preferences.v1";
@@ -113,6 +114,15 @@ function getFallbackDefaultAudioStreamIndex(
   );
 }
 
+function getTurkishSubtitleStreamIndex(
+  mediaSource: MediaSource | undefined,
+): number | undefined {
+  return getStreamsOfType(mediaSource, "Subtitle").find(
+    (stream) =>
+      stream.Index !== undefined && isTurkishSubtitleLanguage(stream.Language),
+  )?.Index;
+}
+
 export function getStoredItemPlaybackDefaults(
   item: MediaItem | undefined,
 ): ItemPlaybackDefaults {
@@ -173,6 +183,7 @@ export function getDefaultSubtitleStreamIndexForItem(item: MediaItem): number {
   return (
     storedDefaults.subtitleStreamIndex ??
     getStoredDefaultSubtitleStreamIndex(item.Id) ??
+    getTurkishSubtitleStreamIndex(item.MediaSources?.[0]) ??
     item.MediaSources?.[0]?.DefaultSubtitleStreamIndex ??
     -1
   );
@@ -187,6 +198,7 @@ export function getDefaultSubtitleStreamIndexForSource(
   return (
     storedDefaults.subtitleStreamIndex ??
     getStoredDefaultSubtitleStreamIndex(source.itemId) ??
+    getTurkishSubtitleStreamIndex(source.mediaSource) ??
     source.mediaSource.DefaultSubtitleStreamIndex ??
     -1
   );

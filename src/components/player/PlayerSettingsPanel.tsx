@@ -24,6 +24,7 @@ import {
   COUNTRY_NAME_FLAG_CODES,
   LANGUAGE_FLAG_COUNTRY_CODES,
 } from "../../lib/flagCountryCodes";
+import { isVisibleSubtitleLanguage } from "../../lib/subtitleLanguages";
 import { getPlaybackModeLabel } from "../../lib/playbackDiagnostics";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
@@ -68,7 +69,9 @@ function getStreamsOfType(
 ): MediaStream[] {
   return (
     source.mediaSource.MediaStreams?.filter(
-      (stream) => stream.Type?.toLowerCase() === type.toLowerCase(),
+      (stream) =>
+        stream.Type?.toLowerCase() === type.toLowerCase() &&
+        (type !== "Subtitle" || isVisibleSubtitleLanguage(stream.Language)),
     ) ?? []
   );
 }

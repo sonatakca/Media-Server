@@ -22,6 +22,7 @@ import { buildAnalysisFromInventory } from "../probe/analysisFromInventory";
 import type { PlaybackSessionStore } from "./playbackSessionStore";
 import type { RenditionService } from "../../renditionService";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
+import { extractSubtitleAsWebVtt } from "./subtitleDelivery";
 
 export const PLAYBACK_SESSION_ROUTE_BASE = "/ownAPI/v1/playback/sessions";
 
@@ -37,6 +38,7 @@ export interface PlaybackRoutesOptions {
   sessions: PlaybackSessionStore;
   sessionManager: PlaybackSessionManager;
   mediaRoot: string;
+  ffmpegPath?: string;
   /**
    * Absent when no rendition root is configured, in which case playback still
    * works — it just has nothing but the original and live transcodes to offer.
@@ -158,6 +160,7 @@ export function createPlaybackRoutes({
   sessions,
   sessionManager,
   mediaRoot,
+  ffmpegPath,
   renditions,
 }: PlaybackRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
@@ -575,6 +578,89 @@ export function createPlaybackRoutes({
           context.method === "HEAD",
           "private, max-age=0, no-cache",
         );
+      },
+    },
+
+    {
+      method: "GET",
+      path: "/playback/sessions/:sessionId/subtitles/:subtitleAsset",
+      access: "authenticated",
+      skipCsrf: true,
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const session = await requireOwnedSession(
+          principal.userId,
+          requireUuid(context.params.sessionId, "sessionId"),
+        );
+        const assetMatch = /^(\d{1,6})\.vtt$/.exec(
+          context.params.subtitleAsset ?? "",
+        );
+        if (!assetMatch?.[1]) {
+          throw validationError("The subtitle stream is invalid.");
+        }
+
+        const streamIndex = Number(assetMatch[1]);
+        const file = await catalogue.getFileById(session.mediaFileId);
+        const streams = file ? await catalogue.listStreams(file.id) : [];
+        const stream = streams.find(
+          (candidate) =>
+            candidate.kind === "subtitle" &&
+            candidate.streamIndex === streamIndex &&
+            candidate.isTextSubtitle,
+        );
+        if (!file || file.missingSince !== null || !stream) {
+          throw new OwnApiError(
+            "SUBTITLE_NOT_FOUND",
+            "The requested subtitle could not be found.",
+            404,
+          );
+        }
+
+        const relativeInputPath = stream.isExternal
+          ? stream.externalRelativePath
+          : file.relativePath;
+        if (!relativeInputPath) {
+          throw new OwnApiError(
+            "SUBTITLE_NOT_FOUND",
+            "The requested subtitle could not be found.",
+            404,
+          );
+        }
+
+        const absoluteInputPath = path.resolve(
+          resolvedMediaRoot,
+          ...relativeInputPath.split("/"),
+        );
+        if (!isPathInsideRoot(resolvedMediaRoot, absoluteInputPath)) {
+          throw new OwnApiError(
+            "SUBTITLE_NOT_FOUND",
+            "The requested subtitle could not be found.",
+            404,
+          );
+        }
+
+        let webVtt: Buffer;
+        try {
+          webVtt = await extractSubtitleAsWebVtt(
+            absoluteInputPath,
+            stream.isExternal ? 0 : stream.streamIndex,
+            ffmpegPath,
+          );
+        } catch {
+          throw new OwnApiError(
+            "SUBTITLE_UNAVAILABLE",
+            "The requested subtitle could not be converted.",
+            422,
+          );
+        }
+
+        await sessions.touch(session.id);
+        context.response.statusCode = 200;
+        context.response.setHeader("Content-Type", "text/vtt; charset=utf-8");
+        context.response.setHeader("Content-Length", String(webVtt.length));
+        context.response.setHeader("Cache-Control", "private, max-age=300");
+        context.response.setHeader("X-Content-Type-Options", "nosniff");
+        context.response.end(context.method === "HEAD" ? undefined : webVtt);
       },
     },
 

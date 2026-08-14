@@ -992,7 +992,11 @@ export function CustomVideoPlayer({
         : {
             ...source,
             id: `quality-file-${quality.id}`,
-            playSessionId: undefined,
+            // Generated renditions still use the original media file's
+            // subtitle inventory. Keep its authorized playback session so
+            // sidecar and embedded subtitle tracks remain downloadable while
+            // the generated video file is on screen.
+            playSessionId: source.playSessionId,
             mode: "DirectPlay",
             url: quality.playbackUrl,
             mimeType: quality.container === "mp4" ? "video/mp4" : undefined,
@@ -4250,7 +4254,11 @@ export function CustomVideoPlayer({
     setActiveSubtitleText("");
     setSubtitleCues([]);
 
-    if (selectedSubtitleStreamIndex < 0 || !activeSource.mediaSourceId) {
+    if (
+      selectedSubtitleStreamIndex < 0 ||
+      !activeSource.mediaSourceId ||
+      !activeSource.playSessionId
+    ) {
       return undefined;
     }
 
@@ -4266,13 +4274,14 @@ export function CustomVideoPlayer({
 
     const abortController = new AbortController();
     const subtitleUrl = buildSubtitleStreamUrl(
-      activeSource.playSessionId ?? "",
+      activeSource.playSessionId,
       selectedSubtitleStreamIndex,
     );
 
     const loadSubtitleCues = async () => {
       try {
         const response = await fetch(subtitleUrl, {
+          credentials: "include",
           signal: abortController.signal,
         });
 
@@ -4304,6 +4313,7 @@ export function CustomVideoPlayer({
     activeSource.itemId,
     activeSource.mediaSource,
     activeSource.mediaSourceId,
+    activeSource.playSessionId,
     selectedSubtitleStreamIndex,
   ]);
 

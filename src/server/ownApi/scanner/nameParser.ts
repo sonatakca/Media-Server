@@ -497,7 +497,9 @@ export function parseSubtitleSuffix(stem: string): {
       isDefault = true;
       continue;
     }
-    if (token === "sdh" || token === "cc") continue;
+    // Bazarr uses `.hi` for hearing-impaired subtitles (for example
+    // `Movie.tr.hi.srt`), not for the Hindi language in this suffix position.
+    if (token === "sdh" || token === "cc" || token === "hi") continue;
     if (!language) language = token;
   }
 

@@ -308,6 +308,7 @@ export async function createMediaServer(
     mediaRoot,
     sessionManager,
     generatedStoragePath,
+    ...(options.ffmpegPath ? { ffmpegPath: options.ffmpegPath } : {}),
     ...(options.ffprobePath ? { ffprobePath: options.ffprobePath } : {}),
     ...(options.runWorker === undefined
       ? {}

@@ -79,6 +79,7 @@ export interface CreateNativeRuntimeOptions {
   trustedOrigins?: ReadonlySet<string>;
   mediaRoot: string;
   sessionManager: PlaybackSessionManager;
+  ffmpegPath?: string;
   ffprobePath?: string;
   /** Where cached artwork is written; defaults to the generated-storage volume. */
   generatedStoragePath: string;
@@ -103,6 +104,7 @@ export async function createNativeRuntime({
   trustedOrigins,
   mediaRoot,
   sessionManager,
+  ffmpegPath,
   ffprobePath,
   generatedStoragePath,
   runWorker = true,
@@ -267,6 +269,7 @@ export async function createNativeRuntime({
       sessions: playbackSessions,
       sessionManager,
       mediaRoot,
+      ...(ffmpegPath ? { ffmpegPath } : {}),
       renditions,
     }),
     ...createImageRoutes({ images, imageStorage, catalogue }),

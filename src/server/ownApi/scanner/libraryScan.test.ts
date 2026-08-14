@@ -65,6 +65,32 @@ describe("scanLibraryTree — movies", () => {
     ]);
   });
 
+  it("describes a matching Turkish SRT as an external text stream", async () => {
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem({
+        Movies: ["Ford v Ferrari (2019)/"],
+        "Movies/Ford v Ferrari (2019)": [
+          "Ford v Ferrari (2019) [359724].mp4",
+          "Ford v Ferrari (2019) [359724].tr.srt",
+        ],
+      }),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")[0]?.subtitles).toEqual([
+      {
+        relativePath:
+          "Movies/Ford v Ferrari (2019)/Ford v Ferrari (2019) [359724].tr.srt",
+        codec: "subrip",
+        isText: true,
+        language: "tr",
+        isForced: false,
+        isDefault: false,
+      },
+    ]);
+  });
+
   it("does not merge different titles that share a folder", async () => {
     const fileSystem = createFileSystem({
       Movies: ["Boxset/"],

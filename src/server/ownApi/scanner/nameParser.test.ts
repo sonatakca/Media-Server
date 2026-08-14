@@ -203,6 +203,12 @@ describe("parseSubtitleSuffix", () => {
       isForced: false,
       isDefault: false,
     });
+    expect(parseSubtitleSuffix("Oppenheimer.tr.hi")).toEqual({
+      baseStem: "Oppenheimer",
+      language: "tr",
+      isForced: false,
+      isDefault: false,
+    });
   });
 
   it("leaves a stem without a language suffix untouched", () => {
