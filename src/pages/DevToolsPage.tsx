@@ -17,7 +17,6 @@ import {
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
 import { useEffect } from "react";
-import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 import { useLanguage } from "../i18n/LanguageContext";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";

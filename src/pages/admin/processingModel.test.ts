@@ -4,6 +4,8 @@ import {
   audioDecisionKey,
   audioFormatLabel,
   canCancel,
+  canPause,
+  canResume,
   canRetry,
   formatBytes,
   formatDuration,
@@ -44,6 +46,8 @@ function job(overrides: Partial<ProcessingJob> = {}): ProcessingJob {
     publishedVersion: null,
     attempts: 1,
     cancellationRequested: false,
+    pauseRequested: false,
+    pausedReason: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     startedAt: null,
     finishedAt: null,
@@ -87,6 +91,44 @@ describe("actions", () => {
   it("does not offer cancel twice", () => {
     expect(
       canCancel(job({ state: "running", cancellationRequested: true })),
+    ).toBe(false);
+  });
+
+  it("offers pause only while a job is actually encoding", () => {
+    expect(canPause(job({ state: "running" }))).toBe(true);
+    expect(canPause(job({ state: "queued" }))).toBe(false);
+    expect(canPause(job({ state: "succeeded" }))).toBe(false);
+  });
+
+  it("does not offer pause twice, or while cancelling", () => {
+    expect(canPause(job({ state: "running", pauseRequested: true }))).toBe(
+      false,
+    );
+    expect(
+      canPause(job({ state: "running", cancellationRequested: true })),
+    ).toBe(false);
+  });
+
+  it("offers resume once a job is paused", () => {
+    expect(canResume(job({ state: "paused", pauseRequested: true }))).toBe(
+      true,
+    );
+    expect(canResume(job({ state: "running" }))).toBe(false);
+  });
+
+  /**
+   * A job the storage paused comes back on its own. Offering the button would
+   * invite a click that can only fail while the volume is still missing.
+   */
+  it("does not offer resume for a job the storage paused", () => {
+    expect(
+      canResume(
+        job({
+          state: "paused",
+          pauseRequested: true,
+          pausedReason: "storage-unavailable",
+        }),
+      ),
     ).toBe(false);
   });
 

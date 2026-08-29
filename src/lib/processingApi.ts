@@ -132,6 +132,8 @@ export interface ProcessingJob {
   publishedVersion: string | null;
   attempts: number;
   cancellationRequested: boolean;
+  pauseRequested: boolean;
+  pausedReason: "operator" | "storage-unavailable" | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -245,6 +247,24 @@ export function cancelProcessingJob(
 ): Promise<{ job: ProcessingJob }> {
   return ownApiClient.request<{ job: ProcessingJob }>(
     `/processing/jobs/${encodeURIComponent(jobId)}/cancel`,
+    { method: "POST" },
+  );
+}
+
+export function pauseProcessingJob(
+  jobId: string,
+): Promise<{ job: ProcessingJob }> {
+  return ownApiClient.request<{ job: ProcessingJob }>(
+    `/processing/jobs/${encodeURIComponent(jobId)}/pause`,
+    { method: "POST" },
+  );
+}
+
+export function resumeProcessingJob(
+  jobId: string,
+): Promise<{ job: ProcessingJob }> {
+  return ownApiClient.request<{ job: ProcessingJob }>(
+    `/processing/jobs/${encodeURIComponent(jobId)}/resume`,
     { method: "POST" },
   );
 }

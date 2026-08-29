@@ -50,6 +50,9 @@ export interface ProcessingJobRecord {
   publishedVersion: string | null;
   attempts: number;
   cancellationRequested: boolean;
+  pauseRequested: boolean;
+  /** Why it is paused: an operator asked, or the storage went away. */
+  pausedReason: "operator" | "storage-unavailable" | null;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -107,6 +110,8 @@ export interface ProcessingJobUpdate {
    * doing nothing at all.
    */
   cancellationRequested?: boolean;
+  pauseRequested?: boolean;
+  pausedReason?: "operator" | "storage-unavailable" | null;
 }
 
 const ACTIVE_STATES: readonly ProcessingState[] = [
@@ -123,7 +128,8 @@ const COLUMNS = `
   speed, fps, eta_seconds, hardware_adapter, video_encoder,
   decision, stream_decisions, validation, warnings,
   error_code, error_message, staging_directory, published_version,
-  attempts, cancellation_requested, created_at, started_at, finished_at, updated_at
+  attempts, cancellation_requested, pause_requested, paused_reason,
+  created_at, started_at, finished_at, updated_at
 `;
 
 interface RawRow {
@@ -156,6 +162,8 @@ interface RawRow {
   published_version: string | null;
   attempts: number;
   cancellation_requested: boolean;
+  pause_requested: boolean;
+  paused_reason: "operator" | "storage-unavailable" | null;
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -199,6 +207,8 @@ function toRecord(row: RawRow): ProcessingJobRecord {
     publishedVersion: row.published_version,
     attempts: row.attempts,
     cancellationRequested: row.cancellation_requested,
+    pauseRequested: row.pause_requested,
+    pausedReason: row.paused_reason,
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -231,6 +241,23 @@ export interface ProcessingJobStore {
     update: ProcessingJobUpdate,
   ): Promise<ProcessingJobRecord | null>;
   requestCancellation(id: string): Promise<boolean>;
+  /** Asks a running job to suspend itself, recording who asked and why. */
+  requestPause(
+    id: string,
+    reason: "operator" | "storage-unavailable",
+  ): Promise<boolean>;
+  /**
+   * Lifts a pause. Pass `onlyReason` to lift only pauses of that kind, so the
+   * storage returning does not restart something a person paused on purpose.
+   */
+  resume(
+    id: string,
+    onlyReason?: "operator" | "storage-unavailable",
+  ): Promise<boolean>;
+  listPaused(
+    reason: "operator" | "storage-unavailable",
+  ): Promise<ProcessingJobRecord[]>;
+  listActive(): Promise<ProcessingJobRecord[]>;
   incrementAttempts(id: string): Promise<number>;
   appendEvent(input: {
     processingJobId: string;
@@ -384,6 +411,12 @@ export function createProcessingJobStore(
         set("staging_directory", update.stagingDirectory);
       if (update.publishedVersion !== undefined)
         set("published_version", update.publishedVersion);
+      if (update.pauseRequested !== undefined) {
+        set("pause_requested", update.pauseRequested);
+      }
+      if (update.pausedReason !== undefined) {
+        set("paused_reason", update.pausedReason);
+      }
       if (update.cancellationRequested !== undefined) {
         set("cancellation_requested", update.cancellationRequested);
       }
@@ -399,6 +432,55 @@ export function createProcessingJobStore(
         values,
       );
       return result.rows[0] ? toRecord(result.rows[0]) : null;
+    },
+
+    async requestPause(id, reason) {
+      const result = await pool.query(
+        `UPDATE processing_jobs
+            SET pause_requested = true, paused_reason = $3, updated_at = now()
+          WHERE id = $1 AND state = ANY($2::text[])
+            AND cancellation_requested = false`,
+        [id, ACTIVE_STATES, reason],
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    /**
+     * Clears the pause. A job the operator paused by hand is deliberately not
+     * resumed by the storage coming back: the drive returning answers why the
+     * machine paused it, not why a person did.
+     */
+    async resume(id, onlyReason) {
+      const conditions = onlyReason ? "AND paused_reason = $3" : "";
+      const values: unknown[] = [id, ACTIVE_STATES];
+      if (onlyReason) values.push(onlyReason);
+      const result = await pool.query(
+        `UPDATE processing_jobs
+            SET pause_requested = false, paused_reason = NULL,
+                state = CASE WHEN state = 'paused' THEN 'running' ELSE state END,
+                updated_at = now()
+          WHERE id = $1 AND state = ANY($2::text[]) ${conditions}`,
+        values,
+      );
+      return (result.rowCount ?? 0) > 0;
+    },
+
+    async listPaused(reason) {
+      const result = await pool.query<RawRow>(
+        `SELECT ${COLUMNS} FROM processing_jobs
+          WHERE paused_reason = $1 ORDER BY created_at`,
+        [reason],
+      );
+      return result.rows.map(toRecord);
+    },
+
+    async listActive() {
+      const result = await pool.query<RawRow>(
+        `SELECT ${COLUMNS} FROM processing_jobs
+          WHERE state = ANY($1::text[]) ORDER BY created_at`,
+        [ACTIVE_STATES],
+      );
+      return result.rows.map(toRecord);
     },
 
     async requestCancellation(id) {

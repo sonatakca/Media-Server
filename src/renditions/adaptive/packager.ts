@@ -18,6 +18,7 @@ import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SEGMENT_TARGET_SECONDS } from "../../lib/playback-planner/gopPolicy";
 import { UNKNOWN_LANGUAGE } from "../processing/languages";
+import type { PauseController } from "../processing/pauseController";
 import type { SidecarSubtitle } from "./sidecarSubtitles";
 import type { DriveSpace, RenditionPaths } from "../analysis";
 import { getDriveSpace } from "../analysis";
@@ -165,6 +166,11 @@ export interface AdaptivePackagerOptions {
   /** Text subtitle stream indexes the retention policy chose for WebVTT. */
   subtitleStreamIndexes?: readonly number[];
   /**
+   * Suspends the encoder while paused instead of killing it, so a pause keeps
+   * the work already done rather than costing the whole ladder.
+   */
+  pauseController?: PauseController;
+  /**
    * Subtitle files sitting beside the source that the policy chose to package.
    *
    * Most of this library is subtitled this way rather than in-container, so a
@@ -182,6 +188,7 @@ export interface AdaptivePackagerOptions {
       onProgress?: (
         progress: ReturnType<typeof parseFfmpegProgressFields>,
       ) => void;
+      pauseController?: PauseController;
     },
   ) => Promise<void>;
   onEvent?: RenditionProgressReporter;
@@ -296,6 +303,7 @@ async function runFfmpegProcess(
     onProgress?: (
       progress: ReturnType<typeof parseFfmpegProgressFields>,
     ) => void;
+    pauseController?: PauseController;
   },
 ): Promise<void> {
   const { runFfmpeg } = await import("../processor");
@@ -412,6 +420,7 @@ export async function packageAdaptiveRendition(
     audioStreamIndexes,
     subtitleStreamIndexes = [],
     sidecarSubtitles = [],
+    pauseController,
     driveSpaceProvider = () => getDriveSpace(paths.mediaRoot),
     runEncoder = runFfmpegProcess,
     onEvent,
@@ -646,6 +655,7 @@ export async function packageAdaptiveRendition(
     try {
       await runEncoder(ffmpegPath, args, {
         ...(signal ? { signal } : {}),
+        ...(pauseController ? { pauseController } : {}),
         logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
         ...(onEvent
           ? {

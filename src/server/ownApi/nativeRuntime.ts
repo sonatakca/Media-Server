@@ -56,6 +56,7 @@ import { createTaskRoutes } from "./tasks/taskRoutes";
 import { createProcessingJobStore } from "./processing/jobStore";
 import { createProcessingRoutes } from "./processing/processingRoutes";
 import { createProcessingJobRunner } from "./processing/jobRunner";
+import { createStorageWatchdog } from "../../renditions/processing/storageWatchdog";
 import type { RenditionPaths } from "../../renditions/analysis";
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
@@ -205,6 +206,35 @@ export async function createNativeRuntime({
     environment.SEYIRLIK_RENDITION_STATE_ROOT?.trim() ||
     path.join(mediaRoot, ".seyirlik", "state");
   const processingJobs = createProcessingJobStore(pool);
+
+  /**
+   * An unplugged drive must not be discovered one failed job at a time.
+   *
+   * Without this the queue marches through every remaining title against a
+   * volume that is not there, failing each in turn, and what an operator finds
+   * afterwards is an empty queue full of failures that had nothing wrong with
+   * them. Pausing instead keeps every job alive and resumable.
+   */
+  const storageWatchdog = createStorageWatchdog({
+    mediaRoot,
+    onLost: async () => {
+      for (const job of await processingJobs.listActive()) {
+        await processingJobs.requestPause(job.id, "storage-unavailable");
+      }
+    },
+    onRestored: async () => {
+      // Only the jobs the watchdog itself paused: a job an operator paused by
+      // hand stays paused, because the drive returning does not answer why a
+      // person stopped it.
+      for (const job of await processingJobs.listPaused(
+        "storage-unavailable",
+      )) {
+        await processingJobs.resume(job.id, "storage-unavailable");
+      }
+    },
+  });
+  storageWatchdog.start();
+
   /**
    * Where a package is built before it is published, and where its FFmpeg log
    * is kept. Separate from the published root on purpose: staging is disposable
@@ -322,6 +352,7 @@ export async function createNativeRuntime({
     ...createTaskRoutes({ queue, libraries }),
     ...createProcessingRoutes({
       catalogue,
+      storageAvailable: () => storageWatchdog.available,
       store: processingJobs,
       queue,
       mediaRoot,
@@ -425,6 +456,7 @@ export async function createNativeRuntime({
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
       clearInterval(syncplayCleanupTimer);
+      storageWatchdog.stop();
       await worker.stop();
       await pool.end();
     },

@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { resolveTitleRoot } from "./titleRoot";
 import type { DatabasePool } from "../database/databasePool";
 import type { TmdbPerson } from "./tmdbClient";
 
@@ -62,7 +63,14 @@ const TARGET_COLUMNS = `
   series_id, index_number, parent_index_number, source_key,
   (SELECT relative_path FROM media_files
    WHERE media_files.item_id = items.id AND media_files.is_primary = true
-   ORDER BY media_files.created_at LIMIT 1) AS primary_relative_path
+   ORDER BY media_files.created_at LIMIT 1) AS primary_relative_path,
+  -- A series owns no file of its own, so its folder can only be read off an
+  -- episode's path. Without this a series has no title root and its artwork
+  -- never reaches the folder a person browses.
+  (SELECT mf.relative_path FROM media_files mf
+   JOIN items child ON child.id = mf.item_id
+   WHERE child.series_id = items.id
+   ORDER BY mf.created_at LIMIT 1) AS descendant_relative_path
 `;
 
 interface RawTargetRow {
@@ -77,21 +85,16 @@ interface RawTargetRow {
   parent_index_number: number | null;
   source_key: string;
   primary_relative_path: string | null;
+  descendant_relative_path: string | null;
 }
 
 function toTarget(row: RawTargetRow): MetadataTarget {
-  const prefix = `${row.kind}:`;
-  const sourceRoot = row.source_key.startsWith(prefix)
-    ? row.source_key.slice(prefix.length)
-    : undefined;
-  const titleRoot =
-    row.kind === "series"
-      ? sourceRoot
-      : row.kind === "movie" &&
-          sourceRoot &&
-          row.primary_relative_path?.startsWith(`${sourceRoot}/`)
-        ? sourceRoot
-        : undefined;
+  const titleRoot = resolveTitleRoot({
+    kind: row.kind,
+    sourceKey: row.source_key,
+    primaryRelativePath: row.primary_relative_path,
+    descendantRelativePath: row.descendant_relative_path,
+  });
 
   return {
     id: row.id,

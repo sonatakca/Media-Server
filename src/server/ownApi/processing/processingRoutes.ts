@@ -42,6 +42,11 @@ export interface ProcessingRoutesOptions {
   renditionRoot: string;
   ffmpegPath?: string;
   ffprobePath?: string;
+  /**
+   * Whether the media volume is currently mounted. Injected rather than probed
+   * here so the routes and the watchdog cannot disagree about it.
+   */
+  storageAvailable?: () => boolean;
 }
 
 /**
@@ -78,6 +83,8 @@ function toJobDto(job: ProcessingJobRecord) {
     publishedVersion: job.publishedVersion,
     attempts: job.attempts,
     cancellationRequested: job.cancellationRequested,
+    pauseRequested: job.pauseRequested,
+    pausedReason: job.pausedReason,
     createdAt: job.createdAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
@@ -93,6 +100,7 @@ export function createProcessingRoutes({
   renditionRoot,
   ffmpegPath = process.env.SEYIRLIK_FFMPEG_PATH ?? "ffmpeg",
   ffprobePath = process.env.SEYIRLIK_FFPROBE_PATH ?? "ffprobe",
+  storageAvailable = () => true,
 }: ProcessingRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
   let hardwareCache: { report: HardwareReport; at: number } | null = null;
@@ -522,6 +530,71 @@ export function createProcessingRoutes({
           level: "warning",
           message: "Cancellation requested.",
         });
+        sendData(context.response, context.requestId, {
+          job: toJobDto((await store.get(id))!),
+        });
+      },
+    },
+
+    /**
+     * Suspends an encode without losing it.
+     *
+     * Cancelling a two-hour 4K ladder throws away every frame it has produced.
+     * Pausing stops the encoder where it stands and keeps the work, which is
+     * what an operator actually wants when they need the machine back for a
+     * while.
+     */
+    {
+      method: "POST",
+      path: "/processing/jobs/:jobId/pause",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const id = requireUuid(context.params.jobId, "jobId");
+        const job = await store.get(id);
+        if (!job) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_NOT_FOUND",
+            "The processing job could not be found.",
+            404,
+          );
+        }
+        await store.requestPause(id, "operator");
+        sendData(context.response, context.requestId, {
+          job: toJobDto((await store.get(id))!),
+        });
+      },
+    },
+
+    {
+      method: "POST",
+      path: "/processing/jobs/:jobId/resume",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const id = requireUuid(context.params.jobId, "jobId");
+        const job = await store.get(id);
+        if (!job) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_NOT_FOUND",
+            "The processing job could not be found.",
+            404,
+          );
+        }
+        /*
+         * A job the storage paused cannot be resumed by hand while the volume
+         * is still missing: it would wake straight into the same I/O failure
+         * and be marked failed, which is exactly the outcome the auto-pause
+         * exists to prevent.
+         */
+        if (job.pausedReason === "storage-unavailable" && !storageAvailable()) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_UNAVAILABLE",
+            "The media volume is not available. This job resumes on its own once the volume is back.",
+            409,
+          );
+        }
+        await store.resume(id);
         sendData(context.response, context.requestId, {
           job: toJobDto((await store.get(id))!),
         });

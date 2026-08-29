@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   Cpu,
   Loader2,
+  Pause,
   Play,
   RefreshCcw,
   Sparkles,
@@ -20,6 +21,8 @@ import type { MediaItem, MediaLibrary } from "../../lib/types";
 import { getDisplayTitle } from "../../lib/format";
 import {
   cancelProcessingJob,
+  pauseProcessingJob,
+  resumeProcessingJob,
   enqueueProcessing,
   getProcessingJob,
   getProcessingOverview,
@@ -35,6 +38,8 @@ import {
   audioDecisionKey,
   audioFormatLabel,
   canCancel,
+  canPause,
+  canResume,
   canRetry,
   formatBytes,
   formatDuration,
@@ -508,6 +513,15 @@ export function MediaProcessingPage() {
                       >
                         {t(`processing.state.${job.state}` as never)}
                       </Chip>
+                      {job.pausedReason ? (
+                        <Chip tone="muted">
+                          {t(
+                            job.pausedReason === "storage-unavailable"
+                              ? "processing.pausedByStorage"
+                              : "processing.pausedByOperator",
+                          )}
+                        </Chip>
+                      ) : null}
                       {job.warnings.length > 0 ? (
                         <Chip tone="warn">
                           <AlertTriangle size={11} aria-hidden="true" />
@@ -525,6 +539,36 @@ export function MediaProcessingPage() {
                         >
                           {t("processing.inspect")}
                         </button>
+                        {canPause(job) ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await pauseProcessingJob(job.id).catch(
+                                () => undefined,
+                              );
+                              await refreshOverview();
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          >
+                            <Pause size={12} aria-hidden="true" />
+                            {t("processing.pause")}
+                          </button>
+                        ) : null}
+                        {canResume(job) ? (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              await resumeProcessingJob(job.id).catch(
+                                () => undefined,
+                              );
+                              await refreshOverview();
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          >
+                            <Play size={12} aria-hidden="true" />
+                            {t("processing.resume")}
+                          </button>
+                        ) : null}
                         {canCancel(job) ? (
                           <button
                             type="button"

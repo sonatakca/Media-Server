@@ -41,6 +41,8 @@ function record(
     publishedVersion: null,
     attempts: 0,
     cancellationRequested: false,
+    pauseRequested: false,
+    pausedReason: null,
     createdAt: new Date(),
     startedAt: null,
     finishedAt: null,

@@ -1,4 +1,6 @@
 import path from "node:path";
+import { createPauseController } from "../../../renditions/processing/pauseController";
+import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
 import {
@@ -316,10 +318,51 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       const encodeAbort = new AbortController();
       const forwardAbort = () => encodeAbort.abort();
       input.signal?.addEventListener("abort", forwardAbort, { once: true });
+
+      /*
+       * Pause travels the same way cancellation does, for the same reason: the
+       * request is made in one process and the encoder runs in another, so a
+       * polled flag is the only channel between them. Unlike cancellation it
+       * suspends rather than kills, so the work already done survives.
+       */
+      const pauseController = createPauseController();
       const cancellationWatch = setInterval(() => {
-        void cancelled().then((isCancelled) => {
-          if (isCancelled && !encodeAbort.signal.aborted) encodeAbort.abort();
-        });
+        void (async () => {
+          const latest = await store.get(job.id);
+          if (latest?.pauseRequested && !pauseController.paused) {
+            pauseController.pause();
+            await store.update(job.id, { state: "paused" });
+            await store.appendEvent({
+              processingJobId: job.id,
+              stage: latest.stage,
+              level: "warning",
+              message:
+                latest.pausedReason === "storage-unavailable"
+                  ? "Paused: the media volume is not available."
+                  : "Paused.",
+            });
+          } else if (
+            latest &&
+            !latest.pauseRequested &&
+            pauseController.paused
+          ) {
+            pauseController.resume();
+            await store.update(job.id, { state: "running" });
+            await store.appendEvent({
+              processingJobId: job.id,
+              stage: latest.stage,
+              level: "info",
+              message: "Resumed.",
+            });
+          }
+
+          if ((await cancelled()) && !encodeAbort.signal.aborted) {
+            // A suspended encoder cannot notice an abort, so lift the pause
+            // first and let the abort reach it.
+            pauseController.resume();
+            encodeAbort.abort();
+          }
+        })();
       }, 1000);
       if (typeof cancellationWatch.unref === "function")
         cancellationWatch.unref();
@@ -343,7 +386,18 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             hdrVideoEncoder: decision.videoEncoder,
             audioStreamIndexes: decision.streams.keptAudioStreamIndexes,
             subtitleStreamIndexes: decision.streams.keptSubtitleStreamIndexes,
+            /*
+             * Most of this library is subtitled with a `.srt` beside the file
+             * rather than a stream inside it. Without this the server path
+             * publishes titles with no subtitles in a retained language while
+             * the offline CLI, running the same policy, publishes them with —
+             * the same title processed two ways giving two different answers.
+             */
+            sidecarSubtitles: await planRetainedSidecarSubtitles(
+              input.sourcePath,
+            ),
             signal: encodeAbort.signal,
+            pauseController,
             onEvent: (event) => {
               if (event.type !== "encode-progress") return;
               const fraction =

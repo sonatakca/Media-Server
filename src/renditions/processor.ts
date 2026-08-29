@@ -1,4 +1,8 @@
 import { spawn } from "node:child_process";
+import {
+  bindChildToPauseController,
+  type PauseController,
+} from "./processing/pauseController";
 import { randomUUID } from "node:crypto";
 import {
   appendFile,
@@ -144,10 +148,17 @@ export async function runFfmpeg(
     signal,
     logPath,
     onProgress,
+    pauseController,
   }: {
     signal?: AbortSignal;
     logPath: string;
     onProgress?: (progress: FfmpegProgress) => void;
+    /**
+     * Suspends this encoder with SIGSTOP while paused. Progress is kept: the
+     * process holds its memory, its output files and its position, so resuming
+     * costs nothing where cancelling would cost the whole encode.
+     */
+    pauseController?: PauseController;
   },
 ): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -156,16 +167,30 @@ export async function runFfmpeg(
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
     });
+    const unbindPause = pauseController
+      ? bindChildToPauseController(child, pauseController)
+      : undefined;
     let stderrTail = "";
     let settled = false;
     const complete = (error?: Error) => {
       if (settled) return;
       settled = true;
+      unbindPause?.();
       signal?.removeEventListener("abort", onAbort);
       if (error) reject(error);
       else resolve();
     };
     const onAbort = () => {
+      // A stopped process cannot act on SIGTERM. Waking it first is what makes
+      // cancelling a paused encode take effect immediately rather than leaving
+      // a suspended FFmpeg behind holding its output files open.
+      if (pauseController?.paused) {
+        try {
+          child.kill("SIGCONT");
+        } catch {
+          // Already gone.
+        }
+      }
       child.kill("SIGTERM");
       complete(new Error("FFmpeg was cancelled."));
     };

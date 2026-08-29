@@ -1,12 +1,14 @@
 import { readFile } from "node:fs/promises";
 import type { DatabasePool } from "../database/databasePool";
 import type { ImageStorage, TitleArtworkType } from "./imageStorage";
+import { resolveTitleRoot } from "../metadata/titleRoot";
 
 interface LegacyArtworkRow {
   id: string;
   kind: string;
   source_key: string;
   primary_relative_path: string | null;
+  descendant_relative_path: string | null;
   image_type: TitleArtworkType;
   content_type: string;
   storage_key: string;
@@ -18,19 +20,18 @@ export interface TitleArtworkMigrationResult {
   failed: number;
 }
 
+/**
+ * Shared with the metadata repository rather than restated here: the two once
+ * held the same rule twice and the same case-sensitivity bug twice, so neither
+ * a movie's nor a series' artwork ever reached its title folder.
+ */
 function titleRootFor(row: LegacyArtworkRow): string | undefined {
-  const prefix = `${row.kind}:`;
-  if (!row.source_key.startsWith(prefix)) return undefined;
-  const candidate = row.source_key.slice(prefix.length);
-  if (!candidate) return undefined;
-  if (row.kind === "series") return candidate;
-  if (
-    row.kind === "movie" &&
-    row.primary_relative_path?.startsWith(`${candidate}/`)
-  ) {
-    return candidate;
-  }
-  return undefined;
+  return resolveTitleRoot({
+    kind: row.kind,
+    sourceKey: row.source_key,
+    primaryRelativePath: row.primary_relative_path,
+    descendantRelativePath: row.descendant_relative_path,
+  });
 }
 
 /**
@@ -52,7 +53,11 @@ export async function migrateTitleArtwork(
             (SELECT relative_path FROM media_files
              WHERE media_files.item_id = items.id
                AND media_files.is_primary = true
-             ORDER BY media_files.created_at LIMIT 1) AS primary_relative_path
+             ORDER BY media_files.created_at LIMIT 1) AS primary_relative_path,
+            (SELECT mf.relative_path FROM media_files mf
+             JOIN items child ON child.id = mf.item_id
+             WHERE child.series_id = items.id
+             ORDER BY mf.created_at LIMIT 1) AS descendant_relative_path
      FROM item_images
      JOIN items ON items.id = item_images.item_id
      WHERE item_images.image_type IN ('cover', 'backdrop', 'logo')

@@ -57,6 +57,39 @@ export function canCancel(
   return isActiveState(job.state) && !job.cancellationRequested;
 }
 
+/**
+ * A running job can be suspended. Pausing keeps the encode where it stands
+ * rather than discarding it, so it is offered wherever cancelling is — the
+ * difference being that this one is reversible.
+ */
+export function canPause(
+  job: Pick<
+    ProcessingJob,
+    "state" | "pauseRequested" | "cancellationRequested"
+  >,
+): boolean {
+  return (
+    job.state === "running" && !job.pauseRequested && !job.cancellationRequested
+  );
+}
+
+/**
+ * A job paused because the volume went away resumes on its own when it comes
+ * back, so offering the button would invite a click that can only fail.
+ */
+export function canResume(
+  job: Pick<
+    ProcessingJob,
+    "state" | "pauseRequested" | "pausedReason" | "cancellationRequested"
+  >,
+): boolean {
+  return (
+    job.pauseRequested &&
+    !job.cancellationRequested &&
+    job.pausedReason !== "storage-unavailable"
+  );
+}
+
 export function canRetry(job: Pick<ProcessingJob, "state">): boolean {
   return ["failed", "cancelled"].includes(job.state);
 }
