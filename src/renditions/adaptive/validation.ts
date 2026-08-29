@@ -16,7 +16,7 @@
  */
 
 import { open, readFile, realpath, stat } from "node:fs/promises";
-import path from "node:path";
+import path, { posix } from "node:path";
 import { spawn } from "node:child_process";
 import { tmpdir } from "node:os";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -37,12 +37,14 @@ import {
   type PackagedVideoProbe,
 } from "./probePackaged";
 import {
-  ADAPTIVE_MEDIA_FILE,
   ADAPTIVE_METADATA_FILE,
   ALIGNMENT_EPSILON_SECONDS,
   AUDIO_DURATION_TOLERANCE_SECONDS,
   VIDEO_DURATION_TOLERANCE_SECONDS,
 } from "./profile";
+import { parseWebVttMediaPlaylist } from "./subtitles";
+import { TITLE_PACKAGE_DIRECTORY } from "./titleLayout";
+import { TITLE_BUILD_RECORD } from "./publishTitle";
 
 export interface AdaptiveValidationIssue {
   mediaId: string;
@@ -394,10 +396,20 @@ export async function validateAdaptivePackage({
 }: AdaptiveValidationOptions): Promise<AdaptiveValidationResult> {
   const collector = new ValidationCollector(mediaId);
 
-  const metadataText = await readPackageFile(
+  /*
+   * A package is validated in two places: in the work directory before it is
+   * published, where its layout is the build's own, and in the title folder
+   * afterwards, where the paths are the library's names. Both carry the same
+   * record under different filenames, so the layout is recognised rather than
+   * demanded — an operator revalidating a published title should not have to
+   * say which shape it is in.
+   */
+  const published = await readPackageFile(
     versionRoot,
-    ADAPTIVE_METADATA_FILE,
+    `${TITLE_PACKAGE_DIRECTORY}/${TITLE_BUILD_RECORD}`,
   );
+  const metadataText =
+    published ?? (await readPackageFile(versionRoot, ADAPTIVE_METADATA_FILE));
   if (metadataText === null) {
     collector.add(
       "package",
@@ -413,6 +425,7 @@ export async function validateAdaptivePackage({
       mediaId,
       ...(sourceFingerprint ? { sourceFingerprint } : {}),
       ...(profileVersion ? { profileVersion } : {}),
+      ...(published ? { enforceCanonicalPaths: false } : {}),
     });
   } catch (error) {
     collector.add(
@@ -452,8 +465,20 @@ export async function validateAdaptivePackage({
         "master playlist does not declare #EXT-X-INDEPENDENT-SEGMENTS.",
       );
     }
+    /*
+     * A master names its renditions relative to itself, and the manifest names
+     * them relative to the package root. Those are the same path expressed from
+     * two places, so both are brought to the package root before they are
+     * compared — and percent-encoding is undone, because a published name
+     * carries spaces a URI cannot.
+     */
+    const toPackageRelative = (uri: string): string => {
+      const decoded = decodeURIComponent(uri);
+      const base = posix.dirname(metadata.masterPlaylistPath);
+      return base === "." ? decoded : posix.normalize(`${base}/${decoded}`);
+    };
     const declaredVariants = new Set(
-      master.variants.map((variant) => variant.uri),
+      master.variants.map((variant) => toPackageRelative(variant.uri)),
     );
     for (const rendition of metadata.videoRenditions) {
       if (!declaredVariants.has(rendition.playlistPath)) {
@@ -465,10 +490,22 @@ export async function validateAdaptivePackage({
       }
     }
     const declaredAudio = new Set(
-      master.audioRenditions.map((entry) => entry.uri),
+      master.audioRenditions.map((entry) => toPackageRelative(entry.uri)),
     );
     for (const rendition of metadata.audioRenditions) {
       if (!declaredAudio.has(rendition.playlistPath)) {
+        collector.add(
+          rendition.id,
+          "master-playlist",
+          `master playlist does not reference ${rendition.playlistPath}.`,
+        );
+      }
+    }
+    const declaredSubtitles = new Set(
+      master.subtitleRenditions.map((entry) => toPackageRelative(entry.uri)),
+    );
+    for (const rendition of metadata.subtitleRenditions ?? []) {
+      if (!declaredSubtitles.has(rendition.playlistPath)) {
         collector.add(
           rendition.id,
           "master-playlist",
@@ -545,20 +582,30 @@ export async function validateAdaptivePackage({
         "media playlist does not declare #EXT-X-INDEPENDENT-SEGMENTS.",
       );
     }
-    if (playlist.map.uri !== ADAPTIVE_MEDIA_FILE) {
+    /*
+     * One file per rendition is what makes byte ranges work, so the
+     * initialisation range and every segment must name that one file — the
+     * media file this rendition's own manifest entry points at, wherever the
+     * package was laid out.
+     */
+    const expectedMediaUri = posix.relative(
+      posix.dirname(rendition.playlistPath),
+      rendition.mediaPath,
+    );
+    const namesTheMediaFile = (uri: string): boolean =>
+      decodeURIComponent(uri) === expectedMediaUri;
+    if (!namesTheMediaFile(playlist.map.uri)) {
       collector.add(
         rendition.id,
         "media-playlist",
-        `#EXT-X-MAP points at ${playlist.map.uri}, not ${ADAPTIVE_MEDIA_FILE}.`,
+        `#EXT-X-MAP points at ${playlist.map.uri}, not ${expectedMediaUri}.`,
       );
     }
-    if (
-      playlist.segments.some((segment) => segment.uri !== ADAPTIVE_MEDIA_FILE)
-    ) {
+    if (playlist.segments.some((segment) => !namesTheMediaFile(segment.uri))) {
       collector.add(
         rendition.id,
         "media-playlist",
-        `a segment references a file other than ${ADAPTIVE_MEDIA_FILE}.`,
+        `a segment references a file other than ${expectedMediaUri}.`,
       );
     }
     if (playlist.segments.length !== rendition.segmentCount) {
@@ -909,6 +956,77 @@ export async function validateAdaptivePackage({
   }
   collector.pass("audio-properties");
   collector.pass("audio-video-coverage");
+
+  for (const rendition of metadata.subtitleRenditions ?? []) {
+    const playlistText = await readPackageFile(
+      versionRoot,
+      rendition.playlistPath,
+    );
+    if (playlistText === null) {
+      collector.add(
+        rendition.id,
+        "subtitle-playlist",
+        `${rendition.playlistPath} is missing, unreadable, or resolves outside the package.`,
+      );
+      continue;
+    }
+    try {
+      const playlist = parseWebVttMediaPlaylist(playlistText);
+      if (playlist.uri !== path.posix.basename(rendition.subtitlePath)) {
+        collector.add(
+          rendition.id,
+          "subtitle-playlist",
+          `subtitle playlist points at ${playlist.uri}, not ${path.posix.basename(rendition.subtitlePath)}.`,
+        );
+      }
+      if (
+        Math.abs(playlist.durationSeconds - rendition.durationSeconds) >
+        AUDIO_DURATION_TOLERANCE_SECONDS
+      ) {
+        collector.add(
+          rendition.id,
+          "subtitle-timeline",
+          "subtitle playlist duration does not match its metadata.",
+        );
+      }
+    } catch (error) {
+      collector.add(
+        rendition.id,
+        "subtitle-playlist",
+        error instanceof Error ? error.message : String(error),
+      );
+      continue;
+    }
+    const subtitlePath = await resolveInsidePackage(
+      versionRoot,
+      rendition.subtitlePath,
+    );
+    if (!subtitlePath) {
+      collector.add(
+        rendition.id,
+        "subtitle-file",
+        `${rendition.subtitlePath} is missing or resolves outside the package.`,
+      );
+      continue;
+    }
+    const subtitleStats = await stat(subtitlePath).catch(() => null);
+    const contents = await readFile(subtitlePath, "utf8").catch(() => "");
+    if (
+      !subtitleStats?.isFile() ||
+      subtitleStats.size !== rendition.fileSizeBytes ||
+      !/^WEBVTT(?:\s|$)/.test(contents)
+    ) {
+      collector.add(
+        rendition.id,
+        "subtitle-file",
+        "subtitle file is missing, changed, or is not valid WebVTT.",
+      );
+    }
+  }
+  if ((metadata.subtitleRenditions?.length ?? 0) > 0) {
+    collector.pass("webvtt-subtitles");
+    collector.pass("subtitle-metadata");
+  }
 
   if (!deep) {
     return {

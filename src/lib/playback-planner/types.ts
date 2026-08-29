@@ -166,6 +166,8 @@ export type PlaybackReasonCode =
   | "bitrate_too_high"
   | "audio_codec_unsupported"
   | "audio_channels_unsupported"
+  /** A non-default audio track was chosen, which direct play cannot deliver. */
+  | "audio_selection_requires_remux"
   | "subtitle_external_supported"
   | "subtitle_conversion_required"
   | "subtitle_burn_required"
@@ -222,6 +224,10 @@ export interface PlaybackPlan {
   preservesOriginalVideoQuality: boolean;
   expectedStartup: "instant" | "fast" | "slow";
   mediaId: string;
+  /** Earliest timeline position an incremental replacement must expose. */
+  startTimeSeconds?: number;
+  /** Source bound used when reserving startup buffer near the end. */
+  sourceDurationSeconds?: number;
   selected: {
     videoStreamIndex: number;
     audioStreamIndex?: number;

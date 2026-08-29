@@ -11,7 +11,7 @@ export const ARTWORK_KINDS: ArtworkKind[] = ["poster", "backdrop", "logo"];
 
 /** The stored image type each provider set replaces. */
 export const STORED_TYPE_BY_KIND: Record<ArtworkKind, string> = {
-  poster: "primary",
+  poster: "cover",
   backdrop: "backdrop",
   logo: "logo",
 };

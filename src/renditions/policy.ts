@@ -10,10 +10,21 @@ export const RENDITION_PROFILE_VERSION = "h264-aac-mp4-v2";
  * The long edge classifies every aspect ratio, including portrait video,
  * consistently.
  */
+/**
+ * Every rung a ladder may contain, largest first.
+ *
+ * The top of the ladder now reaches the source's own class: a title carries a
+ * processed rendition at its native size as well as the smaller ones, so the
+ * source file is one day removable without the best quality going with it.
+ */
 export const RENDITION_TARGETS = [
+  { qualityHeight: 2160, longEdge: 3840 },
   { qualityHeight: 1080, longEdge: 1920 },
   { qualityHeight: 720, longEdge: 1280 },
   { qualityHeight: 480, longEdge: 854 },
+  { qualityHeight: 360, longEdge: 640 },
+  { qualityHeight: 240, longEdge: 426 },
+  { qualityHeight: 144, longEdge: 256 },
 ] as const;
 
 /**
@@ -32,9 +43,14 @@ const QUALITY_CLASSES = [
 ] as const;
 
 /**
- * A target is only generated when the source is meaningfully larger than it.
- * Below this ratio the output would be close enough to the source to be wasted
- * space — it also keeps a 1080p source from producing another 1080p file.
+ * How much larger than a target the source must be for that target to be a
+ * *downscale*.
+ *
+ * Below this ratio the rung is not smaller than the source in any useful sense.
+ * It is still generated — the ladder deliberately reaches the source's own
+ * class so the title carries a processed copy at full quality — but it is
+ * generated at the source's real dimensions rather than being stretched up to
+ * the nominal class.
  */
 const MINIMUM_DOWNSCALE_RATIO = 1.2;
 const QUALITY_CLASS_TOLERANCE = 1.05;
@@ -67,6 +83,14 @@ const SUPPORTED_VIDEO_EXTENSIONS = new Set([
  */
 const EXCLUDED_DIRECTORY_NAMES = new Set([
   ".seyirlik",
+  /*
+   * A title's own generated media. Walking into these would offer the ladder
+   * back to the packager as seven more sources to build ladders from.
+   */
+  "video",
+  "audio",
+  "subtitle",
+  "content",
   "backdrops",
   "behind the scenes",
   "books",
@@ -196,7 +220,24 @@ export function buildRenditionRequirements(
   const seen = new Set<string>();
   const requirements: RenditionRequirement[] = [];
 
+  /*
+   * The ladder starts at the source's own class, encoded at the source's real
+   * dimensions rather than stretched up to the nominal class — a 2.39:1 4K
+   * master is 3840x1604 and stays that shape. This rung is what lets the source
+   * file eventually be removed: without it the best copy of a title would only
+   * ever exist as the original.
+   */
+  const sourceClass = classifyQualityHeight(source);
+  const sourceDimensions = computeRenditionDimensions(
+    display.width,
+    display.height,
+    sourceLongEdge,
+  );
+  seen.add(`${sourceDimensions.width}x${sourceDimensions.height}`);
+  requirements.push({ ...sourceDimensions, qualityHeight: sourceClass });
+
   for (const target of RENDITION_TARGETS) {
+    if (target.qualityHeight >= sourceClass) continue;
     if (sourceLongEdge < target.longEdge * MINIMUM_DOWNSCALE_RATIO) continue;
     const dimensions = computeRenditionDimensions(
       display.width,

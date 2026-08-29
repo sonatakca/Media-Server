@@ -317,7 +317,16 @@ export function RainbowAnimation({
           overflow: hidden;
           filter: blur(${blurPx}px);
           opacity: 0.92;
-          will-change: transform, filter, opacity;
+          /*
+           * Only transform is hinted. The blur and the opacity here never
+           * change, and naming a static property in will-change buys nothing
+           * while forcing the compositor to keep a filter-capable layer for an
+           * element this large — the devtools instance is 115vw x 82vh blurred
+           * by 38px, big enough that re-rasterising it mid-animation shows as
+           * a flicker. The hint that matters is the one that keeps the blurred
+           * result on its own layer while an ancestor transforms it.
+           */
+          will-change: transform;
           background-image:
             repeating-linear-gradient(
               ${stripeAngleDeg}deg,
@@ -363,7 +372,15 @@ export function RainbowAnimation({
             );
           background-size: 100% 100%, 190% 190%;
           background-position: 50% 50%, 50% 50%;
-          will-change: transform, background-position;
+          /*
+           * background-position is deliberately not hinted even though the
+           * drift animates it. It is not a compositable property, so the hint
+           * cannot spare the repaint it implies — it only promotes a layer the
+           * browser must then repaint on every frame anyway, which on a 300%
+           * wide element under a blurred, screen-blended parent is the most
+           * expensive thing this component does.
+           */
+          will-change: transform;
           animation: ${driftKeyframes} ${actualDriftDuration}s linear ${startDelay}s forwards;
         }
 

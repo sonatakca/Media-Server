@@ -151,6 +151,38 @@ describe("scanLibraryTree — movies", () => {
     expect(result.skipped.some((skip) => skip.reason === "sample")).toBe(true);
   });
 
+  it("attaches every video in content/trailers without scanning content as titles", async () => {
+    const fileSystem = createFileSystem({
+      Movies: ["Dune (2021)/"],
+      "Movies/Dune (2021)": ["Dune (2021).mkv", "content/"],
+      "Movies/Dune (2021)/content/trailers": [
+        "official-teaser.mp4",
+        "sample.mkv",
+      ],
+    });
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")).toHaveLength(1);
+    expect(byKind(result.items, "trailer")).toEqual([
+      expect.objectContaining({
+        files: [
+          expect.objectContaining({
+            relativePath:
+              "Movies/Dune (2021)/content/trailers/official-teaser.mp4",
+          }),
+        ],
+      }),
+    ]);
+    expect(result.items.some((item) => item.title === "official teaser")).toBe(
+      false,
+    );
+  });
+
   it("keeps identifiers stable when a file is re-encoded into another container", async () => {
     const before = await scanLibraryTree({
       fileSystem: createFileSystem({
@@ -247,6 +279,29 @@ describe("scanLibraryTree — series", () => {
 
     expect(byKind(result.items, "season")).toHaveLength(1);
     expect(byKind(result.items, "episode")).toHaveLength(2);
+  });
+
+  it("attaches a content/trailers video to its series", async () => {
+    const fileSystem = createFileSystem({
+      Shows: ["Firefly/"],
+      "Shows/Firefly": ["Season 1/", "content/"],
+      "Shows/Firefly/Season 1": ["Firefly S01E01.mkv"],
+      "Shows/Firefly/content/trailers": ["trailer.mp4"],
+    });
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const series = byKind(result.items, "series")[0];
+    expect(byKind(result.items, "trailer")).toEqual([
+      expect.objectContaining({
+        parentSourceKey: series?.sourceKey,
+        seriesSourceKey: series?.sourceKey,
+      }),
+    ]);
   });
 
   it("files specials as season zero", async () => {

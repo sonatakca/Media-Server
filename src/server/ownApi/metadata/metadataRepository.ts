@@ -12,6 +12,8 @@ export interface MetadataTarget {
   seriesId: string | null;
   indexNumber: number | null;
   parentIndexNumber: number | null;
+  /** Existing title directory, relative to the media root, when the item owns one. */
+  titleRoot?: string;
 }
 
 export interface TitleMetadataUpdate {
@@ -57,7 +59,10 @@ export interface MetadataRepository {
 
 const TARGET_COLUMNS = `
   id, kind, title, production_year, provider_ids, locked_fields,
-  series_id, index_number, parent_index_number
+  series_id, index_number, parent_index_number, source_key,
+  (SELECT relative_path FROM media_files
+   WHERE media_files.item_id = items.id AND media_files.is_primary = true
+   ORDER BY media_files.created_at LIMIT 1) AS primary_relative_path
 `;
 
 interface RawTargetRow {
@@ -70,9 +75,24 @@ interface RawTargetRow {
   series_id: string | null;
   index_number: number | null;
   parent_index_number: number | null;
+  source_key: string;
+  primary_relative_path: string | null;
 }
 
 function toTarget(row: RawTargetRow): MetadataTarget {
+  const prefix = `${row.kind}:`;
+  const sourceRoot = row.source_key.startsWith(prefix)
+    ? row.source_key.slice(prefix.length)
+    : undefined;
+  const titleRoot =
+    row.kind === "series"
+      ? sourceRoot
+      : row.kind === "movie" &&
+          sourceRoot &&
+          row.primary_relative_path?.startsWith(`${sourceRoot}/`)
+        ? sourceRoot
+        : undefined;
+
   return {
     id: row.id,
     kind: row.kind,
@@ -83,6 +103,7 @@ function toTarget(row: RawTargetRow): MetadataTarget {
     seriesId: row.series_id,
     indexNumber: row.index_number,
     parentIndexNumber: row.parent_index_number,
+    ...(titleRoot ? { titleRoot } : {}),
   };
 }
 

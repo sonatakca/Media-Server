@@ -528,3 +528,76 @@ describe("decidePlaybackPlan", () => {
     );
   });
 });
+
+describe("decidePlaybackPlan audio track selection", () => {
+  const multilingual = () =>
+    buildMedia({
+      audioStreams: [
+        { index: 1, codecName: "aac", channels: 2, isDefault: true },
+        { index: 2, codecName: "aac", channels: 2, isDefault: false },
+      ],
+    });
+
+  it("direct plays when no audio track was explicitly chosen", () => {
+    const plan = decidePlaybackPlan({
+      media: multilingual(),
+      client: buildClient(),
+    });
+
+    expect(plan.mode).toBe("direct-play");
+    expect(plan.requiresFfmpeg).toBe(false);
+  });
+
+  it("direct plays when the chosen track is already the file's default", () => {
+    const plan = decidePlaybackPlan({
+      media: multilingual(),
+      client: buildClient(),
+      selectedAudioStreamIndex: 1,
+    });
+
+    expect(plan.mode).toBe("direct-play");
+  });
+
+  /**
+   * No Chromium implements `HTMLMediaElement.audioTracks`, so a directly played
+   * file always sounds like its default track. Served that way, choosing the
+   * second language changes nothing the viewer can hear, and the player is left
+   * asking for a source that can never satisfy it.
+   */
+  it("remuxes when a non-default audio track is chosen", () => {
+    const plan = decidePlaybackPlan({
+      media: multilingual(),
+      client: buildClient(),
+      selectedAudioStreamIndex: 2,
+    });
+
+    expect(plan.mode).toBe("remux");
+    expect(plan.requiresFfmpeg).toBe(true);
+    expect(plan.delivery.type).toBe("hls");
+    expect(plan.reasons.map((entry) => entry.code)).toContain(
+      "audio_selection_requires_remux",
+    );
+  });
+
+  it("maps only the chosen audio stream into the remux", () => {
+    const plan = decidePlaybackPlan({
+      media: multilingual(),
+      client: buildClient(),
+      selectedAudioStreamIndex: 2,
+    });
+
+    expect(plan.selected.audioStreamIndex).toBe(2);
+    expect(plan.video.action).toBe("copy");
+    expect(plan.audio.action).toBe("copy");
+  });
+
+  it("leaves a single-track file on direct play", () => {
+    const plan = decidePlaybackPlan({
+      media: buildMedia(),
+      client: buildClient(),
+      selectedAudioStreamIndex: 1,
+    });
+
+    expect(plan.mode).toBe("direct-play");
+  });
+});

@@ -7,59 +7,96 @@ import {
 } from "./policy";
 
 describe("rendition policy", () => {
-  it("plans 1080p, 720p and 480p for a 2160p source", () => {
+  /**
+   * The ladder reaches the source's own class as well as every rung below it.
+   * That top rung is what makes the source file removable later: without it the
+   * best copy of a title would only ever exist as the original.
+   */
+  it("plans the full ladder down from a 2160p source", () => {
     expect(
       buildRenditionRequirements({ width: 3840, height: 2160, rotation: 0 }),
+    ).toEqual([
+      { qualityHeight: 2160, width: 3840, height: 2160 },
+      { qualityHeight: 1080, width: 1920, height: 1080 },
+      { qualityHeight: 720, width: 1280, height: 720 },
+      { qualityHeight: 480, width: 854, height: 480 },
+      { qualityHeight: 360, width: 640, height: 360 },
+      { qualityHeight: 240, width: 426, height: 240 },
+      { qualityHeight: 144, width: 256, height: 144 },
+    ]);
+  });
+
+  it("never plans a rung above the source's own class", () => {
+    expect(
+      buildRenditionRequirements({ width: 1920, height: 1080, rotation: 0 }),
     ).toEqual([
       { qualityHeight: 1080, width: 1920, height: 1080 },
       { qualityHeight: 720, width: 1280, height: 720 },
       { qualityHeight: 480, width: 854, height: 480 },
+      { qualityHeight: 360, width: 640, height: 360 },
+      { qualityHeight: 240, width: 426, height: 240 },
+      { qualityHeight: 144, width: 256, height: 144 },
     ]);
-  });
 
-  it("plans 720p and 480p for a 1080p source", () => {
     expect(
-      buildRenditionRequirements({ width: 1920, height: 1080, rotation: 0 }),
+      buildRenditionRequirements({ width: 1280, height: 720, rotation: 0 }),
     ).toEqual([
       { qualityHeight: 720, width: 1280, height: 720 },
       { qualityHeight: 480, width: 854, height: 480 },
+      { qualityHeight: 360, width: 640, height: 360 },
+      { qualityHeight: 240, width: 426, height: 240 },
+      { qualityHeight: 144, width: 256, height: 144 },
     ]);
-  });
-
-  it("plans only 480p for a 720p source", () => {
-    expect(
-      buildRenditionRequirements({ width: 1280, height: 720, rotation: 0 }),
-    ).toEqual([{ qualityHeight: 480, width: 854, height: 480 }]);
   });
 
   it("classifies letterboxed masters by display long edge, not frame height", () => {
     // A 4K scope feature stores a 1604px frame height; the height-threshold
     // ladder used to cap it at 720p and never produce a 1080p file.
     expect(classifyQualityHeight({ width: 3840, height: 1604 })).toBe(2160);
+    // The top rung keeps the source's real shape rather than being stretched
+    // up to the nominal class: a 2.39:1 master stays 2.39:1.
     expect(
       buildRenditionRequirements({ width: 3840, height: 1604, rotation: 0 }),
     ).toEqual([
+      { qualityHeight: 2160, width: 3840, height: 1604 },
       { qualityHeight: 1080, width: 1920, height: 802 },
       { qualityHeight: 720, width: 1280, height: 534 },
       { qualityHeight: 480, width: 854, height: 356 },
+      { qualityHeight: 360, width: 640, height: 268 },
+      { qualityHeight: 240, width: 426, height: 178 },
+      { qualityHeight: 144, width: 256, height: 106 },
     ]);
 
     expect(classifyQualityHeight({ width: 1920, height: 816 })).toBe(1080);
     expect(
       buildRenditionRequirements({ width: 1920, height: 816, rotation: 0 }),
     ).toEqual([
+      { qualityHeight: 1080, width: 1920, height: 816 },
       { qualityHeight: 720, width: 1280, height: 544 },
       { qualityHeight: 480, width: 854, height: 362 },
+      { qualityHeight: 360, width: 640, height: 272 },
+      { qualityHeight: 240, width: 426, height: 182 },
+      { qualityHeight: 144, width: 256, height: 108 },
     ]);
   });
 
-  it("does not upscale or create meaningless lower renditions", () => {
-    expect(
-      buildRenditionRequirements({ width: 854, height: 480, rotation: 0 }),
-    ).toEqual([]);
-    expect(
-      buildRenditionRequirements({ width: 1024, height: 576, rotation: 0 }),
-    ).toEqual([]);
+  it("does not upscale", () => {
+    // A 480p source gets its own class and the rungs below it, and nothing
+    // above: there are no extra pixels to invent.
+    const fromSmallSource = buildRenditionRequirements({
+      width: 854,
+      height: 480,
+      rotation: 0,
+    });
+    expect(fromSmallSource[0]).toEqual({
+      qualityHeight: 480,
+      width: 854,
+      height: 480,
+    });
+    expect(fromSmallSource.every((rung) => rung.qualityHeight <= 480)).toBe(
+      true,
+    );
+    expect(fromSmallSource.every((rung) => rung.width <= 854)).toBe(true);
   });
 
   it("preserves unusual aspect ratios and produces even dimensions", () => {
@@ -79,9 +116,13 @@ describe("rendition policy", () => {
     expect(
       buildRenditionRequirements({ width: 3840, height: 2160, rotation: 90 }),
     ).toEqual([
+      { qualityHeight: 2160, width: 2160, height: 3840 },
       { qualityHeight: 1080, width: 1080, height: 1920 },
       { qualityHeight: 720, width: 720, height: 1280 },
       { qualityHeight: 480, width: 480, height: 854 },
+      { qualityHeight: 360, width: 360, height: 640 },
+      { qualityHeight: 240, width: 240, height: 426 },
+      { qualityHeight: 144, width: 144, height: 256 },
     ]);
   });
 

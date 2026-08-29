@@ -15,6 +15,8 @@ import {
   ADAPTIVE_MEDIA_FILE,
   ADAPTIVE_METADATA_SCHEMA_VERSION,
   ADAPTIVE_PLAYLIST_FILE,
+  ADAPTIVE_SUBTITLE_DIRECTORY,
+  ADAPTIVE_SUBTITLE_FILE,
   ADAPTIVE_POINTER_SCHEMA_VERSION,
   ADAPTIVE_VIDEO_DIRECTORY,
   isSafeRenditionId,
@@ -64,6 +66,15 @@ export interface AdaptiveAudioRenditionMetadata {
   title?: string;
   isDefault: boolean;
   isForced: boolean;
+  /**
+   * The source's own `original` and `comment` dispositions, kept separate from
+   * `isDefault`. Which track a container opens with says nothing about which
+   * language the film was shot in — a Turkish remux routinely flags its dub
+   * default — so the name a viewer reads has to come from the disposition that
+   * actually claims it.
+   */
+  isOriginal?: boolean;
+  isCommentary?: boolean;
   codec: "aac";
   codecString: string;
   channels: number;
@@ -75,6 +86,21 @@ export interface AdaptiveAudioRenditionMetadata {
   fileSizeBytes: number;
   /** True when the source AAC was carried through without re-encoding. */
   streamCopied: boolean;
+}
+
+export interface AdaptiveSubtitleRenditionMetadata {
+  id: string;
+  sourceStreamIndex: number;
+  language?: string;
+  title?: string;
+  isDefault: boolean;
+  isForced: boolean;
+  isHearingImpaired: boolean;
+  codec: "webvtt";
+  durationSeconds: number;
+  playlistPath: string;
+  subtitlePath: string;
+  fileSizeBytes: number;
 }
 
 export interface AdaptivePackageMetadata {
@@ -100,6 +126,7 @@ export interface AdaptivePackageMetadata {
   masterPlaylistPath: string;
   videoRenditions: AdaptiveVideoRenditionMetadata[];
   audioRenditions: AdaptiveAudioRenditionMetadata[];
+  subtitleRenditions?: AdaptiveSubtitleRenditionMetadata[];
   validation: {
     validatedAt: string;
     alignmentToleranceSeconds: number;
@@ -109,6 +136,7 @@ export interface AdaptivePackageMetadata {
   storage: {
     videoBytes: number;
     audioBytes: number;
+    subtitleBytes?: number;
     totalBytes: number;
   };
   /**
@@ -224,7 +252,10 @@ function parseKeyframeInterval(
   };
 }
 
-function parseVideoRendition(value: unknown): AdaptiveVideoRenditionMetadata {
+function parseVideoRendition(
+  value: unknown,
+  enforceCanonicalPaths: boolean,
+): AdaptiveVideoRenditionMetadata {
   if (!isRecord(value)) fail("A video rendition entry must be an object.");
   const id = value.id;
   if (!isSafeRenditionId(id)) fail("Video rendition id is not a safe id.");
@@ -244,16 +275,20 @@ function parseVideoRendition(value: unknown): AdaptiveVideoRenditionMetadata {
 
   const playlistPath = safeRelativePath(value.playlistPath, "playlistPath");
   const mediaPath = safeRelativePath(value.mediaPath, "mediaPath");
-  if (
-    playlistPath !==
-    `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`
-  ) {
-    fail(`Video rendition ${id} playlist is not at its canonical location.`);
-  }
-  if (
-    mediaPath !== `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`
-  ) {
-    fail(`Video rendition ${id} media file is not at its canonical location.`);
+  if (enforceCanonicalPaths) {
+    if (
+      playlistPath !==
+      `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`
+    ) {
+      fail(`Video rendition ${id} playlist is not at its canonical location.`);
+    }
+    if (
+      mediaPath !== `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`
+    ) {
+      fail(
+        `Video rendition ${id} media file is not at its canonical location.`,
+      );
+    }
   }
 
   return {
@@ -295,7 +330,10 @@ function parseVideoRendition(value: unknown): AdaptiveVideoRenditionMetadata {
   };
 }
 
-function parseAudioRendition(value: unknown): AdaptiveAudioRenditionMetadata {
+function parseAudioRendition(
+  value: unknown,
+  enforceCanonicalPaths: boolean,
+): AdaptiveAudioRenditionMetadata {
   if (!isRecord(value)) fail("An audio rendition entry must be an object.");
   const id = value.id;
   if (!isSafeRenditionId(id)) fail("Audio rendition id is not a safe id.");
@@ -324,22 +362,37 @@ function parseAudioRendition(value: unknown): AdaptiveAudioRenditionMetadata {
 
   const playlistPath = safeRelativePath(value.playlistPath, "playlistPath");
   const mediaPath = safeRelativePath(value.mediaPath, "mediaPath");
-  if (
-    playlistPath !==
-    `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`
-  ) {
-    fail(`Audio rendition ${id} playlist is not at its canonical location.`);
-  }
-  if (
-    mediaPath !== `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`
-  ) {
-    fail(`Audio rendition ${id} media file is not at its canonical location.`);
+  if (enforceCanonicalPaths) {
+    if (
+      playlistPath !==
+      `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`
+    ) {
+      fail(`Audio rendition ${id} playlist is not at its canonical location.`);
+    }
+    if (
+      mediaPath !== `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`
+    ) {
+      fail(
+        `Audio rendition ${id} media file is not at its canonical location.`,
+      );
+    }
   }
   if (typeof value.isDefault !== "boolean")
     fail("isDefault must be a boolean.");
   if (typeof value.isForced !== "boolean") fail("isForced must be a boolean.");
   if (typeof value.streamCopied !== "boolean") {
     fail("streamCopied must be a boolean.");
+  }
+  // Absent in packages built before these dispositions were carried, so the
+  // check is on the value rather than on its presence.
+  if (value.isOriginal !== undefined && typeof value.isOriginal !== "boolean") {
+    fail("isOriginal must be a boolean.");
+  }
+  if (
+    value.isCommentary !== undefined &&
+    typeof value.isCommentary !== "boolean"
+  ) {
+    fail("isCommentary must be a boolean.");
   }
 
   return {
@@ -351,6 +404,12 @@ function parseAudioRendition(value: unknown): AdaptiveAudioRenditionMetadata {
       : { title: value.title as string }),
     isDefault: value.isDefault,
     isForced: value.isForced,
+    ...(value.isOriginal === undefined
+      ? {}
+      : { isOriginal: value.isOriginal as boolean }),
+    ...(value.isCommentary === undefined
+      ? {}
+      : { isCommentary: value.isCommentary as boolean }),
     codec: "aac",
     codecString,
     channels: positiveInteger(value.channels, "channels"),
@@ -364,12 +423,88 @@ function parseAudioRendition(value: unknown): AdaptiveAudioRenditionMetadata {
   };
 }
 
+function parseSubtitleRendition(
+  value: unknown,
+  enforceCanonicalPaths: boolean,
+): AdaptiveSubtitleRenditionMetadata {
+  if (!isRecord(value)) fail("A subtitle rendition entry must be an object.");
+  const id = value.id;
+  if (!isSafeRenditionId(id) || !id.startsWith("subtitle-")) {
+    fail("Subtitle rendition id is not a safe subtitle id.");
+  }
+  const sourceStreamIndex = nonNegativeNumber(
+    value.sourceStreamIndex,
+    "sourceStreamIndex",
+  );
+  if (!Number.isSafeInteger(sourceStreamIndex)) {
+    fail("sourceStreamIndex must be an integer.");
+  }
+  if (id !== `subtitle-${sourceStreamIndex}`) {
+    fail("Subtitle rendition id does not match its source stream index.");
+  }
+  const playlistPath = safeRelativePath(value.playlistPath, "playlistPath");
+  const subtitlePath = safeRelativePath(value.subtitlePath, "subtitlePath");
+  if (enforceCanonicalPaths) {
+    if (
+      playlistPath !==
+      `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`
+    ) {
+      fail(
+        `Subtitle rendition ${id} playlist is not at its canonical location.`,
+      );
+    }
+    if (
+      subtitlePath !==
+      `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_SUBTITLE_FILE}`
+    ) {
+      fail(`Subtitle rendition ${id} file is not at its canonical location.`);
+    }
+  }
+  if (value.codec !== "webvtt") fail("Subtitle codec must be webvtt.");
+  if (typeof value.isDefault !== "boolean")
+    fail("isDefault must be a boolean.");
+  if (typeof value.isForced !== "boolean") fail("isForced must be a boolean.");
+  if (typeof value.isHearingImpaired !== "boolean") {
+    fail("isHearingImpaired must be a boolean.");
+  }
+  const language = optionalString(value.language, "language");
+  if (language && !LANGUAGE_PATTERN.test(language)) {
+    fail("Subtitle language is malformed.");
+  }
+  return {
+    id,
+    sourceStreamIndex,
+    ...(language ? { language } : {}),
+    ...(optionalString(value.title, "title") === undefined
+      ? {}
+      : { title: value.title as string }),
+    isDefault: value.isDefault,
+    isForced: value.isForced,
+    isHearingImpaired: value.isHearingImpaired,
+    codec: "webvtt",
+    durationSeconds: positiveNumber(value.durationSeconds, "durationSeconds"),
+    playlistPath,
+    subtitlePath,
+    fileSizeBytes: positiveInteger(value.fileSizeBytes, "fileSizeBytes"),
+  };
+}
+
 export function parseAdaptiveMetadata(
   value: unknown,
   expected?: {
     mediaId?: string;
     sourceFingerprint?: string;
     profileVersion?: string;
+    /**
+     * Whether every rendition must sit at the location the build layout
+     * dictates.
+     *
+     * True while the package is still a work directory, where a path that
+     * disagrees with the layout means the manifest and the files have drifted
+     * apart. False for the record published into a title folder, whose paths
+     * are the library's names by design.
+     */
+    enforceCanonicalPaths?: boolean;
   },
 ): AdaptivePackageMetadata {
   if (!isRecord(value)) fail("The manifest must be an object.");
@@ -397,8 +532,21 @@ export function parseAdaptiveMetadata(
     fail("validation.checks must be an array.");
   }
 
-  const videoRenditions = value.videoRenditions.map(parseVideoRendition);
-  const audioRenditions = value.audioRenditions.map(parseAudioRendition);
+  const enforceCanonicalPaths = expected?.enforceCanonicalPaths !== false;
+  const videoRenditions = value.videoRenditions.map((entry) =>
+    parseVideoRendition(entry, enforceCanonicalPaths),
+  );
+  const audioRenditions = value.audioRenditions.map((entry) =>
+    parseAudioRendition(entry, enforceCanonicalPaths),
+  );
+  const subtitleRenditions =
+    value.subtitleRenditions === undefined
+      ? []
+      : Array.isArray(value.subtitleRenditions)
+        ? value.subtitleRenditions.map((entry) =>
+            parseSubtitleRendition(entry, enforceCanonicalPaths),
+          )
+        : fail("subtitleRenditions must be an array.");
 
   if (
     new Set(videoRenditions.map((entry) => entry.id)).size !==
@@ -411,6 +559,12 @@ export function parseAdaptiveMetadata(
     audioRenditions.length
   ) {
     fail("audioRenditions contains duplicate ids.");
+  }
+  if (
+    new Set(subtitleRenditions.map((entry) => entry.id)).size !==
+    subtitleRenditions.length
+  ) {
+    fail("subtitleRenditions contains duplicate ids.");
   }
   if (audioRenditions.filter((entry) => entry.isDefault).length !== 1) {
     fail("Exactly one audio rendition must be marked default.");
@@ -477,6 +631,7 @@ export function parseAdaptiveMetadata(
     ),
     videoRenditions,
     audioRenditions,
+    ...(value.subtitleRenditions === undefined ? {} : { subtitleRenditions }),
     validation: {
       validatedAt: isoTimestamp(
         value.validation.validatedAt,
@@ -503,6 +658,14 @@ export function parseAdaptiveMetadata(
         value.storage.audioBytes,
         "storage.audioBytes",
       ),
+      ...(value.storage.subtitleBytes === undefined
+        ? {}
+        : {
+            subtitleBytes: nonNegativeNumber(
+              value.storage.subtitleBytes,
+              "storage.subtitleBytes",
+            ),
+          }),
       totalBytes: positiveInteger(
         value.storage.totalBytes,
         "storage.totalBytes",
@@ -532,7 +695,9 @@ export function parseAdaptiveMetadata(
   };
 
   const measuredTotal =
-    metadata.storage.videoBytes + metadata.storage.audioBytes;
+    metadata.storage.videoBytes +
+    metadata.storage.audioBytes +
+    (metadata.storage.subtitleBytes ?? 0);
   if (measuredTotal !== metadata.storage.totalBytes) {
     fail("storage.totalBytes does not equal videoBytes plus audioBytes.");
   }

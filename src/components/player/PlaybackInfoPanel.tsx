@@ -751,7 +751,7 @@ export function PlaybackInfoPanel({
         );
 
         if (!isCancelled) {
-          setActiveTranscodingReasons(reasons);
+          setActiveTranscodingReasons(reasons ?? []);
           console.info(
             "[Seyirlik Playback] Active transcoding reasons",
             reasons,

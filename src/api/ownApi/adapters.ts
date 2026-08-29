@@ -177,7 +177,7 @@ export function toMediaItem(item: ItemDto): MediaItem {
       ? {}
       : { RecursiveItemCount: item.recursiveItemCount }),
     ImageTags: {
-      ...(images.primary ? { Primary: images.primary.tag } : {}),
+      ...(images.cover ? { Primary: images.cover.tag } : {}),
       ...(images.logo ? { Logo: images.logo.tag } : {}),
       ...(images.thumb ? { Thumb: images.thumb.tag } : {}),
       ...(images.banner ? { Banner: images.banner.tag } : {}),
@@ -185,8 +185,8 @@ export function toMediaItem(item: ItemDto): MediaItem {
     BackdropImageTags: images.backdrops.map((backdrop) => backdrop.tag),
     // Inherited artwork lets an episode card fall back to its series poster
     // without the component knowing where it came from.
-    ...(images.parentPrimary
-      ? { SeriesPrimaryImageTag: images.parentPrimary.tag }
+    ...(images.parentCover
+      ? { SeriesPrimaryImageTag: images.parentCover.tag }
       : {}),
     ...(images.parentLogo && item.seriesId
       ? {

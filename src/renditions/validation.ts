@@ -20,7 +20,13 @@ export interface RenditionFileMetadata {
   sourceAudioStreamIndex: number;
   audioLanguage?: string;
   /** Which encoder produced the file; recorded for diagnostics only. */
-  videoEncoder?: "libx264" | "h264_qsv" | "libx265" | "hevc_qsv";
+  videoEncoder?:
+    | "libx264"
+    | "h264_qsv"
+    | "h264_videotoolbox"
+    | "libx265"
+    | "hevc_qsv"
+    | "hevc_videotoolbox";
   /** True when the file carries the source HDR10 grade rather than SDR. */
   hdr?: boolean;
   /** True when an HDR master was tone mapped to SDR for this rendition. */

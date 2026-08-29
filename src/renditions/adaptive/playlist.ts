@@ -17,8 +17,11 @@
 import { ADAPTIVE_AUDIO_GROUP } from "./encoding";
 import type {
   AdaptiveAudioRenditionMetadata,
+  AdaptiveSubtitleRenditionMetadata,
   AdaptiveVideoRenditionMetadata,
 } from "./metadata";
+
+export const ADAPTIVE_SUBTITLE_GROUP = "seyirlik-subtitles";
 
 export interface PlaylistByteRange {
   length: number;
@@ -248,6 +251,7 @@ function videoRangeFor(rendition: AdaptiveVideoRenditionMetadata): string {
 export interface MasterPlaylistInput {
   videoRenditions: AdaptiveVideoRenditionMetadata[];
   audioRenditions: AdaptiveAudioRenditionMetadata[];
+  subtitleRenditions?: AdaptiveSubtitleRenditionMetadata[];
   /** RFC 6381 video codec string per rendition id, from the real bitstream. */
   videoCodecStrings: Map<string, string>;
   audioCodecStrings: Map<string, string>;
@@ -266,6 +270,7 @@ export interface MasterPlaylistInput {
 export function buildMasterPlaylist({
   videoRenditions,
   audioRenditions,
+  subtitleRenditions = [],
   videoCodecStrings,
   audioCodecStrings,
 }: MasterPlaylistInput): string {
@@ -305,7 +310,24 @@ export function buildMasterPlaylist({
       `AUTOSELECT=${audio.isDefault ? "YES" : "NO"}`,
       ...(audio.isForced ? ["FORCED=YES"] : []),
       `CHANNELS="${audio.channels}"`,
+      `X-SEYIRLIK-STREAM-INDEX=${audio.sourceStreamIndex}`,
       `URI="${audio.playlistPath}"`,
+    ];
+    lines.push(`#EXT-X-MEDIA:${attributes.join(",")}`);
+  }
+
+  for (const subtitle of subtitleRenditions) {
+    const attributes = [
+      "TYPE=SUBTITLES",
+      `GROUP-ID="${ADAPTIVE_SUBTITLE_GROUP}"`,
+      `NAME="${escapeAttribute(subtitle.title ?? subtitle.language ?? subtitle.id)}"`,
+      ...(subtitle.language
+        ? [`LANGUAGE="${escapeAttribute(subtitle.language)}"`]
+        : []),
+      `DEFAULT=${subtitle.isDefault ? "YES" : "NO"}`,
+      "AUTOSELECT=YES",
+      ...(subtitle.isForced ? ["FORCED=YES"] : []),
+      `URI="${subtitle.playlistPath}"`,
     ];
     lines.push(`#EXT-X-MEDIA:${attributes.join(",")}`);
   }
@@ -333,6 +355,9 @@ export function buildMasterPlaylist({
       `CODECS="${videoCodec},${defaultAudioCodec}"`,
       `VIDEO-RANGE=${videoRangeFor(video)}`,
       `AUDIO="${ADAPTIVE_AUDIO_GROUP}"`,
+      ...(subtitleRenditions.length > 0
+        ? [`SUBTITLES="${ADAPTIVE_SUBTITLE_GROUP}"`]
+        : []),
     ];
     lines.push(`#EXT-X-STREAM-INF:${attributes.join(",")}`);
     lines.push(video.playlistPath);
@@ -363,6 +388,14 @@ export interface ParsedMasterPlaylist {
     isDefault: boolean;
     uri: string;
   }>;
+  subtitleRenditions: Array<{
+    groupId: string;
+    name: string;
+    language?: string;
+    isDefault: boolean;
+    isForced: boolean;
+    uri: string;
+  }>;
 }
 
 function attributeValue(attributes: string, key: string): string | undefined {
@@ -381,6 +414,7 @@ export function parseMasterPlaylist(text: string): ParsedMasterPlaylist {
   let independentSegments = false;
   const variants: ParsedMasterVariant[] = [];
   const audioRenditions: ParsedMasterPlaylist["audioRenditions"] = [];
+  const subtitleRenditions: ParsedMasterPlaylist["subtitleRenditions"] = [];
 
   for (let index = 1; index < lines.length; index += 1) {
     const line = lines[index].trim();
@@ -393,20 +427,28 @@ export function parseMasterPlaylist(text: string): ParsedMasterPlaylist {
 
     if (line.startsWith("#EXT-X-MEDIA:")) {
       const attributes = line.slice("#EXT-X-MEDIA:".length);
-      if (attributeValue(attributes, "TYPE") !== "AUDIO") continue;
+      const type = attributeValue(attributes, "TYPE");
+      if (type !== "AUDIO" && type !== "SUBTITLES") continue;
       const groupId = attributeValue(attributes, "GROUP-ID");
       const uri = attributeValue(attributes, "URI");
       if (!groupId || !uri) {
         throw new Error("#EXT-X-MEDIA is missing GROUP-ID or URI.");
       }
       const language = attributeValue(attributes, "LANGUAGE");
-      audioRenditions.push({
+      const rendition = {
         groupId,
         name: attributeValue(attributes, "NAME") ?? "",
         ...(language ? { language } : {}),
         isDefault: attributeValue(attributes, "DEFAULT") === "YES",
         uri,
-      });
+      };
+      if (type === "AUDIO") audioRenditions.push(rendition);
+      else {
+        subtitleRenditions.push({
+          ...rendition,
+          isForced: attributeValue(attributes, "FORCED") === "YES",
+        });
+      }
       continue;
     }
 
@@ -466,5 +508,10 @@ export function parseMasterPlaylist(text: string): ParsedMasterPlaylist {
     throw new Error("Master playlist contains no variants.");
   }
 
-  return { independentSegments, variants, audioRenditions };
+  return {
+    independentSegments,
+    variants,
+    audioRenditions,
+    subtitleRenditions,
+  };
 }

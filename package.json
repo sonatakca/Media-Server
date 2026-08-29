@@ -12,6 +12,9 @@
     "test": "vitest",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "bench:containers": "bash scripts/build-container-benchmark.sh",
+    "media:lab:build-matrix": "bash scripts/build-media-test-matrix.sh",
+    "media:lab:verify-matrix": "node --env-file=.env --import tsx scripts/verify-media-test-matrix.ts",
+    "media:lab:server": "bash scripts/run-media-lab-server.sh",
     "lint": "eslint .",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\" \"docs/**/*.md\"",
     "db:migrate": "node --env-file=.env --import tsx scripts/run-own-api-migrations.ts",
@@ -22,6 +25,7 @@
     "media:renditions:status": "node --env-file=.env --import tsx scripts/media-renditions.ts status",
     "media:renditions:validate": "node --env-file=.env --import tsx scripts/media-renditions.ts validate",
     "media:renditions:cleanup": "node --env-file=.env --import tsx scripts/media-renditions.ts cleanup",
+    "media:lab:verify-http": "bash scripts/verify-media-lab-http.sh",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\""
   },
   "dependencies": {

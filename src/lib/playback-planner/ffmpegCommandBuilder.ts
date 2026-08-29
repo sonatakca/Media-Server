@@ -21,6 +21,16 @@ export interface FfmpegCommand {
   playlistPath?: string;
 }
 
+export class PlaybackConversionUnavailableError extends Error {
+  readonly code = "PLAYBACK_CONVERSION_UNAVAILABLE";
+  readonly statusCode = 409;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "PlaybackConversionUnavailableError";
+  }
+}
+
 interface VideoEncoderPreset {
   codec: string;
   args: string[];
@@ -194,17 +204,6 @@ function selectVideoEncoder(
   }
 }
 
-function getAudioBitrate(
-  media: MediaAnalysis,
-  audioStreamIndex?: number,
-): string {
-  const stream = media.audioStreams.find(
-    (audio) => audio.index === audioStreamIndex,
-  );
-
-  return stream?.channels && stream.channels > 2 ? "384k" : "192k";
-}
-
 function getHlsSegmentExtension(plan: PlaybackPlan): "m4s" | "ts" {
   return plan.container.output === "hls-fmp4" ? "m4s" : "ts";
 }
@@ -230,6 +229,16 @@ function buildHlsArgs(plan: PlaybackPlan, outputDir: string): string[] {
 
   if (isVideoEncoding) {
     args.push("-hls_list_size", "5");
+  } else {
+    // Ephemeral sessions must publish as soon as the first segment is ready.
+    // FFmpeg's VOD mode may withhold the playlist until the full input has been
+    // processed, turning an audio switch into a whole-film startup wait. EVENT
+    // keeps every segment from zero (unlike the default five-segment live
+    // window), grows monotonically while FFmpeg works, and gains ENDLIST when
+    // the process completes. Safari can therefore attach the replacement
+    // immediately without losing arbitrary seekability once the target range
+    // has been generated.
+    args.push("-hls_playlist_type", "event");
   }
 
   if (plan.container.output === "hls-fmp4") {
@@ -237,7 +246,10 @@ function buildHlsArgs(plan: PlaybackPlan, outputDir: string): string[] {
       "-hls_segment_type",
       "fmp4",
       "-hls_fmp4_init_filename",
-      join(outputDir, "init.mp4"),
+      // FFmpeg resolves this value relative to the media playlist. Passing an
+      // absolute path makes the HLS muxer prepend the playlist directory a
+      // second time ("/output//output/init.mp4") and breaks every live remux.
+      "init.mp4",
     );
   }
 
@@ -281,8 +293,8 @@ function buildVideoFilter(
 
   if (video?.isHdr || video?.hasDolbyVision) {
     if (!runtimeProfile.supportsHdrToneMapping) {
-      throw new Error(
-        "This FFmpeg build cannot tone-map HDR safely because the zscale and tonemap filters are not both available.",
+      throw new PlaybackConversionUnavailableError(
+        "This server cannot safely convert HDR for this device because its FFmpeg build lacks the required HDR tone-mapping filters.",
       );
     }
 
@@ -370,12 +382,7 @@ export function buildFfmpegCommand({
   if (plan.audio.action === "copy") {
     args.push("-c:a", "copy");
   } else if (plan.audio.action === "transcode") {
-    args.push(
-      "-c:a",
-      "aac",
-      "-b:a",
-      getAudioBitrate(media, plan.selected.audioStreamIndex),
-    );
+    args.push("-c:a", "aac", "-b:a", "192k", "-ac", "2");
   } else {
     args.push("-an");
   }

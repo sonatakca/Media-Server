@@ -16,6 +16,7 @@ export const JOB_TYPES = {
   metadataScan: "metadata.scan",
   metadataRefresh: "metadata.refresh",
   trickplayGenerate: "trickplay.generate",
+  mediaProcess: "media.process",
 } as const;
 
 export interface JobHandlerOptions {
@@ -27,6 +28,25 @@ export interface JobHandlerOptions {
   /** Absent when no TMDB key is configured; metadata jobs then no-op. */
   metadataService?: MetadataService;
   trickplayService?: TrickplayService;
+  /**
+   * Runs a media-processing job. Absent when the runtime has no rendition
+   * paths configured, in which case queued processing jobs fail cleanly rather
+   * than being silently dropped.
+   */
+  processingRunner?: {
+    run(input: {
+      processingJobId: string;
+      sourcePath: string;
+      relativePath: string;
+      sizeBytes: number;
+      mtimeMs: number;
+      signal?: AbortSignal;
+      isCancelled?: () => Promise<boolean>;
+    }): Promise<{
+      status: "succeeded" | "failed" | "cancelled";
+      errorMessage?: string;
+    }>;
+  };
 }
 
 /**
@@ -58,6 +78,7 @@ export function createJobHandlers({
   queue,
   metadataService,
   trickplayService,
+  processingRunner,
 }: JobHandlerOptions): Record<string, JobHandler> {
   const libraryScan: JobHandler = async ({
     job,
@@ -234,7 +255,62 @@ export function createJobHandlers({
       : { generated: false };
   };
 
+  /**
+   * Runs one media-processing job.
+   *
+   * The queue owns scheduling, leasing and retry; the runner owns the media
+   * work and writes its own detailed record. Progress is mirrored back onto the
+   * queue row so the generic task list stays meaningful, but the processing UI
+   * reads the richer record directly.
+   */
+  const mediaProcess: JobHandler = async ({
+    job,
+    reportProgress,
+    isCancelled,
+  }) => {
+    const payload = job.payload as {
+      processingJobId?: unknown;
+      sourcePath?: unknown;
+      relativePath?: unknown;
+      sizeBytes?: unknown;
+      mtimeMs?: unknown;
+    };
+    if (
+      typeof payload.processingJobId !== "string" ||
+      typeof payload.sourcePath !== "string" ||
+      typeof payload.relativePath !== "string" ||
+      typeof payload.sizeBytes !== "number" ||
+      typeof payload.mtimeMs !== "number"
+    ) {
+      throw new PermanentJobError("The processing task payload is incomplete.");
+    }
+    if (!processingRunner) {
+      throw new PermanentJobError(
+        "This server is not configured to process media.",
+      );
+    }
+
+    await reportProgress(0.01, "Starting media processing");
+    const outcome = await processingRunner.run({
+      processingJobId: payload.processingJobId,
+      sourcePath: payload.sourcePath,
+      relativePath: payload.relativePath,
+      sizeBytes: payload.sizeBytes,
+      mtimeMs: payload.mtimeMs,
+      isCancelled,
+    });
+    await reportProgress(1, "Media processing finished");
+
+    if (outcome.status === "failed") {
+      // Already recorded in detail on the processing job; the queue row only
+      // needs to know it did not succeed.
+      throw new PermanentJobError(outcome.errorMessage ?? "Processing failed.");
+    }
+    return { status: outcome.status };
+  };
+
   return {
+    [JOB_TYPES.mediaProcess]: mediaProcess,
     [JOB_TYPES.libraryScan]: libraryScan,
     [JOB_TYPES.trickplayGenerate]: trickplayGenerate,
     [JOB_TYPES.mediaProbe]: mediaProbe,

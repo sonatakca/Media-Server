@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import { OwnApiError } from "../ownApiHandler";
 import { serveFile } from "../api/fileDelivery";
 import { sendData, sendNoContent } from "../api/envelope";
@@ -12,7 +13,12 @@ import {
 } from "../api/validation";
 import { isPathInsideRoot } from "../../pathSecurity";
 import { decidePlaybackPlan } from "../../../lib/playback-planner/playbackDecision";
-import type { PlaybackSessionManager } from "../../../lib/playback-planner/playbackSessionManager";
+import {
+  PlaybackCapacityError,
+  PlaybackSessionStartupError,
+  type PlaybackSessionManager,
+} from "../../../lib/playback-planner/playbackSessionManager";
+import { PlaybackConversionUnavailableError } from "../../../lib/playback-planner/ffmpegCommandBuilder";
 import type {
   ClientCapabilities,
   PlaybackPlan,
@@ -23,6 +29,10 @@ import type { PlaybackSessionStore } from "./playbackSessionStore";
 import type { RenditionService } from "../../renditionService";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
 import { extractSubtitleAsWebVtt } from "./subtitleDelivery";
+import {
+  applyAdaptiveMasterSelection,
+  parseAdaptiveMasterSelection,
+} from "../../../renditions/adaptive/masterSelection";
 
 export const PLAYBACK_SESSION_ROUTE_BASE = "/ownAPI/v1/playback/sessions";
 
@@ -80,6 +90,8 @@ export function buildAdaptiveRenditionPlan(
   options: {
     selectedAudioStreamIndex?: number;
     maxHeight?: number;
+    /** Exact rendition lock, as opposed to the `maxHeight` ceiling. */
+    qualityHeight?: number;
   } = {},
 ): PlaybackPlan | null {
   const adaptive = qualityManifest?.adaptive;
@@ -97,6 +109,17 @@ export function buildAdaptiveRenditionPlan(
   const url = new URL(adaptive.playbackUrl, "http://seyirlik.local");
   if (options.maxHeight !== undefined) {
     url.searchParams.set("maxHeight", String(options.maxHeight));
+  }
+  if (options.qualityHeight !== undefined) {
+    url.searchParams.set("height", String(options.qualityHeight));
+  }
+  // Carried in the URL rather than only validated, because Safari's native HLS
+  // engine picks its audio rendition from the manifest and from nothing else.
+  if (options.selectedAudioStreamIndex !== undefined) {
+    url.searchParams.set(
+      "audioStreamIndex",
+      String(options.selectedAudioStreamIndex),
+    );
   }
   const deliveryUrl = `${url.pathname}${url.search}`;
   const selectedManifest: MediaQualityManifest = {
@@ -241,7 +264,9 @@ export function createPlaybackRoutes({
       "audioStreamIndex",
       "subtitleStreamIndex",
       "maxHeight",
+      "qualityHeight",
       "maxBitrateBps",
+      "startTimeMs",
     ]);
 
     return {
@@ -262,9 +287,19 @@ export function createPlaybackRoutes({
         min: 144,
         max: 4_320,
       }),
+      // An exact adaptive rendition lock, distinct from the `maxHeight`
+      // ceiling: a client asking for 720p means 720p, not "720p or less".
+      qualityHeight: optionalBodyInteger(body, "qualityHeight", {
+        min: 144,
+        max: 4_320,
+      }),
       maxBitrateBps: optionalBodyInteger(body, "maxBitrateBps", {
         min: 100_000,
         max: 400_000_000,
+      }),
+      startTimeMs: optionalBodyInteger(body, "startTimeMs", {
+        min: 0,
+        max: 7 * 24 * 60 * 60 * 1000,
       }),
     };
   }
@@ -378,6 +413,88 @@ export function createPlaybackRoutes({
     return session;
   }
 
+  async function resolveAuthorizedAdaptiveAsset(
+    context: Parameters<RouteDefinition["handle"]>[0],
+    assetPath: string,
+  ) {
+    if (!renditions) return null;
+    const principal = context.requirePrincipal();
+    const mediaFileId = requireUuid(context.params.token, "token");
+    const file = await catalogue.getFileById(mediaFileId);
+    if (
+      !file ||
+      file.missingSince !== null ||
+      !(await catalogue.canUserAccessItem(principal.userId, file.itemId))
+    ) {
+      throw new OwnApiError(
+        "MEDIA_NOT_FOUND",
+        "The requested media could not be found.",
+        404,
+      );
+    }
+    return renditions.resolveAdaptiveAsset(
+      mediaFileId,
+      context.params.version ?? "",
+      assetPath,
+    );
+  }
+
+  async function serveAdaptiveMaster(
+    context: Parameters<RouteDefinition["handle"]>[0],
+    assetPath: string,
+  ): Promise<void> {
+    const resolved = await resolveAuthorizedAdaptiveAsset(context, assetPath);
+    if (!resolved) {
+      throw new OwnApiError(
+        "RENDITION_NOT_FOUND",
+        "The requested adaptive package is unavailable.",
+        404,
+      );
+    }
+
+    // Safari's native HLS engine has no level or audio-track API, so a manual
+    // quality or audio choice can only be expressed in the manifest it is
+    // given. The package on disk is untouched; the selection is applied to the
+    // bytes on the way out.
+    const selection = parseAdaptiveMasterSelection(context.url.searchParams);
+    const master = await readFile(resolved.absolutePath, "utf8");
+    const body = Buffer.from(
+      applyAdaptiveMasterSelection(master, selection),
+      "utf8",
+    );
+
+    context.response.statusCode = 200;
+    context.response.setHeader("Content-Type", "application/vnd.apple.mpegurl");
+    context.response.setHeader("Content-Length", String(body.length));
+    context.response.setHeader(
+      "Cache-Control",
+      "private, max-age=31536000, immutable",
+    );
+    context.response.setHeader("X-Content-Type-Options", "nosniff");
+    context.response.end(context.method === "HEAD" ? undefined : body);
+  }
+
+  async function serveAdaptiveFile(
+    context: Parameters<RouteDefinition["handle"]>[0],
+    assetPath: string,
+  ): Promise<void> {
+    const resolved = await resolveAuthorizedAdaptiveAsset(context, assetPath);
+    if (!resolved) {
+      throw new OwnApiError(
+        "RENDITION_NOT_FOUND",
+        "The requested adaptive package asset is unavailable.",
+        404,
+      );
+    }
+    await serveFile(
+      context.response,
+      resolved.absolutePath,
+      context.request.headers.range as string | undefined,
+      context.method === "HEAD",
+      "private, max-age=31536000, immutable",
+    );
+  }
+
   return [
     {
       method: "POST",
@@ -412,7 +529,19 @@ export function createPlaybackRoutes({
           request.itemId,
           request.mediaFileId,
         );
-        const planned = buildPlan(request, analysis);
+        const basePlan = buildPlan(request, analysis);
+        const planned: PlaybackPlan = {
+          ...basePlan,
+          sourceDurationSeconds: analysis.durationSeconds,
+          ...(request.startTimeMs === undefined
+            ? {}
+            : {
+                startTimeSeconds: Math.min(
+                  request.startTimeMs / 1000,
+                  Math.max(0, analysis.durationSeconds - 0.25),
+                ),
+              }),
+        };
 
         // Reserve the durable session id before choosing delivery. It gives the
         // original-file fallback a stable URL while the rendition service
@@ -433,6 +562,7 @@ export function createPlaybackRoutes({
           {
             selectedAudioStreamIndex: request.audioStreamIndex,
             maxHeight: request.maxHeight,
+            qualityHeight: request.qualityHeight,
           },
         );
         const canUseAdaptive = adaptivePlan !== null;
@@ -449,10 +579,27 @@ export function createPlaybackRoutes({
           deliveryType = "hls";
           deliveryUrl = plan.delivery.url as string;
         } else if (plan.requiresFfmpeg) {
-          const runtimeSession = await sessionManager.createSession(
-            plan,
-            analysis,
-          );
+          let runtimeSession: Awaited<
+            ReturnType<PlaybackSessionManager["createSession"]>
+          >;
+          try {
+            runtimeSession = await sessionManager.createSession(plan, analysis);
+          } catch (error) {
+            if (
+              error instanceof PlaybackConversionUnavailableError ||
+              error instanceof PlaybackSessionStartupError ||
+              error instanceof PlaybackCapacityError
+            ) {
+              throw new OwnApiError(
+                "code" in error && typeof error.code === "string"
+                  ? error.code
+                  : "PLAYBACK_SESSION_START_FAILED",
+                error.message,
+                error.statusCode,
+              );
+            }
+            throw error;
+          }
           runtimeKey = runtimeSession.sessionId;
           sessionId = runtimeSession.sessionId;
           deliveryType = "hls";
@@ -671,89 +818,37 @@ export function createPlaybackRoutes({
             path: "/playback/renditions/:token/adaptive/:version/master.m3u8",
             access: "authenticated",
             skipCsrf: true,
-            handle: async (context) => {
-              const principal = context.requirePrincipal();
-              const mediaFileId = requireUuid(context.params.token, "token");
-              const file = await catalogue.getFileById(mediaFileId);
-              if (
-                !file ||
-                file.missingSince !== null ||
-                !(await catalogue.canUserAccessItem(
-                  principal.userId,
-                  file.itemId,
-                ))
-              ) {
-                throw new OwnApiError(
-                  "MEDIA_NOT_FOUND",
-                  "The requested media could not be found.",
-                  404,
-                );
-              }
-              const resolved = await renditions.resolveAdaptiveAsset(
-                mediaFileId,
-                context.params.version ?? "",
-                "master.m3u8",
-              );
-              if (!resolved) {
-                throw new OwnApiError(
-                  "RENDITION_NOT_FOUND",
-                  "The requested adaptive package is unavailable.",
-                  404,
-                );
-              }
-              await serveFile(
-                context.response,
-                resolved.absolutePath,
-                undefined,
-                context.method === "HEAD",
-                "private, max-age=31536000, immutable",
-              );
-            },
+            handle: (context) => serveAdaptiveMaster(context, "master.m3u8"),
+          } satisfies RouteDefinition,
+          {
+            method: "GET",
+            path: "/playback/renditions/:token/adaptive/:version/.seyirlik/master.m3u8",
+            access: "authenticated",
+            skipCsrf: true,
+            handle: (context) =>
+              serveAdaptiveMaster(context, ".seyirlik/master.m3u8"),
+          } satisfies RouteDefinition,
+          {
+            method: "GET",
+            path: "/playback/renditions/:token/adaptive/:version/:kind/:assetName",
+            access: "authenticated",
+            skipCsrf: true,
+            handle: (context) =>
+              serveAdaptiveFile(
+                context,
+                `${context.params.kind ?? ""}/${context.params.assetName ?? ""}`,
+              ),
           } satisfies RouteDefinition,
           {
             method: "GET",
             path: "/playback/renditions/:token/adaptive/:version/:kind/:renditionId/:assetName",
             access: "authenticated",
             skipCsrf: true,
-            handle: async (context) => {
-              const principal = context.requirePrincipal();
-              const mediaFileId = requireUuid(context.params.token, "token");
-              const file = await catalogue.getFileById(mediaFileId);
-              if (
-                !file ||
-                file.missingSince !== null ||
-                !(await catalogue.canUserAccessItem(
-                  principal.userId,
-                  file.itemId,
-                ))
-              ) {
-                throw new OwnApiError(
-                  "MEDIA_NOT_FOUND",
-                  "The requested media could not be found.",
-                  404,
-                );
-              }
-              const assetPath = `${context.params.kind ?? ""}/${context.params.renditionId ?? ""}/${context.params.assetName ?? ""}`;
-              const resolved = await renditions.resolveAdaptiveAsset(
-                mediaFileId,
-                context.params.version ?? "",
-                assetPath,
-              );
-              if (!resolved) {
-                throw new OwnApiError(
-                  "RENDITION_NOT_FOUND",
-                  "The requested adaptive package asset is unavailable.",
-                  404,
-                );
-              }
-              await serveFile(
-                context.response,
-                resolved.absolutePath,
-                context.request.headers.range as string | undefined,
-                context.method === "HEAD",
-                "private, max-age=31536000, immutable",
-              );
-            },
+            handle: (context) =>
+              serveAdaptiveFile(
+                context,
+                `${context.params.kind ?? ""}/${context.params.renditionId ?? ""}/${context.params.assetName ?? ""}`,
+              ),
           } satisfies RouteDefinition,
           {
             /**

@@ -48,29 +48,36 @@ export function createMetadataService({
   minimumConfidence = "medium",
 }: MetadataServiceOptions) {
   async function storeArtwork(
-    itemId: string,
-    imageType: "primary" | "backdrop" | "logo" | "thumb",
+    target: MetadataTarget,
+    imageType: "cover" | "backdrop" | "logo" | "thumb",
     imagePath: string,
     size: string,
     imageIndex = 0,
   ): Promise<void> {
     const existing = await images.findByItemAndType(
-      itemId,
+      target.id,
       imageType,
       imageIndex,
     );
+    if (existing?.isLocked) return;
 
     try {
-      const stored = await imageStorage.fetchAndStore(
-        tmdb.buildImageUrl(imagePath, size),
-      );
+      const sourceUrl = tmdb.buildImageUrl(imagePath, size);
+      const stored =
+        target.titleRoot && imageType !== "thumb"
+          ? await imageStorage.fetchAndStoreTitleArtwork(
+              sourceUrl,
+              target.titleRoot,
+              imageType,
+            )
+          : await imageStorage.fetchAndStore(sourceUrl);
 
       // Identical bytes mean nothing changed; skip the write so an ETag stays
       // stable and clients keep their cached copy.
       if (existing?.contentHash === stored.contentHash) return;
 
       await images.upsert({
-        itemId,
+        itemId: target.id,
         imageType,
         imageIndex,
         contentHash: stored.contentHash,
@@ -124,19 +131,13 @@ export function createMetadataService({
     await metadata.replacePeople(target.id, details.people);
 
     if (details.posterPath) {
-      await storeArtwork(target.id, "primary", details.posterPath, POSTER_SIZE);
+      await storeArtwork(target, "cover", details.posterPath, POSTER_SIZE);
     }
     if (details.logoPath) {
-      await storeArtwork(target.id, "logo", details.logoPath, LOGO_SIZE);
+      await storeArtwork(target, "logo", details.logoPath, LOGO_SIZE);
     }
-    for (const [index, backdropPath] of details.backdropPaths.entries()) {
-      await storeArtwork(
-        target.id,
-        "backdrop",
-        backdropPath,
-        BACKDROP_SIZE,
-        index,
-      );
+    for (const backdropPath of details.backdropPaths.slice(0, 1)) {
+      await storeArtwork(target, "backdrop", backdropPath, BACKDROP_SIZE, 0);
     }
   }
 
@@ -191,7 +192,7 @@ export function createMetadataService({
 
         if (providerEpisode.stillPath) {
           await storeArtwork(
-            local.id,
+            local,
             "thumb",
             providerEpisode.stillPath,
             STILL_SIZE,

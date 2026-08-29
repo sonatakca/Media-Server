@@ -52,6 +52,9 @@ function parseArguments(argv: string[]): CliArguments {
     confirmStale: false,
     olderThanHours: 24,
     profile: "legacy",
+    // The library build applies the same retention policy the server job path
+    // does — one best track per retained language, English and Turkish, and
+    // never fewer than one audio track. `--all-audio-tracks` opts back out.
     allAudioTracks: false,
   };
   for (let index = 0; index < rest.length; index += 1) {
@@ -59,6 +62,8 @@ function parseArguments(argv: string[]): CliArguments {
     const next = rest[index + 1];
     if (argument === "--dry-run") result.dryRun = true;
     else if (argument === "--all-audio-tracks") result.allAudioTracks = true;
+    else if (argument === "--default-audio-only")
+      result.allAudioTracks = false;
     else if (argument === "--confirm-stale") result.confirmStale = true;
     else if (argument === "--library" && next) {
       result.library = next;
@@ -262,14 +267,16 @@ async function validateOutputs(
 
 async function validateAdaptiveOutputs(
   report: RenditionAnalysisReport,
-  renditionRoot: string,
+  mediaRoot: string,
   ffprobePath?: string,
 ) {
   const results = [];
   for (const item of report.items) {
     const inspection = await inspectAdaptivePackage({
-      mediaRoot: path.join(renditionRoot, item.mediaId),
-      mediaId: item.mediaId,
+      // A package lives beside the source it was made from.
+      titleRoot: path.dirname(
+        path.join(mediaRoot, ...item.relativePath.split("/")),
+      ),
       sourceFingerprint: item.sourceFingerprint,
       profileVersion: ADAPTIVE_PROFILE_VERSION,
     });
@@ -357,8 +364,10 @@ async function cleanupWork(
 function describeEncoder(encoder: string): string {
   const labels: Record<string, string> = {
     h264_qsv: "h264_qsv (Intel QuickSync, H.264)",
+    h264_videotoolbox: "h264_videotoolbox (Apple VideoToolbox, H.264)",
     libx264: "libx264 (software, H.264)",
     hevc_qsv: "hevc_qsv (Intel QuickSync, HEVC Main 10)",
+    hevc_videotoolbox: "hevc_videotoolbox (Apple VideoToolbox, HEVC Main 10)",
     libx265: "libx265 (software, HEVC Main 10)",
   };
   return labels[encoder] ?? encoder;
@@ -510,7 +519,7 @@ function usage(): string {
   return [
     "Seyirlik rendition CLI",
     "  analyse",
-    "  process [--profile legacy|adaptive|all] [--library Movies|Series] [--media-id UUID] [--source relative/path] [--workers 1] [--all-audio-tracks] [--dry-run]",
+    "  process [--profile legacy|adaptive|all] [--library Movies|Series] [--media-id UUID] [--source relative/path] [--workers 1] [--default-audio-only] [--dry-run]",
     "  resume  [same options as process]",
     "  status",
     "  validate [--profile legacy|adaptive|all] [--media-id UUID] [--source relative/path]",
@@ -718,11 +727,7 @@ async function main() {
     }
     if (args.profile === "adaptive" || args.profile === "all") {
       resultSets.push(
-        await validateAdaptiveOutputs(
-          filtered,
-          paths.renditionRoot,
-          ffprobePath,
-        ),
+        await validateAdaptiveOutputs(filtered, paths.mediaRoot, ffprobePath),
       );
     }
     const results = resultSets.flat();

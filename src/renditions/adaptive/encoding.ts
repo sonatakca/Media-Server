@@ -44,11 +44,20 @@ import {
 export const ADAPTIVE_AUDIO_GROUP = "aud";
 
 export interface AdaptiveVideoOutput {
-  /** Standard class (480/720/1080) that selects the rate policy. */
+  /** Standard class (144…2160) that selects the rate policy. */
   qualityHeight: number;
   /** Encoded pixel dimensions, preserving the source aspect ratio. */
   width: number;
   height: number;
+  /**
+   * The rate this rung is encoded at, when it differs from the source.
+   *
+   * The small rungs exist because bandwidth is short, so they are halved to 30
+   * rather than carrying 60 frames a second nobody on that rung can see.
+   * Segments stay switchable because keyframes are forced on *time*, not on a
+   * frame count, so a 30 and a 60 rung still cut on the same instants.
+   */
+  frameRate?: number;
 }
 
 export type AdaptiveAudioAction = "copy" | "transcode";
@@ -58,6 +67,12 @@ export interface AdaptiveAudioOutput {
   action: AdaptiveAudioAction;
   /** Ignored when the action is `copy`. */
   bitrate: number;
+  /**
+   * Channel count to encode. Ignored when the action is `copy`. Left undefined
+   * the encoder keeps the source layout, which is how a 7.1 source used to
+   * reach the browser as an undecodable AAC channel configuration.
+   */
+  channels?: number;
   language?: string;
   title?: string;
   isDefault: boolean;
@@ -78,17 +93,97 @@ export interface AdaptivePackageEncodingInput {
   preset?: string;
 }
 
-function levelFor(qualityHeight: number, family: "h264" | "hevc"): string {
-  if (family === "hevc") return qualityHeight >= 1080 ? "4.1" : "4";
-  return qualityHeight >= 1080 ? "4.1" : qualityHeight >= 720 ? "3.1" : "3.0";
+/**
+ * H.264 level limits, in the units the specification uses.
+ *
+ * `maxFrameMacroblocks` is MaxFS and `maxMacroblocksPerSecond` is MaxMBPS from
+ * ITU-T H.264 Table A-1. Only the levels a delivery ladder can reach are
+ * listed; anything larger than the last entry is clamped to it.
+ */
+const H264_LEVELS: ReadonlyArray<{
+  level: string;
+  maxFrameMacroblocks: number;
+  maxMacroblocksPerSecond: number;
+}> = [
+  { level: "3.0", maxFrameMacroblocks: 1620, maxMacroblocksPerSecond: 40_500 },
+  { level: "3.1", maxFrameMacroblocks: 3600, maxMacroblocksPerSecond: 108_000 },
+  { level: "3.2", maxFrameMacroblocks: 5120, maxMacroblocksPerSecond: 216_000 },
+  { level: "4.0", maxFrameMacroblocks: 8192, maxMacroblocksPerSecond: 245_760 },
+  { level: "4.1", maxFrameMacroblocks: 8192, maxMacroblocksPerSecond: 245_760 },
+  { level: "4.2", maxFrameMacroblocks: 8704, maxMacroblocksPerSecond: 522_240 },
+  {
+    level: "5.0",
+    maxFrameMacroblocks: 22_080,
+    maxMacroblocksPerSecond: 589_824,
+  },
+  {
+    level: "5.1",
+    maxFrameMacroblocks: 36_864,
+    maxMacroblocksPerSecond: 983_040,
+  },
+];
+
+export function frameMacroblocks(width: number, height: number): number {
+  return (
+    Math.ceil(Math.max(1, width) / 16) * Math.ceil(Math.max(1, height) / 16)
+  );
+}
+
+/**
+ * The H.264 level for an actual encoded frame.
+ *
+ * Deliberately derived from the frame being produced rather than from the rung
+ * name. A rung is named for its height, but its width comes from the source
+ * aspect ratio, and the two differ enough to change the answer: a 2.39:1 480p
+ * rung is 854x356 (1242 macroblocks, comfortably level 3.0) while a 16:9 one is
+ * 854x480 (1620 macroblocks, at the very edge of it). VideoToolbox refuses to
+ * even open an encoder for the second case — `Cannot prepare encoder: -12902` —
+ * so naming the level after the rung meant every 16:9 title failed to package
+ * its 480p rung on Apple hardware, while letterboxed sources went through.
+ *
+ * The chosen level must have strictly more room than the frame needs. At
+ * exactly MaxFS the hardware encoder has no headroom for its reference frames
+ * and rejects the configuration, so equality is treated as not fitting.
+ */
+export function h264LevelFor(
+  width: number,
+  height: number,
+  frameRate: number | undefined,
+): string {
+  const macroblocks = frameMacroblocks(width, height);
+  const rate = frameRate && frameRate > 0 ? frameRate : 30;
+  const perSecond = macroblocks * rate;
+  const fitting = H264_LEVELS.find(
+    (candidate) =>
+      candidate.maxFrameMacroblocks > macroblocks &&
+      candidate.maxMacroblocksPerSecond >= perSecond,
+  );
+  return (fitting ?? H264_LEVELS[H264_LEVELS.length - 1]!).level;
+}
+
+function levelFor(
+  output: AdaptiveVideoOutput,
+  family: "h264" | "hevc",
+  frameRate: number | undefined,
+): string {
+  if (family === "hevc") return output.qualityHeight >= 1080 ? "4.1" : "4";
+  return h264LevelFor(output.width, output.height, frameRate);
 }
 
 function pixelFormatFor(
   encoder: RenditionVideoEncoder,
   hdr: RenditionHdrSignal | undefined,
 ): string {
-  if (hdr) return encoder === "hevc_qsv" ? "p010le" : "yuv420p10le";
-  return encoder === "h264_qsv" || encoder === "hevc_qsv" ? "nv12" : "yuv420p";
+  if (hdr)
+    return encoder === "hevc_qsv" || encoder === "hevc_videotoolbox"
+      ? "p010le"
+      : "yuv420p10le";
+  return encoder === "h264_qsv" ||
+    encoder === "hevc_qsv" ||
+    encoder === "h264_videotoolbox" ||
+    encoder === "hevc_videotoolbox"
+    ? "nv12"
+    : "yuv420p";
 }
 
 /**
@@ -138,16 +233,26 @@ export function buildAdaptiveFilterComplex({
     );
     videoOutputs.forEach((output, index) => {
       chains.push(
-        `[${branches[index]}]scale=${output.width}:${output.height}:flags=lanczos,format=${pixelFormat}[out${index}]`,
+        `[${branches[index]}]${rateFilterFor(output)}scale=${output.width}:${output.height}:flags=lanczos,format=${pixelFormat}[out${index}]`,
       );
     });
   } else {
     chains.push(
-      `[${head}]scale=${videoOutputs[0].width}:${videoOutputs[0].height}:flags=lanczos,format=${pixelFormat}[out0]`,
+      `[${head}]${rateFilterFor(videoOutputs[0])}scale=${videoOutputs[0].width}:${videoOutputs[0].height}:flags=lanczos,format=${pixelFormat}[out0]`,
     );
   }
 
   return chains.join(";");
+}
+
+/**
+ * The rate conversion a rung needs, as a filter prefix.
+ *
+ * Dropped in front of the scale so the frames that will not survive are
+ * discarded before they are resized, rather than after.
+ */
+function rateFilterFor(output: AdaptiveVideoOutput): string {
+  return output.frameRate ? `fps=${output.frameRate},` : "";
 }
 
 function gopEncoderFamily(encoder: RenditionVideoEncoder): GopEncoderFamily {
@@ -165,13 +270,15 @@ function videoEncoderArgsFor(
 ): string[] {
   const family = codecFamilyForEncoder(encoder);
   const policy = getEncodingPolicy(output.qualityHeight, family);
+  // A rung encoded at half the source rate has half the macroblock rate and
+  // half the frames in a two-second GOP, so both the level and `-g` have to be
+  // read from the rung rather than from the source.
+  const rungFrameRate = output.frameRate ?? frameRate;
   const specifier = `v:${ordinal}`;
-  const args: string[] = [
-    `-c:${specifier}`,
-    encoder,
-    `-preset:${specifier}`,
-    preset,
-  ];
+  const args: string[] = [`-c:${specifier}`, encoder];
+  if (!encoder.endsWith("_videotoolbox")) {
+    args.push(`-preset:${specifier}`, preset);
+  }
 
   if (encoder === "hevc_qsv") {
     args.push(
@@ -182,6 +289,13 @@ function videoEncoderArgsFor(
     );
   } else if (encoder === "libx265") {
     args.push(`-crf:${specifier}`, String(policy.crf));
+  } else if (encoder === "hevc_videotoolbox") {
+    args.push(
+      `-profile:${specifier}`,
+      hdr ? "main10" : "main",
+      `-b:${specifier}`,
+      String(policy.expectedVideoBitrate),
+    );
   } else if (encoder === "h264_qsv") {
     args.push(
       `-global_quality:${specifier}`,
@@ -189,7 +303,16 @@ function videoEncoderArgsFor(
       `-profile:${specifier}`,
       "high",
       `-level:${specifier}`,
-      levelFor(output.qualityHeight, family),
+      levelFor(output, family, rungFrameRate),
+    );
+  } else if (encoder === "h264_videotoolbox") {
+    args.push(
+      `-b:${specifier}`,
+      String(policy.expectedVideoBitrate),
+      `-profile:${specifier}`,
+      "high",
+      `-level:${specifier}`,
+      levelFor(output, family, rungFrameRate),
     );
   } else {
     args.push(
@@ -198,7 +321,7 @@ function videoEncoderArgsFor(
       `-profile:${specifier}`,
       "high",
       `-level:${specifier}`,
-      levelFor(output.qualityHeight, family),
+      levelFor(output, family, rungFrameRate),
     );
   }
 
@@ -227,7 +350,7 @@ function videoEncoderArgsFor(
   // other rung of the ladder on the encoder's own cadence.
   for (const argument of buildGopArgs({
     encoder: gopEncoderFamily(encoder),
-    frameRate,
+    frameRate: rungFrameRate,
     segmentSeconds,
   })) {
     args.push(argument.startsWith("-") ? `${argument}:${specifier}` : argument);
@@ -251,6 +374,8 @@ function audioEncoderArgsFor(
     String(output.bitrate),
     `-ar:${specifier}`,
     "48000",
+    `-ac:${specifier}`,
+    String(deliveryChannelsFor(output.channels)),
   ];
 }
 
@@ -435,6 +560,45 @@ export function adaptiveOutputDirectories({
         `${ADAPTIVE_AUDIO_DIRECTORY}/${audioRenditionId(output.sourceStreamIndex)}`,
     ),
   ];
+}
+
+/**
+ * Channel count that every target browser can actually decode.
+ *
+ * AAC signals its layout with a `channelConfiguration` index (ISO 14496-3
+ * Table 1.19), and browsers disagree about which indices they accept from an
+ * fMP4 append:
+ *
+ *  - Chromium's MSE parser rejects the common ffmpeg "7.1" side layout
+ *    (index 12) outright, with `CHUNK_DEMUXER_ERROR_APPEND_FAILED`, so a 7.1
+ *    source packaged untouched never starts at all.
+ *  - 5.1 (index 6) gets past the parser but is not decoded reliably
+ *    everywhere: measured on this ladder, Chrome 148 fails a 5.1 rendition
+ *    with `PIPELINE_ERROR_DECODE: Failed to send audio packet for decoding` on
+ *    the first append after a seek, while the identical package carrying a
+ *    stereo rendition plays. Chrome 151 decodes both.
+ *  - Safari's native HLS engine decodes all of them.
+ *
+ * One shared audio ladder is served to every client, so it can only carry a
+ * layout none of them refuse, and that is stereo. Surround is therefore not
+ * delivered on this lane; the original file, offered alongside whenever it can
+ * be played directly, still carries it. Keeping surround here would need a
+ * second audio ladder selected per client, which is a larger change than a
+ * compatibility floor.
+ */
+export const MAX_DELIVERY_AUDIO_CHANNELS = 2;
+
+export function deliveryChannelsFor(
+  sourceChannels: number | undefined,
+): number {
+  if (
+    sourceChannels === undefined ||
+    !Number.isInteger(sourceChannels) ||
+    sourceChannels < 1
+  ) {
+    return 2;
+  }
+  return Math.min(sourceChannels, MAX_DELIVERY_AUDIO_CHANNELS);
 }
 
 /**

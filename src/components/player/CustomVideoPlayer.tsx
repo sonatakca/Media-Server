@@ -17,7 +17,6 @@ import {
   getItemTrickplayImageUrl,
   getActiveTranscodingReasons,
   redactPlaybackUrl,
-  stopActiveTranscodeSession,
 } from "../../lib/mediaApi";
 import { isCustomPlaybackCandidate } from "../../lib/playback-planner/customPlaybackApi";
 import {
@@ -395,6 +394,11 @@ export function CustomVideoPlayer({
     notifyActiveSeek,
   } = deck;
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
+  /**
+   * Audio tracks a re-planned source has already been requested for, so a
+   * source that cannot carry the chosen track is not asked for again and again.
+   */
+  const attemptedAudioFallbackKeysRef = useRef<Set<string>>(new Set());
   /**
    * Set during a promotion so the source-attach effect recognises that the deck
    * already holds these bytes. Without it the effect would re-attach the URL to
@@ -851,6 +855,24 @@ export function CustomVideoPlayer({
   const [qualitySelectionNotice, setQualitySelectionNotice] = useState<
     string | null
   >(null);
+  /**
+   * Why an audio track change did not take effect.
+   *
+   * Kept apart from the quality notice it used to borrow: the quality
+   * machinery clears that value whenever it re-evaluates the ladder, which
+   * happens during the very re-plan an audio failure comes out of — so the
+   * message was set and wiped before it could ever be painted.
+   */
+  const [audioSelectionNotice, setAudioSelectionNotice] = useState<
+    string | null
+  >(null);
+  /**
+   * The one line the settings panel shows about a refused change.
+   *
+   * An audio refusal wins: it is the more specific answer to the click the
+   * viewer just made.
+   */
+  const settingsNoticeText = audioSelectionNotice ?? qualitySelectionNotice;
   const [isWaitingForAudioTranscodeReady, setIsWaitingForAudioTranscodeReady] =
     useState(false);
   const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<
@@ -881,8 +903,27 @@ export function CustomVideoPlayer({
       ),
     [qualityManifest],
   );
+  /**
+   * The ladder as the title was opened with, which is what choosing the opening
+   * quality is about.
+   *
+   * Deliberately taken from the source prop rather than from whatever is
+   * playing. An in-player audio or quality change replaces the active source
+   * with one whose manifest differs, and keying the opening choice on that made
+   * it re-run and reset playback straight back to the original source — undoing
+   * the very change that had just been made.
+   */
+  const initialQualityFiles = useMemo(
+    () =>
+      [...(source.qualityManifest?.qualities ?? [])].sort(
+        (left, right) => right.height - left.height,
+      ),
+    [source.qualityManifest],
+  );
   const hasFileQualities =
     availableQualityFiles.length > 0 && !isAdaptiveRenditionPlayback;
+  const hasInitialFileQualities =
+    initialQualityFiles.length > 0 && !source.qualityManifest?.adaptive;
   const hasAdaptiveQualities = Boolean(
     adaptiveQualityManifest && adaptiveQualityManifest.qualities.length > 0,
   );
@@ -1016,6 +1057,19 @@ export function CustomVideoPlayer({
           },
     [qualityManifest, source],
   );
+  /**
+   * Held in a ref for the opening-quality effect.
+   *
+   * `buildQualityFileSource` closes over the active source's manifest, so its
+   * identity changes on every in-player audio or quality switch. Listed as a
+   * dependency it re-ran the opening choice and reset playback to the source
+   * the title was opened with, undoing the switch that had just been made.
+   */
+  const buildQualityFileSourceRef = useRef(buildQualityFileSource);
+  useEffect(() => {
+    buildQualityFileSourceRef.current = buildQualityFileSource;
+  });
+
   const persistQualityPreference = useCallback(
     (preference: QualityPreference) => {
       qualityPreferenceRef.current = preference;
@@ -1478,8 +1532,8 @@ export function CustomVideoPlayer({
         }
       }
 
-      if (hasFileQualities) {
-        const initialQualityFiles = availableQualityFiles.filter((quality) =>
+      if (hasInitialFileQualities) {
+        const compatibleInitialFiles = initialQualityFiles.filter((quality) =>
           isQualityAudioCompatible(quality, defaultAudioIndex),
         );
         const playerHeight =
@@ -1487,17 +1541,17 @@ export function CustomVideoPlayer({
           (typeof window === "undefined" ? 720 : window.innerHeight * 0.7);
         const selectedFile =
           storedPreference.mode === "low-data"
-            ? selectLowDataQuality(initialQualityFiles)
+            ? selectLowDataQuality(compatibleInitialFiles)
             : storedPreference.mode === "higher-resolution"
-              ? selectHigherResolutionQuality(initialQualityFiles)
+              ? selectHigherResolutionQuality(compatibleInitialFiles)
               : storedPreference.mode === "advanced"
-                ? selectManualQuality(initialQualityFiles, storedPreference)
+                ? selectManualQuality(compatibleInitialFiles, storedPreference)
                 : selectAutoQuality(
-                    initialQualityFiles,
+                    compatibleInitialFiles,
                     getFileQualitySelectionContext(playerHeight),
                   );
         if (selectedFile) {
-          nextSource = buildQualityFileSource(selectedFile);
+          nextSource = buildQualityFileSourceRef.current(selectedFile);
           setActiveQualityFileId(selectedFile.id);
         } else if (storedPreference.mode === "advanced") {
           manualQualityUnavailable = true;
@@ -1539,9 +1593,8 @@ export function CustomVideoPlayer({
 
     void applyInitialQuality();
   }, [
-    availableQualityFiles,
-    buildQualityFileSource,
-    hasFileQualities,
+    hasInitialFileQualities,
+    initialQualityFiles,
     item.Id,
     qualityUserId,
     source.id,
@@ -1572,6 +1625,19 @@ export function CustomVideoPlayer({
         );
 
         if (isCancelled) {
+          return;
+        }
+
+        if (reasons === null) {
+          // The session this poll was keyed to has been retired, which happens
+          // on every audio, quality or page change. Asking again would just
+          // produce a 404 every few seconds for a session that is meant to be
+          // gone.
+          if (intervalId !== null) {
+            window.clearInterval(intervalId);
+            intervalId = null;
+          }
+          setLiveTranscodingReasons([]);
           return;
         }
 
@@ -1630,6 +1696,7 @@ export function CustomVideoPlayer({
 
   useEffect(() => {
     latestPlaybackPositionRef.current = 0;
+    attemptedAudioFallbackKeysRef.current.clear();
     hasReportedStoppedRef.current = false;
     hasAutoPlayedNextRef.current = false;
     hasAppliedInitialStartRef.current = false;
@@ -1846,67 +1913,57 @@ export function CustomVideoPlayer({
     };
   }, [finishSubtitleEditMode, isSubtitleEditMode]);
 
-  const stopCurrentPlaybackForSourceSwitch = useCallback(
-    async (currentSource: PlaybackSourceCandidate) => {
-      const video = videoRef.current;
+  const stopCurrentPlaybackForSourceSwitch = useCallback(async () => {
+    const video = videoRef.current;
 
-      try {
-        video?.pause();
-      } catch {
-        // Ignore pause errors during source switching.
-      }
+    try {
+      video?.pause();
+    } catch {
+      // Ignore pause errors during source switching.
+    }
 
-      try {
-        activeAttachmentRef.current?.destroy();
-      } catch (destroyError) {
-        console.warn(
-          "[Seyirlik Playback] Could not destroy current video attachment before source switch",
-          destroyError,
-        );
-      } finally {
-        activeAttachmentRef.current = null;
-      }
+    try {
+      activeAttachmentRef.current?.destroy();
+    } catch (destroyError) {
+      console.warn(
+        "[Seyirlik Playback] Could not destroy current video attachment before source switch",
+        destroyError,
+      );
+    } finally {
+      activeAttachmentRef.current = null;
+    }
 
-      try {
-        video?.removeAttribute("src");
-        video?.load();
-      } catch {
-        // Ignore media reset errors during source switching.
-      }
+    try {
+      video?.removeAttribute("src");
+      video?.load();
+    } catch {
+      // Ignore media reset errors during source switching.
+    }
 
-      if (isCustomPlaybackCandidate(currentSource)) {
-        try {
-          await stopCustomPlaybackSessionImmediately(currentSource);
-        } catch (stopError) {
-          console.warn(
-            "[Seyirlik Playback] Could not stop active custom playback session",
-            stopError,
-          );
-        }
-        return;
-      }
-
-      if (
-        (currentSource.mode === "Transcoding" || currentSource.isHls) &&
-        currentSource.hlsKind !== "adaptive-rendition"
-      ) {
-        try {
-          await stopActiveTranscodeSession(currentSource.playSessionId);
-        } catch (stopError) {
-          console.warn(
-            "[Seyirlik Playback] Could not stop active transcode session",
-            stopError,
-          );
-        }
-      }
-    },
-    [],
-  );
+    // Do not end the server session here. Safari and hls.js can issue a final
+    // playlist request after the media element is detached. Ending the
+    // session synchronously turns that harmless late request into a 404 and
+    // can surface a fatal player error while an audio/quality replacement is
+    // already ready. The session lease releases the old session after the
+    // new source has rendered, with a short grace period for in-flight reads.
+  }, []);
 
   const switchPlayerSource = useCallback(
     async (
       nextSource: PlaybackSourceCandidate,
-      options: { preserveCachedBytes?: boolean } = {},
+      options: {
+        preserveCachedBytes?: boolean;
+        currentTimeSeconds?: number;
+        /**
+         * The selection this switch is being made *for*.
+         *
+         * The restore snapshot is otherwise taken from the render-time state,
+         * which is still the previous track: an audio change would attach the
+         * right source and then immediately restore the old selection over it,
+         * leaving the settings row pointing at a track that is not playing.
+         */
+        selectedAudioStreamIndex?: number;
+      } = {},
     ) => {
       const video = videoRef.current;
 
@@ -1922,7 +1979,10 @@ export function CustomVideoPlayer({
       playbackAttemptIdRef.current += 1;
       playbackAttemptRef.current = null;
 
-      const currentTime = video?.currentTime ?? progress.currentTime;
+      const currentTime =
+        options.currentTimeSeconds ??
+        video?.currentTime ??
+        progress.currentTime;
       const wasPlaying = video
         ? !video.paused && !video.ended
         : progress.isPlaying;
@@ -1934,7 +1994,8 @@ export function CustomVideoPlayer({
         volume: video?.volume ?? 1,
         muted: video?.muted ?? false,
         playbackRate: video?.playbackRate ?? 1,
-        selectedAudioStreamIndex,
+        selectedAudioStreamIndex:
+          options.selectedAudioStreamIndex ?? selectedAudioStreamIndex,
         selectedSubtitleStreamIndex,
       };
       pendingAudioTranscodePlayRef.current = null;
@@ -1944,7 +2005,7 @@ export function CustomVideoPlayer({
       setLastVideoError(null);
       revealPlayerChrome();
 
-      await stopCurrentPlaybackForSourceSwitch(activeSource);
+      await stopCurrentPlaybackForSourceSwitch();
       if (sourceSwitchTokenRef.current !== switchToken) return;
 
       // A restart of the *same* URL needs a distinct one, or the element
@@ -1996,10 +2057,12 @@ export function CustomVideoPlayer({
       baseSource: PlaybackSourceCandidate,
       quality?: PlaybackQualityOption,
       audioStreamIndex = selectedAudioStreamIndex,
+      overrides: Partial<PlaybackSourceSettings> = {},
     ): Promise<PlaybackSourceCandidate> => {
       const settings: PlaybackSourceSettings = {
         ...getQualitySettings(quality),
         audioStreamIndex,
+        ...overrides,
       };
 
       const configured = await buildConfiguredHlsPlaybackSource(
@@ -2014,6 +2077,94 @@ export function CustomVideoPlayer({
       return configured;
     },
     [selectedAudioStreamIndex],
+  );
+
+  /**
+   * Re-plans an adaptive package for an engine with no JavaScript control.
+   *
+   * Safari plays the package with its native HLS engine, which exposes neither
+   * a level API nor the audio rendition group through `video.audioTracks`. A
+   * quality or audio choice therefore cannot be applied to the running stream —
+   * but it must not be dropped either. The choice is sent to the server as a
+   * new plan instead; the server answers with a master playlist advertising
+   * exactly the requested rung and defaulting to the requested audio rendition,
+   * and `switchPlayerSource` re-attaches it at the current position and play
+   * state. The outgoing session is retired by its lease only after the
+   * replacement is attached, so a late playlist read cannot become a fatal
+   * error.
+   */
+  const replanNativeAdaptiveSource = useCallback(
+    async (request: {
+      qualityHeight?: number | null;
+      audioStreamIndex?: number;
+    }): Promise<boolean> => {
+      try {
+        const nextSource = await buildConfiguredSource(
+          activeSource,
+          undefined,
+          request.audioStreamIndex ?? selectedAudioStreamIndex,
+          {
+            ...(request.qualityHeight === null ||
+            request.qualityHeight === undefined
+              ? {}
+              : { qualityHeight: request.qualityHeight }),
+            startTimeMs: Math.round(
+              (videoRef.current?.currentTime ?? progress.currentTime) * 1000,
+            ),
+          },
+        );
+        await switchPlayerSource(nextSource, {
+          ...(request.audioStreamIndex === undefined
+            ? {}
+            : { selectedAudioStreamIndex: request.audioStreamIndex }),
+        });
+        return true;
+      } catch (replanError) {
+        console.warn(
+          "[Seyirlik Playback] Could not re-plan the native adaptive source",
+          replanError,
+        );
+        return false;
+      }
+    },
+    [
+      activeSource,
+      buildConfiguredSource,
+      selectedAudioStreamIndex,
+      progress.currentTime,
+      switchPlayerSource,
+    ],
+  );
+
+  /**
+   * The rung the native adaptive source is currently pinned to.
+   *
+   * Read back out of the URL that is actually attached rather than kept in a
+   * parallel variable, so it cannot drift from what is playing. Re-selecting
+   * the rung already on screen then costs nothing instead of reloading the
+   * stream.
+   */
+  const nativeAdaptiveQualityHeight = useMemo(() => {
+    try {
+      const value = new URL(
+        activeSource.url,
+        typeof window === "undefined"
+          ? "http://seyirlik.local"
+          : window.location.origin,
+      ).searchParams.get("height");
+      const height = value ? Number(value) : Number.NaN;
+      return Number.isFinite(height) && height > 0 ? height : null;
+    } catch {
+      return null;
+    }
+  }, [activeSource.url]);
+
+  const applyNativeAdaptiveQualityHeight = useCallback(
+    (height: number | null) => {
+      if (nativeAdaptiveQualityHeight === height) return;
+      void replanNativeAdaptiveSource({ qualityHeight: height });
+    },
+    [nativeAdaptiveQualityHeight, replanNativeAdaptiveSource],
   );
 
   /**
@@ -2351,16 +2502,14 @@ export function CustomVideoPlayer({
       qualityId?: string,
     ) => {
       if (!adaptiveQualityManifest) return false;
-      if (
-        mode !== "auto" &&
+      // Safari's native HLS engine keeps seamless ABR but exposes no JavaScript
+      // API for exact or capped level selection. The choice is honoured by
+      // re-planning against a manifest that advertises only the chosen rung,
+      // rather than being reported to the viewer as a missing file.
+      const requiresNativeReplan =
         isAdaptiveRenditionPlayback &&
         activeSource.usingHlsJs === false &&
-        !activeAttachmentRef.current?.adaptiveController
-      ) {
-        // Safari's native HLS engine keeps seamless ABR but does not expose a
-        // JavaScript API for exact/capped level selection.
-        return false;
-      }
+        !activeAttachmentRef.current?.adaptiveController;
       const ordered = [...adaptiveQualityManifest.qualities].sort(
         (left, right) => left.height - right.height,
       );
@@ -2391,6 +2540,9 @@ export function CustomVideoPlayer({
 
       if (mode === "advanced" && preferred) {
         controller?.setQualityHeight(preferred.height, preferred.height);
+        if (requiresNativeReplan) {
+          applyNativeAdaptiveQualityHeight(preferred.height);
+        }
         setAdaptiveLockedQualityId(preferred.id);
         setActiveAdaptiveHeight((current) => current ?? preferred.height);
         persistQualityPreference({
@@ -2400,14 +2552,16 @@ export function CustomVideoPlayer({
           preferOriginal: false,
         });
       } else {
-        controller?.setQualityHeight(
-          null,
+        const ceiling =
           mode === "low-data"
             ? (lowest?.height ?? null)
             : mode === "higher-resolution"
               ? (highest?.height ?? null)
-              : null,
-        );
+              : null;
+        controller?.setQualityHeight(null, ceiling);
+        if (requiresNativeReplan) {
+          applyNativeAdaptiveQualityHeight(ceiling);
+        }
         setAdaptiveLockedQualityId(null);
         persistQualityPreference({ mode });
       }
@@ -2418,6 +2572,7 @@ export function CustomVideoPlayer({
     [
       activeSource.usingHlsJs,
       adaptiveQualityManifest,
+      applyNativeAdaptiveQualityHeight,
       isAdaptiveRenditionPlayback,
       persistQualityPreference,
     ],
@@ -2899,18 +3054,55 @@ export function CustomVideoPlayer({
         return;
       }
 
+      // Choosing a track is a fresh intent, so an earlier failed attempt at the
+      // same track must not suppress this one.
+      attemptedAudioFallbackKeysRef.current.delete(`${item.Id}:${streamIndex}`);
+
       if (isAdaptiveRenditionPlayback) {
-        const switched =
-          activeAttachmentRef.current?.adaptiveController?.setAudioStream(
-            streamIndex,
-          ) ?? false;
-        if (switched) {
+        const controller = activeAttachmentRef.current?.adaptiveController;
+
+        if (controller?.setAudioStream(streamIndex)) {
           setSelectedAudioStreamIndex(streamIndex);
           setActiveAudioStreamIndex(streamIndex);
           setQualitySelectionNotice(null);
           revealPlayerChrome();
+          return;
+        }
+
+        /**
+         * The track is not in the package, or the engine cannot select it.
+         *
+         * Both cases are re-planned rather than refused. The retention policy
+         * deliberately leaves unrelated languages out of a generated package,
+         * but the settings panel still lists every track the *source* carries,
+         * so a viewer can reasonably ask for one that was left out. The server
+         * answers that by remuxing the original with only that stream mapped;
+         * refusing here would make the click a silent no-op, which is exactly
+         * what an unsupported API must never become.
+         *
+         * Safari reaches this the other way round: its native HLS engine never
+         * surfaces a rendition group in `video.audioTracks` at all, so there is
+         * no controller and nothing to reject.
+         */
+        if (controller) {
+          console.info(
+            "[Seyirlik Playback] The package does not carry this audio rendition; re-planning",
+            { streamIndex },
+          );
+        }
+        const replanned = await replanNativeAdaptiveSource({
+          audioStreamIndex: streamIndex,
+          qualityHeight: nativeAdaptiveQualityHeight,
+        });
+
+        if (replanned) {
+          setSelectedAudioStreamIndex(streamIndex);
+          setActiveAudioStreamIndex(streamIndex);
+          setAudioSelectionNotice(null);
+          revealPlayerChrome();
         } else {
-          setQualitySelectionNotice(t("player.qualityManualUnavailable"));
+          setAudioSelectionNotice(t("player.audioSwitchUnavailable"));
+          revealPlayerChrome();
         }
         return;
       }
@@ -2989,27 +3181,39 @@ export function CustomVideoPlayer({
         getAudioFallbackSource(activeSource, availablePlaybackCandidates) ??
         activeSource;
       let nextSource: PlaybackSourceCandidate;
+      const requestedStartTimeMs = Math.round(
+        (video?.currentTime ?? progress.currentTime) * 1000,
+      );
 
       try {
         nextSource = await buildConfiguredSource(
           fallbackBaseSource,
           selectedQuality,
           streamIndex,
+          {
+            startTimeMs: requestedStartTimeMs,
+          },
         );
+        nextSource = { ...nextSource, requestedStartTimeMs };
       } catch (switchError) {
         console.warn(
           "[Seyirlik Playback] Could not build audio stream source",
           switchError,
         );
+        setAudioSelectionNotice(t("player.audioSwitchUnavailable"));
+        revealPlayerChrome();
         return;
       }
 
+      setAudioSelectionNotice(null);
       setSelectedAudioStreamIndex(streamIndex);
       setActiveAudioStreamIndex(
         shouldDeferActiveAudioUntilSourceSwitch ? undefined : streamIndex,
       );
 
-      void switchPlayerSource(nextSource).catch((switchError: unknown) => {
+      void switchPlayerSource(nextSource, {
+        selectedAudioStreamIndex: streamIndex,
+      }).catch((switchError: unknown) => {
         console.warn(
           "[Seyirlik Playback] Could not switch audio stream",
           switchError,
@@ -3023,7 +3227,9 @@ export function CustomVideoPlayer({
       canSwitchAudio,
       isAdaptiveRenditionPlayback,
       item,
+      nativeAdaptiveQualityHeight,
       qualityOptions,
+      replanNativeAdaptiveSource,
       revealPlayerChrome,
       selectedQualityId,
       switchPlayerSource,
@@ -3410,13 +3616,16 @@ export function CustomVideoPlayer({
     };
 
     let wasPlayingBeforeAudioTranscodeSeek = false;
+    let isRestoringPlaybackPosition = false;
 
     const handleAudioTranscodeSeeking = () => {
       if (!isCurrentAttempt() || !isAudioTranscodeSource(sourceToAttach)) {
         return;
       }
 
-      wasPlayingBeforeAudioTranscodeSeek = !video.paused && !video.ended;
+      wasPlayingBeforeAudioTranscodeSeek = isRestoringPlaybackPosition
+        ? Boolean(pendingRestore?.wasPlaying)
+        : !video.paused && !video.ended;
 
       if (wasPlayingBeforeAudioTranscodeSeek) {
         video.pause();
@@ -3451,6 +3660,7 @@ export function CustomVideoPlayer({
         "seeked-audio-transcode-buffering",
         wasPlayingBeforeAudioTranscodeSeek,
       );
+      isRestoringPlaybackPosition = false;
     };
 
     const restorePlayback = () => {
@@ -3460,6 +3670,14 @@ export function CustomVideoPlayer({
         didRestore ||
         pendingRestore.token !== sourceSwitchTokenRef.current
       ) {
+        return;
+      }
+
+      // hls.js emits loadedmetadata before it has established the playable
+      // range of an incremental audio replacement. Seeking there is undone by
+      // the following duration update; canplay is the first stable restore
+      // point for this source class.
+      if (isAudioTranscodeSource(sourceToAttach) && video.readyState < 3) {
         return;
       }
 
@@ -3478,6 +3696,7 @@ export function CustomVideoPlayer({
             Number.isFinite(video.duration) && video.duration > 0
               ? Math.max(0, video.duration - 0.25)
               : pendingRestore.currentTime;
+          isRestoringPlaybackPosition = isAudioTranscodeSource(sourceToAttach);
           video.currentTime = Math.min(pendingRestore.currentTime, maxTime);
         }
       } catch (seekError) {
@@ -3520,15 +3739,50 @@ export function CustomVideoPlayer({
         return;
       }
 
+      // `didRequestAudioFallback` is scoped to one attachment, so on its own it
+      // cannot stop a fallback that keeps producing a source which still will
+      // not carry the requested track: each replacement attaches, discovers the
+      // same thing, and asks again, one server session per turn. The attempt is
+      // therefore recorded against the track itself, and only ever made once.
+      const fallbackKey = `${sourceToAttach.itemId}:${selectedAudioIndexForSource}`;
+      if (attemptedAudioFallbackKeysRef.current.has(fallbackKey)) {
+        console.warn(
+          "[Seyirlik Playback] The requested audio track could not be delivered by a replanned source",
+          {
+            selectedAudioStreamIndex: selectedAudioIndexForSource,
+            sourceMode: sourceToAttach.mode,
+          },
+        );
+        setActiveAudioStreamIndex(
+          getNativeActiveAudioStreamIndex(video, sourceToAttach),
+        );
+        setQualitySelectionNotice(t("player.audioSwitchUnavailable"));
+        return;
+      }
+      attemptedAudioFallbackKeysRef.current.add(fallbackKey);
+
       didRequestAudioFallback = true;
 
       let fallbackSource: PlaybackSourceCandidate;
+      const fallbackStartTimeSeconds = Math.max(
+        0,
+        sourceToAttach.requestedStartTimeMs === undefined
+          ? 0
+          : sourceToAttach.requestedStartTimeMs / 1000,
+        pendingRestore?.currentTime ?? 0,
+        latestPlaybackPositionRef.current,
+        videoRef.current?.currentTime ?? 0,
+        progress.currentTime,
+      );
 
       try {
         fallbackSource = await buildConfiguredSource(
           fallbackBaseSource,
           selectedQuality,
           selectedAudioIndexForSource,
+          {
+            startTimeMs: Math.round(fallbackStartTimeSeconds * 1000),
+          },
         );
       } catch (fallbackError) {
         console.warn(
@@ -3549,7 +3803,10 @@ export function CustomVideoPlayer({
         fallbackUrl: redactPlaybackUrl(fallbackSource.url),
       });
 
-      void switchPlayerSource(fallbackSource).catch((switchError: unknown) => {
+      void switchPlayerSource(fallbackSource, {
+        selectedAudioStreamIndex: selectedAudioIndexForSource,
+        currentTimeSeconds: fallbackStartTimeSeconds,
+      }).catch((switchError: unknown) => {
         if (!isCurrentAttempt()) {
           return;
         }
@@ -5542,6 +5799,9 @@ export function CustomVideoPlayer({
             onSelectAutoQuality={handleSelectAutoQuality}
             onSelectQuality={handleSelectQuality}
             onSelectAudioStream={handleSelectAudioStream}
+            {...(settingsNoticeText
+              ? { audioNoticeText: settingsNoticeText }
+              : {})}
             onSelectSubtitleStream={handleSelectSubtitleStream}
             onSubtitleDelayChange={setSubtitleDelaySeconds}
             onStartSubtitleEdit={startSubtitleEditMode}

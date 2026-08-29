@@ -12,7 +12,7 @@ import { ownApiClient } from "../api/ownApi/client";
 export type ArtworkKind = "poster" | "backdrop" | "logo";
 
 /** The stored image type each provider set is written to. */
-export type StoredImageType = "primary" | "backdrop" | "logo";
+export type StoredImageType = "cover" | "backdrop" | "logo";
 
 export interface ArtworkCandidate {
   kind: ArtworkKind;

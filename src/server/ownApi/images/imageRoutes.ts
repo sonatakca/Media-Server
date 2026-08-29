@@ -12,7 +12,7 @@ import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { ImageRepository } from "./imageRepository";
 import type { ImageStorage } from "./imageStorage";
 
-const IMAGE_TYPES = ["primary", "backdrop", "logo", "thumb", "banner"] as const;
+const IMAGE_TYPES = ["cover", "backdrop", "logo", "thumb", "banner"] as const;
 
 export interface ImageRoutesOptions {
   images: ImageRepository;
@@ -150,7 +150,7 @@ export function createImageRoutes({
         const imageType = parseEnum(
           context.params.imageType ?? null,
           IMAGE_TYPES,
-          "primary",
+          "cover",
           "imageType",
         );
         const imageIndex =

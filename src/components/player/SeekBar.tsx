@@ -41,7 +41,6 @@ const TRICKPLAY_ROWS = 10;
 const TRICKPLAY_IMAGES_PER_SHEET = TRICKPLAY_COLUMNS * TRICKPLAY_ROWS;
 
 const SEEK_DRAG_THRESHOLD_PX = 6;
-const SEEK_SNAP_INTERVAL_SECONDS = 3;
 const SEEK_TRACK_HIT_SLOP_PX = 10;
 const SEEK_HOVER_RANGE_OVERLAP_PERCENT = 0.35;
 
@@ -68,17 +67,12 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-function getDisplaySeekPoint(seconds: number, duration: number): number {
+export function getDisplaySeekPoint(seconds: number, duration: number): number {
   if (!Number.isFinite(seconds) || duration <= 0) {
     return 0;
   }
 
-  const safeSeconds = clamp(seconds, 0, duration);
-  const snappedSeconds =
-    Math.floor((safeSeconds + 0.01) / SEEK_SNAP_INTERVAL_SECONDS) *
-    SEEK_SNAP_INTERVAL_SECONDS;
-
-  return clamp(snappedSeconds, 0, duration);
+  return clamp(seconds, 0, duration);
 }
 
 function getSafeSeekTargetSeconds(

@@ -30,6 +30,7 @@ import { createCatalogueRoutes } from "./catalogue/catalogueRoutes";
 import { createImageRepository } from "./images/imageRepository";
 import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
+import { migrateTitleArtwork } from "./images/titleArtworkMigration";
 import { createBookRoutes } from "./books/bookRoutes";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
@@ -52,6 +53,10 @@ import { createJobQueue } from "./tasks/jobQueue";
 import { createWorker } from "./tasks/worker";
 import { createJobHandlers } from "./tasks/jobHandlers";
 import { createTaskRoutes } from "./tasks/taskRoutes";
+import { createProcessingJobStore } from "./processing/jobStore";
+import { createProcessingRoutes } from "./processing/processingRoutes";
+import { createProcessingJobRunner } from "./processing/jobRunner";
+import type { RenditionPaths } from "../../renditions/analysis";
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
@@ -151,7 +156,14 @@ export async function createNativeRuntime({
 
   const imageStorage = createImageStorage({
     imageRoot: path.join(generatedStoragePath, "images"),
+    mediaRoot,
   });
+  const artworkMigration = await migrateTitleArtwork(pool, imageStorage);
+  if (artworkMigration.failed > 0) {
+    console.warn(
+      `Could not migrate ${artworkMigration.failed} title artwork file(s); legacy storage remains active for them.`,
+    );
+  }
   const metadataRepository = createMetadataRepository(pool);
 
   // Metadata is optional: without a provider key the catalogue still scans,
@@ -186,14 +198,33 @@ export async function createNativeRuntime({
    * the serving route re-checks library visibility, so nothing here needs a
    * second opaque identifier to hand around.
    */
+  const renditionRoot =
+    environment.SEYIRLIK_RENDITION_ROOT?.trim() ||
+    path.join(mediaRoot, ".seyirlik", "renditions");
+  const renditionStateRoot =
+    environment.SEYIRLIK_RENDITION_STATE_ROOT?.trim() ||
+    path.join(mediaRoot, ".seyirlik", "state");
+  const processingJobs = createProcessingJobStore(pool);
+  /**
+   * Where a package is built before it is published, and where its FFmpeg log
+   * is kept. Separate from the published root on purpose: staging is disposable
+   * and is never served, so a partial package cannot be reached by a player.
+   */
+  const renditionPaths: RenditionPaths = {
+    mediaRoot,
+    renditionRoot,
+    stateRoot: renditionStateRoot,
+    workRoot:
+      environment.SEYIRLIK_RENDITION_WORK_ROOT?.trim() ||
+      path.join(mediaRoot, ".seyirlik", "work"),
+    logsRoot:
+      environment.SEYIRLIK_RENDITION_LOGS_ROOT?.trim() ||
+      path.join(mediaRoot, ".seyirlik", "logs"),
+  };
   const renditions = createRenditionService({
     mediaRoot,
-    renditionRoot:
-      environment.SEYIRLIK_RENDITION_ROOT?.trim() ||
-      path.join(mediaRoot, ".seyirlik", "renditions"),
-    stateRoot:
-      environment.SEYIRLIK_RENDITION_STATE_ROOT?.trim() ||
-      path.join(mediaRoot, ".seyirlik", "state"),
+    renditionRoot,
+    stateRoot: renditionStateRoot,
     mediaResolver: {
       resolveMedia: () => {
         throw new Error("The native playback routes resolve media themselves.");
@@ -221,6 +252,13 @@ export async function createNativeRuntime({
     queue,
     handlers: createJobHandlers({
       libraries,
+      processingRunner: createProcessingJobRunner({
+        store: processingJobs,
+        paths: renditionPaths,
+        mediaRoot,
+        ...(ffmpegPath ? { ffmpegPath } : {}),
+        ...(ffprobePath ? { ffprobePath } : {}),
+      }),
       scanStore,
       fileSystem: createNodeScannerFileSystem(mediaRoot),
       probeService,
@@ -282,6 +320,14 @@ export async function createNativeRuntime({
       passwords: createArgon2PasswordHasher(),
     }),
     ...createTaskRoutes({ queue, libraries }),
+    ...createProcessingRoutes({
+      catalogue,
+      store: processingJobs,
+      queue,
+      mediaRoot,
+      renditionRoot,
+      ...(ffmpegPath ? { ffmpegPath } : {}),
+    }),
     ...(tmdb
       ? [
           ...createMetadataRoutes({

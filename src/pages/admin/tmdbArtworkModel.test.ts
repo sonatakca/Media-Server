@@ -23,7 +23,7 @@ function candidate(
 ): ArtworkCandidate {
   return {
     kind: "poster",
-    imageType: "primary",
+    imageType: "cover",
     filePath: "/a.jpg",
     language: "en",
     width: 2000,
@@ -148,14 +148,14 @@ describe("candidate filtering", () => {
 
 describe("stored artwork state", () => {
   it("maps a provider set onto the stored image type it replaces", () => {
-    expect(isKindLocked(["primary"], "poster")).toBe(true);
-    expect(isKindLocked(["primary"], "backdrop")).toBe(false);
+    expect(isKindLocked(["cover"], "poster")).toBe(true);
+    expect(isKindLocked(["cover"], "backdrop")).toBe(false);
     expect(isKindLocked(["logo", "backdrop"], "logo")).toBe(true);
   });
 
   it("only counts the first image of a type as the one on display", () => {
     const current = [
-      { imageType: "primary", imageIndex: 0 },
+      { imageType: "cover", imageIndex: 0 },
       { imageType: "backdrop", imageIndex: 1 },
     ];
 
@@ -167,7 +167,7 @@ describe("stored artwork state", () => {
 
   it("reads the current content hash used by card previews", () => {
     const current = [
-      { imageType: "primary", imageIndex: 0, contentHash: "cover-hash" },
+      { imageType: "cover", imageIndex: 0, contentHash: "cover-hash" },
       { imageType: "logo", imageIndex: 0, contentHash: "logo-hash" },
       { imageType: "logo", imageIndex: 1, contentHash: "extra-logo" },
     ];

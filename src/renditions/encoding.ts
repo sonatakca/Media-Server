@@ -4,9 +4,15 @@ export type RenditionCodecFamily = "h264" | "hevc";
 export type RenditionVideoEncoder =
   | "libx264"
   | "h264_qsv"
+  | "h264_videotoolbox"
   | "libx265"
-  | "hevc_qsv";
-export type RenditionEncoderPreference = "auto" | "qsv" | "software";
+  | "hevc_qsv"
+  | "hevc_videotoolbox";
+export type RenditionEncoderPreference =
+  | "auto"
+  | "qsv"
+  | "videotoolbox"
+  | "software";
 /**
  * `preserve` keeps an HDR master in HDR, which forces HEVC Main 10 because no
  * browser decodes 10-bit H.264. `tonemap` converts to SDR H.264 instead, which
@@ -45,6 +51,27 @@ const ENCODING_POLICY: Record<
   Record<number, RenditionEncodingPolicy>
 > = {
   h264: {
+    4320: {
+      crf: 22,
+      globalQuality: 24,
+      maxVideoBitrate: 100_000_000,
+      expectedVideoBitrate: 50_000_000,
+      audioBitrate: 384_000,
+    },
+    2160: {
+      crf: 21,
+      globalQuality: 23,
+      maxVideoBitrate: 40_000_000,
+      expectedVideoBitrate: 20_000_000,
+      audioBitrate: 384_000,
+    },
+    1440: {
+      crf: 20,
+      globalQuality: 22,
+      maxVideoBitrate: 20_000_000,
+      expectedVideoBitrate: 10_000_000,
+      audioBitrate: 384_000,
+    },
     1080: {
       crf: 20,
       globalQuality: 22,
@@ -66,8 +93,50 @@ const ENCODING_POLICY: Record<
       expectedVideoBitrate: 1_400_000,
       audioBitrate: 192_000,
     },
+    360: {
+      crf: 23,
+      globalQuality: 25,
+      maxVideoBitrate: 1_200_000,
+      expectedVideoBitrate: 700_000,
+      audioBitrate: 128_000,
+    },
+    240: {
+      crf: 24,
+      globalQuality: 26,
+      maxVideoBitrate: 600_000,
+      expectedVideoBitrate: 350_000,
+      audioBitrate: 96_000,
+    },
+    144: {
+      crf: 26,
+      globalQuality: 28,
+      maxVideoBitrate: 300_000,
+      expectedVideoBitrate: 180_000,
+      audioBitrate: 64_000,
+    },
   },
   hevc: {
+    4320: {
+      crf: 25,
+      globalQuality: 27,
+      maxVideoBitrate: 60_000_000,
+      expectedVideoBitrate: 30_000_000,
+      audioBitrate: 384_000,
+    },
+    2160: {
+      crf: 24,
+      globalQuality: 26,
+      maxVideoBitrate: 25_000_000,
+      expectedVideoBitrate: 12_000_000,
+      audioBitrate: 384_000,
+    },
+    1440: {
+      crf: 23,
+      globalQuality: 25,
+      maxVideoBitrate: 18_000_000,
+      expectedVideoBitrate: 9_000_000,
+      audioBitrate: 384_000,
+    },
     1080: {
       crf: 22,
       globalQuality: 24,
@@ -88,6 +157,27 @@ const ENCODING_POLICY: Record<
       maxVideoBitrate: 3_000_000,
       expectedVideoBitrate: 1_600_000,
       audioBitrate: 192_000,
+    },
+    360: {
+      crf: 25,
+      globalQuality: 27,
+      maxVideoBitrate: 900_000,
+      expectedVideoBitrate: 500_000,
+      audioBitrate: 128_000,
+    },
+    240: {
+      crf: 26,
+      globalQuality: 28,
+      maxVideoBitrate: 450_000,
+      expectedVideoBitrate: 260_000,
+      audioBitrate: 96_000,
+    },
+    144: {
+      crf: 28,
+      globalQuality: 30,
+      maxVideoBitrate: 220_000,
+      expectedVideoBitrate: 130_000,
+      audioBitrate: 64_000,
     },
   },
 };
@@ -138,7 +228,11 @@ export interface RenditionEncodingInput {
 export function codecFamilyForEncoder(
   encoder: RenditionVideoEncoder,
 ): RenditionCodecFamily {
-  return encoder === "libx265" || encoder === "hevc_qsv" ? "hevc" : "h264";
+  return encoder === "libx265" ||
+    encoder === "hevc_qsv" ||
+    encoder === "hevc_videotoolbox"
+    ? "hevc"
+    : "h264";
 }
 
 export function getEncodingPolicy(
@@ -151,9 +245,26 @@ export function getEncodingPolicy(
   return policy;
 }
 
+/**
+ * The level a decoder is told to expect.
+ *
+ * H.264 levels cap the frame size, so a 4K rung declared at 4.1 is a frame the
+ * level does not admit — VideoToolbox refuses to configure the encoder at all
+ * and every other decoder is entitled to reject the stream.
+ */
 function levelFor(qualityHeight: number, family: RenditionCodecFamily): string {
-  if (family === "hevc") return qualityHeight >= 1080 ? "4.1" : "4";
-  return qualityHeight >= 1080 ? "4.1" : qualityHeight >= 720 ? "3.1" : "3.0";
+  if (family === "hevc") {
+    if (qualityHeight >= 4320) return "6.1";
+    if (qualityHeight >= 2160) return "5.1";
+    if (qualityHeight >= 1440) return "5";
+    return qualityHeight >= 1080 ? "4.1" : "4";
+  }
+  if (qualityHeight >= 4320) return "6.2";
+  if (qualityHeight >= 2160) return "5.2";
+  if (qualityHeight >= 1440) return "5.0";
+  if (qualityHeight >= 1080) return "4.1";
+  if (qualityHeight >= 720) return "3.1";
+  return "3.0";
 }
 
 function videoEncoderArgs(
@@ -227,6 +338,21 @@ function videoEncoderArgs(
     ];
   }
 
+  if (encoder === "hevc_videotoolbox") {
+    return [
+      "-c:v",
+      encoder,
+      "-profile:v",
+      hdr ? "main10" : "main",
+      "-b:v",
+      String(policy.expectedVideoBitrate),
+      ...rateCap,
+      ...colour,
+      "-tag:v",
+      "hvc1",
+    ];
+  }
+
   const shared = [
     ...rateCap,
     ...colour,
@@ -248,6 +374,16 @@ function videoEncoderArgs(
     ];
   }
 
+  if (encoder === "h264_videotoolbox") {
+    return [
+      "-c:v",
+      encoder,
+      "-b:v",
+      String(policy.expectedVideoBitrate),
+      ...shared,
+    ];
+  }
+
   return [
     "-c:v",
     "libx264",
@@ -263,8 +399,16 @@ function pixelFormatFor(
   encoder: RenditionVideoEncoder,
   hdr: RenditionHdrSignal | undefined,
 ): string {
-  if (hdr) return encoder === "hevc_qsv" ? "p010le" : "yuv420p10le";
-  return encoder === "h264_qsv" || encoder === "hevc_qsv" ? "nv12" : "yuv420p";
+  if (hdr)
+    return encoder === "hevc_qsv" || encoder === "hevc_videotoolbox"
+      ? "p010le"
+      : "yuv420p10le";
+  return encoder === "h264_qsv" ||
+    encoder === "hevc_qsv" ||
+    encoder === "h264_videotoolbox" ||
+    encoder === "hevc_videotoolbox"
+    ? "nv12"
+    : "yuv420p";
 }
 
 /**
@@ -393,9 +537,14 @@ export function parseEncoderPreference(
 ): RenditionEncoderPreference {
   const preference = value?.trim().toLowerCase();
   if (!preference || preference === "auto") return "auto";
-  if (preference === "qsv" || preference === "software") return preference;
+  if (
+    preference === "qsv" ||
+    preference === "videotoolbox" ||
+    preference === "software"
+  )
+    return preference;
   throw new Error(
-    "SEYIRLIK_RENDITION_ENCODER must be `auto`, `qsv` or `software`.",
+    "SEYIRLIK_RENDITION_ENCODER must be `auto`, `qsv`, `videotoolbox` or `software`.",
   );
 }
 
@@ -419,7 +568,9 @@ export async function detectEncoderSupport(
 ): Promise<boolean> {
   const sourceFormat = tenBit ? "p010" : "nv12";
   const profile =
-    encoder === "hevc_qsv" ? ["-profile:v", tenBit ? "main10" : "main"] : [];
+    encoder === "hevc_qsv" || encoder === "hevc_videotoolbox"
+      ? ["-profile:v", tenBit ? "main10" : "main"]
+      : [];
 
   return new Promise((resolve) => {
     const child = spawn(
@@ -453,24 +604,33 @@ export async function resolveVideoEncoder(
   tenBit = false,
   signal?: AbortSignal,
 ): Promise<RenditionVideoEncoder> {
-  const hardware: RenditionVideoEncoder =
-    family === "hevc" ? "hevc_qsv" : "h264_qsv";
   const software: RenditionVideoEncoder =
     family === "hevc" ? "libx265" : "libx264";
 
   if (preference === "software") return software;
 
-  const supported = await detectEncoderSupport(
-    ffmpegPath,
-    hardware,
-    tenBit,
-    signal,
-  );
+  const qsv: RenditionVideoEncoder =
+    family === "hevc" ? "hevc_qsv" : "h264_qsv";
+  const videotoolbox: RenditionVideoEncoder =
+    family === "hevc" ? "hevc_videotoolbox" : "h264_videotoolbox";
+  const candidates =
+    preference === "qsv"
+      ? [qsv]
+      : preference === "videotoolbox"
+        ? [videotoolbox]
+        : process.platform === "darwin"
+          ? [videotoolbox, qsv]
+          : [qsv];
 
-  if (supported) return hardware;
-  if (preference === "qsv") {
+  for (const encoder of candidates) {
+    if (await detectEncoderSupport(ffmpegPath, encoder, tenBit, signal)) {
+      return encoder;
+    }
+  }
+
+  if (preference !== "auto") {
     throw new Error(
-      `SEYIRLIK_RENDITION_ENCODER=qsv was requested but ${hardware} is not usable on this machine.`,
+      `SEYIRLIK_RENDITION_ENCODER=${preference} was requested but ${candidates[0]} is not usable on this machine.`,
     );
   }
   return software;

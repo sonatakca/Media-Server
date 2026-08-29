@@ -1,4 +1,8 @@
-import { ownApiClient, ownApiUrl } from "../api/ownApi/client";
+import {
+  OwnApiClientError,
+  ownApiClient,
+  ownApiUrl,
+} from "../api/ownApi/client";
 import { nextProgressSequence } from "./progressSequence";
 import {
   toMediaItem,
@@ -117,7 +121,9 @@ export function getPrimaryImageUrl(
   tag?: string,
   maxWidth = 500,
 ): string {
-  return imageUrl(itemId, "primary", tag, maxWidth);
+  // `Primary` is the legacy view-model name. The native catalogue calls the
+  // title-owned file what it is: the cover.
+  return imageUrl(itemId, "cover", tag, maxWidth);
 }
 
 export function getBackdropImageUrl(
@@ -467,12 +473,25 @@ export async function reportPlaybackProgress(
   await writeProgress(source.itemId, positionTicks);
 }
 
+/**
+ * Records where the viewer stopped.
+ *
+ * Deliberately does not end the server session. "Stopped" fires when playback
+ * reaches the end of a title, and the media element is still attached and still
+ * seekable at that point: a viewer who scrubs back into the film needs the same
+ * session to keep serving bytes. Ending it here meant the first request after
+ * the credits returned 404 and the element died with
+ * `PIPELINE_ERROR_READ: FFmpegDemuxer: data source error`, with no way back
+ * short of reloading the page.
+ *
+ * Session lifetime belongs to the lease, which ends a session once nothing is
+ * attached to it any more, and to the explicit page-exit path.
+ */
 export async function reportPlaybackStopped(
   source: PlaybackSourceCandidate,
   positionTicks: number,
 ): Promise<void> {
   await writeProgress(source.itemId, positionTicks);
-  await stopActiveTranscodeSession(source.playSessionId);
 }
 
 /**
@@ -552,9 +571,15 @@ export async function getPlaybackInfo(
         ...(settings.maxHeight === undefined
           ? {}
           : { maxHeight: settings.maxHeight }),
+        ...(settings.qualityHeight === undefined
+          ? {}
+          : { qualityHeight: settings.qualityHeight }),
         ...(settings.maxStreamingBitrate === undefined
           ? {}
           : { maxBitrateBps: settings.maxStreamingBitrate }),
+        ...(settings.startTimeMs === undefined
+          ? {}
+          : { startTimeMs: settings.startTimeMs }),
       },
     },
   );
@@ -583,6 +608,7 @@ export async function getPlaybackInfo(
   return {
     MediaSources: [mediaSource],
     PlaySessionId: session.sessionId,
+    sessionPlan: session.plan,
     // Rendition URLs are server-relative for the same reason the delivery URL
     // is: a deployment that serves the app and the API from different hosts has
     // to send the browser to the API's origin, not its own.
@@ -610,6 +636,13 @@ export async function getPlaybackInfo(
   };
 }
 
+function sessionPlanUsesAudioTranscode(
+  playbackInfo: PlaybackInfoResponse,
+): boolean {
+  const plan = playbackInfo.sessionPlan;
+  return plan?.audio.action === "transcode" && plan.video.action === "copy";
+}
+
 export function buildPlaybackCandidates(
   itemId: string,
   playbackInfo: PlaybackInfoResponse,
@@ -619,12 +652,22 @@ export function buildPlaybackCandidates(
 
   const isHls = Boolean(mediaSource.TranscodingUrl);
   const adaptive = playbackInfo.qualityManifest?.adaptive;
-  const url =
-    adaptive?.playbackUrl ??
-    mediaSource.TranscodingUrl ??
-    mediaSource.DirectStreamUrl ??
-    "";
-  const usesAdaptiveRendition = Boolean(adaptive);
+  const deliveryUrl =
+    mediaSource.TranscodingUrl ?? mediaSource.DirectStreamUrl ?? "";
+  /**
+   * The server's delivery URL is the authority, not the package manifest.
+   *
+   * The manifest describes the pre-generated package and is sent alongside
+   * every plan, including the plans where the server deliberately chose a live
+   * session because the package cannot serve this request — asking for an
+   * audio track the retention policy dropped is the ordinary case. Preferring
+   * the manifest there played the package instead of the stream the server
+   * planned: the requested track never came on, and re-attaching the same URL
+   * restarted the title from the beginning.
+   */
+  const usesAdaptiveRendition =
+    Boolean(adaptive) && deliveryUrl === adaptive?.playbackUrl;
+  const url = deliveryUrl || (adaptive?.playbackUrl ?? "");
   const mode = mediaSource.SupportsDirectPlay
     ? "DirectPlay"
     : mediaSource.SupportsDirectStream
@@ -646,7 +689,9 @@ export function buildPlaybackCandidates(
         ? {
             hlsKind: usesAdaptiveRendition
               ? ("adaptive-rendition" as const)
-              : ("forced-transcode" as const),
+              : sessionPlanUsesAudioTranscode(playbackInfo)
+                ? ("audio-transcode" as const)
+                : ("forced-transcode" as const),
             usingHlsJs: true,
           }
         : {}),
@@ -777,17 +822,30 @@ export async function stopActiveTranscodeSession(
     .catch(() => undefined);
 }
 
+/**
+ * Live transcoding reasons for a session, or `null` once that session is gone.
+ *
+ * The distinction matters to the caller that polls this. A session is retired
+ * whenever the source is replaced — an audio change, a quality change, leaving
+ * the page — and a poller keyed to the old id would otherwise ask for it every
+ * few seconds forever, filling the console with 404s that describe nothing the
+ * viewer can act on. `null` means "stop asking"; an empty array still means
+ * "asked, nothing to report".
+ */
 export async function getActiveTranscodingReasons(
   _itemId: string,
   playSessionId?: string,
-): Promise<string[]> {
+): Promise<string[] | null> {
   if (!playSessionId) return [];
   try {
     const session = await ownApiClient.request<{ reasonCodes: string[] }>(
       `/playback/sessions/${encodeURIComponent(playSessionId)}`,
     );
     return session.reasonCodes;
-  } catch {
+  } catch (error) {
+    if (error instanceof OwnApiClientError && error.status === 404) {
+      return null;
+    }
     return [];
   }
 }

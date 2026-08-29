@@ -43,6 +43,9 @@ describe("rendition library analysis", () => {
           codec: "aac",
           channels: 2,
           isDefault: true,
+          isCommentary: false,
+          isVisualImpaired: false,
+          isOriginal: false,
         },
       ],
       subtitleTracks: [],
@@ -77,7 +80,7 @@ describe("rendition library analysis", () => {
       report.items
         .find((item) => item.relativePath.endsWith("Film.mkv"))
         ?.jobs.map((job) => job.qualityHeight),
-    ).toEqual([480, 720, 1080]);
+    ).toEqual([144, 240, 360, 480, 720, 1080, 2160]);
     expect(report.storage.completePlanFits).toBe(true);
   });
 

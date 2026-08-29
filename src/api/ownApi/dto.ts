@@ -26,12 +26,12 @@ export interface ImageRefDto {
 }
 
 export interface ItemImagesDto {
-  primary?: ImageRefDto;
+  cover?: ImageRefDto;
   logo?: ImageRefDto;
   thumb?: ImageRefDto;
   banner?: ImageRefDto;
   backdrops: ImageRefDto[];
-  parentPrimary?: ImageRefDto;
+  parentCover?: ImageRefDto;
   parentBackdrops?: ImageRefDto[];
   parentLogo?: ImageRefDto;
 }

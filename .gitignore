@@ -24,3 +24,4 @@ service-account*.json
 # Browser-test artefacts (failure screenshots and attachments)
 .vitest-attachments
 **/__screenshots__
+.env.backup-*

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import type { PlaybackSourceCandidate } from "../types";
+import { stopActiveTranscodeSession } from "../mediaApi";
 import {
   isCustomPlaybackCandidate,
   stopCustomPlaybackSession,
@@ -17,10 +18,10 @@ interface SessionLease {
 const leasesBySessionId = new Map<string, SessionLease>();
 const stoppedSessionIds = new Set<string>();
 
-function getCustomSessionId(
+function getPlaybackSessionId(
   source: PlaybackSourceCandidate | null | undefined,
 ): string | null {
-  if (!source?.playSessionId || !isCustomPlaybackCandidate(source)) {
+  if (!source?.playSessionId) {
     return null;
   }
 
@@ -51,7 +52,7 @@ function clearPendingStop(lease: SessionLease): void {
 export function retainCustomPlaybackSession(
   source: PlaybackSourceCandidate | null | undefined,
 ): void {
-  const sessionId = getCustomSessionId(source);
+  const sessionId = getPlaybackSessionId(source);
 
   if (!sessionId || !source) {
     return;
@@ -78,7 +79,7 @@ export function releaseCustomPlaybackSession(
   source: PlaybackSourceCandidate | null | undefined,
   options: { graceMs?: number } = {},
 ): void {
-  const sessionId = getCustomSessionId(source);
+  const sessionId = getPlaybackSessionId(source);
 
   if (!sessionId || !source) {
     return;
@@ -118,7 +119,11 @@ export function releaseCustomPlaybackSession(
     currentLease.stopTimer = null;
     currentLease.stopping = true;
 
-    void stopCustomPlaybackSession(currentLease.source).finally(() => {
+    const stopRequest = isCustomPlaybackCandidate(currentLease.source)
+      ? stopCustomPlaybackSession(currentLease.source)
+      : stopActiveTranscodeSession(currentLease.source.playSessionId);
+
+    void stopRequest.finally(() => {
       stoppedSessionIds.add(sessionId);
 
       const latestLease = leasesBySessionId.get(sessionId);
@@ -134,7 +139,7 @@ export async function stopCustomPlaybackSessionImmediately(
   source: PlaybackSourceCandidate | null | undefined,
   options: { keepalive?: boolean } = {},
 ): Promise<void> {
-  const sessionId = getCustomSessionId(source);
+  const sessionId = getPlaybackSessionId(source);
 
   if (!sessionId || !source) {
     return;

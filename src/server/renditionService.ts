@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import type {
@@ -18,6 +19,7 @@ import {
 } from "../renditions/registry";
 import { inspectCompletedRendition } from "../renditions/validation";
 import { inspectAdaptivePackage } from "../renditions/adaptive/inspect";
+import { qualityLabel } from "../renditions/adaptive/layout";
 import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
 
 // Analysis records "already-valid" when every required height already exists and
@@ -33,8 +35,19 @@ const REJECTED_REGISTRY_STATUSES = new Set([
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{8,128}$/;
 const FILE_ID_PATTERN = /^[A-Za-z0-9_-]{8,128}\.mp4$/;
+/**
+ * A path a package asset may be requested under.
+ *
+ * Deliberately a shape check rather than a list of the package's own layouts.
+ * The previous version enumerated `video/` and `audio/` and was not updated when
+ * the packager gained subtitle renditions, so every subtitle playlist 404d — and
+ * a 404 behind an advertised subtitle group does not degrade to "no subtitles",
+ * it fails the whole title. Authorisation does not rest on this: only paths the
+ * title's own manifest names are served, and this exists to reject traversal and
+ * anything a filename cannot legitimately contain.
+ */
 const ADAPTIVE_ASSET_PATTERN =
-  /^(?:master\.m3u8|(?:video|audio)\/(?:\d{2,4}p|track-\d{1,5})\/(?:playlist\.m3u8|media\.m4s))$/;
+  /^(?!.*(?:^|\/)\.\.(?:\/|$))[\w .()[\]-]+(?:\/[\w .()[\]-]+){0,2}$/;
 const ADAPTIVE_VERSION_PATTERN = /^[0-9a-f]{12}$/;
 const MAX_ACCESS_ENTRIES = 10_000;
 const ACCESS_TTL_MS = 12 * 60 * 60 * 1_000;
@@ -121,6 +134,32 @@ export interface RenditionService {
     versionId: string,
     assetPath: string,
   ): Promise<ResolvedRenditionFile | null>;
+}
+
+/**
+ * The path segment an adaptive package is served under.
+ *
+ * Derived from the package build, not from the source file. Every asset under
+ * this segment is served `immutable`, which is only honest if the bytes behind
+ * a given URL never change — and they do change whenever a package is
+ * regenerated, which happens on any encoder or policy change. Keyed on the
+ * source alone, a rebuild silently reused the same URLs: clients that had
+ * cached the previous build kept serving its playlists and byte ranges against
+ * the new media, and playback stopped with no error to explain it. Including
+ * the package's own creation stamp gives every build its own URL space, so a
+ * stale cache simply misses.
+ */
+export function adaptiveVersionIdFor(metadata: {
+  profileVersion: string;
+  sourceFingerprint: string;
+  createdAt: string;
+}): string {
+  return createHash("sha256")
+    .update(
+      `${metadata.profileVersion}\n${metadata.sourceFingerprint}\n${metadata.createdAt}`,
+    )
+    .digest("hex")
+    .slice(0, 12);
 }
 
 function normalizeForComparison(filePath: string): string {
@@ -262,8 +301,8 @@ export function createRenditionService({
       registryItem.adaptiveStatus === "ready" &&
       registryItem.adaptiveProfileVersion === ADAPTIVE_PROFILE_VERSION
         ? inspectAdaptivePackage({
-            mediaRoot: packageRoot,
-            mediaId: registryItem.id,
+            // A package lives beside the source it was made from.
+            titleRoot: path.dirname(media.filePath),
             sourceFingerprint: registryItem.sourceFingerprint,
             profileVersion: ADAPTIVE_PROFILE_VERSION,
           })
@@ -332,6 +371,9 @@ export function createRenditionService({
       )
         ? adaptiveInspection.metadata
         : undefined;
+    const adaptiveVersionId = adaptiveMetadata
+      ? adaptiveVersionIdFor(adaptiveMetadata)
+      : undefined;
     if (adaptiveMetadata) {
       adaptiveFilesByPath.set(adaptiveMetadata.masterPlaylistPath, {
         filePath: adaptiveMetadata.masterPlaylistPath,
@@ -348,15 +390,34 @@ export function createRenditionService({
           expectedSize: rendition.fileSizeBytes,
         });
       }
+      for (const rendition of adaptiveMetadata.subtitleRenditions ?? []) {
+        adaptiveFilesByPath.set(rendition.playlistPath, {
+          filePath: rendition.playlistPath,
+        });
+        adaptiveFilesByPath.set(rendition.subtitlePath, {
+          filePath: rendition.subtitlePath,
+          expectedSize: rendition.fileSizeBytes,
+        });
+      }
       manifest.adaptive = {
         profileVersion: adaptiveMetadata.profileVersion,
-        playbackUrl: `${basePath}/${encodeURIComponent(token)}/adaptive/${registryItem.sourceFingerprint.slice(0, 12)}/master.m3u8`,
+        // The master's own recorded location, not a fixed name: a player
+        // resolves every rendition URI against this URL, so it has to sit where
+        // the package actually put it.
+        playbackUrl: `${basePath}/${encodeURIComponent(token)}/adaptive/${adaptiveVersionId}/${adaptiveMetadata.masterPlaylistPath
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/")}`,
         mimeType: "application/vnd.apple.mpegurl",
         segmentTargetSeconds: adaptiveMetadata.segmentTargetSeconds,
         qualities: adaptiveMetadata.videoRenditions
           .map((rendition) => ({
             id: rendition.id,
-            label: `${rendition.qualityHeight}p${rendition.hdr === "sdr" ? "" : " HDR"}`,
+            label: qualityLabel({
+              qualityHeight: rendition.qualityHeight,
+              frameRate: rendition.frameRate,
+              isHdr: rendition.hdr !== "sdr",
+            }),
             width: rendition.width,
             height: rendition.qualityHeight,
             bitrate: rendition.averageBitrate,
@@ -387,9 +448,7 @@ export function createRenditionService({
       ...(adaptiveInspection.versionRoot
         ? { adaptiveVersionRoot: adaptiveInspection.versionRoot }
         : {}),
-      ...(adaptiveMetadata
-        ? { adaptiveVersionId: registryItem.sourceFingerprint.slice(0, 12) }
-        : {}),
+      ...(adaptiveVersionId ? { adaptiveVersionId } : {}),
       adaptiveFilesByPath,
     });
     return manifest;
@@ -478,7 +537,9 @@ export function createRenditionService({
         sizeBytes: stats.size,
         contentType: assetPath.endsWith(".m3u8")
           ? "application/vnd.apple.mpegurl"
-          : "video/iso.segment",
+          : assetPath.endsWith(".vtt")
+            ? "text/vtt; charset=utf-8"
+            : "video/iso.segment",
       };
     } catch {
       return null;

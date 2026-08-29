@@ -200,6 +200,37 @@ describe("parseCodecsFromGeneratedMaster", () => {
 });
 
 describe("buildMasterPlaylist", () => {
+  it("signals retained WebVTT renditions and preserves forced metadata", () => {
+    const master = buildMasterPlaylist({
+      videoRenditions: [videoRendition()],
+      audioRenditions: [audioRendition()],
+      subtitleRenditions: [
+        {
+          id: "subtitle-7",
+          sourceStreamIndex: 7,
+          language: "eng",
+          title: "English Forced",
+          isDefault: false,
+          isForced: true,
+          isHearingImpaired: false,
+          codec: "webvtt",
+          durationSeconds: 32.4,
+          playlistPath: "subtitles/subtitle-7/playlist.m3u8",
+          subtitlePath: "subtitles/subtitle-7/subtitles.vtt",
+          fileSizeBytes: 128,
+        },
+      ],
+      videoCodecStrings: new Map([["720p", "avc1.64001f"]]),
+      audioCodecStrings: new Map([["track-1", "mp4a.40.2"]]),
+    });
+
+    expect(master).toContain("TYPE=SUBTITLES");
+    expect(master).toContain("FORCED=YES");
+    expect(master).toContain('SUBTITLES="seyirlik-subtitles"');
+    expect(parseMasterPlaylist(master).subtitleRenditions).toEqual([
+      expect.objectContaining({ language: "eng", isForced: true }),
+    ]);
+  });
   const videoCodecStrings = new Map([
     ["480p", "avc1.64001e"],
     ["720p", "avc1.640028"],

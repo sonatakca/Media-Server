@@ -237,6 +237,11 @@ export interface PlaybackInfoResponse {
    * equivalent there.
    */
   qualityManifest?: MediaQualityManifest;
+  /** Native API decision retained for client-side source lifecycle handling. */
+  sessionPlan?: {
+    video: { action: string };
+    audio: { action: string };
+  };
 }
 
 export interface TranscodingInfo {
@@ -300,6 +305,15 @@ export interface PlaybackSourceSettings {
   maxHeight?: number;
   maxWidth?: number;
   maxStreamingBitrate?: number;
+  /**
+   * Exact adaptive rendition to lock to, as opposed to the `maxHeight`
+   * ceiling. Set when a manual quality is chosen on an engine that cannot be
+   * capped from JavaScript, so the server hands back a manifest advertising
+   * that rung and nothing else.
+   */
+  qualityHeight?: number;
+  /** Position the replacement source must be able to seek to before attach. */
+  startTimeMs?: number;
 }
 
 export interface PlaybackSourceCandidate {
@@ -328,4 +342,6 @@ export interface PlaybackSourceCandidate {
   transcodeReasons?: string[];
   directPlayError?: string;
   priority: number;
+  /** Explicit handoff position for a multi-step source replacement. */
+  requestedStartTimeMs?: number;
 }

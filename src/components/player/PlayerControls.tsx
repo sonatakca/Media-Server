@@ -38,6 +38,14 @@ interface PlayerControlsProps {
   selectedSubtitleStreamIndex: number;
   subtitleDelaySeconds: number;
   canSwitchAudio: boolean;
+  /**
+   * Why a track or quality change did not take effect.
+   *
+   * Rendered inside the settings panel, next to the row that was clicked: a
+   * refusal announced anywhere else is indistinguishable from the click doing
+   * nothing at all.
+   */
+  audioNoticeText?: string;
   canSwitchSubtitles: boolean;
   completeFileQuality?: CompleteFileQualityControls;
   isSubtitleEditMode?: boolean;
@@ -105,6 +113,7 @@ export function PlayerControls({
   selectedSubtitleStreamIndex,
   subtitleDelaySeconds,
   canSwitchAudio,
+  audioNoticeText,
   canSwitchSubtitles,
   completeFileQuality,
   isSubtitleEditMode = false,
@@ -371,6 +380,7 @@ export function PlayerControls({
                     selectedSubtitleStreamIndex={selectedSubtitleStreamIndex}
                     subtitleDelaySeconds={subtitleDelaySeconds}
                     canSwitchAudio={canSwitchAudio}
+                    {...(audioNoticeText ? { audioNoticeText } : {})}
                     canSwitchSubtitles={canSwitchSubtitles}
                     completeFileQuality={completeFileQuality}
                     compact={compactLayout}

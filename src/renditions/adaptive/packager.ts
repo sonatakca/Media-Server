@@ -14,9 +14,11 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SEGMENT_TARGET_SECONDS } from "../../lib/playback-planner/gopPolicy";
+import { UNKNOWN_LANGUAGE } from "../processing/languages";
+import type { SidecarSubtitle } from "./sidecarSubtitles";
 import type { DriveSpace, RenditionPaths } from "../analysis";
 import { getDriveSpace } from "../analysis";
 import {
@@ -42,6 +44,7 @@ import {
   adaptiveOutputDirectories,
   buildAdaptivePackageFfmpegArgs,
   canStreamCopyAudio,
+  deliveryChannelsFor,
   type AdaptiveAudioOutput,
   type AdaptiveVideoOutput,
 } from "./encoding";
@@ -49,6 +52,7 @@ import type {
   AdaptiveAudioRenditionMetadata,
   AdaptiveHdrState,
   AdaptivePackageMetadata,
+  AdaptiveSubtitleRenditionMetadata,
   AdaptiveVideoRenditionMetadata,
 } from "./metadata";
 import {
@@ -68,16 +72,49 @@ import {
   ADAPTIVE_METADATA_FILE,
   ADAPTIVE_METADATA_SCHEMA_VERSION,
   ADAPTIVE_PLAYLIST_FILE,
-  ADAPTIVE_POINTER_FILE,
-  ADAPTIVE_POINTER_SCHEMA_VERSION,
   ADAPTIVE_PROFILE_VERSION,
+  ADAPTIVE_SUBTITLE_DIRECTORY,
+  ADAPTIVE_SUBTITLE_FILE,
   ADAPTIVE_VIDEO_DIRECTORY,
   ALIGNMENT_EPSILON_SECONDS,
   AUDIO_DURATION_TOLERANCE_SECONDS,
   audioRenditionId,
+  subtitleRenditionId,
   videoRenditionId,
 } from "./profile";
+import { frameRateForClass } from "./layout";
+import {
+  publishTitlePackage,
+  readTitlePackageManifest,
+  type TitlePackageManifest,
+} from "./publishTitle";
 import { validateAdaptivePackage } from "./validation";
+import { buildWebVttMediaPlaylist, extractWebVttFile } from "./subtitles";
+
+/**
+ * Whether a title still holds every file its manifest names.
+ *
+ * A manifest alone is not proof: a half-deleted folder would otherwise be
+ * reported as current and then fail on the first request.
+ */
+async function titlePackageFilesPresent(
+  titleRoot: string,
+  manifest: TitlePackageManifest,
+): Promise<boolean> {
+  for (const rendition of [
+    ...manifest.video,
+    ...manifest.audio,
+    ...manifest.subtitle,
+  ]) {
+    for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
+      const stats = await stat(
+        path.join(titleRoot, ...relative.split("/")),
+      ).catch(() => undefined);
+      if (!stats?.isFile() || stats.size === 0) return false;
+    }
+  }
+  return true;
+}
 
 export type AdaptivePackageStatus =
   | "ready"
@@ -123,6 +160,18 @@ export interface AdaptivePackagerOptions {
    * given run actually encodes.
    */
   allAudioTracks?: boolean;
+  /** Source audio stream indexes the retention policy chose, in order. */
+  audioStreamIndexes?: readonly number[];
+  /** Text subtitle stream indexes the retention policy chose for WebVTT. */
+  subtitleStreamIndexes?: readonly number[];
+  /**
+   * Subtitle files sitting beside the source that the policy chose to package.
+   *
+   * Most of this library is subtitled this way rather than in-container, so a
+   * packager that only reads embedded streams publishes titles with no
+   * subtitles at all in a language it was told to retain.
+   */
+  sidecarSubtitles?: readonly SidecarSubtitle[];
   driveSpaceProvider?: () => Promise<DriveSpace>;
   runEncoder?: (
     command: string,
@@ -174,29 +223,63 @@ function hdrStateFor(probe: RenditionMediaProbe): AdaptiveHdrState {
  */
 export function planAudioRenditions(
   probe: RenditionMediaProbe,
-  { allTracks = false }: { allTracks?: boolean } = {},
+  {
+    allTracks = false,
+    streamIndexes,
+  }: {
+    allTracks?: boolean;
+    /**
+     * Exactly which source tracks to package, decided by the retention policy.
+     *
+     * Takes precedence over `allTracks`. The policy knows which language is the
+     * source default and which duplicates to drop; the packager only has to
+     * carry out that decision. An index the source does not have is ignored
+     * rather than failing the encode.
+     */
+    streamIndexes?: readonly number[];
+  } = {},
 ): { outputs: AdaptiveAudioOutput[]; deferred: number[] } {
   const tracks = probe.audioTracks;
   if (tracks.length === 0) {
     return { outputs: [], deferred: [] };
   }
   const defaultTrack = tracks.find((track) => track.isDefault) ?? tracks[0];
-  const selected = allTracks ? tracks : [defaultTrack];
+  // Mapped in the order the policy asked for, not the order the container
+  // stores them in: the first rendition becomes the package default, and that
+  // has to be the track the policy chose as the source's own default.
+  const requested = streamIndexes
+    ? streamIndexes
+        .map((index) => tracks.find((track) => track.streamIndex === index))
+        .filter(
+          (track): track is (typeof tracks)[number] => track !== undefined,
+        )
+    : undefined;
+  const selected =
+    requested && requested.length > 0
+      ? requested
+      : allTracks
+        ? tracks
+        : [defaultTrack];
   const deferred = tracks
     .filter((track) => !selected.includes(track))
     .map((track) => track.streamIndex);
 
   const outputs = selected.map<AdaptiveAudioOutput>((track) => {
     const channels = track.channels ?? 2;
+    // The rate follows the layout that is actually delivered, not the source
+    // one, so a downmixed 7.1 track is not paid for at 7.1 rates.
+    const deliveryChannels = deliveryChannelsFor(channels);
     return {
       sourceStreamIndex: track.streamIndex,
       action: canStreamCopyAudio({ codec: track.codec, channels })
         ? "copy"
         : "transcode",
-      bitrate: channels > 2 ? 256_000 : 192_000,
+      channels: deliveryChannels,
+      bitrate: deliveryChannels > 2 ? 256_000 : 192_000,
       ...(track.language ? { language: track.language } : {}),
       ...(track.title ? { title: track.title } : {}),
-      isDefault: track.streamIndex === defaultTrack.streamIndex,
+      isDefault:
+        track.streamIndex === (selected[0] ?? defaultTrack).streamIndex,
       isForced: false,
     };
   });
@@ -217,50 +300,6 @@ async function runFfmpegProcess(
 ): Promise<void> {
   const { runFfmpeg } = await import("../processor");
   return runFfmpeg(command, args, options);
-}
-
-async function writeAdaptivePointer(
-  mediaRoot: string,
-  versionDirectory: string,
-  sourceFingerprint: string,
-): Promise<void> {
-  const pointerPath = path.join(mediaRoot, ADAPTIVE_POINTER_FILE);
-  const temporaryPath = `${pointerPath}.${process.pid}.${randomUUID()}.tmp`;
-  await writeFile(
-    temporaryPath,
-    `${JSON.stringify(
-      {
-        schemaVersion: ADAPTIVE_POINTER_SCHEMA_VERSION,
-        versionDirectory,
-        sourceFingerprint,
-        profileVersion: ADAPTIVE_PROFILE_VERSION,
-      },
-      null,
-      2,
-    )}\n`,
-    { encoding: "utf8", flag: "wx" },
-  );
-  try {
-    await rename(temporaryPath, pointerPath);
-  } catch (error) {
-    if (process.platform !== "win32") {
-      await rm(temporaryPath, { force: true });
-      throw error;
-    }
-    // Windows `rename` refuses to replace an existing file, so the previous
-    // pointer is moved aside and restored if the swap does not complete. There
-    // is no instant at which no pointer exists.
-    const previousPath = `${pointerPath}.${randomUUID()}.previous`;
-    try {
-      await rename(pointerPath, previousPath);
-      await rename(temporaryPath, pointerPath);
-      await rm(previousPath, { force: true });
-    } catch (replacementError) {
-      await rename(previousPath, pointerPath).catch(() => undefined);
-      await rm(temporaryPath, { force: true });
-      throw replacementError;
-    }
-  }
 }
 
 /**
@@ -370,6 +409,9 @@ export async function packageAdaptiveRendition(
     segmentSeconds = SEGMENT_TARGET_SECONDS,
     preset = "medium",
     allAudioTracks = false,
+    audioStreamIndexes,
+    subtitleStreamIndexes = [],
+    sidecarSubtitles = [],
     driveSpaceProvider = () => getDriveSpace(paths.mediaRoot),
     runEncoder = runFfmpegProcess,
     onEvent,
@@ -388,36 +430,28 @@ export async function packageAdaptiveRendition(
     `adaptive:${request.mediaId}`,
   );
 
-  const mediaRoot = path.join(paths.renditionRoot, request.mediaId);
   const versionDirectory = `${ADAPTIVE_PROFILE_VERSION}-${request.sourceFingerprint.slice(0, 16)}`;
-  const finalVersionRoot = path.join(mediaRoot, versionDirectory);
 
   try {
-    // A deterministic version directory that already validates is simply
-    // re-pointed at rather than rebuilt, which is what makes `resume` cheap.
-    const existing = await validateAdaptivePackage({
-      versionRoot: finalVersionRoot,
-      mediaId: request.mediaId,
-      sourceFingerprint: request.sourceFingerprint,
-      profileVersion: ADAPTIVE_PROFILE_VERSION,
-      ffprobePath,
-      ffmpegPath,
-      ...(signal ? { signal } : {}),
-    }).catch(() => null);
-    if (existing?.ok) {
-      await mkdir(mediaRoot, { recursive: true });
-      await writeAdaptivePointer(
-        mediaRoot,
-        versionDirectory,
-        request.sourceFingerprint,
-      );
+    /*
+     * A title that already holds a package built from these exact bytes under
+     * this exact profile is left alone. This is what makes `resume` cheap, and
+     * it is answered from the title's own manifest because that is where the
+     * package now lives.
+     */
+    const existingTitleRoot = path.dirname(request.sourcePath);
+    const existing = await readTitlePackageManifest(existingTitleRoot);
+    if (
+      existing &&
+      existing.sourceFingerprint === request.sourceFingerprint &&
+      existing.profileVersion === ADAPTIVE_PROFILE_VERSION &&
+      (await titlePackageFilesPresent(existingTitleRoot, existing))
+    ) {
       return {
         ...base,
         status: "already-valid",
         versionDirectory,
-        ...(existing.metadata
-          ? { storageBytes: existing.metadata.storage.totalBytes }
-          : {}),
+        storageBytes: existing.storage.totalBytes,
       };
     }
 
@@ -452,11 +486,14 @@ export async function packageAdaptiveRendition(
         ...base,
         status: "incompatible",
         error:
-          "The source is not meaningfully larger than the smallest ladder rung, so no adaptive variants would be produced.",
+          "The source does not report usable video dimensions, so no ladder can be built from it.",
       };
     }
 
-    const audioPlan = planAudioRenditions(probe, { allTracks: allAudioTracks });
+    const audioPlan = planAudioRenditions(probe, {
+      allTracks: allAudioTracks,
+      ...(audioStreamIndexes ? { streamIndexes: audioStreamIndexes } : {}),
+    });
     if (audioPlan.outputs.length === 0) {
       return {
         ...base,
@@ -517,12 +554,30 @@ export async function packageAdaptiveRendition(
       };
     }
 
+    const sourceFrameRate =
+      probe.video.frameRate && probe.video.frameRate > 0
+        ? probe.video.frameRate
+        : undefined;
     const videoOutputs: AdaptiveVideoOutput[] = requirements.map(
-      (requirement) => ({
-        qualityHeight: requirement.qualityHeight,
-        width: requirement.width,
-        height: requirement.height,
-      }),
+      (requirement) => {
+        const rate = frameRateForClass(
+          requirement.qualityHeight,
+          sourceFrameRate,
+        );
+        return {
+          qualityHeight: requirement.qualityHeight,
+          width: requirement.width,
+          height: requirement.height,
+          // Only carried when it actually differs: a rung at the source's own
+          // rate must not gain an `fps` filter that would resample a timeline
+          // that is already correct.
+          ...(rate !== undefined &&
+          sourceFrameRate !== undefined &&
+          rate < sourceFrameRate - 0.01
+            ? { frameRate: rate }
+            : {}),
+        };
+      },
     );
     const gopFrameRate =
       Math.max(probe.video.frameRate ?? 0, probe.video.maxFrameRate ?? 0) ||
@@ -541,6 +596,21 @@ export async function packageAdaptiveRendition(
       await mkdir(path.join(workVersionRoot, ...directory.split("/")), {
         recursive: true,
       });
+    }
+    for (const streamIndex of [
+      ...subtitleStreamIndexes,
+      // Sidecars are extracted in the same place as embedded tracks and so
+      // need their directories made here too, not only the embedded ones.
+      ...sidecarSubtitles.map((sidecar) => sidecar.streamIndex),
+    ]) {
+      await mkdir(
+        path.join(
+          workVersionRoot,
+          ADAPTIVE_SUBTITLE_DIRECTORY,
+          subtitleRenditionId(streamIndex),
+        ),
+        { recursive: true },
+      );
     }
 
     onEvent?.({
@@ -619,8 +689,10 @@ export async function packageAdaptiveRendition(
     const audioCodecStrings = new Map<string, string>();
     const videoRenditions: AdaptiveVideoRenditionMetadata[] = [];
     const audioRenditions: AdaptiveAudioRenditionMetadata[] = [];
+    const subtitleRenditions: AdaptiveSubtitleRenditionMetadata[] = [];
     let videoBytes = 0;
     let audioBytes = 0;
+    let subtitleBytes = 0;
 
     for (const output of videoOutputs) {
       const id = videoRenditionId(output.qualityHeight);
@@ -736,6 +808,12 @@ export async function packageAdaptiveRendition(
         ...(sourceTrack?.title ? { title: sourceTrack.title } : {}),
         isDefault: output.isDefault,
         isForced: output.isForced,
+        ...(sourceTrack?.isOriginal === undefined
+          ? {}
+          : { isOriginal: sourceTrack.isOriginal }),
+        ...(sourceTrack?.isCommentary === undefined
+          ? {}
+          : { isCommentary: sourceTrack.isCommentary }),
         codec: "aac",
         codecString,
         channels: packaged.channels,
@@ -749,11 +827,112 @@ export async function packageAdaptiveRendition(
       });
     }
 
+    for (const streamIndex of subtitleStreamIndexes) {
+      const sourceTrack = probe.subtitleTracks.find(
+        (track) => track.streamIndex === streamIndex && track.isTextBased,
+      );
+      if (!sourceTrack) continue;
+      const id = subtitleRenditionId(streamIndex);
+      const playlistPath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`;
+      const subtitlePath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_SUBTITLE_FILE}`;
+      const absoluteSubtitle = path.join(
+        workVersionRoot,
+        ...subtitlePath.split("/"),
+      );
+      const extracted = await extractWebVttFile({
+        ffmpegPath,
+        inputPath: request.sourcePath,
+        streamIndex,
+        outputPath: absoluteSubtitle,
+        ...(signal ? { signal } : {}),
+      });
+      await writeFile(
+        path.join(workVersionRoot, ...playlistPath.split("/")),
+        buildWebVttMediaPlaylist(probe.durationSeconds, ADAPTIVE_SUBTITLE_FILE),
+        "utf8",
+      );
+      subtitleBytes += extracted.fileSizeBytes;
+      subtitleRenditions.push({
+        id,
+        sourceStreamIndex: streamIndex,
+        ...(sourceTrack.language ? { language: sourceTrack.language } : {}),
+        ...(sourceTrack.title ? { title: sourceTrack.title } : {}),
+        isDefault: sourceTrack.isDefault,
+        isForced: sourceTrack.isForced,
+        isHearingImpaired: sourceTrack.isHearingImpaired,
+        codec: "webvtt",
+        durationSeconds: probe.durationSeconds,
+        playlistPath,
+        subtitlePath,
+        fileSizeBytes: extracted.fileSizeBytes,
+      });
+    }
+
+    /*
+     * Subtitles that live beside the source rather than inside it. They are
+     * converted the same way, differing only in that each is its own input file
+     * and so is always that file's stream 0.
+     */
+    for (const sidecar of sidecarSubtitles) {
+      const id = subtitleRenditionId(sidecar.streamIndex);
+      const playlistPath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`;
+      const subtitlePath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_SUBTITLE_FILE}`;
+      const absoluteSubtitle = path.join(
+        workVersionRoot,
+        ...subtitlePath.split("/"),
+      );
+      let extracted: { fileSizeBytes: number };
+      try {
+        extracted = await extractWebVttFile({
+          ffmpegPath,
+          inputPath: sidecar.filePath,
+          streamIndex: 0,
+          outputPath: absoluteSubtitle,
+          ...(signal ? { signal } : {}),
+        });
+      } catch (error) {
+        /*
+         * A malformed or mis-encoded sidecar must not fail the whole package —
+         * the title is still worth publishing without that one translation —
+         * but it must not vanish either. Swallowing this silently is how a
+         * wiring mistake reads as "this library simply has no subtitles".
+         */
+        console.warn(
+          `[seyirlik] ${request.relativePath}: skipped sidecar subtitle ${
+            sidecar.fileName
+          } — ${error instanceof Error ? error.message : String(error)}`,
+        );
+        continue;
+      }
+      await writeFile(
+        path.join(workVersionRoot, ...playlistPath.split("/")),
+        buildWebVttMediaPlaylist(probe.durationSeconds, ADAPTIVE_SUBTITLE_FILE),
+        "utf8",
+      );
+      subtitleBytes += extracted.fileSizeBytes;
+      subtitleRenditions.push({
+        id,
+        sourceStreamIndex: sidecar.streamIndex,
+        ...(sidecar.language !== UNKNOWN_LANGUAGE
+          ? { language: sidecar.language }
+          : {}),
+        isDefault: false,
+        isForced: sidecar.isForced,
+        isHearingImpaired: sidecar.isHearingImpaired,
+        codec: "webvtt",
+        durationSeconds: probe.durationSeconds,
+        playlistPath,
+        subtitlePath,
+        fileSizeBytes: extracted.fileSizeBytes,
+      });
+    }
+
     await writeFile(
       generatedMasterPath,
       buildMasterPlaylist({
         videoRenditions,
         audioRenditions,
+        subtitleRenditions,
         videoCodecStrings,
         audioCodecStrings,
       }),
@@ -787,6 +966,7 @@ export async function packageAdaptiveRendition(
       masterPlaylistPath: ADAPTIVE_MASTER_PLAYLIST,
       videoRenditions,
       audioRenditions,
+      subtitleRenditions,
       validation: {
         validatedAt: new Date().toISOString(),
         alignmentToleranceSeconds:
@@ -798,7 +978,8 @@ export async function packageAdaptiveRendition(
       storage: {
         videoBytes,
         audioBytes,
-        totalBytes: videoBytes + audioBytes,
+        subtitleBytes,
+        totalBytes: videoBytes + audioBytes + subtitleBytes,
       },
       ...(audioPlan.deferred.length > 0
         ? { deferredAudioStreamIndexes: audioPlan.deferred }
@@ -848,38 +1029,50 @@ export async function packageAdaptiveRendition(
       "utf8",
     );
 
-    await mkdir(mediaRoot, { recursive: true });
-    await rm(finalVersionRoot, { recursive: true, force: true });
-    await rename(workVersionRoot, finalVersionRoot);
-
-    // Re-validated after promotion: if anything altered the package between the
-    // work-directory check and publication, the pointer must not be written.
-    const promoted = await validateAdaptivePackage({
-      versionRoot: finalVersionRoot,
-      mediaId: request.mediaId,
-      sourceFingerprint: request.sourceFingerprint,
-      profileVersion: ADAPTIVE_PROFILE_VERSION,
-      ffprobePath,
-      ffmpegPath,
-      ...(signal ? { signal } : {}),
+    /*
+     * The package lives with the title it belongs to, not in a parallel tree
+     * keyed by an opaque id. It is published only after it has proven itself in
+     * the work directory, and publication never touches the source file: the
+     * original is read throughout and is still there afterwards.
+     */
+    const titleRoot = path.dirname(request.sourcePath);
+    const { manifest } = await publishTitlePackage({
+      workVersionRoot,
+      titleRoot,
+      metadata,
     });
-    if (!promoted.ok) {
+
+    // Publication moves and rewrites; a file the manifest names but the folder
+    // does not hold would be a package that reads as present and plays as
+    // broken, so the manifest is checked against the disk it just described.
+    const missing: string[] = [];
+    for (const rendition of [
+      ...manifest.video,
+      ...manifest.audio,
+      ...manifest.subtitle,
+    ]) {
+      for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
+        const stats = await stat(
+          path.join(titleRoot, ...relative.split("/")),
+        ).catch(() => undefined);
+        if (!stats?.isFile() || stats.size === 0) missing.push(relative);
+      }
+    }
+    if (missing.length > 0) {
       return {
         ...base,
         status: "validation-failed",
         error:
-          "The package failed re-validation after promotion, so it was not activated.",
-        issues: promoted.issues.map(
-          (issue) => `${issue.rendition}/${issue.stage}: ${issue.message}`,
-        ),
+          "The published package is missing files its own manifest names, so it was not activated.",
+        issues: missing,
       };
     }
 
-    await writeAdaptivePointer(
-      mediaRoot,
-      versionDirectory,
-      request.sourceFingerprint,
-    );
+    /*
+     * No pointer is written into the rendition root any more: nothing lives
+     * there. The title folder's own manifest is what says which package is
+     * current, which keeps the answer next to the files it describes.
+     */
     await rm(path.dirname(workVersionRoot), {
       recursive: true,
       force: true,

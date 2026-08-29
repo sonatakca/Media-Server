@@ -5,6 +5,7 @@ import {
   Bug,
   Database,
   DatabaseZap,
+  FileVideo,
   Images,
   Languages,
   Lightbulb,
@@ -55,6 +56,13 @@ export function DevToolsPage() {
       to: "/dev/playback-health",
       icon: ShieldAlert,
       tag: t("devtools.card.playbackHealth.tag"),
+    },
+    {
+      title: t("devtools.card.mediaProcessing.title"),
+      description: t("devtools.card.mediaProcessing.description"),
+      to: "/dev/media-processing",
+      icon: FileVideo,
+      tag: t("devtools.card.mediaProcessing.tag"),
     },
     {
       title: t("devtools.card.userManagement.title"),

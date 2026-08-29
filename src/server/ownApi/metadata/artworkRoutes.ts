@@ -32,7 +32,7 @@ const ARTWORK_TARGETS: Record<
   TmdbArtworkKind,
   { imageType: string; size: string; uploadPreviewWidth: number }
 > = {
-  poster: { imageType: "primary", size: "w780", uploadPreviewWidth: 440 },
+  poster: { imageType: "cover", size: "w780", uploadPreviewWidth: 440 },
   backdrop: {
     imageType: "backdrop",
     size: "w1280",
@@ -386,7 +386,17 @@ export function createArtworkRoutes({
 
         let stored;
         try {
-          stored = await imageStorage.store(upload.bytes, upload.contentType);
+          stored = target.titleRoot
+            ? await imageStorage.storeTitleArtwork(
+                upload.bytes,
+                upload.contentType,
+                target.titleRoot,
+                ARTWORK_TARGETS[kind].imageType as
+                  | "cover"
+                  | "backdrop"
+                  | "logo",
+              )
+            : await imageStorage.store(upload.bytes, upload.contentType);
         } catch {
           throw new OwnApiError(
             "INVALID_ARTWORK_FILE",
@@ -448,7 +458,13 @@ export function createArtworkRoutes({
         const sourceUrl = tmdb.buildImageUrl(filePath, size);
         let stored;
         try {
-          stored = await imageStorage.fetchAndStore(sourceUrl);
+          stored = target.titleRoot
+            ? await imageStorage.fetchAndStoreTitleArtwork(
+                sourceUrl,
+                target.titleRoot,
+                imageType as "cover" | "backdrop" | "logo",
+              )
+            : await imageStorage.fetchAndStore(sourceUrl);
         } catch {
           // Deliberately not the underlying message: it can carry the request
           // URL, and a v3 credential rides in that query string.

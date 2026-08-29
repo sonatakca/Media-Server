@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { parseAdaptiveMetadata, parseAdaptivePointer } from "./metadata";
+import { ADAPTIVE_PROFILE_VERSION } from "./profile";
 
 const FINGERPRINT = "a".repeat(64);
 
 function validMetadata(): Record<string, unknown> {
   return {
     schemaVersion: 1,
-    profileVersion: "cmaf-hls-aligned-v1",
+    profileVersion: ADAPTIVE_PROFILE_VERSION,
     mediaId: "33333333-3333-4333-8333-333333333333",
     sourceFingerprint: FINGERPRINT,
     createdAt: "2026-08-13T10:00:00.000Z",
@@ -255,11 +256,11 @@ describe("parseAdaptivePointer", () => {
     expect(
       parseAdaptivePointer({
         schemaVersion: 1,
-        versionDirectory: "cmaf-hls-aligned-v1-0123456789abcdef",
+        versionDirectory: `${ADAPTIVE_PROFILE_VERSION}-0123456789abcdef`,
         sourceFingerprint: FINGERPRINT,
-        profileVersion: "cmaf-hls-aligned-v1",
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
       }).versionDirectory,
-    ).toBe("cmaf-hls-aligned-v1-0123456789abcdef");
+    ).toBe(`${ADAPTIVE_PROFILE_VERSION}-0123456789abcdef`);
   });
 
   it.each([
@@ -273,7 +274,7 @@ describe("parseAdaptivePointer", () => {
         schemaVersion: 1,
         versionDirectory,
         sourceFingerprint: FINGERPRINT,
-        profileVersion: "cmaf-hls-aligned-v1",
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
       }),
     ).toThrow(/Adaptive pointer is invalid/);
   });
@@ -284,7 +285,7 @@ describe("parseAdaptivePointer", () => {
         schemaVersion: 1,
         versionDirectory: "ok",
         sourceFingerprint: "short",
-        profileVersion: "cmaf-hls-aligned-v1",
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
       }),
     ).toThrow(/Adaptive pointer is invalid/);
   });

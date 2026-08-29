@@ -10,6 +10,7 @@ import {
 } from "./playbackRoutes";
 import type { PlaybackPlan } from "../../../lib/playback-planner/types";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
+import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
 
 function plan(overrides: Partial<PlaybackPlan> = {}): PlaybackPlan {
   return {
@@ -125,7 +126,7 @@ describe("pre-generated adaptive planning", () => {
     mediaId: "file-1",
     qualities: [],
     adaptive: {
-      profileVersion: "cmaf-hls-aligned-v1",
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
       playbackUrl: "/renditions/file/adaptive/abcdef123456/master.m3u8",
       mimeType: "application/vnd.apple.mpegurl",
       segmentTargetSeconds: 2,
@@ -181,6 +182,31 @@ describe("pre-generated adaptive planning", () => {
       video: { action: "copy" },
     });
     expect(selected?.delivery.url).toContain("maxHeight=720");
+  });
+
+  /**
+   * The retention policy deliberately leaves unrelated languages out of a
+   * generated package, while the player still lists every track the *source*
+   * carries. Asking for one of the left-out tracks therefore has to fall back
+   * to the normal planner, which remuxes the original with only that stream
+   * mapped. Without this the click is a silent no-op.
+   */
+  it("falls back to the normal planner for a track the package does not carry", () => {
+    const packaged = manifest.adaptive!.audioTracks.map(
+      (track) => track.sourceStreamIndex,
+    );
+    const notPackaged = Math.max(...packaged) + 1;
+
+    expect(
+      buildAdaptiveRenditionPlan(plan(), manifest, {
+        selectedAudioStreamIndex: notPackaged,
+      }),
+    ).toBeNull();
+    expect(
+      buildAdaptiveRenditionPlan(plan(), manifest, {
+        selectedAudioStreamIndex: packaged[0],
+      }),
+    ).not.toBeNull();
   });
 
   it("keeps the normal planner for unavailable audio or burned subtitles", () => {
@@ -389,6 +415,22 @@ describe("rendition delivery", () => {
     );
 
     expect(served).toEqual([`${FILE}/abcdef123456/video/720p/media.m4s`]);
+  });
+
+  it("resolves title-layout masters, hidden playlists, and visible media paths", async () => {
+    const served: string[] = [];
+    const router = buildRenditionRouter({ served });
+    const base = `/ownAPI/v1/playback/renditions/${FILE}/adaptive/abcdef123456`;
+
+    await get(router, `${base}/.seyirlik/master.m3u8`);
+    await get(router, `${base}/.seyirlik/video/1080p60%20HDR.m3u8`);
+    await get(router, `${base}/video/1080p60%20HDR.mp4`);
+
+    expect(served).toEqual([
+      `${FILE}/abcdef123456/.seyirlik/master.m3u8`,
+      `${FILE}/abcdef123456/.seyirlik/video/1080p60 HDR.m3u8`,
+      `${FILE}/abcdef123456/video/1080p60 HDR.mp4`,
+    ]);
   });
 
   it("refuses a rendition of a file in a library the viewer cannot see", async () => {

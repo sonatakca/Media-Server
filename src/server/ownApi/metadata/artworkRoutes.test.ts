@@ -35,7 +35,7 @@ function target(overrides: Partial<MetadataTarget> = {}): MetadataTarget {
 }
 
 const TARGETS: Record<string, MetadataTarget> = {
-  [MOVIE]: target(),
+  [MOVIE]: target({ titleRoot: "Movies/Dune (2021)" }),
   [UNIDENTIFIED]: target({ id: UNIDENTIFIED, providerIds: {} }),
   [EPISODE]: target({ id: EPISODE, kind: "episode" }),
   [BOOK]: target({
@@ -95,20 +95,18 @@ function fakeImages(overrides: Partial<ImageRepository> = {}): ImageRepository {
 }
 
 function fakeStorage(overrides: Partial<ImageStorage> = {}): ImageStorage {
+  const stored = {
+    contentHash: "hash",
+    contentType: "image/jpeg",
+    sizeBytes: 10,
+    storageKey: "aa/bb/hash.jpg",
+  };
   return {
     resolve: (key) => `/generated/${key}`,
-    store: async () => ({
-      contentHash: "hash",
-      contentType: "image/jpeg",
-      sizeBytes: 10,
-      storageKey: "aa/bb/hash.jpg",
-    }),
-    fetchAndStore: async () => ({
-      contentHash: "hash",
-      contentType: "image/jpeg",
-      sizeBytes: 10,
-      storageKey: "aa/bb/hash.jpg",
-    }),
+    store: async () => stored,
+    fetchAndStore: async () => stored,
+    storeTitleArtwork: async () => stored,
+    fetchAndStoreTitleArtwork: async () => stored,
     getVariant: async (image) => ({
       ...image,
       contentType: "image/webp",
@@ -281,7 +279,7 @@ async function call(
 describe("artwork routes", () => {
   it("lists provider candidates alongside the types an operator has taken over", async () => {
     const router = buildRouter({
-      images: fakeImages({ listLockedTypes: async () => ["primary"] }),
+      images: fakeImages({ listLockedTypes: async () => ["cover"] }),
     });
 
     const result = await call(
@@ -293,7 +291,7 @@ describe("artwork routes", () => {
     expect(result.sent.statusCode).toBe(200);
     expect(result.json?.data).toMatchObject({
       item: { id: MOVIE, providerId: "438631" },
-      lockedTypes: ["primary"],
+      lockedTypes: ["cover"],
     });
     // The page groups by stored type, not by the provider's own vocabulary.
     expect(
@@ -301,7 +299,7 @@ describe("artwork routes", () => {
         .candidates[0],
     ).toMatchObject({
       kind: "poster",
-      imageType: "primary",
+      imageType: "cover",
       previewUrl: "https://image.tmdb.org/t/p/w342/poster.jpg",
     });
   });
@@ -326,7 +324,7 @@ describe("artwork routes", () => {
       {
         id: "book-cover-image",
         itemId: BOOK,
-        imageType: "primary",
+        imageType: "cover",
         imageIndex: 0,
         contentHash: "book-cover",
         width: 780,
@@ -362,18 +360,18 @@ describe("artwork routes", () => {
   });
 
   it("downloads the chosen file at the same size as the automatic pass and locks it", async () => {
-    const fetchAndStore = vi.fn(async () => ({
+    const fetchAndStoreTitleArtwork = vi.fn(async () => ({
       contentHash: "hash",
       contentType: "image/jpeg",
       sizeBytes: 10,
-      storageKey: "aa/bb/hash.jpg",
+      storageKey: "media:Movies/Dune (2021)/content/backdrop.jpg",
     }));
     const replaceLocked = vi.fn<ImageRepository["replaceLocked"]>(
       async () => "locked-image",
     );
     const router = buildRouter({
       images: fakeImages({ replaceLocked }),
-      imageStorage: fakeStorage({ fetchAndStore }),
+      imageStorage: fakeStorage({ fetchAndStoreTitleArtwork }),
     });
 
     const result = await call(
@@ -384,8 +382,10 @@ describe("artwork routes", () => {
     );
 
     expect(result.sent.statusCode).toBe(200);
-    expect(fetchAndStore).toHaveBeenCalledWith(
+    expect(fetchAndStoreTitleArtwork).toHaveBeenCalledWith(
       "https://image.tmdb.org/t/p/w1280/wide.jpg",
+      "Movies/Dune (2021)",
+      "backdrop",
     );
     // The lock is the entire point: an ordinary upsert would be undone by the
     // next automatic refresh.
@@ -438,7 +438,7 @@ describe("artwork routes", () => {
     );
     expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
       itemId: BOOK,
-      imageType: "primary",
+      imageType: "cover",
       source: "upload",
       sourceUrl: null,
     });
@@ -476,7 +476,7 @@ describe("artwork routes", () => {
     expect(store).toHaveBeenCalledWith(bytes, "image/webp");
     expect(replaceLocked.mock.calls[0]?.[0]).toMatchObject({
       itemId: BOOK,
-      imageType: "primary",
+      imageType: "cover",
       source: "upload",
     });
   });
@@ -527,7 +527,7 @@ describe("artwork routes", () => {
     // message is never the one that reaches the browser.
     const router = buildRouter({
       imageStorage: fakeStorage({
-        fetchAndStore: async () => {
+        fetchAndStoreTitleArtwork: async () => {
           throw new Error(
             "connect ETIMEDOUT https://api.themoviedb.org/?api_key=secret",
           );

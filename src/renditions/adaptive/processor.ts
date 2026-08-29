@@ -15,6 +15,15 @@ import {
   type AdaptiveRegistryStatus,
 } from "../registry";
 import {
+  decideAudioStreams,
+  decideSubtitleStreams,
+  type StreamPolicyOptions,
+} from "../processing/streamPolicy";
+import {
+  discoverSidecarSubtitles,
+  type SidecarSubtitle,
+} from "./sidecarSubtitles";
+import {
   packageAdaptiveRendition,
   type AdaptivePackageResult,
 } from "./packager";
@@ -31,7 +40,14 @@ export interface ProcessAdaptiveReportOptions {
   mediaId?: string;
   workerCount?: number;
   maxRetries?: number;
+  /**
+   * Bypass the retention policy and keep every language. Off by default: a
+   * library build that keeps everything is what fills a disk with subtitle
+   * languages nobody reads.
+   */
   allAudioTracks?: boolean;
+  /** Languages the retention policy keeps. Defaults to English and Turkish. */
+  preferredLanguages?: string[];
   dryRun?: boolean;
   signal?: AbortSignal;
   onEvent?: RenditionProgressReporter;
@@ -41,6 +57,89 @@ export interface ProcessAdaptiveReportOutcome {
   videoEncoder: RenditionVideoEncoder;
   hdrVideoEncoder?: RenditionVideoEncoder;
   results: AdaptivePackageResult[];
+}
+
+/**
+ * The offline CLI has no per-user language preference to apply. Preserve every
+ * text subtitle the package can represent rather than silently dropping the
+ * entire subtitle group; the server job path supplies its explicit retention
+ * decision instead.
+ */
+export function defaultSubtitleStreamIndexes(
+  probe: Pick<
+    NonNullable<RenditionAnalysisReport["items"][number]["probe"]>,
+    "subtitleTracks"
+  >,
+): number[] {
+  return probe.subtitleTracks
+    .filter((track) => track.isTextBased)
+    .map((track) => track.streamIndex);
+}
+
+/**
+ * The streams an offline build keeps, decided by the same policy the server job
+ * path uses rather than by a second set of rules that could drift from it.
+ *
+ * A library build that keeps every stream is how a title ends up carrying
+ * thirty-four subtitle languages nobody reads. Keeping the policy in one place
+ * means "why did the French audio go" has the same answer whichever path built
+ * the package.
+ */
+export function planRetainedStreams(
+  probe: Pick<
+    NonNullable<RenditionAnalysisReport["items"][number]["probe"]>,
+    "audioTracks" | "subtitleTracks"
+  >,
+  options: StreamPolicyOptions = {},
+): { audioStreamIndexes: number[]; subtitleStreamIndexes: number[] } {
+  const audio = decideAudioStreams(probe.audioTracks, options);
+  const subtitles = decideSubtitleStreams(probe.subtitleTracks, options);
+  return {
+    audioStreamIndexes: audio
+      .filter((decision) => decision.keep)
+      .map((decision) => decision.streamIndex),
+    // A kept bitmap track has no WebVTT to extract, so it cannot join the
+    // package even though the policy retains it on the source.
+    subtitleStreamIndexes: subtitles
+      .filter((decision) => decision.keep && !decision.requiresOcr)
+      .map((decision) => decision.streamIndex),
+  };
+}
+
+/**
+ * The subtitle files beside a source that the retention policy keeps.
+ *
+ * Judged by the same policy as the embedded streams, so a Turkish `.srt` and a
+ * Turkish subtitle track inside the container are kept or dropped for the same
+ * stated reason rather than by two different sets of rules.
+ */
+export async function planRetainedSidecarSubtitles(
+  sourcePath: string,
+  options: StreamPolicyOptions = {},
+): Promise<SidecarSubtitle[]> {
+  const found = await discoverSidecarSubtitles(sourcePath);
+  if (found.length === 0) return [];
+
+  const decisions = decideSubtitleStreams(
+    found.map((sidecar) => ({
+      streamIndex: sidecar.streamIndex,
+      codec: "subrip",
+      isTextBased: true,
+      isDefault: false,
+      isForced: sidecar.isForced,
+      isHearingImpaired: sidecar.isHearingImpaired,
+      isCommentary: false,
+      language: sidecar.language,
+    })) as never,
+    options,
+  );
+
+  const keptIndexes = new Set(
+    decisions
+      .filter((decision) => decision.keep)
+      .map((decision) => decision.streamIndex),
+  );
+  return found.filter((sidecar) => keptIndexes.has(sidecar.streamIndex));
 }
 
 function registryStatus(
@@ -182,6 +281,18 @@ export async function processAdaptiveReport(
           reusedQualities: [],
         });
 
+        const sourcePath = path.join(
+          paths.mediaRoot,
+          ...item.relativePath.split("/"),
+        );
+        const sidecarSubtitles = options.allAudioTracks
+          ? []
+          : await planRetainedSidecarSubtitles(sourcePath, {
+              ...(options.preferredLanguages
+                ? { preferredLanguages: options.preferredLanguages }
+                : {}),
+            });
+
         let result: AdaptivePackageResult | undefined;
         for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
           result = await packageAdaptiveRendition(
@@ -189,10 +300,7 @@ export async function processAdaptiveReport(
               mediaId: item.mediaId,
               relativePath: item.relativePath,
               sourceFingerprint: item.sourceFingerprint,
-              sourcePath: path.join(
-                paths.mediaRoot,
-                ...item.relativePath.split("/"),
-              ),
+              sourcePath,
               probe: item.probe,
             },
             paths,
@@ -206,6 +314,18 @@ export async function processAdaptiveReport(
               videoEncoder,
               hdrVideoEncoder,
               allAudioTracks: options.allAudioTracks,
+              ...(options.allAudioTracks
+                ? {
+                    subtitleStreamIndexes: defaultSubtitleStreamIndexes(
+                      item.probe,
+                    ),
+                  }
+                : planRetainedStreams(item.probe, {
+                    ...(options.preferredLanguages
+                      ? { preferredLanguages: options.preferredLanguages }
+                      : {}),
+                  })),
+              sidecarSubtitles,
               dryRun: options.dryRun,
               signal: options.signal,
               onEvent: options.onEvent,

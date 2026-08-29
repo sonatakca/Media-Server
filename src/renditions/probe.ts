@@ -18,6 +18,9 @@ interface FfprobeStream {
   disposition?: Record<string, number | undefined>;
   side_data_list?: Array<Record<string, unknown>>;
   channels?: number;
+  channel_layout?: string;
+  sample_rate?: string | number;
+  profile?: string;
 }
 
 interface FfprobeChapter {
@@ -66,10 +69,19 @@ export interface RenditionVideoProbe {
 export interface RenditionAudioTrackProbe {
   streamIndex: number;
   codec: string;
+  profile?: string;
   channels?: number;
+  /** ffprobe's layout name, e.g. `stereo`, `5.1`, `7.1`. */
+  channelLayout?: string;
+  sampleRate?: number;
+  bitrate?: number;
   language?: string;
   title?: string;
   isDefault: boolean;
+  /** Director's commentary and similar secondary programme audio. */
+  isCommentary: boolean;
+  isVisualImpaired: boolean;
+  isOriginal: boolean;
 }
 
 export interface RenditionSubtitleTrackProbe {
@@ -79,6 +91,26 @@ export interface RenditionSubtitleTrackProbe {
   title?: string;
   isDefault: boolean;
   isForced: boolean;
+  /** Subtitles for the deaf and hard of hearing. */
+  isHearingImpaired: boolean;
+  isCommentary: boolean;
+  /**
+   * False for bitmap formats (PGS, VobSub, DVB). Those cannot become WebVTT
+   * without OCR, so they are retained and flagged rather than dropped.
+   */
+  isTextBased: boolean;
+}
+
+/** Bitmap subtitle formats, which need OCR or burn-in before a browser sees them. */
+const IMAGE_SUBTITLE_CODECS = new Set([
+  "dvb_subtitle",
+  "dvd_subtitle",
+  "hdmv_pgs_subtitle",
+  "xsub",
+]);
+
+export function isTextSubtitleCodec(codec: string): boolean {
+  return !IMAGE_SUBTITLE_CODECS.has(codec.trim().toLowerCase());
 }
 
 export interface RenditionMediaProbe {
@@ -194,10 +226,23 @@ export function parseRenditionProbe(
       .map((stream) => ({
         streamIndex: stream.index ?? 0,
         codec: (stream.codec_name ?? "unknown").toLowerCase(),
-        channels: stream.channels,
+        ...(stream.profile ? { profile: stream.profile } : {}),
+        ...(stream.channels === undefined ? {} : { channels: stream.channels }),
+        ...(stream.channel_layout
+          ? { channelLayout: stream.channel_layout }
+          : {}),
+        ...(numberValue(stream.sample_rate) === undefined
+          ? {}
+          : { sampleRate: numberValue(stream.sample_rate) }),
+        ...(numberValue(stream.bit_rate) === undefined
+          ? {}
+          : { bitrate: numberValue(stream.bit_rate) }),
         language: stream.tags?.language,
         title: stream.tags?.title,
         isDefault: stream.disposition?.default === 1,
+        isCommentary: stream.disposition?.comment === 1,
+        isVisualImpaired: stream.disposition?.visual_impaired === 1,
+        isOriginal: stream.disposition?.original === 1,
       })),
     subtitleTracks: streams
       .filter((stream) => stream.codec_type === "subtitle")
@@ -208,6 +253,9 @@ export function parseRenditionProbe(
         title: stream.tags?.title,
         isDefault: stream.disposition?.default === 1,
         isForced: stream.disposition?.forced === 1,
+        isHearingImpaired: stream.disposition?.hearing_impaired === 1,
+        isCommentary: stream.disposition?.comment === 1,
+        isTextBased: isTextSubtitleCodec(stream.codec_name ?? ""),
       })),
     chapters: (output.chapters ?? []).map((chapter) => ({
       id: chapter.id,

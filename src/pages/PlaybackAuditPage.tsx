@@ -405,6 +405,9 @@ async function waitForTranscodingReasons(
       playSessionId,
     ).catch(() => []);
 
+    // A retired session will never start reporting reasons, so stop waiting.
+    if (reasons === null) return [];
+
     if (reasons.length > 0) {
       return Array.from(new Set(reasons.filter(Boolean)));
     }

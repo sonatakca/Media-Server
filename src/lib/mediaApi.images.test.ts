@@ -8,7 +8,7 @@ describe("artwork URLs", () => {
       "https://www.seyirlik.org",
     );
 
-    expect(url.pathname).toBe("/ownAPI/v1/items/book-1/images/primary");
+    expect(url.pathname).toBe("/ownAPI/v1/items/book-1/images/cover");
     expect(url.searchParams.get("tag")).toBe("cover-hash");
     expect(url.searchParams.get("maxWidth")).toBe("440");
     expect(url.searchParams.get("variant")).toBe("webp-v1");

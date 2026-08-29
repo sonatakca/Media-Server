@@ -2,6 +2,7 @@ import React, { StrictMode } from "react";
 import { render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PlaybackSourceCandidate } from "../types";
+import { stopActiveTranscodeSession } from "../mediaApi";
 import {
   releaseCustomPlaybackSession,
   resetCustomPlaybackSessionLeasesForTests,
@@ -9,6 +10,10 @@ import {
   stopCustomPlaybackSessionImmediately,
   useCustomPlaybackSessionLease,
 } from "./customPlaybackSessionLease";
+
+vi.mock("../mediaApi", () => ({
+  stopActiveTranscodeSession: vi.fn(async () => undefined),
+}));
 
 function customSource(
   sessionId: string | undefined,
@@ -146,7 +151,7 @@ describe("custom playback session lease", () => {
     );
   });
 
-  it("ignores non-custom and direct-file candidates", async () => {
+  it("leases native playback sessions as well as custom sessions", async () => {
     retainCustomPlaybackSession(nonCustomSource("jellyfin-session"));
     releaseCustomPlaybackSession(nonCustomSource("jellyfin-session"), {
       graceMs: 750,
@@ -155,7 +160,8 @@ describe("custom playback session lease", () => {
     releaseCustomPlaybackSession(customSource(undefined), { graceMs: 750 });
 
     await vi.advanceTimersByTimeAsync(1_000);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(stopActiveTranscodeSession).toHaveBeenCalledTimes(1);
+    expect(stopActiveTranscodeSession).toHaveBeenCalledWith("jellyfin-session");
   });
 
   it("uses keepalive for immediate unload stops", async () => {

@@ -137,26 +137,22 @@ describe("own API router", () => {
     const ok = await run(
       router,
       "GET",
-      "/ownAPI/v1/items/abc-123/images/primary",
+      "/ownAPI/v1/items/abc-123/images/cover",
     );
     expect(ok.handled).toBe(true);
-    expect(seen).toEqual([{ itemId: "abc-123", imageType: "primary" }]);
+    expect(seen).toEqual([{ itemId: "abc-123", imageType: "cover" }]);
 
     const traversal = await run(
       router,
       "GET",
-      "/ownAPI/v1/items/a%2Fb/images/primary",
+      "/ownAPI/v1/items/a%2Fb/images/cover",
     );
     expect(traversal.handled).toBe(false);
   });
 
   it("returns 401 for authenticated routes without a session", async () => {
     const { router } = buildRouter(null);
-    const result = await run(
-      router,
-      "GET",
-      "/ownAPI/v1/items/x/images/primary",
-    );
+    const result = await run(router, "GET", "/ownAPI/v1/items/x/images/cover");
     expect((result.error as OwnApiError).statusCode).toBe(401);
     expect((result.error as OwnApiError).code).toBe("AUTH_REQUIRED");
   });
@@ -263,7 +259,7 @@ describe("own API router", () => {
   it("resolves fixed route templates for logging", () => {
     const { router } = buildRouter(principal());
     expect(
-      router.resolveTemplate("/ownAPI/v1/items/secret-id/images/primary"),
+      router.resolveTemplate("/ownAPI/v1/items/secret-id/images/cover"),
     ).toBe("/ownAPI/v1/items/:itemId/images/:imageType");
     expect(router.resolveTemplate("/ownAPI/v1/unknown")).toBeUndefined();
   });

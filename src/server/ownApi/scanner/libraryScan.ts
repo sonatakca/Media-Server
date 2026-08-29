@@ -232,6 +232,38 @@ function matchSubtitles(
   return matches;
 }
 
+/** Video files deliberately placed in a title's canonical trailer directory. */
+async function canonicalTrailerPaths(
+  fs: ScannerFileSystem,
+  titleDirectory: string,
+  skipped: ScanSkip[],
+): Promise<string[]> {
+  const trailerDirectory = joinRelative(
+    joinRelative(titleDirectory, "content"),
+    "trailers",
+  );
+  let entries: ScanDirectoryEntry[];
+  try {
+    entries = await fs.readDirectory(trailerDirectory);
+  } catch {
+    // Most titles have no trailer directory; absence is not a scan warning.
+    return [];
+  }
+
+  const paths: string[] = [];
+  for (const entry of entries) {
+    if (entry.isDirectory || isIgnoredEntry(entry.name)) continue;
+    const relativePath = joinRelative(trailerDirectory, entry.name);
+    const { stem } = splitExtension(entry.name);
+    if (isSampleFile(stem)) {
+      skipped.push({ relativePath, reason: "sample" });
+    } else if (isVideoFile(entry.name)) {
+      paths.push(relativePath);
+    }
+  }
+  return paths.sort();
+}
+
 /**
  * A folder holding several videos for the same title (a 4K cut plus a 1080p
  * cut, or a two-disc rip) is one logical movie with several files. Distinct
@@ -271,14 +303,18 @@ async function scanMovieDirectory(
   }
 
   const contents = await readDirectoryContents(fs, directory, result.skipped);
-  const trailerNames: string[] = [];
+  const trailerPaths: string[] = [];
   const featureNames: string[] = [];
 
   for (const videoFile of contents.videoFiles) {
     const { stem } = splitExtension(videoFile);
-    if (isTrailerFile(stem)) trailerNames.push(videoFile);
+    if (isTrailerFile(stem))
+      trailerPaths.push(joinRelative(directory, videoFile));
     else featureNames.push(videoFile);
   }
+  trailerPaths.push(
+    ...(await canonicalTrailerPaths(fs, directory, result.skipped)),
+  );
 
   if (featureNames.length > 0) {
     // Several files in one title folder are alternate cuts of the same movie —
@@ -336,10 +372,10 @@ async function scanMovieDirectory(
       );
       result.items.push(movie);
 
-      for (const trailerName of trailerNames) {
+      for (const trailerPath of trailerPaths) {
         const trailerFile = await toScannedFile(
           fs,
-          joinRelative(directory, trailerName),
+          trailerPath,
           result.skipped,
         );
         if (!trailerFile) continue;
@@ -355,7 +391,7 @@ async function scanMovieDirectory(
       }
       // Trailers belong to the first group only; a root-level loose-file layout
       // has no folder-scoped trailer to share.
-      trailerNames.length = 0;
+      trailerPaths.length = 0;
     }
   }
 
@@ -488,6 +524,27 @@ async function scanSeriesFolder(
     directory,
     result.skipped,
   );
+
+  const trailerPaths = [
+    ...rootContents.videoFiles
+      .filter((videoFile) => isTrailerFile(splitExtension(videoFile).stem))
+      .map((videoFile) => joinRelative(directory, videoFile)),
+    ...(await canonicalTrailerPaths(fs, directory, result.skipped)),
+  ];
+  for (const trailerPath of trailerPaths) {
+    const trailerFile = await toScannedFile(fs, trailerPath, result.skipped);
+    if (!trailerFile) continue;
+    result.items.push({
+      sourceKey: sourceKey("trailer", trailerFile.relativePath),
+      kind: "trailer",
+      title: `${series.title} (Trailer)`,
+      sortTitle: series.sortTitle,
+      parentSourceKey: series.sourceKey,
+      seriesSourceKey: series.sourceKey,
+      files: [trailerFile],
+      subtitles: [],
+    });
+  }
 
   // Episodes sitting directly in the series folder (flat layout).
   await scanEpisodeFiles(

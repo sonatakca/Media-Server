@@ -8,6 +8,8 @@
  * wrong guess silently files an episode under the wrong series.
  */
 
+import { GENERATED_TITLE_DIRECTORIES } from "../../../renditions/adaptive/layout";
+
 export const VIDEO_EXTENSIONS = new Set([
   "mkv",
   "mp4",
@@ -182,6 +184,13 @@ export function isIgnoredEntry(name: string): boolean {
 }
 
 const EXTRA_DIRECTORY_NAMES = new Set([
+  /*
+   * Everything a title generates for itself lives in its own folder now:
+   * `video/` holds a rung per quality, `audio/` a file per language. They are
+   * real media files belonging to the title above them, so without this a
+   * seven-rung ladder scans as seven more movies.
+   */
+  ...GENERATED_TITLE_DIRECTORIES,
   // Media managers write video backdrops and theme clips beside a title. They
   // contain real video files, so without this they scan as separate movies.
   "backdrops",

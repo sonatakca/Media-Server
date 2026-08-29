@@ -9,12 +9,7 @@ import type { CatalogueItemRow, ItemKind } from "./catalogueRepository";
  * shape to its view models, never the other way around.
  */
 
-export type ItemImageType =
-  | "primary"
-  | "backdrop"
-  | "logo"
-  | "thumb"
-  | "banner";
+export type ItemImageType = "cover" | "backdrop" | "logo" | "thumb" | "banner";
 
 export interface ImageRefDto {
   /** Opaque id for `/images/:imageId`. */
@@ -26,13 +21,13 @@ export interface ImageRefDto {
 }
 
 export interface ItemImagesDto {
-  primary?: ImageRefDto;
+  cover?: ImageRefDto;
   logo?: ImageRefDto;
   thumb?: ImageRefDto;
   banner?: ImageRefDto;
   backdrops: ImageRefDto[];
   /** Artwork inherited from the parent series/season for episode cards. */
-  parentPrimary?: ImageRefDto;
+  parentCover?: ImageRefDto;
   parentBackdrops?: ImageRefDto[];
   parentLogo?: ImageRefDto;
 }
@@ -145,8 +140,8 @@ function buildImages(
   const inheritedSorted = [...(inherited ?? [])].sort(
     (left, right) => left.imageIndex - right.imageIndex,
   );
-  const inheritedPrimary = inheritedSorted.find(
-    (record) => record.imageType === "primary",
+  const inheritedCover = inheritedSorted.find(
+    (record) => record.imageType === "cover",
   );
   const inheritedLogo = inheritedSorted.find(
     (record) => record.imageType === "logo",
@@ -155,20 +150,18 @@ function buildImages(
     .filter((record) => record.imageType === "backdrop")
     .map(toImageRef);
 
-  const primary = pick("primary");
+  const cover = pick("cover");
   const logo = pick("logo");
   const thumb = pick("thumb");
   const banner = pick("banner");
 
   return {
-    ...(primary ? { primary } : {}),
+    ...(cover ? { cover } : {}),
     ...(logo ? { logo } : {}),
     ...(thumb ? { thumb } : {}),
     ...(banner ? { banner } : {}),
     backdrops,
-    ...(inheritedPrimary
-      ? { parentPrimary: toImageRef(inheritedPrimary) }
-      : {}),
+    ...(inheritedCover ? { parentCover: toImageRef(inheritedCover) } : {}),
     ...(inheritedLogo ? { parentLogo: toImageRef(inheritedLogo) } : {}),
     ...(inheritedBackdrops.length > 0
       ? { parentBackdrops: inheritedBackdrops }

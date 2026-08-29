@@ -9,6 +9,7 @@
  */
 
 import {
+  copyFile,
   cp,
   mkdtemp,
   mkdir,
@@ -30,6 +31,7 @@ import {
   ensureAdaptiveSourceFixtures,
   getAdaptiveFixtureDirectory,
 } from "./testFixtures";
+import { ADAPTIVE_PROFILE_VERSION } from "./profile";
 
 const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -53,7 +55,7 @@ async function validate(versionRoot: string, deep = false) {
     versionRoot,
     mediaId: MEDIA_ID,
     sourceFingerprint,
-    profileVersion: "cmaf-hls-aligned-v1",
+    profileVersion: ADAPTIVE_PROFILE_VERSION,
     deep,
   });
 }
@@ -64,7 +66,7 @@ function stages(result: Awaited<ReturnType<typeof validate>>): string[] {
 
 async function readMetadata(versionRoot: string) {
   return JSON.parse(
-    await readFile(path.join(versionRoot, "metadata.json"), "utf8"),
+    await readFile(path.join(versionRoot, ".seyirlik", "build.json"), "utf8"),
   ) as Record<string, unknown> & {
     videoRenditions: Array<Record<string, unknown>>;
     audioRenditions: Array<Record<string, unknown>>;
@@ -73,7 +75,7 @@ async function readMetadata(versionRoot: string) {
 
 async function writeMetadata(versionRoot: string, metadata: unknown) {
   await writeFile(
-    path.join(versionRoot, "metadata.json"),
+    path.join(versionRoot, ".seyirlik", "build.json"),
     `${JSON.stringify(metadata, null, 2)}\n`,
     "utf8",
   );
@@ -84,11 +86,20 @@ beforeAll(async () => {
   workspace = await mkdtemp(path.join(tmpdir(), "seyirlik-adaptive-val-"));
   if (!ffmpegAvailable) return;
 
-  const sourcePath = path.join(
-    getAdaptiveFixtureDirectory(),
-    "source-sdr-25.mp4",
-  );
+  /*
+   * A package is published beside its source, so the fixture is copied into a
+   * folder of its own first. Building into the shared fixture directory would
+   * leave a package there for the next suite to find — and find it would, as
+   * "already current".
+   */
   const root = await mkdtemp(path.join(workspace, "pristine-"));
+  const titleRoot = path.join(root, "title");
+  await mkdir(titleRoot, { recursive: true });
+  const sourcePath = path.join(titleRoot, "source-sdr-25.mp4");
+  await copyFile(
+    path.join(getAdaptiveFixtureDirectory(), "source-sdr-25.mp4"),
+    sourcePath,
+  );
   const paths: RenditionPaths = {
     mediaRoot: getAdaptiveFixtureDirectory(),
     renditionRoot: path.join(root, "renditions"),
@@ -118,11 +129,9 @@ beforeAll(async () => {
       `Fixture package was not produced: ${result.error ?? result.status}`,
     );
   }
-  pristineVersionRoot = path.join(
-    paths.renditionRoot,
-    MEDIA_ID,
-    result.versionDirectory as string,
-  );
+  // The package lives with its title now, so the title folder is the root
+  // every path in its manifest is relative to.
+  pristineVersionRoot = titleRoot;
 }, 600_000);
 
 afterAll(async () => {
@@ -140,7 +149,7 @@ describe("adaptive package validation", () => {
   it("rejects a missing manifest", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      await rm(path.join(root, "metadata.json"));
+      await rm(path.join(root, ".seyirlik", "build.json"));
     });
     const result = await validate(versionRoot);
     expect(result.ok).toBe(false);
@@ -150,7 +159,7 @@ describe("adaptive package validation", () => {
   it("rejects a corrupt media playlist", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const playlist = path.join(root, "video", "480p", "playlist.m3u8");
+      const playlist = path.join(root, ".seyirlik", "video", "480p.m3u8");
       const text = await readFile(playlist, "utf8");
       await writeFile(playlist, text.replace("#EXT-X-ENDLIST", ""), "utf8");
     });
@@ -163,7 +172,7 @@ describe("adaptive package validation", () => {
   it("rejects a byte range that runs past the end of its media file", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const playlist = path.join(root, "video", "480p", "playlist.m3u8");
+      const playlist = path.join(root, ".seyirlik", "video", "480p.m3u8");
       const text = await readFile(playlist, "utf8");
       await writeFile(
         playlist,
@@ -183,7 +192,7 @@ describe("adaptive package validation", () => {
   it("rejects a missing initialization range", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const playlist = path.join(root, "video", "480p", "playlist.m3u8");
+      const playlist = path.join(root, ".seyirlik", "video", "480p.m3u8");
       const text = await readFile(playlist, "utf8");
       await writeFile(
         playlist,
@@ -199,7 +208,7 @@ describe("adaptive package validation", () => {
   it("rejects a media file whose size no longer matches the manifest", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const media = path.join(root, "video", "480p", "media.m4s");
+      const media = path.join(root, "video", "480p.mp4");
       const stats = await stat(media);
       await truncate(media, stats.size - 1024);
     });
@@ -213,7 +222,7 @@ describe("adaptive package validation", () => {
   it("rejects an empty media file", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      await writeFile(path.join(root, "video", "480p", "media.m4s"), "");
+      await writeFile(path.join(root, "video", "480p.mp4"), "");
     });
     const result = await validate(versionRoot);
     expect(result.ok).toBe(false);
@@ -268,7 +277,7 @@ describe("adaptive package validation", () => {
   it("rejects a segment boundary that drifts out of alignment", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const playlist = path.join(root, "video", "480p", "playlist.m3u8");
+      const playlist = path.join(root, ".seyirlik", "video", "480p.m3u8");
       const text = await readFile(playlist, "utf8");
       // Move the first boundary half a second, which shifts every later one.
       await writeFile(
@@ -287,11 +296,14 @@ describe("adaptive package validation", () => {
   it("rejects a switching set whose renditions cover different durations", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      const playlist = path.join(root, "video", "480p", "playlist.m3u8");
+      const playlist = path.join(root, ".seyirlik", "video", "480p.m3u8");
       const text = await readFile(playlist, "utf8");
       const lines = text.split("\n");
-      // Drop the final segment, so this rendition ends early.
-      const lastSegment = lines.lastIndexOf("media.m4s");
+      // Drop the final segment, so this rendition ends early. Every segment
+      // line names the one media file this rendition is stored in.
+      const lastSegment = lines.findLastIndex(
+        (line) => line.trim() !== "" && !line.startsWith("#"),
+      );
       lines.splice(lastSegment - 2, 3);
       await writeFile(playlist, lines.join("\n"), "utf8");
     });
@@ -309,7 +321,12 @@ describe("adaptive package validation", () => {
     });
     const result = await validate(versionRoot);
     expect(result.ok).toBe(false);
-    expect(stages(result)).toEqual(expect.arrayContaining(["audio-playlist"]));
+    // The playlist survives — it lives in the package directory — so what is
+    // reported is the media file the manifest names and the folder no longer
+    // holds, which is exactly what went missing.
+    expect(stages(result)).toEqual(
+      expect.arrayContaining(["audio-media-file"]),
+    );
   });
 
   it("rejects a manifest claiming the wrong audio sample rate", async () => {
@@ -356,7 +373,7 @@ describe("adaptive package validation", () => {
   it("names the media id, rendition and stage without leaking a filesystem path", async () => {
     if (!ffmpegAvailable) return;
     const versionRoot = await damagedCopy(async (root) => {
-      await writeFile(path.join(root, "video", "480p", "media.m4s"), "");
+      await writeFile(path.join(root, "video", "480p.mp4"), "");
     });
     const result = await validate(versionRoot);
     const issue = result.issues[0];
@@ -372,23 +389,26 @@ describe("adaptive package validation", () => {
 });
 
 describe("inspectAdaptivePackage", () => {
-  it("reports a package with no pointer as missing", async () => {
+  it("reports a folder with no package as missing", async () => {
     if (!ffmpegAvailable) return;
     const empty = await mkdtemp(path.join(workspace, "empty-"));
     expect(
       await inspectAdaptivePackage({
-        mediaRoot: empty,
-        mediaId: MEDIA_ID,
+        titleRoot: empty,
         sourceFingerprint,
       }),
     ).toEqual({ status: "missing" });
   });
 
+  /**
+   * Stale rather than broken: the package parses and its files are there, it
+   * was simply made from bytes this title no longer has. That is something to
+   * regenerate, not something to report as corruption.
+   */
   it("reports a package built from a different source as stale", async () => {
     if (!ffmpegAvailable) return;
     const inspection = await inspectAdaptivePackage({
-      mediaRoot: path.dirname(pristineVersionRoot),
-      mediaId: MEDIA_ID,
+      titleRoot: pristineVersionRoot,
       sourceFingerprint: "1".repeat(64),
     });
     expect(inspection.status).toBe("stale");
@@ -398,8 +418,7 @@ describe("inspectAdaptivePackage", () => {
   it("accepts the active package and returns its manifest", async () => {
     if (!ffmpegAvailable) return;
     const inspection = await inspectAdaptivePackage({
-      mediaRoot: path.dirname(pristineVersionRoot),
-      mediaId: MEDIA_ID,
+      titleRoot: pristineVersionRoot,
       sourceFingerprint,
     });
     expect(inspection.status).toBe("ready");
@@ -408,24 +427,20 @@ describe("inspectAdaptivePackage", () => {
     );
   });
 
+  /**
+   * The size check is the whole point of inspecting rather than trusting: it is
+   * what catches a package whose bytes changed after it was validated.
+   */
   it("refuses a package whose bytes changed after it was validated", async () => {
     if (!ffmpegAvailable) return;
-    const mediaRoot = await mkdtemp(path.join(workspace, "mutated-"));
-    await cp(path.dirname(pristineVersionRoot), mediaRoot, { recursive: true });
-    const versionDirectory = path.basename(pristineVersionRoot);
-    const media = path.join(
-      mediaRoot,
-      versionDirectory,
-      "video",
-      "480p",
-      "media.m4s",
-    );
+    const titleRoot = await mkdtemp(path.join(workspace, "mutated-"));
+    await cp(pristineVersionRoot, titleRoot, { recursive: true });
+    const media = path.join(titleRoot, "video", "480p.mp4");
     const stats = await stat(media);
     await truncate(media, stats.size - 512);
 
     const inspection = await inspectAdaptivePackage({
-      mediaRoot,
-      mediaId: MEDIA_ID,
+      titleRoot,
       sourceFingerprint,
     });
     expect(inspection.status).toBe("validation-failed");

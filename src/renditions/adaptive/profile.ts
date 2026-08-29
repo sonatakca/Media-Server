@@ -15,7 +15,18 @@
  * package that still plays.
  */
 
-export const ADAPTIVE_PROFILE_VERSION = "cmaf-hls-aligned-v1";
+/**
+ * v2 delivers audio at a channel layout every target decodes.
+ *
+ * v1 packages carried multichannel audio at the source layout, so a 7.1 source
+ * reached the browser as AAC channelConfiguration 12. Safari plays that;
+ * Chromium rejects the very first append with
+ * CHUNK_DEMUXER_ERROR_APPEND_FAILED and the title never starts. 5.1 fares
+ * little better — it parses, but is not decoded reliably by every shipping
+ * Chrome. Every v1 package built from a multichannel source is therefore
+ * unplayable somewhere and has to be rebuilt rather than reused.
+ */
+export const ADAPTIVE_PROFILE_VERSION = "cmaf-hls-aligned-v3";
 export const ADAPTIVE_METADATA_SCHEMA_VERSION = 1;
 export const ADAPTIVE_POINTER_SCHEMA_VERSION = 1;
 
@@ -27,8 +38,10 @@ export const ADAPTIVE_MASTER_PLAYLIST = "master.m3u8";
 export const ADAPTIVE_METADATA_FILE = "metadata.json";
 export const ADAPTIVE_VIDEO_DIRECTORY = "video";
 export const ADAPTIVE_AUDIO_DIRECTORY = "audio";
+export const ADAPTIVE_SUBTITLE_DIRECTORY = "subtitles";
 export const ADAPTIVE_MEDIA_FILE = "media.m4s";
 export const ADAPTIVE_PLAYLIST_FILE = "playlist.m3u8";
+export const ADAPTIVE_SUBTITLE_FILE = "subtitles.vtt";
 
 /**
  * Alignment slack allowed on top of one source-frame duration.
@@ -52,10 +65,17 @@ export const AUDIO_DURATION_TOLERANCE_SECONDS = 0.5;
 /** Video renditions must describe the same timeline as each other far more tightly. */
 export const VIDEO_DURATION_TOLERANCE_SECONDS = 0.1;
 
-export type AdaptiveQualityClass = 480 | 720 | 1080;
+/**
+ * The rungs a package may advertise.
+ *
+ * Kept in step with `RENDITION_TARGETS`: a class the ladder can produce but
+ * this union does not name is rejected by the validator, which turns a
+ * perfectly good package into a failed one.
+ */
+export type AdaptiveQualityClass = 144 | 240 | 360 | 480 | 720 | 1080 | 2160;
 
 export const ADAPTIVE_QUALITY_CLASSES: readonly AdaptiveQualityClass[] = [
-  480, 720, 1080,
+  144, 240, 360, 480, 720, 1080, 2160,
 ];
 
 export function isAdaptiveQualityClass(
@@ -80,7 +100,11 @@ export function audioRenditionId(sourceStreamIndex: number): string {
   return `track-${sourceStreamIndex}`;
 }
 
-const RENDITION_ID_PATTERN = /^(?:\d{2,4}p|track-\d{1,5})$/;
+export function subtitleRenditionId(sourceStreamIndex: number): string {
+  return `subtitle-${sourceStreamIndex}`;
+}
+
+const RENDITION_ID_PATTERN = /^(?:\d{2,4}p|track-\d{1,5}|subtitle-\d{1,5})$/;
 
 export function isSafeRenditionId(value: unknown): value is string {
   return typeof value === "string" && RENDITION_ID_PATTERN.test(value);

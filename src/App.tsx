@@ -54,6 +54,10 @@ const DevToolsPage = lazy(async () => ({
 const DevToolsBoardPage = lazy(async () => ({
   default: (await import("./pages/DevToolsBoardPage")).DevToolsBoardPage,
 }));
+const MediaProcessingPage = lazy(async () => ({
+  default: (await import("./pages/admin/MediaProcessingPage"))
+    .MediaProcessingPage,
+}));
 const LibraryMaintenancePage = lazy(async () => ({
   default: (await import("./pages/LibraryMaintenancePage"))
     .LibraryMaintenancePage,
@@ -370,6 +374,10 @@ export default function App() {
                 <Route
                   path="/dev/playback-health"
                   element={<PlaybackHealthPage />}
+                />
+                <Route
+                  path="/dev/media-processing"
+                  element={<MediaProcessingPage />}
                 />
                 <Route
                   path="/dev/library-maintenance"

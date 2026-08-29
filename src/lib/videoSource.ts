@@ -175,10 +175,26 @@ export function attachSourceToVideo(
     const applyAdaptivePreference = () => {
       if (hls.levels.length === 0) return;
       hls.autoLevelCapping = levelAtOrBelow(maximumHeight);
-      // `loadLevel` changes the next fragment without flushing already-decoded
-      // media. Setting `currentLevel` would discard the buffer and recreate the
-      // very pause/black-frame behaviour this package format is meant to avoid.
-      hls.loadLevel = lockedHeight === null ? -1 : levelAtOrBelow(lockedHeight);
+
+      if (lockedHeight === null) {
+        // Back to automatic: future fragments follow ABR again, and nothing
+        // already buffered needs to be thrown away to get there.
+        hls.nextLevel = -1;
+        hls.loadLevel = -1;
+        return;
+      }
+
+      // An explicit rung is a promise to the viewer, so it has to become the
+      // picture within a second or two. `loadLevel` alone only changes what is
+      // fetched next, and a title whose whole timeline is already buffered has
+      // nothing left to fetch — the click then does nothing visible for
+      // minutes, until the old rung has finished playing out. `nextLevel`
+      // replaces the buffer ahead of the play head while leaving the fragment
+      // currently on screen alone, so the change lands quickly without the
+      // black frame that flushing everything (`currentLevel`) would cause.
+      const level = levelAtOrBelow(lockedHeight);
+      hls.loadLevel = level;
+      if (hls.nextLevel !== level) hls.nextLevel = level;
     };
 
     hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {

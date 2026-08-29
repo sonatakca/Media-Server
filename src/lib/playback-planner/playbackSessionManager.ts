@@ -23,7 +23,7 @@ export type PlaybackStartupFailureCode =
   | "playlist-timeout-process-exited"
   | "cancelled";
 
-function getHlsStartupTimeoutMs(
+export function getHlsStartupTimeoutMs(
   plan: PlaybackPlan,
   overrideMs?: number,
 ): number {
@@ -39,11 +39,19 @@ function getHlsStartupTimeoutMs(
     return 8_000;
   }
 
-  if (plan.audio.action === "transcode") {
-    return 3_500;
-  }
-
-  return 2_500;
+  /**
+   * Everything that copies the video waits on the same thing: opening and
+   * demuxing the source far enough to emit a first segment. That cost scales
+   * with the source, not with the work — a 4K HDR master can take well over
+   * eight seconds to reach it — and transcoding the audio alongside adds
+   * almost nothing to it, so an audio-only transcode gets the same room as a
+   * pure remux rather than a deadline sized for the audio.
+   *
+   * The deadline is a failure detector, not a latency target; killing a
+   * healthy replacement here leaves the old source playing and makes the
+   * viewer's explicit selection a no-op.
+   */
+  return 20_000;
 }
 
 export interface PlaybackSession {
@@ -398,16 +406,17 @@ export class PlaybackSessionManager {
         softwareThreadLimit: runtimeProfile.softwareThreads,
       },
     };
-    const command = buildFfmpegCommand({
-      plan: planWithRuntime,
-      media,
-      outputDir,
-      ffmpegPath: this.ffmpegPath,
-      runtimeProfile,
-    });
+    let command: ReturnType<typeof buildFfmpegCommand> | undefined;
     let session: PlaybackSession | undefined;
 
     try {
+      command = buildFfmpegCommand({
+        plan: planWithRuntime,
+        media,
+        outputDir,
+        ffmpegPath: this.ffmpegPath,
+        runtimeProfile,
+      });
       const child = this.spawnProcess(command.command, command.args, {
         stdio: ["ignore", "pipe", "pipe"],
       });
@@ -456,15 +465,37 @@ export class PlaybackSessionManager {
         error instanceof PlaybackSessionStartupError
           ? new PlaybackSessionStartupError(error.message, error.code, {
               ...error.details,
-              command: command.command,
-              args: [...command.args],
+              command: command?.command,
+              args: command ? [...command.args] : undefined,
               pid: session?.process.pid,
               outputDir,
               outputFiles,
             })
           : error;
 
-      await rm(outputDir, { recursive: true, force: true });
+      /**
+       * Tidying up must never replace the reason we are here.
+       *
+       * FFmpeg can still be flushing into this directory when the deadline
+       * fires, and a recursive remove that loses that race throws ENOTEMPTY —
+       * which then propagated instead of the typed startup error, so a
+       * diagnosable 409 reached the viewer as an anonymous 500.
+       */
+      try {
+        await rm(outputDir, {
+          recursive: true,
+          force: true,
+          maxRetries: 3,
+          retryDelay: 100,
+        });
+      } catch (cleanupError) {
+        console.warn(
+          `[Seyirlik Playback Backend] Could not remove the session output directory ${outputDir}:`,
+          cleanupError instanceof Error
+            ? cleanupError.message
+            : String(cleanupError),
+        );
+      }
 
       throw enrichedError;
     }
@@ -645,7 +676,7 @@ export class PlaybackSessionManager {
         }
 
         session.process.off("error", handleError);
-        session.process.off("exit", handleExit);
+        session.process.off("exit", onProcessExit);
       };
 
       const finish = (error?: Error) => {
@@ -664,46 +695,86 @@ export class PlaybackSessionManager {
         resolve();
       };
 
+      /**
+       * Whether the output on disk is playable right now.
+       *
+       * Kept separate from the polling loop so that the exit handler can ask
+       * the same question. A short title can be remuxed faster than the first
+       * poll interval, in which case FFmpeg has already exited — with a
+       * complete, perfectly playable package — by the time anything looks.
+       */
+      const isOutputPlayable = async (): Promise<boolean> => {
+        try {
+          const playlistStat = await stat(playlistPath);
+          if (!playlistStat.isFile() || playlistStat.size === 0) return false;
+
+          const playlist = await readFile(playlistPath, "utf8");
+          const references = getHlsPlaylistReferences(playlist);
+          const availableDuration = [
+            ...playlist.matchAll(/#EXTINF:([0-9.]+)/g),
+          ].reduce((total, match) => total + Number(match[1] ?? 0), 0);
+          /**
+           * A finished playlist is as much media as will ever exist.
+           *
+           * The position gate below waits for enough media to cover where the
+           * viewer asked to resume. That is right while FFmpeg is still
+           * writing, and wrong once it has stopped: `#EXT-X-ENDLIST` means the
+           * title is complete, and holding a complete package to a target it
+           * can never reach fails it forever. It can genuinely never reach it —
+           * the target is clamped to the container's duration, which on a file
+           * whose subtitle track outlasts its video is longer than any amount
+           * of media the muxer will produce.
+           */
+          const isComplete = playlist.includes("#EXT-X-ENDLIST");
+          const requestedPosition = session.plan.startTimeSeconds;
+          const requiredPosition =
+            requestedPosition === undefined
+              ? 0.25
+              : Math.max(
+                  0.25,
+                  Math.min(
+                    requestedPosition + 12,
+                    session.plan.sourceDurationSeconds ??
+                      Number.POSITIVE_INFINITY,
+                  ) - 0.25,
+                );
+          if (isComplete) {
+            if (availableDuration <= 0) return false;
+          } else if (availableDuration < requiredPosition) {
+            return false;
+          }
+
+          const initFileReady =
+            !references.initFile ||
+            (await hasNonEmptyFile(
+              join(session.outputDir, references.initFile),
+            ));
+          if (!initFileReady) return false;
+
+          for (const segmentFileName of references.mediaSegments) {
+            if (
+              await hasNonEmptyFile(join(session.outputDir, segmentFileName))
+            ) {
+              return true;
+            }
+          }
+          return false;
+        } catch {
+          return false;
+        }
+      };
+
       const poll = async () => {
-        if (session.process.exitCode !== null) {
-          handleExit();
+        const exitedAlready = session.process.exitCode !== null;
+
+        if (await isOutputPlayable()) {
+          finish();
           return;
         }
 
-        try {
-          const playlistStat = await stat(playlistPath);
-
-          if (playlistStat.isFile() && playlistStat.size > 0) {
-            const playlist = await readFile(playlistPath, "utf8");
-            const references = getHlsPlaylistReferences(playlist);
-
-            const initFileReady =
-              !references.initFile ||
-              (await hasNonEmptyFile(
-                join(session.outputDir, references.initFile),
-              ));
-
-            let playableSegmentReady = false;
-
-            for (const segmentFileName of references.mediaSegments) {
-              if (
-                await hasNonEmptyFile(join(session.outputDir, segmentFileName))
-              ) {
-                playableSegmentReady = true;
-                break;
-              }
-            }
-
-            if (!initFileReady || !playableSegmentReady) {
-              pollTimer = setTimeout(poll, this.hlsStartupPollMs);
-              return;
-            }
-
-            finish();
-            return;
-          }
-        } catch {
-          // Keep polling until the playlist exists, FFmpeg exits, or timeout fires.
+        if (exitedAlready) {
+          void handleExit();
+          return;
         }
 
         if (!settled) {
@@ -729,7 +800,16 @@ export class PlaybackSessionManager {
         );
       };
 
-      const handleExit = () => {
+      const handleExit = async () => {
+        // FFmpeg exiting is only a failure if it left nothing playable behind.
+        // A stream copy of a short title finishes in a fraction of a second,
+        // and reporting that as a startup failure turns the fastest possible
+        // success into an error the viewer sees.
+        if (await isOutputPlayable()) {
+          finish();
+          return;
+        }
+
         const hardwareFailure =
           session.plan.processing?.hardwareAccelerated === true &&
           hasHardwareEncoderFailure(session.stderrTail);
@@ -787,7 +867,8 @@ export class PlaybackSessionManager {
       }, startupTimeoutMs);
 
       session.process.once("error", handleError);
-      session.process.once("exit", handleExit);
+      const onProcessExit = () => void handleExit();
+      session.process.once("exit", onProcessExit);
       void poll();
     });
   }
@@ -819,7 +900,19 @@ export class PlaybackSessionManager {
 
     await this.terminateSessionProcess(session);
 
-    await rm(session.outputDir, { recursive: true, force: true });
+    await rm(session.outputDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 5,
+      retryDelay: 100,
+    }).catch((error) => {
+      // Session teardown is intentionally idempotent. A removable-volume
+      // metadata race must not turn the player's best-effort DELETE into 500.
+      console.warn(
+        `[Seyirlik Playback Backend] Could not remove ended session directory ${session.outputDir}:`,
+        error instanceof Error ? error.message : String(error),
+      );
+    });
   }
 
   async stopAllSessions(): Promise<void> {

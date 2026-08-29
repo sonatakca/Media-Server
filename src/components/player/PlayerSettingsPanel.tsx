@@ -57,6 +57,8 @@ interface PlayerSettingsPanelProps {
   onSelectAutoQuality: () => void;
   onSelectQuality: (quality: PlaybackQualityOption) => void;
   onSelectAudioStream: (streamIndex: number) => void;
+  /** Shown in the audio section when a track could not be started. */
+  audioNoticeText?: string;
   onSelectSubtitleStream: (streamIndex: number) => void;
   onSubtitleDelayChange: (seconds: number) => void;
   onStartSubtitleEdit?: () => void;
@@ -486,6 +488,7 @@ export function PlayerSettingsPanel({
   onSelectAutoQuality,
   onSelectQuality,
   onSelectAudioStream,
+  audioNoticeText,
   onSelectSubtitleStream,
   onSubtitleDelayChange,
   onStartSubtitleEdit,
@@ -676,6 +679,21 @@ export function PlayerSettingsPanel({
               <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
                 {t("settings.audio")}
               </div>
+
+              {/*
+                A failed audio change has to be reported where the viewer is
+                looking. The same notice is shown under Quality, and an audio
+                failure announced only there is indistinguishable from the
+                click doing nothing at all.
+              */}
+              {audioNoticeText ? (
+                <p
+                  role="status"
+                  className="mx-2 mb-2 rounded-xl bg-white/[0.05] px-3 py-2 text-[11px] leading-relaxed text-white/70"
+                >
+                  {audioNoticeText}
+                </p>
+              ) : null}
 
               {audioStreams.length > 0 ? (
                 audioStreams.map((stream, index) => (

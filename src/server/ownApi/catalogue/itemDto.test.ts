@@ -38,7 +38,7 @@ function image(overrides: Partial<ImageRecord> = {}): ImageRecord {
   return {
     id: "img-1",
     itemId: "11111111-1111-4111-8111-111111111111",
-    imageType: "primary",
+    imageType: "cover",
     imageIndex: 0,
     contentHash: "hash-1",
     width: 600,
@@ -82,12 +82,12 @@ describe("toItemDto", () => {
       images: [
         image({ id: "b2", imageType: "backdrop", imageIndex: 1 }),
         image({ id: "b1", imageType: "backdrop", imageIndex: 0 }),
-        image({ id: "p1", imageType: "primary", imageIndex: 0 }),
+        image({ id: "p1", imageType: "cover", imageIndex: 0 }),
         image({ id: "l1", imageType: "logo", imageIndex: 0 }),
       ],
     });
 
-    expect(dto.images.primary?.id).toBe("p1");
+    expect(dto.images.cover?.id).toBe("p1");
     expect(dto.images.logo?.id).toBe("l1");
     expect(dto.images.backdrops.map((backdrop) => backdrop.id)).toEqual([
       "b1",
@@ -99,21 +99,21 @@ describe("toItemDto", () => {
     const dto = toItemDto(row(), {
       images: [image({ contentHash: "abc123" })],
     });
-    expect(dto.images.primary?.tag).toBe("abc123");
+    expect(dto.images.cover?.tag).toBe("abc123");
   });
 
   it("surfaces inherited series artwork separately from the item's own", () => {
     const dto = toItemDto(row({ kind: "episode" }), {
       images: [image({ id: "own-thumb", imageType: "thumb" })],
       inheritedImages: [
-        image({ id: "series-poster", imageType: "primary" }),
+        image({ id: "series-poster", imageType: "cover" }),
         image({ id: "series-backdrop", imageType: "backdrop" }),
       ],
     });
 
     expect(dto.images.thumb?.id).toBe("own-thumb");
-    expect(dto.images.primary).toBeUndefined();
-    expect(dto.images.parentPrimary?.id).toBe("series-poster");
+    expect(dto.images.cover).toBeUndefined();
+    expect(dto.images.parentCover?.id).toBe("series-poster");
     expect(dto.images.parentBackdrops?.[0]?.id).toBe("series-backdrop");
   });
 

@@ -96,6 +96,12 @@ function fakeImages(): ImageRepository & { upserts: unknown[] } {
 }
 
 function fakeStorage(): ImageStorage {
+  const stored = {
+    contentHash: "hash",
+    contentType: "image/jpeg",
+    sizeBytes: 100,
+    storageKey: "aa/bb/hash.jpg",
+  };
   return {
     resolve: (key) => `/generated/${key}`,
     store: async () => ({
@@ -110,6 +116,8 @@ function fakeStorage(): ImageStorage {
       sizeBytes: 10,
       storageKey: "aa/bb/hash.jpg",
     }),
+    storeTitleArtwork: async () => stored,
+    fetchAndStoreTitleArtwork: async () => stored,
     getVariant: async (image) => ({
       ...image,
       contentType: "image/webp",
@@ -277,7 +285,50 @@ describe("metadata identification", () => {
 
     expect(
       images.upserts.map((entry) => (entry as { imageType: string }).imageType),
-    ).toEqual(["primary", "logo", "backdrop", "backdrop"]);
+    ).toEqual(["cover", "logo", "backdrop"]);
+  });
+
+  it("writes title artwork through the title-local storage path", async () => {
+    const images = fakeImages();
+    const imageStorage = fakeStorage();
+    const fetchAndStoreTitleArtwork = vi.fn(
+      imageStorage.fetchAndStoreTitleArtwork,
+    );
+    imageStorage.fetchAndStoreTitleArtwork = fetchAndStoreTitleArtwork;
+    const item = target({ titleRoot: "Movies/The Matrix (1999)" });
+    const service = createMetadataService({
+      metadata: fakeMetadata(item).repository,
+      images,
+      imageStorage,
+      tmdb: fakeTmdb({
+        getMovie: async () =>
+          details({
+            posterPath: "/poster.jpg",
+            logoPath: "/logo.png",
+            backdropPaths: ["/backdrop.jpg"],
+          }),
+      }),
+    });
+
+    await service.identify(item);
+
+    expect(fetchAndStoreTitleArtwork.mock.calls).toEqual([
+      [
+        "https://image.tmdb.org/t/p/w780/poster.jpg",
+        "Movies/The Matrix (1999)",
+        "cover",
+      ],
+      [
+        "https://image.tmdb.org/t/p/w500/logo.png",
+        "Movies/The Matrix (1999)",
+        "logo",
+      ],
+      [
+        "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+        "Movies/The Matrix (1999)",
+        "backdrop",
+      ],
+    ]);
   });
 
   it("does not rewrite artwork whose bytes are unchanged", async () => {
@@ -285,7 +336,7 @@ describe("metadata identification", () => {
     images.findByItemAndType = async () => ({
       id: "existing",
       itemId: "item-1",
-      imageType: "primary",
+      imageType: "cover",
       imageIndex: 0,
       contentHash: "hash",
       width: null,
@@ -293,6 +344,7 @@ describe("metadata identification", () => {
       contentType: "image/jpeg",
       storageKey: "aa/bb/hash.jpg",
       sizeBytes: 10,
+      isLocked: false,
     });
 
     const service = createMetadataService({
@@ -307,6 +359,42 @@ describe("metadata identification", () => {
     await service.identify(target());
 
     expect(images.upserts).toHaveLength(0);
+  });
+
+  it("does not overwrite a title-local file locked by an administrator", async () => {
+    const images = fakeImages();
+    images.findByItemAndType = async () => ({
+      id: "locked-cover",
+      itemId: "item-1",
+      imageType: "cover",
+      imageIndex: 0,
+      contentHash: "chosen",
+      width: null,
+      height: null,
+      contentType: "image/jpeg",
+      storageKey: "media:Movies/The Matrix (1999)/content/cover.jpg",
+      sizeBytes: 10,
+      isLocked: true,
+    });
+    const imageStorage = fakeStorage();
+    const fetchAndStoreTitleArtwork = vi.fn(
+      imageStorage.fetchAndStoreTitleArtwork,
+    );
+    imageStorage.fetchAndStoreTitleArtwork = fetchAndStoreTitleArtwork;
+    const item = target({ titleRoot: "Movies/The Matrix (1999)" });
+    const service = createMetadataService({
+      metadata: fakeMetadata(item).repository,
+      images,
+      imageStorage,
+      tmdb: fakeTmdb({
+        getMovie: async () => details({ posterPath: "/poster.jpg" }),
+      }),
+    });
+
+    await service.identify(item);
+
+    expect(fetchAndStoreTitleArtwork).not.toHaveBeenCalled();
+    expect(images.upserts).toEqual([]);
   });
 
   it("still applies metadata when artwork cannot be downloaded", async () => {

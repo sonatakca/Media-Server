@@ -357,8 +357,8 @@ export async function analyseRenditionLibrary({
                 : "ready"
               : "pending";
       const adaptiveInspection = await inspectAdaptivePackage({
-        mediaRoot: path.join(paths.renditionRoot, registryItem.id),
-        mediaId: registryItem.id,
+        // A package lives beside the source it was made from.
+        titleRoot: path.dirname(source.filePath),
         sourceFingerprint: fingerprint,
         profileVersion: ADAPTIVE_PROFILE_VERSION,
       });

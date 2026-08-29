@@ -620,6 +620,19 @@ export function decidePlaybackPlan({
 
   const audio = findAudioStream(media, selectedAudioStreamIndex);
   const subtitle = findSubtitleStream(media, selectedSubtitleStreamIndex);
+  /**
+   * Direct play hands the browser the whole file, and the browser plays
+   * whichever audio track the file marks as default. No Chromium implements
+   * `HTMLMediaElement.audioTracks`, so an explicit choice of a different track
+   * cannot be applied on the client at all; served directly, the viewer picks
+   * Turkish and keeps hearing English. Honouring the choice means remuxing with
+   * only that stream mapped.
+   */
+  const requiresAudioSelectionRemux =
+    selectedAudioStreamIndex !== undefined &&
+    audio !== undefined &&
+    media.audioStreams.length > 1 &&
+    audio.index !== findAudioStream(media, undefined)?.index;
   const container = normalizeContainer(media);
   const directContainerSupported = getNativePlayer(client)
     ? clientSupportsDirectContainer(client, container)
@@ -788,7 +801,11 @@ export function decidePlaybackPlan({
     };
   }
 
-  if (!directContainerSupported || subtitleDecision.action === "convert") {
+  if (
+    !directContainerSupported ||
+    subtitleDecision.action === "convert" ||
+    requiresAudioSelectionRemux
+  ) {
     return {
       mode: "remux",
       requiresFfmpeg: true,
@@ -814,7 +831,19 @@ export function decidePlaybackPlan({
         action: subtitleDecision.action,
         reason: subtitleDecision.reasons[0]?.message,
       },
-      reasons: [...containerReasons, ...subtitleDecision.reasons],
+      reasons: [
+        ...containerReasons,
+        ...subtitleDecision.reasons,
+        ...(requiresAudioSelectionRemux
+          ? [
+              reason(
+                "audio_selection_requires_remux",
+                "blocking",
+                "The selected audio track is not the file's default one, and the browser cannot switch tracks inside a directly played file.",
+              ),
+            ]
+          : []),
+      ],
       delivery: {
         type: "hls",
       },

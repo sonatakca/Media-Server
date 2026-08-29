@@ -6,6 +6,10 @@ import {
   buildAdaptivePackageFfmpegArgs,
   buildVarStreamMap,
   canStreamCopyAudio,
+  frameMacroblocks,
+  h264LevelFor,
+  deliveryChannelsFor,
+  MAX_DELIVERY_AUDIO_CHANNELS,
   type AdaptiveAudioOutput,
   type AdaptiveVideoOutput,
 } from "./encoding";
@@ -42,6 +46,34 @@ function valueAfter(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index === -1 ? undefined : args[index + 1];
 }
+
+describe("per-rung frame rate", () => {
+  /**
+   * The small rungs are halved because they exist for scarce bandwidth. The
+   * conversion goes in front of the scale so the frames that will not survive
+   * are discarded before they are resized rather than after.
+   */
+  it("drops the rate before the scale, and only where it changes", () => {
+    const filter = buildAdaptiveFilterComplex({
+      videoOutputs: [
+        { qualityHeight: 1080, width: 1920, height: 1080 },
+        { qualityHeight: 480, width: 854, height: 480, frameRate: 30 },
+      ],
+    });
+
+    expect(filter).toContain("fps=30,scale=854:480");
+    expect(filter).not.toContain("fps=30,scale=1920:1080");
+    expect(filter.match(/fps=/g)).toHaveLength(1);
+  });
+
+  it("leaves a single-rung ladder alone when its rate matches the source", () => {
+    const filter = buildAdaptiveFilterComplex({
+      videoOutputs: [{ qualityHeight: 1080, width: 1920, height: 1080 }],
+    });
+
+    expect(filter).not.toContain("fps=");
+  });
+});
 
 describe("buildAdaptiveFilterComplex", () => {
   it("decodes once and splits into every rendition", () => {
@@ -176,6 +208,48 @@ describe("buildAdaptivePackageFfmpegArgs", () => {
     expect(valueAfter(args, "-ar:a:0")).toBe("48000");
   });
 
+  it("encodes a stereo source at its own channel count", () => {
+    const args = build({
+      audioOutputs: [{ ...DEFAULT_AUDIO, channels: 2 }],
+    });
+
+    expect(valueAfter(args, "-ac:a:0")).toBe("2");
+  });
+
+  it("downmixes a 7.1 source to a layout every engine decodes", () => {
+    // ffmpeg's 7.1 layout is AAC channelConfiguration 12, which Chromium's MSE
+    // parser rejects outright with CHUNK_DEMUXER_ERROR_APPEND_FAILED.
+    const args = build({
+      audioOutputs: [{ ...DEFAULT_AUDIO, channels: 8, bitrate: 256_000 }],
+    });
+
+    expect(valueAfter(args, "-ac:a:0")).toBe("2");
+  });
+
+  it("downmixes a 5.1 source too", () => {
+    // 5.1 gets past the parser but is not decoded reliably by every shipping
+    // Chrome, and one shared ladder cannot carry a layout any client refuses.
+    const args = build({
+      audioOutputs: [{ ...DEFAULT_AUDIO, channels: 6, bitrate: 256_000 }],
+    });
+
+    expect(valueAfter(args, "-ac:a:0")).toBe("2");
+  });
+
+  it("leaves a mono source mono rather than upmixing it", () => {
+    const args = build({
+      audioOutputs: [{ ...DEFAULT_AUDIO, channels: 1 }],
+    });
+
+    expect(valueAfter(args, "-ac:a:0")).toBe("1");
+  });
+
+  it("never leaves the encoder to inherit an unknown source layout", () => {
+    const args = build({ audioOutputs: [DEFAULT_AUDIO] });
+
+    expect(valueAfter(args, "-ac:a:0")).toBe("2");
+  });
+
   it("stream-copies audio when the source is already browser-compatible", () => {
     const args = build({
       audioOutputs: [{ ...DEFAULT_AUDIO, action: "copy" }],
@@ -243,6 +317,25 @@ describe("buildAdaptivePackageFfmpegArgs", () => {
         "scenecut=0",
       );
     }
+  });
+
+  it("uses Apple VideoToolbox without unsupported preset options", () => {
+    const args = build({
+      encoder: "hevc_videotoolbox",
+      videoOutputs: [LADDER[1]],
+      hdr: {
+        colorPrimaries: "bt2020",
+        colorTransfer: "smpte2084",
+        colorSpace: "bt2020nc",
+      },
+    });
+
+    expect(valueAfter(args, "-c:v:0")).toBe("hevc_videotoolbox");
+    expect(valueAfter(args, "-profile:v:0")).toBe("main10");
+    expect(valueAfter(args, "-tag:v:0")).toBe("hvc1");
+    expect(args.join(" ")).toContain("format=p010le");
+    expect(args).not.toContain("-preset:v:0");
+    expect(args).not.toContain("-crf:v:0");
   });
 
   it("does not tag H.264 output as hvc1", () => {
@@ -326,5 +419,69 @@ describe("canStreamCopyAudio", () => {
         channels: 2,
       }),
     ).toBe(false);
+  });
+});
+
+describe("deliveryChannelsFor", () => {
+  it("caps every multichannel layout at the universally decodable one", () => {
+    expect(deliveryChannelsFor(6)).toBe(MAX_DELIVERY_AUDIO_CHANNELS);
+    expect(deliveryChannelsFor(7)).toBe(MAX_DELIVERY_AUDIO_CHANNELS);
+    expect(deliveryChannelsFor(8)).toBe(MAX_DELIVERY_AUDIO_CHANNELS);
+    expect(deliveryChannelsFor(12)).toBe(MAX_DELIVERY_AUDIO_CHANNELS);
+  });
+
+  it("passes layouts at or below the cap through untouched", () => {
+    expect(deliveryChannelsFor(1)).toBe(1);
+    expect(deliveryChannelsFor(2)).toBe(2);
+  });
+
+  it("falls back to stereo when the source channel count is unusable", () => {
+    expect(deliveryChannelsFor(undefined)).toBe(2);
+    expect(deliveryChannelsFor(0)).toBe(2);
+    expect(deliveryChannelsFor(-1)).toBe(2);
+    expect(deliveryChannelsFor(2.5)).toBe(2);
+  });
+});
+
+describe("h264LevelFor", () => {
+  /**
+   * The bug this exists to prevent: a rung is named for its height, but its
+   * width comes from the source aspect ratio. Naming the level after the rung
+   * gave every 16:9 title a 480p rung at level 3.0, which VideoToolbox refuses
+   * to open an encoder for, while letterboxed sources happened to fit and
+   * packaged fine.
+   */
+  it("gives a 16:9 480p rung more room than level 3.0", () => {
+    expect(frameMacroblocks(854, 480)).toBe(1620);
+    expect(h264LevelFor(854, 480, 23.976)).toBe("3.1");
+  });
+
+  it("keeps a letterboxed 480p rung at level 3.0", () => {
+    expect(frameMacroblocks(854, 356)).toBe(1242);
+    expect(h264LevelFor(854, 356, 23.976)).toBe("3.0");
+  });
+
+  it("never sits exactly at a level's frame-size ceiling", () => {
+    // At exactly MaxFS the hardware encoder has no headroom for reference
+    // frames and rejects the configuration outright.
+    expect(h264LevelFor(1280, 720, 23.976)).not.toBe("3.1");
+    expect(h264LevelFor(640, 480, 23.976)).toBe("3.0");
+  });
+
+  it("scales up with the frame", () => {
+    expect(h264LevelFor(1920, 800, 23.976)).toBe("4.0");
+    expect(h264LevelFor(1920, 1080, 23.976)).toBe("4.0");
+    expect(h264LevelFor(3840, 2160, 23.976)).toBe("5.1");
+  });
+
+  it("accounts for frame rate, not only frame size", () => {
+    // 1920x1080 at 60fps needs more macroblocks per second than level 4.0
+    // allows, even though the frame itself fits.
+    expect(h264LevelFor(1920, 1080, 60)).toBe("4.2");
+  });
+
+  it("assumes a safe frame rate when the source does not report one", () => {
+    expect(h264LevelFor(854, 480, undefined)).toBe("3.1");
+    expect(h264LevelFor(854, 480, 0)).toBe("3.1");
   });
 });

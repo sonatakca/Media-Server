@@ -223,6 +223,42 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(manager.getSession(session.sessionId)).toBe(session);
   });
 
+  /**
+   * A stream copy of a short title can finish in a fraction of a second, so
+   * FFmpeg is already gone by the time the first poll looks. The output it left
+   * behind is complete and perfectly playable; treating the exit itself as the
+   * failure turned the fastest possible success into a 409 for the viewer.
+   */
+  it("accepts output that was complete before FFmpeg exited", async () => {
+    let playlistPath = "";
+    const { child, manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+
+    const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+
+    await writeReadyPlaylist(playlistPath);
+    child.exitCode = 0;
+    child.emit("exit", 0, null);
+
+    const session = await sessionPromise;
+    expect(session.outputDir).toBe(path.dirname(playlistPath));
+  });
+
+  it("still rejects when FFmpeg exits leaving nothing playable", async () => {
+    const { child, manager } = createManager({});
+    const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    child.exitCode = 1;
+    child.emit("exit", 1, null);
+
+    await expect(sessionPromise).rejects.toMatchObject({ code: "early-exit" });
+  });
+
   it("does not wait for every segment referenced by the live playlist", async () => {
     let playlistPath = "";
 
@@ -271,6 +307,50 @@ describe("PlaybackSessionManager HLS readiness", () => {
       access(path.join(path.dirname(playlistPath), "segment_00002.m4s")),
     ).rejects.toThrow();
 
+    await manager.stopSession(session.sessionId);
+  });
+
+  it("does not attach a replacement before its requested position is seekable", async () => {
+    let playlistPath = "";
+    let resolved = false;
+    const { manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+    const sessionPromise = manager
+      .createSession(
+        {
+          ...hlsPlan(),
+          startTimeSeconds: 5,
+          sourceDurationSeconds: 10,
+        },
+        mediaAnalysis(),
+      )
+      .then((session) => {
+        resolved = true;
+        return session;
+      });
+    await vi.waitFor(() => expect(playlistPath).not.toBe(""));
+    await writeReadyPlaylist(playlistPath);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(resolved).toBe(false);
+
+    await writeFile(
+      playlistPath,
+      [
+        "#EXTM3U",
+        "#EXT-X-VERSION:7",
+        '#EXT-X-MAP:URI="init.mp4"',
+        "#EXTINF:4.000000,",
+        "segment_00000.m4s",
+        "#EXTINF:6.000000,",
+        "segment_00001.m4s",
+        "",
+      ].join("\n"),
+    );
+    const session = await sessionPromise;
+    expect(resolved).toBe(true);
     await manager.stopSession(session.sessionId);
   });
 

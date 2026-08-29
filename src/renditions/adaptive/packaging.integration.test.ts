@@ -9,7 +9,15 @@
  * way to establish them is to encode something and measure it.
  */
 
-import { mkdtemp, mkdir, readFile, rm, stat } from "node:fs/promises";
+import {
+  copyFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -26,6 +34,7 @@ import {
   ensureAdaptiveSourceFixtures,
   getAdaptiveFixtureDirectory,
 } from "./testFixtures";
+import { ADAPTIVE_PROFILE_VERSION } from "./profile";
 
 const MEDIA_ID = "11111111-1111-4111-8111-111111111111";
 
@@ -51,6 +60,16 @@ async function packageSource(
   options: Record<string, unknown> = {},
 ) {
   const paths = await createPaths();
+  /*
+   * A package is published beside its source, so two runs against one fixture
+   * would share a destination and the second would find the first already
+   * there. Each run gets its own copy of the source in its own title folder,
+   * which is also how a real library is shaped: one folder, one title.
+   */
+  const titleRoot = await mkdtemp(path.join(workspace, "title-"));
+  const isolatedSource = path.join(titleRoot, path.basename(sourcePath));
+  await copyFile(sourcePath, isolatedSource);
+  sourcePath = isolatedSource;
   const fingerprint = await computeSourceFingerprint(
     sourcePath,
     await stat(sourcePath),
@@ -70,9 +89,11 @@ async function packageSource(
       ...options,
     },
   );
-  const versionRoot = result.versionDirectory
-    ? path.join(paths.renditionRoot, MEDIA_ID, result.versionDirectory)
-    : undefined;
+  /*
+   * A package now lives with the title it belongs to, so the folder holding the
+   * source is also the root every published path is relative to.
+   */
+  const versionRoot = path.dirname(sourcePath);
   return { result, paths, fingerprint, versionRoot };
 }
 
@@ -106,13 +127,17 @@ describe.each(ADAPTIVE_SOURCE_FIXTURES)(
       expect(result.status).toBe("ready");
       expect(versionRoot).toBeDefined();
       expect(result.versionDirectory).toMatch(
-        /^cmaf-hls-aligned-v1-[0-9a-f]{16}$/,
+        new RegExp(`^${ADAPTIVE_PROFILE_VERSION}-[0-9a-f]{16}$`),
       );
 
       const metadata = parseAdaptiveMetadata(
         JSON.parse(
-          await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+          await readFile(
+            path.join(versionRoot!, ".seyirlik", "build.json"),
+            "utf8",
+          ),
         ),
+        { enforceCanonicalPaths: false },
       );
 
       // Every check the validator can make must have run and passed, including
@@ -149,10 +174,17 @@ describe.each(ADAPTIVE_SOURCE_FIXTURES)(
         if (metadata.videoRenditions.includes(rendition as never)) {
           expect(playlist.independentSegments).toBe(true);
         }
-        expect(playlist.map.uri).toBe("media.m4s");
+        // One file per rendition is what makes byte ranges possible, so the
+        // initialisation range and every segment must still name that one file
+        // — now under the published name it carries in the library.
+        const publishedUri = rendition.mediaPath
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
+        expect(playlist.map.uri).toBe(`../../${publishedUri}`);
         expect(
           new Set(playlist.segments.map((segment) => segment.uri)),
-        ).toEqual(new Set(["media.m4s"]));
+        ).toEqual(new Set([`../../${publishedUri}`]));
         const mediaStats = await stat(
           path.join(versionRoot!, ...rendition.mediaPath.split("/")),
         );
@@ -170,8 +202,12 @@ describe.each(ADAPTIVE_SOURCE_FIXTURES)(
       const { versionRoot } = await packageSource(sourcePath);
       const metadata = parseAdaptiveMetadata(
         JSON.parse(
-          await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+          await readFile(
+            path.join(versionRoot!, ".seyirlik", "build.json"),
+            "utf8",
+          ),
         ),
+        { enforceCanonicalPaths: false },
       );
 
       const keyframesByRendition = new Map<string, number[]>();
@@ -247,8 +283,12 @@ describe.each(ADAPTIVE_SOURCE_FIXTURES)(
       const { versionRoot } = await packageSource(sourcePath);
       const metadata = parseAdaptiveMetadata(
         JSON.parse(
-          await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+          await readFile(
+            path.join(versionRoot!, ".seyirlik", "build.json"),
+            "utf8",
+          ),
         ),
+        { enforceCanonicalPaths: false },
       );
 
       const { probePackagedAudio } = await import("./probePackaged");
@@ -279,8 +319,12 @@ describe("adaptive packaging with several audio tracks", () => {
     expect(result.status).toBe("ready");
     const metadata = parseAdaptiveMetadata(
       JSON.parse(
-        await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+        await readFile(
+          path.join(versionRoot!, ".seyirlik", "build.json"),
+          "utf8",
+        ),
       ),
+      { enforceCanonicalPaths: false },
     );
 
     expect(metadata.audioRenditions).toHaveLength(2);
@@ -303,7 +347,10 @@ describe("adaptive packaging with several audio tracks", () => {
     expect(turkish.sampleRate).toBe(48_000);
 
     const master = parseMasterPlaylist(
-      await readFile(path.join(versionRoot!, "master.m3u8"), "utf8"),
+      await readFile(
+        path.join(versionRoot!, ".seyirlik", "master.m3u8"),
+        "utf8",
+      ),
     );
     expect(master.audioRenditions).toHaveLength(2);
     for (const variant of master.variants) {
@@ -326,8 +373,12 @@ describe("adaptive packaging with several audio tracks", () => {
     });
     const metadata = parseAdaptiveMetadata(
       JSON.parse(
-        await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+        await readFile(
+          path.join(versionRoot!, ".seyirlik", "build.json"),
+          "utf8",
+        ),
       ),
+      { enforceCanonicalPaths: false },
     );
 
     expect(metadata.audioRenditions).toHaveLength(1);
@@ -357,8 +408,12 @@ describe("adaptive packaging of HDR sources", () => {
 
     const metadata = parseAdaptiveMetadata(
       JSON.parse(
-        await readFile(path.join(versionRoot!, "metadata.json"), "utf8"),
+        await readFile(
+          path.join(versionRoot!, ".seyirlik", "build.json"),
+          "utf8",
+        ),
       ),
+      { enforceCanonicalPaths: false },
     );
 
     expect(metadata.source.isHdr).toBe(true);
@@ -371,7 +426,10 @@ describe("adaptive packaging of HDR sources", () => {
     }
 
     const master = parseMasterPlaylist(
-      await readFile(path.join(versionRoot!, "master.m3u8"), "utf8"),
+      await readFile(
+        path.join(versionRoot!, ".seyirlik", "master.m3u8"),
+        "utf8",
+      ),
     );
     for (const variant of master.variants) {
       expect(variant.videoRange).toBe("PQ");
@@ -387,8 +445,96 @@ describe("adaptive packaging of HDR sources", () => {
   }, 900_000);
 });
 
+describe("adaptive WebVTT subtitle packaging", () => {
+  it("extracts the retained forced track and signals it in the master", async () => {
+    if (!ffmpegAvailable) return;
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const subtitleSource = path.join(workspace, "forced-subtitle.srt");
+    const sourcePath = path.join(workspace, "source-with-forced-subtitle.mkv");
+    await writeFile(
+      subtitleSource,
+      "1\n00:00:01,000 --> 00:00:03,000\nOnly the beginning.\n",
+      "utf8",
+    );
+    await promisify(execFile)("ffmpeg", [
+      "-hide_banner",
+      "-loglevel",
+      "error",
+      "-y",
+      "-i",
+      path.join(getAdaptiveFixtureDirectory(), "source-sdr-2398.mp4"),
+      "-f",
+      "srt",
+      "-i",
+      subtitleSource,
+      "-map",
+      "0:v:0",
+      "-map",
+      "0:a:0",
+      "-map",
+      "1:0",
+      "-c:v",
+      "copy",
+      "-c:a",
+      "copy",
+      "-c:s",
+      "srt",
+      "-metadata:s:s:0",
+      "language=eng",
+      "-disposition:s:0",
+      "forced",
+      sourcePath,
+    ]);
+
+    const { result, versionRoot } = await packageSource(sourcePath, {
+      subtitleStreamIndexes: [2],
+    });
+    expect(result.status).toBe("ready");
+    const metadata = parseAdaptiveMetadata(
+      JSON.parse(
+        await readFile(
+          path.join(versionRoot!, ".seyirlik", "build.json"),
+          "utf8",
+        ),
+      ),
+      { enforceCanonicalPaths: false },
+    );
+    expect(metadata.subtitleRenditions).toEqual([
+      expect.objectContaining({
+        sourceStreamIndex: 2,
+        language: "eng",
+        isForced: true,
+        codec: "webvtt",
+      }),
+    ]);
+    const vtt = await readFile(
+      path.join(versionRoot!, "subtitle", "english (forced).vtt"),
+      "utf8",
+    );
+    expect(vtt).toContain("WEBVTT");
+    expect(vtt).toContain("Only the beginning.");
+    const master = parseMasterPlaylist(
+      await readFile(
+        path.join(versionRoot!, ".seyirlik", "master.m3u8"),
+        "utf8",
+      ),
+    );
+    expect(master.subtitleRenditions).toEqual([
+      expect.objectContaining({ language: "eng", isForced: true }),
+    ]);
+    expect(metadata.validation.checks).toContain("webvtt-subtitles");
+  }, 300_000);
+});
+
 describe("adaptive packaging refusals", () => {
-  it("refuses a source that is not meaningfully larger than the smallest rung", async () => {
+  /**
+   * A small source still earns a package: it gets its own class and the rungs
+   * below it. That package is the copy that lets the original file be removed,
+   * so refusing it would leave the smallest titles permanently dependent on
+   * their source.
+   */
+  it("packages a small source down from its own class", async () => {
     if (!ffmpegAvailable) return;
 
     const smallSource = path.join(workspace, "small.mp4");
@@ -418,9 +564,20 @@ describe("adaptive packaging refusals", () => {
       smallSource,
     ]);
 
-    const { result } = await packageSource(smallSource);
-    expect(result.status).toBe("incompatible");
-    expect(result.error).toMatch(/not meaningfully larger/i);
+    const { result, versionRoot } = await packageSource(smallSource);
+    expect(result.status).toBe("ready");
+    const metadata = parseAdaptiveMetadata(
+      JSON.parse(
+        await readFile(
+          path.join(versionRoot!, ".seyirlik", "build.json"),
+          "utf8",
+        ),
+      ),
+      { enforceCanonicalPaths: false },
+    );
+    expect(
+      metadata.videoRenditions.map((rendition) => rendition.qualityHeight),
+    ).toEqual([360, 240, 144]);
   }, 120_000);
 
   it("refuses a source with no audio", async () => {
@@ -473,9 +630,13 @@ describe("resume behaviour", () => {
   it("re-points at an already-valid deterministic version instead of re-encoding", async () => {
     if (!ffmpegAvailable) return;
 
-    const sourcePath = path.join(
-      getAdaptiveFixtureDirectory(),
-      "source-sdr-25.mp4",
+    // Its own title folder, because the second run is meant to find the first
+    // run's package — and only that one.
+    const titleRoot = await mkdtemp(path.join(workspace, "resume-"));
+    const sourcePath = path.join(titleRoot, "source-sdr-25.mp4");
+    await copyFile(
+      path.join(getAdaptiveFixtureDirectory(), "source-sdr-25.mp4"),
+      sourcePath,
     );
     const paths = await createPaths();
     const fingerprint = await computeSourceFingerprint(

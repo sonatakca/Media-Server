@@ -3,13 +3,13 @@ import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { createRenditionService } from "./renditionService";
+import {
+  adaptiveVersionIdFor,
+  createRenditionService,
+} from "./renditionService";
 import { RENDITION_PROFILE_VERSION } from "../renditions/policy";
 import type { PlaybackMediaResolver } from "../lib/playback-planner/playbackRoutes";
-import {
-  ADAPTIVE_POINTER_FILE,
-  ADAPTIVE_PROFILE_VERSION,
-} from "../renditions/adaptive/profile";
+import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
 
 const mediaId = "jellyfin-item";
 const renditionId = "11111111-1111-4111-8111-111111111111";
@@ -96,7 +96,7 @@ async function fixture({
             videoCodec: hdr ? "hevc" : "h264",
             audioCodec: "aac",
             container: "mp4",
-            frameRate: 24,
+            frameRate: 60,
             file: "480p.mp4",
             sourceAudioStreamIndex: 1,
             audioLanguage: "tur",
@@ -113,48 +113,48 @@ async function fixture({
     );
   }
   if (includeAdaptive) {
-    const adaptiveDirectory = `${ADAPTIVE_PROFILE_VERSION}-${fingerprint.slice(0, 16)}`;
-    const adaptiveRoot = path.join(
-      renditionRoot,
-      renditionId,
-      adaptiveDirectory,
-    );
+    // A package lives in the folder of the title it belongs to.
+    const adaptiveRoot = path.dirname(sourcePath);
     const videoBytes = Buffer.from("video-cmaf-bytes");
     const audioBytes = Buffer.from("audio-cmaf-bytes");
-    await mkdir(path.join(adaptiveRoot, "video", "720p"), {
-      recursive: true,
-    });
-    await mkdir(path.join(adaptiveRoot, "audio", "track-1"), {
-      recursive: true,
-    });
-    await writeFile(path.join(adaptiveRoot, "master.m3u8"), "#EXTM3U\n");
+    for (const directory of [
+      ["video"],
+      ["audio"],
+      ["subtitle"],
+      [".seyirlik"],
+      [".seyirlik", "video"],
+      [".seyirlik", "audio"],
+      [".seyirlik", "subtitle"],
+    ]) {
+      await mkdir(path.join(adaptiveRoot, ...directory), { recursive: true });
+    }
     await writeFile(
-      path.join(adaptiveRoot, "video", "720p", "playlist.m3u8"),
+      path.join(adaptiveRoot, ".seyirlik", "master.m3u8"),
       "#EXTM3U\n",
     );
     await writeFile(
-      path.join(adaptiveRoot, "audio", "track-1", "playlist.m3u8"),
+      path.join(adaptiveRoot, ".seyirlik", "video", "720p.m3u8"),
       "#EXTM3U\n",
     );
     await writeFile(
-      path.join(adaptiveRoot, "video", "720p", "media.m4s"),
-      videoBytes,
+      path.join(adaptiveRoot, ".seyirlik", "audio", "english.m3u8"),
+      "#EXTM3U\n",
     );
+    await writeFile(path.join(adaptiveRoot, "video", "720p.mp4"), videoBytes);
     await writeFile(
-      path.join(adaptiveRoot, "audio", "track-1", "media.m4s"),
+      path.join(adaptiveRoot, "audio", "english.m4a"),
       audioBytes,
     );
     await writeFile(
-      path.join(renditionRoot, renditionId, ADAPTIVE_POINTER_FILE),
-      JSON.stringify({
-        schemaVersion: 1,
-        versionDirectory: adaptiveDirectory,
-        sourceFingerprint: fingerprint,
-        profileVersion: ADAPTIVE_PROFILE_VERSION,
-      }),
+      path.join(adaptiveRoot, ".seyirlik", "subtitle", "english.m3u8"),
+      "#EXTM3U\n",
     );
     await writeFile(
-      path.join(adaptiveRoot, "metadata.json"),
+      path.join(adaptiveRoot, "subtitle", "english.vtt"),
+      "WEBVTT\n",
+    );
+    await writeFile(
+      path.join(adaptiveRoot, ".seyirlik", "build.json"),
       JSON.stringify({
         schemaVersion: 1,
         profileVersion: ADAPTIVE_PROFILE_VERSION,
@@ -174,7 +174,7 @@ async function fixture({
         },
         segmentTargetSeconds: 2,
         switchingSetDurationSeconds: 60,
-        masterPlaylistPath: "master.m3u8",
+        masterPlaylistPath: ".seyirlik/master.m3u8",
         videoRenditions: [
           {
             id: "720p",
@@ -185,12 +185,12 @@ async function fixture({
             codecString: "avc1.64001f",
             pixelFormat: "yuv420p",
             hdr: "sdr",
-            frameRate: 24,
+            frameRate: 60,
             averageBitrate: 3_000_000,
             peakBitrate: 3_500_000,
             durationSeconds: 60,
-            playlistPath: "video/720p/playlist.m3u8",
-            mediaPath: "video/720p/media.m4s",
+            playlistPath: ".seyirlik/video/720p.m3u8",
+            mediaPath: "video/720p.mp4",
             fileSizeBytes: videoBytes.length,
             keyframeCount: 30,
             keyframeIntervalSeconds: {
@@ -215,10 +215,25 @@ async function fixture({
             sampleRate: 48_000,
             averageBitrate: 192_000,
             durationSeconds: 60,
-            playlistPath: "audio/track-1/playlist.m3u8",
-            mediaPath: "audio/track-1/media.m4s",
+            playlistPath: ".seyirlik/audio/english.m3u8",
+            mediaPath: "audio/english.m4a",
             fileSizeBytes: audioBytes.length,
             streamCopied: true,
+          },
+        ],
+        subtitleRenditions: [
+          {
+            id: "subtitle-4",
+            sourceStreamIndex: 4,
+            language: "eng",
+            isDefault: true,
+            isForced: false,
+            isHearingImpaired: false,
+            codec: "webvtt",
+            durationSeconds: 60,
+            playlistPath: ".seyirlik/subtitle/english.m3u8",
+            subtitlePath: "subtitle/english.vtt",
+            fileSizeBytes: 7,
           },
         ],
         validation: {
@@ -476,18 +491,26 @@ describe("complete-file rendition routes", () => {
     expect(manifest.adaptive).toMatchObject({
       profileVersion: ADAPTIVE_PROFILE_VERSION,
       switching: "aligned-cmaf-hls",
-      qualities: [{ id: "720p", height: 720 }],
+      qualities: [{ id: "720p", height: 720, label: "720p60" }],
     });
-    const versionId = fingerprint.slice(0, 12);
+    // The URL segment identifies the package build, not the source, so a
+    // rebuilt package never reuses a URL whose assets are served `immutable`.
+    const versionId = new URL(
+      `https://media.test${manifest.adaptive!.playbackUrl}`,
+    ).pathname
+      .split("/adaptive/")[1]!
+      .split("/")[0]!;
+    expect(versionId).toMatch(/^[0-9a-f]{12}$/);
+    expect(versionId).not.toBe(fingerprint.slice(0, 12));
     const master = await service.resolveAdaptiveAsset(
       "opaque-capability",
       versionId,
-      "master.m3u8",
+      ".seyirlik/master.m3u8",
     );
     const media = await service.resolveAdaptiveAsset(
       "opaque-capability",
       versionId,
-      "video/720p/media.m4s",
+      "video/720p.mp4",
     );
     expect(master?.contentType).toBe("application/vnd.apple.mpegurl");
     expect(await readFile(media?.absolutePath ?? "", "utf8")).toBe(
@@ -497,8 +520,72 @@ describe("complete-file rendition routes", () => {
       service.resolveAdaptiveAsset(
         "opaque-capability",
         versionId,
-        "video/720p/../../metadata.json",
+        "video/../../etc/passwd",
       ),
     ).resolves.toBeNull();
+
+    /**
+     * A subtitle group the master advertises has to resolve. This is an
+     * allow-list, so a rendition kind the packager writes but it does not name
+     * is a 404 — and a 404 behind an advertised subtitle group does not
+     * degrade to "no subtitles", it fails the whole title in both engines.
+     */
+    const subtitlePlaylist = await service.resolveAdaptiveAsset(
+      "opaque-capability",
+      versionId,
+      ".seyirlik/subtitle/english.m3u8",
+    );
+    const subtitleFile = await service.resolveAdaptiveAsset(
+      "opaque-capability",
+      versionId,
+      "subtitle/english.vtt",
+    );
+    expect(subtitlePlaylist?.contentType).toBe("application/vnd.apple.mpegurl");
+    expect(await readFile(subtitleFile?.absolutePath ?? "", "utf8")).toBe(
+      "WEBVTT\n",
+    );
+  });
+});
+
+describe("adaptiveVersionIdFor", () => {
+  const base = {
+    profileVersion: ADAPTIVE_PROFILE_VERSION,
+    sourceFingerprint: "a".repeat(64),
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("produces a version segment the route will accept", () => {
+    expect(adaptiveVersionIdFor(base)).toMatch(/^[0-9a-f]{12}$/);
+  });
+
+  it("is stable for the same package", () => {
+    expect(adaptiveVersionIdFor(base)).toBe(adaptiveVersionIdFor({ ...base }));
+  });
+
+  /**
+   * Adaptive assets are served `immutable`, so a rebuilt package must never
+   * land on a URL a client may already have cached: the cached playlists and
+   * byte ranges would be read against different media, and playback would stop
+   * with nothing to explain it.
+   */
+  it("changes when the package is rebuilt from the same source", () => {
+    expect(
+      adaptiveVersionIdFor({
+        ...base,
+        createdAt: "2026-01-02T00:00:00.000Z",
+      }),
+    ).not.toBe(adaptiveVersionIdFor(base));
+  });
+
+  it("changes when the profile changes", () => {
+    expect(
+      adaptiveVersionIdFor({ ...base, profileVersion: "other-profile" }),
+    ).not.toBe(adaptiveVersionIdFor(base));
+  });
+
+  it("distinguishes two sources packaged at the same instant", () => {
+    expect(
+      adaptiveVersionIdFor({ ...base, sourceFingerprint: "b".repeat(64) }),
+    ).not.toBe(adaptiveVersionIdFor(base));
   });
 });

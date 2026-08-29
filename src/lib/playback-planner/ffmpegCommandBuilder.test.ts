@@ -1,9 +1,11 @@
 // @vitest-environment node
 import { describe, expect, it } from "vitest";
-import { buildFfmpegCommand } from "./ffmpegCommandBuilder";
+import {
+  buildFfmpegCommand,
+  PlaybackConversionUnavailableError,
+} from "./ffmpegCommandBuilder";
 import type { FfmpegRuntimeProfile } from "./ffmpegRuntime";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
-import { join } from "node:path";
 
 function media(overrides: Partial<MediaAnalysis> = {}): MediaAnalysis {
   return {
@@ -74,6 +76,85 @@ function getArgumentValue(args: string[], argumentName: string): string {
 
   return args[index + 1];
 }
+
+describe("buildFfmpegCommand HLS playlist type", () => {
+  function remuxPlan(): PlaybackPlan {
+    return {
+      ...plan(),
+      mode: "remux",
+      video: { inputCodec: "h264", action: "copy" },
+      container: { input: "mkv", output: "hls-ts", action: "hls" },
+    };
+  }
+
+  /**
+   * A session must become attachable after its first segment; VOD can withhold
+   * the playlist until FFmpeg has processed the whole film.
+   */
+  it("publishes a stream-copy playlist incrementally as EVENT", () => {
+    const command = buildFfmpegCommand({
+      plan: remuxPlan(),
+      media: media(),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("libx264"),
+    });
+
+    expect(getArgumentValue(command.args, "-hls_playlist_type")).toBe("event");
+  });
+
+  /**
+   * EVENT retains the full segment history; the default live window would drop
+   * the start of a title and break backward seeks.
+   */
+  it("does not cap the segment window on a stream copy", () => {
+    const command = buildFfmpegCommand({
+      plan: remuxPlan(),
+      media: media(),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("libx264"),
+    });
+
+    expect(command.args).not.toContain("-hls_list_size");
+  });
+
+  /**
+   * A live encode genuinely is a sliding window: it deletes segments as it
+   * goes, so it must not claim the whole asset is available.
+   */
+  it("keeps a re-encoding session on a sliding window", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media(),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("libx264"),
+    });
+
+    expect(command.args).not.toContain("-hls_playlist_type");
+    expect(getArgumentValue(command.args, "-hls_list_size")).toBe("5");
+  });
+});
+
+describe("buildFfmpegCommand compatibility audio", () => {
+  it("downmixes every AAC transcode to the shared stereo floor", () => {
+    const command = buildFfmpegCommand({
+      plan: {
+        ...plan(),
+        mode: "remux",
+        video: { inputCodec: "h264", action: "copy" },
+        audio: { inputCodec: "eac3", outputCodec: "aac", action: "transcode" },
+      },
+      media: media({
+        audioStreams: [{ index: 1, codecName: "eac3", channels: 6 }],
+      }),
+      outputDir: "/tmp/output",
+      runtimeProfile: runtime("libx264"),
+    });
+
+    expect(getArgumentValue(command.args, "-c:a")).toBe("aac");
+    expect(getArgumentValue(command.args, "-b:a")).toBe("192k");
+    expect(getArgumentValue(command.args, "-ac")).toBe("2");
+  });
+});
 
 describe("buildFfmpegCommand", () => {
   it("uses a selected hardware encoder", () => {
@@ -194,7 +275,7 @@ describe("buildFfmpegCommand", () => {
     });
 
     expect(getArgumentValue(command.args, "-hls_fmp4_init_filename")).toBe(
-      join(outputDir, "init.mp4"),
+      "init.mp4",
     );
   });
 
@@ -291,6 +372,6 @@ describe("buildFfmpegCommand", () => {
         outputDir: "/tmp/output",
         runtimeProfile: limitedRuntime,
       }),
-    ).toThrow("cannot tone-map HDR safely");
+    ).toThrow(PlaybackConversionUnavailableError);
   });
 });

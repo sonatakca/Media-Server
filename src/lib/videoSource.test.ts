@@ -10,6 +10,9 @@ const hlsMock = vi.hoisted(() => ({
     autoLevelCapping: number;
     currentLevel: number;
     loadLevel: number;
+    nextLevel: number;
+    audioTrack: number;
+    audioTracks: Array<{ name: string; url?: string }>;
     levels: Array<{ width: number; height: number; bitrate: number }>;
     trigger: (event: string, data?: unknown) => void;
   }>,
@@ -164,7 +167,7 @@ describe("videoSource", () => {
     expect(shouldUseNativeHls(video)).toBe(true);
   });
 
-  it("switches only future fragments and returns to ABR without flushing the current level", () => {
+  it("applies a manual rung ahead of the play head and returns to ABR without flushing", () => {
     setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
     const onAdaptiveLevelChanged = vi.fn();
     const attachment = attachSourceToVideo(
@@ -185,6 +188,12 @@ describe("videoSource", () => {
     attachment.adaptiveController?.setQualityHeight(720, 720);
     expect(hls.loadLevel).toBe(1);
     expect(hls.autoLevelCapping).toBe(1);
+    // `nextLevel` replaces what is buffered ahead, so a title whose whole
+    // timeline is already downloaded still changes rung within a second or two
+    // instead of waiting minutes for the old one to play out.
+    expect(hls.nextLevel).toBe(1);
+    // The fragment on screen is left alone: flushing everything is what puts a
+    // black frame in front of the viewer.
     expect(hls.currentLevel).toBe(-1);
 
     hls.trigger("levelSwitched", { level: 1 });
@@ -193,6 +202,118 @@ describe("videoSource", () => {
     attachment.adaptiveController?.setQualityHeight(null, null);
     expect(hls.loadLevel).toBe(-1);
     expect(hls.autoLevelCapping).toBe(-1);
+    expect(hls.nextLevel).toBe(-1);
     expect(hls.currentLevel).toBe(-1);
+  });
+
+  describe("hls.js audio rendition switching", () => {
+    function attachWithTracks(tracks: Array<{ name: string; url?: string }>) {
+      setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+      const attachment = attachSourceToVideo(
+        createVideo(""),
+        "http://example.test/play/master.m3u8",
+        "application/vnd.apple.mpegurl",
+      );
+      const hls = hlsMock.instances[0];
+      if (!hls) throw new Error("hls.js was not attached");
+      hls.audioTracks = tracks;
+      return { attachment, hls };
+    }
+
+    /**
+     * Audio renditions are addressed by their source stream index, which is
+     * what the package's directory names carry, so a regenerated package that
+     * drops a track cannot silently re-point a saved choice at another
+     * language.
+     */
+    it("selects a rendition by its source stream index", () => {
+      const { attachment, hls } = attachWithTracks([
+        {
+          name: "English",
+          url: "https://media.test/audio/track-1/playlist.m3u8",
+        },
+        {
+          name: "Turkish",
+          url: "https://media.test/audio/track-2/playlist.m3u8",
+        },
+        {
+          name: "French",
+          url: "https://media.test/audio/track-3/playlist.m3u8",
+        },
+      ]);
+
+      expect(attachment.adaptiveController?.setAudioStream(2)).toBe(true);
+      expect(hls.audioTrack).toBe(1);
+
+      expect(attachment.adaptiveController?.setAudioStream(3)).toBe(true);
+      expect(hls.audioTrack).toBe(2);
+
+      expect(attachment.adaptiveController?.setAudioStream(1)).toBe(true);
+      expect(hls.audioTrack).toBe(0);
+    });
+
+    it("reports a rendition the package does not carry rather than silently keeping the old one", () => {
+      const { attachment, hls } = attachWithTracks([
+        {
+          name: "English",
+          url: "https://media.test/audio/track-1/playlist.m3u8",
+        },
+      ]);
+      hls.audioTrack = 0;
+
+      expect(attachment.adaptiveController?.setAudioStream(7)).toBe(false);
+      expect(hls.audioTrack).toBe(0);
+    });
+
+    it("falls back to the rendition name when the track carries no url", () => {
+      const { attachment, hls } = attachWithTracks([
+        { name: "audio/track-1" },
+        { name: "audio/track-2" },
+      ]);
+
+      expect(attachment.adaptiveController?.setAudioStream(2)).toBe(true);
+      expect(hls.audioTrack).toBe(1);
+    });
+
+    it("has no controller at all on a native HLS engine", () => {
+      // Safari plays the package itself, so there is nothing to call. The
+      // player must recognise this and re-plan rather than treat the missing
+      // controller as a completed switch.
+      setUserAgent(
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15",
+      );
+      const attachment = attachSourceToVideo(
+        createVideo("maybe"),
+        "http://example.test/play/master.m3u8",
+        "application/vnd.apple.mpegurl",
+      );
+
+      expect(attachment.usingHlsJs).toBe(false);
+      expect(attachment.adaptiveController).toBeUndefined();
+    });
+  });
+
+  it("caps automatic switching without pinning a rung", () => {
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const attachment = attachSourceToVideo(
+      createVideo(""),
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [
+      { width: 854, height: 480, bitrate: 1_500_000 },
+      { width: 1280, height: 720, bitrate: 3_000_000 },
+      { width: 1920, height: 1080, bitrate: 6_000_000 },
+    ];
+    hls.trigger("manifestParsed", {});
+
+    // A ceiling is not a lock: ABR still chooses, it just may not go above 720p.
+    attachment.adaptiveController?.setQualityHeight(null, 720);
+
+    expect(hls.autoLevelCapping).toBe(1);
+    expect(hls.loadLevel).toBe(-1);
+    expect(hls.nextLevel).toBe(-1);
   });
 });

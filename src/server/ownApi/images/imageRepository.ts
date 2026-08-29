@@ -6,6 +6,7 @@ export interface StoredImage extends ImageRecord {
   contentType: string;
   storageKey: string;
   sizeBytes: number;
+  isLocked: boolean;
 }
 
 export interface ImageRepository {
@@ -80,6 +81,7 @@ interface RawImageRow {
   height: number | null;
   size_bytes: string;
   storage_key: string;
+  is_locked: boolean;
 }
 
 function toRecord(row: RawImageRow): ImageRecord {
@@ -100,6 +102,7 @@ function toStored(row: RawImageRow): StoredImage {
     contentType: row.content_type,
     storageKey: row.storage_key,
     sizeBytes: Number(row.size_bytes),
+    isLocked: row.is_locked,
   };
 }
 
@@ -109,7 +112,7 @@ const IMAGE_COLUMNS = `
   item_images.id, item_images.item_id, item_images.image_type,
   item_images.image_index, item_images.content_hash, item_images.content_type,
   item_images.width, item_images.height, item_images.size_bytes,
-  item_images.storage_key
+  item_images.storage_key, item_images.is_locked
 `;
 
 export function createImageRepository(pool: DatabasePool): ImageRepository {

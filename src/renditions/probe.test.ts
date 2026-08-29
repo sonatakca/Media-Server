@@ -57,6 +57,9 @@ describe("rendition ffprobe parsing", () => {
         language: "eng",
         title: "Atmos",
         isDefault: true,
+        isCommentary: false,
+        isVisualImpaired: false,
+        isOriginal: false,
       },
     ]);
     expect(result.subtitleTracks).toEqual([
@@ -67,6 +70,9 @@ describe("rendition ffprobe parsing", () => {
         title: undefined,
         isDefault: false,
         isForced: true,
+        isHearingImpaired: false,
+        isCommentary: false,
+        isTextBased: true,
       },
     ]);
     expect(result.chapters).toEqual([

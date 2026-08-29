@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildRenditionFfmpegArgs,
   buildRenditionFilterComplex,
+  getEncodingPolicy,
   parseEncoderPreference,
 } from "./encoding";
 
@@ -26,6 +27,17 @@ function outputs() {
 }
 
 describe("standalone rendition encoding commands", () => {
+  it.each([4320, 1440])(
+    "has policies for the %ip source-only quality class",
+    (qualityHeight) => {
+      expect(
+        getEncodingPolicy(qualityHeight, "h264").maxVideoBitrate,
+      ).toBeGreaterThan(0);
+      expect(
+        getEncodingPolicy(qualityHeight, "hevc").maxVideoBitrate,
+      ).toBeGreaterThan(0);
+    },
+  );
   it("builds a shell-free FFmpeg argument array for complete fast-start MP4s", () => {
     const args = buildRenditionFfmpegArgs({
       inputPath: "D:\\media\\Movies\\Çağrı & Film.mkv",
@@ -127,12 +139,34 @@ describe("standalone rendition encoding commands", () => {
     expect(args.join(" ")).toContain("format=nv12");
   });
 
+  it("emits Apple VideoToolbox HEVC Main 10 with p010 HDR frames", () => {
+    const args = buildRenditionFfmpegArgs({
+      inputPath: "/media/Movies/Film.mp4",
+      outputs: outputs(),
+      audioStreamIndex: 1,
+      encoder: "hevc_videotoolbox",
+      hdr: {
+        colorPrimaries: "bt2020",
+        colorTransfer: "smpte2084",
+        colorSpace: "bt2020nc",
+      },
+    });
+
+    expect(args).toContain("hevc_videotoolbox");
+    expect(args).toContain("main10");
+    expect(args).toContain("hvc1");
+    expect(args.join(" ")).toContain("format=p010le");
+    expect(args).not.toContain("-preset");
+    expect(args).not.toContain("-crf");
+  });
+
   it("validates the configured encoder preference", () => {
     expect(parseEncoderPreference(undefined)).toBe("auto");
     expect(parseEncoderPreference(" QSV ")).toBe("qsv");
+    expect(parseEncoderPreference(" VideoToolbox ")).toBe("videotoolbox");
     expect(parseEncoderPreference("software")).toBe("software");
     expect(() => parseEncoderPreference("nvenc")).toThrow(
-      /must be `auto`, `qsv` or `software`/,
+      /must be `auto`, `qsv`, `videotoolbox` or `software`/,
     );
   });
 });

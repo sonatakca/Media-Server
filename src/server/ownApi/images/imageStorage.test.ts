@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -72,6 +72,76 @@ describe("image storage", () => {
     const png = await storage.store(PNG, "image/png");
 
     expect(png.contentHash).not.toBe(jpeg.contentHash);
+  });
+
+  it("writes canonical cover, backdrop and logo files inside the title", async () => {
+    const mediaRoot = path.join(imageRoot, "media");
+    const titleRoot = "Movies/Dune (2021)";
+    await mkdir(path.join(mediaRoot, titleRoot), { recursive: true });
+    const storage = createImageStorage({ imageRoot, mediaRoot });
+    const photograph = await sharp({
+      create: {
+        width: 80,
+        height: 120,
+        channels: 3,
+        background: "#c08457",
+      },
+    })
+      .png()
+      .toBuffer();
+    const logo = await sharp({
+      create: {
+        width: 120,
+        height: 40,
+        channels: 4,
+        background: { r: 255, g: 255, b: 255, alpha: 0.5 },
+      },
+    })
+      .webp()
+      .toBuffer();
+
+    const cover = await storage.storeTitleArtwork(
+      photograph,
+      "image/png",
+      titleRoot,
+      "cover",
+    );
+    const backdrop = await storage.storeTitleArtwork(
+      photograph,
+      "image/png",
+      titleRoot,
+      "backdrop",
+    );
+    const storedLogo = await storage.storeTitleArtwork(
+      logo,
+      "image/webp",
+      titleRoot,
+      "logo",
+    );
+
+    expect(cover.storageKey).toBe("media:Movies/Dune (2021)/content/cover.jpg");
+    expect(backdrop.storageKey).toBe(
+      "media:Movies/Dune (2021)/content/backdrop.jpg",
+    );
+    expect(storedLogo.storageKey).toBe(
+      "media:Movies/Dune (2021)/content/logo.png",
+    );
+    await expect(
+      sharp(storage.resolve(cover.storageKey)).metadata(),
+    ).resolves.toMatchObject({ format: "jpeg" });
+    await expect(
+      sharp(storage.resolve(storedLogo.storageKey)).metadata(),
+    ).resolves.toMatchObject({ format: "png" });
+  });
+
+  it("refuses a title artwork path outside the media root", async () => {
+    const mediaRoot = path.join(imageRoot, "media");
+    await mkdir(mediaRoot, { recursive: true });
+    const storage = createImageStorage({ imageRoot, mediaRoot });
+
+    await expect(
+      storage.storeTitleArtwork(PNG, "image/png", "../outside", "cover"),
+    ).rejects.toThrow(/safe relative path/);
   });
 
   it("creates and reuses a small WebP variant for a full-size custom cover", async () => {

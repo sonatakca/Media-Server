@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdir, rename, stat, unlink, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  realpath,
+  rename,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import path from "node:path";
 import sharp from "sharp";
 import {
@@ -7,13 +14,15 @@ import {
   MAX_ARTWORK_WIDTH,
   clampArtworkWidth,
 } from "../../../lib/artworkSizes";
+import { isPathInsideRoot } from "../../pathSecurity";
 
 /**
- * Content-addressed artwork storage on the generated-storage volume.
+ * Artwork storage spanning title-owned originals and generated cache variants.
  *
- * Bytes are keyed by their own hash, so re-fetching unchanged artwork is a
- * no-op, two items sharing a poster share one file, and the hash doubles as the
- * HTTP cache validator. Nothing is ever written into the media root.
+ * New cover, backdrop and logo originals use stable names in the title's own
+ * content/ directory. Legacy originals and derived WebP variants stay
+ * content-addressed on the generated-storage volume; the content hash remains
+ * the HTTP cache validator for both layouts.
  */
 
 const MAX_IMAGE_BYTES = 12 * 1_024 * 1_024;
@@ -32,11 +41,25 @@ export interface StoredImageBytes {
   storageKey: string;
 }
 
+export type TitleArtworkType = "cover" | "backdrop" | "logo";
+
 export interface ImageStorage {
   /** Absolute path for a stored key, for delivery. */
   resolve(storageKey: string): string;
   store(bytes: Buffer, contentType: string): Promise<StoredImageBytes>;
   fetchAndStore(url: string): Promise<StoredImageBytes>;
+  /** Writes the canonical human-readable file inside a title's content/. */
+  storeTitleArtwork(
+    bytes: Buffer,
+    contentType: string,
+    titleRoot: string,
+    imageType: TitleArtworkType,
+  ): Promise<StoredImageBytes>;
+  fetchAndStoreTitleArtwork(
+    url: string,
+    titleRoot: string,
+    imageType: TitleArtworkType,
+  ): Promise<StoredImageBytes>;
   /** A persistent, card-sized WebP derived from immutable original bytes. */
   getVariant(
     image: Pick<StoredImageBytes, "contentHash" | "storageKey">,
@@ -76,14 +99,18 @@ export function detectImageType(bytes: Buffer): string | null {
 export interface CreateImageStorageOptions {
   /** Directory under the generated-storage volume. */
   imageRoot: string;
+  /** Root containing title folders. Required for title-owned artwork writes. */
+  mediaRoot?: string;
   fetchImpl?: typeof fetch;
 }
 
 export function createImageStorage({
   imageRoot,
+  mediaRoot,
   fetchImpl = fetch,
 }: CreateImageStorageOptions): ImageStorage {
   const root = path.resolve(imageRoot);
+  const resolvedMediaRoot = mediaRoot ? path.resolve(mediaRoot) : undefined;
   const variantRequests = new Map<string, Promise<StoredImageBytes>>();
 
   // A bounded set prevents an authenticated client from creating an unbounded
@@ -149,6 +176,120 @@ export function createImageStorage({
     };
   }
 
+  async function download(url: string): Promise<{
+    bytes: Buffer;
+    contentType: string;
+  }> {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "https:") {
+      throw new Error("Artwork must be fetched over HTTPS.");
+    }
+
+    const response = await fetchImpl(parsed, {
+      headers: { Accept: "image/jpeg,image/png,image/webp" },
+      redirect: "follow",
+    });
+    if (!response.ok) {
+      throw new Error("The artwork could not be downloaded.");
+    }
+
+    const declaredLength = Number(response.headers.get("content-length") ?? 0);
+    if (declaredLength > MAX_IMAGE_BYTES) {
+      throw new Error("The artwork is empty or too large.");
+    }
+
+    return {
+      bytes: Buffer.from(await response.arrayBuffer()),
+      contentType:
+        (response.headers.get("content-type") ?? "").split(";", 1)[0]?.trim() ??
+        "",
+    };
+  }
+
+  function validateRelativeTitleRoot(titleRoot: string): string[] {
+    if (
+      !titleRoot ||
+      titleRoot.includes("\0") ||
+      path.isAbsolute(titleRoot) ||
+      titleRoot.split(/[\\/]/).includes("..")
+    ) {
+      throw new Error("The title root must be a safe relative path.");
+    }
+    return titleRoot.split(/[\\/]/).filter(Boolean);
+  }
+
+  async function storeTitleArtwork(
+    bytes: Buffer,
+    declaredContentType: string,
+    titleRoot: string,
+    imageType: TitleArtworkType,
+  ): Promise<StoredImageBytes> {
+    if (!resolvedMediaRoot) {
+      throw new Error("Title artwork storage has no media root.");
+    }
+
+    // Validate the supplied bytes before sharp sees them. The canonical files
+    // deliberately use stable formats and names: JPEG for photographic art,
+    // PNG for a logo that may carry transparency.
+    const actualType = detectImageType(bytes);
+    if (
+      bytes.length === 0 ||
+      bytes.length > MAX_IMAGE_BYTES ||
+      !actualType ||
+      !ALLOWED_CONTENT_TYPES[actualType] ||
+      (ALLOWED_CONTENT_TYPES[declaredContentType] &&
+        declaredContentType !== actualType)
+    ) {
+      throw new Error("The artwork is not a supported image.");
+    }
+
+    const segments = validateRelativeTitleRoot(titleRoot);
+    const realMediaRoot = await realpath(resolvedMediaRoot);
+    const titleDirectory = path.resolve(realMediaRoot, ...segments);
+    const realTitleDirectory = await realpath(titleDirectory);
+    if (!isPathInsideRoot(realMediaRoot, realTitleDirectory)) {
+      throw new Error("The title root escapes the media root.");
+    }
+
+    const contentDirectory = path.join(realTitleDirectory, "content");
+    await mkdir(contentDirectory, { recursive: true });
+    const realContentDirectory = await realpath(contentDirectory);
+    if (!isPathInsideRoot(realMediaRoot, realContentDirectory)) {
+      throw new Error("The title content directory escapes the media root.");
+    }
+
+    const isLogo = imageType === "logo";
+    const canonicalBytes = isLogo
+      ? await sharp(bytes, { limitInputPixels: 40_000_000 })
+          .rotate()
+          .png({ compressionLevel: 9 })
+          .toBuffer()
+      : await sharp(bytes, { limitInputPixels: 40_000_000 })
+          .rotate()
+          .jpeg({ quality: 92, mozjpeg: true })
+          .toBuffer();
+    const extension = isLogo ? "png" : "jpg";
+    const contentType = isLogo ? "image/png" : "image/jpeg";
+    const fileName = `${imageType}.${extension}`;
+    const absolutePath = path.join(realContentDirectory, fileName);
+    const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
+    await writeFile(temporaryPath, canonicalBytes);
+    try {
+      await rename(temporaryPath, absolutePath);
+    } catch (error) {
+      await unlink(temporaryPath).catch(() => undefined);
+      throw error;
+    }
+
+    const relativePath = path.posix.join(...segments, "content", fileName);
+    return {
+      contentHash: createHash("sha256").update(canonicalBytes).digest("hex"),
+      contentType,
+      sizeBytes: canonicalBytes.length,
+      storageKey: `media:${relativePath}`,
+    };
+  }
+
   async function createVariant(
     image: Pick<StoredImageBytes, "contentHash" | "storageKey">,
     maxWidth: number,
@@ -172,7 +313,7 @@ export function createImageStorage({
     await mkdir(path.dirname(absolutePath), { recursive: true });
     const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      const result = await sharp(path.join(root, image.storageKey), {
+      const result = await sharp(resolveStorageKey(image.storageKey), {
         // File-byte limits alone do not stop a highly compressed image from
         // expanding to unreasonable dimensions during decoding.
         limitInputPixels: 40_000_000,
@@ -206,37 +347,41 @@ export function createImageStorage({
     }
   }
 
+  function resolveStorageKey(storageKey: string): string {
+    if (storageKey.startsWith("media:")) {
+      if (!resolvedMediaRoot) {
+        throw new Error("Title artwork storage has no media root.");
+      }
+      const relativePath = storageKey.slice("media:".length);
+      const segments = validateRelativeTitleRoot(relativePath);
+      const resolved = path.resolve(resolvedMediaRoot, ...segments);
+      if (!isPathInsideRoot(resolvedMediaRoot, resolved)) {
+        throw new Error("The image path escapes the media root.");
+      }
+      return resolved;
+    }
+    return path.join(root, storageKey);
+  }
+
   return {
-    resolve: (storageKey) => path.join(root, storageKey),
+    resolve: resolveStorageKey,
 
     store,
 
     fetchAndStore: async (url) => {
-      const parsed = new URL(url);
-      if (parsed.protocol !== "https:") {
-        throw new Error("Artwork must be fetched over HTTPS.");
-      }
+      const downloaded = await download(url);
+      return store(downloaded.bytes, downloaded.contentType);
+    },
 
-      const response = await fetchImpl(parsed, {
-        headers: { Accept: "image/jpeg,image/png,image/webp" },
-        redirect: "follow",
-      });
-      if (!response.ok) {
-        throw new Error("The artwork could not be downloaded.");
-      }
+    storeTitleArtwork,
 
-      const declaredLength = Number(
-        response.headers.get("content-length") ?? 0,
-      );
-      if (declaredLength > MAX_IMAGE_BYTES) {
-        throw new Error("The artwork is empty or too large.");
-      }
-
-      const bytes = Buffer.from(await response.arrayBuffer());
-      return store(
-        bytes,
-        (response.headers.get("content-type") ?? "").split(";", 1)[0]?.trim() ??
-          "",
+    fetchAndStoreTitleArtwork: async (url, titleRoot, imageType) => {
+      const downloaded = await download(url);
+      return storeTitleArtwork(
+        downloaded.bytes,
+        downloaded.contentType,
+        titleRoot,
+        imageType,
       );
     },
 
@@ -254,7 +399,7 @@ export function createImageStorage({
     },
 
     remove: async (storageKey) => {
-      await unlink(path.join(root, storageKey)).catch(() => undefined);
+      await unlink(resolveStorageKey(storageKey)).catch(() => undefined);
     },
   };
 }
