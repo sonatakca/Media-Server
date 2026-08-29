@@ -20,6 +20,7 @@ import { useEffect } from "react";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 import { useLanguage } from "../i18n/LanguageContext";
+import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 
 export function DevToolsPage() {
   const { t } = useLanguage();
@@ -124,7 +125,7 @@ export function DevToolsPage() {
 
   return (
     <div className="relative mx-auto max-w-5xl space-y-6">
-      <RainbowAnimation
+      {/* <RainbowAnimation
         startDelay={0}
         fadeInDuration={2.5}
         holdDuration={5}
@@ -147,9 +148,10 @@ export function DevToolsPage() {
         glowHoldDuration={5}
         glowFadeOutDuration={2.2}
         glowMaxOpacity={0.72}
-      />
+      /> */}
+      <ConfettiAnimation startDelay={0} pieceCount={250} />
 
-      <SparkleAnimation startDelay={3} sparkleDuration={6} />
+      <SparkleAnimation startDelay={1} sparkleDuration={1.5} />
 
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-[var(--accent)]/20 blur-3xl" />
