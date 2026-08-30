@@ -21,6 +21,7 @@ async function fixture({
   registryStatus = "ready",
   hdr = false,
   includeAdaptive = false,
+  adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION,
 } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "seyirlik-routes-"));
   const mediaRoot = path.join(root, "media");
@@ -53,7 +54,7 @@ async function fixture({
           ...(includeAdaptive
             ? {
                 adaptiveStatus: "ready",
-                adaptiveProfileVersion: ADAPTIVE_PROFILE_VERSION,
+                adaptiveProfileVersion,
               }
             : {}),
         },
@@ -472,6 +473,38 @@ describe("complete-file rendition routes", () => {
       await service.resolveFile("unknown-token", "480-abc123def456.mp4"),
     ).toBeNull();
     expect(root).toBeTruthy();
+  });
+
+  /**
+   * What moving `ADAPTIVE_PROFILE_VERSION` actually costs.
+   *
+   * A package whose recorded profile does not match is not merely flagged for
+   * rebuilding — it is withdrawn from delivery entirely, and the title loses
+   * its quality ladder until it has been re-encoded. That makes the constant a
+   * statement about *readability*, never a convenient way to mark packages as
+   * out of date: a ladder that gains a rung leaves every existing package
+   * perfectly playable and must not move it. Nothing caught this the first
+   * time, so it is written down here.
+   */
+  it("withdraws an adaptive package whose profile version does not match", async () => {
+    const { service, sourcePath } = await fixture({
+      includeAdaptive: true,
+      adaptiveProfileVersion: "cmaf-hls-aligned-v3-superseded",
+    });
+    const sourceStats = await stat(sourcePath);
+
+    const manifest = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      undefined,
+      { h264: true, hevc: false },
+    );
+
+    expect(manifest.adaptive).toBeUndefined();
   });
 
   it("offers and resolves only registered adaptive package assets", async () => {

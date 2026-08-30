@@ -9,18 +9,23 @@ import {
   Pause,
   Play,
   RefreshCcw,
-  Sparkles,
+  Search,
   X,
   XCircle,
 } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { setPageTitle } from "../../lib/pageTitle";
 import { notify } from "../../lib/notifications/notificationStore";
-import { getVideoItemsForLibrary, getUserViews } from "../../lib/mediaApi";
+import {
+  getPrimaryImageUrl,
+  getVideoItemsForLibrary,
+  getUserViews,
+} from "../../lib/mediaApi";
 import type { MediaItem, MediaLibrary } from "../../lib/types";
 import { getDisplayTitle } from "../../lib/format";
 import {
   cancelProcessingJob,
+  deleteProcessingJob,
   pauseProcessingJob,
   resumeProcessingJob,
   enqueueProcessing,
@@ -35,23 +40,21 @@ import {
   type ProcessingPreview,
 } from "../../lib/processingApi";
 import {
-  audioDecisionKey,
-  audioFormatLabel,
   canCancel,
   canPause,
   canResume,
   canRetry,
   formatBytes,
   formatDuration,
+  formatFinishedAt,
   formatSpeed,
   lastSequence,
   mergeEvents,
   mergeJobFrame,
   PROCESSING_STAGE_ORDER,
   progressPercent,
-  localisedLanguageName,
+  processingDurationSeconds,
   stageStateFor,
-  subtitleDecisionKey,
   summariseLanguages,
 } from "./processingModel";
 import { formatTemplate } from "./libraryMaintenanceModel";
@@ -59,6 +62,28 @@ import { formatTemplate } from "./libraryMaintenanceModel";
 const CARD = "rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5";
 const LABEL =
   "text-[11px] font-black uppercase tracking-[0.14em] text-white/40";
+
+type PreviewLoadState =
+  | { status: "waiting" | "loading" }
+  | { status: "ready"; value: ProcessingPreview }
+  | { status: "error"; message: string };
+
+// React's development Strict Mode starts effects twice. Sharing only in-flight
+// probes keeps that safety check from analysing the same media file twice,
+// while still allowing a fresh preview after the probe settles.
+const previewRequests = new Map<string, Promise<ProcessingPreview>>();
+
+function loadProcessingPreview(itemId: string): Promise<ProcessingPreview> {
+  const current = previewRequests.get(itemId);
+  if (current) return current;
+  const request = previewProcessing(itemId);
+  previewRequests.set(itemId, request);
+  const clear = () => {
+    if (previewRequests.get(itemId) === request) previewRequests.delete(itemId);
+  };
+  void request.then(clear, clear);
+  return request;
+}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
@@ -93,15 +118,79 @@ function Chip({
   );
 }
 
+/**
+ * The ladder as a list of rungs, each saying whether it already exists.
+ *
+ * This replaces a single joined line that listed the whole ladder in one
+ * colour: it could say "already packaged" beside a ladder containing a rung
+ * the title did not have, and nothing in the text distinguished the two. A
+ * rung is the unit the decision is actually made in, so it is the unit shown.
+ *
+ * Green is what will be reused; amber is what this run would encode. Amber
+ * rather than red on purpose — a rung that does not exist yet is planned work,
+ * not a fault, and the page keeps red for things that actually went wrong.
+ */
+function LadderRungs({
+  planned,
+  present,
+  keptLabel,
+  buildLabel,
+}: {
+  planned: readonly number[];
+  present: readonly number[];
+  keptLabel: string;
+  buildLabel: string;
+}) {
+  const owned = new Set(present);
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-wrap gap-1.5">
+        {planned.map((height) => {
+          const kept = owned.has(height);
+          return (
+            <span
+              key={height}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1 text-xs font-bold tabular-nums ${
+                kept
+                  ? "border-emerald-400/25 bg-emerald-400/15 text-emerald-200"
+                  : "border-amber-400/30 bg-amber-400/15 text-amber-100"
+              }`}
+            >
+              <span aria-hidden="true" className="text-[10px] leading-none">
+                {kept ? "\u2713" : "+"}
+              </span>
+              {height}p
+            </span>
+          );
+        })}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-[11px] text-white/45">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400/70" />
+          {keptLabel}
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-amber-400/70" />
+          {buildLabel}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function MediaProcessingPage() {
-  const { t } = useLanguage();
+  const { language, t } = useLanguage();
+  const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
   const [overview, setOverview] = useState<ProcessingOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<MediaItem[]>([]);
-  const [selectedItemId, setSelectedItemId] = useState("");
-  const [preview, setPreview] = useState<ProcessingPreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [starting, setStarting] = useState(false);
+  const [titlesLoading, setTitlesLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [previews, setPreviews] = useState<Record<string, PreviewLoadState>>(
+    {},
+  );
+  const [startingItemId, setStartingItemId] = useState<string | null>(null);
+  const [removingJobIds, setRemovingJobIds] = useState<Set<string>>(new Set());
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [openJob, setOpenJob] = useState<ProcessingJob | null>(null);
   const [events, setEvents] = useState<ProcessingJobEvent[]>([]);
@@ -140,13 +229,59 @@ export function MediaProcessingPage() {
         const found = await getVideoItemsForLibrary(movies.Id);
         if (!cancelled) setItems(found);
       } catch {
-        // The picker is a convenience; the page still works without it.
+        // History and running jobs still work when the catalogue is offline.
+      } finally {
+        if (!cancelled) setTitlesLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
   }, []);
+
+  /**
+   * Previewing can probe a large media file, so titles are deliberately
+   * analysed one at a time. The catalogue cards render before this loop starts
+   * yielding results, keeping initial page load independent of ffprobe speed.
+   */
+  useEffect(() => {
+    if (items.length === 0) return undefined;
+    let cancelled = false;
+    setPreviews(
+      Object.fromEntries(items.map((item) => [item.Id, { status: "waiting" }])),
+    );
+
+    void (async () => {
+      for (const item of items) {
+        if (cancelled) return;
+        setPreviews((current) => ({
+          ...current,
+          [item.Id]: { status: "loading" },
+        }));
+        try {
+          const value = await loadProcessingPreview(item.Id);
+          if (cancelled) return;
+          setPreviews((current) => ({
+            ...current,
+            [item.Id]: { status: "ready", value },
+          }));
+        } catch (error) {
+          if (cancelled) return;
+          setPreviews((current) => ({
+            ...current,
+            [item.Id]: {
+              status: "error",
+              message: error instanceof Error ? error.message : "",
+            },
+          }));
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items]);
 
   /**
    * Live progress for the open job.
@@ -222,43 +357,82 @@ export function MediaProcessingPage() {
     };
   }, [openJobId, refreshOverview]);
 
-  const runPreview = useCallback(async () => {
-    if (!selectedItemId) return;
-    setPreviewing(true);
-    try {
-      setPreview(await previewProcessing(selectedItemId));
-    } catch (error) {
-      notify({
-        tone: "error",
-        title:
-          error instanceof Error
-            ? error.message
-            : t("common.somethingWentWrong"),
-      });
-    } finally {
-      setPreviewing(false);
-    }
-  }, [selectedItemId, t]);
+  const runPreview = useCallback(
+    async (itemId: string) => {
+      setPreviews((current) => ({
+        ...current,
+        [itemId]: { status: "loading" },
+      }));
+      try {
+        const value = await loadProcessingPreview(itemId);
+        setPreviews((current) => ({
+          ...current,
+          [itemId]: { status: "ready", value },
+        }));
+      } catch (error) {
+        setPreviews((current) => ({
+          ...current,
+          [itemId]: {
+            status: "error",
+            message:
+              error instanceof Error
+                ? error.message
+                : t("processing.previewUnavailable"),
+          },
+        }));
+      }
+    },
+    [t],
+  );
 
-  const startJob = useCallback(async () => {
-    if (!selectedItemId) return;
-    setStarting(true);
-    try {
-      const { job } = await enqueueProcessing(selectedItemId);
-      setOpenJobId(job.id);
-      await refreshOverview();
-    } catch (error) {
-      notify({
-        tone: "error",
-        title:
-          error instanceof Error
-            ? error.message
-            : t("common.somethingWentWrong"),
-      });
-    } finally {
-      setStarting(false);
-    }
-  }, [selectedItemId, refreshOverview, t]);
+  const startJob = useCallback(
+    async (itemId: string) => {
+      setStartingItemId(itemId);
+      try {
+        const { job } = await enqueueProcessing(itemId);
+        setOpenJobId(job.id);
+        await refreshOverview();
+        await runPreview(itemId);
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+      } finally {
+        setStartingItemId(null);
+      }
+    },
+    [refreshOverview, runPreview, t],
+  );
+
+  const removeJob = useCallback(
+    async (jobId: string) => {
+      setRemovingJobIds((current) => new Set(current).add(jobId));
+      try {
+        await deleteProcessingJob(jobId);
+        if (openJobId === jobId) setOpenJobId(null);
+        await refreshOverview();
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+      } finally {
+        setRemovingJobIds((current) => {
+          const next = new Set(current);
+          next.delete(jobId);
+          return next;
+        });
+      }
+    },
+    [openJobId, refreshOverview, t],
+  );
 
   const itemTitleFor = useCallback(
     (itemId: string) =>
@@ -269,9 +443,33 @@ export function MediaProcessingPage() {
   );
 
   const jobs = overview?.jobs ?? [];
+  const activeItemIds = useMemo(
+    () =>
+      new Set(
+        jobs
+          .filter((job) =>
+            ["pending", "queued", "running", "paused"].includes(job.state),
+          )
+          .map((job) => job.itemId),
+      ),
+    [jobs],
+  );
   const counts = overview?.counts;
   const hardware = overview?.hardware;
   const detail = openJob;
+  const filteredItems = useMemo(() => {
+    const query = searchTerm.trim().toLocaleLowerCase(language);
+    return [...items]
+      .sort((left, right) =>
+        getDisplayTitle(left).localeCompare(getDisplayTitle(right), language),
+      )
+      .filter((item) =>
+        query
+          ? getDisplayTitle(item).toLocaleLowerCase(language).includes(query)
+          : true,
+      );
+  }, [items, language, searchTerm]);
+  const dateLocale = language === "tr" ? "tr-TR" : "en-US";
   const languages = useMemo(
     () =>
       summariseLanguages(
@@ -303,6 +501,46 @@ export function MediaProcessingPage() {
             </p>
           </div>
         </header>
+
+        <div
+          role="tablist"
+          aria-label={t("processing.title")}
+          className="grid w-full grid-cols-2 rounded-2xl border border-white/10 bg-white/[0.03] p-1 sm:w-fit sm:min-w-80"
+        >
+          {(["titles", "processes"] as const).map((tab) => {
+            const selected = activeTab === tab;
+            return (
+              <button
+                key={tab}
+                type="button"
+                role="tab"
+                id={`processing-tab-${tab}`}
+                aria-selected={selected}
+                aria-controls={`processing-panel-${tab}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => setActiveTab(tab)}
+                className={`inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                  selected
+                    ? "bg-white/[0.1] text-white shadow-sm"
+                    : "text-white/45 hover:bg-white/[0.05] hover:text-white/75"
+                }`}
+              >
+                {t(`processing.tabs.${tab}`)}
+                {tab === "processes" && jobs.length > 0 ? (
+                  <span
+                    className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                      selected
+                        ? "bg-[var(--accent)] text-black"
+                        : "bg-white/10 text-white/55"
+                    }`}
+                  >
+                    {jobs.length}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
 
         {/* ------------------------------------------------ health strip */}
         <section
@@ -358,296 +596,440 @@ export function MediaProcessingPage() {
           </div>
         </section>
 
-        {/* ------------------------------------------------- start a job */}
-        <section className={`${CARD} flex flex-col gap-3`}>
-          <span className={LABEL}>{t("processing.chooseTitle")}</span>
-          <div className="flex flex-wrap items-center gap-2">
-            <select
-              value={selectedItemId}
-              onChange={(event) => {
-                setSelectedItemId(event.target.value);
-                setPreview(null);
-              }}
-              aria-label={t("processing.chooseTitle")}
-              className="min-w-[16rem] flex-1 rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-            >
-              <option value="">—</option>
-              {items.map((item) => (
-                <option key={item.Id} value={item.Id}>
-                  {getDisplayTitle(item)}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={() => void runPreview()}
-              disabled={!selectedItemId || previewing}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.06] px-3 py-2 text-sm font-semibold transition hover:bg-white/[0.1] disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-            >
-              {previewing ? (
-                <Loader2
-                  size={15}
-                  className="animate-spin motion-reduce:animate-none"
+        {/* --------------------------------------- searchable title catalogue */}
+        {activeTab === "titles" ? (
+          <section
+            id="processing-panel-titles"
+            role="tabpanel"
+            aria-labelledby="processing-tab-titles"
+            className="flex flex-col gap-3"
+          >
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <span className={LABEL}>{t("processing.chooseTitle")}</span>
+              <label className="relative block w-full sm:max-w-sm">
+                <Search
+                  size={16}
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-white/35"
                   aria-hidden="true"
                 />
-              ) : (
-                <Sparkles size={15} aria-hidden="true" />
-              )}
-              {t("processing.preview")}
-            </button>
-            <button
-              type="button"
-              onClick={() => void startJob()}
-              disabled={!selectedItemId || starting}
-              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 py-2 text-sm font-bold text-black transition hover:brightness-110 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-            >
-              {starting ? (
-                <Loader2
-                  size={15}
-                  className="animate-spin motion-reduce:animate-none"
-                  aria-hidden="true"
+                <input
+                  type="search"
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder={t("processing.search")}
+                  aria-label={t("processing.search")}
+                  className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]"
                 />
-              ) : (
-                <Play size={15} aria-hidden="true" />
-              )}
-              {t("processing.start")}
-            </button>
-          </div>
+              </label>
+            </div>
 
-          {preview ? (
-            <div className="mt-1 flex flex-col gap-3 rounded-xl border border-white/10 bg-black/30 p-4">
-              <p className="text-sm font-semibold text-white/90">
-                {preview.decision.summary}
-              </p>
-              <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                <Stat
-                  label={t("processing.source")}
-                  value={`${preview.decision.source.width}×${preview.decision.source.height}${preview.decision.source.isHdr ? " HDR" : ""}`}
-                />
-                <Stat
-                  label={t("processing.ladder")}
-                  value={preview.decision.ladder
-                    .map((rung) => `${rung.qualityHeight}p`)
-                    .join(" · ")}
-                />
-                <Stat
-                  label={t("processing.encoder")}
-                  value={preview.decision.videoEncoder}
-                />
-                <Stat
-                  label={t("processing.estimate")}
-                  value={formatBytes(preview.decision.estimate.outputBytes)}
-                />
+            {titlesLoading ? (
+              <div
+                className="flex flex-col gap-3"
+                aria-label={t("processing.loadingTitles")}
+              >
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className={`${CARD} flex gap-4`}>
+                    <div className="aspect-[2/3] w-24 shrink-0 animate-pulse rounded-xl bg-white/[0.07] sm:w-28" />
+                    <div className="flex flex-1 flex-col gap-3 py-2">
+                      <div className="h-5 w-44 animate-pulse rounded bg-white/[0.07]" />
+                      <div className="h-16 animate-pulse rounded-xl bg-white/[0.05]" />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <ul className="flex flex-col gap-1 text-xs text-white/60">
-                {preview.decision.streams.audio.map((entry) => (
-                  <li key={`a-${entry.streamIndex}`}>
-                    {entry.keep ? "✓ " : "· "}
-                    {formatTemplate(t(audioDecisionKey(entry) as never), {
-                      language: localisedLanguageName(entry, (key) =>
-                        t(key as never),
-                      ),
-                      format: audioFormatLabel(entry),
-                    })}
-                  </li>
-                ))}
-                {preview.decision.streams.subtitles.map((entry) => (
-                  <li key={`s-${entry.streamIndex}`}>
-                    {entry.keep ? "✓ " : "· "}
-                    {formatTemplate(t(subtitleDecisionKey(entry) as never), {
-                      language: localisedLanguageName(entry, (key) =>
-                        t(key as never),
-                      ),
-                    })}
-                    {entry.keep && entry.requiresOcr
-                      ? ` (${t("processing.subtitle.needsOcr")})`
-                      : ""}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </section>
-
-        {/* ------------------------------------------------------- queue */}
-        <section className="flex flex-col gap-3">
-          <span className={LABEL}>{t("processing.queue")}</span>
-          {loading ? (
-            <div className={`${CARD} flex flex-col gap-3`}>
-              {[0, 1].map((row) => (
-                <div
-                  key={row}
-                  className="h-14 animate-pulse rounded-xl bg-white/[0.06]"
-                />
-              ))}
-            </div>
-          ) : jobs.length === 0 ? (
-            <div className={`${CARD} text-center`}>
-              <p className="text-sm font-semibold text-white/70">
-                {t("processing.empty")}
-              </p>
-              <p className="mt-1 text-xs text-white/40">
-                {t("processing.emptyHint")}
-              </p>
-            </div>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {jobs.map((job) => {
-                const percent = progressPercent(job);
-                return (
-                  <li key={job.id} className={`${CARD} flex flex-col gap-3`}>
-                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                      <span className="text-sm font-bold">
-                        {itemTitleFor(job.itemId)}
-                      </span>
-                      <Chip
-                        tone={
-                          job.state === "succeeded"
-                            ? "ok"
-                            : job.state === "failed"
-                              ? "bad"
-                              : job.state === "cancelled"
-                                ? "muted"
-                                : "warn"
-                        }
-                      >
-                        {t(`processing.state.${job.state}` as never)}
-                      </Chip>
-                      {job.pausedReason ? (
-                        <Chip tone="muted">
-                          {t(
-                            job.pausedReason === "storage-unavailable"
-                              ? "processing.pausedByStorage"
-                              : "processing.pausedByOperator",
-                          )}
-                        </Chip>
-                      ) : null}
-                      {job.warnings.length > 0 ? (
-                        <Chip tone="warn">
-                          <AlertTriangle size={11} aria-hidden="true" />
-                          {job.warnings.length}
-                        </Chip>
-                      ) : null}
-                      <span className="text-xs text-white/40">
-                        {t(`processing.stage.${job.stage}` as never)}
-                      </span>
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => setOpenJobId(job.id)}
-                          className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                        >
-                          {t("processing.inspect")}
-                        </button>
-                        {canPause(job) ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await pauseProcessingJob(job.id).catch(
-                                () => undefined,
-                              );
-                              await refreshOverview();
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                          >
-                            <Pause size={12} aria-hidden="true" />
-                            {t("processing.pause")}
-                          </button>
-                        ) : null}
-                        {canResume(job) ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await resumeProcessingJob(job.id).catch(
-                                () => undefined,
-                              );
-                              await refreshOverview();
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                          >
-                            <Play size={12} aria-hidden="true" />
-                            {t("processing.resume")}
-                          </button>
-                        ) : null}
-                        {canCancel(job) ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await cancelProcessingJob(job.id).catch(
-                                () => undefined,
-                              );
-                              await refreshOverview();
-                            }}
-                            className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                          >
-                            {t("processing.cancel")}
-                          </button>
-                        ) : null}
-                        {canRetry(job) ? (
-                          <button
-                            type="button"
-                            onClick={async () => {
-                              await retryProcessingJob(job.id).catch(
-                                () => undefined,
-                              );
-                              await refreshOverview();
-                            }}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                          >
-                            <RefreshCcw size={12} aria-hidden="true" />
-                            {t("processing.retry")}
-                          </button>
+            ) : filteredItems.length === 0 ? (
+              <div className={`${CARD} text-center text-sm text-white/55`}>
+                {searchTerm.trim()
+                  ? t("processing.noSearchResults")
+                  : t("processing.emptyTitles")}
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-3">
+                {filteredItems.map((item) => {
+                  const title = getDisplayTitle(item);
+                  const state = previews[item.Id] ?? { status: "waiting" };
+                  const itemPreview =
+                    state.status === "ready" ? state.value : null;
+                  const imageUrl = item.ImageTags?.Primary
+                    ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 360)
+                    : "";
+                  const isStarting = startingItemId === item.Id;
+                  const hasActiveJob = loading
+                    ? Boolean(itemPreview?.activeJobId)
+                    : activeItemIds.has(item.Id);
+                  return (
+                    <li
+                      key={item.Id}
+                      className={`${CARD} grid grid-cols-[6rem,minmax(0,1fr)] gap-4 sm:grid-cols-[7rem,minmax(0,1fr)] sm:gap-5`}
+                    >
+                      <div className="media-card-cinematic relative aspect-[2/3] w-24 self-start overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] sm:w-28">
+                        {imageUrl ? (
+                          <img
+                            src={imageUrl}
+                            alt=""
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] p-3 text-center text-xs font-bold text-white/80">
+                            {title}
+                          </div>
+                        )}
+                        {item.ProductionYear ? (
+                          <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white/75 backdrop-blur">
+                            {item.ProductionYear}
+                          </span>
                         ) : null}
                       </div>
-                    </div>
 
-                    <div
-                      className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
-                      role="progressbar"
-                      aria-valuenow={percent}
-                      aria-valuemin={0}
-                      aria-valuemax={100}
-                      aria-label={itemTitleFor(job.itemId)}
-                    >
+                      <div className="flex min-w-0 flex-col gap-3">
+                        <div className="flex flex-wrap items-start gap-2">
+                          <div className="min-w-0 flex-1">
+                            <h2 className="truncate text-base font-black text-white sm:text-lg">
+                              {title}
+                            </h2>
+                            {itemPreview ? (
+                              <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-white/45">
+                                {itemPreview.decision.summary}
+                              </p>
+                            ) : null}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void startJob(item.Id)}
+                            disabled={
+                              isStarting ||
+                              state.status !== "ready" ||
+                              hasActiveJob
+                            }
+                            className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 py-2 text-xs font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                          >
+                            {isStarting ? (
+                              <Loader2
+                                size={14}
+                                className="animate-spin motion-reduce:animate-none"
+                                aria-hidden="true"
+                              />
+                            ) : (
+                              <Play size={14} aria-hidden="true" />
+                            )}
+                            {hasActiveJob
+                              ? t("processing.activeJob")
+                              : t("processing.start")}
+                          </button>
+                        </div>
+
+                        {state.status === "waiting" ||
+                        state.status === "loading" ? (
+                          <div className="flex min-h-24 items-center justify-center rounded-xl border border-white/[0.07] bg-black/25 text-xs text-white/40">
+                            {state.status === "loading" ? (
+                              <span className="inline-flex items-center gap-2">
+                                <Loader2
+                                  size={14}
+                                  className="animate-spin motion-reduce:animate-none"
+                                  aria-hidden="true"
+                                />
+                                {t("processing.loadingPreview")}
+                              </span>
+                            ) : (
+                              t("processing.loadingPreview")
+                            )}
+                          </div>
+                        ) : state.status === "error" ? (
+                          <div className="flex min-h-24 flex-col items-start justify-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3">
+                            <p className="line-clamp-2 text-xs text-rose-200/80">
+                              {state.message ||
+                                t("processing.previewUnavailable")}
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void runPreview(item.Id)}
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-bold text-white/70 transition hover:bg-white/[0.08]"
+                            >
+                              <RefreshCcw size={12} aria-hidden="true" />
+                              {t("processing.tryAgain")}
+                            </button>
+                          </div>
+                        ) : itemPreview ? (
+                          <div className="flex flex-col gap-3 rounded-xl border border-white/[0.07] bg-black/25 p-3 sm:p-4">
+                            {itemPreview.existing?.present &&
+                            !itemPreview.existing.current ? (
+                              <p className="text-xs font-semibold text-white/55">
+                                {formatTemplate(t("processing.rebuildReason"), {
+                                  reason: itemPreview.existing.sourceMatches
+                                    ? t("processing.rebuildProfile")
+                                    : t("processing.rebuildSource"),
+                                })}
+                              </p>
+                            ) : null}
+                            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                              <Stat
+                                label={t("processing.source")}
+                                value={`${itemPreview.decision.source.width}×${itemPreview.decision.source.height}${itemPreview.decision.source.isHdr ? " HDR" : ""}`}
+                              />
+                              <Stat
+                                label={t("processing.encoder")}
+                                value={itemPreview.decision.videoEncoder}
+                              />
+                              <Stat
+                                label={t("processing.estimate")}
+                                value={formatBytes(
+                                  itemPreview.decision.estimate.outputBytes,
+                                )}
+                              />
+                            </div>
+                            <div className="flex flex-col gap-2">
+                              <span className={LABEL}>
+                                {t("processing.ladder")}
+                              </span>
+                              <LadderRungs
+                                planned={itemPreview.decision.ladder.map(
+                                  (rung) => rung.qualityHeight,
+                                )}
+                                present={
+                                  itemPreview.existing?.present
+                                    ? itemPreview.existing.rungs
+                                    : []
+                                }
+                                keptLabel={t("processing.rungKept")}
+                                buildLabel={t("processing.rungBuild")}
+                              />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        ) : null}
+
+        {/* ------------------------------------------------------- queue */}
+        {activeTab === "processes" ? (
+          <section
+            id="processing-panel-processes"
+            role="tabpanel"
+            aria-labelledby="processing-tab-processes"
+            className="flex flex-col gap-3"
+          >
+            <span className={LABEL}>{t("processing.queue")}</span>
+            {loading ? (
+              <div className={`${CARD} flex flex-col gap-3`}>
+                {[0, 1].map((row) => (
+                  <div
+                    key={row}
+                    className="h-14 animate-pulse rounded-xl bg-white/[0.06]"
+                  />
+                ))}
+              </div>
+            ) : jobs.length === 0 ? (
+              <div className={`${CARD} text-center`}>
+                <p className="text-sm font-semibold text-white/70">
+                  {t("processing.empty")}
+                </p>
+                <p className="mt-1 text-xs text-white/40">
+                  {t("processing.emptyHint")}
+                </p>
+              </div>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {jobs.map((job) => {
+                  const percent = progressPercent(job);
+                  const isFinished = [
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                  ].includes(job.state);
+                  return (
+                    <li key={job.id} className={`${CARD} flex flex-col gap-3`}>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="text-sm font-bold">
+                          {itemTitleFor(job.itemId)}
+                        </span>
+                        <Chip
+                          tone={
+                            job.state === "succeeded"
+                              ? "ok"
+                              : job.state === "failed"
+                                ? "bad"
+                                : job.state === "cancelled"
+                                  ? "muted"
+                                  : "warn"
+                          }
+                        >
+                          {t(`processing.state.${job.state}` as never)}
+                        </Chip>
+                        {job.pausedReason ? (
+                          <Chip tone="muted">
+                            {t(
+                              job.pausedReason === "storage-unavailable"
+                                ? "processing.pausedByStorage"
+                                : "processing.pausedByOperator",
+                            )}
+                          </Chip>
+                        ) : null}
+                        {job.warnings.length > 0 ? (
+                          <Chip tone="warn">
+                            <AlertTriangle size={11} aria-hidden="true" />
+                            {job.warnings.length}
+                          </Chip>
+                        ) : null}
+                        <span className="text-xs text-white/40">
+                          {t(`processing.stage.${job.stage}` as never)}
+                        </span>
+                        <div className="ml-auto flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setOpenJobId(job.id)}
+                            className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          >
+                            {t("processing.inspect")}
+                          </button>
+                          {canPause(job) ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await pauseProcessingJob(job.id).catch(
+                                  () => undefined,
+                                );
+                                await refreshOverview();
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                            >
+                              <Pause size={12} aria-hidden="true" />
+                              {t("processing.pause")}
+                            </button>
+                          ) : null}
+                          {canResume(job) ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await resumeProcessingJob(job.id).catch(
+                                  () => undefined,
+                                );
+                                await refreshOverview();
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                            >
+                              <Play size={12} aria-hidden="true" />
+                              {t("processing.resume")}
+                            </button>
+                          ) : null}
+                          {canCancel(job) ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await cancelProcessingJob(job.id).catch(
+                                  () => undefined,
+                                );
+                                await refreshOverview();
+                              }}
+                              className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                            >
+                              {t("processing.cancel")}
+                            </button>
+                          ) : null}
+                          {canRetry(job) ? (
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await retryProcessingJob(job.id).catch(
+                                  () => undefined,
+                                );
+                                await refreshOverview();
+                              }}
+                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                            >
+                              <RefreshCcw size={12} aria-hidden="true" />
+                              {t("processing.retry")}
+                            </button>
+                          ) : null}
+                          {isFinished ? (
+                            <button
+                              type="button"
+                              onClick={() => void removeJob(job.id)}
+                              disabled={removingJobIds.has(job.id)}
+                              aria-label={
+                                removingJobIds.has(job.id)
+                                  ? t("processing.removing")
+                                  : `${t("processing.remove")}: ${itemTitleFor(job.itemId)}`
+                              }
+                              title={t("processing.remove")}
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-white/40 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                            >
+                              {removingJobIds.has(job.id) ? (
+                                <Loader2
+                                  size={13}
+                                  className="animate-spin motion-reduce:animate-none"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <X size={14} aria-hidden="true" />
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+
                       <div
-                        className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 motion-reduce:transition-none"
-                        style={{ width: `${percent}%` }}
-                      />
-                    </div>
+                        className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
+                        role="progressbar"
+                        aria-valuenow={percent}
+                        aria-valuemin={0}
+                        aria-valuemax={100}
+                        aria-label={itemTitleFor(job.itemId)}
+                      >
+                        <div
+                          className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 motion-reduce:transition-none"
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
 
-                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
-                      <Stat label="%" value={`${percent}%`} />
-                      <Stat
-                        label={t("processing.speed")}
-                        value={formatSpeed(job.speed)}
-                      />
-                      <Stat
-                        label={t("processing.fps")}
-                        value={job.fps ? job.fps.toFixed(0) : "—"}
-                      />
-                      <Stat
-                        label={t("processing.eta")}
-                        value={formatDuration(job.etaSeconds)}
-                      />
-                      <Stat
-                        label={t("processing.actualOutput")}
-                        value={formatBytes(
-                          job.outputBytes ?? job.estimatedOutputBytes,
-                        )}
-                      />
-                    </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                        <Stat label="%" value={`${percent}%`} />
+                        <Stat
+                          label={t("processing.speed")}
+                          value={formatSpeed(job.speed)}
+                        />
+                        <Stat
+                          label={t("processing.fps")}
+                          value={job.fps ? job.fps.toFixed(0) : "—"}
+                        />
+                        <Stat
+                          label={t("processing.eta")}
+                          value={formatDuration(job.etaSeconds)}
+                        />
+                        <Stat
+                          label={t("processing.actualOutput")}
+                          value={formatBytes(
+                            job.outputBytes ?? job.estimatedOutputBytes,
+                          )}
+                        />
+                        <Stat
+                          label={t("processing.duration")}
+                          value={formatDuration(processingDurationSeconds(job))}
+                        />
+                        <Stat
+                          label={t("processing.finishedAt")}
+                          value={formatFinishedAt(job.finishedAt, dateLocale)}
+                        />
+                      </div>
 
-                    {job.errorMessage ? (
-                      <p className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
-                        {job.errorMessage}
-                      </p>
-                    ) : null}
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
+                      {job.errorMessage ? (
+                        <p className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                          {job.errorMessage}
+                        </p>
+                      ) : null}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        ) : null}
       </div>
 
       {/* ------------------------------------------------- detail drawer */}

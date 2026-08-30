@@ -25,6 +25,15 @@
  * little better — it parses, but is not decoded reliably by every shipping
  * Chrome. Every v1 package built from a multichannel source is therefore
  * unplayable somewhere and has to be rebuilt rather than reused.
+ *
+ * Adding a ladder rung deliberately does *not* move this version. The version
+ * says whether a package is still readable by this profile, and a mismatch
+ * resolves the package to `missing` in `renditionService`, which withdraws a
+ * perfectly playable title from delivery. A package built before 1440p existed
+ * is a rung short, not unreadable — it plays exactly as well as it always did.
+ * "This title could gain a rung" is a question for the processing preview,
+ * which compares the ladder a package contains against the one the profile
+ * would build today; it is not a reason to stop serving what is on disk.
  */
 export const ADAPTIVE_PROFILE_VERSION = "cmaf-hls-aligned-v3";
 export const ADAPTIVE_METADATA_SCHEMA_VERSION = 1;

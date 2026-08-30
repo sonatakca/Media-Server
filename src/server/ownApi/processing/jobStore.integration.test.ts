@@ -102,6 +102,19 @@ describeIfDatabase("processing job store", () => {
     expect(second.id).not.toBe(first.id);
   });
 
+  it("removes only finished history entries", async () => {
+    if (!itemId) return;
+    const active = await make();
+    expect(await store.deleteFinished(active.id)).toBe(false);
+
+    await store.update(active.id, {
+      state: "succeeded",
+      finishedAt: new Date(),
+    });
+    expect(await store.deleteFinished(active.id)).toBe(true);
+    expect(await store.get(active.id)).toBeNull();
+  });
+
   it("never lets stored progress move backwards", async () => {
     if (!itemId) return;
     const job = await make();

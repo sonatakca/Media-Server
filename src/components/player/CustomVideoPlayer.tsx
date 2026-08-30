@@ -24,7 +24,10 @@ import {
   useCustomPlaybackSessionLease,
 } from "../../lib/playback-planner/customPlaybackSessionLease";
 import { attachSourceToVideo } from "../../lib/videoSource";
-import type { AttachedVideoSource } from "../../lib/videoSource";
+import type {
+  AdaptiveHlsController,
+  AttachedVideoSource,
+} from "../../lib/videoSource";
 import type {
   AvailableQualityFile,
   QualityPreferenceMode,
@@ -171,6 +174,8 @@ import {
   saveQualityPreference,
   selectAutoQuality,
   selectHigherResolutionQuality,
+  selectModeRungs,
+  type ModeSelectionContext,
   selectLowDataQuality,
   selectManualQuality,
   shouldSwitchFileQuality,
@@ -255,6 +260,21 @@ function getFileQualitySelectionContext(
     downlinkMbps: connection?.downlink,
     recentStallCount,
   };
+}
+
+/**
+ * The link speed the browser will admit to, in Mbps.
+ *
+ * Safari and Firefox do not implement `navigator.connection` at all, so this
+ * is absent more often than not and every caller has to treat "unknown" as an
+ * ordinary case rather than an error.
+ */
+function navigatorDownlinkMbps(): number | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  const downlink = (
+    navigator as Navigator & { connection?: { downlink?: number } }
+  ).connection?.downlink;
+  return typeof downlink === "number" && downlink > 0 ? downlink : undefined;
 }
 
 function isHlsStartupSuccessEvent(eventName: string): boolean {
@@ -394,6 +414,12 @@ export function CustomVideoPlayer({
     notifyActiveSeek,
   } = deck;
   const activeAttachmentRef = useRef<AttachedVideoSource | null>(null);
+  /**
+   * The source the element is currently holding, so a re-run of the attach
+   * effect can tell a genuine source change from a re-attach of what is already
+   * on screen.
+   */
+  const attachedSourceKeyRef = useRef<string | null>(null);
   /**
    * Audio tracks a re-planned source has already been requested for, so a
    * source that cannot carry the chosen track is not asked for again and again.
@@ -801,6 +827,33 @@ export function CustomVideoPlayer({
   const [adaptiveLockedQualityId, setAdaptiveLockedQualityId] = useState<
     string | null
   >(null);
+  const [activeAdaptiveWidth, setActiveAdaptiveWidth] = useState<number | null>(
+    null,
+  );
+  /*
+   * The player's rendered height, as state rather than a ref read.
+   *
+   * Quality modes reason about how much resolution the screen can actually use,
+   * and that reasoning happens while rendering the settings panel. Reading
+   * `containerRef.current` there is both unsound — a ref can be stale and its
+   * change never re-renders anything — and enough to stop the compiler
+   * memoising the surrounding component.
+   */
+  const [measuredContainerHeight, setMeasuredContainerHeight] = useState<
+    number | null
+  >(null);
+  /*
+   * The width of the frame actually being decoded.
+   *
+   * hls.js announces every level switch, but the native HLS path has no such
+   * callback — Safari picks a variant internally and tells the page nothing.
+   * The decoded frame is the one signal both paths share, so the rung on screen
+   * is identified from it rather than from a player event that only one engine
+   * emits.
+   */
+  const [decodedFrameWidth, setDecodedFrameWidth] = useState<number | null>(
+    null,
+  );
   const [activeAdaptiveHeight, setActiveAdaptiveHeight] = useState<
     number | null
   >(null);
@@ -942,8 +995,13 @@ export function CustomVideoPlayer({
     [audioCompatibleQualityFiles],
   );
   const higherResolutionQualityFile = useMemo(
-    () => selectHigherResolutionQuality(audioCompatibleQualityFiles),
-    [audioCompatibleQualityFiles],
+    () =>
+      selectHigherResolutionQuality(
+        audioCompatibleQualityFiles,
+        measuredContainerHeight ?? undefined,
+        typeof window === "undefined" ? 1 : window.devicePixelRatio,
+      ),
+    [audioCompatibleQualityFiles, measuredContainerHeight],
   );
   const qualityOptions = useMemo(
     () => getManualQualityOptions(activeSource.mediaSource),
@@ -1543,7 +1601,11 @@ export function CustomVideoPlayer({
           storedPreference.mode === "low-data"
             ? selectLowDataQuality(compatibleInitialFiles)
             : storedPreference.mode === "higher-resolution"
-              ? selectHigherResolutionQuality(compatibleInitialFiles)
+              ? selectHigherResolutionQuality(
+                  compatibleInitialFiles,
+                  playerHeight,
+                  typeof window === "undefined" ? 1 : window.devicePixelRatio,
+                )
               : storedPreference.mode === "advanced"
                 ? selectManualQuality(compatibleInitialFiles, storedPreference)
                 : selectAutoQuality(
@@ -2496,6 +2558,68 @@ export function CustomVideoPlayer({
     applyQualityFileRef.current = applyQualityFile;
   });
 
+  /**
+   * The best estimate of the link, held at its peak rather than read raw.
+   *
+   * Reading the engine's instantaneous estimate would make the three modes
+   * chase their own tail: pinning Low Data to a small rung means downloading
+   * small fragments, the measured throughput falls because less is being
+   * asked of the link rather than because it got slower, the anchor drops, and
+   * Low Data steps down again. Holding the peak and letting it decay slowly
+   * measures what the connection *can* do, which is the question all three
+   * modes are actually asking. Stalls are what pull it down, and they do so
+   * through `recentStallCount` where the evidence is real.
+   */
+  const linkEstimateRef = useRef<number | undefined>(undefined);
+  const readLinkEstimateBps = useCallback(
+    (controller: AdaptiveHlsController | undefined): number | undefined => {
+      const sample =
+        controller?.getBandwidthEstimateBps() ??
+        (() => {
+          const mbps = navigatorDownlinkMbps();
+          return mbps === undefined ? undefined : mbps * 1_000_000;
+        })();
+      const held = linkEstimateRef.current;
+      if (sample === undefined) return held;
+      // Rises immediately to a better measurement, forgets an old peak slowly.
+      const next = held === undefined ? sample : Math.max(sample, held * 0.9);
+      linkEstimateRef.current = next;
+      return next;
+    },
+    [],
+  );
+
+  /** The one description of the connection all three modes are chosen from. */
+  const modeSelectionContext = useCallback(
+    (controller: AdaptiveHlsController | undefined): ModeSelectionContext => {
+      const connection =
+        typeof navigator === "undefined"
+          ? undefined
+          : (
+              navigator as Navigator & {
+                connection?: { saveData?: boolean; effectiveType?: string };
+              }
+            ).connection;
+      const bandwidthBps = readLinkEstimateBps(controller);
+      return {
+        ...(bandwidthBps === undefined ? {} : { bandwidthBps }),
+        ...(measuredContainerHeight === null
+          ? {}
+          : { displayHeight: measuredContainerHeight }),
+        devicePixelRatio:
+          typeof window === "undefined" ? 1 : window.devicePixelRatio,
+        ...(connection?.saveData === undefined
+          ? {}
+          : { saveData: connection.saveData }),
+        ...(connection?.effectiveType === undefined
+          ? {}
+          : { effectiveType: connection.effectiveType }),
+        recentStallCount: recentQualityStallsRef.current.length,
+      };
+    },
+    [measuredContainerHeight, readLinkEstimateBps],
+  );
+
   const applyAdaptiveQualityPreference = useCallback(
     (
       mode: Exclude<QualityPreferenceMode, "advanced"> | "advanced",
@@ -2534,9 +2658,17 @@ export function CustomVideoPlayer({
               undefined,
             )
           : undefined);
-      const lowest = ordered[0];
-      const highest = ordered.at(-1);
+      /*
+       * The same two selectors the menu labels itself with. Deriving the label
+       * from one rule and the applied ceiling from another is how the panel
+       * came to advertise 360p while the player was told to cap at 144p — the
+       * viewer reads one number and watches a different one.
+       */
       const controller = activeAttachmentRef.current?.adaptiveController;
+      const { lowData: lowest, higher: highest } = selectModeRungs(
+        ordered,
+        modeSelectionContext(controller),
+      );
 
       if (mode === "advanced" && preferred) {
         controller?.setQualityHeight(preferred.height, preferred.height);
@@ -2574,6 +2706,9 @@ export function CustomVideoPlayer({
       adaptiveQualityManifest,
       applyNativeAdaptiveQualityHeight,
       isAdaptiveRenditionPlayback,
+      // The container height now reaches this through the mode context, which
+      // carries the measured link alongside it.
+      modeSelectionContext,
       persistQualityPreference,
     ],
   );
@@ -2894,6 +3029,49 @@ export function CustomVideoPlayer({
   });
 
   useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return undefined;
+    const read = () =>
+      setMeasuredContainerHeight((current) =>
+        current === (container.clientHeight || null)
+          ? current
+          : container.clientHeight || null,
+      );
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [deckEpoch]);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return undefined;
+    const read = () =>
+      setDecodedFrameWidth((current) =>
+        current === (video.videoWidth || null)
+          ? current
+          : video.videoWidth || null,
+      );
+    read();
+    video.addEventListener("loadedmetadata", read);
+    video.addEventListener("loadeddata", read);
+    video.addEventListener("resize", read);
+    // A promoted deck swaps the element rather than resizing it, and a slow
+    // source reports its size late, so neither event alone is sufficient.
+    const poll = window.setInterval(read, 500);
+    return () => {
+      video.removeEventListener("loadedmetadata", read);
+      video.removeEventListener("loadeddata", read);
+      video.removeEventListener("resize", read);
+      window.clearInterval(poll);
+    };
+    // A ref object is stable, so naming it here would only be a ref access
+    // during render for no benefit; the deck epoch is what actually changes
+    // which element is being watched.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckEpoch]);
+
+  useEffect(() => {
     if (!hasFileQualities) return undefined;
     const video = videoRef.current;
     const container = containerRef.current;
@@ -2948,11 +3126,31 @@ export function CustomVideoPlayer({
       const ordered = [...adaptiveQualityManifest.qualities].sort(
         (left, right) => left.height - right.height,
       );
-      const lowest = ordered[0];
-      const highest = ordered.at(-1);
-      const effective = ordered.find(
-        (quality) => quality.height === activeAdaptiveHeight,
+      const { lowData: lowest, higher: highest } = selectModeRungs(
+        ordered,
+        modeSelectionContext(activeAttachmentRef.current?.adaptiveController),
       );
+      /*
+       * Matched on the frame the decoder produced, not on the rung's name. A
+       * rung is named by its class while the frame it emits is whatever the
+       * source's shape gives — the "2160p" rung of a 2.39:1 master is
+       * 3840x1608 — so comparing the decoded height against the class matched
+       * nothing on any letterboxed title, and Auto reported itself as "Auto".
+       */
+      const onScreenWidth = activeAdaptiveWidth ?? decodedFrameWidth;
+      const effective =
+        ordered.find(
+          (quality) =>
+            onScreenWidth !== null && quality.width === onScreenWidth,
+        ) ??
+        ordered.find((quality) => quality.height === activeAdaptiveHeight) ??
+        (activeAdaptiveHeight === null
+          ? undefined
+          : [...ordered].sort(
+              (left, right) =>
+                Math.abs(left.height - activeAdaptiveHeight) -
+                Math.abs(right.height - activeAdaptiveHeight),
+            )[0]);
       const activeOriginal = !isAdaptiveRenditionPlayback
         ? availableQualityFiles.find(
             (quality) =>
@@ -2967,8 +3165,10 @@ export function CustomVideoPlayer({
           (activeAdaptiveHeight ? `${activeAdaptiveHeight}p` : undefined),
         modeQualityLabels: {
           "low-data": lowest?.label,
-          auto:
-            fileQualityMode === "auto" ? (effective?.label ?? "Auto") : "Auto",
+          // Undefined rather than the word "Auto": the panel renders the mode's
+          // own name when it has no rung to report, so returning a label here
+          // produced "Auto (Auto)".
+          auto: effective?.label,
           "higher-resolution": highest?.label,
         },
         advancedOptions: advancedQualityOptions,
@@ -3032,6 +3232,9 @@ export function CustomVideoPlayer({
     activeQualityFile,
     activeQualityFileId,
     activeAdaptiveHeight,
+    activeAdaptiveWidth,
+    decodedFrameWidth,
+    measuredContainerHeight,
     adaptiveLockedQualityId,
     adaptiveQualityManifest,
     advancedQualityOptions,
@@ -3379,6 +3582,42 @@ export function CustomVideoPlayer({
 
     if (seamlessAdoption) {
       seamlessAdoptionRef.current = null;
+    }
+
+    /*
+     * A re-run for the source already on screen is not a new playback.
+     *
+     * This effect depends on values that can settle a few seconds after a
+     * switch — the audio index resolved for the new source, a progress
+     * callback's identity — so it re-runs while the same URL is still playing.
+     * By then `restorePlayback` has consumed the pending restore and
+     * `hasAppliedInitialStartRef` is spent, so nothing was left to say where
+     * the viewer was: the element re-attached the same URL and began at zero.
+     * That is the "selecting 4K plays for a few seconds and then starts over"
+     * report — the re-plan itself resumed correctly, and the *second* attach
+     * threw the position away. Re-attaching the same source therefore carries
+     * the live position forward the way a real switch does, and counts as the
+     * same continuation a deck promotion is.
+     */
+    const sourceKey = `${sourceToAttach.id}::${sourceToAttach.url}`;
+    if (
+      !pendingSourceRestoreRef.current &&
+      !seamlessAdoption &&
+      attachedSourceKeyRef.current === sourceKey &&
+      !video.ended &&
+      Number.isFinite(video.currentTime) &&
+      video.currentTime > 0
+    ) {
+      pendingSourceRestoreRef.current = {
+        token: sourceSwitchTokenRef.current,
+        currentTime: video.currentTime,
+        wasPlaying: !video.paused,
+        volume: video.volume,
+        muted: video.muted,
+        playbackRate: video.playbackRate,
+        selectedAudioStreamIndex: selectedAudioIndexForSource,
+        selectedSubtitleStreamIndex,
+      };
     }
 
     // A promotion is a continuation, not a new playback. Resetting these would
@@ -4250,12 +4489,13 @@ export function CustomVideoPlayer({
                   { hlsError: getSerializableHlsError(data) },
                 );
               },
-              onAdaptiveLevelChanged: (height) => {
+              onAdaptiveLevelChanged: (level) => {
                 if (
                   isCurrentAttempt() &&
                   sourceToAttach.hlsKind === "adaptive-rendition"
                 ) {
-                  setActiveAdaptiveHeight(height);
+                  setActiveAdaptiveHeight(level.height);
+                  setActiveAdaptiveWidth(level.width || null);
                 }
               },
             },
@@ -4265,6 +4505,7 @@ export function CustomVideoPlayer({
         usingHlsJs: attachment?.usingHlsJs ?? false,
       };
       activeAttachmentRef.current = attachment ?? null;
+      attachedSourceKeyRef.current = sourceKey;
 
       setActiveSource((currentSource) =>
         currentSource.id === sourceToAttach.id &&

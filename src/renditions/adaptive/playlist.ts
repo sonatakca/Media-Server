@@ -334,9 +334,31 @@ export function buildMasterPlaylist({
 
   lines.push("");
 
-  const ordered = [...videoRenditions].sort(
+  const ascending = [...videoRenditions].sort(
     (left, right) => left.averageBitrate - right.averageBitrate,
   );
+  /*
+   * The opening rung leads, then the rest in ascending order.
+   *
+   * A native player — Safari, AVPlayer, anything on iOS or tvOS — begins on the
+   * first variant listed, because at that moment it has measured no bandwidth to
+   * choose by. Listing the ladder purely in ascending order therefore started
+   * every title on the smallest rung, and on a link whose estimate settles
+   * slowly it stayed there: the picture opened at 144p and crawled up, which
+   * reads as Auto being broken while a manual pick looks perfect. hls.js is
+   * unaffected either way, since it picks by `startLevel` and ignores order —
+   * which is why this only ever showed on the native path.
+   *
+   * The opener is the highest rung at or below 720p: high enough to look like a
+   * considered choice on a large display, small enough that a modest connection
+   * is not committed to something it cannot sustain before ABR has any evidence.
+   */
+  const OPENING_RUNG_CEILING = 720;
+  const opener =
+    [...ascending]
+      .reverse()
+      .find((video) => video.height <= OPENING_RUNG_CEILING) ?? ascending[0];
+  const ordered = [opener, ...ascending.filter((video) => video !== opener)];
 
   for (const video of ordered) {
     const videoCodec = videoCodecStrings.get(video.id);

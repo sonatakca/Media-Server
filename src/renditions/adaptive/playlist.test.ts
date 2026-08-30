@@ -288,9 +288,89 @@ describe("buildMasterPlaylist", () => {
       audioCodecStrings,
     });
 
-    expect(master.indexOf("video/480p/playlist.m3u8")).toBeLessThan(
-      master.indexOf("video/720p/playlist.m3u8"),
+    /*
+     * 720p leads because a native player starts on whatever is listed first,
+     * before it has measured anything. The rest still ascend behind it.
+     */
+    expect(master.indexOf("video/720p/playlist.m3u8")).toBeLessThan(
+      master.indexOf("video/480p/playlist.m3u8"),
     );
+  });
+
+  /**
+   * The regression this guards: the ladder was listed purely cheapest-first, so
+   * Safari and every other native player opened each title on the smallest rung
+   * and only crawled up from there. hls.js chooses by `startLevel` and ignores
+   * order, which is why this was invisible in Chrome.
+   */
+  it("leads with a rung a player can open on, then ascends", () => {
+    const rung = (height: number, bitrate: number) =>
+      videoRendition({
+        id: `${height}p`,
+        qualityHeight: height,
+        width: Math.round((height * 16) / 9),
+        height,
+        codecString: "avc1.64001e",
+        averageBitrate: bitrate,
+        peakBitrate: bitrate * 1.2,
+        playlistPath: `video/${height}p/playlist.m3u8`,
+        mediaPath: `video/${height}p/media.m4s`,
+      });
+
+    const master = buildMasterPlaylist({
+      videoRenditions: [
+        rung(144, 180_000),
+        rung(360, 700_000),
+        rung(720, 3_000_000),
+        rung(1080, 5_500_000),
+      ],
+      audioRenditions: [audioRendition()],
+      videoCodecStrings: new Map([
+        ["144p", "avc1.64001e"],
+        ["360p", "avc1.64001e"],
+        ["720p", "avc1.64001e"],
+        ["1080p", "avc1.64001e"],
+      ]),
+      audioCodecStrings,
+    });
+
+    const order = ["144p", "360p", "720p", "1080p"].map((id) => ({
+      id,
+      at: master.indexOf(`video/${id}/playlist.m3u8`),
+    }));
+    const first = [...order].sort((a, b) => a.at - b.at)[0];
+    expect(first.id).toBe("720p");
+
+    // Everything after the opener still climbs, so a player walking the list
+    // sees a normal ladder.
+    const rest = order.filter((entry) => entry.id !== "720p");
+    expect(rest.map((entry) => entry.at)).toEqual(
+      [...rest].sort((a, b) => a.at - b.at).map((entry) => entry.at),
+    );
+  });
+
+  /** With nothing at or below the opening ceiling, the smallest rung leads. */
+  it("falls back to the smallest rung when none is small enough to open on", () => {
+    const master = buildMasterPlaylist({
+      videoRenditions: [
+        videoRendition({
+          id: "2160p",
+          qualityHeight: 2160,
+          width: 3840,
+          height: 2160,
+          codecString: "avc1.640033",
+          averageBitrate: 12_000_000,
+          peakBitrate: 20_000_000,
+          playlistPath: "video/2160p/playlist.m3u8",
+          mediaPath: "video/2160p/media.m4s",
+        }),
+      ],
+      audioRenditions: [audioRendition()],
+      videoCodecStrings: new Map([["2160p", "avc1.640033"]]),
+      audioCodecStrings,
+    });
+
+    expect(master).toContain("video/2160p/playlist.m3u8");
   });
 
   it("signals HDR renditions as PQ and HLG rather than SDR", () => {

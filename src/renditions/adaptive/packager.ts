@@ -117,6 +117,24 @@ async function titlePackageFilesPresent(
   return true;
 }
 
+/**
+ * A matching source/profile is not enough to skip packaging: the ladder can
+ * gain a rung without invalidating the renditions already on disk. In that
+ * case the package is still playable, but it is not complete for today's
+ * policy and must go through the encoder.
+ */
+export function titlePackageCoversVideoLadder(
+  manifest: { video: readonly { qualityHeight: number }[] },
+  requirements: readonly { qualityHeight: number }[],
+): boolean {
+  const present = new Set(
+    manifest.video.map((rendition) => rendition.qualityHeight),
+  );
+  return requirements.every((requirement) =>
+    present.has(requirement.qualityHeight),
+  );
+}
+
 export type AdaptivePackageStatus =
   | "ready"
   | "already-valid"
@@ -442,11 +460,32 @@ export async function packageAdaptiveRendition(
   const versionDirectory = `${ADAPTIVE_PROFILE_VERSION}-${request.sourceFingerprint.slice(0, 16)}`;
 
   try {
+    const probe =
+      request.probe ??
+      (await probeMediaFile(request.sourcePath, ffprobePath, signal));
+    if (!(probe.durationSeconds > 0)) {
+      return {
+        ...base,
+        status: "incompatible",
+        error: "The source does not report a positive duration.",
+      };
+    }
+
+    const requirements = buildRenditionRequirements(probe.video);
+    if (requirements.length === 0) {
+      return {
+        ...base,
+        status: "incompatible",
+        error:
+          "The source does not report usable video dimensions, so no ladder can be built from it.",
+      };
+    }
+
     /*
      * A title that already holds a package built from these exact bytes under
-     * this exact profile is left alone. This is what makes `resume` cheap, and
-     * it is answered from the title's own manifest because that is where the
-     * package now lives.
+     * this exact profile and containing every rung required today is left
+     * alone. This is what makes `resume` cheap without mistaking an older,
+     * shorter ladder for a complete one.
      */
     const existingTitleRoot = path.dirname(request.sourcePath);
     const existing = await readTitlePackageManifest(existingTitleRoot);
@@ -454,6 +493,7 @@ export async function packageAdaptiveRendition(
       existing &&
       existing.sourceFingerprint === request.sourceFingerprint &&
       existing.profileVersion === ADAPTIVE_PROFILE_VERSION &&
+      titlePackageCoversVideoLadder(existing, requirements) &&
       (await titlePackageFilesPresent(existingTitleRoot, existing))
     ) {
       return {
@@ -476,27 +516,6 @@ export async function packageAdaptiveRendition(
           "Source changed after analysis; run analysis again before packaging.",
         );
       }
-    }
-
-    const probe =
-      request.probe ??
-      (await probeMediaFile(request.sourcePath, ffprobePath, signal));
-    if (!(probe.durationSeconds > 0)) {
-      return {
-        ...base,
-        status: "incompatible",
-        error: "The source does not report a positive duration.",
-      };
-    }
-
-    const requirements = buildRenditionRequirements(probe.video);
-    if (requirements.length === 0) {
-      return {
-        ...base,
-        status: "incompatible",
-        error:
-          "The source does not report usable video dimensions, so no ladder can be built from it.",
-      };
     }
 
     const audioPlan = planAudioRenditions(probe, {

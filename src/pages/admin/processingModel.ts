@@ -157,6 +157,33 @@ export function formatSpeed(speed: number | null | undefined): string {
   return `${speed.toFixed(2)}×`;
 }
 
+/** Wall-clock time spent on a finished job, measured from its actual start. */
+export function processingDurationSeconds(
+  job: Pick<ProcessingJob, "createdAt" | "startedAt" | "finishedAt">,
+): number | null {
+  if (!job.finishedAt) return null;
+  const start = Date.parse(job.startedAt ?? job.createdAt);
+  const finish = Date.parse(job.finishedAt);
+  if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start) {
+    return null;
+  }
+  return (finish - start) / 1000;
+}
+
+/** Local date and clock time for a history row. */
+export function formatFinishedAt(
+  finishedAt: string | null | undefined,
+  locale: string,
+): string {
+  if (!finishedAt) return "—";
+  const value = new Date(finishedAt);
+  if (!Number.isFinite(value.getTime())) return "—";
+  return new Intl.DateTimeFormat(locale, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(value);
+}
+
 /** Languages kept and dropped, ready to render as two short lists. */
 export function summariseLanguages(
   audio: ProcessingAudioDecision[] | undefined,

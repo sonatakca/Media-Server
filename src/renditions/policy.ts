@@ -19,6 +19,7 @@ export const RENDITION_PROFILE_VERSION = "h264-aac-mp4-v2";
  */
 export const RENDITION_TARGETS = [
   { qualityHeight: 2160, longEdge: 3840 },
+  { qualityHeight: 1440, longEdge: 2560 },
   { qualityHeight: 1080, longEdge: 1920 },
   { qualityHeight: 720, longEdge: 1280 },
   { qualityHeight: 480, longEdge: 854 },

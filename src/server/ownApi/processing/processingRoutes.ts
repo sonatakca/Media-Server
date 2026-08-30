@@ -24,6 +24,7 @@ import {
   type ProcessingDecision,
 } from "../../../renditions/processing/decide";
 import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
+import { readTitlePackageManifest } from "../../../renditions/adaptive/publishTitle";
 import {
   DuplicateProcessingJobError,
   type ProcessingJobRecord,
@@ -145,6 +146,37 @@ export function createProcessingRoutes({
     return { file, absolutePath };
   }
 
+  /**
+   * What the title already holds, so a preview can describe the work that is
+   * actually left rather than the work a bare source would need.
+   *
+   * Without this the preview listed the whole ladder for a title that already
+   * carried every rung of it, which reads as "all of this is about to be
+   * built" when the honest answer is "nothing is".
+   */
+  async function existingPackage(absolutePath: string, fingerprint: string) {
+    const titleRoot = path.dirname(absolutePath);
+    const manifest = await readTitlePackageManifest(titleRoot).catch(
+      () => undefined,
+    );
+    if (!manifest) return { present: false as const };
+
+    const sourceMatches = manifest.sourceFingerprint === fingerprint;
+    const profileMatches = manifest.profileVersion === ADAPTIVE_PROFILE_VERSION;
+    return {
+      present: true as const,
+      current: sourceMatches && profileMatches,
+      sourceMatches,
+      profileMatches,
+      rungs: manifest.video
+        .map((rendition) => rendition.qualityHeight)
+        .sort((left, right) => right - left),
+      audioTracks: manifest.audio.length,
+      subtitleTracks: manifest.subtitle.length,
+      totalBytes: manifest.storage.totalBytes,
+    };
+  }
+
   async function analyse(
     itemId: string,
     mediaFileId?: string,
@@ -154,26 +186,58 @@ export function createProcessingRoutes({
     file: Awaited<ReturnType<typeof resolveSource>>["file"];
     absolutePath: string;
     mtimeMs: number;
+    /** The package on disk, plus the rungs today's ladder would add to it. */
+    existing: Awaited<ReturnType<typeof existingPackage>> & {
+      missingRungs: number[];
+    };
   }> {
     const { file, absolutePath } = await resolveSource(itemId, mediaFileId);
     const stats = await stat(absolutePath);
     const probe = await probeMediaFile(absolutePath, ffprobePath);
     const report = await hardware();
     const freeBytes = await freeBytesOn(renditionRoot);
-    const decision = decideProcessing({
+    const fingerprint = await computeSourceFingerprint(absolutePath, stats);
+    const existing = await existingPackage(absolutePath, fingerprint);
+    const plan = {
       probe,
       container: path.extname(absolutePath).replace(".", ""),
       sizeBytes: stats.size,
       hardware: report,
       ...(freeBytes === undefined ? {} : { freeBytes }),
-    });
-    const fingerprint = await computeSourceFingerprint(absolutePath, stats);
+    };
+
+    /*
+     * What this source would be built into today, before asking whether the
+     * package on disk already satisfies it.
+     *
+     * The two questions are separate: the profile version says whether a
+     * package is still *readable*, and the ladder says whether it is still
+     * *complete*. Deciding completeness from the profile version alone means a
+     * title that predates a new rung reports "nothing to do" — and moving the
+     * profile version to force the issue is worse, because a mismatch resolves
+     * the package to `missing` and withdraws a perfectly playable title from
+     * delivery. So the ladder is compared directly. `decideProcessing` reads
+     * only the values above, so asking it twice costs nothing.
+     */
+    const planned = decideProcessing(plan);
+    const missingRungs = planned.ladder
+      .map((rung) => rung.qualityHeight)
+      .filter(
+        (height) => !existing.present || !existing.rungs.includes(height),
+      );
+    const isCurrent =
+      existing.present && existing.current && missingRungs.length === 0;
+    const decision = isCurrent
+      ? decideProcessing({ ...plan, alreadyCurrent: true })
+      : planned;
+
     return {
       decision,
       fingerprint,
       file,
       absolutePath,
       mtimeMs: stats.mtimeMs,
+      existing: { ...existing, missingRungs },
     };
   }
 
@@ -227,7 +291,7 @@ export function createProcessingRoutes({
         const mediaFileId = body.mediaFileId
           ? requireUuid(optionalBodyString(body, "mediaFileId"), "mediaFileId")
           : undefined;
-        const { decision, file, fingerprint } = await analyse(
+        const { decision, file, fingerprint, existing } = await analyse(
           itemId,
           mediaFileId,
         );
@@ -238,6 +302,7 @@ export function createProcessingRoutes({
           relativePath: file.relativePath,
           sourceFingerprint: fingerprint,
           decision,
+          existing,
           activeJobId: active?.id ?? null,
         });
       },
@@ -381,6 +446,40 @@ export function createProcessingRoutes({
             createdAt: event.createdAt.toISOString(),
           })),
         });
+      },
+    },
+
+    {
+      method: "DELETE",
+      path: "/processing/jobs/:jobId",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const id = requireUuid(context.params.jobId, "jobId");
+        const job = await store.get(id);
+        if (!job) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_NOT_FOUND",
+            "The processing job could not be found.",
+            404,
+          );
+        }
+        if (["pending", "queued", "running", "paused"].includes(job.state)) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_ACTIVE",
+            "An active processing job cannot be removed from history.",
+            409,
+          );
+        }
+        const removed = await store.deleteFinished(id);
+        if (!removed) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_ACTIVE",
+            "An active processing job cannot be removed from history.",
+            409,
+          );
+        }
+        sendData(context.response, context.requestId, { removed: true });
       },
     },
 

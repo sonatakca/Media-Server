@@ -17,6 +17,7 @@ describe("rendition policy", () => {
       buildRenditionRequirements({ width: 3840, height: 2160, rotation: 0 }),
     ).toEqual([
       { qualityHeight: 2160, width: 3840, height: 2160 },
+      { qualityHeight: 1440, width: 2560, height: 1440 },
       { qualityHeight: 1080, width: 1920, height: 1080 },
       { qualityHeight: 720, width: 1280, height: 720 },
       { qualityHeight: 480, width: 854, height: 480 },
@@ -59,6 +60,7 @@ describe("rendition policy", () => {
       buildRenditionRequirements({ width: 3840, height: 1604, rotation: 0 }),
     ).toEqual([
       { qualityHeight: 2160, width: 3840, height: 1604 },
+      { qualityHeight: 1440, width: 2560, height: 1070 },
       { qualityHeight: 1080, width: 1920, height: 802 },
       { qualityHeight: 720, width: 1280, height: 534 },
       { qualityHeight: 480, width: 854, height: 356 },
@@ -117,6 +119,7 @@ describe("rendition policy", () => {
       buildRenditionRequirements({ width: 3840, height: 2160, rotation: 90 }),
     ).toEqual([
       { qualityHeight: 2160, width: 2160, height: 3840 },
+      { qualityHeight: 1440, width: 1440, height: 2560 },
       { qualityHeight: 1080, width: 1080, height: 1920 },
       { qualityHeight: 720, width: 720, height: 1280 },
       { qualityHeight: 480, width: 480, height: 854 },

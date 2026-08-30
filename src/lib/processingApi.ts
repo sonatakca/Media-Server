@@ -191,12 +191,36 @@ export function getProcessingHardware(): Promise<HardwareReport> {
   return ownApiClient.request<HardwareReport>("/processing/hardware");
 }
 
+/** What the title already holds, so a preview can describe the work left. */
+export type ExistingPackage =
+  | { present: false }
+  | {
+      present: true;
+      /** True when the package was built from these bytes under this profile. */
+      current: boolean;
+      sourceMatches: boolean;
+      profileMatches: boolean;
+      rungs: number[];
+      /**
+       * Rungs today's ladder would add to this package.
+       *
+       * Separate from `current`: a package can match its source and profile
+       * exactly and still be a rung short, because a ladder gaining a rung
+       * does not make what is on disk unreadable.
+       */
+      missingRungs: number[];
+      audioTracks: number;
+      subtitleTracks: number;
+      totalBytes: number;
+    };
+
 export interface ProcessingPreview {
   itemId: string;
   mediaFileId: string;
   relativePath: string;
   sourceFingerprint: string;
   decision: ProcessingDecision;
+  existing: ExistingPackage;
   activeJobId: string | null;
 }
 
@@ -275,6 +299,13 @@ export function retryProcessingJob(
   return ownApiClient.request<{ job: ProcessingJob }>(
     `/processing/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: "POST" },
+  );
+}
+
+export function deleteProcessingJob(jobId: string): Promise<{ removed: true }> {
+  return ownApiClient.request<{ removed: true }>(
+    `/processing/jobs/${encodeURIComponent(jobId)}`,
+    { method: "DELETE" },
   );
 }
 

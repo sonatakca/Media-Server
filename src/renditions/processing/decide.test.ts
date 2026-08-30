@@ -73,7 +73,7 @@ describe("decideProcessing", () => {
 
     expect(decision.action).toBe("package-adaptive");
     expect(decision.ladder.map((rung) => rung.qualityHeight)).toEqual([
-      2160, 1080, 720, 480, 360, 240, 144,
+      2160, 1440, 1080, 720, 480, 360, 240, 144,
     ]);
   });
 

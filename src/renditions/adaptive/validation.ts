@@ -972,11 +972,23 @@ export async function validateAdaptivePackage({
     }
     try {
       const playlist = parseWebVttMediaPlaylist(playlistText);
-      if (playlist.uri !== path.posix.basename(rendition.subtitlePath)) {
+      /*
+       * Resolved against the playlist's own location, exactly as the video and
+       * audio checks do. Comparing against a bare filename assumed the playlist
+       * sits beside its media, which stopped being true when playlists moved
+       * into the hidden package directory and the media stayed in the folder a
+       * person browses — so every published title carrying subtitles failed
+       * validation while being perfectly correct.
+       */
+      const expectedSubtitleUri = path.posix.relative(
+        path.posix.dirname(rendition.playlistPath),
+        rendition.subtitlePath,
+      );
+      if (decodeURIComponent(playlist.uri) !== expectedSubtitleUri) {
         collector.add(
           rendition.id,
           "subtitle-playlist",
-          `subtitle playlist points at ${playlist.uri}, not ${path.posix.basename(rendition.subtitlePath)}.`,
+          `subtitle playlist points at ${playlist.uri}, not ${expectedSubtitleUri}.`,
         );
       }
       if (

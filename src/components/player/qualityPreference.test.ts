@@ -8,7 +8,10 @@ import {
   displayTargetHeight,
   selectAutoQuality,
   selectHigherResolutionQuality,
+  selectHigherResolutionRung,
+  selectModeRungs,
   selectLowDataQuality,
+  selectLowDataRung,
   selectManualQuality,
   shouldSwitchFileQuality,
 } from "./qualityPreference";
@@ -126,13 +129,19 @@ describe("complete-file quality selection", () => {
   });
 
   it("selects only existing files for Low Data and Higher Resolution", () => {
-    expect(selectLowDataQuality(qualities)?.id).toBe("generated-480");
+    /*
+     * This ladder prices nothing, so the anchor rests on the unmeasured-link
+     * ceiling of 1080p — Low Data is the rung below it and Higher Resolution
+     * the rung above, rather than the ends of the array.
+     */
+    expect(selectLowDataQuality(qualities)?.id).toBe("generated-720");
     expect(selectHigherResolutionQuality(qualities)?.id).toBe("original");
+    // Remove the anchor itself and the whole menu shifts down with it.
     expect(
       selectLowDataQuality(
-        qualities.filter((quality) => quality.height !== 480),
+        qualities.filter((quality) => quality.height !== 1080),
       )?.id,
-    ).toBe("generated-720");
+    ).toBe("generated-480");
   });
 
   it("selects Auto from player size and conservative network information", () => {
@@ -171,6 +180,274 @@ describe("complete-file quality selection", () => {
         downlinkMbps: 30,
       })?.height,
     ).toBe(2160);
+  });
+
+  /**
+   * A ladder with real costs, so bandwidth decisions can be checked rather than
+   * only screen-size ones.
+   */
+  const priced: AvailableQualityFile[] = [
+    {
+      id: "p144",
+      label: "144p",
+      kind: "generated",
+      width: 256,
+      height: 144,
+      bitrate: 181_231,
+      playbackUrl: "/144",
+    },
+    {
+      id: "p240",
+      label: "240p",
+      kind: "generated",
+      width: 426,
+      height: 240,
+      bitrate: 350_980,
+      playbackUrl: "/240",
+    },
+    {
+      id: "p360",
+      label: "360p",
+      kind: "generated",
+      width: 640,
+      height: 360,
+      bitrate: 700_834,
+      playbackUrl: "/360",
+    },
+    {
+      id: "p480",
+      label: "480p",
+      kind: "generated",
+      width: 854,
+      height: 480,
+      bitrate: 1_399_773,
+      playbackUrl: "/480",
+    },
+    {
+      id: "p720",
+      label: "720p",
+      kind: "generated",
+      width: 1280,
+      height: 720,
+      bitrate: 2_997_311,
+      playbackUrl: "/720",
+    },
+    {
+      id: "p1080",
+      label: "1080p",
+      kind: "generated",
+      width: 1920,
+      height: 1080,
+      bitrate: 5_500_436,
+      playbackUrl: "/1080",
+    },
+  ];
+
+  /**
+   * The regression this guards: every constraint used to short-circuit to the
+   * bottom of the ladder, so Auto was binary — top rung or 144p — and one
+   * modest `navigator.connection.downlink` reading pinned a capable link to the
+   * floor for good. The rungs in between were never chosen at all.
+   */
+  it("walks down the ladder in proportion to the measured link", () => {
+    const at = (downlinkMbps: number) =>
+      selectAutoQuality(priced, {
+        playerHeight: 1080,
+        devicePixelRatio: 1,
+        downlinkMbps,
+      })?.height;
+
+    expect(at(20)).toBe(1080);
+    expect(at(6)).toBe(720);
+    expect(at(3)).toBe(480);
+    expect(at(1.6)).toBe(360);
+    expect(at(0.8)).toBe(240);
+    expect(at(0.35)).toBe(144);
+  });
+
+  it("does not drop to the floor merely because the link is under 2.5 Mbps", () => {
+    expect(
+      selectAutoQuality(priced, {
+        playerHeight: 1080,
+        devicePixelRatio: 1,
+        downlinkMbps: 2.4,
+      })?.height,
+    ).toBe(480);
+  });
+
+  /** Stalls tighten the budget by degrees rather than emptying it at once. */
+  it("gives up one rung at a time as stalls accumulate", () => {
+    const at = (recentStallCount: number) =>
+      selectAutoQuality(priced, {
+        playerHeight: 1080,
+        devicePixelRatio: 1,
+        downlinkMbps: 9,
+        recentStallCount,
+      })?.height;
+
+    expect(at(0)).toBe(1080);
+    expect(at(1)).toBe(720);
+    expect(at(2)).toBe(480);
+  });
+
+  /** A stated preference to spend less data is obeyed, unlike a measurement. */
+  it("still honours save-data absolutely", () => {
+    expect(
+      selectAutoQuality(priced, {
+        playerHeight: 1080,
+        devicePixelRatio: 1,
+        downlinkMbps: 50,
+        saveData: true,
+      })?.height,
+    ).toBe(144);
+  });
+
+  /** The display still decides the ceiling when bandwidth is ample. */
+  it("never exceeds what the display can show", () => {
+    expect(
+      selectAutoQuality(priced, {
+        playerHeight: 400,
+        devicePixelRatio: 1,
+        downlinkMbps: 100,
+      })?.height,
+    ).toBe(480);
+  });
+
+  /**
+   * Ford v Ferrari's real ladder. These are the average bitrates, because that
+   * is what the quality manifest reports to the player — the master's own
+   * BANDWIDTH figures are peaks and would misjudge every budget.
+   */
+  const fordLadder = [
+    { id: "144p", height: 144, bitrate: 326_344 },
+    { id: "240p", height: 240, bitrate: 450_605 },
+    { id: "360p", height: 360, bitrate: 662_704 },
+    { id: "480p", height: 480, bitrate: 1_358_229 },
+    { id: "720p", height: 720, bitrate: 2_158_280 },
+    { id: "1080p", height: 1080, bitrate: 3_187_375 },
+    { id: "2160p", height: 2160, bitrate: 6_891_111 },
+  ];
+
+  /**
+   * The regression: both modes were the ends of the array. Low Data handed a
+   * viewer 144p on a link that would carry 240p for the same intent, and
+   * Higher Resolution served 2160p to a 1080p window — several times the
+   * bandwidth to paint pixels the screen cannot resolve.
+   */
+  /**
+   * The whole model: one measured decision, with a safer and a sharper
+   * neighbour either side of it.
+   *
+   * Each mode used to carry its own hardcoded budget, so they disagreed about
+   * the same connection — Low Data spent a flat 750 kbps whatever the link
+   * could do, which on this ladder meant 360p while Auto sustained 4K, and
+   * Higher Resolution answered from screen size while ignoring bandwidth
+   * entirely. Anchored, the menu always reads as three adjacent rungs.
+   */
+  it("offers the anchor with one rung either side of it", () => {
+    const big = { displayHeight: 2160, devicePixelRatio: 1 };
+    const at = (bandwidthBps: number) => {
+      const { anchor, lowData, higher } = selectModeRungs(fordLadder, {
+        ...big,
+        bandwidthBps,
+      });
+      return [lowData?.id, anchor?.id, higher?.id].join(" < ");
+    };
+
+    // Comfortably carrying the 3.19 Mbps 1080p rung.
+    expect(at(9_000_000)).toBe("720p < 1080p < 2160p");
+    // Enough for 720p, so Low Data is 480p and Higher Resolution is 1080p.
+    expect(at(4_000_000)).toBe("480p < 720p < 1080p");
+    expect(at(2_500_000)).toBe("360p < 480p < 720p");
+  });
+
+  /** At the ends of the ladder there is no neighbour to step to. */
+  it("clamps at the ends of the ladder instead of inventing rungs", () => {
+    const top = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 100_000_000,
+    });
+    expect(top.anchor?.id).toBe("2160p");
+    expect(top.higher?.id).toBe("2160p");
+    expect(top.lowData?.id).toBe("1080p");
+
+    const floor = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 200_000,
+    });
+    expect(floor.anchor?.id).toBe("144p");
+    expect(floor.lowData?.id).toBe("144p");
+    expect(floor.higher?.id).toBe("240p");
+  });
+
+  /**
+   * The anchor is what the *connection* justifies, so a small window still
+   * caps it: paying for rows the window cannot show is the one saving always
+   * available for free.
+   */
+  it("lets the display cap the anchor as well as the link", () => {
+    const { anchor, lowData, higher } = selectModeRungs(fordLadder, {
+      displayHeight: 480,
+      devicePixelRatio: 1,
+      bandwidthBps: 100_000_000,
+    });
+    expect([lowData?.id, anchor?.id, higher?.id]).toEqual([
+      "360p",
+      "480p",
+      "720p",
+    ]);
+  });
+
+  /** Save-data is a stated preference, not a measurement, so it wins. */
+  it("honours save-data absolutely", () => {
+    const { anchor, lowData } = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 100_000_000,
+      saveData: true,
+    });
+    expect(anchor?.id).toBe("144p");
+    expect(lowData?.id).toBe("144p");
+  });
+
+  /** With nothing measured, the anchor opens at a safe 1080p rather than 4K. */
+  it("opens conservatively when nothing has measured the link", () => {
+    const { anchor, higher } = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+    });
+    expect(anchor?.id).toBe("1080p");
+    expect(higher?.id).toBe("2160p");
+  });
+
+  /** Repeated stalls shrink the budget, so all three modes step down together. */
+  it("steps the whole menu down after repeated stalls", () => {
+    const steady = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 12_000_000,
+    });
+    const stalling = selectModeRungs(fordLadder, {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 12_000_000,
+      recentStallCount: 2,
+    });
+    expect(steady.anchor?.id).toBe("2160p");
+    expect(stalling.anchor?.id).toBe("720p");
+    expect(stalling.lowData?.id).toBe("480p");
+  });
+
+  it("keeps the legacy rung helpers agreeing with the anchor", () => {
+    const context = {
+      displayHeight: 2160,
+      devicePixelRatio: 1,
+      bandwidthBps: 9_000_000,
+    };
+    expect(selectLowDataRung(fordLadder, context)?.id).toBe("720p");
+    expect(selectHigherResolutionRung(fordLadder, context)?.id).toBe("2160p");
   });
 
   it("resolves Advanced only to a quality actually present", () => {

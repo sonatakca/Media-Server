@@ -74,9 +74,15 @@ describe("the ladder", () => {
     );
   });
 
-  /** A rung the player would never meaningfully switch to is not worth its cost. */
-  it("leaves out 1440p", () => {
-    expect(LADDER_QUALITY_CLASSES).not.toContain(1440);
+  /**
+   * The jump from 1080p to 2160p is four times the pixels; a link that cannot
+   * hold the top rung should have somewhere to land other than 1080p.
+   */
+  it("includes 1440p between 1080p and 2160p", () => {
+    expect(LADDER_QUALITY_CLASSES).toContain(1440);
+    expect(LADDER_QUALITY_CLASSES.indexOf(1440)).toBe(
+      LADDER_QUALITY_CLASSES.indexOf(2160) + 1,
+    );
   });
 });
 

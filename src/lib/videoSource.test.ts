@@ -197,7 +197,12 @@ describe("videoSource", () => {
     expect(hls.currentLevel).toBe(-1);
 
     hls.trigger("levelSwitched", { level: 1 });
-    expect(onAdaptiveLevelChanged).toHaveBeenCalledWith(720);
+    // Width travels with height: a rung is named by its class while the frame
+    // it emits follows the source's shape, so the caller matches on width.
+    expect(onAdaptiveLevelChanged).toHaveBeenCalledWith({
+      height: 720,
+      width: 1280,
+    });
 
     attachment.adaptiveController?.setQualityHeight(null, null);
     expect(hls.loadLevel).toBe(-1);

@@ -43,12 +43,13 @@ export const GENERATED_TITLE_DIRECTORIES: ReadonlySet<string> = new Set([
 /**
  * The rungs a ladder may contain, largest first.
  *
- * 1440p is deliberately absent: it sits close enough to 1080p that the extra
- * rung costs storage and encode time without giving the player a switch it
- * would meaningfully use.
+ * 1440p earns its place on a 4K source: the step from 1080p to 2160p is a
+ * fourfold jump in pixels and roughly a doubling in bitrate, which is a long
+ * way for a link to fall in one move, and it is the rung most large displays
+ * can actually use without paying for 4K.
  */
 export const LADDER_QUALITY_CLASSES: readonly number[] = [
-  2160, 1080, 720, 480, 360, 240, 144,
+  2160, 1440, 1080, 720, 480, 360, 240, 144,
 ];
 
 /**

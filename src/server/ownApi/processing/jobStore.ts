@@ -232,6 +232,8 @@ export interface ProcessingJobStore {
   get(id: string): Promise<ProcessingJobRecord | null>;
   getByQueueJobId(jobId: string): Promise<ProcessingJobRecord | null>;
   findActiveForFile(mediaFileId: string): Promise<ProcessingJobRecord | null>;
+  /** Removes a finished history entry. Active work is deliberately retained. */
+  deleteFinished(id: string): Promise<boolean>;
   list(options?: {
     state?: ProcessingState;
     limit?: number;
@@ -351,6 +353,15 @@ export function createProcessingJobStore(
         [mediaFileId, ACTIVE_STATES],
       );
       return result.rows[0] ? toRecord(result.rows[0]) : null;
+    },
+
+    async deleteFinished(id) {
+      const result = await pool.query(
+        `DELETE FROM processing_jobs
+          WHERE id = $1 AND state IN ('succeeded', 'failed', 'cancelled')`,
+        [id],
+      );
+      return (result.rowCount ?? 0) > 0;
     },
 
     async list(options = {}) {

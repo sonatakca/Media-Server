@@ -139,16 +139,182 @@ export function isQualityAudioCompatible(
   );
 }
 
+/** A rung, by the things any mode needs to reason about. */
+interface RungLike {
+  height: number;
+  bitrate?: number;
+}
+
+/**
+ * How much of the measured link a rung may claim.
+ *
+ * A stream that exactly fills the pipe has nothing left for the variance in
+ * its own bitrate, so it stalls on the first busy scene. Two thirds leaves room
+ * for a peak without giving away a whole rung.
+ */
+const BANDWIDTH_SAFETY_FRACTION = 2 / 3;
+
+/** Each consecutive stall costs this much of the bandwidth budget. */
+const STALL_PENALTY = 0.6;
+
+/**
+ * The opening bid when nothing has measured the link yet.
+ *
+ * Safari and Firefox expose no `navigator.connection`, and the engine has no
+ * throughput estimate until it has pulled fragments, so without a ceiling the
+ * anchor would open at the top rung on the strength of screen size alone.
+ */
+const UNMEASURED_ANCHOR_CEILING = 1080;
+
+export interface ModeSelectionContext {
+  /** Measured link throughput in bits/second, if anything has measured it. */
+  bandwidthBps?: number;
+  displayHeight?: number;
+  devicePixelRatio?: number;
+  saveData?: boolean;
+  effectiveType?: string;
+  recentStallCount?: number;
+}
+
+function ascendingRungs<T extends RungLike>(qualities: readonly T[]): T[] {
+  return [...qualities].sort((left, right) => left.height - right.height);
+}
+
+/**
+ * The rung the measured connection and the display jointly justify.
+ *
+ * This is the single anchor every mode is expressed against, so all three
+ * agree about what the link can currently do instead of each deciding
+ * separately from its own hardcoded budget.
+ */
+export function selectAnchorRung<T extends RungLike>(
+  qualities: readonly T[],
+  context: ModeSelectionContext = {},
+): T | undefined {
+  const ascending = ascendingRungs(qualities);
+  if (ascending.length === 0) return undefined;
+
+  // A stated preference, not a measurement, so it is honoured absolutely.
+  if (
+    context.saveData === true ||
+    ["slow-2g", "2g"].includes(context.effectiveType ?? "")
+  ) {
+    return ascending[0];
+  }
+
+  /*
+   * The smallest rung that still covers the display, not the largest that fits
+   * inside it: a 600px-tall player is better served by a 720p rung scaled down
+   * than by a 480p one scaled up.
+   */
+  const displayTarget =
+    context.displayHeight && context.displayHeight > 0
+      ? displayTargetHeight(context.displayHeight, context.devicePixelRatio)
+      : Number.POSITIVE_INFINITY;
+  const covering =
+    ascending.find((quality) => quality.height >= displayTarget) ??
+    ascending.at(-1)!;
+  let eligible = ascending.slice(0, ascending.indexOf(covering) + 1);
+
+  /*
+   * Caps that exist for safety rather than for the screen, applied as true
+   * ceilings.
+   *
+   * These must not be folded into the display target above: that target is
+   * rounded *up* to the rung that covers it, so a ladder with no rung at the
+   * cap would step straight over it — a ladder of 480/720/2160 answered 2160p
+   * for an unmeasured link, which is precisely what the ceiling exists to
+   * prevent.
+   */
+  const ceilings: number[] = [];
+  if (context.effectiveType === "3g") ceilings.push(720);
+  if (context.bandwidthBps === undefined) {
+    ceilings.push(UNMEASURED_ANCHOR_CEILING);
+  }
+  if (ceilings.length > 0) {
+    const cap = Math.min(...ceilings);
+    const capped = eligible.filter((quality) => quality.height <= cap);
+    // Every rung is above the cap, so the cheapest is the closest to honouring it.
+    eligible = capped.length > 0 ? capped : [eligible[0]!];
+  }
+
+  if (context.bandwidthBps === undefined) return eligible.at(-1);
+
+  const budgetBps =
+    context.bandwidthBps *
+    BANDWIDTH_SAFETY_FRACTION *
+    STALL_PENALTY ** (context.recentStallCount ?? 0);
+
+  // A rung with no measured bitrate is judged on height alone rather than
+  // excluded, since an unknown cost is not evidence of an unaffordable one.
+  const affordable = eligible.filter(
+    (quality) => !quality.bitrate || quality.bitrate <= budgetBps,
+  );
+  return affordable.at(-1) ?? eligible[0];
+}
+
+/**
+ * The three modes, as one step down, the anchor, and one step up.
+ *
+ * Every mode used to carry its own hardcoded budget, so they disagreed about
+ * the same connection: Low Data spent a flat 750 kbps whatever the link could
+ * do, and Higher Resolution answered from screen size alone while ignoring
+ * bandwidth entirely. Anchoring all three to one measured decision makes the
+ * menu mean something a viewer can predict — the rung the connection actually
+ * justifies, with a safer and a sharper neighbour on either side of it.
+ *
+ * The step is ordinal on purpose. A rung is the unit the ladder is built in,
+ * so "one better" and "one safer" survive any bitrate the encoder happens to
+ * produce, where a share-of-bitrate rule flips on rounding.
+ */
+export function selectModeRungs<T extends RungLike>(
+  qualities: readonly T[],
+  context: ModeSelectionContext = {},
+): { anchor: T | undefined; lowData: T | undefined; higher: T | undefined } {
+  const ascending = ascendingRungs(qualities);
+  const anchor = selectAnchorRung(ascending, context);
+  if (!anchor) {
+    return { anchor: undefined, lowData: undefined, higher: undefined };
+  }
+  const index = ascending.indexOf(anchor);
+  return {
+    anchor,
+    // At an end of the ladder there is no neighbour, and the honest answer is
+    // the anchor itself rather than a rung that does not exist.
+    lowData: ascending[Math.max(0, index - 1)] ?? anchor,
+    higher: ascending[Math.min(ascending.length - 1, index + 1)] ?? anchor,
+  };
+}
+
+export function selectLowDataRung<T extends RungLike>(
+  qualities: readonly T[],
+  context: ModeSelectionContext = {},
+): T | undefined {
+  return selectModeRungs(qualities, context).lowData;
+}
+
+export function selectHigherResolutionRung<T extends RungLike>(
+  qualities: readonly T[],
+  context: ModeSelectionContext = {},
+): T | undefined {
+  return selectModeRungs(qualities, context).higher;
+}
+
 export function selectLowDataQuality(
   qualities: readonly AvailableQualityFile[],
 ): AvailableQualityFile | undefined {
-  return sortedQualities(qualities)[0];
+  return selectLowDataRung(qualities);
 }
 
 export function selectHigherResolutionQuality(
   qualities: readonly AvailableQualityFile[],
+  displayHeight?: number,
+  devicePixelRatio?: number,
 ): AvailableQualityFile | undefined {
-  return sortedQualities(qualities).at(-1);
+  return selectHigherResolutionRung(qualities, {
+    ...(displayHeight === undefined ? {} : { displayHeight }),
+    ...(devicePixelRatio === undefined ? {} : { devicePixelRatio }),
+  });
 }
 
 export function selectManualQuality(
@@ -187,40 +353,34 @@ export function displayTargetHeight(
   return Math.max(1, playerHeight) * pixelRatio;
 }
 
+/** The rung Auto should be on, from the shared anchor. */
 export function selectAutoQuality(
   qualities: readonly AvailableQualityFile[],
   context: FileQualitySelectionContext,
 ): AvailableQualityFile | undefined {
-  const sorted = sortedQualities(qualities);
-  if (sorted.length === 0) return undefined;
-  const constrainedConnection =
-    context.saveData === true ||
-    ["slow-2g", "2g"].includes(context.effectiveType ?? "") ||
-    (context.downlinkMbps !== undefined && context.downlinkMbps < 2.5) ||
-    (context.recentStallCount ?? 0) >= 2;
-  if (constrainedConnection) return sorted[0];
-
-  let targetHeight = displayTargetHeight(
-    context.playerHeight,
-    context.devicePixelRatio,
-  );
-  if (
-    context.effectiveType === "3g" ||
-    (context.downlinkMbps !== undefined && context.downlinkMbps < 6)
-  ) {
-    targetHeight = Math.min(targetHeight, 720);
-  } else if (context.downlinkMbps === undefined) {
-    // Safari and Firefox do not implement `navigator.connection`, so the old
-    // 720p cap here left Auto permanently stuck at 720p on those browsers.
-    // 1080p is a safe opening bid; measured buffer health moves it from there.
-    targetHeight = Math.min(targetHeight, 1080);
-  } else if (context.downlinkMbps < 12) {
-    targetHeight = Math.min(targetHeight, 1080);
-  }
-
-  return (
-    sorted.find((quality) => quality.height >= targetHeight) ?? sorted.at(-1)
-  );
+  /*
+   * The complete-file path still describes its connection with
+   * `navigator.connection`, so its Mbps hint is converted to the bits/second
+   * the shared anchor speaks. Both paths then answer from one rule, which is
+   * the point: Auto must not mean two different things depending on whether a
+   * title happens to be packaged adaptively.
+   */
+  return selectAnchorRung(sortedQualities(qualities), {
+    displayHeight: context.playerHeight,
+    ...(context.devicePixelRatio === undefined
+      ? {}
+      : { devicePixelRatio: context.devicePixelRatio }),
+    ...(context.saveData === undefined ? {} : { saveData: context.saveData }),
+    ...(context.effectiveType === undefined
+      ? {}
+      : { effectiveType: context.effectiveType }),
+    ...(context.downlinkMbps === undefined
+      ? {}
+      : { bandwidthBps: context.downlinkMbps * 1_000_000 }),
+    ...(context.recentStallCount === undefined
+      ? {}
+      : { recentStallCount: context.recentStallCount }),
+  });
 }
 
 export function shouldSwitchFileQuality({

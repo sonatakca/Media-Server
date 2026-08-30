@@ -32,6 +32,7 @@ import {
   getAdaptiveFixtureDirectory,
 } from "./testFixtures";
 import { ADAPTIVE_PROFILE_VERSION } from "./profile";
+import { buildWebVttMediaPlaylist } from "./subtitles";
 
 const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -145,6 +146,60 @@ describe("adaptive package validation", () => {
     expect(result.issues).toEqual([]);
     expect(result.ok).toBe(true);
   }, 300_000);
+
+  /**
+   * The regression this guards: the subtitle check compared the playlist's URI
+   * against a bare filename, which assumed the playlist sits beside its media.
+   * In the published layout the playlist lives in the hidden package directory
+   * and the media in the folder a person browses, so every title carrying
+   * subtitles failed validation while being entirely correct.
+   */
+  it("accepts a subtitle whose playlist and media sit in different folders", async () => {
+    if (!ffmpegAvailable) return;
+    const root = await damagedCopy(async (versionRoot) => {
+      const metadata = await readMetadata(versionRoot);
+      const duration = Number(metadata.sourceDurationSeconds);
+
+      await mkdir(path.join(versionRoot, "subtitle"), { recursive: true });
+      await mkdir(path.join(versionRoot, ".seyirlik", "subtitle"), {
+        recursive: true,
+      });
+      await writeFile(
+        path.join(versionRoot, "subtitle", "turkish.vtt"),
+        "WEBVTT\n\n00:00.000 --> 00:02.000\nMerhaba.\n",
+        "utf8",
+      );
+      await writeFile(
+        path.join(versionRoot, ".seyirlik", "subtitle", "turkish.m3u8"),
+        buildWebVttMediaPlaylist(duration, "../../subtitle/turkish.vtt"),
+        "utf8",
+      );
+
+      await writeMetadata(versionRoot, {
+        ...metadata,
+        subtitleRenditions: [
+          {
+            id: "subtitle-1000",
+            sourceStreamIndex: 1000,
+            language: "tur",
+            isDefault: false,
+            isForced: false,
+            isHearingImpaired: false,
+            codec: "webvtt",
+            durationSeconds: duration,
+            playlistPath: ".seyirlik/subtitle/turkish.m3u8",
+            subtitlePath: "subtitle/turkish.vtt",
+            fileSizeBytes: 42,
+          },
+        ],
+      });
+    });
+
+    const result = await validate(root);
+    expect(
+      result.issues.filter((issue) => issue.stage === "subtitle-playlist"),
+    ).toEqual([]);
+  }, 120_000);
 
   it("rejects a missing manifest", async () => {
     if (!ffmpegAvailable) return;

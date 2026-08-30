@@ -10,6 +10,15 @@ export interface AdaptiveHlsController {
   /** `height` locks one level; null returns future fragments to ABR. */
   setQualityHeight(height: number | null, maxHeight?: number | null): void;
   setAudioStream(sourceStreamIndex: number): boolean;
+  /**
+   * What the engine has actually measured the link to carry, in bits/second.
+   *
+   * This is throughput observed while pulling real fragments, which is a far
+   * better number than `navigator.connection.downlink` — that is a coarse,
+   * rounded hint the browser volunteers, and Safari and Firefox do not
+   * volunteer it at all. Undefined when no estimate exists yet.
+   */
+  getBandwidthEstimateBps(): number | undefined;
 }
 
 export interface HlsPlaybackEvent {
@@ -20,7 +29,14 @@ export interface HlsPlaybackEvent {
 export interface AttachSourceOptions {
   onHlsEvent?: (event: HlsPlaybackEvent) => void;
   onHlsFatalError?: (data: unknown) => void;
-  onAdaptiveLevelChanged?: (height: number) => void;
+  /**
+   * The level now on screen. `width` is reported alongside `height` because a
+   * ladder rung is named by its class (1080p) while the frame it produces is
+   * whatever the source's shape gives — a 2.39:1 master's "2160p" rung is
+   * 3840x1608. Matching a rung by frame height alone therefore fails on every
+   * letterboxed title, so the caller is given the width to match on instead.
+   */
+  onAdaptiveLevelChanged?: (level: { height: number; width: number }) => void;
 }
 
 export function isHlsPlaybackUrl(
@@ -152,13 +168,52 @@ export function attachSourceToVideo(
   if (isHls && Hls.isSupported()) {
     const hls = new Hls({
       enableWorker: true,
-      capLevelToPlayerSize: true,
+      /*
+       * Deliberately off. hls.js's own cap controller writes `autoLevelCapping`
+       * on a timer, and this file writes it too whenever the viewer's choice
+       * changes — two owners of one property, where whoever ran last wins. The
+       * visible symptom is Auto ignoring the ladder: the cap the viewer's mode
+       * implies gets overwritten a second later by a size-derived one, and an
+       * element measured while it is hidden or mid-reattach measures zero,
+       * which that controller reads as "the smallest rung will do". Capping is
+       * done in `applyAdaptivePreference` instead, where both inputs are
+       * considered together and a zero measurement is not mistaken for a
+       * request for 144p.
+       */
+      capLevelToPlayerSize: false,
       lowLatencyMode: false,
       startLevel: -1,
       abrEwmaDefaultEstimate: 5_000_000,
       maxStarvationDelay: 4,
       maxLoadingDelay: 4,
       testBandwidth: true,
+      /*
+       * Recover from a dip roughly as fast as we fell into it.
+       *
+       * The defaults are tuned for the open internet, where a link that just
+       * failed is assumed likely to fail again, so the estimate is slow to
+       * forgive and up-switches demand a wide margin. Measured against this
+       * ladder that produced a badly asymmetric Auto: a drop to the bottom rung
+       * happened within seconds, while climbing back took minutes at a
+       * bandwidth that had comfortably served a much higher rung on the way
+       * down. To a viewer that reads as Auto going to 144p and staying there.
+       *
+       * A media server on a home network is the opposite case — the link is
+       * usually excellent and a dip is usually transient — so the estimate is
+       * given a shorter memory and up-switches a smaller margin. Down-switching
+       * is deliberately left at its default: being quick to protect playback is
+       * the behaviour that was already right.
+       */
+      /*
+       * Only the slow half of the estimate is shortened. Speeding up the fast
+       * half as well was measurably worse: at a bandwidth with little headroom
+       * it re-tried the rung above on every sample and oscillated between two
+       * rungs, which is more distracting to watch than simply sitting on the
+       * lower one. The slow half is what carries the memory of a bad patch, so
+       * it is the half worth shortening.
+       */
+      abrEwmaSlowVoD: 6.0,
+      abrBandWidthUpFactor: 0.8,
     });
     let lockedHeight: number | null = null;
     let maximumHeight: number | null = requestedMaxHeight;
@@ -172,9 +227,35 @@ export function attachSourceToVideo(
       return allowed[0]?.index ?? getBestAllowedHlsLevel(hls, height);
     };
 
+    /**
+     * The tallest rung this player is physically able to show, or null when
+     * that cannot be known yet.
+     *
+     * Returning null rather than zero is the point: an element that is hidden,
+     * detached, or between sources measures nothing, and treating that as a
+     * ceiling would pin Auto to the bottom rung exactly when it is least able
+     * to argue back. A cap is only applied once the element has a real size.
+     */
+    const displayCapHeight = (): number | null => {
+      const rect = videoElement.getBoundingClientRect();
+      const ratio =
+        typeof window === "undefined"
+          ? 1
+          : Math.min(Math.max(window.devicePixelRatio || 1, 1), 2);
+      const usable = Math.round(rect.height * ratio);
+      return usable > 0 ? usable : null;
+    };
+
     const applyAdaptivePreference = () => {
       if (hls.levels.length === 0) return;
-      hls.autoLevelCapping = levelAtOrBelow(maximumHeight);
+      // The lower of what the viewer asked for and what the screen can show,
+      // with either side allowed to be absent.
+      const display = displayCapHeight();
+      const ceiling =
+        maximumHeight !== null && display !== null
+          ? Math.min(maximumHeight, display)
+          : (maximumHeight ?? display);
+      hls.autoLevelCapping = levelAtOrBelow(ceiling);
 
       if (lockedHeight === null) {
         // Back to automatic: future fragments follow ABR again, and nothing
@@ -209,7 +290,12 @@ export function attachSourceToVideo(
     hls.on(Hls.Events.LEVEL_SWITCHED, (_event, data) => {
       options.onHlsEvent?.({ name: Hls.Events.LEVEL_SWITCHED, data });
       const level = hls.levels[data.level];
-      if (level?.height) options.onAdaptiveLevelChanged?.(level.height);
+      if (level?.height) {
+        options.onAdaptiveLevelChanged?.({
+          height: level.height,
+          width: level.width ?? 0,
+        });
+      }
 
       console.info("[Seyirlik Playback] HLS level switched", {
         level: data.level,
@@ -247,6 +333,18 @@ export function attachSourceToVideo(
     hls.loadSource(playbackUrl);
     hls.attachMedia(videoElement);
 
+    /*
+     * The display ceiling changes with the window, with fullscreen, and simply
+     * with the element gaining a size after layout. Re-evaluating on resize is
+     * what lets a player that was measured at zero recover the moment it has
+     * real dimensions, instead of staying capped for the rest of the session.
+     */
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => applyAdaptivePreference());
+    observer?.observe(videoElement);
+
     return {
       usingHlsJs: true,
       adaptiveController: {
@@ -254,6 +352,14 @@ export function attachSourceToVideo(
           lockedHeight = height;
           maximumHeight = maxHeight;
           applyAdaptivePreference();
+        },
+        getBandwidthEstimateBps: () => {
+          const estimate = hls.bandwidthEstimate;
+          return typeof estimate === "number" &&
+            Number.isFinite(estimate) &&
+            estimate > 0
+            ? estimate
+            : undefined;
         },
         setAudioStream: (sourceStreamIndex) => {
           const marker = `track-${sourceStreamIndex}`;
@@ -269,6 +375,7 @@ export function attachSourceToVideo(
         },
       },
       destroy: () => {
+        observer?.disconnect();
         hls.destroy();
         videoElement.removeAttribute("src");
         videoElement.load();

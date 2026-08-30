@@ -9,11 +9,13 @@ import {
   canRetry,
   formatBytes,
   formatDuration,
+  formatFinishedAt,
   formatSpeed,
   lastSequence,
   mergeEvents,
   mergeJobFrame,
   progressPercent,
+  processingDurationSeconds,
   stageStateFor,
   subtitleDecisionKey,
   summariseLanguages,
@@ -137,6 +139,30 @@ describe("actions", () => {
     expect(canRetry(job({ state: "cancelled" }))).toBe(true);
     expect(canRetry(job({ state: "succeeded" }))).toBe(false);
     expect(canRetry(job({ state: "running" }))).toBe(false);
+  });
+});
+
+describe("job history time", () => {
+  it("measures a completed job from its actual start", () => {
+    expect(
+      processingDurationSeconds(
+        job({
+          createdAt: "2026-01-01T09:59:00.000Z",
+          startedAt: "2026-01-01T10:00:00.000Z",
+          finishedAt: "2026-01-01T10:02:05.000Z",
+        }),
+      ),
+    ).toBe(125);
+  });
+
+  it("has no duration or finish label before completion", () => {
+    expect(processingDurationSeconds(job())).toBeNull();
+    expect(formatFinishedAt(null, "en-US")).toBe("—");
+  });
+
+  it("formats the recorded finish instant in the requested locale", () => {
+    const value = formatFinishedAt("2026-08-30T18:52:00.000Z", "en-US");
+    expect(value).toContain("2026");
   });
 });
 

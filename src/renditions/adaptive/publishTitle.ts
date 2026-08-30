@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import type { AdaptivePackageMetadata } from "./metadata";
+import { MASTER_LAYOUT_VERSION } from "./repairMaster";
 import {
   TITLE_AUDIO_DIRECTORY,
   TITLE_SUBTITLE_DIRECTORY,
@@ -308,6 +309,10 @@ export async function publishTitlePackage({
     }
     const buildRecord = {
       ...metadata,
+      // Which master generator produced this playlist, so a later improvement
+      // to it can be applied to the package without re-encoding media that is
+      // already correct.
+      masterLayoutVersion: MASTER_LAYOUT_VERSION,
       masterPlaylistPath: plan.masterPlaylistPath,
       videoRenditions: metadata.videoRenditions.map((rendition) => ({
         ...rendition,

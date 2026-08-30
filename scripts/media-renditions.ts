@@ -1,5 +1,9 @@
 #!/usr/bin/env node
 import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import {
+  MASTER_LAYOUT_VERSION,
+  repairTitleMaster,
+} from "../src/renditions/adaptive/repairMaster";
 import path from "node:path";
 import {
   analyseRenditionLibrary,
@@ -62,8 +66,7 @@ function parseArguments(argv: string[]): CliArguments {
     const next = rest[index + 1];
     if (argument === "--dry-run") result.dryRun = true;
     else if (argument === "--all-audio-tracks") result.allAudioTracks = true;
-    else if (argument === "--default-audio-only")
-      result.allAudioTracks = false;
+    else if (argument === "--default-audio-only") result.allAudioTracks = false;
     else if (argument === "--confirm-stale") result.confirmStale = true;
     else if (argument === "--library" && next) {
       result.library = next;
@@ -301,7 +304,23 @@ async function validateAdaptiveOutputs(
       mediaId: item.mediaId,
       relativePath: item.relativePath,
       status: validation.ok ? "ready" : "validation-failed",
-      ...(!validation.ok ? { error: validation.issues.join("; ") } : {}),
+      /*
+       * An issue is a record, not a string, so joining the array directly
+       * rendered every failure as "[object Object]" — the one moment the tool
+       * exists for is the one moment it said nothing. Each issue names the
+       * rendition and stage it came from, and both belong in the line.
+       */
+      ...(!validation.ok
+        ? {
+            error: validation.issues
+              .map((issue) =>
+                [issue.rendition, issue.stage].filter(Boolean).length > 0
+                  ? `${[issue.rendition, issue.stage].filter(Boolean).join("/")}: ${issue.message}`
+                  : issue.message,
+              )
+              .join("; "),
+          }
+        : {}),
     });
   }
   return results;
@@ -524,6 +543,10 @@ function usage(): string {
     "  status",
     "  validate [--profile legacy|adaptive|all] [--media-id UUID] [--source relative/path]",
     "  cleanup [--older-than-hours 24] [--dry-run]",
+    "  repair-masters [--library Movies|Series] [--media-id UUID] [--source relative/path] [--dry-run]",
+    "",
+    "repair-masters rewrites published master playlists to the current layout without",
+    "re-encoding. Media files are never touched.",
     "",
     "cleanup removes only abandoned generated work directories. Stale completed output is never removed by this command.",
   ].join("\n");
@@ -707,6 +730,58 @@ async function main() {
       process.removeListener("SIGINT", cancel);
       process.removeListener("SIGTERM", cancel);
     }
+    return;
+  }
+
+  if (args.command === "repair-masters") {
+    /*
+     * Brings existing packages up to the current master layout without
+     * re-encoding. The media in a published package is unaffected by a change
+     * in how the playlist describes it, so spending hours reproducing correct
+     * bytes to obtain a corrected playlist would be pure waste.
+     */
+    const report = await loadLatestReport(reportPath);
+    const titles = new Set<string>();
+    for (const item of report.items) {
+      if (args.source && item.relativePath !== args.source) continue;
+      if (args.mediaId && item.mediaId !== args.mediaId) continue;
+      if (args.library && !item.relativePath.startsWith(`${args.library}/`)) {
+        continue;
+      }
+      titles.add(
+        path.dirname(
+          path.join(paths.mediaRoot, ...item.relativePath.split("/")),
+        ),
+      );
+    }
+
+    let updated = 0;
+    let current = 0;
+    let unsupported = 0;
+    for (const titleRoot of [...titles].sort()) {
+      const result = args.dryRun
+        ? { status: "dry-run" as const, previousVersion: 0 }
+        : await repairTitleMaster(titleRoot);
+      const name = path.basename(titleRoot);
+      if (result.status === "updated") {
+        updated += 1;
+        console.log(
+          `updated\t${name} (layout v${result.previousVersion} -> v${MASTER_LAYOUT_VERSION})`,
+        );
+      } else if (result.status === "current") {
+        current += 1;
+      } else if (result.status === "unsupported") {
+        unsupported += 1;
+        console.log(
+          `skipped\t${name}: ${"reason" in result ? result.reason : "unsupported"}`,
+        );
+      } else {
+        console.log(`dry-run\t${name}`);
+      }
+    }
+    console.log(
+      `\nMaster layout v${MASTER_LAYOUT_VERSION}: ${updated} updated, ${current} already current, ${unsupported} skipped.`,
+    );
     return;
   }
 
