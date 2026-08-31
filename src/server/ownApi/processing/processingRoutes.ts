@@ -10,6 +10,7 @@ import {
   requireUuid,
 } from "../api/validation";
 import { isPathInsideRoot } from "../../pathSecurity";
+import { RENDITION_TARGETS } from "../../../renditions/policy";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { JobQueue } from "../tasks/jobQueue";
 import {
@@ -126,13 +127,19 @@ export function createProcessingRoutes({
     return report;
   }
 
-  /** Resolves an item to a real file on disk, refusing anything outside the root. */
-  async function resolveSource(itemId: string, mediaFileId?: string) {
+  /**
+   * Where an item's bytes would live, whether or not they are still there.
+   *
+   * Locating and reading are separate steps because a source can be deleted
+   * while the package built from it stays on disk: the path is still the only
+   * way to find that package, so it is resolved before the file is opened.
+   */
+  async function locateSource(itemId: string, mediaFileId?: string) {
     const files = await catalogue.listFilesForItem(itemId);
     const file = mediaFileId
       ? files.find((candidate) => candidate.id === mediaFileId)
       : files[0];
-    if (!file || file.missingSince !== null) {
+    if (!file) {
       throw new OwnApiError(
         "MEDIA_NOT_FOUND",
         "The requested media could not be found.",
@@ -154,6 +161,26 @@ export function createProcessingRoutes({
   }
 
   /**
+   * The source's stats, or `null` when the source is gone.
+   *
+   * A deleted source is an ordinary state of the library, not a fault: `stat`
+   * raising ENOENT used to reach the page as a bare internal error, which said
+   * nothing about the package the title still has.
+   */
+  async function statSource(
+    file: { missingSince: Date | null },
+    absolutePath: string,
+  ) {
+    if (file.missingSince !== null) return null;
+    try {
+      return await stat(absolutePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  }
+
+  /**
    * What the title already holds, so a preview can describe the work that is
    * actually left rather than the work a bare source would need.
    *
@@ -161,23 +188,49 @@ export function createProcessingRoutes({
    * carried every rung of it, which reads as "all of this is about to be
    * built" when the honest answer is "nothing is".
    */
-  async function existingPackage(absolutePath: string, fingerprint: string) {
+  async function existingPackage(
+    absolutePath: string,
+    /** `null` when the source is gone, so nothing can be compared against it. */
+    fingerprint: string | null,
+  ) {
     const titleRoot = path.dirname(absolutePath);
     const manifest = await readTitlePackageManifest(titleRoot).catch(
       () => undefined,
     );
     if (!manifest) return { present: false as const };
 
-    const sourceMatches = manifest.sourceFingerprint === fingerprint;
+    const sourceMatches =
+      fingerprint !== null && manifest.sourceFingerprint === fingerprint;
+    const rungs = manifest.video
+      .map((rendition) => rendition.qualityHeight)
+      .sort((left, right) => right - left);
+    /*
+     * Whether the package is a whole ladder, judged from the package alone.
+     *
+     * The source is what normally decides which rungs a title should have, and
+     * it can be gone by the time anyone asks. Its own top rung stands in for
+     * it: the ladder always reaches the source's class, so a package holding
+     * every standard rung at or below its best one is not short of anything.
+     */
+    const complete = RENDITION_TARGETS.map((target) => target.qualityHeight)
+      .filter((height) => height <= (rungs[0] ?? 0))
+      .every((height) => rungs.includes(height));
     const profileMatches = manifest.profileVersion === ADAPTIVE_PROFILE_VERSION;
     return {
       present: true as const,
       current: sourceMatches && profileMatches,
       sourceMatches,
       profileMatches,
-      rungs: manifest.video
-        .map((rendition) => rendition.qualityHeight)
-        .sort((left, right) => right - left),
+      rungs,
+      complete,
+      /*
+       * The package's dynamic range, which is the only record of it once the
+       * source is gone. A ladder is packaged in one transfer characteristic,
+       * so the first rung that is not SDR names the whole package.
+       */
+      hdr:
+        manifest.video.find((rendition) => rendition.hdr !== "sdr")?.hdr ??
+        "sdr",
       audioTracks: manifest.audio.length,
       subtitleTracks: manifest.subtitle.length,
       totalBytes: manifest.storage.totalBytes,
@@ -190,7 +243,7 @@ export function createProcessingRoutes({
   ): Promise<{
     decision: ProcessingDecision;
     fingerprint: string;
-    file: Awaited<ReturnType<typeof resolveSource>>["file"];
+    file: Awaited<ReturnType<typeof locateSource>>["file"];
     absolutePath: string;
     mtimeMs: number;
     /** The package on disk, plus the rungs today's ladder would add to it. */
@@ -198,8 +251,15 @@ export function createProcessingRoutes({
       missingRungs: number[];
     };
   }> {
-    const { file, absolutePath } = await resolveSource(itemId, mediaFileId);
-    const stats = await stat(absolutePath);
+    const { file, absolutePath } = await locateSource(itemId, mediaFileId);
+    const stats = await statSource(file, absolutePath);
+    if (!stats) {
+      throw new OwnApiError(
+        "SOURCE_UNAVAILABLE",
+        "The source file for this title is no longer on disk.",
+        409,
+      );
+    }
     const probe = await probeMediaFile(absolutePath, ffprobePath);
     const report = await hardware();
     const freeBytes = await freeBytesOn(renditionRoot);
@@ -242,7 +302,10 @@ export function createProcessingRoutes({
      * output and reserved space for seven renditions it was not making.
      */
     const incremental =
-      !isCurrent && existing.present && existing.current && missingRungs.length > 0;
+      !isCurrent &&
+      existing.present &&
+      existing.current &&
+      missingRungs.length > 0;
     const decision = isCurrent
       ? decideProcessing({ ...plan, alreadyCurrent: true })
       : incremental
@@ -316,6 +379,30 @@ export function createProcessingRoutes({
         const mediaFileId = body.mediaFileId
           ? requireUuid(optionalBodyString(body, "mediaFileId"), "mediaFileId")
           : undefined;
+        /*
+         * A title whose source has been deleted still has a package worth
+         * describing, so the preview reports the absent source rather than
+         * failing on it. There is no decision to make without the bytes: the
+         * page shows what is on disk and offers no way to start a job.
+         */
+        const located = await locateSource(itemId, mediaFileId);
+        const stats = await statSource(located.file, located.absolutePath);
+        if (!stats) {
+          const existing = await existingPackage(located.absolutePath, null);
+          const activeJob = await store.findActiveForFile(located.file.id);
+          sendData(context.response, context.requestId, {
+            itemId,
+            mediaFileId: located.file.id,
+            relativePath: located.file.relativePath,
+            sourceAvailable: false,
+            sourceFingerprint: null,
+            decision: null,
+            existing: { ...existing, missingRungs: [] },
+            activeJobId: activeJob?.id ?? null,
+          });
+          return;
+        }
+
         const { decision, file, fingerprint, existing } = await analyse(
           itemId,
           mediaFileId,
@@ -325,6 +412,7 @@ export function createProcessingRoutes({
           itemId,
           mediaFileId: file.id,
           relativePath: file.relativePath,
+          sourceAvailable: true,
           sourceFingerprint: fingerprint,
           decision,
           existing,

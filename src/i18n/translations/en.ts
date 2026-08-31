@@ -333,6 +333,12 @@ export const en = {
   "processing.loadingTitles": "Loading titles…",
   "processing.loadingPreview": "Loading process preview…",
   "processing.previewUnavailable": "A process preview is not available.",
+  "processing.sourceMissing": "The source file is no longer available.",
+  "processing.sourceMissingHint":
+    "This title's source file is gone, so nothing can be processed. The renditions below are still on disk.",
+  "processing.dynamicRange": "Dynamic range",
+  "processing.packageSize": "Package size",
+  "processing.noPackage": "No renditions are on disk for this title.",
   "processing.tryAgain": "Try again",
   "processing.activeJob": "Already in the queue",
   "processing.preview": "Preview decision",

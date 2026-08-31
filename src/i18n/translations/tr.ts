@@ -334,6 +334,12 @@ export const tr = {
   "processing.loadingTitles": "Başlıklar yükleniyor…",
   "processing.loadingPreview": "İşlem önizlemesi yükleniyor…",
   "processing.previewUnavailable": "İşlem önizlemesi kullanılamıyor.",
+  "processing.sourceMissing": "Kaynak dosya artık kullanılamıyor.",
+  "processing.sourceMissingHint":
+    "Bu başlığın kaynak dosyası yok, bu yüzden işlenemez. Aşağıdaki çözünürlükler diskte duruyor.",
+  "processing.dynamicRange": "Dinamik aralık",
+  "processing.packageSize": "Paket boyutu",
+  "processing.noPackage": "Bu başlık için diskte çözünürlük yok.",
   "processing.tryAgain": "Tekrar dene",
   "processing.activeJob": "Zaten kuyrukta",
   "processing.preview": "Kararı önizle",

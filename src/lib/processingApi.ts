@@ -217,6 +217,17 @@ export type ExistingPackage =
       profileMatches: boolean;
       rungs: number[];
       /**
+       * True when the package holds every standard rung at or below its own
+       * best one — a whole ladder, judged without the source. Absent from
+       * servers predating it.
+       */
+      complete?: boolean;
+      /**
+       * The package's transfer characteristic: "sdr", "hdr10" or "hlg".
+       * Absent from servers predating it, so read it as unknown, not as SDR.
+       */
+      hdr?: string;
+      /**
        * Rungs today's ladder would add to this package.
        *
        * Separate from `current`: a package can match its source and profile
@@ -229,15 +240,37 @@ export type ExistingPackage =
       totalBytes: number;
     };
 
-export interface ProcessingPreview {
+interface ProcessingPreviewBase {
   itemId: string;
   mediaFileId: string;
   relativePath: string;
-  sourceFingerprint: string;
-  decision: ProcessingDecision;
   existing: ExistingPackage;
   activeJobId: string | null;
 }
+
+/**
+ * A preview describes a title, not only the work waiting for it.
+ *
+ * The source can be deleted while the package built from it stays on disk, so
+ * `sourceAvailable` is false rather than the request failing: there is no
+ * decision to show, but the renditions the title still holds are worth seeing.
+ */
+export type ProcessingPreview =
+  | (ProcessingPreviewBase & {
+      /*
+       * Optional, and only ever `true`, so that a server predating this field
+       * is read as "the source is there" — which is what every response it can
+       * produce means. Absence must not be mistaken for absence of a source.
+       */
+      sourceAvailable?: true;
+      sourceFingerprint: string;
+      decision: ProcessingDecision;
+    })
+  | (ProcessingPreviewBase & {
+      sourceAvailable: false;
+      sourceFingerprint: null;
+      decision: null;
+    });
 
 export function previewProcessing(
   itemId: string,

@@ -93,6 +93,19 @@ function loadProcessingPreview(itemId: string): Promise<ProcessingPreview> {
   return request;
 }
 
+/**
+ * The transfer characteristic, spelled the way a viewer would say it.
+ *
+ * Stated even when it is SDR: "no HDR" is as much a fact about a title as HDR
+ * is, and its absence used to be indistinguishable from an unread source.
+ */
+function dynamicRangeLabel(hdr: string): string {
+  if (hdr === "hdr10") return "HDR10";
+  if (hdr === "hlg") return "HLG";
+  if (hdr === "sdr") return "SDR";
+  return hdr.toUpperCase();
+}
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -147,7 +160,8 @@ function LadderRungs({
   planned: readonly number[];
   present: readonly number[];
   keptLabel: string;
-  buildLabel: string;
+  /** Omitted where nothing can be built, so the legend states only the truth. */
+  buildLabel?: string;
 }) {
   const owned = new Set(present);
   return (
@@ -177,10 +191,12 @@ function LadderRungs({
           <span className="h-2 w-2 rounded-full bg-emerald-400/70" />
           {keptLabel}
         </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="h-2 w-2 rounded-full bg-amber-400/70" />
-          {buildLabel}
-        </span>
+        {buildLabel ? (
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-amber-400/70" />
+            {buildLabel}
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -687,6 +703,25 @@ export function MediaProcessingPage() {
                     ? getPrimaryImageUrl(item.Id, item.ImageTags.Primary, 360)
                     : "";
                   const isStarting = startingItemId === item.Id;
+                  /*
+                   * Nothing can be encoded from bytes that are gone, so a
+                   * title whose source has been deleted drops its start button
+                   * and describes the package it still holds instead. Split
+                   * here rather than at each use so the decision is only read
+                   * where it exists.
+                   */
+                  const orphanPreview =
+                    itemPreview && itemPreview.sourceAvailable === false
+                      ? itemPreview
+                      : null;
+                  const readyPreview =
+                    itemPreview && itemPreview.sourceAvailable !== false
+                      ? itemPreview
+                      : null;
+                  const orphanComplete =
+                    orphanPreview !== null &&
+                    orphanPreview.existing.present &&
+                    orphanPreview.existing.complete === true;
                   const hasActiveJob = loading
                     ? Boolean(itemPreview?.activeJobId)
                     : activeItemIds.has(item.Id);
@@ -723,33 +758,37 @@ export function MediaProcessingPage() {
                             </h2>
                             {itemPreview ? (
                               <p className="mt-0.5 line-clamp-2 text-xs leading-relaxed text-white/45">
-                                {itemPreview.decision.summary}
+                                {readyPreview
+                                  ? readyPreview.decision.summary
+                                  : t("processing.sourceMissing")}
                               </p>
                             ) : null}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => void startJob(item.Id)}
-                            disabled={
-                              isStarting ||
-                              state.status !== "ready" ||
-                              hasActiveJob
-                            }
-                            className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 py-2 text-xs font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
-                          >
-                            {isStarting ? (
-                              <Loader2
-                                size={14}
-                                className="animate-spin motion-reduce:animate-none"
-                                aria-hidden="true"
-                              />
-                            ) : (
-                              <Play size={14} aria-hidden="true" />
-                            )}
-                            {hasActiveJob
-                              ? t("processing.activeJob")
-                              : t("processing.start")}
-                          </button>
+                          {orphanPreview ? null : (
+                            <button
+                              type="button"
+                              onClick={() => void startJob(item.Id)}
+                              disabled={
+                                isStarting ||
+                                state.status !== "ready" ||
+                                hasActiveJob
+                              }
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-[var(--accent)] px-3 py-2 text-xs font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                            >
+                              {isStarting ? (
+                                <Loader2
+                                  size={14}
+                                  className="animate-spin motion-reduce:animate-none"
+                                  aria-hidden="true"
+                                />
+                              ) : (
+                                <Play size={14} aria-hidden="true" />
+                              )}
+                              {hasActiveJob
+                                ? t("processing.activeJob")
+                                : t("processing.start")}
+                            </button>
+                          )}
                         </div>
 
                         {state.status === "waiting" ||
@@ -783,13 +822,86 @@ export function MediaProcessingPage() {
                               {t("processing.tryAgain")}
                             </button>
                           </div>
-                        ) : itemPreview ? (
+                        ) : orphanPreview ? (
+                          /*
+                           * A whole ladder with no source left is a finished
+                           * title, not a problem, so it is not dressed as a
+                           * warning. Amber is kept for a package that really
+                           * is short of rungs it can no longer be given.
+                           */
+                          <div
+                            className={`flex flex-col gap-3 rounded-xl border p-3 sm:p-4 ${
+                              orphanComplete
+                                ? "border-emerald-400/20 bg-emerald-400/[0.05]"
+                                : "border-amber-400/20 bg-amber-400/[0.05]"
+                            }`}
+                          >
+                            <p
+                              className={`text-xs font-semibold ${
+                                orphanComplete
+                                  ? "text-emerald-100/75"
+                                  : "text-amber-100/75"
+                              }`}
+                            >
+                              {t("processing.sourceMissingHint")}
+                            </p>
+                            {orphanPreview.existing.present ? (
+                              <>
+                                <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                                  <Stat
+                                    label={t("processing.dynamicRange")}
+                                    value={dynamicRangeLabel(
+                                      orphanPreview.existing.hdr ?? "sdr",
+                                    )}
+                                  />
+                                  <Stat
+                                    label={t("processing.packageSize")}
+                                    value={formatBytes(
+                                      orphanPreview.existing.totalBytes,
+                                    )}
+                                  />
+                                  <Stat
+                                    label={t("processing.audioKept")}
+                                    value={String(
+                                      orphanPreview.existing.audioTracks,
+                                    )}
+                                  />
+                                  <Stat
+                                    label={t("processing.subtitlesKept")}
+                                    value={String(
+                                      orphanPreview.existing.subtitleTracks,
+                                    )}
+                                  />
+                                </div>
+                                <div className="flex flex-col gap-2">
+                                  <span className={LABEL}>
+                                    {t("processing.ladder")}
+                                  </span>
+                                  {/*
+                                   * Every rung here is already built, and
+                                   * without a source none can be added, so the
+                                   * "will be encoded" legend is left off.
+                                   */}
+                                  <LadderRungs
+                                    planned={orphanPreview.existing.rungs}
+                                    present={orphanPreview.existing.rungs}
+                                    keptLabel={t("processing.rungKept")}
+                                  />
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-xs text-white/45">
+                                {t("processing.noPackage")}
+                              </p>
+                            )}
+                          </div>
+                        ) : readyPreview ? (
                           <div className="flex flex-col gap-3 rounded-xl border border-white/[0.07] bg-black/25 p-3 sm:p-4">
-                            {itemPreview.existing?.present &&
-                            !itemPreview.existing.current ? (
+                            {readyPreview.existing?.present &&
+                            !readyPreview.existing.current ? (
                               <p className="text-xs font-semibold text-white/55">
                                 {formatTemplate(t("processing.rebuildReason"), {
-                                  reason: itemPreview.existing.sourceMatches
+                                  reason: readyPreview.existing.sourceMatches
                                     ? t("processing.rebuildProfile")
                                     : t("processing.rebuildSource"),
                                 })}
@@ -798,16 +910,36 @@ export function MediaProcessingPage() {
                             <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
                               <Stat
                                 label={t("processing.source")}
-                                value={`${itemPreview.decision.source.width}×${itemPreview.decision.source.height}${itemPreview.decision.source.isHdr ? " HDR" : ""}`}
+                                value={`${readyPreview.decision.source.width}×${readyPreview.decision.source.height}`}
+                              />
+                              <Stat
+                                label={t("processing.dynamicRange")}
+                                value={
+                                  /*
+                                   * The source decides this. The package only
+                                   * names the flavour, and only when it agrees
+                                   * that there is one — a tone-mapped package
+                                   * of an HDR source must not read as SDR.
+                                   */
+                                  !readyPreview.decision.source.isHdr
+                                    ? "SDR"
+                                    : readyPreview.existing.present &&
+                                        readyPreview.existing.hdr &&
+                                        readyPreview.existing.hdr !== "sdr"
+                                      ? dynamicRangeLabel(
+                                          readyPreview.existing.hdr,
+                                        )
+                                      : "HDR"
+                                }
                               />
                               <Stat
                                 label={t("processing.encoder")}
-                                value={itemPreview.decision.videoEncoder}
+                                value={readyPreview.decision.videoEncoder}
                               />
                               <Stat
                                 label={t("processing.estimate")}
                                 value={formatBytes(
-                                  itemPreview.decision.estimate.outputBytes,
+                                  readyPreview.decision.estimate.outputBytes,
                                 )}
                               />
                             </div>
@@ -816,12 +948,12 @@ export function MediaProcessingPage() {
                                 {t("processing.ladder")}
                               </span>
                               <LadderRungs
-                                planned={itemPreview.decision.ladder.map(
+                                planned={readyPreview.decision.ladder.map(
                                   (rung) => rung.qualityHeight,
                                 )}
                                 present={
-                                  itemPreview.existing?.present
-                                    ? itemPreview.existing.rungs
+                                  readyPreview.existing?.present
+                                    ? readyPreview.existing.rungs
                                     : []
                                 }
                                 keptLabel={t("processing.rungKept")}
@@ -1021,10 +1153,10 @@ export function MediaProcessingPage() {
                       </div>
 
                       {/*
-                        * Nine figures now rather than eight, so the row gains a
-                        * column at the widest breakpoint instead of squeezing
-                        * every value narrower.
-                        */}
+                       * Nine figures now rather than eight, so the row gains a
+                       * column at the widest breakpoint instead of squeezing
+                       * every value narrower.
+                       */}
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
                         <Stat label="%" value={`${percent}%`} />
                         <Stat
@@ -1050,11 +1182,11 @@ export function MediaProcessingPage() {
                           }
                         />
                         {/*
-                          * Two separate questions: what this job has written,
-                          * and how large it will end up. Falling back from the
-                          * first to the second is what labelled a planning
-                          * estimate as though it were bytes on disk.
-                          */}
+                         * Two separate questions: what this job has written,
+                         * and how large it will end up. Falling back from the
+                         * first to the second is what labelled a planning
+                         * estimate as though it were bytes on disk.
+                         */}
                         <Stat
                           label={t("processing.actualOutput")}
                           value={formatBytes(job.actualOutputBytes)}
