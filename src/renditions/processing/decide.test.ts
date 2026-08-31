@@ -68,6 +68,63 @@ const input = (overrides: Partial<DecideInput> = {}) =>
   });
 
 describe("decideProcessing", () => {
+  /**
+   * The summary describes the work, not the destination.
+   *
+   * A one-rung job announced itself as "Package 2160p, 1440p, 1080p, 720p,
+   * 480p, 360p, 240p, 144p", which reads as a full rebuild — exactly what the
+   * incremental path exists to avoid.
+   */
+  it("says what an incremental run will actually encode", () => {
+    const decision = input({
+      renditionsToEncode: [1440],
+      audioTracksToEncode: 0,
+    });
+
+    expect(decision.summary).toContain("1440p");
+    expect(decision.summary).toMatch(/existing package|reusing/i);
+    // It must not read as though every rung is being made again.
+    expect(decision.summary).not.toContain("2160p");
+    expect(decision.summary).not.toContain("720p");
+    // The full ladder is still available to anything that wants it.
+    expect(decision.ladder.length).toBeGreaterThan(1);
+    expect(decision.renditionsToEncode).toEqual([1440]);
+  });
+
+  /** A genuine full build still describes the whole package. */
+  it("still describes the whole ladder when everything is being built", () => {
+    const decision = input();
+    expect(decision.summary).toContain("Package");
+    expect(decision.summary).toContain("audio");
+  });
+
+
+  /**
+   * Sizing the job, not the finished package.
+   *
+   * A one-rung run reported the whole package's bytes as its own output — the
+   * page showed 35.7 GiB at 3% — and reserved disk for seven renditions it was
+   * never going to write.
+   */
+  it("estimates only the renditions this run will encode", () => {
+    const whole = input();
+    const oneRung = input({
+      renditionsToEncode: [1440],
+      audioTracksToEncode: 0,
+    });
+
+    expect(oneRung.estimate.outputBytes).toBeLessThan(
+      whole.estimate.outputBytes,
+    );
+    // The ladder still describes the finished package.
+    expect(oneRung.ladder.length).toBe(whole.ladder.length);
+    // And the staging reservation shrinks with it.
+    expect(oneRung.estimate.stagingBytes).toBeLessThan(
+      whole.estimate.stagingBytes,
+    );
+  });
+
+
   it("plans the full ladder for a 4K source", () => {
     const decision = input();
 

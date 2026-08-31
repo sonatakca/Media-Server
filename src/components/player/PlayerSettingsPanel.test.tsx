@@ -21,7 +21,7 @@ vi.mock("../../i18n/LanguageContext", () => ({
         "settings.noAlternateQualities": "No alternate qualities",
         "player.qualityLowData": "Low Data",
         "player.qualityLowDataDescription": "Uses less data",
-        "player.qualityHigherResolution": "Higher Resolution",
+        "player.qualityHigherResolution": "Higher Quality",
         "player.qualityHigherResolutionDescription": "Uses more data",
         "player.qualityAdvanced": "Advanced",
         "player.qualityBackToModes": "Quality modes",
@@ -72,20 +72,20 @@ function renderPanel(overrides: Partial<CompleteFileQualityControls> = {}) {
         },
         advancedOptions: [
           {
-            id: "original",
-            label: "Original (2160p)",
-            subtitle: "",
-            maxHeight: 2160,
-            maxWidth: 3840,
-            maxStreamingBitrate: 80_000_000,
-          },
-          {
             id: "generated-720",
             label: "720p",
             subtitle: "",
             maxHeight: 720,
             maxWidth: 1280,
             maxStreamingBitrate: 4_000_000,
+          },
+          {
+            id: "original",
+            label: "Original (2160p)",
+            subtitle: "",
+            maxHeight: 2160,
+            maxWidth: 3840,
+            maxStreamingBitrate: 80_000_000,
           },
         ],
         limitationsText: "Generated files carry the default audio track only.",
@@ -116,7 +116,7 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
       screen.getByRole("button", { name: /Auto \(720p\)/ }),
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: /Higher Resolution.*1080p/s }),
+      screen.getByRole("button", { name: /Higher Quality.*1080p/s }),
     ).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /Advanced/ }),
@@ -146,6 +146,13 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
 
     expect(screen.getByText("Original (2160p)")).toBeInTheDocument();
     expect(screen.getByText("720p")).toBeInTheDocument();
+    expect(
+      screen
+        .getAllByRole("button")
+        .map((button) => button.textContent)
+        .slice(-3),
+      // The 4K tag rides along in the accessible name; 720p earns no tag.
+    ).toEqual(["Quality modes", "720p", "Original (2160p)4K"]);
     expect(screen.queryByText("480p")).not.toBeInTheDocument();
     // Entries carry no repeated boilerplate; the check mark marks the active one.
     expect(screen.queryByText("Complete file")).not.toBeInTheDocument();
@@ -169,11 +176,50 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
     expect(screen.getByRole("button", { name: /Advanced/ })).toHaveFocus();
   });
 
-  it("marks the locked Advanced quality when playback is locked", () => {
+  /**
+   * The row names the rendition and nothing else. It is already the selected
+   * one, under a heading that says Advanced, so wording like "Locked to" spent
+   * a line repeating what the row's own state already shows.
+   */
+  it("names the chosen rendition under Advanced without extra wording", () => {
     renderPanel({ activeMode: "advanced", lockedQualityId: "generated-720" });
 
+    const advanced = screen.getByRole("button", { name: /Advanced/ });
+    expect(advanced.textContent).toContain("720p");
+    expect(advanced.textContent).not.toContain("Locked to");
+  });
+
+  /**
+   * The tag belongs on the first screen too, not only inside Advanced. That is
+   * the view most people ever see, and it is where the rendition each mode
+   * resolves to is shown.
+   */
+  it("tags the renditions the modes resolve to", () => {
+    renderPanel();
+
+    // Higher Quality resolves to 1080p here, so it is HD.
+    const higher = screen.getByRole("button", { name: /Higher quality/i });
+    expect(higher.textContent).toContain("HD");
+    // Low Data resolves to 480p, which is not worth a tag.
+    const lowData = screen.getByRole("button", { name: /Low data/i });
+    expect(lowData.textContent).not.toContain("HD");
+    expect(lowData.textContent).not.toContain("4K");
+  });
+
+  /**
+   * The class tag streaming players show beside a rendition. It says something
+   * the number does not — which tier this is — and only where that is worth
+   * saying, so 720p and below carry none.
+   */
+  it("tags 4K and HD renditions and leaves the rest untagged", () => {
+    renderPanel();
+    fireEvent.click(screen.getByRole("button", { name: /Advanced/ }));
+
     expect(
-      screen.getByRole("button", { name: /Advanced.*Locked to 720p/s }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: /Original \(2160p\)/ }).textContent,
+    ).toContain("4K");
+    expect(
+      screen.getByRole("button", { name: /^720p/ }).textContent,
+    ).not.toContain("HD");
   });
 });

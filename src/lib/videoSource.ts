@@ -248,13 +248,12 @@ export function attachSourceToVideo(
 
     const applyAdaptivePreference = () => {
       if (hls.levels.length === 0) return;
-      // The lower of what the viewer asked for and what the screen can show,
-      // with either side allowed to be absent.
+      // Auto is capped to what the screen can show. A derived or manual mode
+      // already incorporates Auto's display-aware baseline, so its explicit
+      // target owns the cap; applying the display limit a second time would
+      // erase Higher Quality's deliberate one-rung upward bias.
       const display = displayCapHeight();
-      const ceiling =
-        maximumHeight !== null && display !== null
-          ? Math.min(maximumHeight, display)
-          : (maximumHeight ?? display);
+      const ceiling = maximumHeight ?? display;
       hls.autoLevelCapping = levelAtOrBelow(ceiling);
 
       if (lockedHeight === null) {

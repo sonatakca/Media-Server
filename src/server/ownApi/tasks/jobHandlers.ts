@@ -43,7 +43,7 @@ export interface JobHandlerOptions {
       signal?: AbortSignal;
       isCancelled?: () => Promise<boolean>;
     }): Promise<{
-      status: "succeeded" | "failed" | "cancelled";
+      status: "succeeded" | "failed" | "cancelled" | "waiting-for-storage";
       errorMessage?: string;
     }>;
   };
@@ -305,6 +305,15 @@ export function createJobHandlers({
       // Already recorded in detail on the processing job; the queue row only
       // needs to know it did not succeed.
       throw new PermanentJobError(outcome.errorMessage ?? "Processing failed.");
+    }
+    /*
+     * Storage disappearing ends this queue run without being a failure. The
+     * processing job stays paused with its reason recorded and is requeued
+     * when the volume returns, so retrying here would only burn attempts
+     * against a disk that is not there.
+     */
+    if (outcome.status === "waiting-for-storage") {
+      return { status: "cancelled" as const };
     }
     return { status: outcome.status };
   };

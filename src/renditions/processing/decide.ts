@@ -69,6 +69,15 @@ export interface ProcessingDecision {
     colorPrimaries?: string;
   };
   ladder: LadderRung[];
+  /**
+   * The rungs this run will actually encode.
+   *
+   * `ladder` describes the package when it is finished; this describes the
+   * job. They differ whenever an existing package is only a rung or two short,
+   * and conflating them is what had a one-rung job report itself as encoding
+   * the whole ladder.
+   */
+  renditionsToEncode: number[];
   videoCodec: "h264" | "hevc";
   videoEncoder: RenditionVideoEncoder;
   hardwareAdapter: string;
@@ -91,6 +100,16 @@ export interface DecideProcessingInput {
   reserveBytes?: number;
   /** True when a current package for this exact source already exists. */
   alreadyCurrent?: boolean;
+  /**
+   * Rungs this run would actually encode, when a package already exists.
+   *
+   * The ladder describes the finished package; this describes the job. Sizing
+   * the job from the ladder made a one-rung run reserve disk for eight and
+   * report the whole package's bytes as its own output.
+   */
+  renditionsToEncode?: readonly number[];
+  /** Audio tracks this run would encode; existing valid audio is reused. */
+  audioTracksToEncode?: number;
 }
 
 /** Headroom kept free on the output volume so a full disk cannot be reached. */
@@ -156,11 +175,20 @@ export function decideProcessing(
       : hardware.selectedAdapter.hevc
     : hardware.selectedAdapter.h264;
 
+  /*
+   * What this run will write, which is the whole ladder only when the whole
+   * ladder is being built. Both the free-space check and the job's reported
+   * output size read this.
+   */
+  const encodedRungs =
+    input.renditionsToEncode ?? ladder.map((rung) => rung.qualityHeight);
   const estimateBytes = estimateAdaptivePackageBytes({
     durationSeconds: probe.durationSeconds,
-    qualityHeights: ladder.map((rung) => rung.qualityHeight),
+    qualityHeights: [...encodedRungs],
     codecFamily: codecFamilyForEncoder(encoder),
-    audioTrackCount: Math.max(1, streams.keptAudioStreamIndexes.length),
+    audioTrackCount:
+      input.audioTracksToEncode ??
+      Math.max(1, streams.keptAudioStreamIndexes.length),
   });
   const reserveBytes = input.reserveBytes ?? DEFAULT_RESERVE_BYTES;
   const stagingBytes = stagingBytesFor(estimateBytes.totalBytes);
@@ -208,6 +236,7 @@ export function decideProcessing(
   const base = {
     source,
     ladder,
+    renditionsToEncode: [...encodedRungs],
     videoCodec,
     videoEncoder: encoder,
     hardwareAdapter,
@@ -235,12 +264,39 @@ export function decideProcessing(
   const rungs = ladder.map((rung) => `${rung.qualityHeight}p`).join(", ");
   const audioCount = streams.keptAudioStreamIndexes.length;
   const subtitleCount = streams.keptSubtitleStreamIndexes.length;
+  const codecLabel = `${videoCodec === "hevc" ? "HEVC" : "H.264"}${preservesHdr ? " HDR" : ""}`;
+
+  /*
+   * What this run will do, not what the finished package will contain.
+   *
+   * The summary described the whole ladder whatever the job was, so a run
+   * adding a single rung announced itself as "Package 2160p, 1440p, 1080p,
+   * 720p, 480p, 360p, 240p, 144p" — which reads as though every rendition is
+   * being rebuilt, the very thing the incremental work exists to avoid. The
+   * full ladder is still carried in `ladder` for anything that wants it.
+   */
+  const isIncremental =
+    encodedRungs.length > 0 && encodedRungs.length < ladder.length;
+  if (isIncremental) {
+    const building = [...encodedRungs]
+      .sort((left, right) => right - left)
+      .map((height) => `${height}p`)
+      .join(", ");
+    return {
+      ...base,
+      action: "package-adaptive",
+      summary:
+        `Encode ${building} ${codecLabel} and add ${encodedRungs.length === 1 ? "it" : "them"} ` +
+        `to the existing package, reusing its other ${ladder.length - encodedRungs.length} renditions` +
+        `${audioCount > 0 ? ", audio" : ""}${subtitleCount > 0 ? " and subtitles" : ""}.`,
+    };
+  }
+
   return {
     ...base,
     action: "package-adaptive",
     summary:
-      `Package ${rungs} ${videoCodec === "hevc" ? "HEVC" : "H.264"}` +
-      `${preservesHdr ? " HDR" : ""} with ${audioCount} audio ` +
+      `Package ${rungs} ${codecLabel} with ${audioCount} audio ` +
       `${audioCount === 1 ? "rendition" : "renditions"}` +
       `${subtitleCount > 0 ? ` and ${subtitleCount} subtitle ${subtitleCount === 1 ? "track" : "tracks"}` : ""}.`,
   };

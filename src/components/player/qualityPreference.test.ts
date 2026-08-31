@@ -1,15 +1,22 @@
 import { describe, expect, it } from "vitest";
-import type { AvailableQualityFile } from "../../renditions/contracts";
+import type {
+  AvailableQualityFile,
+  QualityPreferenceMode,
+} from "../../renditions/contracts";
 import {
+  adaptiveQualityRequestForMode,
+  AUTO_QUALITY_LEVELS,
   loadQualityPreference,
   isQualityAudioCompatible,
   resolveManualHeight,
+  resolvePlaybackQualityTarget,
   saveQualityPreference,
   displayTargetHeight,
   selectAutoQuality,
   selectHigherResolutionQuality,
   selectHigherResolutionRung,
   selectModeRungs,
+  selectModeRungsFromAutoHeight,
   selectLowDataQuality,
   selectLowDataRung,
   selectManualQuality,
@@ -74,6 +81,19 @@ const qualities: AvailableQualityFile[] = [
 ];
 
 describe("quality preference persistence", () => {
+  it("keeps native Auto uncapped while biased and Advanced modes stay bounded", () => {
+    expect(adaptiveQualityRequestForMode("auto", 1080)).toEqual({});
+    expect(adaptiveQualityRequestForMode("low-data", 720)).toEqual({
+      maxHeight: 720,
+    });
+    expect(adaptiveQualityRequestForMode("higher-resolution", 1440)).toEqual({
+      maxHeight: 1440,
+    });
+    expect(adaptiveQualityRequestForMode("advanced", 2160)).toEqual({
+      qualityHeight: 2160,
+    });
+  });
+
   it("defaults to Auto and isolates preferences by user", () => {
     const storage = new MemoryStorage();
     saveQualityPreference({ mode: "low-data" }, "user-a", storage);
@@ -108,10 +128,77 @@ describe("quality preference persistence", () => {
     expect(loadQualityPreference("user-a", storage)).toEqual({ mode: "auto" });
   });
 
+  it("persists an automatic mode without a stale derived resolution", () => {
+    const storage = new MemoryStorage();
+    saveQualityPreference(
+      {
+        mode: "higher-resolution",
+        preferredHeight: 1440,
+        preferredQualityId: "generated-1440",
+      },
+      "user-a",
+      storage,
+    );
+
+    expect(loadQualityPreference("user-a", storage)).toEqual({
+      mode: "higher-resolution",
+    });
+    expect(storage.getItem("seyirlik:quality-preference:user-a")).toBe(
+      '{"mode":"higher-resolution"}',
+    );
+  });
+
   it("chooses the nearest lower manual height and never silently upgrades", () => {
     expect(resolveManualHeight(1080, [2160, 720, 480])).toBe(720);
     expect(resolveManualHeight(360, [2160, 720, 480])).toBe(480);
     expect(resolveManualHeight(720, [1080, 720, 480])).toBe(720);
+  });
+});
+
+describe("deriving the biased modes from a stable anchor", () => {
+  const ladder = [144, 240, 360, 480, 720, 1080, 1440, 2160].map((height) => ({
+    id: `${height}p`,
+    height,
+  }));
+
+  /**
+   * The ratchet this guards.
+   *
+   * Low Data was derived from the rung currently on screen. Applying it capped
+   * playback at 1080p, so the next read saw 1080p as "what Auto chose" and
+   * offered 720p instead — the menu walked downwards every time it was opened,
+   * and Auto itself appeared to fall from 2160p to 1080p.
+   */
+  it("does not move its own target when the bias is applied", () => {
+    const fromAuto = selectModeRungsFromAutoHeight(ladder, 2160);
+    expect(fromAuto.anchor?.id).toBe("2160p");
+    expect(fromAuto.lowData?.id).toBe("1080p");
+
+    /*
+     * The anchor is remembered from Auto, so asking again while Low Data is
+     * active — when the decoded rung is 1080p — must give the same answer.
+     */
+    const askedAgain = selectModeRungsFromAutoHeight(ladder, 2160);
+    expect(askedAgain.lowData?.id).toBe("1080p");
+    expect(askedAgain.anchor?.id).toBe("2160p");
+  });
+
+  /** Reading the anchor from the capped rung is what produced the slide. */
+  it("shows how deriving from the capped rung would slide downwards", () => {
+    const first = selectModeRungsFromAutoHeight(ladder, 2160).lowData!.height;
+    const second = selectModeRungsFromAutoHeight(ladder, first).lowData!.height;
+    const third = selectModeRungsFromAutoHeight(ladder, second).lowData!.height;
+
+    // Each step is strictly lower — exactly the behaviour the fix prevents by
+    // never re-learning the anchor while a bias is in force.
+    expect(first).toBeGreaterThan(second);
+    expect(second).toBeGreaterThan(third);
+  });
+
+  it("keeps Higher Quality above the anchor and bounded by the ladder", () => {
+    expect(selectModeRungsFromAutoHeight(ladder, 1080).higher?.id).toBe("1440p");
+    // At the top there is nowhere further to go.
+    expect(selectModeRungsFromAutoHeight(ladder, 2160).higher?.id).toBe("2160p");
   });
 });
 
@@ -135,7 +222,9 @@ describe("complete-file quality selection", () => {
      * the rung above, rather than the ends of the array.
      */
     expect(selectLowDataQuality(qualities)?.id).toBe("generated-720");
-    expect(selectHigherResolutionQuality(qualities)?.id).toBe("original");
+    // Higher Quality asks for 1440p, then falls back downward to the existing
+    // 1080p file rather than jumping to the 2160p source.
+    expect(selectHigherResolutionQuality(qualities)?.id).toBe("generated-1080");
     // Remove the anchor itself and the whole menu shifts down with it.
     expect(
       selectLowDataQuality(
@@ -328,6 +417,65 @@ describe("complete-file quality selection", () => {
     { id: "2160p", height: 2160, bitrate: 6_891_111 },
   ];
 
+  it("derives the exact bounded targets from the canonical ladder", () => {
+    expect(AUTO_QUALITY_LEVELS).toEqual([
+      144, 240, 360, 480, 720, 1080, 1440, 2160,
+    ]);
+
+    const expected = [
+      [144, 144, 720],
+      [240, 144, 720],
+      [360, 240, 720],
+      [480, 360, 720],
+      [720, 480, 1080],
+      [1080, 720, 1440],
+      [1440, 1080, 2160],
+      [2160, 1080, 2160],
+    ] as const;
+
+    for (const [auto, lowData, higher] of expected) {
+      expect(resolvePlaybackQualityTarget(auto, "low-data")).toBe(lowData);
+      expect(resolvePlaybackQualityTarget(auto, "auto")).toBe(auto);
+      expect(resolvePlaybackQualityTarget(auto, "higher-resolution")).toBe(
+        higher,
+      );
+    }
+  });
+
+  it("tracks a changing Auto recommendation without freezing the old target", () => {
+    const targetsAt = (auto: number) => [
+      resolvePlaybackQualityTarget(auto, "low-data"),
+      resolvePlaybackQualityTarget(auto, "auto"),
+      resolvePlaybackQualityTarget(auto, "higher-resolution"),
+    ];
+
+    expect(targetsAt(720)).toEqual([480, 720, 1080]);
+    expect(targetsAt(1080)).toEqual([720, 1080, 1440]);
+    const modes: Array<Exclude<QualityPreferenceMode, "advanced">> = [
+      "low-data",
+      "auto",
+      "higher-resolution",
+      "low-data",
+      "auto",
+      "higher-resolution",
+    ];
+    expect(
+      modes.map((mode) => resolvePlaybackQualityTarget(1080, mode)),
+    ).toEqual([720, 1080, 1440, 720, 1080, 1440]);
+  });
+
+  it("derives mode labels from the Auto rung the playback engine reached", () => {
+    const reached4k = selectModeRungsFromAutoHeight(fordLadder, 2160);
+    expect(reached4k.anchor?.id).toBe("2160p");
+    expect(reached4k.lowData?.id).toBe("1080p");
+    expect(reached4k.higher?.id).toBe("2160p");
+
+    const droppedTo720 = selectModeRungsFromAutoHeight(fordLadder, 720);
+    expect(droppedTo720.anchor?.id).toBe("720p");
+    expect(droppedTo720.lowData?.id).toBe("480p");
+    expect(droppedTo720.higher?.id).toBe("1080p");
+  });
+
   /**
    * The regression: both modes were the ends of the array. Low Data handed a
    * viewer 144p on a link that would carry 240p for the same intent, and
@@ -355,7 +503,8 @@ describe("complete-file quality selection", () => {
     };
 
     // Comfortably carrying the 3.19 Mbps 1080p rung.
-    expect(at(9_000_000)).toBe("720p < 1080p < 2160p");
+    // The desired 1440p target is unavailable, so the safe fallback is 1080p.
+    expect(at(9_000_000)).toBe("720p < 1080p < 1080p");
     // Enough for 720p, so Low Data is 480p and Higher Resolution is 1080p.
     expect(at(4_000_000)).toBe("480p < 720p < 1080p");
     expect(at(2_500_000)).toBe("360p < 480p < 720p");
@@ -379,7 +528,7 @@ describe("complete-file quality selection", () => {
     });
     expect(floor.anchor?.id).toBe("144p");
     expect(floor.lowData?.id).toBe("144p");
-    expect(floor.higher?.id).toBe("240p");
+    expect(floor.higher?.id).toBe("720p");
   });
 
   /**
@@ -419,7 +568,7 @@ describe("complete-file quality selection", () => {
       devicePixelRatio: 1,
     });
     expect(anchor?.id).toBe("1080p");
-    expect(higher?.id).toBe("2160p");
+    expect(higher?.id).toBe("1080p");
   });
 
   /** Repeated stalls shrink the budget, so all three modes step down together. */
@@ -447,7 +596,29 @@ describe("complete-file quality selection", () => {
       bandwidthBps: 9_000_000,
     };
     expect(selectLowDataRung(fordLadder, context)?.id).toBe("720p");
-    expect(selectHigherResolutionRung(fordLadder, context)?.id).toBe("2160p");
+    expect(selectHigherResolutionRung(fordLadder, context)?.id).toBe("1080p");
+  });
+
+  it("resolves missing and source-limited renditions safely", () => {
+    const missingTargets = [
+      { id: "240p", height: 240 },
+      { id: "480p", height: 480 },
+      { id: "1080p", height: 1080 },
+    ];
+    const resolved = selectModeRungs(missingTargets, {
+      displayHeight: 720,
+      bandwidthBps: 100_000_000,
+    });
+    expect(resolved.anchor?.height).toBe(1080);
+    expect(resolved.lowData?.height).toBe(480);
+    expect(resolved.higher?.height).toBe(1080);
+
+    const sourceLimited = selectModeRungs(
+      missingTargets.filter((quality) => quality.height <= 480),
+      { displayHeight: 2160, bandwidthBps: 100_000_000 },
+    );
+    expect(sourceLimited.anchor?.height).toBe(480);
+    expect(sourceLimited.higher?.height).toBe(480);
   });
 
   it("resolves Advanced only to a quality actually present", () => {

@@ -45,6 +45,12 @@ function parsePreference(value: unknown): QualityPreference | undefined {
     preferOriginal?: unknown;
   };
   if (!isQualityPreferenceMode(candidate.mode)) return undefined;
+  // Automatic modes are durable intent, not a snapshot of the resolution that
+  // intent happened to resolve to on one title. Discarding manual-only fields
+  // here also cleans up preferences written by older clients.
+  if (candidate.mode !== "advanced") {
+    return { mode: candidate.mode };
+  }
   const preferredHeight = candidate.preferredHeight;
   if (
     preferredHeight !== undefined &&
@@ -143,6 +149,84 @@ export function isQualityAudioCompatible(
 interface RungLike {
   height: number;
   bitrate?: number;
+}
+
+/** The authoritative order used to bias every automatic quality decision. */
+export const AUTO_QUALITY_LEVELS = [
+  144, 240, 360, 480, 720, 1080, 1440, 2160,
+] as const;
+
+const LOW_DATA_MIN_HEIGHT = 144;
+const LOW_DATA_MAX_HEIGHT = 1080;
+const HIGHER_QUALITY_MIN_HEIGHT = 720;
+const HIGHER_QUALITY_MAX_HEIGHT = 2160;
+
+type AutomaticQualityMode = Exclude<QualityPreferenceMode, "advanced">;
+
+export interface AdaptiveQualityRequest {
+  /** A manual Advanced selection is an exact rendition lock. */
+  qualityHeight?: number;
+  /** Biased automatic modes remain ABR, bounded by their derived rung. */
+  maxHeight?: number;
+}
+
+/**
+ * Translate a displayed mode rung into the server request native HLS needs.
+ *
+ * Safari exposes no level controller, so the master playlist is its only
+ * quality-control surface. Auto must receive the complete ladder so native ABR
+ * can use every rendition the device and link can sustain. Low Data and Higher
+ * Quality receive a bias ceiling, while Advanced receives one exact rendition.
+ */
+export function adaptiveQualityRequestForMode(
+  mode: QualityPreferenceMode,
+  height: number | undefined,
+): AdaptiveQualityRequest {
+  if (mode === "auto" || height === undefined) return {};
+  return mode === "advanced"
+    ? { qualityHeight: height }
+    : { maxHeight: height };
+}
+
+function clampHeight(height: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(height, minimum), maximum);
+}
+
+/**
+ * Resolve the desired automatic-mode height before consulting a manifest.
+ *
+ * Low Data and Higher Quality move on the canonical ladder, then apply their
+ * product bounds. This ordering is significant: 360p steps to 480p before the
+ * Higher Quality floor raises it to 720p, while 2160p steps down to 1440p
+ * before the Low Data ceiling lowers it to 1080p.
+ */
+export function resolvePlaybackQualityTarget(
+  autoHeight: number,
+  mode: AutomaticQualityMode,
+): number {
+  if (mode === "auto") return autoHeight;
+
+  const normalizedAutoHeight =
+    resolveManualHeight(autoHeight, AUTO_QUALITY_LEVELS) ??
+    AUTO_QUALITY_LEVELS[0];
+  const autoIndex = AUTO_QUALITY_LEVELS.indexOf(
+    normalizedAutoHeight as (typeof AUTO_QUALITY_LEVELS)[number],
+  );
+
+  if (mode === "low-data") {
+    const previous = AUTO_QUALITY_LEVELS[Math.max(0, autoIndex - 1)];
+    return clampHeight(previous, LOW_DATA_MIN_HEIGHT, LOW_DATA_MAX_HEIGHT);
+  }
+
+  const next =
+    AUTO_QUALITY_LEVELS[
+      Math.min(AUTO_QUALITY_LEVELS.length - 1, autoIndex + 1)
+    ];
+  return clampHeight(
+    next,
+    HIGHER_QUALITY_MIN_HEIGHT,
+    HIGHER_QUALITY_MAX_HEIGHT,
+  );
 }
 
 /**
@@ -254,18 +338,19 @@ export function selectAnchorRung<T extends RungLike>(
 }
 
 /**
- * The three modes, as one step down, the anchor, and one step up.
+ * The three modes, as a bounded canonical step down, the anchor, and a bounded
+ * canonical step up.
  *
  * Every mode used to carry its own hardcoded budget, so they disagreed about
  * the same connection: Low Data spent a flat 750 kbps whatever the link could
  * do, and Higher Resolution answered from screen size alone while ignoring
  * bandwidth entirely. Anchoring all three to one measured decision makes the
  * menu mean something a viewer can predict — the rung the connection actually
- * justifies, with a safer and a sharper neighbour on either side of it.
+ * justifies, with a safer and a sharper canonical neighbour on either side.
  *
- * The step is ordinal on purpose. A rung is the unit the ladder is built in,
- * so "one better" and "one safer" survive any bitrate the encoder happens to
- * produce, where a share-of-bitrate rule flips on rounding.
+ * The step is ordinal on purpose. Resolving the desired target before looking
+ * at the manifest keeps the meaning stable even when a particular source omits
+ * a rung; only then does the normal downward fallback select a playable file.
  */
 export function selectModeRungs<T extends RungLike>(
   qualities: readonly T[],
@@ -276,13 +361,34 @@ export function selectModeRungs<T extends RungLike>(
   if (!anchor) {
     return { anchor: undefined, lowData: undefined, higher: undefined };
   }
-  const index = ascending.indexOf(anchor);
+  return selectModeRungsFromAutoHeight(ascending, anchor.height);
+}
+
+/** Derive the two biased modes from an Auto rung the engine actually chose. */
+export function selectModeRungsFromAutoHeight<T extends RungLike>(
+  qualities: readonly T[],
+  autoHeight: number,
+): { anchor: T | undefined; lowData: T | undefined; higher: T | undefined } {
+  const ascending = ascendingRungs(qualities);
+  if (ascending.length === 0) {
+    return { anchor: undefined, lowData: undefined, higher: undefined };
+  }
+  const resolveAvailableRung = (targetHeight: number): T =>
+    [...ascending]
+      .reverse()
+      .find((quality) => quality.height <= targetHeight) ?? ascending[0];
+  const anchor = resolveAvailableRung(autoHeight);
   return {
     anchor,
-    // At an end of the ladder there is no neighbour, and the honest answer is
-    // the anchor itself rather than a rung that does not exist.
-    lowData: ascending[Math.max(0, index - 1)] ?? anchor,
-    higher: ascending[Math.min(ascending.length - 1, index + 1)] ?? anchor,
+    // Desired targets come from the canonical ladder. The manifest layer then
+    // uses its established safe fallback: nearest available rung at or below
+    // the target, or the source's lowest rung when every rendition is taller.
+    lowData: resolveAvailableRung(
+      resolvePlaybackQualityTarget(anchor.height, "low-data"),
+    ),
+    higher: resolveAvailableRung(
+      resolvePlaybackQualityTarget(anchor.height, "higher-resolution"),
+    ),
   };
 }
 
@@ -315,6 +421,38 @@ export function selectHigherResolutionQuality(
     ...(displayHeight === undefined ? {} : { displayHeight }),
     ...(devicePixelRatio === undefined ? {} : { devicePixelRatio }),
   });
+}
+
+function fileModeSelectionContext(
+  context: FileQualitySelectionContext,
+): ModeSelectionContext {
+  return {
+    displayHeight: context.playerHeight,
+    ...(context.devicePixelRatio === undefined
+      ? {}
+      : { devicePixelRatio: context.devicePixelRatio }),
+    ...(context.saveData === undefined ? {} : { saveData: context.saveData }),
+    ...(context.effectiveType === undefined
+      ? {}
+      : { effectiveType: context.effectiveType }),
+    ...(context.downlinkMbps === undefined
+      ? {}
+      : { bandwidthBps: context.downlinkMbps * 1_000_000 }),
+    ...(context.recentStallCount === undefined
+      ? {}
+      : { recentStallCount: context.recentStallCount }),
+  };
+}
+
+/** Resolve all complete-file modes from the same current Auto recommendation. */
+export function selectFileModeQualities(
+  qualities: readonly AvailableQualityFile[],
+  context: FileQualitySelectionContext,
+): ReturnType<typeof selectModeRungs<AvailableQualityFile>> {
+  return selectModeRungs(
+    sortedQualities(qualities),
+    fileModeSelectionContext(context),
+  );
 }
 
 export function selectManualQuality(
@@ -365,22 +503,7 @@ export function selectAutoQuality(
    * the point: Auto must not mean two different things depending on whether a
    * title happens to be packaged adaptively.
    */
-  return selectAnchorRung(sortedQualities(qualities), {
-    displayHeight: context.playerHeight,
-    ...(context.devicePixelRatio === undefined
-      ? {}
-      : { devicePixelRatio: context.devicePixelRatio }),
-    ...(context.saveData === undefined ? {} : { saveData: context.saveData }),
-    ...(context.effectiveType === undefined
-      ? {}
-      : { effectiveType: context.effectiveType }),
-    ...(context.downlinkMbps === undefined
-      ? {}
-      : { bandwidthBps: context.downlinkMbps * 1_000_000 }),
-    ...(context.recentStallCount === undefined
-      ? {}
-      : { recentStallCount: context.recentStallCount }),
-  });
+  return selectFileModeQualities(qualities, context).anchor;
 }
 
 export function shouldSwitchFileQuality({

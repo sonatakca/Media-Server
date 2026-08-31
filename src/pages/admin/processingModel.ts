@@ -142,7 +142,7 @@ export function formatDuration(seconds: number | null | undefined): string {
   const remainder = whole % 60;
   if (minutes < 60) return `${minutes}m ${String(remainder).padStart(2, "0")}s`;
   const hours = Math.floor(minutes / 60);
-  return `${hours}h ${String(minutes % 60).padStart(2, "0")}m`;
+  return `${hours}h ${String(minutes % 60).padStart(2, "0")}m ${String(remainder).padStart(2, "0")}s`;
 }
 
 export function formatSpeed(speed: number | null | undefined): string {
@@ -168,6 +168,18 @@ export function processingDurationSeconds(
     return null;
   }
   return (finish - start) / 1000;
+}
+
+/** Wall-clock time already spent on work that has not finished yet. */
+export function processingElapsedSeconds(
+  job: Pick<ProcessingJob, "createdAt" | "startedAt">,
+  nowMs: number,
+): number | null {
+  const start = Date.parse(job.startedAt ?? job.createdAt);
+  if (!Number.isFinite(start) || !Number.isFinite(nowMs) || nowMs < start) {
+    return null;
+  }
+  return (nowMs - start) / 1000;
 }
 
 /** Local date and clock time for a history row. */

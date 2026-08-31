@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import path from "node:path";
 import type { AdaptivePackageMetadata } from "./metadata";
+import { buildMasterPlaylist } from "./playlist";
 import { MASTER_LAYOUT_VERSION } from "./repairMaster";
 import {
   TITLE_AUDIO_DIRECTORY,
@@ -24,6 +25,7 @@ import {
   TITLE_STAGING_PREFIX,
   type TitleLayoutPlan,
   planTitleLayout,
+  playlistUri,
   rewriteMasterPlaylist,
   rewriteRenditionPlaylist,
 } from "./titleLayout";
@@ -420,3 +422,314 @@ export async function readTitlePackageManifest(
 }
 
 export { TITLE_MASTER_PLAYLIST };
+
+/**
+ * Adding renditions to a package that is already published, without replacing it.
+ *
+ * `publishTitlePackage` swaps whole directories, which is exactly right when a
+ * package is being rebuilt and exactly wrong when one rendition is being added
+ * to seven good ones: the swap would carry away every rendition this run did
+ * not produce. So the new files are written in beside the existing ones and
+ * only the three description files — master playlist, package manifest and
+ * build record — are replaced, each by write-then-rename.
+ *
+ * The ordering matters for safety. Media lands first and is inert until
+ * something references it; the master is rewritten last and atomically. A run
+ * that dies part-way leaves an unreferenced file and a package that still
+ * plays exactly as it did before.
+ */
+export async function publishAdditionalRenditions({
+  workVersionRoot,
+  titleRoot,
+  existing,
+  added,
+}: {
+  workVersionRoot: string;
+  titleRoot: string;
+  /** The published package's own build record, read from disk. */
+  existing: AdaptivePackageMetadata;
+  /** Newly encoded renditions, in the packager's work layout. */
+  added: Pick<
+    AdaptivePackageMetadata,
+    "videoRenditions" | "audioRenditions" | "subtitleRenditions"
+  >;
+}): Promise<{ manifest: TitlePackageManifest; plan: TitleLayoutPlan }> {
+  /*
+   * Existing renditions are listed first so the layout planner hands them the
+   * stems they already carry: their published paths must come out unchanged,
+   * because those files are staying exactly where they are. Anything the new
+   * run rebuilt replaces the old entry of the same id.
+   */
+  const replaced = new Set([
+    ...added.videoRenditions.map((rendition) => rendition.id),
+    ...added.audioRenditions.map((rendition) => rendition.id),
+    ...(added.subtitleRenditions ?? []).map((rendition) => rendition.id),
+  ]);
+  const merged: AdaptivePackageMetadata = {
+    ...existing,
+    videoRenditions: [
+      ...existing.videoRenditions.filter(
+        (rendition) => !replaced.has(rendition.id),
+      ),
+      ...added.videoRenditions,
+    ].sort((left, right) => right.qualityHeight - left.qualityHeight),
+    audioRenditions: [
+      ...existing.audioRenditions.filter(
+        (rendition) => !replaced.has(rendition.id),
+      ),
+      ...added.audioRenditions,
+    ],
+    subtitleRenditions: [
+      ...(existing.subtitleRenditions ?? []).filter(
+        (rendition) => !replaced.has(rendition.id),
+      ),
+      ...(added.subtitleRenditions ?? []),
+    ],
+  };
+
+  const plan = planTitleLayout(merged);
+  const publishedById = new Map<string, { media: string; playlist: string }>();
+  for (const group of [plan.video, plan.audio, plan.subtitle]) {
+    for (const entry of group) {
+      publishedById.set(entry.id, {
+        media: entry.mediaPath,
+        playlist: entry.playlistPath,
+      });
+    }
+  }
+
+  // Media and its playlist, moved into the live package beside what is there.
+  const moveIn = async (rendition: {
+    id: string;
+    mediaPath: string;
+    playlistPath: string;
+  }) => {
+    const target = publishedById.get(rendition.id);
+    if (!target) return;
+    const destinationMedia = path.join(titleRoot, ...target.media.split("/"));
+    const destinationPlaylist = path.join(
+      titleRoot,
+      ...target.playlist.split("/"),
+    );
+    await mkdir(path.dirname(destinationMedia), { recursive: true });
+    await mkdir(path.dirname(destinationPlaylist), { recursive: true });
+    await moveFile(
+      path.join(workVersionRoot, ...rendition.mediaPath.split("/")),
+      destinationMedia,
+    );
+    const playlist = await readFile(
+      path.join(workVersionRoot, ...rendition.playlistPath.split("/")),
+      "utf8",
+    );
+    const pending = `${destinationPlaylist}.pending`;
+    await writeFile(
+      pending,
+      rewriteRenditionPlaylist(
+        playlist,
+        path.posix.basename(rendition.mediaPath),
+        target.media,
+      ),
+      "utf8",
+    );
+    await rename(pending, destinationPlaylist);
+  };
+
+  for (const rendition of added.videoRenditions) await moveIn(rendition);
+  for (const rendition of added.audioRenditions) await moveIn(rendition);
+  for (const rendition of added.subtitleRenditions ?? []) {
+    await moveIn({
+      id: rendition.id,
+      mediaPath: rendition.subtitlePath,
+      playlistPath: rendition.playlistPath,
+    });
+  }
+
+  /*
+   * Rebuilt from the merged set rather than from whatever this run's FFmpeg
+   * happened to emit, so the master describes every rendition the title holds
+   * — including the seven this job never touched.
+   */
+  const republished = <T extends { id: string }>(
+    renditions: readonly T[],
+    pathKey: "mediaPath" | "subtitlePath",
+  ) =>
+    renditions.map((rendition) => {
+      const target = publishedById.get(rendition.id);
+      return {
+        ...rendition,
+        ...(target
+          ? { [pathKey]: target.media, playlistPath: target.playlist }
+          : {}),
+      } as T;
+    });
+
+  const publishedMetadata: AdaptivePackageMetadata & {
+    masterLayoutVersion: number;
+  } = {
+    ...merged,
+    masterLayoutVersion: MASTER_LAYOUT_VERSION,
+    masterPlaylistPath: plan.masterPlaylistPath,
+    videoRenditions: republished(merged.videoRenditions, "mediaPath"),
+    audioRenditions: republished(merged.audioRenditions, "mediaPath"),
+    subtitleRenditions: republished(
+      merged.subtitleRenditions ?? [],
+      "subtitlePath",
+    ),
+  };
+
+  const atomicWrite = async (relative: string, contents: string) => {
+    const target = path.join(titleRoot, ...relative.split("/"));
+    await mkdir(path.dirname(target), { recursive: true });
+    const pending = `${target}.pending`;
+    await writeFile(pending, contents, "utf8");
+    await rename(pending, target);
+  };
+
+  const subtitles = publishedMetadata.subtitleRenditions ?? [];
+  const totalBytes = [
+    ...publishedMetadata.videoRenditions,
+    ...publishedMetadata.audioRenditions,
+    ...subtitles,
+  ].reduce((total, rendition) => total + rendition.fileSizeBytes, 0);
+
+  const manifest: TitlePackageManifest = {
+    schemaVersion: TITLE_MANIFEST_SCHEMA_VERSION,
+    profileVersion: publishedMetadata.profileVersion,
+    sourceFingerprint: publishedMetadata.sourceFingerprint,
+    createdAt: publishedMetadata.createdAt,
+    sourceDurationSeconds: publishedMetadata.sourceDurationSeconds,
+    masterPlaylistPath: plan.masterPlaylistPath,
+    video: publishedMetadata.videoRenditions.map((rendition) => ({
+      id: rendition.id,
+      mediaPath: rendition.mediaPath,
+      playlistPath: rendition.playlistPath,
+      fileSizeBytes: rendition.fileSizeBytes,
+      qualityHeight: rendition.qualityHeight,
+      width: rendition.width,
+      height: rendition.height,
+      codec: rendition.codec,
+      codecString: rendition.codecString,
+      frameRate: rendition.frameRate,
+      hdr: rendition.hdr,
+      averageBitrate: rendition.averageBitrate,
+      peakBitrate: rendition.peakBitrate,
+    })),
+    audio: publishedMetadata.audioRenditions.map((rendition) => ({
+      id: rendition.id,
+      mediaPath: rendition.mediaPath,
+      playlistPath: rendition.playlistPath,
+      fileSizeBytes: rendition.fileSizeBytes,
+      sourceStreamIndex: rendition.sourceStreamIndex,
+      ...(rendition.language ? { language: rendition.language } : {}),
+      ...(rendition.title ? { title: rendition.title } : {}),
+      isDefault: rendition.isDefault,
+      isForced: rendition.isForced,
+      codecString: rendition.codecString,
+      channels: rendition.channels,
+    })),
+    subtitle: subtitles.map((rendition) => ({
+      id: rendition.id,
+      mediaPath: rendition.subtitlePath,
+      playlistPath: rendition.playlistPath,
+      fileSizeBytes: rendition.fileSizeBytes,
+      sourceStreamIndex: rendition.sourceStreamIndex,
+      ...(rendition.language ? { language: rendition.language } : {}),
+      ...(rendition.title ? { title: rendition.title } : {}),
+      isDefault: rendition.isDefault,
+      isForced: rendition.isForced,
+      isHearingImpaired: rendition.isHearingImpaired,
+    })),
+    storage: { totalBytes },
+  };
+
+  // The record describes the whole package, so its byte totals must count the
+  // renditions this run reused as well as the ones it produced.
+  const sumBytes = (renditions: readonly { fileSizeBytes: number }[]) =>
+    renditions.reduce((total, rendition) => total + rendition.fileSizeBytes, 0);
+  publishedMetadata.storage = {
+    videoBytes: sumBytes(publishedMetadata.videoRenditions),
+    audioBytes: sumBytes(publishedMetadata.audioRenditions),
+    subtitleBytes: sumBytes(subtitles),
+    totalBytes,
+  };
+
+  await atomicWrite(
+    `${TITLE_PACKAGE_DIRECTORY}/${TITLE_BUILD_RECORD}`,
+    `${JSON.stringify(publishedMetadata, null, 2)}\n`,
+  );
+  await atomicWrite(
+    plan.manifestPath,
+    `${JSON.stringify(manifest, null, 2)}\n`,
+  );
+  // Last, so nothing advertises a rendition before its bytes are in place.
+  await atomicWrite(
+    plan.masterPlaylistPath,
+    buildTitleMasterPlaylist(publishedMetadata),
+  );
+
+  return { manifest, plan };
+}
+
+/** The master a published package should carry, built from its own record. */
+function buildTitleMasterPlaylist(
+  metadata: AdaptivePackageMetadata,
+): string {
+  const relative = (published: string): string =>
+    playlistUri(published.slice(TITLE_PACKAGE_DIRECTORY.length + 1));
+  return buildMasterPlaylist({
+    videoRenditions: metadata.videoRenditions.map((rendition) => ({
+      ...rendition,
+      playlistPath: relative(rendition.playlistPath),
+    })),
+    audioRenditions: metadata.audioRenditions.map((rendition) => ({
+      ...rendition,
+      playlistPath: relative(rendition.playlistPath),
+    })),
+    subtitleRenditions: (metadata.subtitleRenditions ?? []).map(
+      (rendition) => ({
+        ...rendition,
+        playlistPath: relative(rendition.playlistPath),
+      }),
+    ),
+    videoCodecStrings: new Map(
+      metadata.videoRenditions.map((rendition) => [
+        rendition.id,
+        rendition.codecString,
+      ]),
+    ),
+    audioCodecStrings: new Map(
+      metadata.audioRenditions.map((rendition) => [
+        rendition.id,
+        rendition.codecString,
+      ]),
+    ),
+  });
+}
+
+/**
+ * A published package's own build record, which carries far more than the
+ * manifest does — codec strings measured off the bitstream, achieved bitrates,
+ * keyframe cadence. An incremental publish needs all of it to rebuild a master
+ * that describes renditions it never encoded.
+ */
+export async function readTitleBuildRecord(
+  titleRoot: string,
+): Promise<AdaptivePackageMetadata | null> {
+  try {
+    const raw = await readFile(
+      path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
+      "utf8",
+    );
+    const record = JSON.parse(raw) as AdaptivePackageMetadata;
+    // Without measured codec strings a faithful master cannot be regenerated,
+    // and inventing them would advertise a bitstream nobody verified.
+    const complete =
+      Array.isArray(record.videoRenditions) &&
+      record.videoRenditions.length > 0 &&
+      record.videoRenditions.every((rendition) => rendition.codecString) &&
+      (record.audioRenditions ?? []).every((rendition) => rendition.codecString);
+    return complete ? record : null;
+  } catch {
+    return null;
+  }
+}

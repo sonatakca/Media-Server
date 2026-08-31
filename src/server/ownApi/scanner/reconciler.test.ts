@@ -143,6 +143,18 @@ function movie(
   };
 }
 
+function renditionBackedMovie(sourceKey: string, title: string): ScannedItem {
+  return {
+    sourceKey,
+    kind: "movie",
+    title,
+    sortTitle: title.toLowerCase(),
+    files: [],
+    subtitles: [],
+    renditionBacked: true,
+  };
+}
+
 function scan(items: ScannedItem[]): ScanResult {
   return { items, skipped: [] };
 }
@@ -150,6 +162,73 @@ function scan(items: ScannedItem[]): ScanResult {
 const LIBRARY = "library-1";
 
 describe("reconcileLibraryScan", () => {
+  it("revives an existing movie and file identity from its complete rendition package", async () => {
+    const store = createStore();
+    const start = new Date("2026-08-31T00:00:00Z");
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        movie(
+          "movie:movies/ford v ferrari (2019)",
+          "Ford v Ferrari",
+          "Movies/Ford v Ferrari (2019)/Ford v Ferrari (2019).mkv",
+        ),
+        movie("movie:b", "Heat", "Movies/Heat (1995)/Heat (1995).mkv"),
+      ]),
+      now: () => start,
+    });
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        movie("movie:b", "Heat", "Movies/Heat (1995)/Heat (1995).mkv"),
+      ]),
+      now: () => start,
+    });
+
+    const summary = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        renditionBackedMovie(
+          "movie:movies/ford v ferrari (2019)",
+          "Ford v Ferrari",
+        ),
+        movie("movie:b", "Heat", "Movies/Heat (1995)/Heat (1995).mkv"),
+      ]),
+      now: () => start,
+    });
+
+    expect(summary.itemsUpdated).toBe(2);
+    expect(summary.filesMarkedMissing).toBe(0);
+    const ford = [...store.items.values()].find(
+      (item) => item.title === "Ford v Ferrari",
+    );
+    expect(ford?.missingSince).toBeNull();
+    expect(
+      [...store.files.values()].find((file) => file.itemId === ford?.id)
+        ?.missingSince,
+    ).toBeNull();
+  });
+
+  it("does not create an unplayable item from a package with no catalogue identity", async () => {
+    const store = createStore();
+    const summary = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        renditionBackedMovie(
+          "movie:movies/ford v ferrari (2019)",
+          "Ford v Ferrari",
+        ),
+      ]),
+    });
+
+    expect(summary.itemsCreated).toBe(0);
+    expect(store.items).toHaveLength(0);
+  });
+
   it("creates items and queues probes on first scan", async () => {
     const store = createStore();
     const summary = await reconcileLibraryScan({

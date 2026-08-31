@@ -186,6 +186,22 @@ function positiveInteger(value: unknown, field: string): number {
   return parsed;
 }
 
+/**
+ * A byte total that may legitimately be zero.
+ *
+ * A package describing only the video an incremental run produced has no audio
+ * bytes, and zero is the honest measurement rather than a malformed one.
+ */
+function byteTotal(value: unknown, field: string): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    fail(`${field} must be a non-negative finite number.`);
+  }
+  if (!Number.isSafeInteger(value as number)) {
+    fail(`${field} must be a safe integer.`);
+  }
+  return value as number;
+}
+
 function nonEmptyString(value: unknown, field: string): string {
   if (typeof value !== "string" || value.length === 0) {
     fail(`${field} must be a non-empty string.`);
@@ -496,6 +512,11 @@ export function parseAdaptiveMetadata(
     sourceFingerprint?: string;
     profileVersion?: string;
     /**
+     * Allows a package that describes only part of a title, which is what an
+     * incremental run's work directory is. Never set for a published package.
+     */
+    allowMissingAudio?: boolean;
+    /**
      * Whether every rendition must sit at the location the build layout
      * dictates.
      *
@@ -522,9 +543,18 @@ export function parseAdaptiveMetadata(
   ) {
     fail("videoRenditions must be a non-empty array.");
   }
+  /*
+   * A published package must carry audio; the work directory of an
+   * incremental run need not. Adding a video rung to a title whose audio is
+   * already published produces video and nothing else, and demanding audio
+   * there would force the run to re-encode sound it was deliberately reusing.
+   */
+  if (!Array.isArray(value.audioRenditions)) {
+    fail("audioRenditions must be an array.");
+  }
   if (
-    !Array.isArray(value.audioRenditions) ||
-    value.audioRenditions.length === 0
+    !expected?.allowMissingAudio &&
+    (value.audioRenditions as unknown[]).length === 0
   ) {
     fail("audioRenditions must be a non-empty array.");
   }
@@ -566,7 +596,12 @@ export function parseAdaptiveMetadata(
   ) {
     fail("subtitleRenditions contains duplicate ids.");
   }
-  if (audioRenditions.filter((entry) => entry.isDefault).length !== 1) {
+  // A package carrying no audio at all has no default to nominate; one that
+  // carries audio must still nominate exactly one.
+  if (
+    audioRenditions.length > 0 &&
+    audioRenditions.filter((entry) => entry.isDefault).length !== 1
+  ) {
     fail("Exactly one audio rendition must be marked default.");
   }
 
@@ -650,14 +685,8 @@ export function parseAdaptiveMetadata(
       ),
     },
     storage: {
-      videoBytes: positiveInteger(
-        value.storage.videoBytes,
-        "storage.videoBytes",
-      ),
-      audioBytes: positiveInteger(
-        value.storage.audioBytes,
-        "storage.audioBytes",
-      ),
+      videoBytes: byteTotal(value.storage.videoBytes, "storage.videoBytes"),
+      audioBytes: byteTotal(value.storage.audioBytes, "storage.audioBytes"),
       ...(value.storage.subtitleBytes === undefined
         ? {}
         : {

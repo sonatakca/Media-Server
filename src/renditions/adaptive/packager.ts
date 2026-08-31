@@ -85,11 +85,19 @@ import {
 } from "./profile";
 import { frameRateForClass } from "./layout";
 import {
+  publishAdditionalRenditions,
   publishTitlePackage,
+  readTitleBuildRecord,
   readTitlePackageManifest,
   type TitlePackageManifest,
 } from "./publishTitle";
 import { validateAdaptivePackage } from "./validation";
+import { createOutputMeter } from "../outputMeter";
+import {
+  planPackageWork,
+  type PackageWorkPlan,
+  type RenditionPresence,
+} from "./incrementalPlan";
 import { buildWebVttMediaPlaylist, extractWebVttFile } from "./subtitles";
 
 /**
@@ -98,23 +106,48 @@ import { buildWebVttMediaPlaylist, extractWebVttFile } from "./subtitles";
  * A manifest alone is not proof: a half-deleted folder would otherwise be
  * reported as current and then fail on the first request.
  */
-async function titlePackageFilesPresent(
+/**
+ * Which published renditions are individually intact.
+ *
+ * `titlePackageFilesPresent` answers for the package as a whole, which is the
+ * right question when deciding whether to skip everything and the wrong one
+ * when deciding what to build: a single truncated rendition would condemn the
+ * other seven to a needless re-encode. This reports per rendition so the plan
+ * can rebuild exactly the broken one.
+ */
+async function titleRenditionPresence(
   titleRoot: string,
   manifest: TitlePackageManifest,
-): Promise<boolean> {
-  for (const rendition of [
-    ...manifest.video,
-    ...manifest.audio,
-    ...manifest.subtitle,
-  ]) {
-    for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
+): Promise<RenditionPresence> {
+  const intact = async (relatives: readonly string[]): Promise<boolean> => {
+    for (const relative of relatives) {
       const stats = await stat(
         path.join(titleRoot, ...relative.split("/")),
       ).catch(() => undefined);
       if (!stats?.isFile() || stats.size === 0) return false;
     }
-  }
-  return true;
+    return true;
+  };
+  const collect = async (
+    renditions: readonly {
+      id: string;
+      mediaPath: string;
+      playlistPath: string;
+    }[],
+  ): Promise<Set<string>> => {
+    const present = new Set<string>();
+    for (const rendition of renditions) {
+      if (await intact([rendition.mediaPath, rendition.playlistPath])) {
+        present.add(rendition.id);
+      }
+    }
+    return present;
+  };
+  return {
+    video: await collect(manifest.video),
+    audio: await collect(manifest.audio),
+    subtitle: await collect(manifest.subtitle),
+  };
 }
 
 /**
@@ -154,6 +187,13 @@ export interface AdaptivePackageResult {
   /** Populated when validation ran and produced findings. */
   issues?: string[];
   storageBytes?: number;
+  /**
+   * Bytes this run actually produced, as against `storageBytes` which is the
+   * whole published package. They are the same for a full build and very
+   * different for an incremental one — a job that added a single rung must not
+   * report the size of the seven it reused.
+   */
+  jobOutputBytes?: number;
 }
 
 export interface AdaptivePackageRequest {
@@ -489,20 +529,9 @@ export async function packageAdaptiveRendition(
      */
     const existingTitleRoot = path.dirname(request.sourcePath);
     const existing = await readTitlePackageManifest(existingTitleRoot);
-    if (
-      existing &&
-      existing.sourceFingerprint === request.sourceFingerprint &&
-      existing.profileVersion === ADAPTIVE_PROFILE_VERSION &&
-      titlePackageCoversVideoLadder(existing, requirements) &&
-      (await titlePackageFilesPresent(existingTitleRoot, existing))
-    ) {
-      return {
-        ...base,
-        status: "already-valid",
-        versionDirectory,
-        storageBytes: existing.storage.totalBytes,
-      };
-    }
+    const presence: RenditionPresence = existing
+      ? await titleRenditionPresence(existingTitleRoot, existing)
+      : { video: new Set(), audio: new Set(), subtitle: new Set() };
 
     if (verifySourceFingerprint) {
       const { computeSourceFingerprint } = await import("../registry");
@@ -528,6 +557,40 @@ export async function packageAdaptiveRendition(
         status: "incompatible",
         error:
           "The source has no audio stream, which an adaptive package requires.",
+      };
+    }
+
+    /*
+     * What actually has to be built, per rendition.
+     *
+     * Everything below encodes from `work`, never from `requirements`. That is
+     * the whole fix: the desired ladder describes the finished package, while
+     * this describes the outstanding job, and handing the first to the encoder
+     * is what rebuilt seven good renditions to obtain an eighth.
+     */
+    const work: PackageWorkPlan = planPackageWork({
+      requirements,
+      existing,
+      presence,
+      sourceFingerprint: request.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      requiredAudioStreamIndexes: audioPlan.outputs.map(
+        (output) => output.sourceStreamIndex,
+      ),
+      requiredSubtitleStreamIndexes: [
+        ...subtitleStreamIndexes,
+        // Sidecar files are published as subtitle renditions like any other,
+        // so they are reusable on the same terms.
+        ...sidecarSubtitles.map((sidecar) => sidecar.streamIndex),
+      ],
+    });
+
+    if (work.mode === "none" && existing) {
+      return {
+        ...base,
+        status: "already-valid",
+        versionDirectory,
+        storageBytes: existing.storage.totalBytes,
       };
     }
 
@@ -558,13 +621,20 @@ export async function packageAdaptiveRendition(
         }
       : undefined;
 
+    /*
+     * What *this run* will write, not what the finished package will hold.
+     *
+     * Both the free-space preflight and the job's progress reporting read this,
+     * and estimating a whole ladder for a one-rung job overstated both: the
+     * preflight reserved space for eight renditions that were not being made,
+     * and the page showed the full package size under a heading that says what
+     * the encoder has produced so far.
+     */
     const estimate = estimateAdaptivePackageBytes({
       durationSeconds: probe.durationSeconds,
-      qualityHeights: requirements.map(
-        (requirement) => requirement.qualityHeight,
-      ),
+      qualityHeights: work.videoQualityHeights,
       codecFamily,
-      audioTrackCount: audioPlan.outputs.length,
+      audioTrackCount: work.audioStreamIndexes.length,
     });
 
     // Preflight accounts for the package being built while the previous one is
@@ -586,7 +656,16 @@ export async function packageAdaptiveRendition(
       probe.video.frameRate && probe.video.frameRate > 0
         ? probe.video.frameRate
         : undefined;
-    const videoOutputs: AdaptiveVideoOutput[] = requirements.map(
+    /*
+     * Only the rungs the plan asked for. `requirements` still describes the
+     * finished ladder — the estimate and the published manifest need that —
+     * but the filter graph, the encoders and the variant map are all derived
+     * from this list, so a one-rung job produces one scaler and one encoder.
+     */
+    const plannedRequirements = requirements.filter((requirement) =>
+      work.videoQualityHeights.includes(requirement.qualityHeight),
+    );
+    const videoOutputs: AdaptiveVideoOutput[] = plannedRequirements.map(
       (requirement) => {
         const rate = frameRateForClass(
           requirement.qualityHeight,
@@ -611,6 +690,21 @@ export async function packageAdaptiveRendition(
       Math.max(probe.video.frameRate ?? 0, probe.video.maxFrameRate ?? 0) ||
       undefined;
 
+    /*
+     * Audio is asked for separately from video. Adding a video rung must not
+     * re-encode sound that is already published and intact — that transcode is
+     * pure waste and it rewrites a track the viewer is currently using.
+     */
+    const plannedAudioOutputs = audioPlan.outputs.filter((output) =>
+      work.audioStreamIndexes.includes(output.sourceStreamIndex),
+    );
+    const plannedSubtitleStreamIndexes = subtitleStreamIndexes.filter(
+      (streamIndex) => work.subtitleStreamIndexes.includes(streamIndex),
+    );
+    const plannedSidecarSubtitles = sidecarSubtitles.filter((sidecar) =>
+      work.subtitleStreamIndexes.includes(sidecar.streamIndex),
+    );
+
     const workVersionRoot = path.join(
       paths.workRoot,
       request.mediaId,
@@ -619,17 +713,17 @@ export async function packageAdaptiveRendition(
     await rm(workVersionRoot, { recursive: true, force: true });
     for (const directory of adaptiveOutputDirectories({
       videoOutputs,
-      audioOutputs: audioPlan.outputs,
+      audioOutputs: plannedAudioOutputs,
     })) {
       await mkdir(path.join(workVersionRoot, ...directory.split("/")), {
         recursive: true,
       });
     }
     for (const streamIndex of [
-      ...subtitleStreamIndexes,
+      ...plannedSubtitleStreamIndexes,
       // Sidecars are extracted in the same place as embedded tracks and so
       // need their directories made here too, not only the embedded ones.
-      ...sidecarSubtitles.map((sidecar) => sidecar.streamIndex),
+      ...plannedSidecarSubtitles.map((sidecar) => sidecar.streamIndex),
     ]) {
       await mkdir(
         path.join(
@@ -640,6 +734,20 @@ export async function packageAdaptiveRendition(
         { recursive: true },
       );
     }
+
+    /*
+     * Exactly the media files this run will write — one per rendition being
+     * encoded. An incremental job measures only what it is producing, never
+     * the renditions it is reusing.
+     */
+    const outputMeter = createOutputMeter(
+      adaptiveOutputDirectories({
+        videoOutputs,
+        audioOutputs: plannedAudioOutputs,
+      }).map((directory) =>
+        path.join(workVersionRoot, ...directory.split("/"), ADAPTIVE_MEDIA_FILE),
+      ),
+    );
 
     onEvent?.({
       type: "encode-start",
@@ -657,7 +765,7 @@ export async function packageAdaptiveRendition(
       // platform, so the output root is normalised to POSIX separators here.
       outputRoot: workVersionRoot.split(path.sep).join("/"),
       videoOutputs,
-      audioOutputs: audioPlan.outputs,
+      audioOutputs: plannedAudioOutputs,
       encoder,
       ...(hdr ? { hdr } : {}),
       // The GOP is sized from the ceiling rate, not the average. `-g` counts
@@ -678,13 +786,24 @@ export async function packageAdaptiveRendition(
         logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
         ...(onEvent
           ? {
-              onProgress: (progress) =>
+              onProgress: (progress) => {
+                /*
+                 * FFmpeg reports `total_size=N/A` for HLS, so `progress` never
+                 * carries a byte count here and the measured figure replaces
+                 * it. The sample is fired and forgotten — the progress stream
+                 * must not wait on the filesystem — so the value emitted is
+                 * whichever measurement last landed.
+                 */
+                outputMeter.sample();
+                const writtenBytes = outputMeter.latest();
                 onEvent({
                   type: "encode-progress",
                   mediaId: request.mediaId,
                   durationSeconds: probe.durationSeconds,
                   ...progress,
-                }),
+                  ...(writtenBytes === undefined ? {} : { writtenBytes }),
+                });
+              },
             }
           : {}),
       });
@@ -800,7 +919,7 @@ export async function packageAdaptiveRendition(
       });
     }
 
-    for (const output of audioPlan.outputs) {
+    for (const output of plannedAudioOutputs) {
       const id = audioRenditionId(output.sourceStreamIndex);
       const playlistPath = `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`;
       const mediaRelativePath = `${ADAPTIVE_AUDIO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`;
@@ -856,7 +975,7 @@ export async function packageAdaptiveRendition(
       });
     }
 
-    for (const streamIndex of subtitleStreamIndexes) {
+    for (const streamIndex of plannedSubtitleStreamIndexes) {
       const sourceTrack = probe.subtitleTracks.find(
         (track) => track.streamIndex === streamIndex && track.isTextBased,
       );
@@ -902,7 +1021,7 @@ export async function packageAdaptiveRendition(
      * converted the same way, differing only in that each is its own input file
      * and so is always that file's stream 0.
      */
-    for (const sidecar of sidecarSubtitles) {
+    for (const sidecar of plannedSidecarSubtitles) {
       const id = subtitleRenditionId(sidecar.streamIndex);
       const playlistPath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`;
       const subtitlePath = `${ADAPTIVE_SUBTITLE_DIRECTORY}/${id}/${ADAPTIVE_SUBTITLE_FILE}`;
@@ -1029,6 +1148,9 @@ export async function packageAdaptiveRendition(
       ffprobePath,
       ffmpegPath,
       deep: true,
+      // An incremental run's work directory holds only what it built, which is
+      // video alone whenever the published audio is being reused.
+      allowMissingAudio: audioRenditions.length === 0,
       ...(signal ? { signal } : {}),
     });
 
@@ -1041,7 +1163,16 @@ export async function packageAdaptiveRendition(
       return {
         ...base,
         status: "validation-failed",
-        error: "The packaged ladder did not pass validation and was discarded.",
+        // The issues, not just the verdict: a package that fails validation is
+        // discarded, so this message is the only surviving evidence of why.
+        error: `The packaged ladder did not pass validation and was discarded: ${validation.issues
+          .map((issue) =>
+            [issue.rendition, issue.stage].filter(Boolean).length > 0
+              ? `${[issue.rendition, issue.stage].filter(Boolean).join("/")}: ${issue.message}`
+              : issue.message,
+          )
+          .slice(0, 6)
+          .join("; ")}`,
         issues: validation.issues.map(
           (issue) => `${issue.rendition}/${issue.stage}: ${issue.message}`,
         ),
@@ -1065,11 +1196,32 @@ export async function packageAdaptiveRendition(
      * original is read throughout and is still there afterwards.
      */
     const titleRoot = path.dirname(request.sourcePath);
-    const { manifest } = await publishTitlePackage({
-      workVersionRoot,
-      titleRoot,
-      metadata,
-    });
+    /*
+     * An incremental run must not swap the package's directories: the swap
+     * carries away every rendition this job did not produce, which for a
+     * one-rung job is the entire rest of the ladder. Its new files are written
+     * in beside the existing ones instead, and only the master, manifest and
+     * build record are replaced.
+     */
+    const existingBuildRecord =
+      work.mode === "incremental"
+        ? await readTitleBuildRecord(titleRoot)
+        : null;
+    const { manifest } = existingBuildRecord
+      ? await publishAdditionalRenditions({
+          workVersionRoot,
+          titleRoot,
+          existing: existingBuildRecord,
+          added: metadata,
+        })
+      : await publishTitlePackage({
+          workVersionRoot,
+          titleRoot,
+          metadata,
+        });
+    // The manifest describes the whole title, including renditions this run
+    // reused, so it is the honest source for the package's own size.
+    const publishedTotalBytes = manifest.storage.totalBytes;
 
     // Publication moves and rewrites; a file the manifest names but the folder
     // does not hold would be a package that reads as present and plays as
@@ -1111,7 +1263,10 @@ export async function packageAdaptiveRendition(
       ...base,
       status: "ready",
       versionDirectory,
-      storageBytes: metadata.storage.totalBytes,
+      // The published package, whether this run built all of it or one rung.
+      storageBytes: publishedTotalBytes,
+      // What this run itself wrote.
+      jobOutputBytes: metadata.storage.totalBytes,
     };
   } catch (error) {
     return {

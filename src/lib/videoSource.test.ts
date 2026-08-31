@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
+import { selectModeRungs } from "../components/player/qualityPreference";
 import { attachSourceToVideo, shouldUseNativeHls } from "./videoSource";
 
 const hlsMock = vi.hoisted(() => ({
@@ -318,6 +319,46 @@ describe("videoSource", () => {
     attachment.adaptiveController?.setQualityHeight(null, 720);
 
     expect(hls.autoLevelCapping).toBe(1);
+    expect(hls.loadLevel).toBe(-1);
+    expect(hls.nextLevel).toBe(-1);
+  });
+
+  it("applies the canonical Higher Quality target to the hls.js ABR cap", () => {
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const video = createVideo("");
+    vi.spyOn(video, "getBoundingClientRect").mockReturnValue({
+      height: 144,
+    } as DOMRect);
+    const attachment = attachSourceToVideo(
+      video,
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [
+      { width: 256, height: 144, bitrate: 180_000 },
+      { width: 426, height: 240, bitrate: 350_000 },
+      { width: 640, height: 360, bitrate: 700_000 },
+      { width: 854, height: 480, bitrate: 1_400_000 },
+      { width: 1280, height: 720, bitrate: 3_000_000 },
+      { width: 1920, height: 1080, bitrate: 5_500_000 },
+    ];
+    hls.trigger("manifestParsed", {});
+
+    const rungs = hls.levels.map((level) => ({
+      height: level.height,
+      bitrate: level.bitrate,
+    }));
+    const { anchor, higher } = selectModeRungs(rungs, { saveData: true });
+    expect(anchor?.height).toBe(144);
+    expect(higher?.height).toBe(720);
+
+    attachment.adaptiveController?.setQualityHeight(
+      null,
+      higher?.height ?? null,
+    );
+    expect(hls.autoLevelCapping).toBe(4);
     expect(hls.loadLevel).toBe(-1);
     expect(hls.nextLevel).toBe(-1);
   });

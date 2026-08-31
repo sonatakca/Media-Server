@@ -158,6 +158,12 @@ export async function reconcileLibraryScan({
   const existingFilesByPath = new Map(
     existingFiles.map((file) => [file.relativePath, file]),
   );
+  const existingFilesByItem = new Map<string, ExistingFileRow[]>();
+  for (const file of existingFiles) {
+    const itemFiles = existingFilesByItem.get(file.itemId) ?? [];
+    itemFiles.push(file);
+    existingFilesByItem.set(file.itemId, itemFiles);
+  }
 
   const itemIdBySourceKey = new Map<string, string>();
   const seenItemIds: string[] = [];
@@ -166,6 +172,20 @@ export async function reconcileLibraryScan({
 
   for (const scanned of orderByDependency(scan.items)) {
     const existing = existingItemsByKey.get(scanned.sourceKey);
+    const existingIdentityFiles = existing
+      ? (existingFilesByItem.get(existing.id) ?? [])
+      : [];
+    // Version 1 title manifests intentionally do not contain enough original
+    // source provenance to create a fresh media_files row. A complete package can
+    // therefore preserve/revive an existing catalogue identity, but must not
+    // create a visible item that has no playable file identity.
+    if (
+      scanned.renditionBacked &&
+      (!existing || existingIdentityFiles.length === 0)
+    ) {
+      continue;
+    }
+
     const itemId = await store.upsertItem({
       libraryId,
       sourceKey: scanned.sourceKey,
@@ -182,6 +202,13 @@ export async function reconcileLibraryScan({
     seenItemIds.push(itemId);
     if (existing) summary.itemsUpdated += 1;
     else summary.itemsCreated += 1;
+
+    if (scanned.renditionBacked) {
+      // Playback and adaptive-asset authorization resolve through the original
+      // media file row. Keep that row active after the source bytes are removed;
+      // the scanner has already proven the replacement package is complete.
+      seenFileIds.push(...existingIdentityFiles.map((file) => file.id));
+    }
 
     for (const [index, file] of scanned.files.entries()) {
       const previous = existingFilesByPath.get(file.relativePath);

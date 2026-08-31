@@ -1,5 +1,19 @@
 import { createHash } from "node:crypto";
 import {
+  TITLE_AUDIO_DIRECTORY,
+  TITLE_SUBTITLE_DIRECTORY,
+  TITLE_VIDEO_DIRECTORY,
+} from "../../../renditions/adaptive/layout";
+import {
+  TITLE_MASTER_PLAYLIST,
+  TITLE_PACKAGE_DIRECTORY,
+  TITLE_PACKAGE_MANIFEST,
+} from "../../../renditions/adaptive/titleLayout";
+import {
+  TITLE_BUILD_RECORD,
+  TITLE_MANIFEST_SCHEMA_VERSION,
+} from "../../../renditions/adaptive/publishTitle";
+import {
   buildSortTitle,
   isBookFile,
   isExtraDirectory,
@@ -34,6 +48,7 @@ export interface ScanDirectoryEntry {
  */
 export interface ScannerFileSystem {
   readDirectory(relativePath: string): Promise<ScanDirectoryEntry[]>;
+  readTextFile(relativePath: string): Promise<string>;
   statFile(relativePath: string): Promise<{ size: number; mtimeMs: number }>;
 }
 
@@ -76,6 +91,13 @@ export interface ScannedItem {
   seriesSourceKey?: string;
   files: ScannedFile[];
   subtitles: ScannedSubtitle[];
+  /**
+   * A complete adaptive package exists in the title folder even though its
+   * original source file does not. Reconciliation uses the existing file row as
+   * the package's durable playback identity; it must never create a file-less
+   * catalogue item from this marker alone.
+   */
+  renditionBacked?: boolean;
 }
 
 export interface ScanSkip {
@@ -89,9 +111,271 @@ export interface ScanResult {
 }
 
 const MAX_SCAN_DEPTH = 12;
+const MAX_TITLE_MANIFEST_BYTES = 1_048_576;
 
 function joinRelative(parent: string, name: string): string {
   return parent ? `${parent}/${name}` : name;
+}
+
+interface PackageAsset {
+  id: string;
+  mediaPath: string;
+  playlistPath: string;
+  fileSizeBytes: number;
+}
+
+interface PackageManifestShape {
+  schemaVersion: number;
+  profileVersion: string;
+  sourceFingerprint: string;
+  createdAt: string;
+  sourceDurationSeconds: number;
+  masterPlaylistPath: string;
+  video: PackageAsset[];
+  audio: PackageAsset[];
+  subtitle: PackageAsset[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isSafeRelativePackagePath(relativePath: string): boolean {
+  if (
+    relativePath.length === 0 ||
+    relativePath.startsWith("/") ||
+    relativePath.includes("\\") ||
+    relativePath.includes("\0")
+  ) {
+    return false;
+  }
+  return relativePath
+    .split("/")
+    .every(
+      (segment) => segment.length > 0 && segment !== "." && segment !== "..",
+    );
+}
+
+function pathStartsIn(relativePath: string, directory: string): boolean {
+  return relativePath.startsWith(`${directory}/`);
+}
+
+function parsePackageAssets(
+  value: unknown,
+  mediaDirectory: string,
+): PackageAsset[] | null {
+  if (!Array.isArray(value)) return null;
+  const assets: PackageAsset[] = [];
+  for (const entry of value) {
+    if (
+      !isRecord(entry) ||
+      typeof entry.id !== "string" ||
+      entry.id.length === 0 ||
+      typeof entry.mediaPath !== "string" ||
+      typeof entry.playlistPath !== "string" ||
+      typeof entry.fileSizeBytes !== "number" ||
+      !Number.isSafeInteger(entry.fileSizeBytes) ||
+      entry.fileSizeBytes <= 0 ||
+      !isSafeRelativePackagePath(entry.mediaPath) ||
+      !isSafeRelativePackagePath(entry.playlistPath) ||
+      entry.mediaPath === entry.playlistPath ||
+      !pathStartsIn(entry.mediaPath, mediaDirectory) ||
+      !pathStartsIn(
+        entry.playlistPath,
+        `${TITLE_PACKAGE_DIRECTORY}/${mediaDirectory}`,
+      )
+    ) {
+      return null;
+    }
+    assets.push({
+      id: entry.id,
+      mediaPath: entry.mediaPath,
+      playlistPath: entry.playlistPath,
+      fileSizeBytes: entry.fileSizeBytes,
+    });
+  }
+  return assets;
+}
+
+function buildRecordMatchesPackage(
+  value: unknown,
+  manifest: PackageManifestShape,
+): boolean {
+  if (
+    !isRecord(value) ||
+    value.profileVersion !== manifest.profileVersion ||
+    value.sourceFingerprint !== manifest.sourceFingerprint ||
+    value.createdAt !== manifest.createdAt ||
+    value.sourceDurationSeconds !== manifest.sourceDurationSeconds ||
+    value.masterPlaylistPath !== manifest.masterPlaylistPath
+  ) {
+    return false;
+  }
+
+  const groups: Array<{
+    published: PackageAsset[];
+    built: unknown;
+    buildMediaField: "mediaPath" | "subtitlePath";
+  }> = [
+    {
+      published: manifest.video,
+      built: value.videoRenditions,
+      buildMediaField: "mediaPath",
+    },
+    {
+      published: manifest.audio,
+      built: value.audioRenditions,
+      buildMediaField: "mediaPath",
+    },
+    {
+      published: manifest.subtitle,
+      built: value.subtitleRenditions,
+      buildMediaField: "subtitlePath",
+    },
+  ];
+
+  for (const { published, built, buildMediaField } of groups) {
+    if (!Array.isArray(built) || built.length !== published.length)
+      return false;
+    const builtById = new Map(
+      built
+        .filter(isRecord)
+        .map((entry) => [entry.id, entry] as const)
+        .filter(([id]) => typeof id === "string"),
+    );
+    if (builtById.size !== published.length) return false;
+    for (const rendition of published) {
+      const builtRendition = builtById.get(rendition.id);
+      if (
+        builtRendition?.[buildMediaField] !== rendition.mediaPath ||
+        builtRendition.playlistPath !== rendition.playlistPath ||
+        builtRendition.fileSizeBytes !== rendition.fileSizeBytes
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function parsePackageManifest(value: unknown): PackageManifestShape | null {
+  if (!isRecord(value)) return null;
+  const video = parsePackageAssets(value.video, TITLE_VIDEO_DIRECTORY);
+  const audio = parsePackageAssets(value.audio, TITLE_AUDIO_DIRECTORY);
+  const subtitle = parsePackageAssets(value.subtitle, TITLE_SUBTITLE_DIRECTORY);
+  if (
+    value.schemaVersion !== TITLE_MANIFEST_SCHEMA_VERSION ||
+    typeof value.profileVersion !== "string" ||
+    value.profileVersion.length === 0 ||
+    typeof value.sourceFingerprint !== "string" ||
+    value.sourceFingerprint.length === 0 ||
+    typeof value.createdAt !== "string" ||
+    !Number.isFinite(Date.parse(value.createdAt)) ||
+    typeof value.sourceDurationSeconds !== "number" ||
+    !Number.isFinite(value.sourceDurationSeconds) ||
+    value.sourceDurationSeconds <= 0 ||
+    typeof value.masterPlaylistPath !== "string" ||
+    value.masterPlaylistPath !==
+      `${TITLE_PACKAGE_DIRECTORY}/${TITLE_MASTER_PLAYLIST}` ||
+    video === null ||
+    video.length === 0 ||
+    audio === null ||
+    audio.length === 0 ||
+    subtitle === null
+  ) {
+    return null;
+  }
+  return {
+    schemaVersion: value.schemaVersion,
+    profileVersion: value.profileVersion,
+    sourceFingerprint: value.sourceFingerprint,
+    createdAt: value.createdAt,
+    sourceDurationSeconds: value.sourceDurationSeconds,
+    masterPlaylistPath: value.masterPlaylistPath,
+    video,
+    audio,
+    subtitle,
+  };
+}
+
+/**
+ * A package can stand in for its removed source only after every published
+ * playlist and media asset has survived intact. Merely finding package.json is
+ * not enough: interrupted publishing and manual file removal must remain visible
+ * as missing media rather than producing a broken catalogue entry.
+ */
+async function hasCompleteTitlePackage(
+  fs: ScannerFileSystem,
+  titleDirectory: string,
+): Promise<boolean> {
+  const manifestPath = joinRelative(
+    joinRelative(titleDirectory, TITLE_PACKAGE_DIRECTORY),
+    TITLE_PACKAGE_MANIFEST,
+  );
+  const buildRecordPath = joinRelative(
+    joinRelative(titleDirectory, TITLE_PACKAGE_DIRECTORY),
+    TITLE_BUILD_RECORD,
+  );
+  try {
+    const [manifestStat, buildRecordStat] = await Promise.all([
+      fs.statFile(manifestPath),
+      fs.statFile(buildRecordPath),
+    ]);
+    if (
+      manifestStat.size <= 0 ||
+      manifestStat.size > MAX_TITLE_MANIFEST_BYTES ||
+      buildRecordStat.size <= 0 ||
+      buildRecordStat.size > MAX_TITLE_MANIFEST_BYTES
+    ) {
+      return false;
+    }
+    const [manifestText, buildRecordText] = await Promise.all([
+      fs.readTextFile(manifestPath),
+      fs.readTextFile(buildRecordPath),
+    ]);
+    const manifest = parsePackageManifest(JSON.parse(manifestText) as unknown);
+    if (!manifest) return false;
+    if (
+      !buildRecordMatchesPackage(
+        JSON.parse(buildRecordText) as unknown,
+        manifest,
+      )
+    ) {
+      return false;
+    }
+
+    const expectedSizes = new Map<string, number | null>();
+    expectedSizes.set(manifest.masterPlaylistPath, null);
+    for (const rendition of [
+      ...manifest.video,
+      ...manifest.audio,
+      ...manifest.subtitle,
+    ]) {
+      if (
+        expectedSizes.has(rendition.mediaPath) ||
+        expectedSizes.has(rendition.playlistPath)
+      ) {
+        return false;
+      }
+      expectedSizes.set(rendition.mediaPath, rendition.fileSizeBytes);
+      expectedSizes.set(rendition.playlistPath, null);
+    }
+
+    for (const [relativePath, expectedSize] of expectedSizes) {
+      const stat = await fs.statFile(
+        joinRelative(titleDirectory, relativePath),
+      );
+      if (
+        stat.size <= 0 ||
+        (expectedSize !== null && stat.size !== expectedSize)
+      ) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function buildFingerprint(
@@ -393,6 +677,12 @@ async function scanMovieDirectory(
       // has no folder-scoped trailer to share.
       trailerPaths.length = 0;
     }
+  } else if (!isLibraryRoot && (await hasCompleteTitlePackage(fs, directory))) {
+    const displayName = directory.split("/").pop() ?? directory;
+    result.items.push({
+      ...buildMovieItem(directory, displayName, [], []),
+      renditionBacked: true,
+    });
   }
 
   if (!recurseIntoSubdirectories) return;

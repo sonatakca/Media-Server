@@ -168,19 +168,24 @@ import {
 import { warmQualityAtPosition } from "./warmQuality";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
+  adaptiveQualityRequestForMode,
   displayTargetHeight,
   isQualityAudioCompatible,
   loadQualityPreference,
   saveQualityPreference,
   selectAutoQuality,
-  selectHigherResolutionQuality,
+  selectFileModeQualities,
   selectModeRungs,
+  selectModeRungsFromAutoHeight,
   type ModeSelectionContext,
-  selectLowDataQuality,
   selectManualQuality,
   shouldSwitchFileQuality,
   type QualityPreference,
 } from "./qualityPreference";
+import {
+  decideNativeReplan,
+  nativeQualityRequestKey,
+} from "./nativeQualityRequest";
 
 /** How often Auto re-examines conditions while playback continues. */
 const QUALITY_REVIEW_INTERVAL_MS = 15_000;
@@ -260,6 +265,41 @@ function getFileQualitySelectionContext(
     downlinkMbps: connection?.downlink,
     recentStallCount,
   };
+}
+
+function sortQualityOptionsLowestFirst(
+  options: readonly PlaybackQualityOption[],
+): PlaybackQualityOption[] {
+  return [...options].sort(
+    (left, right) =>
+      (left.maxHeight ?? Number.MAX_SAFE_INTEGER) -
+        (right.maxHeight ?? Number.MAX_SAFE_INTEGER) ||
+      (left.maxWidth ?? Number.MAX_SAFE_INTEGER) -
+        (right.maxWidth ?? Number.MAX_SAFE_INTEGER),
+  );
+}
+
+/** Match a manifest rung to the dimensions the decoder is actually emitting. */
+function findEffectiveAdaptiveRung<
+  T extends { height: number; width?: number },
+>(
+  ordered: readonly T[],
+  decodedWidth: number | null,
+  reportedHeight: number | null,
+): T | undefined {
+  return (
+    ordered.find(
+      (quality) => decodedWidth !== null && quality.width === decodedWidth,
+    ) ??
+    ordered.find((quality) => quality.height === reportedHeight) ??
+    (reportedHeight === null
+      ? undefined
+      : [...ordered].sort(
+          (left, right) =>
+            Math.abs(left.height - reportedHeight) -
+            Math.abs(right.height - reportedHeight),
+        )[0])
+  );
 }
 
 /**
@@ -854,6 +894,23 @@ export function CustomVideoPlayer({
   const [decodedFrameWidth, setDecodedFrameWidth] = useState<number | null>(
     null,
   );
+  /**
+   * The rung Auto settled on, remembered across mode changes.
+   *
+   * Every automatic mode is expressed relative to what Auto would choose, and
+   * reading that from the rung currently on screen is circular the moment a
+   * bias is applied: Low Data caps playback at 1080p, the decoded rung becomes
+   * 1080p, so Low Data recomputes itself as 720p, and the menu walks downwards
+   * every time it is opened. The same loop re-planned the native source on
+   * each pass, which is why the picture went black and never recovered.
+   *
+   * So the anchor is only ever learned while Auto is actually in charge. Under
+   * a bias it is frozen: the ceiling it produces stays put, the re-plan guard
+   * matches, and nothing thrashes.
+   */
+  const [autoAnchorHeight, setAutoAnchorHeight] = useState<number | undefined>(
+    undefined,
+  );
   const [activeAdaptiveHeight, setActiveAdaptiveHeight] = useState<
     number | null
   >(null);
@@ -883,6 +940,7 @@ export function CustomVideoPlayer({
   const preloadTokenRef = useRef(0);
   const [_isPreparingQuality, setIsPreparingQuality] = useState(false);
   const recentQualityStallsRef = useRef<number[]>([]);
+  const [recentQualityStallCount, setRecentQualityStallCount] = useState(0);
   const [loadedVideoAspectRatio, setLoadedVideoAspectRatio] = useState<
     number | null
   >(null);
@@ -990,19 +1048,23 @@ export function CustomVideoPlayer({
       ),
     [availableQualityFiles, selectedAudioStreamIndex],
   );
-  const lowDataQualityFile = useMemo(
-    () => selectLowDataQuality(audioCompatibleQualityFiles),
-    [audioCompatibleQualityFiles],
-  );
-  const higherResolutionQualityFile = useMemo(
+  const fileModeQualities = useMemo(
     () =>
-      selectHigherResolutionQuality(
+      selectFileModeQualities(
         audioCompatibleQualityFiles,
-        measuredContainerHeight ?? undefined,
-        typeof window === "undefined" ? 1 : window.devicePixelRatio,
+        getFileQualitySelectionContext(
+          measuredContainerHeight ?? 720,
+          recentQualityStallCount,
+        ),
       ),
-    [audioCompatibleQualityFiles, measuredContainerHeight],
+    [
+      audioCompatibleQualityFiles,
+      measuredContainerHeight,
+      recentQualityStallCount,
+    ],
   );
+  const lowDataQualityFile = fileModeQualities.lowData;
+  const higherResolutionQualityFile = fileModeQualities.higher;
   const qualityOptions = useMemo(
     () => getManualQualityOptions(activeSource.mediaSource),
     [activeSource.mediaSource],
@@ -1022,40 +1084,45 @@ export function CustomVideoPlayer({
       const original = availableQualityFiles.find(
         (quality) => quality.kind === "original",
       );
-      return original
-        ? [
-            ...adaptiveOptions,
-            {
-              id: original.id,
-              label: formatTemplate(t("player.qualityOriginalWithHeight"), {
-                height: original.height,
-              }),
-              subtitle: "",
-              maxHeight: original.height,
-              maxWidth: original.width,
-              maxStreamingBitrate: original.bitrate ?? Number.MAX_SAFE_INTEGER,
-            },
-          ]
-        : adaptiveOptions;
+      return sortQualityOptionsLowestFirst(
+        original
+          ? [
+              ...adaptiveOptions,
+              {
+                id: original.id,
+                label: formatTemplate(t("player.qualityOriginalWithHeight"), {
+                  height: original.height,
+                }),
+                subtitle: "",
+                maxHeight: original.height,
+                maxWidth: original.width,
+                maxStreamingBitrate:
+                  original.bitrate ?? Number.MAX_SAFE_INTEGER,
+              },
+            ]
+          : adaptiveOptions,
+      );
     }
-    return availableQualityFiles.map((quality) => ({
-      id: quality.id,
-      label: `${
-        quality.kind === "original"
-          ? formatTemplate(t("player.qualityOriginalWithHeight"), {
-              height: quality.height,
-            })
-          : `${quality.height}p`
-      }${quality.hdr ? " HDR" : ""}`,
-      // Only carry a subtitle when it says something the label does not; the
-      // check mark already marks the active entry.
-      subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
-        ? ""
-        : t("player.qualityAudioMismatch"),
-      maxHeight: quality.height,
-      maxWidth: quality.width,
-      maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
-    }));
+    return sortQualityOptionsLowestFirst(
+      availableQualityFiles.map((quality) => ({
+        id: quality.id,
+        label: `${
+          quality.kind === "original"
+            ? formatTemplate(t("player.qualityOriginalWithHeight"), {
+                height: quality.height,
+              })
+            : `${quality.height}p`
+        }${quality.hdr ? " HDR" : ""}`,
+        // Only carry a subtitle when it says something the label does not; the
+        // check mark already marks the active entry.
+        subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
+          ? ""
+          : t("player.qualityAudioMismatch"),
+        maxHeight: quality.height,
+        maxWidth: quality.width,
+        maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
+      })),
+    );
   }, [
     adaptiveQualityManifest,
     availableQualityFiles,
@@ -1597,21 +1664,18 @@ export function CustomVideoPlayer({
         const playerHeight =
           containerRef.current?.clientHeight ??
           (typeof window === "undefined" ? 720 : window.innerHeight * 0.7);
+        const initialModeQualities = selectFileModeQualities(
+          compatibleInitialFiles,
+          getFileQualitySelectionContext(playerHeight),
+        );
         const selectedFile =
           storedPreference.mode === "low-data"
-            ? selectLowDataQuality(compatibleInitialFiles)
+            ? initialModeQualities.lowData
             : storedPreference.mode === "higher-resolution"
-              ? selectHigherResolutionQuality(
-                  compatibleInitialFiles,
-                  playerHeight,
-                  typeof window === "undefined" ? 1 : window.devicePixelRatio,
-                )
+              ? initialModeQualities.higher
               : storedPreference.mode === "advanced"
                 ? selectManualQuality(compatibleInitialFiles, storedPreference)
-                : selectAutoQuality(
-                    compatibleInitialFiles,
-                    getFileQualitySelectionContext(playerHeight),
-                  );
+                : initialModeQualities.anchor;
         if (selectedFile) {
           nextSource = buildQualityFileSourceRef.current(selectedFile);
           setActiveQualityFileId(selectedFile.id);
@@ -1632,6 +1696,8 @@ export function CustomVideoPlayer({
       hasReportedStoppedRef.current = false;
       hasAutoPlayedNextRef.current = false;
       qualityPreferenceRef.current = storedPreference;
+      recentQualityStallsRef.current = [];
+      setRecentQualityStallCount(0);
       setActiveSource(nextSource);
       setFileQualityMode(storedPreference.mode);
       setSelectedQualityId(AUTO_QUALITY_ID);
@@ -2149,15 +2215,16 @@ export function CustomVideoPlayer({
    * quality or audio choice therefore cannot be applied to the running stream —
    * but it must not be dropped either. The choice is sent to the server as a
    * new plan instead; the server answers with a master playlist advertising
-   * exactly the requested rung and defaulting to the requested audio rendition,
-   * and `switchPlayerSource` re-attaches it at the current position and play
-   * state. The outgoing session is retired by its lease only after the
-   * replacement is attached, so a late playlist read cannot become a fatal
-   * error.
+   * either the exact manual rung or the automatic mode's bounded ladder, while
+   * defaulting to the requested audio rendition. `switchPlayerSource`
+   * re-attaches it at the current position and play state. The outgoing session
+   * is retired by its lease only after the replacement is attached, so a late
+   * playlist read cannot become a fatal error.
    */
   const replanNativeAdaptiveSource = useCallback(
     async (request: {
       qualityHeight?: number | null;
+      maxHeight?: number | null;
       audioStreamIndex?: number;
     }): Promise<boolean> => {
       try {
@@ -2166,12 +2233,23 @@ export function CustomVideoPlayer({
           undefined,
           request.audioStreamIndex ?? selectedAudioStreamIndex,
           {
+            ...(request.maxHeight === null || request.maxHeight === undefined
+              ? {}
+              : { maxHeight: request.maxHeight }),
             ...(request.qualityHeight === null ||
             request.qualityHeight === undefined
               ? {}
               : { qualityHeight: request.qualityHeight }),
+            /*
+             * Read from the element and a ref rather than from render state.
+             * Depending on `progress.currentTime` gave this callback — and
+             * every callback built on it — a new identity several times a
+             * second, which re-ran the preference effect at the same rate and
+             * let it re-plan before the previous plan had attached.
+             */
             startTimeMs: Math.round(
-              (videoRef.current?.currentTime ?? progress.currentTime) * 1000,
+              (videoRef.current?.currentTime ??
+                latestPlaybackPositionRef.current) * 1000,
             ),
           },
         );
@@ -2193,7 +2271,6 @@ export function CustomVideoPlayer({
       activeSource,
       buildConfiguredSource,
       selectedAudioStreamIndex,
-      progress.currentTime,
       switchPlayerSource,
     ],
   );
@@ -2221,12 +2298,65 @@ export function CustomVideoPlayer({
     }
   }, [activeSource.url]);
 
-  const applyNativeAdaptiveQualityHeight = useCallback(
-    (height: number | null) => {
-      if (nativeAdaptiveQualityHeight === height) return;
-      void replanNativeAdaptiveSource({ qualityHeight: height });
+  const nativeAdaptiveMaximumHeight = useMemo(() => {
+    try {
+      const value = new URL(
+        activeSource.url,
+        typeof window === "undefined"
+          ? "http://seyirlik.local"
+          : window.location.origin,
+      ).searchParams.get("maxHeight");
+      const height = value ? Number(value) : Number.NaN;
+      return Number.isFinite(height) && height > 0 ? height : null;
+    } catch {
+      return null;
+    }
+  }, [activeSource.url]);
+
+  /**
+   * The re-plan already asked for and not yet attached.
+   *
+   * Re-planning is asynchronous: the URL this guard reads only changes once
+   * `switchPlayerSource` has finished. Comparing against the attached URL
+   * alone therefore says "not yet applied" for the whole of that window, so
+   * anything asking again inside it — selecting a rung sets the locked id,
+   * which re-runs the effect that reapplies the preference — started a second
+   * re-plan on top of the first. Each one replaced the source again, so none
+   * of them ever finished attaching and the picture stayed black.
+   */
+  const pendingNativeQualityRequestRef = useRef<string | null>(null);
+  const applyNativeAdaptiveQualityRequest = useCallback(
+    (request: { qualityHeight?: number; maxHeight?: number }) => {
+      const qualityHeight = request.qualityHeight ?? null;
+      const maxHeight = request.maxHeight ?? null;
+      const decision = decideNativeReplan(
+        { qualityHeight, maxHeight },
+        {
+          qualityHeight: nativeAdaptiveQualityHeight,
+          maxHeight: nativeAdaptiveMaximumHeight,
+        },
+        pendingNativeQualityRequestRef.current,
+      );
+      if (decision === "attached") {
+        // Nothing to do, and nothing outstanding.
+        pendingNativeQualityRequestRef.current = null;
+        return;
+      }
+      if (decision === "in-flight") return;
+      const desired = nativeQualityRequestKey({ qualityHeight, maxHeight });
+      pendingNativeQualityRequestRef.current = desired;
+      void replanNativeAdaptiveSource(request).finally(() => {
+        // Released only by whoever still owns it, so a newer request stands.
+        if (pendingNativeQualityRequestRef.current === desired) {
+          pendingNativeQualityRequestRef.current = null;
+        }
+      });
     },
-    [nativeAdaptiveQualityHeight, replanNativeAdaptiveSource],
+    [
+      nativeAdaptiveMaximumHeight,
+      nativeAdaptiveQualityHeight,
+      replanNativeAdaptiveSource,
+    ],
   );
 
   /**
@@ -2614,16 +2744,17 @@ export function CustomVideoPlayer({
         ...(connection?.effectiveType === undefined
           ? {}
           : { effectiveType: connection.effectiveType }),
-        recentStallCount: recentQualityStallsRef.current.length,
+        recentStallCount: recentQualityStallCount,
       };
     },
-    [measuredContainerHeight, readLinkEstimateBps],
+    [measuredContainerHeight, readLinkEstimateBps, recentQualityStallCount],
   );
 
   const applyAdaptiveQualityPreference = useCallback(
     (
       mode: Exclude<QualityPreferenceMode, "advanced"> | "advanced",
       qualityId?: string,
+      options: { persist?: boolean } = {},
     ) => {
       if (!adaptiveQualityManifest) return false;
       // Safari's native HLS engine keeps seamless ABR but exposes no JavaScript
@@ -2665,24 +2796,44 @@ export function CustomVideoPlayer({
        * viewer reads one number and watches a different one.
        */
       const controller = activeAttachmentRef.current?.adaptiveController;
-      const { lowData: lowest, higher: highest } = selectModeRungs(
-        ordered,
-        modeSelectionContext(controller),
-      );
+      /*
+       * What Auto settled on, which is a fact about the link and the device
+       * rather than about the mode being applied. Deriving it from the rung on
+       * screen made each bias move its own target.
+       */
+      const anchorHeight =
+        fileQualityMode === "auto"
+          ? (findEffectiveAdaptiveRung(
+              ordered,
+              activeAdaptiveWidth ?? decodedFrameWidth,
+              activeAdaptiveHeight,
+            )?.height ?? autoAnchorHeight)
+          : autoAnchorHeight;
+      const {
+        anchor,
+        lowData: lowest,
+        higher: highest,
+      } = anchorHeight !== undefined
+        ? selectModeRungsFromAutoHeight(ordered, anchorHeight)
+        : selectModeRungs(ordered, modeSelectionContext(controller));
 
       if (mode === "advanced" && preferred) {
         controller?.setQualityHeight(preferred.height, preferred.height);
         if (requiresNativeReplan) {
-          applyNativeAdaptiveQualityHeight(preferred.height);
+          applyNativeAdaptiveQualityRequest(
+            adaptiveQualityRequestForMode("advanced", preferred.height),
+          );
         }
         setAdaptiveLockedQualityId(preferred.id);
         setActiveAdaptiveHeight((current) => current ?? preferred.height);
-        persistQualityPreference({
-          mode: "advanced",
-          preferredHeight: preferred.height,
-          preferredQualityId: preferred.id,
-          preferOriginal: false,
-        });
+        if (options.persist !== false) {
+          persistQualityPreference({
+            mode: "advanced",
+            preferredHeight: preferred.height,
+            preferredQualityId: preferred.id,
+            preferOriginal: false,
+          });
+        }
       } else {
         const ceiling =
           mode === "low-data"
@@ -2692,10 +2843,14 @@ export function CustomVideoPlayer({
               : null;
         controller?.setQualityHeight(null, ceiling);
         if (requiresNativeReplan) {
-          applyNativeAdaptiveQualityHeight(ceiling);
+          applyNativeAdaptiveQualityRequest(
+            adaptiveQualityRequestForMode(mode, ceiling ?? anchor?.height),
+          );
         }
         setAdaptiveLockedQualityId(null);
-        persistQualityPreference({ mode });
+        if (options.persist !== false) {
+          persistQualityPreference({ mode });
+        }
       }
       setFileQualityMode(mode);
       setQualitySelectionNotice(null);
@@ -2703,8 +2858,13 @@ export function CustomVideoPlayer({
     },
     [
       activeSource.usingHlsJs,
+      activeAdaptiveHeight,
+      activeAdaptiveWidth,
       adaptiveQualityManifest,
-      applyNativeAdaptiveQualityHeight,
+      applyNativeAdaptiveQualityRequest,
+      autoAnchorHeight,
+      decodedFrameWidth,
+      fileQualityMode,
       isAdaptiveRenditionPlayback,
       // The container height now reaches this through the mode context, which
       // carries the measured link alongside it.
@@ -2713,13 +2873,47 @@ export function CustomVideoPlayer({
     ],
   );
 
-  // Source attachment is asynchronous. Reapply the saved preference once the
-  // persistent hls.js instance exists; this changes only future fragments and
-  // never replaces the video element or its MediaSource.
+  /*
+   * Learned only under Auto. While a bias is applied the decoded rung is the
+   * capped one, which says nothing about what Auto would have chosen.
+   */
   useEffect(() => {
-    if (!hasAdaptiveQualities || !activeSource.usingHlsJs) return;
+    if (fileQualityMode !== "auto") return;
+    const ordered = [...(adaptiveQualityManifest?.qualities ?? [])].sort(
+      (left, right) => left.height - right.height,
+    );
+    if (ordered.length === 0) return;
+    const effective = findEffectiveAdaptiveRung(
+      ordered,
+      activeAdaptiveWidth ?? decodedFrameWidth,
+      activeAdaptiveHeight,
+    );
+    if (!effective) return;
+    setAutoAnchorHeight((current) =>
+      current === effective.height ? current : effective.height,
+    );
+  }, [
+    activeAdaptiveHeight,
+    activeAdaptiveWidth,
+    adaptiveQualityManifest,
+    decodedFrameWidth,
+    fileQualityMode,
+  ]);
+
+  // Source attachment is asynchronous. Reapply the saved preference once the
+  // engine exists. hls.js changes future fragments in place; native HLS is
+  // re-planned once with a master capped to the same rung the menu displays.
+  const applyAdaptiveQualityPreferenceRef = useRef(
+    applyAdaptiveQualityPreference,
+  );
+  useEffect(() => {
+    applyAdaptiveQualityPreferenceRef.current = applyAdaptiveQualityPreference;
+  });
+
+  useEffect(() => {
+    if (!hasAdaptiveQualities) return;
     const saved = qualityPreferenceRef.current;
-    applyAdaptiveQualityPreference(
+    applyAdaptiveQualityPreferenceRef.current(
       saved.mode,
       saved.mode === "advanced"
         ? (adaptiveLockedQualityId ?? saved.preferredQualityId)
@@ -2730,12 +2924,52 @@ export function CustomVideoPlayer({
         selectedAudioStreamIndex,
       );
     }
+    /*
+     * Deliberately not depending on `applyAdaptiveQualityPreference`. This
+     * effect reapplies the saved preference when the *engine* changes, and
+     * nothing else; the callback is reached through a ref so that its identity
+     * — which moves whenever playback position does — cannot turn a one-off
+     * reapplication into one that runs several times a second. When it did,
+     * each pass could re-plan the native source before the previous plan had
+     * attached, and the picture never came back.
+     */
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     activeSource.usingHlsJs,
     adaptiveLockedQualityId,
-    applyAdaptiveQualityPreference,
     hasAdaptiveQualities,
     selectedAudioStreamIndex,
+  ]);
+
+  // Keep automatic biases tied to the latest ABR recommendation. hls.js updates
+  // its throughput estimate as fragments arrive even when the visible level
+  // does not change, so a periodic review is needed to move the cap without a
+  // menu click or source re-attachment. Auto itself remains uncapped ABR and
+  // Advanced remains an explicit lock.
+  useEffect(() => {
+    if (
+      !hasAdaptiveQualities ||
+      !activeSource.usingHlsJs ||
+      fileQualityMode === "auto" ||
+      fileQualityMode === "advanced"
+    ) {
+      return undefined;
+    }
+
+    const refreshBias = () =>
+      applyAdaptiveQualityPreference(fileQualityMode, undefined, {
+        persist: false,
+      });
+    const interval = window.setInterval(
+      refreshBias,
+      QUALITY_REVIEW_INTERVAL_MS,
+    );
+    return () => window.clearInterval(interval);
+  }, [
+    activeSource.usingHlsJs,
+    applyAdaptiveQualityPreference,
+    fileQualityMode,
+    hasAdaptiveQualities,
   ]);
 
   const handleSelectQualityMode = useCallback(
@@ -2755,13 +2989,7 @@ export function CustomVideoPlayer({
           ? lowDataQualityFile
           : mode === "higher-resolution"
             ? higherResolutionQualityFile
-            : selectAutoQuality(
-                audioCompatibleQualityFiles,
-                getFileQualitySelectionContext(
-                  containerRef.current?.clientHeight ?? 720,
-                  recentQualityStallsRef.current.length,
-                ),
-              );
+            : fileModeQualities.anchor;
 
       if (!selectedFile) {
         setQualitySelectionNotice(t("player.qualityManualUnavailable"));
@@ -2773,7 +3001,7 @@ export function CustomVideoPlayer({
     [
       applyQualityFile,
       applyAdaptiveQualityPreference,
-      audioCompatibleQualityFiles,
+      fileModeQualities.anchor,
       hasAdaptiveQualities,
       higherResolutionQualityFile,
       isAdaptiveRenditionPlayback,
@@ -3082,7 +3310,11 @@ export function CustomVideoPlayer({
       recentQualityStallsRef.current = recentQualityStallsRef.current.filter(
         (timestamp) => timestamp >= cutoff,
       );
-      return recentQualityStallsRef.current.length;
+      const count = recentQualityStallsRef.current.length;
+      setRecentQualityStallCount((current) =>
+        current === count ? current : count,
+      );
+      return count;
     };
     // The callback is read through a ref so this effect never depends on
     // `switchPlayerSource`, whose identity changes on every progress tick. When
@@ -3092,6 +3324,7 @@ export function CustomVideoPlayer({
     const handleWaiting = () => {
       if (!video || video.paused || video.currentTime <= 0) return;
       recentQualityStallsRef.current.push(Date.now());
+      setRecentQualityStallCount(recentQualityStallsRef.current.length);
       run();
     };
     const handleResize = () => {
@@ -3126,10 +3359,11 @@ export function CustomVideoPlayer({
       const ordered = [...adaptiveQualityManifest.qualities].sort(
         (left, right) => left.height - right.height,
       );
-      const { lowData: lowest, higher: highest } = selectModeRungs(
+      const estimatedModeRungs = selectModeRungs(
         ordered,
         modeSelectionContext(activeAttachmentRef.current?.adaptiveController),
       );
+      const { anchor, lowData: lowest, higher: highest } = estimatedModeRungs;
       /*
        * Matched on the frame the decoder produced, not on the rung's name. A
        * rung is named by its class while the frame it emits is whatever the
@@ -3137,20 +3371,22 @@ export function CustomVideoPlayer({
        * 3840x1608 — so comparing the decoded height against the class matched
        * nothing on any letterboxed title, and Auto reported itself as "Auto".
        */
-      const onScreenWidth = activeAdaptiveWidth ?? decodedFrameWidth;
-      const effective =
-        ordered.find(
-          (quality) =>
-            onScreenWidth !== null && quality.width === onScreenWidth,
-        ) ??
-        ordered.find((quality) => quality.height === activeAdaptiveHeight) ??
-        (activeAdaptiveHeight === null
-          ? undefined
-          : [...ordered].sort(
-              (left, right) =>
-                Math.abs(left.height - activeAdaptiveHeight) -
-                Math.abs(right.height - activeAdaptiveHeight),
-            )[0]);
+      const effective = findEffectiveAdaptiveRung(
+        ordered,
+        activeAdaptiveWidth ?? decodedFrameWidth,
+        activeAdaptiveHeight,
+      );
+      /*
+       * The labels answer the same question the handler does, from the same
+       * anchor — otherwise the menu advertises one rung and the player is told
+       * to use another.
+       */
+      const labelAnchorHeight =
+        fileQualityMode === "auto" ? (effective?.height ?? autoAnchorHeight) : autoAnchorHeight;
+      const displayedModeRungs =
+        labelAnchorHeight !== undefined
+          ? selectModeRungsFromAutoHeight(ordered, labelAnchorHeight)
+          : estimatedModeRungs;
       const activeOriginal = !isAdaptiveRenditionPlayback
         ? availableQualityFiles.find(
             (quality) =>
@@ -3164,12 +3400,22 @@ export function CustomVideoPlayer({
           effective?.label ??
           (activeAdaptiveHeight ? `${activeAdaptiveHeight}p` : undefined),
         modeQualityLabels: {
-          "low-data": lowest?.label,
+          "low-data": displayedModeRungs.lowData?.label ?? lowest?.label,
           // Undefined rather than the word "Auto": the panel renders the mode's
           // own name when it has no rung to report, so returning a label here
           // produced "Auto (Auto)".
-          auto: effective?.label,
-          "higher-resolution": highest?.label,
+          /*
+           * From the anchored set, like the other two. Reading `anchor` here
+           * took it from the bandwidth estimate instead, which on an engine
+           * that reports no throughput falls back to a 1080p ceiling — so
+           * selecting Low Data made Auto itself appear to drop to 1080p.
+           */
+          auto:
+            fileQualityMode === "auto"
+              ? (effective?.label ?? displayedModeRungs.anchor?.label)
+              : (displayedModeRungs.anchor?.label ?? anchor?.label),
+          "higher-resolution":
+            displayedModeRungs.higher?.label ?? highest?.label,
         },
         advancedOptions: advancedQualityOptions,
         lockedQualityId:
@@ -3186,7 +3432,7 @@ export function CustomVideoPlayer({
       audioCompatibleQualityFiles,
       getFileQualitySelectionContext(
         containerRef.current?.clientHeight ?? 720,
-        recentQualityStallsRef.current.length,
+        recentQualityStallCount,
       ),
     );
 
@@ -3233,6 +3479,7 @@ export function CustomVideoPlayer({
     activeQualityFileId,
     activeAdaptiveHeight,
     activeAdaptiveWidth,
+    autoAnchorHeight,
     decodedFrameWidth,
     measuredContainerHeight,
     adaptiveLockedQualityId,
@@ -3248,6 +3495,7 @@ export function CustomVideoPlayer({
     isAdaptiveRenditionPlayback,
     lowDataQualityFile,
     qualitySelectionNotice,
+    recentQualityStallCount,
     t,
   ]);
 
@@ -3296,6 +3544,7 @@ export function CustomVideoPlayer({
         const replanned = await replanNativeAdaptiveSource({
           audioStreamIndex: streamIndex,
           qualityHeight: nativeAdaptiveQualityHeight,
+          maxHeight: nativeAdaptiveMaximumHeight,
         });
 
         if (replanned) {
@@ -3430,6 +3679,7 @@ export function CustomVideoPlayer({
       canSwitchAudio,
       isAdaptiveRenditionPlayback,
       item,
+      nativeAdaptiveMaximumHeight,
       nativeAdaptiveQualityHeight,
       qualityOptions,
       replanNativeAdaptiveSource,

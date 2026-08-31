@@ -12,7 +12,7 @@ import {
   resolveRenditionPaths,
   type RenditionAnalysisReport,
 } from "../src/renditions/analysis";
-import { acquireDirectoryLock } from "../src/renditions/locks";
+import { acquireDirectoryLock, staleLock } from "../src/renditions/locks";
 import { calculateReserveBytes } from "../src/renditions/planning";
 import { processRenditionReport } from "../src/renditions/processor";
 import {
@@ -326,6 +326,9 @@ async function validateAdaptiveOutputs(
   return results;
 }
 
+/** A lock older than this is treated as abandoned regardless of its lease. */
+const LOCK_MAXIMUM_AGE_MS = 24 * 60 * 60 * 1_000;
+
 async function cleanupWork(
   workRoot: string,
   stateRoot: string,
@@ -347,12 +350,20 @@ async function cleanupWork(
       path.join(stateRoot, "locks", `${mediaEntry.name}.lock`),
       path.join(stateRoot, "locks", `${mediaEntry.name}.adaptive.lock`),
     ];
+    /*
+     * A lock's presence is not the question; whether anything is still holding
+     * it is. A dead attempt leaves its lock behind — an unplugged volume is the
+     * usual way — and treating that as active meant the workspace it abandoned
+     * could never be reclaimed. The lease says which it is.
+     */
     let hasActiveLock = false;
     for (const lockPath of lockPaths) {
       try {
         await stat(lockPath);
-        hasActiveLock = true;
-        break;
+        if (!(await staleLock(lockPath, LOCK_MAXIMUM_AGE_MS))) {
+          hasActiveLock = true;
+          break;
+        }
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       }

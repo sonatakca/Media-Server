@@ -1,4 +1,4 @@
-import { readdir, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { isPathInsideRoot } from "../../pathSecurity";
 import type { ScanDirectoryEntry, ScannerFileSystem } from "./libraryScan";
@@ -14,6 +14,12 @@ export function createNodeScannerFileSystem(
   mediaRoot: string,
 ): ScannerFileSystem {
   const root = path.resolve(mediaRoot);
+  let realRoot: Promise<string> | undefined;
+
+  function resolveRealRoot(): Promise<string> {
+    realRoot ??= realpath(root);
+    return realRoot;
+  }
 
   function resolveInsideRoot(relativePath: string): string {
     if (relativePath.includes("\0")) {
@@ -28,6 +34,20 @@ export function createNodeScannerFileSystem(
       throw new Error("Path escapes the media root.");
     }
     return resolved;
+  }
+
+  async function resolveExistingInsideRoot(
+    relativePath: string,
+  ): Promise<string> {
+    const absolute = resolveInsideRoot(relativePath);
+    const [trustedRoot, existingPath] = await Promise.all([
+      resolveRealRoot(),
+      realpath(absolute),
+    ]);
+    if (!isPathInsideRoot(trustedRoot, existingPath)) {
+      throw new Error("Path escapes the media root.");
+    }
+    return existingPath;
   }
 
   return {
@@ -62,8 +82,13 @@ export function createNodeScannerFileSystem(
       return results;
     },
 
+    readTextFile: async (relativePath) => {
+      const absolute = await resolveExistingInsideRoot(relativePath);
+      return readFile(absolute, "utf8");
+    },
+
     statFile: async (relativePath) => {
-      const absolute = resolveInsideRoot(relativePath);
+      const absolute = await resolveExistingInsideRoot(relativePath);
       const stats = await stat(absolute);
       if (!stats.isFile()) {
         throw new Error("Path is not a regular file.");

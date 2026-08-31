@@ -91,19 +91,21 @@ export interface ProcessingJobUpdate {
   overallProgress?: number;
   bytesProcessed?: number;
   outputBytes?: number;
+  /** The job's live prediction of its own final size, refined as it runs. */
+  estimatedOutputBytes?: number;
   speed?: number | null;
   fps?: number | null;
   etaSeconds?: number | null;
   hardwareAdapter?: string;
   videoEncoder?: string;
-  validation?: Record<string, unknown>;
+  validation?: Record<string, unknown> | null;
   warnings?: string[];
   errorCode?: string | null;
   errorMessage?: string | null;
   stagingDirectory?: string | null;
   publishedVersion?: string | null;
   startedAt?: Date;
-  finishedAt?: Date;
+  finishedAt?: Date | null;
   /**
    * Cleared when a job is retried. A retry that inherited the flag was
    * cancelled again the moment it started, which looked like the retry button
@@ -260,6 +262,30 @@ export interface ProcessingJobStore {
     reason: "operator" | "storage-unavailable",
   ): Promise<ProcessingJobRecord[]>;
   listActive(): Promise<ProcessingJobRecord[]>;
+  /**
+   * Starts a new attempt, resetting everything scoped to an attempt.
+   *
+   * A processing job outlives its attempts: it keeps its identity, its source
+   * and the package it has already published. Everything describing *how the
+   * work went* belongs to one attempt and must not survive into the next. It
+   * did — a retry inherited the previous attempt's 89% overall progress, its
+   * `finishedAt`, its estimate and its speed, so a freshly started run showed
+   * as nearly complete and as having finished two minutes before it began.
+   * Resetting in one statement is what makes that impossible to get wrong
+   * again, rather than each caller remembering the whole list.
+   */
+  beginAttempt(
+    id: string,
+    input: {
+      estimatedOutputBytes?: number;
+      estimatedStagingBytes?: number;
+      decision?: Record<string, unknown>;
+      streamDecisions?: Record<string, unknown>;
+      hardwareAdapter?: string;
+      videoEncoder?: string;
+      warnings?: string[];
+    },
+  ): Promise<ProcessingJobRecord | null>;
   incrementAttempts(id: string): Promise<number>;
   appendEvent(input: {
     processingJobId: string;
@@ -273,6 +299,13 @@ export interface ProcessingJobStore {
     afterSequence?: number,
   ): Promise<ProcessingJobEvent[]>;
   counts(): Promise<Record<ProcessingState, number>>;
+  /**
+   * Mirrors terminal queue failures into the operator-facing processing row.
+   * A worker can disappear between those two durable records; without this
+   * repair the queue is honestly failed while the processing page says the
+   * encoder is still running forever.
+   */
+  reconcileTerminalQueueJobs(): Promise<number>;
   /**
    * Returns jobs abandoned by a worker that stopped, so they can be resumed or
    * failed on the next start rather than sitting at `running` for ever.
@@ -402,6 +435,8 @@ export function createProcessingJobStore(
       }
       if (update.bytesProcessed !== undefined)
         set("bytes_processed", update.bytesProcessed);
+      if (update.estimatedOutputBytes !== undefined)
+        set("estimated_output_bytes", update.estimatedOutputBytes);
       if (update.outputBytes !== undefined)
         set("output_bytes", update.outputBytes);
       if (update.speed !== undefined) set("speed", update.speed);
@@ -504,6 +539,58 @@ export function createProcessingJobStore(
       return (result.rowCount ?? 0) > 0;
     },
 
+    async beginAttempt(id, input) {
+      /*
+       * One statement, so a reader can see the whole boundary between what a
+       * job keeps and what an attempt owns. Kept deliberately: the job's
+       * identity, its source fingerprint, its attempt count, and
+       * `published_version` — that names the package already on disk, which a
+       * new attempt builds upon rather than replaces.
+       */
+      const result = await pool.query<RawRow>(
+        `UPDATE processing_jobs SET
+           state = 'queued',
+           stage = 'waiting',
+           stage_progress = 0,
+           overall_progress = 0,
+           bytes_processed = 0,
+           output_bytes = NULL,
+           estimated_output_bytes = $2,
+           estimated_staging_bytes = COALESCE($3, estimated_staging_bytes),
+           speed = NULL,
+           fps = NULL,
+           eta_seconds = NULL,
+           validation = NULL,
+           error_code = NULL,
+           error_message = NULL,
+           cancellation_requested = false,
+           pause_requested = false,
+           paused_reason = NULL,
+           started_at = NULL,
+           finished_at = NULL,
+           decision = COALESCE($4::jsonb, decision),
+           stream_decisions = COALESCE($5::jsonb, stream_decisions),
+           hardware_adapter = COALESCE($6, hardware_adapter),
+           video_encoder = COALESCE($7, video_encoder),
+           warnings = COALESCE($8::jsonb, warnings),
+           updated_at = now()
+         WHERE id = $1
+         RETURNING ${COLUMNS}`,
+        [
+          id,
+          input.estimatedOutputBytes ?? null,
+          input.estimatedStagingBytes ?? null,
+          input.decision ? JSON.stringify(input.decision) : null,
+          input.streamDecisions ? JSON.stringify(input.streamDecisions) : null,
+          input.hardwareAdapter ?? null,
+          input.videoEncoder ?? null,
+          input.warnings ? JSON.stringify(input.warnings) : null,
+        ],
+      );
+      const row = result.rows[0];
+      return row ? toRecord(row) : null;
+    },
+
     async incrementAttempts(id) {
       const result = await pool.query<{ attempts: number }>(
         `UPDATE processing_jobs
@@ -599,6 +686,38 @@ export function createProcessingJobStore(
       } satisfies Record<ProcessingState, number>;
       for (const row of result.rows) counts[row.state] = Number(row.count);
       return counts;
+    },
+
+    async reconcileTerminalQueueJobs() {
+      const result = await pool.query(
+        `UPDATE processing_jobs AS processing SET
+           state = CASE
+             WHEN queue.status = 'cancelled' THEN 'cancelled'
+             ELSE 'failed'
+           END,
+           error_code = CASE
+             WHEN queue.status = 'cancelled' THEN 'CANCELLED'
+             ELSE 'WORKER_STOPPED'
+           END,
+           error_message = CASE
+             WHEN queue.status = 'cancelled' THEN 'Processing was cancelled.'
+             ELSE COALESCE(
+               NULLIF(queue.safe_error, ''),
+               'The processing worker stopped before the job completed.'
+             )
+           END,
+           speed = NULL,
+           fps = NULL,
+           eta_seconds = NULL,
+           finished_at = COALESCE(queue.finished_at, now()),
+           updated_at = now()
+         FROM jobs AS queue
+         WHERE processing.job_id = queue.id
+           AND processing.state = ANY($1::text[])
+           AND queue.status IN ('failed', 'cancelled')`,
+        [ACTIVE_STATES],
+      );
+      return result.rowCount ?? 0;
     },
 
     async findInterrupted() {

@@ -355,10 +355,7 @@ describe("buildAdaptivePackageFfmpegArgs", () => {
     ).toThrow(/no browser decodes 10-bit H.264/i);
   });
 
-  it("requires exactly one default audio rendition", () => {
-    expect(() => build({ audioOutputs: [] })).toThrow(
-      /at least one audio rendition/i,
-    );
+  it("requires exactly one default audio rendition when audio is encoded", () => {
     expect(() =>
       build({
         audioOutputs: [
@@ -367,6 +364,23 @@ describe("buildAdaptivePackageFfmpegArgs", () => {
         ],
       }),
     ).toThrow(/exactly one adaptive audio rendition must be default/i);
+  });
+
+  /**
+   * One invocation is not one package.
+   *
+   * These arguments used to insist on both video and audio, which assumed
+   * every run builds a complete package. Once work is planned per rendition
+   * that is wrong in both directions — adding a rung to a title whose audio is
+   * already published is a video-only run — and refusing it would force the
+   * caller back to rebuilding the whole ladder.
+   */
+  it("accepts a run that produces only video, or only audio", () => {
+    expect(() => build({ audioOutputs: [] })).not.toThrow();
+    expect(() => build({ videoOutputs: [] })).not.toThrow();
+    expect(() => build({ videoOutputs: [], audioOutputs: [] })).toThrow(
+      /at least one video or audio rendition/i,
+    );
   });
 });
 

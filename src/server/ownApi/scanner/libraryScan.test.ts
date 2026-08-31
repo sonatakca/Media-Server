@@ -12,7 +12,18 @@ import {
 function createFileSystem(
   tree: Record<string, string[]>,
   sizes: Record<string, number> = {},
+  contents: Record<string, string> = {},
 ): ScannerFileSystem {
+  const knownFiles = new Set<string>([
+    ...Object.keys(sizes),
+    ...Object.keys(contents),
+  ]);
+  for (const [directory, entries] of Object.entries(tree)) {
+    for (const entry of entries) {
+      if (!entry.endsWith("/")) knownFiles.add(`${directory}/${entry}`);
+    }
+  }
+
   return {
     readDirectory: async (relativePath) => {
       const entries = tree[relativePath];
@@ -22,10 +33,89 @@ function createFileSystem(
         isDirectory: entry.endsWith("/"),
       }));
     },
-    statFile: async (relativePath) => ({
-      size: sizes[relativePath] ?? 1_000,
-      mtimeMs: 1_700_000_000_000,
-    }),
+    readTextFile: async (relativePath) => {
+      const content = contents[relativePath];
+      if (content === undefined)
+        throw new Error(`missing file ${relativePath}`);
+      return content;
+    },
+    statFile: async (relativePath) => {
+      if (!knownFiles.has(relativePath)) {
+        throw new Error(`missing file ${relativePath}`);
+      }
+      return {
+        size:
+          sizes[relativePath] ??
+          (contents[relativePath] === undefined
+            ? 1_000
+            : Buffer.byteLength(contents[relativePath])),
+        mtimeMs: 1_700_000_000_000,
+      };
+    },
+  };
+}
+
+function titlePackageFixture(titleDirectory: string): {
+  tree: Record<string, string[]>;
+  sizes: Record<string, number>;
+  contents: Record<string, string>;
+} {
+  const manifestPath = `${titleDirectory}/.seyirlik/package.json`;
+  const buildRecordPath = `${titleDirectory}/.seyirlik/build.json`;
+  const video = [
+    {
+      id: "1080p",
+      mediaPath: "video/1080p.mp4",
+      playlistPath: ".seyirlik/video/1080p.m3u8",
+      fileSizeBytes: 20_000,
+    },
+  ];
+  const audio = [
+    {
+      id: "audio-0",
+      mediaPath: "audio/English.m4a",
+      playlistPath: ".seyirlik/audio/English.m3u8",
+      fileSizeBytes: 2_000,
+    },
+  ];
+  const manifest = JSON.stringify({
+    schemaVersion: 1,
+    profileVersion: "test",
+    sourceFingerprint: "source-fingerprint",
+    createdAt: "2026-08-31T00:00:00.000Z",
+    sourceDurationSeconds: 9_000,
+    masterPlaylistPath: ".seyirlik/master.m3u8",
+    video,
+    audio,
+    subtitle: [],
+    storage: { totalBytes: 22_000 },
+  });
+  const buildRecord = JSON.stringify({
+    profileVersion: "test",
+    sourceFingerprint: "source-fingerprint",
+    createdAt: "2026-08-31T00:00:00.000Z",
+    sourceDurationSeconds: 9_000,
+    masterPlaylistPath: ".seyirlik/master.m3u8",
+    videoRenditions: video,
+    audioRenditions: audio,
+    subtitleRenditions: [],
+  });
+  return {
+    tree: {
+      Movies: [`${titleDirectory.split("/").pop()}/`],
+      [titleDirectory]: ["video/", "audio/", ".seyirlik/"],
+    },
+    sizes: {
+      [`${titleDirectory}/.seyirlik/master.m3u8`]: 200,
+      [`${titleDirectory}/.seyirlik/video/1080p.m3u8`]: 100,
+      [`${titleDirectory}/.seyirlik/audio/English.m3u8`]: 100,
+      [`${titleDirectory}/video/1080p.mp4`]: 20_000,
+      [`${titleDirectory}/audio/English.m4a`]: 2_000,
+    },
+    contents: {
+      [manifestPath]: manifest,
+      [buildRecordPath]: buildRecord,
+    },
   };
 }
 
@@ -34,6 +124,46 @@ function byKind(items: ScannedItem[], kind: string): ScannedItem[] {
 }
 
 describe("scanLibraryTree — movies", () => {
+  it("recognizes a complete rendition package after its source is removed", async () => {
+    const fixture = titlePackageFixture("Movies/Ford v Ferrari (2019)");
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem(
+        fixture.tree,
+        fixture.sizes,
+        fixture.contents,
+      ),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")).toEqual([
+      expect.objectContaining({
+        sourceKey: "movie:movies/ford v ferrari (2019)",
+        title: "Ford v Ferrari",
+        year: 2019,
+        files: [],
+        renditionBacked: true,
+      }),
+    ]);
+  });
+
+  it("does not recognize a rendition package with a missing published asset", async () => {
+    const fixture = titlePackageFixture("Movies/Ford v Ferrari (2019)");
+    delete fixture.sizes["Movies/Ford v Ferrari (2019)/audio/English.m4a"];
+
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem(
+        fixture.tree,
+        fixture.sizes,
+        fixture.contents,
+      ),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")).toHaveLength(0);
+  });
+
   it("treats a title folder as one movie and picks the largest file first", async () => {
     const fileSystem = createFileSystem(
       {

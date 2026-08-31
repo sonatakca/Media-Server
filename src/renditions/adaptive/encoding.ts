@@ -427,15 +427,27 @@ export function buildAdaptivePackageFfmpegArgs({
   segmentSeconds = SEGMENT_TARGET_SECONDS,
   preset = "medium",
 }: AdaptivePackageEncodingInput): string[] {
-  if (videoOutputs.length === 0) {
-    throw new Error("At least one adaptive video rendition is required.");
-  }
-  if (audioOutputs.length === 0) {
+  /*
+   * These describe one FFmpeg invocation, not a finished package.
+   *
+   * The builder used to insist on at least one video *and* at least one audio
+   * rendition, which quietly assumed every run produces a whole package. Once
+   * work is planned per rendition that assumption is wrong in both directions:
+   * adding a rung to a title whose audio is already published is a video-only
+   * run, and recovering a lost audio track is an audio-only one. Refusing
+   * either would force the caller back to rebuilding everything, which is the
+   * behaviour being removed. A run that produces nothing at all is still a
+   * mistake worth catching.
+   */
+  if (videoOutputs.length === 0 && audioOutputs.length === 0) {
     throw new Error(
-      "An adaptive package requires at least one audio rendition.",
+      "An encode must produce at least one video or audio rendition.",
     );
   }
-  if (audioOutputs.filter((output) => output.isDefault).length !== 1) {
+  if (
+    audioOutputs.length > 0 &&
+    audioOutputs.filter((output) => output.isDefault).length !== 1
+  ) {
     throw new Error("Exactly one adaptive audio rendition must be default.");
   }
   if (hdr && codecFamilyForEncoder(encoder) !== "hevc") {
@@ -453,8 +465,15 @@ export function buildAdaptivePackageFfmpegArgs({
     "-y",
     "-i",
     inputPath,
-    "-filter_complex",
-    buildAdaptiveFilterComplex({ videoOutputs, encoder, hdr }),
+    // An audio-only run has no picture to scale, and an empty filter graph is
+    // not a valid argument, so the flag itself is omitted rather than passed
+    // with nothing in it.
+    ...(videoOutputs.length > 0
+      ? [
+          "-filter_complex",
+          buildAdaptiveFilterComplex({ videoOutputs, encoder, hdr }),
+        ]
+      : []),
   ];
 
   videoOutputs.forEach((_, index) => {

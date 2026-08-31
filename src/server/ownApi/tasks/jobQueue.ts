@@ -295,7 +295,11 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
              WHEN attempts < max_attempts THEN safe_error
              ELSE 'The job did not complete before its lease expired.' END,
            lease_owner = NULL,
-           lease_expires_at = NULL
+           lease_expires_at = NULL,
+           finished_at = CASE
+             WHEN attempts < max_attempts THEN NULL
+             ELSE now()
+           END
          WHERE status = 'running' AND lease_expires_at < now()`,
       );
       return result.rowCount ?? 0;

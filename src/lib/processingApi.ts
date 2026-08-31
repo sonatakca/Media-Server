@@ -85,6 +85,12 @@ export interface ProcessingDecision {
     colorPrimaries?: string;
   };
   ladder: ProcessingLadderRung[];
+  /**
+   * The rungs this job will actually encode. Absent on jobs recorded before
+   * processing became incremental, where the whole ladder was always built.
+   */
+  renditionsToEncode?: number[];
+  incremental?: boolean;
   videoCodec: "h264" | "hevc";
   videoEncoder: string;
   hardwareAdapter: string;
@@ -116,6 +122,15 @@ export interface ProcessingJob {
   stageProgress: number;
   overallProgress: number;
   bytesProcessed: number;
+  /**
+   * Bytes this job has physically written.
+   *
+   * Distinct from `outputBytes`, which is the whole published package: an
+   * incremental job that adds one rendition writes a fraction of what the
+   * title holds, and reporting the package total as this job's output is what
+   * showed a 5%-complete run as having produced 10 GiB.
+   */
+  actualOutputBytes: number;
   outputBytes: number | null;
   estimatedOutputBytes: number | null;
   estimatedStagingBytes: number | null;

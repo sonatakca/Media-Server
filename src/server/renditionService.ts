@@ -206,6 +206,23 @@ function originalQuality(
   };
 }
 
+/**
+ * The catalogue row can intentionally outlive the source bytes when a complete
+ * adaptive package replaces them. That row remains the package's authorization
+ * identity, but it is not evidence that an "Original" playback target still
+ * exists. Consult the filesystem before advertising the direct file.
+ */
+async function hasOriginalSource(
+  media: PlaybackResolvedMedia,
+): Promise<boolean> {
+  try {
+    const source = await stat(media.filePath);
+    return source.isFile() && source.size > 0;
+  } catch {
+    return false;
+  }
+}
+
 export function createRenditionService({
   mediaRoot,
   renditionRoot,
@@ -260,7 +277,9 @@ export function createRenditionService({
     original,
     client,
   ) => {
-    const playableOriginal = originalQuality(original);
+    const playableOriginal = (await hasOriginalSource(media))
+      ? originalQuality(original)
+      : undefined;
     const emptyManifest: MediaQualityManifest = {
       mediaId: media.mediaId,
       qualities: playableOriginal ? [playableOriginal] : [],
@@ -276,10 +295,24 @@ export function createRenditionService({
     const registryItem = registryItems.find(
       (item) => item.relativePath.toLowerCase() === relativePath.toLowerCase(),
     );
+    /*
+     * A registry record that disagrees with the file describes some other
+     * version of it, and its renditions must not be offered. Size is decisive.
+     *
+     * The modification time is only consulted when the record actually carries
+     * one. A record written without it — a recovery path that had no stats to
+     * hand, an import — would otherwise fail this comparison against every
+     * real file and return an empty manifest, which withdraws the entire
+     * ladder and leaves the player direct-playing the source as the only
+     * quality on offer. A zero is an absent measurement, not evidence that the
+     * file changed, and the package's own fingerprint is checked below in any
+     * case.
+     */
+    const registeredMtime = Math.trunc(registryItem?.mtimeMs ?? 0);
     if (
       !registryItem ||
       registryItem.size !== media.size ||
-      Math.trunc(registryItem.mtimeMs) !== Math.trunc(media.mtimeMs)
+      (registeredMtime > 0 && registeredMtime !== Math.trunc(media.mtimeMs))
     ) {
       return emptyManifest;
     }

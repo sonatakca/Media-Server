@@ -2,6 +2,7 @@ import path from "node:path";
 import { createPauseController } from "../../../renditions/processing/pauseController";
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
+import { estimateFinalOutputBytes } from "../../../renditions/outputEstimate";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
 import {
   detectHardware,
@@ -48,6 +49,17 @@ export interface ProcessingJobRunnerDeps {
   probeFn?: typeof probeMediaFile;
   /** Free bytes on the output volume. Injected so tests can force a shortfall. */
   freeBytesFn?: typeof freeBytesOn;
+  /**
+   * Whether the storage this work needs is currently available.
+   *
+   * Consulted when an encode fails, because the failure a vanished volume
+   * produces is an ordinary-looking `ENOENT` on an output path — indisting-
+   * uishable by its code from a genuinely missing file. Asking the storage
+   * itself is the only reliable way to tell "the drive was unplugged" from
+   * "this source is gone", and getting that wrong turned every accidental
+   * disconnect into a permanent failure.
+   */
+  storageAvailableFn?: () => boolean | Promise<boolean>;
   now?: () => number;
 }
 
@@ -62,7 +74,12 @@ export interface RunProcessingJobInput {
 }
 
 export interface RunProcessingJobOutcome {
-  status: "succeeded" | "failed" | "cancelled";
+  /**
+   * `waiting-for-storage` is a recoverable outcome, not an ending: the job is
+   * paused with its reason recorded and will be requeued automatically once
+   * the volume it needs is back.
+   */
+  status: "succeeded" | "failed" | "cancelled" | "waiting-for-storage";
   decision?: ProcessingDecision;
   packageResult?: AdaptivePackageResult;
   errorCode?: string;
@@ -101,6 +118,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     packageFn = packageAdaptiveRendition,
     probeFn = probeMediaFile,
     freeBytesFn = freeBytesOn,
+    storageAvailableFn,
   } = deps;
 
   async function enterStage(
@@ -177,7 +195,57 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         return { status: "cancelled" as const };
       };
 
-      await store.update(job.id, { state: "running", startedAt: new Date() });
+      /**
+       * The encode stopped because its storage went away.
+       *
+       * Deliberately not a failure: nothing is wrong with the source, the plan
+       * or the package, and marking it failed is what forced a person to press
+       * Retry after every accidental unplug. The job stays paused with the
+       * reason recorded, keeps no finish time because it has not finished, and
+       * is picked up again automatically when the volume returns.
+       */
+      const finishStorageInterrupted = async () => {
+        await store.update(job.id, {
+          state: "paused",
+          // It has not finished, so it must not carry a finish time.
+          finishedAt: null,
+          speed: null,
+          fps: null,
+          etaSeconds: null,
+          errorCode: null,
+          errorMessage: null,
+        });
+        await store.appendEvent({
+          processingJobId: job.id,
+          stage: "waiting",
+          level: "warning",
+          message:
+            "Waiting for storage. Published renditions are untouched; the interrupted rendition will be built again when the volume returns.",
+        });
+        return { status: "waiting-for-storage" as const };
+      };
+
+      /*
+       * An attempt begins here whether it arrived through a retry or through
+       * the queue re-leasing an abandoned job, so the invariants are enforced
+       * at the point work actually starts rather than only on one path. A
+       * running attempt cannot carry a finish time, and its progress and
+       * telemetry describe this attempt alone — the previous one's 89% must
+       * not make a run that has just begun look nearly done.
+       */
+      await store.update(job.id, {
+        state: "running",
+        startedAt: new Date(),
+        finishedAt: null,
+        stageProgress: 0,
+        overallProgress: 0,
+        speed: null,
+        fps: null,
+        etaSeconds: null,
+        validation: null,
+        errorCode: null,
+        errorMessage: null,
+      });
       await store.incrementAttempts(job.id);
 
       // ---------------------------------------------------------- analysing
@@ -276,16 +344,30 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       }
 
       // ------------------------------------------------- video/audio/subs
+      /*
+       * The diagnostics name the rungs this run will encode, not the ladder the
+       * finished package holds. Logging the whole ladder for a one-rung job was
+       * how a job that encoded only 1440p still read as "Encoding 2160p, 1440p,
+       * 1080p, ..." in its own history.
+       */
+      const encodedRungs =
+        decision.renditionsToEncode && decision.renditionsToEncode.length > 0
+          ? decision.renditionsToEncode
+          : decision.ladder.map((rung) => rung.qualityHeight);
       await enterStage(
         job,
         "video",
-        `Encoding ${decision.ladder.map((rung) => `${rung.qualityHeight}p`).join(", ")} ` +
+        `Encoding ${encodedRungs.map((height) => `${height}p`).join(", ")} ` +
           `${decision.videoCodec === "hevc" ? "HEVC" : "H.264"} with ${hardware.adapters.find((adapter) => adapter.id === decision.hardwareAdapter)?.label ?? decision.hardwareAdapter}`,
       );
       if (await cancelled()) return finishCancelled();
 
       const durationSeconds = probe.durationSeconds;
-      let lastOverall = job.overallProgress;
+      // Scoped to this attempt: the record was just reset, and the in-memory
+      // `job` still holds the previous attempt's figure.
+      let lastOverall = 0;
+      /** This job's current guess at its own final size, refined as it runs. */
+      let lastEstimateBytes: number | undefined;
 
       /**
        * The rendition registry, not the catalogue, owns the identity a package
@@ -326,20 +408,49 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * suspends rather than kills, so the work already done survives.
        */
       const pauseController = createPauseController();
+      /*
+       * Set when the encode is stopped because its storage disappeared, so the
+       * outcome can be told apart from a person cancelling. The two look
+       * identical to the encoder — both end in an abort — and conflating them
+       * is what turned an unplugged drive into a permanently failed job.
+       */
+      let storageInterrupted = false;
       const cancellationWatch = setInterval(() => {
         void (async () => {
           const latest = await store.get(job.id);
-          if (latest?.pauseRequested && !pauseController.paused) {
-            pauseController.pause();
+          if (
+            latest?.pauseRequested &&
+            latest.pausedReason === "storage-unavailable" &&
+            !storageInterrupted
+          ) {
+            /*
+             * Suspending is the wrong move here, and used to be what happened.
+             * A stopped FFmpeg keeps its file descriptors open on a volume that
+             * is no longer there, and resuming it later would carry on writing
+             * through handles that may now point at a different disk entirely.
+             * The encoder is ended instead: its partial output is discarded on
+             * recovery and only the interrupted rendition is built again, while
+             * every published rendition is left exactly as it is.
+             */
+            storageInterrupted = true;
+            pauseController.resume();
+            encodeAbort.abort();
             await store.update(job.id, { state: "paused" });
             await store.appendEvent({
               processingJobId: job.id,
               stage: latest.stage,
               level: "warning",
               message:
-                latest.pausedReason === "storage-unavailable"
-                  ? "Paused: the media volume is not available."
-                  : "Paused.",
+                "Storage became unavailable; the encoder was stopped and the job is waiting for it to return.",
+            });
+          } else if (latest?.pauseRequested && !pauseController.paused) {
+            pauseController.pause();
+            await store.update(job.id, { state: "paused" });
+            await store.appendEvent({
+              processingJobId: job.id,
+              stage: latest.stage,
+              level: "warning",
+              message: "Paused.",
             });
           } else if (
             latest &&
@@ -406,6 +517,23 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
                   : 0;
               const next = overallProgress("video", fraction);
               lastOverall = monotonicProgress(lastOverall, next);
+              /*
+               * The estimate is refined here rather than in the browser so
+               * every reader — page, history, API — sees one number. It starts
+               * as the plan and moves toward what the encoder is actually
+               * producing as the evidence accumulates.
+               */
+              if (event.writtenBytes !== undefined) {
+                lastEstimateBytes = estimateFinalOutputBytes({
+                  plannedBytes: decision.estimate.outputBytes,
+                  actualBytes: event.writtenBytes,
+                  progressFraction: fraction,
+                  processedSeconds: event.processedSeconds,
+                  ...(lastEstimateBytes === undefined
+                    ? {}
+                    : { previousEstimate: lastEstimateBytes }),
+                });
+              }
               void store.update(job.id, {
                 stage: "video",
                 stageProgress: fraction,
@@ -413,6 +541,9 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
                 ...(event.writtenBytes === undefined
                   ? {}
                   : { bytesProcessed: event.writtenBytes }),
+                ...(lastEstimateBytes === undefined
+                  ? {}
+                  : { estimatedOutputBytes: lastEstimateBytes }),
                 speed: event.speed ?? null,
                 fps: event.fps ?? null,
                 etaSeconds: etaFrom(
@@ -424,13 +555,30 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             },
           },
         );
+      } catch (error) {
+        /*
+         * A throw from the packager used to escape this function entirely, so
+         * nothing was written to the job's own diagnostics and the row was
+         * back-filled later with a generic worker-stopped message. The reason
+         * the encode never started — a held rendition lock, a vanished drive —
+         * is exactly what a person opening the details is looking for, so it
+         * is recorded here where it is still known.
+         */
+        return fail(
+          PROCESSING_ERROR_CODES.encodeFailed,
+          error instanceof Error
+            ? error.message
+            : "The encoder stopped before the package was built.",
+        );
       } finally {
         clearInterval(cancellationWatch);
         input.signal?.removeEventListener("abort", forwardAbort);
       }
 
       if (await cancelled()) return finishCancelled();
-      if (result.status === "interrupted") return finishCancelled();
+      if (result.status === "interrupted") {
+        return storageInterrupted ? finishStorageInterrupted() : finishCancelled();
+      }
 
       // ------------------------------------------------------- validating
       await enterStage(job, "validating", "Validating the package.");
@@ -444,6 +592,10 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         );
       }
       if (result.status === "failed" || result.status === "incompatible") {
+        // The storage is asked directly rather than inferred from the error.
+        if (storageAvailableFn && !(await storageAvailableFn())) {
+          return finishStorageInterrupted();
+        }
         return fail(
           PROCESSING_ERROR_CODES.encodeFailed,
           result.error ?? "The package could not be produced.",
@@ -472,6 +624,17 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         ...(result.versionDirectory
           ? { publishedVersion: result.versionDirectory }
           : {}),
+        /*
+         * On success the size is no longer predicted, it is known. Actual and
+         * estimated converge so a finished row cannot show two different
+         * numbers for the same thing.
+         */
+        ...(result.jobOutputBytes === undefined
+          ? {}
+          : {
+              bytesProcessed: result.jobOutputBytes,
+              estimatedOutputBytes: result.jobOutputBytes,
+            }),
         ...(result.storageBytes === undefined
           ? {}
           : { outputBytes: result.storageBytes }),

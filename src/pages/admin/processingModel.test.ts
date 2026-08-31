@@ -16,6 +16,7 @@ import {
   mergeJobFrame,
   progressPercent,
   processingDurationSeconds,
+  processingElapsedSeconds,
   stageStateFor,
   subtitleDecisionKey,
   summariseLanguages,
@@ -32,6 +33,7 @@ function job(overrides: Partial<ProcessingJob> = {}): ProcessingJob {
     stageProgress: 0.5,
     overallProgress: 0.4,
     bytesProcessed: 0,
+    actualOutputBytes: 0,
     outputBytes: null,
     estimatedOutputBytes: null,
     estimatedStagingBytes: null,
@@ -160,6 +162,15 @@ describe("job history time", () => {
     expect(formatFinishedAt(null, "en-US")).toBe("—");
   });
 
+  it("measures elapsed time for a running job at the supplied refresh instant", () => {
+    expect(
+      processingElapsedSeconds(
+        job({ startedAt: "2026-01-01T10:00:00.000Z" }),
+        Date.parse("2026-01-01T10:02:05.000Z"),
+      ),
+    ).toBe(125);
+  });
+
   it("formats the recorded finish instant in the requested locale", () => {
     const value = formatFinishedAt("2026-08-30T18:52:00.000Z", "en-US");
     expect(value).toContain("2026");
@@ -269,7 +280,7 @@ describe("formatting", () => {
   it("shows durations without leading zeroes people have to decode", () => {
     expect(formatDuration(45)).toBe("45s");
     expect(formatDuration(95)).toBe("1m 35s");
-    expect(formatDuration(3725)).toBe("1h 02m");
+    expect(formatDuration(3725)).toBe("1h 02m 05s");
     expect(formatDuration(null)).toBe("—");
   });
 

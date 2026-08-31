@@ -21,7 +21,7 @@ export interface CompleteFileQualityControls {
   effectiveQualityLabel?: string;
   /** Effective resolution for each automatic mode, keyed by mode. */
   modeQualityLabels: Partial<Record<AutomaticQualityMode, string>>;
-  /** Every quality the Advanced list may lock onto, highest first. */
+  /** Every quality the Advanced list may lock onto, lowest first. */
   advancedOptions: PlaybackQualityOption[];
   /** Identifier of the quality Advanced is currently locked to, when locked. */
   lockedQualityId?: string;

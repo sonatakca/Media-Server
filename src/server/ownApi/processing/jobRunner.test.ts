@@ -159,6 +159,14 @@ function fakeStore() {
     setCancelled: () => {
       current = { ...current, cancellationRequested: true };
     },
+    /** What the storage watchdog does when the volume disappears. */
+    setStorageUnavailable: () => {
+      current = {
+        ...current,
+        pauseRequested: true,
+        pausedReason: "storage-unavailable",
+      };
+    },
     latest: () => current,
   };
 }
@@ -440,5 +448,84 @@ describe("processing job runner", () => {
       audioStreamIndexes: [1],
       videoEncoder: "hevc_videotoolbox",
     });
+  });
+
+  /**
+   * Losing the volume mid-encode.
+   *
+   * This used to suspend FFmpeg and leave it holding descriptors on storage
+   * that was no longer there, and an aborted encode was reported as cancelled
+   * — so an accidental unplug looked like a deliberate stop and needed a
+   * person to press Retry.
+   */
+  it("parks the job as waiting for storage rather than cancelling it", async () => {
+    const packageFn = vi.fn(async () => {
+      fake.setStorageUnavailable();
+      // The runner polls the store once a second, so the encode has to still
+      // be in flight when that tick lands — as a real one would be.
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "interrupted" as const,
+      };
+    });
+
+    const outcome = await runner(fake, packageFn as never).run(input);
+
+    expect(outcome.status).toBe("waiting-for-storage");
+    const final = fake.latest();
+    expect(final.state).toBe("paused");
+    // It has not finished, so it must not claim a finish time.
+    expect(final.finishedAt ?? null).toBeNull();
+    // And it is not an error the operator has to clear.
+    expect(final.errorCode ?? null).toBeNull();
+  });
+
+  /** A person cancelling still cancels; the two paths must stay distinct. */
+  it("still reports a genuine cancellation as cancelled", async () => {
+    const packageFn = vi.fn(async () => {
+      fake.setCancelled();
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "interrupted" as const,
+      };
+    });
+
+    const outcome = await runner(fake, packageFn as never).run(input);
+    expect(outcome.status).toBe("cancelled");
+    expect(fake.latest().state).toBe("cancelled");
+  });
+
+  /**
+   * A new attempt owns its own telemetry.
+   *
+   * The live bug: a retry inherited the previous attempt's 89% overall
+   * progress and its finish time, so a run that had just begun showed as
+   * nearly done and as having finished before it started.
+   */
+  it("starts an attempt with fresh progress and no finish time", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "ready" as const,
+    }));
+
+    await runner(fake, packageFn).run(input);
+
+    const start = fake.updates.find(
+      (update) => update.state === "running",
+    ) as Record<string, unknown> | undefined;
+    expect(start).toBeDefined();
+    expect(start!.finishedAt).toBeNull();
+    expect(start!.overallProgress).toBe(0);
+    expect(start!.stageProgress).toBe(0);
+    expect(start!.speed).toBeNull();
+    expect(start!.fps).toBeNull();
+    expect(start!.etaSeconds).toBeNull();
+    expect(start!.validation).toBeNull();
+    expect(start!.errorCode).toBeNull();
   });
 });

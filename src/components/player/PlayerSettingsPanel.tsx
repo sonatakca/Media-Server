@@ -28,7 +28,8 @@ import { isVisibleSubtitleLanguage } from "../../lib/subtitleLanguages";
 import { getPlaybackModeLabel } from "../../lib/playbackDiagnostics";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
-import { AnimatedText } from "../AnimatedText";
+import { SwapText } from "../SwapText";
+import { qualityBadgeForLabel, type QualityBadge } from "./qualityBadge";
 import { AnimatedWidth } from "../AnimatedWidth";
 import type {
   AutomaticQualityMode,
@@ -255,6 +256,7 @@ function SettingsButton({
   active,
   disabled,
   hasSubmenu,
+  badge,
   compact,
   buttonRef,
   ariaExpanded,
@@ -262,6 +264,8 @@ function SettingsButton({
 }: {
   title: string;
   subtitle?: string;
+  /** Small class tag shown above the title's baseline, as "4K" or "HD". */
+  badge?: QualityBadge | undefined;
   leading?: ReactNode;
   active?: boolean;
   disabled?: boolean;
@@ -287,14 +291,50 @@ function SettingsButton({
       <span className="flex min-w-0 items-center gap-3">
         {leading ? <span className="shrink-0">{leading}</span> : null}
         <span className="min-w-0">
-          <span className="block truncate text-sm font-bold text-white">
-            {compact ? (
-              title
-            ) : (
-              <AnimatedWidth value={title}>
-                <AnimatedText value={title} />
-              </AnimatedWidth>
-            )}
+          {/*
+           * The tag is a sibling of the title, not a child of it.
+           *
+           * It lived inside the truncating span, where `overflow: hidden`
+           * clips anything raised above the line box — so a superscript was
+           * shown with its top sliced off. Kept alongside instead, the
+           * truncation still applies to the name while the tag sits in its
+           * own column and is never cut.
+           */}
+          <span className="flex min-w-0 items-start gap-[0.15rem]">
+            <span className="min-w-0 truncate text-sm font-bold text-white">
+              {compact ? (
+                title
+              ) : (
+                <AnimatedWidth value={title}>
+                  <SwapText value={title} />
+                </AnimatedWidth>
+              )}
+            </span>
+            {badge ? (
+              /*
+               * A chip rather than loose text, so it reads as a mark on the
+               * rendition instead of a fragment of its name. 4K borrows the
+               * accent because it is the tier worth noticing; HD stays neutral
+               * so a list of mostly-HD rungs does not turn into a wall of
+               * colour. Both are kept tiny — the number is still the thing
+               * being read.
+               */
+              <span
+                className={`mt-[0.1rem] shrink-0 rounded-[3px] pl-1 pr-[0.2rem] py-[0.08rem] text-[7px] font-black uppercase leading-[1.35] tracking-[0.1em] ring-1 ${
+                  badge === "4K"
+                    ? /*
+                       * The theme's own alpha tokens rather than an opacity
+                       * modifier on an arbitrary value: `bg-[var(--accent)]/20`
+                       * does not survive the build here, and silently rendered
+                       * a chip with no fill and a solid ring.
+                       */
+                      "bg-[var(--accent-soft)] text-[var(--accent)] ring-[var(--accent-strong)]"
+                    : "bg-white/10 text-white/65 ring-white/15"
+                }`}
+              >
+                {badge}
+              </span>
+            ) : null}
           </span>
           {subtitle ? (
             <span className="mt-0.5 block truncate text-xs text-white/45">
@@ -302,7 +342,7 @@ function SettingsButton({
                 subtitle
               ) : (
                 <AnimatedWidth value={subtitle}>
-                  <AnimatedText value={subtitle} />
+                  <SwapText value={subtitle} />
                 </AnimatedWidth>
               )}
             </span>
@@ -401,6 +441,7 @@ function CompleteFileQualitySection({
             <SettingsButton
               key={option.id}
               title={option.label}
+              badge={qualityBadgeForLabel(option.label, option.maxHeight)}
               // A switch can take a while on a slow link, so the row the viewer
               // picked says so rather than looking inert.
               subtitle={
@@ -448,6 +489,14 @@ function CompleteFileQualitySection({
                 ? undefined
                 : (effectiveLabel ?? t(descriptionKey))
             }
+            /*
+             * Auto puts the rendition in its own title; the biased modes put
+             * it in the subtitle. Either way the tag describes the same thing,
+             * so it is read from whichever line is carrying it.
+             */
+            badge={
+              effectiveLabel ? qualityBadgeForLabel(effectiveLabel) : undefined
+            }
             active={controls.activeMode === mode}
             compact={compact}
             onClick={() => controls.onSelectMode(mode)}
@@ -457,11 +506,19 @@ function CompleteFileQualitySection({
 
       <SettingsButton
         title={t("player.qualityAdvanced")}
+        /*
+         * The rendition alone. The row is already the selected one and reads
+         * "Advanced" above it, so spelling out that it is locked adds a word
+         * without adding a fact.
+         */
         subtitle={
           controls.activeMode === "advanced" && lockedOption
-            ? formatTemplate(t("player.qualityLockedTo"), {
-                quality: lockedOption.label,
-              })
+            ? lockedOption.label
+            : undefined
+        }
+        badge={
+          controls.activeMode === "advanced" && lockedOption
+            ? qualityBadgeForLabel(lockedOption.label, lockedOption.maxHeight)
             : undefined
         }
         active={controls.activeMode === "advanced"}
@@ -474,6 +531,24 @@ function CompleteFileQualitySection({
     </>
   );
 }
+
+/**
+ * How the panel resolves a change of size.
+ *
+ * Slightly slower than the fade beneath it, so the box has settled by the time
+ * the incoming section is fully legible rather than the two finishing together
+ * and reading as one abrupt jump.
+ */
+const PANEL_RESIZE = { duration: 0.32, ease: [0.22, 1, 0.36, 1] } as const;
+
+/**
+ * How one section gives way to another.
+ *
+ * Opacity only. Sections used to animate their own height as well, which meant
+ * every switch had two elements interpolating the same dimension from
+ * different starting measurements.
+ */
+const SECTION_FADE = { duration: 0.16, ease: "easeInOut" } as const;
 
 export function PlayerSettingsPanel({
   source,
@@ -506,9 +581,20 @@ export function PlayerSettingsPanel({
   const canSelectAudio = canSwitchAudio && !DISABLE_AUDIO_SELECTION;
 
   return (
+    /*
+     * One element owns the panel's size, and it is this one.
+     *
+     * Size used to be animated here *and* on the scroll container *and* on
+     * each section, which all measure independently: three animators chasing
+     * the same box. Stepping into Advanced changed the content underneath them
+     * with no transition of its own, so the height jumped while the outer
+     * animation was still interpolating towards the old target and the panel
+     * appeared to stutter and overshoot. Now the sections only fade, and the
+     * single layout animation below resolves whatever size that leaves.
+     */
     <motion.div
-      layout="size"
-      transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
+      layout
+      transition={PANEL_RESIZE}
       className="seyirlik-player-settings-panel fixed inset-x-2 bottom-[calc(env(safe-area-inset-bottom)+0.5rem)] z-[70] max-h-[calc(100dvh-1rem)] overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.96)] shadow-[0_24px_90px_rgba(0,0,0,0.72)] backdrop-blur-2xl sm:absolute sm:inset-x-auto sm:bottom-[5.25rem] sm:right-0 sm:w-[min(22rem,calc(100vw-2rem))]"
     >
       <div className="seyirlik-player-settings-header border-b border-white/10 px-4 py-3">
@@ -565,21 +651,15 @@ export function PlayerSettingsPanel({
         </div>
       </div>
 
-      <motion.div
-        layout="size"
-        transition={{ duration: 0.42, ease: [0.22, 1, 0.36, 1] }}
-        className="seyirlik-player-settings-content max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]"
-      >
+      <div className="seyirlik-player-settings-content max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]">
         <AnimatePresence mode="wait" initial={false}>
           {!HIDE_QUALITY_SETTINGS && activeSection === "quality" ? (
             <motion.div
               key="quality"
-              layout="size"
-              initial={{ opacity: 0, height: 0, y: 8 }}
-              animate={{ opacity: 1, height: "auto", y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -8 }}
-              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={SECTION_FADE}
             >
               <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
                 {t("settings.quality")}
@@ -669,12 +749,10 @@ export function PlayerSettingsPanel({
           {!HIDE_AUDIO_SETTINGS && activeSection === "audio" ? (
             <motion.div
               key="audio"
-              layout="size"
-              initial={{ opacity: 0, height: 0, y: 8 }}
-              animate={{ opacity: 1, height: "auto", y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -8 }}
-              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={SECTION_FADE}
             >
               <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
                 {t("settings.audio")}
@@ -735,12 +813,10 @@ export function PlayerSettingsPanel({
           {activeSection === "subtitles" ? (
             <motion.div
               key="subtitles"
-              layout="size"
-              initial={{ opacity: 0, height: 0, y: 8 }}
-              animate={{ opacity: 1, height: "auto", y: 0 }}
-              exit={{ opacity: 0, height: 0, y: -8 }}
-              transition={{ duration: 0.34, ease: [0.22, 1, 0.36, 1] }}
-              className="overflow-hidden"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={SECTION_FADE}
             >
               <div className="px-2 pb-1 pt-2 text-xs font-black uppercase tracking-[0.16em] text-white/40">
                 {t("settings.subtitles")}
@@ -853,7 +929,7 @@ export function PlayerSettingsPanel({
             </motion.div>
           ) : null}
         </AnimatePresence>
-      </motion.div>
+      </div>
     </motion.div>
   );
 }

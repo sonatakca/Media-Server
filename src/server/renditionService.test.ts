@@ -1,5 +1,12 @@
 // @vitest-environment node
-import { mkdtemp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  stat,
+  unlink,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -293,6 +300,34 @@ function addressOf(playbackUrl: string): { token: string; fileId: string } {
 }
 
 describe("complete-file rendition routes", () => {
+  it("omits a removed original while keeping its adaptive package available", async () => {
+    const { service, sourcePath } = await fixture({
+      includeGenerated: false,
+      includeAdaptive: true,
+    });
+    const sourceStats = await stat(sourcePath);
+    await unlink(sourcePath);
+
+    const manifest = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      {
+        width: 1920,
+        height: 1080,
+        codec: "h264",
+        playableUrl: "/api/playback/direct/original",
+      },
+      { h264: true, hevc: false },
+    );
+
+    expect(manifest.qualities).toEqual([]);
+    expect(manifest.adaptive).toBeDefined();
+  });
+
   it("returns only ready complete files and resolves them to real bytes", async () => {
     const { service, sourcePath } = await fixture();
     const sourceStats = await stat(sourcePath);
@@ -504,6 +539,73 @@ describe("complete-file rendition routes", () => {
       { h264: true, hevc: false },
     );
 
+    expect(manifest.adaptive).toBeUndefined();
+  });
+
+  /**
+   * A registry record with no modification time must not withdraw the ladder.
+   *
+   * This is what put a fully packaged title into direct play with "Original
+   * (2160p)" as its only quality: a recovery path enqueued work without stats
+   * to hand, wrote `mtimeMs: 0` into the registry, and every later comparison
+   * against the real file failed — so the manifest came back empty and eight
+   * published renditions became invisible.
+   */
+  it("still describes a title whose registry record has no modification time", async () => {
+    const { service, sourcePath } = await fixture({ includeAdaptive: true });
+    const sourceStats = await stat(sourcePath);
+
+    const manifest = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      undefined,
+      { h264: true, hevc: false },
+    );
+    expect(manifest.adaptive).toBeDefined();
+
+    // The same file, described by a record that never recorded an mtime.
+    const registryPath = path.join(
+      path.dirname(path.dirname(sourcePath)),
+      ".seyirlik",
+      "state",
+      "registry.json",
+    );
+    const registry = JSON.parse(await readFile(registryPath, "utf8"));
+    registry.items[0].mtimeMs = 0;
+    await writeFile(registryPath, JSON.stringify(registry), "utf8");
+
+    const afterwards = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      undefined,
+      { h264: true, hevc: false },
+    );
+    expect(afterwards.adaptive).toBeDefined();
+  });
+
+  /** A record describing a different size is still rejected outright. */
+  it("withdraws the ladder when the registered size disagrees", async () => {
+    const { service, sourcePath } = await fixture({ includeAdaptive: true });
+    const sourceStats = await stat(sourcePath);
+
+    const manifest = await service.createManifest(
+      {
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size + 1_000,
+        mtimeMs: sourceStats.mtimeMs,
+      },
+      undefined,
+      { h264: true, hevc: false },
+    );
     expect(manifest.adaptive).toBeUndefined();
   });
 

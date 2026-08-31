@@ -54,6 +54,7 @@ import {
   PROCESSING_STAGE_ORDER,
   progressPercent,
   processingDurationSeconds,
+  processingElapsedSeconds,
   stageStateFor,
   summariseLanguages,
 } from "./processingModel";
@@ -62,6 +63,13 @@ import { formatTemplate } from "./libraryMaintenanceModel";
 const CARD = "rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5";
 const LABEL =
   "text-[11px] font-black uppercase tracking-[0.14em] text-white/40";
+/*
+ * A running encode reports speed, frame rate and progress several times a
+ * second, so a five-second poll showed a figure that was already stale by the
+ * time it was painted — and a job that started and failed inside one interval
+ * never appeared to run at all.
+ */
+const PROCESSING_REFRESH_MS = 1_000;
 
 type PreviewLoadState =
   | { status: "waiting" | "loading" }
@@ -182,6 +190,7 @@ export function MediaProcessingPage() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
   const [overview, setOverview] = useState<ProcessingOverview | null>(null);
+  const [refreshedAt, setRefreshedAt] = useState(() => Date.now());
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [titlesLoading, setTitlesLoading] = useState(true);
@@ -198,25 +207,48 @@ export function MediaProcessingPage() {
     "idle" | "live" | "reconnecting"
   >("idle");
   const sourceRef = useRef<EventSource | null>(null);
+  const overviewRequestRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
     setPageTitle(t("processing.title"));
   }, [t]);
 
   const refreshOverview = useCallback(async () => {
-    try {
-      setOverview(await getProcessingOverview());
-    } catch {
-      notify({ tone: "error", title: t("common.somethingWentWrong") });
-    } finally {
-      setLoading(false);
-    }
+    if (overviewRequestRef.current) return overviewRequestRef.current;
+    const request = (async () => {
+      try {
+        setOverview(await getProcessingOverview());
+        setRefreshedAt(Date.now());
+      } catch {
+        notify({ tone: "error", title: t("common.somethingWentWrong") });
+      } finally {
+        setLoading(false);
+      }
+    })();
+    overviewRequestRef.current = request;
+    await request.finally(() => {
+      if (overviewRequestRef.current === request) {
+        overviewRequestRef.current = null;
+      }
+    });
   }, [t]);
 
   useEffect(() => {
     void refreshOverview();
-    const timer = window.setInterval(() => void refreshOverview(), 5000);
-    return () => window.clearInterval(timer);
+    const timer = window.setInterval(
+      () => void refreshOverview(),
+      PROCESSING_REFRESH_MS,
+    );
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshOverview();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    window.addEventListener("focus", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      window.removeEventListener("focus", refreshWhenVisible);
+    };
   }, [refreshOverview]);
 
   useEffect(() => {
@@ -988,7 +1020,12 @@ export function MediaProcessingPage() {
                         />
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-7">
+                      {/*
+                        * Nine figures now rather than eight, so the row gains a
+                        * column at the widest breakpoint instead of squeezing
+                        * every value narrower.
+                        */}
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
                         <Stat label="%" value={`${percent}%`} />
                         <Stat
                           label={t("processing.speed")}
@@ -1003,14 +1040,36 @@ export function MediaProcessingPage() {
                           value={formatDuration(job.etaSeconds)}
                         />
                         <Stat
+                          label={t("processing.encoding")}
+                          value={
+                            job.decision?.renditionsToEncode?.length
+                              ? job.decision.renditionsToEncode
+                                  .map((height) => `${height}p`)
+                                  .join(" · ")
+                              : t("processing.fullPackage")
+                          }
+                        />
+                        {/*
+                          * Two separate questions: what this job has written,
+                          * and how large it will end up. Falling back from the
+                          * first to the second is what labelled a planning
+                          * estimate as though it were bytes on disk.
+                          */}
+                        <Stat
                           label={t("processing.actualOutput")}
-                          value={formatBytes(
-                            job.outputBytes ?? job.estimatedOutputBytes,
-                          )}
+                          value={formatBytes(job.actualOutputBytes)}
+                        />
+                        <Stat
+                          label={t("processing.estimatedOutput")}
+                          value={formatBytes(job.estimatedOutputBytes)}
                         />
                         <Stat
                           label={t("processing.duration")}
-                          value={formatDuration(processingDurationSeconds(job))}
+                          value={formatDuration(
+                            isFinished
+                              ? processingDurationSeconds(job)
+                              : processingElapsedSeconds(job, refreshedAt),
+                          )}
                         />
                         <Stat
                           label={t("processing.finishedAt")}
@@ -1123,7 +1182,7 @@ export function MediaProcessingPage() {
               />
               <Stat
                 label={t("processing.actualOutput")}
-                value={formatBytes(detail.outputBytes)}
+                value={formatBytes(detail.actualOutputBytes)}
               />
               <Stat
                 label={t("processing.staging")}

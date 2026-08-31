@@ -1,3 +1,4 @@
+import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { IncomingMessage } from "node:http";
 import type { OwnApiRouteHandler } from "./ownApiHandler";
@@ -205,7 +206,15 @@ export async function createNativeRuntime({
   const renditionStateRoot =
     environment.SEYIRLIK_RENDITION_STATE_ROOT?.trim() ||
     path.join(mediaRoot, ".seyirlik", "state");
+  const renditionWorkRoot =
+    environment.SEYIRLIK_RENDITION_WORK_ROOT?.trim() ||
+    path.join(mediaRoot, ".seyirlik", "work");
   const processingJobs = createProcessingJobStore(pool);
+
+  // Repair the operator-facing record before routes or the worker become
+  // visible. The generic queue may have exhausted an interrupted job's lease
+  // retries while the previous server process was disappearing.
+  await processingJobs.reconcileTerminalQueueJobs();
 
   /**
    * An unplugged drive must not be discovered one failed job at a time.
@@ -215,8 +224,79 @@ export async function createNativeRuntime({
    * afterwards is an empty queue full of failures that had nothing wrong with
    * them. Pausing instead keeps every job alive and resumable.
    */
+  /**
+   * Puts jobs back to work after their storage returns.
+   *
+   * Lifting the pause flag used to be the whole of this, which worked while a
+   * suspended encoder was still sitting there waiting for SIGCONT. It is not
+   * enough now that losing the volume ends the encoder outright: there is no
+   * process left to resume, so the job has to be queued again. It comes back
+   * as a fresh attempt, which is also what makes recovery rendition-level —
+   * the planner looks at what is actually published, finds the interrupted
+   * rendition missing, and rebuilds only that one.
+   */
+  const requeueStorageInterruptedJobs = async (): Promise<number> => {
+    let recovered = 0;
+    for (const job of await processingJobs.listPaused("storage-unavailable")) {
+      // Clears the pause and every field describing the attempt that died.
+      await processingJobs.resume(job.id, "storage-unavailable");
+      const record = await processingJobs.beginAttempt(job.id, {});
+      if (!record) continue;
+      try {
+        const file = await catalogue.getFileById(job.mediaFileId);
+        if (!file) continue;
+        const sourcePath = path.resolve(
+          mediaRoot,
+          ...file.relativePath.split("/"),
+        );
+        /*
+         * The real modification time, not a placeholder.
+         *
+         * This value is written straight into the rendition registry, and the
+         * quality manifest refuses to describe a title whose registered mtime
+         * disagrees with the file. A zero here therefore does not merely look
+         * untidy: it silently withdraws every rendition from the player, which
+         * falls back to direct play and offers the source as the only quality.
+         */
+        const sourceStats = await stat(sourcePath);
+        const queueJobId = await queue.enqueue({
+          jobType: "media.process",
+          payload: {
+            processingJobId: job.id,
+            sourcePath,
+            relativePath: file.relativePath,
+            sizeBytes: Number(file.sizeBytes),
+            mtimeMs: sourceStats.mtimeMs,
+          },
+          dedupeKey: `processing:${job.mediaFileId}:storage-recovery:${Date.now()}`,
+        });
+        await processingJobs.attachQueueJob(job.id, queueJobId);
+        await processingJobs.appendEvent({
+          processingJobId: job.id,
+          stage: "waiting",
+          level: "info",
+          message:
+            "Storage is available again; the interrupted rendition will be built from scratch while published renditions are reused.",
+        });
+        recovered += 1;
+      } catch (error) {
+        console.warn(
+          `[seyirlik] could not requeue ${job.id} after storage returned:`,
+          error,
+        );
+      }
+    }
+    return recovered;
+  };
+
   const storageWatchdog = createStorageWatchdog({
     mediaRoot,
+    /*
+     * A job reads its source from one root and writes staging and published
+     * output to others, which may be different volumes. Losing any of them
+     * stops the work just as completely, so all are watched.
+     */
+    additionalRoots: [renditionRoot, renditionWorkRoot, renditionStateRoot],
     onLost: async () => {
       for (const job of await processingJobs.listActive()) {
         await processingJobs.requestPause(job.id, "storage-unavailable");
@@ -226,14 +306,43 @@ export async function createNativeRuntime({
       // Only the jobs the watchdog itself paused: a job an operator paused by
       // hand stays paused, because the drive returning does not answer why a
       // person stopped it.
-      for (const job of await processingJobs.listPaused(
-        "storage-unavailable",
-      )) {
-        await processingJobs.resume(job.id, "storage-unavailable");
-      }
+      await requeueStorageInterruptedJobs();
     },
   });
   storageWatchdog.start();
+
+  /*
+   * Nothing can still be encoding at the moment this process starts, so a job
+   * the database calls `running` is the residue of a server that died or a
+   * volume that vanished. The record was never reconciled — `findInterrupted`
+   * existed but nothing called it — so such a job stayed `running` for ever
+   * and its rendition lock was never released.
+   *
+   * What to do about it depends on whether the storage is there. If it is, the
+   * job goes straight back on the queue as a fresh attempt; the planner then
+   * rebuilds only the rendition that was interrupted. If it is not, the job is
+   * parked as waiting for storage, which is what the watchdog is looking for
+   * when the volume comes back — so a restart while the disk is absent still
+   * recovers on its own once it returns.
+   */
+  const reconcileInterruptedJobs = async (): Promise<void> => {
+    const interrupted = await processingJobs.findInterrupted();
+    if (interrupted.length === 0) return;
+    const storageReady = await storageWatchdog.poll();
+    for (const job of interrupted) {
+      await processingJobs.requestPause(job.id, "storage-unavailable");
+      await processingJobs.appendEvent({
+        processingJobId: job.id,
+        stage: "waiting",
+        level: "warning",
+        message: storageReady
+          ? "Found still marked as running after a restart; starting a fresh attempt."
+          : `Found still marked as running after a restart, and ${storageWatchdog.missingRoots.join(", ") || "its storage"} is unavailable. Waiting for it to return.`,
+      });
+    }
+    if (storageReady) await requeueStorageInterruptedJobs();
+  };
+  await reconcileInterruptedJobs();
 
   /**
    * Where a package is built before it is published, and where its FFmpeg log
@@ -244,9 +353,7 @@ export async function createNativeRuntime({
     mediaRoot,
     renditionRoot,
     stateRoot: renditionStateRoot,
-    workRoot:
-      environment.SEYIRLIK_RENDITION_WORK_ROOT?.trim() ||
-      path.join(mediaRoot, ".seyirlik", "work"),
+    workRoot: renditionWorkRoot,
     logsRoot:
       environment.SEYIRLIK_RENDITION_LOGS_ROOT?.trim() ||
       path.join(mediaRoot, ".seyirlik", "logs"),
@@ -286,6 +393,9 @@ export async function createNativeRuntime({
         store: processingJobs,
         paths: renditionPaths,
         mediaRoot,
+        // Polls rather than reading the cached flag: an encode can fail within
+        // the same second the volume goes, before the watchdog's next tick.
+        storageAvailableFn: () => storageWatchdog.poll(),
         ...(ffmpegPath ? { ffmpegPath } : {}),
         ...(ffprobePath ? { ffprobePath } : {}),
       }),

@@ -75,6 +75,15 @@ export interface AdaptiveValidationOptions {
    * session, which must stay cheap, and always run by the CLI validator.
    */
   deep?: boolean;
+  /**
+   * The package under validation describes only part of a title.
+   *
+   * True for the work directory of an incremental run, which holds just the
+   * renditions that run produced — commonly video with no audio, because the
+   * published audio is being reused untouched. Never true for a published
+   * package, which must always carry audio.
+   */
+  allowMissingAudio?: boolean;
   signal?: AbortSignal;
 }
 
@@ -392,6 +401,7 @@ export async function validateAdaptivePackage({
     process.env.SEYIRLIK_FFMPEG_PATH ??
     "ffmpeg",
   deep = false,
+  allowMissingAudio = false,
   signal,
 }: AdaptiveValidationOptions): Promise<AdaptiveValidationResult> {
   const collector = new ValidationCollector(mediaId);
@@ -426,6 +436,7 @@ export async function validateAdaptivePackage({
       ...(sourceFingerprint ? { sourceFingerprint } : {}),
       ...(profileVersion ? { profileVersion } : {}),
       ...(published ? { enforceCanonicalPaths: false } : {}),
+      ...(allowMissingAudio ? { allowMissingAudio: true } : {}),
     });
   } catch (error) {
     collector.add(
@@ -514,7 +525,9 @@ export async function validateAdaptivePackage({
       }
     }
     for (const variant of master.variants) {
-      if (!variant.audioGroup) {
+      // A partial package's master describes only what its run produced; the
+      // published master it merges into is where sound is guaranteed.
+      if (!allowMissingAudio && !variant.audioGroup) {
         collector.add(
           "package",
           "master-playlist",

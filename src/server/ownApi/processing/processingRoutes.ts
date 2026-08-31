@@ -70,6 +70,13 @@ function toJobDto(job: ProcessingJobRecord) {
     bytesProcessed: job.bytesProcessed,
     outputBytes: job.outputBytes,
     estimatedOutputBytes: job.estimatedOutputBytes,
+    /*
+     * Named for what they mean rather than for where they are stored.
+     * `actualOutputBytes` is what this job has physically written; it is never
+     * the package's size and never a prediction. `outputBytes` is kept as the
+     * published package total for anything already reading it.
+     */
+    actualOutputBytes: job.bytesProcessed,
     estimatedStagingBytes: job.estimatedStagingBytes,
     speed: job.speed,
     fps: job.fps,
@@ -227,9 +234,26 @@ export function createProcessingRoutes({
       );
     const isCurrent =
       existing.present && existing.current && missingRungs.length === 0;
+
+    /*
+     * Re-decided once the outstanding work is known, so the estimate and the
+     * disk preflight describe this job rather than the finished package. A
+     * one-rung job otherwise reported the whole package's size as its own
+     * output and reserved space for seven renditions it was not making.
+     */
+    const incremental =
+      !isCurrent && existing.present && existing.current && missingRungs.length > 0;
     const decision = isCurrent
       ? decideProcessing({ ...plan, alreadyCurrent: true })
-      : planned;
+      : incremental
+        ? decideProcessing({
+            ...plan,
+            renditionsToEncode: missingRungs,
+            // Existing audio is reused whenever the package is otherwise
+            // current, so this run encodes none of it.
+            audioTracksToEncode: 0,
+          })
+        : planned;
 
     return {
       decision,
@@ -258,6 +282,7 @@ export function createProcessingRoutes({
       access: "admin",
       handle: async (context) => {
         context.requirePrincipal();
+        await store.reconcileTerminalQueueJobs();
         const [counts, report, jobs] = await Promise.all([
           store.counts(),
           hardware(),
@@ -325,7 +350,7 @@ export function createProcessingRoutes({
         const mediaFileId = body.mediaFileId
           ? requireUuid(optionalBodyString(body, "mediaFileId"), "mediaFileId")
           : undefined;
-        const { decision, file, fingerprint, absolutePath, mtimeMs } =
+        const { decision, file, fingerprint, absolutePath, mtimeMs, existing } =
           await analyse(itemId, mediaFileId);
 
         if (decision.action.startsWith("reject")) {
@@ -346,7 +371,24 @@ export function createProcessingRoutes({
             mediaFileId: file.id,
             sourceFingerprint: fingerprint,
             profile: ADAPTIVE_PROFILE_VERSION,
-            decision: decision as unknown as Record<string, unknown>,
+            /*
+             * The job records the rungs it is actually going to build, not
+             * only the ladder the finished package will hold. Without it a
+             * one-rung job is indistinguishable from a full rebuild in the
+             * history, which is exactly the confusion that hid this bug.
+             */
+            /*
+             * `decision.renditionsToEncode` already states the work; the flag
+             * only records whether this was an addition to a package that was
+             * otherwise complete, which is what the history reads back.
+             */
+            decision: {
+              ...decision,
+              incremental:
+                existing.present &&
+                decision.renditionsToEncode.length > 0 &&
+                decision.renditionsToEncode.length < decision.ladder.length,
+            } as unknown as Record<string, unknown>,
             streamDecisions: {
               audio: decision.streams.audio,
               subtitles: decision.streams.subtitles,
@@ -401,6 +443,7 @@ export function createProcessingRoutes({
       access: "admin",
       handle: async (context) => {
         context.requirePrincipal();
+        await store.reconcileTerminalQueueJobs();
         const stateParam = context.url.searchParams.get("state");
         const limit = parseLimit(
           context.url.searchParams.get("limit"),
@@ -722,19 +765,31 @@ export function createProcessingRoutes({
             409,
           );
         }
-        const { file, absolutePath, fingerprint, mtimeMs } = await analyse(
-          job.itemId,
-          job.mediaFileId,
-        );
-        await store.update(id, {
-          state: "queued",
-          stage: "waiting",
-          stageProgress: 0,
-          errorCode: null,
-          errorMessage: null,
-          // A retry starts from a clean slate; keeping the flag would cancel
-          // the new attempt the moment it began.
-          cancellationRequested: false,
+        const { decision, file, absolutePath, fingerprint, mtimeMs, existing } =
+          await analyse(job.itemId, job.mediaFileId);
+        /*
+         * The whole attempt is reset in one place, and the estimate is taken
+         * from the decision made *now*. Resetting a handful of fields by hand
+         * here is what left a retry showing the previous attempt's 89%, its
+         * finish time and its far larger full-ladder estimate.
+         */
+        await store.beginAttempt(id, {
+          estimatedOutputBytes: decision.estimate.outputBytes,
+          estimatedStagingBytes: decision.estimate.stagingBytes,
+          decision: {
+            ...decision,
+            incremental:
+              existing.present &&
+              decision.renditionsToEncode.length > 0 &&
+              decision.renditionsToEncode.length < decision.ladder.length,
+          } as unknown as Record<string, unknown>,
+          streamDecisions: {
+            audio: decision.streams.audio,
+            subtitles: decision.streams.subtitles,
+          } as unknown as Record<string, unknown>,
+          hardwareAdapter: decision.hardwareAdapter,
+          videoEncoder: decision.videoEncoder,
+          warnings: decision.warnings,
         });
         const queueJobId = await queue.enqueue({
           jobType: PROCESSING_JOB_TYPE,

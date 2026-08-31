@@ -277,15 +277,27 @@ export function buildMasterPlaylist({
   if (videoRenditions.length === 0) {
     throw new Error("A master playlist needs at least one video rendition.");
   }
-  if (audioRenditions.length === 0) {
-    throw new Error("A master playlist needs at least one audio rendition.");
+  /*
+   * A master with no audio is legitimate for a work directory.
+   *
+   * An incremental run that adds a video rung to a title whose audio is
+   * already published produces no audio, and the validator still needs a
+   * master describing what that run made. The published master is built from
+   * the merged package record, which carries the existing audio, so dropping
+   * this guard cannot publish a silent package — and the packager already
+   * refuses a source with no audio outright.
+   */
+  if (videoRenditions.length === 0 && audioRenditions.length === 0) {
+    throw new Error("A master playlist needs at least one rendition.");
   }
 
   const defaultAudio =
     audioRenditions.find((rendition) => rendition.isDefault) ??
     audioRenditions[0];
-  const defaultAudioCodec = audioCodecStrings.get(defaultAudio.id);
-  if (!defaultAudioCodec) {
+  const defaultAudioCodec = defaultAudio
+    ? audioCodecStrings.get(defaultAudio.id)
+    : undefined;
+  if (defaultAudio && !defaultAudioCodec) {
     throw new Error(
       `No codec string was measured for audio rendition ${defaultAudio.id}.`,
     );
@@ -367,16 +379,21 @@ export function buildMasterPlaylist({
         `No codec string was measured for video rendition ${video.id}.`,
       );
     }
+    /*
+     * A variant only advertises audio when the master actually carries an
+     * audio group. Naming a group with no members would be a master that
+     * refers to something it does not define, which is invalid and would fail
+     * validation for an incremental run that adds video to published audio.
+     */
+    const audioBitrate = defaultAudio?.averageBitrate ?? 0;
     const attributes = [
-      `BANDWIDTH=${Math.round(video.peakBitrate + defaultAudio.averageBitrate)}`,
-      `AVERAGE-BANDWIDTH=${Math.round(
-        video.averageBitrate + defaultAudio.averageBitrate,
-      )}`,
+      `BANDWIDTH=${Math.round(video.peakBitrate + audioBitrate)}`,
+      `AVERAGE-BANDWIDTH=${Math.round(video.averageBitrate + audioBitrate)}`,
       `RESOLUTION=${video.width}x${video.height}`,
       `FRAME-RATE=${video.frameRate.toFixed(3)}`,
-      `CODECS="${videoCodec},${defaultAudioCodec}"`,
+      `CODECS="${[videoCodec, defaultAudioCodec].filter(Boolean).join(",")}"`,
       `VIDEO-RANGE=${videoRangeFor(video)}`,
-      `AUDIO="${ADAPTIVE_AUDIO_GROUP}"`,
+      ...(defaultAudio ? [`AUDIO="${ADAPTIVE_AUDIO_GROUP}"`] : []),
       ...(subtitleRenditions.length > 0
         ? [`SUBTITLES="${ADAPTIVE_SUBTITLE_GROUP}"`]
         : []),
