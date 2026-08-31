@@ -290,3 +290,35 @@ describe("parseAdaptivePointer", () => {
     ).toThrow(/Adaptive pointer is invalid/);
   });
 });
+
+/**
+ * The master layout stamp a repair leaves behind.
+ *
+ * The served URL is keyed on it, so it has to survive parsing — dropped here,
+ * a repaired master keeps the URL of the broken one and cached clients never
+ * see the fix.
+ */
+describe("the master layout a package records", () => {
+  it("carries the stamp through", () => {
+    const parsed = parseAdaptiveMetadata({
+      ...validMetadata(),
+      masterLayoutVersion: 3,
+    });
+    expect(parsed.masterLayoutVersion).toBe(3);
+  });
+
+  it("leaves a package published before the stamp without one", () => {
+    expect(parseAdaptiveMetadata(validMetadata()).masterLayoutVersion).toBe(
+      undefined,
+    );
+  });
+
+  it("rejects a stamp that is not a whole version", () => {
+    expect(() =>
+      parseAdaptiveMetadata({ ...validMetadata(), masterLayoutVersion: 0 }),
+    ).toThrow(/masterLayoutVersion/);
+    expect(() =>
+      parseAdaptiveMetadata({ ...validMetadata(), masterLayoutVersion: 2.5 }),
+    ).toThrow(/masterLayoutVersion/);
+  });
+});

@@ -124,6 +124,16 @@ export interface AdaptivePackageMetadata {
   /** Duration the video switching set actually covers, measured after packaging. */
   switchingSetDurationSeconds: number;
   masterPlaylistPath: string;
+  /**
+   * Which revision of the master layout the playlist on disk was written by.
+   *
+   * A master repair rewrites the playlist without re-encoding, so this is the
+   * only thing that separates a corrected package from the one it replaced —
+   * and the served URL is keyed on it, so a client never keeps a cached copy of
+   * a master that has since been fixed. Absent on packages published before the
+   * layout was versioned, which are the original layout by definition.
+   */
+  masterLayoutVersion?: number;
   videoRenditions: AdaptiveVideoRenditionMetadata[];
   audioRenditions: AdaptiveAudioRenditionMetadata[];
   subtitleRenditions?: AdaptiveSubtitleRenditionMetadata[];
@@ -700,6 +710,20 @@ export function parseAdaptiveMetadata(
         "storage.totalBytes",
       ),
     },
+    ...(value.masterLayoutVersion === undefined
+      ? {}
+      : {
+          masterLayoutVersion: (() => {
+            const parsed = nonNegativeNumber(
+              value.masterLayoutVersion,
+              "masterLayoutVersion",
+            );
+            if (!Number.isSafeInteger(parsed) || parsed < 1) {
+              fail("masterLayoutVersion must be a positive integer.");
+            }
+            return parsed;
+          })(),
+        }),
     ...(value.deferredAudioStreamIndexes === undefined
       ? {}
       : {

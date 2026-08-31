@@ -30,8 +30,12 @@ import type { AdaptivePackageMetadata } from "./metadata";
  *
  * 2 — variants lead with an opening rung rather than being listed
  *     cheapest-first, so a native player does not begin every title at 144p.
+ * 3 — renditions in an EXT-X-MEDIA group are given distinct NAMEs. Several
+ *     subtitle tracks in one language previously shared the language as their
+ *     name, which RFC 8216 forbids, and a title carrying three English tracks
+ *     would not open on iPadOS.
  */
-export const MASTER_LAYOUT_VERSION = 2;
+export const MASTER_LAYOUT_VERSION = 3;
 
 export interface MasterRepairResult {
   status: "updated" | "current" | "unsupported";
@@ -42,7 +46,7 @@ export interface MasterRepairResult {
 
 /** The layout version a package records, defaulting to the pre-versioned one. */
 export function recordedMasterLayoutVersion(
-  metadata: Pick<AdaptivePackageMetadata, "masterPlaylistPath"> & {
+  metadata: Partial<Pick<AdaptivePackageMetadata, "masterPlaylistPath">> & {
     masterLayoutVersion?: number;
   },
 ): number {

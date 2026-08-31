@@ -2841,7 +2841,18 @@ export function CustomVideoPlayer({
             : mode === "higher-resolution"
               ? (highest?.height ?? null)
               : null;
-        controller?.setQualityHeight(null, ceiling);
+        /*
+         * The mode travels with the ceiling because the two say different
+         * things: the ceiling is a bound, while the mode is which of the
+         * anchor's neighbours is wanted. Higher Quality has to be able to
+         * climb *above* the rung Auto would pick, which a ceiling alone can
+         * never express.
+         */
+        controller?.setQualityHeight(
+          null,
+          ceiling,
+          mode === "advanced" ? "auto" : mode,
+        );
         if (requiresNativeReplan) {
           applyNativeAdaptiveQualityRequest(
             adaptiveQualityRequestForMode(mode, ceiling ?? anchor?.height),
@@ -4717,6 +4728,17 @@ export function CustomVideoPlayer({
             sourceToAttach.url,
             sourceToAttach.mimeType,
             {
+              /*
+               * A package with no SDR rung is the one shape Apple's native HLS
+               * refuses to present on a display that cannot show HDR, so it is
+               * the only shape diverted to ManagedMediaSource. Everything else
+               * keeps native playback, and with it AirPlay.
+               */
+              hdrOnlyPackage:
+                (adaptiveQualityManifest?.qualities.length ?? 0) > 0 &&
+                adaptiveQualityManifest!.qualities.every(
+                  (quality) => quality.hdr,
+                ),
               onHlsEvent: (event) => {
                 if (!isCurrentAttempt()) {
                   return;

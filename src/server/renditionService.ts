@@ -21,6 +21,7 @@ import { inspectCompletedRendition } from "../renditions/validation";
 import { inspectAdaptivePackage } from "../renditions/adaptive/inspect";
 import { qualityLabel } from "../renditions/adaptive/layout";
 import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
+import { recordedMasterLayoutVersion } from "../renditions/adaptive/repairMaster";
 
 // Analysis records "already-valid" when every required height already exists and
 // "pending" while a title is only partially generated. Both still expose the
@@ -148,15 +149,27 @@ export interface RenditionService {
  * the new media, and playback stopped with no error to explain it. Including
  * the package's own creation stamp gives every build its own URL space, so a
  * stale cache simply misses.
+ *
+ * The master layout belongs in the same key. A master repair rewrites the
+ * playlist in place without re-encoding, so the creation stamp it was built
+ * under still stands — and without this, a corrected master kept the URL of the
+ * broken one it replaced and every client that had cached the old copy went on
+ * using it for the year the `immutable` directive promises.
  */
 export function adaptiveVersionIdFor(metadata: {
   profileVersion: string;
   sourceFingerprint: string;
   createdAt: string;
+  masterLayoutVersion?: number;
 }): string {
   return createHash("sha256")
     .update(
-      `${metadata.profileVersion}\n${metadata.sourceFingerprint}\n${metadata.createdAt}`,
+      [
+        metadata.profileVersion,
+        metadata.sourceFingerprint,
+        metadata.createdAt,
+        `master-layout-${recordedMasterLayoutVersion(metadata)}`,
+      ].join("\n"),
     )
     .digest("hex")
     .slice(0, 12);

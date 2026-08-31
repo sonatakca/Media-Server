@@ -109,11 +109,19 @@ function warmHlsManifest(source: PlaybackSourceCandidate): void {
     return;
   }
 
-  void fetch(source.url, { method: "GET", cache: "no-store" }).catch(
-    (error) => {
-      console.debug("[Seyirlik Playback] HLS manifest preload skipped", error);
-    },
-  );
+  // The manifest lives on the media origin, not the page origin, and is
+  // authorised by the session cookie. Without `credentials` the browser omits
+  // that cookie, so this warmed nothing: every preload answered 401. The
+  // media element's own request carries the cookie and succeeded, which is why
+  // the failure was invisible from the player and only showed up as an
+  // unexplained uncredentialed 401 in a server-side request trace.
+  void fetch(source.url, {
+    method: "GET",
+    cache: "no-store",
+    credentials: "include",
+  }).catch((error) => {
+    console.debug("[Seyirlik Playback] HLS manifest preload skipped", error);
+  });
 }
 
 function scheduleUnusedCustomSessionRelease(

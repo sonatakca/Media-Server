@@ -1,5 +1,11 @@
 import Hls from "hls.js";
 
+import {
+  type AutomaticQualityMode,
+  canonicalRungClass,
+  selectAdaptiveTargetRung,
+} from "../components/player/qualityPreference";
+
 export interface AttachedVideoSource {
   usingHlsJs: boolean;
   adaptiveController?: AdaptiveHlsController;
@@ -7,8 +13,16 @@ export interface AttachedVideoSource {
 }
 
 export interface AdaptiveHlsController {
-  /** `height` locks one level; null returns future fragments to ABR. */
-  setQualityHeight(height: number | null, maxHeight?: number | null): void;
+  /**
+   * `height` locks one level; null hands future fragments back to Seyirlik's
+   * own adaptive policy for `mode`. It does not hand them to hls.js's ABR —
+   * see `applyAdaptivePreference`.
+   */
+  setQualityHeight(
+    height: number | null,
+    maxHeight?: number | null,
+    mode?: AutomaticQualityMode,
+  ): void;
   setAudioStream(sourceStreamIndex: number): boolean;
   /**
    * What the engine has actually measured the link to carry, in bits/second.
@@ -37,6 +51,174 @@ export interface AttachSourceOptions {
    * letterboxed title, so the caller is given the width to match on instead.
    */
   onAdaptiveLevelChanged?: (level: { height: number; width: number }) => void;
+  /**
+   * True when the adaptive package offers no SDR rung. Only this shape is
+   * affected by the native-HLS refusal, so only this shape is diverted.
+   */
+  hdrOnlyPackage?: boolean;
+}
+
+/**
+ * How often the adaptive policy is allowed to reconsider.
+ *
+ * Every fragment moves the bandwidth estimate, so re-deciding on each one of
+ * a burst means arguing with hls.js continuously for no gain. One decision a
+ * second is far more often than the picture can usefully change and still
+ * cheap: the work is a handful of comparisons over the ladder.
+ */
+const RUNG_EVALUATION_INTERVAL_MS = 1000;
+
+/**
+ * The policy's own clock, so decisions do not wait on fragment arrivals.
+ *
+ * Under ManagedMediaSource the engine loads in bursts: Safari asks for data,
+ * hls.js fills the buffer to about thirty seconds in a second or two, and
+ * then nothing is fetched at all until the buffer drains back to roughly ten.
+ * Driving the policy from `FRAG_BUFFERED` alone therefore gave it one
+ * opportunity to decide every twenty seconds, which multiplied every interval
+ * below by ten or more: measured on the iPad, a climb the policy had already
+ * decided on took a minute and a half to arrive. A timer makes the constants
+ * mean what they say.
+ */
+const RUNG_TICK_INTERVAL_MS = 1000;
+
+/**
+ * How long a better rung has to keep looking affordable before it is taken.
+ *
+ * Down-switches apply immediately because a rung that no longer fits is
+ * already costing the viewer a stall. Up-switches wait, because a single
+ * optimistic sample is the cheapest way to start oscillating between two
+ * rungs — which is more distracting than sitting one rung low for a moment.
+ *
+ * Two seconds, which at the tick above is two independent confirmations
+ * rather than a single lucky fragment. The ladder is walked a rung at a time
+ * and each rung has to re-earn the next — the estimate only learns what the
+ * link can do by fetching the larger fragments a higher rung asks for — so
+ * this interval is what the whole climb is paced by: at four seconds a
+ * session that opened at 480p took the better part of a minute to arrive at
+ * the rung it could have had, which reads as a player that is stuck.
+ */
+const UPSWITCH_HOLD_MS = 2000;
+
+/** A stall stops counting against the budget once the link has behaved again. */
+const STALL_MEMORY_MS = 30_000;
+
+/**
+ * How much buffered video counts as "this rung is comfortably sustainable".
+ *
+ * Throughput measured from a small fragment is mostly overhead: a 144p
+ * fragment is ~120 kB and lands in milliseconds, so the estimate reads far
+ * below what the link can do — measured at 0.9 Mbps on an idle LAN. A rung
+ * chosen from that estimate then keeps the fragments small, which keeps the
+ * estimate low. A buffer that keeps filling is the honest evidence the
+ * estimate cannot give, so it is what licenses a climb out of that hole.
+ *
+ * Ten seconds, because that is the shape of the real buffer rather than the
+ * configured maximum: measured on the iPad the forward buffer sits around
+ * eleven to thirteen seconds while a session is refilling, so a threshold set
+ * at the nominal thirty never once fired.
+ */
+const PROBE_BUFFER_SECONDS = 10;
+
+/** A stall only says something about bandwidth if the buffer was actually short. */
+const STARVED_BUFFER_SECONDS = 5;
+
+/**
+ * How long a stall keeps the ladder from being climbed again.
+ *
+ * A stall leaves the estimate stale-high — it only moves when a fragment
+ * finishes, and none did — so the policy's first instinct afterwards is to
+ * climb straight back to the rung that just failed. Long enough for the
+ * cheaper rung's fragment to land and correct the estimate, short enough that
+ * a one-off hiccup costs a few seconds of quality and nothing more.
+ */
+const STALL_UPSWITCH_BLOCK_MS = 6000;
+
+/**
+ * How much better than measured the probe is allowed to assume the link is.
+ *
+ * Three, against the policy's two-thirds safety margin, comes to a simple
+ * rule: the probe may take a rung costing up to twice what the link has been
+ * measured to carry — but only while the buffer says that measurement is the
+ * thing that is wrong. Rungs sit between one and a half and two and a half
+ * times apart in bitrate, so this reliably reaches the next one and rarely
+ * more; the one-rung-per-turn clamp handles the ladders where it would.
+ */
+const PROBE_BANDWIDTH_OPTIMISM = 3;
+
+/**
+ * How long a rung the probe has just taken is protected from the estimate.
+ *
+ * The probe exists because the estimate is wrong, so the estimate cannot also
+ * be the judge of whether the probe was right — and for the first seconds it
+ * is all there is, because throughput at the new rung has not been measured
+ * yet. Without this the two argued every second: the probe climbed, the stale
+ * reading pulled it straight back, and the session flickered between two
+ * rungs instead of settling on either.
+ *
+ * The buffer is the judge instead, and it revokes the protection early: a
+ * stall, or a forward buffer that stops covering the probe's own threshold,
+ * ends the grace immediately and the ordinary downgrade applies.
+ */
+const PROBE_GRACE_MS = 8000;
+
+/**
+ * How far back the probe looks when asking whether the link is still holding.
+ *
+ * Long enough to span several evaluation ticks, short enough that a link which
+ * has recovered is not still being judged by how it behaved a minute ago.
+ */
+const BANDWIDTH_TREND_WINDOW_MS = 10_000;
+
+/** Below this many samples there is no trend, only a reading. */
+const BANDWIDTH_TREND_MIN_SAMPLES = 3;
+
+/**
+ * How far under its recent peak the estimate has to sit to count as falling.
+ *
+ * Deliberately coarse. The estimate a low rung produces is noisy — small
+ * fragments, mostly overhead — so a tight threshold would read ordinary jitter
+ * as a collapse and re-trap the session on the bottom rung, which is the exact
+ * failure the probe exists to prevent. A third of the link disappearing is not
+ * jitter.
+ */
+const BANDWIDTH_TREND_FALLING_RATIO = 0.7;
+
+/** One reading of the engine's own estimate, kept only to see its direction. */
+interface BandwidthSample {
+  at: number;
+  bps: number;
+}
+
+/**
+ * Whether the measured link is meaningfully on its way down.
+ *
+ * The buffer probe trusts a full buffer over a low estimate, which is right
+ * when the estimate is low because the fragments are small and wrong when it
+ * is low because the link is collapsing — a buffer takes time to drain, so for
+ * a few seconds both look identical. Measured on the iPad: during a 350 kbps
+ * throttle the probe climbed a rung at 62 s on a buffer that had not caught up
+ * yet, and Auto corrected it twelve seconds later. Reading the direction of
+ * the estimate separates the two cases before the climb rather than after it.
+ *
+ * This is not a second estimator. The samples are the engine's own
+ * `bandwidthEstimate`, recorded as the policy already reads it; only their
+ * recent shape is new.
+ */
+export function isBandwidthFalling(
+  samples: readonly BandwidthSample[],
+  now: number,
+): boolean {
+  const recent = samples.filter(
+    (sample) => now - sample.at <= BANDWIDTH_TREND_WINDOW_MS,
+  );
+  if (recent.length < BANDWIDTH_TREND_MIN_SAMPLES) return false;
+
+  const latest = recent.at(-1)!;
+  const peak = Math.max(...recent.map((sample) => sample.bps));
+  if (!(peak > 0)) return false;
+
+  return latest.bps <= peak * BANDWIDTH_TREND_FALLING_RATIO;
 }
 
 export function isHlsPlaybackUrl(
@@ -78,6 +260,46 @@ function isAppleNativeHlsRuntime(): boolean {
     /Safari/i.test(userAgent) &&
     !/Chrome|Chromium|CriOS|FxiOS|Edg|OPR|SamsungBrowser/i.test(userAgent)
   );
+}
+
+/**
+ * Whether this playback has to go through ManagedMediaSource to work at all.
+ *
+ * Apple's native HLS refuses a multivariant presentation whose every variant is
+ * PQ when the display cannot present HDR. Measured on an iPad (9th generation,
+ * iPadOS 26.1): the master and the chosen variant playlist load, the init
+ * segment is fetched once, and playback then fails with `MEDIA_ERR_DECODE`
+ * without a single media segment being requested. The device decodes the very
+ * same bytes happily — `canPlayType` answers "probably" and the identical media
+ * playlist opened directly plays — so this is a presentation decision, not a
+ * decoding limit, and nothing about the encode or the playlist can talk it
+ * round. Feeding the same renditions through MMS bypasses that decision.
+ *
+ * Deliberately not user-agent sniffing: the predicate asks about the package,
+ * the display and the runtime, so a device that gains an HDR display stops
+ * matching. Nothing here is cached — the display is read at attach time, so a
+ * later session on an external HDR display takes the native path again.
+ */
+export function shouldUseManagedHdrFallback(options: {
+  /** True when every rung carries the HDR grade, leaving no SDR variant. */
+  hdrOnlyPackage: boolean;
+}): boolean {
+  if (!options.hdrOnlyPackage) return false;
+  if (typeof window === "undefined") return false;
+
+  // MMS is the transport that makes this work; plain MediaSource is not enough
+  // on the affected devices, and hls.js is what drives it.
+  const managedMediaSource = (
+    window as unknown as { ManagedMediaSource?: unknown }
+  ).ManagedMediaSource;
+  if (typeof managedMediaSource === "undefined") return false;
+  if (!Hls.isSupported()) return false;
+
+  // A display that can present HDR is not affected, so it keeps native HLS —
+  // and with it AirPlay, which MMS cannot offer.
+  const displayPresentsHdr =
+    window.matchMedia?.("(dynamic-range: high)")?.matches === true;
+  return !displayPresentsHdr;
 }
 
 export function shouldUseNativeHls(videoElement: HTMLVideoElement): boolean {
@@ -154,7 +376,11 @@ export function attachSourceToVideo(
   const isHls = isHlsPlaybackUrl(playbackUrl, mimeType);
   const requestedMaxHeight = getRequestedMaxHeight(playbackUrl);
 
-  if (isHls && shouldUseNativeHls(videoElement)) {
+  const managedHdrFallback = shouldUseManagedHdrFallback({
+    hdrOnlyPackage: options.hdrOnlyPackage === true,
+  });
+
+  if (isHls && !managedHdrFallback && shouldUseNativeHls(videoElement)) {
     videoElement.src = playbackUrl;
     return {
       usingHlsJs: false,
@@ -217,6 +443,19 @@ export function attachSourceToVideo(
     });
     let lockedHeight: number | null = null;
     let maximumHeight: number | null = requestedMaxHeight;
+    let adaptiveMode: AutomaticQualityMode = "auto";
+    let appliedLevel: number | null = null;
+    let upgradeCandidate: {
+      level: number;
+      since: number;
+      probe: boolean;
+    } | null = null;
+    let probeHoldUntil = 0;
+    let upswitchBlockedUntil = 0;
+    let lastEvaluationAt = 0;
+    let recentStallCount = 0;
+    let lastStallAt = 0;
+    let bandwidthSamples: BandwidthSample[] = [];
 
     const levelAtOrBelow = (height: number | null): number => {
       if (height === null) return -1;
@@ -246,6 +485,189 @@ export function attachSourceToVideo(
       return usable > 0 ? usable : null;
     };
 
+    /**
+     * The ladder as the quality policy understands it: canonical classes, not
+     * frame heights, so a letterboxed rung is compared as the 720p it is
+     * rather than as the 536 it measures.
+     */
+    const adaptiveRungs = () =>
+      hls.levels.map((level, index) => ({
+        index,
+        height: canonicalRungClass(level.width ?? 0, level.height ?? 0),
+        bitrate: level.bitrate || undefined,
+      }));
+
+    /**
+     * The rung Seyirlik's own policy wants, given what the link is currently
+     * measured to carry.
+     *
+     * hls.js's ABR is deliberately not consulted. On the physical iPad it
+     * answered level 0 at every sample — 144p on a link measured at 16.8 Mbps,
+     * with its own cap set five rungs higher — so Auto and Higher Quality were
+     * both pinned to the bottom of the ladder whatever the connection did.
+     * hls.js still measures throughput and manages buffering; only the choice
+     * of rung moves here.
+     */
+    const chooseAdaptiveLevel = (bandwidthOptimism = 1): number => {
+      const rungs = adaptiveRungs();
+      if (rungs.length === 0) return -1;
+
+      const eligible =
+        maximumHeight === null
+          ? rungs
+          : rungs.filter((rung) => rung.height <= maximumHeight!);
+      // Every rung is above the ceiling, so the cheapest honours it best.
+      const pool = eligible.length > 0 ? eligible : [rungs[0]!];
+
+      const estimate = hls.bandwidthEstimate;
+      const measured =
+        typeof estimate === "number" && Number.isFinite(estimate) && estimate > 0
+          ? estimate
+          : undefined;
+      const target = selectAdaptiveTargetRung(pool, adaptiveMode, {
+        bandwidthBps:
+          measured === undefined ? undefined : measured * bandwidthOptimism,
+        displayHeight: videoElement.getBoundingClientRect().height || undefined,
+        devicePixelRatio:
+          typeof window === "undefined" ? undefined : window.devicePixelRatio,
+        recentStallCount,
+      });
+      return target?.index ?? pool[0]!.index;
+    };
+
+    const driveLevel = (level: number) => {
+      hls.loadLevel = level;
+      if (hls.nextLevel !== level) hls.nextLevel = level;
+      appliedLevel = level;
+    };
+
+    /** Seconds of continuous media buffered ahead of the play head. */
+    const bufferedAhead = (): number => {
+      const { buffered, currentTime } = videoElement;
+      for (let index = 0; index < buffered.length; index += 1) {
+        if (
+          buffered.start(index) <= currentTime + 0.25 &&
+          buffered.end(index) > currentTime
+        ) {
+          return buffered.end(index) - currentTime;
+        }
+      }
+      return 0;
+    };
+
+    const evaluateAdaptiveTarget = (force = false) => {
+      if (hls.levels.length === 0) return;
+      const now = Date.now();
+      if (!force && now - lastEvaluationAt < RUNG_EVALUATION_INTERVAL_MS) return;
+      lastEvaluationAt = now;
+
+      /*
+       * Recorded whatever the mode, because the trend describes the link and
+       * not the menu. Sampling only while Auto is in charge would hand a
+       * session returning from a manual rung an empty history at exactly the
+       * moment it has to decide, and an empty history reads as "steady".
+       */
+      const estimate = hls.bandwidthEstimate;
+      if (typeof estimate === "number" && Number.isFinite(estimate) && estimate > 0) {
+        bandwidthSamples.push({ at: now, bps: estimate });
+        bandwidthSamples = bandwidthSamples.filter(
+          (sample) => now - sample.at <= BANDWIDTH_TREND_WINDOW_MS,
+        );
+      }
+
+      // A locked rung is the viewer's decision; nothing here overrides it.
+      if (lockedHeight !== null) return;
+
+      if (recentStallCount > 0 && now - lastStallAt > STALL_MEMORY_MS) {
+        recentStallCount = 0;
+      }
+
+      let target = chooseAdaptiveLevel();
+      if (target < 0) return;
+      const current = appliedLevel ?? -1;
+      let probing = false;
+
+      /*
+       * Climb one rung on the buffer's evidence when the estimate has nothing
+       * useful to say. Without this the session cannot leave a low rung it
+       * arrived at during a rough start: the rung keeps the fragments small,
+       * the small fragments keep the estimate low, and the low estimate keeps
+       * the rung. Overshooting is self-correcting — the buffer stops filling,
+       * a stall follows, and the ordinary immediate downgrade applies.
+       */
+      if (
+        current >= 0 &&
+        target <= current &&
+        recentStallCount === 0 &&
+        bufferedAhead() >= PROBE_BUFFER_SECONDS &&
+        // A buffer that has not drained yet is not evidence the link is still
+        // there. When the estimate is already on its way down, the buffer is
+        // spending what the link no longer earns, so the probe stands aside
+        // and lets the ordinary policy follow the estimate down.
+        !isBandwidthFalling(bandwidthSamples, now)
+      ) {
+        /*
+         * The question is put back to the same policy rather than answered
+         * here, so everything the policy knows still applies — the display
+         * ceiling above all. Stepping the level directly ignored that ceiling
+         * and produced a loop: the probe climbed to a rung the screen cannot
+         * show, the anchor pulled it straight back on the next tick, and the
+         * session cycled 1080p -> 1440p -> 2160p -> 1080p indefinitely.
+         */
+        const optimistic = chooseAdaptiveLevel(PROBE_BANDWIDTH_OPTIMISM);
+        if (optimistic > current) {
+          target = Math.min(optimistic, current + 1);
+          probing = true;
+        }
+      }
+
+      if (current < 0 || target <= current) {
+        upgradeCandidate = null;
+        if (target === current) return;
+        // See PROBE_GRACE_MS: a rung the probe has just taken is not given up
+        // on the word of the reading it was taken in spite of — but only
+        // while the buffer is still saying the same thing the probe heard.
+        if (
+          now < probeHoldUntil &&
+          recentStallCount === 0 &&
+          bufferedAhead() >= PROBE_BUFFER_SECONDS
+        ) {
+          return;
+        }
+        driveLevel(target);
+        return;
+      }
+
+      // See STALL_UPSWITCH_BLOCK_MS: right after a stall the estimate still
+      // describes the link as it was before it failed.
+      if (now < upswitchBlockedUntil) {
+        upgradeCandidate = null;
+        return;
+      }
+
+      /*
+       * The clock measures how long *some* better rung has been affordable,
+       * not how long one particular rung has been the answer. Restarting it
+       * whenever the target moved between two neighbouring rungs meant a
+       * fluctuating estimate reset the timer on every sample, so the climb
+       * never arrived: measured on the iPad, Auto sat on the bottom rung for
+       * 42 s while the link comfortably carried 480p the entire time.
+       */
+      if (!upgradeCandidate) {
+        upgradeCandidate = { level: target, since: now, probe: probing };
+        return;
+      }
+      upgradeCandidate.level = target;
+      upgradeCandidate.probe = probing;
+      if (now - upgradeCandidate.since >= UPSWITCH_HOLD_MS) {
+        const climbTo = upgradeCandidate.level;
+        const climbWasProbed = upgradeCandidate.probe;
+        upgradeCandidate = null;
+        if (climbWasProbed) probeHoldUntil = now + PROBE_GRACE_MS;
+        driveLevel(climbTo);
+      }
+    };
+
     const applyAdaptivePreference = () => {
       if (hls.levels.length === 0) return;
       // Auto is capped to what the screen can show. A derived or manual mode
@@ -257,12 +679,21 @@ export function attachSourceToVideo(
       hls.autoLevelCapping = levelAtOrBelow(ceiling);
 
       if (lockedHeight === null) {
-        // Back to automatic: future fragments follow ABR again, and nothing
-        // already buffered needs to be thrown away to get there.
-        hls.nextLevel = -1;
-        hls.loadLevel = -1;
+        /*
+         * Back to automatic. The rung is chosen here rather than by hls.js, so
+         * returning to Auto re-decides immediately instead of handing the
+         * ladder to an ABR controller that answers 144p regardless of the
+         * link. Nothing already buffered is thrown away to get there.
+         */
+        upgradeCandidate = null;
+        appliedLevel = null;
+        evaluateAdaptiveTarget(true);
         return;
       }
+
+      // Leaving automatic: forget the pending climb so a stale candidate
+      // cannot fire a switch after the viewer has taken manual control.
+      upgradeCandidate = null;
 
       // An explicit rung is a promise to the viewer, so it has to become the
       // picture within a second or two. `loadLevel` alone only changes what is
@@ -273,8 +704,7 @@ export function attachSourceToVideo(
       // currently on screen alone, so the change lands quickly without the
       // black frame that flushing everything (`currentLevel`) would cause.
       const level = levelAtOrBelow(lockedHeight);
-      hls.loadLevel = level;
-      if (hls.nextLevel !== level) hls.nextLevel = level;
+      driveLevel(level);
     };
 
     hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
@@ -308,6 +738,9 @@ export function attachSourceToVideo(
 
     hls.on(Hls.Events.FRAG_BUFFERED, (_event, data) => {
       options.onHlsEvent?.({ name: Hls.Events.FRAG_BUFFERED, data });
+      // Each buffered fragment is a fresh throughput sample, and the only
+      // regular tick available while playback is steady.
+      evaluateAdaptiveTarget();
     });
 
     hls.on(Hls.Events.BUFFER_APPENDED, (_event, data) => {
@@ -325,6 +758,47 @@ export function attachSourceToVideo(
           videoElement.dispatchEvent(new Event("error"));
         }
       } else {
+        if (
+          data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR &&
+          // A stall with a full buffer is not a bandwidth signal. Charging for
+          // those let the ordinary flurry while a session fills its buffer
+          // bankrupt the budget before playback had settled.
+          bufferedAhead() < STARVED_BUFFER_SECONDS
+        ) {
+          /*
+           * Capped at two. Each stall costs 40% of the budget, so allowing a
+           * third let the ordinary flurry of stalls while a session is still
+           * filling its buffer drive the budget under the cheapest rung on the
+           * ladder — the penalty for a rough start became a session pinned to
+           * 144p.
+           */
+          recentStallCount = Math.min(recentStallCount + 1, 2);
+          lastStallAt = Date.now();
+          /*
+           * Step down at once, without waiting for the estimate to agree.
+           *
+           * The estimate cannot agree: it only moves when a fragment finishes,
+           * and the fragment is precisely what is not finishing. Measured on
+           * the iPad against a link too slow to deliver anything, the policy
+           * therefore held 1080p throughout — and because an explicitly driven
+           * level turns off hls.js's own abandon-and-retry rules, the stuck
+           * fragment was never given up either. Playback came back about a
+           * minute later, when the loader finally timed out.
+           *
+           * Dropping a rung writes `nextLevel`, which abandons that fragment
+           * and asks for the cheaper rung's much smaller one instead. The
+           * ladder is then climbed back in seconds if the stall was a blip.
+           */
+          upswitchBlockedUntil = lastStallAt + STALL_UPSWITCH_BLOCK_MS;
+          if (lockedHeight === null && appliedLevel !== null && appliedLevel > 0) {
+            upgradeCandidate = null;
+            probeHoldUntil = 0;
+            driveLevel(appliedLevel - 1);
+          }
+          // A stall is evidence the current rung is too expensive, and the
+          // policy charges for it — so re-decide without waiting for the tick.
+          evaluateAdaptiveTarget(true);
+        }
         console.warn("[Seyirlik Playback] hls.js warning", data);
       }
     });
@@ -344,12 +818,20 @@ export function attachSourceToVideo(
         : new ResizeObserver(() => applyAdaptivePreference());
     observer?.observe(videoElement);
 
+    // See RUNG_TICK_INTERVAL_MS: the engine's own events arrive in bursts, so
+    // the policy keeps its own clock rather than inheriting that shape.
+    const rungTicker = setInterval(
+      () => evaluateAdaptiveTarget(),
+      RUNG_TICK_INTERVAL_MS,
+    );
+
     return {
       usingHlsJs: true,
       adaptiveController: {
-        setQualityHeight: (height, maxHeight = null) => {
+        setQualityHeight: (height, maxHeight = null, mode = "auto") => {
           lockedHeight = height;
           maximumHeight = maxHeight;
+          adaptiveMode = mode;
           applyAdaptivePreference();
         },
         getBandwidthEstimateBps: () => {
@@ -374,6 +856,7 @@ export function attachSourceToVideo(
         },
       },
       destroy: () => {
+        clearInterval(rungTicker);
         observer?.disconnect();
         hls.destroy();
         videoElement.removeAttribute("src");

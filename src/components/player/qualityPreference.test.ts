@@ -6,6 +6,8 @@ import type {
 import {
   adaptiveQualityRequestForMode,
   AUTO_QUALITY_LEVELS,
+  canonicalRungClass,
+  selectAdaptiveTargetRung,
   loadQualityPreference,
   isQualityAudioCompatible,
   resolveManualHeight,
@@ -698,5 +700,149 @@ describe("complete-file quality selection", () => {
         lastSwitchAt: 0,
       }),
     ).toBe(true);
+  });
+});
+
+describe("canonicalRungClass", () => {
+  it("files a 16:9 rung under its own height", () => {
+    expect(canonicalRungClass(1280, 720)).toBe(720);
+    expect(canonicalRungClass(3840, 2160)).toBe(2160);
+  });
+
+  it("recovers the class of a letterboxed cinema rung from its width", () => {
+    // The real Ford v Ferrari ladder: 2.39:1, so every frame height sits one
+    // or two classes below the rung it actually is.
+    expect(canonicalRungClass(256, 108)).toBe(144);
+    expect(canonicalRungClass(426, 178)).toBe(240);
+    expect(canonicalRungClass(640, 268)).toBe(360);
+    expect(canonicalRungClass(854, 358)).toBe(480);
+    expect(canonicalRungClass(1280, 536)).toBe(720);
+    expect(canonicalRungClass(1920, 804)).toBe(1080);
+    expect(canonicalRungClass(2560, 1072)).toBe(1440);
+    expect(canonicalRungClass(3840, 1608)).toBe(2160);
+  });
+
+  it("recovers the class of a pillarboxed rung from its height", () => {
+    expect(canonicalRungClass(960, 720)).toBe(720);
+  });
+
+  it("falls back to height when width is unknown", () => {
+    expect(canonicalRungClass(0, 1080)).toBe(1080);
+  });
+});
+
+describe("selectAdaptiveTargetRung", () => {
+  const ladder = (heights: readonly number[], bitrateFor = (h: number) => h * 4000) =>
+    heights.map((height) => ({ height, bitrate: bitrateFor(height) }));
+  const full = ladder([144, 240, 360, 480, 720, 1080, 1440, 2160]);
+
+  it("stays on the cheapest rung when bandwidth is below the whole ladder", () => {
+    expect(
+      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 100_000 })?.height,
+    ).toBe(144);
+  });
+
+  it("takes a rung whose bitrate fits inside the safety margin", () => {
+    // 480p costs 1.92 Mbps; two thirds of 3 Mbps is 2 Mbps, so it fits.
+    expect(
+      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })?.height,
+    ).toBe(480);
+  });
+
+  it("does not take a rung that only fits without the safety margin", () => {
+    // 720p costs 2.88 Mbps, which fits 3 Mbps raw but not 2 Mbps of budget.
+    expect(
+      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })?.height,
+    ).not.toBe(720);
+  });
+
+  it("climbs the whole ladder when bandwidth is plentiful", () => {
+    expect(
+      selectAdaptiveTargetRung(full, "auto", {
+        bandwidthBps: 200_000_000,
+      })?.height,
+    ).toBe(2160);
+  });
+
+  it("charges recent stalls against the budget", () => {
+    const steady = selectAdaptiveTargetRung(full, "auto", {
+      bandwidthBps: 6_000_000,
+    })?.height;
+    const stalling = selectAdaptiveTargetRung(full, "auto", {
+      bandwidthBps: 6_000_000,
+      recentStallCount: 2,
+    })?.height;
+    expect(stalling).toBeLessThan(steady!);
+  });
+
+  it("steps Low Data one class below Auto and Higher Quality one above", () => {
+    // 8 Mbps of budget: 1440p costs 5.76 Mbps and fits, 2160p costs 8.64 and
+    // does not.
+    const context = { bandwidthBps: 12_000_000 };
+    expect(selectAdaptiveTargetRung(full, "auto", context)?.height).toBe(1440);
+    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(1080);
+    expect(
+      selectAdaptiveTargetRung(full, "higher-resolution", context)?.height,
+    ).toBe(2160);
+  });
+
+  it("never lets Higher Quality sit below 720p", () => {
+    // Auto is pinned to the floor here, but Higher Quality still has a floor
+    // of its own.
+    const context = { bandwidthBps: 120_000 };
+    expect(selectAdaptiveTargetRung(full, "auto", context)?.height).toBe(144);
+    expect(
+      selectAdaptiveTargetRung(full, "higher-resolution", context)?.height,
+    ).toBe(720);
+  });
+
+  it("never lets Low Data exceed 1080p", () => {
+    const context = { bandwidthBps: 500_000_000 };
+    expect(selectAdaptiveTargetRung(full, "auto", context)?.height).toBe(2160);
+    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(1080);
+  });
+
+  it("resolves to a rung that exists on an incomplete ladder", () => {
+    const sparse = ladder([480, 720, 1080]);
+    const context = { bandwidthBps: 12_000_000 };
+    expect(selectAdaptiveTargetRung(sparse, "auto", context)?.height).toBe(1080);
+    expect(selectAdaptiveTargetRung(sparse, "low-data", context)?.height).toBe(720);
+    // 1440p does not exist, so the step up settles on the tallest that does.
+    expect(
+      selectAdaptiveTargetRung(sparse, "higher-resolution", context)?.height,
+    ).toBe(1080);
+  });
+
+  it("handles a ladder with a large gap in the middle", () => {
+    const gapped = ladder([720, 2160]);
+    const context = { bandwidthBps: 8_000_000 };
+    const auto = selectAdaptiveTargetRung(gapped, "auto", context)?.height;
+    expect([720, 2160]).toContain(auto);
+    // Nothing below 720p exists, so Low Data cannot go lower than the floor.
+    expect(selectAdaptiveTargetRung(gapped, "low-data", context)?.height).toBe(720);
+  });
+
+  it("honours an explicit save-data preference over any measurement", () => {
+    expect(
+      selectAdaptiveTargetRung(full, "auto", {
+        bandwidthBps: 200_000_000,
+        saveData: true,
+      })?.height,
+    ).toBe(144);
+  });
+
+  it("returns nothing when the ladder is empty", () => {
+    expect(selectAdaptiveTargetRung([], "auto", { bandwidthBps: 5_000_000 })).toBeUndefined();
+  });
+
+  it("rises and falls with the measured link", () => {
+    const collapsed = selectAdaptiveTargetRung(full, "auto", {
+      bandwidthBps: 400_000,
+    })?.height;
+    const recovered = selectAdaptiveTargetRung(full, "auto", {
+      bandwidthBps: 40_000_000,
+    })?.height;
+    expect(collapsed).toBe(144);
+    expect(recovered).toBeGreaterThan(collapsed!);
   });
 });

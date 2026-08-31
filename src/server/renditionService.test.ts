@@ -723,4 +723,25 @@ describe("adaptiveVersionIdFor", () => {
       adaptiveVersionIdFor({ ...base, sourceFingerprint: "b".repeat(64) }),
     ).not.toBe(adaptiveVersionIdFor(base));
   });
+
+  /**
+   * A master repair rewrites the playlist in place and does not re-encode, so
+   * the package keeps the creation stamp it was built under. Without the layout
+   * in the key, a corrected master inherited the URL of the broken one it
+   * replaced, and every client holding the old copy kept it for the year the
+   * `immutable` directive promises — which is exactly as long as the bug the
+   * repair fixes would have gone on showing.
+   */
+  it("changes when the master layout is repaired", () => {
+    expect(adaptiveVersionIdFor({ ...base, masterLayoutVersion: 3 })).not.toBe(
+      adaptiveVersionIdFor({ ...base, masterLayoutVersion: 2 }),
+    );
+  });
+
+  /** A package predating the stamp is the original layout, not a new one. */
+  it("treats an unstamped package as the original layout", () => {
+    expect(adaptiveVersionIdFor(base)).toBe(
+      adaptiveVersionIdFor({ ...base, masterLayoutVersion: 1 }),
+    );
+  });
 });

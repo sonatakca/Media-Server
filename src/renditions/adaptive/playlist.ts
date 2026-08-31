@@ -72,6 +72,41 @@ function parseByteRange(
  * reader disagree about the format, and continuing would validate a package
  * whose real structure nothing has inspected.
  */
+/**
+ * Names that are unique inside one EXT-X-MEDIA group.
+ *
+ * RFC 8216 §4.3.4.1 requires every rendition in a group to carry a different
+ * NAME. A title with three English subtitle tracks — a plain one, an alternate
+ * and a forced one — has nothing but the language to name them by, so all three
+ * came out as "eng" and the group violated the spec. macOS Safari plays such a
+ * master regardless; a stricter client is entitled not to, and gives no reason
+ * when it declines.
+ *
+ * Only collisions are touched, so a title whose tracks were already
+ * distinguishable keeps the names it had.
+ */
+export function uniqueRenditionNames(names: readonly string[]): string[] {
+  const taken = new Set<string>();
+
+  return names.map((name) => {
+    if (!taken.has(name)) {
+      taken.add(name);
+      return name;
+    }
+
+    // The suffix stays outside the first word so that language matching, which
+    // reads the leading token, still recognises "eng 2" as English.
+    let ordinal = 2;
+    let candidate = `${name} ${ordinal}`;
+    while (taken.has(candidate)) {
+      ordinal += 1;
+      candidate = `${name} ${ordinal}`;
+    }
+    taken.add(candidate);
+    return candidate;
+  });
+}
+
 export function parseMediaPlaylist(text: string): ParsedMediaPlaylist {
   const lines = text.split(/\r?\n/);
   if (lines[0]?.trim() !== "#EXTM3U") {
@@ -310,11 +345,15 @@ export function buildMasterPlaylist({
     "",
   ];
 
-  for (const audio of audioRenditions) {
+  const audioNames = uniqueRenditionNames(
+    audioRenditions.map((audio) => audio.title ?? audio.language ?? audio.id),
+  );
+
+  for (const [audioIndex, audio] of audioRenditions.entries()) {
     const attributes = [
       "TYPE=AUDIO",
       `GROUP-ID="${ADAPTIVE_AUDIO_GROUP}"`,
-      `NAME="${escapeAttribute(audio.title ?? audio.language ?? audio.id)}"`,
+      `NAME="${escapeAttribute(audioNames[audioIndex]!)}"`,
       ...(audio.language
         ? [`LANGUAGE="${escapeAttribute(audio.language)}"`]
         : []),
@@ -328,11 +367,17 @@ export function buildMasterPlaylist({
     lines.push(`#EXT-X-MEDIA:${attributes.join(",")}`);
   }
 
-  for (const subtitle of subtitleRenditions) {
+  const subtitleNames = uniqueRenditionNames(
+    subtitleRenditions.map(
+      (subtitle) => subtitle.title ?? subtitle.language ?? subtitle.id,
+    ),
+  );
+
+  for (const [subtitleIndex, subtitle] of subtitleRenditions.entries()) {
     const attributes = [
       "TYPE=SUBTITLES",
       `GROUP-ID="${ADAPTIVE_SUBTITLE_GROUP}"`,
-      `NAME="${escapeAttribute(subtitle.title ?? subtitle.language ?? subtitle.id)}"`,
+      `NAME="${escapeAttribute(subtitleNames[subtitleIndex]!)}"`,
       ...(subtitle.language
         ? [`LANGUAGE="${escapeAttribute(subtitle.language)}"`]
         : []),

@@ -4,6 +4,7 @@ import {
   parseCodecsFromGeneratedMaster,
   parseMasterPlaylist,
   parseMediaPlaylist,
+  uniqueRenditionNames,
 } from "./playlist";
 import type {
   AdaptiveAudioRenditionMetadata,
@@ -494,5 +495,79 @@ describe("parseMasterPlaylist", () => {
         ),
       ),
     ).toThrow(/BANDWIDTH and CODECS/);
+  });
+});
+
+/**
+ * A group whose renditions share a NAME.
+ *
+ * A title with several English subtitle tracks has only the language to name
+ * them by, so every one of them came out as "eng". RFC 8216 §4.3.4.1 requires
+ * the names in a group to differ, and a client that enforces it stops after
+ * reading the master without saying why.
+ */
+describe("naming renditions inside one group", () => {
+  it("leaves names that are already distinct alone", () => {
+    expect(uniqueRenditionNames(["eng", "tur", "fra"])).toEqual([
+      "eng",
+      "tur",
+      "fra",
+    ]);
+  });
+
+  it("separates repeated names", () => {
+    expect(uniqueRenditionNames(["eng", "eng", "eng"])).toEqual([
+      "eng",
+      "eng 2",
+      "eng 3",
+    ]);
+  });
+
+  /**
+   * Audio tracks are matched to source streams by the leading word of their
+   * label, so the suffix has to stay out of it.
+   */
+  it("keeps the language as the first word", () => {
+    for (const name of uniqueRenditionNames(["eng", "eng"])) {
+      expect(name.split(" ")[0]).toBe("eng");
+    }
+  });
+
+  /** A suffix must not collide with a name that already ends in one. */
+  it("does not reuse a name a later rendition already carries", () => {
+    expect(uniqueRenditionNames(["eng", "eng 2", "eng"])).toEqual([
+      "eng",
+      "eng 2",
+      "eng 3",
+    ]);
+  });
+
+  it("gives a master's subtitle group distinct names end to end", () => {
+    const master = buildMasterPlaylist({
+      videoRenditions: [videoRendition()],
+      audioRenditions: [audioRendition()],
+      subtitleRenditions: [1, 2, 3].map((index) => ({
+        id: `subtitle-${index}`,
+        sourceStreamIndex: index,
+        language: "eng",
+        isDefault: false,
+        isForced: false,
+        isHearingImpaired: false,
+        codec: "webvtt" as const,
+        durationSeconds: 32.4,
+        playlistPath: `subtitles/subtitle-${index}/playlist.m3u8`,
+        subtitlePath: `subtitles/subtitle-${index}/subtitles.vtt`,
+        fileSizeBytes: 128,
+      })),
+      videoCodecStrings: new Map([["720p", "avc1.64001f"]]),
+      audioCodecStrings: new Map([["track-1", "mp4a.40.2"]]),
+    });
+
+    const names = [
+      ...master.matchAll(/TYPE=SUBTITLES[^\n]*NAME="([^"]+)"/g),
+    ].map((match) => match[1]);
+
+    expect(names).toHaveLength(3);
+    expect(new Set(names).size).toBe(3);
   });
 });

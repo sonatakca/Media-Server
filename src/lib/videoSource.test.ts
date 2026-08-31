@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 import { selectModeRungs } from "../components/player/qualityPreference";
-import { attachSourceToVideo, shouldUseNativeHls } from "./videoSource";
+import {
+  attachSourceToVideo,
+  isBandwidthFalling,
+  shouldUseManagedHdrFallback,
+  shouldUseNativeHls,
+} from "./videoSource";
 
 const hlsMock = vi.hoisted(() => ({
   instances: [] as Array<{
@@ -15,6 +20,7 @@ const hlsMock = vi.hoisted(() => ({
     audioTrack: number;
     audioTracks: Array<{ name: string; url?: string }>;
     levels: Array<{ width: number; height: number; bitrate: number }>;
+    bandwidthEstimate: number;
     trigger: (event: string, data?: unknown) => void;
   }>,
   isSupported: vi.fn(() => true),
@@ -31,6 +37,10 @@ vi.mock("hls.js", () => {
       MANIFEST_PARSED: "manifestParsed",
     };
 
+    static ErrorDetails = {
+      BUFFER_STALLED_ERROR: "bufferStalledError",
+    };
+
     static isSupported = hlsMock.isSupported;
 
     autoLevelCapping = -1;
@@ -41,6 +51,7 @@ vi.mock("hls.js", () => {
     startLevel = -1;
     audioTrack = -1;
     audioTracks: Array<{ name: string; url?: string }> = [];
+    bandwidthEstimate = 0;
     handlers = new Map<
       string,
       Array<(event: string, data?: unknown) => void>
@@ -168,7 +179,7 @@ describe("videoSource", () => {
     expect(shouldUseNativeHls(video)).toBe(true);
   });
 
-  it("applies a manual rung ahead of the play head and returns to ABR without flushing", () => {
+  it("applies a manual rung ahead of the play head and returns to automatic without flushing", () => {
     setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
     const onAdaptiveLevelChanged = vi.fn();
     const attachment = attachSourceToVideo(
@@ -206,9 +217,16 @@ describe("videoSource", () => {
     });
 
     attachment.adaptiveController?.setQualityHeight(null, null);
-    expect(hls.loadLevel).toBe(-1);
     expect(hls.autoLevelCapping).toBe(-1);
-    expect(hls.nextLevel).toBe(-1);
+    /*
+     * Automatic no longer means `-1`. hls.js's own ABR answered the bottom
+     * rung on a link measured at 16.8 Mbps, so Seyirlik resolves the rung and
+     * drives it; `-1` here would hand the ladder straight back to the
+     * behaviour this replaced.
+     */
+    expect(hls.loadLevel).not.toBe(-1);
+    expect(hls.nextLevel).toBe(hls.loadLevel);
+    // Still no flush: the fragment on screen is left alone.
     expect(hls.currentLevel).toBe(-1);
   });
 
@@ -299,7 +317,7 @@ describe("videoSource", () => {
     });
   });
 
-  it("caps automatic switching without pinning a rung", () => {
+  it("bounds automatic switching by the ceiling it is given", () => {
     setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
     const attachment = attachSourceToVideo(
       createVideo(""),
@@ -315,15 +333,17 @@ describe("videoSource", () => {
     ];
     hls.trigger("manifestParsed", {});
 
-    // A ceiling is not a lock: ABR still chooses, it just may not go above 720p.
+    // A ceiling bounds the choice; Seyirlik still resolves a concrete rung
+    // within it rather than delegating the decision to hls.js.
     attachment.adaptiveController?.setQualityHeight(null, 720);
 
     expect(hls.autoLevelCapping).toBe(1);
-    expect(hls.loadLevel).toBe(-1);
-    expect(hls.nextLevel).toBe(-1);
+    expect(hls.loadLevel).toBeLessThanOrEqual(1);
+    expect(hls.loadLevel).not.toBe(-1);
+    expect(hls.nextLevel).toBe(hls.loadLevel);
   });
 
-  it("applies the canonical Higher Quality target to the hls.js ABR cap", () => {
+  it("drives the canonical Higher Quality target rather than only capping", () => {
     setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
     const video = createVideo("");
     vi.spyOn(video, "getBoundingClientRect").mockReturnValue({
@@ -357,9 +377,390 @@ describe("videoSource", () => {
     attachment.adaptiveController?.setQualityHeight(
       null,
       higher?.height ?? null,
+      "higher-resolution",
     );
     expect(hls.autoLevelCapping).toBe(4);
-    expect(hls.loadLevel).toBe(-1);
-    expect(hls.nextLevel).toBe(-1);
+    /*
+     * Higher Quality has to reach the rung above the anchor. Expressed only as
+     * a cap it never did: on the iPad the cap sat five rungs up while hls.js
+     * kept choosing the bottom one, so the mode did nothing at all.
+     */
+    expect(hls.loadLevel).toBe(4);
+    expect(hls.nextLevel).toBe(4);
+  });
+});
+
+describe("shouldUseManagedHdrFallback", () => {
+  const withWindow = (
+    overrides: { managed?: boolean; hdrDisplay?: boolean },
+    run: () => void,
+  ) => {
+    const managedDescriptor = Object.getOwnPropertyDescriptor(
+      window,
+      "ManagedMediaSource",
+    );
+    const originalMatchMedia = window.matchMedia;
+    if (overrides.managed) {
+      Object.defineProperty(window, "ManagedMediaSource", {
+        value: class {},
+        configurable: true,
+      });
+    } else {
+      Reflect.deleteProperty(window as object, "ManagedMediaSource");
+    }
+    window.matchMedia = ((query: string) =>
+      ({
+        matches:
+          query.includes("dynamic-range: high") && overrides.hdrDisplay === true,
+      }) as MediaQueryList) as typeof window.matchMedia;
+    try {
+      run();
+    } finally {
+      Reflect.deleteProperty(window as object, "ManagedMediaSource");
+      if (managedDescriptor) {
+        Object.defineProperty(window, "ManagedMediaSource", managedDescriptor);
+      }
+      window.matchMedia = originalMatchMedia;
+    }
+  };
+
+  it("diverts an HDR-only package on a display that cannot present HDR", () => {
+    withWindow({ managed: true, hdrDisplay: false }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: true })).toBe(true);
+    });
+  });
+
+  it("leaves a package that has an SDR rung on the native path", () => {
+    withWindow({ managed: true, hdrDisplay: false }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: false })).toBe(false);
+    });
+  });
+
+  it("leaves an HDR display on the native path so AirPlay survives", () => {
+    withWindow({ managed: true, hdrDisplay: true }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: true })).toBe(false);
+    });
+  });
+
+  it("does not divert when ManagedMediaSource is unavailable", () => {
+    withWindow({ managed: false, hdrDisplay: false }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: true })).toBe(false);
+    });
+  });
+
+  it("re-reads the display each time rather than caching a verdict", () => {
+    withWindow({ managed: true, hdrDisplay: false }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: true })).toBe(true);
+    });
+    // Same package, HDR display attached: the answer has to change.
+    withWindow({ managed: true, hdrDisplay: true }, () => {
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: true })).toBe(false);
+    });
+  });
+});
+
+describe("isBandwidthFalling", () => {
+  const series = (values: number[], step = 2000) =>
+    values.map((bps, index) => ({ at: index * step, bps }));
+  const now = (values: number[], step = 2000) => (values.length - 1) * step;
+
+  it("reads a healthy, stable link as not falling", () => {
+    const samples = [5_000_000, 5_100_000, 4_900_000, 5_000_000];
+    expect(isBandwidthFalling(series(samples), now(samples))).toBe(false);
+  });
+
+  it("reads a recovering link as not falling", () => {
+    const samples = [1_000_000, 2_000_000, 4_000_000, 6_000_000];
+    expect(isBandwidthFalling(series(samples), now(samples))).toBe(false);
+  });
+
+  it("reads a sharp collapse as falling", () => {
+    const samples = [8_000_000, 6_000_000, 3_000_000, 1_000_000];
+    expect(isBandwidthFalling(series(samples), now(samples))).toBe(true);
+  });
+
+  it("does not read the jitter of a low rung as a collapse", () => {
+    // What a 144p rung actually measures on an idle LAN: ~120 kB fragments
+    // that land in milliseconds, so the estimate is mostly overhead and wobbles
+    // without the link changing at all. Calling this a collapse would re-trap
+    // the session on the bottom rung, which is what the probe exists to undo.
+    const samples = [950_000, 880_000, 800_000, 900_000];
+    expect(isBandwidthFalling(series(samples), now(samples))).toBe(false);
+  });
+
+  it("does not read a mild decline as meaningful", () => {
+    const samples = [4_000_000, 3_600_000, 3_200_000, 3_000_000];
+    expect(isBandwidthFalling(series(samples), now(samples))).toBe(false);
+  });
+
+  it("needs more than a reading or two before it claims a direction", () => {
+    expect(
+      isBandwidthFalling(
+        [
+          { at: 0, bps: 8_000_000 },
+          { at: 2000, bps: 500_000 },
+        ],
+        2000,
+      ),
+    ).toBe(false);
+  });
+
+  it("forgets a peak that has aged out of the window", () => {
+    // A link that dropped a minute ago and has been steady since is not
+    // falling now, and must not be held down by its own history.
+    expect(
+      isBandwidthFalling(
+        [
+          { at: 0, bps: 8_000_000 },
+          { at: 60_000, bps: 1_000_000 },
+          { at: 62_000, bps: 1_050_000 },
+          { at: 64_000, bps: 1_000_000 },
+        ],
+        64_000,
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("the adaptive buffer probe", () => {
+  beforeEach(() => {
+    hlsMock.instances.length = 0;
+    hlsMock.isSupported.mockReturnValue(true);
+  });
+
+  const LADDER = [
+    { width: 256, height: 144, bitrate: 180_000 },
+    { width: 426, height: 240, bitrate: 350_000 },
+    { width: 640, height: 360, bitrate: 700_000 },
+    { width: 854, height: 480, bitrate: 1_400_000 },
+    { width: 1280, height: 720, bitrate: 3_000_000 },
+    { width: 1920, height: 1080, bitrate: 5_500_000 },
+  ];
+
+  /**
+   * A session already playing in Auto with a comfortable forward buffer and no
+   * stalls — the state in which the probe is the only thing that can climb.
+   */
+  function playingInAuto(estimateBps: number) {
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const video = createVideo("");
+    vi.spyOn(video, "getBoundingClientRect").mockReturnValue({
+      height: 400,
+    } as DOMRect);
+    let bufferedAhead = 12;
+    Object.defineProperty(video, "buffered", {
+      configurable: true,
+      get: () =>
+        ({
+          length: 1,
+          start: () => 0,
+          end: () => bufferedAhead,
+        }) as unknown as TimeRanges,
+    });
+
+    let clock = 0;
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => clock);
+
+    const attachment = attachSourceToVideo(
+      video,
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [...LADDER];
+    hls.bandwidthEstimate = estimateBps;
+    hls.trigger("manifestParsed", {});
+    attachment.adaptiveController?.setQualityHeight(null, null, "auto");
+
+    return {
+      hls,
+      dateNow,
+      /** The forward buffer collapses to nothing worth arguing about. */
+      starveBuffer() {
+        bufferedAhead = 2;
+      },
+      /** hls.js reports that the play head has nothing left to play. */
+      stall() {
+        hls.trigger("error", {
+          fatal: false,
+          details: "bufferStalledError",
+        });
+      },
+      /** One fragment lands: the clock moves and the policy reconsiders. */
+      tick(estimate: number) {
+        clock += 2000;
+        hls.bandwidthEstimate = estimate;
+        hls.trigger("hlsFragBuffered", {});
+      },
+    };
+  }
+
+  it("still climbs out of a low rung whose estimate is only small fragments", () => {
+    // The anti-trap case: 900 kbps is what the bottom of the ladder measures,
+    // not what the link can do, and the full buffer is the evidence for that.
+    const session = playingInAuto(900_000);
+    expect(session.hls.loadLevel).toBe(1);
+
+    // Six seconds of healthy buffer is enough to earn the climb. The pace is
+    // the point: a viewer reads a rung that arrives a minute later as the
+    // player being stuck, not as caution.
+    for (const estimate of [880_000, 920_000, 900_000]) session.tick(estimate);
+
+    // One rung above what the estimate alone would ever have justified.
+    expect(session.hls.loadLevel).toBe(2);
+    expect(session.hls.nextLevel).toBe(2);
+    session.dateNow.mockRestore();
+  });
+
+  it("stands aside once the estimate is genuinely collapsing", () => {
+    // Same buffer, same absence of stalls, same starting rung — only the
+    // direction of the estimate differs. Seen on the iPad as a climb to
+    // 1280 wide at 62 s during a 350 kbps throttle, corrected 12 s later.
+    const session = playingInAuto(900_000);
+    expect(session.hls.loadLevel).toBe(1);
+
+    for (const estimate of [800_000, 500_000, 300_000, 250_000, 250_000, 240_000]) {
+      session.tick(estimate);
+    }
+
+    // The rung the collapsing link justifies, and no exploratory climb above it.
+    expect(session.hls.loadLevel).toBe(0);
+    expect(session.hls.nextLevel).toBe(0);
+    session.dateNow.mockRestore();
+  });
+
+  it("keeps a probed rung long enough for it to be measured", () => {
+    // The probe is taken *because* the reading is wrong, so the same reading
+    // cannot be what overturns it a second later. Without the grace the two
+    // argue every tick and the picture flickers between two rungs.
+    const session = playingInAuto(900_000);
+    for (const estimate of [880_000, 920_000, 900_000]) session.tick(estimate);
+    const probed = session.hls.loadLevel;
+    expect(probed).toBe(2);
+
+    // Same stale reading, healthy buffer, no stalls: the climb stands.
+    for (let index = 0; index < 3; index += 1) session.tick(900_000);
+    expect(session.hls.loadLevel).toBeGreaterThanOrEqual(probed);
+    session.dateNow.mockRestore();
+  });
+
+  it("gives up a probed rung at once when the buffer stops backing it", () => {
+    const session = playingInAuto(900_000);
+    for (const estimate of [880_000, 920_000, 900_000]) session.tick(estimate);
+    expect(session.hls.loadLevel).toBe(2);
+
+    // The buffer was the whole case for the climb. Once it is gone the grace
+    // is over, whatever the clock says.
+    session.starveBuffer();
+    session.tick(900_000);
+    expect(session.hls.loadLevel).toBe(1);
+    session.dateNow.mockRestore();
+  });
+
+  it("steps down on a starved stall instead of waiting for the estimate", () => {
+    // A stall means the fragment in flight is not arriving, and the estimate
+    // cannot say so — it only moves when a fragment finishes. Driving the
+    // level explicitly also switches off hls.js's own abandon-and-retry, so
+    // nothing else will give that fragment up either. Measured on the iPad,
+    // a link that went away left the session on 1080p until the loader timed
+    // out about a minute later.
+    const session = playingInAuto(20_000_000);
+    const started = session.hls.loadLevel;
+    expect(started).toBeGreaterThan(0);
+
+    session.starveBuffer();
+    session.stall();
+    expect(session.hls.loadLevel).toBe(started - 1);
+    // `nextLevel` is what abandons the fragment that is not arriving.
+    expect(session.hls.nextLevel).toBe(started - 1);
+
+    // And the still-optimistic estimate must not climb straight back into it.
+    session.tick(20_000_000);
+    session.tick(20_000_000);
+    expect(session.hls.loadLevel).toBe(started - 1);
+    session.dateNow.mockRestore();
+  });
+
+  it("carries the link's history across a manual rung and back", () => {
+    // A collapse that happens while the viewer is on a manual rung is still a
+    // collapse. Sampling only while Auto is in charge would hand the session an
+    // empty history at the moment it resumes deciding, and an empty history
+    // reads as steady — which is how a probe climbs straight into a dead link.
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const video = createVideo("");
+    vi.spyOn(video, "getBoundingClientRect").mockReturnValue({
+      height: 400,
+    } as DOMRect);
+    Object.defineProperty(video, "buffered", {
+      configurable: true,
+      get: () =>
+        ({ length: 1, start: () => 0, end: () => 12 }) as unknown as TimeRanges,
+    });
+    let clock = 0;
+    const dateNow = vi.spyOn(Date, "now").mockImplementation(() => clock);
+
+    const attachment = attachSourceToVideo(
+      video,
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [...LADDER];
+    hls.bandwidthEstimate = 8_000_000;
+    hls.trigger("manifestParsed", {});
+
+    const tick = (estimate: number) => {
+      clock += 2000;
+      hls.bandwidthEstimate = estimate;
+      hls.trigger("hlsFragBuffered", {});
+    };
+
+    // Locked to the bottom rung while the link falls away underneath it.
+    attachment.adaptiveController?.setQualityHeight(144, 144);
+    expect(hls.loadLevel).toBe(0);
+    for (const estimate of [8_000_000, 3_000_000, 1_000_000, 400_000]) {
+      tick(estimate);
+    }
+
+    attachment.adaptiveController?.setQualityHeight(null, null, "auto");
+    expect(hls.loadLevel).toBe(0);
+
+    // Auto is back and the buffer is deep, but the link is visibly on its way
+    // down, so the probe stays where it is.
+    for (let index = 0; index < 3; index += 1) tick(400_000);
+    expect(hls.loadLevel).toBe(0);
+
+    // Once the collapse has aged out and the reading has held steady, the
+    // ordinary anti-trap climb is available again.
+    let highest = 0;
+    for (let index = 0; index < 10; index += 1) {
+      tick(400_000);
+      highest = Math.max(highest, hls.loadLevel);
+    }
+    expect(highest).toBeGreaterThan(0);
+    dateNow.mockRestore();
+  });
+
+  it("resumes climbing once a collapsed link has steadied again", () => {
+    const session = playingInAuto(900_000);
+    for (const estimate of [800_000, 500_000, 300_000, 250_000]) {
+      session.tick(estimate);
+    }
+    expect(session.hls.loadLevel).toBe(0);
+
+    // Steady again at the same low reading: the direction is what changed.
+    // The reading never improves here because the test pins it, so the climb
+    // is given up again and retried; what matters is that it is attempted at
+    // all, which is what a falling reading forbids.
+    let highest = 0;
+    for (let index = 0; index < 8; index += 1) {
+      session.tick(250_000 + (index % 2) * 10_000);
+      highest = Math.max(highest, session.hls.loadLevel);
+    }
+
+    expect(highest).toBeGreaterThan(0);
+    session.dateNow.mockRestore();
   });
 });

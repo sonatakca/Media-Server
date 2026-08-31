@@ -161,7 +161,10 @@ const LOW_DATA_MAX_HEIGHT = 1080;
 const HIGHER_QUALITY_MIN_HEIGHT = 720;
 const HIGHER_QUALITY_MAX_HEIGHT = 2160;
 
-type AutomaticQualityMode = Exclude<QualityPreferenceMode, "advanced">;
+export type AutomaticQualityMode = Exclude<
+  QualityPreferenceMode,
+  "advanced"
+>;
 
 export interface AdaptiveQualityRequest {
   /** A manual Advanced selection is an exact rendition lock. */
@@ -390,6 +393,50 @@ export function selectModeRungsFromAutoHeight<T extends RungLike>(
       resolvePlaybackQualityTarget(anchor.height, "higher-resolution"),
     ),
   };
+}
+
+/**
+ * The canonical rung class a decoded frame belongs to.
+ *
+ * A rung is named by its class (720p) while the frame it produces is whatever
+ * the source's shape gives — a 2.39:1 master's "720p" rung is 1280x536, and
+ * its "2160p" rung is 3840x1608. Matching on frame height alone therefore
+ * files every letterboxed rung one or two classes too low, which is how a
+ * ladder of cinema heights turns "one step above Auto" into "the rung Auto
+ * already chose".
+ *
+ * Width recovers the class for letterboxed content and height recovers it for
+ * pillarboxed content, so the larger of the two is the one that reflects the
+ * class the encoder meant. The result is snapped to the canonical ladder so
+ * every downstream comparison happens in the same vocabulary.
+ */
+export function canonicalRungClass(width: number, height: number): number {
+  const fromWidth = width > 0 ? (width * 9) / 16 : 0;
+  const candidate = Math.max(fromWidth, height > 0 ? height : 0);
+  if (!(candidate > 0)) return height;
+  return AUTO_QUALITY_LEVELS.reduce((best, level) =>
+    Math.abs(level - candidate) < Math.abs(best - candidate) ? level : best,
+  );
+}
+
+/**
+ * The one rung an automatic mode wants right now.
+ *
+ * Every automatic mode resolves through here so Auto, Low Data and Higher
+ * Quality cannot disagree about the same connection: they are the anchor and
+ * its two bounded canonical neighbours, nothing more. Transport belongs to the
+ * caller — this answers only "which rung", so the native and hls.js paths can
+ * share one policy instead of each growing its own.
+ */
+export function selectAdaptiveTargetRung<T extends RungLike>(
+  qualities: readonly T[],
+  mode: AutomaticQualityMode,
+  context: ModeSelectionContext = {},
+): T | undefined {
+  const { anchor, lowData, higher } = selectModeRungs(qualities, context);
+  if (mode === "low-data") return lowData ?? anchor;
+  if (mode === "higher-resolution") return higher ?? anchor;
+  return anchor;
 }
 
 export function selectLowDataRung<T extends RungLike>(
