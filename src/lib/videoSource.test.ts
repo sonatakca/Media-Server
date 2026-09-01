@@ -21,6 +21,13 @@ const hlsMock = vi.hoisted(() => ({
     audioTracks: Array<{ name: string; url?: string }>;
     levels: Array<{ width: number; height: number; bitrate: number }>;
     bandwidthEstimate: number;
+    config: {
+      xhrSetup?: (xhr: XMLHttpRequest, url: string) => void;
+      fetchSetup?: (
+        context: { url: string },
+        initParams: RequestInit,
+      ) => Request;
+    };
     trigger: (event: string, data?: unknown) => void;
   }>,
   isSupported: vi.fn(() => true),
@@ -72,7 +79,10 @@ vi.mock("hls.js", () => {
       this.handlers.get(event)?.forEach((handler) => handler(event, data));
     }
 
-    constructor() {
+    config: Record<string, unknown>;
+
+    constructor(config: Record<string, unknown> = {}) {
+      this.config = config;
       hlsMock.instances.push(this);
     }
   }
@@ -121,6 +131,31 @@ describe("videoSource", () => {
     expect(hlsMock.instances).toHaveLength(1);
     expect(hlsMock.instances[0]?.loadSource).toHaveBeenCalledWith(url);
     expect(hlsMock.instances[0]?.attachMedia).toHaveBeenCalledWith(video);
+  });
+
+  it("sends the session cookie with every hls.js request", () => {
+    setUserAgent(
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+    );
+    const video = createVideo("maybe");
+
+    attachSourceToVideo(
+      video,
+      "http://media.example.test/ownAPI/v1/playback/renditions/abc/adaptive/def/.seyirlik/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+
+    const config = hlsMock.instances[0]?.config;
+    const xhr = { withCredentials: false } as XMLHttpRequest;
+
+    config?.xhrSetup?.(xhr, "http://media.example.test/master.m3u8");
+    expect(xhr.withCredentials).toBe(true);
+
+    const request = config?.fetchSetup?.(
+      { url: "http://media.example.test/master.m3u8" },
+      { method: "GET" },
+    );
+    expect(request?.credentials).toBe("include");
   });
 
   it("forwards HLS buffered and fatal events to attempt-aware callbacks", () => {

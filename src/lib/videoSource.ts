@@ -1,4 +1,4 @@
-import Hls from "hls.js";
+import Hls, { type LoaderContext } from "hls.js";
 
 import {
   type AutomaticQualityMode,
@@ -440,6 +440,25 @@ export function attachSourceToVideo(
        */
       abrEwmaSlowVoD: 6.0,
       abrBandWidthUpFactor: 0.8,
+      /*
+       * Every request hls.js makes — multivariant playlist, media playlists,
+       * init and media segments — is authorised by the same session cookie as
+       * the rest of the own-API, and in the split deployment the media origin
+       * (`VITE_OWN_API_BASE_URL`) is a different host from the page. A media
+       * element attaches that cookie to its own requests without being asked;
+       * an XHR or a fetch does not, so without this every hls.js playback
+       * answered 401 at the very first manifest load. The same omission was
+       * already found and fixed once in the manifest preload.
+       *
+       * Both hooks are set because the loader is a config choice, not a fixed
+       * one: `xhrSetup` covers the default XhrLoader and `fetchSetup` the
+       * FetchLoader that a progressive or overridden config selects instead.
+       */
+      xhrSetup: (xhr: XMLHttpRequest) => {
+        xhr.withCredentials = true;
+      },
+      fetchSetup: (context: LoaderContext, initParams: RequestInit) =>
+        new Request(context.url, { ...initParams, credentials: "include" }),
     });
     let lockedHeight: number | null = null;
     let maximumHeight: number | null = requestedMaxHeight;
