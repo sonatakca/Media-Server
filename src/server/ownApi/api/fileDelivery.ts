@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 import type { ServerResponse } from "node:http";
+import type { Readable } from "node:stream";
 import { OwnApiError } from "../ownApiHandler";
 
 /**
@@ -114,14 +115,68 @@ export async function serveFile(
     return;
   }
 
-  await new Promise<void>((resolve, reject) => {
-    const stream = createReadStream(
+  await streamToResponse(
+    createReadStream(
       absolutePath,
       range ? { start: range.start, end: range.end } : undefined,
-    );
-    // A client that seeks away aborts the response; that is normal, not an error.
-    response.on("close", () => stream.destroy());
-    stream.on("error", reject);
-    stream.pipe(response).on("finish", resolve).on("error", reject);
+    ),
+    response,
+  );
+}
+
+/**
+ * Errors that mean "the client is gone", not "the server failed".
+ *
+ * A player that seeks, a tab that closes, a phone that leaves the network: all
+ * of them tear down the socket mid-body, and the tear-down surfaces as one of
+ * these. None is a fault of ours and none should be reported as one.
+ */
+function isClientDisconnect(error: unknown): boolean {
+  const code = (error as NodeJS.ErrnoException | null)?.code;
+  return (
+    code === "ECONNRESET" ||
+    code === "EPIPE" ||
+    code === "ERR_STREAM_PREMATURE_CLOSE" ||
+    code === "ERR_STREAM_DESTROYED" ||
+    code === "ERR_STREAM_WRITE_AFTER_END" ||
+    code === "ECANCELED"
+  );
+}
+
+/**
+ * Sends a stream to a response and settles exactly once.
+ *
+ * This used to be `stream.pipe(response)` with `reject` wired to both ends, and
+ * that is how a routine aborted seek killed the whole server: the rejection
+ * travelled out of an async request handler nothing was awaiting, which Node
+ * treats as an unhandled rejection and ends the process for. An abort is the
+ * normal end of a byte range, so it resolves; only a real read failure rejects,
+ * and the read stream is destroyed either way so no descriptor is left behind.
+ */
+export function streamToResponse(
+  stream: Readable,
+  response: ServerResponse,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    let settled = false;
+
+    const settle = (error?: unknown): void => {
+      if (settled) return;
+      settled = true;
+      stream.destroy();
+      if (error && !isClientDisconnect(error)) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+        return;
+      }
+      resolve();
+    };
+
+    stream.on("error", settle);
+    response.on("error", settle);
+    // Fires both when the body has been delivered and when the client walked
+    // away part-way through; either way there is nothing left to send.
+    response.on("close", () => settle());
+    response.on("finish", () => settle());
+    stream.pipe(response);
   });
 }

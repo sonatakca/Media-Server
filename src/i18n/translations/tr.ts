@@ -726,6 +726,39 @@ export const tr = {
   "devtools.card.libraryMaintenance.description":
     "Kütüphaneleri tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "devtools.card.libraryMaintenance.tag": "Bakım",
+  "devtools.card.serverControl.title": "Sunucu Denetimi",
+  "devtools.card.serverControl.description":
+    "Medya sunucusunu yeniden başlat ve yanıt vermeye başlayınca uygulamayı yeniden yükle.",
+  "devtools.card.serverControl.tag": "Yaşam Döngüsü",
+  "serverControl.eyebrow": "Sunucu",
+  "serverControl.title": "Sunucu Denetimi",
+  "serverControl.description":
+    "Medya sunucusu sürecini durdurup başlatır. Süren oynatmalar sona erer ve izleyen herkesin baştan başlaması gerekir.",
+  "serverControl.loading": "Sunucu durumu okunuyor",
+  "serverControl.loadFailed": "Sunucu durumu okunamadı.",
+  "serverControl.statusUnavailable": "Sunucu durumu okunamadı",
+  "serverControl.restart.title": "Sunucuyu yeniden başlat",
+  "serverControl.restart.description":
+    "Yalnızca başlangıçta etkili olan yapılandırma veya kod değişikliklerini uygular. Bu sayfa sunucunun dönmesini bekler ve ardından kendini yeniden yükler.",
+  "serverControl.restart.action": "Sunucuyu yeniden başlat",
+  "serverControl.mode.respawn": "Kendi yerine geçeni başlatır",
+  "serverControl.mode.supervisor": "Yöneticisi tarafından başlatılır",
+  "serverControl.mode.disabled": "Yeniden başlatma kullanılamıyor",
+  "serverControl.unavailable":
+    "Bu sunucu kendini yeniden başlatacak şekilde yapılandırılmamış. SEYIRLIK_RESTART_MODE değerini respawn yapın; süreci sizin için systemd, Docker veya pm2 yeniden başlatıyorsa supervisor yapın.",
+  "serverControl.confirm.question": "Sunucu şimdi yeniden başlatılsın mı?",
+  "serverControl.confirm.consequence":
+    "Etkin tüm yayınlar durur, süren görevler kesilir ve sonraki başlangıçta kaldığı yerden devam eder, uygulamaya birkaç saniye erişilemez.",
+  "serverControl.confirm.accept": "Evet, yeniden başlat",
+  "serverControl.confirm.cancel": "Vazgeç",
+  "serverControl.progress.stopping": "Sunucu durduruluyor",
+  "serverControl.progress.starting": "Sunucunun dönmesi bekleniyor",
+  "serverControl.progress.ready": "Sunucu döndü; yeniden yükleniyor",
+  "serverControl.progress.hint":
+    "Bu sayfayı açık tutun. Kendiliğinden yeniden yüklenecek.",
+  "serverControl.requestFailed": "Yeniden başlatma isteği gönderilemedi.",
+  "serverControl.timedOut":
+    "Sunucu zamanında dönmedi. Yeniden denemeden önce terminali veya servis günlüklerini kontrol edin.",
   "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
   "devtools.card.tmdbArtwork.description":
     "Film, dizi ve kitaplar için TMDB görsellerini seçin veya özel kapak, arka plan ve logo yükleyin.",

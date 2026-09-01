@@ -172,7 +172,17 @@ export function createStorageWatchdog({
     poll,
     start() {
       if (timer) return;
-      timer = setInterval(() => void poll(), intervalMs);
+      // A poll that throws — a root that vanished mid-`stat`, a database that
+      // blinked while jobs were being paused — must not reach the process as an
+      // unhandled rejection, which would end it. The next tick tries again.
+      timer = setInterval(() => {
+        void poll().catch((error) => {
+          console.warn(
+            "[Seyirlik] Storage check failed:",
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }, intervalMs);
       if (typeof timer.unref === "function") timer.unref();
     },
     stop() {

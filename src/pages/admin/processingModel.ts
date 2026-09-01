@@ -112,18 +112,14 @@ export function progressPercent(
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || !Number.isFinite(bytes))
     return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ["KiB", "MiB", "GiB", "TiB"];
-  let value = bytes / 1024;
-  let unit = 0;
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024;
-    unit += 1;
-  }
-  // One decimal at every scale: comparing an estimate against an actual size
-  // is the whole point of showing both, and dropping the decimal above 100
-  // made two visibly different sizes render identically.
-  return `${value.toFixed(1)} ${units[unit]}`;
+  const safeBytes = Math.max(0, bytes);
+  if (safeBytes < 1_000) return `${Math.round(safeBytes)} B`;
+  if (safeBytes < 1_000_000) return `${(safeBytes / 1_000).toFixed(1)} KB`;
+
+  // Output figures deliberately stay in MB even when they cross a gigabyte.
+  // Actual and estimated output can then be compared digit-for-digit without
+  // mentally converting one row from GB while another is still in MB.
+  return `${(safeBytes / 1_000_000).toFixed(1)} MB`;
 }
 
 /** Duration in the shortest form that stays unambiguous. */

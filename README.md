@@ -22,6 +22,7 @@ media server being installed.
 - [Laying out your library](#laying-out-your-library)
 - [Running it](#running-it)
 - [Development](#development)
+- [NFO export](#nfo-export)
 - [Renditions](#renditions)
 - [Security model](#security-model)
 - [Further reading](#further-reading)
@@ -89,9 +90,9 @@ media server being installed.
      ┌─────┴──────┬──────────────┬──────────────┐
      ▼            ▼              ▼              ▼
  PostgreSQL   media root   generated storage   TMDB
- catalogue,   (read-only   (artwork cache,     (optional
- users,       source of    trickplay,          metadata)
- progress     truth)       transcode temp)
+ catalogue,   (media and   (artwork cache,     (optional
+ users,       NFO source   trickplay,          metadata)
+ progress     of truth)    transcode temp)
            ▲
            │
 ┌──────────┴──────────┐
@@ -110,13 +111,35 @@ Two entry points share one runtime:
 
 Three storage locations, with different rules:
 
-- **The media root** is the source of truth and is treated as read-only.
-  Seyirlik never writes into it.
+- **The media root** is the source of truth. Playback, discovery, probing and
+  transcoding treat media files as read-only; only the two explicitly listed
+  features below write adjacent metadata or artwork.
 - **Generated storage** holds everything derived: cached artwork and its
   resized variants, trickplay sprites, and transcode scratch space. Safe to
   delete; it will be rebuilt.
 - **PostgreSQL** holds the catalogue, users, sessions, watch progress, and the
   job queue.
+
+### What may write to the media root
+
+Two narrowly scoped features write there, and both are named here rather than
+left to be discovered from a diff:
+
+| Feature                | Writes                          | Default | How to turn it off                      |
+| ---------------------- | ------------------------------- | ------- | --------------------------------------- |
+| Title-owned artwork    | `<Title>/content/cover.jpg` and | **on**  | Leave `SEYIRLIK_TMDB_API_KEY` unset, or |
+|                        | `backdrop.jpg`, `logo.png`      |         | do not use the artwork admin pages      |
+| NFO export (`sidecar`) | `movie.nfo`, `tvshow.nfo`,      | **on**  | Set `SEYIRLIK_NFO_EXPORT=disabled`      |
+|                        | `season.nfo`, `<episode>.nfo`   |         |                                         |
+
+Artwork writes are long-standing behaviour: a cover placed in the title's own
+`content/` folder travels with the title when it is moved or backed up, which a
+hash-named cache file does not. NFO sidecars are generated during scans by
+default and use managed-only replacement, so files from another application or
+a person are preserved.
+
+Everything else — trickplay, variants, renditions, transcode scratch — stays on
+generated storage.
 
 The client is a React app under `src/`, split into `pages/desktop` and
 `pages/mobile` where the two need to differ. Shared logic lives in `src/lib`,
@@ -191,6 +214,7 @@ Everything is read from the environment. Only `DATABASE_URL` and
 | `SEYIRLIK_HOST`              | `127.0.0.1`    | Listen address. Set to `0.0.0.0` to accept connections from other machines. |
 | `SEYIRLIK_PORT`              | `43110`        | Listen port.                                                                |
 | `SEYIRLIK_DATABASE_POOL_MAX` | driver default | Maximum pooled connections.                                                 |
+| `SEYIRLIK_RUN_WORKER`        | `true`         | Whether this process also runs background jobs. See "Running it".           |
 
 ### Networking and cookies
 
@@ -210,6 +234,36 @@ Everything is read from the environment. Only `DATABASE_URL` and
 | `SEYIRLIK_FFMPEG_VIDEO_ENCODER`       | auto              | Force a specific video encoder.                                       |
 | `SEYIRLIK_MAX_VIDEO_TRANSCODES`       | bounded           | Concurrent transcode ceiling.                                         |
 | `SEYIRLIK_SOFTWARE_TRANSCODE_THREADS` | auto              | Thread count for software transcoding.                                |
+
+### Restarting
+
+| Variable                | Default                                             | Purpose                                                              |
+| ----------------------- | --------------------------------------------------- | -------------------------------------------------------------------- |
+| `SEYIRLIK_RESTART_MODE` | `respawn`, or `supervisor` under systemd or launchd | How the server comes back after the Server Control page restarts it. |
+
+`respawn` makes the process start its own replacement, which is what a bare
+`npm run server` needs. Set `supervisor` when Docker or pm2 restarts the
+process for you — under those, respawning would put two servers on one port.
+systemd and launchd are detected on their own, through `INVOCATION_ID` and
+`XPC_SERVICE_NAME`. `disabled` turns the endpoints off, and the page says so
+rather than failing on the button.
+
+Under a supervisor, check that its restart policy covers a _clean_ exit. A
+restart requested from the Server Control page ends the process with status 0,
+so a policy of "restart only after a failure" — launchd's
+`KeepAlive: {SuccessfulExit: false}`, Docker's `on-failure` — reads that as a
+deliberate stop and leaves the server down.
+
+### NFO export
+
+Sidecar generation runs during scans by default. Set the mode to `disabled` for
+an explicit opt-out.
+
+| Variable                             | Default        | Purpose                                                                  |
+| ------------------------------------ | -------------- | ------------------------------------------------------------------------ |
+| `SEYIRLIK_NFO_EXPORT`                | `sidecar`      | Scan output: `disabled`, `preview`, `generated`, or `sidecar`.           |
+| `SEYIRLIK_NFO_OVERWRITE`             | `managed-only` | `force` also replaces .nfo files Seyirlik did not write.                 |
+| `SEYIRLIK_NFO_ARR_MANAGED_LIBRARIES` | none           | Library slugs a Radarr/Sonarr instance owns; never exported to natively. |
 
 ### Libraries
 
@@ -289,12 +343,43 @@ The server speaks plain HTTP and expects to sit behind a reverse proxy that
 terminates TLS. Set `SEYIRLIK_PUBLIC_ORIGIN` to the origin browsers actually
 use so cookies and CORS line up.
 
-To move scanning and probing off the machine serving playback, point a second
-process at the same database and media root:
+### Splitting the worker out
+
+By default one process does everything, which is the right shape for one
+machine. Scanning, probing and encoding can be moved into a process of their
+own instead — on the same machine or another one — by pointing it at the same
+database and media root:
 
 ```bash
-npm run worker
+SEYIRLIK_RUN_WORKER=false npm run server   # serves the site and the API
+npm run worker                             # scans, probes and encodes
 ```
+
+`SEYIRLIK_RUN_WORKER=false` is the half that matters: without it the API
+process keeps its own worker and both halves claim from the same queue.
+
+The two never talk to each other directly; they meet in the job queue in
+PostgreSQL, and a job survives either one restarting. That is the point of the
+split — restarting the site from the Server Control page no longer abandons an
+encode half-way through, and an encoder that wedges no longer takes playback
+with it.
+
+### Running as a service
+
+`deploy/` holds a launchd job for each half, and the comments in them explain
+the two settings that are easy to get wrong: run the Node binary rather than
+`npm`, so the process the supervisor watches is the server itself and cannot be
+orphaned holding the port, and keep the process alive after a clean exit, so
+the restart button comes back.
+
+```bash
+cp deploy/org.seyirlik.server.plist ~/Library/LaunchAgents/
+cp deploy/org.seyirlik.worker.plist ~/Library/LaunchAgents/   # only if splitting
+launchctl bootout gui/$UID/org.seyirlik.server 2>/dev/null
+launchctl bootstrap gui/$UID ~/Library/LaunchAgents/org.seyirlik.server.plist
+```
+
+Both write to `~/Library/Logs/Seyirlik/`.
 
 ### Maintenance commands
 
@@ -349,6 +434,91 @@ docs/             architecture notes
 
 ---
 
+## NFO export
+
+Seyirlik writes Kodi/Jellyfin-compatible `.nfo` sidecars from its catalogue as
+the final stage of every library scan, so a library stays readable by another
+program — or by a person with a text editor — without Seyirlik running. The
+catalogue is the source of truth; an `.nfo` is an output of a scan, not an input
+to it.
+
+### The four modes
+
+```
+SEYIRLIK_NFO_EXPORT=disabled    explicit opt-out; nothing is generated
+SEYIRLIK_NFO_EXPORT=preview     XML through the API only; no file is written
+SEYIRLIK_NFO_EXPORT=generated   files under SEYIRLIK_GENERATED_STORAGE/nfo/
+SEYIRLIK_NFO_EXPORT=sidecar     files beside the media              (default)
+```
+
+`preview` and `generated` never touch the media root. `generated` mirrors the
+media layout under generated storage, so you can read the output, diff it, or
+rsync it into place yourself before committing to anything.
+
+`sidecar` is part of the media-root write policy: scans may create or update
+Seyirlik-managed NFO files beside media. Set `SEYIRLIK_NFO_EXPORT=disabled` to
+keep scans read-only with respect to NFO metadata.
+
+### What is written where
+
+| Item    | File                       | Root element       |
+| ------- | -------------------------- | ------------------ |
+| Movie   | `movie.nfo` in the folder  | `<movie>`          |
+| Series  | `tvshow.nfo` in the folder | `<tvshow>`         |
+| Season  | `season.nfo` in the folder | `<season>`         |
+| Episode | `<video stem>.nfo`         | `<episodedetails>` |
+
+A movie with several versions in one folder also gets a `.nfo` named after each
+video file, because one `movie.nfo` cannot describe two different resolutions.
+Books, collections and trailers are not exported.
+
+Output is UTF-8 with an XML declaration, every value escaped, and deterministic:
+unchanged metadata produces byte-identical output, so re-running an export
+rewrites nothing and changes no modification times.
+
+### Existing files are never overwritten
+
+The default overwrite policy is `managed-only`. Seyirlik writes a marker comment
+into the files it generates, and replaces **only** files carrying that marker.
+A legacy Jellyfin, Radarr, Sonarr, Kodi or hand-written `.nfo` is reported as a
+conflict and left exactly as it is. So is anything at the path that is not a
+regular file, and any path that resolves through a symlink out of the export
+root.
+
+An administrator can override that per request with `{"force": true}` on an
+export endpoint, or globally with `SEYIRLIK_NFO_OVERWRITE=force`. Nothing is
+ever deleted; an `.nfo` that stops being generated stays where it is.
+
+### Running an export
+
+```bash
+# What would be written for one item, and what is already there.
+curl --cookie … https://seyirlik.example/ownAPI/v1/admin/items/<itemId>/nfo/preview
+
+# Queue an export. Both return 202 with a task id to poll on /admin/tasks/:id.
+curl -X POST … /ownAPI/v1/admin/items/<itemId>/nfo/export
+curl -X POST … /ownAPI/v1/admin/libraries/<libraryId>/nfo/export
+```
+
+Both manual operations run as background jobs — `nfo.export.item` and
+`nfo.export.library` — which deduplicate, report progress, and finish with counts
+of created, updated, unchanged, skipped-conflict and failed files, plus a bounded
+list of conflicting paths. Normal library scans run the same safe exporter
+directly before the scan task completes.
+
+### Alongside Radarr or Sonarr
+
+If a Radarr or Sonarr instance already writes `.nfo` files for a library, list
+that library's slug in `SEYIRLIK_NFO_ARR_MANAGED_LIBRARIES`. Seyirlik then never
+writes to it, whatever the mode says. Two programs managing the same file is not
+a conflict either can detect — both files look valid and the library churns.
+
+Seyirlik does not talk to Radarr or Sonarr. `src/server/ownApi/nfo/arrClient.ts`
+defines the interface a future adapter would implement and nothing constructs
+one.
+
+---
+
 ## Renditions
 
 Separate from live transcoding, Seyirlik can pre-encode a library into
@@ -385,8 +555,10 @@ to it.
   visibility of the item it belongs to.
 - Paths from the database and from requests are resolved against the media root
   before anything is opened, so a crafted relative path cannot escape it.
-- The media root is never written to. Everything generated goes to generated
-  storage.
+- The media root is read-only outside two documented features,
+  both listed under "What may write to the media root": title-owned artwork,
+  and scan-time NFO export in `sidecar` mode. Everything else generated goes to
+  generated storage.
 - TLS is the reverse proxy's job. Do not expose the server directly.
 
 ---

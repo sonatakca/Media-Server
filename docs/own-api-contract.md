@@ -229,6 +229,106 @@ The following is the target native surface. Endpoints are protected unless marke
 | GET    | `/images/:imageId`                       | Authorized cached image with cache headers |
 | GET    | `/items/:itemId/images/:imageType`       | Resolve current authorized item image      |
 
+### Server lifecycle
+
+| Method | Path                    | Purpose                                   |
+| ------ | ----------------------- | ----------------------------------------- |
+| GET    | `/admin/system/restart` | Whether a restart is available, and how   |
+| POST   | `/admin/system/restart` | Restart the server; `202` before shutdown |
+
+`GET` returns `{ "mode": "respawn" | "supervisor" | "disabled", "available":
+true, "inProgress": false }`. It succeeds even when restarts are unavailable, so
+a client can explain why rather than discovering it by pressing the button.
+
+`POST` answers `202` with `{ "status": "restarting", "mode": … }` **before** the
+server stops: the response has to reach the caller while the socket is still
+open, so the shutdown is scheduled behind a short grace period. A request while
+a restart is already under way is accepted again rather than rejected. When the
+mode is `disabled` the response is `409 RESTART_UNAVAILABLE`.
+
+A client that has sent the `POST` should wait for the server to stop answering
+`GET /health` and then to answer it again with `ready: true`, rather than
+reloading straight away — for a moment after the `202`, the old process is still
+healthy.
+
+### NFO export
+
+Library scans generate sidecars by default; these administrator-only endpoints
+preview or manually repeat the same safe export. See the README for modes and
+media-root storage policy.
+
+| Method | Path                                     | Purpose                                           |
+| ------ | ---------------------------------------- | ------------------------------------------------- |
+| GET    | `/admin/items/:itemId/nfo/preview`       | Generated XML and the path it would be written to |
+| POST   | `/admin/items/:itemId/nfo/export`        | Queue `nfo.export.item`; `202` with a task id     |
+| POST   | `/admin/libraries/:libraryId/nfo/export` | Queue `nfo.export.library`; `202` with a task id  |
+
+Both export endpoints accept an optional body of `{ "force": true }`, which is
+the only way to replace an .nfo that this server did not write — a legacy
+Jellyfin, Radarr, Sonarr or hand-authored file. Without it such a file is
+reported as a conflict and left untouched. An unknown body field is a `422`.
+
+A preview response describes one item:
+
+```json
+{
+  "data": {
+    "itemId": "…",
+    "kind": "movie",
+    "mode": "sidecar",
+    "overwritePolicy": "managed-only",
+    "destination": "media-root",
+    "files": [
+      {
+        "relativePath": "Movies/Dune (2021)/movie.nfo",
+        "xml": "<?xml version=\"1.0\" …",
+        "existing": "foreign",
+        "identical": false
+      }
+    ]
+  },
+  "requestId": "0190…"
+}
+```
+
+`mode` is one of `disabled`, `preview`, `generated`, `sidecar`; `destination` is
+`media-root`, `generated-storage`, or `none`. `existing` is `absent`, `managed`,
+`foreign`, or `unreadable`. A `skipped` field appears instead of files when the
+item cannot own an .nfo — `unsupported-kind`, `no-title-root`,
+`no-primary-file`, `no-season-directory` — or when a Radarr/Sonarr instance owns
+the library (`arr-managed`).
+
+Every path in an NFO response is relative to the export root. Absolute host
+paths are never returned, including in conflict reports.
+
+The task result for either export job carries the counts and a bounded conflict
+list:
+
+```json
+{
+  "created": 12,
+  "updated": 3,
+  "unchanged": 480,
+  "skippedConflict": 2,
+  "skippedNotApplicable": 9,
+  "failed": 0,
+  "mode": "sidecar",
+  "itemsConsidered": 506,
+  "conflicts": [
+    {
+      "itemId": "…",
+      "relativePath": "Movies/Dune (2021)/movie.nfo",
+      "reason": "foreign-file"
+    }
+  ],
+  "conflictsTruncated": false
+}
+```
+
+A conflict `reason` is `foreign-file`, `symlink`, `not-a-regular-file`,
+`unsafe-path`, or `outside-root`. The counts stay exact when
+`conflictsTruncated` is true.
+
 ### Playback and user state
 
 | Method   | Path                                                    | Purpose                                                        |

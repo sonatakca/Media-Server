@@ -138,12 +138,28 @@ export function createWorker({
       running = true;
       stopping = false;
 
+      /*
+       * The next pass is scheduled from a `finally`, so the loop survives
+       * whatever the last one hit. `tick` catches its own errors today, but a
+       * throw from anywhere else in here — a logger, a handler registry — used
+       * to stop background work for the lifetime of the process and reject
+       * into nothing, which Node ends the process for.
+       */
       const loop = async () => {
-        await tick();
-        if (!stopping) timer = setTimeout(loop, pollIntervalMs);
-        timer?.unref();
+        try {
+          await tick();
+        } finally {
+          if (!stopping) {
+            timer = setTimeout(loop, pollIntervalMs);
+            timer.unref();
+          }
+        }
       };
-      void loop();
+      void loop().catch((error) => {
+        logger?.error?.("job.loop.failed", {
+          message: sanitizeJobError(error),
+        });
+      });
     },
 
     async stop(): Promise<void> {

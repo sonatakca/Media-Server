@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Seyirlik's API and site process, supervised by launchd.
+
+  Two things here are deliberate and were both learned from outages:
+
+  * `ProgramArguments` runs node directly rather than `npm run server`. npm is
+    a wrapper that spawns a shell that spawns node, so the process launchd
+    watches is not the server: launchd's stop signal reaches the wrapper, the
+    wrapper exits, launchd calls the job dead and starts a replacement — while
+    the real server is still alive and still holding port 43110. The
+    replacement then fails to bind, exits, and is relaunched every ten seconds
+    for as long as the orphan lives.
+
+  * `KeepAlive` is unconditional. It used to be `SuccessfulExit: false`, which
+    means "restart only after a failure" — and a restart requested from the
+    Server Control page is a clean exit by design. Under the old key that
+    button stopped the server for good.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.seyirlik.server</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/node@22/bin/node</string>
+    <string>--env-file=.env</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>src/server/mediaServer.ts</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/sonat/Documents/Development/Media-Server</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <!-- Serving playback is interactive work; the default class lets macOS
+       throttle it alongside background housekeeping. -->
+  <key>ProcessType</key><string>Interactive</string>
+  <key>StandardOutPath</key><string>/Users/sonat/Library/Logs/Seyirlik/server.log</string>
+  <key>StandardErrorPath</key><string>/Users/sonat/Library/Logs/Seyirlik/server.log</string>
+</dict>
+</plist>

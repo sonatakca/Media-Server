@@ -564,7 +564,16 @@ export function CustomVideoPlayer({
   );
   const [hasKnownVideoDuration, setHasKnownVideoDuration] = useState(false);
 
-  const progress = usePlayerProgress(videoRef, deckEpoch);
+  const sourceDurationSeconds =
+    source.playbackDiagnostics?.media.durationSeconds ??
+    (typeof item.RunTimeTicks === "number" && item.RunTimeTicks > 0
+      ? item.RunTimeTicks / 10_000_000
+      : 0);
+  const progress = usePlayerProgress(
+    videoRef,
+    deckEpoch,
+    sourceDurationSeconds,
+  );
   const refreshProgress = progress.refresh;
 
   const hasValidVideoDuration =

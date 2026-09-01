@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Seyirlik's background work — scanning, probing, artwork, and every encode —
+  in a process of its own.
+
+  Install this alongside the server job and set `SEYIRLIK_RUN_WORKER=false` in
+  `.env`, and the two halves stop sharing a fate: restarting the site from the
+  Server Control page no longer abandons an encode half-way through, and an
+  encoder that wedges no longer takes playback down with it. They meet only in
+  the job queue in PostgreSQL, which is what carries a job across either one
+  restarting.
+
+  `ProcessType: Background` is the honest description of this job, and it is
+  also what keeps a long encode from competing with playback for the CPU.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>org.seyirlik.worker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/opt/node@22/bin/node</string>
+    <string>--env-file=.env</string>
+    <string>--import</string>
+    <string>tsx</string>
+    <string>src/server/mediaWorker.ts</string>
+  </array>
+  <key>WorkingDirectory</key><string>/Users/sonat/Documents/Development/Media-Server</string>
+  <key>EnvironmentVariables</key>
+  <dict><key>PATH</key><string>/opt/homebrew/opt/node@22/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string></dict>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>10</integer>
+  <key>ProcessType</key><string>Background</string>
+  <key>StandardOutPath</key><string>/Users/sonat/Library/Logs/Seyirlik/worker.log</string>
+  <key>StandardErrorPath</key><string>/Users/sonat/Library/Logs/Seyirlik/worker.log</string>
+</dict>
+</plist>

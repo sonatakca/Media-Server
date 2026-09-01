@@ -273,7 +273,10 @@ describe("event merging", () => {
 describe("formatting", () => {
   it("shows sizes an operator can compare at a glance", () => {
     expect(formatBytes(512)).toBe("512 B");
-    expect(formatBytes(1024 * 1024 * 125.4)).toBe("125.4 MiB");
+    expect(formatBytes(1_500)).toBe("1.5 KB");
+    expect(formatBytes(999_999)).toBe("1000.0 KB");
+    expect(formatBytes(125_400_000)).toBe("125.4 MB");
+    expect(formatBytes(10_000_000_000)).toBe("10000.0 MB");
     expect(formatBytes(null)).toBe("—");
   });
 

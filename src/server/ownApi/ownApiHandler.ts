@@ -182,6 +182,21 @@ function sendError(
   requestId: string,
   error: OwnApiError,
 ): void {
+  /*
+   * A failure part-way through a body has no error response left to send.
+   *
+   * Writing headers to a response that already has them throws
+   * `ERR_HTTP_HEADERS_SENT`, and that throw escapes the request handler
+   * entirely — which is how a read error on a half-sent video used to end the
+   * process rather than the request. Cutting the connection is the only honest
+   * answer at this point: the client sees a truncated body, which is exactly
+   * what happened.
+   */
+  if (response.headersSent) {
+    response.destroy();
+    return;
+  }
+
   sendOwnApiJson(response, error.statusCode, {
     error: {
       code: error.code,

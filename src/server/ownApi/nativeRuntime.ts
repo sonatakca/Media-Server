@@ -67,6 +67,14 @@ import { createSyncplayRepository } from "./syncplay/syncplayRepository";
 import { createSyncplayRoutes } from "./syncplay/syncplayRoutes";
 import { createSyncplayEventBus } from "./syncplay/eventBus";
 import { createNodeScannerFileSystem } from "./scanner/nodeFileSystem";
+import { parseNfoConfig, writesFiles } from "./nfo/nfoConfig";
+import { createNfoRepository } from "./nfo/nfoRepository";
+import { createNfoWriter } from "./nfo/nfoWriter";
+import { createNfoService } from "./nfo/nfoService";
+import { createNfoJobHandlers } from "./nfo/nfoJobs";
+import { createNfoRoutes } from "./nfo/nfoRoutes";
+import { createSystemRoutes } from "./system/systemRoutes";
+import type { RestartController } from "../restartController";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
 
 type Environment = Record<string, string | undefined>;
@@ -92,6 +100,15 @@ export interface CreateNativeRuntimeOptions {
   generatedStoragePath: string;
   /** Set false in tests and in a dedicated worker process. */
   runWorker?: boolean;
+  /**
+   * Exposes the administrator restart endpoints.
+   *
+   * Owned by whoever owns the process, not by the runtime: the runtime can
+   * close its own resources but has no business deciding that the process
+   * should end. Absent in the worker and in tests, where the routes simply do
+   * not exist.
+   */
+  restartController?: RestartController;
 }
 
 const EXPIRED_SESSION_CLEANUP_INTERVAL_MS = 15 * 60_000;
@@ -115,9 +132,13 @@ export async function createNativeRuntime({
   ffprobePath,
   generatedStoragePath,
   runWorker = true,
+  restartController,
 }: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
+  // Parsed before the pool opens so an invalid export policy stops the process
+  // at the point the mistake was made, not on the first title it writes.
+  const nfoConfig = parseNfoConfig(environment);
 
   const pool: DatabasePool = createDatabasePool(databaseConfig);
   try {
@@ -289,6 +310,15 @@ export async function createNativeRuntime({
     return recovered;
   };
 
+  /*
+   * Recovering interrupted work belongs to whoever runs the encoders.
+   *
+   * The watchdog itself runs everywhere, because the processing pages ask this
+   * runtime whether the storage is there and a server that serves playback
+   * still has to answer. What is gated is the acting on it: with the worker
+   * split into its own process, two runtimes see the volume return, and two
+   * runtimes requeueing the same job would build the same rendition twice.
+   */
   const storageWatchdog = createStorageWatchdog({
     mediaRoot,
     /*
@@ -297,17 +327,21 @@ export async function createNativeRuntime({
      * stops the work just as completely, so all are watched.
      */
     additionalRoots: [renditionRoot, renditionWorkRoot, renditionStateRoot],
-    onLost: async () => {
-      for (const job of await processingJobs.listActive()) {
-        await processingJobs.requestPause(job.id, "storage-unavailable");
-      }
-    },
-    onRestored: async () => {
-      // Only the jobs the watchdog itself paused: a job an operator paused by
-      // hand stays paused, because the drive returning does not answer why a
-      // person stopped it.
-      await requeueStorageInterruptedJobs();
-    },
+    ...(runWorker
+      ? {
+          onLost: async () => {
+            for (const job of await processingJobs.listActive()) {
+              await processingJobs.requestPause(job.id, "storage-unavailable");
+            }
+          },
+          onRestored: async () => {
+            // Only the jobs the watchdog itself paused: a job an operator
+            // paused by hand stays paused, because the drive returning does not
+            // answer why a person stopped it.
+            await requeueStorageInterruptedJobs();
+          },
+        }
+      : {}),
   });
   storageWatchdog.start();
 
@@ -342,7 +376,9 @@ export async function createNativeRuntime({
     }
     if (storageReady) await requeueStorageInterruptedJobs();
   };
-  await reconcileInterruptedJobs();
+  // Same ownership rule: the process that will run the work is the one that
+  // decides what to do with work the last run left behind.
+  if (runWorker) await reconcileInterruptedJobs();
 
   /**
    * Where a package is built before it is published, and where its FFmpeg log
@@ -385,27 +421,49 @@ export async function createNativeRuntime({
     ...(ffprobePath ? { ffprobePath } : {}),
   });
 
+  /**
+   * Kodi/Jellyfin sidecar export.
+   *
+   * Always constructed so preview and manual repair endpoints remain available.
+   * The scan handler receives it only for modes that actually write files.
+   */
+  const nfoService = createNfoService({
+    repository: createNfoRepository(pool),
+    writer: createNfoWriter({
+      mode: nfoConfig.mode,
+      overwritePolicy: nfoConfig.overwritePolicy,
+      mediaRoot,
+      generatedStoragePath,
+    }),
+    config: nfoConfig,
+  });
+
   const worker = createWorker({
     queue,
-    handlers: createJobHandlers({
-      libraries,
-      processingRunner: createProcessingJobRunner({
-        store: processingJobs,
-        paths: renditionPaths,
-        mediaRoot,
-        // Polls rather than reading the cached flag: an encode can fail within
-        // the same second the volume goes, before the watchdog's next tick.
-        storageAvailableFn: () => storageWatchdog.poll(),
-        ...(ffmpegPath ? { ffmpegPath } : {}),
-        ...(ffprobePath ? { ffprobePath } : {}),
+    handlers: {
+      ...createJobHandlers({
+        libraries,
+        processingRunner: createProcessingJobRunner({
+          store: processingJobs,
+          paths: renditionPaths,
+          mediaRoot,
+          // Polls rather than reading the cached flag: an encode can fail
+          // within the same second the volume goes, before the watchdog's
+          // next tick.
+          storageAvailableFn: () => storageWatchdog.poll(),
+          ...(ffmpegPath ? { ffmpegPath } : {}),
+          ...(ffprobePath ? { ffprobePath } : {}),
+        }),
+        scanStore,
+        fileSystem: createNodeScannerFileSystem(mediaRoot),
+        probeService,
+        queue,
+        ...(metadataService ? { metadataService } : {}),
+        trickplayService: trickplay,
+        ...(writesFiles(nfoConfig.mode) ? { nfoService } : {}),
       }),
-      scanStore,
-      fileSystem: createNodeScannerFileSystem(mediaRoot),
-      probeService,
-      queue,
-      ...(metadataService ? { metadataService } : {}),
-      trickplayService: trickplay,
-    }),
+      ...createNfoJobHandlers(nfoService),
+    },
     logger: console,
   });
   if (runWorker) worker.start();
@@ -460,6 +518,10 @@ export async function createNativeRuntime({
       passwords: createArgon2PasswordHasher(),
     }),
     ...createTaskRoutes({ queue, libraries }),
+    ...createNfoRoutes({ service: nfoService, queue }),
+    ...(restartController
+      ? createSystemRoutes({ restart: restartController })
+      : []),
     ...createProcessingRoutes({
       catalogue,
       storageAvailable: () => storageWatchdog.available,

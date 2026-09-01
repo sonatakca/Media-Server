@@ -11,6 +11,7 @@ import {
   Lightbulb,
   ListOrdered,
   PanelsTopLeft,
+  ServerCog,
   ShieldAlert,
   ShieldCheck,
   Users,
@@ -105,6 +106,13 @@ export function DevToolsPage() {
       to: "/dev/playback-defaults",
       icon: Languages,
       tag: t("devtools.card.playbackDefaults.tag"),
+    },
+    {
+      title: t("devtools.card.serverControl.title"),
+      description: t("devtools.card.serverControl.description"),
+      to: "/dev/server-control",
+      icon: ServerCog,
+      tag: t("devtools.card.serverControl.tag"),
     },
     {
       title: t("devtools.card.knownBugs.title"),

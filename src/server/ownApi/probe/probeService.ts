@@ -176,15 +176,21 @@ export function createProbeService({
   }
 
   return {
-    /** Probes one batch of pending files. Returns counts for the job report. */
-    runBatch: async (): Promise<ProbeBatchResult> => {
+    /**
+     * Probes one batch of pending files. A library-scoped run is used by a
+     * library scan so its NFO export cannot race unrelated probe work.
+     */
+    runBatch: async (libraryId?: string): Promise<ProbeBatchResult> => {
       const pending = await pool.query<PendingFile>(
-        `SELECT id, item_id, relative_path
-         FROM media_files
-         WHERE probe_state = 'pending' AND missing_since IS NULL
-         ORDER BY is_primary DESC, created_at
+        `SELECT mf.id, mf.item_id, mf.relative_path
+         FROM media_files mf
+         JOIN items i ON i.id = mf.item_id
+         WHERE mf.probe_state = 'pending'
+           AND mf.missing_since IS NULL
+           AND ($2::uuid IS NULL OR i.library_id = $2)
+         ORDER BY mf.is_primary DESC, mf.created_at
          LIMIT $1`,
-        [batchSize],
+        [batchSize, libraryId ?? null],
       );
 
       let probed = 0;
@@ -212,9 +218,13 @@ export function createProbeService({
       }
 
       const remaining = await pool.query<{ total: string }>(
-        `SELECT count(*) AS total FROM media_files
-         WHERE probe_state = 'pending' AND missing_since IS NULL`,
-        [],
+        `SELECT count(*) AS total
+         FROM media_files mf
+         JOIN items i ON i.id = mf.item_id
+         WHERE mf.probe_state = 'pending'
+           AND mf.missing_since IS NULL
+           AND ($1::uuid IS NULL OR i.library_id = $1)`,
+        [libraryId ?? null],
       );
 
       return {

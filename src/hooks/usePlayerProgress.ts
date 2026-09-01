@@ -26,6 +26,23 @@ function clampVolume(volume: number): number {
   return Math.min(1, Math.max(0, volume));
 }
 
+/**
+ * Native HLS reports an in-progress VOD playlist as `Infinity` on Safari.
+ * The server already knows the source duration from ffprobe, so use that until
+ * the media element replaces its provisional value with a finite one.
+ */
+export function resolvePlayerDuration(
+  mediaElementDuration: number,
+  sourceDurationSeconds = 0,
+): number {
+  if (Number.isFinite(mediaElementDuration) && mediaElementDuration > 0) {
+    return mediaElementDuration;
+  }
+  return Number.isFinite(sourceDurationSeconds) && sourceDurationSeconds > 0
+    ? sourceDurationSeconds
+    : 0;
+}
+
 function getStoredVolumeState(): Pick<PlayerProgressState, "volume" | "muted"> {
   if (typeof window === "undefined") {
     return { volume: 1, muted: false };
@@ -82,6 +99,7 @@ function saveStoredVolumeState(volume: number, muted: boolean): void {
 export function usePlayerProgress(
   videoRef: RefObject<HTMLVideoElement>,
   deckEpoch = 0,
+  sourceDurationSeconds = 0,
 ) {
   const [state, setState] = useState<PlayerProgressState>(() => ({
     ...initialState,
@@ -102,14 +120,14 @@ export function usePlayerProgress(
 
     setState({
       currentTime: Number.isFinite(video.currentTime) ? video.currentTime : 0,
-      duration: Number.isFinite(video.duration) ? video.duration : 0,
+      duration: resolvePlayerDuration(video.duration, sourceDurationSeconds),
       bufferedEnd,
       isPlaying: !video.paused && !video.ended,
       isBuffering: video.readyState < 3 && !video.paused,
       volume: video.volume,
       muted: video.muted,
     });
-  }, [videoRef]);
+  }, [sourceDurationSeconds, videoRef]);
 
   useEffect(() => {
     const video = videoRef.current;

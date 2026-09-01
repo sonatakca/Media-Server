@@ -12,9 +12,36 @@ export function createDatabasePool(config: DatabaseConfig): DatabasePool {
     application_name: "seyirlik-own-api",
     statement_timeout: 10_000,
     query_timeout: 12_000,
+    // A connection parked in the pool is idle TCP, which a router, a laptop
+    // sleeping, or Docker's NAT will silently drop. Keepalives make the socket
+    // notice while the pool can still replace it.
+    keepAlive: true,
   };
 
-  return new Pool(poolConfig);
+  const pool = new Pool(poolConfig);
+
+  /*
+   * PostgreSQL restarting must not take the media server with it.
+   *
+   * `Pool` is an EventEmitter, and an EventEmitter with no `error` listener
+   * rethrows what it is given — out of a timer, from an idle client nobody is
+   * awaiting, straight past every `try` in the codebase and into the process.
+   * That is the whole of it: a `pg_ctl restart`, a `brew services restart`, or
+   * a dropped idle socket ended the server outright, with
+   * `terminating connection due to administrator command` as the only notice.
+   *
+   * The pool itself needs no help recovering — it discards the broken client
+   * and dials again on the next query — so this listener exists to say what
+   * happened and let the process carry on.
+   */
+  pool.on("error", (error) => {
+    console.error(
+      "[Seyirlik] Idle database connection failed; the pool will reconnect:",
+      error instanceof Error ? error.message : String(error),
+    );
+  });
+
+  return pool;
 }
 
 export async function validateDatabaseConnection(

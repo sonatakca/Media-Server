@@ -9,6 +9,7 @@ import type { ScannerFileSystem } from "../scanner/libraryScan";
 import type { createProbeService } from "../probe/probeService";
 import type { MetadataService } from "../metadata/metadataService";
 import type { TrickplayService } from "../trickplay/trickplayService";
+import type { NfoService } from "../nfo/nfoService";
 
 export const JOB_TYPES = {
   libraryScan: "library.scan",
@@ -28,6 +29,8 @@ export interface JobHandlerOptions {
   /** Absent when no TMDB key is configured; metadata jobs then no-op. */
   metadataService?: MetadataService;
   trickplayService?: TrickplayService;
+  /** Writes NFO metadata as the final, observable stage of a library scan. */
+  nfoService?: NfoService;
   /**
    * Runs a media-processing job. Absent when the runtime has no rendition
    * paths configured, in which case queued processing jobs fail cleanly rather
@@ -70,6 +73,77 @@ function mergeScans(results: ScanResult[]): ScanResult {
   return merged;
 }
 
+type ProgressReporter = (fraction: number, message?: string) => Promise<void>;
+
+async function runProbeBatches(
+  probeService: ReturnType<typeof createProbeService>,
+  isCancelled: () => Promise<boolean>,
+  reportProgress: ProgressReporter,
+  libraryId?: string,
+): Promise<{ probed: number; failed: number }> {
+  let probed = 0;
+  let failed = 0;
+
+  for (;;) {
+    if (await isCancelled()) break;
+
+    const batch = await probeService.runBatch(libraryId);
+    probed += batch.probed;
+    failed += batch.failed;
+
+    const total = probed + failed + batch.remaining;
+    await reportProgress(
+      total === 0 ? 1 : (probed + failed) / total,
+      `Analysed ${probed + failed} of ${total} files`,
+    );
+
+    if (batch.remaining === 0) break;
+    if (batch.probed === 0 && batch.failed === 0) break;
+  }
+
+  return { probed, failed };
+}
+
+async function runMetadataBatches(
+  metadataService: MetadataService,
+  isCancelled: () => Promise<boolean>,
+  reportProgress: ProgressReporter,
+  libraryId?: string,
+): Promise<{ matched: number; ambiguous: number; notFound: number }> {
+  let matched = 0;
+  let ambiguous = 0;
+  let notFound = 0;
+
+  // Bounded batches keep the provider's rate limit in view and let a
+  // cancellation take effect between them. The seen set is a termination
+  // guard: if a batch returns only items already visited, no progress is
+  // being made and the loop must stop rather than spin.
+  const seen = new Set<string>();
+
+  for (;;) {
+    if (await isCancelled()) break;
+
+    const results = await metadataService.processPending(10, libraryId);
+    if (results.length === 0) break;
+    if (results.every((result) => seen.has(result.itemId))) break;
+
+    for (const result of results) {
+      seen.add(result.itemId);
+      if (result.status === "matched") matched += 1;
+      else if (result.status === "ambiguous") ambiguous += 1;
+      else if (result.status === "not-found") notFound += 1;
+    }
+
+    await reportProgress(
+      0.5,
+      `Identified ${matched} titles, ${ambiguous} need review`,
+    );
+  }
+
+  await reportProgress(1, `Identified ${matched} titles`);
+  return { matched, ambiguous, notFound };
+}
+
 export function createJobHandlers({
   libraries,
   scanStore,
@@ -79,6 +153,7 @@ export function createJobHandlers({
   metadataService,
   trickplayService,
   processingRunner,
+  nfoService,
 }: JobHandlerOptions): Record<string, JobHandler> {
   const libraryScan: JobHandler = async ({
     job,
@@ -125,55 +200,78 @@ export function createJobHandlers({
       allowMassRemoval: job.payload.allowMassRemoval === true,
     });
 
-    // Probing and metadata are queued separately so a long backlog does not
-    // hold the scan's lease, and so the catalogue is browsable before either
-    // finishes.
-    if (summary.probesQueued > 0) {
-      await queue.enqueue({
-        jobType: JOB_TYPES.mediaProbe,
-        dedupeKey: JOB_TYPES.mediaProbe,
-        priority: 200,
-      });
+    // With NFO output disabled, keep the original short scan behavior: probe
+    // and provider matching can run independently in the background.
+    if (!nfoService) {
+      if (summary.probesQueued > 0) {
+        await queue.enqueue({
+          jobType: JOB_TYPES.mediaProbe,
+          dedupeKey: JOB_TYPES.mediaProbe,
+          priority: 200,
+        });
+      }
+      if (metadataService) {
+        await queue.enqueue({
+          jobType: JOB_TYPES.metadataScan,
+          payload: { libraryId },
+          dedupeKey: `${JOB_TYPES.metadataScan}:${libraryId}`,
+          priority: 300,
+        });
+      }
+      await reportProgress(1, "Scan complete");
+      return { ...summary };
     }
-    // Not gated on itemsCreated: a scan that failed after reconciling leaves the
-    // items already created, so the retry would report zero and never ask for
-    // metadata. The job is deduped and exits immediately when nothing is
-    // pending, so queueing it unconditionally costs nothing.
+
+    // NFO is a scan output, so every source of information it serializes must
+    // finish first. In particular, queuing the probe and immediately exporting
+    // produced a runtime-free NFO for every newly discovered file.
+    await reportProgress(0.7, "Analysing media files");
+    const probe = await runProbeBatches(
+      probeService,
+      isCancelled,
+      async (fraction, message) =>
+        reportProgress(0.7 + fraction * 0.1, message),
+      libraryId,
+    );
+    if (await isCancelled()) return { ...summary, probe, cancelled: true };
+
+    let metadata;
     if (metadataService) {
-      await queue.enqueue({
-        jobType: JOB_TYPES.metadataScan,
-        payload: { libraryId },
-        dedupeKey: `${JOB_TYPES.metadataScan}:${libraryId}`,
-        priority: 300,
+      await reportProgress(0.81, "Identifying titles");
+      metadata = await runMetadataBatches(
+        metadataService,
+        isCancelled,
+        async (fraction, message) =>
+          reportProgress(0.81 + fraction * 0.08, message),
+        libraryId,
+      );
+      if (await isCancelled()) {
+        return { ...summary, probe, metadata, cancelled: true };
+      }
+    }
+
+    let nfoExport;
+    if (nfoService) {
+      await reportProgress(0.9, "Writing NFO metadata");
+      nfoExport = await nfoService.exportLibrary(libraryId, {
+        force: false,
+        isCancelled,
+        reportProgress: (fraction, message) =>
+          reportProgress(0.9 + fraction * 0.09, message),
       });
     }
 
     await reportProgress(1, "Scan complete");
-    return { ...summary };
+    return {
+      ...summary,
+      probe,
+      ...(metadata ? { metadata } : {}),
+      ...(nfoExport ? { nfoExport } : {}),
+    };
   };
 
   const mediaProbe: JobHandler = async ({ reportProgress, isCancelled }) => {
-    let probed = 0;
-    let failed = 0;
-
-    for (;;) {
-      if (await isCancelled()) break;
-
-      const batch = await probeService.runBatch();
-      probed += batch.probed;
-      failed += batch.failed;
-
-      if (batch.remaining === 0) break;
-      if (batch.probed === 0 && batch.failed === 0) break;
-
-      const total = probed + failed + batch.remaining;
-      await reportProgress(
-        total === 0 ? 1 : (probed + failed) / total,
-        `Analysed ${probed + failed} of ${total} files`,
-      );
-    }
-
-    return { probed, failed };
+    return runProbeBatches(probeService, isCancelled, reportProgress);
   };
 
   const metadataScan: JobHandler = async ({
@@ -190,37 +288,12 @@ export function createJobHandlers({
         ? job.payload.libraryId
         : undefined;
 
-    let matched = 0;
-    let ambiguous = 0;
-    let notFound = 0;
-
-    // Bounded batches keep the provider's rate limit in view and let a
-    // cancellation take effect between them. The seen set is a termination
-    // guard: if a batch returns only items already visited, no progress is
-    // being made and the loop must stop rather than spin.
-    const seen = new Set<string>();
-
-    for (;;) {
-      if (await isCancelled()) break;
-
-      const results = await metadataService.processPending(10, libraryId);
-      if (results.length === 0) break;
-      if (results.every((result) => seen.has(result.itemId))) break;
-
-      for (const result of results) {
-        seen.add(result.itemId);
-        if (result.status === "matched") matched += 1;
-        else if (result.status === "ambiguous") ambiguous += 1;
-        else if (result.status === "not-found") notFound += 1;
-      }
-
-      await reportProgress(
-        0.5,
-        `Identified ${matched} titles, ${ambiguous} need review`,
-      );
-    }
-
-    return { matched, ambiguous, notFound };
+    return runMetadataBatches(
+      metadataService,
+      isCancelled,
+      reportProgress,
+      libraryId,
+    );
   };
 
   const metadataRefresh: JobHandler = async ({ job }) => {

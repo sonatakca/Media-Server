@@ -81,6 +81,9 @@ const PlaybackHealthPage = lazy(async () => ({
 const SkeletonLabPage = lazy(async () => ({
   default: (await import("./pages/SkeletonLabPage")).SkeletonLabPage,
 }));
+const ServerControlPage = lazy(async () => ({
+  default: (await import("./pages/ServerControlPage")).ServerControlPage,
+}));
 const UserManagementPage = lazy(async () => ({
   default: (await import("./pages/UserManagementPage")).UserManagementPage,
 }));
@@ -399,6 +402,10 @@ export default function App() {
                 <Route
                   path="/dev/playback-defaults"
                   element={<PlaybackDefaultsPage />}
+                />
+                <Route
+                  path="/dev/server-control"
+                  element={<ServerControlPage />}
                 />
                 <Route
                   path="/dev/known-bugs"

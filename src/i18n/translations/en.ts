@@ -724,6 +724,38 @@ export const en = {
   "devtools.card.libraryMaintenance.description":
     "Scan libraries, refresh metadata, replace images, and edit common item metadata.",
   "devtools.card.libraryMaintenance.tag": "Maintenance",
+  "devtools.card.serverControl.title": "Server Control",
+  "devtools.card.serverControl.description":
+    "Restart the media server and reload the app once it is answering again.",
+  "devtools.card.serverControl.tag": "Lifecycle",
+  "serverControl.eyebrow": "Server",
+  "serverControl.title": "Server Control",
+  "serverControl.description":
+    "Stop and start the media server process. Playback in progress ends, and everyone streaming has to start again.",
+  "serverControl.loading": "Reading server status",
+  "serverControl.loadFailed": "The server status could not be read.",
+  "serverControl.statusUnavailable": "The server status could not be read",
+  "serverControl.restart.title": "Restart the server",
+  "serverControl.restart.description":
+    "Applies changes to configuration or code that only take effect on start. This page waits for the server to come back and then reloads itself.",
+  "serverControl.restart.action": "Restart server",
+  "serverControl.mode.respawn": "Starts its own replacement",
+  "serverControl.mode.supervisor": "Restarted by its supervisor",
+  "serverControl.mode.disabled": "Restart unavailable",
+  "serverControl.unavailable":
+    "This server is not configured to restart itself. Set SEYIRLIK_RESTART_MODE to respawn, or to supervisor when systemd, Docker or pm2 restarts the process for you.",
+  "serverControl.confirm.question": "Restart the server now?",
+  "serverControl.confirm.consequence":
+    "Every active stream stops, running tasks are interrupted and resumed on the next start, and the app is unreachable for a few seconds.",
+  "serverControl.confirm.accept": "Yes, restart",
+  "serverControl.confirm.cancel": "Cancel",
+  "serverControl.progress.stopping": "Stopping the server",
+  "serverControl.progress.starting": "Waiting for the server to come back",
+  "serverControl.progress.ready": "Server is back; reloading",
+  "serverControl.progress.hint": "Keep this page open. It reloads on its own.",
+  "serverControl.requestFailed": "The restart could not be requested.",
+  "serverControl.timedOut":
+    "The server did not come back in time. Check the terminal or service logs before trying again.",
   "devtools.card.tmdbArtwork.title": "TMDB Artwork",
   "devtools.card.tmdbArtwork.description":
     "Choose TMDB artwork or upload a custom cover, backdrop, and logo for movies, shows, and books.",

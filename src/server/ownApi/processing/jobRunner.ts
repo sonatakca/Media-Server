@@ -416,6 +416,14 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        */
       let storageInterrupted = false;
       const cancellationWatch = setInterval(() => {
+        /*
+         * Every line below talks to the database, and a database that blinks —
+         * a restart, a dropped idle socket, a query timeout — rejects them. A
+         * rejection from a timer is nobody's to catch, so before this `catch`
+         * existed it reached the process as an unhandled rejection and ended
+         * the server mid-encode. The tick is a poll: missing one costs a second
+         * of latency on a pause request, and nothing else.
+         */
         void (async () => {
           const latest = await store.get(job.id);
           if (
@@ -473,7 +481,12 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             pauseController.resume();
             encodeAbort.abort();
           }
-        })();
+        })().catch((error) => {
+          console.warn(
+            "[Seyirlik] Could not read the pause state for a processing job:",
+            error instanceof Error ? error.message : String(error),
+          );
+        });
       }, 1000);
       if (typeof cancellationWatch.unref === "function")
         cancellationWatch.unref();
@@ -534,24 +547,30 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
                     : { previousEstimate: lastEstimateBytes }),
                 });
               }
-              void store.update(job.id, {
-                stage: "video",
-                stageProgress: fraction,
-                overallProgress: lastOverall,
-                ...(event.writtenBytes === undefined
-                  ? {}
-                  : { bytesProcessed: event.writtenBytes }),
-                ...(lastEstimateBytes === undefined
-                  ? {}
-                  : { estimatedOutputBytes: lastEstimateBytes }),
-                speed: event.speed ?? null,
-                fps: event.fps ?? null,
-                etaSeconds: etaFrom(
-                  event.processedSeconds,
-                  durationSeconds,
-                  event.speed,
-                ),
-              });
+              // Progress is written without waiting so the encoder is never
+              // paced by the database, and its failure is swallowed for the
+              // same reason it is not awaited: the next event overwrites it a
+              // second later. Unhandled, that same rejection ended the process.
+              void store
+                .update(job.id, {
+                  stage: "video",
+                  stageProgress: fraction,
+                  overallProgress: lastOverall,
+                  ...(event.writtenBytes === undefined
+                    ? {}
+                    : { bytesProcessed: event.writtenBytes }),
+                  ...(lastEstimateBytes === undefined
+                    ? {}
+                    : { estimatedOutputBytes: lastEstimateBytes }),
+                  speed: event.speed ?? null,
+                  fps: event.fps ?? null,
+                  etaSeconds: etaFrom(
+                    event.processedSeconds,
+                    durationSeconds,
+                    event.speed,
+                  ),
+                })
+                .catch(() => undefined);
             },
           },
         );
@@ -577,7 +596,9 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
 
       if (await cancelled()) return finishCancelled();
       if (result.status === "interrupted") {
-        return storageInterrupted ? finishStorageInterrupted() : finishCancelled();
+        return storageInterrupted
+          ? finishStorageInterrupted()
+          : finishCancelled();
       }
 
       // ------------------------------------------------------- validating
