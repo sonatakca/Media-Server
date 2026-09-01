@@ -96,6 +96,7 @@ export interface CreateNativeRuntimeOptions {
   sessionManager: PlaybackSessionManager;
   ffmpegPath?: string;
   ffprobePath?: string;
+  softwareTranscodeThreads?: number;
   /** Where cached artwork is written; defaults to the generated-storage volume. */
   generatedStoragePath: string;
   /** Set false in tests and in a dedicated worker process. */
@@ -130,6 +131,7 @@ export async function createNativeRuntime({
   sessionManager,
   ffmpegPath,
   ffprobePath,
+  softwareTranscodeThreads,
   generatedStoragePath,
   runWorker = true,
   restartController,
@@ -453,6 +455,9 @@ export async function createNativeRuntime({
           storageAvailableFn: () => storageWatchdog.poll(),
           ...(ffmpegPath ? { ffmpegPath } : {}),
           ...(ffprobePath ? { ffprobePath } : {}),
+          ...(softwareTranscodeThreads === undefined
+            ? {}
+            : { softwareThreads: softwareTranscodeThreads }),
         }),
         scanStore,
         fileSystem: createNodeScannerFileSystem(mediaRoot),

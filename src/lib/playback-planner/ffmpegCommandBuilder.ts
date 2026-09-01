@@ -5,6 +5,7 @@ import {
   type GopEncoderFamily,
 } from "./gopPolicy";
 import type { FfmpegRuntimeProfile, H264VideoEncoder } from "./ffmpegRuntime";
+import { defaultSoftwareFilterThreads } from "../../server/cpuTopology";
 import type { MediaAnalysis, PlaybackPlan } from "./types";
 
 export interface FfmpegCommandInput {
@@ -355,7 +356,10 @@ export function buildFfmpegCommand({
     "-y",
     "-nostdin",
     "-filter_threads",
-    String(Math.max(1, runtimeProfile.softwareThreads)),
+    String(
+      runtimeProfile.softwareFilterThreads ??
+        defaultSoftwareFilterThreads(runtimeProfile.softwareThreads),
+    ),
     "-i",
     media.filePath,
     ...buildMapArgs(plan),

@@ -12,6 +12,7 @@
     "test": "vitest",
     "test:browser": "vitest run --config vitest.browser.config.ts",
     "bench:containers": "bash scripts/build-container-benchmark.sh",
+    "bench:software-threads": "node --env-file=.env --import tsx scripts/benchmark-software-threads.ts",
     "media:lab:build-matrix": "bash scripts/build-media-test-matrix.sh",
     "media:lab:verify-matrix": "node --env-file=.env --import tsx scripts/verify-media-test-matrix.ts",
     "media:lab:server": "bash scripts/run-media-lab-server.sh",

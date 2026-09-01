@@ -52,6 +52,20 @@ export const LOCK_LEASE_TIMEOUT_MS = 90_000;
  */
 const liveLeases = new Set<string>();
 
+/**
+ * The lock is held by work that is genuinely still going.
+ *
+ * Worth its own type because it is the one lock failure that is not a fault:
+ * nothing is broken, another attempt is simply ahead of this one, and the right
+ * response is to come back later rather than to give up on the job.
+ */
+export class RenditionLockHeldError extends Error {
+  constructor(lockPath: string) {
+    super(`Rendition lock is already held: ${lockPath}`);
+    this.name = "RenditionLockHeldError";
+  }
+}
+
 export interface AcquiredLock {
   path: string;
   /** Identifies this holding, so a caller can prove a lock is its own. */
@@ -102,9 +116,29 @@ export async function staleLock(
       return true;
     }
 
+    /*
+     * A holder that this host can see is gone is gone now, not in ninety
+     * seconds. The heartbeat exists to notice a holder that died without
+     * tidying up; when the death can be established directly there is nothing
+     * left to infer, and waiting out the lease only delays the retry. That
+     * delay was not theoretical: restarting the worker mid-encode left a
+     * lock with a heartbeat seconds old, and the job it had just requeued was
+     * refused by its own remains.
+     *
+     * Only ever used to declare a lock free, never to declare one live — a
+     * recycled pid makes a dead holder look alive, which merely falls through
+     * to the heartbeat, while the opposite mistake would hand two encoders the
+     * same output directory.
+     */
     const heartbeatAt = Date.parse(owner.heartbeatAt ?? "");
     if (Number.isFinite(heartbeatAt)) {
-      return now() - heartbeatAt > LOCK_LEASE_TIMEOUT_MS || expired;
+      const holderIsGone =
+        owner.hostname === os.hostname() &&
+        typeof owner.pid === "number" &&
+        !isProcessAlive(owner.pid);
+      return (
+        holderIsGone || now() - heartbeatAt > LOCK_LEASE_TIMEOUT_MS || expired
+      );
     }
 
     /*
@@ -188,7 +222,7 @@ export async function acquireDirectoryLock(
         await rm(lockPath, { recursive: true, force: true });
         continue;
       }
-      throw new Error(`Rendition lock is already held: ${lockPath}`);
+      throw new RenditionLockHeldError(lockPath);
     }
   }
   throw new Error(`Could not acquire rendition lock: ${lockPath}`);

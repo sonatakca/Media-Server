@@ -154,6 +154,44 @@ describe("adaptiveOutputDirectories", () => {
 });
 
 describe("buildAdaptivePackageFfmpegArgs", () => {
+  it("shares a software CPU budget across encoders and keeps one filter pool", () => {
+    const args = build({
+      encoder: "libx264",
+      softwareThreads: 8,
+      filterComplexThreads: 4,
+    });
+
+    expect(valueAfter(args, "-filter_complex_threads")).toBe("4");
+    expect(valueAfter(args, "-threads:v:0")).toBe("3");
+    expect(valueAfter(args, "-threads:v:1")).toBe("3");
+    expect(valueAfter(args, "-threads:v:2")).toBe("2");
+  });
+
+  it("does not apply software thread controls to a hardware encoder", () => {
+    const args = build({
+      encoder: "h264_videotoolbox",
+      softwareThreads: 8,
+    });
+
+    expect(args.some((argument) => argument.startsWith("-threads:v:"))).toBe(
+      false,
+    );
+  });
+
+  it("limits libx265's actual worker pool without losing its GOP controls", () => {
+    const args = build({
+      encoder: "libx265",
+      videoOutputs: [LADDER[2]],
+      softwareThreads: 8,
+      filterComplexThreads: 4,
+    });
+
+    expect(args).not.toContain("-threads:v:0");
+    expect(valueAfter(args, "-x265-params:v:0")).toBe(
+      "keyint=48:min-keyint=48:scenecut=0:open-gop=0:pools=8",
+    );
+  });
+
   it("forces a two-second closed GOP on every rendition, not just the first", () => {
     const args = build();
 

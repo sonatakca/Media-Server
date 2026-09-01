@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -66,6 +67,20 @@ describe("rendition directory locks", () => {
   });
 });
 
+/**
+ * A process that is certainly alive and certainly not this one. `launchd` is
+ * always running, and signalling it as an ordinary user fails with `EPERM`,
+ * which is how liveness is established without permission to interfere.
+ */
+const LIVE_FOREIGN_PID = 1;
+
+/**
+ * A pid that named a real process and no longer does — a worker killed
+ * mid-encode, in miniature. Taken from a child that has already exited and
+ * been reaped, rather than a guessed number that some other process may own.
+ */
+const DEAD_PID = spawnSync("/usr/bin/true").pid as number;
+
 describe("deciding whether a rendition lock is still alive", () => {
   /**
    * The exact record from the live incident: a lock owned by the long-running
@@ -89,13 +104,15 @@ describe("deciding whether a rendition lock is still alive", () => {
   /**
    * A lock being refreshed right now is genuinely held and must be left alone.
    *
-   * Held by a different process, so the heartbeat is the only evidence
-   * available — this process cannot know whether that attempt is alive.
+   * Held by a different process — a live one, `launchd`, which stands in for
+   * the other Seyirlik process here. A pid that does not exist would prove
+   * nothing about heartbeats, because a holder this host can see is gone is
+   * reclaimed on that evidence alone.
    */
   it("refuses to steal a lock whose holder is still heartbeating", async () => {
     const now = Date.now();
     const lockPath = await lockDir({
-      pid: process.pid + 1,
+      pid: LIVE_FOREIGN_PID,
       hostname: os.hostname(),
       createdAt: new Date(now - 20 * 60_000).toISOString(),
       purpose: "adaptive:7ada79bd",
@@ -113,13 +130,53 @@ describe("deciding whether a rendition lock is still alive", () => {
   it("tolerates a heartbeat that is merely late", async () => {
     const now = Date.now();
     const lockPath = await lockDir({
-      pid: process.pid + 1,
+      pid: LIVE_FOREIGN_PID,
       hostname: os.hostname(),
       createdAt: new Date(now - 20 * 60_000).toISOString(),
       purpose: "adaptive:7ada79bd",
       leaseId: "attempt-1",
       // Well past one interval, comfortably inside the lease.
       heartbeatAt: new Date(now - LOCK_LEASE_TIMEOUT_MS / 2).toISOString(),
+    });
+
+    expect(await staleLock(lockPath, DAY_MS, () => now)).toBe(false);
+  });
+
+  /**
+   * The restart case.
+   *
+   * Restarting the worker mid-encode kills the holder without giving it a
+   * chance to release, leaving a lock whose heartbeat is seconds old. The
+   * replacement requeues the job immediately, and if that lock were honoured
+   * the job would be refused by the remains of its own previous attempt — which
+   * is exactly what happened, and the queue recorded it as a permanent failure.
+   */
+  it("reclaims a lock whose holder no longer exists, however fresh the heartbeat", async () => {
+    const now = Date.now();
+    const lockPath = await lockDir({
+      // A pid that has been reaped; the process it named is gone.
+      pid: DEAD_PID,
+      hostname: os.hostname(),
+      createdAt: new Date(now - 30_000).toISOString(),
+      purpose: "adaptive:7ada79bd",
+      leaseId: "attempt-1",
+      heartbeatAt: new Date(now - 1_000).toISOString(),
+    });
+
+    expect(await staleLock(lockPath, DAY_MS, () => now)).toBe(true);
+  });
+
+  it("leaves a lock held on another host alone, whoever owns the pid here", async () => {
+    // Nothing can be concluded about a pid on a machine this one cannot see,
+    // so the heartbeat is the only evidence and it says the work is live.
+    const now = Date.now();
+    const lockPath = await lockDir({
+      pid: DEAD_PID,
+      hostname: `${os.hostname()}-other`,
+      createdAt: new Date(now - 30_000).toISOString(),
+      purpose: "adaptive:7ada79bd",
+      leaseId: "attempt-1",
+      heartbeatAt: new Date(now - 1_000).toISOString(),
     });
 
     expect(await staleLock(lockPath, DAY_MS, () => now)).toBe(false);

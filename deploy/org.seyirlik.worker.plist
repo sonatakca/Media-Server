@@ -11,8 +11,16 @@
   the job queue in PostgreSQL, which is what carries a job across either one
   restarting.
 
-  `ProcessType: Background` is the honest description of this job, and it is
-  also what keeps a long encode from competing with playback for the CPU.
+  `ProcessType` must not be `Background`, however tempting the name is for a
+  job that encodes in the background. On Apple silicon that class is not a mild
+  deprioritisation: it clamps the whole process tree to the efficiency cores
+  and throttles its disk I/O. Measured on this machine, one 4K HDR ladder ran
+  at 1.8x under `Standard` and 0.07x under `Background` — a thirty-hour encode
+  instead of a ninety-minute one.
+
+  Keeping playback ahead of encoding is the server job's `Interactive` class
+  doing its work, not this one being crippled: the scheduler already prefers
+  the server whenever both want the CPU.
 -->
 <plist version="1.0">
 <dict>
@@ -31,7 +39,7 @@
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ThrottleInterval</key><integer>10</integer>
-  <key>ProcessType</key><string>Background</string>
+  <key>ProcessType</key><string>Standard</string>
   <key>StandardOutPath</key><string>/Users/sonat/Library/Logs/Seyirlik/worker.log</string>
   <key>StandardErrorPath</key><string>/Users/sonat/Library/Logs/Seyirlik/worker.log</string>
 </dict>

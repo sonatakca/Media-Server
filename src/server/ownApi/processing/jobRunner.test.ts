@@ -180,6 +180,7 @@ const paths = {
 function runner(
   fake: ReturnType<typeof fakeStore>,
   packageFn: ReturnType<typeof vi.fn>,
+  softwareThreads?: number,
 ) {
   return createProcessingJobRunner({
     store: fake.store,
@@ -188,6 +189,7 @@ function runner(
     detectHardwareFn: vi.fn(async () => hardware) as never,
     probeFn: vi.fn(async () => probe()) as never,
     packageFn: packageFn as never,
+    ...(softwareThreads === undefined ? {} : { softwareThreads }),
   });
 }
 
@@ -450,6 +452,19 @@ describe("processing job runner", () => {
     });
   });
 
+  it("passes an explicit software thread override to the packager", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "ready" as const,
+    }));
+
+    await runner(fake, packageFn, 8).run(input);
+
+    const options = (packageFn.mock.calls[0] as unknown as unknown[])[2];
+    expect(options).toMatchObject({ softwareThreads: 8 });
+  });
+
   /**
    * Losing the volume mid-encode.
    *
@@ -515,9 +530,9 @@ describe("processing job runner", () => {
 
     await runner(fake, packageFn).run(input);
 
-    const start = fake.updates.find(
-      (update) => update.state === "running",
-    ) as Record<string, unknown> | undefined;
+    const start = fake.updates.find((update) => update.state === "running") as
+      | Record<string, unknown>
+      | undefined;
     expect(start).toBeDefined();
     expect(start!.finishedAt).toBeNull();
     expect(start!.overallProgress).toBe(0);

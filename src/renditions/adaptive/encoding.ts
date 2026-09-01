@@ -91,6 +91,10 @@ export interface AdaptivePackageEncodingInput {
   frameRate?: number;
   segmentSeconds?: number;
   preset?: string;
+  /** Total software-encoder CPU budget for this FFmpeg process. */
+  softwareThreads?: number;
+  /** Shared pool for the one complex filter graph. */
+  filterComplexThreads?: number;
 }
 
 /**
@@ -267,6 +271,7 @@ function videoEncoderArgsFor(
   hdr: RenditionHdrSignal | undefined,
   frameRate: number | undefined,
   segmentSeconds: number,
+  softwareThreads: number | undefined,
 ): string[] {
   const family = codecFamilyForEncoder(encoder);
   const policy = getEncodingPolicy(output.qualityHeight, family);
@@ -276,6 +281,9 @@ function videoEncoderArgsFor(
   const rungFrameRate = output.frameRate ?? frameRate;
   const specifier = `v:${ordinal}`;
   const args: string[] = [`-c:${specifier}`, encoder];
+  if (softwareThreads !== undefined && encoder === "libx264") {
+    args.push(`-threads:${specifier}`, String(softwareThreads));
+  }
   if (!encoder.endsWith("_videotoolbox")) {
     args.push(`-preset:${specifier}`, preset);
   }
@@ -348,11 +356,25 @@ function videoEncoderArgsFor(
   // The GOP policy is per-stream because `-force_key_frames` without a stream
   // specifier only reaches the first video output, which would leave every
   // other rung of the ladder on the encoder's own cadence.
-  for (const argument of buildGopArgs({
+  const gopArgs = buildGopArgs({
     encoder: gopEncoderFamily(encoder),
     frameRate: rungFrameRate,
     segmentSeconds,
-  })) {
+  });
+  for (let index = 0; index < gopArgs.length; index += 1) {
+    const argument = gopArgs[index]!;
+    if (
+      encoder === "libx265" &&
+      softwareThreads !== undefined &&
+      argument === "-x265-params"
+    ) {
+      args.push(
+        `${argument}:${specifier}`,
+        `${gopArgs[index + 1]}:pools=${softwareThreads}`,
+      );
+      index += 1;
+      continue;
+    }
     args.push(argument.startsWith("-") ? `${argument}:${specifier}` : argument);
   }
 
@@ -426,6 +448,8 @@ export function buildAdaptivePackageFfmpegArgs({
   frameRate,
   segmentSeconds = SEGMENT_TARGET_SECONDS,
   preset = "medium",
+  softwareThreads,
+  filterComplexThreads,
 }: AdaptivePackageEncodingInput): string[] {
   /*
    * These describe one FFmpeg invocation, not a finished package.
@@ -463,6 +487,9 @@ export function buildAdaptivePackageFfmpegArgs({
     "pipe:1",
     "-nostats",
     "-y",
+    ...(videoOutputs.length > 0 && filterComplexThreads !== undefined
+      ? ["-filter_complex_threads", String(filterComplexThreads)]
+      : []),
     "-i",
     inputPath,
     // An audio-only run has no picture to scale, and an empty filter graph is
@@ -489,6 +516,16 @@ export function buildAdaptivePackageFfmpegArgs({
   args.push("-sn", "-dn");
 
   videoOutputs.forEach((output, index) => {
+    const baseThreads =
+      softwareThreads === undefined
+        ? undefined
+        : Math.floor(softwareThreads / videoOutputs.length);
+    const extraThreadStreams =
+      softwareThreads === undefined ? 0 : softwareThreads % videoOutputs.length;
+    const threadsPerEncoder =
+      baseThreads === undefined
+        ? undefined
+        : Math.max(1, baseThreads + (index < extraThreadStreams ? 1 : 0));
     args.push(
       ...videoEncoderArgsFor(
         encoder,
@@ -498,6 +535,7 @@ export function buildAdaptivePackageFfmpegArgs({
         hdr,
         frameRate,
         segmentSeconds,
+        threadsPerEncoder,
       ),
       // Rotation is applied by the scaler, so the output must not also ask a
       // player to rotate it again.

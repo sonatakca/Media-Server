@@ -369,6 +369,9 @@ export async function createMediaServer(
     generatedStoragePath,
     ...(options.ffmpegPath ? { ffmpegPath: options.ffmpegPath } : {}),
     ...(options.ffprobePath ? { ffprobePath: options.ffprobePath } : {}),
+    ...(options.softwareTranscodeThreads === undefined
+      ? {}
+      : { softwareTranscodeThreads: options.softwareTranscodeThreads }),
     ...(options.runWorker === undefined
       ? {}
       : { runWorker: options.runWorker }),

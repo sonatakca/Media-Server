@@ -21,6 +21,18 @@ export async function startMediaWorkerFromEnv(): Promise<() => Promise<void>> {
   }
 
   const resolvedMediaRoot = await assertMediaRootDirectory(mediaRoot);
+  const rawSoftwareThreads = process.env.SEYIRLIK_SOFTWARE_TRANSCODE_THREADS;
+  const parsedSoftwareThreads = rawSoftwareThreads
+    ? Number(rawSoftwareThreads)
+    : undefined;
+  if (
+    parsedSoftwareThreads !== undefined &&
+    (!Number.isInteger(parsedSoftwareThreads) || parsedSoftwareThreads <= 0)
+  ) {
+    throw new Error(
+      "SEYIRLIK_SOFTWARE_TRANSCODE_THREADS must be a positive integer.",
+    );
+  }
   // The worker never serves playback; the manager exists only to satisfy the
   // runtime's contract and is configured to do nothing.
   const sessionManager = new PlaybackSessionManager({
@@ -42,6 +54,9 @@ export async function startMediaWorkerFromEnv(): Promise<() => Promise<void>> {
     ...(process.env.SEYIRLIK_FFPROBE_PATH
       ? { ffprobePath: process.env.SEYIRLIK_FFPROBE_PATH }
       : {}),
+    ...(parsedSoftwareThreads === undefined
+      ? {}
+      : { softwareTranscodeThreads: parsedSoftwareThreads }),
     runWorker: true,
   });
 

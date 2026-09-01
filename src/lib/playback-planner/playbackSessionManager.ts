@@ -355,6 +355,7 @@ export class PlaybackSessionManager {
           ffmpegPath: this.ffmpegPath,
           preferredVideoEncoder: options.preferredVideoEncoder,
           softwareThreads: options.softwareThreads,
+          maxConcurrentSoftwareTranscodes: this.maxConcurrentVideoTranscodes,
         }));
     this.spawnProcess = options.spawnProcess ?? spawn;
   }

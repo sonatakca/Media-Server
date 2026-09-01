@@ -233,7 +233,7 @@ Everything is read from the environment. Only `DATABASE_URL` and
 | `SEYIRLIK_FFPROBE_PATH`               | `ffprobe` on PATH | ffprobe binary.                                                       |
 | `SEYIRLIK_FFMPEG_VIDEO_ENCODER`       | auto              | Force a specific video encoder.                                       |
 | `SEYIRLIK_MAX_VIDEO_TRANSCODES`       | bounded           | Concurrent transcode ceiling.                                         |
-| `SEYIRLIK_SOFTWARE_TRANSCODE_THREADS` | auto              | Thread count for software transcoding.                                |
+| `SEYIRLIK_SOFTWARE_TRANSCODE_THREADS` | topology-aware    | Optional software encoder thread override.                            |
 
 ### Restarting
 

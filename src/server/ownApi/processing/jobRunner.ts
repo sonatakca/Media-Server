@@ -10,6 +10,7 @@ import {
 } from "../../../renditions/hardware/detect";
 import type { RenditionPaths } from "../../../renditions/analysis";
 import { probeMediaFile } from "../../../renditions/probe";
+import { RenditionLockHeldError } from "../../../renditions/locks";
 import {
   loadRenditionRegistry,
   saveRenditionRegistry,
@@ -43,6 +44,7 @@ export interface ProcessingJobRunnerDeps {
   mediaRoot: string;
   ffmpegPath?: string;
   ffprobePath?: string;
+  softwareThreads?: number;
   /** Injected in tests so nothing spawns FFmpeg. */
   detectHardwareFn?: typeof detectHardware;
   packageFn?: typeof packageAdaptiveRendition;
@@ -84,6 +86,13 @@ export interface RunProcessingJobOutcome {
   packageResult?: AdaptivePackageResult;
   errorCode?: string;
   errorMessage?: string;
+  /**
+   * Set when the failure is a condition of the moment rather than a defect in
+   * the job — another attempt holding the rendition lock is the case that
+   * matters. Such a job must go back on the queue: failing it outright leaves
+   * a perfectly processable title needing a person to notice and requeue it.
+   */
+  retryable?: boolean;
 }
 
 /** Structured codes so the UI can offer the right next action. */
@@ -114,6 +123,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     paths,
     ffmpegPath = process.env.SEYIRLIK_FFMPEG_PATH ?? "ffmpeg",
     ffprobePath = process.env.SEYIRLIK_FFPROBE_PATH ?? "ffprobe",
+    softwareThreads,
     detectHardwareFn = detectHardware,
     packageFn = packageAdaptiveRendition,
     probeFn = probeMediaFile,
@@ -151,7 +161,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         };
       }
 
-      const fail = async (code: string, message: string) => {
+      const fail = async (code: string, message: string, retryable = false) => {
         await store.update(job.id, {
           state: "failed",
           errorCode: code,
@@ -168,6 +178,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           status: "failed" as const,
           errorCode: code,
           errorMessage: message,
+          ...(retryable ? { retryable: true } : {}),
         };
       };
 
@@ -506,6 +517,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             ffmpegPath,
             ffprobePath,
             reserveBytes: decision.estimate.reserveBytes,
+            ...(softwareThreads === undefined ? {} : { softwareThreads }),
             videoEncoder: decision.videoEncoder,
             hdrVideoEncoder: decision.videoEncoder,
             audioStreamIndexes: decision.streams.keptAudioStreamIndexes,
@@ -588,6 +600,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           error instanceof Error
             ? error.message
             : "The encoder stopped before the package was built.",
+          error instanceof RenditionLockHeldError,
         );
       } finally {
         clearInterval(cancellationWatch);

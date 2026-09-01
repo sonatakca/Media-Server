@@ -48,6 +48,8 @@ export interface JobHandlerOptions {
     }): Promise<{
       status: "succeeded" | "failed" | "cancelled" | "waiting-for-storage";
       errorMessage?: string;
+      /** A failure the queue should try again, such as a held rendition lock. */
+      retryable?: boolean;
     }>;
   };
 }
@@ -375,9 +377,22 @@ export function createJobHandlers({
     await reportProgress(1, "Media processing finished");
 
     if (outcome.status === "failed") {
-      // Already recorded in detail on the processing job; the queue row only
-      // needs to know it did not succeed.
-      throw new PermanentJobError(outcome.errorMessage ?? "Processing failed.");
+      const message = outcome.errorMessage ?? "Processing failed.";
+      /*
+       * Contention is not a verdict on the job.
+       *
+       * A rendition lock held by another attempt says only that this one
+       * arrived second, and the queue's own backoff is exactly the right
+       * answer. Failing permanently instead left a title needing a person to
+       * requeue it by hand — which is what happened to every encode that was
+       * running when the worker was restarted, since the lock its own killed
+       * process left behind refused its retry.
+       *
+       * Everything else is already recorded in detail on the processing job;
+       * the queue row only needs to know it did not succeed.
+       */
+      if (outcome.retryable) throw new Error(message);
+      throw new PermanentJobError(message);
     }
     /*
      * Storage disappearing ends this queue run without being a failure. The

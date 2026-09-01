@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
-import { cpus } from "node:os";
+import {
+  defaultSoftwareEncoderThreads,
+  defaultSoftwareFilterThreads,
+} from "../../server/cpuTopology";
 
 export const H264_VIDEO_ENCODERS = [
   "h264_videotoolbox",
@@ -15,6 +18,7 @@ export interface FfmpegRuntimeProfile {
   videoEncoder: H264VideoEncoder;
   hardwareAccelerated: boolean;
   softwareThreads: number;
+  softwareFilterThreads?: number;
   availableVideoEncoders: H264VideoEncoder[];
   supportsHdrToneMapping: boolean;
 }
@@ -26,10 +30,8 @@ export interface DetectFfmpegRuntimeOptions {
   platform?: NodeJS.Platform;
   encoderOutput?: string;
   filterOutput?: string;
-}
-
-function defaultSoftwareThreads(): number {
-  return Math.max(1, Math.min(8, Math.floor(cpus().length / 2) || 1));
+  /** Used only for the automatic default; an explicit thread override wins. */
+  maxConcurrentSoftwareTranscodes?: number;
 }
 
 export function parseFfmpegVideoEncoders(output: string): Set<string> {
@@ -208,13 +210,18 @@ export async function detectFfmpegRuntime(
     detected.has(encoder),
   );
 
+  const softwareThreads =
+    options.softwareThreads && options.softwareThreads > 0
+      ? Math.floor(options.softwareThreads)
+      : defaultSoftwareEncoderThreads({
+          concurrentEncodes: options.maxConcurrentSoftwareTranscodes,
+        });
+
   return {
     videoEncoder,
     hardwareAccelerated: videoEncoder !== "libx264",
-    softwareThreads:
-      options.softwareThreads && options.softwareThreads > 0
-        ? Math.floor(options.softwareThreads)
-        : defaultSoftwareThreads(),
+    softwareThreads,
+    softwareFilterThreads: defaultSoftwareFilterThreads(softwareThreads),
     availableVideoEncoders,
     supportsHdrToneMapping:
       detectedFilters.has("zscale") && detectedFilters.has("tonemap"),
@@ -229,6 +236,7 @@ export function createSoftwareRuntimeProfile(
     videoEncoder: "libx264",
     hardwareAccelerated: false,
     softwareThreads: Math.max(1, Math.floor(softwareThreads)),
+    softwareFilterThreads: defaultSoftwareFilterThreads(softwareThreads),
     availableVideoEncoders: ["libx264"],
     supportsHdrToneMapping,
   };

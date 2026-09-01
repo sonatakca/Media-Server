@@ -94,6 +94,10 @@ import {
 import { validateAdaptivePackage } from "./validation";
 import { createOutputMeter } from "../outputMeter";
 import {
+  defaultSoftwareEncoderThreads,
+  defaultSoftwareFilterThreads,
+} from "../../server/cpuTopology";
+import {
   planPackageWork,
   type PackageWorkPlan,
   type RenditionPresence,
@@ -213,6 +217,8 @@ export interface AdaptivePackagerOptions {
   reserveBytes: number;
   segmentSeconds?: number;
   preset?: string;
+  /** Explicit software CPU budget; automatic topology detection is the default. */
+  softwareThreads?: number;
   /**
    * Package every source audio track rather than only the default one. The
    * schema and master generator always support several; this decides how many a
@@ -474,6 +480,7 @@ export async function packageAdaptiveRendition(
     reserveBytes,
     segmentSeconds = SEGMENT_TARGET_SECONDS,
     preset = "medium",
+    softwareThreads = defaultSoftwareEncoderThreads(),
     allAudioTracks = false,
     audioStreamIndexes,
     subtitleStreamIndexes = [],
@@ -745,7 +752,11 @@ export async function packageAdaptiveRendition(
         videoOutputs,
         audioOutputs: plannedAudioOutputs,
       }).map((directory) =>
-        path.join(workVersionRoot, ...directory.split("/"), ADAPTIVE_MEDIA_FILE),
+        path.join(
+          workVersionRoot,
+          ...directory.split("/"),
+          ADAPTIVE_MEDIA_FILE,
+        ),
       ),
     );
 
@@ -777,6 +788,12 @@ export async function packageAdaptiveRendition(
       ...(gopFrameRate === undefined ? {} : { frameRate: gopFrameRate }),
       segmentSeconds,
       preset,
+      ...(encoder === "libx264" || encoder === "libx265"
+        ? {
+            softwareThreads,
+            filterComplexThreads: defaultSoftwareFilterThreads(softwareThreads),
+          }
+        : {}),
     });
 
     try {

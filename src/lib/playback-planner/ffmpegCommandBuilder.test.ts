@@ -323,6 +323,23 @@ describe("buildFfmpegCommand", () => {
     );
   });
 
+  it("uses a smaller filter pool than the software encoder pool", () => {
+    const command = buildFfmpegCommand({
+      plan: plan(),
+      media: media(),
+      outputDir: "/tmp/output",
+      runtimeProfile: {
+        ...runtime("libx264"),
+        softwareThreads: 8,
+        softwareFilterThreads: 4,
+      },
+    });
+
+    expect(command.args).toEqual(
+      expect.arrayContaining(["-filter_threads", "4", "-threads", "8"]),
+    );
+  });
+
   it("adds HDR tone mapping before H.264 output", () => {
     const command = buildFfmpegCommand({
       plan: plan(),

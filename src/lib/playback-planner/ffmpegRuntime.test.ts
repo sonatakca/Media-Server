@@ -67,4 +67,16 @@ describe("FFmpeg runtime selection", () => {
       supportsHdrToneMapping: true,
     });
   });
+
+  it("shares automatic software threads across the configured concurrency", async () => {
+    const profile = await detectFfmpegRuntime({
+      encoderOutput: ENCODER_OUTPUT,
+      filterOutput: FILTER_OUTPUT,
+      preferredVideoEncoder: "software",
+      platform: "linux",
+      maxConcurrentSoftwareTranscodes: 2,
+    });
+
+    expect(profile.softwareThreads).toBeGreaterThan(0);
+  });
 });
