@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, stat, writeFile } from "node:fs/promises";
 import {
   MASTER_LAYOUT_VERSION,
   repairTitleMaster,
@@ -32,6 +32,8 @@ import { inspectAdaptivePackage } from "../src/renditions/adaptive/inspect";
 import { validateAdaptivePackage } from "../src/renditions/adaptive/validation";
 import { processAdaptiveReport } from "../src/renditions/adaptive/processor";
 import { ADAPTIVE_PROFILE_VERSION } from "../src/renditions/adaptive/profile";
+import { cleanupAdaptiveWork } from "../src/renditions/adaptive/epochs/cleanup";
+import { summariseCheckpoints } from "../src/renditions/adaptive/epochs/status";
 
 type RenditionGeneration = "legacy" | "adaptive" | "all";
 
@@ -80,6 +82,9 @@ function parseArguments(argv: string[]): CliArguments {
     } else if (argument === "--workers" && next) {
       result.workers = Number(next);
       index += 1;
+      // Still accepted so an existing cron line does not start failing, and
+      // deliberately ignored: age is no evidence about a checkpoint, which is
+      // exactly as useful a week later as it was when it was written.
     } else if (argument === "--older-than-hours" && next) {
       result.olderThanHours = Number(next);
       index += 1;
@@ -329,62 +334,30 @@ async function validateAdaptiveOutputs(
 /** A lock older than this is treated as abandoned regardless of its lease. */
 const LOCK_MAXIMUM_AGE_MS = 24 * 60 * 60 * 1_000;
 
-async function cleanupWork(
-  workRoot: string,
+/**
+ * Whether anything is still working on a media id.
+ *
+ * A lock's presence is not the question; whether anything is still holding it
+ * is. A dead attempt leaves its lock behind — an unplugged volume is the usual
+ * way — and treating that as active meant the workspace it abandoned could
+ * never be reclaimed. The lease says which it is.
+ */
+async function hasActiveRenditionLock(
   stateRoot: string,
-  olderThanHours: number,
-  dryRun: boolean,
-): Promise<Array<{ path: string; action: string }>> {
-  const actions: Array<{ path: string; action: string }> = [];
-  const cutoff = Date.now() - olderThanHours * 60 * 60 * 1_000;
-  let mediaEntries;
-  try {
-    mediaEntries = await readdir(workRoot, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return actions;
-    throw error;
+  mediaId: string,
+): Promise<boolean> {
+  for (const lockPath of [
+    path.join(stateRoot, "locks", `${mediaId}.lock`),
+    path.join(stateRoot, "locks", `${mediaId}.adaptive.lock`),
+  ]) {
+    try {
+      await stat(lockPath);
+      if (!(await staleLock(lockPath, LOCK_MAXIMUM_AGE_MS))) return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
-  for (const mediaEntry of mediaEntries) {
-    if (!mediaEntry.isDirectory() || mediaEntry.isSymbolicLink()) continue;
-    const lockPaths = [
-      path.join(stateRoot, "locks", `${mediaEntry.name}.lock`),
-      path.join(stateRoot, "locks", `${mediaEntry.name}.adaptive.lock`),
-    ];
-    /*
-     * A lock's presence is not the question; whether anything is still holding
-     * it is. A dead attempt leaves its lock behind — an unplugged volume is the
-     * usual way — and treating that as active meant the workspace it abandoned
-     * could never be reclaimed. The lease says which it is.
-     */
-    let hasActiveLock = false;
-    for (const lockPath of lockPaths) {
-      try {
-        await stat(lockPath);
-        if (!(await staleLock(lockPath, LOCK_MAXIMUM_AGE_MS))) {
-          hasActiveLock = true;
-          break;
-        }
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-      }
-    }
-    if (hasActiveLock) {
-      actions.push({ path: mediaEntry.name, action: "skipped-active-lock" });
-      continue;
-    }
-    const mediaWorkRoot = path.join(workRoot, mediaEntry.name);
-    const mediaStats = await stat(mediaWorkRoot);
-    if (mediaStats.mtimeMs > cutoff) {
-      actions.push({ path: mediaEntry.name, action: "skipped-recent" });
-      continue;
-    }
-    actions.push({
-      path: mediaEntry.name,
-      action: dryRun ? "would-remove-invalid-work" : "removed-invalid-work",
-    });
-    if (!dryRun) await rm(mediaWorkRoot, { recursive: true, force: true });
-  }
-  return actions;
+  return false;
 }
 
 /**
@@ -411,6 +384,7 @@ function createProgressRenderer() {
   let lastPrintedAt = 0;
   let activeLine = false;
   let currentQualities = "";
+  let currentEpoch = "";
 
   const clearLine = () => {
     if (activeLine && isTty) {
@@ -507,7 +481,7 @@ function createProgressRenderer() {
           event.speed,
         );
         const line =
-          `    ${currentQualities} ${percent.toFixed(1).padStart(5)}%` +
+          `    ${currentQualities}${currentEpoch ? ` e${currentEpoch}` : ""} ${percent.toFixed(1).padStart(5)}%` +
           ` ${formatDuration(event.processedSeconds)}/${formatDuration(event.durationSeconds)}` +
           `${event.speed ? ` ${event.speed.toFixed(2)}x` : ""}` +
           `${event.fps ? ` ${Math.round(event.fps)}fps` : ""}` +
@@ -523,6 +497,45 @@ function createProgressRenderer() {
         }
         break;
       }
+
+      case "epoch-plan":
+        write(
+          `    plan: ${event.epochCount} checkpointed ${event.epochCount === 1 ? "epoch" : "epochs"}` +
+            ` of about ${Math.round(event.epochTargetSeconds / 60)} min` +
+            (event.reusedEpochs > 0
+              ? ` — reusing ${event.reusedEpochs}, protected through ${formatDuration(event.protectedSeconds)}`
+              : ""),
+        );
+        for (const entry of event.invalidated) {
+          write(
+            `    checkpoint ${entry.index + 1} rejected (${entry.reason}); it will be built again`,
+          );
+        }
+        break;
+
+      case "epoch-start":
+        currentEpoch = `${event.index + 1}/${event.epochCount}`;
+        write(
+          `    ${event.attempt > 1 ? "retrying" : "encoding"} epoch ${currentEpoch}` +
+            ` ${formatDuration(event.startSeconds)}–${formatDuration(event.endSeconds)}`,
+        );
+        lastPrintedAt = 0;
+        break;
+
+      case "epoch-complete":
+        // A reused checkpoint reports no bytes; only newly durable work is
+        // announced, or a resumed job would print a line per epoch it skipped.
+        if (event.bytes > 0) {
+          write(
+            `    checkpoint saved — protected through ${formatDuration(event.protectedSeconds)}` +
+              ` (${event.index + 1}/${event.epochCount}, ${formatBytes(event.bytes)})`,
+          );
+        }
+        break;
+
+      case "build-stage":
+        if (event.stage !== "encoding") write(`    ${event.stage}...`);
+        break;
 
       case "quality-ready":
         write(
@@ -550,16 +563,24 @@ function usage(): string {
     "Seyirlik rendition CLI",
     "  analyse",
     "  process [--profile legacy|adaptive|all] [--library Movies|Series] [--media-id UUID] [--source relative/path] [--workers 1] [--default-audio-only] [--dry-run]",
-    "  resume  [same options as process]",
+    "  resume  [same options as process]  continue from durable checkpoints",
     "  status",
     "  validate [--profile legacy|adaptive|all] [--media-id UUID] [--source relative/path]",
-    "  cleanup [--older-than-hours 24] [--dry-run]",
+    "  cleanup [--dry-run]",
     "  repair-masters [--library Movies|Series] [--media-id UUID] [--source relative/path] [--dry-run]",
     "",
     "repair-masters rewrites published master playlists to the current layout without",
     "re-encoding. Media files are never touched.",
     "",
-    "cleanup removes only abandoned generated work directories. Stale completed output is never removed by this command.",
+    "resume continues an interrupted title from its last durable five-minute checkpoint.",
+    "Encoding already protected by a checkpoint is never repeated.",
+    "",
+    "cleanup no longer sweeps by age: a work directory can hold fifty minutes of",
+    "validated encoding a job is about to resume from. It removes abandoned generated",
+    "work instead — partial epochs nobody is writing, staging directories from attempts",
+    "that have ended, and builds keyed to an obsolete profile. A valid completed",
+    "checkpoint is never removed by this command, at any age, and neither is stale",
+    "completed output.",
   ].join("\n");
 }
 
@@ -606,8 +627,29 @@ async function main() {
     const report = await loadLatestReport(reportPath);
     console.log(formatAnalysisReport(report));
     for (const item of report.items) {
+      /*
+       * The durable checkpoints, read from disk rather than from any record of
+       * them. "adaptive=failed" on its own tells an operator nothing about what
+       * a resume would actually have to redo; "epochs=10/31 protected=00:50:00"
+       * tells them exactly.
+       */
+      const checkpoints = await summariseCheckpoints({
+        workRoot: paths.workRoot,
+        mediaId: item.mediaId,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+        sourceFingerprint: item.sourceFingerprint,
+      });
+      const durable = checkpoints.present
+        ? `\tepochs=${checkpoints.completedEpochs}/${checkpoints.epochCount}` +
+          `\tprotected=${formatDuration(checkpoints.protectedSeconds)}` +
+          (checkpoints.nextEpochIndex === null
+            ? "\tcurrent=none"
+            : `\tcurrent=${checkpoints.nextEpochIndex + 1}`) +
+          `\tcheckpointed=${formatBytes(checkpoints.bytes)}` +
+          (checkpoints.activePartials > 0 ? "\tactive" : "")
+        : "";
       console.log(
-        `legacy=${item.status}\tadaptive=${item.adaptive.status}${item.adaptive.eligible ? "" : " (incompatible)"}\t${item.mediaId}\t${item.relativePath}`,
+        `legacy=${item.status}\tadaptive=${item.adaptive.status}${item.adaptive.eligible ? "" : " (incompatible)"}${durable}\t${item.mediaId}\t${item.relativePath}`,
       );
     }
     return;
@@ -838,14 +880,38 @@ async function main() {
       "rendition-cleanup",
     );
     try {
-      const actions = await cleanupWork(
-        paths.workRoot,
-        paths.stateRoot,
-        args.olderThanHours,
-        args.dryRun,
+      /*
+       * Cleanup no longer sweeps by age. A work directory can hold fifty
+       * minutes of validated, immutable encoding that a job is about to resume
+       * from, and "older than twenty-four hours" describes precisely the job
+       * that was interrupted by a drive being unplugged over a weekend — the
+       * case checkpoints exist for. It removes what is provably unusable
+       * instead, and says so per entry.
+       */
+      const known = new Set(
+        (await loadLatestReport(reportPath).catch(() => null))?.items.map(
+          (item) => item.mediaId,
+        ) ?? [],
       );
-      for (const action of actions)
-        console.log(`${action.action}\t${action.path}`);
+      const actions = await cleanupAdaptiveWork({
+        workRoot: paths.workRoot,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+        ...(known.size > 0
+          ? { isKnownMedia: (mediaId: string) => known.has(mediaId) }
+          : {}),
+        hasActiveLock: (mediaId) =>
+          hasActiveRenditionLock(paths.stateRoot, mediaId),
+        dryRun: args.dryRun,
+      });
+      for (const action of actions) {
+        console.log(
+          `${action.action}\t${action.path}${
+            action.keptEpochs === undefined
+              ? ""
+              : `\tepochs=${action.keptEpochs}`
+          }`,
+        );
+      }
     } finally {
       await lock.release();
     }

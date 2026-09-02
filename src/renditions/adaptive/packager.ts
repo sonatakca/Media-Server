@@ -7,10 +7,15 @@
  * directory a playback session might currently be reading, and a failed run
  * leaves the previously active package — legacy or adaptive — exactly as it was.
  *
- * The one structural difference from the legacy processor is that the unit of
- * work is the whole package rather than a file. A ladder is only meaningful if
- * every rung shares a timeline, so a partially encoded package has no useful
- * subset to keep and resume restarts the encode instead of reusing rungs.
+ * The unit of *work*, however, is no longer the whole package. The timeline is
+ * cut into nominal five-minute epochs, each encoded by one FFmpeg process that
+ * reads and decodes the source once and produces every rung of the ladder for
+ * that stretch. An epoch that finishes is validated, manifested and renamed
+ * into place, and from that moment it is immutable: a crash, a cancel, an
+ * unplugged drive or a restarted server costs at most the epoch that was
+ * running. Assembly then joins those epochs into the final renditions by
+ * copying bytes — no decoder, no encoder, not even a remux — so the recovery
+ * story does not cost a second transcode at the end.
  */
 
 import { randomUUID } from "node:crypto";
@@ -42,8 +47,6 @@ import { probeMediaFile } from "../probe";
 import type { RenditionProgressReporter } from "../progress";
 import { parseFfmpegProgressFields } from "../progress";
 import {
-  adaptiveOutputDirectories,
-  buildAdaptivePackageFfmpegArgs,
   canStreamCopyAudio,
   deliveryChannelsFor,
   type AdaptiveAudioOutput,
@@ -56,11 +59,7 @@ import type {
   AdaptiveSubtitleRenditionMetadata,
   AdaptiveVideoRenditionMetadata,
 } from "./metadata";
-import {
-  buildMasterPlaylist,
-  parseCodecsFromGeneratedMaster,
-  parseMediaPlaylist,
-} from "./playlist";
+import { buildMasterPlaylist, parseMediaPlaylist } from "./playlist";
 import {
   audioCodecString,
   probePackagedAudio,
@@ -92,7 +91,6 @@ import {
   type TitlePackageManifest,
 } from "./publishTitle";
 import { validateAdaptivePackage } from "./validation";
-import { createOutputMeter } from "../outputMeter";
 import {
   defaultSoftwareEncoderThreads,
   defaultSoftwareFilterThreads,
@@ -103,6 +101,26 @@ import {
   type RenditionPresence,
 } from "./incrementalPlan";
 import { buildWebVttMediaPlaylist, extractWebVttFile } from "./subtitles";
+import {
+  audioStagePath,
+  checkpointBytes,
+  checkpointRoot,
+  reconcilePlan,
+} from "./epochs/checkpoints";
+import {
+  DEFAULT_EPOCH_TARGET_SECONDS,
+  EPOCH_TIMELINE_POLICY_VERSION,
+} from "./epochs/policy";
+import { buildEpochPlan, nominalEpochBoundaries } from "./epochs/plan";
+import {
+  probeSourceFrameTimeline,
+  timestampSeconds,
+} from "./epochs/sourceTimeline";
+import { runEpochBuild } from "./epochs/engine";
+import { ensureAudioStage } from "./epochs/audioStage";
+import { assembleVideoRenditions, copyStageDirectory } from "./epochs/assemble";
+import { epochProgress } from "./epochs/progress";
+import { SourceReadError, StorageInterruptedError } from "./epochs/failure";
 
 /**
  * Whether a title still holds every file its manifest names.
@@ -192,6 +210,15 @@ export interface AdaptivePackageResult {
   issues?: string[];
   storageBytes?: number;
   /**
+   * Why an `interrupted` run stopped.
+   *
+   * A cancellation and a vanished volume both end the encoder the same way, and
+   * conflating them is what turned an accidental unplug into a permanently
+   * failed job. The caller needs to know which happened to choose between
+   * "cancelled" and "waiting for the drive".
+   */
+  interruption?: "cancelled" | "storage";
+  /**
    * Bytes this run actually produced, as against `storageBytes` which is the
    * whole published package. They are the same for a full build and very
    * different for an incremental one — a job that added a single rung must not
@@ -242,6 +269,30 @@ export interface AdaptivePackagerOptions {
    * subtitles at all in a language it was told to retain.
    */
   sidecarSubtitles?: readonly SidecarSubtitle[];
+  /**
+   * Nominal epoch length. Five minutes in production; tests shorten it so an
+   * integration run crosses several boundaries in a few seconds of fixture.
+   */
+  epochTargetSeconds?: number;
+  /**
+   * Whether every root this job needs is answering right now.
+   *
+   * Consulted only when something fails, and it is the deciding evidence: an
+   * `ENOENT` on an output path is a vanished volume when the volume is gone and
+   * a genuinely missing file when it is not, and no error message distinguishes
+   * them.
+   */
+  storageAvailable?: () => boolean | Promise<boolean>;
+  /** Which roots failed their last check, so the reason names the drive. */
+  missingRoots?: () => readonly string[];
+  /**
+   * Waits between re-reading a source that returned an I/O error.
+   *
+   * Long enough by default to outlast a watchdog poll, so a drive that has
+   * genuinely gone is recognised as gone rather than blamed on the media.
+   * Tests shorten it; nothing else should.
+   */
+  sourceIoBackoffMs?: readonly number[];
   driveSpaceProvider?: () => Promise<DriveSpace>;
   runEncoder?: (
     command: string,
@@ -486,6 +537,10 @@ export async function packageAdaptiveRendition(
     subtitleStreamIndexes = [],
     sidecarSubtitles = [],
     pauseController,
+    epochTargetSeconds = DEFAULT_EPOCH_TARGET_SECONDS,
+    storageAvailable,
+    sourceIoBackoffMs,
+    missingRoots,
     driveSpaceProvider = () => getDriveSpace(paths.mediaRoot),
     runEncoder = runFfmpegProcess,
     onEvent,
@@ -644,11 +699,36 @@ export async function packageAdaptiveRendition(
       audioTrackCount: work.audioStreamIndexes.length,
     });
 
-    // Preflight accounts for the package being built while the previous one is
-    // still on disk: both exist between promotion and an explicit cleanup.
+    /*
+     * Two directories, with very different lifetimes.
+     *
+     * The checkpoint root is durable: it survives a crash, a cancel, a remount
+     * and a restart, and it is what makes resume mean "carry on" rather than
+     * "start again". The staging root, made further down, is this attempt's
+     * scratch space and is the only thing the publisher ever sees.
+     */
+    const checkpoints = checkpointRoot(
+      paths.workRoot,
+      request.mediaId,
+      ADAPTIVE_PROFILE_VERSION,
+      request.sourceFingerprint,
+    );
+    /** Bytes already protected on disk when this attempt started. */
+    const inheritedBytes = await checkpointBytes(checkpoints);
+
+    /*
+     * Preflight accounts for three things existing at once: the checkpoints,
+     * the assembled copy staged beside them, and the previously published
+     * package, which is not removed until the replacement is proven. Bytes
+     * already checkpointed are subtracted, because a resumed job does not have
+     * to find room for work it has already done — reserving for them again is
+     * what stopped a nearly finished title from resuming on a full-ish drive.
+     */
     const drive = await driveSpaceProvider();
-    const conservativeBytes = Math.ceil(
-      estimate.totalBytes * (1 + DEFAULT_STORAGE_SAFETY_MARGIN) * 2,
+    const conservativeBytes = Math.max(
+      0,
+      Math.ceil(estimate.totalBytes * (1 + DEFAULT_STORAGE_SAFETY_MARGIN) * 2) -
+        inheritedBytes,
     );
     if (drive.freeBytes - conservativeBytes < reserveBytes) {
       return {
@@ -718,14 +798,7 @@ export async function packageAdaptiveRendition(
       `${versionDirectory}.${process.pid}-${randomUUID().slice(0, 8)}.partial`,
     );
     await rm(workVersionRoot, { recursive: true, force: true });
-    for (const directory of adaptiveOutputDirectories({
-      videoOutputs,
-      audioOutputs: plannedAudioOutputs,
-    })) {
-      await mkdir(path.join(workVersionRoot, ...directory.split("/")), {
-        recursive: true,
-      });
-    }
+    await mkdir(workVersionRoot, { recursive: true });
     for (const streamIndex of [
       ...plannedSubtitleStreamIndexes,
       // Sidecars are extracted in the same place as embedded tracks and so
@@ -742,24 +815,6 @@ export async function packageAdaptiveRendition(
       );
     }
 
-    /*
-     * Exactly the media files this run will write — one per rendition being
-     * encoded. An incremental job measures only what it is producing, never
-     * the renditions it is reusing.
-     */
-    const outputMeter = createOutputMeter(
-      adaptiveOutputDirectories({
-        videoOutputs,
-        audioOutputs: plannedAudioOutputs,
-      }).map((directory) =>
-        path.join(
-          workVersionRoot,
-          ...directory.split("/"),
-          ADAPTIVE_MEDIA_FILE,
-        ),
-      ),
-    );
-
     onEvent?.({
       type: "encode-start",
       mediaId: request.mediaId,
@@ -770,65 +825,299 @@ export async function packageAdaptiveRendition(
       durationSeconds: probe.durationSeconds,
     });
 
-    const args = buildAdaptivePackageFfmpegArgs({
-      inputPath: request.sourcePath,
-      // FFmpeg's `%v` templates are joined with forward slashes regardless of
-      // platform, so the output root is normalised to POSIX separators here.
-      outputRoot: workVersionRoot.split(path.sep).join("/"),
-      videoOutputs,
-      audioOutputs: plannedAudioOutputs,
-      encoder,
-      ...(hdr ? { hdr } : {}),
-      // The GOP is sized from the ceiling rate, not the average. `-g` counts
-      // frames; on a variable-rate source an average-derived count elapses
-      // sooner than two seconds of presentation time and inserts keyframes at
-      // positions the forced-keyframe expression never chose — which is how a
-      // ladder ends up with random-access points its own segment boundaries
-      // disagree with.
-      ...(gopFrameRate === undefined ? {} : { frameRate: gopFrameRate }),
+    /*
+     * The plan is computed from the source's own frame times and then written
+     * down, so a restart regenerates exactly the boundaries the checkpoints on
+     * disk were cut on rather than a set that merely looks similar.
+     */
+    onEvent?.({
+      type: "build-stage",
+      mediaId: request.mediaId,
+      stage: "planning",
+    });
+    const boundaries = nominalEpochBoundaries({
+      sourceDurationSeconds: probe.durationSeconds,
+      epochTargetSeconds,
       segmentSeconds,
-      preset,
-      ...(encoder === "libx264" || encoder === "libx265"
-        ? {
-            softwareThreads,
-            filterComplexThreads: defaultSoftwareFilterThreads(softwareThreads),
-          }
-        : {}),
+    });
+    const timeline = await probeSourceFrameTimeline({
+      sourcePath: request.sourcePath,
+      boundaries,
+      ffprobePath,
+      ...(signal ? { signal } : {}),
+    });
+    const freshPlan = buildEpochPlan({
+      mediaId: request.mediaId,
+      sourceFingerprint: request.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      sourceDurationSeconds: probe.durationSeconds,
+      epochTargetSeconds,
+      segmentSeconds,
+      timeline,
+    });
+    const planExpectation = {
+      mediaId: request.mediaId,
+      sourceFingerprint: request.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      epochTargetSeconds,
+      segmentSeconds,
+      sourceDurationSeconds: probe.durationSeconds,
+    };
+    const { plan } = await reconcilePlan({
+      root: checkpoints,
+      plan: freshPlan,
+      expected: planExpectation,
     });
 
+    const identity = {
+      mediaId: request.mediaId,
+      sourceFingerprint: request.sourceFingerprint,
+      adaptiveProfileVersion: ADAPTIVE_PROFILE_VERSION,
+      timelinePolicyVersion: EPOCH_TIMELINE_POLICY_VERSION,
+    };
+
+    let completedEpochBytes = 0;
+    let currentEpochBytes = 0;
+    const reportBytes = () =>
+      inheritedBytes + completedEpochBytes + currentEpochBytes;
+
+    let epochBuild: Awaited<ReturnType<typeof runEpochBuild>> | undefined;
     try {
-      await runEncoder(ffmpegPath, args, {
-        ...(signal ? { signal } : {}),
-        ...(pauseController ? { pauseController } : {}),
-        logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
-        ...(onEvent
+      onEvent?.({
+        type: "build-stage",
+        mediaId: request.mediaId,
+        stage: "encoding",
+      });
+      epochBuild = await runEpochBuild({
+        identity,
+        checkpointRoot: checkpoints,
+        plan,
+        sourcePath: request.sourcePath,
+        videoOutputs,
+        encoder,
+        codecFamily,
+        ...(hdr ? { hdr } : {}),
+        hdrState: hdrStateFor(probe),
+        ...(gopFrameRate === undefined ? {} : { frameRate: gopFrameRate }),
+        segmentSeconds,
+        preset,
+        ...(encoder === "libx264" || encoder === "libx265"
           ? {
-              onProgress: (progress) => {
-                /*
-                 * FFmpeg reports `total_size=N/A` for HLS, so `progress` never
-                 * carries a byte count here and the measured figure replaces
-                 * it. The sample is fired and forgotten — the progress stream
-                 * must not wait on the filesystem — so the value emitted is
-                 * whichever measurement last landed.
-                 */
-                outputMeter.sample();
-                const writtenBytes = outputMeter.latest();
-                onEvent({
-                  type: "encode-progress",
-                  mediaId: request.mediaId,
-                  durationSeconds: probe.durationSeconds,
-                  ...progress,
-                  ...(writtenBytes === undefined ? {} : { writtenBytes }),
-                });
-              },
+              softwareThreads,
+              filterComplexThreads:
+                defaultSoftwareFilterThreads(softwareThreads),
             }
           : {}),
+        ffmpegPath,
+        ffprobePath,
+        logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
+        runEncoder,
+        ...(signal ? { signal } : {}),
+        ...(pauseController ? { pauseController } : {}),
+        ...(storageAvailable ? { storageAvailable } : {}),
+        ...(missingRoots ? { missingRoots } : {}),
+        ...(sourceIoBackoffMs ? { sourceIoBackoffMs } : {}),
+        /*
+         * The bounded readability re-check between I/O retries. Reading the
+         * epoch's own window with ffprobe is the cheapest honest answer to
+         * "can this part of the file still be read at all", and it uses the
+         * same prober the planner does, so a source that is failing shows up
+         * the same way in both places.
+         */
+        verifySourceReadable: async (epochIndex: number) => {
+          const entry = plan.epochs[epochIndex];
+          if (!entry) return false;
+          const timeline = await probeSourceFrameTimeline({
+            sourcePath: request.sourcePath,
+            boundaries: [timestampSeconds(entry.start)],
+            ffprobePath,
+            ...(signal ? { signal } : {}),
+          });
+          return timeline !== null && timeline.ticks.length > 0;
+        },
+        onEvent: (event) => {
+          if (!onEvent) return;
+          switch (event.type) {
+            case "reconciled":
+              onEvent({
+                type: "epoch-plan",
+                mediaId: request.mediaId,
+                epochCount: event.epochCount,
+                epochTargetSeconds,
+                sourceDurationSeconds: probe.durationSeconds,
+                reusedEpochs: event.outcome.complete.length,
+                protectedSeconds: event.protectedSeconds,
+                checkpointBytes: inheritedBytes,
+                invalidated: event.outcome.invalidated,
+              });
+              break;
+            case "epoch-reused":
+              onEvent({
+                type: "epoch-complete",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                protectedSeconds: event.protectedSeconds,
+                bytes: 0,
+                elapsedMs: 0,
+              });
+              break;
+            case "epoch-start":
+              currentEpochBytes = 0;
+              onEvent({
+                type: "epoch-start",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                startSeconds: event.startSeconds,
+                endSeconds: event.endSeconds,
+                attempt: event.attempt,
+              });
+              break;
+            case "epoch-progress": {
+              if (event.writtenBytes !== undefined) {
+                currentEpochBytes = event.writtenBytes;
+              }
+              const encodedSeconds = epochProgress({
+                protectedSeconds: event.protectedSeconds,
+                currentEpochStartSeconds: event.startSeconds,
+                currentEpochProcessedSeconds: event.epochProcessedSeconds,
+                sourceDurationSeconds: event.sourceDurationSeconds,
+              }).encodedSeconds;
+              onEvent({
+                type: "epoch-progress",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                startSeconds: event.startSeconds,
+                endSeconds: event.endSeconds,
+                epochProcessedSeconds: event.epochProcessedSeconds,
+                encodedSeconds,
+                protectedSeconds: event.protectedSeconds,
+                sourceDurationSeconds: event.sourceDurationSeconds,
+                ...(event.fps === undefined ? {} : { fps: event.fps }),
+                ...(event.speed === undefined ? {} : { speed: event.speed }),
+                writtenBytes: reportBytes(),
+              });
+              /*
+               * The legacy shape is still emitted so the CLI renderer and any
+               * reader written against it keep working. It carries the same
+               * media time, which is the only figure either of them uses.
+               */
+              onEvent({
+                type: "encode-progress",
+                mediaId: request.mediaId,
+                processedSeconds: encodedSeconds,
+                durationSeconds: probe.durationSeconds,
+                ...(event.fps === undefined ? {} : { fps: event.fps }),
+                ...(event.speed === undefined ? {} : { speed: event.speed }),
+                writtenBytes: reportBytes(),
+              });
+              break;
+            }
+            case "epoch-complete":
+              completedEpochBytes += event.bytes;
+              currentEpochBytes = 0;
+              onEvent({
+                type: "epoch-complete",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                protectedSeconds: event.protectedSeconds,
+                bytes: event.bytes,
+                elapsedMs: event.elapsedMs,
+              });
+              break;
+            case "source-io-retry":
+              onEvent({
+                type: "source-io-retry",
+                mediaId: request.mediaId,
+                index: event.index,
+                attempt: event.attempt,
+                maxAttempts: event.maxAttempts,
+                ...(event.sourceReadable === undefined
+                  ? {}
+                  : { sourceReadable: event.sourceReadable }),
+                detail: event.detail,
+              });
+              break;
+            case "epoch-invalid":
+              onEvent({
+                type: "epoch-invalid",
+                mediaId: request.mediaId,
+                index: event.index,
+                reason: event.reason,
+              });
+              break;
+          }
+        },
       });
+
+      /*
+       * Audio is built once for the whole title, after the video epochs and
+       * entirely apart from them. It is minutes of work against hours, and
+       * keeping it separate is what stops a soundtrack failure from touching a
+       * single durable video epoch.
+       */
+      if (plannedAudioOutputs.length > 0) {
+        onEvent?.({
+          type: "build-stage",
+          mediaId: request.mediaId,
+          stage: "audio",
+        });
+        const audio = await ensureAudioStage({
+          stageDirectory: audioStagePath(checkpoints),
+          mediaId: request.mediaId,
+          sourceFingerprint: request.sourceFingerprint,
+          adaptiveProfileVersion: ADAPTIVE_PROFILE_VERSION,
+          sourcePath: request.sourcePath,
+          audioOutputs: plannedAudioOutputs,
+          sourceDurationSeconds: probe.durationSeconds,
+          ffmpegPath,
+          ffprobePath,
+          logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
+          runEncoder,
+          ...(signal ? { signal } : {}),
+          ...(pauseController ? { pauseController } : {}),
+          ...(storageAvailable ? { storageAvailable } : {}),
+        });
+        if (!audio.reused) completedEpochBytes += audio.bytes;
+      }
     } catch (error) {
+      /*
+       * Nothing durable is removed here. The staging directory is this
+       * attempt's own and goes; every completed epoch stays exactly where it
+       * is, which is the difference between losing five minutes and losing an
+       * evening.
+       */
       await rm(workVersionRoot, { recursive: true, force: true }).catch(
         () => undefined,
       );
-      if (signal?.aborted) return { ...base, status: "interrupted" };
+      if (signal?.aborted) {
+        return { ...base, status: "interrupted", interruption: "cancelled" };
+      }
+      /*
+       * A source that will not read while its volume stays healthy is a
+       * failure, not a pause. Reported before the storage case because the two
+       * arrive by the same route and only this one must stop the job.
+       */
+      if (error instanceof SourceReadError) {
+        return {
+          ...base,
+          status: "failed",
+          error: `${error.failure.summary} Epoch ${error.epochIndex + 1} was read ${error.attempts} times without success. Every checkpoint before it is kept, so a retry once the source is repaired or replaced re-encodes only that epoch.`,
+          issues: [error.failure.detail],
+        };
+      }
+      if (error instanceof StorageInterruptedError) {
+        return {
+          ...base,
+          status: "interrupted",
+          interruption: "storage",
+          error: error.failure.summary,
+          issues: [error.failure.detail],
+        };
+      }
       throw error;
     }
 
@@ -836,18 +1125,60 @@ export async function packageAdaptiveRendition(
       await rm(workVersionRoot, { recursive: true, force: true }).catch(
         () => undefined,
       );
-      return { ...base, status: "interrupted" };
+      return { ...base, status: "interrupted", interruption: "cancelled" };
     }
 
-    // FFmpeg's master is read only for its codec strings, which it derives from
-    // the real bitstream, and is then replaced by one carrying measured
-    // bandwidth and the signalling the muxer does not emit.
+    /*
+     * Assembly. Not a transcode, not even a remux: the epochs' fragments are
+     * copied into one file per rendition under a single initialisation segment,
+     * with each fragment's decode time moved onto the global timeline. A
+     * five-hour checkpointed encode followed by a second full transcode would
+     * be worse than no checkpointing at all.
+     */
+    onEvent?.({
+      type: "build-stage",
+      mediaId: request.mediaId,
+      stage: "assembling",
+    });
+    const assembled = await assembleVideoRenditions({
+      checkpointRoot: checkpoints,
+      plan,
+      manifests: epochBuild.manifests,
+      renditionIds: videoOutputs.map((output) =>
+        videoRenditionId(output.qualityHeight),
+      ),
+      targetRoot: workVersionRoot,
+      targetDirectory: ADAPTIVE_VIDEO_DIRECTORY,
+    });
+    for (const rendition of assembled) {
+      if (rendition.sourceGaps > 0) {
+        console.warn(
+          `[seyirlik] ${request.relativePath}: ${rendition.id} kept ${rendition.sourceGaps} timeline gap(s) the source itself contains.`,
+        );
+      }
+    }
+    if (plannedAudioOutputs.length > 0) {
+      await copyStageDirectory(
+        path.join(audioStagePath(checkpoints), ADAPTIVE_AUDIO_DIRECTORY),
+        path.join(workVersionRoot, ADAPTIVE_AUDIO_DIRECTORY),
+      );
+    }
+
     const generatedMasterPath = path.join(
       workVersionRoot,
       ADAPTIVE_MASTER_PLAYLIST,
     );
-    const generatedCodecs = parseCodecsFromGeneratedMaster(
-      await readFile(generatedMasterPath, "utf8"),
+    /*
+     * Codec strings come from the master FFmpeg wrote beside an epoch. They are
+     * derived from the real bitstream, and every epoch produced the same ones —
+     * which the identical initialisation segments independently prove — so the
+     * assembled rendition advertises exactly what it contains.
+     */
+    const generatedCodecs = new Map<string, string>(
+      [...epochBuild.videoCodecStrings].map(([id, codec]) => [
+        `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`,
+        codec,
+      ]),
     );
 
     const videoCodecStrings = new Map<string, string>();
@@ -992,6 +1323,16 @@ export async function packageAdaptiveRendition(
       });
     }
 
+    if (
+      plannedSubtitleStreamIndexes.length > 0 ||
+      plannedSidecarSubtitles.length > 0
+    ) {
+      onEvent?.({
+        type: "build-stage",
+        mediaId: request.mediaId,
+        stage: "subtitles",
+      });
+    }
     for (const streamIndex of plannedSubtitleStreamIndexes) {
       const sourceTrack = probe.subtitleTracks.find(
         (track) => track.streamIndex === streamIndex && track.isTextBased,
@@ -1157,6 +1498,11 @@ export async function packageAdaptiveRendition(
       "utf8",
     );
 
+    onEvent?.({
+      type: "build-stage",
+      mediaId: request.mediaId,
+      stage: "validating",
+    });
     const validation = await validateAdaptivePackage({
       versionRoot: workVersionRoot,
       mediaId: request.mediaId,
@@ -1212,6 +1558,11 @@ export async function packageAdaptiveRendition(
      * the work directory, and publication never touches the source file: the
      * original is read throughout and is still there afterwards.
      */
+    onEvent?.({
+      type: "build-stage",
+      mediaId: request.mediaId,
+      stage: "publishing",
+    });
     const titleRoot = path.dirname(request.sourcePath);
     /*
      * An incremental run must not swap the package's directories: the swap
@@ -1270,6 +1621,10 @@ export async function packageAdaptiveRendition(
      * No pointer is written into the rendition root any more: nothing lives
      * there. The title folder's own manifest is what says which package is
      * current, which keeps the answer next to the files it describes.
+     *
+     * This is the one place checkpoints are removed, and it is reached only
+     * after the package has been validated and published. Until then they are
+     * the job's durable progress and nothing may touch them.
      */
     await rm(path.dirname(workVersionRoot), {
       recursive: true,

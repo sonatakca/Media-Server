@@ -57,6 +57,7 @@ import { createTaskRoutes } from "./tasks/taskRoutes";
 import { createProcessingJobStore } from "./processing/jobStore";
 import { createProcessingRoutes } from "./processing/processingRoutes";
 import { createProcessingJobRunner } from "./processing/jobRunner";
+import { pruneLiveProgress } from "./processing/liveProgress";
 import { createStorageWatchdog } from "../../renditions/processing/storageWatchdog";
 import type { RenditionPaths } from "../../renditions/analysis";
 import { createProbeService } from "./probe/probeService";
@@ -299,7 +300,7 @@ export async function createNativeRuntime({
           stage: "waiting",
           level: "info",
           message:
-            "Storage is available again; the interrupted rendition will be built from scratch while published renditions are reused.",
+            "Storage is available again; encoding continues from the last durable checkpoint. Only the five-minute epoch that was interrupted is built again.",
         });
         recovered += 1;
       } catch (error) {
@@ -382,6 +383,15 @@ export async function createNativeRuntime({
   // decides what to do with work the last run left behind.
   if (runWorker) await reconcileInterruptedJobs();
 
+  /*
+   * A worker killed mid-encode leaves its last live sample behind. A page that
+   * found it would animate a bar from a frozen speed as though the encode were
+   * still going, so anything belonging to a job that is not active goes.
+   */
+  void pruneLiveProgress(
+    (await processingJobs.listActive()).map((job) => job.id),
+  ).catch(() => undefined);
+
   /**
    * Where a package is built before it is published, and where its FFmpeg log
    * is kept. Separate from the published root on purpose: staging is disposable
@@ -453,6 +463,9 @@ export async function createNativeRuntime({
           // within the same second the volume goes, before the watchdog's
           // next tick.
           storageAvailableFn: () => storageWatchdog.poll(),
+          // Which volume, so the failure reads "Expansion became unavailable"
+          // rather than leaving an operator to work out which drive is missing.
+          missingRootsFn: () => storageWatchdog.missingRoots,
           ...(ffmpegPath ? { ffmpegPath } : {}),
           ...(ffprobePath ? { ffprobePath } : {}),
           ...(softwareTranscodeThreads === undefined

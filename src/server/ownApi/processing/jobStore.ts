@@ -53,6 +53,24 @@ export interface ProcessingJobRecord {
   pauseRequested: boolean;
   /** Why it is paused: an operator asked, or the storage went away. */
   pausedReason: "operator" | "storage-unavailable" | null;
+  /**
+   * The epoch build's position, cached from the checkpoints on disk.
+   *
+   * None of this is authoritative: the filesystem owns durable progress, and a
+   * restart reconciles against it. It is here so a page opened before the
+   * encoder next reports in can already say how much work is protected.
+   */
+  epochCount: number | null;
+  epochIndex: number | null;
+  completedEpochs: number;
+  protectedSeconds: number;
+  /** Media time encoded. The video percentage is this over the source duration. */
+  encodedSeconds: number;
+  sourceDurationSeconds: number | null;
+  epochStartSeconds: number | null;
+  epochEndSeconds: number | null;
+  checkpointBytes: number;
+  freeBytes: number | null;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -114,6 +132,16 @@ export interface ProcessingJobUpdate {
   cancellationRequested?: boolean;
   pauseRequested?: boolean;
   pausedReason?: "operator" | "storage-unavailable" | null;
+  epochCount?: number | null;
+  epochIndex?: number | null;
+  completedEpochs?: number;
+  protectedSeconds?: number;
+  encodedSeconds?: number;
+  sourceDurationSeconds?: number | null;
+  epochStartSeconds?: number | null;
+  epochEndSeconds?: number | null;
+  checkpointBytes?: number;
+  freeBytes?: number | null;
 }
 
 const ACTIVE_STATES: readonly ProcessingState[] = [
@@ -131,6 +159,9 @@ const COLUMNS = `
   decision, stream_decisions, validation, warnings,
   error_code, error_message, staging_directory, published_version,
   attempts, cancellation_requested, pause_requested, paused_reason,
+  epoch_count, epoch_index, completed_epochs, protected_seconds,
+  encoded_seconds, source_duration_seconds, epoch_start_seconds,
+  epoch_end_seconds, checkpoint_bytes, free_bytes,
   created_at, started_at, finished_at, updated_at
 `;
 
@@ -166,6 +197,16 @@ interface RawRow {
   cancellation_requested: boolean;
   pause_requested: boolean;
   paused_reason: "operator" | "storage-unavailable" | null;
+  epoch_count: number | null;
+  epoch_index: number | null;
+  completed_epochs: number;
+  protected_seconds: string | number;
+  encoded_seconds: string | number;
+  source_duration_seconds: string | number | null;
+  epoch_start_seconds: string | number | null;
+  epoch_end_seconds: string | number | null;
+  checkpoint_bytes: string | number;
+  free_bytes: string | number | null;
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -211,6 +252,16 @@ function toRecord(row: RawRow): ProcessingJobRecord {
     cancellationRequested: row.cancellation_requested,
     pauseRequested: row.pause_requested,
     pausedReason: row.paused_reason,
+    epochCount: row.epoch_count,
+    epochIndex: row.epoch_index,
+    completedEpochs: row.completed_epochs ?? 0,
+    protectedSeconds: toNumber(row.protected_seconds) ?? 0,
+    encodedSeconds: toNumber(row.encoded_seconds) ?? 0,
+    sourceDurationSeconds: toNumber(row.source_duration_seconds),
+    epochStartSeconds: toNumber(row.epoch_start_seconds),
+    epochEndSeconds: toNumber(row.epoch_end_seconds),
+    checkpointBytes: toNumber(row.checkpoint_bytes) ?? 0,
+    freeBytes: toNumber(row.free_bytes),
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -466,6 +517,25 @@ export function createProcessingJobStore(
       if (update.cancellationRequested !== undefined) {
         set("cancellation_requested", update.cancellationRequested);
       }
+      if (update.epochCount !== undefined)
+        set("epoch_count", update.epochCount);
+      if (update.epochIndex !== undefined)
+        set("epoch_index", update.epochIndex);
+      if (update.completedEpochs !== undefined)
+        set("completed_epochs", update.completedEpochs);
+      if (update.protectedSeconds !== undefined)
+        set("protected_seconds", update.protectedSeconds);
+      if (update.encodedSeconds !== undefined)
+        set("encoded_seconds", update.encodedSeconds);
+      if (update.sourceDurationSeconds !== undefined)
+        set("source_duration_seconds", update.sourceDurationSeconds);
+      if (update.epochStartSeconds !== undefined)
+        set("epoch_start_seconds", update.epochStartSeconds);
+      if (update.epochEndSeconds !== undefined)
+        set("epoch_end_seconds", update.epochEndSeconds);
+      if (update.checkpointBytes !== undefined)
+        set("checkpoint_bytes", update.checkpointBytes);
+      if (update.freeBytes !== undefined) set("free_bytes", update.freeBytes);
       if (update.startedAt !== undefined) set("started_at", update.startedAt);
       if (update.finishedAt !== undefined)
         set("finished_at", update.finishedAt);
@@ -568,6 +638,19 @@ export function createProcessingJobStore(
            paused_reason = NULL,
            started_at = NULL,
            finished_at = NULL,
+           /*
+            * The epoch position describes an attempt, not the job, and is
+            * rebuilt from the checkpoints the moment the next attempt
+            * reconciles. What it must not do is carry the previous attempt's
+            * "protected through 00:50:00" into a run that has not looked at
+            * the disk yet.
+            */
+           epoch_index = NULL,
+           completed_epochs = 0,
+           protected_seconds = 0,
+           encoded_seconds = 0,
+           epoch_start_seconds = NULL,
+           epoch_end_seconds = NULL,
            decision = COALESCE($4::jsonb, decision),
            stream_decisions = COALESCE($5::jsonb, stream_decisions),
            hardware_adapter = COALESCE($6, hardware_adapter),

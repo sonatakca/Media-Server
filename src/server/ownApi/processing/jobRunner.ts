@@ -22,12 +22,63 @@ import {
   freeBytesOn,
   type ProcessingDecision,
 } from "../../../renditions/processing/decide";
+import {
+  createSpeedEstimator,
+  estimateEncodeEtaSeconds,
+} from "../../../renditions/adaptive/epochs/progress";
+import { formatClock } from "../../../renditions/adaptive/epochs/engine";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
+import {
+  clearLiveProgress,
+  writeLiveProgress,
+  type BuildPhase,
+  type LiveProgressSnapshot,
+} from "./liveProgress";
 import {
   monotonicProgress,
   overallProgress,
   type ProcessingStage,
 } from "./stages";
+
+/**
+ * Which durable stage each build phase belongs to.
+ *
+ * The phases the packager reports are finer than the stages the job record has
+ * always carried, and the record's vocabulary is what history rows, the
+ * timeline and every existing test are written against. Mapping rather than
+ * renaming keeps both honest: `assembling` is the packaging stage, and an
+ * operator watching sees the word that describes what is happening.
+ */
+const STAGE_FOR_PHASE: Readonly<Record<BuildPhase, ProcessingStage>> = {
+  planning: "planning",
+  encoding: "video",
+  audio: "audio",
+  subtitles: "subtitles",
+  assembling: "packaging",
+  validating: "validating",
+  publishing: "publishing",
+};
+
+const PHASE_MESSAGES: Readonly<Record<BuildPhase, string>> = {
+  planning: "Planning the checkpointed encode.",
+  encoding: "Encoding the video ladder.",
+  audio: "Encoding audio.",
+  subtitles: "Converting subtitles.",
+  assembling:
+    "Assembling the checkpointed epochs into the final renditions. No video is re-encoded.",
+  validating: "Validating the assembled package.",
+  publishing: "Publishing the verified package.",
+};
+
+/**
+ * How often the running job's row is written while the encoder reports.
+ *
+ * FFmpeg reports four times a second. Writing that to the database for hours,
+ * per title, would be sustained write pressure for data nothing needs to
+ * survive a restart — the durable progress is the checkpoints on disk. The fast
+ * lane goes to the live-progress file instead; this is the slow one.
+ */
+export const PERSIST_INTERVAL_MS = 1_000;
 
 /**
  * Runs one processing job from analysis to publication.
@@ -62,6 +113,14 @@ export interface ProcessingJobRunnerDeps {
    * disconnect into a permanent failure.
    */
   storageAvailableFn?: () => boolean | Promise<boolean>;
+  /** Which roots failed their last check, so an error can name the drive. */
+  missingRootsFn?: () => readonly string[];
+  /**
+   * Nominal epoch length. Five minutes in production; a deployment with very
+   * short titles or very slow storage can shorten it, at the cost of one FFmpeg
+   * start and one validation pass more often.
+   */
+  epochTargetSeconds?: number;
   now?: () => number;
 }
 
@@ -106,17 +165,6 @@ export const PROCESSING_ERROR_CODES = {
   cancelled: "CANCELLED",
 } as const;
 
-function etaFrom(
-  processedSeconds: number,
-  durationSeconds: number,
-  speed: number | undefined,
-): number | null {
-  if (!speed || speed <= 0 || durationSeconds <= 0) return null;
-  const remaining = Math.max(0, durationSeconds - processedSeconds);
-  const eta = remaining / speed;
-  return Number.isFinite(eta) ? Math.round(eta) : null;
-}
-
 export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
   const {
     store,
@@ -129,6 +177,8 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     probeFn = probeMediaFile,
     freeBytesFn = freeBytesOn,
     storageAvailableFn,
+    missingRootsFn,
+    epochTargetSeconds,
   } = deps;
 
   async function enterStage(
@@ -162,6 +212,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       }
 
       const fail = async (code: string, message: string, retryable = false) => {
+        await clearLiveProgress(job.id);
         await store.update(job.id, {
           state: "failed",
           errorCode: code,
@@ -190,6 +241,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       };
 
       const finishCancelled = async () => {
+        await clearLiveProgress(job.id);
         await store.update(job.id, {
           state: "cancelled",
           errorCode: PROCESSING_ERROR_CODES.cancelled,
@@ -215,9 +267,25 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * reason recorded, keeps no finish time because it has not finished, and
        * is picked up again automatically when the volume returns.
        */
-      const finishStorageInterrupted = async () => {
+      const finishStorageInterrupted = async (detail?: string) => {
+        /*
+         * The live sample goes but the durable row keeps its epoch position, so
+         * a page opened while the drive is missing still says how much work is
+         * protected and which five minutes will be redone.
+         */
+        await clearLiveProgress(job.id);
         await store.update(job.id, {
           state: "paused",
+          /*
+           * The reason is what makes the pause recoverable.
+           * `requeueStorageInterruptedJobs` looks for work with
+           * `listPaused("storage-unavailable")`, which reads this column. The
+           * encoder classifies an I/O error as storage loss before the watchdog
+           * has polled, so without stamping it here that ordinary path leaves a
+           * job paused with no reason, no error and nothing that will ever pick
+           * it up again.
+           */
+          pausedReason: "storage-unavailable",
           // It has not finished, so it must not carry a finish time.
           finishedAt: null,
           speed: null,
@@ -230,8 +298,9 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           processingJobId: job.id,
           stage: "waiting",
           level: "warning",
-          message:
-            "Waiting for storage. Published renditions are untouched; the interrupted rendition will be built again when the volume returns.",
+          message: detail
+            ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
+            : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
         });
         return { status: "waiting-for-storage" as const };
       };
@@ -316,6 +385,10 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         hardwareAdapter: decision.hardwareAdapter,
         videoEncoder: decision.videoEncoder,
         warnings: decision.warnings,
+        sourceDurationSeconds: probe.durationSeconds,
+        // Shown beside the protected bytes so an operator can see the headroom
+        // the rest of the ladder has to fit into.
+        ...(freeBytes === undefined ? {} : { freeBytes }),
         stageProgress: 1,
         overallProgress: overallProgress("planning", 1),
       });
@@ -379,6 +452,82 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       let lastOverall = 0;
       /** This job's current guess at its own final size, refined as it runs. */
       let lastEstimateBytes: number | undefined;
+
+      /*
+       * The live sample, kept in memory and republished on every change.
+       *
+       * Held as one object rather than a handful of variables so the transient
+       * file and the durable row can never describe different moments.
+       */
+      const live: {
+        stage: ProcessingStage;
+        phase: BuildPhase;
+        epochIndex: number | null;
+        epochCount: number | null;
+        epochStartSeconds: number | null;
+        epochEndSeconds: number | null;
+        epochFraction: number | null;
+        completedEpochs: number;
+        protectedSeconds: number;
+        encodedSeconds: number;
+        sourceDurationSeconds: number;
+        fps?: number;
+        speed?: number;
+        smoothedSpeed?: number;
+        etaSeconds?: number;
+        writtenBytes?: number;
+      } = {
+        stage: "video",
+        phase: "planning",
+        epochIndex: null,
+        epochCount: null,
+        epochStartSeconds: null,
+        epochEndSeconds: null,
+        epochFraction: null,
+        completedEpochs: 0,
+        protectedSeconds: 0,
+        encodedSeconds: 0,
+        sourceDurationSeconds: durationSeconds,
+      };
+      let revision = 0;
+      let lastPersistMs = 0;
+      let etaWasKnown = false;
+      let checkpointBytesWritten = 0;
+      let speed = createSpeedEstimator();
+
+      const publishLive = (): Promise<void> => {
+        revision += 1;
+        const snapshot: LiveProgressSnapshot = {
+          processingJobId: job.id,
+          revision,
+          timestampMs: Date.now(),
+          stage: live.stage,
+          phase: live.phase,
+          epochIndex: live.epochIndex,
+          epochCount: live.epochCount,
+          epochStartSeconds: live.epochStartSeconds,
+          epochEndSeconds: live.epochEndSeconds,
+          epochFraction: live.epochFraction,
+          completedEpochs: live.completedEpochs,
+          protectedSeconds: live.protectedSeconds,
+          encodedSeconds: live.encodedSeconds,
+          sourceDurationSeconds: live.sourceDurationSeconds,
+          ...(live.fps === undefined ? {} : { fps: live.fps }),
+          ...(live.speed === undefined ? {} : { speed: live.speed }),
+          ...(live.smoothedSpeed === undefined
+            ? {}
+            : { smoothedSpeed: live.smoothedSpeed }),
+          ...(live.etaSeconds === undefined
+            ? {}
+            : { etaSeconds: live.etaSeconds }),
+          ...(live.writtenBytes === undefined
+            ? {}
+            : { writtenBytes: live.writtenBytes }),
+          encoder: decision.videoEncoder,
+          qualityHeights: encodedRungs,
+        };
+        return writeLiveProgress(snapshot);
+      };
 
       /**
        * The rendition registry, not the catalogue, owns the identity a package
@@ -534,55 +683,284 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             ),
             signal: encodeAbort.signal,
             pauseController,
+            ...(epochTargetSeconds === undefined ? {} : { epochTargetSeconds }),
+            /*
+             * The packager asks these at the moment something fails, which is
+             * the only moment the answer distinguishes "the drive was pulled
+             * out" from "this encode is broken".
+             */
+            ...(storageAvailableFn
+              ? { storageAvailable: storageAvailableFn }
+              : {}),
+            ...(missingRootsFn ? { missingRoots: missingRootsFn } : {}),
             onEvent: (event) => {
-              if (event.type !== "encode-progress") return;
-              const fraction =
-                durationSeconds > 0
-                  ? Math.min(1, event.processedSeconds / durationSeconds)
-                  : 0;
-              const next = overallProgress("video", fraction);
-              lastOverall = monotonicProgress(lastOverall, next);
-              /*
-               * The estimate is refined here rather than in the browser so
-               * every reader — page, history, API — sees one number. It starts
-               * as the plan and moves toward what the encoder is actually
-               * producing as the evidence accumulates.
-               */
-              if (event.writtenBytes !== undefined) {
-                lastEstimateBytes = estimateFinalOutputBytes({
-                  plannedBytes: decision.estimate.outputBytes,
-                  actualBytes: event.writtenBytes,
-                  progressFraction: fraction,
-                  processedSeconds: event.processedSeconds,
-                  ...(lastEstimateBytes === undefined
-                    ? {}
-                    : { previousEstimate: lastEstimateBytes }),
-                });
+              switch (event.type) {
+                case "build-stage": {
+                  /*
+                   * The stages are shown apart rather than folded into one
+                   * number. A job that has finished encoding and is assembling
+                   * says so; it does not sit at a percentage that means neither
+                   * thing.
+                   */
+                  live.phase = event.stage;
+                  const stage = STAGE_FOR_PHASE[event.stage];
+                  if (stage !== live.stage) {
+                    live.stage = stage;
+                    void store
+                      .update(job.id, {
+                        stage,
+                        stageProgress: 0,
+                        overallProgress: monotonicProgress(
+                          lastOverall,
+                          overallProgress(stage, 0),
+                        ),
+                      })
+                      .catch(() => undefined);
+                    void store
+                      .appendEvent({
+                        processingJobId: job.id,
+                        stage,
+                        message: PHASE_MESSAGES[event.stage],
+                      })
+                      .catch(() => undefined);
+                  }
+                  void publishLive();
+                  return;
+                }
+
+                case "epoch-plan": {
+                  live.epochCount = event.epochCount;
+                  live.completedEpochs = event.reusedEpochs;
+                  live.protectedSeconds = event.protectedSeconds;
+                  live.encodedSeconds = event.protectedSeconds;
+                  live.sourceDurationSeconds = event.sourceDurationSeconds;
+                  // Seeded from what is already on disk, so "protected media"
+                  // counts the checkpoints a resumed job inherited rather than
+                  // only the ones this attempt produced.
+                  checkpointBytesWritten = event.checkpointBytes;
+                  void store
+                    .update(job.id, {
+                      checkpointBytes: event.checkpointBytes,
+                      epochCount: event.epochCount,
+                      completedEpochs: event.reusedEpochs,
+                      protectedSeconds: event.protectedSeconds,
+                      encodedSeconds: event.protectedSeconds,
+                      sourceDurationSeconds: event.sourceDurationSeconds,
+                    })
+                    .catch(() => undefined);
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage: "video",
+                      message:
+                        event.reusedEpochs > 0
+                          ? `Resuming from ${event.reusedEpochs} of ${event.epochCount} checkpoints; protected through ${formatClock(event.protectedSeconds)}.`
+                          : `Encoding in ${event.epochCount} checkpointed ${event.epochCount === 1 ? "epoch" : "epochs"} of about ${Math.round(event.epochTargetSeconds / 60)} minutes.`,
+                      detail: {
+                        epochCount: event.epochCount,
+                        reusedEpochs: event.reusedEpochs,
+                        invalidated: event.invalidated,
+                      },
+                    })
+                    .catch(() => undefined);
+                  for (const entry of event.invalidated) {
+                    void store
+                      .appendEvent({
+                        processingJobId: job.id,
+                        stage: "video",
+                        level: "warning",
+                        message: `Checkpoint ${entry.index + 1} could not be trusted (${entry.reason}) and will be built again.`,
+                      })
+                      .catch(() => undefined);
+                  }
+                  void publishLive();
+                  return;
+                }
+
+                case "epoch-start": {
+                  live.epochIndex = event.index;
+                  live.epochStartSeconds = event.startSeconds;
+                  live.epochEndSeconds = event.endSeconds;
+                  live.epochFraction = 0;
+                  // A new epoch is a new encoder run, so the throughput estimate
+                  // starts again rather than carrying the previous epoch's
+                  // startup samples into this one's ETA.
+                  speed = createSpeedEstimator();
+                  void store
+                    .update(job.id, {
+                      epochIndex: event.index,
+                      epochStartSeconds: event.startSeconds,
+                      epochEndSeconds: event.endSeconds,
+                    })
+                    .catch(() => undefined);
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage: "video",
+                      message: `${event.attempt > 1 ? "Retrying" : "Encoding"} epoch ${event.index + 1}/${event.epochCount} (${formatClock(event.startSeconds)}–${formatClock(event.endSeconds)})`,
+                    })
+                    .catch(() => undefined);
+                  void publishLive();
+                  return;
+                }
+
+                case "epoch-progress": {
+                  live.epochIndex = event.index;
+                  live.epochCount = event.epochCount;
+                  live.epochStartSeconds = event.startSeconds;
+                  live.epochEndSeconds = event.endSeconds;
+                  live.protectedSeconds = event.protectedSeconds;
+                  live.encodedSeconds = event.encodedSeconds;
+                  live.sourceDurationSeconds = event.sourceDurationSeconds;
+                  const window = event.endSeconds - event.startSeconds;
+                  live.epochFraction =
+                    window > 0
+                      ? Math.min(
+                          1,
+                          Math.max(0, event.epochProcessedSeconds / window),
+                        )
+                      : 0;
+                  live.fps = event.fps;
+                  live.speed = event.speed;
+                  live.smoothedSpeed = speed.sample(event.speed);
+                  live.etaSeconds = estimateEncodeEtaSeconds({
+                    encodedSeconds: event.encodedSeconds,
+                    sourceDurationSeconds: event.sourceDurationSeconds,
+                    smoothedSpeed: live.smoothedSpeed,
+                  });
+                  live.writtenBytes = event.writtenBytes;
+
+                  const fraction =
+                    durationSeconds > 0
+                      ? Math.min(1, event.encodedSeconds / durationSeconds)
+                      : 0;
+                  lastOverall = monotonicProgress(
+                    lastOverall,
+                    overallProgress("video", fraction),
+                  );
+                  /*
+                   * The estimate is refined here rather than in the browser so
+                   * every reader — page, history, API — sees one number. It
+                   * starts as the plan and moves toward what the encoder is
+                   * actually producing as the evidence accumulates.
+                   */
+                  if (event.writtenBytes !== undefined) {
+                    lastEstimateBytes = estimateFinalOutputBytes({
+                      plannedBytes: decision.estimate.outputBytes,
+                      actualBytes: event.writtenBytes,
+                      progressFraction: fraction,
+                      processedSeconds: event.encodedSeconds,
+                      ...(lastEstimateBytes === undefined
+                        ? {}
+                        : { previousEstimate: lastEstimateBytes }),
+                    });
+                  }
+
+                  // The transient lane runs at the encoder's own rate; the
+                  // durable one is deliberately much slower — except that an
+                  // estimate appearing for the first time is a state change
+                  // rather than a sample, and a page that reconnects before the
+                  // next tick should already see it.
+                  void publishLive();
+                  const etaBecameKnown =
+                    (live.etaSeconds !== undefined) !== etaWasKnown;
+                  if (
+                    etaBecameKnown ||
+                    Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS
+                  ) {
+                    etaWasKnown = live.etaSeconds !== undefined;
+                    lastPersistMs = Date.now();
+                    void store
+                      .update(job.id, {
+                        stage: "video",
+                        stageProgress: fraction,
+                        overallProgress: lastOverall,
+                        encodedSeconds: event.encodedSeconds,
+                        protectedSeconds: event.protectedSeconds,
+                        epochIndex: event.index,
+                        ...(event.writtenBytes === undefined
+                          ? {}
+                          : { bytesProcessed: event.writtenBytes }),
+                        ...(lastEstimateBytes === undefined
+                          ? {}
+                          : { estimatedOutputBytes: lastEstimateBytes }),
+                        speed: event.speed ?? null,
+                        fps: event.fps ?? null,
+                        etaSeconds: live.etaSeconds ?? null,
+                      })
+                      .catch(() => undefined);
+                  }
+                  return;
+                }
+
+                case "epoch-complete": {
+                  live.completedEpochs = Math.max(
+                    live.completedEpochs,
+                    event.index + 1,
+                  );
+                  live.protectedSeconds = event.protectedSeconds;
+                  live.encodedSeconds = Math.max(
+                    live.encodedSeconds,
+                    event.protectedSeconds,
+                  );
+                  checkpointBytesWritten += event.bytes;
+                  void store
+                    .update(job.id, {
+                      completedEpochs: live.completedEpochs,
+                      protectedSeconds: event.protectedSeconds,
+                      encodedSeconds: live.encodedSeconds,
+                      checkpointBytes: checkpointBytesWritten,
+                    })
+                    .catch(() => undefined);
+                  if (event.bytes > 0) {
+                    void store
+                      .appendEvent({
+                        processingJobId: job.id,
+                        stage: "video",
+                        message: `Checkpoint saved — protected through ${formatClock(event.protectedSeconds)} (${event.index + 1}/${event.epochCount})`,
+                      })
+                      .catch(() => undefined);
+                  }
+                  void publishLive();
+                  return;
+                }
+
+                case "source-io-retry": {
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage: "video",
+                      level: "warning",
+                      message: `Epoch ${event.index + 1} could not be read (attempt ${event.attempt} of ${event.maxAttempts}); the volume was re-checked and is still available, so the read is being retried.`,
+                      detail: {
+                        epochIndex: event.index,
+                        attempt: event.attempt,
+                        maxAttempts: event.maxAttempts,
+                        ...(event.sourceReadable === undefined
+                          ? {}
+                          : { sourceReadable: event.sourceReadable }),
+                        error: event.detail,
+                      },
+                    })
+                    .catch(() => undefined);
+                  return;
+                }
+
+                case "epoch-invalid": {
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage: "video",
+                      level: "warning",
+                      message: `Epoch ${event.index + 1} did not pass its checks and will be built again: ${event.reason}`,
+                    })
+                    .catch(() => undefined);
+                  return;
+                }
+
+                default:
+                  return;
               }
-              // Progress is written without waiting so the encoder is never
-              // paced by the database, and its failure is swallowed for the
-              // same reason it is not awaited: the next event overwrites it a
-              // second later. Unhandled, that same rejection ended the process.
-              void store
-                .update(job.id, {
-                  stage: "video",
-                  stageProgress: fraction,
-                  overallProgress: lastOverall,
-                  ...(event.writtenBytes === undefined
-                    ? {}
-                    : { bytesProcessed: event.writtenBytes }),
-                  ...(lastEstimateBytes === undefined
-                    ? {}
-                    : { estimatedOutputBytes: lastEstimateBytes }),
-                  speed: event.speed ?? null,
-                  fps: event.fps ?? null,
-                  etaSeconds: etaFrom(
-                    event.processedSeconds,
-                    durationSeconds,
-                    event.speed,
-                  ),
-                })
-                .catch(() => undefined);
             },
           },
         );
@@ -607,6 +985,17 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         input.signal?.removeEventListener("abort", forwardAbort);
       }
 
+      /*
+       * The packager now says *why* it stopped. A cancellation and a vanished
+       * volume both end the encoder with an abort, and only one of them is a
+       * reason to mark the job cancelled.
+       */
+      if (result.interruption === "storage") {
+        return finishStorageInterrupted(result.error);
+      }
+      if (storageInterrupted && result.status === "interrupted") {
+        return finishStorageInterrupted();
+      }
       if (await cancelled()) return finishCancelled();
       if (result.status === "interrupted") {
         return storageInterrupted
@@ -620,9 +1009,15 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         await store.update(job.id, {
           validation: { ok: false, issues: result.issues ?? [] },
         });
+        /*
+         * The verdict alone is useless to whoever has to fix it. The package is
+         * discarded on a validation failure, so this message is the only
+         * surviving evidence of what was wrong with it.
+         */
         return fail(
           PROCESSING_ERROR_CODES.validationFailed,
-          "The package failed validation and was not published.",
+          result.error ??
+            "The package failed validation and was not published.",
         );
       }
       if (result.status === "failed" || result.status === "incompatible") {
@@ -650,6 +1045,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
 
       // -------------------------------------------------------- publishing
       await enterStage(job, "publishing", "Publishing the verified package.");
+      await clearLiveProgress(job.id);
       await store.update(job.id, {
         state: "succeeded",
         stage: "complete",

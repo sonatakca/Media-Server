@@ -1,6 +1,8 @@
 import type {
   ProcessingAudioDecision,
+  ProcessingBuildPhase,
   ProcessingJob,
+  ProcessingLiveProgress,
   ProcessingStage,
   ProcessingSubtitleDecision,
 } from "../../lib/processingApi";
@@ -337,4 +339,209 @@ export function localisedLanguageName(
   // `processing.language.eng` to a viewer is worse than showing "English", so
   // an untranslated key falls back to the name the server sent.
   return translated && translated !== key ? translated : entry.languageName;
+}
+
+/**
+ * How much of the film has actually been encoded.
+ *
+ * Deliberately not `overallProgress`. That figure weights whole workflow
+ * stages, so a job which had merely *reached* a late stage read as 89% while
+ * FFmpeg was a third of the way through the picture — the exact confusion this
+ * separation exists to end. This is media time and nothing else: the epochs
+ * that are durable, plus however far into the running one the encoder has got.
+ *
+ * The live sample wins when there is one, because it is up to four times
+ * fresher than the job row; the row answers when the encoder has not reported
+ * yet, which is what a page opened after a restart sees.
+ */
+export function encodedFraction(
+  job: Pick<
+    ProcessingJob,
+    "encodedSeconds" | "sourceDurationSeconds" | "state"
+  >,
+  live?: ProcessingLiveProgress | null,
+): number | null {
+  const duration = live?.sourceDurationSeconds ?? job.sourceDurationSeconds;
+  if (!duration || duration <= 0) return null;
+  if (job.state === "succeeded") return 1;
+  const encoded = Math.max(live?.encodedSeconds ?? 0, job.encodedSeconds);
+  return Math.min(1, Math.max(0, encoded / duration));
+}
+
+export function encodedPercent(
+  job: Pick<
+    ProcessingJob,
+    "encodedSeconds" | "sourceDurationSeconds" | "state"
+  >,
+  live?: ProcessingLiveProgress | null,
+): number | null {
+  const fraction = encodedFraction(job, live);
+  if (fraction === null) return null;
+  // One decimal, because at feature length a whole percent is a minute and a
+  // half of film and a bar that only moves once a minute reads as stuck.
+  return Math.round(fraction * 1000) / 10;
+}
+
+/** Position on the source timeline, as a clock. */
+export function formatMediaClock(seconds: number | null | undefined): string {
+  if (
+    seconds === null ||
+    seconds === undefined ||
+    !Number.isFinite(seconds) ||
+    seconds < 0
+  ) {
+    return "--:--:--";
+  }
+  const whole = Math.floor(seconds);
+  const hours = String(Math.floor(whole / 3600)).padStart(2, "0");
+  const minutes = String(Math.floor((whole % 3600) / 60)).padStart(2, "0");
+  const rest = String(whole % 60).padStart(2, "0");
+  return `${hours}:${minutes}:${rest}`;
+}
+
+/**
+ * The number an operator most wants: how much work a crash cannot take away.
+ */
+export function protectedSeconds(
+  job: Pick<ProcessingJob, "protectedSeconds">,
+  live?: ProcessingLiveProgress | null,
+): number {
+  return Math.max(job.protectedSeconds, live?.protectedSeconds ?? 0);
+}
+
+export function completedEpochs(
+  job: Pick<ProcessingJob, "completedEpochs">,
+  live?: ProcessingLiveProgress | null,
+): number {
+  return Math.max(job.completedEpochs, live?.completedEpochs ?? 0);
+}
+
+/**
+ * Media time to show right now, interpolated between authoritative samples.
+ *
+ * Bounded twice over: never past the end of the running epoch, and never past
+ * what the elapsed time could plausibly have produced. A stalled encoder
+ * therefore reaches the bound and stops, rather than showing a bar that keeps
+ * moving over an encoder that is doing nothing.
+ */
+export function smoothedEncodedSeconds({
+  live,
+  nowMs,
+}: {
+  live: ProcessingLiveProgress | null | undefined;
+  nowMs: number;
+}): number | null {
+  if (!live) return null;
+  /*
+   * The floor is the durable mark, and it is applied to every path out of this
+   * function including the ceilings below.
+   *
+   * Media that is already checkpointed has been encoded by definition, so a
+   * position behind it is not a conservative estimate, it is a wrong one — and
+   * the one thing an operator reads this number for is to know how much work is
+   * safe. Nothing in the current event order produces such a sample, but
+   * "currently impossible" is not the same as "cannot happen", and a bar that
+   * walks backwards over protected media is the exact confusion this panel
+   * exists to remove.
+   */
+  const floor = live.protectedSeconds;
+  const speed = live.smoothedSpeed ?? live.speed;
+  if (!speed || speed <= 0) return Math.max(floor, live.encodedSeconds);
+  const elapsedSeconds = Math.max(0, (nowMs - live.timestampMs) / 1000);
+  const ceiling = Math.min(
+    live.sourceDurationSeconds,
+    live.epochEndSeconds ?? live.sourceDurationSeconds,
+  );
+  return Math.max(
+    floor,
+    Math.min(ceiling, live.encodedSeconds + elapsedSeconds * speed),
+  );
+}
+
+/** Human phase label key, so the page can say what is happening rather than a percentage. */
+export const BUILD_PHASE_LABEL_KEYS: Readonly<
+  Record<ProcessingBuildPhase, string>
+> = {
+  planning: "processing.phase.planning",
+  encoding: "processing.phase.encoding",
+  audio: "processing.phase.audio",
+  subtitles: "processing.phase.subtitles",
+  assembling: "processing.phase.assembling",
+  validating: "processing.phase.validating",
+  publishing: "processing.phase.publishing",
+};
+
+/**
+ * The phase to show, from whichever source knows.
+ *
+ * The live sample is authoritative while it exists. Without one the stage on
+ * the job row is mapped back, so a page opened after a restart still says
+ * "Assembling" rather than falling back to a bare percentage.
+ */
+export function buildPhaseFor(
+  job: Pick<ProcessingJob, "stage">,
+  live?: ProcessingLiveProgress | null,
+): ProcessingBuildPhase | null {
+  if (live) return live.phase;
+  switch (job.stage) {
+    case "planning":
+      return "planning";
+    case "video":
+      return "encoding";
+    case "audio":
+      return "audio";
+    case "subtitles":
+      return "subtitles";
+    case "packaging":
+      return "assembling";
+    case "validating":
+      return "validating";
+    case "publishing":
+      return "publishing";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Whether a stopped job has durable work a retry would carry forward.
+ *
+ * Retry is offered on any finished-unhappily job, but what it *means* differs:
+ * with checkpoints it continues, without them it starts again, and telling an
+ * operator which is what the button is for.
+ */
+export function hasResumableCheckpoints(
+  job: Pick<ProcessingJob, "completedEpochs" | "protectedSeconds" | "state">,
+): boolean {
+  return (
+    ["failed", "cancelled", "paused"].includes(job.state) &&
+    job.completedEpochs > 0 &&
+    job.protectedSeconds > 0
+  );
+}
+
+/**
+ * What Retry will actually redo, in words.
+ *
+ * "Retry" on its own invites the fear it is about to throw away five hours of
+ * encoding, which for a checkpointed build is precisely wrong.
+ */
+export function retryScopeKey(
+  job: Pick<ProcessingJob, "completedEpochs" | "protectedSeconds" | "state">,
+): "processing.retry.fromCheckpoints" | "processing.retry.fromStart" {
+  return hasResumableCheckpoints(job)
+    ? "processing.retry.fromCheckpoints"
+    : "processing.retry.fromStart";
+}
+
+/**
+ * Whether the job is waiting for a volume rather than for a person.
+ *
+ * A storage-paused job resumes on its own, so the page offers waiting and a
+ * storage re-check rather than a Continue button that can only fail.
+ */
+export function isWaitingForStorage(
+  job: Pick<ProcessingJob, "state" | "pauseRequested" | "pausedReason">,
+): boolean {
+  return job.pausedReason === "storage-unavailable" && job.pauseRequested;
 }

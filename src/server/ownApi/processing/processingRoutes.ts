@@ -33,6 +33,11 @@ import {
   type ProcessingState,
 } from "./jobStore";
 import { PROCESSING_STAGES } from "./stages";
+import {
+  liveProgressIsFresh,
+  readLiveProgress,
+  type LiveProgressSnapshot,
+} from "./liveProgress";
 
 export const PROCESSING_JOB_TYPE = "media.process";
 
@@ -94,6 +99,22 @@ function toJobDto(job: ProcessingJobRecord) {
     cancellationRequested: job.cancellationRequested,
     pauseRequested: job.pauseRequested,
     pausedReason: job.pausedReason,
+    /*
+     * The checkpointed build's position. `encodedSeconds` over
+     * `sourceDurationSeconds` is the video percentage the page shows;
+     * `overallProgress` remains a whole-workflow figure and must never be
+     * presented as how much of the film has been encoded.
+     */
+    epochCount: job.epochCount,
+    epochIndex: job.epochIndex,
+    completedEpochs: job.completedEpochs,
+    protectedSeconds: job.protectedSeconds,
+    encodedSeconds: job.encodedSeconds,
+    sourceDurationSeconds: job.sourceDurationSeconds,
+    epochStartSeconds: job.epochStartSeconds,
+    epochEndSeconds: job.epochEndSeconds,
+    checkpointBytes: job.checkpointBytes,
+    freeBytes: job.freeBytes,
     createdAt: job.createdAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
@@ -564,8 +585,16 @@ export function createProcessingRoutes({
         const after = Number(
           context.url.searchParams.get("afterSequence") ?? 0,
         );
+        /*
+         * The snapshot carries the live sample too. A page that has just
+         * reconnected must not have to wait for the next encoder tick before it
+         * can show where the encode is — that wait is what made a refresh look
+         * like a stall.
+         */
+        const live = await readLiveProgress(id);
         sendData(context.response, context.requestId, {
           job: toJobDto(job),
+          live: live && liveProgressIsFresh(live) ? live : null,
           streamDecisions: job.streamDecisions,
           events: (
             await store.listEvents(id, Number.isFinite(after) ? after : 0)
@@ -696,6 +725,7 @@ export function createProcessingRoutes({
               );
             }
             if (["succeeded", "failed", "cancelled"].includes(current.state)) {
+              await liveTick();
               send("done", toJobDto(current));
               finish();
             }
@@ -705,6 +735,29 @@ export function createProcessingRoutes({
           }
         };
 
+        /*
+         * The fast lane.
+         *
+         * The encoder reports four times a second and writes each sample to a
+         * small file; the job row is written about once a second. Reading the
+         * file here is what lets the page move at the encoder's rate without
+         * asking the database to absorb four writes a second per job for hours.
+         *
+         * Only a sample newer than the last one is sent, so a stalled encoder
+         * produces silence rather than a bar that keeps moving.
+         */
+        let lastRevision = 0;
+        const liveTick = async () => {
+          if (closed) return;
+          const snapshot = await readLiveProgress(id);
+          if (!snapshot) return;
+          if (snapshot.revision <= lastRevision) return;
+          if (!liveProgressIsFresh(snapshot)) return;
+          lastRevision = snapshot.revision;
+          send("live", snapshot satisfies LiveProgressSnapshot);
+        };
+
+        const liveInterval = setInterval(() => void liveTick(), 250);
         const interval = setInterval(() => void tick(), 1000);
         // Keeps intermediaries from closing an idle connection between stages.
         const keepAlive = setInterval(() => {
@@ -716,12 +769,14 @@ export function createProcessingRoutes({
           if (closed) return;
           closed = true;
           clearInterval(interval);
+          clearInterval(liveInterval);
           clearInterval(keepAlive);
           response.end();
         }
 
         context.request.on("close", finish);
         await tick();
+        await liveTick();
 
         // Held open until the client disconnects or the job finishes.
         await new Promise<void>((resolve) => {

@@ -1,0 +1,182 @@
+import { describe, expect, it } from "vitest";
+import {
+  classifyFailure,
+  looksLikeOutOfSpace,
+  looksLikeStorageLoss,
+  SourceReadError,
+  StorageInterruptedError,
+} from "./failure";
+
+describe("classifyFailure", () => {
+  it("calls it storage when the volume itself is not answering", () => {
+    const failure = classifyFailure({
+      message: "ENOENT: no such file or directory, open '/Volumes/Expansion/x'",
+      storageAvailable: false,
+      missingRoots: ["/Volumes/Expansion"],
+    });
+    expect(failure.kind).toBe("storage-unavailable");
+    expect(failure.summary).toContain("/Volumes/Expansion");
+  });
+
+  it("recognises an I/O error as disappearing storage even before the watchdog notices", () => {
+    /*
+     * The watchdog polls; FFmpeg fails instantly. Between the two there is a
+     * window in which the drive is gone and the check has not run yet, and a
+     * job that failed in that window used to be marked permanently failed.
+     */
+    const failure = classifyFailure({
+      message: "FFmpeg failed with exit code 1: Input/output error",
+      storageAvailable: true,
+    });
+    expect(failure.kind).toBe("storage-unavailable");
+  });
+
+  it("separates a full disk from a missing one", () => {
+    expect(
+      classifyFailure({
+        message: "av_interleaved_write_frame(): No space left on device",
+        storageAvailable: true,
+      }).kind,
+    ).toBe("out-of-space");
+  });
+
+  it("treats a missing path as a missing source while the storage is healthy", () => {
+    expect(
+      classifyFailure({
+        message: "ENOENT: no such file or directory",
+        storageAvailable: true,
+      }).kind,
+    ).toBe("source-missing");
+  });
+
+  it("falls back to an encoder fault when nothing else fits", () => {
+    const failure = classifyFailure({
+      message: "Cannot prepare encoder: -12902",
+      storageAvailable: true,
+    });
+    expect(failure.kind).toBe("encoder");
+    expect(failure.detail).toContain("-12902");
+  });
+
+  it("keeps the underlying text so the cause survives into the job record", () => {
+    const failure = classifyFailure({
+      message: `${"x".repeat(9000)}Input/output error`,
+      storageAvailable: true,
+    });
+    expect(failure.detail.length).toBeLessThanOrEqual(4000);
+    expect(failure.detail).toContain("Input/output error");
+  });
+});
+
+describe("error patterns", () => {
+  it.each([
+    "Input/output error",
+    "EIO",
+    "Stale file handle",
+    "Device not configured",
+  ])("recognises %s as storage loss", (message) => {
+    expect(looksLikeStorageLoss(message)).toBe(true);
+  });
+
+  it("does not mistake an ordinary encoder failure for storage loss", () => {
+    expect(looksLikeStorageLoss("Invalid argument")).toBe(false);
+    expect(looksLikeOutOfSpace("Invalid argument")).toBe(false);
+  });
+});
+
+describe("StorageInterruptedError", () => {
+  it("carries the classification so no layer has to re-derive it from a string", () => {
+    const failure = classifyFailure({
+      message: "Input/output error",
+      storageAvailable: false,
+    });
+    const error = new StorageInterruptedError(failure);
+    expect(error.failure.kind).toBe("storage-unavailable");
+    expect(error.name).toBe("StorageInterruptedError");
+  });
+});
+
+/**
+ * Telling a drive that was pulled out from media that will not read.
+ *
+ * Both arrive as `EIO` and both used to be answered by parking the job and
+ * waiting for a watchdog transition. That is right for the first and a silent
+ * trap for the second, so the escalation is what decides between them: an I/O
+ * error is storage loss until the storage has been re-checked, repeatedly, and
+ * found present each time.
+ */
+describe("escalating a repeated I/O error", () => {
+  it("still reads the first I/O error as storage the watchdog has not caught up with", () => {
+    expect(
+      classifyFailure({
+        message: "Input/output error",
+        storageAvailable: true,
+        ioRechecksExhausted: false,
+      }).kind,
+    ).toBe("storage-unavailable");
+  });
+
+  it("calls it a source fault once the volume has proved it is still there", () => {
+    const failure = classifyFailure({
+      message: "FFmpeg failed with exit code 1: Input/output error",
+      storageAvailable: true,
+      ioRechecksExhausted: true,
+    });
+    expect(failure.kind).toBe("source-io");
+    expect(failure.summary).toMatch(/damaged media|failing disk/i);
+    expect(failure.detail).toContain("Input/output error");
+  });
+
+  it("lets a missing volume win over an exhausted read budget", () => {
+    /*
+     * The drive going in the middle of the escalation is still a drive going.
+     * Reporting damaged media for a disk that has been unplugged would send an
+     * operator looking for a fault that is not there.
+     */
+    expect(
+      classifyFailure({
+        message: "Input/output error",
+        storageAvailable: false,
+        ioRechecksExhausted: true,
+        missingRoots: ["/Volumes/Expansion"],
+      }).kind,
+    ).toBe("storage-unavailable");
+  });
+
+  it("does not escalate an ordinary encoder fault into a source fault", () => {
+    expect(
+      classifyFailure({
+        message: "Cannot prepare encoder: -12902",
+        storageAvailable: true,
+        ioRechecksExhausted: true,
+      }).kind,
+    ).toBe("encoder");
+  });
+
+  it("does not escalate a full disk", () => {
+    expect(
+      classifyFailure({
+        message: "No space left on device",
+        storageAvailable: true,
+        ioRechecksExhausted: true,
+      }).kind,
+    ).toBe("out-of-space");
+  });
+});
+
+describe("SourceReadError", () => {
+  it("names the epoch and how many reads were spent on it", () => {
+    const failure = classifyFailure({
+      message: "Input/output error",
+      storageAvailable: true,
+      ioRechecksExhausted: true,
+    });
+    const error = new SourceReadError(failure, 2, 4);
+    expect(error.name).toBe("SourceReadError");
+    expect(error.epochIndex).toBe(2);
+    expect(error.attempts).toBe(4);
+    // It is deliberately not a StorageInterruptedError: the two are handled
+    // in opposite ways and must never be caught by the same branch.
+    expect(error).not.toBeInstanceOf(StorageInterruptedError);
+  });
+});

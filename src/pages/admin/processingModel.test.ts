@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { ProcessingJob } from "../../lib/processingApi";
+import type { ProcessingLiveProgress } from "../../lib/processingApi";
 import {
   audioDecisionKey,
+  buildPhaseFor,
+  completedEpochs,
+  encodedFraction,
+  encodedPercent,
+  formatMediaClock,
+  hasResumableCheckpoints,
+  isWaitingForStorage,
+  protectedSeconds,
+  retryScopeKey,
+  smoothedEncodedSeconds,
   audioFormatLabel,
   canCancel,
   canPause,
@@ -52,6 +63,16 @@ function job(overrides: Partial<ProcessingJob> = {}): ProcessingJob {
     cancellationRequested: false,
     pauseRequested: false,
     pausedReason: null,
+    epochCount: null,
+    epochIndex: null,
+    completedEpochs: 0,
+    protectedSeconds: 0,
+    encodedSeconds: 0,
+    sourceDurationSeconds: null,
+    epochStartSeconds: null,
+    epochEndSeconds: null,
+    checkpointBytes: 0,
+    freeBytes: null,
     createdAt: "2026-01-01T00:00:00.000Z",
     startedAt: null,
     finishedAt: null,
@@ -434,5 +455,313 @@ describe("localised decision sentences", () => {
       "EAC3 6ch",
     );
     expect(audioFormatLabel({ codec: "aac" } as never)).toBe("AAC");
+  });
+});
+
+function liveSample(
+  overrides: Partial<ProcessingLiveProgress> = {},
+): ProcessingLiveProgress {
+  return {
+    processingJobId: "job-1",
+    revision: 1,
+    timestampMs: 1_000,
+    stage: "video",
+    phase: "encoding",
+    epochIndex: 10,
+    epochCount: 31,
+    epochStartSeconds: 3000,
+    epochEndSeconds: 3300,
+    epochFraction: 0.308,
+    completedEpochs: 10,
+    protectedSeconds: 3000,
+    encodedSeconds: 3092.5,
+    sourceDurationSeconds: 9039.2,
+    ...overrides,
+  };
+}
+
+describe("encoded progress", () => {
+  it("is media time encoded, not a position in the workflow", () => {
+    /*
+     * The case the whole separation exists for: a job whose workflow bar reads
+     * 89% because it has reached a late stage, while the encoder is a third of
+     * the way through the film.
+     */
+    const running = job({
+      overallProgress: 0.89,
+      encodedSeconds: 3092.5,
+      sourceDurationSeconds: 9039.2,
+    });
+    expect(progressPercent(running)).toBe(89);
+    expect(encodedPercent(running)).toBe(34.2);
+  });
+
+  it("prefers the live sample, which is fresher than the row", () => {
+    const running = job({
+      encodedSeconds: 3000,
+      sourceDurationSeconds: 9039.2,
+    });
+    expect(encodedPercent(running, liveSample())).toBe(34.2);
+  });
+
+  it("never goes backwards when a stale row arrives after a live sample", () => {
+    const running = job({
+      encodedSeconds: 4000,
+      sourceDurationSeconds: 9039.2,
+    });
+    const fraction = encodedFraction(running, liveSample());
+    expect(fraction).toBeCloseTo(4000 / 9039.2, 6);
+  });
+
+  it("says nothing at all before the source duration is known", () => {
+    expect(encodedPercent(job({ sourceDurationSeconds: null }))).toBeNull();
+  });
+
+  it("reads complete only when the job actually is", () => {
+    expect(
+      encodedPercent(
+        job({
+          state: "succeeded",
+          encodedSeconds: 0,
+          sourceDurationSeconds: 9039.2,
+        }),
+      ),
+    ).toBe(100);
+  });
+});
+
+describe("formatMediaClock", () => {
+  it("reads as a position in the film", () => {
+    expect(formatMediaClock(3093)).toBe("00:51:33");
+    expect(formatMediaClock(9039.2)).toBe("02:30:39");
+    expect(formatMediaClock(0)).toBe("00:00:00");
+  });
+
+  it("shows nothing rather than a wrong time when there is no value", () => {
+    expect(formatMediaClock(null)).toBe("--:--:--");
+    expect(formatMediaClock(Number.NaN)).toBe("--:--:--");
+  });
+});
+
+describe("protected progress", () => {
+  it("takes the furthest-along figure either source knows", () => {
+    expect(
+      protectedSeconds(job({ protectedSeconds: 2700 }), liveSample()),
+    ).toBe(3000);
+    expect(completedEpochs(job({ completedEpochs: 12 }), liveSample())).toBe(
+      12,
+    );
+  });
+});
+
+describe("smoothedEncodedSeconds", () => {
+  it("moves between samples at the rate the encoder reported", () => {
+    const value = smoothedEncodedSeconds({
+      live: liveSample({ smoothedSpeed: 0.6 }),
+      nowMs: 1_500,
+    });
+    expect(value).toBeCloseTo(3092.8, 6);
+  });
+
+  it("stops at the end of the running epoch rather than running past it", () => {
+    const value = smoothedEncodedSeconds({
+      live: liveSample({ smoothedSpeed: 5 }),
+      nowMs: 600_000,
+    });
+    expect(value).toBe(3300);
+  });
+
+  it("does not move at all when nothing is known about the rate", () => {
+    expect(smoothedEncodedSeconds({ live: liveSample(), nowMs: 900_000 })).toBe(
+      3092.5,
+    );
+  });
+
+  it("has nothing to say without a live sample", () => {
+    expect(smoothedEncodedSeconds({ live: null, nowMs: 1 })).toBeNull();
+  });
+});
+
+/**
+ * The numbers an operator uses to decide whether it is safe to unplug.
+ *
+ * They are read together — a position, a percentage and a protected mark — so
+ * they have to agree with each other at every instant, not merely be
+ * individually plausible. These pin the relationships rather than the values.
+ */
+describe("progress invariants", () => {
+  it("never reports a position behind media that is already protected", () => {
+    /*
+     * The shape of the discrepancy this is here to make impossible: a sample
+     * whose protected mark has moved past its own encoded figure. Nothing in
+     * the current event order writes one, and the display must not depend on
+     * that staying true.
+     */
+    const value = smoothedEncodedSeconds({
+      live: liveSample({ protectedSeconds: 600, encodedSeconds: 599.4 }),
+      nowMs: 1_000,
+    });
+    expect(value).toBe(600);
+  });
+
+  it("keeps the floor even when the epoch ceiling would pull it back", () => {
+    const value = smoothedEncodedSeconds({
+      live: liveSample({
+        protectedSeconds: 600,
+        encodedSeconds: 599.4,
+        epochStartSeconds: 300,
+        // A ceiling behind the protected mark, which must not win.
+        epochEndSeconds: 599.5,
+        smoothedSpeed: 4,
+      }),
+      nowMs: 60_000,
+    });
+    expect(value).toBeGreaterThanOrEqual(600);
+  });
+
+  it("never runs past the end of the source, however long the gap in samples", () => {
+    const value = smoothedEncodedSeconds({
+      live: liveSample({
+        epochEndSeconds: null,
+        smoothedSpeed: 50,
+        sourceDurationSeconds: 9039.2,
+      }),
+      nowMs: 10_000_000,
+    });
+    expect(value).toBeLessThanOrEqual(9039.2);
+  });
+
+  it("keeps the running epoch's own progress inside the running epoch", () => {
+    const value = smoothedEncodedSeconds({
+      live: liveSample({ smoothedSpeed: 100 }),
+      nowMs: 10_000_000,
+    });
+    expect(value).toBeGreaterThanOrEqual(3000);
+    expect(value).toBeLessThanOrEqual(3300);
+  });
+
+  /**
+   * The specific reading that must never appear: a panel saying a checkpoint
+   * protects the first ten minutes while the position beside it reads 09:59.
+   */
+  it("cannot show 00:09:59 once 00:10:00 is durable", () => {
+    const live = liveSample({
+      protectedSeconds: 600.016,
+      encodedSeconds: 599.9,
+      epochStartSeconds: 600.016,
+      epochEndSeconds: 900.02,
+      sourceDurationSeconds: 1200,
+    });
+    const position = smoothedEncodedSeconds({ live, nowMs: 1_000 })!;
+    expect(formatMediaClock(position)).toBe("00:10:00");
+    expect(
+      formatMediaClock(protectedSeconds({ protectedSeconds: 0 }, live)),
+    ).toBe("00:10:00");
+    // And the percentage that goes with it is not below half.
+    expect(
+      encodedPercent(
+        {
+          encodedSeconds: 0,
+          sourceDurationSeconds: 1200,
+          state: "running",
+        },
+        { ...live, encodedSeconds: position },
+      )!,
+    ).toBeGreaterThanOrEqual(50);
+  });
+
+  it("takes the protected mark from whichever source is further ahead", () => {
+    // The durable row ahead of a live sample that has not caught up.
+    expect(
+      protectedSeconds(
+        { protectedSeconds: 3300 },
+        liveSample({ protectedSeconds: 3000 }),
+      ),
+    ).toBe(3300);
+    // And the live sample ahead of a row that has not been written yet.
+    expect(protectedSeconds({ protectedSeconds: 0 }, liveSample())).toBe(3000);
+  });
+});
+
+describe("buildPhaseFor", () => {
+  it("uses the live sample while there is one", () => {
+    expect(
+      buildPhaseFor(
+        job({ stage: "video" }),
+        liveSample({ phase: "assembling" }),
+      ),
+    ).toBe("assembling");
+  });
+
+  it("falls back to the stage so a reopened page still names the phase", () => {
+    expect(buildPhaseFor(job({ stage: "packaging" }))).toBe("assembling");
+    expect(buildPhaseFor(job({ stage: "video" }))).toBe("encoding");
+    expect(buildPhaseFor(job({ stage: "waiting" }))).toBeNull();
+  });
+});
+
+describe("checkpoint-aware actions", () => {
+  it("recognises a stopped job that has work worth continuing from", () => {
+    expect(
+      hasResumableCheckpoints(
+        job({
+          state: "cancelled",
+          completedEpochs: 10,
+          protectedSeconds: 3000,
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("does not claim checkpoints for a job that never made one", () => {
+    expect(
+      hasResumableCheckpoints(
+        job({ state: "failed", completedEpochs: 0, protectedSeconds: 0 }),
+      ),
+    ).toBe(false);
+  });
+
+  it("says what Retry will actually redo", () => {
+    expect(
+      retryScopeKey(
+        job({ state: "failed", completedEpochs: 3, protectedSeconds: 900 }),
+      ),
+    ).toBe("processing.retry.fromCheckpoints");
+    expect(
+      retryScopeKey(
+        job({ state: "failed", completedEpochs: 0, protectedSeconds: 0 }),
+      ),
+    ).toBe("processing.retry.fromStart");
+  });
+
+  it("distinguishes waiting for a drive from waiting for a person", () => {
+    expect(
+      isWaitingForStorage(
+        job({
+          state: "paused",
+          pauseRequested: true,
+          pausedReason: "storage-unavailable",
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      isWaitingForStorage(
+        job({
+          state: "paused",
+          pauseRequested: true,
+          pausedReason: "operator",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps Continue off a storage pause, which resumes on its own", () => {
+    const stalled = job({
+      state: "paused",
+      pauseRequested: true,
+      pausedReason: "storage-unavailable",
+    });
+    expect(canResume(stalled)).toBe(false);
+    expect(canCancel(stalled)).toBe(true);
   });
 });

@@ -53,6 +53,101 @@ export type RenditionProgressEvent =
       fileSize: number;
       reused: boolean;
     }
+  /**
+   * The build's shape, once the epoch plan is known and disk has been
+   * reconciled against it. Sent before any encoding so a page that attaches
+   * mid-job can describe the work without waiting for a progress tick.
+   */
+  | {
+      type: "epoch-plan";
+      mediaId: string;
+      epochCount: number;
+      epochTargetSeconds: number;
+      sourceDurationSeconds: number;
+      /** Epochs already durable when this attempt started. */
+      reusedEpochs: number;
+      protectedSeconds: number;
+      /** Bytes of durable checkpoint media already on disk for this build. */
+      checkpointBytes: number;
+      /** Checkpoints that existed and could not be trusted, with reasons. */
+      invalidated: Array<{ index: number; reason: string }>;
+    }
+  | {
+      type: "epoch-start";
+      mediaId: string;
+      index: number;
+      epochCount: number;
+      startSeconds: number;
+      endSeconds: number;
+      attempt: number;
+    }
+  /**
+   * The authoritative video-progress sample.
+   *
+   * `encodedSeconds` is the number the page shows as a percentage: media time
+   * genuinely encoded, never a weighted position in a workflow.
+   */
+  | {
+      type: "epoch-progress";
+      mediaId: string;
+      index: number;
+      epochCount: number;
+      startSeconds: number;
+      endSeconds: number;
+      epochProcessedSeconds: number;
+      encodedSeconds: number;
+      protectedSeconds: number;
+      sourceDurationSeconds: number;
+      fps?: number;
+      speed?: number;
+      /** Bytes this job has written, checkpoints included. */
+      writtenBytes?: number;
+    }
+  | {
+      type: "epoch-complete";
+      mediaId: string;
+      index: number;
+      epochCount: number;
+      protectedSeconds: number;
+      bytes: number;
+      elapsedMs: number;
+    }
+  | {
+      type: "epoch-invalid";
+      mediaId: string;
+      index: number;
+      reason: string;
+    }
+  /**
+   * A source read that failed while the volume kept answering.
+   *
+   * Reported so an operator watching a job can see it escalating rather than
+   * apparently stalling, and so the job record carries the count that decided
+   * the outcome.
+   */
+  | {
+      type: "source-io-retry";
+      mediaId: string;
+      index: number;
+      attempt: number;
+      maxAttempts: number;
+      sourceReadable?: boolean;
+      detail: string;
+    }
+  /** Which part of the build is running, for a page that shows stages apart. */
+  | {
+      type: "build-stage";
+      mediaId: string;
+      stage:
+        | "planning"
+        | "encoding"
+        | "audio"
+        | "subtitles"
+        | "assembling"
+        | "validating"
+        | "publishing";
+      detail?: string;
+    }
   | {
       type: "item-complete";
       mediaId: string;

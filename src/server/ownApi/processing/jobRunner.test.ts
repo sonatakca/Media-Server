@@ -43,6 +43,16 @@ function record(
     cancellationRequested: false,
     pauseRequested: false,
     pausedReason: null,
+    epochCount: null,
+    epochIndex: null,
+    completedEpochs: 0,
+    protectedSeconds: 0,
+    encodedSeconds: 0,
+    sourceDurationSeconds: null,
+    epochStartSeconds: null,
+    epochEndSeconds: null,
+    checkpointBytes: 0,
+    freeBytes: null,
     createdAt: new Date(),
     startedAt: null,
     finishedAt: null,
@@ -408,17 +418,40 @@ describe("processing job runner", () => {
     expect(fake.latest().overallProgress).toBe(1);
   });
 
-  it("computes an ETA from the encoder's own speed", async () => {
+  it("computes an ETA from smoothed throughput once there is enough evidence", async () => {
+    /*
+     * The estimate deliberately ignores the first samples of an epoch: they are
+     * dominated by process start, filter-graph construction and the seek
+     * preroll, and taking them at face value showed an ETA of days for the
+     * first seconds of every five minutes.
+     */
     const packageFn = vi.fn(async (_request, _paths, options: never) => {
       const onEvent = (options as { onEvent?: (event: unknown) => void })
         .onEvent!;
       onEvent({
-        type: "encode-progress",
+        type: "epoch-start",
         mediaId: "file-1",
-        processedSeconds: 100,
-        durationSeconds: 300,
-        speed: 2,
+        index: 0,
+        epochCount: 1,
+        startSeconds: 0,
+        endSeconds: 300,
+        attempt: 1,
       });
+      for (let sample = 0; sample < 30; sample += 1) {
+        onEvent({
+          type: "epoch-progress",
+          mediaId: "file-1",
+          index: 0,
+          epochCount: 1,
+          startSeconds: 0,
+          endSeconds: 300,
+          epochProcessedSeconds: 100,
+          encodedSeconds: 100,
+          protectedSeconds: 0,
+          sourceDurationSeconds: 300,
+          speed: 2,
+        });
+      }
       return {
         mediaId: "file-1",
         relativePath: "Movies/Dune.mp4",
@@ -433,7 +466,138 @@ describe("processing job runner", () => {
       .filter(
         (value): value is number => typeof value === "number" && value > 0,
       );
+    // 200 seconds of media left at twice real time.
     expect(etas).toContain(100);
+  });
+
+  it("reports video progress as media time encoded, not as a workflow position", async () => {
+    const packageFn = vi.fn(async (_request, _paths, options: never) => {
+      const onEvent = (options as { onEvent?: (event: unknown) => void })
+        .onEvent!;
+      onEvent({
+        type: "epoch-plan",
+        mediaId: "file-1",
+        epochCount: 31,
+        epochTargetSeconds: 300,
+        sourceDurationSeconds: 9039.2,
+        reusedEpochs: 10,
+        protectedSeconds: 3000,
+        invalidated: [],
+      });
+      onEvent({
+        type: "epoch-progress",
+        mediaId: "file-1",
+        index: 10,
+        epochCount: 31,
+        startSeconds: 3000,
+        endSeconds: 3300,
+        epochProcessedSeconds: 92.5,
+        encodedSeconds: 3092.5,
+        protectedSeconds: 3000,
+        sourceDurationSeconds: 9039.2,
+      });
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "ready" as const,
+      };
+    });
+
+    await runner(fake, packageFn).run(input);
+
+    const encoded = fake.updates
+      .map((update) => update.encodedSeconds)
+      .filter((value): value is number => typeof value === "number");
+    expect(encoded).toContain(3092.5);
+    const protectedSeconds = fake.updates
+      .map((update) => update.protectedSeconds)
+      .filter((value): value is number => typeof value === "number");
+    expect(protectedSeconds).toContain(3000);
+    const counts = fake.updates
+      .map((update) => update.epochCount)
+      .filter((value): value is number => typeof value === "number");
+    expect(counts).toContain(31);
+  });
+
+  it("records a checkpoint the moment it becomes durable", async () => {
+    const packageFn = vi.fn(async (_request, _paths, options: never) => {
+      const onEvent = (options as { onEvent?: (event: unknown) => void })
+        .onEvent!;
+      onEvent({
+        type: "epoch-complete",
+        mediaId: "file-1",
+        index: 9,
+        epochCount: 31,
+        protectedSeconds: 3000,
+        bytes: 1_234_567,
+        elapsedMs: 1000,
+      });
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "ready" as const,
+      };
+    });
+
+    await runner(fake, packageFn).run(input);
+
+    expect(
+      fake.events.some((event) =>
+        event.message.includes("Checkpoint saved — protected through 00:50:00"),
+      ),
+    ).toBe(true);
+    expect(fake.updates.some((update) => update.completedEpochs === 10)).toBe(
+      true,
+    );
+  });
+
+  it("waits for storage rather than failing when the packager says the volume went", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "interrupted" as const,
+      interruption: "storage" as const,
+      error: "Expansion became unavailable.",
+    }));
+
+    const outcome = await runner(fake, packageFn).run(input);
+
+    expect(outcome.status).toBe("waiting-for-storage");
+    expect(fake.latest().state).toBe("paused");
+    // Not finished, so it must carry no finish time and no failure.
+    expect(fake.latest().finishedAt).toBeNull();
+    expect(fake.latest().errorCode).toBeNull();
+    expect(
+      fake.events.some((event) =>
+        event.message.includes("Every completed checkpoint is untouched"),
+      ),
+    ).toBe(true);
+  });
+
+  /**
+   * The reason is what makes the pause recoverable.
+   *
+   * `requeueStorageInterruptedJobs` finds work to restart with
+   * `listPaused("storage-unavailable")`, which reads `paused_reason`. A job the
+   * runner parks without stamping that reason is invisible to the watchdog: it
+   * sits in `paused` with no reason, no error and no finish time, and nothing
+   * will ever pick it up again. The engine classifies an I/O error as storage
+   * loss *before* the watchdog has polled, so this is the ordinary path, not a
+   * corner of one.
+   */
+  it("stamps the storage reason so the watchdog can find the job it parked", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "interrupted" as const,
+      interruption: "storage" as const,
+      error: "Input/output error",
+    }));
+
+    await runner(fake, packageFn).run(input);
+
+    expect(fake.latest().state).toBe("paused");
+    expect(fake.latest().pausedReason).toBe("storage-unavailable");
   });
 
   it("passes the policy's audio selection to the packager", async () => {

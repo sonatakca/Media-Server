@@ -95,6 +95,32 @@ export interface AdaptivePackageEncodingInput {
   softwareThreads?: number;
   /** Shared pool for the one complex filter graph. */
   filterComplexThreads?: number;
+  /**
+   * Where in the source this invocation starts reading, in seconds.
+   *
+   * Passed as an *input* option, which makes it an accurate seek: FFmpeg finds
+   * the keyframe before the target, decodes forward and discards, so the first
+   * frame produced is the first frame at or after the position. The epoch
+   * planner only ever hands over a position that falls between two frames, so
+   * there is no frame close enough to the cut for a microsecond of rounding to
+   * decide whether it is encoded twice or not at all.
+   */
+  startSeconds?: number;
+  /**
+   * How much of the source this invocation writes, in seconds of output time.
+   *
+   * An output option, so it is measured from the first frame the epoch keeps —
+   * after the seek pre-roll has been trimmed away — rather than from the seek
+   * target. Left undefined the encode runs to the end of the source, which is
+   * what the last epoch of a title wants.
+   */
+  durationSeconds?: number;
+  /**
+   * How often FFmpeg reports progress. Four times a second is what makes the
+   * processing page feel live without asking the encoder to do real work
+   * between frames.
+   */
+  statsPeriodSeconds?: number;
 }
 
 /**
@@ -202,10 +228,14 @@ export function buildAdaptiveFilterComplex({
   videoOutputs,
   encoder = "libx264",
   hdr,
-}: Pick<
-  AdaptivePackageEncodingInput,
-  "videoOutputs" | "encoder" | "hdr"
->): string {
+  trimSeekPreroll = false,
+}: Pick<AdaptivePackageEncodingInput, "videoOutputs" | "encoder" | "hdr"> & {
+  /**
+   * Discards the frame FFmpeg's accurate seek keeps from *before* the seek
+   * point. See `AdaptivePackageEncodingInput.startSeconds`.
+   */
+  trimSeekPreroll?: boolean;
+}): string {
   if (videoOutputs.length === 0) {
     throw new Error("At least one adaptive video rendition is required.");
   }
@@ -213,6 +243,27 @@ export function buildAdaptiveFilterComplex({
   const pixelFormat = pixelFormatFor(encoder, hdr);
   const chains: string[] = [];
   let head = "0:v:0";
+
+  if (trimSeekPreroll) {
+    /*
+     * An accurate `-ss` does not hand the filter graph only the frames from the
+     * seek point. It also hands over the frame immediately before it, carrying
+     * a negative timestamp, and expects the container to hide it with an edit
+     * list. A progressive MP4 does exactly that, which is why the behaviour is
+     * invisible in ordinary use — but fragmented MP4 has no such edit to apply,
+     * so that frame is delivered, and every epoch after the first would begin
+     * one frame early. Concatenated, the title gained a frame per join and
+     * every epoch's picture sat a frame later than its own timeline claimed.
+     *
+     * The seek point is always placed midway between two frames, so the
+     * pre-roll is the only frame with a negative timestamp and dropping
+     * everything below zero drops exactly it. `setpts` then rebases the epoch
+     * to zero, which is what keeps every epoch's initialisation segment
+     * byte-identical and therefore joinable.
+     */
+    chains.push(`[${head}]trim=start=0,setpts=PTS-STARTPTS[epoch]`);
+    head = "epoch";
+  }
 
   if (hdr) {
     // The colour properties are stamped onto the frames rather than left to the
@@ -450,6 +501,9 @@ export function buildAdaptivePackageFfmpegArgs({
   preset = "medium",
   softwareThreads,
   filterComplexThreads,
+  startSeconds,
+  durationSeconds,
+  statsPeriodSeconds,
 }: AdaptivePackageEncodingInput): string[] {
   /*
    * These describe one FFmpeg invocation, not a finished package.
@@ -485,11 +539,18 @@ export function buildAdaptivePackageFfmpegArgs({
     "-nostdin",
     "-progress",
     "pipe:1",
+    ...(statsPeriodSeconds === undefined
+      ? []
+      : ["-stats_period", String(statsPeriodSeconds)]),
     "-nostats",
     "-y",
     ...(videoOutputs.length > 0 && filterComplexThreads !== undefined
       ? ["-filter_complex_threads", String(filterComplexThreads)]
       : []),
+    // Before `-i`, so it seeks the input rather than discarding decoded output.
+    ...(startSeconds === undefined || startSeconds <= 0
+      ? []
+      : ["-ss", startSeconds.toFixed(6)]),
     "-i",
     inputPath,
     // An audio-only run has no picture to scale, and an empty filter graph is
@@ -498,7 +559,12 @@ export function buildAdaptivePackageFfmpegArgs({
     ...(videoOutputs.length > 0
       ? [
           "-filter_complex",
-          buildAdaptiveFilterComplex({ videoOutputs, encoder, hdr }),
+          buildAdaptiveFilterComplex({
+            videoOutputs,
+            encoder,
+            ...(hdr ? { hdr } : {}),
+            trimSeekPreroll: startSeconds !== undefined && startSeconds > 0,
+          }),
         ]
       : []),
   ];
@@ -514,6 +580,16 @@ export function buildAdaptivePackageFfmpegArgs({
   // would be duplicated into every rung and, worse, would make the variants
   // non-interchangeable to a player switching between them mid-playback.
   args.push("-sn", "-dn");
+
+  /*
+   * The epoch's length, as an output duration. It has to come after the maps
+   * so it applies to this output rather than being read as an input limit,
+   * and it is deliberately not `-to`: with input seeking the output timeline
+   * restarts at zero, so an absolute stop time would name the wrong instant.
+   */
+  if (durationSeconds !== undefined && durationSeconds > 0) {
+    args.push("-t", durationSeconds.toFixed(6));
+  }
 
   videoOutputs.forEach((output, index) => {
     const baseThreads =

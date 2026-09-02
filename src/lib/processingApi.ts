@@ -149,10 +149,71 @@ export interface ProcessingJob {
   cancellationRequested: boolean;
   pauseRequested: boolean;
   pausedReason: "operator" | "storage-unavailable" | null;
+  /**
+   * The checkpointed build's position.
+   *
+   * `encodedSeconds / sourceDurationSeconds` is how much of the film has been
+   * encoded, and is the only figure that may be shown as encoding progress.
+   * `overallProgress` remains a whole-workflow weighting and reads as nearly
+   * done long before the encoder is.
+   */
+  epochCount: number | null;
+  epochIndex: number | null;
+  completedEpochs: number;
+  /** Media time that would survive the machine losing power right now. */
+  protectedSeconds: number;
+  encodedSeconds: number;
+  sourceDurationSeconds: number | null;
+  epochStartSeconds: number | null;
+  epochEndSeconds: number | null;
+  /** Bytes of encoded media protected by checkpoints. */
+  checkpointBytes: number;
+  freeBytes: number | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
   updatedAt: string;
+}
+
+/** Where a checkpointed build is, in terms an operator recognises. */
+export type ProcessingBuildPhase =
+  | "planning"
+  | "encoding"
+  | "audio"
+  | "subtitles"
+  | "assembling"
+  | "validating"
+  | "publishing";
+
+/**
+ * One high-frequency sample from the running encoder.
+ *
+ * Delivered on its own event so it can arrive four times a second without the
+ * job row being written that often. Everything in it is transient: a page that
+ * has none of it still shows the durable figures from the job record.
+ */
+export interface ProcessingLiveProgress {
+  processingJobId: string;
+  revision: number;
+  timestampMs: number;
+  stage: ProcessingStage;
+  phase: ProcessingBuildPhase;
+  epochIndex: number | null;
+  epochCount: number | null;
+  epochStartSeconds: number | null;
+  epochEndSeconds: number | null;
+  epochFraction: number | null;
+  completedEpochs: number;
+  protectedSeconds: number;
+  encodedSeconds: number;
+  sourceDurationSeconds: number;
+  fps?: number;
+  speed?: number;
+  smoothedSpeed?: number;
+  etaSeconds?: number;
+  writtenBytes?: number;
+  encoder?: string;
+  qualityHeights?: number[];
 }
 
 export interface ProcessingJobEvent {
@@ -303,6 +364,14 @@ export function getProcessingJob(
   afterSequence = 0,
 ): Promise<{
   job: ProcessingJob;
+  /**
+   * The latest encoder sample, when one is fresh enough to trust.
+   *
+   * Carried on the snapshot as well as on the stream so a page that has just
+   * reconnected does not have to wait for the next tick before it can say where
+   * the encode is — that wait is what made a refresh look like a stall.
+   */
+  live: ProcessingLiveProgress | null;
   streamDecisions: {
     audio: ProcessingAudioDecision[];
     subtitles: ProcessingSubtitleDecision[];

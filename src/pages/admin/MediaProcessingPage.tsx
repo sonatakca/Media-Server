@@ -36,18 +36,26 @@ import {
   retryProcessingJob,
   type ProcessingJob,
   type ProcessingJobEvent,
+  type ProcessingLiveProgress,
   type ProcessingOverview,
   type ProcessingPreview,
 } from "../../lib/processingApi";
 import {
+  BUILD_PHASE_LABEL_KEYS,
+  buildPhaseFor,
   canCancel,
   canPause,
   canResume,
   canRetry,
+  completedEpochs,
+  encodedPercent,
   formatBytes,
   formatDuration,
   formatFinishedAt,
+  formatMediaClock,
   formatSpeed,
+  hasResumableCheckpoints,
+  isWaitingForStorage,
   lastSequence,
   mergeEvents,
   mergeJobFrame,
@@ -55,6 +63,9 @@ import {
   progressPercent,
   processingDurationSeconds,
   processingElapsedSeconds,
+  protectedSeconds,
+  retryScopeKey,
+  smoothedEncodedSeconds,
   stageStateFor,
   summariseLanguages,
 } from "./processingModel";
@@ -70,6 +81,19 @@ const LABEL =
  * never appeared to run at all.
  */
 const PROCESSING_REFRESH_MS = 1_000;
+
+/** The page's own translator, so a helper cannot be handed an unknown key. */
+type Translate = ReturnType<typeof useLanguage>["t"];
+
+/**
+ * How often the page repaints between authoritative samples.
+ *
+ * The encoder reports four times a second and the stream carries every sample,
+ * so this is not the source of the numbers — it is what lets the seconds
+ * counter move smoothly between them. It never runs ahead of the bound the last
+ * sample established, so a stalled encoder shows a bar that stops.
+ */
+const LIVE_TICK_MS = 250;
 
 type PreviewLoadState =
   | { status: "waiting" | "loading" }
@@ -202,6 +226,171 @@ function LadderRungs({
   );
 }
 
+/**
+ * What a checkpointed encode is doing, in the terms an operator asks about.
+ *
+ * Deliberately separate from the workflow bar above it. That bar answers "how
+ * far through the whole job", which is a different question from "how much of
+ * the film has been encoded" and used to be the only one on offer — so a job
+ * that had merely reached a late stage read as nearly done while the encoder
+ * was a third of the way through the picture.
+ */
+function EpochPanel({
+  job,
+  live,
+  nowMs,
+  t,
+}: {
+  job: ProcessingJob;
+  live: ProcessingLiveProgress | null;
+  nowMs: number;
+  t: Translate;
+}) {
+  const duration = live?.sourceDurationSeconds ?? job.sourceDurationSeconds;
+  if (!duration || duration <= 0) return null;
+
+  const phase = buildPhaseFor(job, live);
+  const smoothed = smoothedEncodedSeconds({ live, nowMs });
+  const guarded = protectedSeconds(job, live);
+  /*
+   * Floored at the protected mark as well as at the row, because the two come
+   * from different places — the durable row and the live file — and either can
+   * be the fresher of the pair. Showing a position behind media that is already
+   * checkpointed is what makes a panel say "protected through 00:10:00" and
+   * "00:09:59" in the same breath.
+   */
+  const encoded = Math.max(
+    guarded,
+    job.encodedSeconds,
+    smoothed ?? live?.encodedSeconds ?? 0,
+  );
+  const percent =
+    job.state === "succeeded"
+      ? 100
+      : Math.min(100, Math.round((encoded / duration) * 1000) / 10);
+  const done = completedEpochs(job, live);
+  const count = live?.epochCount ?? job.epochCount;
+  const index = live?.epochIndex ?? job.epochIndex;
+  const epochStart = live?.epochStartSeconds ?? job.epochStartSeconds;
+  const epochEnd = live?.epochEndSeconds ?? job.epochEndSeconds;
+  const encoding = phase === "encoding" && job.state === "running";
+  const rungs = live?.qualityHeights ?? job.decision?.renditionsToEncode ?? [];
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className={LABEL}>
+          {phase
+            ? t(BUILD_PHASE_LABEL_KEYS[phase] as never)
+            : t("processing.stage.video")}
+        </span>
+        {encoding ? (
+          <span className="text-2xl font-black tabular-nums">{percent}%</span>
+        ) : (
+          <span className="text-sm font-bold text-white/70">
+            {t("processing.epoch.videoComplete")}
+          </span>
+        )}
+        <span className="text-xs tabular-nums text-white/45">
+          {formatTemplate(t("processing.epoch.mediaPosition"), {
+            encoded: formatMediaClock(encoded),
+            total: formatMediaClock(duration),
+          })}
+        </span>
+      </div>
+
+      {/*
+       * Two bars in one: the filled part is what has been encoded, and the
+       * brighter mark inside it is how much of that a crash could not take
+       * away. Seeing the two apart is the whole point of checkpointing.
+       */}
+      <div className="relative h-2 overflow-hidden rounded-full bg-white/[0.08]">
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-[var(--accent)]/45"
+          style={{ width: `${Math.min(100, (encoded / duration) * 100)}%` }}
+        />
+        <div
+          className="absolute inset-y-0 left-0 rounded-full bg-emerald-400/80"
+          style={{ width: `${Math.min(100, (guarded / duration) * 100)}%` }}
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-white/55">
+        <span className="inline-flex items-center gap-1.5">
+          <span className="h-2 w-2 rounded-full bg-emerald-400/80" />
+          {done > 0 && count
+            ? `${formatTemplate(t("processing.epoch.checkpointsSaved"), {
+                done: String(done),
+                count: String(count),
+              })} · ${formatTemplate(t("processing.epoch.protectedThrough"), {
+                time: formatMediaClock(guarded),
+              })}`
+            : t("processing.epoch.noneYet")}
+        </span>
+        {job.checkpointBytes > 0 ? (
+          <span className="tabular-nums text-white/40">
+            {t("processing.epoch.protectedMedia")}:{" "}
+            {formatBytes(job.checkpointBytes)}
+          </span>
+        ) : null}
+      </div>
+
+      {/*
+       * The rungs, and the fact that they advance together. They are produced
+       * from one decode inside each epoch, so their timeline progress is the
+       * same by construction — listing them separately would invite the reader
+       * to look for a difference that cannot exist.
+       */}
+      {rungs.length > 0 ? (
+        <div className="flex flex-wrap items-center gap-1.5">
+          {rungs.map((height) => (
+            <span
+              key={height}
+              className={`rounded-md border px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${
+                encoding
+                  ? "border-amber-400/30 bg-amber-400/15 text-amber-100"
+                  : "border-emerald-400/25 bg-emerald-400/15 text-emerald-200"
+              }`}
+            >
+              {height}p
+            </span>
+          ))}
+          {live?.encoder ? (
+            <span className="text-[11px] text-white/40">{live.encoder}</span>
+          ) : null}
+          {job.freeBytes !== null ? (
+            <span className="ml-auto text-[11px] tabular-nums text-white/40">
+              {formatTemplate(t("processing.storage.free"), {
+                free: formatBytes(job.freeBytes),
+              })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {index !== null && count && epochStart !== null && epochEnd !== null ? (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-white/45">
+          <span className={LABEL}>{t("processing.epoch.heading")}</span>
+          <span className="font-bold tabular-nums text-white/70">
+            {formatTemplate(t("processing.epoch.position"), {
+              index: String(index + 1),
+              count: String(count),
+            })}
+          </span>
+          <span className="tabular-nums">
+            {formatMediaClock(epochStart)} → {formatMediaClock(epochEnd)}
+          </span>
+          {live?.epochFraction !== null && live?.epochFraction !== undefined ? (
+            <span className="tabular-nums">
+              {Math.round(live.epochFraction * 100)}%
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function MediaProcessingPage() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
@@ -219,6 +408,17 @@ export function MediaProcessingPage() {
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [openJob, setOpenJob] = useState<ProcessingJob | null>(null);
   const [events, setEvents] = useState<ProcessingJobEvent[]>([]);
+  /**
+   * The newest encoder sample, and which job it belongs to.
+   *
+   * Kept beside the job rather than merged into it because the two have very
+   * different lifetimes: the job row survives a restart and this does not.
+   */
+  const [live, setLive] = useState<{
+    jobId: string;
+    snapshot: ProcessingLiveProgress;
+  } | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [streamState, setStreamState] = useState<
     "idle" | "live" | "reconnecting"
   >("idle");
@@ -337,24 +537,38 @@ export function MediaProcessingPage() {
    * Reconnects resume from the last sequence the page already has, so a refresh
    * mid-encode continues the timeline instead of replaying or losing it.
    */
+  /*
+   * The job whose live stream is worth holding open.
+   *
+   * The one an operator has opened, or failing that the one that is actually
+   * encoding — so the running card moves at the encoder's own rate rather than
+   * at the overview poll, without anybody having to open it first.
+   */
+  const runningJobId =
+    overview?.jobs.find((entry) => entry.state === "running")?.id ?? null;
+  const streamJobId = openJobId ?? runningJobId;
+
   useEffect(() => {
     sourceRef.current?.close();
     sourceRef.current = null;
-    if (!openJobId) {
+    setLive(null);
+    if (!streamJobId) {
       setStreamState("idle");
       return undefined;
     }
+    const jobId = streamJobId;
 
     let closed = false;
     void (async () => {
-      const snapshot = await getProcessingJob(openJobId).catch(() => null);
+      const snapshot = await getProcessingJob(jobId).catch(() => null);
       if (closed || !snapshot) return;
       setOpenJob(snapshot.job);
       setEvents(snapshot.events);
+      if (snapshot.live) setLive({ jobId, snapshot: snapshot.live });
 
       const connect = (from: number) => {
         if (closed) return;
-        const source = new EventSource(processingStreamUrl(openJobId, from), {
+        const source = new EventSource(processingStreamUrl(jobId, from), {
           withCredentials: true,
         });
         sourceRef.current = source;
@@ -371,12 +585,30 @@ export function MediaProcessingPage() {
           ) as ProcessingJobEvent;
           setEvents((previous) => mergeEvents(previous, [entry]));
         });
+        /*
+         * The fast lane. Out-of-order delivery is possible on a reconnect, so
+         * a sample older than the one on screen is discarded by its revision
+         * rather than trusted for having arrived last.
+         */
+        source.addEventListener("live", (event) => {
+          const snapshot = JSON.parse(
+            (event as MessageEvent<string>).data,
+          ) as ProcessingLiveProgress;
+          setLive((previous) =>
+            previous &&
+            previous.jobId === snapshot.processingJobId &&
+            previous.snapshot.revision >= snapshot.revision
+              ? previous
+              : { jobId: snapshot.processingJobId, snapshot },
+          );
+        });
         source.addEventListener("done", (event) => {
           const frame = JSON.parse(
             (event as MessageEvent<string>).data,
           ) as ProcessingJob;
           setOpenJob((previous) => mergeJobFrame(previous ?? undefined, frame));
           setStreamState("idle");
+          setLive(null);
           source.close();
           void refreshOverview();
         });
@@ -403,7 +635,18 @@ export function MediaProcessingPage() {
       sourceRef.current?.close();
       sourceRef.current = null;
     };
-  }, [openJobId, refreshOverview]);
+  }, [streamJobId, refreshOverview]);
+
+  /*
+   * Repaints between authoritative samples so the seconds counter moves rather
+   * than stepping. Only runs while there is a live sample to interpolate from,
+   * so a finished or storage-paused job costs nothing.
+   */
+  useEffect(() => {
+    if (!live) return undefined;
+    const timer = window.setInterval(() => setNowMs(Date.now()), LIVE_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, [live]);
 
   const runPreview = useCallback(
     async (itemId: string) => {
@@ -1002,6 +1245,9 @@ export function MediaProcessingPage() {
               <ul className="flex flex-col gap-2">
                 {jobs.map((job) => {
                   const percent = progressPercent(job);
+                  const jobLive = live?.jobId === job.id ? live.snapshot : null;
+                  const encoded = encodedPercent(job, jobLive);
+                  const waitingForStorage = isWaitingForStorage(job);
                   const isFinished = [
                     "succeeded",
                     "failed",
@@ -1152,24 +1398,97 @@ export function MediaProcessingPage() {
                         />
                       </div>
 
+                      {waitingForStorage ? (
+                        /*
+                         * Not an error. Nothing is wrong with the source, the
+                         * plan or the package; a volume went away and the job
+                         * is waiting for it. Saying so, and saying that no
+                         * action is needed, is what stops an operator pressing
+                         * Retry on something that will continue by itself.
+                         */
+                        <div className="flex flex-col gap-1 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-100">
+                          <span className="font-bold">
+                            {t("processing.storage.interrupted")}
+                          </span>
+                          <span className="text-amber-100/75">
+                            {t("processing.storage.waiting")}
+                          </span>
+                          {job.protectedSeconds > 0 ? (
+                            <span className="tabular-nums text-amber-100/75">
+                              {formatTemplate(
+                                t("processing.epoch.protectedThrough"),
+                                {
+                                  time: formatMediaClock(job.protectedSeconds),
+                                },
+                              )}
+                              {job.epochStartSeconds !== null &&
+                              job.epochEndSeconds !== null
+                                ? ` · ${t("processing.storage.willRetry")}: ${formatMediaClock(job.epochStartSeconds)} → ${formatMediaClock(job.epochEndSeconds)}`
+                                : ""}
+                            </span>
+                          ) : null}
+                          <span className="text-amber-100/60">
+                            {t("processing.storage.noAction")}
+                          </span>
+                        </div>
+                      ) : null}
+
+                      {job.pauseRequested && job.pausedReason === "operator" ? (
+                        /*
+                         * Pausing suspends the encoder rather than killing it,
+                         * so it costs nothing — but only while the process
+                         * lives, and saying so is the difference between a
+                         * promise the system keeps and one it cannot.
+                         */
+                        <p className="text-xs text-white/50">
+                          {t("processing.pausedLive")}
+                        </p>
+                      ) : null}
+
+                      <EpochPanel
+                        job={job}
+                        live={jobLive}
+                        nowMs={nowMs}
+                        t={t}
+                      />
+
+                      {canRetry(job) && hasResumableCheckpoints(job) ? (
+                        <p className="text-xs text-white/45">
+                          {formatTemplate(t(retryScopeKey(job) as never), {
+                            time: formatMediaClock(job.protectedSeconds),
+                          })}
+                        </p>
+                      ) : null}
+
                       {/*
                        * Nine figures now rather than eight, so the row gains a
                        * column at the widest breakpoint instead of squeezing
                        * every value narrower.
                        */}
                       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
-                        <Stat label="%" value={`${percent}%`} />
+                        <Stat
+                          label="%"
+                          value={
+                            encoded === null ? `${percent}%` : `${encoded}%`
+                          }
+                        />
                         <Stat
                           label={t("processing.speed")}
-                          value={formatSpeed(job.speed)}
+                          value={formatSpeed(jobLive?.speed ?? job.speed)}
                         />
                         <Stat
                           label={t("processing.fps")}
-                          value={job.fps ? job.fps.toFixed(0) : "—"}
+                          value={
+                            (jobLive?.fps ?? job.fps)
+                              ? (jobLive?.fps ?? job.fps)!.toFixed(0)
+                              : "—"
+                          }
                         />
                         <Stat
                           label={t("processing.eta")}
-                          value={formatDuration(job.etaSeconds)}
+                          value={formatDuration(
+                            jobLive?.etaSeconds ?? job.etaSeconds,
+                          )}
                         />
                         <Stat
                           label={t("processing.encoding")}

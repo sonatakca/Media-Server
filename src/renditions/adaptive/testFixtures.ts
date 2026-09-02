@@ -60,6 +60,27 @@ export const ADAPTIVE_SOURCE_FIXTURES: readonly AdaptiveSourceFixture[] = [
   },
 ];
 
+/**
+ * A source long enough to be cut into several epochs.
+ *
+ * Small on purpose: the epoch tests are about where the cuts land and whether
+ * the joins are exact, and those properties are identical at 640x360 and at 4K
+ * while the encode is a fraction of the cost. The rate is still 23.976, because
+ * a boundary that lands between two frames rather than on one is the whole
+ * difficulty and a round 30 fps clip would hide it.
+ */
+export const ADAPTIVE_EPOCH_FIXTURE: AdaptiveSourceFixture = {
+  name: "epoch-2398",
+  fileName: "source-epoch-2398.mp4",
+  frameRate: 24000 / 1001,
+  width: 640,
+  height: 360,
+  description: "23.976 fps SDR H.264 long enough for several epochs",
+};
+
+/** Long enough that a six-second epoch target produces four epochs. */
+export const ADAPTIVE_EPOCH_FIXTURE_SECONDS = 26;
+
 export const ADAPTIVE_HDR_FIXTURE: AdaptiveSourceFixture = {
   name: "hdr-2398",
   fileName: "source-hdr-2398.mp4",
@@ -114,10 +135,18 @@ export async function hasEncoder(encoder: string): Promise<boolean> {
   }
 }
 
+function fixtureSeconds(fixture: AdaptiveSourceFixture): number {
+  return fixture.name === ADAPTIVE_EPOCH_FIXTURE.name
+    ? ADAPTIVE_EPOCH_FIXTURE_SECONDS
+    : ADAPTIVE_FIXTURE_SECONDS;
+}
+
 function sourceArguments(fixture: AdaptiveSourceFixture): string[] {
-  const duration = String(ADAPTIVE_FIXTURE_SECONDS);
+  const duration = String(fixtureSeconds(fixture));
   const rate =
-    fixture.name === "sdr-2398" || fixture.name === "hdr-2398"
+    fixture.name === "sdr-2398" ||
+    fixture.name === "hdr-2398" ||
+    fixture.name === ADAPTIVE_EPOCH_FIXTURE.name
       ? "24000/1001"
       : String(fixture.frameRate);
 
@@ -133,7 +162,7 @@ async function buildSdrFixture(
   fixture: AdaptiveSourceFixture,
   target: string,
 ): Promise<void> {
-  const duration = String(ADAPTIVE_FIXTURE_SECONDS);
+  const duration = String(fixtureSeconds(fixture));
   const args = [
     "-hide_banner",
     "-loglevel",
@@ -258,6 +287,22 @@ export async function ensureAdaptiveSourceFixtures(): Promise<boolean> {
   }
 
   return true;
+}
+
+/**
+ * Builds the multi-epoch fixture, returning its path.
+ *
+ * Kept out of `ensureAdaptiveSourceFixtures` so the packaging suite, which has
+ * nothing to say about epoch boundaries, does not pay to encode it.
+ */
+export async function ensureAdaptiveEpochFixture(): Promise<string | null> {
+  if (!(await hasFfmpeg())) return null;
+  const directory = getAdaptiveFixtureDirectory();
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, ADAPTIVE_EPOCH_FIXTURE.fileName);
+  if (!(await exists(target)))
+    await buildSdrFixture(ADAPTIVE_EPOCH_FIXTURE, target);
+  return target;
 }
 
 export async function ensureAdaptiveHdrFixture(): Promise<string | null> {

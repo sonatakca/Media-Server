@@ -83,18 +83,97 @@ a seek. The original file keeps its surround tracks.
 `waiting → analysing → planning → video → audio → subtitles → packaging →
 validating → publishing → complete`
 
-Overall progress is a weighted sum, not "stage N of 9": encoding is worth 70% of
-the bar because it is where the time goes. Progress is a high-water mark in both
-the runner and the database, so an out-of-order update or a retry cannot walk
-the bar backwards. FFmpeg is read through `-progress`, never by parsing its
+Two different numbers, deliberately kept apart:
+
+- **`overallProgress`** is a weighted sum across the stages, and answers "how far
+  through the whole job". It is a high-water mark in both the runner and the
+  database, so an out-of-order update or a retry cannot walk it backwards.
+- **`encodedSeconds / sourceDurationSeconds`** is how much of the film has
+  actually been encoded, and is the only figure shown as encoding progress.
+
+Conflating them is what made a job read 89% while FFmpeg was a third of the way
+through the picture — the late stage had been _reached_, not completed. The page
+shows the second figure during encoding, and names the stages after it rather than
+folding them into one bar: encoding, assembling, validating, publishing.
+
+Encoded media time is `protected + how far into the running epoch`, measured from
+that epoch's own start rather than from the protected mark — an epoch being
+rebuilt after a corrupted checkpoint sits behind it, and adding the two would
+count the same stretch twice.
+
+FFmpeg is read through `-progress` at `-stats_period 0.25`, never by parsing its
 console output.
 
 ## Live progress
 
-`GET /processing/jobs/:id/stream` is Server-Sent Events. Every stage event
-carries the job's own sequence number as the SSE id, so a browser reconnecting
-with `Last-Event-ID` resumes exactly where it stopped rather than replaying the
-timeline or losing part of it.
+There are two lanes, because the encoder runs in the worker process and the page
+is served by the API process, and nothing in memory is shared between them.
+
+- **Transient**, four times a second: the worker writes one small JSON file per
+  job (`SEYIRLIK_LIVE_PROGRESS_DIR`, the system temporary directory by default),
+  replaced by an atomic rename. It carries a monotonic revision, a timestamp, the
+  epoch position, encoded and protected media time, fps, raw and smoothed speed,
+  ETA and bytes written. A sample older than six seconds is ignored, so a killed
+  worker produces silence rather than a bar that keeps moving.
+- **Durable**, about once a second and on every state change: the job row. It is
+  what a page opened after a restart sees before the first live sample arrives.
+
+Writing four samples a second to Postgres, per title, for hours, would be
+sustained write pressure for data nothing needs to survive a restart — the
+durable progress is the checkpoints on disk.
+
+`GET /processing/jobs/:id/stream` is Server-Sent Events carrying both: `progress`
+and `stage` from the job row each second, and `live` from the transient file four
+times a second. Every stage event carries the job's own sequence number as the SSE
+id, so a browser reconnecting with `Last-Event-ID` resumes exactly where it
+stopped. The job snapshot endpoint returns the latest live sample too, so a page
+that has just reconnected does not have to wait for the next encoder tick — that
+wait is what made a refresh look like a stall.
+
+The page interpolates between authoritative samples using the smoothed speed,
+bounded by the end of the running epoch and by the elapsed time, and snaps to the
+real value on every sample. A stalled encoder therefore reaches the bound and
+stops.
+
+## Durable checkpoints
+
+Video is encoded in nominal five-minute epochs, each of which becomes an
+immutable, validated checkpoint on disk. The full design — where the cuts fall,
+why the seek pre-roll has to be trimmed, the on-disk layout, and how assembly
+joins the epochs without a decoder — is in
+[adaptive-renditions.md](./adaptive-renditions.md#epochs-and-checkpoints).
+
+What it means for operating the system:
+
+- A crash, a cancel, a killed worker, a restarted server or an unplugged drive
+  costs at most the epoch that was running.
+- Retry and resume continue from the last durable checkpoint. Neither ever
+  deletes one.
+- A failure after the encoding is finished — assembly, validation, publication —
+  keeps every epoch, so the retry re-encodes no video at all.
+- The page shows how much media time is protected, which epoch is running and
+  what Retry would actually redo.
+
+## Storage interruption and recovery
+
+The storage watchdog polls every root the work needs — media, rendition, work and
+state — and remembers the device each was on, so a _different_ disk mounted at the
+same path is treated as absent rather than as the storage coming back.
+
+When a root goes missing, every active job is paused with
+`pausedReason = storage-unavailable`, the encoder is ended rather than suspended
+(a stopped FFmpeg keeps file descriptors open on a volume that is no longer
+there), and the completed checkpoints are left exactly as they are. When the roots
+return, those jobs — and only those; a job an operator paused by hand stays paused
+— are requeued automatically. No one has to press anything.
+
+Failures are classified rather than guessed at. An `ENOENT` on an output path is a
+vanished volume when the volume is gone and a genuinely missing file when it is
+not, and no error message distinguishes them, so the storage itself is asked. An
+`EIO` or `Input/output error` is treated as disappearing storage even before the
+watchdog's next poll, which closes the window in which a job could be marked
+permanently failed for an unplugged drive. `ENOSPC` is reported as a full disk,
+which is a different problem with a different answer.
 
 ## Safety
 
@@ -144,14 +223,40 @@ Open **Developer tools → Media Processing** (`/dev/media-processing`).
 - **Inspect** opens the stage timeline, the disk impact, the retained and
   dropped languages, the validation result, and the raw event log behind a
   diagnostics panel.
-- **Cancel** stops the encode; **Retry** re-queues a job that failed or was
-  cancelled.
+- **Cancel** stops the encode and keeps every checkpoint; **Retry** re-queues a
+  job that failed or was cancelled and continues from the last one, saying which
+  point that is rather than offering a bare button.
+- A job waiting for a volume says so, says how much is protected, says which five
+  minutes will be redone, and says that no action is needed — it resumes on its
+  own.
 
-From the command line, the existing CLI still works and shares the same
-packager:
+From the command line, the existing CLI still works and shares the same packager
+and the same checkpoint engine — there is one implementation, so "why did it
+re-encode that" has one answer whichever path built the package:
 
 ```sh
 npm run media:renditions:process -- --profile adaptive --all-audio-tracks
+npm run media:renditions:resume  -- --profile adaptive --source "Movies/Title (2026)/Title (2026).mkv"
+npm run media:renditions:status
+```
+
+`resume` continues an interrupted title from its last durable five-minute
+checkpoint; encoding already protected by one is never repeated, and a single
+title can be resumed without a library-wide run. `status` reports the durable
+work per title:
+
+```text
+legacy=ready  adaptive=failed  epochs=10/31  protected=50:00  current=11  checkpointed=10.7 GiB
+```
+
+`cleanup` removes abandoned work — partial epochs nobody is writing, staging from
+attempts that have ended, builds keyed to an obsolete profile. It never removes a
+valid completed checkpoint, at any age.
+
+To measure what checkpointing costs when nothing goes wrong:
+
+```sh
+npm run bench:epochs -- --source "/path/to/movie.mkv" --epoch-seconds 300
 ```
 
 ## Lab

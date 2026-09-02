@@ -125,6 +125,12 @@ washed blacks or accidental HDR tags.
 Exit criterion: killing the worker mid-encode and restarting it never exposes a
 partial package and produces a clear resume or retry outcome.
 
+Done, and gone further than the criterion asked: the timeline is cut into
+nominal five-minute epochs, each of which becomes an immutable checkpoint the
+moment it validates, so a restart resumes from the last one rather than from the
+beginning. See
+[adaptive-renditions.md](./adaptive-renditions.md#epochs-and-checkpoints).
+
 ### Phase 5 — Device certification
 
 - Safari on macOS/iPhone/iPad/Apple TV.
