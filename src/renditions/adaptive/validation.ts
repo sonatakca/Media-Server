@@ -45,6 +45,16 @@ import {
 import { parseWebVttMediaPlaylist } from "./subtitles";
 import { TITLE_PACKAGE_DIRECTORY } from "./titleLayout";
 import { TITLE_BUILD_RECORD } from "./publishTitle";
+import {
+  createByteRateEstimator,
+  etaFromRate,
+  safeFraction,
+  VERIFICATION_STALE_MS,
+  type VerificationCheckKind,
+  type VerificationGroupProgress,
+  type VerificationPhaseProgress,
+  type VerificationStepProgress,
+} from "./phaseProgress";
 
 export interface AdaptiveValidationIssue {
   mediaId: string;
@@ -85,6 +95,279 @@ export interface AdaptiveValidationOptions {
    */
   allowMissingAudio?: boolean;
   signal?: AbortSignal;
+  /**
+   * Called as each planned check finishes.
+   *
+   * The plan is built from the manifest before the first check runs, so the
+   * denominator is real: these are the checks this package will actually
+   * receive, weighted by the bytes they will actually read. A metadata parse
+   * and a probe of a ten-gigabyte rendition are both one check and are nothing
+   * like the same work, which is why the fraction is byte-weighted and the
+   * count is reported beside it rather than instead of it.
+   */
+  onProgress?: (progress: VerificationPhaseProgress) => void;
+}
+
+/**
+ * What a check costs, relative to the others.
+ *
+ * A structural check parses a playlist of a few kilobytes. A probe runs ffprobe
+ * across the whole media file — `-skip_frame nokey` discards non-keyframes but
+ * the demuxer still walks the file to find them — so its cost grows with the
+ * rendition's size. A deep seek-decode reads two segments.
+ *
+ * The unit is bytes because the size of what a check reads is the best
+ * available predictor of its cost, and for no other reason. It is a weight, not
+ * a measurement: ffprobe reports nothing while it runs, so a check contributes
+ * all of its weight when it finishes and none before. Nothing downstream may
+ * present these as bytes actually read.
+ */
+const STRUCTURAL_CHECK_WEIGHT = 64 * 1024;
+
+/** Segments a deep check reads at each probe point. */
+const DEEP_SLICE_SEGMENTS = 2;
+
+/**
+ * A deep check's weight: two segments at each probe point, where a segment
+ * averages the rendition's size over its segment count.
+ */
+function deepSliceWeight(
+  rendition: { fileSizeBytes: number; segmentCount: number },
+  probePoints: number,
+): number {
+  if (rendition.segmentCount <= 0) return STRUCTURAL_CHECK_WEIGHT;
+  const perSegment = rendition.fileSizeBytes / rendition.segmentCount;
+  return Math.round(perSegment * DEEP_SLICE_SEGMENTS * probePoints);
+}
+
+/** One planned verification check. Exported for the progress tests. */
+export interface PlannedCheck {
+  kind: VerificationCheckKind;
+  rendition: string;
+  /** Relative cost of this check. Unitless; see the constant above. */
+  weight: number;
+}
+
+/**
+ * A progress reporter over a plan that is fixed before any check runs.
+ *
+ * Kept as a closure rather than a class because it holds two counters and one
+ * callback, and because nothing outside this file may advance it: a check that
+ * reported itself complete without having run would be exactly the lie this
+ * whole exercise exists to remove.
+ */
+export function createVerificationReporter(
+  planned: PlannedCheck[],
+  declared: VerificationPhaseProgress["declared"],
+  onProgress: ((progress: VerificationPhaseProgress) => void) | undefined,
+  now: () => number = Date.now,
+) {
+  const totalWeight = planned.reduce((sum, check) => sum + check.weight, 0);
+  const done = new Set<string>();
+  let completedChecks = 0;
+  let completedWeight = 0;
+  /*
+   * Live state for the check that is running, which is separate from the
+   * counters on purpose. `completedChecks` may only move when a check has
+   * genuinely finished — that is the number the page prints as "10 / 36" — so
+   * everything a long scan reports about its own position lives here instead.
+   */
+  let step: VerificationStepProgress | undefined;
+  let stepRate = createByteRateEstimator();
+  /** Presentation time of the first keyframe, so a scan that does not start at
+   * zero is still measured from where it actually began. */
+  let stepOrigin: number | undefined;
+  let stepFurthest = 0;
+
+  const key = (kind: VerificationCheckKind, rendition: string) =>
+    `${kind}:${rendition}`;
+
+  /** Counts per family, which are the figures the page prints as numbers. */
+  const groups = (): VerificationGroupProgress[] => {
+    const byKind = new Map<VerificationCheckKind, VerificationGroupProgress>();
+    for (const check of planned) {
+      const entry = byKind.get(check.kind) ?? {
+        kind: check.kind,
+        completed: 0,
+        total: 0,
+      };
+      entry.total += 1;
+      if (done.has(key(check.kind, check.rendition))) entry.completed += 1;
+      byKind.set(check.kind, entry);
+    }
+    return [...byKind.values()];
+  };
+
+  /**
+   * The running check as the page should see it.
+   *
+   * A rate and an estimate are shown only while the scan is demonstrably
+   * moving. Once it has said nothing for long enough they are withdrawn rather
+   * than left counting down from a measurement that is no longer true — the
+   * same rule the encoder's own panel follows.
+   */
+  const currentStep = (
+    check: PlannedCheck,
+    at: number,
+  ): VerificationStepProgress => {
+    if (
+      !step ||
+      step.kind !== check.kind ||
+      step.rendition !== check.rendition
+    ) {
+      return { kind: check.kind, rendition: check.rendition };
+    }
+    const total = step.totalMediaSeconds;
+    const measurable = total !== undefined && total > 0;
+    const stalled =
+      step.lastAdvancedAtMs !== undefined &&
+      at - step.lastAdvancedAtMs > VERIFICATION_STALE_MS;
+    const rate = stalled ? undefined : stepRate.rate(at);
+    const remaining = measurable ? Math.max(0, total - stepFurthest) : 0;
+    const eta = measurable ? etaFromRate(remaining, rate) : undefined;
+    return {
+      ...step,
+      ...(stepFurthest > 0 ? { currentMediaSeconds: stepFurthest } : {}),
+      ...(measurable ? { fraction: safeFraction(stepFurthest, total) } : {}),
+      ...(rate === undefined ? {} : { rate }),
+      ...(eta === undefined ? {} : { etaSeconds: eta }),
+      ...(stalled ? { stalled: true } : {}),
+    };
+  };
+
+  const emit = (current?: PlannedCheck, ok?: boolean): void => {
+    if (!onProgress) return;
+    const at = now();
+    const running = current ? currentStep(current, at) : undefined;
+    /*
+     * The running check counts for the part of itself it has measurably done.
+     *
+     * Without this the phase's bar — and with it the whole job's — stood still
+     * for the entire time the largest rendition was being read, which on a
+     * two-and-a-half-hour 4K title is minutes of a page that looks stopped.
+     * Only a check that reports a real position contributes anything; the ones
+     * that finish atomically still move the bar exactly once, when they finish.
+     */
+    const inFlight =
+      running?.fraction !== undefined && current
+        ? current.weight * running.fraction
+        : 0;
+    onProgress({
+      totalChecks: planned.length,
+      completedChecks,
+      totalWeight,
+      completedWeight,
+      fraction: safeFraction(completedWeight + inFlight, totalWeight),
+      groups: groups(),
+      ...(running ? { current: running } : {}),
+      ...(declared ? { declared } : {}),
+      ...(ok === undefined ? {} : { ok }),
+    });
+  };
+
+  return {
+    /** Announces the check about to run, before it does any work. */
+    begin(
+      kind: VerificationCheckKind,
+      rendition: string,
+      totalMediaSeconds?: number,
+    ): void {
+      /*
+       * A new check starts from nothing. Carrying the previous rendition's
+       * position forward would show 2160p's progress under 1440p's name for as
+       * long as it took the next scan to print its first keyframe.
+       */
+      step = {
+        kind,
+        rendition,
+        startedAtMs: now(),
+        ...(totalMediaSeconds !== undefined && totalMediaSeconds > 0
+          ? { totalMediaSeconds }
+          : {}),
+      };
+      stepRate = createByteRateEstimator();
+      stepOrigin = undefined;
+      stepFurthest = 0;
+      emit(
+        planned.find(
+          (check) => check.kind === kind && check.rendition === rendition,
+        ) ?? { kind, rendition, weight: 0 },
+      );
+    },
+    /**
+     * Records how far into its own timeline the running check has read.
+     *
+     * Monotonic by construction: a presentation time that goes backwards is
+     * ordinary — an out-of-order sample, a container whose timestamps are not
+     * strictly sorted — and a bar that went backwards would read as a fault
+     * where there is none.
+     */
+    advance(mediaSeconds: number): void {
+      if (!step || !Number.isFinite(mediaSeconds)) return;
+      const at = now();
+      const publish = (): void =>
+        emit(
+          planned.find(
+            (check) =>
+              check.kind === step!.kind && check.rendition === step!.rendition,
+          ) ?? { kind: step!.kind, rendition: step!.rendition, weight: 0 },
+        );
+
+      /*
+       * The first timestamp is the origin, not progress — a scan that opens at
+       * ten minutes has not already done ten minutes of work. It is still
+       * reported, because it is the moment the page can first say which
+       * rendition is being read, and it seeds the window the rate is measured
+       * over.
+       */
+      if (stepOrigin === undefined) {
+        stepOrigin = mediaSeconds;
+        stepRate.sample(0, at);
+        step = { ...step, lastAdvancedAtMs: at };
+        publish();
+        return;
+      }
+
+      const scanned = mediaSeconds - stepOrigin;
+      if (!(scanned > stepFurthest)) {
+        /*
+         * Not progress, but an opportunity: a repeated or out-of-order
+         * timestamp still tells us the scan is being read from, and re-emitting
+         * is how a page learns that the position has stopped moving.
+         */
+        if (
+          step.lastAdvancedAtMs !== undefined &&
+          at - step.lastAdvancedAtMs > VERIFICATION_STALE_MS
+        ) {
+          publish();
+        }
+        return;
+      }
+      stepFurthest = scanned;
+      stepRate.sample(stepFurthest, at);
+      step = { ...step, lastAdvancedAtMs: at };
+      publish();
+    },
+    /** Records a check that has genuinely finished. */
+    complete(kind: VerificationCheckKind, rendition: string): void {
+      step = undefined;
+      const identity = key(kind, rendition);
+      if (done.has(identity)) return;
+      done.add(identity);
+      const match = planned.find(
+        (check) => check.kind === kind && check.rendition === rendition,
+      );
+      completedChecks = Math.min(planned.length, completedChecks + 1);
+      completedWeight = Math.min(
+        totalWeight,
+        completedWeight + (match?.weight ?? 0),
+      );
+      emit();
+    },
+    finish(ok: boolean): void {
+      emit(undefined, ok);
+    },
+  };
 }
 
 class ValidationCollector {
@@ -403,6 +686,7 @@ export async function validateAdaptivePackage({
   deep = false,
   allowMissingAudio = false,
   signal,
+  onProgress,
 }: AdaptiveValidationOptions): Promise<AdaptiveValidationResult> {
   const collector = new ValidationCollector(mediaId);
 
@@ -447,6 +731,75 @@ export async function validateAdaptivePackage({
     return { ok: false, checks: collector.checks, issues: collector.issues };
   }
   collector.pass("metadata-schema");
+
+  /*
+   * The workload, fixed here and never revised. Every entry below is a check
+   * this run will genuinely perform on this package, and its byte cost is the
+   * size of what that check reads — the manifest's own recorded file sizes,
+   * which the structural checks then prove against the disk.
+   */
+  const planned: PlannedCheck[] = [
+    { kind: "metadata", rendition: "package", weight: STRUCTURAL_CHECK_WEIGHT },
+    {
+      kind: "master-playlist",
+      rendition: "package",
+      weight: STRUCTURAL_CHECK_WEIGHT,
+    },
+    ...metadata.videoRenditions.map((rendition) => ({
+      kind: "video-structure" as const,
+      rendition: rendition.id,
+      weight: STRUCTURAL_CHECK_WEIGHT,
+    })),
+    ...metadata.videoRenditions.map((rendition) => ({
+      kind: "video-probe" as const,
+      rendition: rendition.id,
+      weight: rendition.fileSizeBytes,
+    })),
+    {
+      kind: "cross-rendition",
+      rendition: "package",
+      weight: STRUCTURAL_CHECK_WEIGHT,
+    },
+    ...metadata.audioRenditions.map((rendition) => ({
+      kind: "audio" as const,
+      rendition: rendition.id,
+      weight: rendition.fileSizeBytes,
+    })),
+    ...(metadata.subtitleRenditions ?? []).map((rendition) => ({
+      kind: "subtitle" as const,
+      rendition: rendition.id,
+      weight: rendition.fileSizeBytes,
+    })),
+    ...(deep
+      ? [
+          ...metadata.videoRenditions.map((rendition) => ({
+            kind: "seek-decode" as const,
+            rendition: rendition.id,
+            // Three probe points, two segments each, out of a file whose
+            // segments average its size over its segment count.
+            weight: deepSliceWeight(rendition, 3),
+          })),
+          ...(metadata.videoRenditions.length > 1
+            ? metadata.videoRenditions.map((rendition) => ({
+                kind: "cross-quality-splice" as const,
+                rendition: rendition.id,
+                weight: deepSliceWeight(rendition, 1),
+              }))
+            : []),
+        ]
+      : []),
+  ];
+  const progress = createVerificationReporter(
+    planned,
+    {
+      videoRenditions: metadata.videoRenditions.length,
+      audioRenditions: metadata.audioRenditions.length,
+      subtitleRenditions: metadata.subtitleRenditions?.length ?? 0,
+    },
+    onProgress,
+  );
+  progress.complete("metadata", "package");
+  progress.begin("master-playlist", "package");
 
   // 1 & 20. The master must exist, parse, and resolve inside the package.
   const masterText = await readPackageFile(
@@ -536,6 +889,7 @@ export async function validateAdaptivePackage({
       }
     }
     collector.pass("master-playlist");
+    progress.complete("master-playlist", "package");
   } catch (error) {
     collector.add(
       "package",
@@ -565,6 +919,7 @@ export async function validateAdaptivePackage({
 
   // 2-7. Playlists parse, media files exist, sizes match, ranges stay inside.
   for (const rendition of metadata.videoRenditions) {
+    progress.begin("video-structure", rendition.id);
     const playlistText = await readPackageFile(
       versionRoot,
       rendition.playlistPath,
@@ -684,6 +1039,7 @@ export async function validateAdaptivePackage({
     }
 
     loadedVideo.push({ id: rendition.id, playlist, mediaPath, rendition });
+    progress.complete("video-structure", rendition.id);
   }
 
   if (loadedVideo.length === 0) {
@@ -704,9 +1060,24 @@ export async function validateAdaptivePackage({
 
   // 8, 13, 14, 16, 19. Probe each rendition and compare against its claims.
   for (const entry of loadedVideo) {
+    /*
+     * The rendition's own declared length is the denominator. Taken from the
+     * playlist rather than from the probe, because the probe is the thing being
+     * measured and will not report a duration until it has finished.
+     */
+    progress.begin(
+      "video-probe",
+      entry.id,
+      entry.playlist.totalDurationSeconds,
+    );
     let probe: PackagedVideoProbe;
     try {
-      probe = await probePackagedVideo(entry.mediaPath, ffprobePath, signal);
+      probe = await probePackagedVideo(
+        entry.mediaPath,
+        ffprobePath,
+        signal,
+        (ptsSeconds) => progress.advance(ptsSeconds),
+      );
     } catch (error) {
       collector.add(
         entry.id,
@@ -771,6 +1142,7 @@ export async function validateAdaptivePackage({
         break;
       }
     }
+    progress.complete("video-probe", entry.id);
   }
 
   const probed = loadedVideo.filter(
@@ -793,6 +1165,7 @@ export async function validateAdaptivePackage({
   // 10 & 12. Every video rendition must describe the same timeline, segment for
   // segment. This is the property that makes a mid-playback switch invisible.
   const reference = probed[0];
+  progress.begin("cross-rendition", "package");
   for (const entry of probed.slice(1)) {
     if (entry.playlist.segments.length !== reference.playlist.segments.length) {
       collector.add(
@@ -854,9 +1227,11 @@ export async function validateAdaptivePackage({
   collector.pass("segment-alignment");
   collector.pass("keyframe-alignment");
   collector.pass("switching-set-duration");
+  progress.complete("cross-rendition", "package");
 
   // 9 & 11. Audio must match its metadata and cover the same content.
   for (const rendition of metadata.audioRenditions) {
+    progress.begin("audio", rendition.id);
     const playlistText = await readPackageFile(
       versionRoot,
       rendition.playlistPath,
@@ -966,11 +1341,13 @@ export async function validateAdaptivePackage({
         error instanceof Error ? error.message : String(error),
       );
     }
+    progress.complete("audio", rendition.id);
   }
   collector.pass("audio-properties");
   collector.pass("audio-video-coverage");
 
   for (const rendition of metadata.subtitleRenditions ?? []) {
+    progress.begin("subtitle", rendition.id);
     const playlistText = await readPackageFile(
       versionRoot,
       rendition.playlistPath,
@@ -1047,6 +1424,7 @@ export async function validateAdaptivePackage({
         "subtitle file is missing, changed, or is not valid WebVTT.",
       );
     }
+    progress.complete("subtitle", rendition.id);
   }
   if ((metadata.subtitleRenditions?.length ?? 0) > 0) {
     collector.pass("webvtt-subtitles");
@@ -1054,6 +1432,7 @@ export async function validateAdaptivePackage({
   }
 
   if (!deep) {
+    progress.finish(collector.ok);
     return {
       ok: collector.ok,
       checks: collector.checks,
@@ -1078,6 +1457,7 @@ export async function validateAdaptivePackage({
     ].filter((value, index, all) => all.indexOf(value) === index);
 
     for (const entry of probed) {
+      progress.begin("seek-decode", entry.id);
       const starts = segmentStartTimes(entry.playlist);
       const base = entry.probe.keyframeTimes[0] ?? 0;
       for (const point of probePoints) {
@@ -1134,6 +1514,7 @@ export async function validateAdaptivePackage({
         }
         await rm(slicePath, { force: true });
       }
+      progress.complete("seek-decode", entry.id);
     }
     collector.pass("seek-decode");
 
@@ -1144,6 +1525,7 @@ export async function validateAdaptivePackage({
       const splicePoint = Math.max(1, Math.floor(segmentTotal / 2));
       const spliceTimes: Array<{ id: string; time: number }> = [];
       for (const entry of probed) {
+        progress.begin("cross-quality-splice", entry.id);
         const slicePath = path.join(
           workDirectory,
           `splice-${entry.id.replace(/[^A-Za-z0-9_-]/g, "_")}.mp4`,
@@ -1179,6 +1561,7 @@ export async function validateAdaptivePackage({
         const base = entry.probe.keyframeTimes[0] ?? 0;
         spliceTimes.push({ id: entry.id, time: firstTime - base });
         await rm(slicePath, { force: true });
+        progress.complete("cross-quality-splice", entry.id);
       }
       for (const candidate of spliceTimes.slice(1)) {
         const drift = Math.abs(candidate.time - spliceTimes[0].time);
@@ -1198,6 +1581,7 @@ export async function validateAdaptivePackage({
     );
   }
 
+  progress.finish(collector.ok);
   return {
     ok: collector.ok,
     checks: collector.checks,

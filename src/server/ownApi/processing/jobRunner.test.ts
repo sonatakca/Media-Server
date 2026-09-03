@@ -34,6 +34,7 @@ function record(
     decision: null,
     streamDecisions: null,
     validation: null,
+    sourceDamage: null,
     warnings: [],
     errorCode: null,
     errorMessage: null,

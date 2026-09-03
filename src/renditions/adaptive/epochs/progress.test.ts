@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  createMediaStallDetector,
   createSpeedEstimator,
   epochProgress,
   estimateEncodeEtaSeconds,
@@ -277,5 +278,47 @@ describe("epoch progress invariants", () => {
     expect(snapshot.encodedSeconds).toBeGreaterThanOrEqual(600);
     expect(formatClock(snapshot.encodedSeconds)).toBe("00:10:00");
     expect(snapshot.encodedFraction * 100).toBeGreaterThanOrEqual(50);
+  });
+});
+
+/**
+ * Watching media time rather than the reports about it.
+ *
+ * FFmpeg blocked on an unreadable sector keeps reporting four times a second
+ * with the same `out_time` and a `speed` that falls a little further each time.
+ * Believing those reports is what put a confidently declining encoding rate on
+ * the page for minutes while nothing at all was happening.
+ */
+describe("createMediaStallDetector", () => {
+  it("does not call a working encoder stalled", () => {
+    const detector = createMediaStallDetector({ stallAfterMs: 6_000 });
+    expect(detector.sample(1, 1_000).stalled).toBe(false);
+    expect(detector.sample(2, 2_000).stalled).toBe(false);
+    expect(detector.sample(20, 20_000).stalled).toBe(false);
+  });
+
+  it("calls it stalled once media time stops for the window", () => {
+    const detector = createMediaStallDetector({ stallAfterMs: 6_000 });
+    detector.sample(123.29, 1_000);
+    expect(detector.sample(123.29, 5_000).stalled).toBe(false);
+    const reading = detector.sample(123.29, 8_000);
+    expect(reading.stalled).toBe(true);
+    expect(reading.stalledForMs).toBe(7_000);
+    expect(reading.advancedAtMs).toBe(1_000);
+  });
+
+  it("recovers the moment media time moves again", () => {
+    const detector = createMediaStallDetector({ stallAfterMs: 6_000 });
+    detector.sample(123.29, 1_000);
+    expect(detector.sample(123.29, 9_000).stalled).toBe(true);
+    expect(detector.sample(123.5, 9_100).stalled).toBe(false);
+  });
+
+  it("starts again for a new epoch, so a process is never born stalled", () => {
+    const detector = createMediaStallDetector({ stallAfterMs: 6_000 });
+    detector.sample(123.29, 1_000);
+    detector.sample(123.29, 20_000);
+    detector.reset();
+    expect(detector.sample(0, 20_100).stalled).toBe(false);
   });
 });

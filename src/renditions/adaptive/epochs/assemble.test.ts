@@ -2,14 +2,22 @@
  * The guard that stands between independently encoded epochs and one file.
  *
  * Assembly concatenates fragments under a *single* initialisation segment —
- * epoch zero's. That is only sound because every epoch's initialisation is
- * byte-identical, which holds because each epoch is muxed on its own zero-based
- * timeline with the same settings. If it ever stopped holding, concatenating
- * anyway would produce a file whose second half is decoded with the wrong
- * VPS/SPS/PPS: wrong dimensions, wrong profile, wrong colour, or simply noise,
- * with nothing in the container to say so.
+ * epoch zero's. That is only sound while every epoch's fragments decode
+ * correctly under it. If it ever stopped holding, concatenating anyway would
+ * produce a file whose second half is decoded with the wrong VPS/SPS/PPS: wrong
+ * dimensions, wrong profile, wrong colour, or simply noise, with nothing in the
+ * container to say so.
  *
- * So the digest is not decoration. These tests prove it is load-bearing.
+ * What is compared is therefore the decoder configuration, the sample entry and
+ * the timescale, and not the initialisation segment byte for byte. The two
+ * differ on exactly one thing and it matters: a replacement epoch generated for
+ * an unreadable interval carries no HDR10 mastering-display metadata, because a
+ * colour generator has none to carry, while producing a byte-identical `hvcC`
+ * from the same encoder. Those boxes belong to the initialisation assembly
+ * keeps, so refusing over them rejected media that joins perfectly — and the
+ * published title still carries the film's own values across the gap.
+ *
+ * So the comparison is not decoration. These tests prove it is load-bearing.
  */
 
 import { mkdtemp, readdir, rm } from "node:fs/promises";
@@ -65,6 +73,13 @@ function manifest(
         measuredDurationSeconds: 6,
         mediaTimescale: 15360,
         initDigest: "a".repeat(64),
+        joinKey: {
+          mediaTimescale: 15360,
+          sampleFormat: "avc1",
+          width: 1920,
+          height: 1080,
+          configDigest: "a".repeat(64),
+        },
         ...overrides,
       },
     ],
@@ -98,21 +113,59 @@ async function assemble(manifests: EpochCheckpointManifest[]) {
 
 describe("initialisation compatibility across epochs", () => {
   /**
-   * The whole point. A single differing byte anywhere in the initialisation
-   * segment — a changed SPS, a different profile or level, another pixel
-   * format, other dimensions, a moved colour box, an HDR signal that came or
-   * went, a different `mdhd` timescale — changes the digest, and the digest is
-   * what is compared. There is no list of fields to keep in step with the
-   * format because the comparison is over the bytes themselves.
+   * The whole point. A changed SPS, a different profile or level, another
+   * pixel format or other dimensions all change the decoder configuration, and
+   * the decoder configuration is what the fragments are decoded with.
    */
-  it("refuses to join epochs whose initialisation segments differ", async () => {
+  it("refuses to join epochs whose decoder configuration differs", async () => {
     await expect(
       assemble([
         manifest(0),
-        manifest(1, { initDigest: "b".repeat(64) }),
+        manifest(1, {
+          joinKey: {
+            mediaTimescale: 15360,
+            sampleFormat: "avc1",
+            width: 1920,
+            height: 1080,
+            configDigest: "b".repeat(64),
+          },
+        }),
         manifest(2),
       ]),
-    ).rejects.toThrow(/different .* initialisation segment/i);
+    ).rejects.toThrow(/different decoder configuration/i);
+  });
+
+  it("refuses to join epochs encoded at different dimensions", async () => {
+    await expect(
+      assemble([
+        manifest(0),
+        manifest(1, {
+          joinKey: {
+            mediaTimescale: 15360,
+            sampleFormat: "avc1",
+            width: 1280,
+            height: 720,
+            configDigest: "a".repeat(64),
+          },
+        }),
+      ]),
+    ).rejects.toThrow(/1280x720 where the reference used 1920x1080/);
+  });
+
+  /**
+   * Metadata that no fragment is decoded with must not refuse a join. This is
+   * the salvage case: the replacement's own initialisation segment differs from
+   * the film's, and is discarded by assembly anyway.
+   */
+  it("does not refuse an epoch whose initialisation differs only in metadata", async () => {
+    /*
+     * These manifests describe media that is not on disk, so assembly cannot
+     * finish here — what is under test is that it gets past the compatibility
+     * guard and fails on the missing bytes instead of refusing the join.
+     */
+    await expect(
+      assemble([manifest(0), manifest(1, { initDigest: "b".repeat(64) })]),
+    ).rejects.toThrow(/ENOENT/);
   });
 
   it("names the epoch that disagrees, so the right one is rebuilt", async () => {
@@ -120,7 +173,15 @@ describe("initialisation compatibility across epochs", () => {
       assemble([
         manifest(0),
         manifest(1),
-        manifest(2, { initDigest: "c".repeat(64) }),
+        manifest(2, {
+          joinKey: {
+            mediaTimescale: 15360,
+            sampleFormat: "avc1",
+            width: 1920,
+            height: 1080,
+            configDigest: "c".repeat(64),
+          },
+        }),
       ]),
     ).rejects.toThrow(/Epoch 2/);
   });
@@ -134,7 +195,18 @@ describe("initialisation compatibility across epochs", () => {
    */
   it("writes no media at all when the check fails", async () => {
     await expect(
-      assemble([manifest(0), manifest(1, { initDigest: "b".repeat(64) })]),
+      assemble([
+        manifest(0),
+        manifest(1, {
+          joinKey: {
+            mediaTimescale: 15360,
+            sampleFormat: "avc1",
+            width: 1920,
+            height: 1080,
+            configDigest: "b".repeat(64),
+          },
+        }),
+      ]),
     ).rejects.toThrow();
     const staged = await readdir(
       path.join(workspace, "staging", "video", RENDITION),
@@ -143,16 +215,26 @@ describe("initialisation compatibility across epochs", () => {
   });
 
   /**
-   * The timescale is checked separately even though it lives inside the
-   * initialisation segment and is therefore already covered by the digest. It
-   * is the one field assembly *uses* — every offset is converted through it —
-   * so a mismatch gets its own message rather than being reported as a generic
-   * initialisation difference an operator cannot act on.
+   * The timescale gets its own message. It is the one field assembly *uses* —
+   * every offset is converted through it — so a mismatch is reported as itself
+   * rather than as a generic difference an operator cannot act on.
    */
   it("refuses epochs muxed on different timescales, and says so plainly", async () => {
     await expect(
-      assemble([manifest(0), manifest(1, { mediaTimescale: 90000 })]),
-    ).rejects.toThrow(/90000 timescale where epoch 0 used 15360/);
+      assemble([
+        manifest(0),
+        manifest(1, {
+          mediaTimescale: 90000,
+          joinKey: {
+            mediaTimescale: 90000,
+            sampleFormat: "avc1",
+            width: 1920,
+            height: 1080,
+            configDigest: "a".repeat(64),
+          },
+        }),
+      ]),
+    ).rejects.toThrow(/90000 media timescale where the reference used 15360/);
   });
 
   it("refuses to assemble an epoch that is missing the rendition entirely", async () => {

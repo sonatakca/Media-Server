@@ -10,6 +10,7 @@ import {
   Play,
   RefreshCcw,
   Search,
+  Trash2,
   X,
   XCircle,
 } from "lucide-react";
@@ -26,6 +27,7 @@ import { getDisplayTitle } from "../../lib/format";
 import {
   cancelProcessingJob,
   deleteProcessingJob,
+  deleteProcessingSource,
   pauseProcessingJob,
   resumeProcessingJob,
   enqueueProcessing,
@@ -34,15 +36,26 @@ import {
   previewProcessing,
   processingStreamUrl,
   retryProcessingJob,
+  type AssemblyPhaseProgress,
+  type AudioPhaseProgress,
+  type CompletedPhaseSummary,
   type ProcessingJob,
   type ProcessingJobEvent,
   type ProcessingLiveProgress,
   type ProcessingOverview,
   type ProcessingPreview,
+  type PublishPhaseProgress,
+  type VerificationPhaseProgress,
 } from "../../lib/processingApi";
 import {
   BUILD_PHASE_LABEL_KEYS,
   buildPhaseFor,
+  completedPhaseLabelKey,
+  describeAudioTrack,
+  liveSampleIsStale,
+  formatByteRate,
+  globalProgressPercent,
+  phasePercent,
   canCancel,
   canPause,
   canResume,
@@ -51,10 +64,12 @@ import {
   encodedPercent,
   formatBytes,
   formatDuration,
+  formatFileSize,
   formatFinishedAt,
   formatMediaClock,
   formatSpeed,
   hasResumableCheckpoints,
+  isSalvaged,
   isWaitingForStorage,
   lastSequence,
   mergeEvents,
@@ -64,6 +79,8 @@ import {
   processingDurationSeconds,
   processingElapsedSeconds,
   protectedSeconds,
+  sourceDamageRecords,
+  sourceIoNotice,
   retryScopeKey,
   smoothedEncodedSeconds,
   stageStateFor,
@@ -235,6 +252,615 @@ function LadderRungs({
  * that had merely reached a late stage read as nearly done while the encoder
  * was a third of the way through the picture.
  */
+
+/**
+ * The audio stage.
+ *
+ * One FFmpeg pass writes every retained track together, so there is one
+ * timeline and a list of tracks, not a track counter. Saying "track 2 of 3"
+ * would read better and would describe a pipeline this is not.
+ */
+function AudioPanel({
+  progress,
+  stale,
+  t,
+}: {
+  progress: AudioPhaseProgress;
+  /** True when nothing has been reported for several seconds. */
+  stale: boolean;
+  t: Translate;
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-2xl font-black tabular-nums">
+          {progress.reused ? "—" : phasePercent(progress.fraction)}
+        </span>
+        {/*
+         * One position for every track, because one FFmpeg pass writes them
+         * all. The label says "source timeline" rather than leaving the reader
+         * to assume this is a per-track figure.
+         */}
+        <span className="text-xs tabular-nums text-white/45">
+          {t("processing.audio.sharedTimeline")}{" "}
+          {formatTemplate(t("processing.epoch.mediaPosition"), {
+            encoded: formatMediaClock(progress.processedSeconds),
+            total: formatMediaClock(progress.durationSeconds),
+          })}
+        </span>
+        {progress.reused ? (
+          <span className="text-xs font-semibold text-emerald-200/80">
+            {t("processing.audio.reused")}
+          </span>
+        ) : null}
+      </div>
+      <PhaseBar fraction={progress.fraction} />
+      <div className="flex flex-col gap-1.5">
+        <span className={LABEL}>
+          {formatTemplate(t("processing.audio.trackCount"), {
+            count: String(progress.tracks.length),
+          })}
+        </span>
+        {progress.tracks.map((track) => (
+          <div
+            key={track.id}
+            className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 text-xs"
+          >
+            <span className="text-white/70">
+              {describeAudioTrack(track, (code) =>
+                t(`processing.language.${code}` as never),
+              )}
+            </span>
+            <span className="tabular-nums text-white/45">
+              {formatBytes(track.writtenBytes)}
+            </span>
+          </div>
+        ))}
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/45">
+        {/*
+         * Rate and remaining time describe something happening now, so they go
+         * when nothing is. The measured position stays, because it is still
+         * exactly where the work stopped.
+         */}
+        {progress.speed && !stale ? (
+          <span className="tabular-nums">
+            {t("processing.speed")}: {formatSpeed(progress.speed)}
+          </span>
+        ) : null}
+        <span className="tabular-nums">
+          {t("processing.actualOutput")}: {formatBytes(progress.writtenBytes)}
+        </span>
+        {progress.etaSeconds !== undefined && !stale ? (
+          <span className="tabular-nums">
+            {t("processing.eta")}: {formatDuration(progress.etaSeconds)}
+          </span>
+        ) : null}
+        {stale ? (
+          <span className="text-amber-100/70">
+            {t("processing.phaseStalled")}
+          </span>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Assembly, rung by rung and byte by byte.
+ *
+ * The table is the point. 2160p is seventy times the bytes of 144p, so a
+ * position expressed in rungs would have called this build a quarter done when
+ * it had written two thirds of its data.
+ */
+function AssemblyPanel({
+  progress,
+  stale,
+  t,
+}: {
+  progress: AssemblyPhaseProgress;
+  stale: boolean;
+  t: Translate;
+}) {
+  const current = progress.renditions.find(
+    (rendition) => rendition.id === progress.currentId,
+  );
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-2xl font-black tabular-nums">
+          {phasePercent(progress.fraction)}
+        </span>
+        <span className="text-xs tabular-nums text-white/45">
+          {formatBytes(progress.completedBytes)} /{" "}
+          {formatBytes(progress.totalBytes)}
+        </span>
+      </div>
+      <PhaseBar fraction={progress.fraction} />
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[19rem] border-collapse text-xs">
+          <tbody>
+            {progress.renditions.map((rendition) => {
+              const fraction =
+                rendition.expectedBytes > 0
+                  ? Math.min(
+                      1,
+                      rendition.writtenBytes / rendition.expectedBytes,
+                    )
+                  : 0;
+              return (
+                <tr key={rendition.id} className="align-baseline">
+                  <td className="py-0.5 pr-3 font-bold text-white/75">
+                    {rendition.id}
+                  </td>
+                  <td className="py-0.5 pr-3 tabular-nums text-white/45">
+                    {rendition.state === "waiting"
+                      ? t("processing.assembly.waiting")
+                      : `${formatBytes(rendition.writtenBytes)} / ${formatBytes(
+                          rendition.expectedBytes,
+                        )}`}
+                  </td>
+                  <td className="py-0.5 text-right tabular-nums">
+                    {rendition.state === "complete" ? (
+                      <span className="text-emerald-300">✓</span>
+                    ) : rendition.state === "running" ? (
+                      <span className="text-amber-200">
+                        {phasePercent(fraction)}
+                      </span>
+                    ) : (
+                      <span className="text-white/25">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-white/45">
+        {current ? (
+          <span className="tabular-nums">
+            {t("processing.assembly.current")}: {current.id}
+          </span>
+        ) : null}
+        {/*
+         * A rate is a claim about the present tense. When the writer has
+         * stopped — paused, or its volume gone — there is no current rate, and
+         * showing the last one produces a remaining time that never arrives.
+         */}
+        <span className="tabular-nums">
+          {t("processing.assembly.writeRate")}:{" "}
+          {formatByteRate(stale ? undefined : progress.bytesPerSecond)}
+        </span>
+        <span className="tabular-nums">
+          {t("processing.assembly.remaining")}:{" "}
+          {formatBytes(
+            Math.max(0, progress.totalBytes - progress.completedBytes),
+          )}
+        </span>
+        {/*
+         * Absent rather than zero when there is no measured rate to divide by.
+         * A stalled writer has no estimate, and inventing one is what makes a
+         * remaining time that counts up.
+         */}
+        {progress.etaSeconds !== undefined && !stale ? (
+          <span className="tabular-nums">
+            {t("processing.eta")}: {formatDuration(progress.etaSeconds)}
+          </span>
+        ) : null}
+        {stale ? (
+          <span className="text-amber-100/70">
+            {t("processing.phaseStalled")}
+          </span>
+        ) : null}
+        {progress.audioCopyState ? (
+          <span className="tabular-nums">
+            {t("processing.assembly.audioCopy")}:{" "}
+            {progress.audioCopyState === "complete"
+              ? formatBytes(progress.audioCopyBytes ?? 0)
+              : t("processing.assembly.copying")}
+          </span>
+        ) : null}
+      </div>
+      {/*
+       * The measurement that follows the join. Without it the panel showed a
+       * full byte bar and a stale-rate notice for as long as it took to read
+       * every rendition back — which on a thirty-gigabyte ladder is tens of
+       * minutes of work the page flatly denied was happening.
+       */}
+      {progress.measure ? (
+        <div className="flex flex-col gap-1 rounded-lg bg-white/[0.03] px-3 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-xs text-white/60">
+              {formatTemplate(t("processing.assembly.measuring"), {
+                rendition: progress.measure.currentId,
+              })}
+            </span>
+            <span className="text-[11px] tabular-nums text-white/40">
+              {formatTemplate(t("processing.assembly.rungOf"), {
+                index: String(progress.measure.index),
+                count: String(progress.measure.count),
+              })}
+            </span>
+            {progress.measure.fraction !== undefined ? (
+              <span className="text-xs font-semibold tabular-nums">
+                {(progress.measure.fraction * 100).toFixed(1)}%
+              </span>
+            ) : null}
+          </div>
+          {progress.measure.fraction !== undefined ? (
+            <PhaseBar fraction={progress.measure.fraction} />
+          ) : null}
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-white/40">
+            {progress.measure.currentMediaSeconds !== undefined &&
+            progress.measure.totalMediaSeconds !== undefined ? (
+              <span className="tabular-nums">
+                {formatDuration(progress.measure.currentMediaSeconds)} /{" "}
+                {formatDuration(progress.measure.totalMediaSeconds)}
+              </span>
+            ) : null}
+            {progress.measure.etaSeconds !== undefined &&
+            !stale &&
+            !progress.measure.stalled ? (
+              <span className="tabular-nums">
+                {t("processing.eta")}:{" "}
+                {formatDuration(progress.measure.etaSeconds)}
+              </span>
+            ) : null}
+            {progress.measure.stalled ? (
+              <span className="text-amber-100/70">
+                {t("processing.verification.waiting")}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Verification.
+ *
+ * The literal figures are the counts: how many checks of each kind have
+ * finished, and which one is running. The bar is weighted by the size of what
+ * each check reads, because a probe of a ten-gigabyte rendition and a playlist
+ * parse are not the same work — and it is labelled as weighted, because
+ * ffprobe reports nothing until it exits, so no byte figure here would be a
+ * measurement of anything.
+ */
+function VerificationPanel({
+  progress,
+  stale,
+  t,
+}: {
+  progress: VerificationPhaseProgress;
+  stale: boolean;
+  t: Translate;
+}) {
+  /** Only the families this package actually has. */
+  const groups = progress.groups.filter((group) => group.total > 0);
+  const step = progress.current;
+  /*
+   * The running check's own progress, which exists only for a check that reads
+   * a timeline. Its rate and estimate are withdrawn the moment the scan stops
+   * reporting — the position it reached stays, because that much is still true.
+   */
+  const scanning = step?.fraction !== undefined;
+  const quiet = stale || step?.stalled === true;
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+        <span className="text-2xl font-black tabular-nums">
+          {formatTemplate(t("processing.verification.checks"), {
+            done: String(progress.completedChecks),
+            total: String(progress.totalChecks),
+          })}
+        </span>
+        {step ? (
+          <span className="text-xs text-white/45">
+            {t(`processing.verification.kind.${step.kind}` as never)}
+            {step.rendition === "package" ? "" : ` · ${step.rendition}`}
+          </span>
+        ) : null}
+      </div>
+      <PhaseBar fraction={progress.fraction} />
+      <span className="text-[11px] text-white/35">
+        {t("processing.verification.weighted")}
+      </span>
+
+      {step && scanning ? (
+        <div className="flex flex-col gap-1 rounded-lg bg-white/[0.03] px-3 py-2">
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <span className="text-sm font-semibold tabular-nums">
+              {(step.fraction! * 100).toFixed(1)}%
+            </span>
+            {step.currentMediaSeconds !== undefined &&
+            step.totalMediaSeconds !== undefined ? (
+              <span className="text-xs tabular-nums text-white/45">
+                {formatDuration(step.currentMediaSeconds)} /{" "}
+                {formatDuration(step.totalMediaSeconds)}
+              </span>
+            ) : null}
+          </div>
+          <PhaseBar fraction={step.fraction!} />
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-[11px] text-white/40">
+            {step.rate !== undefined && !quiet ? (
+              <span className="tabular-nums">
+                {t("processing.verification.scanRate")}:{" "}
+                {formatTemplate(t("processing.verification.timesRealtime"), {
+                  rate: step.rate.toFixed(1),
+                })}
+              </span>
+            ) : null}
+            {step.etaSeconds !== undefined && !quiet ? (
+              <span className="tabular-nums">
+                {t("processing.eta")}: {formatDuration(step.etaSeconds)}
+              </span>
+            ) : null}
+            {quiet ? (
+              <span className="text-amber-100/70">
+                {t("processing.verification.waiting")}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-col gap-1">
+        {groups.map((group) => (
+          <div
+            key={group.kind}
+            className="flex items-baseline justify-between gap-3 text-xs"
+          >
+            <span className="text-white/60">
+              {t(`processing.verification.kind.${group.kind}` as never)}
+            </span>
+            <span className="tabular-nums text-white/45">
+              {group.completed} / {group.total}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {progress.declared ? (
+        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-white/45">
+          <span>
+            {formatTemplate(t("processing.verification.videoRenditions"), {
+              count: String(progress.declared.videoRenditions),
+            })}
+          </span>
+          <span>
+            {formatTemplate(t("processing.verification.audioTracks"), {
+              count: String(progress.declared.audioRenditions),
+            })}
+          </span>
+          <span>
+            {formatTemplate(t("processing.verification.subtitles"), {
+              count: String(progress.declared.subtitleRenditions),
+            })}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Publication, as the list of operations it genuinely performs. */
+function PublishPanel({
+  progress,
+  t,
+}: {
+  progress: PublishPhaseProgress;
+  t: Translate;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      {progress.steps.map((step) => (
+        <div
+          key={step.id}
+          className="flex items-baseline gap-2 text-xs text-white/60"
+        >
+          <span
+            className={
+              step.state === "complete"
+                ? "text-emerald-300"
+                : step.state === "running"
+                  ? "text-amber-200"
+                  : "text-white/25"
+            }
+          >
+            {step.state === "complete"
+              ? "✓"
+              : step.state === "running"
+                ? "•"
+                : "○"}
+          </span>
+          <span>{t(`processing.publish.${step.id}` as never)}</span>
+          {step.bytes ? (
+            <span className="ml-auto tabular-nums text-white/35">
+              {formatBytes(step.bytes)}
+            </span>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The bar a phase panel draws for its own measured fraction. */
+function PhaseBar({ fraction }: { fraction: number }) {
+  return (
+    <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]">
+      <div
+        className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300 motion-reduce:transition-none"
+        style={{
+          width: `${Math.min(100, Math.max(0, fraction * 100))}%`,
+        }}
+      />
+    </div>
+  );
+}
+
+/**
+ * What is finished, in one line each.
+ *
+ * Kept because the phase panel above it only ever shows the phase that is
+ * running: without this, a job in verification looked as though it had never
+ * encoded anything.
+ */
+function PhaseHistory({
+  phases,
+  t,
+}: {
+  phases: readonly CompletedPhaseSummary[];
+  t: Translate;
+}) {
+  if (phases.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-white/40">
+      {phases.map((entry) => (
+        <span key={entry.phase} className="inline-flex items-center gap-1.5">
+          <span className="text-emerald-300">✓</span>
+          <span className="font-semibold text-white/55">
+            {t(completedPhaseLabelKey(entry.phase) as never)}
+          </span>
+          <span className="tabular-nums">
+            {formatDuration(entry.elapsedSeconds)}
+            {entry.count ? ` · ${entry.count}` : ""}
+            {entry.bytes ? ` · ${formatBytes(entry.bytes)}` : ""}
+            {entry.reused ? ` · ${t("processing.audio.reused")}` : ""}
+          </span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * What the encoder currently believes about the source it is reading.
+ *
+ * Shown in the epoch panel rather than as an alert, because for most of its
+ * life it is not an alert: media time stopping means the encoder may be busy.
+ * The wording escalates only as the evidence does, which is the difference
+ * between a page that is trusted and one that cries wolf. It also replaces the
+ * thing this exists to remove — a confidently falling encoding speed shown for
+ * minutes while FFmpeg is blocked on a platter that will never answer.
+ */
+function SourceIoNotice({
+  live,
+  t,
+}: {
+  live: ProcessingLiveProgress | null;
+  t: Translate;
+}) {
+  const notice = sourceIoNotice(live);
+  if (!notice) return null;
+  return (
+    <div
+      className={`flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs ${
+        notice.tentative
+          ? "border-white/10 bg-white/[0.04] text-white/60"
+          : "border-amber-400/25 bg-amber-400/10 text-amber-100"
+      }`}
+    >
+      {notice.tentative ? (
+        <Loader2
+          size={13}
+          className="animate-spin text-white/40 motion-reduce:animate-none"
+          aria-hidden="true"
+        />
+      ) : (
+        <AlertTriangle size={13} aria-hidden="true" />
+      )}
+      <span>{formatTemplate(t(notice.key as never), notice.values)}</span>
+    </div>
+  );
+}
+
+/**
+ * The warning a salvaged title keeps for ever.
+ *
+ * A succeeded row and a playable package look exactly like a clean encode from
+ * every other angle, so this is the only place the difference is stated. It
+ * names the interval rather than saying "some source damage", because the one
+ * thing an operator does with this is decide whether that stretch of the film
+ * is worth re-ripping the disc for.
+ */
+function SourceDamagePanel({
+  job,
+  live,
+  t,
+}: {
+  job: ProcessingJob;
+  live?: ProcessingLiveProgress | null;
+  t: Translate;
+}) {
+  const records = sourceDamageRecords(job, live);
+  if (records.length === 0) return null;
+  const total = records.reduce(
+    (sum, record) =>
+      sum + Math.max(0, record.sourceEndSeconds - record.sourceStartSeconds),
+    0,
+  );
+  return (
+    <div className="flex flex-col gap-2 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3">
+      <div className="flex items-center gap-2">
+        <AlertTriangle
+          size={13}
+          className="text-amber-200"
+          aria-hidden="true"
+        />
+        <span className="text-xs font-bold uppercase tracking-[0.14em] text-amber-200/90">
+          {t("processing.sourceDamage.heading")}
+        </span>
+      </div>
+      <p className="text-xs font-semibold text-amber-100">
+        {t("processing.sourceDamage.completed")}
+      </p>
+      <ul className="flex flex-col gap-1.5 text-xs text-amber-100/85">
+        {records.map((record) => (
+          <li
+            key={`${record.epochIndex}-${record.sourceStartSeconds}`}
+            className="flex flex-col gap-0.5"
+          >
+            <span className="tabular-nums">
+              {formatTemplate(t("processing.sourceDamage.interval"), {
+                from: formatMediaClock(record.sourceStartSeconds),
+                to: formatMediaClock(record.sourceEndSeconds),
+              })}
+            </span>
+            {record.audioReplaced ? (
+              <span className="text-amber-100/60">
+                {t("processing.sourceDamage.audio")}
+              </span>
+            ) : null}
+            {record.subtitlesAffected ? (
+              <span className="text-amber-100/60">
+                {t("processing.sourceDamage.subtitles")}
+              </span>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+      <p className="text-[11px] tabular-nums text-amber-100/60">
+        {formatTemplate(t("processing.sourceDamage.total"), {
+          duration: formatDuration(total),
+          count: String(records.length),
+        })}
+      </p>
+      <p className="text-[11px] text-amber-100/60">
+        {t("processing.sourceDamage.advice")}
+      </p>
+    </div>
+  );
+}
+
+/** Exported so the panels can be asserted without standing up a live stream. */
+export const SourceDamagePanelForTest = SourceDamagePanel;
+
 function EpochPanel({
   job,
   live,
@@ -298,6 +924,8 @@ function EpochPanel({
           })}
         </span>
       </div>
+
+      <SourceIoNotice live={live} t={t} />
 
       {/*
        * Two bars in one: the filled part is what has been encoded, and the
@@ -391,6 +1019,67 @@ function EpochPanel({
   );
 }
 
+/**
+ * The detail area under the global bar: whichever phase is running, in its own
+ * terms.
+ *
+ * Video keeps the panel it already had, unchanged — it is the standard the
+ * others were built to meet — and the phases that used to show nothing now show
+ * what they are measuring.
+ */
+function PhaseDetail({
+  job,
+  live,
+  nowMs,
+  t,
+}: {
+  job: ProcessingJob;
+  live: ProcessingLiveProgress | null;
+  nowMs: number;
+  t: Translate;
+}) {
+  const phase = buildPhaseFor(job, live);
+  const stale = liveSampleIsStale(live, nowMs);
+  const detail =
+    live && phase === "audio" && live.audio ? (
+      <AudioPanel progress={live.audio} stale={stale} t={t} />
+    ) : live && phase === "assembling" && live.assembly ? (
+      <AssemblyPanel progress={live.assembly} stale={stale} t={t} />
+    ) : live && phase === "validating" && live.verification ? (
+      <VerificationPanel progress={live.verification} stale={stale} t={t} />
+    ) : live && phase === "publishing" && live.publish ? (
+      <PublishPanel progress={live.publish} t={t} />
+    ) : null;
+
+  /*
+   * No payload for this phase — it is video, or it is a phase whose sample has
+   * not arrived yet, or the job is being read from its row after a restart. The
+   * epoch panel is the right thing to show in all three: it is the only one
+   * that can describe a build from the durable record alone.
+   */
+  if (!detail) {
+    return <EpochPanel job={job} live={live} nowMs={nowMs} t={t} />;
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-white/10 bg-white/[0.02] p-3">
+      <span className={LABEL}>
+        {phase ? t(BUILD_PHASE_LABEL_KEYS[phase] as never) : ""}
+      </span>
+      {detail}
+    </div>
+  );
+}
+
+/**
+ * The phase panel, exported so its rendering can be tested directly.
+ *
+ * The panels are what turn a measurement into something on screen, and testing
+ * them through the whole page would mean standing up a live stream to reach
+ * them. Named for what it is rather than dressed up as production API.
+ */
+export const PhaseDetailForTest = PhaseDetail;
+
 export function MediaProcessingPage() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
@@ -404,6 +1093,18 @@ export function MediaProcessingPage() {
     {},
   );
   const [startingItemId, setStartingItemId] = useState<string | null>(null);
+  /**
+   * The title whose source deletion has been armed, and the one being deleted.
+   *
+   * Deleting a source cannot be undone, so the first press only arms the
+   * second: one press of a button sitting where "start processing" used to be
+   * must never be enough to remove the file. Only one title can be armed at a
+   * time, and arming another disarms the first.
+   */
+  const [confirmingDeleteItemId, setConfirmingDeleteItemId] = useState<
+    string | null
+  >(null);
+  const [deletingItemId, setDeletingItemId] = useState<string | null>(null);
   const [removingJobIds, setRemovingJobIds] = useState<Set<string>>(new Set());
   const [openJobId, setOpenJobId] = useState<string | null>(null);
   const [openJob, setOpenJob] = useState<ProcessingJob | null>(null);
@@ -699,6 +1400,55 @@ export function MediaProcessingPage() {
     [refreshOverview, runPreview, t],
   );
 
+  /**
+   * Removes a finished title's source file.
+   *
+   * Only reachable from the armed second press, and only for a title whose
+   * package the preview reports as holding every rendition. The server checks
+   * that again for itself before unlinking anything — this is the operator's
+   * intent, not the authority on whether the file is still needed.
+   */
+  const deleteSource = useCallback(
+    async (itemId: string, sizeBytes: number) => {
+      setDeletingItemId(itemId);
+      try {
+        const result = await deleteProcessingSource(itemId);
+        setConfirmingDeleteItemId(null);
+        notify({
+          tone: "success",
+          title: formatTemplate(
+            t(
+              result.alreadyAbsent
+                ? "processing.sourceAlreadyGone"
+                : "processing.sourceDeleted",
+            ),
+            {
+              size: formatFileSize(
+                result.alreadyAbsent ? sizeBytes : result.freedBytes,
+              ),
+            },
+          ),
+        });
+        await refreshOverview();
+        await runPreview(itemId);
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+        // The preview is re-read on failure too: a refusal is nearly always the
+        // server disagreeing with what this page was still showing.
+        await runPreview(itemId);
+      } finally {
+        setDeletingItemId(null);
+      }
+    },
+    [refreshOverview, runPreview, t],
+  );
+
   const removeJob = useCallback(
     async (jobId: string) => {
       setRemovingJobIds((current) => new Set(current).add(jobId));
@@ -968,6 +1718,24 @@ export function MediaProcessingPage() {
                   const hasActiveJob = loading
                     ? Boolean(itemPreview?.activeJobId)
                     : activeItemIds.has(item.Id);
+                  /*
+                   * A title that has everything it will ever be given: its
+                   * package was built from these exact bytes under this
+                   * profile, and today's ladder would add nothing to it. Only
+                   * then is the source dead weight, and only then is removing
+                   * it offered in place of starting a run that would encode
+                   * nothing.
+                   */
+                  const canDeleteSource =
+                    readyPreview !== null &&
+                    readyPreview.existing.present &&
+                    readyPreview.existing.current &&
+                    readyPreview.existing.missingRungs.length === 0 &&
+                    !hasActiveJob;
+                  const sourceBytes =
+                    readyPreview?.decision.source.sizeBytes ?? 0;
+                  const isConfirmingDelete = confirmingDeleteItemId === item.Id;
+                  const isDeletingSource = deletingItemId === item.Id;
                   return (
                     <li
                       key={item.Id}
@@ -1007,7 +1775,67 @@ export function MediaProcessingPage() {
                               </p>
                             ) : null}
                           </div>
-                          {orphanPreview ? null : (
+                          {orphanPreview ? null : canDeleteSource ? (
+                            /*
+                             * Two presses, never one. The first only arms the
+                             * second, and the second says what it costs: the
+                             * file is unlinked, not moved anywhere it could be
+                             * fetched back from.
+                             */
+                            isConfirmingDelete ? (
+                              <div className="flex flex-col items-stretch gap-1.5 sm:max-w-[16rem]">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    void deleteSource(item.Id, sourceBytes)
+                                  }
+                                  disabled={isDeletingSource}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-500 px-3 py-2 text-xs font-black text-black transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                                >
+                                  {isDeletingSource ? (
+                                    <Loader2
+                                      size={14}
+                                      className="animate-spin motion-reduce:animate-none"
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <AlertTriangle
+                                      size={14}
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  {formatTemplate(
+                                    t("processing.deleteSourceConfirm"),
+                                    { size: formatFileSize(sourceBytes) },
+                                  )}
+                                </button>
+                                <p className="text-[11px] leading-snug text-white/45">
+                                  {t("processing.deleteSourceHint")}
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setConfirmingDeleteItemId(null)
+                                  }
+                                  disabled={isDeletingSource}
+                                  className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-bold text-white/70 transition hover:bg-white/[0.08] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                                >
+                                  {t("processing.deleteSourceCancel")}
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setConfirmingDeleteItemId(item.Id)
+                                }
+                                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-400/40 bg-rose-400/[0.12] px-3 py-2 text-xs font-black text-rose-100 transition hover:bg-rose-400/20 focus:outline-none focus-visible:ring-2 focus-visible:ring-white"
+                              >
+                                <Trash2 size={14} aria-hidden="true" />
+                                {t("processing.deleteSource")}
+                              </button>
+                            )
+                          ) : (
                             <button
                               type="button"
                               onClick={() => void startJob(item.Id)}
@@ -1246,6 +2074,7 @@ export function MediaProcessingPage() {
                 {jobs.map((job) => {
                   const percent = progressPercent(job);
                   const jobLive = live?.jobId === job.id ? live.snapshot : null;
+                  const globalPercent = globalProgressPercent(job, jobLive);
                   const encoded = encodedPercent(job, jobLive);
                   const waitingForStorage = isWaitingForStorage(job);
                   const isFinished = [
@@ -1384,17 +2213,27 @@ export function MediaProcessingPage() {
                         </div>
                       </div>
 
+                      {/*
+                       * The whole-job bar, and the only one that spans every
+                       * phase. It carries no number on purpose: inside each
+                       * phase the figures below are exact, but the boundaries
+                       * between phases rest on an estimate of their relative
+                       * cost, and printing a percentage would claim a precision
+                       * the second half of that does not have. It is monotonic,
+                       * it moves only when real work is measured, and it fills
+                       * only when the job row says the package is published.
+                       */}
                       <div
                         className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
                         role="progressbar"
-                        aria-valuenow={percent}
+                        aria-valuenow={Math.round(globalPercent)}
                         aria-valuemin={0}
                         aria-valuemax={100}
                         aria-label={itemTitleFor(job.itemId)}
                       >
                         <div
-                          className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-500 motion-reduce:transition-none"
-                          style={{ width: `${percent}%` }}
+                          className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300 ease-linear motion-reduce:transition-none"
+                          style={{ width: `${globalPercent}%` }}
                         />
                       </div>
 
@@ -1445,12 +2284,16 @@ export function MediaProcessingPage() {
                         </p>
                       ) : null}
 
-                      <EpochPanel
+                      <PhaseDetail
                         job={job}
                         live={jobLive}
                         nowMs={nowMs}
                         t={t}
                       />
+
+                      {jobLive?.completedPhases?.length ? (
+                        <PhaseHistory phases={jobLive.completedPhases} t={t} />
+                      ) : null}
 
                       {canRetry(job) && hasResumableCheckpoints(job) ? (
                         <p className="text-xs text-white/45">
@@ -1576,6 +2419,48 @@ export function MediaProcessingPage() {
               </button>
             </div>
 
+            {/*
+             * The same whole-job bar the queue row carries, at the top of the
+             * card where the title is. No number beside it, for the same
+             * reason: the phase panel underneath prints the figures that are
+             * exact, and this one is a position, not a measurement.
+             */}
+            <div
+              className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
+              role="progressbar"
+              aria-valuenow={Math.round(
+                globalProgressPercent(
+                  detail,
+                  live?.jobId === detail.id ? live.snapshot : null,
+                ),
+              )}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label={itemTitleFor(detail.itemId)}
+            >
+              <div
+                className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300 ease-linear motion-reduce:transition-none"
+                style={{
+                  width: `${globalProgressPercent(
+                    detail,
+                    live?.jobId === detail.id ? live.snapshot : null,
+                  )}%`,
+                }}
+              />
+            </div>
+
+            <PhaseDetail
+              job={detail}
+              live={live?.jobId === detail.id ? live.snapshot : null}
+              nowMs={nowMs}
+              t={t}
+            />
+
+            {live?.jobId === detail.id &&
+            live.snapshot.completedPhases?.length ? (
+              <PhaseHistory phases={live.snapshot.completedPhases} t={t} />
+            ) : null}
+
             <ol className="flex flex-col gap-1.5">
               {PROCESSING_STAGE_ORDER.map((stage) => {
                 const state = stageStateFor(stage, detail);
@@ -1659,6 +2544,17 @@ export function MediaProcessingPage() {
             {detail.validation ? (
               <div className="flex items-center gap-2">
                 <span className={LABEL}>{t("processing.validation")}</span>
+                {/*
+                 * A salvaged package validates — every structural claim it
+                 * makes is true — so the validation chip alone would present it
+                 * as a clean result. This sits beside it and says otherwise.
+                 */}
+                {isSalvaged(detail) ? (
+                  <Chip tone="warn">
+                    <AlertTriangle size={11} aria-hidden="true" />
+                    {t("processing.sourceDamage.badge")}
+                  </Chip>
+                ) : null}
                 {detail.validation.ok ? (
                   <Chip tone="ok">
                     <CheckCircle2 size={11} aria-hidden="true" />
@@ -1672,6 +2568,12 @@ export function MediaProcessingPage() {
                 )}
               </div>
             ) : null}
+
+            <SourceDamagePanel
+              job={detail}
+              live={live?.jobId === detail.id ? live.snapshot : null}
+              t={t}
+            />
 
             {detail.warnings.length > 0 ? (
               <div className="flex flex-col gap-1">

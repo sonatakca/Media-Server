@@ -14,6 +14,12 @@ import type { AdaptivePackageMetadata } from "./metadata";
 import { buildMasterPlaylist } from "./playlist";
 import { MASTER_LAYOUT_VERSION } from "./repairMaster";
 import {
+  safeFraction,
+  type PublishPhaseProgress,
+  type PublishStepId,
+  type PublishStepProgress,
+} from "./phaseProgress";
+import {
   TITLE_AUDIO_DIRECTORY,
   TITLE_SUBTITLE_DIRECTORY,
   TITLE_VIDEO_DIRECTORY,
@@ -133,7 +139,73 @@ export interface PublishTitlePackageInput {
   /** The folder the source file lives in. */
   titleRoot: string;
   metadata: AdaptivePackageMetadata;
+  /**
+   * Called as each publication step finishes.
+   *
+   * Publication is usually renames within one filesystem and over in seconds —
+   * but when the work directory is on a different volume from the library every
+   * byte of the package is copied, and a job that sat silent for ten minutes at
+   * "publishing" looked hung. The steps are weighted by the bytes they move so
+   * the reported position means the same thing in both cases.
+   */
+  onProgress?: (progress: PublishPhaseProgress) => void;
 }
+
+/**
+ * A reporter over the fixed list of steps publication performs.
+ *
+ * The list is derived from the package being published, so it names only work
+ * that will actually happen: a title with no subtitles has no subtitle step.
+ */
+export function createPublishReporter(
+  steps: readonly { id: PublishStepId; bytes?: number }[],
+  onProgress: ((progress: PublishPhaseProgress) => void) | undefined,
+) {
+  const state = new Map<PublishStepId, PublishStepProgress["state"]>(
+    steps.map((step) => [step.id, "waiting" as const]),
+  );
+  const totalBytes = steps.reduce((sum, step) => sum + (step.bytes ?? 0), 0);
+
+  const emit = (currentId?: PublishStepId): void => {
+    if (!onProgress) return;
+    const list: PublishStepProgress[] = steps.map((step) => ({
+      id: step.id,
+      state: state.get(step.id) ?? "waiting",
+      ...(step.bytes === undefined ? {} : { bytes: step.bytes }),
+    }));
+    const completedBytes = steps.reduce(
+      (sum, step) =>
+        sum + (state.get(step.id) === "complete" ? (step.bytes ?? 0) : 0),
+      0,
+    );
+    onProgress({
+      steps: list,
+      totalBytes,
+      completedBytes,
+      fraction: safeFraction(completedBytes, totalBytes),
+      ...(currentId === undefined ? {} : { currentId }),
+    });
+  };
+
+  return {
+    begin(id: PublishStepId): void {
+      if (!state.has(id)) return;
+      state.set(id, "running");
+      emit(id);
+    },
+    complete(id: PublishStepId): void {
+      if (!state.has(id)) return;
+      state.set(id, "complete");
+      emit();
+    },
+    /** Marks a step complete that another component performed. */
+    finish(): void {
+      emit();
+    },
+  };
+}
+
+export type PublishReporter = ReturnType<typeof createPublishReporter>;
 
 export interface PublishTitlePackageResult {
   manifest: TitlePackageManifest;
@@ -151,8 +223,56 @@ export async function publishTitlePackage({
   workVersionRoot,
   titleRoot,
   metadata,
+  onProgress,
 }: PublishTitlePackageInput): Promise<PublishTitlePackageResult> {
   const plan = planTitleLayout(metadata);
+  /*
+   * The steps, named before any of them runs. The media steps carry the bytes
+   * they move; the small ones carry none, so a package that publishes by rename
+   * still reports each stage passing rather than one long silence.
+   */
+  const progress = createPublishReporter(
+    [
+      ...(metadata.videoRenditions.length > 0
+        ? [
+            {
+              id: "video" as const,
+              bytes: metadata.videoRenditions.reduce(
+                (sum, rendition) => sum + rendition.fileSizeBytes,
+                0,
+              ),
+            },
+          ]
+        : []),
+      ...(metadata.audioRenditions.length > 0
+        ? [
+            {
+              id: "audio" as const,
+              bytes: metadata.audioRenditions.reduce(
+                (sum, rendition) => sum + rendition.fileSizeBytes,
+                0,
+              ),
+            },
+          ]
+        : []),
+      ...((metadata.subtitleRenditions?.length ?? 0) > 0
+        ? [
+            {
+              id: "subtitles" as const,
+              bytes: (metadata.subtitleRenditions ?? []).reduce(
+                (sum, rendition) => sum + rendition.fileSizeBytes,
+                0,
+              ),
+            },
+          ]
+        : []),
+      { id: "master-playlist" as const },
+      { id: "manifest" as const },
+      { id: "build-record" as const },
+      { id: "swap" as const },
+    ],
+    onProgress,
+  );
   const staging = path.join(
     titleRoot,
     `${TITLE_STAGING_PREFIX}-${process.pid}-${randomUUID().slice(0, 8)}`,
@@ -200,6 +320,7 @@ export async function publishTitlePackage({
     };
 
     const video: TitleVideoRendition[] = [];
+    progress.begin("video");
     for (const [index, rendition] of metadata.videoRenditions.entries()) {
       const published = plan.video[index]!;
       await publishOne(published, rendition.mediaPath, rendition.playlistPath);
@@ -220,7 +341,9 @@ export async function publishTitlePackage({
       });
     }
 
+    progress.complete("video");
     const audio: TitleAudioRendition[] = [];
+    progress.begin("audio");
     for (const [index, rendition] of metadata.audioRenditions.entries()) {
       const published = plan.audio[index]!;
       await publishOne(published, rendition.mediaPath, rendition.playlistPath);
@@ -239,7 +362,9 @@ export async function publishTitlePackage({
       });
     }
 
+    progress.complete("audio");
     const subtitle: TitleSubtitleRendition[] = [];
+    progress.begin("subtitles");
     for (const [index, rendition] of (
       metadata.subtitleRenditions ?? []
     ).entries()) {
@@ -263,6 +388,9 @@ export async function publishTitlePackage({
       });
     }
 
+    progress.complete("subtitles");
+
+    progress.begin("master-playlist");
     const master = await readFile(
       absolute(workVersionRoot, metadata.masterPlaylistPath),
       "utf8",
@@ -272,6 +400,8 @@ export async function publishTitlePackage({
       rewriteMasterPlaylist(master, plan, workPlaylistPathById),
       "utf8",
     );
+    progress.complete("master-playlist");
+    progress.begin("manifest");
 
     const manifest: TitlePackageManifest = {
       schemaVersion: TITLE_MANIFEST_SCHEMA_VERSION,
@@ -290,6 +420,8 @@ export async function publishTitlePackage({
       `${JSON.stringify(manifest, null, 2)}\n`,
       "utf8",
     );
+    progress.complete("manifest");
+    progress.begin("build-record");
 
     /*
      * The build record travels with the package it describes: which checks the
@@ -342,7 +474,10 @@ export async function publishTitlePackage({
       "utf8",
     );
 
+    progress.complete("build-record");
+    progress.begin("swap");
     await swapPublishedDirectories(titleRoot, staging);
+    progress.complete("swap");
     return { manifest, plan };
   } finally {
     await rm(staging, { recursive: true, force: true }).catch(() => undefined);
@@ -443,6 +578,7 @@ export async function publishAdditionalRenditions({
   titleRoot,
   existing,
   added,
+  onProgress,
 }: {
   workVersionRoot: string;
   titleRoot: string;
@@ -453,6 +589,7 @@ export async function publishAdditionalRenditions({
     AdaptivePackageMetadata,
     "videoRenditions" | "audioRenditions" | "subtitleRenditions"
   >;
+  onProgress?: (progress: PublishPhaseProgress) => void;
 }): Promise<{ manifest: TitlePackageManifest; plan: TitleLayoutPlan }> {
   /*
    * Existing renditions are listed first so the layout planner hands them the
@@ -534,8 +671,38 @@ export async function publishAdditionalRenditions({
     await rename(pending, destinationPlaylist);
   };
 
+  const bytesOf = (renditions: readonly { fileSizeBytes: number }[]) =>
+    renditions.reduce((sum, rendition) => sum + rendition.fileSizeBytes, 0);
+  const progress = createPublishReporter(
+    [
+      ...(added.videoRenditions.length > 0
+        ? [{ id: "video" as const, bytes: bytesOf(added.videoRenditions) }]
+        : []),
+      ...(added.audioRenditions.length > 0
+        ? [{ id: "audio" as const, bytes: bytesOf(added.audioRenditions) }]
+        : []),
+      ...((added.subtitleRenditions?.length ?? 0) > 0
+        ? [
+            {
+              id: "subtitles" as const,
+              bytes: bytesOf(added.subtitleRenditions ?? []),
+            },
+          ]
+        : []),
+      { id: "master-playlist" as const },
+      { id: "manifest" as const },
+      { id: "build-record" as const },
+    ],
+    onProgress,
+  );
+
+  progress.begin("video");
   for (const rendition of added.videoRenditions) await moveIn(rendition);
+  progress.complete("video");
+  progress.begin("audio");
   for (const rendition of added.audioRenditions) await moveIn(rendition);
+  progress.complete("audio");
+  progress.begin("subtitles");
   for (const rendition of added.subtitleRenditions ?? []) {
     await moveIn({
       id: rendition.id,
@@ -543,6 +710,8 @@ export async function publishAdditionalRenditions({
       playlistPath: rendition.playlistPath,
     });
   }
+  progress.complete("subtitles");
+  progress.begin("master-playlist");
 
   /*
    * Rebuilt from the merged set rather than from whatever this run's FFmpeg
@@ -653,27 +822,30 @@ export async function publishAdditionalRenditions({
     totalBytes,
   };
 
+  progress.begin("build-record");
   await atomicWrite(
     `${TITLE_PACKAGE_DIRECTORY}/${TITLE_BUILD_RECORD}`,
     `${JSON.stringify(publishedMetadata, null, 2)}\n`,
   );
+  progress.complete("build-record");
+  progress.begin("manifest");
   await atomicWrite(
     plan.manifestPath,
     `${JSON.stringify(manifest, null, 2)}\n`,
   );
+  progress.complete("manifest");
   // Last, so nothing advertises a rendition before its bytes are in place.
   await atomicWrite(
     plan.masterPlaylistPath,
     buildTitleMasterPlaylist(publishedMetadata),
   );
+  progress.complete("master-playlist");
 
   return { manifest, plan };
 }
 
 /** The master a published package should carry, built from its own record. */
-function buildTitleMasterPlaylist(
-  metadata: AdaptivePackageMetadata,
-): string {
+function buildTitleMasterPlaylist(metadata: AdaptivePackageMetadata): string {
   const relative = (published: string): string =>
     playlistUri(published.slice(TITLE_PACKAGE_DIRECTORY.length + 1));
   return buildMasterPlaylist({
@@ -727,7 +899,9 @@ export async function readTitleBuildRecord(
       Array.isArray(record.videoRenditions) &&
       record.videoRenditions.length > 0 &&
       record.videoRenditions.every((rendition) => rendition.codecString) &&
-      (record.audioRenditions ?? []).every((rendition) => rendition.codecString);
+      (record.audioRenditions ?? []).every(
+        (rendition) => rendition.codecString,
+      );
     return complete ? record : null;
   } catch {
     return null;

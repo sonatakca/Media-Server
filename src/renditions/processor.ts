@@ -1,8 +1,21 @@
-import { spawn } from "node:child_process";
 import {
   bindChildToPauseController,
   type PauseController,
 } from "./processing/pauseController";
+import {
+  EncoderAbortedError,
+  spawnManagedProcess,
+  type EncoderWatchdog,
+  type ManagedProcessOutcome,
+} from "./processExecution";
+
+/*
+ * Re-exported where they have always been imported from. They live in the
+ * process-execution module because that is what owns a child's lifetime, and
+ * because the adaptive epoch engine needs them without needing this file.
+ */
+export { EncoderAbortedError };
+export type { EncoderWatchdog };
 import { randomUUID } from "node:crypto";
 import {
   appendFile,
@@ -148,96 +161,205 @@ export async function runFfmpeg(
     signal,
     logPath,
     onProgress,
+    onStderr,
     pauseController,
+    watchdog,
+    now = Date.now,
   }: {
     signal?: AbortSignal;
     logPath: string;
     onProgress?: (progress: FfmpegProgress) => void;
+    /**
+     * Every line FFmpeg writes to stderr, as it writes it.
+     *
+     * Handed out rather than kept private because the exit code is not enough
+     * to classify a failure: a demuxer that gave up on an unreadable region can
+     * still let the muxer finalise and exit zero, and a caller that only sees
+     * the resolved promise would go on to blame the encoder for a short output.
+     * The caller keeps its own bounded tail; nothing here grows without limit.
+     */
+    onStderr?: (chunk: string) => void;
     /**
      * Suspends this encoder with SIGSTOP while paused. Progress is kept: the
      * process holds its memory, its output files and its position, so resuming
      * costs nothing where cancelling would cost the whole encode.
      */
     pauseController?: PauseController;
+    /**
+     * Ends the run when media time stops advancing.
+     *
+     * Absent by default, because most callers here are short-lived and a
+     * needless watchdog is a needless way to fail. The epoch encoder, the
+     * replacement generator and the audio stage all set one: they are the runs
+     * that read a source for minutes at a time, and they are the runs that a
+     * failing platter can wedge indefinitely.
+     */
+    watchdog?: EncoderWatchdog;
+    now?: () => number;
   },
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      shell: false,
-      windowsHide: true,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    const unbindPause = pauseController
-      ? bindChildToPauseController(child, pauseController)
-      : undefined;
-    let stderrTail = "";
-    let settled = false;
-    const complete = (error?: Error) => {
-      if (settled) return;
-      settled = true;
-      unbindPause?.();
-      signal?.removeEventListener("abort", onAbort);
-      if (error) reject(error);
-      else resolve();
-    };
-    const onAbort = () => {
-      // A stopped process cannot act on SIGTERM. Waking it first is what makes
-      // cancelling a paused encode take effect immediately rather than leaving
-      // a suspended FFmpeg behind holding its output files open.
-      if (pauseController?.paused) {
-        try {
-          child.kill("SIGCONT");
-        } catch {
-          // Already gone.
-        }
-      }
-      child.kill("SIGTERM");
-      complete(new Error("FFmpeg was cancelled."));
-    };
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener("abort", onAbort, { once: true });
-    if (onProgress) {
-      const fields: Record<string, string> = {};
-      let pending = "";
-      child.stdout?.setEncoding("utf8");
-      child.stdout?.on("data", (chunk: string) => {
-        pending += chunk;
-        const lines = pending.split(/\r?\n/);
-        pending = lines.pop() ?? "";
-        for (const line of lines) {
-          const separator = line.indexOf("=");
-          if (separator <= 0) continue;
-          fields[line.slice(0, separator).trim()] = line
-            .slice(separator + 1)
-            .trim();
-          if (line.startsWith("progress=")) {
-            onProgress(parseFfmpegProgressFields(fields));
-          }
-        }
-      });
-    } else {
-      child.stdout?.resume();
-    }
-    child.stderr?.setEncoding("utf8");
-    child.stderr?.on("data", (chunk: string) => {
-      stderrTail = `${stderrTail}${chunk}`.slice(-32_768);
+  /*
+   * Media time, watched rather than the reports about it. The distinction is
+   * the whole point: a report arriving says the process is alive, and only the
+   * figure inside it says work is happening.
+   */
+  let lastMediaSeconds = 0;
+  let lastProgressAtMs = now();
+  /**
+   * Whether anything has been produced yet.
+   *
+   * Until the first report the process is allowed a much longer silence: an
+   * accurate seek decodes forward from the previous keyframe and says nothing
+   * until it reaches the frame the epoch actually begins on.
+   */
+  let started = false;
+  let stallTimer: NodeJS.Timeout | undefined;
+  let stallDetail:
+    | { lastMediaSeconds: number; stalledForMs: number }
+    | undefined;
+
+  const managed = spawnManagedProcess({
+    command,
+    args,
+    ...(signal ? { signal } : {}),
+    ...(watchdog?.terminationGraceMs === undefined
+      ? {}
+      : { terminationGraceMs: watchdog.terminationGraceMs }),
+    onStderr: (chunk) => {
+      onStderr?.(chunk);
       void appendBoundedLog(logPath, chunk).catch(() => undefined);
-    });
-    child.once("error", (error) => complete(error));
-    child.once("close", (code) => {
-      if (settled) return;
-      if (code === 0) complete();
-      else
-        complete(
-          new Error(
-            `FFmpeg failed with exit code ${code ?? "unknown"}: ${stderrTail}`,
-          ),
-        );
-    });
+    },
+    ...(onProgress
+      ? {
+          onStdout: (() => {
+            const fields: Record<string, string> = {};
+            let pending = "";
+            return (chunk: string) => {
+              pending += chunk;
+              const lines = pending.split(/\r?\n/);
+              pending = lines.pop() ?? "";
+              for (const line of lines) {
+                const separator = line.indexOf("=");
+                if (separator <= 0) continue;
+                fields[line.slice(0, separator).trim()] = line
+                  .slice(separator + 1)
+                  .trim();
+                if (!line.startsWith("progress=")) continue;
+                const progress = parseFfmpegProgressFields(fields);
+                if (
+                  !started ||
+                  progress.processedSeconds > lastMediaSeconds + 1e-6
+                ) {
+                  started = true;
+                  lastMediaSeconds = Math.max(
+                    lastMediaSeconds,
+                    progress.processedSeconds,
+                  );
+                  lastProgressAtMs = now();
+                }
+                onProgress(progress);
+              }
+            };
+          })(),
+        }
+      : {}),
   });
+
+  const unbindPause = pauseController
+    ? bindChildToPauseController(
+        {
+          pid: managed.pid,
+          kill: (sig: NodeJS.Signals) => {
+            const pid = managed.pid;
+            if (pid === undefined) return false;
+            try {
+              // The group, not the leaf: a paused encoder that left a helper
+              // running would keep reading the very source it was suspended for.
+              process.kill(-pid, sig);
+            } catch {
+              try {
+                process.kill(pid, sig);
+              } catch {
+                return false;
+              }
+            }
+            return true;
+          },
+        },
+        pauseController,
+      )
+    : undefined;
+
+  if (watchdog) {
+    /*
+     * Polled rather than scheduled from each report, so a process that has
+     * stopped reporting altogether — no stdout, no stderr, nothing — is caught
+     * by the same clock as one that reports a frozen timeline. A quarter of the
+     * threshold keeps the check cheap and the overshoot small.
+     */
+    const interval = Math.max(250, Math.floor(watchdog.hardStallMs / 4));
+    stallTimer = setInterval(() => {
+      /*
+       * A paused encoder is not a stalled one. It is producing nothing because
+       * it was told to, and killing it would turn a pause into a lost epoch.
+       */
+      if (pauseController?.paused) {
+        lastProgressAtMs = now();
+        return;
+      }
+      const stalledForMs = now() - lastProgressAtMs;
+      const allowance = started
+        ? watchdog.hardStallMs
+        : (watchdog.startupStallMs ?? watchdog.hardStallMs);
+      if (stalledForMs < allowance) return;
+      if (stallDetail) return;
+      stallDetail = { lastMediaSeconds, stalledForMs };
+      watchdog.onStall?.(stallDetail);
+      managed.abort("media-watchdog");
+    }, interval);
+    stallTimer.unref?.();
+  }
+
+  let outcome: ManagedProcessOutcome;
+  try {
+    outcome = await managed.completed;
+  } finally {
+    if (stallTimer) clearInterval(stallTimer);
+    unbindPause?.();
+  }
+
+  /*
+   * An abort outranks the exit status, always. FFmpeg killed mid-write can
+   * still close its outputs and report success on the way out, and `progress=end`
+   * arriving says something about the reporting pipe rather than about the
+   * media — so a run that was stopped on purpose is never reported as one that
+   * finished.
+   */
+  if (outcome.aborted) {
+    const media = {
+      lastMediaSeconds,
+      lastProgressAtMs,
+      stalledForMs: stallDetail?.stalledForMs ?? now() - lastProgressAtMs,
+    };
+    if (outcome.abortReason === "media-watchdog") {
+      throw new EncoderAbortedError(
+        `FFmpeg produced no media for ${Math.round(
+          media.stalledForMs / 1000,
+        )}s and was stopped at ${media.lastMediaSeconds.toFixed(3)}s.`,
+        outcome,
+        media,
+      );
+    }
+    throw new EncoderAbortedError("FFmpeg was cancelled.", outcome, media);
+  }
+
+  if (outcome.exitCode === 0) return;
+  throw new Error(
+    `FFmpeg failed with exit code ${
+      outcome.exitCode ??
+      (outcome.signal ? `signal ${outcome.signal}` : "unknown")
+    }: ${outcome.stderrTail}`,
+  );
 }
 
 async function defaultProbeVariant(

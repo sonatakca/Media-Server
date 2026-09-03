@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { stat, unlink } from "node:fs/promises";
 import path from "node:path";
 import { OwnApiError } from "../ownApiHandler";
 import { sendData } from "../api/envelope";
@@ -25,7 +25,10 @@ import {
   type ProcessingDecision,
 } from "../../../renditions/processing/decide";
 import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
-import { readTitlePackageManifest } from "../../../renditions/adaptive/publishTitle";
+import {
+  readTitlePackageManifest,
+  type TitlePackageManifest,
+} from "../../../renditions/adaptive/publishTitle";
 import {
   DuplicateProcessingJobError,
   type ProcessingJobRecord,
@@ -92,6 +95,13 @@ function toJobDto(job: ProcessingJobRecord) {
     decision: job.decision,
     validation: job.validation,
     warnings: job.warnings,
+    /*
+     * Null for a clean encode; an array of replaced intervals for a salvaged
+     * one. The page needs this to tell a perfect result from a title that is
+     * playable because five minutes of it were substituted, which a `succeeded`
+     * state alone cannot say. It carries seconds and counts only — never a path.
+     */
+    sourceDamage: job.sourceDamage,
     errorCode: job.errorCode,
     errorMessage: job.errorMessage,
     publishedVersion: job.publishedVersion,
@@ -120,6 +130,60 @@ function toJobDto(job: ProcessingJobRecord) {
     finishedAt: job.finishedAt?.toISOString() ?? null,
     updatedAt: job.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Every file the manifest claims, checked against what is actually on disk.
+ *
+ * Read before a source file is deleted, which is the one action here that
+ * cannot be taken back. A manifest is only a record of what publishing meant
+ * to leave behind: an interrupted swap or a hand-deleted rendition leaves it
+ * describing files that are no longer there, and trusting it at that moment
+ * would trade a recoverable package for nothing at all. Sizes are compared as
+ * well as existence, because a truncated segment file still opens.
+ */
+async function missingPackageAssets(
+  titleRoot: string,
+  manifest: TitlePackageManifest,
+): Promise<string[]> {
+  const renditions = [
+    ...manifest.video,
+    ...manifest.audio,
+    ...manifest.subtitle,
+  ];
+  const expected: Array<{ relativePath: string; sizeBytes?: number }> = [
+    { relativePath: manifest.masterPlaylistPath },
+    ...renditions.flatMap((rendition) => [
+      { relativePath: rendition.mediaPath, sizeBytes: rendition.fileSizeBytes },
+      { relativePath: rendition.playlistPath },
+    ]),
+  ];
+
+  const missing: string[] = [];
+  for (const entry of expected) {
+    const absolutePath = path.resolve(
+      titleRoot,
+      ...entry.relativePath.split("/"),
+    );
+    // The manifest is a file on disk like any other, so its paths are treated
+    // as data rather than as instructions about what to open.
+    if (!isPathInsideRoot(titleRoot, absolutePath)) {
+      missing.push(entry.relativePath);
+      continue;
+    }
+    try {
+      const stats = await stat(absolutePath);
+      if (
+        !stats.isFile() ||
+        (entry.sizeBytes !== undefined && stats.size !== entry.sizeBytes)
+      ) {
+        missing.push(entry.relativePath);
+      }
+    } catch {
+      missing.push(entry.relativePath);
+    }
+  }
+  return missing;
 }
 
 export function createProcessingRoutes({
@@ -438,6 +502,121 @@ export function createProcessingRoutes({
           decision,
           existing,
           activeJobId: active?.id ?? null,
+        });
+      },
+    },
+
+    {
+      /**
+       * Deletes the source file of a title whose package already holds every
+       * rendition it would ever be given.
+       *
+       * The bytes are gone for good, so nothing the page believes is taken on
+       * trust: the source is re-fingerprinted, the ladder is re-decided from
+       * it, and every file the package claims is checked before the source is
+       * unlinked. A page can be looking at a preview minutes old, and in that
+       * time the file can have been replaced or the package half-removed.
+       */
+      method: "POST",
+      path: "/processing/source/delete",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const body = asObjectBody(await context.readJson(8 * 1024), [
+          "itemId",
+          "mediaFileId",
+        ]);
+        const itemId = requireUuid(
+          optionalBodyString(body, "itemId"),
+          "itemId",
+        );
+        const mediaFileId = body.mediaFileId
+          ? requireUuid(optionalBodyString(body, "mediaFileId"), "mediaFileId")
+          : undefined;
+
+        /*
+         * A volume that has gone away reads as "every file is missing", which
+         * is the one reading under which this route must do nothing at all.
+         */
+        if (!storageAvailable()) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_UNAVAILABLE",
+            "The media volume is not available, so the source file cannot be removed.",
+            409,
+          );
+        }
+
+        const located = await locateSource(itemId, mediaFileId);
+        const active = await store.findActiveForFile(located.file.id);
+        if (active) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_EXISTS",
+            "This file has a processing job that has not finished, and that job is still reading it.",
+            409,
+          );
+        }
+
+        const stats = await statSource(located.file, located.absolutePath);
+        if (!stats) {
+          /*
+           * The state being asked for is already the state on disk. Reporting
+           * that is more useful than failing: a double submission, or a page
+           * that lost the response, must not read as a problem.
+           */
+          sendData(context.response, context.requestId, {
+            deleted: false,
+            alreadyAbsent: true,
+            freedBytes: 0,
+          });
+          return;
+        }
+        if (!stats.isFile()) {
+          throw new OwnApiError(
+            "SOURCE_NOT_A_FILE",
+            "The source path is not a regular file.",
+            409,
+          );
+        }
+
+        const { existing } = await analyse(itemId, mediaFileId);
+        if (
+          !existing.present ||
+          !existing.sourceMatches ||
+          !existing.profileMatches ||
+          existing.missingRungs.length > 0
+        ) {
+          throw new OwnApiError(
+            "PROCESSING_PACKAGE_INCOMPLETE",
+            "This title still needs its source: its package is missing renditions, was built from different bytes, or was built by an older profile.",
+            409,
+          );
+        }
+
+        const titleRoot = path.dirname(located.absolutePath);
+        const manifest = await readTitlePackageManifest(titleRoot).catch(
+          () => undefined,
+        );
+        if (!manifest) {
+          throw new OwnApiError(
+            "PROCESSING_PACKAGE_INCOMPLETE",
+            "This title's package manifest could not be read, so its renditions cannot be confirmed.",
+            409,
+          );
+        }
+        const missing = await missingPackageAssets(titleRoot, manifest);
+        if (missing.length > 0) {
+          throw new OwnApiError(
+            "PROCESSING_PACKAGE_INCOMPLETE",
+            `This title's package is incomplete on disk: ${missing.length} of its files are missing or the wrong size.`,
+            409,
+          );
+        }
+
+        await unlink(located.absolutePath);
+        sendData(context.response, context.requestId, {
+          deleted: true,
+          alreadyAbsent: false,
+          freedBytes: stats.size,
         });
       },
     },

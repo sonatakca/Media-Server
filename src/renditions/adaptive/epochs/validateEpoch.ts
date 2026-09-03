@@ -20,7 +20,12 @@ import path from "node:path";
 import { parseMediaPlaylist } from "../playlist";
 import { probePackagedVideo } from "../probePackaged";
 import { ALIGNMENT_EPSILON_SECONDS } from "../profile";
-import { readFragmentTiming, readInitSegment } from "./fragments";
+import {
+  readEpochJoinKey,
+  readFragmentTiming,
+  readInitSegment,
+  type EpochJoinKey,
+} from "./fragments";
 
 export interface EpochRenditionExpectation {
   id: string;
@@ -39,7 +44,16 @@ export interface EpochRenditionExpectation {
 export interface EpochMeasurement {
   id: string;
   mediaTimescale: number;
+  /**
+   * Digest of the whole initialisation segment.
+   *
+   * Kept because it is what a manifest has always recorded, and because two
+   * epochs of real film do produce the same one. It is *not* what decides
+   * whether epochs can be joined — see `joinKey`.
+   */
   initDigest: string;
+  /** What actually has to match for these fragments to join another epoch's. */
+  joinKey: EpochJoinKey;
   /** Decode time of the first fragment, in the rendition's media timescale. */
   firstDecodeTicks: number;
   /** Sum of every fragment's sample durations. */
@@ -171,6 +185,7 @@ export async function measureEpochRendition({
     id: expectation.id,
     mediaTimescale,
     initDigest: createHash("sha256").update(init).digest("hex"),
+    joinKey: readEpochJoinKey(init),
     firstDecodeTicks,
     totalTicks,
     measuredDurationSeconds: totalTicks / mediaTimescale,
@@ -342,4 +357,31 @@ export async function validateEpoch({
   checks.push("initialisation digest recorded for cross-epoch comparison");
 
   return { ok: issues.length === 0, issues, checks, measurements };
+}
+
+/**
+ * Reads one finished rendition's joinability key straight from its media file.
+ *
+ * Taken from disk rather than from the checkpoint manifest on purpose. The
+ * manifests written before joinability was understood record only a digest of
+ * the whole initialisation segment, and re-deriving the key costs one read of a
+ * kilobyte — so every checkpoint an operator already has stays valid instead of
+ * being invalidated by a change to how they are compared.
+ */
+export async function readRenditionJoinKey(
+  epochDirectory: string,
+  rendition: { mediaPath: string; playlistPath: string },
+): Promise<EpochJoinKey> {
+  const playlist = parseMediaPlaylist(
+    await readFile(
+      path.join(epochDirectory, ...rendition.playlistPath.split("/")),
+      "utf8",
+    ),
+  );
+  const init = await readRange(
+    path.join(epochDirectory, ...rendition.mediaPath.split("/")),
+    playlist.map.byteRange.offset,
+    playlist.map.byteRange.length,
+  );
+  return readEpochJoinKey(init);
 }

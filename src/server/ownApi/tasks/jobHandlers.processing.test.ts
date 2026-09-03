@@ -61,8 +61,8 @@ function processingJob(): JobRecord {
 }
 
 function handlersFor(outcome: {
-  status: "failed";
-  errorMessage: string;
+  status: "failed" | "succeeded";
+  errorMessage?: string;
   retryable?: boolean;
 }) {
   return createJobHandlers({
@@ -109,5 +109,50 @@ describe("a processing job that failed", () => {
     }).catch((thrown: Error) => thrown);
 
     expect(error).toBeInstanceOf(PermanentJobError);
+  });
+});
+
+/**
+ * The regression the damaged Seagate volume exposed.
+ *
+ * When the wedged FFmpeg was finally killed, the worker logged
+ * `job.failed { retry: true }` and the queue immediately re-ran the identical
+ * `media.process` job — a second FFmpeg, same `-ss`, same source, straight back
+ * into the same unreadable sectors while the first was still being reaped.
+ *
+ * A confirmed physical fault is never a condition of the moment, so it must
+ * never come back through the queue. The processing record keeps the detail and
+ * the page keeps its Retry button; what goes away is the automatic second pass.
+ */
+describe("a source that cannot be read", () => {
+  it("is never requeued automatically", async () => {
+    const error = await run({
+      status: "failed",
+      errorMessage:
+        "The source could not be read while its volume stayed available.",
+    }).catch((thrown: Error) => thrown);
+
+    expect(error).toBeInstanceOf(PermanentJobError);
+  });
+
+  it("does not requeue an encoder that stopped producing either", async () => {
+    // Whatever wedged it is in the encode, so doing it again wedges it again.
+    const error = await run({
+      status: "failed",
+      errorMessage:
+        "The encoder stopped producing media and had to be stopped.",
+    }).catch((thrown: Error) => thrown);
+
+    expect(error).toBeInstanceOf(PermanentJobError);
+  });
+
+  it("does not fail the queue run at all when the interval was salvaged", async () => {
+    /*
+     * The whole point of salvage: the damage is handled *inside* the media job,
+     * which then carries on to the next epoch and finishes. There is nothing
+     * here for the queue to retry because nothing failed.
+     */
+    const result = await run({ status: "succeeded" });
+    expect(result).toEqual({ status: "succeeded" });
   });
 });

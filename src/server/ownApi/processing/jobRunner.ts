@@ -23,17 +23,44 @@ import {
   type ProcessingDecision,
 } from "../../../renditions/processing/decide";
 import {
+  createMediaStallDetector,
   createSpeedEstimator,
   estimateEncodeEtaSeconds,
 } from "../../../renditions/adaptive/epochs/progress";
 import { formatClock } from "../../../renditions/adaptive/epochs/engine";
+import {
+  stallThresholds,
+  type StallThresholds,
+} from "../../../renditions/adaptive/epochs/stallPolicy";
+import {
+  damageIntervalOf,
+  describeInterval,
+  sourceDamagePolicyFromEnvironment,
+  type SourceDamagePolicy,
+  type SourceDamageRecord,
+} from "../../../renditions/adaptive/epochs/salvage";
+import type { ProcessingFailureKind } from "../../../renditions/adaptive/epochs/failure";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
 import {
   clearLiveProgress,
   writeLiveProgress,
   type BuildPhase,
+  type CompletedPhaseSummary,
   type LiveProgressSnapshot,
+  type SourceIoStatus,
 } from "./liveProgress";
+import {
+  globalPhaseFor,
+  globalProgress,
+  monotonic,
+  planPhaseWeights,
+  type PhaseWeights,
+} from "./jobProgress";
+import {
+  calibratePhaseRates,
+  describeCalibration,
+  ESTIMATED_RATES,
+} from "./phaseCalibration";
 import {
   monotonicProgress,
   overallProgress,
@@ -81,6 +108,32 @@ const PHASE_MESSAGES: Readonly<Record<BuildPhase, string>> = {
 export const PERSIST_INTERVAL_MS = 1_000;
 
 /**
+ * Smallest gap between live samples reaching the transient file.
+ *
+ * The phases after the encode report far more often than this — the assembler
+ * on every write — so they are collapsed to roughly four samples a second,
+ * which is the rate the encoder already sets and the rate the page's stream
+ * polls at. Faster would be four file writes a second the reader cannot use.
+ */
+export const LIVE_PUBLISH_INTERVAL_MS = 250;
+
+/**
+ * How often the last confirmed sample is republished while nothing new arrives.
+ *
+ * Some operations legitimately report nothing for minutes: ffprobe walking a
+ * ten-gigabyte rendition, a publish that has to copy across volumes. The
+ * reader drops a sample older than six seconds — correctly, because that is
+ * how a dead worker is detected — so without this the panel vanished in the
+ * middle of work that was going perfectly well.
+ *
+ * The heartbeat republishes the *same* figures with a fresh publication time.
+ * It never advances progress by so much as a byte; `confirmedAtMs` keeps
+ * saying when the values were really measured, which is what the page uses to
+ * decide that a throughput or an estimate has gone stale.
+ */
+export const LIVE_HEARTBEAT_INTERVAL_MS = 2_000;
+
+/**
  * Runs one processing job from analysis to publication.
  *
  * Every stage transition and every progress update goes through the store, so
@@ -121,6 +174,22 @@ export interface ProcessingJobRunnerDeps {
    * start and one validation pass more often.
    */
   epochTargetSeconds?: number;
+  /**
+   * What to do when part of a source cannot be read at all.
+   *
+   * Defaults to the deployment's environment setting, which itself defaults to
+   * the strict behaviour. A library on a failing drive can be told to salvage
+   * without changing what every other deployment does.
+   */
+  sourceDamagePolicy?: SourceDamagePolicy;
+  /**
+   * How patient this deployment is with an encoder that stops producing.
+   *
+   * The same object the encoder's watchdog uses, so the page's "waiting for
+   * source data" and the termination that follows it cannot be working to
+   * different clocks.
+   */
+  stalls?: StallThresholds;
   now?: () => number;
 }
 
@@ -162,8 +231,46 @@ export const PROCESSING_ERROR_CODES = {
   insufficientSpace: "INSUFFICIENT_DISK_SPACE",
   validationFailed: "VALIDATION_FAILED",
   encodeFailed: "ENCODE_FAILED",
+  /**
+   * A region of the source cannot be read, and the policy in force says not to
+   * substitute anything for it.
+   *
+   * Its own code because it is the one failure that must never be requeued
+   * automatically: the next attempt would read the same dead sectors, take tens
+   * of seconds per one, and fail in the same place. Repairing or replacing the
+   * media is a person's job, and the button for it is on the page.
+   */
+  sourceUnreadable: "SOURCE_UNREADABLE",
+  /**
+   * The encoder stopped producing while the source read perfectly.
+   *
+   * Also not requeued: whatever wedged it is in the encode, and doing it again
+   * wedges it again. Distinct from a source failure so nobody blames a disk for
+   * it.
+   */
+  mediaProgressTimeout: "MEDIA_PROGRESS_TIMEOUT",
   cancelled: "CANCELLED",
 } as const;
+
+/**
+ * Which failures the *queue* should try again, and which are a person's.
+ *
+ * The queue's retry exists for conditions of the moment — a lock another
+ * attempt is holding, a blip — and it is exactly wrong for a physical fault:
+ * requeuing a title whose source has an unreadable region sends the encoder
+ * straight back into it, which is what happened when a watchdog termination
+ * reached the queue looking like an ordinary error.
+ */
+export function failureIsWorthRequeuing(
+  kind: ProcessingFailureKind | undefined,
+): boolean {
+  if (kind === undefined) return false;
+  return !(
+    kind === "source-io" ||
+    kind === "media-progress-timeout" ||
+    kind === "encoder"
+  );
+}
 
 export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
   const {
@@ -179,6 +286,8 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     storageAvailableFn,
     missingRootsFn,
     epochTargetSeconds,
+    sourceDamagePolicy = sourceDamagePolicyFromEnvironment(),
+    stalls = stallThresholds(),
   } = deps;
 
   async function enterStage(
@@ -200,626 +309,941 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     });
   }
 
-  return {
-    async run(input: RunProcessingJobInput): Promise<RunProcessingJobOutcome> {
-      const job = await store.get(input.processingJobId);
-      if (!job) {
-        return {
-          status: "failed",
-          errorCode: "JOB_NOT_FOUND",
-          errorMessage: "The processing job no longer exists.",
-        };
-      }
-
-      const fail = async (code: string, message: string, retryable = false) => {
-        await clearLiveProgress(job.id);
-        await store.update(job.id, {
-          state: "failed",
-          errorCode: code,
-          errorMessage: message,
-          finishedAt: new Date(),
-        });
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: job.stage,
-          level: "error",
-          message,
-        });
-        return {
-          status: "failed" as const,
-          errorCode: code,
-          errorMessage: message,
-          ...(retryable ? { retryable: true } : {}),
-        };
+  /**
+   * One attempt, from analysis to publication.
+   *
+   * Wrapped below rather than exposed directly, because everything in here
+   * talks to a database and a database can blink. An exception escaping this
+   * function used to reach the task queue as an ordinary error, and an ordinary
+   * error is requeued — which is how a job whose encoder had just been stopped
+   * on a damaged region was sent straight back into it.
+   */
+  async function attempt(
+    input: RunProcessingJobInput,
+  ): Promise<RunProcessingJobOutcome> {
+    const job = await store.get(input.processingJobId);
+    if (!job) {
+      return {
+        status: "failed",
+        errorCode: "JOB_NOT_FOUND",
+        errorMessage: "The processing job no longer exists.",
       };
+    }
 
-      const cancelled = async () => {
-        if (input.signal?.aborted) return true;
-        if (await input.isCancelled?.()) return true;
-        const latest = await store.get(job.id);
-        return latest?.cancellationRequested === true;
-      };
-
-      const finishCancelled = async () => {
-        await clearLiveProgress(job.id);
-        await store.update(job.id, {
-          state: "cancelled",
-          errorCode: PROCESSING_ERROR_CODES.cancelled,
-          errorMessage: "Processing was cancelled.",
-          finishedAt: new Date(),
-        });
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: "waiting",
-          level: "warning",
-          message:
-            "Processing was cancelled. Any published package is untouched.",
-        });
-        return { status: "cancelled" as const };
-      };
-
-      /**
-       * The encode stopped because its storage went away.
-       *
-       * Deliberately not a failure: nothing is wrong with the source, the plan
-       * or the package, and marking it failed is what forced a person to press
-       * Retry after every accidental unplug. The job stays paused with the
-       * reason recorded, keeps no finish time because it has not finished, and
-       * is picked up again automatically when the volume returns.
-       */
-      const finishStorageInterrupted = async (detail?: string) => {
-        /*
-         * The live sample goes but the durable row keeps its epoch position, so
-         * a page opened while the drive is missing still says how much work is
-         * protected and which five minutes will be redone.
-         */
-        await clearLiveProgress(job.id);
-        await store.update(job.id, {
-          state: "paused",
-          /*
-           * The reason is what makes the pause recoverable.
-           * `requeueStorageInterruptedJobs` looks for work with
-           * `listPaused("storage-unavailable")`, which reads this column. The
-           * encoder classifies an I/O error as storage loss before the watchdog
-           * has polled, so without stamping it here that ordinary path leaves a
-           * job paused with no reason, no error and nothing that will ever pick
-           * it up again.
-           */
-          pausedReason: "storage-unavailable",
-          // It has not finished, so it must not carry a finish time.
-          finishedAt: null,
-          speed: null,
-          fps: null,
-          etaSeconds: null,
-          errorCode: null,
-          errorMessage: null,
-        });
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: "waiting",
-          level: "warning",
-          message: detail
-            ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
-            : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
-        });
-        return { status: "waiting-for-storage" as const };
-      };
-
-      /*
-       * An attempt begins here whether it arrived through a retry or through
-       * the queue re-leasing an abandoned job, so the invariants are enforced
-       * at the point work actually starts rather than only on one path. A
-       * running attempt cannot carry a finish time, and its progress and
-       * telemetry describe this attempt alone — the previous one's 89% must
-       * not make a run that has just begun look nearly done.
-       */
+    const fail = async (code: string, message: string, retryable = false) => {
+      await clearLiveProgress(job.id);
       await store.update(job.id, {
-        state: "running",
-        startedAt: new Date(),
+        state: "failed",
+        errorCode: code,
+        errorMessage: message,
+        finishedAt: new Date(),
+      });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: job.stage,
+        level: "error",
+        message,
+      });
+      return {
+        status: "failed" as const,
+        errorCode: code,
+        errorMessage: message,
+        ...(retryable ? { retryable: true } : {}),
+      };
+    };
+
+    const cancelled = async () => {
+      if (input.signal?.aborted) return true;
+      if (await input.isCancelled?.()) return true;
+      const latest = await store.get(job.id);
+      return latest?.cancellationRequested === true;
+    };
+
+    const finishCancelled = async () => {
+      await clearLiveProgress(job.id);
+      await store.update(job.id, {
+        state: "cancelled",
+        errorCode: PROCESSING_ERROR_CODES.cancelled,
+        errorMessage: "Processing was cancelled.",
+        finishedAt: new Date(),
+      });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "waiting",
+        level: "warning",
+        message:
+          "Processing was cancelled. Any published package is untouched.",
+      });
+      return { status: "cancelled" as const };
+    };
+
+    /**
+     * The encode stopped because its storage went away.
+     *
+     * Deliberately not a failure: nothing is wrong with the source, the plan
+     * or the package, and marking it failed is what forced a person to press
+     * Retry after every accidental unplug. The job stays paused with the
+     * reason recorded, keeps no finish time because it has not finished, and
+     * is picked up again automatically when the volume returns.
+     */
+    const finishStorageInterrupted = async (detail?: string) => {
+      /*
+       * The live sample goes but the durable row keeps its epoch position, so
+       * a page opened while the drive is missing still says how much work is
+       * protected and which five minutes will be redone.
+       */
+      await clearLiveProgress(job.id);
+      await store.update(job.id, {
+        state: "paused",
+        /*
+         * The reason is what makes the pause recoverable.
+         * `requeueStorageInterruptedJobs` looks for work with
+         * `listPaused("storage-unavailable")`, which reads this column. The
+         * encoder classifies an I/O error as storage loss before the watchdog
+         * has polled, so without stamping it here that ordinary path leaves a
+         * job paused with no reason, no error and nothing that will ever pick
+         * it up again.
+         */
+        pausedReason: "storage-unavailable",
+        // It has not finished, so it must not carry a finish time.
         finishedAt: null,
-        stageProgress: 0,
-        overallProgress: 0,
         speed: null,
         fps: null,
         etaSeconds: null,
-        validation: null,
         errorCode: null,
         errorMessage: null,
       });
-      await store.incrementAttempts(job.id);
-
-      // ---------------------------------------------------------- analysing
-      await enterStage(job, "analysing", "Analysing the source.");
-      if (await cancelled()) return finishCancelled();
-
-      let probe: Awaited<ReturnType<typeof probeMediaFile>>;
-      try {
-        probe = await probeFn(input.sourcePath, ffprobePath, input.signal);
-      } catch (error) {
-        return fail(
-          PROCESSING_ERROR_CODES.noVideo,
-          error instanceof Error
-            ? error.message
-            : "The source could not be probed.",
-        );
-      }
       await store.appendEvent({
         processingJobId: job.id,
-        stage: "analysing",
-        message: `Analysing ${probe.audioTracks.length} audio and ${probe.subtitleTracks.length} subtitle ${probe.subtitleTracks.length === 1 ? "track" : "tracks"}`,
+        stage: "waiting",
+        level: "warning",
+        message: detail
+          ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
+          : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
       });
-      await store.update(job.id, {
-        stageProgress: 1,
-        overallProgress: overallProgress("analysing", 1),
+      return { status: "waiting-for-storage" as const };
+    };
+
+    /*
+     * An attempt begins here whether it arrived through a retry or through
+     * the queue re-leasing an abandoned job, so the invariants are enforced
+     * at the point work actually starts rather than only on one path. A
+     * running attempt cannot carry a finish time, and its progress and
+     * telemetry describe this attempt alone — the previous one's 89% must
+     * not make a run that has just begun look nearly done.
+     */
+    await store.update(job.id, {
+      state: "running",
+      startedAt: new Date(),
+      finishedAt: null,
+      stageProgress: 0,
+      overallProgress: 0,
+      speed: null,
+      fps: null,
+      etaSeconds: null,
+      validation: null,
+      errorCode: null,
+      errorMessage: null,
+    });
+    await store.incrementAttempts(job.id);
+
+    // ---------------------------------------------------------- analysing
+    await enterStage(job, "analysing", "Analysing the source.");
+    if (await cancelled()) return finishCancelled();
+
+    let probe: Awaited<ReturnType<typeof probeMediaFile>>;
+    try {
+      probe = await probeFn(input.sourcePath, ffprobePath, input.signal);
+    } catch (error) {
+      return fail(
+        PROCESSING_ERROR_CODES.noVideo,
+        error instanceof Error
+          ? error.message
+          : "The source could not be probed.",
+      );
+    }
+    await store.appendEvent({
+      processingJobId: job.id,
+      stage: "analysing",
+      message: `Analysing ${probe.audioTracks.length} audio and ${probe.subtitleTracks.length} subtitle ${probe.subtitleTracks.length === 1 ? "track" : "tracks"}`,
+    });
+    /*
+     * Provisional weights: neither the plan nor this machine's measured
+     * rates are known yet, so the source's own size stands in for the
+     * package's. Analysis is worth a sliver under any weighting, and the
+     * committed weights land moments later — but the value is kept so the
+     * next write can be held at or above it rather than stepping down when
+     * the real denominator turns out to be larger.
+     */
+    const analysedProgress = globalProgress(
+      planPhaseWeights({
+        sourceDurationSeconds: probe.durationSeconds,
+        audioTrackCount: probe.audioTracks.length,
+        subtitleTrackCount: probe.subtitleTracks.length,
+        outputBytes: input.sizeBytes,
+      }),
+      "analysing",
+      1,
+    );
+    await store.update(job.id, {
+      stageProgress: 1,
+      overallProgress: analysedProgress,
+    });
+
+    // ----------------------------------------------------------- planning
+    await enterStage(job, "planning", "Choosing the processing plan.");
+    if (await cancelled()) return finishCancelled();
+
+    let hardware: HardwareReport;
+    try {
+      hardware = await detectHardwareFn({
+        ffmpegPath,
+        probeWidth: 1920,
+        probeHeight: 1080,
+        ...(input.signal ? { signal: input.signal } : {}),
       });
+    } catch {
+      return fail(
+        PROCESSING_ERROR_CODES.encodeFailed,
+        "No usable video encoder was found on this machine.",
+      );
+    }
 
-      // ----------------------------------------------------------- planning
-      await enterStage(job, "planning", "Choosing the processing plan.");
-      if (await cancelled()) return finishCancelled();
+    const freeBytes = await freeBytesFn(paths.renditionRoot);
+    const decision = decideProcessing({
+      probe,
+      container: path.extname(input.sourcePath).replace(".", ""),
+      sizeBytes: input.sizeBytes,
+      hardware,
+      ...(freeBytes === undefined ? {} : { freeBytes }),
+    });
 
-      let hardware: HardwareReport;
+    /*
+     * The bar's denominator, committed here and never revised.
+     *
+     * The workloads are known exactly now: the source's duration, the tracks
+     * the plan retains, the package's estimated size. The rates that turn
+     * them into comparable costs are read off this machine's own completed
+     * jobs — its real encoder speed, its real storage throughput — falling
+     * back to documented estimates only where it has no history to answer
+     * from. Committed once rather than refined as the job runs, because a
+     * denominator that changes is a bar that can walk backwards.
+     */
+    const calibration = await (async () => {
+      /*
+       * A history that cannot be read is not a reason to fail a job. The
+       * estimates stand in, the diagnostics say so, and the encode proceeds
+       * — this is the bar's scale, not the work.
+       */
       try {
-        hardware = await detectHardwareFn({
-          ffmpegPath,
-          probeWidth: 1920,
-          probeHeight: 1080,
-          ...(input.signal ? { signal: input.signal } : {}),
+        return calibratePhaseRates(await store.listPhaseTimings(20), {
+          encoder: decision.videoEncoder,
         });
       } catch {
-        return fail(
-          PROCESSING_ERROR_CODES.encodeFailed,
-          "No usable video encoder was found on this machine.",
-        );
+        return { rates: ESTIMATED_RATES, measured: {}, consideredJobs: 0 };
       }
-
-      const freeBytes = await freeBytesFn(paths.renditionRoot);
-      const decision = decideProcessing({
-        probe,
-        container: path.extname(input.sourcePath).replace(".", ""),
-        sizeBytes: input.sizeBytes,
-        hardware,
-        ...(freeBytes === undefined ? {} : { freeBytes }),
-      });
-
-      await store.update(job.id, {
-        hardwareAdapter: decision.hardwareAdapter,
-        videoEncoder: decision.videoEncoder,
-        warnings: decision.warnings,
+    })();
+    const weights: PhaseWeights = planPhaseWeights(
+      {
         sourceDurationSeconds: probe.durationSeconds,
-        // Shown beside the protected bytes so an operator can see the headroom
-        // the rest of the ladder has to fit into.
-        ...(freeBytes === undefined ? {} : { freeBytes }),
-        stageProgress: 1,
-        overallProgress: overallProgress("planning", 1),
-      });
+        audioTrackCount: decision.streams.keptAudioStreamIndexes.length,
+        subtitleTrackCount: decision.streams.keptSubtitleStreamIndexes.length,
+        outputBytes: decision.estimate.outputBytes,
+      },
+      calibration.rates,
+    );
+    await store.appendEvent({
+      processingJobId: job.id,
+      stage: "planning",
+      message: describeCalibration(calibration),
+      detail: {
+        measuredRates: calibration.measured,
+        consideredJobs: calibration.consideredJobs,
+      },
+    });
+
+    await store.update(job.id, {
+      hardwareAdapter: decision.hardwareAdapter,
+      videoEncoder: decision.videoEncoder,
+      warnings: decision.warnings,
+      sourceDurationSeconds: probe.durationSeconds,
+      // Shown beside the protected bytes so an operator can see the headroom
+      // the rest of the ladder has to fit into.
+      ...(freeBytes === undefined ? {} : { freeBytes }),
+      stageProgress: 1,
+      /*
+       * The cumulative bar, from the same weighted model the live samples
+       * use. The old stage-weighted figure put a job that had merely chosen
+       * a plan at 3% of a four-hour encode; this puts it where the work
+       * actually is, which for analysis and planning is a sliver.
+       */
+      overallProgress: Math.max(
+        analysedProgress,
+        globalProgress(weights, "planning", 1),
+      ),
+    });
+    await store.appendEvent({
+      processingJobId: job.id,
+      stage: "planning",
+      message: decision.summary,
+      detail: { decision: decision as unknown as Record<string, unknown> },
+    });
+    for (const entry of decision.streams.audio) {
       await store.appendEvent({
         processingJobId: job.id,
         stage: "planning",
-        message: decision.summary,
-        detail: { decision: decision as unknown as Record<string, unknown> },
+        message: entry.explanation,
       });
-      for (const entry of decision.streams.audio) {
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: "planning",
-          message: entry.explanation,
-        });
-      }
-      for (const entry of decision.streams.subtitles) {
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: "planning",
-          message: entry.explanation,
-          ...(entry.requiresOcr ? { level: "warning" as const } : {}),
-        });
-      }
+    }
+    for (const entry of decision.streams.subtitles) {
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "planning",
+        message: entry.explanation,
+        ...(entry.requiresOcr ? { level: "warning" as const } : {}),
+      });
+    }
 
-      if (decision.action === "reject-no-video") {
-        return fail(PROCESSING_ERROR_CODES.noVideo, decision.summary);
-      }
-      if (decision.action === "reject-too-small") {
-        return fail(PROCESSING_ERROR_CODES.tooSmall, decision.summary);
-      }
-      if (!decision.estimate.sufficient) {
-        return fail(
-          PROCESSING_ERROR_CODES.insufficientSpace,
-          "There is not enough free space for this package and its staging copy.",
-        );
-      }
-
-      // ------------------------------------------------- video/audio/subs
-      /*
-       * The diagnostics name the rungs this run will encode, not the ladder the
-       * finished package holds. Logging the whole ladder for a one-rung job was
-       * how a job that encoded only 1440p still read as "Encoding 2160p, 1440p,
-       * 1080p, ..." in its own history.
-       */
-      const encodedRungs =
-        decision.renditionsToEncode && decision.renditionsToEncode.length > 0
-          ? decision.renditionsToEncode
-          : decision.ladder.map((rung) => rung.qualityHeight);
-      await enterStage(
-        job,
-        "video",
-        `Encoding ${encodedRungs.map((height) => `${height}p`).join(", ")} ` +
-          `${decision.videoCodec === "hevc" ? "HEVC" : "H.264"} with ${hardware.adapters.find((adapter) => adapter.id === decision.hardwareAdapter)?.label ?? decision.hardwareAdapter}`,
+    if (decision.action === "reject-no-video") {
+      return fail(PROCESSING_ERROR_CODES.noVideo, decision.summary);
+    }
+    if (decision.action === "reject-too-small") {
+      return fail(PROCESSING_ERROR_CODES.tooSmall, decision.summary);
+    }
+    if (!decision.estimate.sufficient) {
+      return fail(
+        PROCESSING_ERROR_CODES.insufficientSpace,
+        "There is not enough free space for this package and its staging copy.",
       );
-      if (await cancelled()) return finishCancelled();
+    }
 
-      const durationSeconds = probe.durationSeconds;
-      // Scoped to this attempt: the record was just reset, and the in-memory
-      // `job` still holds the previous attempt's figure.
-      let lastOverall = 0;
-      /** This job's current guess at its own final size, refined as it runs. */
-      let lastEstimateBytes: number | undefined;
+    // ------------------------------------------------- video/audio/subs
+    /*
+     * The diagnostics name the rungs this run will encode, not the ladder the
+     * finished package holds. Logging the whole ladder for a one-rung job was
+     * how a job that encoded only 1440p still read as "Encoding 2160p, 1440p,
+     * 1080p, ..." in its own history.
+     */
+    const encodedRungs =
+      decision.renditionsToEncode && decision.renditionsToEncode.length > 0
+        ? decision.renditionsToEncode
+        : decision.ladder.map((rung) => rung.qualityHeight);
+    await enterStage(
+      job,
+      "video",
+      `Encoding ${encodedRungs.map((height) => `${height}p`).join(", ")} ` +
+        `${decision.videoCodec === "hevc" ? "HEVC" : "H.264"} with ${hardware.adapters.find((adapter) => adapter.id === decision.hardwareAdapter)?.label ?? decision.hardwareAdapter}`,
+    );
+    if (await cancelled()) return finishCancelled();
 
+    const durationSeconds = probe.durationSeconds;
+    // Scoped to this attempt: the record was just reset, and the in-memory
+    // `job` still holds the previous attempt's figure.
+    let lastOverall = 0;
+    /** This job's current guess at its own final size, refined as it runs. */
+    let lastEstimateBytes: number | undefined;
+
+    /*
+     * The live sample, kept in memory and republished on every change.
+     *
+     * Held as one object rather than a handful of variables so the transient
+     * file and the durable row can never describe different moments.
+     */
+    const live: {
+      stage: ProcessingStage;
+      phase: BuildPhase;
+      epochIndex: number | null;
+      epochCount: number | null;
+      epochStartSeconds: number | null;
+      epochEndSeconds: number | null;
+      epochFraction: number | null;
+      completedEpochs: number;
+      protectedSeconds: number;
+      encodedSeconds: number;
+      sourceDurationSeconds: number;
+      fps?: number;
+      speed?: number;
+      smoothedSpeed?: number;
+      etaSeconds?: number;
+      writtenBytes?: number;
+      globalProgress?: number;
+      phaseFraction?: number;
+      audio?: LiveProgressSnapshot["audio"];
+      assembly?: LiveProgressSnapshot["assembly"];
+      verification?: LiveProgressSnapshot["verification"];
+      publish?: LiveProgressSnapshot["publish"];
+      sourceIo?: SourceIoStatus;
+    } = {
+      stage: "video",
+      phase: "planning",
+      epochIndex: null,
+      epochCount: null,
+      epochStartSeconds: null,
+      epochEndSeconds: null,
+      epochFraction: null,
+      completedEpochs: 0,
+      protectedSeconds: 0,
+      encodedSeconds: 0,
+      sourceDurationSeconds: durationSeconds,
+    };
+    let revision = 0;
+    let lastPersistMs = 0;
+    let lastLivePublishMs = 0;
+    let etaWasKnown = false;
+    let checkpointBytesWritten = 0;
+    let speed = createSpeedEstimator();
+    /*
+     * Media time, watched rather than the reports about it. FFmpeg keeps
+     * reporting while it is blocked on an unreadable sector — same out_time,
+     * four times a second, with a speed that falls a little further each
+     * time — and showing that is a page confidently animating a rate for a
+     * process that is doing nothing.
+     */
+    let mediaStall = createMediaStallDetector({
+      stallAfterMs: stalls.softStallMs,
+    });
+    /** Intervals this attempt has replaced, in the order they were found. */
+    const sourceDamage: SourceDamageRecord[] = [];
+
+    /** Phase summaries, for the compact history under the live panel. */
+    const completedPhases: CompletedPhaseSummary[] = [];
+    let phaseStartedMs = Date.now();
+    /**
+     * The global bar's high-water mark.
+     *
+     * Separate from `lastOverall`, which is the durable row's stage-weighted
+     * figure and stays as it is so nothing reading the API changes meaning.
+     */
+    let lastGlobal = Math.max(
+      analysedProgress,
+      globalProgress(weights, "planning", 1),
+    );
+    /*
+     * Seeded, so that a sample published before the first phase reports —
+     * the heartbeat, or a stage transition — carries the position the job is
+     * genuinely at rather than no position at all.
+     */
+    live.globalProgress = lastGlobal;
+
+    /**
+     * Records the phase's measured position and returns the global value.
+     *
+     * The single place a phase fraction becomes a bar position, so no caller
+     * can invent one: every one of them passes a fraction it measured.
+     */
+    const advance = (phase: BuildPhase, fraction: number): number => {
+      live.phaseFraction = Math.min(1, Math.max(0, fraction));
+      lastGlobal = monotonic(
+        lastGlobal,
+        globalProgress(weights, globalPhaseFor(phase), fraction),
+      );
+      live.globalProgress = lastGlobal;
+      return lastGlobal;
+    };
+
+    /**
+     * Publishes at most four samples a second.
+     *
+     * The assembler reports on every write and FFmpeg four times a second;
+     * collapsing them here is what keeps the transient file from being
+     * rewritten hundreds of times a second while still moving at the rate the
+     * page reads it. `force` is for state changes — a phase beginning, a
+     * phase ending — which must not wait for the next slot.
+     */
+    const publishLiveThrottled = (force = false, confirmed = true): void => {
+      const at = Date.now();
       /*
-       * The live sample, kept in memory and republished on every change.
-       *
-       * Held as one object rather than a handful of variables so the transient
-       * file and the durable row can never describe different moments.
+       * Every call here follows a report, and only a report that carried new
+       * measurements moves this. A sample repeating the same media time is
+       * FFmpeg saying it is alive, not that it is working, and treating the
+       * two alike is what kept a falling speed on the page for minutes while
+       * the encoder was blocked on a platter.
        */
-      const live: {
-        stage: ProcessingStage;
-        phase: BuildPhase;
-        epochIndex: number | null;
-        epochCount: number | null;
-        epochStartSeconds: number | null;
-        epochEndSeconds: number | null;
-        epochFraction: number | null;
-        completedEpochs: number;
-        protectedSeconds: number;
-        encodedSeconds: number;
-        sourceDurationSeconds: number;
-        fps?: number;
-        speed?: number;
-        smoothedSpeed?: number;
-        etaSeconds?: number;
-        writtenBytes?: number;
-      } = {
-        stage: "video",
-        phase: "planning",
-        epochIndex: null,
-        epochCount: null,
-        epochStartSeconds: null,
-        epochEndSeconds: null,
-        epochFraction: null,
-        completedEpochs: 0,
-        protectedSeconds: 0,
-        encodedSeconds: 0,
-        sourceDurationSeconds: durationSeconds,
-      };
-      let revision = 0;
-      let lastPersistMs = 0;
-      let etaWasKnown = false;
-      let checkpointBytesWritten = 0;
-      let speed = createSpeedEstimator();
+      if (confirmed) confirmedAtMs = at;
+      if (!force && at - lastLivePublishMs < LIVE_PUBLISH_INTERVAL_MS) return;
+      lastLivePublishMs = at;
+      void publishLive();
+    };
 
-      const publishLive = (): Promise<void> => {
-        revision += 1;
-        const snapshot: LiveProgressSnapshot = {
-          processingJobId: job.id,
-          revision,
-          timestampMs: Date.now(),
-          stage: live.stage,
-          phase: live.phase,
-          epochIndex: live.epochIndex,
-          epochCount: live.epochCount,
-          epochStartSeconds: live.epochStartSeconds,
-          epochEndSeconds: live.epochEndSeconds,
-          epochFraction: live.epochFraction,
-          completedEpochs: live.completedEpochs,
-          protectedSeconds: live.protectedSeconds,
-          encodedSeconds: live.encodedSeconds,
-          sourceDurationSeconds: live.sourceDurationSeconds,
-          ...(live.fps === undefined ? {} : { fps: live.fps }),
-          ...(live.speed === undefined ? {} : { speed: live.speed }),
-          ...(live.smoothedSpeed === undefined
-            ? {}
-            : { smoothedSpeed: live.smoothedSpeed }),
-          ...(live.etaSeconds === undefined
-            ? {}
-            : { etaSeconds: live.etaSeconds }),
-          ...(live.writtenBytes === undefined
-            ? {}
-            : { writtenBytes: live.writtenBytes }),
-          encoder: decision.videoEncoder,
-          qualityHeights: encodedRungs,
-        };
-        return writeLiveProgress(snapshot);
-      };
+    /*
+     * The heartbeat. It republishes what is already there, so a phase in the
+     * middle of one long operation keeps its panel while contributing nothing
+     * to progress. `confirmedAtMs` is untouched, which is what lets the page
+     * tell "still working, nothing new to report" from "measured a moment
+     * ago".
+     */
+    const heartbeat = setInterval(() => {
+      if (Date.now() - lastLivePublishMs < LIVE_HEARTBEAT_INTERVAL_MS) return;
+      lastLivePublishMs = Date.now();
+      void publishLive();
+    }, LIVE_HEARTBEAT_INTERVAL_MS);
 
-      /**
-       * The rendition registry, not the catalogue, owns the identity a package
-       * is stored under.
-       *
-       * The playback service finds a package by looking the source up in the
-       * registry and reading `<renditionRoot>/<registryItem.id>`. Packaging
-       * under the catalogue's own file id would produce a perfectly valid
-       * package in a directory nothing ever looks in.
+    /** Closes the running phase and starts the next one's clock. */
+    const closePhase = (
+      phase: BuildPhase,
+      summary: Omit<CompletedPhaseSummary, "phase" | "elapsedSeconds">,
+    ): void => {
+      const elapsedSeconds = Math.max(
+        0,
+        Math.round((Date.now() - phaseStartedMs) / 1000),
+      );
+      if (!completedPhases.some((entry) => entry.phase === phase)) {
+        completedPhases.push({ phase, elapsedSeconds, ...summary });
+      }
+      phaseStartedMs = Date.now();
+    };
+
+    /** When the figures in `live` were last actually measured. */
+    let confirmedAtMs = Date.now();
+
+    const publishLive = (): Promise<void> => {
+      revision += 1;
+      const snapshot: LiveProgressSnapshot = {
+        processingJobId: job.id,
+        revision,
+        timestampMs: Date.now(),
+        confirmedAtMs,
+        stage: live.stage,
+        phase: live.phase,
+        epochIndex: live.epochIndex,
+        epochCount: live.epochCount,
+        epochStartSeconds: live.epochStartSeconds,
+        epochEndSeconds: live.epochEndSeconds,
+        epochFraction: live.epochFraction,
+        completedEpochs: live.completedEpochs,
+        protectedSeconds: live.protectedSeconds,
+        encodedSeconds: live.encodedSeconds,
+        sourceDurationSeconds: live.sourceDurationSeconds,
+        ...(live.fps === undefined ? {} : { fps: live.fps }),
+        ...(live.speed === undefined ? {} : { speed: live.speed }),
+        ...(live.smoothedSpeed === undefined
+          ? {}
+          : { smoothedSpeed: live.smoothedSpeed }),
+        ...(live.etaSeconds === undefined
+          ? {}
+          : { etaSeconds: live.etaSeconds }),
+        ...(live.writtenBytes === undefined
+          ? {}
+          : { writtenBytes: live.writtenBytes }),
+        encoder: decision.videoEncoder,
+        qualityHeights: encodedRungs,
+        ...(live.globalProgress === undefined
+          ? {}
+          : { globalProgress: live.globalProgress }),
+        ...(live.phaseFraction === undefined
+          ? {}
+          : { phaseFraction: live.phaseFraction }),
+        ...(live.audio === undefined ? {} : { audio: live.audio }),
+        ...(live.assembly === undefined ? {} : { assembly: live.assembly }),
+        ...(live.verification === undefined
+          ? {}
+          : { verification: live.verification }),
+        ...(live.publish === undefined ? {} : { publish: live.publish }),
+        ...(completedPhases.length === 0
+          ? {}
+          : { completedPhases: [...completedPhases] }),
+        ...(live.sourceIo === undefined ? {} : { sourceIo: live.sourceIo }),
+        ...(sourceDamage.length === 0
+          ? {}
+          : { sourceDamage: [...sourceDamage] }),
+      };
+      return writeLiveProgress(snapshot);
+    };
+
+    /**
+     * The rendition registry, not the catalogue, owns the identity a package
+     * is stored under.
+     *
+     * The playback service finds a package by looking the source up in the
+     * registry and reading `<renditionRoot>/<registryItem.id>`. Packaging
+     * under the catalogue's own file id would produce a perfectly valid
+     * package in a directory nothing ever looks in.
+     */
+    const registryPath = path.join(paths.stateRoot, "registry.json");
+    const registry = await loadRenditionRegistry(registryPath);
+    const registryItem = upsertRegistrySource(registry, {
+      relativePath: input.relativePath,
+      size: input.sizeBytes,
+      mtimeMs: input.mtimeMs,
+      sourceFingerprint: job.sourceFingerprint,
+    });
+    await saveRenditionRegistry(registryPath, registry);
+
+    /**
+     * Cancellation has to reach FFmpeg, not just the loop around it.
+     *
+     * The queue reports cancellation through a polled predicate, while the
+     * packager takes an `AbortSignal` that it forwards to the encoder.
+     * Without this bridge a cancelled job kept encoding to the end and only
+     * noticed afterwards, which to an operator is indistinguishable from the
+     * request being ignored.
+     */
+    const encodeAbort = new AbortController();
+    const forwardAbort = () => encodeAbort.abort();
+    input.signal?.addEventListener("abort", forwardAbort, { once: true });
+
+    /*
+     * Pause travels the same way cancellation does, for the same reason: the
+     * request is made in one process and the encoder runs in another, so a
+     * polled flag is the only channel between them. Unlike cancellation it
+     * suspends rather than kills, so the work already done survives.
+     */
+    const pauseController = createPauseController();
+    /*
+     * Set when the encode is stopped because its storage disappeared, so the
+     * outcome can be told apart from a person cancelling. The two look
+     * identical to the encoder — both end in an abort — and conflating them
+     * is what turned an unplugged drive into a permanently failed job.
+     */
+    let storageInterrupted = false;
+    const cancellationWatch = setInterval(() => {
+      /*
+       * Every line below talks to the database, and a database that blinks —
+       * a restart, a dropped idle socket, a query timeout — rejects them. A
+       * rejection from a timer is nobody's to catch, so before this `catch`
+       * existed it reached the process as an unhandled rejection and ended
+       * the server mid-encode. The tick is a poll: missing one costs a second
+       * of latency on a pause request, and nothing else.
        */
-      const registryPath = path.join(paths.stateRoot, "registry.json");
-      const registry = await loadRenditionRegistry(registryPath);
-      const registryItem = upsertRegistrySource(registry, {
-        relativePath: input.relativePath,
-        size: input.sizeBytes,
-        mtimeMs: input.mtimeMs,
-        sourceFingerprint: job.sourceFingerprint,
+      void (async () => {
+        const latest = await store.get(job.id);
+        if (
+          latest?.pauseRequested &&
+          latest.pausedReason === "storage-unavailable" &&
+          !storageInterrupted
+        ) {
+          /*
+           * Suspending is the wrong move here, and used to be what happened.
+           * A stopped FFmpeg keeps its file descriptors open on a volume that
+           * is no longer there, and resuming it later would carry on writing
+           * through handles that may now point at a different disk entirely.
+           * The encoder is ended instead: its partial output is discarded on
+           * recovery and only the interrupted rendition is built again, while
+           * every published rendition is left exactly as it is.
+           */
+          storageInterrupted = true;
+          pauseController.resume();
+          encodeAbort.abort();
+          await store.update(job.id, { state: "paused" });
+          await store.appendEvent({
+            processingJobId: job.id,
+            stage: latest.stage,
+            level: "warning",
+            message:
+              "Storage became unavailable; the encoder was stopped and the job is waiting for it to return.",
+          });
+        } else if (latest?.pauseRequested && !pauseController.paused) {
+          pauseController.pause();
+          await store.update(job.id, { state: "paused" });
+          await store.appendEvent({
+            processingJobId: job.id,
+            stage: latest.stage,
+            level: "warning",
+            message: "Paused.",
+          });
+        } else if (latest && !latest.pauseRequested && pauseController.paused) {
+          pauseController.resume();
+          await store.update(job.id, { state: "running" });
+          await store.appendEvent({
+            processingJobId: job.id,
+            stage: latest.stage,
+            level: "info",
+            message: "Resumed.",
+          });
+        }
+
+        if ((await cancelled()) && !encodeAbort.signal.aborted) {
+          // A suspended encoder cannot notice an abort, so lift the pause
+          // first and let the abort reach it.
+          pauseController.resume();
+          encodeAbort.abort();
+        }
+      })().catch((error) => {
+        console.warn(
+          "[Seyirlik] Could not read the pause state for a processing job:",
+          error instanceof Error ? error.message : String(error),
+        );
       });
-      await saveRenditionRegistry(registryPath, registry);
+    }, 1000);
+    if (typeof cancellationWatch.unref === "function")
+      cancellationWatch.unref();
 
-      /**
-       * Cancellation has to reach FFmpeg, not just the loop around it.
-       *
-       * The queue reports cancellation through a polled predicate, while the
-       * packager takes an `AbortSignal` that it forwards to the encoder.
-       * Without this bridge a cancelled job kept encoding to the end and only
-       * noticed afterwards, which to an operator is indistinguishable from the
-       * request being ignored.
-       */
-      const encodeAbort = new AbortController();
-      const forwardAbort = () => encodeAbort.abort();
-      input.signal?.addEventListener("abort", forwardAbort, { once: true });
-
-      /*
-       * Pause travels the same way cancellation does, for the same reason: the
-       * request is made in one process and the encoder runs in another, so a
-       * polled flag is the only channel between them. Unlike cancellation it
-       * suspends rather than kills, so the work already done survives.
-       */
-      const pauseController = createPauseController();
-      /*
-       * Set when the encode is stopped because its storage disappeared, so the
-       * outcome can be told apart from a person cancelling. The two look
-       * identical to the encoder — both end in an abort — and conflating them
-       * is what turned an unplugged drive into a permanently failed job.
-       */
-      let storageInterrupted = false;
-      const cancellationWatch = setInterval(() => {
-        /*
-         * Every line below talks to the database, and a database that blinks —
-         * a restart, a dropped idle socket, a query timeout — rejects them. A
-         * rejection from a timer is nobody's to catch, so before this `catch`
-         * existed it reached the process as an unhandled rejection and ended
-         * the server mid-encode. The tick is a poll: missing one costs a second
-         * of latency on a pause request, and nothing else.
-         */
-        void (async () => {
-          const latest = await store.get(job.id);
-          if (
-            latest?.pauseRequested &&
-            latest.pausedReason === "storage-unavailable" &&
-            !storageInterrupted
-          ) {
-            /*
-             * Suspending is the wrong move here, and used to be what happened.
-             * A stopped FFmpeg keeps its file descriptors open on a volume that
-             * is no longer there, and resuming it later would carry on writing
-             * through handles that may now point at a different disk entirely.
-             * The encoder is ended instead: its partial output is discarded on
-             * recovery and only the interrupted rendition is built again, while
-             * every published rendition is left exactly as it is.
-             */
-            storageInterrupted = true;
-            pauseController.resume();
-            encodeAbort.abort();
-            await store.update(job.id, { state: "paused" });
-            await store.appendEvent({
-              processingJobId: job.id,
-              stage: latest.stage,
-              level: "warning",
-              message:
-                "Storage became unavailable; the encoder was stopped and the job is waiting for it to return.",
-            });
-          } else if (latest?.pauseRequested && !pauseController.paused) {
-            pauseController.pause();
-            await store.update(job.id, { state: "paused" });
-            await store.appendEvent({
-              processingJobId: job.id,
-              stage: latest.stage,
-              level: "warning",
-              message: "Paused.",
-            });
-          } else if (
-            latest &&
-            !latest.pauseRequested &&
-            pauseController.paused
-          ) {
-            pauseController.resume();
-            await store.update(job.id, { state: "running" });
-            await store.appendEvent({
-              processingJobId: job.id,
-              stage: latest.stage,
-              level: "info",
-              message: "Resumed.",
-            });
-          }
-
-          if ((await cancelled()) && !encodeAbort.signal.aborted) {
-            // A suspended encoder cannot notice an abort, so lift the pause
-            // first and let the abort reach it.
-            pauseController.resume();
-            encodeAbort.abort();
-          }
-        })().catch((error) => {
-          console.warn(
-            "[Seyirlik] Could not read the pause state for a processing job:",
-            error instanceof Error ? error.message : String(error),
-          );
-        });
-      }, 1000);
-      if (typeof cancellationWatch.unref === "function")
-        cancellationWatch.unref();
-
-      let result: Awaited<ReturnType<typeof packageFn>>;
-      try {
-        result = await packageFn(
-          {
-            mediaId: registryItem.id,
-            relativePath: input.relativePath,
-            sourceFingerprint: job.sourceFingerprint,
-            sourcePath: input.sourcePath,
-            probe,
-          },
-          paths,
-          {
-            ffmpegPath,
-            ffprobePath,
-            reserveBytes: decision.estimate.reserveBytes,
-            ...(softwareThreads === undefined ? {} : { softwareThreads }),
-            videoEncoder: decision.videoEncoder,
-            hdrVideoEncoder: decision.videoEncoder,
-            audioStreamIndexes: decision.streams.keptAudioStreamIndexes,
-            subtitleStreamIndexes: decision.streams.keptSubtitleStreamIndexes,
-            /*
-             * Most of this library is subtitled with a `.srt` beside the file
-             * rather than a stream inside it. Without this the server path
-             * publishes titles with no subtitles in a retained language while
-             * the offline CLI, running the same policy, publishes them with —
-             * the same title processed two ways giving two different answers.
-             */
-            sidecarSubtitles: await planRetainedSidecarSubtitles(
-              input.sourcePath,
-            ),
-            signal: encodeAbort.signal,
-            pauseController,
-            ...(epochTargetSeconds === undefined ? {} : { epochTargetSeconds }),
-            /*
-             * The packager asks these at the moment something fails, which is
-             * the only moment the answer distinguishes "the drive was pulled
-             * out" from "this encode is broken".
-             */
-            ...(storageAvailableFn
-              ? { storageAvailable: storageAvailableFn }
-              : {}),
-            ...(missingRootsFn ? { missingRoots: missingRootsFn } : {}),
-            onEvent: (event) => {
-              switch (event.type) {
-                case "build-stage": {
+    let result: Awaited<ReturnType<typeof packageFn>>;
+    try {
+      result = await packageFn(
+        {
+          mediaId: registryItem.id,
+          relativePath: input.relativePath,
+          sourceFingerprint: job.sourceFingerprint,
+          sourcePath: input.sourcePath,
+          probe,
+        },
+        paths,
+        {
+          ffmpegPath,
+          ffprobePath,
+          reserveBytes: decision.estimate.reserveBytes,
+          ...(softwareThreads === undefined ? {} : { softwareThreads }),
+          videoEncoder: decision.videoEncoder,
+          hdrVideoEncoder: decision.videoEncoder,
+          audioStreamIndexes: decision.streams.keptAudioStreamIndexes,
+          subtitleStreamIndexes: decision.streams.keptSubtitleStreamIndexes,
+          /*
+           * Most of this library is subtitled with a `.srt` beside the file
+           * rather than a stream inside it. Without this the server path
+           * publishes titles with no subtitles in a retained language while
+           * the offline CLI, running the same policy, publishes them with —
+           * the same title processed two ways giving two different answers.
+           */
+          sidecarSubtitles: await planRetainedSidecarSubtitles(
+            input.sourcePath,
+          ),
+          signal: encodeAbort.signal,
+          pauseController,
+          ...(epochTargetSeconds === undefined ? {} : { epochTargetSeconds }),
+          /*
+           * What to do about a source that cannot be read. Passed explicitly
+           * rather than left to the packager's own default so the job's
+           * history records the decision the deployment actually made.
+           */
+          sourceDamagePolicy,
+          stalls,
+          /*
+           * The packager asks these at the moment something fails, which is
+           * the only moment the answer distinguishes "the drive was pulled
+           * out" from "this encode is broken".
+           */
+          ...(storageAvailableFn
+            ? { storageAvailable: storageAvailableFn }
+            : {}),
+          ...(missingRootsFn ? { missingRoots: missingRootsFn } : {}),
+          onEvent: (event) => {
+            switch (event.type) {
+              case "build-stage": {
+                /*
+                 * The stages are shown apart rather than folded into one
+                 * number. A job that has finished encoding and is assembling
+                 * says so; it does not sit at a percentage that means neither
+                 * thing.
+                 */
+                /*
+                 * A phase boundary closes the previous phase's summary and
+                 * pins the bar to that phase's full weight, so the value the
+                 * next phase starts from is where the last one genuinely
+                 * ended rather than wherever its final sample landed.
+                 */
+                if (live.phase !== event.stage) {
+                  advance(live.phase, 1);
                   /*
-                   * The stages are shown apart rather than folded into one
-                   * number. A job that has finished encoding and is assembling
-                   * says so; it does not sit at a percentage that means neither
-                   * thing.
+                   * One line per finished phase, taken from what that phase
+                   * itself reported. Summaries, not samples: the page shows
+                   * "Video ✓ 3h 38m · 34 checkpoints" without holding any of
+                   * the thousands of measurements that produced it.
                    */
-                  live.phase = event.stage;
-                  const stage = STAGE_FOR_PHASE[event.stage];
-                  if (stage !== live.stage) {
-                    live.stage = stage;
-                    void store
-                      .update(job.id, {
-                        stage,
-                        stageProgress: 0,
-                        overallProgress: monotonicProgress(
-                          lastOverall,
-                          overallProgress(stage, 0),
-                        ),
-                      })
-                      .catch(() => undefined);
-                    void store
-                      .appendEvent({
-                        processingJobId: job.id,
-                        stage,
-                        message: PHASE_MESSAGES[event.stage],
-                      })
-                      .catch(() => undefined);
+                  switch (live.phase) {
+                    case "encoding":
+                      closePhase("encoding", {
+                        count: live.completedEpochs,
+                        bytes: checkpointBytesWritten,
+                      });
+                      break;
+                    case "audio":
+                      closePhase("audio", {
+                        count: live.audio?.tracks.length ?? 0,
+                        bytes: live.audio?.writtenBytes ?? 0,
+                        ...(live.audio?.reused ? { reused: true } : {}),
+                      });
+                      break;
+                    case "assembling":
+                      closePhase("assembling", {
+                        count: live.assembly?.renditions.length ?? 0,
+                        bytes: live.assembly?.completedBytes ?? 0,
+                      });
+                      break;
+                    case "validating":
+                      /*
+                       * Checks only. The phase's weight is a cost model, not
+                       * a byte count, so the history line carries the figure
+                       * that is literally true and nothing else.
+                       */
+                      closePhase("validating", {
+                        count: live.verification?.completedChecks ?? 0,
+                      });
+                      break;
+                    default:
+                      closePhase(live.phase, {});
                   }
-                  void publishLive();
-                  return;
+                  live.audio = undefined;
+                  live.assembly = undefined;
+                  live.verification = undefined;
+                  live.publish = undefined;
                 }
-
-                case "epoch-plan": {
-                  live.epochCount = event.epochCount;
-                  live.completedEpochs = event.reusedEpochs;
-                  live.protectedSeconds = event.protectedSeconds;
-                  live.encodedSeconds = event.protectedSeconds;
-                  live.sourceDurationSeconds = event.sourceDurationSeconds;
-                  // Seeded from what is already on disk, so "protected media"
-                  // counts the checkpoints a resumed job inherited rather than
-                  // only the ones this attempt produced.
-                  checkpointBytesWritten = event.checkpointBytes;
+                live.phase = event.stage;
+                advance(event.stage, 0);
+                const stage = STAGE_FOR_PHASE[event.stage];
+                if (stage !== live.stage) {
+                  live.stage = stage;
                   void store
                     .update(job.id, {
-                      checkpointBytes: event.checkpointBytes,
+                      stage,
+                      stageProgress: 0,
+                      overallProgress: monotonicProgress(
+                        lastOverall,
+                        overallProgress(stage, 0),
+                      ),
+                    })
+                    .catch(() => undefined);
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage,
+                      message: PHASE_MESSAGES[event.stage],
+                    })
+                    .catch(() => undefined);
+                }
+                publishLiveThrottled(true);
+                return;
+              }
+
+              case "epoch-plan": {
+                live.epochCount = event.epochCount;
+                live.completedEpochs = event.reusedEpochs;
+                live.protectedSeconds = event.protectedSeconds;
+                live.encodedSeconds = event.protectedSeconds;
+                live.sourceDurationSeconds = event.sourceDurationSeconds;
+                // Seeded from what is already on disk, so "protected media"
+                // counts the checkpoints a resumed job inherited rather than
+                // only the ones this attempt produced.
+                checkpointBytesWritten = event.checkpointBytes;
+                void store
+                  .update(job.id, {
+                    checkpointBytes: event.checkpointBytes,
+                    epochCount: event.epochCount,
+                    completedEpochs: event.reusedEpochs,
+                    protectedSeconds: event.protectedSeconds,
+                    encodedSeconds: event.protectedSeconds,
+                    sourceDurationSeconds: event.sourceDurationSeconds,
+                  })
+                  .catch(() => undefined);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    message:
+                      event.reusedEpochs > 0
+                        ? `Resuming from ${event.reusedEpochs} of ${event.epochCount} checkpoints; protected through ${formatClock(event.protectedSeconds)}.`
+                        : `Encoding in ${event.epochCount} checkpointed ${event.epochCount === 1 ? "epoch" : "epochs"} of about ${Math.round(event.epochTargetSeconds / 60)} minutes.`,
+                    detail: {
                       epochCount: event.epochCount,
-                      completedEpochs: event.reusedEpochs,
-                      protectedSeconds: event.protectedSeconds,
-                      encodedSeconds: event.protectedSeconds,
-                      sourceDurationSeconds: event.sourceDurationSeconds,
-                    })
-                    .catch(() => undefined);
+                      reusedEpochs: event.reusedEpochs,
+                      invalidated: event.invalidated,
+                    },
+                  })
+                  .catch(() => undefined);
+                for (const entry of event.invalidated) {
                   void store
                     .appendEvent({
                       processingJobId: job.id,
                       stage: "video",
-                      message:
-                        event.reusedEpochs > 0
-                          ? `Resuming from ${event.reusedEpochs} of ${event.epochCount} checkpoints; protected through ${formatClock(event.protectedSeconds)}.`
-                          : `Encoding in ${event.epochCount} checkpointed ${event.epochCount === 1 ? "epoch" : "epochs"} of about ${Math.round(event.epochTargetSeconds / 60)} minutes.`,
-                      detail: {
-                        epochCount: event.epochCount,
-                        reusedEpochs: event.reusedEpochs,
-                        invalidated: event.invalidated,
-                      },
+                      level: "warning",
+                      message: `Checkpoint ${entry.index + 1} could not be trusted (${entry.reason}) and will be built again.`,
                     })
                     .catch(() => undefined);
-                  for (const entry of event.invalidated) {
-                    void store
-                      .appendEvent({
-                        processingJobId: job.id,
-                        stage: "video",
-                        level: "warning",
-                        message: `Checkpoint ${entry.index + 1} could not be trusted (${entry.reason}) and will be built again.`,
-                      })
-                      .catch(() => undefined);
-                  }
-                  void publishLive();
-                  return;
                 }
+                void publishLive();
+                return;
+              }
 
-                case "epoch-start": {
-                  live.epochIndex = event.index;
-                  live.epochStartSeconds = event.startSeconds;
-                  live.epochEndSeconds = event.endSeconds;
-                  live.epochFraction = 0;
-                  // A new epoch is a new encoder run, so the throughput estimate
-                  // starts again rather than carrying the previous epoch's
-                  // startup samples into this one's ETA.
-                  speed = createSpeedEstimator();
-                  void store
-                    .update(job.id, {
+              case "epoch-start": {
+                live.epochIndex = event.index;
+                live.epochStartSeconds = event.startSeconds;
+                live.epochEndSeconds = event.endSeconds;
+                live.epochFraction = 0;
+                // A new epoch is a new encoder run, so the throughput estimate
+                // starts again rather than carrying the previous epoch's
+                // startup samples into this one's ETA. The stall watch starts
+                // again with it, so a new process is never born stalled.
+                speed = createSpeedEstimator();
+                mediaStall = createMediaStallDetector({
+                  stallAfterMs: stalls.softStallMs,
+                });
+                if (live.sourceIo?.state !== "replaced") {
+                  live.sourceIo = undefined;
+                }
+                void store
+                  .update(job.id, {
+                    epochIndex: event.index,
+                    epochStartSeconds: event.startSeconds,
+                    epochEndSeconds: event.endSeconds,
+                  })
+                  .catch(() => undefined);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    message: `${event.attempt > 1 ? "Retrying" : "Encoding"} epoch ${event.index + 1}/${event.epochCount} (${formatClock(event.startSeconds)}–${formatClock(event.endSeconds)})`,
+                  })
+                  .catch(() => undefined);
+                void publishLive();
+                return;
+              }
+
+              case "epoch-progress": {
+                live.epochIndex = event.index;
+                live.epochCount = event.epochCount;
+                live.epochStartSeconds = event.startSeconds;
+                live.epochEndSeconds = event.endSeconds;
+                live.protectedSeconds = event.protectedSeconds;
+                live.encodedSeconds = event.encodedSeconds;
+                live.sourceDurationSeconds = event.sourceDurationSeconds;
+                const window = event.endSeconds - event.startSeconds;
+                live.epochFraction =
+                  window > 0
+                    ? Math.min(
+                        1,
+                        Math.max(0, event.epochProcessedSeconds / window),
+                      )
+                    : 0;
+                const stall = mediaStall.sample(
+                  event.epochProcessedSeconds,
+                  Date.now(),
+                );
+                if (stall.stalled) {
+                  /*
+                   * Nothing is being produced. The position stays exactly
+                   * where the encoder left it — it is still true — and the
+                   * rate and the estimate go, because both describe a present
+                   * tense that is not happening. `confirmedAtMs` is not
+                   * refreshed either, which is what tells the page the same
+                   * thing from the other end of the stream.
+                   */
+                  live.fps = undefined;
+                  live.speed = undefined;
+                  live.smoothedSpeed = undefined;
+                  live.etaSeconds = undefined;
+                  /*
+                   * Said as little as the evidence supports. Media time
+                   * stopping is not yet a source problem; a read that has
+                   * actually failed says so through `source-io-retry`, and
+                   * only that promotes this to a diagnosis.
+                   */
+                  if (
+                    live.sourceIo === undefined ||
+                    live.sourceIo.state === "waiting"
+                  ) {
+                    live.sourceIo = {
+                      state: "waiting",
                       epochIndex: event.index,
-                      epochStartSeconds: event.startSeconds,
-                      epochEndSeconds: event.endSeconds,
-                    })
-                    .catch(() => undefined);
-                  void store
-                    .appendEvent({
-                      processingJobId: job.id,
-                      stage: "video",
-                      message: `${event.attempt > 1 ? "Retrying" : "Encoding"} epoch ${event.index + 1}/${event.epochCount} (${formatClock(event.startSeconds)}–${formatClock(event.endSeconds)})`,
-                    })
-                    .catch(() => undefined);
-                  void publishLive();
-                  return;
-                }
-
-                case "epoch-progress": {
-                  live.epochIndex = event.index;
-                  live.epochCount = event.epochCount;
-                  live.epochStartSeconds = event.startSeconds;
-                  live.epochEndSeconds = event.endSeconds;
-                  live.protectedSeconds = event.protectedSeconds;
-                  live.encodedSeconds = event.encodedSeconds;
-                  live.sourceDurationSeconds = event.sourceDurationSeconds;
-                  const window = event.endSeconds - event.startSeconds;
-                  live.epochFraction =
-                    window > 0
-                      ? Math.min(
-                          1,
-                          Math.max(0, event.epochProcessedSeconds / window),
-                        )
-                      : 0;
+                      startSeconds: event.startSeconds,
+                      endSeconds: event.endSeconds,
+                      advancedAtMs: stall.advancedAtMs,
+                    };
+                  }
+                } else {
+                  if (live.sourceIo?.state === "waiting") {
+                    // It was only slow. Nothing was wrong with the source.
+                    live.sourceIo = undefined;
+                  }
                   live.fps = event.fps;
                   live.speed = event.speed;
                   live.smoothedSpeed = speed.sample(event.speed);
@@ -828,269 +1252,633 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
                     sourceDurationSeconds: event.sourceDurationSeconds,
                     smoothedSpeed: live.smoothedSpeed,
                   });
-                  live.writtenBytes = event.writtenBytes;
+                }
+                live.writtenBytes = event.writtenBytes;
 
-                  const fraction =
-                    durationSeconds > 0
-                      ? Math.min(1, event.encodedSeconds / durationSeconds)
-                      : 0;
-                  lastOverall = monotonicProgress(
-                    lastOverall,
-                    overallProgress("video", fraction),
-                  );
-                  /*
-                   * The estimate is refined here rather than in the browser so
-                   * every reader — page, history, API — sees one number. It
-                   * starts as the plan and moves toward what the encoder is
-                   * actually producing as the evidence accumulates.
-                   */
-                  if (event.writtenBytes !== undefined) {
-                    lastEstimateBytes = estimateFinalOutputBytes({
-                      plannedBytes: decision.estimate.outputBytes,
-                      actualBytes: event.writtenBytes,
-                      progressFraction: fraction,
-                      processedSeconds: event.encodedSeconds,
-                      ...(lastEstimateBytes === undefined
-                        ? {}
-                        : { previousEstimate: lastEstimateBytes }),
-                    });
-                  }
-
-                  // The transient lane runs at the encoder's own rate; the
-                  // durable one is deliberately much slower — except that an
-                  // estimate appearing for the first time is a state change
-                  // rather than a sample, and a page that reconnects before the
-                  // next tick should already see it.
-                  void publishLive();
-                  const etaBecameKnown =
-                    (live.etaSeconds !== undefined) !== etaWasKnown;
-                  if (
-                    etaBecameKnown ||
-                    Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS
-                  ) {
-                    etaWasKnown = live.etaSeconds !== undefined;
-                    lastPersistMs = Date.now();
-                    void store
-                      .update(job.id, {
-                        stage: "video",
-                        stageProgress: fraction,
-                        overallProgress: lastOverall,
-                        encodedSeconds: event.encodedSeconds,
-                        protectedSeconds: event.protectedSeconds,
-                        epochIndex: event.index,
-                        ...(event.writtenBytes === undefined
-                          ? {}
-                          : { bytesProcessed: event.writtenBytes }),
-                        ...(lastEstimateBytes === undefined
-                          ? {}
-                          : { estimatedOutputBytes: lastEstimateBytes }),
-                        speed: event.speed ?? null,
-                        fps: event.fps ?? null,
-                        etaSeconds: live.etaSeconds ?? null,
-                      })
-                      .catch(() => undefined);
-                  }
-                  return;
+                const fraction =
+                  durationSeconds > 0
+                    ? Math.min(1, event.encodedSeconds / durationSeconds)
+                    : 0;
+                lastOverall = monotonicProgress(
+                  lastOverall,
+                  overallProgress("video", fraction),
+                );
+                /*
+                 * The same measured media time drives the global bar. Video
+                 * feedback is unchanged by any of this: it still comes from
+                 * FFmpeg's own out_time against the source duration, and the
+                 * bar is derived from it rather than the other way round.
+                 */
+                advance("encoding", fraction);
+                /*
+                 * The estimate is refined here rather than in the browser so
+                 * every reader — page, history, API — sees one number. It
+                 * starts as the plan and moves toward what the encoder is
+                 * actually producing as the evidence accumulates.
+                 */
+                if (event.writtenBytes !== undefined) {
+                  lastEstimateBytes = estimateFinalOutputBytes({
+                    plannedBytes: decision.estimate.outputBytes,
+                    actualBytes: event.writtenBytes,
+                    progressFraction: fraction,
+                    processedSeconds: event.encodedSeconds,
+                    ...(lastEstimateBytes === undefined
+                      ? {}
+                      : { previousEstimate: lastEstimateBytes }),
+                  });
                 }
 
-                case "epoch-complete": {
-                  live.completedEpochs = Math.max(
-                    live.completedEpochs,
-                    event.index + 1,
-                  );
-                  live.protectedSeconds = event.protectedSeconds;
-                  live.encodedSeconds = Math.max(
-                    live.encodedSeconds,
-                    event.protectedSeconds,
-                  );
-                  checkpointBytesWritten += event.bytes;
+                // The transient lane runs at the encoder's own rate; the
+                // durable one is deliberately much slower — except that an
+                // estimate appearing for the first time is a state change
+                // rather than a sample, and a page that reconnects before the
+                // next tick should already see it.
+                publishLiveThrottled(false, !stall.stalled);
+                const etaBecameKnown =
+                  (live.etaSeconds !== undefined) !== etaWasKnown;
+                if (
+                  etaBecameKnown ||
+                  Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS
+                ) {
+                  etaWasKnown = live.etaSeconds !== undefined;
+                  lastPersistMs = Date.now();
                   void store
                     .update(job.id, {
-                      completedEpochs: live.completedEpochs,
+                      stage: "video",
+                      stageProgress: fraction,
+                      /*
+                       * The durable row now carries the cumulative bar rather
+                       * than the stage-weighted guess: it is what the page
+                       * draws before the first live sample arrives, and the
+                       * two must not disagree.
+                       */
+                      overallProgress: Math.max(lastOverall, lastGlobal),
+                      encodedSeconds: event.encodedSeconds,
                       protectedSeconds: event.protectedSeconds,
-                      encodedSeconds: live.encodedSeconds,
-                      checkpointBytes: checkpointBytesWritten,
+                      epochIndex: event.index,
+                      ...(event.writtenBytes === undefined
+                        ? {}
+                        : { bytesProcessed: event.writtenBytes }),
+                      ...(lastEstimateBytes === undefined
+                        ? {}
+                        : { estimatedOutputBytes: lastEstimateBytes }),
+                      speed: event.speed ?? null,
+                      fps: event.fps ?? null,
+                      etaSeconds: live.etaSeconds ?? null,
                     })
                     .catch(() => undefined);
-                  if (event.bytes > 0) {
-                    void store
-                      .appendEvent({
-                        processingJobId: job.id,
-                        stage: "video",
-                        message: `Checkpoint saved — protected through ${formatClock(event.protectedSeconds)} (${event.index + 1}/${event.epochCount})`,
-                      })
-                      .catch(() => undefined);
-                  }
-                  void publishLive();
-                  return;
                 }
-
-                case "source-io-retry": {
-                  void store
-                    .appendEvent({
-                      processingJobId: job.id,
-                      stage: "video",
-                      level: "warning",
-                      message: `Epoch ${event.index + 1} could not be read (attempt ${event.attempt} of ${event.maxAttempts}); the volume was re-checked and is still available, so the read is being retried.`,
-                      detail: {
-                        epochIndex: event.index,
-                        attempt: event.attempt,
-                        maxAttempts: event.maxAttempts,
-                        ...(event.sourceReadable === undefined
-                          ? {}
-                          : { sourceReadable: event.sourceReadable }),
-                        error: event.detail,
-                      },
-                    })
-                    .catch(() => undefined);
-                  return;
-                }
-
-                case "epoch-invalid": {
-                  void store
-                    .appendEvent({
-                      processingJobId: job.id,
-                      stage: "video",
-                      level: "warning",
-                      message: `Epoch ${event.index + 1} did not pass its checks and will be built again: ${event.reason}`,
-                    })
-                    .catch(() => undefined);
-                  return;
-                }
-
-                default:
-                  return;
+                return;
               }
-            },
-          },
-        );
-      } catch (error) {
-        /*
-         * A throw from the packager used to escape this function entirely, so
-         * nothing was written to the job's own diagnostics and the row was
-         * back-filled later with a generic worker-stopped message. The reason
-         * the encode never started — a held rendition lock, a vanished drive —
-         * is exactly what a person opening the details is looking for, so it
-         * is recorded here where it is still known.
-         */
-        return fail(
-          PROCESSING_ERROR_CODES.encodeFailed,
-          error instanceof Error
-            ? error.message
-            : "The encoder stopped before the package was built.",
-          error instanceof RenditionLockHeldError,
-        );
-      } finally {
-        clearInterval(cancellationWatch);
-        input.signal?.removeEventListener("abort", forwardAbort);
-      }
 
+              case "epoch-complete": {
+                live.completedEpochs = Math.max(
+                  live.completedEpochs,
+                  event.index + 1,
+                );
+                live.protectedSeconds = event.protectedSeconds;
+                live.encodedSeconds = Math.max(
+                  live.encodedSeconds,
+                  event.protectedSeconds,
+                );
+                checkpointBytesWritten += event.bytes;
+                void store
+                  .update(job.id, {
+                    completedEpochs: live.completedEpochs,
+                    protectedSeconds: event.protectedSeconds,
+                    encodedSeconds: live.encodedSeconds,
+                    checkpointBytes: checkpointBytesWritten,
+                  })
+                  .catch(() => undefined);
+                if (event.bytes > 0) {
+                  void store
+                    .appendEvent({
+                      processingJobId: job.id,
+                      stage: "video",
+                      message: `Checkpoint saved — protected through ${formatClock(event.protectedSeconds)} (${event.index + 1}/${event.epochCount})`,
+                    })
+                    .catch(() => undefined);
+                }
+                publishLiveThrottled(true);
+                return;
+              }
+
+              case "source-io-retry": {
+                /*
+                 * A read has genuinely failed, which is more than the stall
+                 * watch could tell. The page stops saying "waiting for source
+                 * data" and says what is actually wrong.
+                 */
+                live.sourceIo = {
+                  state: "suspected",
+                  epochIndex: event.index,
+                  startSeconds: live.epochStartSeconds,
+                  endSeconds: live.epochEndSeconds,
+                  attempt: event.attempt,
+                  maxAttempts: event.maxAttempts,
+                };
+                live.speed = undefined;
+                live.smoothedSpeed = undefined;
+                live.etaSeconds = undefined;
+                publishLiveThrottled(true, false);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `Epoch ${event.index + 1} could not be read (attempt ${event.attempt} of ${event.maxAttempts}); the volume was re-checked and is still available, so the read is being retried.`,
+                    detail: {
+                      epochIndex: event.index,
+                      attempt: event.attempt,
+                      maxAttempts: event.maxAttempts,
+                      ...(event.sourceReadable === undefined
+                        ? {}
+                        : { sourceReadable: event.sourceReadable }),
+                      error: event.detail,
+                    },
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              case "source-stall-abort": {
+                /*
+                 * The decision, announced as it is taken. What follows may
+                 * take tens of seconds — a process wedged in an
+                 * uninterruptible read cannot be killed until the kernel
+                 * returns control — and a page that went quiet for them would
+                 * look like a page that had crashed.
+                 */
+                live.sourceIo = {
+                  state: "aborting",
+                  epochIndex: event.index,
+                  startSeconds: event.startSeconds,
+                  endSeconds: event.endSeconds,
+                  lastMediaSeconds: event.lastMediaSeconds,
+                };
+                live.speed = undefined;
+                live.fps = undefined;
+                live.smoothedSpeed = undefined;
+                live.etaSeconds = undefined;
+                publishLiveThrottled(true, false);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `Epoch ${event.index + 1} produced no media for ${Math.round(
+                      event.stalledForMs / 1000,
+                    )}s after reaching ${formatClock(
+                      event.startSeconds + event.lastMediaSeconds,
+                    )}; stopping the encoder rather than letting it keep reading.`,
+                    detail: {
+                      epochIndex: event.index,
+                      lastMediaSeconds: event.lastMediaSeconds,
+                      stalledForMs: event.stalledForMs,
+                    },
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              case "source-damage-confirmed": {
+                live.sourceIo = {
+                  state: "confirmed",
+                  epochIndex: event.index,
+                  startSeconds: event.damage.sourceStartSeconds,
+                  endSeconds: event.damage.sourceEndSeconds,
+                  attempt: event.damage.sourceRetryCount,
+                };
+                publishLiveThrottled(true, false);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `The source could not be read for ${describeInterval(
+                      damageIntervalOf(event.damage),
+                    )} after ${event.damage.sourceRetryCount} attempts while its volume stayed healthy.${
+                      event.policy === "replace-epoch"
+                        ? " That interval will be replaced with black picture and silence of the same length."
+                        : " Processing will stop; every completed checkpoint is kept."
+                    }`,
+                    detail: {
+                      ...(event.damage as unknown as Record<string, unknown>),
+                      policy: event.policy,
+                    },
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              case "epoch-salvage-start": {
+                live.sourceIo = {
+                  state: "replacing",
+                  epochIndex: event.index,
+                  startSeconds: event.startSeconds,
+                  endSeconds: event.endSeconds,
+                };
+                // A replacement is real work with real progress, so the stall
+                // watch starts again rather than inheriting a blocked read.
+                mediaStall = createMediaStallDetector({
+                  stallAfterMs: stalls.softStallMs,
+                });
+                speed = createSpeedEstimator();
+                publishLiveThrottled(true);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `Replacing ${formatClock(event.startSeconds)}–${formatClock(
+                      event.endSeconds,
+                    )} with ${Math.round(event.expectedDurationSeconds)}s of black picture, because the source could not be read there.`,
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              case "epoch-salvaged": {
+                sourceDamage.push(event.damage);
+                live.sourceIo = {
+                  state: "replaced",
+                  epochIndex: event.index,
+                  startSeconds: event.damage.sourceStartSeconds,
+                  endSeconds: event.damage.sourceEndSeconds,
+                  resumeSeconds: event.damage.sourceEndSeconds,
+                };
+                publishLiveThrottled(true);
+                void store
+                  .update(job.id, {
+                    sourceDamage: sourceDamage as unknown as Record<
+                      string,
+                      unknown
+                    >[],
+                  })
+                  .catch(() => undefined);
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `Replaced ${describeInterval(
+                      damageIntervalOf(event.damage),
+                    )}; encoding continues from ${formatClock(
+                      event.damage.sourceEndSeconds,
+                    )}.`,
+                    detail: event.damage as unknown as Record<string, unknown>,
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              case "epoch-invalid": {
+                void store
+                  .appendEvent({
+                    processingJobId: job.id,
+                    stage: "video",
+                    level: "warning",
+                    message: `Epoch ${event.index + 1} did not pass its checks and will be built again: ${event.reason}`,
+                  })
+                  .catch(() => undefined);
+                return;
+              }
+
+              /*
+               * The four phases that used to report only their own name.
+               *
+               * Each one carries a fraction its own producer measured — media
+               * time for audio, bytes for assembly, weighted checks for
+               * verification, steps for publication — and each drives the
+               * global bar through the same `advance` the encoder uses. The
+               * durable row is written at the slow interval; the sample goes
+               * out at four a second.
+               */
+              case "audio-progress": {
+                /*
+                 * A phase's first measurement is a state change, not a
+                 * sample: it is what puts the panel on screen. It goes out
+                 * immediately rather than waiting for the throttle's next
+                 * slot, as does the last one.
+                 */
+                const first = live.audio === undefined;
+                live.audio = event.progress;
+                const global = advance("audio", event.progress.fraction);
+                publishLiveThrottled(first || event.progress.fraction >= 1);
+                if (Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS) {
+                  lastPersistMs = Date.now();
+                  void store
+                    .update(job.id, {
+                      stageProgress: event.progress.fraction,
+                      overallProgress: Math.max(lastOverall, global),
+                    })
+                    .catch(() => undefined);
+                }
+                return;
+              }
+
+              case "assembly-progress": {
+                const first = live.assembly === undefined;
+                live.assembly = event.progress;
+                const global = advance("assembling", event.progress.fraction);
+                publishLiveThrottled(first || event.progress.fraction >= 1);
+                if (Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS) {
+                  lastPersistMs = Date.now();
+                  void store
+                    .update(job.id, {
+                      stageProgress: event.progress.fraction,
+                      overallProgress: Math.max(lastOverall, global),
+                    })
+                    .catch(() => undefined);
+                }
+                return;
+              }
+
+              case "verification-progress": {
+                const first = live.verification === undefined;
+                live.verification = event.progress;
+                const global = advance("validating", event.progress.fraction);
+                publishLiveThrottled(first || event.progress.ok !== undefined);
+                if (Date.now() - lastPersistMs >= PERSIST_INTERVAL_MS) {
+                  lastPersistMs = Date.now();
+                  void store
+                    .update(job.id, {
+                      stageProgress: event.progress.fraction,
+                      overallProgress: Math.max(lastOverall, global),
+                    })
+                    .catch(() => undefined);
+                }
+                return;
+              }
+
+              case "publish-progress": {
+                /*
+                 * Publication arrives in two bursts from two producers — the
+                 * title publisher's own steps, then the packager's verify and
+                 * cleanup — so the steps are merged rather than replaced, and
+                 * the fraction is taken over the union.
+                 */
+                const merged = [
+                  ...(live.publish?.steps ?? []).filter(
+                    (step) =>
+                      !event.progress.steps.some(
+                        (incoming) => incoming.id === step.id,
+                      ),
+                  ),
+                  ...event.progress.steps,
+                ];
+                const completed = merged.filter(
+                  (step) => step.state === "complete",
+                ).length;
+                live.publish = {
+                  ...event.progress,
+                  steps: merged,
+                  fraction: merged.length > 0 ? completed / merged.length : 0,
+                };
+                advance("publishing", live.publish.fraction);
+                publishLiveThrottled(true);
+                return;
+              }
+
+              default:
+                return;
+            }
+          },
+        },
+      );
+    } catch (error) {
       /*
-       * The packager now says *why* it stopped. A cancellation and a vanished
-       * volume both end the encoder with an abort, and only one of them is a
-       * reason to mark the job cancelled.
+       * A throw from the packager used to escape this function entirely, so
+       * nothing was written to the job's own diagnostics and the row was
+       * back-filled later with a generic worker-stopped message. The reason
+       * the encode never started — a held rendition lock, a vanished drive —
+       * is exactly what a person opening the details is looking for, so it
+       * is recorded here where it is still known.
        */
-      if (result.interruption === "storage") {
-        return finishStorageInterrupted(result.error);
-      }
-      if (storageInterrupted && result.status === "interrupted") {
+      return fail(
+        PROCESSING_ERROR_CODES.encodeFailed,
+        error instanceof Error
+          ? error.message
+          : "The encoder stopped before the package was built.",
+        error instanceof RenditionLockHeldError,
+      );
+    } finally {
+      clearInterval(cancellationWatch);
+      clearInterval(heartbeat);
+      input.signal?.removeEventListener("abort", forwardAbort);
+    }
+
+    /*
+     * The packager now says *why* it stopped. A cancellation and a vanished
+     * volume both end the encoder with an abort, and only one of them is a
+     * reason to mark the job cancelled.
+     */
+    if (result.interruption === "storage") {
+      return finishStorageInterrupted(result.error);
+    }
+    if (storageInterrupted && result.status === "interrupted") {
+      return finishStorageInterrupted();
+    }
+    if (await cancelled()) return finishCancelled();
+    if (result.status === "interrupted") {
+      return storageInterrupted
+        ? finishStorageInterrupted()
+        : finishCancelled();
+    }
+
+    // ------------------------------------------------------- validating
+    await enterStage(job, "validating", "Validating the package.");
+    if (result.status === "validation-failed") {
+      await store.update(job.id, {
+        validation: { ok: false, issues: result.issues ?? [] },
+      });
+      /*
+       * The verdict alone is useless to whoever has to fix it. The package is
+       * discarded on a validation failure, so this message is the only
+       * surviving evidence of what was wrong with it.
+       */
+      return fail(
+        PROCESSING_ERROR_CODES.validationFailed,
+        result.error ?? "The package failed validation and was not published.",
+      );
+    }
+    if (result.status === "failed" || result.status === "incompatible") {
+      // The storage is asked directly rather than inferred from the error.
+      if (storageAvailableFn && !(await storageAvailableFn())) {
         return finishStorageInterrupted();
       }
-      if (await cancelled()) return finishCancelled();
-      if (result.status === "interrupted") {
-        return storageInterrupted
-          ? finishStorageInterrupted()
-          : finishCancelled();
+      /*
+       * A failure that nevertheless identified an unreadable interval keeps
+       * the finding. It is what an operator needs in order to choose between
+       * re-ripping the disc and turning salvage on for this library.
+       */
+      if (result.sourceDamage && result.sourceDamage.length > 0) {
+        await store
+          .update(job.id, {
+            sourceDamage: result.sourceDamage as unknown as Record<
+              string,
+              unknown
+            >[],
+          })
+          .catch(() => undefined);
       }
+      /*
+       * The code says what happened, and the code is what decides whether the
+       * queue ever tries this again. A source with an unreadable region and
+       * an encoder that stopped producing are both terminal for this attempt
+       * and both worth a person's attention; neither is worth another pass
+       * over the same sectors.
+       */
+      const code =
+        result.failureKind === "source-io"
+          ? PROCESSING_ERROR_CODES.sourceUnreadable
+          : result.failureKind === "media-progress-timeout"
+            ? PROCESSING_ERROR_CODES.mediaProgressTimeout
+            : PROCESSING_ERROR_CODES.encodeFailed;
+      return fail(
+        code,
+        result.error ?? "The package could not be produced.",
+        failureIsWorthRequeuing(result.failureKind),
+      );
+    }
+    if (result.status === "deferred-for-storage") {
+      return fail(
+        PROCESSING_ERROR_CODES.insufficientSpace,
+        "Processing stopped because the output volume ran short of space.",
+      );
+    }
 
-      // ------------------------------------------------------- validating
-      await enterStage(job, "validating", "Validating the package.");
-      if (result.status === "validation-failed") {
-        await store.update(job.id, {
-          validation: { ok: false, issues: result.issues ?? [] },
-        });
-        /*
-         * The verdict alone is useless to whoever has to fix it. The package is
-         * discarded on a validation failure, so this message is the only
-         * surviving evidence of what was wrong with it.
-         */
-        return fail(
-          PROCESSING_ERROR_CODES.validationFailed,
-          result.error ??
-            "The package failed validation and was not published.",
-        );
-      }
-      if (result.status === "failed" || result.status === "incompatible") {
-        // The storage is asked directly rather than inferred from the error.
-        if (storageAvailableFn && !(await storageAvailableFn())) {
-          return finishStorageInterrupted();
-        }
-        return fail(
-          PROCESSING_ERROR_CODES.encodeFailed,
-          result.error ?? "The package could not be produced.",
-        );
-      }
-      if (result.status === "deferred-for-storage") {
-        return fail(
-          PROCESSING_ERROR_CODES.insufficientSpace,
-          "Processing stopped because the output volume ran short of space.",
-        );
-      }
+    /*
+     * The packager returns only after it has published, so by the time this
+     * line runs every phase has finished. The bar is put where that leaves
+     * it — just short of the end — and reaches the end below, with the row
+     * that says the job succeeded.
+     */
+    await store.update(job.id, {
+      validation: { ok: true, issues: [] },
+      stageProgress: 1,
+      overallProgress: globalProgress(weights, "publishing", 1),
+    });
 
-      await store.update(job.id, {
-        validation: { ok: true, issues: [] },
-        stageProgress: 1,
-        overallProgress: overallProgress("validating", 1),
-      });
+    // -------------------------------------------------------- publishing
+    await enterStage(job, "publishing", "Publishing the verified package.");
+    await clearLiveProgress(job.id);
+    /*
+     * A salvaged title is published and is not a clean encode. The row keeps
+     * `succeeded` — it did succeed, there is a playable package on disk — and
+     * carries the structured record of what was substituted, which is what
+     * lets every reader tell the two apart without a new state to teach the
+     * queue, the history and the timeline about.
+     */
+    const damage = result.sourceDamage ?? sourceDamage;
+    const damageWarnings = damage.map(
+      (record) =>
+        `${describeInterval(damageIntervalOf(record))} could not be read from the source and was replaced with black picture${
+          record.audioReplaced ? " and silence" : ""
+        }.`,
+    );
 
-      // -------------------------------------------------------- publishing
-      await enterStage(job, "publishing", "Publishing the verified package.");
-      await clearLiveProgress(job.id);
-      await store.update(job.id, {
-        state: "succeeded",
-        stage: "complete",
-        stageProgress: 1,
-        overallProgress: 1,
-        ...(result.versionDirectory
-          ? { publishedVersion: result.versionDirectory }
-          : {}),
-        /*
-         * On success the size is no longer predicted, it is known. Actual and
-         * estimated converge so a finished row cannot show two different
-         * numbers for the same thing.
-         */
-        ...(result.jobOutputBytes === undefined
-          ? {}
-          : {
-              bytesProcessed: result.jobOutputBytes,
-              estimatedOutputBytes: result.jobOutputBytes,
-            }),
-        ...(result.storageBytes === undefined
-          ? {}
-          : { outputBytes: result.storageBytes }),
-        speed: null,
-        fps: null,
-        etaSeconds: 0,
-        finishedAt: new Date(),
-      });
-      registryItem.adaptiveStatus = "ready";
-      registryItem.adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION;
-      delete registryItem.adaptiveLastError;
-      await saveRenditionRegistry(registryPath, registry);
+    await store.update(job.id, {
+      state: "succeeded",
+      stage: "complete",
+      stageProgress: 1,
+      overallProgress: 1,
+      ...(damage.length > 0
+        ? {
+            sourceDamage: damage as unknown as Record<string, unknown>[],
+            warnings: [...job.warnings, ...damageWarnings],
+          }
+        : {}),
+      ...(result.versionDirectory
+        ? { publishedVersion: result.versionDirectory }
+        : {}),
+      /*
+       * On success the size is no longer predicted, it is known. Actual and
+       * estimated converge so a finished row cannot show two different
+       * numbers for the same thing.
+       */
+      ...(result.jobOutputBytes === undefined
+        ? {}
+        : {
+            bytesProcessed: result.jobOutputBytes,
+            estimatedOutputBytes: result.jobOutputBytes,
+          }),
+      ...(result.storageBytes === undefined
+        ? {}
+        : { outputBytes: result.storageBytes }),
+      speed: null,
+      fps: null,
+      etaSeconds: 0,
+      finishedAt: new Date(),
+    });
+    registryItem.adaptiveStatus = "ready";
+    registryItem.adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION;
+    delete registryItem.adaptiveLastError;
+    await saveRenditionRegistry(registryPath, registry);
 
-      await store.appendEvent({
-        processingJobId: job.id,
-        stage: "complete",
-        message:
-          result.status === "already-valid"
-            ? "A current package already existed; nothing needed rebuilding."
+    await store.appendEvent({
+      processingJobId: job.id,
+      stage: "complete",
+      level: damage.length > 0 ? "warning" : "info",
+      message:
+        result.status === "already-valid"
+          ? "A current package already existed; nothing needed rebuilding."
+          : damage.length > 0
+            ? `Published with source damage. ${damageWarnings.join(" ")}`
             : "Published the verified package.",
-        ...(result.versionDirectory
-          ? { detail: { versionDirectory: result.versionDirectory } }
-          : {}),
-      });
+      ...(result.versionDirectory
+        ? { detail: { versionDirectory: result.versionDirectory } }
+        : {}),
+    });
 
-      return { status: "succeeded", decision, packageResult: result };
+    return { status: "succeeded", decision, packageResult: result };
+  }
+
+  return {
+    async run(input: RunProcessingJobInput): Promise<RunProcessingJobOutcome> {
+      try {
+        return await attempt(input);
+      } catch (error) {
+        /*
+         * Nothing here is allowed to become a queue-level retry on its own.
+         *
+         * The one condition that genuinely deserves another pass is another
+         * attempt holding the rendition lock, and it says so by its type.
+         * Everything else — a dropped database connection, a bug, an
+         * unhandled rejection from a write — leaves a job row an operator can
+         * see and retry deliberately. Requeuing automatically is what sent a
+         * second FFmpeg at a failing platter while the first was still being
+         * reaped.
+         */
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Processing stopped unexpectedly.";
+        const retryable = error instanceof RenditionLockHeldError;
+        await store
+          .update(input.processingJobId, {
+            state: "failed",
+            errorCode: PROCESSING_ERROR_CODES.encodeFailed,
+            errorMessage: message,
+            finishedAt: new Date(),
+          })
+          .catch(() => undefined);
+        await store
+          .appendEvent({
+            processingJobId: input.processingJobId,
+            stage: "waiting",
+            level: "error",
+            message,
+          })
+          .catch(() => undefined);
+        await clearLiveProgress(input.processingJobId).catch(() => undefined);
+        return {
+          status: "failed",
+          errorCode: PROCESSING_ERROR_CODES.encodeFailed,
+          errorMessage: message,
+          ...(retryable ? { retryable: true } : {}),
+        };
+      }
     },
   };
 }

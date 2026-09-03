@@ -92,6 +92,14 @@ import {
 } from "./publishTitle";
 import { validateAdaptivePackage } from "./validation";
 import {
+  createByteRateEstimator,
+  etaFromRate,
+  safeFraction,
+  VERIFICATION_STALE_MS,
+  type AssemblyPhaseProgress,
+  type PublishPhaseProgress,
+} from "./phaseProgress";
+import {
   defaultSoftwareEncoderThreads,
   defaultSoftwareFilterThreads,
 } from "../../server/cpuTopology";
@@ -112,15 +120,30 @@ import {
   EPOCH_TIMELINE_POLICY_VERSION,
 } from "./epochs/policy";
 import { buildEpochPlan, nominalEpochBoundaries } from "./epochs/plan";
-import {
-  probeSourceFrameTimeline,
-  timestampSeconds,
-} from "./epochs/sourceTimeline";
-import { runEpochBuild } from "./epochs/engine";
+import { probeSourceFrameTimeline } from "./epochs/sourceTimeline";
+import { runEpochBuild, type SourceProbeWindow } from "./epochs/engine";
 import { ensureAudioStage } from "./epochs/audioStage";
 import { assembleVideoRenditions, copyStageDirectory } from "./epochs/assemble";
 import { epochProgress } from "./epochs/progress";
-import { SourceReadError, StorageInterruptedError } from "./epochs/failure";
+import {
+  AudioStageError,
+  MediaProgressTimeoutError,
+  SourceReadError,
+  StorageInterruptedError,
+  type ProcessingFailureKind,
+} from "./epochs/failure";
+import { stallThresholds, type StallThresholds } from "./epochs/stallPolicy";
+import type { SourceProbeOutcome } from "./epochs/sourceIo";
+import { probeSourceRangeReadable } from "./epochs/sourceReadProbe";
+import {
+  damageIntervalOf,
+  describeInterval,
+  mergeIntervals,
+  sourceDamagePolicyFromEnvironment,
+  type SourceDamagePolicy,
+  type SourceDamageRecord,
+  type SourceInterval,
+} from "./epochs/salvage";
 
 /**
  * Whether a title still holds every file its manifest names.
@@ -225,6 +248,24 @@ export interface AdaptivePackageResult {
    * report the size of the seven it reused.
    */
   jobOutputBytes?: number;
+  /**
+   * Intervals that were replaced because the source could not supply them.
+   *
+   * Present, and non-empty, only for a salvaged encode. A `ready` result
+   * carrying these is not the same thing as a clean one, and every reader —
+   * the job record, the API, the page — is expected to say so.
+   */
+  sourceDamage?: SourceDamageRecord[];
+  /**
+   * What kind of failure this was, for a caller that must not parse prose.
+   *
+   * The queue's decision — requeue this, or stop — turns on the difference
+   * between "a lock was held" and "this region of the disk will never read",
+   * and a job that guessed from an error message is a job that eventually
+   * guesses wrong. It guessed wrong once already, and re-attacked a damaged
+   * platter for its trouble.
+   */
+  failureKind?: ProcessingFailureKind;
 }
 
 export interface AdaptivePackageRequest {
@@ -303,9 +344,37 @@ export interface AdaptivePackagerOptions {
       onProgress?: (
         progress: ReturnType<typeof parseFfmpegProgressFields>,
       ) => void;
+      /** FFmpeg's own words, so a clean exit is not mistaken for a clean read. */
+      onStderr?: (chunk: string) => void;
       pauseController?: PauseController;
     },
   ) => Promise<void>;
+  /**
+   * What to do when part of the source cannot be read at all.
+   *
+   * Defaults to the environment's policy, which itself defaults to `fail` —
+   * the behaviour that existed before salvage did. `replace-epoch` substitutes
+   * black picture and silence of exactly the planned length for an unreadable
+   * interval and publishes the rest of the title, with the substitution
+   * recorded as a warning that follows the job to the page.
+   */
+  sourceDamagePolicy?: SourceDamagePolicy;
+  /**
+   * How long an encoder may produce nothing before it is stopped.
+   *
+   * Read from the deployment's policy by default. Injected by tests, which
+   * cannot spend half a minute proving that a watchdog fires.
+   */
+  stalls?: StallThresholds;
+  /**
+   * The readability check, when something other than a real read is wanted.
+   *
+   * Injected by tests so the window the engine asks about can be observed
+   * without a disk that fails on demand. Production always uses the real one.
+   */
+  verifySourceReadable?: (
+    window: SourceProbeWindow,
+  ) => Promise<SourceProbeOutcome>;
   onEvent?: RenditionProgressReporter;
   verifySourceFingerprint?: boolean;
   signal?: AbortSignal;
@@ -543,6 +612,9 @@ export async function packageAdaptiveRendition(
     missingRoots,
     driveSpaceProvider = () => getDriveSpace(paths.mediaRoot),
     runEncoder = runFfmpegProcess,
+    sourceDamagePolicy = sourceDamagePolicyFromEnvironment(),
+    stalls = stallThresholds(),
+    verifySourceReadable,
     onEvent,
     verifySourceFingerprint = true,
     signal,
@@ -882,6 +954,9 @@ export async function packageAdaptiveRendition(
       inheritedBytes + completedEpochBytes + currentEpochBytes;
 
     let epochBuild: Awaited<ReturnType<typeof runEpochBuild>> | undefined;
+    /** Intervals replaced because the source could not supply them. */
+    let sourceDamage: SourceDamageRecord[] = [];
+    let damagedIntervals: SourceInterval[] = [];
     try {
       onEvent?.({
         type: "build-stage",
@@ -917,24 +992,38 @@ export async function packageAdaptiveRendition(
         ...(storageAvailable ? { storageAvailable } : {}),
         ...(missingRoots ? { missingRoots } : {}),
         ...(sourceIoBackoffMs ? { sourceIoBackoffMs } : {}),
+        sourceDamagePolicy,
+        stalls,
         /*
-         * The bounded readability re-check between I/O retries. Reading the
-         * epoch's own window with ffprobe is the cheapest honest answer to
-         * "can this part of the file still be read at all", and it uses the
-         * same prober the planner does, so a source that is failing shows up
-         * the same way in both places.
+         * The bounded readability re-check, asked about the stretch the encoder
+         * could not get through rather than about the epoch as a whole. That
+         * distinction is the whole value of the answer: everything before the
+         * point media time froze has just been read successfully, so a probe
+         * aimed there reports "readable" on a file with a hole in it — which is
+         * exactly how the real damaged title came to be diagnosed as an encoder
+         * fault and failed instead of salvaged.
+         *
+         * Bounded twice over, because this question is asked *of a disk that is
+         * already suspect*: a wall clock the answer cannot outlive, and a
+         * process group that is signalled and then killed rather than left
+         * behind. A probe that does not answer inside its window is not an
+         * inconclusive result — it is the same evidence a second time, and it
+         * is reported as such rather than as a healthy source.
          */
-        verifySourceReadable: async (epochIndex: number) => {
-          const entry = plan.epochs[epochIndex];
-          if (!entry) return false;
-          const timeline = await probeSourceFrameTimeline({
-            sourcePath: request.sourcePath,
-            boundaries: [timestampSeconds(entry.start)],
-            ffprobePath,
-            ...(signal ? { signal } : {}),
-          });
-          return timeline !== null && timeline.ticks.length > 0;
-        },
+        verifySourceReadable: async (
+          window: SourceProbeWindow,
+        ): Promise<SourceProbeOutcome> =>
+          verifySourceReadable
+            ? verifySourceReadable(window)
+            : probeSourceRangeReadable({
+                sourcePath: request.sourcePath,
+                fromSeconds: window.fromSeconds,
+                toSeconds: window.toSeconds,
+                sourceDurationSeconds: probe.durationSeconds,
+                ffprobePath,
+                timeoutMs: stalls.sourceProbeTimeoutMs,
+                ...(signal ? { signal } : {}),
+              }),
         onEvent: (event) => {
           if (!onEvent) return;
           switch (event.type) {
@@ -998,6 +1087,7 @@ export async function packageAdaptiveRendition(
                 ...(event.fps === undefined ? {} : { fps: event.fps }),
                 ...(event.speed === undefined ? {} : { speed: event.speed }),
                 writtenBytes: reportBytes(),
+                ...(event.placeholder ? { placeholder: true } : {}),
               });
               /*
                * The legacy shape is still emitted so the CLI renderer and any
@@ -1038,7 +1128,56 @@ export async function packageAdaptiveRendition(
                 ...(event.sourceReadable === undefined
                   ? {}
                   : { sourceReadable: event.sourceReadable }),
+                ...(event.verdict === undefined
+                  ? {}
+                  : { verdict: event.verdict }),
+                ...(event.because === undefined
+                  ? {}
+                  : { because: event.because }),
                 detail: event.detail,
+              });
+              break;
+            case "source-stall-abort":
+              onEvent({
+                type: "source-stall-abort",
+                mediaId: request.mediaId,
+                index: event.index,
+                startSeconds: event.startSeconds,
+                endSeconds: event.endSeconds,
+                lastMediaSeconds: event.lastMediaSeconds,
+                stalledForMs: event.stalledForMs,
+              });
+              break;
+            case "source-damage-confirmed":
+              onEvent({
+                type: "source-damage-confirmed",
+                mediaId: request.mediaId,
+                index: event.index,
+                damage: event.damage,
+                policy: event.policy,
+              });
+              break;
+            case "epoch-salvage-start":
+              currentEpochBytes = 0;
+              onEvent({
+                type: "epoch-salvage-start",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                startSeconds: event.startSeconds,
+                endSeconds: event.endSeconds,
+                expectedDurationSeconds: event.expectedDurationSeconds,
+              });
+              break;
+            case "epoch-salvaged":
+              onEvent({
+                type: "epoch-salvaged",
+                mediaId: request.mediaId,
+                index: event.index,
+                epochCount: event.epochCount,
+                protectedSeconds: event.protectedSeconds,
+                bytes: event.bytes,
+                damage: event.damage,
               });
               break;
             case "epoch-invalid":
@@ -1059,12 +1198,46 @@ export async function packageAdaptiveRendition(
        * keeping it separate is what stops a soundtrack failure from touching a
        * single durable video epoch.
        */
+      /*
+       * Where the source could not be read, gathered before anything else
+       * touches the file again. Every stage that traverses the whole timeline —
+       * audio, subtitles — is given these so it reads around the holes instead
+       * of walking into them and failing a title whose video was salvaged
+       * successfully.
+       */
+      sourceDamage = [...epochBuild.salvaged].sort(
+        (left, right) => left.sourceStartSeconds - right.sourceStartSeconds,
+      );
+      damagedIntervals = mergeIntervals(sourceDamage.map(damageIntervalOf));
+
       if (plannedAudioOutputs.length > 0) {
         onEvent?.({
           type: "build-stage",
           mediaId: request.mediaId,
           stage: "audio",
         });
+        /*
+         * What the tracks are, so the page can name them. Taken from the
+         * source probe rather than from the encode request: the request says
+         * which streams to keep, the probe says what they contain.
+         */
+        const trackDetails = new Map(
+          plannedAudioOutputs.map((output) => {
+            const track = probe.audioTracks.find(
+              (candidate) => candidate.streamIndex === output.sourceStreamIndex,
+            );
+            return [
+              output.sourceStreamIndex,
+              {
+                ...(track?.language ? { language: track.language } : {}),
+                ...(track?.title ? { title: track.title } : {}),
+                ...(track?.channels === undefined
+                  ? {}
+                  : { channels: track.channels }),
+              },
+            ] as const;
+          }),
+        );
         const audio = await ensureAudioStage({
           stageDirectory: audioStagePath(checkpoints),
           mediaId: request.mediaId,
@@ -1077,11 +1250,30 @@ export async function packageAdaptiveRendition(
           ffprobePath,
           logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
           runEncoder,
+          trackDetails,
           ...(signal ? { signal } : {}),
           ...(pauseController ? { pauseController } : {}),
           ...(storageAvailable ? { storageAvailable } : {}),
+          ...(damagedIntervals.length > 0 ? { damagedIntervals } : {}),
+          stalls,
+          ...(onEvent
+            ? {
+                onProgress: (progress) => {
+                  onEvent({
+                    type: "audio-progress",
+                    mediaId: request.mediaId,
+                    progress,
+                  });
+                },
+              }
+            : {}),
         });
         if (!audio.reused) completedEpochBytes += audio.bytes;
+        // Recorded on the warning itself, so "was the sound replaced too" is
+        // answered by the thing an operator reads rather than inferred.
+        if (damagedIntervals.length > 0) {
+          for (const record of sourceDamage) record.audioReplaced = true;
+        }
       }
     } catch (error) {
       /*
@@ -1107,6 +1299,30 @@ export async function packageAdaptiveRendition(
           status: "failed",
           error: `${error.failure.summary} Epoch ${error.epochIndex + 1} was read ${error.attempts} times without success. Every checkpoint before it is kept, so a retry once the source is repaired or replaced re-encodes only that epoch.`,
           issues: [error.failure.detail],
+          failureKind: "source-io",
+          /*
+           * The interval is reported even though nothing was substituted. It is
+           * what an operator needs in order to decide whether to repair the
+           * source or to turn salvage on for this library.
+           */
+          ...(error.damage ? { sourceDamage: [error.damage] } : {}),
+        };
+      }
+      /*
+       * The encoder stopped producing while the source proved readable. Not
+       * salvageable — replacing film to work around a wedged encoder would be
+       * the worst outcome this feature could have — and not a retry either,
+       * because the next attempt would wedge in the same place.
+       */
+      if (error instanceof MediaProgressTimeoutError) {
+        return {
+          ...base,
+          status: "failed",
+          error: `${error.failure.summary} Epoch ${error.epochIndex + 1} produced no media for ${Math.round(
+            error.stalledForMs / 1000,
+          )}s after reaching ${error.lastMediaSeconds.toFixed(1)}s. Every completed checkpoint is kept.`,
+          issues: [error.failure.detail],
+          failureKind: "media-progress-timeout",
         };
       }
       if (error instanceof StorageInterruptedError) {
@@ -1116,6 +1332,27 @@ export async function packageAdaptiveRendition(
           interruption: "storage",
           error: error.failure.summary,
           issues: [error.failure.detail],
+        };
+      }
+      /*
+       * Audio meeting a bad region the video epochs never touched. The video
+       * checkpoints — salvaged ones included — all survive, so a retry after
+       * the source is repaired or replaced re-encodes only the soundtrack. It
+       * is reported plainly rather than as a generic encoder fault, because
+       * "the disk is failing further" and "the AAC encoder broke" call for
+       * completely different actions.
+       */
+      if (error instanceof AudioStageError) {
+        return {
+          ...base,
+          status: "failed",
+          error:
+            error.failure.kind === "source-io"
+              ? `${error.message} Every video checkpoint is kept, so a retry once the source is repaired or replaced rebuilds only the soundtrack.`
+              : error.message,
+          issues: error.evidence.length > 0 ? error.evidence : undefined,
+          failureKind: error.failure.kind,
+          ...(sourceDamage.length > 0 ? { sourceDamage } : {}),
         };
       }
       throw error;
@@ -1140,6 +1377,12 @@ export async function packageAdaptiveRendition(
       mediaId: request.mediaId,
       stage: "assembling",
     });
+    /*
+     * The last assembly sample is kept so the audio copy that follows can be
+     * reported against the same totals rather than resetting the panel: the
+     * video bytes are done, and the copy is a named step beside them.
+     */
+    let lastAssembly: AssemblyPhaseProgress | undefined;
     const assembled = await assembleVideoRenditions({
       checkpointRoot: checkpoints,
       plan,
@@ -1149,6 +1392,18 @@ export async function packageAdaptiveRendition(
       ),
       targetRoot: workVersionRoot,
       targetDirectory: ADAPTIVE_VIDEO_DIRECTORY,
+      ...(onEvent
+        ? {
+            onProgress: (progress) => {
+              lastAssembly = progress;
+              onEvent({
+                type: "assembly-progress",
+                mediaId: request.mediaId,
+                progress,
+              });
+            },
+          }
+        : {}),
     });
     for (const rendition of assembled) {
       if (rendition.sourceGaps > 0) {
@@ -1158,10 +1413,27 @@ export async function packageAdaptiveRendition(
       }
     }
     if (plannedAudioOutputs.length > 0) {
-      await copyStageDirectory(
+      const reportCopy = (
+        state: "running" | "complete",
+        bytes: number,
+      ): void => {
+        if (!onEvent || !lastAssembly) return;
+        onEvent({
+          type: "assembly-progress",
+          mediaId: request.mediaId,
+          progress: {
+            ...lastAssembly,
+            audioCopyState: state,
+            audioCopyBytes: bytes,
+          },
+        });
+      };
+      reportCopy("running", 0);
+      const copied = await copyStageDirectory(
         path.join(audioStagePath(checkpoints), ADAPTIVE_AUDIO_DIRECTORY),
         path.join(workVersionRoot, ADAPTIVE_AUDIO_DIRECTORY),
       );
+      reportCopy("complete", copied);
     }
 
     const generatedMasterPath = path.join(
@@ -1190,7 +1462,69 @@ export async function packageAdaptiveRendition(
     let audioBytes = 0;
     let subtitleBytes = 0;
 
-    for (const output of videoOutputs) {
+    /*
+     * The measurement pass, announced.
+     *
+     * Everything below reads back what was just written, one rendition at a
+     * time, and it is the largest unannounced stretch the pipeline had: the
+     * byte counter above has already reached its total, so a page with nothing
+     * further to show sat on a finished bar for as long as ffprobe took to walk
+     * thirty gigabytes. The reports are throttled by the live channel, exactly
+     * as the encoder's are, so a rendition's thousands of keyframes cost one
+     * sample every quarter second.
+     */
+    const measureRate = createByteRateEstimator();
+    let measureOrigin: number | undefined;
+    let measureFurthest = 0;
+    const reportMeasure = (
+      currentId: string,
+      index: number,
+      totalMediaSeconds: number | undefined,
+      advancedAtMs: number | undefined,
+    ): void => {
+      if (!onEvent || !lastAssembly) return;
+      const at = Date.now();
+      const measurable =
+        totalMediaSeconds !== undefined && totalMediaSeconds > 0;
+      const stalled =
+        advancedAtMs !== undefined && at - advancedAtMs > VERIFICATION_STALE_MS;
+      const rate = stalled ? undefined : measureRate.rate(at);
+      onEvent({
+        type: "assembly-progress",
+        mediaId: request.mediaId,
+        progress: {
+          ...lastAssembly,
+          measure: {
+            currentId,
+            index,
+            count: videoOutputs.length,
+            ...(measurable ? { totalMediaSeconds } : {}),
+            ...(measureFurthest > 0
+              ? { currentMediaSeconds: measureFurthest }
+              : {}),
+            ...(measurable
+              ? { fraction: safeFraction(measureFurthest, totalMediaSeconds) }
+              : {}),
+            ...(rate === undefined ? {} : { rate }),
+            ...(measurable && rate !== undefined
+              ? {
+                  etaSeconds:
+                    etaFromRate(
+                      Math.max(0, totalMediaSeconds - measureFurthest),
+                      rate,
+                    ) ?? 0,
+                }
+              : {}),
+            ...(advancedAtMs === undefined
+              ? {}
+              : { lastAdvancedAtMs: advancedAtMs }),
+            ...(stalled ? { stalled: true } : {}),
+          },
+        },
+      });
+    };
+
+    for (const [renditionIndex, output] of videoOutputs.entries()) {
       const id = videoRenditionId(output.qualityHeight);
       const playlistPath = `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_PLAYLIST_FILE}`;
       const mediaRelativePath = `${ADAPTIVE_VIDEO_DIRECTORY}/${id}/${ADAPTIVE_MEDIA_FILE}`;
@@ -1206,10 +1540,44 @@ export async function packageAdaptiveRendition(
       const measured = measureBitrates(
         await readFile(absolutePlaylist, "utf8"),
       );
+      measureOrigin = undefined;
+      measureFurthest = 0;
+      let advancedAtMs: number | undefined;
+      reportMeasure(
+        id,
+        renditionIndex + 1,
+        measured.durationSeconds,
+        undefined,
+      );
       const packaged = await probePackagedVideo(
         absoluteMedia,
         ffprobePath,
         signal,
+        (ptsSeconds) => {
+          if (!Number.isFinite(ptsSeconds)) return;
+          const at = Date.now();
+          /*
+           * The first timestamp is where the scan starts, not how far it has
+           * got. Everything after it is measured from there, and only forwards.
+           */
+          if (measureOrigin === undefined) {
+            measureOrigin = ptsSeconds;
+            measureRate.sample(0, at);
+            advancedAtMs = at;
+          } else {
+            const scanned = ptsSeconds - measureOrigin;
+            if (!(scanned > measureFurthest)) return;
+            measureFurthest = scanned;
+            measureRate.sample(measureFurthest, at);
+            advancedAtMs = at;
+          }
+          reportMeasure(
+            id,
+            renditionIndex + 1,
+            measured.durationSeconds,
+            advancedAtMs,
+          );
+        },
       );
       const mediaStats = await stat(absoluteMedia);
       videoBytes += mediaStats.size;
@@ -1350,8 +1718,23 @@ export async function packageAdaptiveRendition(
         inputPath: request.sourcePath,
         streamIndex,
         outputPath: absoluteSubtitle,
+        /*
+         * Read around the holes rather than through them. Cues after a damaged
+         * interval keep their own timestamps — nothing is shifted earlier by
+         * the length of the hole — and cues whose bytes were inside it are
+         * absent, which the warning says rather than the file pretending.
+         */
+        ...(damagedIntervals.length > 0
+          ? {
+              damagedIntervals,
+              sourceDurationSeconds: probe.durationSeconds,
+            }
+          : {}),
         ...(signal ? { signal } : {}),
       });
+      if (extracted.partial) {
+        for (const record of sourceDamage) record.subtitlesAffected = true;
+      }
       await writeFile(
         path.join(workVersionRoot, ...playlistPath.split("/")),
         buildWebVttMediaPlaylist(probe.durationSeconds, ADAPTIVE_SUBTITLE_FILE),
@@ -1504,6 +1887,17 @@ export async function packageAdaptiveRendition(
       stage: "validating",
     });
     const validation = await validateAdaptivePackage({
+      ...(onEvent
+        ? {
+            onProgress: (progress) => {
+              onEvent({
+                type: "verification-progress",
+                mediaId: request.mediaId,
+                progress,
+              });
+            },
+          }
+        : {}),
       versionRoot: workVersionRoot,
       mediaId: request.mediaId,
       sourceFingerprint: request.sourceFingerprint,
@@ -1575,25 +1969,69 @@ export async function packageAdaptiveRendition(
       work.mode === "incremental"
         ? await readTitleBuildRecord(titleRoot)
         : null;
+    const onPublishProgress = onEvent
+      ? {
+          onProgress: (progress: PublishPhaseProgress) => {
+            onEvent({
+              type: "publish-progress",
+              mediaId: request.mediaId,
+              progress,
+            });
+          },
+        }
+      : {};
     const { manifest } = existingBuildRecord
       ? await publishAdditionalRenditions({
           workVersionRoot,
           titleRoot,
           existing: existingBuildRecord,
           added: metadata,
+          ...onPublishProgress,
         })
       : await publishTitlePackage({
           workVersionRoot,
           titleRoot,
           metadata,
+          ...onPublishProgress,
         });
     // The manifest describes the whole title, including renditions this run
     // reused, so it is the honest source for the package's own size.
     const publishedTotalBytes = manifest.storage.totalBytes;
 
+    /*
+     * The two steps publication performs outside `publishTitlePackage`: proving
+     * the manifest against the disk it just described, and removing the
+     * checkpoints. Reported here because they are where the remaining time
+     * goes, and because the second one is the point of no return for a
+     * resumable build.
+     */
+    const publishTail = (
+      id: "verify" | "cleanup",
+      state: "running" | "complete",
+    ): void => {
+      onEvent?.({
+        type: "publish-progress",
+        mediaId: request.mediaId,
+        progress: {
+          steps: [
+            { id: "verify", state: id === "verify" ? state : "complete" },
+            {
+              id: "cleanup",
+              state: id === "cleanup" ? state : "waiting",
+            },
+          ],
+          totalBytes: 0,
+          completedBytes: 0,
+          fraction: id === "cleanup" && state === "complete" ? 1 : 0,
+          currentId: id,
+        },
+      });
+    };
+
     // Publication moves and rewrites; a file the manifest names but the folder
     // does not hold would be a package that reads as present and plays as
     // broken, so the manifest is checked against the disk it just described.
+    publishTail("verify", "running");
     const missing: string[] = [];
     for (const rendition of [
       ...manifest.video,
@@ -1616,6 +2054,7 @@ export async function packageAdaptiveRendition(
         issues: missing,
       };
     }
+    publishTail("verify", "complete");
 
     /*
      * No pointer is written into the rendition root any more: nothing lives
@@ -1626,10 +2065,20 @@ export async function packageAdaptiveRendition(
      * after the package has been validated and published. Until then they are
      * the job's durable progress and nothing may touch them.
      */
+    publishTail("cleanup", "running");
     await rm(path.dirname(workVersionRoot), {
       recursive: true,
       force: true,
     }).catch(() => undefined);
+    publishTail("cleanup", "complete");
+
+    if (sourceDamage.length > 0) {
+      console.warn(
+        `[seyirlik] ${request.relativePath}: published with ${sourceDamage.length} replaced interval(s) — ${sourceDamage
+          .map((record) => describeInterval(damageIntervalOf(record)))
+          .join(", ")} could not be read from the source.`,
+      );
+    }
 
     return {
       ...base,
@@ -1639,6 +2088,12 @@ export async function packageAdaptiveRendition(
       storageBytes: publishedTotalBytes,
       // What this run itself wrote.
       jobOutputBytes: metadata.storage.totalBytes,
+      /*
+       * A salvaged title is published, and it is not a clean encode. Saying so
+       * here is what lets the job record, the API and the page tell the two
+       * apart rather than presenting them identically.
+       */
+      ...(sourceDamage.length > 0 ? { sourceDamage } : {}),
     };
   } catch (error) {
     return {

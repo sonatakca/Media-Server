@@ -33,6 +33,7 @@ import {
 } from "./testFixtures";
 import { ADAPTIVE_PROFILE_VERSION } from "./profile";
 import { buildWebVttMediaPlaylist } from "./subtitles";
+import type { VerificationPhaseProgress } from "./phaseProgress";
 
 const MEDIA_ID = "22222222-2222-4222-8222-222222222222";
 
@@ -500,5 +501,180 @@ describe("inspectAdaptivePackage", () => {
     });
     expect(inspection.status).toBe("validation-failed");
     expect(inspection.reason).toMatch(/changed size after it was validated/);
+  });
+});
+
+/**
+ * Verification used to be a word on a screen for the minutes it spent reading
+ * every byte of a package back. These tests are about the figures it now
+ * reports while doing that: they must describe the checks it genuinely
+ * performs, in the proportions those checks genuinely cost.
+ */
+describe("verification reports the work it is actually doing", () => {
+  async function validateWithProgress(deep: boolean) {
+    const samples: VerificationPhaseProgress[] = [];
+    const result = await validateAdaptivePackage({
+      versionRoot: pristineVersionRoot,
+      mediaId: MEDIA_ID,
+      sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      deep,
+      onProgress: (progress) => samples.push(progress),
+    });
+    return { result, samples };
+  }
+
+  it("counts every planned check and finishes all of them", async () => {
+    if (!ffmpegAvailable) return;
+    const { result, samples } = await validateWithProgress(false);
+    expect(result.ok).toBe(true);
+
+    const last = samples[samples.length - 1]!;
+    expect(last.totalChecks).toBeGreaterThan(0);
+    expect(last.completedChecks).toBe(last.totalChecks);
+    expect(last.ok).toBe(true);
+
+    // The plan is the package: one structural and one probe check per video
+    // rendition, one per audio track, plus metadata, master and alignment.
+    const metadata = await readMetadata(pristineVersionRoot);
+    const expected =
+      3 +
+      metadata.videoRenditions.length * 2 +
+      metadata.audioRenditions.length +
+      ((metadata.subtitleRenditions as unknown[] | undefined)?.length ?? 0);
+    expect(last.totalChecks).toBe(expected);
+  });
+
+  it("never moves backwards, and never exceeds its own plan", async () => {
+    if (!ffmpegAvailable) return;
+    const { samples } = await validateWithProgress(false);
+    let previousChecks = 0;
+    let previousWeight = 0;
+    for (const sample of samples) {
+      expect(sample.completedChecks).toBeGreaterThanOrEqual(previousChecks);
+      expect(sample.completedWeight).toBeGreaterThanOrEqual(previousWeight);
+      expect(sample.completedChecks).toBeLessThanOrEqual(sample.totalChecks);
+      expect(sample.completedWeight).toBeLessThanOrEqual(sample.totalWeight);
+      expect(sample.fraction).toBeGreaterThanOrEqual(0);
+      expect(sample.fraction).toBeLessThanOrEqual(1);
+      previousChecks = sample.completedChecks;
+      previousWeight = sample.completedWeight;
+    }
+  });
+
+  /**
+   * The reason the fraction is byte-weighted rather than a check count: probing
+   * a rendition reads the whole file, and parsing its playlist reads a few
+   * kilobytes. Weighting them equally would make the bar sprint through the
+   * structural checks and then sit still for the probes, which is exactly
+   * backwards.
+   */
+  /**
+   * The reason the fraction is byte-weighted rather than a check count: probing
+   * a rendition reads the whole file, and parsing its playlist reads a few
+   * kilobytes. Weighting them equally would make the bar sprint through the
+   * structural checks and then sit still for the probes, which is exactly
+   * backwards. Asserted as a comparison rather than against a threshold,
+   * because the ratio scales with the title and the fixture here is seconds
+   * long where a real one is hours.
+   */
+  it("weights a rendition probe above the playlist parse for the same file", async () => {
+    if (!ffmpegAvailable) return;
+    const { samples } = await validateWithProgress(false);
+
+    /** What each kind of check moved the fraction by, in total. */
+    const gainByKind = new Map<string, number>();
+    for (let index = 1; index < samples.length; index += 1) {
+      const announced = samples[index - 1]!.current;
+      if (!announced) continue;
+      const gain = samples[index]!.fraction - samples[index - 1]!.fraction;
+      gainByKind.set(
+        announced.kind,
+        (gainByKind.get(announced.kind) ?? 0) + Math.max(0, gain),
+      );
+    }
+
+    const probeGain = gainByKind.get("video-probe") ?? 0;
+    const structuralGain = gainByKind.get("video-structure") ?? 0;
+    expect(probeGain).toBeGreaterThan(structuralGain);
+    expect(samples[samples.length - 1]!.fraction).toBeCloseTo(1, 2);
+  });
+
+  /**
+   * The counts are the literal figures, so each family must be countable on
+   * its own — "5 of 8 video renditions checked" is a fact; a byte total during
+   * an ffprobe that has not returned is not.
+   */
+  it("counts each family of check separately", async () => {
+    if (!ffmpegAvailable) return;
+    const { samples } = await validateWithProgress(false);
+    const metadata = await readMetadata(pristineVersionRoot);
+    const last = samples[samples.length - 1]!;
+
+    const byKind = new Map(
+      last.groups.map((group) => [group.kind, group] as const),
+    );
+    expect(byKind.get("video-probe")?.total).toBe(
+      metadata.videoRenditions.length,
+    );
+    expect(byKind.get("video-probe")?.completed).toBe(
+      metadata.videoRenditions.length,
+    );
+    expect(byKind.get("audio")?.total).toBe(metadata.audioRenditions.length);
+    // Every family sums back to the whole plan.
+    expect(last.groups.reduce((sum, group) => sum + group.total, 0)).toBe(
+      last.totalChecks,
+    );
+  });
+
+  it("names what the package declares, so the panel can summarise it", async () => {
+    if (!ffmpegAvailable) return;
+    const { samples } = await validateWithProgress(false);
+    const metadata = await readMetadata(pristineVersionRoot);
+    const declared = samples[samples.length - 1]!.declared!;
+    expect(declared.videoRenditions).toBe(metadata.videoRenditions.length);
+    expect(declared.audioRenditions).toBe(metadata.audioRenditions.length);
+  });
+
+  /** The deep pass adds real decode work, and says so before it starts. */
+  it("plans the decode checks the deep pass adds", async () => {
+    if (!ffmpegAvailable) return;
+    const shallow = await validateWithProgress(false);
+    const deep = await validateWithProgress(true);
+    expect(deep.samples[0]!.totalChecks).toBeGreaterThan(
+      shallow.samples[0]!.totalChecks,
+    );
+    const kinds = new Set(
+      deep.samples
+        .map((sample) => sample.current?.kind)
+        .filter((kind): kind is NonNullable<typeof kind> => Boolean(kind)),
+    );
+    expect(kinds.has("seek-decode")).toBe(true);
+  });
+
+  /**
+   * A package that fails is not reported as complete. The count stops where the
+   * checking stopped, which is the only honest thing it can say.
+   */
+  it("does not report a failed package as fully checked", async () => {
+    if (!ffmpegAvailable) return;
+    const damaged = await damagedCopy(async (versionRoot) => {
+      const metadata = await readMetadata(versionRoot);
+      metadata.videoRenditions[0]!.fileSizeBytes = 12;
+      await writeMetadata(versionRoot, metadata);
+    });
+    const samples: VerificationPhaseProgress[] = [];
+    const result = await validateAdaptivePackage({
+      versionRoot: damaged,
+      mediaId: MEDIA_ID,
+      sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+      onProgress: (progress) => samples.push(progress),
+    });
+    expect(result.ok).toBe(false);
+    const last = samples[samples.length - 1]!;
+    expect(last.completedChecks).toBeLessThan(last.totalChecks);
+    expect(last.completedWeight).toBeLessThan(last.totalWeight);
+    expect(last.ok).not.toBe(true);
   });
 });

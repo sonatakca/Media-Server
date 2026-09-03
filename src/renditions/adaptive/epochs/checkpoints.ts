@@ -37,6 +37,8 @@ import {
   partialEpochDirectoryName,
 } from "./policy";
 import { parseEpochPlan, planMatches, type EpochPlan } from "./plan";
+import type { EpochJoinKey } from "./fragments";
+import type { EpochSalvageManifest, SourceInterval } from "./salvage";
 
 /** Written inside a `.partial` directory so ownership can be established. */
 export const EPOCH_OWNER_FILE = "OWNER.json";
@@ -75,8 +77,17 @@ export interface EpochRenditionRecord {
   measuredDurationSeconds: number;
   /** Media timescale the fragments are expressed in. */
   mediaTimescale: number;
-  /** SHA-256 of the initialisation segment, proving epochs are joinable. */
+  /** SHA-256 of the whole initialisation segment. Recorded, not load-bearing. */
   initDigest: string;
+  /**
+   * What has to match for this epoch's fragments to join another's.
+   *
+   * Optional because checkpoints written before joinability was distinguished
+   * from byte equality do not carry it; those are re-derived from the media
+   * itself, which costs one read of a kilobyte and keeps every checkpoint an
+   * operator already has valid.
+   */
+  joinKey?: EpochJoinKey;
 }
 
 export interface EpochCheckpointManifest {
@@ -96,6 +107,16 @@ export interface EpochCheckpointManifest {
   renditions: EpochRenditionRecord[];
   totalBytes: number;
   checks: string[];
+  /**
+   * Present only on an epoch whose source could not be read.
+   *
+   * Its absence is what says a checkpoint holds real film. It is written into
+   * the same immutable manifest as everything else so a restart, a resume or a
+   * status command rediscovers *why* a stretch of the title is synthetic
+   * without needing the job record that ran at the time — and so nothing can
+   * quietly promote a replacement into an ordinary checkpoint.
+   */
+  salvage?: EpochSalvageManifest;
   completedAt: string;
 }
 
@@ -107,6 +128,14 @@ export interface AuxiliaryStageManifest {
   stage: "audio" | "subtitles";
   /** Identifies exactly what this stage produced, so a changed plan rebuilds. */
   streamIndexes: number[];
+  /**
+   * Source intervals this stage replaced with silence, if any.
+   *
+   * Part of the stage's identity, not a footnote: a stage built around a hole
+   * must not be reused for a run that no longer believes in that hole, and a
+   * healthy stage must not be reused once one has been found.
+   */
+  damagedIntervals?: SourceInterval[];
   totalBytes: number;
   completedAt: string;
 }

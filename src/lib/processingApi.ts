@@ -1,4 +1,44 @@
 import { ownApiClient, ownApiUrl } from "../api/ownApi/client";
+/*
+ * Type-only, so nothing from the packaging layer is bundled into the browser:
+ * these are the exact shapes the worker measures and the live stream carries,
+ * and restating them here would let the two drift apart silently.
+ */
+import type {
+  AssemblyPhaseProgress,
+  AssemblyRenditionProgress,
+  AudioPhaseProgress,
+  AudioTrackProgress,
+  PublishPhaseProgress,
+  PublishStepProgress,
+  VerificationPhaseProgress,
+} from "../renditions/adaptive/phaseProgress";
+import type {
+  SourceDamageRecord,
+  SourceInterval,
+} from "../renditions/adaptive/epochs/salvage";
+import type { SourceIoStatus } from "../server/ownApi/processing/liveProgress";
+
+export type { SourceDamageRecord, SourceInterval, SourceIoStatus };
+
+export type {
+  AssemblyPhaseProgress,
+  AssemblyRenditionProgress,
+  AudioPhaseProgress,
+  AudioTrackProgress,
+  PublishPhaseProgress,
+  PublishStepProgress,
+  VerificationPhaseProgress,
+};
+
+/** One finished phase, summarised for the history strip. */
+export interface CompletedPhaseSummary {
+  phase: ProcessingBuildPhase;
+  elapsedSeconds: number;
+  bytes?: number;
+  count?: number;
+  reused?: boolean;
+}
 
 /**
  * Client for the media-processing administration API.
@@ -142,6 +182,15 @@ export interface ProcessingJob {
   decision: ProcessingDecision | null;
   validation: { ok: boolean; issues: string[] } | null;
   warnings: string[];
+  /**
+   * Intervals of the source that could not be read and were replaced.
+   *
+   * Null for a clean encode. A succeeded job carrying these is *salvaged*: the
+   * package is playable and on the source's own timeline, with black picture
+   * and silence where the disk could not answer. The page must not present the
+   * two as the same outcome.
+   */
+  sourceDamage: SourceDamageRecord[] | null;
   errorCode: string | null;
   errorMessage: string | null;
   publishedVersion: string | null;
@@ -195,7 +244,14 @@ export type ProcessingBuildPhase =
 export interface ProcessingLiveProgress {
   processingJobId: string;
   revision: number;
+  /** When the sample was published. Refreshed by the worker's heartbeat. */
   timestampMs: number;
+  /**
+   * When the values were last actually measured, which is not the same thing.
+   * A phase inside one long operation keeps publishing the same figures so the
+   * panel survives; this is what says they have not moved.
+   */
+  confirmedAtMs?: number;
   stage: ProcessingStage;
   phase: ProcessingBuildPhase;
   epochIndex: number | null;
@@ -214,6 +270,27 @@ export interface ProcessingLiveProgress {
   writtenBytes?: number;
   encoder?: string;
   qualityHeights?: number[];
+  /**
+   * Cumulative progress across the whole job, in [0,1).
+   *
+   * Drawn as a bar and never printed as a number: everything inside a phase is
+   * measured exactly, while the boundaries between phases rest on an estimate
+   * of their relative cost, and a percentage would claim a precision the second
+   * half of that does not have.
+   */
+  globalProgress?: number;
+  /** How far through the current phase, by that phase's own measure. */
+  phaseFraction?: number;
+  /** Present only for the phase named by `phase`. */
+  audio?: AudioPhaseProgress;
+  assembly?: AssemblyPhaseProgress;
+  verification?: VerificationPhaseProgress;
+  publish?: PublishPhaseProgress;
+  completedPhases?: CompletedPhaseSummary[];
+  /** The source-read diagnosis, present only while there is one to make. */
+  sourceIo?: SourceIoStatus;
+  /** Intervals already replaced in this attempt. */
+  sourceDamage?: SourceDamageRecord[];
 }
 
 export interface ProcessingJobEvent {
@@ -348,6 +425,30 @@ export function enqueueProcessing(
   mediaFileId?: string,
 ): Promise<{ job: ProcessingJob }> {
   return ownApiClient.request<{ job: ProcessingJob }>("/processing/jobs", {
+    method: "POST",
+    body: { itemId, ...(mediaFileId ? { mediaFileId } : {}) },
+  });
+}
+
+/**
+ * Removes the source file of a title whose package already holds every
+ * rendition.
+ *
+ * Separate from anything in the job lifecycle: it queues nothing and touches
+ * no package, it only takes away the bytes a finished title no longer needs.
+ * The server re-checks the package before unlinking, so a refusal here is a
+ * real answer about the title and not a stale preview.
+ */
+export function deleteProcessingSource(
+  itemId: string,
+  mediaFileId?: string,
+): Promise<{
+  deleted: boolean;
+  /** True when the file was already gone, which is not a failure. */
+  alreadyAbsent: boolean;
+  freedBytes: number;
+}> {
+  return ownApiClient.request("/processing/source/delete", {
     method: "POST",
     body: { itemId, ...(mediaFileId ? { mediaFileId } : {}) },
   });

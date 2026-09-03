@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readSourceIoEvidence } from "./sourceIo";
 import {
   classifyFailure,
   looksLikeOutOfSpace,
@@ -178,5 +179,64 @@ describe("SourceReadError", () => {
     // It is deliberately not a StorageInterruptedError: the two are handled
     // in opposite ways and must never be caught by the same branch.
     expect(error).not.toBeInstanceOf(StorageInterruptedError);
+  });
+});
+
+/**
+ * The one misclassification that must never happen.
+ *
+ * Salvage replaces film with black. Doing that because the *destination* volume
+ * returned `EIO` would destroy readable material to work around a failing
+ * output disk, so output-side evidence overrides the retry count entirely.
+ */
+describe("which side of the transcode failed", () => {
+  it("calls a write failure storage, however many times it repeats", () => {
+    const failure = classifyFailure({
+      message: "FFmpeg failed with exit code 1: Input/output error",
+      storageAvailable: true,
+      ioRechecksExhausted: true,
+      evidence: readSourceIoEvidence(
+        "[out#0/hls @ 0x1] Error writing trailer: Input/output error",
+      ),
+    });
+    expect(failure.kind).toBe("storage-unavailable");
+  });
+
+  it("calls a read failure source damage once the budget is spent", () => {
+    const failure = classifyFailure({
+      message: "FFmpeg failed with exit code 1: Input/output error",
+      storageAvailable: true,
+      ioRechecksExhausted: true,
+      evidence: readSourceIoEvidence(
+        [
+          "[in#0/matroska,webm @ 0x1] Read error at pos. 10074169063",
+          "[in#0/matroska,webm @ 0x1] Error during demuxing: Input/output error",
+        ].join("\n"),
+      ),
+    });
+    expect(failure.kind).toBe("source-io");
+    expect(failure.evidence?.byteOffset).toBe(10_074_169_063);
+  });
+
+  it("still waits for the volume before the budget is spent", () => {
+    const failure = classifyFailure({
+      message: "FFmpeg failed with exit code 1: Input/output error",
+      storageAvailable: true,
+      ioRechecksExhausted: false,
+      evidence: readSourceIoEvidence(
+        "[in#0] Error during demuxing: Input/output error",
+      ),
+    });
+    expect(failure.kind).toBe("storage-unavailable");
+  });
+
+  it("keeps the existing answer when there is no evidence to read", () => {
+    expect(
+      classifyFailure({
+        message: "FFmpeg failed with exit code 1: Input/output error",
+        storageAvailable: true,
+        ioRechecksExhausted: true,
+      }).kind,
+    ).toBe("source-io");
   });
 });

@@ -9,7 +9,7 @@
  * the player actually depends on.
  */
 
-import { spawn } from "node:child_process";
+import { spawnManagedProcess } from "../processExecution";
 
 export interface PackagedVideoProbe {
   codec: string;
@@ -45,64 +45,66 @@ interface FfprobeJson {
 
 const MAX_FFPROBE_OUTPUT_BYTES = 32 * 1024 * 1024;
 
-function runFfprobe(
+/**
+ * Runs ffprobe and returns what it printed, optionally streaming it.
+ *
+ * On the managed runner rather than a bare `spawn`, which buys three things
+ * this file used to do without: the child is its own process group, so a
+ * cancelled probe cannot leave a reader holding a file handle on a volume the
+ * system is trying to unmount; a cancellation escalates instead of hoping one
+ * `SIGTERM` lands; and the promise settles only once the child has actually
+ * been reaped.
+ *
+ * `onStdout` is handed each chunk as it arrives. A caller that consumes the
+ * stream this way keeps nothing itself, which is what lets a scan of an
+ * eleven-gigabyte rendition report where it has reached without the output
+ * ever being accumulated.
+ */
+async function runFfprobe(
   ffprobePath: string,
   args: string[],
   signal?: AbortSignal,
+  onStdout?: (chunk: string) => void,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(ffprobePath, args, {
-      shell: false,
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-
-    const finish = (error?: Error, value?: string) => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      if (error) reject(error);
-      else resolve(value as string);
-    };
-    const onAbort = () => {
-      child.kill("SIGTERM");
-      finish(new Error("FFprobe was cancelled."));
-    };
-
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener("abort", onAbort, { once: true });
-
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
+  let stdout = "";
+  let overflowed = false;
+  const managed = spawnManagedProcess({
+    command: ffprobePath,
+    args,
+    ...(signal ? { signal } : {}),
+    onStdout: (chunk) => {
+      onStdout?.(chunk);
+      /*
+       * Retained only for callers that ask for the whole document — the JSON
+       * probes. A streaming caller has already taken what it needs, so holding
+       * the text as well would put a rendition's worth of timestamps in memory
+       * for no reader.
+       */
+      if (onStdout || overflowed) return;
       stdout += chunk;
       if (stdout.length > MAX_FFPROBE_OUTPUT_BYTES) {
-        child.kill("SIGTERM");
-        finish(new Error("FFprobe output exceeded the safe limit."));
+        overflowed = true;
+        managed.abort("output-limit");
       }
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr = `${stderr}${chunk}`.slice(-8192);
-    });
-    child.once("error", (error) => finish(error));
-    child.once("close", (code) => {
-      if (settled) return;
-      if (code !== 0) {
-        finish(
-          new Error(
-            `FFprobe failed with exit code ${code ?? "unknown"}: ${stderr}`,
-          ),
-        );
-        return;
-      }
-      finish(undefined, stdout);
-    });
+    },
   });
+
+  const outcome = await managed.completed;
+  if (outcome.aborted) {
+    throw new Error(
+      outcome.abortReason === "output-limit"
+        ? "FFprobe output exceeded the safe limit."
+        : "FFprobe was cancelled.",
+    );
+  }
+  if (outcome.exitCode !== 0) {
+    throw new Error(
+      `FFprobe failed with exit code ${
+        outcome.exitCode ?? outcome.signal ?? "unknown"
+      }: ${outcome.stderrTail.slice(-8192)}`,
+    );
+  }
+  return stdout;
 }
 
 function numberOf(value: unknown): number | undefined {
@@ -142,8 +144,24 @@ export async function probeKeyframeTimes(
   mediaPath: string,
   ffprobePath: string,
   signal?: AbortSignal,
+  onKeyframe?: (ptsSeconds: number) => void,
 ): Promise<number[]> {
-  const output = await runFfprobe(
+  const times: number[] = [];
+  let pending = "";
+
+  const take = (line: string): void => {
+    const field = line.split(",")[0]?.trim() ?? "";
+    // Empty lines have to be dropped before conversion: `Number("")` is 0, not
+    // NaN, so the trailing newline every ffprobe run emits would otherwise
+    // appear as a keyframe at the start of the timeline.
+    if (field === "" || field.toUpperCase() === "N/A") return;
+    const value = Number(field);
+    if (!Number.isFinite(value)) return;
+    times.push(value);
+    onKeyframe?.(value);
+  };
+
+  await runFfprobe(
     ffprobePath,
     [
       "-v",
@@ -159,25 +177,36 @@ export async function probeKeyframeTimes(
       mediaPath,
     ],
     signal,
+    /*
+     * Parsed as it arrives rather than at the end.
+     *
+     * The timestamps were always being printed while the scan ran; nothing was
+     * listening, so a rendition of eleven gigabytes was several minutes of a
+     * page that could not say whether anything was happening. Consuming the
+     * stream costs nothing — the same lines, split one chunk earlier — and
+     * turns the scan into the one check that can report a real position.
+     *
+     * Only the parsed numbers are retained, and only the tail of a partial
+     * line: the raw text is never accumulated.
+     */
+    (chunk) => {
+      pending += chunk;
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) take(line);
+    },
   );
+  if (pending !== "") take(pending);
 
-  return (
-    output
-      .split(/\r?\n/)
-      .map((line) => line.split(",")[0]?.trim() ?? "")
-      // Empty lines have to be dropped before conversion: `Number("")` is 0, not
-      // NaN, so the trailing newline every ffprobe run emits would otherwise
-      // appear as a keyframe at the start of the timeline.
-      .filter((field) => field !== "" && field.toUpperCase() !== "N/A")
-      .map((field) => Number(field))
-      .filter((value) => Number.isFinite(value))
-  );
+  return times;
 }
 
 export async function probePackagedVideo(
   mediaPath: string,
   ffprobePath: string,
   signal?: AbortSignal,
+  /** Called with each keyframe's presentation time as the scan reaches it. */
+  onKeyframe?: (ptsSeconds: number) => void,
 ): Promise<PackagedVideoProbe> {
   const [raw, keyframeTimes] = await Promise.all([
     runFfprobe(
@@ -195,7 +224,7 @@ export async function probePackagedVideo(
       ],
       signal,
     ),
-    probeKeyframeTimes(mediaPath, ffprobePath, signal),
+    probeKeyframeTimes(mediaPath, ffprobePath, signal, onKeyframe),
   ]);
 
   const parsed = JSON.parse(raw) as FfprobeJson;

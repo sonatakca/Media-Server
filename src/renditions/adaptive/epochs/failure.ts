@@ -8,6 +8,9 @@
  * whether the storage the job needs is answering right now.
  */
 
+import type { SourceIoEvidence, SourceReadVerdict } from "./sourceIo";
+import type { SourceDamageRecord } from "./salvage";
+
 export type ProcessingFailureKind =
   | "storage-unavailable"
   | "out-of-space"
@@ -18,6 +21,16 @@ export type ProcessingFailureKind =
    * job and asks for a person rather than parking it for the watchdog.
    */
   | "source-io"
+  /**
+   * The encoder stopped producing and had to be killed, while the source it
+   * reads proved perfectly readable.
+   *
+   * Deliberately not `source-io`: replacing five minutes of a film with black
+   * because a filter graph deadlocked would be working around a bug by
+   * destroying content. Deliberately not `encoder` either, because nothing
+   * crashed and the distinction is what an operator needs to debug it.
+   */
+  | "media-progress-timeout"
   | "source-missing"
   | "encoder"
   | "unknown";
@@ -28,6 +41,15 @@ export interface ClassifiedFailure {
   summary: string;
   /** The underlying text, kept so the cause survives into the job record. */
   detail: string;
+  /**
+   * What FFmpeg said about *which side* failed, when it said anything.
+   *
+   * Carried through so the salvage decision does not have to re-read a string:
+   * replacing five minutes of a film is only ever justified by input-side
+   * evidence, and a failure that also names the output is a destination problem
+   * wearing the same errno.
+   */
+  evidence?: SourceIoEvidence;
 }
 
 /** Errno spellings that mean the storage stopped answering, not that a file is absent. */
@@ -76,11 +98,33 @@ export function classifyFailure({
   storageAvailable,
   missingRoots = [],
   ioRechecksExhausted = false,
+  evidence,
+  sourceVerdict,
 }: {
   message: string;
   /** Whether every root the job needs answered its last check. */
   storageAvailable: boolean;
   missingRoots?: readonly string[];
+  /**
+   * Structured evidence read from FFmpeg's own stderr.
+   *
+   * Optional, because plenty of callers have only an error message. Where it is
+   * present it *overrides* the message heuristics on the one question that
+   * matters: an I/O error whose evidence names the output is never called
+   * source damage, however many times it repeats.
+   */
+  evidence?: SourceIoEvidence;
+  /**
+   * The verdict the source-read assessment reached, when one was reached.
+   *
+   * Takes precedence over every message heuristic below, because it is built
+   * from strictly more information: which side FFmpeg named, whether the
+   * encoder had to be killed, and what a targeted re-read of the same window
+   * did. A watchdog termination has no errno in its message at all, so without
+   * this it would be read as a generic encoder fault — which is exactly how a
+   * confirmed source failure escaped as a retryable job error.
+   */
+  sourceVerdict?: SourceReadVerdict;
   /**
    * Set once the same epoch has failed to read its source the allowed number of
    * times, with the storage verified present and unchanged between every one of
@@ -92,12 +136,14 @@ export function classifyFailure({
 }): ClassifiedFailure {
   const detail = message.slice(-4000);
   const where = missingRoots.length > 0 ? ` (${missingRoots.join(", ")})` : "";
+  const carry = evidence ? { evidence } : {};
 
   if (!storageAvailable) {
     return {
       kind: "storage-unavailable",
       summary: `The storage this job needs became unavailable${where}.`,
       detail,
+      ...carry,
     };
   }
   if (looksLikeOutOfSpace(message)) {
@@ -105,9 +151,48 @@ export function classifyFailure({
       kind: "out-of-space",
       summary: "The output volume ran out of space.",
       detail,
+      ...carry,
+    };
+  }
+  /*
+   * The assessment, where one was made, outranks everything that follows. It
+   * saw which side FFmpeg named and what a re-read of the same window did;
+   * the checks below only ever saw a sentence.
+   */
+  if (sourceVerdict === "media-progress-timeout") {
+    return {
+      kind: "media-progress-timeout",
+      summary:
+        "The encoder stopped producing media and had to be stopped, but the source it reads is answering normally. This is a fault in the encode rather than in the media.",
+      detail,
+      ...carry,
+    };
+  }
+  if (sourceVerdict === "source-damage" && ioRechecksExhausted) {
+    return {
+      kind: "source-io",
+      summary:
+        "The source could not be read while its volume stayed available, healthy and unchanged. This looks like damaged media or a failing disk rather than a disconnection.",
+      detail,
+      ...carry,
     };
   }
   if (looksLikeStorageLoss(message)) {
+    /*
+     * Evidence that names the *output* settles it before anything else. A
+     * destination volume returning `EIO` is a storage fault whatever the retry
+     * count says, and calling it damaged media would blame a film for the disk
+     * being written to.
+     */
+    if (evidence && evidence.outputWrite && !evidence.sourceRead) {
+      return {
+        kind: "storage-unavailable",
+        summary:
+          "The output volume reported an I/O error while it was being written to.",
+        detail,
+        ...carry,
+      };
+    }
     /*
      * The volume has been re-checked after every one of these and was present,
      * readable and on the same device each time. Whatever is failing is the
@@ -120,6 +205,7 @@ export function classifyFailure({
         summary:
           "The source could not be read after repeated attempts while its volume stayed available, healthy and unchanged. This looks like damaged media or a failing disk rather than a disconnection.",
         detail,
+        ...carry,
       };
     }
     return {
@@ -127,6 +213,7 @@ export function classifyFailure({
       summary:
         "The encoder reported an I/O error consistent with storage that stopped answering.",
       detail,
+      ...carry,
     };
   }
   if (looksLikeMissingPath(message)) {
@@ -134,12 +221,14 @@ export function classifyFailure({
       kind: "source-missing",
       summary: "A file the encode needs is no longer where it was.",
       detail,
+      ...carry,
     };
   }
   return {
     kind: "encoder",
     summary: "The encoder stopped before the epoch was finished.",
     detail,
+    ...carry,
   };
 }
 
@@ -172,15 +261,78 @@ export class SourceReadError extends Error {
   /** Which epoch could not be read, so the message can name the minutes. */
   readonly epochIndex: number;
   readonly attempts: number;
+  /**
+   * The interval that could not be read, when the caller knew it.
+   *
+   * Carried so the job record can name the minutes in the same words whether
+   * the outcome was a strict failure or a salvage — and so a deployment that
+   * later turns salvage on has the interval already described in its history.
+   */
+  readonly damage?: SourceDamageRecord;
   constructor(
     failure: ClassifiedFailure,
     epochIndex: number,
     attempts: number,
+    damage?: SourceDamageRecord,
   ) {
     super(failure.summary);
     this.name = "SourceReadError";
     this.failure = failure;
     this.epochIndex = epochIndex;
     this.attempts = attempts;
+    if (damage) this.damage = damage;
+  }
+}
+
+/**
+ * The audio stage stopping for a reason worth naming.
+ *
+ * Audio is built in one pass over the whole title, so it is the one stage that
+ * can meet a bad region of the source the video epochs never touched. Carried
+ * as its own class so the packager can tell "this soundtrack could not be read"
+ * from "this soundtrack could not be encoded" without parsing a sentence.
+ */
+export class AudioStageError extends Error {
+  readonly failure: ClassifiedFailure;
+  /** Sanitised FFmpeg lines, safe to store and to show. */
+  readonly evidence: string[];
+  constructor(
+    message: string,
+    failure: ClassifiedFailure,
+    evidence: readonly string[] = [],
+  ) {
+    super(message);
+    this.name = "AudioStageError";
+    this.failure = failure;
+    this.evidence = [...evidence];
+  }
+}
+
+/**
+ * The encoder stopped producing, and the source is not to blame.
+ *
+ * Its own class so it cannot be mistaken for source damage on the way up. A
+ * media-progress timeout ends the attempt and is worth a person's attention;
+ * what it must never do is quietly become a black placeholder, because that
+ * would let a deadlocked encoder erase five minutes of a film.
+ */
+export class MediaProgressTimeoutError extends Error {
+  readonly failure: ClassifiedFailure;
+  readonly epochIndex: number;
+  /** Media seconds the encoder had produced when it stopped. */
+  readonly lastMediaSeconds: number;
+  /** How long media time had been standing still. */
+  readonly stalledForMs: number;
+  constructor(
+    failure: ClassifiedFailure,
+    epochIndex: number,
+    media: { lastMediaSeconds: number; stalledForMs: number },
+  ) {
+    super(failure.summary);
+    this.name = "MediaProgressTimeoutError";
+    this.failure = failure;
+    this.epochIndex = epochIndex;
+    this.lastMediaSeconds = media.lastMediaSeconds;
+    this.stalledForMs = media.stalledForMs;
   }
 }

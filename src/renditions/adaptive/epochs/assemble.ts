@@ -37,13 +37,21 @@ import type { EpochPlan } from "./plan";
 import { timestampToTicks } from "./sourceTimeline";
 import {
   adjustLastSampleDuration,
+  describeJoinMismatch,
+  joinKeysMatch,
   patchFragment,
   readFragmentTiming,
 } from "./fragments";
+import { readRenditionJoinKey } from "./validateEpoch";
 import {
   completedEpochPath,
   type EpochCheckpointManifest,
 } from "./checkpoints";
+import {
+  buildAssemblyProgress,
+  createByteRateEstimator,
+  type AssemblyPhaseProgress,
+} from "../phaseProgress";
 
 export interface AssembledRendition {
   id: string;
@@ -69,6 +77,47 @@ export interface AssembleVideoInput {
   targetRoot: string;
   /** Directory inside the staging root, e.g. `video`. */
   targetDirectory: string;
+  /**
+   * Called as bytes are actually written, at most every `progressIntervalMs`.
+   *
+   * The count comes from the copy itself rather than from stat-ing the growing
+   * file: the assembler is the only thing that knows how much it has written,
+   * and asking the filesystem four times a second for the size of a ten-gigabyte
+   * file would be monitoring that costs more than the work it watches.
+   */
+  onProgress?: (progress: AssemblyPhaseProgress) => void;
+  /** Smallest gap between progress reports. */
+  progressIntervalMs?: number;
+  now?: () => number;
+}
+
+/** Roughly four reports a second, which is what makes a byte counter feel live. */
+export const ASSEMBLY_PROGRESS_INTERVAL_MS = 250;
+
+/**
+ * What each rendition will weigh when it is assembled.
+ *
+ * Summed from the checkpoint manifests, so the denominator is known exactly
+ * before the first byte moves — and known in bytes, which is the only unit in
+ * which "2160p is done and 144p is not" means anything. It overstates by one
+ * initialisation segment per epoch after the first, because assembly writes one
+ * initialisation for the whole title; that is a few kilobytes against gigabytes,
+ * and the figure is replaced by the measured one as each rendition finishes.
+ */
+export function expectedAssemblyBytes(
+  manifests: readonly EpochCheckpointManifest[],
+  renditionIds: readonly string[],
+): Map<string, number> {
+  const expected = new Map<string, number>();
+  for (const id of renditionIds) {
+    let bytes = 0;
+    for (const manifest of manifests) {
+      const record = manifest.renditions.find((entry) => entry.id === id);
+      if (record) bytes += record.fileSizeBytes;
+    }
+    expected.set(id, bytes);
+  }
+  return expected;
 }
 
 interface SegmentPlacement {
@@ -99,12 +148,49 @@ export async function assembleVideoRenditions({
   renditionIds,
   targetRoot,
   targetDirectory,
+  onProgress,
+  progressIntervalMs = ASSEMBLY_PROGRESS_INTERVAL_MS,
+  now = Date.now,
 }: AssembleVideoInput): Promise<AssembledRendition[]> {
   if (manifests.length === 0) {
     throw new Error("Assembly needs at least one completed epoch.");
   }
 
   const assembled: AssembledRendition[] = [];
+
+  /*
+   * The whole job's shape, known before a byte moves: what each rendition
+   * should weigh, and therefore what the phase as a whole weighs. Held across
+   * the rendition loop so every report describes the whole assembly rather than
+   * the file currently open.
+   */
+  const expected = expectedAssemblyBytes(manifests, renditionIds);
+  const written = new Map<string, number>(renditionIds.map((id) => [id, 0]));
+  const finished = new Set<string>();
+  const rate = createByteRateEstimator();
+  let lastReportMs = Number.NEGATIVE_INFINITY;
+
+  const report = (currentId: string | undefined, force: boolean): void => {
+    if (!onProgress) return;
+    const at = now();
+    let total = 0;
+    for (const value of written.values()) total += value;
+    rate.sample(total, at);
+    if (!force && at - lastReportMs < progressIntervalMs) return;
+    lastReportMs = at;
+    onProgress(
+      buildAssemblyProgress({
+        renditionIds,
+        expected,
+        written,
+        finished,
+        currentId,
+        bytesPerSecond: rate.rate(at),
+      }),
+    );
+  };
+
+  report(renditionIds[0], true);
 
   for (const renditionId of renditionIds) {
     const outputDirectory = path.join(targetRoot, targetDirectory, renditionId);
@@ -123,25 +209,62 @@ export async function assembleVideoRenditions({
       return { manifest, record };
     });
 
-    const timescale = records[0]!.record.mediaTimescale;
-    const initDigest = records[0]!.record.initDigest;
-    for (const { manifest, record } of records) {
-      if (record.mediaTimescale !== timescale) {
-        throw new Error(
-          `Epoch ${manifest.epochIndex} wrote ${renditionId} on a ${record.mediaTimescale} timescale where epoch 0 used ${timescale}; the epochs cannot be joined.`,
-        );
-      }
-      if (record.initDigest !== initDigest) {
-        throw new Error(
-          `Epoch ${manifest.epochIndex} wrote a different ${renditionId} initialisation segment from epoch 0; the epochs cannot be joined.`,
-        );
-      }
+    /*
+     * Joinability, checked on what joining requires. Only the first epoch's
+     * initialisation segment is written below and every other epoch's fragments
+     * are copied in after it, so what has to agree is the decoder
+     * configuration, the sample entry and the timescale — read from the media
+     * itself rather than from a manifest field, so that checkpoints written
+     * before this distinction existed are still comparable.
+     *
+     * Comparing whole initialisation segments byte for byte was stricter than
+     * that, and refused a salvaged epoch whose only difference was the HDR10
+     * mastering-display metadata a colour generator cannot invent. Those boxes
+     * belong to the initialisation this keeps, so the title still carries the
+     * film's own values across the replaced interval.
+     */
+    const joinKeys = await Promise.all(
+      records.map(async ({ manifest, record }) => ({
+        manifest,
+        key:
+          record.joinKey ??
+          (await readRenditionJoinKey(
+            completedEpochPath(checkpointRoot, manifest.epochIndex),
+            record,
+          )),
+      })),
+    );
+    const reference = joinKeys[0]!.key;
+    for (const { manifest, key } of joinKeys) {
+      if (joinKeysMatch(key, reference)) continue;
+      throw new Error(
+        `Epoch ${manifest.epochIndex} wrote ${renditionId} with ${
+          describeJoinMismatch(key, reference) ?? "incompatible media"
+        }, against epoch ${joinKeys[0]!.manifest.epochIndex}; the epochs cannot be joined.`,
+      );
     }
+    const timescale = reference.mediaTimescale;
 
     const stream = createWriteStream(mediaFile);
+    /*
+     * Every byte that reaches the file is counted here, at the one place they
+     * all pass through. Nothing else in the system has to guess: no periodic
+     * stat of a growing ten-gigabyte file, no directory walk, no shell.
+     */
     const write = (chunk: Buffer): Promise<void> =>
       new Promise((resolve, reject) => {
-        stream.write(chunk, (error) => (error ? reject(error) : resolve()));
+        stream.write(chunk, (error) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          written.set(
+            renditionId,
+            (written.get(renditionId) ?? 0) + chunk.length,
+          );
+          report(renditionId, false);
+          resolve();
+        });
       });
 
     const placements: SegmentPlacement[] = [];
@@ -327,6 +450,16 @@ export async function assembleVideoRenditions({
       "utf8",
     );
 
+    /*
+     * The rendition is complete only after its stream is closed and its
+     * playlist written, which is when `cursor` is the file's real size. Marking
+     * it here rather than at the last write is what keeps the reported bytes
+     * equal to the bytes a reader would find on disk.
+     */
+    written.set(renditionId, cursor);
+    finished.add(renditionId);
+    report(renditionId, true);
+
     const last = placements[placements.length - 1]!;
     const first = placements[0]!;
     assembled.push({
@@ -341,6 +474,7 @@ export async function assembleVideoRenditions({
     });
   }
 
+  report(undefined, true);
   return assembled;
 }
 

@@ -9,6 +9,8 @@
  * number.
  */
 
+import { SOFT_STALL_AFTER_MS } from "./stallPolicy";
+
 export interface EpochProgressInput {
   /** Media time covered by epochs that are already durable. */
   protectedSeconds: number;
@@ -159,4 +161,62 @@ export function interpolatedMediaSeconds({
     upperBoundSeconds,
     confirmedSeconds + elapsed * smoothedSpeed,
   );
+}
+
+/**
+ * How long media time may stand still before the encoder is called stalled.
+ *
+ * The *soft* threshold, and only the soft one: it decides what a page says, not
+ * what happens to a process. It is re-exported from the stall policy rather
+ * than restated, because a page that calls an encode stalled at one figure
+ * while the watchdog is working to another is a page that contradicts itself.
+ */
+export const MEDIA_STALL_AFTER_MS = SOFT_STALL_AFTER_MS;
+
+export interface MediaStallReading {
+  /** True once media time has not advanced for the configured window. */
+  stalled: boolean;
+  /** When media time last advanced, so a page can say how long it has been. */
+  advancedAtMs: number;
+  /** Milliseconds since media time last moved. */
+  stalledForMs: number;
+}
+
+export interface MediaStallDetector {
+  sample(processedSeconds: number, atMs: number): MediaStallReading;
+  /** Starts again, for a new epoch or a new attempt. */
+  reset(): void;
+}
+
+/**
+ * Watches media time rather than the reports about it.
+ *
+ * The distinction is the whole point: a report arriving says the process is
+ * alive, and only the figure inside it says work is happening. Nothing here
+ * knows why the work stopped — a blocked read, a suspended process, a filter
+ * graph thinking — and it deliberately does not guess.
+ */
+export function createMediaStallDetector({
+  stallAfterMs = MEDIA_STALL_AFTER_MS,
+}: { stallAfterMs?: number } = {}): MediaStallDetector {
+  let lastSeconds: number | undefined;
+  let advancedAtMs = 0;
+  return {
+    sample(processedSeconds, atMs) {
+      if (lastSeconds === undefined || processedSeconds > lastSeconds + 1e-6) {
+        lastSeconds = processedSeconds;
+        advancedAtMs = atMs;
+      }
+      const stalledForMs = Math.max(0, atMs - advancedAtMs);
+      return {
+        stalled: stalledForMs > stallAfterMs,
+        advancedAtMs,
+        stalledForMs,
+      };
+    },
+    reset() {
+      lastSeconds = undefined;
+      advancedAtMs = 0;
+    },
+  };
 }

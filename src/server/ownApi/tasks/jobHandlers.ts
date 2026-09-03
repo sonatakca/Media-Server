@@ -365,7 +365,9 @@ export function createJobHandlers({
       );
     }
 
-    await reportProgress(0.01, "Starting media processing");
+    await reportProgress(0.01, "Starting media processing").catch(
+      () => undefined,
+    );
     const outcome = await processingRunner.run({
       processingJobId: payload.processingJobId,
       sourcePath: payload.sourcePath,
@@ -374,7 +376,14 @@ export function createJobHandlers({
       mtimeMs: payload.mtimeMs,
       isCancelled,
     });
-    await reportProgress(1, "Media processing finished");
+    /*
+     * Cosmetic, and deliberately best-effort. This mirrors the media job's
+     * progress onto the generic queue row; a database blip while writing it
+     * must not turn a finished — or a deliberately stopped — encode into a
+     * queue failure, because a queue failure is a requeue and a requeue sends
+     * the encoder back over the same media.
+     */
+    await reportProgress(1, "Media processing finished").catch(() => undefined);
 
     if (outcome.status === "failed") {
       const message = outcome.errorMessage ?? "Processing failed.";

@@ -1,4 +1,15 @@
 import type { RenditionVideoEncoder } from "./encoding";
+import type {
+  AssemblyPhaseProgress,
+  AudioPhaseProgress,
+  PublishPhaseProgress,
+  VerificationPhaseProgress,
+} from "./adaptive/phaseProgress";
+import type {
+  SourceDamagePolicy,
+  SourceDamageRecord,
+} from "./adaptive/epochs/salvage";
+import type { SourceReadVerdict } from "./adaptive/epochs/sourceIo";
 
 export interface RenditionSourceSummary {
   width: number;
@@ -102,6 +113,12 @@ export type RenditionProgressEvent =
       speed?: number;
       /** Bytes this job has written, checkpoints included. */
       writtenBytes?: number;
+      /**
+       * True while the media being produced is the replacement for an
+       * unreadable interval. Real work, honestly reported, and labelled for
+       * what it is.
+       */
+      placeholder?: boolean;
     }
   | {
       type: "epoch-complete";
@@ -132,7 +149,63 @@ export type RenditionProgressEvent =
       attempt: number;
       maxAttempts: number;
       sourceReadable?: boolean;
+      /** What the evidence concludes so far, which decides the read budget. */
+      verdict?: SourceReadVerdict;
+      /** One clause naming what decided it. */
+      because?: string;
       detail: string;
+    }
+  /**
+   * Media time stopped and the encoder is being terminated.
+   *
+   * Between "waiting for source data" and any diagnosis. Emitted at the moment
+   * the decision is taken rather than after the kernel has finished unwinding,
+   * because on the drive this was built for that unwinding takes tens of
+   * seconds and a page that goes quiet for them looks like a page that has
+   * crashed.
+   */
+  | {
+      type: "source-stall-abort";
+      mediaId: string;
+      index: number;
+      startSeconds: number;
+      endSeconds: number;
+      lastMediaSeconds: number;
+      stalledForMs: number;
+    }
+  /**
+   * The read budget is spent and the source is the thing that is broken.
+   *
+   * Emitted under either policy, because the diagnosis does not depend on what
+   * is done about it. A page that has been saying "waiting for source data" can
+   * stop guessing from here.
+   */
+  | {
+      type: "source-damage-confirmed";
+      mediaId: string;
+      index: number;
+      damage: SourceDamageRecord;
+      policy: SourceDamagePolicy;
+    }
+  /** Synthetic media of exactly the planned length is being produced. */
+  | {
+      type: "epoch-salvage-start";
+      mediaId: string;
+      index: number;
+      epochCount: number;
+      startSeconds: number;
+      endSeconds: number;
+      expectedDurationSeconds: number;
+    }
+  /** The replacement passed the same validation a real epoch must. */
+  | {
+      type: "epoch-salvaged";
+      mediaId: string;
+      index: number;
+      epochCount: number;
+      protectedSeconds: number;
+      bytes: number;
+      damage: SourceDamageRecord;
     }
   /** Which part of the build is running, for a page that shows stages apart. */
   | {
@@ -147,6 +220,37 @@ export type RenditionProgressEvent =
         | "validating"
         | "publishing";
       detail?: string;
+    }
+  /**
+   * The phases after the video encode, each reporting its own measured work.
+   *
+   * They arrive on the same channel as the epoch events and carry the same
+   * guarantee: every figure in them is something the process has finished, not
+   * something a timer supposes it might have. Before these existed, a job that
+   * had encoded its last frame reported nothing at all for the minutes it spent
+   * encoding audio, joining twenty-seven gigabytes and reading every one of
+   * them back to prove the result — which is precisely when someone watching
+   * most wants to know that anything is happening.
+   */
+  | {
+      type: "audio-progress";
+      mediaId: string;
+      progress: AudioPhaseProgress;
+    }
+  | {
+      type: "assembly-progress";
+      mediaId: string;
+      progress: AssemblyPhaseProgress;
+    }
+  | {
+      type: "verification-progress";
+      mediaId: string;
+      progress: VerificationPhaseProgress;
+    }
+  | {
+      type: "publish-progress";
+      mediaId: string;
+      progress: PublishPhaseProgress;
     }
   | {
       type: "item-complete";

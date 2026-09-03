@@ -16,7 +16,7 @@
  * where no frame exists and therefore the only place a cut is unambiguous.
  */
 
-import { spawn } from "node:child_process";
+import { runBoundedProcess } from "../../processExecution";
 
 /** Presentation time as the source stores it, kept as an exact rational. */
 export interface SourceTimestamp {
@@ -59,60 +59,30 @@ export interface SourceFrameTimeline {
 
 const MAX_PROBE_OUTPUT_BYTES = 16 * 1024 * 1024;
 
-function runProcess(
+/**
+ * A probe that cannot outlive its own question.
+ *
+ * This reads the *source*, which on the drive that motivated all of this can
+ * enter the same twenty-retry kernel recovery as the encode it is diagnosing —
+ * so it is spawned through the managed runner with a wall clock, a process
+ * group and an escalating termination. An unbounded `await` here would hang the
+ * worker in precisely the situation it exists to diagnose.
+ */
+async function runProcess(
   command: string,
   args: string[],
   signal?: AbortSignal,
+  timeoutMs?: number,
 ): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, { shell: false, windowsHide: true });
-    let stdout = "";
-    let stderr = "";
-    let settled = false;
-    const finish = (error?: Error, value?: string) => {
-      if (settled) return;
-      settled = true;
-      signal?.removeEventListener("abort", onAbort);
-      if (error) reject(error);
-      else resolve(value as string);
-    };
-    const onAbort = () => {
-      child.kill("SIGTERM");
-      finish(new Error("The source timeline probe was cancelled."));
-    };
-    if (signal?.aborted) {
-      onAbort();
-      return;
-    }
-    signal?.addEventListener("abort", onAbort, { once: true });
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-      if (stdout.length > MAX_PROBE_OUTPUT_BYTES) {
-        child.kill("SIGTERM");
-        finish(
-          new Error("The source timeline probe produced too much output."),
-        );
-      }
-    });
-    child.stderr.on("data", (chunk: string) => {
-      stderr = `${stderr}${chunk}`.slice(-8192);
-    });
-    child.once("error", (error) => finish(error));
-    child.once("close", (code) => {
-      if (settled) return;
-      if (code !== 0) {
-        finish(
-          new Error(
-            `ffprobe failed with exit code ${code ?? "unknown"}: ${stderr}`,
-          ),
-        );
-        return;
-      }
-      finish(undefined, stdout);
-    });
+  const { stdout } = await runBoundedProcess({
+    command,
+    args,
+    ...(signal ? { signal } : {}),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    maxOutputBytes: MAX_PROBE_OUTPUT_BYTES,
+    describe: "The source timeline probe",
   });
+  return stdout;
 }
 
 function parseTimebase(value: string): number | undefined {
@@ -151,11 +121,20 @@ export async function probeSourceFrameTimeline({
   boundaries,
   ffprobePath = "ffprobe",
   signal,
+  timeoutMs,
 }: {
   sourcePath: string;
   boundaries: readonly number[];
   ffprobePath?: string;
   signal?: AbortSignal;
+  /**
+   * Wall clock the probe may not exceed.
+   *
+   * Set by anything asking this question *about a source that is already
+   * suspect*. Left unset for ordinary planning, where the file has just been
+   * probed successfully and a timeout would only add a way to fail.
+   */
+  timeoutMs?: number;
 }): Promise<SourceFrameTimeline | null> {
   if (boundaries.length === 0) return { timebase: 1000, ticks: [] };
 
@@ -185,6 +164,7 @@ export async function probeSourceFrameTimeline({
         sourcePath,
       ],
       signal,
+      timeoutMs,
     );
   } catch {
     // A source the prober cannot read is not a reason to refuse to build it:

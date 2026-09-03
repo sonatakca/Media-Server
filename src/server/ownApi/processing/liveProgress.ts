@@ -30,6 +30,54 @@ import {
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ProcessingStage } from "./stages";
+import type {
+  AssemblyPhaseProgress,
+  AudioPhaseProgress,
+  PublishPhaseProgress,
+  VerificationPhaseProgress,
+} from "../../../renditions/adaptive/phaseProgress";
+import type { SourceDamageRecord } from "../../../renditions/adaptive/epochs/salvage";
+
+/**
+ * What the encoder currently believes about the source it is reading.
+ *
+ * The states are a diagnosis in progress, and they are separate on purpose: a
+ * page that says "source read problem" the instant media time stops would be
+ * wrong most of the time — an encoder can be busy for six seconds — and one
+ * that says nothing at all leaves a viewer watching a speed figure fall for
+ * minutes while FFmpeg is blocked on a platter that will never answer.
+ *
+ *  - `waiting`     media time has stopped and nothing is known yet.
+ *  - `aborting`    it has stopped for too long; the encoder is being killed.
+ *  - `suspected`   a read failed; the volume is being re-checked.
+ *  - `confirmed`   the read budget is spent and the volume is healthy.
+ *  - `replacing`   synthetic media of the planned length is being produced.
+ *  - `replaced`    the interval has been substituted and the build moved on.
+ */
+export type SourceIoState =
+  | "waiting"
+  | "aborting"
+  | "suspected"
+  | "confirmed"
+  | "replacing"
+  | "replaced";
+
+export interface SourceIoStatus {
+  state: SourceIoState;
+  epochIndex: number | null;
+  /** The source interval in question, so the page can name the minutes. */
+  startSeconds: number | null;
+  endSeconds: number | null;
+  /** Reads attempted so far, and the budget. */
+  attempt?: number;
+  maxAttempts?: number;
+  /** When media time last advanced, so the page can say how long it has been. */
+  advancedAtMs?: number;
+  /** Media seconds the encoder had produced when it stopped producing. */
+  lastMediaSeconds?: number;
+  /** Where the build carries on from, once an interval has been replaced. */
+  resumeSeconds?: number;
+}
 
 /** Where the build is, in terms an operator recognises. */
 export type BuildPhase =
@@ -45,8 +93,25 @@ export interface LiveProgressSnapshot {
   processingJobId: string;
   /** Monotonic per job, so a page can discard a sample that arrived late. */
   revision: number;
-  /** When the sample was taken, in epoch milliseconds. */
+  /**
+   * When this sample was published, in epoch milliseconds.
+   *
+   * Refreshed by the heartbeat as well as by real progress, so it answers only
+   * "is the worker still there" — the reader uses it to decide whether to trust
+   * the sample at all, never to decide whether work is advancing.
+   */
   timestampMs: number;
+  /**
+   * When the values in this sample were last actually measured.
+   *
+   * Differs from `timestampMs` whenever the worker is inside an operation that
+   * reports nothing until it returns: a probe of a ten-gigabyte rendition, a
+   * cross-volume publish. The panel stays alive on the strength of the first;
+   * the rate and remaining time are withdrawn on the strength of the second,
+   * because those describe something happening now. Absent on samples written
+   * before this field existed, where the two were always the same.
+   */
+  confirmedAtMs?: number;
   stage: ProcessingStage;
   phase: BuildPhase;
   epochIndex: number | null;
@@ -69,6 +134,58 @@ export interface LiveProgressSnapshot {
   encoder?: string;
   /** The rungs this build is producing. */
   qualityHeights?: number[];
+  /**
+   * Cumulative progress across the whole job, in [0,1).
+   *
+   * The one number the top bar is drawn from. Monotonic within an attempt and
+   * deliberately never 1: completion is a fact about the job row, not about a
+   * sample. The page shows it as a bar and never as a percentage, because its
+   * phase boundaries are an estimate even though everything inside each phase
+   * is measured.
+   */
+  globalProgress?: number;
+  /** How far through the current phase, measured by that phase's own work. */
+  phaseFraction?: number;
+  /**
+   * The current phase's own detail. Exactly one is present at a time — the one
+   * belonging to `phase` — and it is absent entirely during video, whose
+   * detail is the epoch fields above.
+   */
+  audio?: AudioPhaseProgress;
+  assembly?: AssemblyPhaseProgress;
+  verification?: VerificationPhaseProgress;
+  publish?: PublishPhaseProgress;
+  /**
+   * A line per finished phase, kept so the page can show what is already done
+   * without holding a log. Summaries only: no samples, no history.
+   */
+  completedPhases?: CompletedPhaseSummary[];
+  /**
+   * The source-read diagnosis, present only while there is one to make.
+   *
+   * Its absence is the ordinary case and means the encoder is reading normally.
+   */
+  sourceIo?: SourceIoStatus;
+  /**
+   * Intervals already replaced in this attempt.
+   *
+   * Carried live so the page can name them while the job is still running,
+   * rather than only once the row is written at the end.
+   */
+  sourceDamage?: SourceDamageRecord[];
+}
+
+/** What a finished phase leaves behind on the page. */
+export interface CompletedPhaseSummary {
+  phase: BuildPhase;
+  /** Wall seconds the phase took. */
+  elapsedSeconds: number;
+  /** Bytes it produced or moved, when that is the meaningful figure. */
+  bytes?: number;
+  /** Items it handled: epochs, tracks, renditions, checks. */
+  count?: number;
+  /** True when the phase was satisfied by existing work rather than redone. */
+  reused?: boolean;
 }
 
 export function liveProgressDirectory(): string {

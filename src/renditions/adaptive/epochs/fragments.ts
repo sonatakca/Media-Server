@@ -15,6 +15,8 @@
  * ships.
  */
 
+import { createHash } from "node:crypto";
+
 const CONTAINER_BOXES = new Set([
   "moov",
   "trak",
@@ -423,4 +425,129 @@ function shiftSubsegmentDurations(fragment: Buffer, deltaTicks: number): void {
     if (adjusted <= 0) return;
     fragment.writeUInt32BE(adjusted, durationAt);
   });
+}
+
+/**
+ * What actually has to match for two epochs to be joined.
+ *
+ * Assembly writes the *first* epoch's initialisation segment and then copies
+ * every other epoch's fragments in after it, so the rest are discarded. A
+ * fragment is therefore compatible when it decodes correctly under that
+ * initialisation — which is decided by the decoder configuration record, the
+ * sample entry's format and dimensions, the colour signalling and the media
+ * timescale, and by nothing else in the box tree.
+ *
+ * The distinction matters because the check used to be a digest of the whole
+ * initialisation segment, and on a real HDR title that is stricter than the
+ * truth. A replacement epoch generated from `lavfi` produced a byte-identical
+ * `hvcC` — the same VideoToolbox encoder, the same profile, level and GOP — and
+ * still failed, because the film's own epochs carry two HDR10 static metadata
+ * boxes the generator has nothing to put in (`mdcv`, the mastering display
+ * colour volume, and `clli`, the content light level) along with different
+ * container tags in `udta`. None of those are read when decoding a fragment,
+ * and all of them belong to the initialisation that assembly keeps: the
+ * published title carries the film's real mastering metadata either way.
+ */
+export interface EpochJoinKey {
+  mediaTimescale: number;
+  /** `hvc1`, `avc1`, … — the sample entry's four-character format. */
+  sampleFormat: string;
+  width: number;
+  height: number;
+  /** Digest over the decoder configuration record and colour signalling. */
+  configDigest: string;
+}
+
+/** Sample-entry children that decide how a fragment decodes and is displayed. */
+const JOIN_RELEVANT_BOXES = new Set(["hvcC", "avcC", "av1C", "vpcC", "colr"]);
+
+/** Bytes of a visual sample entry before its child boxes begin. */
+const VISUAL_SAMPLE_ENTRY_HEADER = 78;
+
+/**
+ * Reads the joinability key from an initialisation segment.
+ *
+ * Deliberately narrow, like the rest of this file: it understands the shape
+ * FFmpeg's fMP4 muxer writes and refuses anything else rather than guessing.
+ */
+export function readEpochJoinKey(buffer: Buffer): EpochJoinKey {
+  const { mediaTimescale } = readInitSegment(buffer);
+  let sampleFormat: string | undefined;
+  let width = 0;
+  let height = 0;
+  const parts: Buffer[] = [];
+
+  walkBoxes(buffer, (box) => {
+    if (box.type !== "stsd") return;
+    /*
+     * `stsd` is a full box whose payload is version/flags, an entry count and
+     * then the entries themselves. Only the first is read: a rendition this
+     * pipeline writes carries exactly one sample entry.
+     */
+    const entry = box.payload + 8;
+    if (entry + 8 + VISUAL_SAMPLE_ENTRY_HEADER > box.end) return;
+    sampleFormat = buffer.toString("latin1", entry + 4, entry + 8);
+    const size = buffer.readUInt32BE(entry);
+    width = buffer.readUInt16BE(entry + 8 + 24);
+    height = buffer.readUInt16BE(entry + 8 + 26);
+    walkBoxes(
+      buffer,
+      (child) => {
+        if (!JOIN_RELEVANT_BOXES.has(child.type)) return;
+        parts.push(
+          Buffer.concat([
+            Buffer.from(child.type, "latin1"),
+            buffer.subarray(child.payload, child.end),
+          ]),
+        );
+      },
+      entry + 8 + VISUAL_SAMPLE_ENTRY_HEADER,
+      Math.min(entry + size, box.end),
+    );
+  });
+
+  if (sampleFormat === undefined || parts.length === 0) {
+    throw new Error(
+      "The initialisation segment carries no readable sample description.",
+    );
+  }
+  return {
+    mediaTimescale,
+    sampleFormat,
+    width,
+    height,
+    configDigest: createHash("sha256")
+      .update(Buffer.concat(parts))
+      .digest("hex"),
+  };
+}
+
+/** Whether two epochs' fragments may be joined under one initialisation. */
+export function joinKeysMatch(
+  left: EpochJoinKey,
+  right: EpochJoinKey,
+): boolean {
+  return (
+    left.mediaTimescale === right.mediaTimescale &&
+    left.sampleFormat === right.sampleFormat &&
+    left.width === right.width &&
+    left.height === right.height &&
+    left.configDigest === right.configDigest
+  );
+}
+
+/** Names the first difference, for a message a person can act on. */
+export function describeJoinMismatch(
+  left: EpochJoinKey,
+  right: EpochJoinKey,
+): string | undefined {
+  if (left.mediaTimescale !== right.mediaTimescale)
+    return `a ${left.mediaTimescale} media timescale where the reference used ${right.mediaTimescale}`;
+  if (left.sampleFormat !== right.sampleFormat)
+    return `a ${left.sampleFormat} sample entry where the reference used ${right.sampleFormat}`;
+  if (left.width !== right.width || left.height !== right.height)
+    return `${left.width}x${left.height} where the reference used ${right.width}x${right.height}`;
+  if (left.configDigest !== right.configDigest)
+    return "a different decoder configuration from the reference";
+  return undefined;
 }

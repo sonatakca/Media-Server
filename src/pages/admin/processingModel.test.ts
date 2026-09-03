@@ -4,6 +4,11 @@ import type { ProcessingLiveProgress } from "../../lib/processingApi";
 import {
   audioDecisionKey,
   buildPhaseFor,
+  damagedSecondsTotal,
+  formatDamagedInterval,
+  isSalvaged,
+  sourceDamageRecords,
+  sourceIoNotice,
   completedEpochs,
   encodedFraction,
   encodedPercent,
@@ -19,6 +24,7 @@ import {
   canResume,
   canRetry,
   formatBytes,
+  formatFileSize,
   formatDuration,
   formatFinishedAt,
   formatSpeed,
@@ -56,6 +62,7 @@ function job(overrides: Partial<ProcessingJob> = {}): ProcessingJob {
     decision: null,
     validation: null,
     warnings: [],
+    sourceDamage: null,
     errorCode: null,
     errorMessage: null,
     publishedVersion: null,
@@ -299,6 +306,18 @@ describe("formatting", () => {
     expect(formatBytes(125_400_000)).toBe("125.4 MB");
     expect(formatBytes(10_000_000_000)).toBe("10000.0 MB");
     expect(formatBytes(null)).toBe("—");
+  });
+
+  it("names a standalone file size in gigabytes", () => {
+    // The figure on the delete button: recognisable at a glance, because the
+    // press after it is the one that cannot be taken back.
+    expect(formatFileSize(20_250_000_000)).toBe("20.25 GB");
+    expect(formatFileSize(24_600_000_000)).toBe("24.60 GB");
+    expect(formatFileSize(1_000_000_000)).toBe("1.00 GB");
+    expect(formatFileSize(2_500_000_000_000)).toBe("2.50 TB");
+    // Under a gigabyte it stays in MB rather than reading as "0.7 GB".
+    expect(formatFileSize(700_000_000)).toBe("700.0 MB");
+    expect(formatFileSize(null)).toBe("—");
   });
 
   it("shows durations without leading zeroes people have to decode", () => {
@@ -763,5 +782,137 @@ describe("checkpoint-aware actions", () => {
     });
     expect(canResume(stalled)).toBe(false);
     expect(canCancel(stalled)).toBe(true);
+  });
+});
+
+const DAMAGE = {
+  type: "source-damage" as const,
+  epochIndex: 10,
+  sourceStartSeconds: 3000.039,
+  sourceEndSeconds: 3300.005,
+  expectedDurationSeconds: 299.966,
+  sourceRetryCount: 4,
+  evidence: [],
+  detectedAt: "2026-09-02T00:00:00.000Z",
+};
+
+/**
+ * Telling a perfect encode from a salvaged one.
+ *
+ * Both succeed, both leave a playable package, and the state alone cannot say
+ * that five minutes of the film are black. This is the only thing that can.
+ */
+describe("a salvaged title", () => {
+  it("is not the same outcome as a clean one", () => {
+    expect(isSalvaged(job())).toBe(false);
+    expect(isSalvaged(job({ sourceDamage: [] }))).toBe(false);
+    expect(isSalvaged(job({ sourceDamage: [DAMAGE] }))).toBe(true);
+  });
+
+  it("names its interval the way the incident report does", () => {
+    expect(formatDamagedInterval(DAMAGE)).toBe("00:50:00–00:55:00");
+    expect(damagedSecondsTotal([DAMAGE])).toBeCloseTo(299.966, 3);
+  });
+
+  it("prefers whichever lane has seen more of the damage", () => {
+    // The live sample leads while a job runs; the row is what survives a
+    // restart. Taking the fuller of the two stops the list flickering.
+    expect(sourceDamageRecords(job({ sourceDamage: [DAMAGE] }), null)).toEqual([
+      DAMAGE,
+    ]);
+    expect(
+      sourceDamageRecords(job(), {
+        sourceDamage: [DAMAGE],
+      } as never),
+    ).toEqual([DAMAGE]);
+    expect(sourceDamageRecords(job(), null)).toEqual([]);
+  });
+});
+
+/**
+ * Saying as little as the evidence supports.
+ *
+ * An encoder is allowed to be busy, so media time stopping is only ever
+ * "waiting"; a read that has actually failed is a problem; and only a spent
+ * budget on a healthy volume justifies naming an interval as damaged.
+ */
+describe("sourceIoNotice", () => {
+  it("says nothing when there is nothing to say", () => {
+    expect(sourceIoNotice(null)).toBeNull();
+    expect(sourceIoNotice({} as never)).toBeNull();
+  });
+
+  it("is tentative while nothing is known", () => {
+    const notice = sourceIoNotice({
+      sourceIo: {
+        state: "waiting",
+        epochIndex: 10,
+        startSeconds: 3000,
+        endSeconds: 3300,
+      },
+    } as never);
+    expect(notice?.key).toBe("processing.sourceIo.waiting");
+    expect(notice?.tentative).toBe(true);
+  });
+
+  it("stops being tentative once the encoder is being stopped", () => {
+    const notice = sourceIoNotice({
+      sourceIo: {
+        state: "aborting",
+        epochIndex: 10,
+        startSeconds: 3000,
+        endSeconds: 3300,
+        lastMediaSeconds: 123.29,
+      },
+    } as never);
+    expect(notice?.key).toBe("processing.sourceIo.aborting");
+    expect(notice?.tentative).toBe(false);
+  });
+
+  it("becomes a statement only once a read has failed for good", () => {
+    expect(
+      sourceIoNotice({
+        sourceIo: {
+          state: "suspected",
+          epochIndex: 10,
+          startSeconds: 3000,
+          endSeconds: 3300,
+          attempt: 3,
+          maxAttempts: 4,
+        },
+      } as never),
+    ).toEqual({
+      key: "processing.sourceIo.suspected",
+      values: { attempt: "3", attempts: "4" },
+      tentative: true,
+    });
+    const confirmed = sourceIoNotice({
+      sourceIo: {
+        state: "confirmed",
+        epochIndex: 10,
+        startSeconds: 3000,
+        endSeconds: 3300,
+      },
+    } as never);
+    expect(confirmed?.tentative).toBe(false);
+    expect(confirmed?.values).toEqual({ from: "00:50:00", to: "00:55:00" });
+  });
+
+  it("says where the build carries on from once the interval is replaced", () => {
+    expect(
+      sourceIoNotice({
+        sourceIo: {
+          state: "replaced",
+          epochIndex: 10,
+          startSeconds: 3000,
+          endSeconds: 3300,
+          resumeSeconds: 3300,
+        },
+      } as never),
+    ).toEqual({
+      key: "processing.sourceIo.replaced",
+      values: { from: "00:55:00" },
+      tentative: false,
+    });
   });
 });

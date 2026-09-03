@@ -1,4 +1,6 @@
 import type {
+  AudioTrackProgress,
+  SourceDamageRecord,
   ProcessingAudioDecision,
   ProcessingBuildPhase,
   ProcessingJob,
@@ -122,6 +124,31 @@ export function formatBytes(bytes: number | null | undefined): string {
   // Actual and estimated output can then be compared digit-for-digit without
   // mentally converting one row from GB while another is still in MB.
   return `${(safeBytes / 1_000_000).toFixed(1)} MB`;
+}
+
+/**
+ * One size on its own, in the unit someone would actually say it in.
+ *
+ * Kept apart from `formatBytes`, which holds everything at MB on purpose so a
+ * column of output figures can be read digit for digit. A source file
+ * announced by itself is the opposite case: it is not being compared with
+ * anything, it is usually tens of gigabytes, and "24600.0 MB" on a button that
+ * deletes the file is a number to decode rather than a size to recognise.
+ * Below a gigabyte it stays in MB, because "0.7 GB" reads as nothing at all.
+ *
+ * Two decimals, not one: at this scale a tenth of a gigabyte is still a
+ * hundred megabytes, and the figure is being read to decide whether the file
+ * is worth removing.
+ */
+export function formatFileSize(bytes: number | null | undefined): string {
+  if (bytes === null || bytes === undefined || !Number.isFinite(bytes))
+    return "—";
+  const safeBytes = Math.max(0, bytes);
+  if (safeBytes >= 1_000_000_000_000)
+    return `${(safeBytes / 1_000_000_000_000).toFixed(2)} TB`;
+  if (safeBytes >= 1_000_000_000)
+    return `${(safeBytes / 1_000_000_000).toFixed(2)} GB`;
+  return formatBytes(safeBytes);
 }
 
 /** Duration in the shortest form that stays unambiguous. */
@@ -458,6 +485,139 @@ export function smoothedEncodedSeconds({
   );
 }
 
+/**
+ * The whole-job bar's position, as a percentage of its own width.
+ *
+ * Three sources, in order of authority: a finished job is finished, a live
+ * sample knows where the work is, and the row is what remains after a restart.
+ * Taking the largest of the two that are live is what keeps the bar from
+ * stepping backwards when a sample arrives a moment before the row that
+ * follows it — they are written by different processes at different rates.
+ *
+ * Deliberately returns a number for a bar's width and nothing else. The page
+ * never prints it: inside every phase the figures are measured exactly, but the
+ * boundaries between phases are an estimate of relative cost, and a percentage
+ * would claim a precision that half of the model does not have.
+ */
+export function globalProgressPercent(
+  job: Pick<ProcessingJob, "overallProgress" | "state">,
+  live?: ProcessingLiveProgress | null,
+): number {
+  if (job.state === "succeeded") return 100;
+  const fromRow = Number.isFinite(job.overallProgress)
+    ? Math.min(1, Math.max(0, job.overallProgress))
+    : 0;
+  const fromLive =
+    live?.globalProgress !== undefined && Number.isFinite(live.globalProgress)
+      ? Math.min(1, Math.max(0, live.globalProgress))
+      : 0;
+  // Never the full width unless the job actually finished: a bar that fills
+  // while a package is still being published is the exact lie this replaces.
+  return Math.min(99.9, Math.max(fromRow, fromLive) * 100);
+}
+
+/**
+ * How long a live sample may be trusted before it is treated as a stall.
+ *
+ * The worker publishes about four times a second while any phase is producing
+ * progress, so silence for this long means the work stopped: a pause, a
+ * vanished volume, a killed worker. The figures in the last sample are still
+ * true — they are what was measured — but a throughput and a remaining time are
+ * not, because both describe a rate that is no longer happening.
+ *
+ * Mirrors the server's own staleness window; the two describe the same fact
+ * from either end of the stream.
+ */
+export const LIVE_SAMPLE_STALE_MS = 6_000;
+
+export function liveSampleIsStale(
+  live: ProcessingLiveProgress | null | undefined,
+  nowMs: number,
+): boolean {
+  if (!live) return false;
+  /*
+   * Measured at, not published at. The worker republishes the same figures
+   * every couple of seconds so a long single operation keeps its panel; what
+   * decides whether a throughput is still true is when the figures last
+   * changed, which is what `confirmedAtMs` records. Samples from before that
+   * field existed fall back to the publication time, where the two were equal.
+   */
+  return (
+    nowMs - (live.confirmedAtMs ?? live.timestampMs) > LIVE_SAMPLE_STALE_MS
+  );
+}
+
+/** Bytes per second, in the units a person reading a disk figure expects. */
+export function formatByteRate(
+  bytesPerSecond: number | null | undefined,
+): string {
+  if (
+    bytesPerSecond === null ||
+    bytesPerSecond === undefined ||
+    !Number.isFinite(bytesPerSecond) ||
+    bytesPerSecond <= 0
+  ) {
+    return "—";
+  }
+  if (bytesPerSecond >= 1024 ** 3) {
+    return `${(bytesPerSecond / 1024 ** 3).toFixed(2)} GiB/s`;
+  }
+  if (bytesPerSecond >= 1024 ** 2) {
+    return `${(bytesPerSecond / 1024 ** 2).toFixed(1)} MiB/s`;
+  }
+  return `${(bytesPerSecond / 1024).toFixed(0)} KiB/s`;
+}
+
+/**
+ * A percentage for a phase's own detail, where one decimal is meaningful.
+ *
+ * Unlike the global bar these are exact: bytes written over bytes to write,
+ * media seconds over media seconds.
+ */
+export function phasePercent(fraction: number | null | undefined): string {
+  if (
+    fraction === null ||
+    fraction === undefined ||
+    !Number.isFinite(fraction)
+  ) {
+    return "—";
+  }
+  return `${(Math.min(1, Math.max(0, fraction)) * 100).toFixed(1)}%`;
+}
+
+/** The label key for a finished phase's history line. */
+export function completedPhaseLabelKey(phase: ProcessingBuildPhase): string {
+  return BUILD_PHASE_LABEL_KEYS[phase];
+}
+
+/**
+ * An audio track's one-line description: language, codec, channels.
+ *
+ * Assembled here rather than in the component so the fallbacks are testable —
+ * a source that declares no language for a track is ordinary, and the line has
+ * to read properly without it.
+ */
+export function describeAudioTrack(
+  track: AudioTrackProgress,
+  languageName: (code: string) => string,
+): string {
+  const channels =
+    track.channels >= 6
+      ? "5.1"
+      : track.channels === 2
+        ? "2.0"
+        : track.channels === 1
+          ? "1.0"
+          : null;
+  return [
+    track.language ? languageName(track.language) : track.title,
+    track.codec.toUpperCase(),
+    channels,
+  ]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+}
+
 /** Human phase label key, so the page can say what is happening rather than a percentage. */
 export const BUILD_PHASE_LABEL_KEYS: Readonly<
   Record<ProcessingBuildPhase, string>
@@ -544,4 +704,133 @@ export function isWaitingForStorage(
   job: Pick<ProcessingJob, "state" | "pauseRequested" | "pausedReason">,
 ): boolean {
   return job.pausedReason === "storage-unavailable" && job.pauseRequested;
+}
+
+/**
+ * Whether a finished job replaced part of the source rather than encoding it.
+ *
+ * The one question that separates a perfect encode from a salvaged one, and it
+ * is deliberately not answerable from the job's state: both succeeded, both
+ * left a playable package, and only this says that five minutes of the film are
+ * black because the disk could not read them.
+ */
+export function isSalvaged(job: Pick<ProcessingJob, "sourceDamage">): boolean {
+  return (job.sourceDamage?.length ?? 0) > 0;
+}
+
+/** Replaced intervals, from whichever source knows: the live sample or the row. */
+export function sourceDamageRecords(
+  job: Pick<ProcessingJob, "sourceDamage">,
+  live?: ProcessingLiveProgress | null,
+): SourceDamageRecord[] {
+  const fromLive = live?.sourceDamage ?? [];
+  const fromRow = job.sourceDamage ?? [];
+  return fromLive.length >= fromRow.length ? fromLive : fromRow;
+}
+
+/** `00:50:00–00:55:00`, the form the warning and the panel both use. */
+export function formatDamagedInterval(
+  record: Pick<SourceDamageRecord, "sourceStartSeconds" | "sourceEndSeconds">,
+): string {
+  return `${formatMediaClock(record.sourceStartSeconds)}–${formatMediaClock(
+    record.sourceEndSeconds,
+  )}`;
+}
+
+/** Total media time replaced, for a one-line summary. */
+export function damagedSecondsTotal(
+  records: readonly SourceDamageRecord[],
+): number {
+  return records.reduce(
+    (total, record) =>
+      total + Math.max(0, record.sourceEndSeconds - record.sourceStartSeconds),
+    0,
+  );
+}
+
+/** What the panel says about the source, and the values its sentence needs. */
+export interface SourceIoNotice {
+  key:
+    | "processing.sourceIo.waiting"
+    | "processing.sourceIo.aborting"
+    | "processing.sourceIo.suspected"
+    | "processing.sourceIo.confirmed"
+    | "processing.sourceIo.replacing"
+    | "processing.sourceIo.replaced";
+  /** Substitutions for the template, already formatted as clock times. */
+  values: Record<string, string>;
+  /** True while nothing is wrong yet and the encoder may simply be busy. */
+  tentative: boolean;
+}
+
+/**
+ * The source-read notice to show, if any.
+ *
+ * Deliberately says as little as the evidence supports. Media time stopping is
+ * "waiting for source data", because an encoder is allowed to be busy; a read
+ * that has actually failed is "source read problem"; and only a spent budget on
+ * a healthy volume justifies naming an interval as damaged. Showing the last of
+ * those first is how a page ends up accusing a perfectly good disc.
+ */
+export function sourceIoNotice(
+  live: ProcessingLiveProgress | null | undefined,
+): SourceIoNotice | null {
+  const status = live?.sourceIo;
+  if (!status) return null;
+  const from = formatMediaClock(status.startSeconds ?? 0);
+  const to = formatMediaClock(status.endSeconds ?? 0);
+  switch (status.state) {
+    case "waiting":
+      return {
+        key: "processing.sourceIo.waiting",
+        values: {},
+        tentative: true,
+      };
+    case "aborting":
+      /*
+       * No longer tentative: the encoder is being stopped. What follows can
+       * take tens of seconds, because a process wedged in an uninterruptible
+       * read cannot be killed until the kernel returns control — so saying so
+       * is the difference between a page that looks busy and one that looks
+       * crashed.
+       */
+      return {
+        key: "processing.sourceIo.aborting",
+        values: {},
+        tentative: false,
+      };
+    case "suspected":
+      return {
+        key: "processing.sourceIo.suspected",
+        values: {
+          attempt: String(status.attempt ?? 1),
+          attempts: String(status.maxAttempts ?? 1),
+        },
+        tentative: true,
+      };
+    case "confirmed":
+      return {
+        key: "processing.sourceIo.confirmed",
+        values: { from, to },
+        tentative: false,
+      };
+    case "replacing":
+      return {
+        key: "processing.sourceIo.replacing",
+        values: { from, to },
+        tentative: false,
+      };
+    case "replaced":
+      return {
+        key: "processing.sourceIo.replaced",
+        values: {
+          from: formatMediaClock(
+            status.resumeSeconds ?? status.endSeconds ?? 0,
+          ),
+        },
+        tentative: false,
+      };
+    default:
+      return null;
+  }
 }

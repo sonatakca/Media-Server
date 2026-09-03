@@ -44,6 +44,14 @@ export interface ProcessingJobRecord {
   streamDecisions: Record<string, unknown> | null;
   validation: Record<string, unknown> | null;
   warnings: string[];
+  /**
+   * Intervals of the source that could not be read and were replaced.
+   *
+   * NULL for every clean encode. A succeeded job carrying these is a *salvaged*
+   * title — playable, on its own timeline, with black picture and silence where
+   * the disk could not answer — and nothing may present it as a perfect result.
+   */
+  sourceDamage: Record<string, unknown>[] | null;
   errorCode: string | null;
   errorMessage: string | null;
   stagingDirectory: string | null;
@@ -118,6 +126,7 @@ export interface ProcessingJobUpdate {
   videoEncoder?: string;
   validation?: Record<string, unknown> | null;
   warnings?: string[];
+  sourceDamage?: Record<string, unknown>[] | null;
   errorCode?: string | null;
   errorMessage?: string | null;
   stagingDirectory?: string | null;
@@ -156,7 +165,7 @@ const COLUMNS = `
   state, stage, stage_progress, overall_progress,
   bytes_processed, output_bytes, estimated_output_bytes, estimated_staging_bytes,
   speed, fps, eta_seconds, hardware_adapter, video_encoder,
-  decision, stream_decisions, validation, warnings,
+  decision, stream_decisions, validation, warnings, source_damage,
   error_code, error_message, staging_directory, published_version,
   attempts, cancellation_requested, pause_requested, paused_reason,
   epoch_count, epoch_index, completed_epochs, protected_seconds,
@@ -189,6 +198,7 @@ interface RawRow {
   stream_decisions: Record<string, unknown> | null;
   validation: Record<string, unknown> | null;
   warnings: string[] | null;
+  source_damage: Record<string, unknown>[] | null;
   error_code: string | null;
   error_message: string | null;
   staging_directory: string | null;
@@ -243,6 +253,7 @@ function toRecord(row: RawRow): ProcessingJobRecord {
     decision: row.decision,
     streamDecisions: row.stream_decisions,
     validation: row.validation,
+    sourceDamage: row.source_damage,
     warnings: Array.isArray(row.warnings) ? row.warnings : [],
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -362,6 +373,33 @@ export interface ProcessingJobStore {
    * failed on the next start rather than sitting at `running` for ever.
    */
   findInterrupted(): Promise<ProcessingJobRecord[]>;
+  /**
+   * How long each phase of recent successful jobs actually took.
+   *
+   * Read from records this system already keeps: the stage history it writes
+   * for the timeline, and the job row's own duration and byte totals. Nothing
+   * is stored for the sake of this query — it is the same evidence an operator
+   * reads off the page, aggregated.
+   *
+   * Its one purpose is to weight the whole-job progress bar from what this
+   * machine and this storage actually do, instead of from constants chosen
+   * elsewhere. Bounded by `limit`, and run once per attempt.
+   */
+  listPhaseTimings(limit?: number): Promise<PhaseTimingRecord[]>;
+}
+
+/** One completed job, reduced to when each of its phases started and ended. */
+export interface PhaseTimingRecord {
+  sourceDurationSeconds: number | null;
+  /** Bytes this job itself wrote — its assembled, verified, published package. */
+  outputBytes: number;
+  videoEncoder: string | null;
+  hardwareAdapter: string | null;
+  audioTrackCount: number;
+  startedAt: Date | null;
+  finishedAt: Date | null;
+  /** First time each stage was reported, which is when that phase began. */
+  stageStartedAt: Partial<Record<ProcessingStage, Date>>;
 }
 
 export function createProcessingJobStore(
@@ -499,6 +537,14 @@ export function createProcessingJobStore(
       if (update.videoEncoder !== undefined)
         set("video_encoder", update.videoEncoder);
       if (update.validation !== undefined) set("validation", update.validation);
+      if (update.sourceDamage !== undefined) {
+        set(
+          "source_damage",
+          update.sourceDamage === null
+            ? null
+            : JSON.stringify(update.sourceDamage),
+        );
+      }
       if (update.warnings !== undefined)
         set("warnings", JSON.stringify(update.warnings));
       if (update.errorCode !== undefined) set("error_code", update.errorCode);
@@ -631,6 +677,13 @@ export function createProcessingJobStore(
            fps = NULL,
            eta_seconds = NULL,
            validation = NULL,
+           /*
+            * A retry is a fresh reading of the source. The previous attempt's
+            * damage describes bytes that may since have been repaired or the
+            * whole file replaced, so it must not survive into a run that has
+            * not looked at the disk yet.
+            */
+           source_damage = NULL,
            error_code = NULL,
            error_message = NULL,
            cancellation_requested = false,
@@ -749,6 +802,72 @@ export function createProcessingJobStore(
         detail: row.detail,
         createdAt: row.created_at,
       }));
+    },
+
+    async listPhaseTimings(limit = 20) {
+      /*
+       * One query, bounded twice: to the most recent successful jobs, and to
+       * the stage rows belonging to them. The inner select is what keeps the
+       * join from touching the whole event history — that table grows without
+       * limit and this runs at the start of every attempt.
+       */
+      const result = await pool.query<{
+        id: string;
+        source_duration_seconds: number | null;
+        bytes_processed: string | number;
+        output_bytes: string | number | null;
+        video_encoder: string | null;
+        hardware_adapter: string | null;
+        decision: Record<string, unknown> | null;
+        started_at: Date | null;
+        finished_at: Date | null;
+        stage: ProcessingStage;
+        stage_started_at: Date;
+      }>(
+        `SELECT j.id, j.source_duration_seconds, j.bytes_processed, j.output_bytes,
+                j.video_encoder, j.hardware_adapter, j.decision,
+                j.started_at, j.finished_at,
+                e.stage, MIN(e.created_at) AS stage_started_at
+           FROM (
+             SELECT id, source_duration_seconds, bytes_processed, output_bytes,
+                    video_encoder, hardware_adapter, decision, started_at, finished_at
+               FROM processing_jobs
+              WHERE state = 'succeeded'
+                AND started_at IS NOT NULL
+                AND finished_at IS NOT NULL
+              ORDER BY finished_at DESC
+              LIMIT $1
+           ) j
+           JOIN processing_job_events e ON e.processing_job_id = j.id
+          GROUP BY j.id, j.source_duration_seconds, j.bytes_processed, j.output_bytes,
+                   j.video_encoder, j.hardware_adapter, j.decision,
+                   j.started_at, j.finished_at, e.stage`,
+        [Math.max(1, Math.min(100, limit))],
+      );
+
+      const byJob = new Map<string, PhaseTimingRecord>();
+      for (const row of result.rows) {
+        let record = byJob.get(row.id);
+        if (!record) {
+          const decision = row.decision as {
+            streams?: { keptAudioStreamIndexes?: unknown[] };
+          } | null;
+          record = {
+            sourceDurationSeconds: row.source_duration_seconds,
+            outputBytes: Number(row.bytes_processed ?? 0),
+            videoEncoder: row.video_encoder,
+            hardwareAdapter: row.hardware_adapter,
+            audioTrackCount:
+              decision?.streams?.keptAudioStreamIndexes?.length ?? 0,
+            startedAt: row.started_at,
+            finishedAt: row.finished_at,
+            stageStartedAt: {},
+          };
+          byJob.set(row.id, record);
+        }
+        record.stageStartedAt[row.stage] = row.stage_started_at;
+      }
+      return [...byJob.values()];
     },
 
     async counts() {
