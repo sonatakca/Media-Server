@@ -1,9 +1,20 @@
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdaptivePackageMetadata } from "./metadata";
-import { publishTitlePackage, readTitlePackageManifest } from "./publishTitle";
+import {
+  copyFileResumable,
+  publishTitlePackage,
+  readTitlePackageManifest,
+} from "./publishTitle";
 
 /**
  * Publishing a built package into the folder a person browses.
@@ -120,14 +131,35 @@ function metadata(): AdaptivePackageMetadata {
   } as unknown as AdaptivePackageMetadata;
 }
 
+/*
+ * The byte ranges have to fit inside the placeholder media files below, not
+ * just look plausible. Publication verifies the destination playlist against
+ * the size of the file it just copied, so a fixture whose ranges ran past its
+ * own media would be rejected for exactly the reason a truncated copy is.
+ */
 function renditionPlaylist(mediaFileName: string): string {
   return [
     "#EXTM3U",
     "#EXT-X-VERSION:7",
-    `#EXT-X-MAP:URI="${mediaFileName}",BYTERANGE="1052@0"`,
+    `#EXT-X-MAP:URI="${mediaFileName}",BYTERANGE="4@0"`,
     "#EXTINF:2.002000,",
-    "#EXT-X-BYTERANGE:855499@1052",
+    "#EXT-X-BYTERANGE:5@4",
     mediaFileName,
+    "#EXT-X-ENDLIST",
+    "",
+  ].join("\n");
+}
+
+/** A WebVTT rendition carries no initialisation segment and never has one. */
+function subtitlePlaylist(fileName: string): string {
+  return [
+    "#EXTM3U",
+    "#EXT-X-VERSION:3",
+    "#EXT-X-TARGETDURATION:3",
+    "#EXT-X-MEDIA-SEQUENCE:0",
+    "#EXT-X-PLAYLIST-TYPE:VOD",
+    "#EXTINF:2.002000,",
+    fileName,
     "#EXT-X-ENDLIST",
     "",
   ].join("\n");
@@ -151,7 +183,7 @@ async function buildWorkPackage(): Promise<{
     ["audio/track-1/media.m4s", "audio-bytes"],
     ["audio/track-1/playlist.m3u8", renditionPlaylist("media.m4s")],
     ["subtitles/subtitle-4/subtitles.vtt", "WEBVTT\n"],
-    ["subtitles/subtitle-4/playlist.m3u8", renditionPlaylist("subtitles.vtt")],
+    ["subtitles/subtitle-4/playlist.m3u8", subtitlePlaylist("subtitles.vtt")],
     [
       "master.m3u8",
       [
@@ -233,6 +265,18 @@ describe("publishing a package into its title folder", () => {
     expect(
       await readFile(path.join(titleRoot, "Dune (2021).mp4"), "utf8"),
     ).toBe("the source");
+  });
+
+  it("keeps the verified scratch package until its caller commits success", async () => {
+    const { workVersionRoot, titleRoot } = await buildWorkPackage();
+    await publishTitlePackage({
+      workVersionRoot,
+      titleRoot,
+      metadata: metadata(),
+    });
+    await expect(
+      readFile(path.join(workVersionRoot, "video/2160p/media.m4s"), "utf8"),
+    ).resolves.toBe("2160-bytes");
   });
 
   /**
@@ -337,5 +381,74 @@ describe("publishing a package into its title folder", () => {
     expect(await readdir(path.join(titleRoot, "audio"))).toEqual([
       "english.m4a",
     ]);
+  });
+
+  it("never exposes an HDD package whose incoming playlists fail verification", async () => {
+    const { workVersionRoot, titleRoot } = await buildWorkPackage();
+    await mkdir(path.join(titleRoot, "video"), { recursive: true });
+    await writeFile(path.join(titleRoot, "video", "existing.mp4"), "old-valid");
+    await writeFile(
+      path.join(workVersionRoot, "video/2160p/playlist.m3u8"),
+      "not an hls playlist",
+    );
+
+    await expect(
+      publishTitlePackage({
+        workVersionRoot,
+        titleRoot,
+        metadata: metadata(),
+        publicationId: "verification-failure",
+      }),
+    ).rejects.toThrow(/invalid playlist/);
+    await expect(
+      readFile(path.join(titleRoot, "video", "existing.mp4"), "utf8"),
+    ).resolves.toBe("old-valid");
+    await expect(
+      stat(path.join(titleRoot, ".seyirlik-incoming", "verification-failure")),
+    ).resolves.toBeDefined();
+  });
+});
+
+describe("resumable cross-volume copy", () => {
+  it("continues a partial destination without recopying its verified prefix", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "seyirlik-copy-resume-"));
+    const source = path.join(root, "scratch.bin");
+    const destination = path.join(root, "incoming", "media.bin");
+    const bytes = Buffer.alloc(3 * 1024 * 1024, 0x5a);
+    await writeFile(source, bytes);
+
+    const controller = new AbortController();
+    await expect(
+      copyFileResumable(source, destination, {
+        signal: controller.signal,
+        onProgress: (completed) => {
+          if (completed >= 1024 * 1024) controller.abort();
+        },
+      }),
+    ).rejects.toThrow(/interrupted/);
+    const partialBytes = (await stat(destination)).size;
+    expect(partialBytes).toBeGreaterThanOrEqual(1024 * 1024);
+    expect(partialBytes).toBeLessThan(bytes.length);
+
+    const samples: number[] = [];
+    await copyFileResumable(source, destination, {
+      onProgress: (completed) => samples.push(completed),
+    });
+    expect(samples[0]).toBe(partialBytes);
+    expect(await readFile(destination)).toEqual(bytes);
+  }, 30_000);
+
+  it("discards an untrusted partial suffix before resuming", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "seyirlik-copy-reset-"));
+    const source = path.join(root, "scratch.bin");
+    const destination = path.join(root, "incoming.bin");
+    await writeFile(source, Buffer.alloc(2 * 1024 * 1024, 0x11));
+    await writeFile(destination, Buffer.alloc(1024 * 1024, 0x22));
+    const samples: number[] = [];
+    await copyFileResumable(source, destination, {
+      onProgress: (completed) => samples.push(completed),
+    });
+    expect(samples[0]).toBe(0);
+    expect(await readFile(destination)).toEqual(await readFile(source));
   });
 });

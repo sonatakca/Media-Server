@@ -12,7 +12,14 @@ import type { SourceIoEvidence, SourceReadVerdict } from "./sourceIo";
 import type { SourceDamageRecord } from "./salvage";
 
 export type ProcessingFailureKind =
+  /** A root is simply absent outside active I/O; this is the clean-unmount path. */
   | "storage-unavailable"
+  /** The device vanished while a source or destination was actively in use. */
+  | "storage-device-lost"
+  /** An unambiguous OS or FFmpeg storage error such as EIO or ENXIO. */
+  | "storage-io"
+  /** A storage-adjacent signal that does not itself establish physical failure. */
+  | "storage-soft-fault"
   | "out-of-space"
   /**
    * The volume is there, mounted, the same device it was, and answering — and
@@ -53,7 +60,7 @@ export interface ClassifiedFailure {
 }
 
 /** Errno spellings that mean the storage stopped answering, not that a file is absent. */
-const STORAGE_ERROR_PATTERNS = [
+const HARD_STORAGE_ERROR_PATTERNS = [
   /\bEIO\b/,
   /Input\/output error/i,
   /\bENXIO\b/,
@@ -62,6 +69,9 @@ const STORAGE_ERROR_PATTERNS = [
   /Stale file handle/i,
   /Device not configured/i,
   /Transport endpoint is not connected/i,
+];
+
+const AMBIGUOUS_STORAGE_ERROR_PATTERNS = [
   /Resource temporarily unavailable on/i,
 ];
 
@@ -74,7 +84,15 @@ const SPACE_ERROR_PATTERNS = [
 const MISSING_PATTERNS = [/\bENOENT\b/, /No such file or directory/i];
 
 export function looksLikeStorageLoss(message: string): boolean {
-  return STORAGE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
+  return [
+    ...HARD_STORAGE_ERROR_PATTERNS,
+    ...AMBIGUOUS_STORAGE_ERROR_PATTERNS,
+  ].some((pattern) => pattern.test(message));
+}
+
+/** True only when one occurrence proves that the storage path failed. */
+export function looksLikeHardStorageFailure(message: string): boolean {
+  return HARD_STORAGE_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 
 export function looksLikeOutOfSpace(message: string): boolean {
@@ -95,6 +113,7 @@ export function looksLikeMissingPath(message: string): boolean {
  */
 export function classifyFailure({
   message,
+  errorCode,
   storageAvailable,
   missingRoots = [],
   ioRechecksExhausted = false,
@@ -102,6 +121,17 @@ export function classifyFailure({
   sourceVerdict,
 }: {
   message: string;
+  /**
+   * The `errno` the failure carried, where it carried one.
+   *
+   * Outranks every message heuristic below, because it is the operating
+   * system's own answer rather than a sentence somebody wrote. Seyirlik's own
+   * storage errors are the case in point: the free-space preflight refuses a
+   * publication with a plain-English message and an `ENOSPC` code, and reading
+   * only the prose classified a merely-full disk as a broken encoder — ending
+   * the job permanently instead of deferring it until room was made.
+   */
+  errorCode?: string | undefined;
   /** Whether every root the job needs answered its last check. */
   storageAvailable: boolean;
   missingRoots?: readonly string[];
@@ -138,10 +168,23 @@ export function classifyFailure({
   const where = missingRoots.length > 0 ? ` (${missingRoots.join(", ")})` : "";
   const carry = evidence ? { evidence } : {};
 
+  /*
+   * An explicit `ENOSPC` is checked before the volume is asked about, because
+   * a full disk is still a present disk: falling through to the availability
+   * question would describe "there is no room" as "the drive went away".
+   */
+  if (errorCode === "ENOSPC") {
+    return {
+      kind: "out-of-space",
+      summary: "The output volume ran out of space.",
+      detail,
+      ...carry,
+    };
+  }
   if (!storageAvailable) {
     return {
-      kind: "storage-unavailable",
-      summary: `The storage this job needs became unavailable${where}.`,
+      kind: "storage-device-lost",
+      summary: `The storage this active job was using became unavailable and disappeared${where}.`,
       detail,
       ...carry,
     };
@@ -150,6 +193,18 @@ export function classifyFailure({
     return {
       kind: "out-of-space",
       summary: "The output volume ran out of space.",
+      detail,
+      ...carry,
+    };
+  }
+  if (
+    errorCode !== undefined &&
+    ["EIO", "ENXIO", "ENODEV", "ESTALE"].includes(errorCode)
+  ) {
+    return {
+      kind: "storage-io",
+      summary:
+        "The operating system reported a hard storage I/O failure on the path this job was using.",
       detail,
       ...carry,
     };
@@ -177,6 +232,15 @@ export function classifyFailure({
       ...carry,
     };
   }
+  if (evidence?.sourceRead && !evidence.outputWrite) {
+    return {
+      kind: "source-io",
+      summary:
+        "FFmpeg explicitly reported an input-side I/O failure consistent with damaged media or a failing disk. The source will not be read again until an operator clears storage quarantine.",
+      detail,
+      ...carry,
+    };
+  }
   if (looksLikeStorageLoss(message)) {
     /*
      * Evidence that names the *output* settles it before anything else. A
@@ -186,32 +250,36 @@ export function classifyFailure({
      */
     if (evidence && evidence.outputWrite && !evidence.sourceRead) {
       return {
-        kind: "storage-unavailable",
+        kind: "storage-io",
         summary:
           "The output volume reported an I/O error while it was being written to.",
         detail,
         ...carry,
       };
     }
-    /*
-     * The volume has been re-checked after every one of these and was present,
-     * readable and on the same device each time. Whatever is failing is the
-     * media, not the mount, and parking the job for a watchdog that has nothing
-     * to wait for would hide a dying disk behind a progress bar for ever.
-     */
-    if (ioRechecksExhausted) {
+    if (looksLikeHardStorageFailure(message)) {
+      if (ioRechecksExhausted) {
+        return {
+          kind: "source-io",
+          summary:
+            "The source could not be read after repeated attempts while its volume stayed present. This looks like damaged media or a failing disk.",
+          detail,
+          ...carry,
+        };
+      }
       return {
-        kind: "source-io",
+        kind: "storage-io",
         summary:
-          "The source could not be read after repeated attempts while its volume stayed available, healthy and unchanged. This looks like damaged media or a failing disk rather than a disconnection.",
+          "The operating system or encoder reported a hard storage I/O failure.",
         detail,
         ...carry,
       };
     }
     return {
-      kind: "storage-unavailable",
-      summary:
-        "The encoder reported an I/O error consistent with storage that stopped answering.",
+      kind: "storage-soft-fault",
+      summary: ioRechecksExhausted
+        ? "The encoder repeatedly reported an ambiguous storage-related failure."
+        : "The encoder reported an ambiguous storage-related failure.",
       detail,
       ...carry,
     };

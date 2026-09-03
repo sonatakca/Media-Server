@@ -36,6 +36,9 @@ import {
   previewProcessing,
   processingStreamUrl,
   retryProcessingJob,
+  adoptProcessingStorage,
+  resumeProcessingStorage,
+  verifyProcessingStorage,
   type AssemblyPhaseProgress,
   type AudioPhaseProgress,
   type CompletedPhaseSummary,
@@ -91,6 +94,9 @@ import { formatTemplate } from "./libraryMaintenanceModel";
 const CARD = "rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5";
 const LABEL =
   "text-[11px] font-black uppercase tracking-[0.14em] text-white/40";
+/** Matches the per-job action buttons, so the recovery flow reads as native. */
+const BUTTON =
+  "rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50";
 /*
  * A running encode reports speed, frame rate and progress several times a
  * second, so a five-second poll showed a figure that was already stale by the
@@ -658,6 +664,21 @@ function PublishPanel({
 }) {
   return (
     <div className="flex flex-col gap-2">
+      {progress.totalBytes > 0 ? (
+        <>
+          <div className="flex items-baseline justify-between text-xs text-white/60">
+            <span>{t("processing.publish.copying")}</span>
+            <span className="tabular-nums text-white/40">
+              {formatBytes(progress.completedBytes)} /{" "}
+              {formatBytes(progress.totalBytes)}
+              {progress.bytesPerSecond
+                ? ` · ${formatBytes(progress.bytesPerSecond)}/s`
+                : ""}
+            </span>
+          </div>
+          <PhaseBar fraction={progress.fraction} />
+        </>
+      ) : null}
       {progress.steps.map((step) => (
         <div
           key={step.id}
@@ -681,6 +702,7 @@ function PublishPanel({
           <span>{t(`processing.publish.${step.id}` as never)}</span>
           {step.bytes ? (
             <span className="ml-auto tabular-nums text-white/35">
+              {formatBytes(step.completedBytes ?? 0)} /{" "}
               {formatBytes(step.bytes)}
             </span>
           ) : null}
@@ -1085,6 +1107,18 @@ export function MediaProcessingPage() {
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
   const [overview, setOverview] = useState<ProcessingOverview | null>(null);
   const [refreshedAt, setRefreshedAt] = useState(() => Date.now());
+  /** Serialises the two recovery presses so neither can be double-fired. */
+  const [storageBusy, setStorageBusy] = useState(false);
+  const [storageNotice, setStorageNotice] = useState<string | null>(null);
+  /**
+   * Set when verification found a volume that is not the one quarantined.
+   *
+   * Gates the adoption button: replacing storage is offered only once the
+   * ordinary check has actually been run and refused, so nobody reaches for it
+   * as a shortcut past a check that would have passed.
+   */
+  const [storageIdentityUnconfirmed, setStorageIdentityUnconfirmed] =
+    useState(false);
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<MediaItem[]>([]);
   const [titlesLoading, setTitlesLoading] = useState(true);
@@ -1484,6 +1518,18 @@ export function MediaProcessingPage() {
   );
 
   const jobs = overview?.jobs ?? [];
+  const storage = overview?.storage;
+  /*
+   * The titles the guard is holding. Read from the pause reason rather than
+   * inferred from the storage state, because the two can disagree for exactly
+   * one job — the one whose own attempt met the I/O error and which is held
+   * even while the volume as a whole has not yet earned a quarantine.
+   */
+  const heldJobs = jobs.filter(
+    (job) =>
+      job.pausedReason === "storage-quarantined" ||
+      job.pausedReason === "recovery-pending",
+  );
   const activeItemIds = useMemo(
     () =>
       new Set(
@@ -1636,6 +1682,190 @@ export function MediaProcessingPage() {
             />
           </div>
         </section>
+
+        {/* ------------------------------------------ storage quarantine */}
+        {storage && storage.state !== "healthy" ? (
+          <section
+            className={`${CARD} flex flex-col gap-4 border-l-4 ${
+              storage.automaticResumeBlocked
+                ? "border-l-red-400/70"
+                : "border-l-amber-400/70"
+            }`}
+            aria-live="polite"
+          >
+            <div className="flex flex-wrap items-start gap-3">
+              <AlertTriangle
+                size={18}
+                className={
+                  storage.automaticResumeBlocked
+                    ? "mt-0.5 shrink-0 text-red-400"
+                    : "mt-0.5 shrink-0 text-amber-400"
+                }
+                aria-hidden="true"
+              />
+              <div className="flex min-w-0 flex-col gap-1">
+                <span className="text-sm font-medium text-white">
+                  {storage.summary}
+                </span>
+                {/*
+                  The reason carries the evidence — which errno, how many faults —
+                  and it is what somebody deciding between a new cable and a new
+                  disk actually needs. It is server-sanitised: no path reaches it.
+                */}
+                <span className="text-xs text-white/60">{storage.reason}</span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+              <Stat label={t("processing.storage.root")} value={storage.root} />
+              {storage.faultCount > 0 ? (
+                <Stat
+                  label={t("processing.storage.faults")}
+                  value={String(storage.faultCount)}
+                />
+              ) : null}
+              {storage.firstFaultAt ? (
+                <Stat
+                  label={t("processing.storage.firstFault")}
+                  value={new Date(storage.firstFaultAt).toLocaleString()}
+                />
+              ) : null}
+              <Stat
+                label={t("processing.storage.automaticResume")}
+                value={
+                  storage.automaticResumeBlocked
+                    ? t("processing.storage.blocked")
+                    : t("processing.storage.allowed")
+                }
+              />
+            </div>
+
+            {/*
+              Which titles this is holding, so the panel answers "what is it
+              costing me" as well as "what is wrong". The last safe checkpoint is
+              shown from the job's own verified counters rather than from a
+              claim, which is the whole correction here.
+            */}
+            {heldJobs.length > 0 ? (
+              <ul className="flex flex-col gap-1 text-xs text-white/70">
+                {heldJobs.slice(0, 5).map((job) => (
+                  <li key={job.id} className="truncate">
+                    {itemTitleFor(job.itemId)}
+                    {job.completedEpochs > 0
+                      ? ` — ${formatTemplate(t("processing.storage.lastSafe"), {
+                          time: formatMediaClock(job.protectedSeconds),
+                        })}`
+                      : ` — ${t("processing.storage.noCheckpoint")}`}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {storage.automaticResumeBlocked ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  className={BUTTON}
+                  disabled={storageBusy}
+                  onClick={async () => {
+                    setStorageBusy(true);
+                    try {
+                      const result = await verifyProcessingStorage();
+                      setStorageNotice(result.detail);
+                      /*
+                       * "Not the same volume" is a different situation from
+                       * "did not answer", and only the first has anything to
+                       * adopt. Conflating them would offer to adopt a volume
+                       * that is not there.
+                       */
+                      setStorageIdentityUnconfirmed(
+                        result.outcome === "identity-unconfirmed",
+                      );
+                      await refreshOverview();
+                    } catch (error) {
+                      setStorageNotice(
+                        error instanceof Error
+                          ? error.message
+                          : t("processing.storage.verifyFailed"),
+                      );
+                    } finally {
+                      setStorageBusy(false);
+                    }
+                  }}
+                >
+                  {t("processing.storage.verify")}
+                </button>
+                {/*
+                  Only offered once verification has passed. Showing it earlier
+                  would let an operator skip the check that establishes the
+                  hardware is answering *now*, which is the only cheap evidence
+                  anyone has.
+                */}
+                {/*
+                  Offered only after verification has refused on identity. The
+                  wording says what it does — this is different storage, and
+                  adopting it means the original was not recovered — because a
+                  button that read "continue anyway" is exactly the generic
+                  override this replaced.
+                */}
+                {storageIdentityUnconfirmed && !storage.awaitingResume ? (
+                  <button
+                    type="button"
+                    className={BUTTON}
+                    disabled={storageBusy}
+                    onClick={async () => {
+                      setStorageBusy(true);
+                      try {
+                        const result = await adoptProcessingStorage();
+                        setStorageNotice(result.detail);
+                        setStorageIdentityUnconfirmed(false);
+                        await refreshOverview();
+                      } catch (error) {
+                        setStorageNotice(
+                          error instanceof Error
+                            ? error.message
+                            : t("processing.storage.adoptFailed"),
+                        );
+                      } finally {
+                        setStorageBusy(false);
+                      }
+                    }}
+                  >
+                    {t("processing.storage.adopt")}
+                  </button>
+                ) : null}
+                {storage.awaitingResume ? (
+                  <button
+                    type="button"
+                    className={BUTTON}
+                    disabled={storageBusy}
+                    onClick={async () => {
+                      setStorageBusy(true);
+                      try {
+                        await resumeProcessingStorage();
+                        setStorageNotice(null);
+                        await refreshOverview();
+                      } catch (error) {
+                        setStorageNotice(
+                          error instanceof Error
+                            ? error.message
+                            : t("processing.storage.resumeFailed"),
+                        );
+                      } finally {
+                        setStorageBusy(false);
+                      }
+                    }}
+                  >
+                    {t("processing.storage.resume")}
+                  </button>
+                ) : null}
+                {storageNotice ? (
+                  <span className="text-xs text-white/60">{storageNotice}</span>
+                ) : null}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
 
         {/* --------------------------------------- searchable title catalogue */}
         {activeTab === "titles" ? (

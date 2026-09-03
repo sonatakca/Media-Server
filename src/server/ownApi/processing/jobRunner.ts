@@ -1,7 +1,9 @@
 import path from "node:path";
+import { rm } from "node:fs/promises";
 import { createPauseController } from "../../../renditions/processing/pauseController";
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
+import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
 import { estimateFinalOutputBytes } from "../../../renditions/outputEstimate";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
 import {
@@ -9,6 +11,7 @@ import {
   type HardwareReport,
 } from "../../../renditions/hardware/detect";
 import type { RenditionPaths } from "../../../renditions/analysis";
+import type { StorageIdentityProbe } from "../../../renditions/processing/storageIdentity";
 import { probeMediaFile } from "../../../renditions/probe";
 import { RenditionLockHeldError } from "../../../renditions/locks";
 import {
@@ -39,8 +42,21 @@ import {
   type SourceDamagePolicy,
   type SourceDamageRecord,
 } from "../../../renditions/adaptive/epochs/salvage";
-import type { ProcessingFailureKind } from "../../../renditions/adaptive/epochs/failure";
+import {
+  classifyFailure,
+  looksLikeOutOfSpace,
+  type ProcessingFailureKind,
+} from "../../../renditions/adaptive/epochs/failure";
+import {
+  assertOwnedJobWorkspace,
+  verifyOwnedJobWorkspace,
+} from "../../../renditions/storageRoles";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
+import {
+  createPermissiveStorageGuard,
+  type StorageGuard,
+} from "./storageGuard";
+import { createDependencyGate } from "../../../renditions/processing/dependencyGate";
 import {
   clearLiveProgress,
   writeLiveProgress,
@@ -169,6 +185,19 @@ export interface ProcessingJobRunnerDeps {
   /** Which roots failed their last check, so an error can name the drive. */
   missingRootsFn?: () => readonly string[];
   /**
+   * The durable verdict on whether this storage may be worked against at all.
+   *
+   * Distinct from `storageAvailableFn`, which asks the volume a question, and
+   * deliberately consulted first. On the failure this exists for, the volume
+   * answered that question correctly — the mount was there, the directory
+   * listed — while its block layer returned `EIO` on every read. Availability
+   * is what the drive says about itself; the guard is what this system
+   * remembers about the drive, and only one of those survives a reboot.
+   */
+  storageGuard?: StorageGuard;
+  /** Reads a path's volume identity. `diskutil` in production, injected in tests. */
+  scratchIdentityProbe?: StorageIdentityProbe;
+  /**
    * Nominal epoch length. Five minutes in production; a deployment with very
    * short titles or very slow storage can shorten it, at the cost of one FFmpeg
    * start and one validation pass more often.
@@ -267,6 +296,9 @@ export function failureIsWorthRequeuing(
   if (kind === undefined) return false;
   return !(
     kind === "source-io" ||
+    kind === "storage-device-lost" ||
+    kind === "storage-io" ||
+    kind === "storage-soft-fault" ||
     kind === "media-progress-timeout" ||
     kind === "encoder"
   );
@@ -285,10 +317,16 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     freeBytesFn = freeBytesOn,
     storageAvailableFn,
     missingRootsFn,
+    storageGuard = createPermissiveStorageGuard(),
+    scratchIdentityProbe,
     epochTargetSeconds,
     sourceDamagePolicy = sourceDamagePolicyFromEnvironment(),
     stalls = stallThresholds(),
   } = deps;
+  // Older callers and isolated tests predate the dedicated scratch root.
+  // Keeping their work under the state root preserves the same ownership
+  // checks without ever falling back to an unscoped filesystem location.
+  const workRoot = paths.workRoot ?? paths.stateRoot;
 
   async function enterStage(
     job: ProcessingJobRecord,
@@ -328,6 +366,77 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         errorCode: "JOB_NOT_FOUND",
         errorMessage: "The processing job no longer exists.",
       };
+    }
+
+    /*
+     * The gate, before anything else in the attempt — before the probe, before
+     * hardware detection, before a single byte is read.
+     *
+     * This is the line that stops a backlog being fed to a failing drive one
+     * title at a time. The queue can still lease the job, because the queue
+     * knows nothing about volumes; what it gets back is a job parked with its
+     * reason recorded rather than a job that spent forty seconds in a kernel
+     * retry sequence discovering the same thing. Placing it here rather than in
+     * the queue also means it applies to every route into an attempt — the
+     * automatic requeue, an operator's retry, a lease reclaimed after a crash.
+     */
+    if (!storageGuard.mayStartWork()) {
+      await clearLiveProgress(job.id).catch(() => undefined);
+      await store.update(job.id, {
+        state: "paused",
+        pauseRequested: true,
+        pausedReason:
+          storageGuard.health.state === "unavailable"
+            ? "storage-unavailable"
+            : storageGuard.health.state === "recovery-pending"
+              ? "recovery-pending"
+              : "storage-quarantined",
+        finishedAt: null,
+        speed: null,
+        fps: null,
+        etaSeconds: null,
+      });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "waiting",
+        level: "warning",
+        message: `Not starting. ${storageGuard.describe()}`,
+        detail: { storageState: storageGuard.health.state },
+      });
+      return { status: "waiting-for-storage" as const };
+    }
+
+    /*
+     * Identity before heavy work, for external media.
+     *
+     * `ensureIdentity` is cheap and cached, and this is the right moment for it:
+     * the storage is healthy, so asking costs nothing, and afterwards nothing
+     * asks the device anything until an operator does. Starting an encode in the
+     * hope that identity can be recovered later is the trade this refuses —
+     * later is precisely when the volume is failing, and a fault recorded
+     * against an unidentified disk leaves recovery with nothing to match.
+     */
+    await storageGuard.ensureIdentity().catch(() => undefined);
+    const identityVerdict = storageGuard.identityPermitsWork();
+    if (!identityVerdict.ok) {
+      await clearLiveProgress(job.id).catch(() => undefined);
+      await store.update(job.id, {
+        state: "paused",
+        pauseRequested: true,
+        pausedReason: "recovery-pending",
+        finishedAt: null,
+        speed: null,
+        fps: null,
+        etaSeconds: null,
+      });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "waiting",
+        level: "warning",
+        message: `Not starting. ${identityVerdict.reason}`,
+        detail: { storageState: storageGuard.health.state },
+      });
+      return { status: "waiting-for-storage" as const };
     }
 
     const fail = async (code: string, message: string, retryable = false) => {
@@ -386,7 +495,24 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
      * reason recorded, keeps no finish time because it has not finished, and
      * is picked up again automatically when the volume returns.
      */
-    const finishStorageInterrupted = async (detail?: string) => {
+    const finishStorageInterrupted = async (
+      detail?: string,
+      failureKind?: ProcessingFailureKind,
+    ) => {
+      if (failureKind && storageGuard.health.state !== "quarantined") {
+        await storageGuard.reportFailure({
+          kind: failureKind,
+          detail: detail ?? "Storage interrupted active processing.",
+          processingJobId: job.id,
+        });
+      }
+      const pausedReason =
+        storageGuard.health.state === "quarantined" ||
+        storageGuard.health.state === "suspect"
+          ? "storage-quarantined"
+          : storageGuard.health.state === "recovery-pending"
+            ? "recovery-pending"
+            : "storage-unavailable";
       /*
        * The live sample goes but the durable row keeps its epoch position, so
        * a page opened while the drive is missing still says how much work is
@@ -404,7 +530,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
          * job paused with no reason, no error and nothing that will ever pick
          * it up again.
          */
-        pausedReason: "storage-unavailable",
+        pausedReason,
         // It has not finished, so it must not carry a finish time.
         finishedAt: null,
         speed: null,
@@ -417,9 +543,13 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         processingJobId: job.id,
         stage: "waiting",
         level: "warning",
-        message: detail
-          ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
-          : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
+        message:
+          storageGuard.health.state === "quarantined" ||
+          storageGuard.health.state === "suspect"
+            ? `Processing stopped. ${storageGuard.describe()} Every completed checkpoint is untouched.`
+            : detail
+              ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
+              : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
       });
       return { status: "waiting-for-storage" as const };
     };
@@ -455,12 +585,27 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     try {
       probe = await probeFn(input.sourcePath, ffprobePath, input.signal);
     } catch (error) {
-      return fail(
-        PROCESSING_ERROR_CODES.noVideo,
+      const message =
         error instanceof Error
           ? error.message
-          : "The source could not be probed.",
-      );
+          : "The source could not be probed.";
+      const failure = classifyFailure({
+        message,
+        storageAvailable: storageAvailableFn
+          ? await storageAvailableFn()
+          : true,
+        ...(missingRootsFn ? { missingRoots: missingRootsFn() } : {}),
+      });
+      if (
+        failure.kind === "storage-unavailable" ||
+        failure.kind === "storage-device-lost" ||
+        failure.kind === "storage-io" ||
+        failure.kind === "storage-soft-fault" ||
+        failure.kind === "source-io"
+      ) {
+        return finishStorageInterrupted(failure.detail, failure.kind);
+      }
+      return fail(PROCESSING_ERROR_CODES.noVideo, message);
     }
     await store.appendEvent({
       processingJobId: job.id,
@@ -509,7 +654,9 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       );
     }
 
-    const freeBytes = await freeBytesFn(paths.renditionRoot);
+    // The expensive writes land on scratch; media-root free space is checked
+    // separately by the transactional publisher immediately before copying.
+    const freeBytes = await freeBytesFn(workRoot);
     const decision = decideProcessing({
       probe,
       container: path.extname(input.sourcePath).replace(".", ""),
@@ -896,6 +1043,44 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
      * is what turned an unplugged drive into a permanently failed job.
      */
     let storageInterrupted = false;
+
+    /**
+     * The pause poll's memory of whether the database is answering.
+     *
+     * This tick used to be an unconditional `store.get` every second with a
+     * `console.warn` in its catch, and when PostgreSQL went down during an
+     * encode it wrote several hundred identical lines. Each one had cost a
+     * five-second connection attempt first, so the loop was also holding open a
+     * dial to a database that was not there, from every running job at once,
+     * for as long as the outage lasted.
+     *
+     * The gate turns that into one probe on a doubling schedule and one line
+     * per transition. Nothing else about the poll changes: while the database
+     * is healthy it is exactly the query it always was.
+     */
+    const databaseGate = createDependencyGate({
+      name: "The processing database",
+      probe: async () => {
+        await store.get(job.id);
+      },
+      onStateChange: (state, detail) => {
+        console.warn(`[Seyirlik] database.${state}: ${detail}`);
+      },
+    });
+    /*
+     * How long an encode may keep running with nothing able to record what it
+     * is doing.
+     *
+     * Not zero, because a database restart takes seconds and killing an
+     * eight-hour ladder over one is absurd. Not unbounded either: past this
+     * point the work is untracked — no checkpoint counter, no pause request
+     * could reach it, no cancellation — and the honest thing is to stop at a
+     * boundary the checkpoints already make safe rather than to encode for
+     * hours into a record nobody can write.
+     */
+    const databaseGraceMs = 120_000;
+    let databaseLostAtMs: number | null = null;
+
     const cancellationWatch = setInterval(() => {
       /*
        * Every line below talks to the database, and a database that blinks —
@@ -906,10 +1091,60 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * of latency on a pause request, and nothing else.
        */
       void (async () => {
+        /*
+         * Cheap and from memory while the database is known to be away, so a
+         * one-second timer during a five-minute outage costs one probe per
+         * backoff step rather than three hundred connection attempts.
+         */
+        if (!(await databaseGate.check())) {
+          databaseLostAtMs ??= Date.now();
+          if (Date.now() - databaseLostAtMs > databaseGraceMs) {
+            /*
+             * Stop at a checkpoint boundary rather than keep going. Every epoch
+             * already promoted is durable on disk and survives this; what is
+             * abandoned is the epoch in flight, which is at most five minutes,
+             * and which would have been abandoned anyway the moment anyone
+             * tried to write down that it had finished.
+             */
+            pauseController.resume();
+            encodeAbort.abort();
+          }
+          return;
+        }
+        databaseLostAtMs = null;
+
         const latest = await store.get(job.id);
+        /*
+         * The guard is re-read on every tick, and it is what stops an encode
+         * that is already running against a volume that has just been
+         * quarantined by something else — a second job's failure, an operator
+         * pressing the button. The volume is not asked; the guard is, because
+         * the volume answered "fine" throughout the incident this exists for.
+         */
+        if (storageGuard.demandsStop() && !storageInterrupted) {
+          storageInterrupted = true;
+          pauseController.resume();
+          encodeAbort.abort();
+          await store.update(job.id, {
+            state: "paused",
+            pausedReason:
+              storageGuard.health.state === "unavailable"
+                ? "storage-unavailable"
+                : "storage-quarantined",
+          });
+          await store.appendEvent({
+            processingJobId: job.id,
+            stage: latest?.stage ?? job.stage,
+            level: "warning",
+            message: `The encoder was stopped. ${storageGuard.describe()}`,
+            detail: { storageState: storageGuard.health.state },
+          });
+          return;
+        }
         if (
           latest?.pauseRequested &&
-          latest.pausedReason === "storage-unavailable" &&
+          (latest.pausedReason === "storage-unavailable" ||
+            latest.pausedReason === "storage-quarantined") &&
           !storageInterrupted
         ) {
           /*
@@ -959,10 +1194,13 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           encodeAbort.abort();
         }
       })().catch((error) => {
-        console.warn(
-          "[Seyirlik] Could not read the pause state for a processing job:",
-          error instanceof Error ? error.message : String(error),
-        );
+        /*
+         * Reported through the gate rather than logged here. A failure that
+         * reaches this point during an outage is the same failure the gate is
+         * already counting, and writing a line for it would restore exactly the
+         * storm the gate was added to remove.
+         */
+        databaseGate.reportFailure(error);
       });
     }, 1000);
     if (typeof cancellationWatch.unref === "function")
@@ -970,9 +1208,15 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
 
     let result: Awaited<ReturnType<typeof packageFn>>;
     try {
+      const workspaceDirectory = assertOwnedJobWorkspace(
+        workRoot,
+        path.join(workRoot, job.id),
+      );
+      await store.update(job.id, { stagingDirectory: workspaceDirectory });
       result = await packageFn(
         {
           mediaId: registryItem.id,
+          workspaceId: job.id,
           relativePath: input.relativePath,
           sourceFingerprint: job.sourceFingerprint,
           sourcePath: input.sourcePath,
@@ -1000,6 +1244,23 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           ),
           signal: encodeAbort.signal,
           pauseController,
+          /*
+           * The cross-process half of scratch identity.
+           *
+           * The job record remembers which volume its workspace was claimed
+           * on, and hands it back on every later attempt. A worker that
+           * restarted while that disk was absent therefore still knows what it
+           * is waiting for, which neither `st_dev` (never persisted, and
+           * recycled between mounts) nor the workspace's own marker (which
+           * lives on the missing volume) can tell it.
+           */
+          ...(scratchIdentityProbe
+            ? { probeScratchIdentity: scratchIdentityProbe }
+            : {}),
+          ...(job.scratchIdentity
+            ? { expectedScratchIdentity: job.scratchIdentity }
+            : {}),
+          retainWorkspaceAfterPublish: true,
           ...(epochTargetSeconds === undefined ? {} : { epochTargetSeconds }),
           /*
            * What to do about a source that cannot be read. Passed explicitly
@@ -1017,6 +1278,13 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             ? { storageAvailable: storageAvailableFn }
             : {}),
           ...(missingRootsFn ? { missingRoots: missingRootsFn } : {}),
+          onHardStorageFault: async (failure) => {
+            await storageGuard.reportFailure({
+              kind: failure.kind,
+              detail: failure.detail,
+              processingJobId: job.id,
+            });
+          },
           onEvent: (event) => {
             switch (event.type) {
               case "build-stage": {
@@ -1627,13 +1895,34 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
                   ),
                   ...event.progress.steps,
                 ];
-                const completed = merged.filter(
+                const totalBytes = merged.reduce(
+                  (sum, step) => sum + (step.bytes ?? 0),
+                  0,
+                );
+                const completedBytes = merged.reduce(
+                  (sum, step) =>
+                    sum +
+                    Math.min(
+                      step.bytes ?? 0,
+                      step.completedBytes ??
+                        (step.state === "complete" ? (step.bytes ?? 0) : 0),
+                    ),
+                  0,
+                );
+                const completedSteps = merged.filter(
                   (step) => step.state === "complete",
                 ).length;
                 live.publish = {
                   ...event.progress,
                   steps: merged,
-                  fraction: merged.length > 0 ? completed / merged.length : 0,
+                  totalBytes,
+                  completedBytes,
+                  fraction:
+                    totalBytes > 0
+                      ? completedBytes / totalBytes
+                      : merged.length > 0
+                        ? completedSteps / merged.length
+                        : 0,
                 };
                 advance("publishing", live.publish.fraction);
                 publishLiveThrottled(true);
@@ -1646,6 +1935,21 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           },
         },
       );
+      /*
+       * Recorded the moment it is known, whatever the outcome.
+       *
+       * A job that failed still claimed a workspace on a particular volume,
+       * and its next attempt has to be held to the same one — otherwise a
+       * retry that runs while the disk is absent is exactly the case this
+       * whole column exists to prevent. Written only when the job does not
+       * already carry an identity, so the first claim wins and a later
+       * probe returning something different cannot quietly redefine it.
+       */
+      if (!job.scratchIdentity && result.scratchIdentity?.volumeUuid) {
+        await store
+          .update(job.id, { scratchIdentity: result.scratchIdentity })
+          .catch(() => undefined);
+      }
     } catch (error) {
       /*
        * A throw from the packager used to escape this function entirely, so
@@ -1655,11 +1959,37 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * is exactly what a person opening the details is looking for, so it
        * is recorded here where it is still known.
        */
-      return fail(
-        PROCESSING_ERROR_CODES.encodeFailed,
+      const message =
         error instanceof Error
           ? error.message
-          : "The encoder stopped before the package was built.",
+          : "The encoder stopped before the package was built.";
+      const available = storageAvailableFn
+        ? await Promise.resolve(storageAvailableFn()).catch(() => false)
+        : true;
+      const classified = classifyFailure({
+        message,
+        storageAvailable: available,
+        missingRoots: missingRootsFn?.() ?? [],
+      });
+      if (classified.kind === "storage-unavailable") {
+        await storageGuard
+          .reportFailure({
+            kind: classified.kind,
+            detail: classified.detail,
+            processingJobId: job.id,
+          })
+          .catch(() => undefined);
+        return finishStorageInterrupted(classified.detail, classified.kind);
+      }
+      if (looksLikeOutOfSpace(message)) {
+        return fail(
+          PROCESSING_ERROR_CODES.insufficientSpace,
+          "Processing stopped because the scratch or final media volume ran out of space.",
+        );
+      }
+      return fail(
+        PROCESSING_ERROR_CODES.encodeFailed,
+        message,
         error instanceof RenditionLockHeldError,
       );
     } finally {
@@ -1674,7 +2004,10 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
      * reason to mark the job cancelled.
      */
     if (result.interruption === "storage") {
-      return finishStorageInterrupted(result.error);
+      return finishStorageInterrupted(
+        result.issues?.[0] ?? result.error,
+        result.failureKind,
+      );
     }
     if (storageInterrupted && result.status === "interrupted") {
       return finishStorageInterrupted();
@@ -1705,7 +2038,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     if (result.status === "failed" || result.status === "incompatible") {
       // The storage is asked directly rather than inferred from the error.
       if (storageAvailableFn && !(await storageAvailableFn())) {
-        return finishStorageInterrupted();
+        return finishStorageInterrupted(result.error, "storage-device-lost");
       }
       /*
        * A failure that nevertheless identified an unreadable interval keeps
@@ -1729,6 +2062,27 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * and both worth a person's attention; neither is worth another pass
        * over the same sectors.
        */
+      /*
+       * The classification goes to the guard as well as into the row. This is
+       * the direction that was missing entirely: every failure was recorded
+       * against the *job*, so the next job started with no knowledge that the
+       * previous one had met an I/O error on the same volume — which is how a
+       * queue works its way through a backlog against a failing drive, one
+       * forty-second kernel retry sequence at a time.
+       *
+       * `media-progress-timeout` is passed through unchanged and is deliberately
+       * *not* storage evidence; the mapping that decides so lives in one place
+       * and the distinction it preserves cost a real investigation to establish.
+       */
+      if (result.failureKind) {
+        await storageGuard
+          .reportFailure({
+            kind: result.failureKind,
+            detail: result.error ?? "The encode failed.",
+            processingJobId: job.id,
+          })
+          .catch(() => undefined);
+      }
       const code =
         result.failureKind === "source-io"
           ? PROCESSING_ERROR_CODES.sourceUnreadable
@@ -1815,6 +2169,50 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     registryItem.adaptiveProfileVersion = ADAPTIVE_PROFILE_VERSION;
     delete registryItem.adaptiveLastError;
     await saveRenditionRegistry(registryPath, registry);
+
+    /*
+     * Publication is now reflected in both durable records. Until this point
+     * the verified SSD workspace remains the recovery source for a crash after
+     * the HDD rename but before the database commit.
+     */
+    if (result.workspaceDirectory) {
+      const owned = await verifyOwnedJobWorkspace(
+        workRoot,
+        result.workspaceDirectory,
+        job.id,
+      );
+      await rm(owned, { recursive: true, force: true }).catch(async (error) => {
+        await store.appendEvent({
+          processingJobId: job.id,
+          stage: "complete",
+          level: "warning",
+          message:
+            "The package was published, but its scratch workspace could not be removed.",
+          detail: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      });
+      await store.update(job.id, { stagingDirectory: null });
+    }
+    if (result.publicationIncomingDirectory) {
+      await cleanupPublicationIncoming(
+        path.dirname(input.sourcePath),
+        result.publicationIncomingDirectory,
+        job.id,
+      ).catch(async (error) => {
+        await store.appendEvent({
+          processingJobId: job.id,
+          stage: "complete",
+          level: "warning",
+          message:
+            "The package was published, but its HDD incoming marker could not be removed.",
+          detail: {
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      });
+    }
 
     await store.appendEvent({
       processingJobId: job.id,

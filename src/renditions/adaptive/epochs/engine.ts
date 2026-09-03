@@ -53,11 +53,13 @@ import {
 } from "./validateEpoch";
 import {
   classifyFailure,
+  looksLikeHardStorageFailure,
   looksLikeOutOfSpace,
   looksLikeStorageLoss,
   MediaProgressTimeoutError,
   SourceReadError,
   StorageInterruptedError,
+  type ClassifiedFailure,
 } from "./failure";
 import {
   assessSourceRead,
@@ -281,6 +283,13 @@ export interface RunEpochBuildInput {
   /** Answers "is the storage this job needs there right now?" on failure. */
   storageAvailable?: () => boolean | Promise<boolean>;
   missingRoots?: () => readonly string[];
+  /**
+   * Production's durable circuit breaker. When present, the first hard fault
+   * is persisted before this function can launch a retry or diagnostic probe.
+   * Offline tooling may omit it and retain its explicitly requested salvage
+   * workflow.
+   */
+  onHardStorageFault?: (failure: ClassifiedFailure) => Promise<void>;
   onEvent?: (event: EpochBuildEvent) => void;
   /** Attempts allowed per epoch before the build gives up. */
   attemptsPerEpoch?: number;
@@ -539,6 +548,7 @@ export async function runEpochBuild({
   pauseController,
   storageAvailable,
   missingRoots,
+  onHardStorageFault,
   onEvent,
   attemptsPerEpoch = 2,
   sourceIoBackoffMs = SOURCE_IO_RETRY_BACKOFF_MS,
@@ -673,9 +683,20 @@ export async function runEpochBuild({
       const handle = await beginPartialEpoch({
         root: checkpointRoot,
         index: epoch.index,
+        // Re-proven at the rename, so an epoch encoded after the scratch volume
+        // vanished cannot become a durable checkpoint on another disk.
+        ...(beforeEpoch
+          ? { beforePromote: () => beforeEpoch(epoch.index) }
+          : {}),
       });
 
       try {
+        /*
+         * These are the directories FFmpeg is about to write fragments into.
+         * `beginPartialEpoch` has just proven the filesystem; proving it again
+         * here costs a `stat` and closes the window between the two.
+         */
+        await beforeEpoch?.(epoch.index);
         for (const directory of adaptiveOutputDirectories({
           videoOutputs: [...videoOutputs],
           audioOutputs: [],
@@ -860,6 +881,28 @@ export async function runEpochBuild({
            */
           let available = storageAvailable ? await storageAvailable() : true;
 
+          if (
+            onHardStorageFault &&
+            (!available ||
+              looksLikeHardStorageFailure(message) ||
+              evidenceIndictsSource(evidence))
+          ) {
+            const hardFailure = classifyFailure({
+              message,
+              storageAvailable: available,
+              ...(missingRoots ? { missingRoots: missingRoots() } : {}),
+              evidence,
+            });
+            await onHardStorageFault(hardFailure);
+            /*
+             * Stop inside the same catch, before backoff, ffprobe, retry, or
+             * placeholder generation. The job runner will park this as a
+             * persisted quarantine; this exception only carries the already
+             * recorded classification back up the stack.
+             */
+            throw new StorageInterruptedError(hardFailure);
+          }
+
           /*
            * An I/O error while the volume still answers is the ambiguous case,
            * and it is ambiguous only because the storage watchdog polls: the
@@ -941,6 +984,15 @@ export async function runEpochBuild({
             evidence,
             ...(sourceVerdict === undefined ? {} : { sourceVerdict }),
           });
+          if (
+            onHardStorageFault &&
+            (failure.kind === "source-io" ||
+              failure.kind === "storage-device-lost" ||
+              failure.kind === "storage-io")
+          ) {
+            await onHardStorageFault(failure);
+            throw new StorageInterruptedError(failure);
+          }
           if (failure.kind === "media-progress-timeout") {
             /*
              * Ended, and not salvaged. The source reads; something in the
@@ -977,11 +1029,6 @@ export async function runEpochBuild({
               policy: sourceDamagePolicy,
             });
             if (sourceDamagePolicy !== "replace-epoch") {
-              /*
-               * Terminal on purpose. Every checkpoint stays where it is, so a
-               * retry after the media is repaired or replaced re-encodes only
-               * the epoch that could not be read.
-               */
               throw new SourceReadError(
                 failure,
                 epoch.index,
@@ -989,18 +1036,15 @@ export async function runEpochBuild({
                 damage,
               );
             }
-            /*
-             * Salvage. The partial epoch goes — it holds two minutes of a five
-             * minute interval and nothing may ever join that to the timeline —
-             * and the replacement is built below, outside this attempt loop,
-             * in a workspace of its own.
-             */
             await handle.discard();
             pendingSalvage = damage;
             break;
           }
           if (
             failure.kind === "storage-unavailable" ||
+            failure.kind === "storage-device-lost" ||
+            failure.kind === "storage-io" ||
+            failure.kind === "storage-soft-fault" ||
             failure.kind === "out-of-space"
           ) {
             /*
@@ -1131,6 +1175,11 @@ export async function runEpochBuild({
       const handle = await beginPartialEpoch({
         root: checkpointRoot,
         index: epoch.index,
+        // Re-proven at the rename, so an epoch encoded after the scratch volume
+        // vanished cannot become a durable checkpoint on another disk.
+        ...(beforeEpoch
+          ? { beforePromote: () => beforeEpoch(epoch.index) }
+          : {}),
       });
       try {
         const protectedSeconds = protectedSecondsAfter(plan, epoch.index);

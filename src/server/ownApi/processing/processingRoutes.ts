@@ -37,6 +37,11 @@ import {
 } from "./jobStore";
 import { PROCESSING_STAGES } from "./stages";
 import {
+  createPermissiveStorageGuard,
+  type StorageGuard,
+} from "./storageGuard";
+import type { StorageIncidentStore } from "./storageIncidentStore";
+import {
   liveProgressIsFresh,
   readLiveProgress,
   type LiveProgressSnapshot,
@@ -57,6 +62,18 @@ export interface ProcessingRoutesOptions {
    * here so the routes and the watchdog cannot disagree about it.
    */
   storageAvailable?: () => boolean;
+  /**
+   * The durable verdict on the storage, and the operator's way back from it.
+   *
+   * Separate from `storageAvailable` on purpose. That asks the volume whether
+   * it is there, which a failing drive answers correctly right up to the moment
+   * it takes the machine down; this asks what the system remembers about it,
+   * which is the only thing that survives the forced reboot that ends such an
+   * incident.
+   */
+  storageGuard?: StorageGuard;
+  /** The incident history, for the panel that explains why nothing is running. */
+  storageIncidents?: Pick<StorageIncidentStore, "listOpen" | "listRecent">;
 }
 
 /**
@@ -195,8 +212,48 @@ export function createProcessingRoutes({
   ffmpegPath = process.env.SEYIRLIK_FFMPEG_PATH ?? "ffmpeg",
   ffprobePath = process.env.SEYIRLIK_FFPROBE_PATH ?? "ffprobe",
   storageAvailable = () => true,
+  storageGuard = createPermissiveStorageGuard(),
+  storageIncidents,
 }: ProcessingRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
+
+  /**
+   * The storage panel's payload.
+   *
+   * Deliberately says whether automatic resume is blocked as its own field
+   * rather than leaving a page to infer it from the state name. "Quarantined"
+   * means nothing to somebody who has just found their library stopped; "this
+   * will not start again until you say so" means everything.
+   */
+  const describeGuard = () => ({
+    root: storageGuard.health.root,
+    state: storageGuard.health.state,
+    summary: storageGuard.describe(),
+    reason: storageGuard.health.reason,
+    faultCount: storageGuard.health.faultCount,
+    missingRoots: [...storageGuard.health.missingRoots],
+    firstFaultAt:
+      storageGuard.health.firstFaultAtMs === null
+        ? null
+        : new Date(storageGuard.health.firstFaultAtMs).toISOString(),
+    lastFaultAt:
+      storageGuard.health.lastFaultAtMs === null
+        ? null
+        : new Date(storageGuard.health.lastFaultAtMs).toISOString(),
+    changedAt: new Date(storageGuard.health.changedAtMs).toISOString(),
+    verifiedAt:
+      storageGuard.health.verifiedAtMs === null
+        ? null
+        : new Date(storageGuard.health.verifiedAtMs).toISOString(),
+    mayStartWork: storageGuard.mayStartWork(),
+    automaticResumeBlocked: !storageGuard.resumesAutomatically(),
+    /** True when the next step is the operator's cheap verification. */
+    awaitingVerification:
+      storageGuard.health.state === "quarantined" ||
+      storageGuard.health.state === "suspect",
+    /** True when verification has passed and only the resume press remains. */
+    awaitingResume: storageGuard.health.state === "recovery-pending",
+  });
   let hardwareCache: { report: HardwareReport; at: number } | null = null;
 
   async function hardware(): Promise<HardwareReport> {
@@ -442,6 +499,137 @@ export function createProcessingRoutes({
           jobs: jobs.map(toJobDto),
           stages: PROCESSING_STAGES,
           profile: ADAPTIVE_PROFILE_VERSION,
+          /*
+           * Carried on the overview rather than left to a second request. A
+           * page that lists a dozen paused jobs and cannot say why is the page
+           * an operator was looking at while the drive was being attacked; the
+           * reason has to arrive with the jobs, not after them.
+           */
+          storage: describeGuard(),
+        });
+      },
+    },
+
+    {
+      /**
+       * The storage panel, and its history.
+       *
+       * Read-only and free: everything it reports is memory or a database row.
+       * Nothing here touches the volume, which is the point — an operator
+       * refreshing the page that tells them their drive is failing must not be
+       * the thing that sends another read at it.
+       */
+      method: "GET",
+      path: "/processing/storage",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        sendData(context.response, context.requestId, {
+          storage: describeGuard(),
+          open: (await storageIncidents?.listOpen()) ?? [],
+          recent: (await storageIncidents?.listRecent(20)) ?? [],
+        });
+      },
+    },
+
+    {
+      /**
+       * "Storage repaired — verify".
+       *
+       * The whole of the check is the watchdog's own poll: stat the roots, list
+       * them, compare the device against the one last seen. It reads no media,
+       * takes no checksum and runs no benchmark, because a verification that
+       * exercises a suspect drive is simply the next outage with a friendlier
+       * label on it.
+       *
+       * Passing does not start anything. It moves the storage to
+       * `recovery-pending`, and the operator presses resume separately — two
+       * steps, so that reconnecting a drive is never on its own the thing that
+       * restarts a multi-hour encode against it.
+       */
+      method: "POST",
+      path: "/processing/storage/verify",
+      access: "admin",
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const outcome = await storageGuard.verify(principal.userId);
+        sendData(context.response, context.requestId, {
+          ok: outcome.ok,
+          detail: outcome.detail,
+          /*
+           * The page must be able to say *which* thing happened. A drive that
+           * was genuinely recovered and a replacement that was adopted are
+           * different facts about what is in the machine, and presenting them
+           * identically would be the interface lying.
+           */
+          outcome: outcome.outcome,
+          storage: describeGuard(),
+        });
+      },
+    },
+
+    {
+      /**
+       * "This is replacement storage — adopt it."
+       *
+       * Its own endpoint rather than a flag on verify, because it is a different
+       * act: verification asks whether this is the same disk, adoption declares
+       * that a different disk is now the one that counts. It requires a volume
+       * that can identify itself and refuses otherwise, so it is never a way to
+       * switch fail-closed off.
+       */
+      method: "POST",
+      path: "/processing/storage/adopt",
+      access: "admin",
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const outcome = await storageGuard.adopt(principal.userId);
+        if (!outcome.ok) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_NOT_ADOPTABLE",
+            outcome.detail,
+            409,
+          );
+        }
+        sendData(context.response, context.requestId, {
+          detail: outcome.detail,
+          adoptedVolumeUuid: outcome.adopted?.volumeUuid ?? null,
+          storage: describeGuard(),
+        });
+      },
+    },
+
+    {
+      /**
+       * The second press. The only thing in this system that lifts a
+       * quarantine.
+       *
+       * Refuses unless a verification has passed, so the cheap safe check has
+       * definitely been run against the hardware as it is now rather than as it
+       * was when somebody last looked.
+       */
+      method: "POST",
+      path: "/processing/storage/resume",
+      access: "admin",
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        if (storageGuard.health.state !== "recovery-pending") {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_NOT_VERIFIED",
+            "Verify the storage before resuming it.",
+            409,
+          );
+        }
+        await storageGuard.resume(principal.userId);
+        /*
+         * Jobs are not requeued from here. Whoever owns the encoders owns that
+         * decision, and in a split deployment that is the worker process — the
+         * one place `requeueStorageInterruptedJobs` lives. Its watchdog sees a
+         * healthy guard within a poll and picks the work up, which is also what
+         * keeps two runtimes from requeueing the same job twice.
+         */
+        sendData(context.response, context.requestId, {
+          storage: describeGuard(),
         });
       },
     },
@@ -627,6 +815,18 @@ export function createProcessingRoutes({
       access: "admin",
       handle: async (context) => {
         context.requirePrincipal();
+        /*
+         * Refused before the source is even located. Queueing new work against
+         * guarded storage is how a backlog gets built that the moment the
+         * quarantine lifts is thrown at the drive all at once.
+         */
+        if (!storageGuard.mayStartWork()) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_GUARDED",
+            `${storageGuard.describe()} Verify and resume the storage before queueing new work.`,
+            409,
+          );
+        }
         const body = asObjectBody(await context.readJson(8 * 1024), [
           "itemId",
           "mediaFileId",
@@ -1058,6 +1258,21 @@ export function createProcessingRoutes({
             409,
           );
         }
+        /*
+         * A guarded volume refuses the per-job resume outright, whatever the
+         * volume currently says about itself. Letting an operator resume one
+         * job at a time would route straight around the quarantine — and it is
+         * the natural thing to try, because the job looks fine and the drive
+         * looks mounted. The way back is the storage panel, and it is two
+         * deliberate presses.
+         */
+        if (!storageGuard.mayStartWork()) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_GUARDED",
+            `${storageGuard.describe()} Verify and resume the storage before resuming this job.`,
+            409,
+          );
+        }
         await store.resume(id);
         sendData(context.response, context.requestId, {
           job: toJobDto((await store.get(id))!),
@@ -1078,6 +1293,13 @@ export function createProcessingRoutes({
             "PROCESSING_JOB_NOT_FOUND",
             "The processing job could not be found.",
             404,
+          );
+        }
+        if (!storageGuard.mayStartWork()) {
+          throw new OwnApiError(
+            "PROCESSING_STORAGE_GUARDED",
+            `${storageGuard.describe()} Verify and resume the storage before retrying this job.`,
+            409,
           );
         }
         if (["queued", "running", "pending"].includes(job.state)) {

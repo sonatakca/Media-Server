@@ -72,7 +72,18 @@ describe("probing a source that does not answer", () => {
       sourcePath: path.join(workspace, "film.mkv"),
       boundaries: [3000],
       ffprobePath: hangingProbe,
-      timeoutMs: 500,
+      /*
+       * Long enough for the fixture to record its own pid before the deadline
+       * lands on it, and still two orders of magnitude below the ceiling this
+       * test asserts.
+       *
+       * At 500ms the shell script had not always reached its first line under
+       * a loaded machine, so there was no pid to look for and the test failed
+       * claiming nothing had been reaped — when in truth nothing had yet been
+       * started. The property under test is that the prober gives up on its
+       * own clock, which this still demonstrates.
+       */
+      timeoutMs: 2_000,
     });
 
     /*
@@ -96,7 +107,8 @@ describe("probing a source that does not answer", () => {
       sourcePath: path.join(workspace, "film.mkv"),
       boundaries: [3000],
       ffprobePath: stubbornProbe,
-      timeoutMs: 400,
+      // Same race as the test above: the fixture has to exist to be killed.
+      timeoutMs: 2_000,
     });
 
     expect(timeline).toBeNull();

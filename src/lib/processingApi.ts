@@ -197,7 +197,19 @@ export interface ProcessingJob {
   attempts: number;
   cancellationRequested: boolean;
   pauseRequested: boolean;
-  pausedReason: "operator" | "storage-unavailable" | null;
+  /**
+   * Why the job is paused, and who may un-pause it.
+   *
+   * Only `storage-unavailable` comes back on its own. The other two mean a
+   * person has to look: `storage-quarantined` is an established I/O fault, and
+   * `recovery-pending` is an attempt whose ending nobody observed.
+   */
+  pausedReason:
+    | "operator"
+    | "storage-unavailable"
+    | "storage-quarantined"
+    | "recovery-pending"
+    | null;
   /**
    * The checkpointed build's position.
    *
@@ -328,12 +340,50 @@ export interface HardwareReport {
   selectedAdapter: { h264: string; hevc: string; hevcTenBit: string };
 }
 
+/**
+ * What the server remembers about the storage, as opposed to what the storage
+ * currently says about itself.
+ *
+ * The distinction is the entire point of the panel this feeds. A drive whose
+ * USB bridge is returning `EIO` still answers a `stat` instantly, so "is it
+ * mounted" is the question that was being asked throughout the incident that
+ * required two forced power-offs. This is the answer to the other one.
+ */
+export type StorageHealthState =
+  | "healthy"
+  | "unavailable"
+  | "suspect"
+  | "quarantined"
+  | "recovery-pending";
+
+export interface ProcessingStorageHealth {
+  root: string;
+  state: StorageHealthState;
+  /** One sentence, already written for an operator. Shown verbatim. */
+  summary: string;
+  reason: string;
+  faultCount: number;
+  missingRoots: string[];
+  firstFaultAt: string | null;
+  lastFaultAt: string | null;
+  changedAt: string;
+  verifiedAt: string | null;
+  mayStartWork: boolean;
+  /** True whenever the volume returning is not, on its own, enough. */
+  automaticResumeBlocked: boolean;
+  /** The next step is the operator's cheap, non-destructive check. */
+  awaitingVerification: boolean;
+  /** Verification passed; only the explicit resume press remains. */
+  awaitingResume: boolean;
+}
+
 export interface ProcessingOverview {
   counts: Record<ProcessingState, number>;
   hardware: HardwareReport;
   jobs: ProcessingJob[];
   stages: ProcessingStage[];
   profile: string;
+  storage: ProcessingStorageHealth;
 }
 
 export function getProcessingOverview(): Promise<ProcessingOverview> {
@@ -518,6 +568,57 @@ export function retryProcessingJob(
     `/processing/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: "POST" },
   );
+}
+
+/**
+ * The operator's cheap check that the storage is back.
+ *
+ * Reads directory metadata and a device identity, and nothing else: no media,
+ * no checksum, no benchmark. A verification that exercised a suspect drive
+ * would simply be the next outage under a friendlier name.
+ */
+export function verifyProcessingStorage(): Promise<{
+  ok: boolean;
+  detail: string;
+  /**
+   * Which thing happened, so a page can never present a replacement as a
+   * confirmed recovery of the original hardware. There is deliberately no
+   * option here meaning "ignore identity": a volume that cannot be matched is
+   * not verified, and the way forward is `adoptProcessingStorage`.
+   */
+  outcome: "same-identity-verified" | "identity-unconfirmed" | "unavailable";
+  storage: ProcessingStorageHealth;
+}> {
+  return ownApiClient.request("/processing/storage/verify", { method: "POST" });
+}
+
+/**
+ * Declares the volume currently present to be the storage from now on.
+ *
+ * For replacement hardware, and for a quarantine recorded before identities
+ * were captured. Not an "ignore identity" button: it requires a volume that
+ * reports an authoritative UUID, writes that UUID down, keeps the superseded
+ * one in the history, and makes every later check an ordinary strict one
+ * against the new identity. Refused when nothing there can identify itself.
+ */
+export function adoptProcessingStorage(): Promise<{
+  detail: string;
+  adoptedVolumeUuid: string | null;
+  storage: ProcessingStorageHealth;
+}> {
+  return ownApiClient.request("/processing/storage/adopt", { method: "POST" });
+}
+
+/**
+ * The second, explicit press. The only thing that lifts a quarantine.
+ *
+ * Separate from verification on purpose: reconnecting a drive must never be, on
+ * its own, the thing that restarts a multi-hour 4K encode against it.
+ */
+export function resumeProcessingStorage(): Promise<{
+  storage: ProcessingStorageHealth;
+}> {
+  return ownApiClient.request("/processing/storage/resume", { method: "POST" });
 }
 
 export function deleteProcessingJob(jobId: string): Promise<{ removed: true }> {

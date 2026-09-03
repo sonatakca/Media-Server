@@ -15,11 +15,11 @@ describe("classifyFailure", () => {
       storageAvailable: false,
       missingRoots: ["/Volumes/Expansion"],
     });
-    expect(failure.kind).toBe("storage-unavailable");
+    expect(failure.kind).toBe("storage-device-lost");
     expect(failure.summary).toContain("/Volumes/Expansion");
   });
 
-  it("recognises an I/O error as disappearing storage even before the watchdog notices", () => {
+  it("recognises one I/O error as hard storage evidence before the watchdog notices", () => {
     /*
      * The watchdog polls; FFmpeg fails instantly. Between the two there is a
      * window in which the drive is gone and the check has not run yet, and a
@@ -29,7 +29,7 @@ describe("classifyFailure", () => {
       message: "FFmpeg failed with exit code 1: Input/output error",
       storageAvailable: true,
     });
-    expect(failure.kind).toBe("storage-unavailable");
+    expect(failure.kind).toBe("storage-io");
   });
 
   it("separates a full disk from a missing one", () => {
@@ -69,6 +69,53 @@ describe("classifyFailure", () => {
   });
 });
 
+describe("the errno outranks the prose", () => {
+  /*
+   * Seyirlik's own storage refusals are written in English and carry a code.
+   * Reading only the sentence classified a full destination volume as a broken
+   * encoder, which ended the job permanently instead of deferring it until
+   * somebody made room.
+   */
+  it("defers a full disk whose message never says so", () => {
+    const failure = classifyFailure({
+      message:
+        "The final media volume does not have enough free space for transactional publication.",
+      errorCode: "ENOSPC",
+      storageAvailable: true,
+    });
+    expect(failure.kind).toBe("out-of-space");
+  });
+
+  it("does not call a full disk a disappeared one", () => {
+    // A full volume is still a mounted volume; "no room" must not become
+    // "the drive went away", which would park the job for a watchdog that has
+    // nothing to wait for.
+    const failure = classifyFailure({
+      message: "No space left on the destination.",
+      errorCode: "ENOSPC",
+      storageAvailable: false,
+    });
+    expect(failure.kind).toBe("out-of-space");
+  });
+
+  it("reads a hard I/O errno even when the message is plain", () => {
+    const failure = classifyFailure({
+      message: "The destination could not be written.",
+      errorCode: "EIO",
+      storageAvailable: true,
+    });
+    expect(failure.kind).toBe("storage-io");
+  });
+
+  it("still falls back to the message when there is no errno", () => {
+    const failure = classifyFailure({
+      message: "The encoder stopped unexpectedly.",
+      storageAvailable: true,
+    });
+    expect(failure.kind).toBe("encoder");
+  });
+});
+
 describe("error patterns", () => {
   it.each([
     "Input/output error",
@@ -92,7 +139,7 @@ describe("StorageInterruptedError", () => {
       storageAvailable: false,
     });
     const error = new StorageInterruptedError(failure);
-    expect(error.failure.kind).toBe("storage-unavailable");
+    expect(error.failure.kind).toBe("storage-device-lost");
     expect(error.name).toBe("StorageInterruptedError");
   });
 });
@@ -106,18 +153,18 @@ describe("StorageInterruptedError", () => {
  * error is storage loss until the storage has been re-checked, repeatedly, and
  * found present each time.
  */
-describe("escalating a repeated I/O error", () => {
-  it("still reads the first I/O error as storage the watchdog has not caught up with", () => {
+describe("classifying hard I/O without corroboration", () => {
+  it("classifies the first I/O error as hard storage evidence", () => {
     expect(
       classifyFailure({
         message: "Input/output error",
         storageAvailable: true,
         ioRechecksExhausted: false,
       }).kind,
-    ).toBe("storage-unavailable");
+    ).toBe("storage-io");
   });
 
-  it("calls it a source fault once the volume has proved it is still there", () => {
+  it("classifies an offline caller's exhausted source retries as source I/O", () => {
     const failure = classifyFailure({
       message: "FFmpeg failed with exit code 1: Input/output error",
       storageAvailable: true,
@@ -141,7 +188,7 @@ describe("escalating a repeated I/O error", () => {
         ioRechecksExhausted: true,
         missingRoots: ["/Volumes/Expansion"],
       }).kind,
-    ).toBe("storage-unavailable");
+    ).toBe("storage-device-lost");
   });
 
   it("does not escalate an ordinary encoder fault into a source fault", () => {
@@ -199,7 +246,7 @@ describe("which side of the transcode failed", () => {
         "[out#0/hls @ 0x1] Error writing trailer: Input/output error",
       ),
     });
-    expect(failure.kind).toBe("storage-unavailable");
+    expect(failure.kind).toBe("storage-io");
   });
 
   it("calls a read failure source damage once the budget is spent", () => {
@@ -218,7 +265,7 @@ describe("which side of the transcode failed", () => {
     expect(failure.evidence?.byteOffset).toBe(10_074_169_063);
   });
 
-  it("still waits for the volume before the budget is spent", () => {
+  it("calls the first explicit FFmpeg input error a source fault", () => {
     const failure = classifyFailure({
       message: "FFmpeg failed with exit code 1: Input/output error",
       storageAvailable: true,
@@ -227,10 +274,10 @@ describe("which side of the transcode failed", () => {
         "[in#0] Error during demuxing: Input/output error",
       ),
     });
-    expect(failure.kind).toBe("storage-unavailable");
+    expect(failure.kind).toBe("source-io");
   });
 
-  it("keeps the existing answer when there is no evidence to read", () => {
+  it("uses the exhausted source verdict when no side evidence exists", () => {
     expect(
       classifyFailure({
         message: "FFmpeg failed with exit code 1: Input/output error",

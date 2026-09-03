@@ -18,8 +18,7 @@
  * story does not cost a second transcode at the end.
  */
 
-import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { readFile, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { SEGMENT_TARGET_SECONDS } from "../../lib/playback-planner/gopPolicy";
 import { UNKNOWN_LANGUAGE } from "../processing/languages";
@@ -88,6 +87,7 @@ import {
   publishTitlePackage,
   readTitleBuildRecord,
   readTitlePackageManifest,
+  TITLE_INCOMING_DIRECTORY,
   type TitlePackageManifest,
 } from "./publishTitle";
 import { validateAdaptivePackage } from "./validation";
@@ -115,6 +115,11 @@ import {
   checkpointRoot,
   reconcilePlan,
 } from "./epochs/checkpoints";
+import type { ClassifiedFailure } from "./epochs/failure";
+import type {
+  StorageIdentityProbe,
+  VolumeIdentity,
+} from "../processing/storageIdentity";
 import {
   DEFAULT_EPOCH_TARGET_SECONDS,
   EPOCH_TIMELINE_POLICY_VERSION,
@@ -127,6 +132,7 @@ import { assembleVideoRenditions, copyStageDirectory } from "./epochs/assemble";
 import { epochProgress } from "./epochs/progress";
 import {
   AudioStageError,
+  classifyFailure,
   MediaProgressTimeoutError,
   SourceReadError,
   StorageInterruptedError,
@@ -144,6 +150,17 @@ import {
   type SourceDamageRecord,
   type SourceInterval,
 } from "./epochs/salvage";
+import {
+  assertOwnedJobWorkspace,
+  assertWorkspaceId,
+  assertClaimedWorkspace,
+  claimJobWorkspace,
+  JOB_WORKSPACE_OWNER_FILE,
+  mkdirWithinWorkspace,
+  ScratchStorageLostError,
+  verifyOwnedJobWorkspace,
+  type ClaimedWorkspace,
+} from "../storageRoles";
 
 /**
  * Whether a title still holds every file its manifest names.
@@ -266,6 +283,17 @@ export interface AdaptivePackageResult {
    * platter for its trouble.
    */
   failureKind?: ProcessingFailureKind;
+  /** Owned scratch workspace retained until the job success row is committed. */
+  workspaceDirectory?: string;
+  /**
+   * The volume the workspace was claimed on, for the caller to persist.
+   *
+   * Returned on the first successful claim so the job record can remember it;
+   * every later attempt passes it back as `expectedScratchIdentity`.
+   */
+  scratchIdentity?: VolumeIdentity | null;
+  /** Hidden HDD staging retained until the job success commit. */
+  publicationIncomingDirectory?: string;
 }
 
 export interface AdaptivePackageRequest {
@@ -274,6 +302,8 @@ export interface AdaptivePackageRequest {
   sourceFingerprint: string;
   sourcePath: string;
   probe?: RenditionMediaProbe;
+  /** Stable domain-job id. Offline callers fall back to the media id. */
+  workspaceId?: string;
 }
 
 export interface AdaptivePackagerOptions {
@@ -326,6 +356,17 @@ export interface AdaptivePackagerOptions {
   storageAvailable?: () => boolean | Promise<boolean>;
   /** Which roots failed their last check, so the reason names the drive. */
   missingRoots?: () => readonly string[];
+  /** Persists a hard storage fault before any retry/probe can be launched. */
+  onHardStorageFault?: (failure: ClassifiedFailure) => Promise<void>;
+  /** Reads the volume identity of a path. Injected; `diskutil` in production. */
+  probeScratchIdentity?: StorageIdentityProbe;
+  /**
+   * The scratch volume this job recorded when it first claimed a workspace.
+   *
+   * Supplied by the caller from durable storage, so a worker that restarted
+   * while the disk was absent still knows which volume the job is waiting for.
+   */
+  expectedScratchIdentity?: VolumeIdentity | null;
   /**
    * Waits between re-reading a source that returned an I/O error.
    *
@@ -379,6 +420,8 @@ export interface AdaptivePackagerOptions {
   verifySourceFingerprint?: boolean;
   signal?: AbortSignal;
   dryRun?: boolean;
+  /** Server jobs clean only after their database success commit. */
+  retainWorkspaceAfterPublish?: boolean;
 }
 
 /**
@@ -584,6 +627,79 @@ export function estimateAdaptivePackageBytes({
   return { videoBytes, audioBytes, totalBytes };
 }
 
+/**
+ * What a restart can learn about an unfinished publication, read from scratch.
+ *
+ * The marker alone is not enough to trust. It records that the package was
+ * complete and verified when it was written, but the volume holding it may
+ * have been unplugged, filled, or partly cleaned since. So every file the
+ * package's own build record names is checked for presence and for the exact
+ * size recorded for it — cheap metadata reads, no hashing — and anything that
+ * disagrees sends the job back to its checkpoints rather than into a
+ * publication that would copy a truncated file.
+ *
+ * Content equality is not re-established here and does not need to be: the
+ * copy itself compares each destination file against this one before it
+ * accepts it.
+ */
+async function readVerifiedScratchPackage({
+  marker,
+  workVersionRoot,
+  sourceFingerprint,
+}: {
+  marker: string;
+  workVersionRoot: string;
+  sourceFingerprint: string;
+}): Promise<{
+  metadata: AdaptivePackageMetadata;
+  mode: "full" | "incremental";
+  sourceDamage: SourceDamageRecord[];
+} | null> {
+  const record = await readFile(marker, "utf8")
+    .then((raw) => JSON.parse(raw) as Record<string, unknown>)
+    .catch(() => null);
+  if (
+    !record ||
+    record.sourceFingerprint !== sourceFingerprint ||
+    record.profileVersion !== ADAPTIVE_PROFILE_VERSION ||
+    record.packageDirectory !== path.basename(workVersionRoot)
+  ) {
+    return null;
+  }
+
+  const metadata = await readFile(
+    path.join(workVersionRoot, ADAPTIVE_METADATA_FILE),
+    "utf8",
+  )
+    .then((raw) => JSON.parse(raw) as AdaptivePackageMetadata)
+    .catch(() => null);
+  if (!metadata) return null;
+
+  for (const rendition of [
+    ...(metadata.videoRenditions ?? []),
+    ...(metadata.audioRenditions ?? []),
+  ]) {
+    const stats = await stat(
+      path.join(workVersionRoot, ...rendition.mediaPath.split("/")),
+    ).catch(() => null);
+    if (!stats?.isFile() || stats.size !== rendition.fileSizeBytes) return null;
+  }
+  for (const rendition of metadata.subtitleRenditions ?? []) {
+    const stats = await stat(
+      path.join(workVersionRoot, ...rendition.subtitlePath.split("/")),
+    ).catch(() => null);
+    if (!stats?.isFile() || stats.size === 0) return null;
+  }
+
+  return {
+    metadata,
+    mode: record.mode === "incremental" ? "incremental" : "full",
+    sourceDamage: Array.isArray(record.sourceDamage)
+      ? (record.sourceDamage as SourceDamageRecord[])
+      : [],
+  };
+}
+
 export async function packageAdaptiveRendition(
   request: AdaptivePackageRequest,
   paths: RenditionPaths,
@@ -608,9 +724,12 @@ export async function packageAdaptiveRendition(
     pauseController,
     epochTargetSeconds = DEFAULT_EPOCH_TARGET_SECONDS,
     storageAvailable,
+    onHardStorageFault,
+    probeScratchIdentity,
+    expectedScratchIdentity,
     sourceIoBackoffMs,
     missingRoots,
-    driveSpaceProvider = () => getDriveSpace(paths.mediaRoot),
+    driveSpaceProvider = () => getDriveSpace(paths.workRoot),
     runEncoder = runFfmpegProcess,
     sourceDamagePolicy = sourceDamagePolicyFromEnvironment(),
     stalls = stallThresholds(),
@@ -619,12 +738,27 @@ export async function packageAdaptiveRendition(
     verifySourceFingerprint = true,
     signal,
     dryRun = false,
+    retainWorkspaceAfterPublish = false,
   }: AdaptivePackagerOptions,
 ): Promise<AdaptivePackageResult> {
   const base = { mediaId: request.mediaId, relativePath: request.relativePath };
+  const workspaceId = assertWorkspaceId(request.workspaceId ?? request.mediaId);
+  const workspaceDirectory = assertOwnedJobWorkspace(
+    paths.workRoot,
+    path.join(paths.workRoot, workspaceId),
+  );
 
   if (signal?.aborted) return { ...base, status: "interrupted" };
   if (dryRun) return { ...base, status: "dry-run" };
+  /** Set once this job's own marker is on scratch. See the failure path. */
+  let workspaceClaimed = false;
+  /**
+   * The workspace once it is claimed, bound to the filesystem it was claimed
+   * on. Every later scratch operation is checked against this.
+   */
+  let workspaceClaim: ClaimedWorkspace | undefined;
+  /** Cleared unconditionally on the way out; see the scratch watch below. */
+  let scratchPoll: ReturnType<typeof setInterval> | undefined;
 
   const lock = await acquireDirectoryLock(
     path.join(paths.stateRoot, "locks", `${request.mediaId}.adaptive.lock`),
@@ -634,6 +768,48 @@ export async function packageAdaptiveRendition(
   const versionDirectory = `${ADAPTIVE_PROFILE_VERSION}-${request.sourceFingerprint.slice(0, 16)}`;
 
   try {
+    const sourceStats = await stat(request.sourcePath);
+    if (!sourceStats.isFile()) {
+      throw new Error("The configured source path is not a media file.");
+    }
+    workspaceClaim = await claimJobWorkspace(
+      paths.workRoot,
+      workspaceDirectory,
+      {
+        workspaceId,
+        sourceFingerprint: request.sourceFingerprint,
+      },
+      {
+        ...(probeScratchIdentity
+          ? { probeIdentity: probeScratchIdentity }
+          : {}),
+        ...(expectedScratchIdentity
+          ? { expectedIdentity: expectedScratchIdentity }
+          : {}),
+      },
+    );
+    /*
+     * From here on, this job owns a directory on scratch and has proven it by
+     * writing a marker into it. That fact is what the failure path below uses
+     * to tell a vanished volume from a missing file.
+     */
+    workspaceClaimed = true;
+    /**
+     * The one check every scratch operation goes through.
+     *
+     * Cheap — a `stat` and a small read — so it can sit in front of directory
+     * creation, each epoch, each promotion, assembly, verification and
+     * publication without being felt.
+     */
+    const assertScratch = async (
+      options: { deep?: boolean } = {},
+    ): Promise<void> => {
+      await assertClaimedWorkspace(workspaceClaim!, options);
+    };
+    const writeProbe = path.join(workspaceDirectory, ".writable-probe");
+    await writeFile(writeProbe, "seyirlik", { encoding: "utf8", flag: "w" });
+    await rm(writeProbe, { force: true });
+
     const probe =
       request.probe ??
       (await probeMediaFile(request.sourcePath, ffprobePath, signal));
@@ -720,12 +896,277 @@ export async function packageAdaptiveRendition(
     });
 
     if (work.mode === "none" && existing) {
+      const finalValidation = await validateAdaptivePackage({
+        versionRoot: existingTitleRoot,
+        mediaId: request.mediaId,
+        sourceFingerprint: request.sourceFingerprint,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+        ffprobePath,
+        ffmpegPath,
+        deep: true,
+        ...(signal ? { signal } : {}),
+      });
+      if (!finalValidation.ok) {
+        return {
+          ...base,
+          status: "validation-failed",
+          error:
+            "An existing final package matched the job record but did not pass recovery validation.",
+          issues: finalValidation.issues.map((issue) => issue.message),
+          workspaceDirectory,
+          scratchIdentity: workspaceClaim?.identity ?? null,
+        };
+      }
       return {
         ...base,
         status: "already-valid",
         versionDirectory,
         storageBytes: existing.storage.totalBytes,
+        workspaceDirectory,
+        scratchIdentity: workspaceClaim?.identity ?? null,
+        ...((await stat(
+          path.join(existingTitleRoot, TITLE_INCOMING_DIRECTORY, workspaceId),
+        ).catch(() => null))
+          ? {
+              publicationIncomingDirectory: path.join(
+                existingTitleRoot,
+                TITLE_INCOMING_DIRECTORY,
+                workspaceId,
+              ),
+            }
+          : {}),
       };
+    }
+
+    /*
+     * The scratch package this job builds, and the marker that says it is
+     * finished and verified.
+     *
+     * Both are named before anything expensive starts, because the marker is
+     * what a restart reads to discover that the transcode is already done. It
+     * is written only after deep validation has passed, so its presence means
+     * exactly one thing: every byte of the package exists on scratch and has
+     * proven itself, and all that remains is to copy it to the media volume.
+     */
+    const workVersionRoot = path.join(
+      workspaceDirectory,
+      `${versionDirectory}.verified-package`,
+    );
+    const verificationMarker = path.join(
+      workspaceDirectory,
+      ".verified-package.json",
+    );
+    const verifiedScratchPackage = await readVerifiedScratchPackage({
+      marker: verificationMarker,
+      workVersionRoot,
+      sourceFingerprint: request.sourceFingerprint,
+    });
+
+    /**
+     * Publishes a verified scratch package and finishes the job.
+     *
+     * Everything from here on is the same whether the package was built by
+     * this process or by one that died mid-copy, which is why it is one
+     * function rather than a path duplicated for resume. It is idempotent:
+     * files already present and matching on the destination are skipped, the
+     * directory swap records which directories it has already renamed, and the
+     * scratch workspace is removed only after the destination has been proven
+     * against the manifest.
+     */
+    const completePublication = async ({
+      metadata,
+      existingBuildRecord,
+      sourceDamage,
+    }: {
+      metadata: AdaptivePackageMetadata;
+      existingBuildRecord: AdaptivePackageMetadata | null;
+      sourceDamage: SourceDamageRecord[];
+    }): Promise<AdaptivePackageResult> => {
+      const titleRoot = path.dirname(request.sourcePath);
+      const onPublishProgress = onEvent
+        ? {
+            onProgress: (progress: PublishPhaseProgress) => {
+              onEvent({
+                type: "publish-progress",
+                mediaId: request.mediaId,
+                progress,
+              });
+            },
+          }
+        : {};
+      const { manifest, incomingDirectory } = existingBuildRecord
+        ? await publishAdditionalRenditions({
+            workVersionRoot,
+            titleRoot,
+            existing: existingBuildRecord,
+            added: metadata,
+            publicationId: workspaceId,
+            destinationReserveBytes: reserveBytes,
+            retainIncomingAfterPublish: retainWorkspaceAfterPublish,
+            ...(signal ? { signal } : {}),
+            ...onPublishProgress,
+          })
+        : await publishTitlePackage({
+            workVersionRoot,
+            titleRoot,
+            metadata,
+            publicationId: workspaceId,
+            destinationReserveBytes: reserveBytes,
+            retainIncomingAfterPublish: retainWorkspaceAfterPublish,
+            ...(signal ? { signal } : {}),
+            ...onPublishProgress,
+          });
+      // The manifest describes the whole title, including renditions this run
+      // reused, so it is the honest source for the package's own size.
+      const publishedTotalBytes = manifest.storage.totalBytes;
+
+      /*
+       * The two steps publication performs outside `publishTitlePackage`: proving
+       * the manifest against the disk it just described, and removing the
+       * checkpoints. Reported here because they are where the remaining time
+       * goes, and because the second one is the point of no return for a
+       * resumable build.
+       */
+      const publishTail = (
+        id: "verify" | "cleanup",
+        state: "running" | "complete",
+      ): void => {
+        onEvent?.({
+          type: "publish-progress",
+          mediaId: request.mediaId,
+          progress: {
+            steps: [
+              { id: "verify", state: id === "verify" ? state : "complete" },
+              {
+                id: "cleanup",
+                state: id === "cleanup" ? state : "waiting",
+              },
+            ],
+            totalBytes: 0,
+            completedBytes: 0,
+            fraction: id === "cleanup" && state === "complete" ? 1 : 0,
+            currentId: id,
+          },
+        });
+      };
+
+      // Publication moves and rewrites; a file the manifest names but the folder
+      // does not hold would be a package that reads as present and plays as
+      // broken, so the manifest is checked against the disk it just described.
+      publishTail("verify", "running");
+      const missing: string[] = [];
+      for (const rendition of [
+        ...manifest.video,
+        ...manifest.audio,
+        ...manifest.subtitle,
+      ]) {
+        for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
+          const stats = await stat(
+            path.join(titleRoot, ...relative.split("/")),
+          ).catch(() => undefined);
+          const expectedSize =
+            relative === rendition.mediaPath
+              ? rendition.fileSizeBytes
+              : undefined;
+          if (
+            !stats?.isFile() ||
+            stats.size === 0 ||
+            (expectedSize !== undefined && stats.size !== expectedSize)
+          ) {
+            missing.push(relative);
+          }
+        }
+      }
+      if (missing.length > 0) {
+        return {
+          ...base,
+          status: "validation-failed",
+          error:
+            "The published package is missing files its own manifest names, so it was not activated.",
+          issues: missing,
+        };
+      }
+      publishTail("verify", "complete");
+
+      /*
+       * No pointer is written into the rendition root any more: nothing lives
+       * there. The title folder's own manifest is what says which package is
+       * current, which keeps the answer next to the files it describes.
+       *
+       * This is the one place checkpoints are removed, and it is reached only
+       * after the package has been validated and published. Until then they are
+       * the job's durable progress and nothing may touch them.
+       */
+      publishTail("cleanup", "running");
+      if (!retainWorkspaceAfterPublish) {
+        const owned = await verifyOwnedJobWorkspace(
+          paths.workRoot,
+          workspaceDirectory,
+          workspaceId,
+        );
+        await rm(owned, {
+          recursive: true,
+          force: true,
+        }).catch(() => undefined);
+      }
+      publishTail("cleanup", "complete");
+
+      if (sourceDamage.length > 0) {
+        console.warn(
+          `[seyirlik] ${request.relativePath}: published with ${sourceDamage.length} replaced interval(s) — ${sourceDamage
+            .map((record) => describeInterval(damageIntervalOf(record)))
+            .join(", ")} could not be read from the source.`,
+        );
+      }
+
+      return {
+        ...base,
+        status: "ready",
+        versionDirectory,
+        workspaceDirectory,
+        scratchIdentity: workspaceClaim?.identity ?? null,
+        publicationIncomingDirectory: incomingDirectory,
+        // The published package, whether this run built all of it or one rung.
+        storageBytes: publishedTotalBytes,
+        // What this run itself wrote.
+        jobOutputBytes: metadata.storage.totalBytes,
+        /*
+         * A salvaged title is published, and it is not a clean encode. Saying so
+         * here is what lets the job record, the API and the page tell the two
+         * apart rather than presenting them identically.
+         */
+        ...(sourceDamage.length > 0 ? { sourceDamage } : {}),
+      };
+    };
+
+    /*
+     * Restart during publication.
+     *
+     * A 400 GB package that was verified before the worker died must not be
+     * built a second time: the encode is finished, the bytes are on scratch,
+     * and the only unfinished work is the copy. Publication is idempotent and
+     * resumable per file, so handing it the package it was already copying is
+     * both the cheapest and the safest thing to do.
+     *
+     * This is deliberately placed after the check above that recognises an
+     * already-published final package, so a crash between the final rename and
+     * the database commit reconciles as `already-valid` rather than copying a
+     * package that is already live.
+     */
+    if (verifiedScratchPackage) {
+      onEvent?.({
+        type: "build-stage",
+        mediaId: request.mediaId,
+        stage: "publishing",
+      });
+      return await completePublication({
+        metadata: verifiedScratchPackage.metadata,
+        existingBuildRecord:
+          verifiedScratchPackage.mode === "incremental"
+            ? await readTitleBuildRecord(path.dirname(request.sourcePath))
+            : null,
+        sourceDamage: verifiedScratchPackage.sourceDamage,
+      });
     }
 
     const preserveHdr = probe.video.isHdr;
@@ -781,7 +1222,7 @@ export async function packageAdaptiveRendition(
      */
     const checkpoints = checkpointRoot(
       paths.workRoot,
-      request.mediaId,
+      workspaceId,
       ADAPTIVE_PROFILE_VERSION,
       request.sourceFingerprint,
     );
@@ -864,26 +1305,29 @@ export async function packageAdaptiveRendition(
       work.subtitleStreamIndexes.includes(sidecar.streamIndex),
     );
 
-    const workVersionRoot = path.join(
-      paths.workRoot,
-      request.mediaId,
-      `${versionDirectory}.${process.pid}-${randomUUID().slice(0, 8)}.partial`,
-    );
-    await rm(workVersionRoot, { recursive: true, force: true });
-    await mkdir(workVersionRoot, { recursive: true });
+    /*
+     * A scratch package that did not finish publishing is rebuilt from its
+     * checkpoints; one that did is never touched again. `resumedPublication`
+     * above has already returned in the second case, so reaching here with the
+     * marker still valid means the package is being extended, not replaced.
+     */
+    if (!verifiedScratchPackage) {
+      await rm(workVersionRoot, { recursive: true, force: true });
+    }
+    await mkdirWithinWorkspace(workspaceClaim, workVersionRoot);
     for (const streamIndex of [
       ...plannedSubtitleStreamIndexes,
       // Sidecars are extracted in the same place as embedded tracks and so
       // need their directories made here too, not only the embedded ones.
       ...plannedSidecarSubtitles.map((sidecar) => sidecar.streamIndex),
     ]) {
-      await mkdir(
+      await mkdirWithinWorkspace(
+        workspaceClaim,
         path.join(
           workVersionRoot,
           ADAPTIVE_SUBTITLE_DIRECTORY,
           subtitleRenditionId(streamIndex),
         ),
-        { recursive: true },
       );
     }
 
@@ -953,6 +1397,30 @@ export async function packageAdaptiveRendition(
     const reportBytes = () =>
       inheritedBytes + completedEpochBytes + currentEpochBytes;
 
+    /*
+     * A signal that fires when the caller cancels *or* when scratch stops
+     * being the filesystem this job claimed.
+     *
+     * The boundary checks above cannot help an encode that is already running:
+     * an epoch is minutes long, and for all of that time FFmpeg holds output
+     * handles on a volume that may already have gone. Polling the claim and
+     * aborting through the existing process-abort path is what turns "the disk
+     * vanished" into a stopped child rather than minutes of writes to wherever
+     * the pathname now resolves.
+     *
+     * Two seconds is chosen against the storage watchdog's five: this is the
+     * cheaper check of the two — one `stat` and one small read, no subprocess —
+     * and it is the one holding a running encoder.
+     */
+    const scratchLost = new AbortController();
+    scratchPoll = setInterval(() => {
+      void assertScratch().catch(() => scratchLost.abort());
+    }, 2_000);
+    scratchPoll.unref?.();
+    const scratchWatch = signal
+      ? { signal: AbortSignal.any([signal, scratchLost.signal]) }
+      : { signal: scratchLost.signal };
+
     let epochBuild: Awaited<ReturnType<typeof runEpochBuild>> | undefined;
     /** Intervals replaced because the source could not supply them. */
     let sourceDamage: SourceDamageRecord[] = [];
@@ -987,10 +1455,22 @@ export async function packageAdaptiveRendition(
         ffprobePath,
         logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),
         runEncoder,
-        ...(signal ? { signal } : {}),
+        /*
+         * The scratch volume is re-proven at every epoch boundary, from a
+         * marker this job wrote into its own workspace.
+         *
+         * The watchdog cannot answer this on its own: when the volume goes,
+         * the next `mkdir` recreates the path on whatever filesystem the mount
+         * point sits on, and a poll that runs afterwards sees a directory and
+         * reports healthy. The job then keeps encoding — onto the wrong disk —
+         * and publishes a package built from it.
+         */
+        beforeEpoch: () => assertScratch(),
+        signal: scratchWatch.signal,
         ...(pauseController ? { pauseController } : {}),
         ...(storageAvailable ? { storageAvailable } : {}),
         ...(missingRoots ? { missingRoots } : {}),
+        ...(onHardStorageFault ? { onHardStorageFault } : {}),
         ...(sourceIoBackoffMs ? { sourceIoBackoffMs } : {}),
         sourceDamagePolicy,
         stalls,
@@ -1332,6 +1812,7 @@ export async function packageAdaptiveRendition(
           interruption: "storage",
           error: error.failure.summary,
           issues: [error.failure.detail],
+          failureKind: error.failure.kind,
         };
       }
       /*
@@ -1383,6 +1864,9 @@ export async function packageAdaptiveRendition(
      * video bytes are done, and the copy is a named step beside them.
      */
     let lastAssembly: AssemblyPhaseProgress | undefined;
+    // Assembly reads every epoch and writes the finished renditions; the volume
+    // is re-proven, identity included, before that begins.
+    await assertScratch({ deep: true });
     const assembled = await assembleVideoRenditions({
       checkpointRoot: checkpoints,
       plan,
@@ -1880,12 +2364,13 @@ export async function packageAdaptiveRendition(
       `${JSON.stringify(metadata, null, 2)}\n`,
       "utf8",
     );
-
     onEvent?.({
       type: "build-stage",
       mediaId: request.mediaId,
       stage: "validating",
     });
+    // Verification is only meaningful against the package this job built.
+    await assertScratch({ deep: true });
     const validation = await validateAdaptivePackage({
       ...(onEvent
         ? {
@@ -1945,6 +2430,29 @@ export async function packageAdaptiveRendition(
       `${JSON.stringify(metadata, null, 2)}\n`,
       "utf8",
     );
+    /*
+     * The point at which the transcode stops being repeatable work.
+     *
+     * Written after deep validation and before the first destination byte, so
+     * a process that dies at any moment during publication restarts into
+     * `readVerifiedScratchPackage` and resumes the copy. `mode` and
+     * `sourceDamage` are recorded because the resuming process has not planned
+     * this build and cannot otherwise know whether it is replacing a package
+     * or extending one, nor that the encode replaced unreadable source.
+     */
+    await writeFile(
+      verificationMarker,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        sourceFingerprint: request.sourceFingerprint,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+        packageDirectory: path.basename(workVersionRoot),
+        mode: work.mode === "incremental" ? "incremental" : "full",
+        sourceDamage,
+        verifiedAt: new Date().toISOString(),
+      })}\n`,
+      "utf8",
+    );
 
     /*
      * The package lives with the title it belongs to, not in a parallel tree
@@ -1957,6 +2465,12 @@ export async function packageAdaptiveRendition(
       mediaId: request.mediaId,
       stage: "publishing",
     });
+    /*
+     * Checked again here because publication reads every byte it copies from
+     * scratch. Publishing from a workspace that is no longer the one this job
+     * verified would copy whatever happens to be at those paths now.
+     */
+    await assertScratch({ deep: true });
     const titleRoot = path.dirname(request.sourcePath);
     /*
      * An incremental run must not swap the package's directories: the swap
@@ -1969,139 +2483,174 @@ export async function packageAdaptiveRendition(
       work.mode === "incremental"
         ? await readTitleBuildRecord(titleRoot)
         : null;
-    const onPublishProgress = onEvent
-      ? {
-          onProgress: (progress: PublishPhaseProgress) => {
-            onEvent({
-              type: "publish-progress",
-              mediaId: request.mediaId,
-              progress,
-            });
-          },
-        }
-      : {};
-    const { manifest } = existingBuildRecord
-      ? await publishAdditionalRenditions({
-          workVersionRoot,
-          titleRoot,
-          existing: existingBuildRecord,
-          added: metadata,
-          ...onPublishProgress,
-        })
-      : await publishTitlePackage({
-          workVersionRoot,
-          titleRoot,
-          metadata,
-          ...onPublishProgress,
-        });
-    // The manifest describes the whole title, including renditions this run
-    // reused, so it is the honest source for the package's own size.
-    const publishedTotalBytes = manifest.storage.totalBytes;
-
+    return await completePublication({
+      metadata,
+      existingBuildRecord,
+      sourceDamage,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
     /*
-     * The two steps publication performs outside `publishTitlePackage`: proving
-     * the manifest against the disk it just described, and removing the
-     * checkpoints. Reported here because they are where the remaining time
-     * goes, and because the second one is the point of no return for a
-     * resumable build.
+     * A refusal to claim scratch is a storage condition, and it is the one
+     * case the checks below cannot reach: nothing was claimed, so there is no
+     * marker to find missing, and the roots all resolve — to the wrong disk,
+     * which is exactly the complaint. Reported here from the error's own type
+     * rather than inferred from its wording.
      */
-    const publishTail = (
-      id: "verify" | "cleanup",
-      state: "running" | "complete",
-    ): void => {
-      onEvent?.({
-        type: "publish-progress",
-        mediaId: request.mediaId,
-        progress: {
-          steps: [
-            { id: "verify", state: id === "verify" ? state : "complete" },
-            {
-              id: "cleanup",
-              state: id === "cleanup" ? state : "waiting",
-            },
-          ],
-          totalBytes: 0,
-          completedBytes: 0,
-          fraction: id === "cleanup" && state === "complete" ? 1 : 0,
-          currentId: id,
-        },
-      });
-    };
-
-    // Publication moves and rewrites; a file the manifest names but the folder
-    // does not hold would be a package that reads as present and plays as
-    // broken, so the manifest is checked against the disk it just described.
-    publishTail("verify", "running");
-    const missing: string[] = [];
-    for (const rendition of [
-      ...manifest.video,
-      ...manifest.audio,
-      ...manifest.subtitle,
-    ]) {
-      for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
-        const stats = await stat(
-          path.join(titleRoot, ...relative.split("/")),
-        ).catch(() => undefined);
-        if (!stats?.isFile() || stats.size === 0) missing.push(relative);
-      }
-    }
-    if (missing.length > 0) {
+    if (error instanceof ScratchStorageLostError) {
       return {
         ...base,
-        status: "validation-failed",
-        error:
-          "The published package is missing files its own manifest names, so it was not activated.",
-        issues: missing,
+        status: "interrupted",
+        interruption: "storage",
+        error: message,
+        issues: [message],
+        failureKind: "storage-device-lost",
+        workspaceDirectory,
+        scratchIdentity: workspaceClaim?.identity ?? null,
       };
     }
-    publishTail("verify", "complete");
-
     /*
-     * No pointer is written into the rendition root any more: nothing lives
-     * there. The title folder's own manifest is what says which package is
-     * current, which keeps the answer next to the files it describes.
+     * Both volumes are re-checked here, right now, rather than trusting the
+     * last watchdog poll.
      *
-     * This is the one place checkpoints are removed, and it is reached only
-     * after the package has been validated and published. Until then they are
-     * the job's durable progress and nothing may touch them.
+     * The watchdog runs on a timer, so a volume pulled between two polls is
+     * still "available" as far as its cached answer is concerned — and the
+     * error a vanished mount produces does not say so either. Unplugging the
+     * media volume mid-publication yields `EACCES ... mkdir /Volumes/<name>`,
+     * because the mount point itself is gone, and that was being filed as a
+     * broken encode: a permanent failure for a job whose only problem was a
+     * loose cable, with a verified package sitting on scratch ready to go.
+     *
+     * A `stat` of two directories costs nothing on a path that is already
+     * failing, and it answers the one question the classification turns on.
      */
-    publishTail("cleanup", "running");
-    await rm(path.dirname(workVersionRoot), {
-      recursive: true,
-      force: true,
-    }).catch(() => undefined);
-    publishTail("cleanup", "complete");
-
-    if (sourceDamage.length > 0) {
-      console.warn(
-        `[seyirlik] ${request.relativePath}: published with ${sourceDamage.length} replaced interval(s) — ${sourceDamage
-          .map((record) => describeInterval(damageIntervalOf(record)))
-          .join(", ")} could not be read from the source.`,
+    const [sourceRootPresent, scratchRootPresent, workspaceMarkerPresent] =
+      await Promise.all([
+        stat(paths.mediaRoot).then(
+          (entry) => entry.isDirectory(),
+          () => false,
+        ),
+        stat(paths.workRoot).then(
+          (entry) => entry.isDirectory(),
+          () => false,
+        ),
+        /*
+         * The job's own ownership marker, which it wrote itself and which
+         * nothing else removes while the job is running.
+         *
+         * Checking the roots alone is not enough. An unmount is not atomic
+         * from a running process's point of view: for a moment the mount
+         * point still stats as a directory while paths inside it have already
+         * stopped resolving, so a scratch volume pulled mid-encode produced an
+         * `ENOENT` on a scratch path while `workRoot` still looked present.
+         * That was classified `source-missing` — a permanent failure — and
+         * threw away a job whose only problem was a disconnected disk.
+         *
+         * A marker this job placed and did not delete cannot be absent for any
+         * innocent reason, so its disappearance is the volume going away.
+         */
+        workspaceClaimed
+          ? stat(path.join(workspaceDirectory, JOB_WORKSPACE_OWNER_FILE)).then(
+              (entry) => entry.isFile(),
+              () => false,
+            )
+          : Promise.resolve(true),
+      ]);
+    const vanished = [
+      ...(sourceRootPresent ? [] : [paths.mediaRoot]),
+      ...(scratchRootPresent && workspaceMarkerPresent ? [] : [paths.workRoot]),
+    ];
+    const available =
+      vanished.length > 0
+        ? false
+        : storageAvailable
+          ? await Promise.resolve(storageAvailable()).catch(() => false)
+          : true;
+    const failure = classifyFailure({
+      message,
+      // The errno, where there was one. Seyirlik's own storage refusals carry
+      // a code and a plain-English message, and only the code is unambiguous.
+      errorCode: (error as NodeJS.ErrnoException | undefined)?.code,
+      storageAvailable: available,
+      missingRoots: [...new Set([...(missingRoots?.() ?? []), ...vanished])],
+    });
+    /*
+     * A disk that is full does not always say so.
+     *
+     * `ENOSPC` reaches the caller only when the failing call was the write that
+     * ran out. Everything downstream of it fails differently: a file that was
+     * never created is read back as `ENOENT`, an ffprobe of a truncated
+     * fragment fails as a broken encode. Those were classified `source-missing`
+     * and `encoder` — both permanent, both wrong, for a job that needs nothing
+     * but room.
+     *
+     * So the volumes are asked how much space they have left, and only an
+     * answer of "essentially none" overrides. The scope is deliberately narrow:
+     * a genuine encoder fault on a healthy disk keeps its classification, and
+     * only the two kinds that a full disk plausibly masquerades as are
+     * reconsidered.
+     */
+    if (failure.kind === "source-missing" || failure.kind === "encoder") {
+      const exhausted = await Promise.all(
+        [paths.workRoot, paths.mediaRoot].map((root) =>
+          statfs(root).then(
+            (info) => info.bavail * info.bsize < 4 * 1024 * 1024,
+            () => false,
+          ),
+        ),
       );
+      if (exhausted.some(Boolean)) {
+        return {
+          ...base,
+          status: "deferred-for-storage",
+          error: "The output volume ran out of space.",
+          issues: [failure.detail],
+          failureKind: "out-of-space",
+          workspaceDirectory,
+          scratchIdentity: workspaceClaim?.identity ?? null,
+        };
+      }
     }
-
-    return {
-      ...base,
-      status: "ready",
-      versionDirectory,
-      // The published package, whether this run built all of it or one rung.
-      storageBytes: publishedTotalBytes,
-      // What this run itself wrote.
-      jobOutputBytes: metadata.storage.totalBytes,
-      /*
-       * A salvaged title is published, and it is not a clean encode. Saying so
-       * here is what lets the job record, the API and the page tell the two
-       * apart rather than presenting them identically.
-       */
-      ...(sourceDamage.length > 0 ? { sourceDamage } : {}),
-    };
-  } catch (error) {
+    /*
+     * Both storage-loss kinds park the job rather than failing it. They differ
+     * only in what an operator is told — a clean unmount against a device that
+     * disappeared under active I/O — and neither is the job's fault.
+     */
+    if (
+      failure.kind === "storage-unavailable" ||
+      failure.kind === "storage-device-lost"
+    ) {
+      return {
+        ...base,
+        status: "interrupted",
+        interruption: "storage",
+        error: failure.summary,
+        issues: [failure.detail],
+        failureKind: failure.kind,
+        workspaceDirectory,
+        scratchIdentity: workspaceClaim?.identity ?? null,
+      };
+    }
+    if (failure.kind === "out-of-space") {
+      return {
+        ...base,
+        status: "deferred-for-storage",
+        error: failure.summary,
+        failureKind: failure.kind,
+        workspaceDirectory,
+        scratchIdentity: workspaceClaim?.identity ?? null,
+      };
+    }
     return {
       ...base,
       status: signal?.aborted ? "interrupted" : "failed",
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      failureKind: failure.kind,
+      workspaceDirectory,
+      scratchIdentity: workspaceClaim?.identity ?? null,
     };
   } finally {
+    if (scratchPoll) clearInterval(scratchPoll);
     await lock.release();
   }
 }

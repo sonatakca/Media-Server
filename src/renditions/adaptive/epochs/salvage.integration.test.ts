@@ -1129,13 +1129,15 @@ describe("a replacement that is already on disk", () => {
     expect(placeholder.salvage?.kind).toBe("source-damage");
 
     /*
-     * The restart. The replacement is a completed checkpoint like any other,
-     * so nothing is encoded at all — not the epochs before it, not the
-     * replacement, not the epochs after. Regenerating it would be both waste
-     * and a second reading of a sector that cannot be read.
+     * The restart. The package had already been assembled and verified before
+     * publication failed, so the job does not plan epochs at all this time: it
+     * recognises the verified scratch package and goes straight to publishing
+     * it. Nothing is encoded — not the epochs before the damage, not the
+     * replacement, not the epochs after — and the sector that cannot be read
+     * is not read a second time.
      */
     let encodes = 0;
-    let reused = -1;
+    let planned = false;
     const { runner: stillBroken } = failingSourceReads(harness, {
       window: [11, 13],
     });
@@ -1146,13 +1148,13 @@ describe("a replacement that is already on disk", () => {
         return stillBroken(command, args, options);
       }) satisfies Runner,
       onEvent: (event: { type: string; reusedEpochs?: number }) => {
-        if (event.type === "epoch-plan") reused = event.reusedEpochs!;
+        if (event.type === "epoch-plan") planned = true;
       },
     });
 
     expect(resumed.status).toBe("ready");
-    expect(reused).toBe(4);
-    // Audio was already staged too, so a publish-only resume runs no encoder.
+    // Publication-only: the build was never re-planned, let alone re-encoded.
+    expect(planned).toBe(false);
     expect(encodes).toBe(0);
     // And the title still says it is salvaged, from the checkpoint's own
     // record rather than from the run that discovered the damage.

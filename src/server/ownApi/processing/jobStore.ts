@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 import type { DatabasePool } from "../database/databasePool";
 import type { ProcessingStage } from "./stages";
+import type {
+  StorageMedium,
+  VolumeIdentity,
+} from "../../../renditions/processing/storageIdentity";
 
 /**
  * The durable record of one media-processing job.
@@ -10,6 +14,27 @@ import type { ProcessingStage } from "./stages";
  * Both are written in the same transaction where it matters, so a job cannot be
  * queued without a record or recorded without being queued.
  */
+
+/**
+ * Why a job is paused, and — crucially — who is allowed to un-pause it.
+ *
+ * Only `storage-unavailable` is automatically recoverable. The two added here
+ * exist because that single reason was being used for two opposite situations:
+ * a drive that was cleanly unplugged, which should come back on its own, and a
+ * drive that was returning `EIO`, which must not. `requeueStorageInterruptedJobs`
+ * reads this column to decide what to restart, so conflating them is not a
+ * labelling problem — it is the mechanism that sent an encoder back at a failing
+ * platter after a forced reboot.
+ */
+export type ProcessingPauseReason =
+  /** A person pressed pause. Only a person lifts it. */
+  | "operator"
+  /** The volume went away cleanly. Resumes when the same one returns and stays. */
+  | "storage-unavailable"
+  /** The volume has an established I/O fault. Operator only. */
+  | "storage-quarantined"
+  /** Nothing observed how the last attempt ended. Operator, or policy, decides. */
+  | "recovery-pending";
 
 export type ProcessingState =
   | "pending"
@@ -52,6 +77,16 @@ export interface ProcessingJobRecord {
    * the disk could not answer — and nothing may present it as a perfect result.
    */
   sourceDamage: Record<string, unknown>[] | null;
+  /**
+   * The scratch volume this job's workspace was claimed on.
+   *
+   * Durable on purpose and stored off that volume: it is what a worker that
+   * restarted while the disk was absent compares against before it is allowed
+   * to create anything at the configured scratch path. `null` means the job
+   * has never claimed an identifiable volume, and it is then treated exactly
+   * as a new job is.
+   */
+  scratchIdentity: VolumeIdentity | null;
   errorCode: string | null;
   errorMessage: string | null;
   stagingDirectory: string | null;
@@ -59,8 +94,8 @@ export interface ProcessingJobRecord {
   attempts: number;
   cancellationRequested: boolean;
   pauseRequested: boolean;
-  /** Why it is paused: an operator asked, or the storage went away. */
-  pausedReason: "operator" | "storage-unavailable" | null;
+  /** Why it is paused. Only `storage-unavailable` resumes without a person. */
+  pausedReason: ProcessingPauseReason | null;
   /**
    * The epoch build's position, cached from the checkpoints on disk.
    *
@@ -127,6 +162,7 @@ export interface ProcessingJobUpdate {
   validation?: Record<string, unknown> | null;
   warnings?: string[];
   sourceDamage?: Record<string, unknown>[] | null;
+  scratchIdentity?: VolumeIdentity | null;
   errorCode?: string | null;
   errorMessage?: string | null;
   stagingDirectory?: string | null;
@@ -140,7 +176,7 @@ export interface ProcessingJobUpdate {
    */
   cancellationRequested?: boolean;
   pauseRequested?: boolean;
-  pausedReason?: "operator" | "storage-unavailable" | null;
+  pausedReason?: ProcessingPauseReason | null;
   epochCount?: number | null;
   epochIndex?: number | null;
   completedEpochs?: number;
@@ -171,6 +207,7 @@ const COLUMNS = `
   epoch_count, epoch_index, completed_epochs, protected_seconds,
   encoded_seconds, source_duration_seconds, epoch_start_seconds,
   epoch_end_seconds, checkpoint_bytes, free_bytes,
+  scratch_volume_uuid, scratch_volume_medium, scratch_volume_fs_type,
   created_at, started_at, finished_at, updated_at
 `;
 
@@ -199,6 +236,9 @@ interface RawRow {
   validation: Record<string, unknown> | null;
   warnings: string[] | null;
   source_damage: Record<string, unknown>[] | null;
+  scratch_volume_uuid: string | null;
+  scratch_volume_medium: StorageMedium | null;
+  scratch_volume_fs_type: string | null;
   error_code: string | null;
   error_message: string | null;
   staging_directory: string | null;
@@ -206,7 +246,7 @@ interface RawRow {
   attempts: number;
   cancellation_requested: boolean;
   pause_requested: boolean;
-  paused_reason: "operator" | "storage-unavailable" | null;
+  paused_reason: ProcessingPauseReason | null;
   epoch_count: number | null;
   epoch_index: number | null;
   completed_epochs: number;
@@ -254,6 +294,20 @@ function toRecord(row: RawRow): ProcessingJobRecord {
     streamDecisions: row.stream_decisions,
     validation: row.validation,
     sourceDamage: row.source_damage,
+    /*
+     * Only a row that recorded a UUID yields an identity. A medium without one
+     * is not a weaker identity, it is none — the same rule the storage-incident
+     * store applies, and for the same reason.
+     */
+    scratchIdentity: row.scratch_volume_uuid
+      ? {
+          volumeUuid: row.scratch_volume_uuid,
+          medium: row.scratch_volume_medium ?? "unknown",
+          fsType: row.scratch_volume_fs_type,
+          deviceNode: null,
+          mountPath: null,
+        }
+      : null,
     warnings: Array.isArray(row.warnings) ? row.warnings : [],
     errorCode: row.error_code,
     errorMessage: row.error_message,
@@ -308,21 +362,13 @@ export interface ProcessingJobStore {
   ): Promise<ProcessingJobRecord | null>;
   requestCancellation(id: string): Promise<boolean>;
   /** Asks a running job to suspend itself, recording who asked and why. */
-  requestPause(
-    id: string,
-    reason: "operator" | "storage-unavailable",
-  ): Promise<boolean>;
+  requestPause(id: string, reason: ProcessingPauseReason): Promise<boolean>;
   /**
    * Lifts a pause. Pass `onlyReason` to lift only pauses of that kind, so the
    * storage returning does not restart something a person paused on purpose.
    */
-  resume(
-    id: string,
-    onlyReason?: "operator" | "storage-unavailable",
-  ): Promise<boolean>;
-  listPaused(
-    reason: "operator" | "storage-unavailable",
-  ): Promise<ProcessingJobRecord[]>;
+  resume(id: string, onlyReason?: ProcessingPauseReason): Promise<boolean>;
+  listPaused(reason: ProcessingPauseReason): Promise<ProcessingJobRecord[]>;
   listActive(): Promise<ProcessingJobRecord[]>;
   /**
    * Starts a new attempt, resetting everything scoped to an attempt.
@@ -544,6 +590,11 @@ export function createProcessingJobStore(
             ? null
             : JSON.stringify(update.sourceDamage),
         );
+      }
+      if (update.scratchIdentity !== undefined) {
+        set("scratch_volume_uuid", update.scratchIdentity?.volumeUuid ?? null);
+        set("scratch_volume_medium", update.scratchIdentity?.medium ?? null);
+        set("scratch_volume_fs_type", update.scratchIdentity?.fsType ?? null);
       }
       if (update.warnings !== undefined)
         set("warnings", JSON.stringify(update.warnings));

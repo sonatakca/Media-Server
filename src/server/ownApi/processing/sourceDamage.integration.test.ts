@@ -87,6 +87,7 @@ function jobRecord(): ProcessingJobRecord {
     streamDecisions: null,
     validation: null,
     sourceDamage: null,
+    scratchIdentity: null,
     warnings: [],
     errorCode: null,
     errorMessage: null,

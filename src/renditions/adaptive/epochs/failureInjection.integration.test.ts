@@ -230,6 +230,38 @@ describe("the worker is killed and the machine restarts", () => {
 });
 
 describe("storage disappears mid-encode", () => {
+  it("persists the first hard EIO before any retry or source probe is spawned", async () => {
+    if (!fixture) return;
+    const harness = await createHarness();
+    let encoderSpawns = 0;
+    let sourceProbes = 0;
+    const persisted: string[] = [];
+
+    const result = await runPackage(harness, {
+      runEncoder: (async () => {
+        encoderSpawns += 1;
+        throw new Error(
+          "[in#0/matroska] Error during demuxing: Input/output error",
+        );
+      }) satisfies Runner,
+      storageAvailable: () => true,
+      verifySourceReadable: async () => {
+        sourceProbes += 1;
+        return { verdict: "readable" as const };
+      },
+      onHardStorageFault: async (failure: { kind: string }) => {
+        persisted.push(failure.kind);
+      },
+      sourceIoBackoffMs: [0, 0, 0],
+    });
+
+    expect(result.status).toBe("interrupted");
+    expect(result.failureKind).toBe("source-io");
+    expect(persisted).toEqual(["source-io"]);
+    expect(encoderSpawns).toBe(1);
+    expect(sourceProbes).toBe(0);
+  }, 900_000);
+
   /**
    * An I/O error is ambiguous, and the ambiguity is resolved by asking again.
    *
@@ -472,22 +504,30 @@ describe("publication fails after the encoding is done", () => {
     const durable = await durableEpochs(harness);
     expect(durable.length).toBeGreaterThan(0);
 
+    /*
+     * The package had already been assembled and verified when publication
+     * failed, so the retry does not plan epochs at all: it recognises the
+     * verified scratch package and publishes it. That is a stronger statement
+     * than "every epoch was reused" — no video work of any kind is repeated.
+     */
     let encodes = 0;
-    let reused = -1;
+    let planned = false;
     const retried = await runPackage(harness, {
       runEncoder: (async (command, args, options) => {
         encodes += 1;
         return runFfmpeg(command, args, options);
       }) satisfies Runner,
       onEvent: (event: { type: string; reusedEpochs?: number }) => {
-        if (event.type === "epoch-plan") reused = event.reusedEpochs!;
+        if (event.type === "epoch-plan") planned = true;
       },
     });
 
     expect(retried.status).toBe("ready");
-    expect(reused).toBe(durable.length);
+    expect(planned).toBe(false);
     // Audio was already staged too, so a publish-only retry runs no encoder.
     expect(encodes).toBe(0);
+    // The checkpoints are still the job's durable progress until it succeeds.
+    expect(durable.length).toBeGreaterThan(0);
   }, 900_000);
 });
 

@@ -209,6 +209,7 @@ Everything is read from the environment. Only `DATABASE_URL` and
 | `DATABASE_URL`               | —              | PostgreSQL connection URL. Required.                                        |
 | `SEYIRLIK_MEDIA_ROOT`        | —              | Absolute path to the media volume. Required, and never written to.          |
 | `SEYIRLIK_GENERATED_STORAGE` | temp dir       | Where derived files are cached. Set this in production.                     |
+| `SEYIRLIK_PROCESSING_SCRATCH_ROOT` | unset | Optional fast scratch root. Jobs build and verify under `<root>/jobs/<job-id>` before transactional publication to media storage. |
 | `SEYIRLIK_LIBRARIES`         | none           | JSON array of library definitions. See below.                               |
 | `SEYIRLIK_STATIC_ROOT`       | none           | Directory of the built client to serve. Usually `dist`.                     |
 | `SEYIRLIK_HOST`              | `127.0.0.1`    | Listen address. Set to `0.0.0.0` to accept connections from other machines. |

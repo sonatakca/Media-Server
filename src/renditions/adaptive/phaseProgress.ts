@@ -275,6 +275,8 @@ export interface PublishStepProgress {
   state: "waiting" | "running" | "complete";
   /** Bytes this step moves, when it moves any. */
   bytes?: number;
+  /** Bytes durably copied for this step, including bytes from a prior attempt. */
+  completedBytes?: number;
 }
 
 /**
@@ -290,6 +292,9 @@ export interface PublishPhaseProgress {
   completedBytes: number;
   fraction: number;
   currentId?: PublishStepId;
+  /** Measured destination-write throughput while a file is being copied. */
+  bytesPerSecond?: number;
+  etaSeconds?: number;
 }
 
 /**

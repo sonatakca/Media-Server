@@ -10,7 +10,8 @@
  */
 
 import { execFile } from "node:child_process";
-import { access, mkdir } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
+import { access, link, mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
@@ -92,6 +93,73 @@ export const ADAPTIVE_HDR_FIXTURE: AdaptiveSourceFixture = {
 
 export function getAdaptiveFixtureDirectory(): string {
   return path.join(tmpdir(), "seyirlik-adaptive-fixtures");
+}
+
+/**
+ * Publishes a fixture into the shared cache, or discovers that somebody else
+ * already has.
+ *
+ * The cache is a fixed path under `tmpdir()` shared by every suite and every
+ * test worker, and the previous version of this file wrote straight into it:
+ *
+ *   if (!(await exists(target))) await buildSdrFixture(fixture, target);
+ *
+ * with `ffmpeg -y target` doing the writing. Under the runner's default
+ * parallelism that is a torn read waiting to happen. FFmpeg creates and
+ * truncates the destination the instant it starts, so a second worker's
+ * `exists(target)` returns true for a file that is empty, then a few hundred
+ * kilobytes, then briefly gone again. What the second worker gets is whatever
+ * was there at the moment it looked — which is how the suite produced
+ * `moov atom not found` on one run and
+ * `ENOENT: copyfile … source-epoch-2398.mp4` on another, from the same cause.
+ *
+ * The fix is to make a fixture atomically *appear*, complete or not at all:
+ *
+ *  - build into a private file named for this process and a fresh UUID, so two
+ *    workers building simultaneously cannot write to the same bytes;
+ *  - publish with `link`, which fails with `EEXIST` rather than replacing, so a
+ *    fixture is written exactly once and is immutable from the instant it is
+ *    visible;
+ *  - a loser deletes its own temporary file and uses the winner's, which is
+ *    correct rather than merely tolerable — both are complete;
+ *  - the temporary is removed on every path, including failure, and removing it
+ *    twice is not an error.
+ *
+ * `link` rather than `rename` deliberately. Rename would silently replace a
+ * fixture another suite is mid-copy from, which is the same torn read one layer
+ * further down; refusing to replace is what makes "immutable after atomic
+ * creation" true rather than aspirational.
+ */
+export async function publishFixture(
+  target: string,
+  build: (temporaryPath: string) => Promise<void>,
+): Promise<void> {
+  if (await exists(target)) return;
+
+  /*
+   * The extension is preserved because FFmpeg infers the container from it, and
+   * the leading dot keeps a half-built fixture out of a directory listing — the
+   * cache doubles as `mediaRoot` for several suites.
+   */
+  const temporary = path.join(
+    path.dirname(target),
+    `.building-${process.pid}-${randomUUID().slice(0, 8)}-${path.basename(target)}`,
+  );
+
+  try {
+    await build(temporary);
+    await link(temporary, target);
+  } catch (error) {
+    /*
+     * `EEXIST` is another worker having finished first, which is a success: the
+     * file it published is as complete as the one built here.
+     */
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") {
+      if (!(await exists(target))) throw error;
+    }
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
 }
 
 async function exists(filePath: string): Promise<boolean> {
@@ -281,9 +349,9 @@ export async function ensureAdaptiveSourceFixtures(): Promise<boolean> {
   await mkdir(directory, { recursive: true });
 
   for (const fixture of ADAPTIVE_SOURCE_FIXTURES) {
-    const target = path.join(directory, fixture.fileName);
-    if (await exists(target)) continue;
-    await buildSdrFixture(fixture, target);
+    await publishFixture(path.join(directory, fixture.fileName), (temporary) =>
+      buildSdrFixture(fixture, temporary),
+    );
   }
 
   return true;
@@ -300,8 +368,9 @@ export async function ensureAdaptiveEpochFixture(): Promise<string | null> {
   const directory = getAdaptiveFixtureDirectory();
   await mkdir(directory, { recursive: true });
   const target = path.join(directory, ADAPTIVE_EPOCH_FIXTURE.fileName);
-  if (!(await exists(target)))
-    await buildSdrFixture(ADAPTIVE_EPOCH_FIXTURE, target);
+  await publishFixture(target, (temporary) =>
+    buildSdrFixture(ADAPTIVE_EPOCH_FIXTURE, temporary),
+  );
   return target;
 }
 
@@ -312,6 +381,6 @@ export async function ensureAdaptiveHdrFixture(): Promise<string | null> {
   const directory = getAdaptiveFixtureDirectory();
   await mkdir(directory, { recursive: true });
   const target = path.join(directory, ADAPTIVE_HDR_FIXTURE.fileName);
-  if (!(await exists(target))) await buildHdrFixture(target);
+  await publishFixture(target, (temporary) => buildHdrFixture(temporary));
   return target;
 }

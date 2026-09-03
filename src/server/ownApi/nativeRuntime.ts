@@ -59,7 +59,26 @@ import { createProcessingRoutes } from "./processing/processingRoutes";
 import { createProcessingJobRunner } from "./processing/jobRunner";
 import { pruneLiveProgress } from "./processing/liveProgress";
 import { createStorageWatchdog } from "../../renditions/processing/storageWatchdog";
+import { createStorageIncidentStore } from "./processing/storageIncidentStore";
+import { createStorageGuard } from "./processing/storageGuard";
+import { createDiskutilIdentityProbe } from "../../renditions/processing/storageIdentity";
+import { runBoundedProcess } from "../../renditions/processExecution";
+import { jobRecordsStorageFault } from "./processing/recoveryPolicy";
+import {
+  AUTOMATIC_REQUEUE_PAUSE_REASON,
+  OPERATOR_HELD_PAUSE_REASONS,
+  reconcileInterruptedJobs,
+} from "./processing/interruptedJobs";
+import {
+  checkpointCountersFor,
+  describeCheckpointRecovery,
+  readCheckpointRecovery,
+} from "./processing/checkpointTruth";
 import type { RenditionPaths } from "../../renditions/analysis";
+import {
+  prepareProcessingStorageRoles,
+  sweepAbandonedWorkspaces,
+} from "../../renditions/storageRoles";
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
@@ -233,7 +252,31 @@ export async function createNativeRuntime({
   const renditionWorkRoot =
     environment.SEYIRLIK_RENDITION_WORK_ROOT?.trim() ||
     path.join(mediaRoot, ".seyirlik", "work");
+  const storageRoles = await prepareProcessingStorageRoles({
+    mediaRoot,
+    ...(environment.SEYIRLIK_PROCESSING_SCRATCH_ROOT?.trim()
+      ? { scratchRoot: environment.SEYIRLIK_PROCESSING_SCRATCH_ROOT.trim() }
+      : {}),
+    legacyWorkRoot: renditionWorkRoot,
+    legacyLogsRoot:
+      environment.SEYIRLIK_RENDITION_LOGS_ROOT?.trim() ||
+      path.join(mediaRoot, ".seyirlik", "logs"),
+    allowUnavailable: !runWorker,
+  });
   const processingJobs = createProcessingJobStore(pool);
+
+  /**
+   * Where a package is built before it is published, and where its FFmpeg log
+   * is kept. Separate from the published root on purpose: staging is disposable
+   * and is never served, so a partial package cannot be reached by a player.
+   */
+  const renditionPaths: RenditionPaths = {
+    mediaRoot,
+    renditionRoot,
+    stateRoot: renditionStateRoot,
+    workRoot: storageRoles.jobsRoot,
+    logsRoot: storageRoles.logsRoot,
+  };
 
   // Repair the operator-facing record before routes or the worker become
   // visible. The generic queue may have exhausted an interrupted job's lease
@@ -248,6 +291,70 @@ export async function createNativeRuntime({
    * afterwards is an empty queue full of failures that had nothing wrong with
    * them. Pausing instead keeps every job alive and resumable.
    */
+  const storageIncidents = createStorageIncidentStore(pool);
+
+  /*
+   * Availability and health are different questions and used to be the same
+   * one. The watchdog answers the first — is the root there, listable, still
+   * the same device — which is everything a clean unplug needs and nothing a
+   * failing drive shows. A USB bridge returning `EIO` from the block layer
+   * leaves directory metadata answering instantly, so the watchdog said
+   * "available" throughout the incident that took the machine down twice.
+   *
+   * The guard answers the second, from a row that a reboot cannot clear.
+   */
+  /**
+   * How this deployment asks what a volume actually is.
+   *
+   * One probe, shared by the storage guard — which decides whether a
+   * quarantined drive has really come back — and by the job runner, which
+   * decides whether the disk at the configured scratch path is the one a
+   * resuming job claimed. Both questions are "which volume is this", and
+   * answering them two different ways is how a path comes to be mistaken for
+   * an identity.
+   *
+   * Only on Darwin. Elsewhere there is no identity, which is handled
+   * explicitly everywhere it matters: identity-dependent decisions fail closed
+   * and an operator clears them with the recorded override.
+   */
+  const volumeIdentityProbe =
+    process.platform === "darwin"
+      ? createDiskutilIdentityProbe({
+          run: async (command, args, timeoutMs) =>
+            (
+              await runBoundedProcess({
+                command,
+                args,
+                timeoutMs,
+                describe: "the volume identity probe",
+              })
+            ).stdout,
+        })
+      : undefined;
+
+  const storageGuard = createStorageGuard({
+    root: mediaRoot,
+    // Assigned below: the watchdog needs the guard's callbacks and the guard
+    // needs the watchdog's poll, and neither is worth a class to break.
+    watchdog: {
+      poll: () => storageWatchdog.poll(),
+      get missingRoots() {
+        return storageWatchdog.missingRoots;
+      },
+    },
+    incidents: storageIncidents,
+    /*
+     * Only on Darwin. Elsewhere the guard has no identity, which is handled
+     * explicitly everywhere it matters: identity-dependent decisions fail
+     * closed and an operator clears them with the recorded override.
+     */
+    ...(volumeIdentityProbe ? { identityProbe: volumeIdentityProbe } : {}),
+    logger: {
+      transition: (event, detail) =>
+        console.warn(`[Seyirlik] ${event}: ${detail}`),
+    },
+  });
+
   /**
    * Puts jobs back to work after their storage returns.
    *
@@ -258,14 +365,58 @@ export async function createNativeRuntime({
    * as a fresh attempt, which is also what makes recovery rendition-level —
    * the planner looks at what is actually published, finds the interrupted
    * rendition missing, and rebuilds only that one.
+   *
+   * The guard is consulted first, and refusing here is the single most
+   * important line in this file. This function is reachable from a watchdog
+   * poll, from a server restart and from a host reboot, and on the day of the
+   * incident all three would have called it against a quarantined drive.
    */
   const requeueStorageInterruptedJobs = async (): Promise<number> => {
+    if (!storageGuard.mayStartWork()) return 0;
     let recovered = 0;
-    for (const job of await processingJobs.listPaused("storage-unavailable")) {
-      // Clears the pause and every field describing the attempt that died.
-      await processingJobs.resume(job.id, "storage-unavailable");
-      const record = await processingJobs.beginAttempt(job.id, {});
-      if (!record) continue;
+    /*
+     * The automatic path reads exactly one reason, and that is the whole of its
+     * safety.
+     *
+     * `storage-unavailable` means a volume went away cleanly and is expected to
+     * come back; it is the only pause a poll may undo. `recovery-pending` and
+     * `storage-quarantined` are held for a person and are deliberately *not*
+     * visible here, so that no watchdog tick, no restart and no remount can
+     * sweep them up — even if the guard's gate above were ever weakened or
+     * bypassed. Releasing those is `releaseOperatorHeldJobs`, below, which only
+     * runs after an operator has verified and resumed.
+     *
+     * An earlier version of this function read all three and leaned entirely on
+     * the `mayStartWork` gate. That was safe but it was one mistake deep: a
+     * single wrong edit to the gate would have made a quarantine automatically
+     * resumable. Two independent mechanisms now have to fail, not one.
+     */
+    const held = await processingJobs.listPaused(
+      AUTOMATIC_REQUEUE_PAUSE_REASON,
+    );
+    for (const job of held) {
+      /*
+       * Re-checked inside the loop. Requeueing is not instantaneous — it
+       * probes the source and writes several rows per job — and a volume that
+       * fails on the first title must not have the rest of the queue thrown at
+       * it while the failure is still being recorded.
+       */
+      if (!storageGuard.mayStartWork()) break;
+      /*
+       * A job whose own last attempt met an I/O error is not restarted by the
+       * volume coming back. It is the one job in the queue guaranteed to read
+       * the bytes that failed.
+       */
+      /*
+       * A job whose own attempt met an I/O error is held even here. The
+       * operator resumed the *storage*; they have not said that this
+       * particular source, which is the one that actually failed to read, is
+       * repaired. Retrying it is a deliberate, separate press on the job.
+       */
+      if (jobRecordsStorageFault(job)) {
+        await processingJobs.requestPause(job.id, "storage-quarantined");
+        continue;
+      }
       try {
         const file = await catalogue.getFileById(job.mediaFileId);
         if (!file) continue;
@@ -283,6 +434,42 @@ export async function createNativeRuntime({
          * falls back to direct play and offers the source as the only quality.
          */
         const sourceStats = await stat(sourcePath);
+        /*
+         * What actually survived, read from the checkpoint store before
+         * anything claims anything. The message this replaces asserted
+         * "continues from the last durable checkpoint" unconditionally, one
+         * statement after `beginAttempt` had reset the epoch counters to zero —
+         * so the history said two hours were protected while the row it sat
+         * beside said none, and nothing had opened a manifest to decide.
+         */
+        const recovery = await readCheckpointRecovery({
+          paths: renditionPaths,
+          workspaceId: job.id,
+          relativePath: file.relativePath,
+          sourceFingerprint: job.sourceFingerprint,
+          sizeBytes: Number(file.sizeBytes),
+          mtimeMs: sourceStats.mtimeMs,
+        });
+
+        /*
+         * Cleared under the reason the job actually carries. Passing a fixed
+         * `storage-unavailable` here silently did nothing for a job parked as
+         * `recovery-pending`, which then went round the loop being requeued
+         * while still flagged paused.
+         */
+        await processingJobs.resume(job.id, job.pausedReason ?? undefined);
+        const record = await processingJobs.beginAttempt(job.id, {});
+        if (!record) continue;
+        /*
+         * Written back after the reset, and only from manifests that were
+         * actually read. `beginAttempt` is right to zero the epoch position —
+         * those figures belonged to an attempt that ended — but the next
+         * attempt does inherit whatever is genuinely on disk, and the page
+         * should say so rather than showing zero until the encoder reports.
+         */
+        if (recovery.completedEpochs.length > 0) {
+          await processingJobs.update(job.id, checkpointCountersFor(recovery));
+        }
         const queueJobId = await queue.enqueue({
           jobType: "media.process",
           payload: {
@@ -299,8 +486,11 @@ export async function createNativeRuntime({
           processingJobId: job.id,
           stage: "waiting",
           level: "info",
-          message:
-            "Storage is available again; encoding continues from the last durable checkpoint. Only the five-minute epoch that was interrupted is built again.",
+          message: `Storage is available again. ${describeCheckpointRecovery(recovery)}`,
+          detail: {
+            completedEpochs: recovery.completedEpochs.length,
+            protectedSeconds: recovery.protectedSeconds,
+          },
         });
         recovered += 1;
       } catch (error) {
@@ -329,22 +519,72 @@ export async function createNativeRuntime({
      * output to others, which may be different volumes. Losing any of them
      * stops the work just as completely, so all are watched.
      */
-    additionalRoots: [renditionRoot, renditionWorkRoot, renditionStateRoot],
-    ...(runWorker
-      ? {
-          onLost: async () => {
-            for (const job of await processingJobs.listActive()) {
-              await processingJobs.requestPause(job.id, "storage-unavailable");
-            }
-          },
-          onRestored: async () => {
-            // Only the jobs the watchdog itself paused: a job an operator
-            // paused by hand stays paused, because the drive returning does not
-            // answer why a person stopped it.
-            await requeueStorageInterruptedJobs();
-          },
-        }
-      : {}),
+    additionalRoots: [
+      renditionRoot,
+      storageRoles.scratchRoot,
+      storageRoles.jobsRoot,
+      renditionStateRoot,
+    ],
+    onLost: async () => {
+      /*
+       * The guard is told everywhere, worker or not, because the processing
+       * page is served by the API process and has to be able to say why
+       * nothing is running. Only the acting on it is gated below.
+       */
+      const active = await processingJobs.listActive().catch(() => []);
+      if (active.length > 0) {
+        /*
+         * Missing at idle is a clean unmount. Missing while an encoder or
+         * probe has the source open is device loss during a read, which is
+         * hard evidence and must survive the first occurrence and every
+         * restart. The watchdog transition is the only place that knows both
+         * facts at once.
+         */
+        await storageGuard.reportFailure({
+          kind: "storage-device-lost",
+          detail: `${storageWatchdog.missingRoots.join(", ") || "The storage"} disappeared while processing was active.`,
+          processingJobId: active[0]?.id,
+        });
+      } else {
+        await storageGuard.observeAvailability(false);
+      }
+      if (!runWorker) return;
+      for (const job of active) {
+        await processingJobs.requestPause(
+          job.id,
+          storageGuard.health.state === "quarantined"
+            ? "storage-quarantined"
+            : "storage-unavailable",
+        );
+      }
+    },
+    onRestored: async () => {
+      await storageGuard.observeAvailability(true);
+      if (!runWorker) return;
+      /*
+       * Only the jobs the watchdog itself paused: a job an operator paused by
+       * hand stays paused, because the drive returning does not answer why a
+       * person stopped it. And only when the guard agrees — a quarantined
+       * volume coming back is a quarantined volume, and the poll that noticed
+       * it is exactly the poll a failing drive passes between retry storms.
+       */
+      if (storageGuard.resumesAutomatically() || storageGuard.mayStartWork()) {
+        await requeueStorageInterruptedJobs();
+      }
+    },
+  });
+  /*
+   * The persisted incident is read before the first poll, so a process that
+   * starts against a quarantined volume knows it before anything can ask
+   * whether work may begin. Failing to read it must not stop the server: the
+   * guard then reports healthy, which is the pre-existing behaviour, and the
+   * runner's own failure classification still catches the first I/O error.
+   */
+  await storageGuard.reload().catch((error) => {
+    console.warn(
+      "[Seyirlik] Could not read the storage incident record:",
+      error instanceof Error ? error.message : String(error),
+    );
   });
   storageWatchdog.start();
 
@@ -355,33 +595,144 @@ export async function createNativeRuntime({
    * existed but nothing called it — so such a job stayed `running` for ever
    * and its rendition lock was never released.
    *
-   * What to do about it depends on whether the storage is there. If it is, the
-   * job goes straight back on the queue as a fresh attempt; the planner then
-   * rebuilds only the rendition that was interrupted. If it is not, the job is
-   * parked as waiting for storage, which is what the watchdog is looking for
-   * when the volume comes back — so a restart while the disk is absent still
-   * recovers on its own once it returns.
+   * What used to happen next was the defect. `storageWatchdog.poll()` was
+   * asked whether the storage was ready, and a `true` requeued the job on the
+   * spot. On the day of the incident that poll returned `true` — the mount was
+   * still there and its metadata still cached — for a drive whose block layer
+   * was returning `EIO`, and the encode that followed took the machine down a
+   * second time.
+   *
+   * So the decision is made from three separate facts now: what the guard
+   * remembers about the volume, what the job's own record says about how its
+   * last attempt ended, and whether anybody observed the interruption at all.
+   * "The path is listable" is not among them.
    */
-  const reconcileInterruptedJobs = async (): Promise<void> => {
-    const interrupted = await processingJobs.findInterrupted();
-    if (interrupted.length === 0) return;
-    const storageReady = await storageWatchdog.poll();
-    for (const job of interrupted) {
-      await processingJobs.requestPause(job.id, "storage-unavailable");
-      await processingJobs.appendEvent({
-        processingJobId: job.id,
-        stage: "waiting",
-        level: "warning",
-        message: storageReady
-          ? "Found still marked as running after a restart; starting a fresh attempt."
-          : `Found still marked as running after a restart, and ${storageWatchdog.missingRoots.join(", ") || "its storage"} is unavailable. Waiting for it to return.`,
-      });
+  /**
+   * Releases the jobs a person was holding, after that person let go.
+   *
+   * Separate from the automatic requeue on purpose, and reachable only from the
+   * transition to healthy that an operator's `resume` produces. Keeping the two
+   * apart is what lets the automatic query stay narrow: nothing that polls can
+   * reach these rows at all, so a quarantine cannot be lifted by a remount even
+   * if every other guard in the process were wrong.
+   */
+  const releaseOperatorHeldJobs = async (): Promise<number> => {
+    if (!storageGuard.mayStartWork()) return 0;
+    let released = 0;
+    for (const reason of OPERATOR_HELD_PAUSE_REASONS) {
+      for (const job of await processingJobs.listPaused(reason)) {
+        /*
+         * The operator resumed the *storage*. They have not said that this
+         * particular source — the one that actually failed to read — is
+         * repaired, so a job carrying its own I/O fault stays put and needs a
+         * deliberate retry on the job itself.
+         */
+        if (jobRecordsStorageFault(job)) continue;
+        /*
+         * Moved onto the automatic reason rather than requeued here, so that
+         * exactly one piece of code knows how to put a job back on the queue.
+         * The requeue call below then picks it up with the truthful checkpoint
+         * reading and the queue row it needs.
+         */
+        await processingJobs.requestPause(
+          job.id,
+          AUTOMATIC_REQUEUE_PAUSE_REASON,
+        );
+        released += 1;
+      }
     }
-    if (storageReady) await requeueStorageInterruptedJobs();
+    if (released > 0) await requeueStorageInterruptedJobs();
+    return released;
   };
+
+  /**
+   * Noticing that an operator lifted the hold, from the other process.
+   *
+   * The two recovery presses land on the API server, and the encoders run in
+   * the worker — so the worker learns about a resume the only way it can, by
+   * re-reading the row. It polls *only while it is being held*: a healthy
+   * deployment does not run this query at all, and a held one runs one indexed
+   * single-row read every five seconds, which is the "periodically attempt
+   * recovery" this needs and nothing more.
+   *
+   * Without it the recovery button appeared to work — the storage went healthy,
+   * the panel cleared — while every held job stayed dormant until the worker
+   * happened to be restarted.
+   */
+  const releaseTimer = runWorker
+    ? setInterval(() => {
+        if (storageGuard.mayStartWork()) return;
+        void (async () => {
+          const before = storageGuard.health.state;
+          await storageGuard.reload();
+          if (
+            before !== storageGuard.health.state &&
+            storageGuard.mayStartWork()
+          ) {
+            /*
+             * The operator's resume landed in the other process. Held jobs are
+             * released here, which is the only path that touches them.
+             */
+            await releaseOperatorHeldJobs();
+          }
+        })().catch((error) => {
+          console.warn(
+            "[Seyirlik] Could not re-read the storage incident:",
+            error instanceof Error ? error.message : String(error),
+          );
+        });
+      }, 5_000)
+    : undefined;
+  releaseTimer?.unref?.();
+
+  /**
+   * Releases scratch that no job can still be waiting on.
+   *
+   * Only the worker sweeps, and only at startup, because this is the one
+   * moment when nothing is running and the set of jobs that could still claim
+   * a workspace is knowable. A workspace whose job is pending, queued, running
+   * or paused is left exactly where it is however old it looks: a job parked
+   * for a drive that has been unplugged for a month owns the most valuable
+   * directory on the volume, and it is precisely the one an age-based sweep
+   * would take.
+   */
+  const sweepAbandonedScratch = async (): Promise<void> => {
+    const live = new Set<string>();
+    for (const state of ["pending", "queued", "running", "paused"] as const) {
+      for (const job of await processingJobs.list({ state, limit: 10_000 })) {
+        live.add(job.id);
+      }
+    }
+    const sweep = await sweepAbandonedWorkspaces({
+      jobsRoot: storageRoles.jobsRoot,
+      stillClaimed: (workspaceId) => live.has(workspaceId),
+    });
+    if (sweep.removed.length > 0) {
+      console.info(
+        `[Seyirlik] Released ${sweep.removed.length} abandoned scratch workspace(s).`,
+      );
+    }
+  };
+
   // Same ownership rule: the process that will run the work is the one that
   // decides what to do with work the last run left behind.
-  if (runWorker) await reconcileInterruptedJobs();
+  if (runWorker) {
+    await sweepAbandonedScratch().catch((error) => {
+      // Never fatal: scratch that is not released is wasted space, while a
+      // worker that will not start is a library that does not process at all.
+      console.warn(
+        "[Seyirlik] Could not sweep abandoned scratch workspaces:",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+    await reconcileInterruptedJobs({
+      store: processingJobs,
+      guard: storageGuard,
+      mediaRoot,
+      storageAvailable: () => storageWatchdog.poll(),
+      requeue: requeueStorageInterruptedJobs,
+    });
+  }
 
   /*
    * A worker killed mid-encode leaves its last live sample behind. A page that
@@ -392,20 +743,6 @@ export async function createNativeRuntime({
     (await processingJobs.listActive()).map((job) => job.id),
   ).catch(() => undefined);
 
-  /**
-   * Where a package is built before it is published, and where its FFmpeg log
-   * is kept. Separate from the published root on purpose: staging is disposable
-   * and is never served, so a partial package cannot be reached by a player.
-   */
-  const renditionPaths: RenditionPaths = {
-    mediaRoot,
-    renditionRoot,
-    stateRoot: renditionStateRoot,
-    workRoot: renditionWorkRoot,
-    logsRoot:
-      environment.SEYIRLIK_RENDITION_LOGS_ROOT?.trim() ||
-      path.join(mediaRoot, ".seyirlik", "logs"),
-  };
   const renditions = createRenditionService({
     mediaRoot,
     renditionRoot,
@@ -466,6 +803,23 @@ export async function createNativeRuntime({
           // Which volume, so the failure reads "Expansion became unavailable"
           // rather than leaving an operator to work out which drive is missing.
           missingRootsFn: () => storageWatchdog.missingRoots,
+          /*
+           * The runner refuses to start against a guarded volume and reports
+           * every classified failure back into it. Both directions matter: the
+           * first is what stops a queued backlog being thrown at a failing
+           * drive one title at a time, and the second is what turns the first
+           * `EIO` into a fact that outlives the process that saw it.
+           */
+          storageGuard,
+          /*
+           * The same probe the guard uses. A job that claimed its workspace on
+           * a particular volume is held to that volume on every later attempt,
+           * which is what makes recovery safe after a restart that happened
+           * while the disk was absent.
+           */
+          ...(volumeIdentityProbe
+            ? { scratchIdentityProbe: volumeIdentityProbe }
+            : {}),
           ...(ffmpegPath ? { ffmpegPath } : {}),
           ...(ffprobePath ? { ffprobePath } : {}),
           ...(softwareTranscodeThreads === undefined
@@ -543,6 +897,8 @@ export async function createNativeRuntime({
     ...createProcessingRoutes({
       catalogue,
       storageAvailable: () => storageWatchdog.available,
+      storageGuard,
+      storageIncidents,
       store: processingJobs,
       queue,
       mediaRoot,
@@ -647,6 +1003,7 @@ export async function createNativeRuntime({
       clearInterval(playbackCleanupTimer);
       clearInterval(syncplayCleanupTimer);
       storageWatchdog.stop();
+      if (releaseTimer) clearInterval(releaseTimer);
       await worker.stop();
       await pool.end();
     },

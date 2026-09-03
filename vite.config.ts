@@ -136,6 +136,35 @@ export default defineConfig(({ mode }) => {
       // `vitest.browser.config.ts` (`npm run test:browser`). jsdom would load
       // it and hang waiting for video that never plays.
       exclude: ["**/node_modules/**", "**/dist/**", "**/*.browser.test.tsx"],
+      /*
+       * Bounded on purpose, and this is not a performance setting.
+       *
+       * The packaging suites encode for real, and on macOS an `auto` encoder
+       * resolves to VideoToolbox — of which the machine has a small, fixed
+       * number of simultaneous sessions. Run one worker per core and the
+       * seventh concurrent encode fails to open a session at all:
+       *
+       *   [h264_videotoolbox] Error retrieving the supported property
+       *   dictionary err=-12903
+       *   [out#0/hls] Nothing was written into output file
+       *
+       * which surfaces as a different integration test failing on every run,
+       * for a reason that has nothing to do with what it asserts. Capping the
+       * workers keeps the number of concurrent encoders inside what the
+       * hardware will grant, which is what makes a full run reproducible
+       * instead of a lottery.
+       *
+       * It belongs here rather than in a flag an operator has to remember: a
+       * suite that only passes when invoked a particular way is a suite people
+       * learn to disbelieve. The cost is roughly a minute on a full run.
+       *
+       * Tests that do not care which encoder they use should pin a software
+       * one (see `scratchUnmount.integration.test.ts`); they then cost nothing
+       * from this budget. Tests that exercise VideoToolbox deliberately keep
+       * `auto` and are covered by the cap.
+       */
+      maxWorkers: 3,
+      minWorkers: 1,
     },
     server: {
       proxy: {

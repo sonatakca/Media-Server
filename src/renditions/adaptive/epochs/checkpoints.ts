@@ -435,17 +435,29 @@ export async function beginPartialEpoch({
   index,
   attemptId = randomUUID(),
   heartbeatIntervalMs = 15_000,
+  assertStorage,
 }: {
   root: string;
   index: number;
   attemptId?: string;
   heartbeatIntervalMs?: number;
+  /**
+   * Proof that this checkpoint store is still on the filesystem it was.
+   *
+   * Called twice, and both matter. Before the epoch's working directory is
+   * created, because `mkdir` with `recursive` rebuilds a vanished scratch path
+   * on whatever filesystem the mount point sits on and FFmpeg would then write
+   * a whole epoch there. And again before the rename that promotes the epoch,
+   * because that is the moment the result becomes durable state.
+   */
+  assertStorage?: () => void | Promise<void>;
 }): Promise<PartialEpochHandle> {
   const token = randomUUID().slice(0, 8);
   const directory = path.join(
     epochsRoot(root),
     partialEpochDirectoryName(index, process.pid, token),
   );
+  await assertStorage?.();
   await mkdir(directory, { recursive: true });
   const ownerPath = path.join(directory, EPOCH_OWNER_FILE);
   const owner: EpochOwner = {
@@ -480,6 +492,7 @@ export async function beginPartialEpoch({
     directory,
     release,
     async promote(manifest) {
+      await assertStorage?.();
       const target = completedEpochPath(root, index);
       /*
        * The manifest is written last and inside the partial directory, so the

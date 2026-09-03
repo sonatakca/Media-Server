@@ -366,6 +366,9 @@ export async function ensureAudioStage({
     });
     if (
       failure.kind === "storage-unavailable" ||
+      failure.kind === "storage-device-lost" ||
+      failure.kind === "storage-io" ||
+      failure.kind === "storage-soft-fault" ||
       failure.kind === "out-of-space"
     ) {
       throw new StorageInterruptedError(failure);

@@ -1,19 +1,23 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import {
-  copyFile,
   mkdir,
+  open,
   readFile,
   rename,
   rm,
+  rmdir,
   stat,
-  unlink,
+  statfs,
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
 import type { AdaptivePackageMetadata } from "./metadata";
-import { buildMasterPlaylist } from "./playlist";
+import { buildMasterPlaylist, parseMediaPlaylist } from "./playlist";
+import { parseWebVttMediaPlaylist } from "./subtitles";
 import { MASTER_LAYOUT_VERSION } from "./repairMaster";
 import {
+  createByteRateEstimator,
+  etaFromRate,
   safeFraction,
   type PublishPhaseProgress,
   type PublishStepId,
@@ -28,7 +32,6 @@ import {
   TITLE_MASTER_PLAYLIST,
   TITLE_PACKAGE_DIRECTORY,
   TITLE_PACKAGE_MANIFEST,
-  TITLE_STAGING_PREFIX,
   type TitleLayoutPlan,
   planTitleLayout,
   playlistUri,
@@ -113,20 +116,182 @@ export interface TitlePackageManifest {
 }
 
 /**
- * Moves one file, falling back to a copy across filesystems.
+ * Efficient copy verification.
  *
- * The work directory is often on a different volume from the library — that is
- * the point of having a separate work root — and `rename` cannot cross one.
+ * Full SHA-256 over hundreds of gigabytes would read both disks for a second
+ * complete pass and roughly double publication time. What is checked instead,
+ * exactly:
+ *
+ *  - **Size**, first and exactly. Any difference — a truncated destination, a
+ *    short write, a longer file — fails before a byte is read.
+ *  - **Files of `COPY_CHUNK_BYTES * 3` (3 MiB) or less**: every window is read,
+ *    so the digest covers the whole file and any single altered byte is caught.
+ *    Playlists, manifests and build records are all far below this.
+ *  - **Larger files**: three 1 MiB windows — first, middle, last — with the
+ *    size mixed into the digest. Verification I/O is capped at 3 MiB a side
+ *    whether the file is 4 MiB or 400 GB.
+ *
+ * The bound this accepts: a same-size alteration inside a large file that
+ * falls outside all three windows is not detected here. That is a deliberate
+ * trade against reading the whole package twice, and it is pinned by a test in
+ * `destinationVerification.test.ts` so it stays deliberate. What surrounds it —
+ * deep validation of the package on scratch before publication, playlist byte
+ * ranges re-checked against the destination file they address, and every
+ * manifest-named file re-checked for its recorded size after the swap — is
+ * described in that file's header.
  */
-async function moveFile(from: string, to: string): Promise<void> {
-  await mkdir(path.dirname(to), { recursive: true });
+const COPY_CHUNK_BYTES = 1024 * 1024;
+
+async function sampledDigest(filePath: string, size: number): Promise<string> {
+  const handle = await open(filePath, "r");
+  const hash = createHash("sha256");
   try {
-    await rename(from, to);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EXDEV") throw error;
-    await copyFile(from, to);
-    await unlink(from).catch(() => undefined);
+    const offsets =
+      size <= COPY_CHUNK_BYTES * 3
+        ? Array.from(
+            { length: Math.ceil(size / COPY_CHUNK_BYTES) },
+            (_, index) => index * COPY_CHUNK_BYTES,
+          )
+        : [
+            0,
+            Math.max(0, Math.floor(size / 2) - COPY_CHUNK_BYTES / 2),
+            size - COPY_CHUNK_BYTES,
+          ];
+    for (const offset of offsets) {
+      const length = Math.min(COPY_CHUNK_BYTES, size - offset);
+      if (length <= 0) continue;
+      const buffer = Buffer.allocUnsafe(length);
+      const { bytesRead } = await handle.read(buffer, 0, length, offset);
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    hash.update(String(size));
+    return hash.digest("hex");
+  } finally {
+    await handle.close();
   }
+}
+
+async function replicasMatch(
+  source: string,
+  destination: string,
+): Promise<boolean> {
+  const [left, right] = await Promise.all([
+    stat(source).catch(() => null),
+    stat(destination).catch(() => null),
+  ]);
+  if (!left?.isFile() || !right?.isFile() || left.size !== right.size)
+    return false;
+  const [leftHash, rightHash] = await Promise.all([
+    sampledDigest(source, left.size),
+    sampledDigest(destination, right.size),
+  ]);
+  return leftHash === rightHash;
+}
+
+/**
+ * Copies one immutable package file without consuming it, resuming a partial
+ * destination after checking samples around the resume boundary.
+ */
+export async function copyFileResumable(
+  from: string,
+  to: string,
+  options: {
+    signal?: AbortSignal;
+    onProgress?: (completedBytes: number, totalBytes: number) => void;
+  } = {},
+): Promise<number> {
+  const sourceStats = await stat(from);
+  if (!sourceStats.isFile())
+    throw new Error(`Publication source is not a file: ${from}`);
+  await mkdir(path.dirname(to), { recursive: true });
+
+  const destinationStats = await stat(to).catch(() => null);
+  if (
+    destinationStats?.size === sourceStats.size &&
+    (await replicasMatch(from, to))
+  ) {
+    options.onProgress?.(sourceStats.size, sourceStats.size);
+    return sourceStats.size;
+  }
+
+  let offset = destinationStats?.isFile() ? destinationStats.size : 0;
+  if (offset > sourceStats.size) offset = 0;
+  if (offset > 0) {
+    const sampleLength = Math.min(COPY_CHUNK_BYTES, offset);
+    const sampleOffset = offset - sampleLength;
+    const [source, destination] = await Promise.all([
+      open(from, "r"),
+      open(to, "r"),
+    ]);
+    try {
+      const left = Buffer.allocUnsafe(sampleLength);
+      const right = Buffer.allocUnsafe(sampleLength);
+      const [a, b] = await Promise.all([
+        source.read(left, 0, sampleLength, sampleOffset),
+        destination.read(right, 0, sampleLength, sampleOffset),
+      ]);
+      if (
+        a.bytesRead !== b.bytesRead ||
+        !left.subarray(0, a.bytesRead).equals(right.subarray(0, b.bytesRead))
+      ) {
+        offset = 0;
+      }
+    } finally {
+      await Promise.all([source.close(), destination.close()]);
+    }
+  }
+
+  const source = await open(from, "r");
+  const destination = await open(to, offset === 0 ? "w" : "r+");
+  try {
+    options.onProgress?.(offset, sourceStats.size);
+    const buffer = Buffer.allocUnsafe(COPY_CHUNK_BYTES);
+    while (offset < sourceStats.size) {
+      if (options.signal?.aborted)
+        throw new Error("Publication was interrupted.");
+      const wanted = Math.min(buffer.length, sourceStats.size - offset);
+      const { bytesRead } = await source.read(buffer, 0, wanted, offset);
+      if (bytesRead === 0)
+        throw new Error("Publication source ended before its recorded size.");
+      let written = 0;
+      while (written < bytesRead) {
+        const result = await destination.write(
+          buffer,
+          written,
+          bytesRead - written,
+          offset + written,
+        );
+        written += result.bytesWritten;
+      }
+      offset += bytesRead;
+      options.onProgress?.(offset, sourceStats.size);
+    }
+    await destination.truncate(sourceStats.size);
+    await destination.sync();
+  } finally {
+    await Promise.all([source.close(), destination.close()]);
+  }
+  if (!(await replicasMatch(from, to))) {
+    /*
+     * The bad destination is discarded before the error is raised, so the next
+     * attempt starts from nothing.
+     *
+     * Leaving it made some corruption permanently unrecoverable. A destination
+     * file of the right size whose damage lies outside the resume sample looks
+     * like a finished copy to the resume check: the retry copies no bytes,
+     * re-runs this comparison, fails identically, and does so for ever. The
+     * job could not make progress and no amount of retrying would have helped.
+     *
+     * Removing it is safe here and only here: `to` is always inside the hidden
+     * incoming staging directory, never a published file, so nothing a player
+     * can reach is being deleted.
+     */
+    await rm(to, { force: true }).catch(() => undefined);
+    throw new Error(
+      "The destination copy did not match the verified scratch file.",
+    );
+  }
+  return sourceStats.size;
 }
 
 function absolute(root: string, relativePath: string): string {
@@ -149,6 +314,12 @@ export interface PublishTitlePackageInput {
    * the reported position means the same thing in both cases.
    */
   onProgress?: (progress: PublishPhaseProgress) => void;
+  /** Stable job id, making HDD incoming state resumable across processes. */
+  publicationId?: string;
+  signal?: AbortSignal;
+  /** Free bytes retained on the destination after the incoming copy. */
+  destinationReserveBytes?: number;
+  retainIncomingAfterPublish?: boolean;
 }
 
 /**
@@ -164,7 +335,9 @@ export function createPublishReporter(
   const state = new Map<PublishStepId, PublishStepProgress["state"]>(
     steps.map((step) => [step.id, "waiting" as const]),
   );
+  const copied = new Map<PublishStepId, number>();
   const totalBytes = steps.reduce((sum, step) => sum + (step.bytes ?? 0), 0);
+  const rate = createByteRateEstimator();
 
   const emit = (currentId?: PublishStepId): void => {
     if (!onProgress) return;
@@ -172,18 +345,25 @@ export function createPublishReporter(
       id: step.id,
       state: state.get(step.id) ?? "waiting",
       ...(step.bytes === undefined ? {} : { bytes: step.bytes }),
+      ...(step.bytes === undefined
+        ? {}
+        : { completedBytes: copied.get(step.id) ?? 0 }),
     }));
     const completedBytes = steps.reduce(
-      (sum, step) =>
-        sum + (state.get(step.id) === "complete" ? (step.bytes ?? 0) : 0),
+      (sum, step) => sum + Math.min(step.bytes ?? 0, copied.get(step.id) ?? 0),
       0,
     );
+    rate.sample(completedBytes, Date.now());
+    const bytesPerSecond = rate.rate(Date.now());
+    const etaSeconds = etaFromRate(totalBytes - completedBytes, bytesPerSecond);
     onProgress({
       steps: list,
       totalBytes,
       completedBytes,
       fraction: safeFraction(completedBytes, totalBytes),
       ...(currentId === undefined ? {} : { currentId }),
+      ...(bytesPerSecond === undefined ? {} : { bytesPerSecond }),
+      ...(etaSeconds === undefined ? {} : { etaSeconds }),
     });
   };
 
@@ -196,7 +376,15 @@ export function createPublishReporter(
     complete(id: PublishStepId): void {
       if (!state.has(id)) return;
       state.set(id, "complete");
+      const step = steps.find((candidate) => candidate.id === id);
+      if (step?.bytes !== undefined) copied.set(id, step.bytes);
       emit();
+    },
+    update(id: PublishStepId, completedBytes: number): void {
+      if (!state.has(id)) return;
+      state.set(id, "running");
+      copied.set(id, Math.max(copied.get(id) ?? 0, completedBytes));
+      emit(id);
     },
     /** Marks a step complete that another component performed. */
     finish(): void {
@@ -210,6 +398,60 @@ export type PublishReporter = ReturnType<typeof createPublishReporter>;
 export interface PublishTitlePackageResult {
   manifest: TitlePackageManifest;
   plan: TitleLayoutPlan;
+  incomingDirectory: string;
+}
+
+export const TITLE_INCOMING_DIRECTORY = ".seyirlik-incoming";
+const PUBLICATION_OWNER_FILE = ".publication.json";
+
+function safePublicationId(value: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value)) {
+    throw new Error("The publication id is not a safe path component.");
+  }
+  return value;
+}
+
+async function prepareIncoming(
+  titleRoot: string,
+  publicationId: string,
+  metadata: AdaptivePackageMetadata,
+): Promise<string> {
+  const incomingRoot = path.join(titleRoot, TITLE_INCOMING_DIRECTORY);
+  const staging = path.join(incomingRoot, safePublicationId(publicationId));
+  const resolvedTitle = path.resolve(titleRoot);
+  if (path.dirname(path.resolve(incomingRoot)) !== resolvedTitle) {
+    throw new Error(
+      "The incoming publication directory escaped the title root.",
+    );
+  }
+  await mkdir(staging, { recursive: true });
+  const marker = path.join(staging, PUBLICATION_OWNER_FILE);
+  const existing = await readFile(marker, "utf8").catch(() => null);
+  if (existing) {
+    const owner = JSON.parse(existing) as Record<string, unknown>;
+    if (
+      owner.publicationId !== publicationId ||
+      owner.sourceFingerprint !== metadata.sourceFingerprint ||
+      owner.profileVersion !== metadata.profileVersion
+    ) {
+      throw new Error(
+        "The HDD incoming directory belongs to a different publication.",
+      );
+    }
+  } else {
+    await writeFile(
+      marker,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        publicationId,
+        sourceFingerprint: metadata.sourceFingerprint,
+        profileVersion: metadata.profileVersion,
+        createdAt: new Date().toISOString(),
+      })}\n`,
+      { encoding: "utf8", flag: "wx" },
+    );
+  }
+  return staging;
 }
 
 /**
@@ -224,6 +466,10 @@ export async function publishTitlePackage({
   titleRoot,
   metadata,
   onProgress,
+  publicationId = `${metadata.profileVersion}-${metadata.sourceFingerprint.slice(0, 16)}`,
+  signal,
+  destinationReserveBytes = 0,
+  retainIncomingAfterPublish = false,
 }: PublishTitlePackageInput): Promise<PublishTitlePackageResult> {
   const plan = planTitleLayout(metadata);
   /*
@@ -269,15 +515,35 @@ export async function publishTitlePackage({
       { id: "master-playlist" as const },
       { id: "manifest" as const },
       { id: "build-record" as const },
+      { id: "verify" as const },
       { id: "swap" as const },
     ],
     onProgress,
   );
-  const staging = path.join(
-    titleRoot,
-    `${TITLE_STAGING_PREFIX}-${process.pid}-${randomUUID().slice(0, 8)}`,
+  const staging = await prepareIncoming(titleRoot, publicationId, metadata);
+
+  const destinationSpace = await statfs(titleRoot);
+  const destinationFreeBytes = destinationSpace.bavail * destinationSpace.bsize;
+  let reusableIncomingBytes = 0;
+  for (const entry of [
+    ...plan.video.map((rendition) => rendition.mediaPath),
+    ...plan.audio.map((rendition) => rendition.mediaPath),
+    ...plan.subtitle.map((rendition) => rendition.mediaPath),
+  ]) {
+    reusableIncomingBytes +=
+      (await stat(absolute(staging, entry)).catch(() => null))?.size ?? 0;
+  }
+  const remainingBytes = Math.max(
+    0,
+    metadata.storage.totalBytes - reusableIncomingBytes,
   );
-  await rm(staging, { recursive: true, force: true });
+  if (destinationFreeBytes - remainingBytes < destinationReserveBytes) {
+    const error = new Error(
+      "The final media volume does not have enough free space for transactional publication.",
+    ) as NodeJS.ErrnoException;
+    error.code = "ENOSPC";
+    throw error;
+  }
 
   const workPlaylistPathById = new Map<string, string>();
   for (const rendition of metadata.videoRenditions) {
@@ -290,16 +556,25 @@ export async function publishTitlePackage({
     workPlaylistPathById.set(rendition.id, rendition.playlistPath);
   }
 
-  try {
+  {
+    const copiedByStep = new Map<PublishStepId, number>();
     const publishOne = async (
+      step: PublishStepId,
       published: { id: string; mediaPath: string; playlistPath: string },
       workMediaPath: string,
       workPlaylistPath: string,
     ) => {
-      await moveFile(
+      const previous = copiedByStep.get(step) ?? 0;
+      const copied = await copyFileResumable(
         absolute(workVersionRoot, workMediaPath),
         absolute(staging, published.mediaPath),
+        {
+          ...(signal ? { signal } : {}),
+          onProgress: (completed) =>
+            progress.update(step, previous + completed),
+        },
       );
+      copiedByStep.set(step, previous + copied);
       const playlist = await readFile(
         absolute(workVersionRoot, workPlaylistPath),
         "utf8",
@@ -323,7 +598,12 @@ export async function publishTitlePackage({
     progress.begin("video");
     for (const [index, rendition] of metadata.videoRenditions.entries()) {
       const published = plan.video[index]!;
-      await publishOne(published, rendition.mediaPath, rendition.playlistPath);
+      await publishOne(
+        "video",
+        published,
+        rendition.mediaPath,
+        rendition.playlistPath,
+      );
       video.push({
         id: rendition.id,
         mediaPath: published.mediaPath,
@@ -346,7 +626,12 @@ export async function publishTitlePackage({
     progress.begin("audio");
     for (const [index, rendition] of metadata.audioRenditions.entries()) {
       const published = plan.audio[index]!;
-      await publishOne(published, rendition.mediaPath, rendition.playlistPath);
+      await publishOne(
+        "audio",
+        published,
+        rendition.mediaPath,
+        rendition.playlistPath,
+      );
       audio.push({
         id: rendition.id,
         mediaPath: published.mediaPath,
@@ -370,6 +655,7 @@ export async function publishTitlePackage({
     ).entries()) {
       const published = plan.subtitle[index]!;
       await publishOne(
+        "subtitles",
         published,
         rendition.subtitlePath,
         rendition.playlistPath,
@@ -475,12 +761,127 @@ export async function publishTitlePackage({
     );
 
     progress.complete("build-record");
+    progress.begin("verify");
+    await verifyIncomingPackage(staging, manifest);
+    progress.complete("verify");
     progress.begin("swap");
     await swapPublishedDirectories(titleRoot, staging);
     progress.complete("swap");
-    return { manifest, plan };
-  } finally {
-    await rm(staging, { recursive: true, force: true }).catch(() => undefined);
+    if (!retainIncomingAfterPublish) {
+      await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+    }
+    return { manifest, plan, incomingDirectory: staging };
+  }
+}
+
+/**
+ * Verifies the hidden HDD copy before any live name is changed.
+ *
+ * Media equality was already checked against SSD by `copyFileResumable`; this
+ * pass proves the package-level relationships that a collection of successful
+ * file copies cannot: every manifest path exists, and every playlist still
+ * parses as the kind of playlist its rendition is.
+ *
+ * The kinds are checked apart on purpose. A CMAF rendition is a single file
+ * addressed by byte range, so its playlist must carry an `#EXT-X-MAP` and its
+ * ranges must fall inside the file that was copied. A WebVTT rendition has no
+ * initialisation segment at all, and requiring one here rejected every title
+ * that carried a subtitle track.
+ */
+async function verifyIncomingPackage(
+  staging: string,
+  manifest: TitlePackageManifest,
+): Promise<void> {
+  const root = path.resolve(staging);
+  const safe = (relative: string): string => {
+    const target = path.resolve(root, ...relative.split("/"));
+    const relation = path.relative(root, target);
+    if (relation.startsWith("..") || path.isAbsolute(relation)) {
+      throw new Error(
+        `A publication path escaped its incoming root: ${relative}`,
+      );
+    }
+    return target;
+  };
+
+  const required = [
+    manifest.masterPlaylistPath,
+    `${TITLE_PACKAGE_DIRECTORY}/${TITLE_PACKAGE_MANIFEST}`,
+    `${TITLE_PACKAGE_DIRECTORY}/${TITLE_BUILD_RECORD}`,
+  ];
+  const renditions = [
+    ...manifest.video.map((rendition) => ({
+      rendition,
+      kind: "cmaf" as const,
+    })),
+    ...manifest.audio.map((rendition) => ({
+      rendition,
+      kind: "cmaf" as const,
+    })),
+    ...manifest.subtitle.map((rendition) => ({
+      rendition,
+      kind: "webvtt" as const,
+    })),
+  ];
+  for (const { rendition, kind } of renditions) {
+    required.push(rendition.mediaPath, rendition.playlistPath);
+    const media = await stat(safe(rendition.mediaPath)).catch(() => null);
+    if (!media?.isFile() || media.size === 0) {
+      throw new Error(`The HDD copy is missing media: ${rendition.mediaPath}`);
+    }
+    const playlist = await readFile(safe(rendition.playlistPath), "utf8");
+    try {
+      if (kind === "webvtt") {
+        parseWebVttMediaPlaylist(playlist);
+      } else {
+        const parsed = parseMediaPlaylist(playlist);
+        /*
+         * The last byte the playlist addresses has to be inside the file that
+         * was actually copied. This is what catches a truncated destination
+         * that still passed its own size check because the manifest and the
+         * playlist disagree.
+         */
+        const end = Math.max(
+          parsed.map.byteRange.offset + parsed.map.byteRange.length,
+          ...parsed.segments.map(
+            (segment) => segment.byteRange.offset + segment.byteRange.length,
+          ),
+        );
+        if (end > media.size) {
+          throw new Error(
+            `its ranges end at ${end}, past the ${media.size}-byte media file`,
+          );
+        }
+      }
+    } catch (error) {
+      throw new Error(
+        `The HDD copy has an invalid playlist: ${rendition.playlistPath} (${
+          error instanceof Error ? error.message : String(error)
+        })`,
+      );
+    }
+  }
+  for (const relative of required) {
+    const entry = await stat(safe(relative)).catch(() => null);
+    if (!entry?.isFile() || entry.size === 0) {
+      throw new Error(`The HDD incoming package is incomplete: ${relative}`);
+    }
+  }
+  const master = await readFile(safe(manifest.masterPlaylistPath), "utf8");
+  if (!master.startsWith("#EXTM3U") || !master.includes("#EXT-X-STREAM-INF")) {
+    throw new Error("The HDD incoming package has an invalid master playlist.");
+  }
+  const parsed = JSON.parse(
+    await readFile(
+      safe(`${TITLE_PACKAGE_DIRECTORY}/${TITLE_PACKAGE_MANIFEST}`),
+      "utf8",
+    ),
+  ) as TitlePackageManifest;
+  if (
+    parsed.sourceFingerprint !== manifest.sourceFingerprint ||
+    parsed.profileVersion !== manifest.profileVersion
+  ) {
+    throw new Error("The HDD incoming manifest does not describe this build.");
   }
 }
 
@@ -497,8 +898,25 @@ async function swapPublishedDirectories(
   staging: string,
 ): Promise<void> {
   const retired = `${staging}.retired`;
-  await rm(retired, { recursive: true, force: true });
   await mkdir(retired, { recursive: true });
+  const statePath = path.join(staging, ".activation.json");
+  const completed = new Set<string>(
+    await readFile(statePath, "utf8")
+      .then((raw) => {
+        const parsed = JSON.parse(raw) as { completed?: string[] };
+        return parsed.completed ?? [];
+      })
+      .catch((): string[] => []),
+  );
+  const commitState = async () => {
+    const pending = `${statePath}.pending`;
+    await writeFile(
+      pending,
+      `${JSON.stringify({ schemaVersion: 1, completed: [...completed] })}\n`,
+      "utf8",
+    );
+    await rename(pending, statePath);
+  };
 
   for (const directory of [
     TITLE_VIDEO_DIRECTORY,
@@ -506,17 +924,34 @@ async function swapPublishedDirectories(
     TITLE_SUBTITLE_DIRECTORY,
     TITLE_PACKAGE_DIRECTORY,
   ]) {
+    if (completed.has(directory)) continue;
     const staged = path.join(staging, directory);
     const live = path.join(titleRoot, directory);
+    const old = path.join(retired, directory);
     const stagedExists = await pathExists(staged);
+    const liveExists = await pathExists(live);
+    const oldExists = await pathExists(old);
+
+    // The staged directory has already been renamed but the process died before
+    // recording it. Presence of both the new live directory and retired old
+    // directory is sufficient to reconcile that boundary without copying.
+    if (!stagedExists && liveExists && oldExists) {
+      completed.add(directory);
+      await commitState();
+      continue;
+    }
     if (!stagedExists) {
       // A package with no subtitles must still clear the previous package's
       // subtitle folder, or a dropped track keeps playing from a stale file.
-      await rename(live, path.join(retired, directory)).catch(() => undefined);
+      if (liveExists && !oldExists) await rename(live, old);
+      completed.add(directory);
+      await commitState();
       continue;
     }
-    await rename(live, path.join(retired, directory)).catch(() => undefined);
+    if (liveExists && !oldExists) await rename(live, old);
     await rename(staged, live);
+    completed.add(directory);
+    await commitState();
   }
 
   await rm(retired, { recursive: true, force: true }).catch(() => undefined);
@@ -579,6 +1014,10 @@ export async function publishAdditionalRenditions({
   existing,
   added,
   onProgress,
+  publicationId = `${existing.profileVersion}-${existing.sourceFingerprint.slice(0, 16)}-incremental`,
+  signal,
+  destinationReserveBytes = 0,
+  retainIncomingAfterPublish = false,
 }: {
   workVersionRoot: string;
   titleRoot: string;
@@ -590,7 +1029,15 @@ export async function publishAdditionalRenditions({
     "videoRenditions" | "audioRenditions" | "subtitleRenditions"
   >;
   onProgress?: (progress: PublishPhaseProgress) => void;
-}): Promise<{ manifest: TitlePackageManifest; plan: TitleLayoutPlan }> {
+  publicationId?: string;
+  signal?: AbortSignal;
+  destinationReserveBytes?: number;
+  retainIncomingAfterPublish?: boolean;
+}): Promise<{
+  manifest: TitlePackageManifest;
+  plan: TitleLayoutPlan;
+  incomingDirectory: string;
+}> {
   /*
    * Existing renditions are listed first so the layout planner hands them the
    * stems they already carry: their published paths must come out unchanged,
@@ -623,6 +1070,22 @@ export async function publishAdditionalRenditions({
       ...(added.subtitleRenditions ?? []),
     ],
   };
+  const staging = await prepareIncoming(titleRoot, publicationId, merged);
+
+  const destinationSpace = await statfs(titleRoot);
+  const destinationFreeBytes = destinationSpace.bavail * destinationSpace.bsize;
+  const addedBytes = [
+    ...added.videoRenditions,
+    ...added.audioRenditions,
+    ...(added.subtitleRenditions ?? []),
+  ].reduce((sum, rendition) => sum + rendition.fileSizeBytes, 0);
+  if (destinationFreeBytes - addedBytes < destinationReserveBytes) {
+    const error = new Error(
+      "The final media volume does not have enough free space for the incremental publication.",
+    ) as NodeJS.ErrnoException;
+    error.code = "ENOSPC";
+    throw error;
+  }
 
   const plan = planTitleLayout(merged);
   const publishedById = new Map<string, { media: string; playlist: string }>();
@@ -650,10 +1113,17 @@ export async function publishAdditionalRenditions({
     );
     await mkdir(path.dirname(destinationMedia), { recursive: true });
     await mkdir(path.dirname(destinationPlaylist), { recursive: true });
-    await moveFile(
-      path.join(workVersionRoot, ...rendition.mediaPath.split("/")),
-      destinationMedia,
+    const sourceMedia = path.join(
+      workVersionRoot,
+      ...rendition.mediaPath.split("/"),
     );
+    if (!(await replicasMatch(sourceMedia, destinationMedia))) {
+      const stagedMedia = path.join(staging, ...target.media.split("/"));
+      await copyFileResumable(sourceMedia, stagedMedia, {
+        ...(signal ? { signal } : {}),
+      });
+      await rename(stagedMedia, destinationMedia);
+    }
     const playlist = await readFile(
       path.join(workVersionRoot, ...rendition.playlistPath.split("/")),
       "utf8",
@@ -841,7 +1311,46 @@ export async function publishAdditionalRenditions({
   );
   progress.complete("master-playlist");
 
-  return { manifest, plan };
+  if (!retainIncomingAfterPublish) {
+    await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+  }
+
+  return { manifest, plan, incomingDirectory: staging };
+}
+
+/** Removes only the owned incoming tree for one confirmed publication. */
+export async function cleanupPublicationIncoming(
+  titleRoot: string,
+  incomingDirectory: string,
+  publicationId: string,
+): Promise<void> {
+  const expected = path.resolve(
+    titleRoot,
+    TITLE_INCOMING_DIRECTORY,
+    safePublicationId(publicationId),
+  );
+  if (path.resolve(incomingDirectory) !== expected) {
+    throw new Error(
+      "Refusing to clean an incoming directory outside this publication.",
+    );
+  }
+  const owner = JSON.parse(
+    await readFile(path.join(expected, PUBLICATION_OWNER_FILE), "utf8"),
+  ) as Record<string, unknown>;
+  if (owner.publicationId !== publicationId) {
+    throw new Error(
+      "Refusing to clean an incoming directory owned by another publication.",
+    );
+  }
+  await rm(expected, { recursive: true, force: true });
+  /*
+   * The shared `.seyirlik-incoming` parent is removed only when this was the
+   * last publication using it, which `rmdir` decides by refusing a directory
+   * that still has entries. `rm` without `recursive` throws on any directory,
+   * so the previous call here always failed and always left the empty folder
+   * sitting in the title beside the published package.
+   */
+  await rmdir(path.dirname(expected)).catch(() => undefined);
 }
 
 /** The master a published package should carry, built from its own record. */
