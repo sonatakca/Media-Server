@@ -131,6 +131,91 @@ function toRecord(row: RawJobRow): JobRecord {
   };
 }
 
+/**
+ * Rejects a payload value that cannot survive the round trip through JSONB.
+ *
+ * A payload is `Record<string, unknown>`, so the compiler accepts anything —
+ * including a Promise from a forgotten `await`. `JSON.stringify` turns one into
+ * `{}` without complaint, and the job then runs with the field simply *missing*,
+ * taking whatever default the reader has. That is how a batch of episodes came
+ * to publish into their season folder instead of their own: the destination was
+ * an un-awaited `resolveTitleRoot`, so every job carried `titleRoot: {}` and
+ * fell back to the directory beside the source, over its neighbours.
+ *
+ * The value that reaches the database must therefore be JSON that means what
+ * the caller wrote. Anything else is a defect at the call site and is raised
+ * there, before a row exists, rather than discovered as missing content later.
+ */
+function assertJsonPayload(
+  payload: Record<string, unknown>,
+  jobType: string,
+): void {
+  const describe = (value: unknown): string => {
+    if (typeof value === "function") return "a function";
+    if (typeof value === "bigint") return "a bigint";
+    if (typeof value === "symbol") return "a symbol";
+    if (typeof value === "object" && value !== null) {
+      if (typeof (value as { then?: unknown }).then === "function") {
+        return "a Promise (missing `await`?)";
+      }
+      return `a ${value.constructor?.name ?? "object"}`;
+    }
+    return `a ${typeof value}`;
+  };
+
+  const walk = (value: unknown, path: string, seen: Set<object>): void => {
+    if (
+      value === null ||
+      typeof value === "string" ||
+      typeof value === "boolean"
+    ) {
+      return;
+    }
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) {
+        throw new Error(
+          `Job payload for "${jobType}" has a non-finite number at ${path}. ` +
+            `JSON cannot carry it and the field would arrive as null.`,
+        );
+      }
+      return;
+    }
+    if (typeof value !== "object") {
+      throw new Error(
+        `Job payload for "${jobType}" has ${describe(value)} at ${path}. ` +
+          `Only JSON values survive the queue.`,
+      );
+    }
+    /*
+     * Plain objects and arrays only. A Date, a Buffer, a Map — and above all a
+     * Promise — all stringify into something the reader will not recognise, so
+     * the caller must convert deliberately rather than by accident.
+     */
+    const prototype = Object.getPrototypeOf(value);
+    const isPlain =
+      Array.isArray(value) ||
+      prototype === Object.prototype ||
+      prototype === null;
+    if (!isPlain) {
+      throw new Error(
+        `Job payload for "${jobType}" has ${describe(value)} at ${path}. ` +
+          `Only JSON values survive the queue.`,
+      );
+    }
+    if (seen.has(value as object)) {
+      throw new Error(`Job payload for "${jobType}" is circular at ${path}.`);
+    }
+    seen.add(value as object);
+    for (const [key, child] of Object.entries(value as object)) {
+      if (child === undefined) continue;
+      walk(child, `${path}.${key}`, seen);
+    }
+    seen.delete(value as object);
+  };
+
+  walk(payload, "payload", new Set<object>());
+}
+
 export function createJobQueue(pool: DatabasePool): JobQueue {
   return {
     enqueue: async ({
@@ -141,6 +226,7 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
       runAfter,
       dedupeKey,
     }) => {
+      assertJsonPayload(payload, jobType);
       const id = randomUUID();
       const result = await pool.query<{ id: string }>(
         `INSERT INTO jobs (id, job_type, payload, priority, max_attempts, run_after, dedupe_key)

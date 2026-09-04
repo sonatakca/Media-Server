@@ -358,7 +358,22 @@ export const en = {
   "processing.counts.succeeded": "Completed",
   "processing.counts.failed": "Failed",
   "processing.counts.warnings": "With warnings",
-  "processing.queue": "Queue",
+  "processing.outcome.active": "In progress",
+  "processing.outcome.finished": "Concluded",
+  "processing.outcome.chooseOutcome": "Processing state",
+  "processing.outcome.emptyActive": "Nothing is being processed.",
+  "processing.outcome.emptyActiveHint":
+    "Queue a title from the Titles tab and it appears here.",
+  "processing.outcome.emptyFinished": "Nothing has finished yet.",
+  "processing.outcome.emptyFinishedHint":
+    "Completed, failed and cancelled jobs are kept here.",
+  "processing.queueOrder.hint":
+    "Drag a waiting job by its handle to change what is encoded next.",
+  "processing.queueOrder.handle":
+    "Reorder {title}, position {position} of {total}",
+  "processing.queueOrder.position": "Next up #{position}",
+  "processing.queueOrder.pinned": "Already started — cannot be moved",
+  "processing.queueOrder.failed": "The queue order could not be saved.",
   "processing.empty": "No processing jobs yet.",
   "processing.emptyHint":
     "Choose a title below to see what processing would do before anything runs.",
@@ -550,6 +565,20 @@ export const en = {
   "processing.storage.waiting": "Waiting for the volume to return…",
   "processing.storage.noAction": "No action needed; this resumes on its own.",
   "processing.storage.willRetry": "Will be encoded again",
+  // The banner's headline, one per guard state. Kept as whole sentences rather
+  // than assembled from fragments, because the states differ in what they ask
+  // of the reader, not just in wording.
+  "processing.storage.summary.healthy": "The storage is answering normally.",
+  "processing.storage.summary.unavailable":
+    "Waiting for the storage to return. Work resumes on its own once it is back and has stayed.",
+  "processing.storage.summary.unavailableNamed":
+    "Waiting for {roots} to return. Work resumes on its own once it is back and has stayed.",
+  "processing.storage.summary.suspect":
+    "An ambiguous storage signal was reported, so work here has stopped while it is corroborated.",
+  "processing.storage.summary.quarantined":
+    "Storage was quarantined after an I/O failure to protect the server. Processing will not resume automatically.",
+  "processing.storage.summary.recovery-pending":
+    "Verified, and waiting for an operator to resume. Nothing runs here until they do.",
   "processing.retry.fromCheckpoints":
     "Retry continues from {time}; completed checkpoints are kept.",
   "processing.retry.fromStart": "Retry starts this title again.",

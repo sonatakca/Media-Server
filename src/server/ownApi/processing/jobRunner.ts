@@ -5,6 +5,7 @@ import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/proce
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
 import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
 import { besideTitleRoot } from "../../../renditions/adaptive/titleRoot";
+import { TitleRootConflictError } from "../../../renditions/adaptive/publishTitle";
 import { estimateFinalOutputBytes } from "../../../renditions/outputEstimate";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
 import {
@@ -226,9 +227,28 @@ export interface ProcessingJobRunnerDeps {
 /**
  * The published package's location for this run, read in exactly one place so
  * publishing and its cleanup can never point at different directories.
+ *
+ * The fallback is for a job that genuinely carries no destination — an offline
+ * caller, or a row queued before episodes had their own folders. It is *not* a
+ * repair for a destination that arrived malformed: for an episode, the
+ * directory beside the source is the season folder its neighbours publish into,
+ * so quietly falling back there is how one title comes to overwrite ten. A
+ * present-but-unusable value is a defect in whoever queued the job, and it stops
+ * the run instead of choosing a destination on their behalf.
  */
 function titleRootForInput(input: RunProcessingJobInput): string {
-  return input.titleRoot ?? besideTitleRoot(input.sourcePath);
+  const titleRoot = input.titleRoot as unknown;
+  if (titleRoot === undefined || titleRoot === null) {
+    return besideTitleRoot(input.sourcePath);
+  }
+  if (typeof titleRoot !== "string" || titleRoot.trim() === "") {
+    throw new Error(
+      `Processing job ${input.processingJobId} carries an unusable titleRoot ` +
+        `(${JSON.stringify(titleRoot)}). Refusing to guess a publish ` +
+        `destination for ${input.relativePath}.`,
+    );
+  }
+  return titleRoot;
 }
 
 export interface RunProcessingJobInput {
@@ -296,6 +316,15 @@ export const PROCESSING_ERROR_CODES = {
    * it.
    */
   mediaProgressTimeout: "MEDIA_PROGRESS_TIMEOUT",
+  /**
+   * The package was built correctly but the folder it was told to publish into
+   * belongs to a different title.
+   *
+   * Never requeued: another attempt resolves the same wrong destination and is
+   * refused in the same place. The encode is sound; what needs correcting is
+   * whatever decided where it goes.
+   */
+  titleRootConflict: "TITLE_ROOT_CONFLICT",
   cancelled: "CANCELLED",
 } as const;
 
@@ -384,6 +413,40 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         errorCode: "JOB_NOT_FOUND",
         errorMessage: "The processing job no longer exists.",
       };
+    }
+
+    /*
+     * A pause that was asked for before this attempt began.
+     *
+     * Until now a pause was only observed from inside the encode loop, so it
+     * stopped a job that was already running and did nothing at all to one that
+     * was merely queued. A worker restarting — and this one is kept alive by
+     * launchd, so it restarts by itself — would lease the next paused job and
+     * start a fresh encode on it, which is the opposite of what the operator
+     * pressed the button for. A pause has to hold at the door as well as in the
+     * room.
+     *
+     * Left in `paused` rather than failed: nothing is wrong with the job, and it
+     * must be exactly as resumable afterwards as it was before the worker
+     * happened to pick it up.
+     */
+    if (job.pauseRequested) {
+      await clearLiveProgress(job.id).catch(() => undefined);
+      await store.update(job.id, {
+        state: "paused",
+        finishedAt: null,
+        speed: null,
+        fps: null,
+        etaSeconds: null,
+      });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "waiting",
+        level: "info",
+        message: "Not starting: the job is paused.",
+        detail: { pausedReason: job.pausedReason },
+      });
+      return { status: "waiting-for-storage" as const };
     }
 
     /*
@@ -2005,6 +2068,15 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           PROCESSING_ERROR_CODES.insufficientSpace,
           "Processing stopped because the scratch or final media volume ran out of space.",
         );
+      }
+      /*
+       * Reported under its own code rather than as an encode failure, because
+       * it is not one: the package is finished and valid, and only its
+       * destination is wrong. Calling this ENCODE_FAILED would send whoever
+       * reads it looking at the encoder.
+       */
+      if (error instanceof TitleRootConflictError) {
+        return fail(PROCESSING_ERROR_CODES.titleRootConflict, message);
       }
       return fail(
         PROCESSING_ERROR_CODES.encodeFailed,

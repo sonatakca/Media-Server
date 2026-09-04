@@ -5,9 +5,11 @@ import { sendData } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import {
   asObjectBody,
+  isUuid,
   optionalBodyString,
   parseLimit,
   requireUuid,
+  validationError,
 } from "../api/validation";
 import { isPathInsideRoot } from "../../pathSecurity";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
@@ -172,6 +174,9 @@ function toJobDto(job: ProcessingJobRecord) {
     epochEndSeconds: job.epochEndSeconds,
     checkpointBytes: job.checkpointBytes,
     freeBytes: job.freeBytes,
+    ...(job.queuePriority === undefined
+      ? {}
+      : { queuePriority: job.queuePriority }),
     createdAt: job.createdAt.toISOString(),
     startedAt: job.startedAt?.toISOString() ?? null,
     finishedAt: job.finishedAt?.toISOString() ?? null,
@@ -1126,6 +1131,31 @@ export function createProcessingRoutes({
     },
 
     {
+      method: "POST",
+      path: "/processing/queue/order",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const body = asObjectBody(await context.readJson(32 * 1024), [
+          "jobIds",
+        ]);
+        const raw = body.jobIds;
+        if (!Array.isArray(raw) || raw.length === 0 || raw.length > 200) {
+          throw validationError("jobIds must be a list of 1 to 200 job ids.");
+        }
+        const jobIds = raw.map((value) => {
+          if (!isUuid(value)) throw validationError("jobIds is invalid.");
+          return value.toLowerCase();
+        });
+        if (new Set(jobIds).size !== jobIds.length) {
+          throw validationError("jobIds must not repeat a job.");
+        }
+        const reordered = await store.reorderQueue(jobIds);
+        sendData(context.response, context.requestId, { reordered });
+      },
+    },
+
+    {
       method: "GET",
       path: "/processing/jobs/:jobId",
       access: "admin",
@@ -1551,29 +1581,52 @@ export function createProcessingRoutes({
         }
 
         /*
-         * The attempt is settled before anything durable moves, so a source
-         * that is no longer on disk refuses the press without having first
-         * un-paused the job.
+         * The source is settled before anything durable moves, so a source that
+         * is no longer on disk refuses the press without having first un-paused
+         * the job. `ensureAttempt` checks this too and throws the same error;
+         * asking here as well is what lets the pause be lifted before an
+         * attempt exists rather than after.
          */
+        const located = await enqueuer.locateSource(
+          job.itemId,
+          job.mediaFileId,
+        );
+        if (!(await enqueuer.statSource(located.file, located.absolutePath))) {
+          throw new OwnApiError(
+            "SOURCE_UNAVAILABLE",
+            "The source file for this title is no longer on disk.",
+            409,
+          );
+        }
+
+        /*
+         * The pause is lifted first and the attempt queued second, which is the
+         * order the block above describes.
+         *
+         * Queueing first leaves — for as long as the next statement takes — an
+         * attempt on the queue for a job still marked paused. A worker that
+         * leases it in that window must refuse it, because refusing to start
+         * paused work is precisely what it is for, and the resume then finishes
+         * into a job that is eligible with nothing left to run it.
+         */
+        await store.resume(id, undefined, "queued");
         const attempt = await enqueuer.ensureAttempt(job);
         const executing = attempt.status === "running";
-        await store.resume(
-          id,
-          undefined,
-          /*
-           * `running` only when a worker genuinely holds this attempt — the
-           * case where an encoder is suspended in place and about to carry on.
-           * Everything else is `queued`, which is the honest description of a
-           * job that is waiting to be leased.
-           */
-          executing ? "running" : "queued",
-        );
         /*
-         * A job left `running` by a worker that died is not paused, so the
-         * clause above does not touch it. It is nonetheless not running, and
-         * saying so is the whole point of this route.
+         * `running` only when a worker genuinely holds this attempt — the case
+         * where an encoder is suspended in place and about to carry on.
+         * Everything else stays `queued`, which is the honest description of a
+         * job waiting to be leased, and covers the job left `running` by a
+         * worker that died: it is not running, and saying so is the whole point
+         * of this route.
          */
-        if (!executing && job.state === "running") {
+        if (executing) {
+          await store.update(id, { state: "running" });
+        } else if (job.state === "running") {
+          /*
+           * A job left `running` by a worker that died is not paused, so the
+           * resume above did not touch it. It is nonetheless not running.
+           */
           await store.update(id, { state: "queued" });
         }
         await store.setCurrentAttempt(id, attempt.queueJobId);
@@ -1669,6 +1722,7 @@ export function createProcessingRoutes({
              */
             titleRoot,
           },
+          priority: await store.nextQueuePriority(),
           dedupeKey: `processing:${file.id}:retry:${Date.now()}`,
         });
         await store.attachQueueJob(id, queueJobId);

@@ -3,7 +3,7 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import path from "node:path";
 
-import { playwright } from "@vitest/browser-playwright";
+import { defineBrowserCommand, playwright } from "@vitest/browser-playwright";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -191,6 +191,37 @@ function serveEpochPackage(): Plugin {
   };
 }
 
+/**
+ * A real mouse, in the page's own coordinates.
+ *
+ * `userEvent` can click and it can drag from one element to another, but it
+ * cannot hold a button down and let the test look at what the page did in the
+ * meantime — which is the only interesting moment of a reorder gesture. The
+ * test runs inside an iframe, so the frame's own offset is added here rather
+ * than left for every caller to remember.
+ */
+const pointer = defineBrowserCommand<
+  [action: "move" | "down" | "up", x?: number, y?: number]
+>(async ({ page, iframe, frame }, action, x = 0, y = 0) => {
+  if (action === "down") {
+    await page.mouse.down();
+    return;
+  }
+  if (action === "up") {
+    await page.mouse.up();
+    return;
+  }
+  /*
+   * The test page lives in an iframe, and vitest scales that iframe when the
+   * viewport asked for is larger than the browser window it has. Both have to
+   * be undone here, or the mouse lands somewhere the test never named.
+   */
+  const box = await iframe.owner().boundingBox();
+  const cssWidth = await (await frame()).evaluate(() => window.innerWidth);
+  const scale = box && cssWidth ? box.width / cssWidth : 1;
+  await page.mouse.move((box?.x ?? 0) + x * scale, (box?.y ?? 0) + y * scale);
+});
+
 export default defineConfig({
   plugins: [react(), serveRenditionFixtures(), serveEpochPackage()],
   test: {
@@ -206,6 +237,7 @@ export default defineConfig({
       // ladder. WebKit exercises the Safari media/event fallbacks, where the
       // capability probe and hidden-deck frame readiness behave differently.
       instances: [{ browser: "chromium" }, { browser: "webkit" }],
+      commands: { pointer },
     },
     // Decoding, seeking and a rendezvous take real wall-clock time.
     testTimeout: 60_000,

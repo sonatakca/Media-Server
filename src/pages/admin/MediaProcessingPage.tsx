@@ -5,7 +5,9 @@ import {
   CheckCircle2,
   ChevronLeft,
   Cpu,
+  GripVertical,
   Loader2,
+  Lock,
   Pause,
   Play,
   RefreshCcw,
@@ -35,6 +37,7 @@ import {
   getProcessingOverview,
   previewProcessing,
   processingStreamUrl,
+  reorderProcessingQueue,
   retryProcessingJob,
   adoptProcessingStorage,
   resumeProcessingStorage,
@@ -94,6 +97,15 @@ import {
   stageStateFor,
   summariseLanguages,
 } from "./processingModel";
+import {
+  applyQueueOverride,
+  canReorder,
+  moveItem,
+  partitionProcessingJobs,
+  PROCESSING_OUTCOME_TABS,
+  type ProcessingOutcomeTab,
+} from "./processingQueueModel";
+import { useQueueSortable } from "./useQueueSortable";
 import { formatTemplate } from "./libraryMaintenanceModel";
 import { ProcessingSeriesTree } from "./ProcessingSeriesTree";
 import {
@@ -106,6 +118,33 @@ import {
 const CARD = "rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5";
 const LABEL =
   "text-[11px] font-black uppercase tracking-[0.14em] text-white/40";
+/**
+ * The storage banner's headline, in the reader's language.
+ *
+ * Keyed off `state` rather than shown as the server sent it. The server writes
+ * one English sentence per state for the log and the job history, which is the
+ * right thing there and the wrong thing here — it arrived on a Turkish page as
+ * English, under chips that were already translated.
+ *
+ * The server's sentence stays the fallback. A state this build has no key for
+ * is better read in English than not read at all, and that is also what keeps a
+ * newer server from blanking the banner on an older page.
+ */
+function storageSummary(
+  storage: { state: string; summary: string; missingRoots: readonly string[] },
+  t: (key: never) => string,
+): string {
+  if (storage.state === "unavailable" && storage.missingRoots.length > 0) {
+    return formatTemplate(
+      t("processing.storage.summary.unavailableNamed" as never),
+      { roots: storage.missingRoots.join(", ") },
+    );
+  }
+  const key = `processing.storage.summary.${storage.state}`;
+  const translated = t(key as never);
+  return translated === key ? storage.summary : translated;
+}
+
 /** Matches the per-job action buttons, so the recovery flow reads as native. */
 const BUTTON =
   "rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-50";
@@ -1118,6 +1157,34 @@ export function MediaProcessingPage() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
   /**
+   * Which half of the Processes tab is showing.
+   *
+   * One list held both the queue and the history, so a page of yesterday's
+   * completed encodes sat between the operator and the thing that is running
+   * right now. They answer different questions — "what is happening" and "what
+   * happened" — and only the first of them can be reordered.
+   */
+  const [outcomeTab, setOutcomeTab] = useState<ProcessingOutcomeTab>("active");
+  /**
+   * The order the operator has just dragged the queue into.
+   *
+   * Held until the server's own answer says the same thing. The page polls
+   * once a second, so without it a poll landing between the drop and the
+   * server's reply would snap the row back to where it came from and then
+   * forward again — which reads as the drag having failed.
+   */
+  const [queueOverride, setQueueOverride] = useState<string[] | null>(null);
+  const [reorderBusy, setReorderBusy] = useState(false);
+  /**
+   * The queue order held still for the length of a drag.
+   *
+   * The rows rearrange under the cursor by transform, not by moving in the
+   * DOM, so the list the gesture was measured against has to stay the list on
+   * screen. Without this the one-second poll would re-sort the queue mid-drag
+   * and the card would be dropped into a slot that had moved.
+   */
+  const [dragFreeze, setDragFreeze] = useState<string[] | null>(null);
+  /**
    * Which content kind the Titles tab is showing.
    *
    * A switch rather than one merged list: a film is one processing unit and an
@@ -1846,6 +1913,132 @@ export function MediaProcessingPage() {
     () => new Set([...expandedSeasonIds, ...searchExpansion.seasonIds]),
     [expandedSeasonIds, searchExpansion],
   );
+  /*
+   * The two halves of the Processes tab, each in its own order: the queue
+   * forwards, because its top is what happens next, and the history backwards,
+   * because its top is what just happened.
+   */
+  const { active: activeJobs, finished: finishedJobs } = useMemo(
+    () => partitionProcessingJobs(jobs),
+    [jobs],
+  );
+  const queue = useMemo(
+    () =>
+      applyQueueOverride(
+        applyQueueOverride(activeJobs, queueOverride),
+        dragFreeze,
+      ),
+    [activeJobs, dragFreeze, queueOverride],
+  );
+  /** The rows that are genuinely still waiting, and so can be moved. */
+  const movableQueue = useMemo(() => queue.filter(canReorder), [queue]);
+  const visibleJobs = outcomeTab === "active" ? queue : finishedJobs;
+
+  /*
+   * The optimistic order is dropped the moment it stops being useful: either
+   * the server has confirmed it, or the queue is no longer the same set of
+   * jobs and the override describes a line that does not exist. Comparing the
+   * answer rather than trusting the request is what keeps a rejected reorder
+   * from leaving the page showing an order the machine will not follow.
+   */
+  useEffect(() => {
+    if (!queueOverride) return;
+    const confirmed = activeJobs.filter(canReorder).map((job) => job.id);
+    const sameLength = confirmed.length === queueOverride.length;
+    const sameOrder =
+      sameLength && confirmed.every((id, index) => id === queueOverride[index]);
+    const sameSet =
+      sameLength && confirmed.every((id) => queueOverride.includes(id));
+    if (sameOrder || !sameSet) setQueueOverride(null);
+  }, [activeJobs, queueOverride]);
+
+  const commitQueueOrder = useCallback(
+    async (orderedIds: string[]) => {
+      setQueueOverride(orderedIds);
+      setReorderBusy(true);
+      try {
+        await reorderProcessingQueue(orderedIds);
+      } catch (error) {
+        /*
+         * The override goes immediately on a refusal. Leaving it up would show
+         * an order the encoder is not going to follow, which is worse than the
+         * row visibly springing back.
+         */
+        setQueueOverride(null);
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("processing.queueOrder.failed"),
+        });
+      } finally {
+        setReorderBusy(false);
+        await refreshOverview();
+      }
+    },
+    [refreshOverview, t],
+  );
+
+  const movableIds = useMemo(
+    () => movableQueue.map((job) => job.id),
+    [movableQueue],
+  );
+
+  /**
+   * The drag itself: which row is held, where it would land, and how far the
+   * rows around it have moved to make room.
+   *
+   * The list rearranges as the pointer crosses each slot, so what is on screen
+   * at any moment is what a release would save. Only waiting rows are handed
+   * to it — the encode underway has already been claimed by a worker and its
+   * position means nothing to the server.
+   */
+  const sortable = useQueueSortable({
+    ids: movableIds,
+    disabled: reorderBusy,
+    onDragStart: setDragFreeze,
+    onDragEnd: () => setDragFreeze(null),
+    onCommit: (orderedIds) => void commitQueueOrder(orderedIds),
+  });
+
+  /*
+   * A queue that changed shape underneath the gesture — the head of the line
+   * claimed by a worker, a job cancelled from another tab — no longer matches
+   * the geometry the drag was measured against. Ending it puts the row back
+   * where the server says it is rather than dropping it into a slot that has
+   * moved.
+   */
+  const cancelQueueDrag = sortable.cancel;
+  useEffect(() => {
+    if (!dragFreeze) return;
+    const waiting = new Set(activeJobs.filter(canReorder).map((job) => job.id));
+    const intact =
+      waiting.size === dragFreeze.length &&
+      dragFreeze.every((id) => waiting.has(id));
+    if (!intact) cancelQueueDrag();
+  }, [activeJobs, cancelQueueDrag, dragFreeze]);
+
+  /**
+   * One step up or down, for the handle's arrow keys.
+   *
+   * A queue that can only be arranged by dragging is a queue that cannot be
+   * arranged without a mouse, and this page is often open on a machine being
+   * operated over a remote session.
+   */
+  const nudgeQueueJob = useCallback(
+    (jobId: string, delta: -1 | 1) => {
+      const from = movableQueue.findIndex((job) => job.id === jobId);
+      if (from < 0) return;
+      const to = from + delta;
+      if (to < 0 || to >= movableQueue.length) return;
+      void commitQueueOrder(
+        moveItem(movableQueue, from, to).map((job) => job.id),
+      );
+    },
+    [commitQueueOrder, movableQueue],
+  );
+
   /** Job identity, so the queue tab can say which show's pilot is encoding. */
   const jobTitlesById = useMemo(
     () =>
@@ -1912,7 +2105,7 @@ export function MediaProcessingPage() {
                 {t(`processing.tabs.${tab}`)}
                 {tab === "processes" && jobs.length > 0 ? (
                   <span
-                    className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                    className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
                       selected
                         ? "bg-[var(--accent)] text-black"
                         : "bg-white/10 text-white/55"
@@ -2012,7 +2205,7 @@ export function MediaProcessingPage() {
               />
               <div className="flex min-w-0 flex-col gap-1">
                 <span className="text-sm font-medium text-white">
-                  {storage.summary}
+                  {storageSummary(storage, t)}
                 </span>
                 {/*
                   The reason carries the evidence — which errno, how many faults —
@@ -2708,7 +2901,67 @@ export function MediaProcessingPage() {
             aria-labelledby="processing-tab-processes"
             className="flex flex-col gap-3"
           >
-            <span className={LABEL}>{t("processing.queue")}</span>
+            {/*
+             * What is happening, and what happened. One list held both, so a
+             * page of yesterday's completed encodes sat between the operator
+             * and the job that is running right now — and only the first of
+             * these two can be reordered at all.
+             */}
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div
+                role="tablist"
+                aria-label={t("processing.outcome.chooseOutcome")}
+                className="grid grid-cols-2 rounded-xl border border-white/10 bg-white/[0.03] p-1 sm:w-fit sm:min-w-64"
+              >
+                {PROCESSING_OUTCOME_TABS.map((outcome) => {
+                  const selected = outcomeTab === outcome;
+                  const count =
+                    outcome === "active"
+                      ? activeJobs.length
+                      : finishedJobs.length;
+                  return (
+                    <button
+                      key={outcome}
+                      type="button"
+                      role="tab"
+                      id={`processing-outcome-${outcome}`}
+                      aria-selected={selected}
+                      aria-controls={`processing-outcome-panel-${outcome}`}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setOutcomeTab(outcome)}
+                      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                        selected
+                          ? "bg-white/[0.1] text-white shadow-sm"
+                          : "text-white/45 hover:bg-white/[0.05] hover:text-white/75"
+                      }`}
+                    >
+                      {t(`processing.outcome.${outcome}`)}
+                      {count > 0 ? (
+                        <span
+                          className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
+                            selected
+                              ? "bg-[var(--accent)] text-black"
+                              : "bg-white/[0.08] text-white/60"
+                          }`}
+                        >
+                          {count}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+              {/*
+               * Said once, above the list, rather than repeated on every
+               * handle. Only worth saying when there is more than one waiting
+               * job: with a single one there is no order to arrange.
+               */}
+              {outcomeTab === "active" && movableQueue.length > 1 ? (
+                <p className="text-xs text-white/40">
+                  {t("processing.queueOrder.hint")}
+                </p>
+              ) : null}
+            </div>
             {loading ? (
               <div className={`${CARD} flex flex-col gap-3`}>
                 {[0, 1].map((row) => (
@@ -2718,349 +2971,475 @@ export function MediaProcessingPage() {
                   />
                 ))}
               </div>
-            ) : jobs.length === 0 ? (
-              <div className={`${CARD} text-center`}>
+            ) : visibleJobs.length === 0 ? (
+              <div
+                id={`processing-outcome-panel-${outcomeTab}`}
+                role="tabpanel"
+                aria-labelledby={`processing-outcome-${outcomeTab}`}
+                className={`${CARD} text-center`}
+              >
                 <p className="text-sm font-semibold text-white/70">
-                  {t("processing.empty")}
+                  {t(
+                    jobs.length === 0
+                      ? "processing.empty"
+                      : outcomeTab === "active"
+                        ? "processing.outcome.emptyActive"
+                        : "processing.outcome.emptyFinished",
+                  )}
                 </p>
                 <p className="mt-1 text-xs text-white/40">
-                  {t("processing.emptyHint")}
+                  {t(
+                    jobs.length === 0
+                      ? "processing.emptyHint"
+                      : outcomeTab === "active"
+                        ? "processing.outcome.emptyActiveHint"
+                        : "processing.outcome.emptyFinishedHint",
+                  )}
                 </p>
               </div>
             ) : (
-              <ul className="flex flex-col gap-2">
-                {jobs.map((job) => {
-                  const percent = progressPercent(job);
-                  const jobLive = live?.jobId === job.id ? live.snapshot : null;
-                  const globalPercent = globalProgressPercent(job, jobLive);
-                  const encoded = encodedPercent(job, jobLive);
-                  const waitingForStorage = isWaitingForStorage(job);
-                  const isFinished = [
-                    "succeeded",
-                    "failed",
-                    "cancelled",
-                  ].includes(job.state);
-                  return (
-                    <li key={job.id} className={`${CARD} flex flex-col gap-3`}>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        {/*
-                         * Who this job belongs to.
-                         *
-                         * A film is its own name. An episode is a show and a
-                         * code: a queue listing three rows called "Pilot" is
-                         * a queue nobody can act on, and the operator has to
-                         * be able to tell which show they would be pausing.
-                         */}
-                        {(() => {
-                          const label = jobLabel(
-                            jobTitlesById.get(job.id),
-                            itemTitleFor(job.itemId),
-                          );
-                          return (
-                            <span className="flex min-w-0 flex-col">
-                              <span className="truncate text-sm font-bold">
-                                {label.primary}
-                              </span>
-                              {label.secondary ? (
-                                <span className="truncate text-[11px] font-semibold text-white/45">
-                                  {label.secondary}
+              /*
+               * The panel is the wrapper rather than the list itself: a `ul`
+               * carrying `role="tabpanel"` stops being a list, and every row
+               * inside it stops being a list item.
+               */
+              <div
+                id={`processing-outcome-panel-${outcomeTab}`}
+                role="tabpanel"
+                aria-labelledby={`processing-outcome-${outcomeTab}`}
+              >
+                <ul className="flex flex-col gap-2">
+                  {visibleJobs.map((job) => {
+                    const percent = progressPercent(job);
+                    const jobLive =
+                      live?.jobId === job.id ? live.snapshot : null;
+                    const globalPercent = globalProgressPercent(job, jobLive);
+                    const encoded = encodedPercent(job, jobLive);
+                    const waitingForStorage = isWaitingForStorage(job);
+                    const isFinished = [
+                      "succeeded",
+                      "failed",
+                      "cancelled",
+                    ].includes(job.state);
+                    /*
+                     * Who this job belongs to.
+                     *
+                     * A film is its own name. An episode is a show and a code: a
+                     * queue listing three rows called "Pilot" is a queue nobody
+                     * can act on, and the operator has to be able to tell which
+                     * show they would be pausing.
+                     */
+                    const label = jobLabel(
+                      jobTitlesById.get(job.id),
+                      itemTitleFor(job.itemId),
+                    );
+                    const movable = outcomeTab === "active" && canReorder(job);
+                    /*
+                     * The number on the card is the number the drop would
+                     * give it. Reading it from the drag's own preview rather
+                     * than from the saved queue is what stops the badges
+                     * disagreeing with the order under the cursor.
+                     */
+                    const orderDuringDrag = sortable.previewOrder;
+                    const queuePosition = movable
+                      ? (orderDuringDrag ?? movableIds).indexOf(job.id) + 1
+                      : 0;
+                    const held = movable && sortable.isActive(job.id);
+                    /*
+                     * The lift stays on for the moment the card is landing.
+                     * The handle's own grabbing state does not: the button has
+                     * been released, and saying otherwise under the cursor is
+                     * how a drag appears to still be going after it has ended.
+                     */
+                    const lifted =
+                      held || (movable && sortable.isSettling(job.id));
+                    return (
+                      <li
+                        key={job.id}
+                        ref={movable ? sortable.registerRow(job.id) : undefined}
+                        style={movable ? sortable.rowStyle(job.id) : undefined}
+                        /*
+                         * The slot this row is in while the list is being
+                         * rearranged. Written out so the behaviour can be
+                         * asserted as an order rather than as pixels.
+                         */
+                        data-queue-slot={movable ? queuePosition : undefined}
+                        className={`${CARD} flex flex-col gap-3 ${
+                          lifted
+                            ? "border-white/25 shadow-[0_20px_45px_-18px_rgba(0,0,0,0.9)]"
+                            : ""
+                        }`}
+                      >
+                        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                          {outcomeTab === "active" ? (
+                            movable ? (
+                              <button
+                                type="button"
+                                aria-label={formatTemplate(
+                                  t("processing.queueOrder.handle"),
+                                  {
+                                    title: label.primary,
+                                    position: String(queuePosition),
+                                    total: String(movableQueue.length),
+                                  },
+                                )}
+                                title={t("processing.queueOrder.hint")}
+                                disabled={reorderBusy}
+                                onPointerDown={(event) =>
+                                  sortable.startDrag(event, job.id)
+                                }
+                                onKeyDown={(event) => {
+                                  if (event.key === "ArrowUp") {
+                                    event.preventDefault();
+                                    nudgeQueueJob(job.id, -1);
+                                  } else if (event.key === "ArrowDown") {
+                                    event.preventDefault();
+                                    nudgeQueueJob(job.id, 1);
+                                  }
+                                }}
+                                className={`inline-flex h-7 w-7 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg border text-white/35 transition-colors hover:bg-white/[0.08] hover:text-white/70 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                                  held
+                                    ? "cursor-grabbing border-white/25 bg-white/[0.1] text-white/80"
+                                    : "border-white/10"
+                                }`}
+                              >
+                                <GripVertical size={14} aria-hidden="true" />
+                              </button>
+                            ) : (
+                              /*
+                               * The head of the line keeps the handle's slot so
+                               * the titles below it stay on one vertical edge —
+                               * and says why it cannot be moved rather than
+                               * leaving a gap that reads as a missing control.
+                               */
+                              <span
+                                title={t("processing.queueOrder.pinned")}
+                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] text-white/20"
+                              >
+                                <Lock size={12} aria-hidden="true" />
+                                <span className="sr-only">
+                                  {t("processing.queueOrder.pinned")}
                                 </span>
-                              ) : null}
+                              </span>
+                            )
+                          ) : null}
+                          <span className="flex min-w-0 flex-col">
+                            <span className="truncate text-sm font-bold">
+                              {label.primary}
                             </span>
-                          );
-                        })()}
-                        <Chip
-                          tone={
-                            job.state === "succeeded"
-                              ? "ok"
-                              : job.state === "failed"
-                                ? "bad"
-                                : job.state === "cancelled"
-                                  ? "muted"
-                                  : "warn"
-                          }
-                        >
-                          {t(`processing.state.${job.state}` as never)}
-                        </Chip>
-                        {job.pausedReason ? (
-                          <Chip tone="muted">
-                            {t(
-                              job.pausedReason === "storage-unavailable"
-                                ? "processing.pausedByStorage"
-                                : "processing.pausedByOperator",
-                            )}
-                          </Chip>
-                        ) : null}
-                        {job.warnings.length > 0 ? (
-                          <Chip tone="warn">
-                            <AlertTriangle size={11} aria-hidden="true" />
-                            {job.warnings.length}
-                          </Chip>
-                        ) : null}
-                        <span className="text-xs text-white/40">
-                          {t(`processing.stage.${job.stage}` as never)}
-                        </span>
-                        <div className="ml-auto flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setOpenJobId(job.id)}
-                            className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                            {label.secondary ? (
+                              <span className="truncate text-[11px] font-semibold text-white/45">
+                                {label.secondary}
+                              </span>
+                            ) : null}
+                          </span>
+                          {movable ? (
+                            <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/45">
+                              {formatTemplate(
+                                t("processing.queueOrder.position"),
+                                { position: String(queuePosition) },
+                              )}
+                            </span>
+                          ) : null}
+                          <Chip
+                            tone={
+                              job.state === "succeeded"
+                                ? "ok"
+                                : job.state === "failed"
+                                  ? "bad"
+                                  : job.state === "cancelled"
+                                    ? "muted"
+                                    : "warn"
+                            }
                           >
-                            {t("processing.inspect")}
-                          </button>
-                          {canPause(job) ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await pauseProcessingJob(job.id).catch(
-                                  () => undefined,
-                                );
-                                await refreshOverview();
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                            >
-                              <Pause size={12} aria-hidden="true" />
-                              {t("processing.pause")}
-                            </button>
+                            {t(`processing.state.${job.state}` as never)}
+                          </Chip>
+                          {job.pausedReason ? (
+                            <Chip tone="muted">
+                              {t(
+                                job.pausedReason === "storage-unavailable"
+                                  ? "processing.pausedByStorage"
+                                  : "processing.pausedByOperator",
+                              )}
+                            </Chip>
                           ) : null}
-                          {canResume(job) ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await resumeProcessingJob(job.id).catch(
-                                  () => undefined,
-                                );
-                                await refreshOverview();
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                            >
-                              <Play size={12} aria-hidden="true" />
-                              {t("processing.resume")}
-                            </button>
+                          {job.warnings.length > 0 ? (
+                            <Chip tone="warn">
+                              <AlertTriangle size={11} aria-hidden="true" />
+                              {job.warnings.length}
+                            </Chip>
                           ) : null}
-                          {canCancel(job) ? (
+                          <span className="text-xs text-white/40">
+                            {t(`processing.stage.${job.stage}` as never)}
+                          </span>
+                          <div className="ml-auto flex items-center gap-2">
                             <button
                               type="button"
-                              onClick={async () => {
-                                await cancelProcessingJob(job.id).catch(
-                                  () => undefined,
-                                );
-                                await refreshOverview();
-                              }}
+                              onClick={() => setOpenJobId(job.id)}
                               className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                             >
-                              {t("processing.cancel")}
+                              {t("processing.inspect")}
                             </button>
-                          ) : null}
-                          {canRetry(job) ? (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                await retryProcessingJob(job.id).catch(
-                                  () => undefined,
-                                );
-                                await refreshOverview();
-                              }}
-                              className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-                            >
-                              <RefreshCcw size={12} aria-hidden="true" />
-                              {t("processing.retry")}
-                            </button>
-                          ) : null}
-                          {isFinished ? (
-                            <button
-                              type="button"
-                              onClick={() => void removeJob(job.id)}
-                              disabled={removingJobIds.has(job.id)}
-                              aria-label={
-                                removingJobIds.has(job.id)
-                                  ? t("processing.removing")
-                                  : `${t("processing.remove")}: ${itemTitleFor(job.itemId)}`
-                              }
-                              title={t("processing.remove")}
-                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-white/40 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
-                            >
-                              {removingJobIds.has(job.id) ? (
-                                <Loader2
-                                  size={13}
-                                  className="animate-spin motion-reduce:animate-none"
-                                  aria-hidden="true"
-                                />
-                              ) : (
-                                <X size={14} aria-hidden="true" />
-                              )}
-                            </button>
-                          ) : null}
+                            {canPause(job) ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await pauseProcessingJob(job.id).catch(
+                                    () => undefined,
+                                  );
+                                  await refreshOverview();
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                              >
+                                <Pause size={12} aria-hidden="true" />
+                                {t("processing.pause")}
+                              </button>
+                            ) : null}
+                            {canResume(job) ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await resumeProcessingJob(job.id).catch(
+                                    () => undefined,
+                                  );
+                                  await refreshOverview();
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                              >
+                                <Play size={12} aria-hidden="true" />
+                                {t("processing.resume")}
+                              </button>
+                            ) : null}
+                            {canCancel(job) ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await cancelProcessingJob(job.id).catch(
+                                    () => undefined,
+                                  );
+                                  await refreshOverview();
+                                }}
+                                className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                              >
+                                {t("processing.cancel")}
+                              </button>
+                            ) : null}
+                            {canRetry(job) ? (
+                              <button
+                                type="button"
+                                onClick={async () => {
+                                  await retryProcessingJob(job.id).catch(
+                                    () => undefined,
+                                  );
+                                  await refreshOverview();
+                                }}
+                                className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                              >
+                                <RefreshCcw size={12} aria-hidden="true" />
+                                {t("processing.retry")}
+                              </button>
+                            ) : null}
+                            {isFinished ? (
+                              <button
+                                type="button"
+                                onClick={() => void removeJob(job.id)}
+                                disabled={removingJobIds.has(job.id)}
+                                aria-label={
+                                  removingJobIds.has(job.id)
+                                    ? t("processing.removing")
+                                    : `${t("processing.remove")}: ${itemTitleFor(job.itemId)}`
+                                }
+                                title={t("processing.remove")}
+                                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 text-white/40 transition hover:border-rose-300/30 hover:bg-rose-400/10 hover:text-rose-200 disabled:opacity-35 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"
+                              >
+                                {removingJobIds.has(job.id) ? (
+                                  <Loader2
+                                    size={13}
+                                    className="animate-spin motion-reduce:animate-none"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <X size={14} aria-hidden="true" />
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
                         </div>
-                      </div>
 
-                      {/*
-                       * The whole-job bar, and the only one that spans every
-                       * phase. It carries no number on purpose: inside each
-                       * phase the figures below are exact, but the boundaries
-                       * between phases rest on an estimate of their relative
-                       * cost, and printing a percentage would claim a precision
-                       * the second half of that does not have. It is monotonic,
-                       * it moves only when real work is measured, and it fills
-                       * only when the job row says the package is published.
-                       */}
-                      <div
-                        className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
-                        role="progressbar"
-                        aria-valuenow={Math.round(globalPercent)}
-                        aria-valuemin={0}
-                        aria-valuemax={100}
-                        aria-label={itemTitleFor(job.itemId)}
-                      >
-                        <div
-                          className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300 ease-linear motion-reduce:transition-none"
-                          style={{ width: `${globalPercent}%` }}
-                        />
-                      </div>
-
-                      {waitingForStorage ? (
-                        /*
-                         * Not an error. Nothing is wrong with the source, the
-                         * plan or the package; a volume went away and the job
-                         * is waiting for it. Saying so, and saying that no
-                         * action is needed, is what stops an operator pressing
-                         * Retry on something that will continue by itself.
-                         */
-                        <div className="flex flex-col gap-1 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-100">
-                          <span className="font-bold">
-                            {t("processing.storage.interrupted")}
-                          </span>
-                          <span className="text-amber-100/75">
-                            {t("processing.storage.waiting")}
-                          </span>
-                          {job.protectedSeconds > 0 ? (
-                            <span className="tabular-nums text-amber-100/75">
-                              {formatTemplate(
-                                t("processing.epoch.protectedThrough"),
-                                {
-                                  time: formatMediaClock(job.protectedSeconds),
-                                },
-                              )}
-                              {job.epochStartSeconds !== null &&
-                              job.epochEndSeconds !== null
-                                ? ` · ${t("processing.storage.willRetry")}: ${formatMediaClock(job.epochStartSeconds)} → ${formatMediaClock(job.epochEndSeconds)}`
-                                : ""}
-                            </span>
-                          ) : null}
-                          <span className="text-amber-100/60">
-                            {t("processing.storage.noAction")}
-                          </span>
-                        </div>
-                      ) : null}
-
-                      {job.pauseRequested && job.pausedReason === "operator" ? (
-                        /*
-                         * Pausing suspends the encoder rather than killing it,
-                         * so it costs nothing — but only while the process
-                         * lives, and saying so is the difference between a
-                         * promise the system keeps and one it cannot.
-                         */
-                        <p className="text-xs text-white/50">
-                          {t("processing.pausedLive")}
-                        </p>
-                      ) : null}
-
-                      <PhaseDetail
-                        job={job}
-                        live={jobLive}
-                        nowMs={nowMs}
-                        t={t}
-                      />
-
-                      {jobLive?.completedPhases?.length ? (
-                        <PhaseHistory phases={jobLive.completedPhases} t={t} />
-                      ) : null}
-
-                      {canRetry(job) && hasResumableCheckpoints(job) ? (
-                        <p className="text-xs text-white/45">
-                          {formatTemplate(t(retryScopeKey(job) as never), {
-                            time: formatMediaClock(job.protectedSeconds),
-                          })}
-                        </p>
-                      ) : null}
-
-                      {/*
-                       * Nine figures now rather than eight, so the row gains a
-                       * column at the widest breakpoint instead of squeezing
-                       * every value narrower.
-                       */}
-                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
-                        <Stat
-                          label="%"
-                          value={
-                            encoded === null ? `${percent}%` : `${encoded}%`
-                          }
-                        />
-                        <Stat
-                          label={t("processing.speed")}
-                          value={formatSpeed(jobLive?.speed ?? job.speed)}
-                        />
-                        <Stat
-                          label={t("processing.fps")}
-                          value={
-                            (jobLive?.fps ?? job.fps)
-                              ? (jobLive?.fps ?? job.fps)!.toFixed(0)
-                              : "—"
-                          }
-                        />
-                        <Stat
-                          label={t("processing.eta")}
-                          value={formatDuration(
-                            jobLive?.etaSeconds ?? job.etaSeconds,
-                          )}
-                        />
-                        <Stat
-                          label={t("processing.encoding")}
-                          value={
-                            job.decision?.renditionsToEncode?.length
-                              ? job.decision.renditionsToEncode
-                                  .map((height) => `${height}p`)
-                                  .join(" · ")
-                              : t("processing.fullPackage")
-                          }
-                        />
                         {/*
-                         * Two separate questions: what this job has written,
-                         * and how large it will end up. Falling back from the
-                         * first to the second is what labelled a planning
-                         * estimate as though it were bytes on disk.
+                         * The whole-job bar, and the only one that spans every
+                         * phase. It carries no number on purpose: inside each
+                         * phase the figures below are exact, but the boundaries
+                         * between phases rest on an estimate of their relative
+                         * cost, and printing a percentage would claim a precision
+                         * the second half of that does not have. It is monotonic,
+                         * it moves only when real work is measured, and it fills
+                         * only when the job row says the package is published.
                          */}
-                        <Stat
-                          label={t("processing.actualOutput")}
-                          value={formatBytes(job.actualOutputBytes)}
-                        />
-                        <Stat
-                          label={t("processing.estimatedOutput")}
-                          value={formatBytes(job.estimatedOutputBytes)}
-                        />
-                        <Stat
-                          label={t("processing.duration")}
-                          value={formatDuration(
-                            isFinished
-                              ? processingDurationSeconds(job)
-                              : processingElapsedSeconds(job, refreshedAt),
-                          )}
-                        />
-                        <Stat
-                          label={t("processing.finishedAt")}
-                          value={formatFinishedAt(job.finishedAt, dateLocale)}
-                        />
-                      </div>
+                        <div
+                          className="h-1.5 overflow-hidden rounded-full bg-white/[0.08]"
+                          role="progressbar"
+                          aria-valuenow={Math.round(globalPercent)}
+                          aria-valuemin={0}
+                          aria-valuemax={100}
+                          aria-label={itemTitleFor(job.itemId)}
+                        >
+                          <div
+                            className="h-full rounded-full bg-[var(--accent)] transition-[width] duration-300 ease-linear motion-reduce:transition-none"
+                            style={{ width: `${globalPercent}%` }}
+                          />
+                        </div>
 
-                      {job.errorMessage ? (
-                        <p className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
-                          {job.errorMessage}
-                        </p>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
+                        {waitingForStorage ? (
+                          /*
+                           * Not an error. Nothing is wrong with the source, the
+                           * plan or the package; a volume went away and the job
+                           * is waiting for it. Saying so, and saying that no
+                           * action is needed, is what stops an operator pressing
+                           * Retry on something that will continue by itself.
+                           */
+                          <div className="flex flex-col gap-1 rounded-xl border border-amber-400/25 bg-amber-400/[0.07] p-3 text-xs text-amber-100">
+                            <span className="font-bold">
+                              {t("processing.storage.interrupted")}
+                            </span>
+                            <span className="text-amber-100/75">
+                              {t("processing.storage.waiting")}
+                            </span>
+                            {job.protectedSeconds > 0 ? (
+                              <span className="tabular-nums text-amber-100/75">
+                                {formatTemplate(
+                                  t("processing.epoch.protectedThrough"),
+                                  {
+                                    time: formatMediaClock(
+                                      job.protectedSeconds,
+                                    ),
+                                  },
+                                )}
+                                {job.epochStartSeconds !== null &&
+                                job.epochEndSeconds !== null
+                                  ? ` · ${t("processing.storage.willRetry")}: ${formatMediaClock(job.epochStartSeconds)} → ${formatMediaClock(job.epochEndSeconds)}`
+                                  : ""}
+                              </span>
+                            ) : null}
+                            <span className="text-amber-100/60">
+                              {t("processing.storage.noAction")}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {job.pauseRequested &&
+                        job.pausedReason === "operator" ? (
+                          /*
+                           * Pausing suspends the encoder rather than killing it,
+                           * so it costs nothing — but only while the process
+                           * lives, and saying so is the difference between a
+                           * promise the system keeps and one it cannot.
+                           */
+                          <p className="text-xs text-white/50">
+                            {t("processing.pausedLive")}
+                          </p>
+                        ) : null}
+
+                        <PhaseDetail
+                          job={job}
+                          live={jobLive}
+                          nowMs={nowMs}
+                          t={t}
+                        />
+
+                        {jobLive?.completedPhases?.length ? (
+                          <PhaseHistory
+                            phases={jobLive.completedPhases}
+                            t={t}
+                          />
+                        ) : null}
+
+                        {canRetry(job) && hasResumableCheckpoints(job) ? (
+                          <p className="text-xs text-white/45">
+                            {formatTemplate(t(retryScopeKey(job) as never), {
+                              time: formatMediaClock(job.protectedSeconds),
+                            })}
+                          </p>
+                        ) : null}
+
+                        {/*
+                         * Nine figures now rather than eight, so the row gains a
+                         * column at the widest breakpoint instead of squeezing
+                         * every value narrower.
+                         */}
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 xl:grid-cols-9">
+                          <Stat
+                            label="%"
+                            value={
+                              encoded === null ? `${percent}%` : `${encoded}%`
+                            }
+                          />
+                          <Stat
+                            label={t("processing.speed")}
+                            value={formatSpeed(jobLive?.speed ?? job.speed)}
+                          />
+                          <Stat
+                            label={t("processing.fps")}
+                            value={
+                              (jobLive?.fps ?? job.fps)
+                                ? (jobLive?.fps ?? job.fps)!.toFixed(0)
+                                : "—"
+                            }
+                          />
+                          <Stat
+                            label={t("processing.eta")}
+                            value={formatDuration(
+                              jobLive?.etaSeconds ?? job.etaSeconds,
+                            )}
+                          />
+                          <Stat
+                            label={t("processing.encoding")}
+                            value={
+                              job.decision?.renditionsToEncode?.length
+                                ? job.decision.renditionsToEncode
+                                    .map((height) => `${height}p`)
+                                    .join(" · ")
+                                : t("processing.fullPackage")
+                            }
+                          />
+                          {/*
+                           * Two separate questions: what this job has written,
+                           * and how large it will end up. Falling back from the
+                           * first to the second is what labelled a planning
+                           * estimate as though it were bytes on disk.
+                           */}
+                          <Stat
+                            label={t("processing.actualOutput")}
+                            value={formatBytes(job.actualOutputBytes)}
+                          />
+                          <Stat
+                            label={t("processing.estimatedOutput")}
+                            value={formatBytes(job.estimatedOutputBytes)}
+                          />
+                          <Stat
+                            label={t("processing.duration")}
+                            value={formatDuration(
+                              isFinished
+                                ? processingDurationSeconds(job)
+                                : processingElapsedSeconds(job, refreshedAt),
+                            )}
+                          />
+                          <Stat
+                            label={t("processing.finishedAt")}
+                            value={formatFinishedAt(job.finishedAt, dateLocale)}
+                          />
+                        </div>
+
+                        {job.errorMessage ? (
+                          <p className="rounded-lg border border-rose-400/25 bg-rose-400/10 px-3 py-2 text-xs text-rose-200">
+                            {job.errorMessage}
+                          </p>
+                        ) : null}
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
             )}
           </section>
         ) : null}

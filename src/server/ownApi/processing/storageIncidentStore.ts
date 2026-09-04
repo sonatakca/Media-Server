@@ -295,14 +295,27 @@ export function createStorageIncidentStore(
             * COALESCEs, so an ordinary write can add an identity that was
             * missing but can never replace one that is already there.
             */
-           volume_uuid = CASE WHEN $17 IS NOT NULL THEN $13
+           /*
+            * $17 is cast at every use. Its first appearance is inside an
+            * IS NOT NULL test, which tells the parser nothing about its type,
+            * so an uncast parameter makes the whole statement fail with
+            * "could not determine data type of parameter $17" before it ever
+            * runs. That mattered far more than a failed write usually does:
+            * this save is best-effort and its errors are logged and swallowed,
+            * so the process carried on believing it had recorded a state it had
+            * not. The row stayed on the previous state for ever, and every
+            * later reader — including a worker restoring health at startup, in
+            * its own process — kept seeing an incident the operator had already
+            * cleared, and kept re-pausing the job they had just resumed.
+            */
+           volume_uuid = CASE WHEN $17::text IS NOT NULL THEN $13
                               ELSE COALESCE(volume_uuid, $13) END,
-           volume_medium = CASE WHEN $17 IS NOT NULL THEN $14
+           volume_medium = CASE WHEN $17::text IS NOT NULL THEN $14
                                 ELSE COALESCE(volume_medium, $14) END,
-           volume_fs_type = CASE WHEN $17 IS NOT NULL THEN $15
+           volume_fs_type = CASE WHEN $17::text IS NOT NULL THEN $15
                                  ELSE COALESCE(volume_fs_type, $15) END,
            device_node = COALESCE($16, device_node),
-           identity_source = CASE WHEN $17 IS NOT NULL THEN $17
+           identity_source = CASE WHEN $17::text IS NOT NULL THEN $17::text
                                   ELSE COALESCE(identity_source,
                                                 CASE WHEN $13 IS NOT NULL THEN 'probe' END) END,
            adopted_at = COALESCE($18, adopted_at),
@@ -310,7 +323,7 @@ export function createStorageIncidentStore(
             * The superseded UUID is whatever the row held before this adoption,
             * captured here rather than by the caller so it cannot be wrong.
             */
-           superseded_volume_uuid = CASE WHEN $17 IS NOT NULL
+           superseded_volume_uuid = CASE WHEN $17::text IS NOT NULL
                                          THEN COALESCE($19, volume_uuid)
                                          ELSE superseded_volume_uuid END,
            updated_at = now()

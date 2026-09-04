@@ -1,7 +1,9 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { mkdir, rm } from "node:fs/promises";
+import { setPriority } from "node:os";
 import path from "node:path";
+import { BACKGROUND_PROCESS_NICENESS } from "../../../renditions/processExecution";
 import type { DatabasePool } from "../database/databasePool";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import { buildTrickplayLayout, type TrickplayLayout } from "./trickplayLayout";
@@ -87,6 +89,19 @@ export function createTrickplayService({
         const child = spawn(ffmpegPath, args, {
           stdio: ["ignore", "ignore", "pipe"],
         });
+        /*
+         * A sprite sheet decodes the whole file to sample it, so this is the
+         * one path here that can hold every performance core for minutes while
+         * nobody is waiting for the result. It runs behind the interface for
+         * the same reason the encodes do; see BACKGROUND_PROCESS_NICENESS.
+         */
+        if (child.pid !== undefined) {
+          try {
+            setPriority(child.pid, BACKGROUND_PROCESS_NICENESS);
+          } catch {
+            // Already gone, or a platform that will not reprioritise.
+          }
+        }
         let stderr = "";
         child.stderr?.on("data", (chunk: Buffer) => {
           stderr = (stderr + chunk.toString()).slice(-2_000);

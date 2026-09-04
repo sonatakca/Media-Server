@@ -114,6 +114,16 @@ export interface ProcessingJobRecord {
   epochEndSeconds: number | null;
   checkpointBytes: number;
   freeBytes: number | null;
+  /**
+   * Where this job sits in the waiting line, read from its queue attempt.
+   *
+   * The generic `jobs` table owns scheduling, so the operator's ordering is
+   * kept there — on the row the worker actually claims — rather than mirrored
+   * here where it could disagree with what runs next. Only listings join it;
+   * a record fetched on its own leaves it undefined, which is not the same as
+   * a job that has no place in the queue.
+   */
+  queuePriority?: number | null;
   createdAt: Date;
   startedAt: Date | null;
   finishedAt: Date | null;
@@ -211,6 +221,46 @@ const COLUMNS = `
   created_at, started_at, finished_at, updated_at
 `;
 
+/**
+ * The priority the head of the processing line holds.
+ *
+ * Deliberately the `jobs.priority` default, so a queue nobody has reordered
+ * sorts exactly where it always did — beside the scans and probes that also
+ * take the default — and reordering only spreads the processing jobs out from
+ * there rather than lifting the whole class of work above everything else.
+ */
+const QUEUE_PRIORITY_BASE = 100;
+
+/**
+ * The ceiling on a recorded failure message.
+ *
+ * Trimmed rather than rejected, which is the whole point. The column was once
+ * narrow enough to refuse a long diagnosis, and PostgreSQL does not shorten an
+ * oversized value — it fails the statement. So the write that was recording why
+ * a job died died itself, and what landed in the row was the database
+ * complaining about the column instead of anything about the job.
+ *
+ * Generous, because the useful part of an FFmpeg failure is often near the end
+ * of a long stderr tail, and a message this size is still nothing next to the
+ * media it describes.
+ */
+const MAX_ERROR_MESSAGE_CHARS = 4_000;
+
+/**
+ * `COLUMNS` again, qualified, for the one query that joins the queue.
+ *
+ * `processing_jobs` and `jobs` share half a dozen column names — `id`,
+ * `attempts`, `started_at` — so the listing cannot select the bare list.
+ * Derived from it rather than written out twice: a column added to one and
+ * forgotten in the other is exactly the kind of drift that makes a listing
+ * silently lose a field.
+ */
+const QUALIFIED_COLUMNS = COLUMNS.split(",")
+  .map((column) => column.trim())
+  .filter((column) => column.length > 0)
+  .map((column) => `job.${column}`)
+  .join(", ");
+
 interface RawRow {
   id: string;
   job_id: string | null;
@@ -257,6 +307,8 @@ interface RawRow {
   epoch_end_seconds: string | number | null;
   checkpoint_bytes: string | number;
   free_bytes: string | number | null;
+  /** Only present on the listing query, which joins the queue attempt. */
+  queue_priority?: number | null;
   created_at: Date;
   started_at: Date | null;
   finished_at: Date | null;
@@ -327,6 +379,15 @@ function toRecord(row: RawRow): ProcessingJobRecord {
     epochEndSeconds: toNumber(row.epoch_end_seconds),
     checkpointBytes: toNumber(row.checkpoint_bytes) ?? 0,
     freeBytes: toNumber(row.free_bytes),
+    /*
+     * Carried only when the query asked for it. Left off entirely otherwise,
+     * so "nobody looked" stays distinguishable from "this job holds no place
+     * in the queue" — a distinction the page reads to decide whether a row can
+     * be dragged at all.
+     */
+    ...(row.queue_priority === undefined
+      ? {}
+      : { queuePriority: row.queue_priority }),
     createdAt: row.created_at,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -356,6 +417,30 @@ export interface ProcessingJobStore {
     state?: ProcessingState;
     limit?: number;
   }): Promise<ProcessingJobRecord[]>;
+  /**
+   * The priority a newly queued job should take to land at the back of the
+   * line.
+   *
+   * Without it every new job would enter on the default priority, which after
+   * a reorder is the *head* position — so queueing an episode while a reordered
+   * backlog was waiting would have jumped it in front of everything the
+   * operator had just arranged.
+   */
+  nextQueuePriority(): Promise<number>;
+  /**
+   * Rewrites the order of the jobs that are still waiting.
+   *
+   * The ids are processing jobs, in the order the operator wants them run, and
+   * the priorities land on the queue attempts because that is the row the
+   * worker claims — an order recorded anywhere else would be a label rather
+   * than a decision. Only jobs that are genuinely still waiting are touched: a
+   * running attempt has already been claimed and cannot be moved, and one that
+   * has finished has no place left to take. Returns the ids that actually
+   * moved, so a caller is never told it reordered something it did not — as a
+   * set, not a sequence: the order they come back in is the database's, and
+   * the order that matters is the one that was sent.
+   */
+  reorderQueue(orderedIds: readonly string[]): Promise<string[]>;
   update(
     id: string,
     update: ProcessingJobUpdate,
@@ -567,18 +652,70 @@ export function createProcessingJobStore(
 
     async list(options = {}) {
       const limit = Math.min(Math.max(options.limit ?? 50, 1), 200);
+      /*
+       * Joined to the attempt so every listing can say where a job stands in
+       * the line. The join is `LEFT`: a job whose attempt has finished, failed
+       * or was never created is still a row the page has to show — it just has
+       * no place in the queue any more.
+       */
       const result = options.state
         ? await pool.query<RawRow>(
-            `SELECT ${COLUMNS} FROM processing_jobs
-              WHERE state = $1 ORDER BY created_at DESC LIMIT $2`,
+            `SELECT ${QUALIFIED_COLUMNS}, attempt.priority AS queue_priority
+               FROM processing_jobs AS job
+               LEFT JOIN jobs AS attempt
+                 ON attempt.id = job.job_id AND attempt.status = 'queued'
+              WHERE job.state = $1
+              ORDER BY job.created_at DESC LIMIT $2`,
             [options.state, limit],
           )
         : await pool.query<RawRow>(
-            `SELECT ${COLUMNS} FROM processing_jobs
-              ORDER BY created_at DESC LIMIT $1`,
+            `SELECT ${QUALIFIED_COLUMNS}, attempt.priority AS queue_priority
+               FROM processing_jobs AS job
+               LEFT JOIN jobs AS attempt
+                 ON attempt.id = job.job_id AND attempt.status = 'queued'
+              ORDER BY job.created_at DESC LIMIT $1`,
             [limit],
           );
       return result.rows.map(toRecord);
+    },
+
+    async nextQueuePriority() {
+      const result = await pool.query<{ next: number }>(
+        `SELECT COALESCE(MAX(attempt.priority), $1 - 1) + 1 AS next
+           FROM jobs AS attempt
+           JOIN processing_jobs AS job ON job.job_id = attempt.id
+          WHERE attempt.status = 'queued'`,
+        [QUEUE_PRIORITY_BASE],
+      );
+      const next = Number(result.rows[0]?.next);
+      return Number.isFinite(next) ? next : QUEUE_PRIORITY_BASE;
+    },
+
+    async reorderQueue(orderedIds) {
+      if (orderedIds.length === 0) return [];
+      /*
+       * One statement, so the line cannot be observed half-rewritten by a
+       * worker claiming between two updates. The positions are handed in as a
+       * `VALUES` list rather than looped, for the same reason.
+       */
+      const values: unknown[] = [];
+      const rows = orderedIds.map((id, index) => {
+        values.push(id, QUEUE_PRIORITY_BASE + index);
+        return `($${values.length - 1}::uuid, $${values.length}::int)`;
+      });
+      const result = await pool.query<{ id: string }>(
+        `UPDATE jobs AS attempt
+            SET priority = ordering.priority
+           FROM (VALUES ${rows.join(", ")})
+                  AS ordering(processing_id, priority)
+           JOIN processing_jobs AS job ON job.id = ordering.processing_id
+          WHERE attempt.id = job.job_id
+            AND attempt.status = 'queued'
+            AND job.state IN ('pending', 'queued')
+        RETURNING job.id`,
+        values,
+      );
+      return result.rows.map((row) => row.id);
     },
 
     async update(id, update) {
@@ -633,7 +770,12 @@ export function createProcessingJobStore(
         set("warnings", JSON.stringify(update.warnings));
       if (update.errorCode !== undefined) set("error_code", update.errorCode);
       if (update.errorMessage !== undefined)
-        set("error_message", update.errorMessage);
+        set(
+          "error_message",
+          update.errorMessage === null
+            ? null
+            : update.errorMessage.slice(0, MAX_ERROR_MESSAGE_CHARS),
+        );
       if (update.stagingDirectory !== undefined)
         set("staging_directory", update.stagingDirectory);
       if (update.publishedVersion !== undefined)

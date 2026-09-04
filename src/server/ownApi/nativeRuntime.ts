@@ -482,7 +482,7 @@ export async function createNativeRuntime({
          * published into the season's, over its neighbours.
          */
         const kind = (await catalogue.getItemKind(job.itemId)) ?? "movie";
-        const titleRoot = resolveTitleRoot(
+        const titleRoot = await resolveTitleRoot(
           sourcePath,
           titleRootLayoutForKind(kind),
         );
@@ -496,6 +496,12 @@ export async function createNativeRuntime({
             mtimeMs: sourceStats.mtimeMs,
             titleRoot,
           },
+          /*
+           * The back of the line, exactly where a fresh queue row's timestamp
+           * used to put it. A recovered job re-enters the queue; it does not
+           * take the head of one an operator has arranged.
+           */
+          priority: await processingJobs.nextQueuePriority(),
           dedupeKey: `processing:${job.mediaFileId}:storage-recovery:${Date.now()}`,
         });
         await processingJobs.attachQueueJob(job.id, queueJobId);

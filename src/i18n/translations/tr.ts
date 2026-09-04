@@ -359,7 +359,22 @@ export const tr = {
   "processing.counts.succeeded": "Tamamlandı",
   "processing.counts.failed": "Başarısız",
   "processing.counts.warnings": "Uyarılı",
-  "processing.queue": "Kuyruk",
+  "processing.outcome.active": "İşlemde",
+  "processing.outcome.finished": "Sonuçlandı",
+  "processing.outcome.chooseOutcome": "İşlem durumu",
+  "processing.outcome.emptyActive": "İşlenen bir şey yok.",
+  "processing.outcome.emptyActiveHint":
+    "Başlıklar sekmesinden bir başlığı kuyruğa alın, burada görünür.",
+  "processing.outcome.emptyFinished": "Henüz sonuçlanan bir şey yok.",
+  "processing.outcome.emptyFinishedHint":
+    "Tamamlanan, başarısız olan ve iptal edilen işler burada tutulur.",
+  "processing.queueOrder.hint":
+    "Sıradaki bir işi tutamacından sürükleyerek hangisinin önce kodlanacağını değiştirin.",
+  "processing.queueOrder.handle":
+    "{title} sırasını değiştir, {total} işten {position}. sırada",
+  "processing.queueOrder.position": "Sırada #{position}",
+  "processing.queueOrder.pinned": "Başladı — sırası değiştirilemez",
+  "processing.queueOrder.failed": "Kuyruk sırası kaydedilemedi.",
   "processing.empty": "Henüz işleme işi yok.",
   "processing.emptyHint":
     "Hiçbir şey çalışmadan önce işlemenin ne yapacağını görmek için aşağıdan bir başlık seçin.",
@@ -555,6 +570,17 @@ export const tr = {
   "processing.storage.noAction":
     "Bir şey yapmanız gerekmiyor; kendiliğinden devam eder.",
   "processing.storage.willRetry": "Yeniden kodlanacak",
+  "processing.storage.summary.healthy": "Depolama normal yanıt veriyor.",
+  "processing.storage.summary.unavailable":
+    "Depolamanın geri gelmesi bekleniyor. Disk geri geldikten ve kalıcı olduktan sonra işlem kendiliğinden sürer.",
+  "processing.storage.summary.unavailableNamed":
+    "{roots} biriminin geri gelmesi bekleniyor. Disk geri geldikten ve kalıcı olduktan sonra işlem kendiliğinden sürer.",
+  "processing.storage.summary.suspect":
+    "Depolamadan belirsiz bir hata sinyali geldi; doğrulanana kadar buradaki işler durduruldu.",
+  "processing.storage.summary.quarantined":
+    "Bir G/Ç hatasından sonra sunucuyu korumak için depolama karantinaya alındı. İşleme kendiliğinden sürdürülmeyecek.",
+  "processing.storage.summary.recovery-pending":
+    "Doğrulandı; bir operatörün sürdürmesi bekleniyor. Siz başlatmadan burada hiçbir şey çalışmaz.",
   "processing.retry.fromCheckpoints":
     "Yeniden deneme {time} noktasından devam eder; tamamlanan kontrol noktaları korunur.",
   "processing.retry.fromStart": "Yeniden deneme bu başlığı baştan işler.",

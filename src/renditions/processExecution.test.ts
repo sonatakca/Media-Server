@@ -21,6 +21,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
+  BACKGROUND_PROCESS_NICENESS,
   ProcessAbortedError,
   runBoundedProcess,
   spawnManagedProcess,
@@ -135,6 +136,57 @@ beforeAll(async () => {
 
 afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
+});
+
+/** The niceness the kernel actually gave a pid, as opposed to the one asked for. */
+async function nicenessOf(pid: number): Promise<number> {
+  const { stdout } = await run("ps", ["-o", "nice=", "-p", String(pid)]);
+  return Number(String(stdout).trim());
+}
+
+describe("scheduling priority", () => {
+  /*
+   * The point of the whole feature: an encode must never be able to win a core
+   * away from the window server. Asserting on `ps` rather than on the argument
+   * passed in, because the failure worth catching is the one where the call is
+   * made against a pid that has already been reaped and nothing happens.
+   */
+  it("runs children behind the interface by default", async () => {
+    const managed = fixtureProcess({ STEPS: "1", HOLD: "true" });
+    expect(managed.pid).toBeDefined();
+    await expect(nicenessOf(managed.pid as number)).resolves.toBe(
+      BACKGROUND_PROCESS_NICENESS,
+    );
+    managed.abort("caller");
+    await managed.completed;
+  });
+
+  it("leaves a process someone is waiting on at foreground priority", async () => {
+    const parent = await nicenessOf(process.pid);
+    const managed = fixtureProcess(
+      { STEPS: "1", HOLD: "true" },
+      { niceness: 0 },
+    );
+    expect(managed.pid).toBeDefined();
+    await expect(nicenessOf(managed.pid as number)).resolves.toBe(parent);
+    managed.abort("caller");
+    await managed.completed;
+  });
+
+  /*
+   * Reprioritising is best effort, so the one thing it must never do is turn a
+   * working spawn into a failed one — including when there is no pid to
+   * reprioritise because the command did not exist.
+   */
+  it("still settles when there is no child to reprioritise", async () => {
+    const managed = spawnManagedProcess({
+      command: path.join(workspace, "no-such-binary"),
+      args: [],
+    });
+    const outcome = await managed.completed;
+    expect(outcome.exitCode).toBeNull();
+    expect(outcome.aborted).toBe(false);
+  });
 });
 
 describe("a process that ends on its own", () => {

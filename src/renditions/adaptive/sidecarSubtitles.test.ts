@@ -120,3 +120,68 @@ describe("finding the sidecars beside a source", () => {
     ).resolves.toEqual([]);
   });
 });
+
+/**
+ * The folder that holds ten titles rather than one.
+ *
+ * The permissive rule — every subtitle in the folder belongs to the video in it
+ * — is right for a movie folder and wrong for a season folder, where it gave
+ * each episode all ten episodes' translations as if they were alternate tracks
+ * of its own.
+ */
+describe("sidecars in a folder shared by several sources", () => {
+  const season = [
+    "House of the Dragon - S01E01 - The Heirs of the Dragon.mp4",
+    "House of the Dragon - S01E01 - The Heirs of the Dragon.tr.srt",
+    "House of the Dragon - S01E02 - The Rogue Prince.mp4",
+    "House of the Dragon - S01E02 - The Rogue Prince.tr.srt",
+    "House of the Dragon - S01E03 - Second of His Name.mp4",
+    "House of the Dragon - S01E03 - Second of His Name.tr.srt",
+    "season.nfo",
+  ];
+
+  it("takes only the subtitles named for the source", async () => {
+    const found = await discoverSidecarSubtitles(
+      "/media/Series/House of the Dragon/Season 1/House of the Dragon - S01E02 - The Rogue Prince.mp4",
+      { readDirectory: (async () => season) as never },
+    );
+
+    expect(found.map((entry) => entry.fileName)).toEqual([
+      "House of the Dragon - S01E02 - The Rogue Prince.tr.srt",
+    ]);
+  });
+
+  it("gives an episode with no sidecar of its own none, rather than its neighbours'", async () => {
+    const found = await discoverSidecarSubtitles(
+      "/media/Series/House of the Dragon/Season 1/House of the Dragon - S01E04 - King of the Narrow Sea.mp4",
+      {
+        readDirectory: (async () => [
+          ...season,
+          "House of the Dragon - S01E04 - King of the Narrow Sea.mp4",
+        ]) as never,
+      },
+    );
+
+    expect(found).toEqual([]);
+  });
+
+  /*
+   * The behaviour the permissive rule exists for, which the season case must not
+   * cost: one film and a translation named after a different release.
+   */
+  it("still takes a differently named subtitle when the folder holds one video", async () => {
+    const found = await discoverSidecarSubtitles(
+      "/media/Movies/Dune (2021)/Dune (2021) [438631].mp4",
+      {
+        readDirectory: (async () => [
+          "Dune (2021) [438631].mp4",
+          "Dune.2021.2160p.WEB-DL.tr.srt",
+        ]) as never,
+      },
+    );
+
+    expect(found.map((entry) => entry.fileName)).toEqual([
+      "Dune.2021.2160p.WEB-DL.tr.srt",
+    ]);
+  });
+});

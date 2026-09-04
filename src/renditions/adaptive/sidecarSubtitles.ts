@@ -1,6 +1,7 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
 import { normalizeLanguage, UNKNOWN_LANGUAGE } from "../processing/languages";
+import { SUPPORTED_VIDEO_EXTENSIONS, isDerivativeFileName } from "../policy";
 
 /**
  * Subtitle files that sit beside a source rather than inside it.
@@ -116,6 +117,14 @@ export interface SidecarSubtitle extends SidecarSubtitleTags {
  * A title folder holds one film, so a subtitle in it belongs to that film even
  * when its name came from a different release than the video's. Requiring the
  * names to match would discard exactly the hand-added translations this is for.
+ *
+ * A season folder is the case that breaks the premise. It holds ten sources and
+ * ten `.tr.srt` files, and taking every subtitle in the directory gave each
+ * episode all ten — nine of them the wrong translation, presented as if they
+ * were alternate tracks. So the permissive rule is applied where its reason
+ * holds, in a folder with a single video, and a shared folder matches subtitles
+ * to the source by name instead. That is the only thing that can tell the two
+ * apart there, and it is what the naming convention in such a folder is for.
  */
 export async function discoverSidecarSubtitles(
   sourcePath: string,
@@ -134,6 +143,22 @@ export async function discoverSidecarSubtitles(
     return [];
   }
 
+  /*
+   * Whether this directory belongs to one title or is shared. Counted from the
+   * videos actually in it rather than from the library layout, so it is right
+   * for a season folder, a movie folder, and the flat folder someone keeps
+   * three films in alike.
+   */
+  const videoSiblings = entries.filter(
+    (name) =>
+      !name.startsWith("._") &&
+      SUPPORTED_VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase()) &&
+      !isDerivativeFileName(name),
+  );
+  const directoryIsShared = videoSiblings.length > 1;
+  const belongsToSource = (name: string): boolean =>
+    name.toLowerCase().startsWith(sourceStem.toLowerCase());
+
   return (
     entries
       .filter((name) =>
@@ -142,6 +167,7 @@ export async function discoverSidecarSubtitles(
       // AppleDouble companions carry no subtitle text, only resource-fork
       // metadata the volume wrote beside the real file.
       .filter((name) => !name.startsWith("._"))
+      .filter((name) => !directoryIsShared || belongsToSource(name))
       .sort((left, right) => left.localeCompare(right))
       .map((name, index) => ({
         ...parseSidecarSubtitleTags(name, sourceStem),

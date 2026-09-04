@@ -331,7 +331,9 @@ export function createProcessingEnqueuer({
         (height) => !existing.present || !existing.rungs?.includes(height),
       );
     const isCurrent =
-      existing.present && existing.current === true && missingRungs.length === 0;
+      existing.present &&
+      existing.current === true &&
+      missingRungs.length === 0;
 
     /*
      * Re-decided once the outstanding work is known, so the estimate and the
@@ -443,6 +445,12 @@ export function createProcessingEnqueuer({
         titleRoot,
       }),
       /*
+       * The back of the line. An attempt re-entering the queue is new work as
+       * far as the order goes, and taking the default priority would have put
+       * it at the head of a queue an operator had arranged by hand.
+       */
+      priority: await store.nextQueuePriority(),
+      /*
        * The same key a first attempt uses, on purpose. It is unique only over
        * queued and running rows, so a finished attempt never blocks a later
        * one — and while an attempt *is* live, two simultaneous presses collapse
@@ -553,6 +561,12 @@ export function createProcessingEnqueuer({
         mtimeMs,
         titleRoot: analysis.titleRoot,
       }),
+      /*
+       * The back of the line, read rather than assumed. The column's default
+       * is the *head* position, so a title queued while a hand-arranged
+       * backlog was waiting would otherwise have been encoded first.
+       */
+      priority: await store.nextQueuePriority(),
       /*
        * The queue's own dedupe key, keyed on the file rather than the item, so
        * a double press and two overlapping bulk requests converge on one job

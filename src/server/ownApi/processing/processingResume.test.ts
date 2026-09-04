@@ -333,6 +333,10 @@ function createStore(seed: ProcessingJobRecord) {
     async reconcileTerminalQueueJobs() {
       return 0;
     },
+    /** Every attempt this store makes enters at the back of an empty line. */
+    async nextQueuePriority() {
+      return 100;
+    },
   };
   return store as typeof store & ProcessingJobStore;
 }

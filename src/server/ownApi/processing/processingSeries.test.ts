@@ -38,7 +38,13 @@ vi.mock("../../../renditions/probe", () => ({
      * volume the temporary directory happens to live on.
      */
     durationSeconds: 30,
-    video: { width: 1920, height: 1080, rotation: 0, codec: "h264", isHdr: false },
+    video: {
+      width: 1920,
+      height: 1080,
+      rotation: 0,
+      codec: "h264",
+      isHdr: false,
+    },
     audioTracks: [],
     subtitleTracks: [],
     chapters: [],
@@ -285,12 +291,28 @@ function createStore(seed: ProcessingJobRecord[] = []) {
     async reconcileTerminalQueueJobs() {
       return 0;
     },
+    reordered: [] as string[][],
+    async nextQueuePriority() {
+      return 100;
+    },
+    async reorderQueue(orderedIds: readonly string[]) {
+      store.reordered.push([...orderedIds]);
+      // The real store moves only what is still waiting; so does this.
+      return orderedIds.filter((id) => {
+        const job = jobs.get(id);
+        return job ? ["pending", "queued"].includes(job.state) : false;
+      });
+    },
   };
   return store as typeof store & ProcessingJobStore;
 }
 
 function createQueue() {
-  const enqueued: Array<{ jobType: string; dedupeKey: string; payload: Record<string, unknown> }> = [];
+  const enqueued: Array<{
+    jobType: string;
+    dedupeKey: string;
+    payload: Record<string, unknown>;
+  }> = [];
   const queue = {
     async enqueue(input: {
       jobType: string;
@@ -316,8 +338,7 @@ function createCatalogue(library: Library): CatalogueRepository {
           kinds.includes(row.kind) &&
           (options.seriesId === undefined ||
             row.seriesId === options.seriesId) &&
-          (options.seasonId === undefined ||
-            row.seasonId === options.seasonId),
+          (options.seasonId === undefined || row.seasonId === options.seasonId),
       );
     },
     listStreamsForFiles: async () => new Map(),
@@ -335,8 +356,7 @@ async function call(
   options: { params?: Record<string, string>; body?: unknown } = {},
 ) {
   const route = routes.find(
-    (candidate) =>
-      candidate.path === routePath && candidate.method === method,
+    (candidate) => candidate.path === routePath && candidate.method === method,
   );
   expect(route, `${method} ${routePath}`).toBeDefined();
 
@@ -383,9 +403,7 @@ async function call(
   return {
     error,
     statusCode: sent.statusCode,
-    data: sent.body
-      ? (JSON.parse(sent.body) as { data: unknown }).data
-      : null,
+    data: sent.body ? (JSON.parse(sent.body) as { data: unknown }).data : null,
   };
 }
 
@@ -429,7 +447,12 @@ describe("GET /processing/overview", () => {
   it("returns films and shows in one coherent model", async () => {
     const library = await buildLibrary([
       ...SEASON_ONE,
-      { seasonId: SEASON_2, seasonNumber: 2, number: 1, title: "One Year Later" },
+      {
+        seasonId: SEASON_2,
+        seasonNumber: 2,
+        number: 1,
+        title: "One Year Later",
+      },
     ]);
     const { routes } = build(library);
     const data = (await call(routes, "GET", "/processing/overview"))
@@ -496,8 +519,9 @@ describe("GET /processing/overview", () => {
       },
     ]);
     const { routes } = build(library);
-    const data = (await call(routes, "GET", "/processing/overview"))
-      .data as { series: Array<{ seasons: Array<{ episodes: unknown[] }> }> };
+    const data = (await call(routes, "GET", "/processing/overview")).data as {
+      series: Array<{ seasons: Array<{ episodes: unknown[] }> }>;
+    };
 
     expect(data.series[0]!.seasons[0]!.episodes).toHaveLength(1);
   });
@@ -636,7 +660,9 @@ describe("POST /processing/seasons/:seasonId/jobs", () => {
       queue.enqueued.every((entry) => entry.jobType === "media.process"),
     ).toBe(true);
     // Three distinct dedupe keys: three files, three jobs.
-    expect(new Set(queue.enqueued.map((entry) => entry.dedupeKey)).size).toBe(3);
+    expect(new Set(queue.enqueued.map((entry) => entry.dedupeKey)).size).toBe(
+      3,
+    );
   });
 
   it("queues only the season it was asked for", async () => {
@@ -785,9 +811,9 @@ describe("POST /processing/series/:seriesId/jobs", () => {
     await call(routes, "POST", "/processing/series/:seriesId/jobs", {
       params: { seriesId: SERIES_ID },
     });
-    expect(
-      store.created.some((entry) => entry.itemId === MOVIE_ID),
-    ).toBe(false);
+    expect(store.created.some((entry) => entry.itemId === MOVIE_ID)).toBe(
+      false,
+    );
   });
 
   it("is idempotent, and agrees with a season press already made", async () => {
@@ -809,5 +835,96 @@ describe("POST /processing/series/:seriesId/jobs", () => {
 
     expect(series.data).toMatchObject({ queued: 1, alreadyQueued: 3 });
     expect(store.created).toHaveLength(4);
+  });
+});
+
+// ------------------------------------------------------------- queue order
+
+describe("POST /processing/queue/order", () => {
+  it("hands the whole order to the store, in the order it was sent", async () => {
+    const library = await buildLibrary(SEASON_ONE);
+    const episodes = library.rows.filter((row) => row.kind === "episode");
+    const seed = episodes.map(
+      (row, index) =>
+        ({
+          id: `0000000${index + 1}-0000-4000-8000-000000000000`,
+          itemId: row.itemId,
+          mediaFileId: row.mediaFileId!,
+          state: "queued",
+          createdAt: new Date(),
+        }) as unknown as ProcessingJobRecord,
+    );
+    const { routes, store } = build(library, seed);
+    const wanted = [seed[2]!.id, seed[0]!.id, seed[1]!.id];
+
+    const result = await call(routes, "POST", "/processing/queue/order", {
+      body: { jobIds: wanted },
+    });
+
+    expect(result.error).toBeUndefined();
+    expect(store.reordered).toEqual([wanted]);
+    // The reply names the jobs that moved. It is a set: the order that matters
+    // is the one that was sent, which the assertion above is about.
+    expect(
+      [...(result.data as { reordered: string[] }).reordered].sort(),
+    ).toEqual([...wanted].sort());
+  });
+
+  it("reports only the jobs that actually moved", async () => {
+    const library = await buildLibrary(SEASON_ONE);
+    const episodes = library.rows.filter((row) => row.kind === "episode");
+    // The first of them is already being encoded: it has been claimed, and a
+    // reorder must not be allowed to claim it has been moved.
+    const seed = episodes.map(
+      (row, index) =>
+        ({
+          id: `0000000${index + 1}-0000-4000-8000-000000000000`,
+          itemId: row.itemId,
+          mediaFileId: row.mediaFileId!,
+          state: index === 0 ? "running" : "queued",
+          createdAt: new Date(),
+        }) as unknown as ProcessingJobRecord,
+    );
+    const { routes } = build(library, seed);
+
+    const result = await call(routes, "POST", "/processing/queue/order", {
+      body: { jobIds: [seed[0]!.id, seed[1]!.id] },
+    });
+
+    expect(result.data).toEqual({ reordered: [seed[1]!.id] });
+  });
+
+  it("refuses a list that repeats a job, rather than guessing which one wins", async () => {
+    const library = await buildLibrary(SEASON_ONE);
+    const { routes, store } = build(library);
+    const id = "00000001-0000-4000-8000-000000000000";
+
+    const result = await call(routes, "POST", "/processing/queue/order", {
+      body: { jobIds: [id, id] },
+    });
+
+    expect(result.error?.code).toBe("VALIDATION_FAILED");
+    expect(store.reordered).toEqual([]);
+  });
+
+  it("refuses an empty list and anything that is not a job id", async () => {
+    const library = await buildLibrary(SEASON_ONE);
+    const { routes, store } = build(library);
+
+    expect(
+      (
+        await call(routes, "POST", "/processing/queue/order", {
+          body: { jobIds: [] },
+        })
+      ).error?.code,
+    ).toBe("VALIDATION_FAILED");
+    expect(
+      (
+        await call(routes, "POST", "/processing/queue/order", {
+          body: { jobIds: ["not-a-uuid"] },
+        })
+      ).error?.code,
+    ).toBe("VALIDATION_FAILED");
+    expect(store.reordered).toEqual([]);
   });
 });

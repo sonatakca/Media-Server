@@ -230,6 +230,15 @@ export interface ProcessingJob {
   /** Bytes of encoded media protected by checkpoints. */
   checkpointBytes: number;
   freeBytes: number | null;
+  /**
+   * Where the job sits in the waiting line.
+   *
+   * A number only while the job is genuinely waiting; `null` once it has been
+   * claimed or has finished, which is what makes a row draggable or not.
+   * Absent from servers predating the ordered queue — read as "this server
+   * cannot be reordered", never as "this job is next".
+   */
+  queuePriority?: number | null;
   createdAt: string;
   startedAt: string | null;
   finishedAt: string | null;
@@ -389,11 +398,7 @@ export interface ProcessingStorageHealth {
  */
 export type ProcessingPackageState =
   /** The server has not read this title's manifest yet. Not "nothing there". */
-  | "unknown"
-  | "none"
-  | "partial"
-  | "complete"
-  | "stale";
+  "unknown" | "none" | "partial" | "complete" | "stale";
 
 export interface ProcessingPackageSummary {
   present: boolean;
@@ -724,6 +729,25 @@ export function retryProcessingJob(
   return ownApiClient.request<{ job: ProcessingJob }>(
     `/processing/jobs/${encodeURIComponent(jobId)}/retry`,
     { method: "POST" },
+  );
+}
+
+/**
+ * Rewrites the order the waiting jobs will be encoded in.
+ *
+ * The whole order goes over, not a single move: the server would otherwise
+ * have to guess what the other positions were, and two people dragging at once
+ * would each get back a queue neither of them arranged. Replaying the same
+ * list changes nothing, and the reply names the jobs that actually moved — a
+ * job that started encoding between the drag and the drop is reported as
+ * unmoved rather than quietly dropped.
+ */
+export function reorderProcessingQueue(
+  jobIds: readonly string[],
+): Promise<{ reordered: string[] }> {
+  return ownApiClient.request<{ reordered: string[] }>(
+    "/processing/queue/order",
+    { method: "POST", body: { jobIds: [...jobIds] } },
   );
 }
 

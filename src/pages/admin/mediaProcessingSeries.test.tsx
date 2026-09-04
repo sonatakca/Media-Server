@@ -26,7 +26,16 @@ const MOVIE_ITEMS = [
   { Id: "movie-1", Name: "Dune", Type: "Movie", ImageTags: {} },
 ];
 
-vi.mock("../../lib/mediaApi", () => ({
+/*
+ * Only the calls this suite answers are replaced. The rest of the module is
+ * kept: the episode rows ask it for a thumbnail too, and a mock that dropped
+ * an export would fail them on the missing name rather than on anything the
+ * tests below are about.
+ */
+vi.mock("../../lib/mediaApi", async () => ({
+  ...(await vi.importActual<typeof import("../../lib/mediaApi")>(
+    "../../lib/mediaApi",
+  )),
   getUserViews: async () => [
     { Id: "lib-movies", Name: "Movies", CollectionType: "movies" },
   ],

@@ -56,7 +56,12 @@ const QUALITY_CLASSES = [
 const MINIMUM_DOWNSCALE_RATIO = 1.2;
 const QUALITY_CLASS_TOLERANCE = 1.05;
 
-const SUPPORTED_VIDEO_EXTENSIONS = new Set([
+/**
+ * Exported so anything that needs to know whether a folder holds one video or
+ * many asks the same question this module answers, rather than keeping a second
+ * list that drifts.
+ */
+export const SUPPORTED_VIDEO_EXTENSIONS = new Set([
   ".3gp",
   ".avi",
   ".flv",

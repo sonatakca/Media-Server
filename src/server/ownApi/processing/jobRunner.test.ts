@@ -171,6 +171,14 @@ function fakeStore() {
     setCancelled: () => {
       current = { ...current, cancellationRequested: true };
     },
+    /** What pressing Pause on the page does to the durable record. */
+    setOperatorPaused: () => {
+      current = {
+        ...current,
+        pauseRequested: true,
+        pausedReason: "operator",
+      };
+    },
     /** What the storage watchdog does when the volume disappears. */
     setStorageUnavailable: () => {
       current = {
@@ -687,6 +695,37 @@ describe("processing job runner", () => {
    * progress and its finish time, so a run that had just begun showed as
    * nearly done and as having finished before it started.
    */
+  /**
+   * A pause has to hold against a worker that starts, not only against one that
+   * is already encoding.
+   *
+   * The worker is kept alive by launchd, so it restarts on its own. While a
+   * pause was only observed from inside the encode loop, such a restart leased
+   * the next paused job and began a fresh encode on it — burning hours on a
+   * drive an operator had just told it to leave alone.
+   */
+  it("does not start an attempt on a job that is paused", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "ready" as const,
+      versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+      storageBytes: 149_000_000,
+    }));
+    fake.setOperatorPaused();
+
+    const outcome = await runner(fake, packageFn).run(input);
+
+    // Nothing was read, probed or encoded.
+    expect(packageFn).not.toHaveBeenCalled();
+    expect(outcome.status).toBe("waiting-for-storage");
+    // And the job is left exactly as resumable as it was.
+    expect(fake.latest().state).toBe("paused");
+    expect(fake.latest().pauseRequested).toBe(true);
+    expect(fake.latest().pausedReason).toBe("operator");
+    expect(fake.events.at(-1)?.message).toMatch(/paused/i);
+  });
+
   it("starts an attempt with fresh progress and no finish time", async () => {
     const packageFn = vi.fn(async () => ({
       mediaId: "file-1",

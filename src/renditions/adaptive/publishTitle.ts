@@ -40,6 +40,75 @@ import {
 } from "./titleLayout";
 
 /**
+ * A publish that would land on another title's package.
+ *
+ * Kept distinct from every other publication failure because the remedy is
+ * different in kind: nothing is wrong with the encode, the bytes, or the
+ * volume. The destination is wrong, and the only safe thing to do about a
+ * wrong destination is nothing at all.
+ */
+export class TitleRootConflictError extends Error {
+  readonly code = "TITLE_ROOT_CONFLICT";
+  constructor(
+    readonly titleRoot: string,
+    readonly occupantMediaId: string,
+    readonly incomingMediaId: string,
+  ) {
+    super(
+      `Refusing to publish into ${titleRoot}: it already holds the package ` +
+        `for media ${occupantMediaId}, and this run built media ` +
+        `${incomingMediaId}. Publishing would replace another title's ` +
+        `renditions. The destination is wrong, not the package.`,
+    );
+    this.name = "TitleRootConflictError";
+  }
+}
+
+/**
+ * The media a package already in this folder was built from, or null.
+ *
+ * Deliberately not `readTitleBuildRecord`: that returns null for a record it
+ * judges too incomplete to rebuild a master from, and a half-written package is
+ * still a package this run must not write over. All that is needed here is
+ * whose it is.
+ */
+async function occupantMediaId(titleRoot: string): Promise<string | null> {
+  try {
+    const raw = await readFile(
+      path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
+      "utf8",
+    );
+    const mediaId = (JSON.parse(raw) as { mediaId?: unknown }).mediaId;
+    return typeof mediaId === "string" && mediaId !== "" ? mediaId : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The last thing standing between a wrong destination and lost content.
+ *
+ * A title root holds exactly one title. Re-encoding a source publishes over its
+ * own package, which is the point; publishing over a *different* source's
+ * package is never intended, and until now nothing said so — a season folder
+ * accepted ten episodes in turn, each one deleting the last, and the only
+ * evidence was that nine of them had quietly stopped existing.
+ *
+ * Whoever resolved the destination is where such a bug lives, and it is fixed
+ * there. This is the assertion that the fix held, on the one path every publish
+ * goes through, so the next way of getting it wrong costs a failed job instead
+ * of a re-encode of somebody's library.
+ */
+async function assertTitleRootOwnedBy(
+  titleRoot: string,
+  mediaId: string,
+): Promise<void> {
+  const occupant = await occupantMediaId(titleRoot);
+  if (occupant === null || occupant === mediaId) return;
+  throw new TitleRootConflictError(titleRoot, occupant, mediaId);
+}
+
+/**
  * Moving a validated package into the title's own folder.
  *
  * The package is built and proven somewhere else, then laid out here under the
@@ -520,6 +589,7 @@ export async function publishTitlePackage({
     ],
     onProgress,
   );
+  await assertTitleRootOwnedBy(titleRoot, metadata.mediaId);
   const staging = await prepareIncoming(titleRoot, publicationId, metadata);
 
   const destinationSpace = await statfs(titleRoot);
@@ -1070,6 +1140,7 @@ export async function publishAdditionalRenditions({
       ...(added.subtitleRenditions ?? []),
     ],
   };
+  await assertTitleRootOwnedBy(titleRoot, merged.mediaId);
   const staging = await prepareIncoming(titleRoot, publicationId, merged);
 
   const destinationSpace = await statfs(titleRoot);

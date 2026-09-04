@@ -29,6 +29,7 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process";
+import { setPriority } from "node:os";
 
 /** Why something was asked to stop. Never a description of what it produced. */
 export type ProcessAbortReason =
@@ -51,6 +52,26 @@ export type ProcessAbortReason =
  * delivers the `SIGKILL` the moment the syscall unwinds.
  */
 export const PROCESS_TERMINATION_GRACE_MS = 10_000;
+
+/**
+ * How far below the interactive foreground this pipeline's children run.
+ *
+ * Priority is only ever spent under contention, which is what makes it cheap:
+ * a niced FFmpeg alone on the machine still gets every core it asked for and
+ * finishes in the same wall time. What changes is who loses when the user comes
+ * back. At nice 0 an eight-thread encode competes on equal terms with the
+ * window server for the same performance cores, and the measured result was a
+ * desktop that stopped drawing — a dead Dock, a Cmd-Tab that never appeared,
+ * and a load average of 99 on a ten-core machine while a quarter of the CPU sat
+ * idle waiting behind it.
+ *
+ * Ten, rather than the maximum, because the media watchdog ends an attempt
+ * whose timeline has been frozen for twenty-five seconds. A niced process is
+ * still scheduled, just later; one starved hard enough to report nothing for a
+ * hundred consecutive intervals would be indistinguishable from the wedged
+ * process that threshold exists to catch.
+ */
+export const BACKGROUND_PROCESS_NICENESS = 10;
 
 export interface ManagedProcessOutcome {
   /** Exit status, or null when a signal ended it. */
@@ -103,6 +124,14 @@ export interface SpawnManagedProcessInput {
    * holding a file handle on a volume this system is trying to unmount.
    */
   ownProcessGroup?: boolean;
+  /**
+   * Scheduling niceness for the child, 0 (foreground) to 19 (last in line).
+   *
+   * Defaults to `BACKGROUND_PROCESS_NICENESS`, because everything spawned here
+   * is background media work and none of it should ever outrank the interface.
+   * Pass `0` for a process whose latency a person is actually waiting on.
+   */
+  niceness?: number;
   /** Injected by tests so a grace period does not cost real seconds. */
   now?: () => number;
 }
@@ -152,6 +181,7 @@ export function spawnManagedProcess({
   timeoutMs,
   terminationGraceMs = PROCESS_TERMINATION_GRACE_MS,
   ownProcessGroup = true,
+  niceness = BACKGROUND_PROCESS_NICENESS,
   now = Date.now,
 }: SpawnManagedProcessInput): ManagedProcess {
   const startedAt = now();
@@ -167,6 +197,26 @@ export function spawnManagedProcess({
      */
     detached: ownProcessGroup,
   });
+
+  /*
+   * Applied to the spawned child rather than by prefixing `nice` to the command
+   * line, so nothing above here has to know: `command` stays the thing that
+   * actually runs, the pid is the child's own, and it is still the group leader
+   * `detached` just made — so the `kill(-pid)` escalation reaches it unchanged.
+   *
+   * Best effort by design. Lowering a child's priority needs no privilege, but
+   * the child may have already exited (a command that does not exist never has
+   * a pid at all), and a platform that declines is not a reason to fail a job
+   * that is otherwise running perfectly well.
+   */
+  if (child.pid !== undefined && niceness !== 0) {
+    try {
+      setPriority(child.pid, niceness);
+    } catch {
+      // Already reaped, or a platform that will not reprioritise. Either way
+      // the encode is unaffected; it just competes on equal terms.
+    }
+  }
 
   let stderrTail = "";
   let settled = false;

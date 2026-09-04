@@ -11,6 +11,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { AdaptivePackageMetadata } from "./metadata";
 import {
+  TitleRootConflictError,
   copyFileResumable,
   publishTitlePackage,
   readTitlePackageManifest,
@@ -450,5 +451,71 @@ describe("resumable cross-volume copy", () => {
     });
     expect(samples[0]).toBe(0);
     expect(await readFile(destination)).toEqual(await readFile(source));
+  });
+});
+
+/**
+ * The folder a package publishes into holds exactly one title.
+ *
+ * This is the assertion that stands between a destination resolved wrongly and
+ * a library that quietly loses content. An episode whose destination came out
+ * as its season folder published over its neighbours one at a time, and because
+ * every individual publish succeeded, the only symptom was that the earlier
+ * episodes had stopped existing. Whatever resolved the destination is where such
+ * a bug is fixed; this is what makes the next one cost a failed job instead.
+ */
+describe("publishing into a folder another title already occupies", () => {
+  it("refuses, and leaves the package that was there untouched", async () => {
+    const first = await buildWorkPackage();
+    await publishTitlePackage({
+      workVersionRoot: first.workVersionRoot,
+      titleRoot: first.titleRoot,
+      metadata: { ...metadata(), mediaId: "media-1" },
+    });
+    const published = await readTitlePackageManifest(first.titleRoot);
+    const videoBefore = await readdir(path.join(first.titleRoot, "video"));
+
+    const second = await buildWorkPackage();
+    await expect(
+      publishTitlePackage({
+        workVersionRoot: second.workVersionRoot,
+        // The season-folder mistake, in miniature: a different source, told to
+        // publish where the first one already lives.
+        titleRoot: first.titleRoot,
+        metadata: { ...metadata(), mediaId: "media-2" },
+      }),
+    ).rejects.toBeInstanceOf(TitleRootConflictError);
+
+    // Not merely "an error was thrown": the occupant is still whole.
+    expect(await readTitlePackageManifest(first.titleRoot)).toEqual(published);
+    expect(await readdir(path.join(first.titleRoot, "video"))).toEqual(
+      videoBefore,
+    );
+  });
+
+  it("still lets a title publish over its own package", async () => {
+    const first = await buildWorkPackage();
+    await publishTitlePackage({
+      workVersionRoot: first.workVersionRoot,
+      titleRoot: first.titleRoot,
+      metadata: { ...metadata(), mediaId: "media-1" },
+    });
+
+    /*
+     * Re-encoding a source replaces its own renditions, and must keep doing so:
+     * a guard that blocked this would make every re-process a manual deletion.
+     */
+    const again = await buildWorkPackage();
+    await expect(
+      publishTitlePackage({
+        workVersionRoot: again.workVersionRoot,
+        titleRoot: first.titleRoot,
+        metadata: {
+          ...metadata(),
+          mediaId: "media-1",
+          sourceFingerprint: "a".repeat(64),
+        },
+      }),
+    ).resolves.toBeDefined();
   });
 });
