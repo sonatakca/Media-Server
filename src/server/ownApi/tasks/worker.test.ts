@@ -49,6 +49,7 @@ function fakeQueue(pending: JobRecord[]): FakeQueue {
     requestCancellation: async () => true,
     isCancellationRequested: async () => false,
     get: async () => null,
+    findActive: async () => null,
     list: async () => [],
     reclaimExpiredLeases: async () => 0,
   };

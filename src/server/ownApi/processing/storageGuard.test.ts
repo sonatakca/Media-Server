@@ -6,6 +6,7 @@ import {
   type StorageIncidentStore,
 } from "./storageIncidentStore";
 import { STABILITY_SETTLE_MS } from "../../../renditions/processing/storageHealth";
+import { createDiskutilIdentityProbe } from "../../../renditions/processing/storageIdentity";
 
 /**
  * The guard, with the database and the volume both faked.
@@ -1069,5 +1070,89 @@ describe("never probing a device that has just hard-failed", () => {
 
     // Only ever the root itself, never a file beneath it.
     expect(new Set(paths)).toEqual(new Set([ROOT]));
+  });
+});
+
+/**
+ * The production incident this whole gate was found by.
+ *
+ * The media root is `/Volumes/Expansion/media` — a directory *on* the external
+ * volume, which is how every deployment configures it. The probe handed that
+ * path straight to `diskutil info -plist`, which takes a device or a mount
+ * point and exits 1 on anything else, so it returned `null`. The gate then did
+ * exactly what it is written to do with no identity on a `/Volumes` path: held
+ * the work. Every job parked `paused / waiting / recovery-pending` against a
+ * USB disk that was healthy, mounted and answering.
+ *
+ * So this runs the real probe against a fake host rather than a fake probe: the
+ * bug lived in the wiring between the two, and a stub identity would have
+ * passed throughout.
+ */
+describe("a healthy external volume configured by a path inside it", () => {
+  const MEDIA_ROOT = "/Volumes/Expansion/media";
+
+  /** This machine's actual `df` and `diskutil` output, trimmed. */
+  const run = async (command: string, args: readonly string[]) => {
+    if (command === "/bin/df") {
+      return `Filesystem   512-blocks       Used  Available Capacity  Mounted on\n/dev/disk4s1 3906904320 2754344448 1152559872    71%    /Volumes/Expansion\n`;
+    }
+    if (args[args.length - 1] !== "/dev/disk4s1") {
+      // What the old code did, and what the real diskutil answers to it.
+      throw new Error("the volume identity probe failed with exit code 1");
+    }
+    return `<plist><dict>
+      <key>BusProtocol</key><string>USB</string>
+      <key>DeviceIdentifier</key><string>disk4s1</string>
+      <key>DeviceNode</key><string>/dev/disk4s1</string>
+      <key>FilesystemType</key><string>exfat</string>
+      <key>Internal</key><false/>
+      <key>MountPoint</key><string>/Volumes/Expansion</string>
+      <key>VolumeUUID</key><string>885D7C8D-8088-315E-AAFF-0B9537DADFD8</string>
+    </dict></plist>`;
+  };
+
+  function guardForMediaRoot() {
+    return createStorageGuard({
+      root: MEDIA_ROOT,
+      watchdog: { poll: async () => true, missingRoots: [] },
+      incidents: fakeIncidents(),
+      identityProbe: createDiskutilIdentityProbe({ run }),
+    });
+  }
+
+  it("identifies the volume and lets processing start", async () => {
+    const guard = guardForMediaRoot();
+
+    await guard.observeAvailability(true);
+    expect(guard.identity.cached?.volumeUuid).toBe(
+      "885D7C8D-8088-315E-AAFF-0B9537DADFD8",
+    );
+    expect(guard.identity.cached?.medium).toBe("physical-external");
+    expect(guard.identity.cached?.fsType).toBe("exfat");
+
+    expect(guard.identityPermitsWork()).toEqual({ ok: true });
+    expect(guard.mayStartWork()).toBe(true);
+    expect(guard.health.state).toBe("healthy");
+  });
+
+  /**
+   * The gate itself is untouched: give it a probe that still cannot identify
+   * the volume and it holds the work exactly as it did on the day. What changed
+   * is that the probe can now answer, not that the refusal got weaker.
+   */
+  it("still holds work when the volume genuinely cannot be identified", async () => {
+    const guard = createStorageGuard({
+      root: MEDIA_ROOT,
+      watchdog: { poll: async () => true, missingRoots: [] },
+      incidents: fakeIncidents(),
+      identityProbe: async () => null,
+    });
+
+    await guard.observeAvailability(true);
+    const verdict = guard.identityPermitsWork();
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok === false && verdict.reason).toContain(
+      "could not be established",
+    );
   });
 });

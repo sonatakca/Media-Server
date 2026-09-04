@@ -60,11 +60,22 @@ export interface VolumeIdentity {
   medium: StorageMedium;
   /** `exfat`, `hfs`, `apfs`. Recorded because a reformat is a different volume. */
   fsType: string | null;
-  /** The mount path it was found at, for reporting only. */
+  /**
+   * Where the volume itself is mounted — `/Volumes/Expansion`, not the
+   * `/Volumes/Expansion/media` a caller may have asked about. Reporting only:
+   * nothing compares it, because a path is never evidence of identity.
+   */
   mountPath: string | null;
 }
 
-/** Asks the OS what is mounted at a path. Injected everywhere. */
+/**
+ * Asks the OS which volume is underneath a path. Injected everywhere.
+ *
+ * The path is any existing path — a configured media root, a scratch
+ * directory, a claimed workspace — and the implementation resolves it to its
+ * filesystem itself. Callers do not know, and must not have to know, where a
+ * volume happens to be mounted.
+ */
 export type StorageIdentityProbe = (
   path: string,
 ) => Promise<VolumeIdentity | null>;
@@ -219,20 +230,28 @@ export function describeMedium(medium: StorageMedium): string {
 }
 
 /**
- * Reads `diskutil info -plist` for a mount path.
+ * Turns one `diskutil info -plist` document into an identity.
  *
- * Bounded, and metadata only: it asks the volume manager what it already knows
- * and never opens a file on the volume. Kept behind the injectable probe type
- * so no test ever runs it, and so a non-macOS deployment simply has no identity
- * and falls back to the path heuristic above.
+ * Bounded, and metadata only: it describes what the volume manager already
+ * knows and never opens a file on the volume. Kept behind the injectable probe
+ * type so no test ever runs `diskutil`, and so a non-macOS deployment simply
+ * has no identity and falls back to the path heuristic above.
  *
- * The parse is deliberately tolerant. A missing key means "unknown", never a
- * throw — an identity probe that can fail loudly during recovery would be one
- * more thing standing between an operator and a repaired drive.
+ * `fallbackMountPath` is used only when the document does not say where the
+ * volume is mounted — see `mountPath` below for why diskutil's own answer wins.
+ *
+ * The parse is deliberately tolerant, and deliberately generous about key
+ * names. A missing key means "unknown", never a throw — an identity probe that
+ * can fail loudly during recovery would be one more thing standing between an
+ * operator and a repaired drive. But a key that is merely *spelled* differently
+ * from the fixture somebody captured years ago is not a missing key, and
+ * treating it as one is how a healthy USB disk came to be classified `unknown`:
+ * current macOS emits `Internal`, while the fixtures here were written against
+ * `DeviceInternal`.
  */
 export function parseDiskutilPlist(
   plist: string,
-  mountPath: string,
+  fallbackMountPath: string,
 ): VolumeIdentity {
   const stringValue = (key: string): string | null => {
     const pattern = new RegExp(
@@ -249,7 +268,13 @@ export function parseDiskutilPlist(
   };
 
   const protocol = stringValue("BusProtocol") ?? stringValue("Protocol");
-  const internal = boolValue("DeviceInternal");
+  /*
+   * `Internal` first, because that is what macOS emits today; `DeviceInternal`
+   * second, because the captured fixtures use it and an older host may too.
+   * `??` rather than `||` so an explicit `false` — the answer that means
+   * "external", the one that matters most here — is never discarded.
+   */
+  const internal = boolValue("Internal") ?? boolValue("DeviceInternal");
   const virtualOrPhysical = stringValue("VirtualOrPhysical");
 
   let medium: StorageMedium = "unknown";
@@ -267,24 +292,73 @@ export function parseDiskutilPlist(
     medium = "physical-external";
   }
 
+  /*
+   * `DeviceNode` is what diskutil normally gives; `DeviceIdentifier` is the
+   * same device without the `/dev/` prefix, and reconstructing the node from it
+   * keeps the field in one shape for the operator who pastes it back into
+   * `diskutil`.
+   */
+  const deviceIdentifier = stringValue("DeviceIdentifier");
+  const deviceNode =
+    stringValue("DeviceNode") ??
+    (deviceIdentifier ? `/dev/${deviceIdentifier}` : null);
+
   return {
     volumeUuid: stringValue("VolumeUUID"),
-    deviceNode: stringValue("DeviceNode"),
+    deviceNode,
     medium,
     fsType: stringValue("FilesystemType") ?? stringValue("FilesystemName"),
-    mountPath,
+    /*
+     * The volume's own mount point in preference to the path the caller asked
+     * about, because this record describes a *volume*: `/Volumes/Expansion` is
+     * the identity, `/Volumes/Expansion/media` is one directory that happens to
+     * sit on it. Nothing compares this field — recovery is decided on UUID,
+     * medium and filesystem — and the incident row stores the configured root
+     * separately, so it is reporting only, and the more useful thing to report
+     * is where the volume actually is.
+     */
+    mountPath: stringValue("MountPoint") ?? fallbackMountPath,
   };
+}
+
+/**
+ * The filesystem `df` says is backing a path.
+ *
+ * `df -P` guarantees one header line and one single-line entry per operand, so
+ * the device is the first field of the second line. Anything else — no data
+ * row, an empty first field — is a refusal rather than a guess.
+ */
+export function parseDfDevice(stdout: string): string | null {
+  const rows = stdout.split("\n").filter((line) => line.trim() !== "");
+  const data = rows[1];
+  if (!data) return null;
+  const device = data.trim().split(/\s+/)[0];
+  return device && device !== "Filesystem" ? device : null;
 }
 
 /**
  * The macOS identity probe.
  *
- * Bounded and metadata-only: `diskutil info` asks the volume manager what it
- * already knows and never opens a file on the volume, which matters because
- * this runs at exactly the moment a disk is least worth exercising. Returns
- * `null` on any failure — a probe that threw during recovery would be one more
- * thing between an operator and a repaired drive, and `null` already fails
- * closed everywhere it is consumed.
+ * Takes **any existing path** and answers for the volume underneath it. That
+ * generality is the whole point and it was missing: `diskutil info` only
+ * accepts a device or a mount point, so asking it about the configured media
+ * root `/Volumes/Expansion/media` exits non-zero, the probe returned `null`,
+ * and the fail-closed identity gate parked every job on a healthy USB disk with
+ * `recovery-pending`. No caller should have to know where a volume happens to
+ * be mounted in order to ask what it is.
+ *
+ * So the path is resolved to its backing filesystem first, by `df -P`, and it
+ * is `df` that is asked rather than the pathname that is parsed: guessing
+ * `/Volumes/<first segment>` would be wrong for the internal scratch root,
+ * wrong across an APFS firmlink, and wrong for anything mounted anywhere else.
+ *
+ * Both steps are bounded and metadata-only: neither `df` nor `diskutil info`
+ * opens a file on the volume, which matters because this runs at exactly the
+ * moment a disk is least worth exercising. Returns `null` on any failure —
+ * unresolvable path, failing `diskutil`, or a document that says nothing — a
+ * probe that threw during recovery would be one more thing between an operator
+ * and a repaired drive, and `null` already fails closed everywhere it is
+ * consumed.
  */
 export function createDiskutilIdentityProbe(options: {
   run: (
@@ -295,11 +369,22 @@ export function createDiskutilIdentityProbe(options: {
   timeoutMs?: number;
 }): StorageIdentityProbe {
   return async (path: string) => {
+    const timeoutMs = options.timeoutMs ?? 10_000;
     try {
+      const device = parseDfDevice(
+        await options.run("/bin/df", ["-P", path], timeoutMs),
+      );
+      /*
+       * Nothing to ask about. Falling back to handing `diskutil` the original
+       * path is exactly the behaviour being fixed, and inventing an identity
+       * is worse than having none.
+       */
+      if (!device) return null;
+
       const stdout = await options.run(
         "/usr/sbin/diskutil",
-        ["info", "-plist", path],
-        options.timeoutMs ?? 10_000,
+        ["info", "-plist", device],
+        timeoutMs,
       );
       const identity = parseDiskutilPlist(stdout, path);
       /*

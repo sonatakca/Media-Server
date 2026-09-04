@@ -377,6 +377,154 @@ export interface ProcessingStorageHealth {
   awaitingResume: boolean;
 }
 
+// ------------------------------------------------------- the catalogue view
+
+/**
+ * What the processing page knows about a title before anything is running.
+ *
+ * One shape for a film and for one episode of a show, because the thing being
+ * processed is the same in both cases: a canonical source file, a plan for it,
+ * a package on disk, and at most one job. What differs is only where it sits
+ * and what it is called.
+ */
+export type ProcessingPackageState =
+  /** The server has not read this title's manifest yet. Not "nothing there". */
+  | "unknown"
+  | "none"
+  | "partial"
+  | "complete"
+  | "stale";
+
+export interface ProcessingPackageSummary {
+  present: boolean;
+  current: boolean;
+  sourceMatches: boolean;
+  profileMatches: boolean;
+  rungs: number[];
+  complete: boolean;
+  hdr: string;
+  audioTracks: number;
+  subtitleTracks: number;
+  totalBytes: number;
+}
+
+export interface ProcessingSourceSummary {
+  width: number;
+  height: number;
+  qualityHeight: number;
+  videoCodec: string;
+  frameRate: number | null;
+  bitDepth: number | null;
+  isHdr: boolean;
+  /** `SDR`, `HDR10` or `HLG`, already resolved for display. */
+  dynamicRange: string;
+  durationSeconds: number;
+  sizeBytes: number;
+  container: string;
+  audioTracks: number;
+  subtitleTracks: number;
+  externalSubtitles: number;
+}
+
+export interface ProcessingPlanSummary {
+  action: string;
+  summary: string;
+  videoCodec: "h264" | "hevc";
+  videoEncoder: string;
+  hardwareAdapter: string;
+  preservesHdr: boolean;
+  ladder: number[];
+  missingRungs: number[];
+  estimatedOutputBytes: number;
+  audioTracksKept: number;
+  subtitleTracksKept: number;
+}
+
+export interface ProcessingTitle {
+  itemId: string;
+  mediaFileId: string | null;
+  title: string;
+  sortTitle: string;
+  sourceAvailable: boolean;
+  /** Above one means alternate representations; only the canonical is used. */
+  fileCount: number;
+  probed: boolean;
+  source: ProcessingSourceSummary | null;
+  plan: ProcessingPlanSummary | null;
+  package: ProcessingPackageSummary | null;
+  packageState: ProcessingPackageState;
+  activeJobId: string | null;
+  activeJobState: ProcessingState | null;
+  processable: boolean;
+}
+
+export interface ProcessingMovieTitle extends ProcessingTitle {
+  productionYear: number | null;
+}
+
+export interface ProcessingEpisode extends ProcessingTitle {
+  seasonNumber: number;
+  episodeNumber: number | null;
+  /** `S01E01`. */
+  code: string;
+}
+
+export interface ProcessingStateCounts {
+  total: number;
+  complete: number;
+  partial: number;
+  unprocessed: number;
+  unknown: number;
+  active: number;
+  unavailable: number;
+  /** How many a bulk press would queue right now. */
+  eligible: number;
+}
+
+export interface ProcessingSeason {
+  seasonId: string;
+  seasonNumber: number;
+  title: string;
+  episodes: ProcessingEpisode[];
+  counts: ProcessingStateCounts;
+}
+
+export interface ProcessingSeries {
+  seriesId: string;
+  title: string;
+  sortTitle: string;
+  productionYear: number | null;
+  seasonCount: number;
+  episodeCount: number;
+  seasons: ProcessingSeason[];
+  counts: ProcessingStateCounts;
+}
+
+/** What a queued or running job is called, so the queue tab can identify it. */
+export interface ProcessingJobTitle {
+  jobId: string;
+  kind: "movie" | "episode";
+  seriesTitle?: string;
+  code?: string;
+  title: string;
+}
+
+/** What a season or series press did. */
+export interface BulkProcessingOutcome {
+  queued: number;
+  alreadyQueued: number;
+  alreadyComplete: number;
+  unavailable: number;
+  failed: number;
+  jobIds: string[];
+  skipped: Array<{
+    itemId: string;
+    mediaFileId: string | null;
+    reason: string;
+    detail?: string;
+  }>;
+}
+
 export interface ProcessingOverview {
   counts: Record<ProcessingState, number>;
   hardware: HardwareReport;
@@ -384,6 +532,15 @@ export interface ProcessingOverview {
   stages: ProcessingStage[];
   profile: string;
   storage: ProcessingStorageHealth;
+  /*
+   * Optional so a page can be served by a server that predates them. Absent is
+   * read as "this server has no catalogue view", never as "the library is
+   * empty" — the two look identical to a reader that defaults them to `[]`
+   * without saying why.
+   */
+  movies?: ProcessingMovieTitle[];
+  series?: ProcessingSeries[];
+  jobTitles?: ProcessingJobTitle[];
 }
 
 export function getProcessingOverview(): Promise<ProcessingOverview> {
@@ -637,5 +794,32 @@ export function deleteProcessingJob(jobId: string): Promise<{ removed: true }> {
 export function processingStreamUrl(jobId: string, lastEventId = 0): string {
   return ownApiUrl(
     `/ownAPI/v1/processing/jobs/${encodeURIComponent(jobId)}/stream?lastEventId=${lastEventId}`,
+  );
+}
+
+/**
+ * Queues one independent job per eligible episode of a season.
+ *
+ * Never one job for the season: a season has no source file and no ladder, and
+ * a single run spanning thirteen hours would lose all thirteen to one failure.
+ * Safe to press twice — episodes that already have a job come back counted as
+ * `alreadyQueued` rather than queued again.
+ */
+export function processSeason(
+  seasonId: string,
+): Promise<BulkProcessingOutcome> {
+  return ownApiClient.request<BulkProcessingOutcome>(
+    `/processing/seasons/${encodeURIComponent(seasonId)}/jobs`,
+    { method: "POST" },
+  );
+}
+
+/** The same, across every season of a show. */
+export function processSeries(
+  seriesId: string,
+): Promise<BulkProcessingOutcome> {
+  return ownApiClient.request<BulkProcessingOutcome>(
+    `/processing/series/${encodeURIComponent(seriesId)}/jobs`,
+    { method: "POST" },
   );
 }

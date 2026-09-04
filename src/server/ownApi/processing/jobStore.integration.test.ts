@@ -151,4 +151,67 @@ describeIfDatabase("processing job store", () => {
     await store.update(job.id, { state: "cancelled", finishedAt: new Date() });
     expect(await store.requestCancellation(job.id)).toBe(false);
   });
+
+  /**
+   * Lifting a pause says the job may run, never that it is running.
+   *
+   * `running` used to be written here, by the press of a button, for a job
+   * whose worker had already exited — which is how a row came to read running,
+   * waiting, never started, and stayed that way through every restart.
+   */
+  it("resumes a paused job into queued, not running", async () => {
+    if (!itemId) return;
+    const job = await make();
+    await store.requestPause(job.id, "recovery-pending");
+    expect((await store.get(job.id))?.state).toBe("paused");
+
+    expect(await store.resume(job.id)).toBe(true);
+    const resumed = await store.get(job.id);
+    expect(resumed?.state).toBe("queued");
+    expect(resumed?.startedAt).toBeNull();
+    expect(resumed?.pauseRequested).toBe(false);
+    expect(resumed?.pausedReason).toBeNull();
+  });
+
+  it("resumes in place for a job whose encoder is still there", async () => {
+    if (!itemId) return;
+    const job = await make();
+    await store.requestPause(job.id, "operator");
+
+    expect(await store.resume(job.id, undefined, "running")).toBe(true);
+    expect((await store.get(job.id))?.state).toBe("running");
+  });
+
+  it("ends an active job as cancelled, once, and never a finished one", async () => {
+    if (!itemId) return;
+    const job = await make();
+    await store.requestPause(job.id, "recovery-pending");
+
+    const cancelled = await store.finalizeCancelled(job.id);
+    expect(cancelled?.state).toBe("cancelled");
+    expect(cancelled?.finishedAt).not.toBeNull();
+    expect(cancelled?.pauseRequested).toBe(false);
+    expect(cancelled?.pausedReason).toBeNull();
+    expect(cancelled?.errorCode).toBe("CANCELLED");
+
+    // Idempotent: a second press changes nothing and reports nothing changed.
+    expect(await store.finalizeCancelled(job.id)).toBeNull();
+    const after = await store.get(job.id);
+    expect(after?.finishedAt?.getTime()).toBe(cancelled?.finishedAt?.getTime());
+  });
+
+  it("refuses to end a job that already succeeded", async () => {
+    if (!itemId) return;
+    const job = await make();
+    await store.update(job.id, {
+      state: "succeeded",
+      finishedAt: new Date(),
+      publishedVersion: "v1",
+    });
+
+    expect(await store.finalizeCancelled(job.id)).toBeNull();
+    const after = await store.get(job.id);
+    expect(after?.state).toBe("succeeded");
+    expect(after?.publishedVersion).toBe("v1");
+  });
 });

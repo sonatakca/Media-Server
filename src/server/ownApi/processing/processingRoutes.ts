@@ -10,31 +10,32 @@ import {
   requireUuid,
 } from "../api/validation";
 import { isPathInsideRoot } from "../../pathSecurity";
-import { RENDITION_TARGETS } from "../../../renditions/policy";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { JobQueue } from "../tasks/jobQueue";
 import {
   detectHardware,
   type HardwareReport,
 } from "../../../renditions/hardware/detect";
-import { probeMediaFile } from "../../../renditions/probe";
-import { computeSourceFingerprint } from "../../../renditions/registry";
-import {
-  decideProcessing,
-  freeBytesOn,
-  type ProcessingDecision,
-} from "../../../renditions/processing/decide";
 import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
 import {
   readTitlePackageManifest,
   type TitlePackageManifest,
 } from "../../../renditions/adaptive/publishTitle";
 import {
-  DuplicateProcessingJobError,
   type ProcessingJobRecord,
   type ProcessingJobStore,
   type ProcessingState,
 } from "./jobStore";
+import {
+  PROCESSING_JOB_TYPE,
+  createProcessingEnqueuer,
+} from "./processingEnqueue";
+import { createPackageIndex } from "./packageIndex";
+import {
+  packageTargetsFor,
+  projectCatalogue,
+  type ProcessingCatalogueView,
+} from "./processingProjection";
 import { PROCESSING_STAGES } from "./stages";
 import {
   createPermissiveStorageGuard,
@@ -42,12 +43,17 @@ import {
 } from "./storageGuard";
 import type { StorageIncidentStore } from "./storageIncidentStore";
 import {
+  clearLiveProgress,
   liveProgressIsFresh,
   readLiveProgress,
   type LiveProgressSnapshot,
 } from "./liveProgress";
 
-export const PROCESSING_JOB_TYPE = "media.process";
+/*
+ * Re-exported rather than redefined: the queue's job type and the code that
+ * enqueues it must not be able to disagree.
+ */
+export { PROCESSING_JOB_TYPE };
 
 export interface ProcessingRoutesOptions {
   catalogue: CatalogueRepository;
@@ -81,7 +87,31 @@ export interface ProcessingRoutesOptions {
  * changes when the machine does, so it is held briefly rather than re-probed on
  * every page load.
  */
+/**
+ * The states in which a processing job still has a future.
+ *
+ * Mirrors the store's own active set, which is what the unique index and every
+ * guarded statement there are written against. Kept here so the routes decide
+ * "can this still be acted on?" from the same list rather than from an
+ * inlined array that drifts from it.
+ */
+const ACTIVE_PROCESSING_STATES: readonly ProcessingState[] = [
+  "pending",
+  "queued",
+  "running",
+  "paused",
+];
+
 const HARDWARE_CACHE_MS = 60_000;
+
+/**
+ * How long the projected catalogue tree is reused between polls.
+ *
+ * Short enough that a finished scan appears almost at once, long enough that a
+ * page refreshing every second is not re-reading every episode of every show
+ * sixty times a minute. Job state is never cached with it.
+ */
+const CATALOGUE_CACHE_MS = 4_000;
 
 function toJobDto(job: ProcessingJobRecord) {
   return {
@@ -203,6 +233,57 @@ async function missingPackageAssets(
   return missing;
 }
 
+/**
+ * What a running job is called, in terms that identify it.
+ *
+ * A movie job needs only its title. An episode job needs the show and the
+ * code as well: a queue tab listing "Pilot", "Pilot", "Pilot" is a queue tab
+ * nobody can act on. Built from the tree the overview already assembled, so
+ * this costs no query of its own.
+ */
+export interface ProcessingJobTitle {
+  jobId: string;
+  kind: "movie" | "episode";
+  /** The show for an episode; absent for a movie. */
+  seriesTitle?: string;
+  /** `S01E01` for an episode; absent for a movie. */
+  code?: string;
+  title: string;
+}
+
+export function describeJobs(
+  jobs: readonly ProcessingJobRecord[],
+  view: ProcessingCatalogueView,
+): ProcessingJobTitle[] {
+  const byItem = new Map<
+    string,
+    { kind: "movie" | "episode"; seriesTitle?: string; code?: string; title: string }
+  >();
+  for (const movie of view.movies) {
+    byItem.set(movie.itemId, { kind: "movie", title: movie.title });
+  }
+  for (const series of view.series) {
+    for (const season of series.seasons) {
+      for (const episode of season.episodes) {
+        byItem.set(episode.itemId, {
+          kind: "episode",
+          seriesTitle: series.title,
+          code: episode.code,
+          title: episode.title,
+        });
+      }
+    }
+  }
+
+  const titles: ProcessingJobTitle[] = [];
+  for (const job of jobs) {
+    const entry = byItem.get(job.itemId);
+    if (!entry) continue;
+    titles.push({ jobId: job.id, ...entry });
+  }
+  return titles;
+}
+
 export function createProcessingRoutes({
   catalogue,
   store,
@@ -269,205 +350,129 @@ export function createProcessingRoutes({
     return report;
   }
 
-  /**
-   * Where an item's bytes would live, whether or not they are still there.
-   *
-   * Locating and reading are separate steps because a source can be deleted
-   * while the package built from it stays on disk: the path is still the only
-   * way to find that package, so it is resolved before the file is opened.
+  /*
+   * The one path that creates a job, shared by the single-title button, the
+   * season button and the series button. Built here so it closes over the same
+   * hardware cache and the same storage guard the routes answer with.
    */
-  async function locateSource(itemId: string, mediaFileId?: string) {
-    const files = await catalogue.listFilesForItem(itemId);
-    const file = mediaFileId
-      ? files.find((candidate) => candidate.id === mediaFileId)
-      : files[0];
-    if (!file) {
-      throw new OwnApiError(
-        "MEDIA_NOT_FOUND",
-        "The requested media could not be found.",
-        404,
-      );
-    }
-    const absolutePath = path.resolve(
-      resolvedMediaRoot,
-      ...file.relativePath.split("/"),
-    );
-    if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
-      throw new OwnApiError(
-        "MEDIA_NOT_FOUND",
-        "The requested media could not be found.",
-        404,
-      );
-    }
-    return { file, absolutePath };
+  const enqueuer = createProcessingEnqueuer({
+    catalogue,
+    store,
+    queue,
+    mediaRoot: resolvedMediaRoot,
+    renditionRoot,
+    ffprobePath,
+    hardware,
+    storageGuard,
+  });
+  const { locateSource, statSource, existingPackage, analyse } = enqueuer;
+
+  /**
+   * The queue attempt currently responsible for a durable job, if any.
+   *
+   * Asked of the queue by what the attempt is *for*. `job.jobId` records the
+   * last attempt attached, and a job outlives its attempts: after a run that
+   * parked the work for storage that column names a row the queue calls
+   * `succeeded`, which is neither an error nor something that can be
+   * cancelled. It is still consulted as a fallback, but only when it points at
+   * something that can actually still run.
+   */
+  async function currentAttempt(
+    job: Pick<ProcessingJobRecord, "id" | "jobId">,
+  ) {
+    const found = await queue.findActive({
+      jobType: PROCESSING_JOB_TYPE,
+      payload: { processingJobId: job.id },
+    });
+    if (found) return found;
+    if (!job.jobId) return null;
+    const attached = await queue.get(job.jobId);
+    return attached &&
+      (attached.status === "queued" || attached.status === "running")
+      ? attached
+      : null;
   }
 
   /**
-   * The source's stats, or `null` when the source is gone.
+   * The catalogue view, cached for a moment.
    *
-   * A deleted source is an ordinary state of the library, not a fault: `stat`
-   * raising ENOENT used to reach the page as a bare internal error, which said
-   * nothing about the package the title still has.
+   * The page polls once a second while anything is running, and almost all of
+   * what it asks for on those polls is the job list. Rebuilding the whole
+   * series tree each time would run the same two statements sixty times a
+   * minute for a result that only changes when a scan does, so the tree is
+   * held briefly and the jobs are always fresh — they are stitched onto the
+   * cached tree below rather than cached with it.
    */
-  async function statSource(
-    file: { missingSince: Date | null },
-    absolutePath: string,
-  ) {
-    if (file.missingSince !== null) return null;
-    try {
-      return await stat(absolutePath);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
-      throw error;
-    }
-  }
+  let catalogueCache: { view: ProcessingCatalogueView; at: number } | null =
+    null;
+  const packageIndex = createPackageIndex();
 
-  /**
-   * What the title already holds, so a preview can describe the work that is
-   * actually left rather than the work a bare source would need.
-   *
-   * Without this the preview listed the whole ladder for a title that already
-   * carried every rung of it, which reads as "all of this is about to be
-   * built" when the honest answer is "nothing is".
-   */
-  async function existingPackage(
-    absolutePath: string,
-    /** `null` when the source is gone, so nothing can be compared against it. */
-    fingerprint: string | null,
-  ) {
-    const titleRoot = path.dirname(absolutePath);
-    const manifest = await readTitlePackageManifest(titleRoot).catch(
-      () => undefined,
-    );
-    if (!manifest) return { present: false as const };
-
-    const sourceMatches =
-      fingerprint !== null && manifest.sourceFingerprint === fingerprint;
-    const rungs = manifest.video
-      .map((rendition) => rendition.qualityHeight)
-      .sort((left, right) => right - left);
+  async function catalogueView(): Promise<ProcessingCatalogueView> {
+    const rows = await catalogue.listProcessableTitles();
     /*
-     * Whether the package is a whole ladder, judged from the package alone.
-     *
-     * The source is what normally decides which rungs a title should have, and
-     * it can be gone by the time anyone asks. Its own top rung stands in for
-     * it: the ladder always reaches the source's class, so a package holding
-     * every standard rung at or below its best one is not short of anything.
+     * Ask the index to keep these titles warm. It reads manifests off the
+     * media volume on its own clock and a few at a time; this call never
+     * touches a disk and never waits.
      */
-    const complete = RENDITION_TARGETS.map((target) => target.qualityHeight)
-      .filter((height) => height <= (rungs[0] ?? 0))
-      .every((height) => rungs.includes(height));
-    const profileMatches = manifest.profileVersion === ADAPTIVE_PROFILE_VERSION;
-    return {
-      present: true as const,
-      current: sourceMatches && profileMatches,
-      sourceMatches,
-      profileMatches,
-      rungs,
-      complete,
-      /*
-       * The package's dynamic range, which is the only record of it once the
-       * source is gone. A ladder is packaged in one transfer characteristic,
-       * so the first rung that is not SDR names the whole package.
-       */
-      hdr:
-        manifest.video.find((rendition) => rendition.hdr !== "sdr")?.hdr ??
-        "sdr",
-      audioTracks: manifest.audio.length,
-      subtitleTracks: manifest.subtitle.length,
-      totalBytes: manifest.storage.totalBytes,
-    };
-  }
+    packageIndex.track(packageTargetsFor(rows, resolvedMediaRoot));
 
-  async function analyse(
-    itemId: string,
-    mediaFileId?: string,
-  ): Promise<{
-    decision: ProcessingDecision;
-    fingerprint: string;
-    file: Awaited<ReturnType<typeof locateSource>>["file"];
-    absolutePath: string;
-    mtimeMs: number;
-    /** The package on disk, plus the rungs today's ladder would add to it. */
-    existing: Awaited<ReturnType<typeof existingPackage>> & {
-      missingRungs: number[];
-    };
-  }> {
-    const { file, absolutePath } = await locateSource(itemId, mediaFileId);
-    const stats = await statSource(file, absolutePath);
-    if (!stats) {
-      throw new OwnApiError(
-        "SOURCE_UNAVAILABLE",
-        "The source file for this title is no longer on disk.",
-        409,
-      );
-    }
-    const probe = await probeMediaFile(absolutePath, ffprobePath);
-    const report = await hardware();
-    const freeBytes = await freeBytesOn(renditionRoot);
-    const fingerprint = await computeSourceFingerprint(absolutePath, stats);
-    const existing = await existingPackage(absolutePath, fingerprint);
-    const plan = {
-      probe,
-      container: path.extname(absolutePath).replace(".", ""),
-      sizeBytes: stats.size,
+    const fileIds = rows
+      .map((row) => row.mediaFileId)
+      .filter((id): id is string => id !== null);
+    const [report, streamsByFile, activeJobs] = await Promise.all([
+      hardware(),
+      catalogue.listStreamsForFiles(fileIds),
+      store.listActive(),
+    ]);
+    const activeJobsByFile = new Map(
+      activeJobs.map((job) => [job.mediaFileId, job]),
+    );
+
+    return projectCatalogue(rows, {
       hardware: report,
-      ...(freeBytes === undefined ? {} : { freeBytes }),
-    };
+      streamsByFile,
+      packageFor: (mediaFileId) => packageIndex.get(mediaFileId),
+      activeJobsByFile,
+    });
+  }
 
-    /*
-     * What this source would be built into today, before asking whether the
-     * package on disk already satisfies it.
-     *
-     * The two questions are separate: the profile version says whether a
-     * package is still *readable*, and the ladder says whether it is still
-     * *complete*. Deciding completeness from the profile version alone means a
-     * title that predates a new rung reports "nothing to do" — and moving the
-     * profile version to force the issue is worse, because a mismatch resolves
-     * the package to `missing` and withdraws a perfectly playable title from
-     * delivery. So the ladder is compared directly. `decideProcessing` reads
-     * only the values above, so asking it twice costs nothing.
-     */
-    const planned = decideProcessing(plan);
-    const missingRungs = planned.ladder
-      .map((rung) => rung.qualityHeight)
+  async function cachedCatalogueView(): Promise<ProcessingCatalogueView> {
+    if (catalogueCache && Date.now() - catalogueCache.at < CATALOGUE_CACHE_MS) {
+      return catalogueCache.view;
+    }
+    const view = await catalogueView();
+    catalogueCache = { view, at: Date.now() };
+    return view;
+  }
+
+  /** Dropped whenever this process changes what the tree would say. */
+  function invalidateCatalogueView(mediaFileId?: string): void {
+    catalogueCache = null;
+    if (mediaFileId) packageIndex.invalidate(mediaFileId);
+  }
+
+  /**
+   * The episodes a season or series press would act on.
+   *
+   * Read from the catalogue rather than from the cached tree, so a bulk action
+   * is never taken against a view that is seconds old. Ineligible episodes are
+   * still returned: `enqueueAll` is what decides, and it decides by trying,
+   * which is the only answer that cannot be stale.
+   */
+  async function episodeTargets(scope: {
+    seriesId?: string;
+    seasonId?: string;
+  }): Promise<Array<{ itemId: string; mediaFileId: string }>> {
+    const rows = await catalogue.listProcessableTitles({
+      ...scope,
+      kinds: ["episode"],
+    });
+    return rows
       .filter(
-        (height) => !existing.present || !existing.rungs.includes(height),
-      );
-    const isCurrent =
-      existing.present && existing.current && missingRungs.length === 0;
-
-    /*
-     * Re-decided once the outstanding work is known, so the estimate and the
-     * disk preflight describe this job rather than the finished package. A
-     * one-rung job otherwise reported the whole package's size as its own
-     * output and reserved space for seven renditions it was not making.
-     */
-    const incremental =
-      !isCurrent &&
-      existing.present &&
-      existing.current &&
-      missingRungs.length > 0;
-    const decision = isCurrent
-      ? decideProcessing({ ...plan, alreadyCurrent: true })
-      : incremental
-        ? decideProcessing({
-            ...plan,
-            renditionsToEncode: missingRungs,
-            // Existing audio is reused whenever the package is otherwise
-            // current, so this run encodes none of it.
-            audioTracksToEncode: 0,
-          })
-        : planned;
-
-    return {
-      decision,
-      fingerprint,
-      file,
-      absolutePath,
-      mtimeMs: stats.mtimeMs,
-      existing: { ...existing, missingRungs },
-    };
+        (row): row is typeof row & { mediaFileId: string } =>
+          row.mediaFileId !== null,
+      )
+      .map((row) => ({ itemId: row.itemId, mediaFileId: row.mediaFileId }));
   }
 
   return [
@@ -488,10 +493,19 @@ export function createProcessingRoutes({
       handle: async (context) => {
         context.requirePrincipal();
         await store.reconcileTerminalQueueJobs();
-        const [counts, report, jobs] = await Promise.all([
+        const [counts, report, jobs, view] = await Promise.all([
           store.counts(),
           hardware(),
           store.list({ limit: 50 }),
+          /*
+           * The catalogue projection, which fails soft. A page that cannot
+           * list titles must still be able to show the jobs that are running
+           * and the drive that is holding them, which is the whole reason
+           * somebody has this page open during an incident.
+           */
+          cachedCatalogueView().catch(
+            (): ProcessingCatalogueView => ({ movies: [], series: [] }),
+          ),
         ]);
         sendData(context.response, context.requestId, {
           counts,
@@ -499,6 +513,21 @@ export function createProcessingRoutes({
           jobs: jobs.map(toJobDto),
           stages: PROCESSING_STAGES,
           profile: ADAPTIVE_PROFILE_VERSION,
+          /*
+           * The catalogue, as processing sees it: films, and shows as the
+           * hierarchy they actually are. Movies keep their own preview-driven
+           * cards, so this is additive — nothing that reads the fields above
+           * has to know these exist.
+           */
+          movies: view.movies,
+          series: view.series,
+          /*
+           * Job identity for the queue tab. A job row carries an item id, and
+           * "Pilot" is not enough to tell which show's pilot is encoding, so
+           * the labels ride along with the jobs rather than being looked up
+           * one at a time by the page.
+           */
+          jobTitles: describeJobs(jobs, view),
           /*
            * Carried on the overview rather than left to a second request. A
            * page that lists a dozen paused jobs and cannot say why is the page
@@ -661,7 +690,10 @@ export function createProcessingRoutes({
         const located = await locateSource(itemId, mediaFileId);
         const stats = await statSource(located.file, located.absolutePath);
         if (!stats) {
-          const existing = await existingPackage(located.absolutePath, null);
+          const existing = await existingPackage(
+            await enqueuer.titleRootFor(itemId, located.absolutePath),
+            null,
+          );
           const activeJob = await store.findActiveForFile(located.file.id);
           sendData(context.response, context.requestId, {
             itemId,
@@ -780,7 +812,16 @@ export function createProcessingRoutes({
           );
         }
 
-        const titleRoot = path.dirname(located.absolutePath);
+        /*
+         * The package's real location, which for an episode is its own folder
+         * inside the season rather than the season folder itself. Removing a
+         * source is the one action here that cannot be taken back, so it must
+         * be checking the package that actually belongs to these bytes.
+         */
+        const titleRoot = await enqueuer.titleRootFor(
+          itemId,
+          located.absolutePath,
+        );
         const manifest = await readTitlePackageManifest(titleRoot).catch(
           () => undefined,
         );
@@ -838,90 +879,86 @@ export function createProcessingRoutes({
         const mediaFileId = body.mediaFileId
           ? requireUuid(optionalBodyString(body, "mediaFileId"), "mediaFileId")
           : undefined;
-        const { decision, file, fingerprint, absolutePath, mtimeMs, existing } =
-          await analyse(itemId, mediaFileId);
 
-        if (decision.action.startsWith("reject")) {
-          throw new OwnApiError("PROCESSING_REJECTED", decision.summary, 422);
-        }
-        if (!decision.estimate.sufficient) {
-          throw new OwnApiError(
-            "INSUFFICIENT_DISK_SPACE",
-            "There is not enough free space for this package and its staging copy.",
-            507,
-          );
-        }
-
-        let job: ProcessingJobRecord;
-        try {
-          job = await store.create({
-            itemId,
-            mediaFileId: file.id,
-            sourceFingerprint: fingerprint,
-            profile: ADAPTIVE_PROFILE_VERSION,
-            /*
-             * The job records the rungs it is actually going to build, not
-             * only the ladder the finished package will hold. Without it a
-             * one-rung job is indistinguishable from a full rebuild in the
-             * history, which is exactly the confusion that hid this bug.
-             */
-            /*
-             * `decision.renditionsToEncode` already states the work; the flag
-             * only records whether this was an addition to a package that was
-             * otherwise complete, which is what the history reads back.
-             */
-            decision: {
-              ...decision,
-              incremental:
-                existing.present &&
-                decision.renditionsToEncode.length > 0 &&
-                decision.renditionsToEncode.length < decision.ladder.length,
-            } as unknown as Record<string, unknown>,
-            streamDecisions: {
-              audio: decision.streams.audio,
-              subtitles: decision.streams.subtitles,
-            } as unknown as Record<string, unknown>,
-            estimatedOutputBytes: decision.estimate.outputBytes,
-            estimatedStagingBytes: decision.estimate.stagingBytes,
-            hardwareAdapter: decision.hardwareAdapter,
-            videoEncoder: decision.videoEncoder,
-            warnings: decision.warnings,
-          });
-        } catch (error) {
-          if (error instanceof DuplicateProcessingJobError) {
-            throw new OwnApiError(
-              "PROCESSING_JOB_EXISTS",
-              "This file already has a processing job that has not finished.",
-              409,
-            );
-          }
-          throw error;
-        }
-
-        const queueJobId = await queue.enqueue({
-          jobType: PROCESSING_JOB_TYPE,
-          payload: {
-            processingJobId: job.id,
-            sourcePath: absolutePath,
-            relativePath: file.relativePath,
-            sizeBytes: Number(file.sizeBytes),
-            mtimeMs,
-          },
-          dedupeKey: `processing:${file.id}`,
-        });
-        await store.attachQueueJob(job.id, queueJobId);
-        await store.appendEvent({
-          processingJobId: job.id,
-          stage: "waiting",
-          message: "Queued for processing.",
-        });
+        /*
+         * One title, through the same creation path a season and a series use.
+         * Nothing about this request is special-cased; what makes it a single
+         * title is that the caller named one.
+         */
+        const { job } = await enqueuer.enqueue(itemId, mediaFileId);
+        invalidateCatalogueView(job.mediaFileId);
 
         sendData(
           context.response,
           context.requestId,
-          { job: toJobDto((await store.get(job.id))!) },
+          { job: toJobDto(job) },
           202,
         );
+      },
+    },
+
+    {
+      /**
+       * "Process this season."
+       *
+       * One independent job per eligible episode, never one job for the
+       * season. A season is a folder, not a thing that can be encoded: it has
+       * no source file, no duration and no ladder, and a single job spanning
+       * thirteen hours of video would lose all thirteen to one failure.
+       *
+       * Idempotent by construction rather than by a guard written here. Every
+       * episode goes through the same creation path a single press uses, and
+       * that path is refused by the unique index on `processing_jobs` and by
+       * the queue's dedupe key when a job for the file already exists — so a
+       * second press, a double click, or a season press overlapping a series
+       * press all converge on the same set of jobs and report the duplicates
+       * as `alreadyQueued` rather than making them.
+       */
+      method: "POST",
+      path: "/processing/seasons/:seasonId/jobs",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const seasonId = requireUuid(context.params.seasonId, "seasonId");
+        const targets = await episodeTargets({ seasonId });
+        if (targets.length === 0) {
+          throw new OwnApiError(
+            "MEDIA_NOT_FOUND",
+            "That season has no episodes with a playable source.",
+            404,
+          );
+        }
+        const outcome = await enqueuer.enqueueAll(targets);
+        invalidateCatalogueView();
+        sendData(context.response, context.requestId, outcome, 202);
+      },
+    },
+
+    {
+      /**
+       * "Process every missing episode of this show."
+       *
+       * The same operation as the season one, over every season. It is not a
+       * series-level job and there is no series-level state: a show is a
+       * container, and the only things with a lifecycle are the episodes.
+       */
+      method: "POST",
+      path: "/processing/series/:seriesId/jobs",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const seriesId = requireUuid(context.params.seriesId, "seriesId");
+        const targets = await episodeTargets({ seriesId });
+        if (targets.length === 0) {
+          throw new OwnApiError(
+            "MEDIA_NOT_FOUND",
+            "That series has no episodes with a playable source.",
+            404,
+          );
+        }
+        const outcome = await enqueuer.enqueueAll(targets);
+        invalidateCatalogueView();
+        sendData(context.response, context.requestId, outcome, 202);
       },
     },
 
@@ -1171,6 +1208,17 @@ export function createProcessingRoutes({
       },
     },
 
+    /**
+     * Stops the durable operation, whether or not anything is executing it.
+     *
+     * Cancellation used to be a message written on one queue row: the id
+     * stored beside the job. That id names the *last* attempt, and an attempt
+     * that parked its job for storage finishes successfully — so a job could
+     * sit active for ever pointing at a queue row that had ended hours before,
+     * with the flag set on nothing that would ever read it. So the attempt is
+     * looked up by what it is for, and when there is no live one the job is
+     * ended here instead of being asked to end itself.
+     */
     {
       method: "POST",
       path: "/processing/jobs/:jobId/cancel",
@@ -1186,16 +1234,70 @@ export function createProcessingRoutes({
             404,
           );
         }
+        /*
+         * Already over. Pressing cancel again is harmless rather than an
+         * error — an operator double-clicking must not be told off — but
+         * nothing is written: a finished job's outcome, its finish time and
+         * its published version are the record of what happened.
+         */
+        if (!ACTIVE_PROCESSING_STATES.includes(job.state)) {
+          sendData(context.response, context.requestId, {
+            job: toJobDto(job),
+          });
+          return;
+        }
+
         await store.requestCancellation(id);
-        if (job.jobId) await queue.requestCancellation(job.jobId);
-        await store.appendEvent({
-          processingJobId: id,
-          stage: job.stage,
-          level: "warning",
-          message: "Cancellation requested.",
-        });
+        const attempt = await currentAttempt(job);
+        if (attempt) await queue.requestCancellation(attempt.id);
+
+        /*
+         * A worker holds the attempt, so the flag has a reader: it stops the
+         * encoder where it stands, and the runner ends the job through its own
+         * path — which knows what is half-written and what may be kept. That
+         * cleanup belongs to the process that made the mess, and nothing here
+         * may pre-empt it.
+         */
+        if (attempt?.status === "running") {
+          await store.appendEvent({
+            processingJobId: id,
+            stage: job.stage,
+            level: "warning",
+            message: "Cancellation requested.",
+          });
+          sendData(context.response, context.requestId, {
+            job: toJobDto((await store.get(id))!),
+          });
+          return;
+        }
+
+        /*
+         * Nothing is executing this: either there was never a live attempt, or
+         * the one there was had not been leased and the queue has just marked
+         * it cancelled. No process will ever observe the flag, so the durable
+         * job is ended here.
+         *
+         * Deliberately nothing is deleted. A published package, a staging
+         * directory and a scratch workspace all outlive an attempt by design —
+         * the package because it is what the title plays from, the workspace
+         * because its checkpoints are hours of encoding that a later job may
+         * legitimately reuse — and the paths that own them release them when
+         * they can prove it is safe. A cancel that reached for a filesystem
+         * would be doing it with the least information anybody has.
+         */
+        await clearLiveProgress(id).catch(() => undefined);
+        const cancelled = await store.finalizeCancelled(id);
+        if (cancelled) {
+          await store.appendEvent({
+            processingJobId: id,
+            stage: job.stage,
+            level: "warning",
+            message:
+              "Cancelled. No attempt was running, so the job was ended directly. Any published package is untouched.",
+          });
+        }
         sendData(context.response, context.requestId, {
-          job: toJobDto((await store.get(id))!),
+          job: toJobDto(cancelled ?? (await store.get(id))!),
         });
       },
     },
@@ -1273,7 +1375,74 @@ export function createProcessingRoutes({
             409,
           );
         }
-        await store.resume(id);
+
+        /*
+         * Resuming is not a state change, it is the creation of an attempt.
+         *
+         * What this used to be was one call that cleared the pause flag and
+         * wrote `running`. Nothing was queued, so no worker ever learned the
+         * job existed, and `running` was a claim about a process that had
+         * exited hours earlier — a row reading running / waiting / never
+         * started, which no later press could get out of, because cancelling
+         * wrote to the queue row of the attempt that had already finished.
+         *
+         * The order below is what survives a crash in the middle. The job is
+         * made eligible first and queued second: a failure between the two
+         * leaves a job that is queued with nothing to run it, which the next
+         * press repairs. The reverse order would leave a queued attempt for a
+         * job still marked paused, and a worker would lease it and start
+         * encoding work an operator had deliberately stopped.
+         */
+        if (job.cancellationRequested) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_CANCELLING",
+            "This job is being cancelled and cannot be resumed.",
+            409,
+          );
+        }
+        if (!ACTIVE_PROCESSING_STATES.includes(job.state)) {
+          throw new OwnApiError(
+            "PROCESSING_JOB_NOT_RESUMABLE",
+            "This job has finished. Use retry to run it again.",
+            409,
+          );
+        }
+
+        /*
+         * The attempt is settled before anything durable moves, so a source
+         * that is no longer on disk refuses the press without having first
+         * un-paused the job.
+         */
+        const attempt = await enqueuer.ensureAttempt(job);
+        const executing = attempt.status === "running";
+        await store.resume(
+          id,
+          undefined,
+          /*
+           * `running` only when a worker genuinely holds this attempt — the
+           * case where an encoder is suspended in place and about to carry on.
+           * Everything else is `queued`, which is the honest description of a
+           * job that is waiting to be leased.
+           */
+          executing ? "running" : "queued",
+        );
+        /*
+         * A job left `running` by a worker that died is not paused, so the
+         * clause above does not touch it. It is nonetheless not running, and
+         * saying so is the whole point of this route.
+         */
+        if (!executing && job.state === "running") {
+          await store.update(id, { state: "queued" });
+        }
+        await store.setCurrentAttempt(id, attempt.queueJobId);
+        if (!attempt.adopted) {
+          await store.appendEvent({
+            processingJobId: id,
+            stage: "waiting",
+            message: "Resumed. Queued for a new processing attempt.",
+            detail: { queueJobId: attempt.queueJobId },
+          });
+        }
         sendData(context.response, context.requestId, {
           job: toJobDto((await store.get(id))!),
         });
@@ -1309,8 +1478,15 @@ export function createProcessingRoutes({
             409,
           );
         }
-        const { decision, file, absolutePath, fingerprint, mtimeMs, existing } =
-          await analyse(job.itemId, job.mediaFileId);
+        const {
+          decision,
+          file,
+          absolutePath,
+          fingerprint,
+          mtimeMs,
+          existing,
+          titleRoot,
+        } = await analyse(job.itemId, job.mediaFileId);
         /*
          * The whole attempt is reset in one place, and the estimate is taken
          * from the decision made *now*. Resetting a handful of fields by hand
@@ -1343,6 +1519,13 @@ export function createProcessingRoutes({
             relativePath: file.relativePath,
             sizeBytes: Number(file.sizeBytes),
             mtimeMs,
+            /*
+             * Carried here as it is on a first attempt. Without it the worker
+             * falls back to the folder beside the source, which for an episode
+             * is the season folder — so a retried episode would publish over
+             * its neighbours. A retry must land where the original would have.
+             */
+            titleRoot,
           },
           dedupeKey: `processing:${file.id}:retry:${Date.now()}`,
         });

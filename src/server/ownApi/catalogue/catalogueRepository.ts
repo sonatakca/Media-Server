@@ -271,9 +271,27 @@ export interface CatalogueRepository {
     limit: number,
   ): Promise<SearchCandidate[]>;
   listFilesForItem(itemId: string): Promise<MediaFileRow[]>;
+  /**
+   * An item's kind, unscoped and without its rows.
+   *
+   * Read by the processing layer, which needs to know whether a source
+   * publishes beside itself or into its own folder, and has an item id rather
+   * than a viewer.
+   */
+  getItemKind(itemId: string): Promise<ItemKind | null>;
   getPrimaryFile(itemId: string): Promise<MediaFileRow | null>;
   getFileById(fileId: string): Promise<MediaFileRow | null>;
   listStreams(mediaFileId: string): Promise<MediaStreamRow[]>;
+  /**
+   * Streams for many files at once, keyed by file.
+   *
+   * The single-file read above is per-title by nature; asking it once per
+   * episode is the N+1 that makes a season of Ezel cost seventy-one round
+   * trips. This is the same rows in one statement.
+   */
+  listStreamsForFiles(
+    mediaFileIds: readonly string[],
+  ): Promise<Map<string, MediaStreamRow[]>>;
   listChapters(
     itemId: string,
   ): Promise<Array<{ index: number; startMs: string; name: string | null }>>;
@@ -283,11 +301,100 @@ export interface CatalogueRepository {
     Array<{ id: string; type: string; startMs: string; endMs: string }>
   >;
   listPendingProbeFiles(limit: number): Promise<MediaFileRow[]>;
+  /**
+   * Every movie and episode the processing page can act on, with its canonical
+   * source and that source's persisted probe, in one statement.
+   *
+   * Unscoped by user, like the other file-level reads here: processing is an
+   * administrator's view of the volume rather than a catalogue browse.
+   */
+  listProcessableTitles(
+    options?: ListProcessableTitlesOptions,
+  ): Promise<ProcessableTitleRow[]>;
   listGenres(
     userId: string,
     libraryId?: string,
   ): Promise<Array<{ name: string; itemCount: number }>>;
   canUserAccessItem(userId: string, itemId: string): Promise<boolean>;
+}
+
+/**
+ * One unit of processable media, with everything the processing page needs to
+ * describe it, read in a single statement.
+ *
+ * A movie is one of these. So is an episode — the hierarchy above it comes
+ * along on the same row rather than being fetched per episode, because a
+ * library of eighty-six Sopranos episodes must cost one query and not
+ * eighty-six. Every technical figure here is the persisted probe result, so
+ * building this view runs no ffprobe at all.
+ */
+export interface ProcessableTitleRow {
+  itemId: string;
+  libraryId: string;
+  kind: "movie" | "episode";
+  title: string;
+  sortTitle: string;
+  productionYear: number | null;
+  runtimeMs: string | null;
+  /** Episode number within its season; null for a movie. */
+  indexNumber: number | null;
+  itemMissingSince: Date | null;
+
+  seriesId: string | null;
+  seriesTitle: string | null;
+  seriesSortTitle: string | null;
+  seriesYear: number | null;
+  seasonId: string | null;
+  seasonTitle: string | null;
+  /**
+   * The season's own number. Read from the season item rather than from the
+   * episode's `parent_index_number` so a season folder that was renamed is
+   * still one season, and so seasons sort by the same value they display.
+   */
+  seasonNumber: number | null;
+
+  /**
+   * The canonical playable file, chosen the way the rest of Seyirlik chooses
+   * it. Null only for an item the catalogue kept with no file rows at all.
+   */
+  mediaFileId: string | null;
+  relativePath: string | null;
+  container: string | null;
+  sizeBytes: string | null;
+  mtimeMs: string | null;
+  fingerprint: string | null;
+  durationMs: string | null;
+  bitrateBps: string | null;
+  probeState: string | null;
+  fileMissingSince: Date | null;
+  /** How many playable files the catalogue holds for this item, canonical included. */
+  fileCount: number;
+
+  videoCodec: string | null;
+  videoProfile: string | null;
+  width: number | null;
+  height: number | null;
+  frameRate: number | null;
+  pixelFormat: string | null;
+  bitDepth: number | null;
+  videoRange: string | null;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
+  colorSpace: string | null;
+
+  audioTrackCount: number;
+  /** Subtitle streams inside the container. */
+  subtitleTrackCount: number;
+  /** Subtitle files sitting beside the source that the scanner matched to it. */
+  externalSubtitleCount: number;
+}
+
+export interface ListProcessableTitlesOptions {
+  /** Restrict to one series' episodes. */
+  seriesId?: string;
+  /** Restrict to one season's episodes. */
+  seasonId?: string;
+  kinds?: Array<"movie" | "episode">;
 }
 
 export interface ListItemsOptions {
@@ -609,6 +716,14 @@ export function createCatalogueRepository(
       return rows.map(toMediaFileRow);
     },
 
+    getItemKind: async (itemId) => {
+      const rows = await query<{ kind: ItemKind }>(
+        `SELECT kind FROM items WHERE id = $1`,
+        [itemId],
+      );
+      return rows[0]?.kind ?? null;
+    },
+
     getPrimaryFile: async (itemId) => {
       const rows = await query<Record<string, never>>(
         `SELECT id, item_id, relative_path, container, size_bytes, mtime_ms,
@@ -644,6 +759,28 @@ export function createCatalogueRepository(
         [mediaFileId],
       );
       return rows.map(toMediaStreamRow);
+    },
+
+    listStreamsForFiles: async (mediaFileIds) => {
+      const byFile = new Map<string, MediaStreamRow[]>();
+      if (mediaFileIds.length === 0) return byFile;
+      const rows = await query<Record<string, never>>(
+        `SELECT media_file_id, stream_index, kind, codec, profile, level, language, title,
+                is_default, is_forced, is_external, is_text_subtitle, external_relative_path,
+                channels, sample_rate, bitrate_bps, width, height, pixel_format,
+                frame_rate, video_range, color_transfer, color_primaries, color_space, bit_depth
+         FROM media_streams
+         WHERE media_file_id = ANY($1::uuid[])
+         ORDER BY media_file_id, stream_index`,
+        [[...mediaFileIds]],
+      );
+      for (const row of rows) {
+        const fileId = (row as Record<string, unknown>).media_file_id as string;
+        const existing = byFile.get(fileId);
+        if (existing) existing.push(toMediaStreamRow(row));
+        else byFile.set(fileId, [toMediaStreamRow(row)]);
+      }
+      return byFile;
     },
 
     listChapters: async (itemId) => {
@@ -709,6 +846,123 @@ export function createCatalogueRepository(
       }));
     },
 
+    listProcessableTitles: async (options = {}) => {
+      const kinds = options.kinds ?? ["movie", "episode"];
+      const values: unknown[] = [kinds];
+      const conditions = ["item.kind = ANY($1::text[])"];
+      if (options.seriesId) {
+        values.push(options.seriesId);
+        conditions.push(`item.series_id = $${values.length}`);
+      }
+      if (options.seasonId) {
+        values.push(options.seasonId);
+        conditions.push(`item.parent_id = $${values.length}`);
+      }
+
+      /*
+       * One statement, three lateral lookups.
+       *
+       * `canonical` is the same choice `getPrimaryFile` makes — the primary
+       * row, largest first — widened only by preferring a file that is still
+       * on disk, so a title whose alternate cut vanished still describes
+       * itself from the copy that has not. It is what stops the `.mkv` and the
+       * `.mp4` of one episode reaching the page as two episodes.
+       *
+       * `video` and the two counts read `media_streams`, which the probe
+       * service already wrote. Nothing here opens a media file.
+       */
+      const rows = await query<Record<string, unknown>>(
+        `SELECT
+           item.id AS item_id,
+           item.library_id,
+           item.kind,
+           item.title,
+           item.sort_title,
+           item.production_year,
+           item.runtime_ms,
+           item.index_number,
+           item.missing_since AS item_missing_since,
+           item.series_id,
+           series.title AS series_title,
+           series.sort_title AS series_sort_title,
+           series.production_year AS series_year,
+           season.id AS season_id,
+           season.title AS season_title,
+           COALESCE(season.index_number, item.parent_index_number) AS season_number,
+           canonical.id AS media_file_id,
+           canonical.relative_path,
+           canonical.container,
+           canonical.size_bytes,
+           canonical.mtime_ms,
+           canonical.fingerprint,
+           canonical.duration_ms,
+           canonical.bitrate_bps,
+           canonical.probe_state,
+           canonical.missing_since AS file_missing_since,
+           COALESCE(counted.file_count, 0) AS file_count,
+           video.codec AS video_codec,
+           video.profile AS video_profile,
+           video.width,
+           video.height,
+           video.frame_rate,
+           video.pixel_format,
+           video.bit_depth,
+           video.video_range,
+           video.color_transfer,
+           video.color_primaries,
+           video.color_space,
+           COALESCE(tracks.audio_count, 0) AS audio_track_count,
+           COALESCE(tracks.subtitle_count, 0) AS subtitle_track_count,
+           COALESCE(tracks.external_subtitle_count, 0) AS external_subtitle_count
+         FROM items item
+         LEFT JOIN items series ON series.id = item.series_id AND series.kind = 'series'
+         LEFT JOIN items season ON season.id = item.parent_id AND season.kind = 'season'
+         LEFT JOIN LATERAL (
+           SELECT file.*
+           FROM media_files file
+           WHERE file.item_id = item.id
+           ORDER BY (file.missing_since IS NULL) DESC,
+                    file.is_primary DESC,
+                    file.size_bytes DESC,
+                    file.id
+           LIMIT 1
+         ) canonical ON true
+         LEFT JOIN LATERAL (
+           SELECT count(*)::int AS file_count
+           FROM media_files file
+           WHERE file.item_id = item.id
+         ) counted ON true
+         LEFT JOIN LATERAL (
+           SELECT stream.*
+           FROM media_streams stream
+           WHERE stream.media_file_id = canonical.id AND stream.kind = 'video'
+           ORDER BY stream.stream_index
+           LIMIT 1
+         ) video ON true
+         LEFT JOIN LATERAL (
+           SELECT
+             count(*) FILTER (WHERE stream.kind = 'audio')::int AS audio_count,
+             count(*) FILTER (WHERE stream.kind = 'subtitle'
+                              AND stream.is_external = false)::int AS subtitle_count,
+             count(*) FILTER (WHERE stream.kind = 'subtitle'
+                              AND stream.is_external = true)::int AS external_subtitle_count
+           FROM media_streams stream
+           WHERE stream.media_file_id = canonical.id
+         ) tracks ON true
+         WHERE ${conditions.join(" AND ")}
+         ORDER BY
+           COALESCE(series.sort_title, item.sort_title),
+           item.series_id NULLS FIRST,
+           COALESCE(season.index_number, item.parent_index_number, 0),
+           COALESCE(item.index_number, 0),
+           item.sort_title,
+           item.id`,
+        values,
+      );
+
+      return rows.map(toProcessableTitleRow);
+    },
+
     listPendingProbeFiles: async (limit) => {
       const rows = await query<Record<string, never>>(
         `SELECT id, item_id, relative_path, container, size_bytes, mtime_ms,
@@ -721,6 +975,59 @@ export function createCatalogueRepository(
       );
       return rows.map(toMediaFileRow);
     },
+  };
+}
+
+function toProcessableTitleRow(
+  row: Record<string, unknown>,
+): ProcessableTitleRow {
+  const numberOrNull = (value: unknown): number | null =>
+    value === null || value === undefined ? null : Number(value);
+  const textOrNull = (value: unknown): string | null =>
+    value === null || value === undefined ? null : String(value);
+
+  return {
+    itemId: row.item_id as string,
+    libraryId: row.library_id as string,
+    kind: row.kind as "movie" | "episode",
+    title: row.title as string,
+    sortTitle: row.sort_title as string,
+    productionYear: numberOrNull(row.production_year),
+    runtimeMs: textOrNull(row.runtime_ms),
+    indexNumber: numberOrNull(row.index_number),
+    itemMissingSince: (row.item_missing_since as Date | null) ?? null,
+    seriesId: textOrNull(row.series_id),
+    seriesTitle: textOrNull(row.series_title),
+    seriesSortTitle: textOrNull(row.series_sort_title),
+    seriesYear: numberOrNull(row.series_year),
+    seasonId: textOrNull(row.season_id),
+    seasonTitle: textOrNull(row.season_title),
+    seasonNumber: numberOrNull(row.season_number),
+    mediaFileId: textOrNull(row.media_file_id),
+    relativePath: textOrNull(row.relative_path),
+    container: textOrNull(row.container),
+    sizeBytes: textOrNull(row.size_bytes),
+    mtimeMs: textOrNull(row.mtime_ms),
+    fingerprint: textOrNull(row.fingerprint),
+    durationMs: textOrNull(row.duration_ms),
+    bitrateBps: textOrNull(row.bitrate_bps),
+    probeState: textOrNull(row.probe_state),
+    fileMissingSince: (row.file_missing_since as Date | null) ?? null,
+    fileCount: Number(row.file_count ?? 0),
+    videoCodec: textOrNull(row.video_codec),
+    videoProfile: textOrNull(row.video_profile),
+    width: numberOrNull(row.width),
+    height: numberOrNull(row.height),
+    frameRate: numberOrNull(row.frame_rate),
+    pixelFormat: textOrNull(row.pixel_format),
+    bitDepth: numberOrNull(row.bit_depth),
+    videoRange: textOrNull(row.video_range),
+    colorTransfer: textOrNull(row.color_transfer),
+    colorPrimaries: textOrNull(row.color_primaries),
+    colorSpace: textOrNull(row.color_space),
+    audioTrackCount: Number(row.audio_track_count ?? 0),
+    subtitleTrackCount: Number(row.subtitle_track_count ?? 0),
+    externalSubtitleCount: Number(row.external_subtitle_count ?? 0),
   };
 }
 

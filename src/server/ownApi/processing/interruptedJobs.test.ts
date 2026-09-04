@@ -141,12 +141,32 @@ function fakeIncidents(): StorageIncidentStore & {
 function fakeStore(jobs: ProcessingJobRecord[]) {
   const pauses: Array<[string, ProcessingPauseReason]> = [];
   const events: Array<{ jobId: string; message: string; level: string }> = [];
+  const cancelled: string[] = [];
   return {
     pauses,
     events,
+    cancelled,
     store: {
       findInterrupted: vi.fn(async () => jobs),
+      finalizeCancelled: vi.fn(async (id: string) => {
+        cancelled.push(id);
+        const job = jobs.find((candidate) => candidate.id === id) ?? null;
+        return job
+          ? ({
+              ...job,
+              state: "cancelled",
+              finishedAt: new Date(),
+            } as ProcessingJobRecord)
+          : null;
+      }),
       requestPause: vi.fn(async (id: string, reason: ProcessingPauseReason) => {
+        /*
+         * The real statement refuses a job with a cancellation pending. The
+         * fake says so too, because a fake that always succeeds is what let
+         * the defect this guards against go unnoticed.
+         */
+        const job = jobs.find((candidate) => candidate.id === id);
+        if (job?.cancellationRequested) return false;
         pauses.push([id, reason]);
         return true;
       }),
@@ -206,6 +226,46 @@ describe("the incident, at the moment it would have repeated", () => {
     expect(result.requeued).toBe(0);
     expect(fake.pauses).toEqual([[AFFECTED_JOB, "recovery-pending"]]);
     expect(guard.mayStartWork()).toBe(false);
+  });
+
+  /**
+   * The zombie this whole change exists for, met at the next start.
+   *
+   * A row marked running with a cancellation pending is a job somebody asked
+   * to stop while nothing was listening. Pausing it is what this used to try,
+   * and `requestPause` rightly refuses a job on its way out — so nothing
+   * happened at all and the row survived every restart, still running, still
+   * never started. Nothing can be encoding at this moment, so the cancellation
+   * is simply completed.
+   */
+  it("completes a cancellation nobody was left to carry out", async () => {
+    const incidents = fakeIncidents();
+    const fake = fakeStore([
+      record({ cancellationRequested: true, stage: "waiting" }),
+    ]);
+    const requeue = vi.fn(async () => 0);
+
+    const result = await reconcileInterruptedJobs({
+      store: fake.store,
+      guard: guardFor(incidents),
+      mediaRoot: MEDIA_ROOT,
+      storageAvailable: async () => true,
+      requeue,
+    });
+
+    expect(result.cancelled).toEqual([AFFECTED_JOB]);
+    expect(fake.cancelled).toEqual([AFFECTED_JOB]);
+    // Not paused, not requeued: it is over.
+    expect(fake.pauses).toHaveLength(0);
+    expect(result.outcomes).toHaveLength(0);
+    /*
+     * The requeue pass still runs — it is the storage-returned sweep, and it
+     * reads `storage-unavailable` only — but it finds nothing to do, because
+     * this job is no longer paused as anything.
+     */
+    expect(result.requeued).toBe(0);
+    expect(fake.events[0]?.level).toBe("warning");
+    expect(fake.events[0]?.message).toContain("cancellation was completed");
   });
 
   /** The history must record the reasoning, not an intention. */
@@ -374,7 +434,7 @@ describe("nothing left behind", () => {
       storageAvailable,
       requeue,
     });
-    expect(result).toEqual({ outcomes: [], requeued: 0 });
+    expect(result).toEqual({ outcomes: [], requeued: 0, cancelled: [] });
     expect(storageAvailable).not.toHaveBeenCalled();
     expect(requeue).not.toHaveBeenCalled();
   });

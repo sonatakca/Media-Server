@@ -82,6 +82,7 @@ import {
   videoRenditionId,
 } from "./profile";
 import { frameRateForClass } from "./layout";
+import { besideTitleRoot } from "./titleRoot";
 import {
   publishAdditionalRenditions,
   publishTitlePackage,
@@ -296,6 +297,11 @@ export interface AdaptivePackageResult {
   publicationIncomingDirectory?: string;
 }
 
+/** One reading of where the package goes, shared by every step below. */
+function titleRootForRequest(request: AdaptivePackageRequest): string {
+  return request.titleRoot ?? besideTitleRoot(request.sourcePath);
+}
+
 export interface AdaptivePackageRequest {
   mediaId: string;
   relativePath: string;
@@ -304,6 +310,16 @@ export interface AdaptivePackageRequest {
   probe?: RenditionMediaProbe;
   /** Stable domain-job id. Offline callers fall back to the media id. */
   workspaceId?: string;
+  /**
+   * Where this title's package lives on the media volume.
+   *
+   * Defaults to the directory beside the source, which for a movie folder is
+   * the title itself. An episode's season folder is not: it holds every
+   * episode of the season, so an episode is given its own nested root (see
+   * `titleRoot.ts`) and passes it here rather than letting this layer guess
+   * from a path that cannot tell the two cases apart.
+   */
+  titleRoot?: string;
 }
 
 export interface AdaptivePackagerOptions {
@@ -837,7 +853,7 @@ export async function packageAdaptiveRendition(
      * alone. This is what makes `resume` cheap without mistaking an older,
      * shorter ladder for a complete one.
      */
-    const existingTitleRoot = path.dirname(request.sourcePath);
+    const existingTitleRoot = titleRootForRequest(request);
     const existing = await readTitlePackageManifest(existingTitleRoot);
     const presence: RenditionPresence = existing
       ? await titleRenditionPresence(existingTitleRoot, existing)
@@ -982,7 +998,7 @@ export async function packageAdaptiveRendition(
       existingBuildRecord: AdaptivePackageMetadata | null;
       sourceDamage: SourceDamageRecord[];
     }): Promise<AdaptivePackageResult> => {
-      const titleRoot = path.dirname(request.sourcePath);
+      const titleRoot = titleRootForRequest(request);
       const onPublishProgress = onEvent
         ? {
             onProgress: (progress: PublishPhaseProgress) => {
@@ -1163,7 +1179,7 @@ export async function packageAdaptiveRendition(
         metadata: verifiedScratchPackage.metadata,
         existingBuildRecord:
           verifiedScratchPackage.mode === "incremental"
-            ? await readTitleBuildRecord(path.dirname(request.sourcePath))
+            ? await readTitleBuildRecord(titleRootForRequest(request))
             : null,
         sourceDamage: verifiedScratchPackage.sourceDamage,
       });
@@ -2471,7 +2487,7 @@ export async function packageAdaptiveRendition(
      * verified would copy whatever happens to be at those paths now.
      */
     await assertScratch({ deep: true });
-    const titleRoot = path.dirname(request.sourcePath);
+    const titleRoot = titleRootForRequest(request);
     /*
      * An incremental run must not swap the package's directories: the swap
      * carries away every rendition this job did not produce, which for a

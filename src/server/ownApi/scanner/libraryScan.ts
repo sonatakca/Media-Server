@@ -711,6 +711,26 @@ async function scanEpisodeFiles(
   result: ScanResult,
   seasonKeys: Map<number, ScannedItem>,
 ): Promise<void> {
+  /** The season row an episode hangs from, created once per season number. */
+  const ensureSeason = (seasonNumber: number): ScannedItem => {
+    const existing = seasonKeys.get(seasonNumber);
+    if (existing) return existing;
+    const season: ScannedItem = {
+      sourceKey: sourceKey("season", context.seriesKey, seasonNumber),
+      kind: "season",
+      title: seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`,
+      sortTitle: String(seasonNumber).padStart(4, "0"),
+      indexNumber: seasonNumber,
+      parentSourceKey: context.seriesKey,
+      seriesSourceKey: context.seriesKey,
+      files: [],
+      subtitles: [],
+    };
+    seasonKeys.set(seasonNumber, season);
+    result.items.push(season);
+    return season;
+  };
+
   for (const videoFile of contents.videoFiles) {
     const { stem } = splitExtension(videoFile);
     if (isTrailerFile(stem)) continue;
@@ -732,22 +752,7 @@ async function scanEpisodeFiles(
     // Without a season the episode cannot be placed in the hierarchy; season 1
     // is the conventional default for a flat series folder.
     const seasonNumber = parsed.seasonNumber ?? 1;
-    let season = seasonKeys.get(seasonNumber);
-    if (!season) {
-      season = {
-        sourceKey: sourceKey("season", context.seriesKey, seasonNumber),
-        kind: "season",
-        title: seasonNumber === 0 ? "Specials" : `Season ${seasonNumber}`,
-        sortTitle: String(seasonNumber).padStart(4, "0"),
-        indexNumber: seasonNumber,
-        parentSourceKey: context.seriesKey,
-        seriesSourceKey: context.seriesKey,
-        files: [],
-        subtitles: [],
-      };
-      seasonKeys.set(seasonNumber, season);
-      result.items.push(season);
-    }
+    const season = ensureSeason(seasonNumber);
 
     const episodeNumber = parsed.episodeNumber;
     const episodeKey =
@@ -784,6 +789,66 @@ async function scanEpisodeFiles(
       seriesSourceKey: context.seriesKey,
       files: [file],
       subtitles: matchSubtitles(directory, contents.subtitleFiles, stem),
+    });
+  }
+
+  /*
+   * An episode whose source has been removed but whose package is still there.
+   *
+   * A movie in that state is recognised by its own folder holding a complete
+   * package and no video file. An episode's package lives in a folder named
+   * after the source file it was built from — `Season 1/Show - S01E01 - Kassa/`
+   * — so the same rule applies one level down, to the season folder's
+   * children. Without this, deleting a processed episode's source makes the
+   * episode vanish from the catalogue at the next scan and takes the package's
+   * only playback identity with it.
+   *
+   * Reconciliation drops any of these that has no existing file row, so this
+   * can revive a known episode and can never invent one.
+   */
+  for (const child of contents.directories) {
+    if (isExtraDirectory(child)) continue;
+
+    const childPath = joinRelative(directory, child);
+    if (!(await hasCompleteTitlePackage(fs, childPath))) continue;
+
+    const parsed = parseEpisodeName(child, {
+      ...(context.folderSeasonNumber === undefined
+        ? {}
+        : { folderSeasonNumber: context.folderSeasonNumber }),
+      folderSeriesTitle: context.seriesTitle,
+    });
+    const seasonNumber = parsed.seasonNumber ?? 1;
+    const episodeNumber = parsed.episodeNumber;
+    const episodeKey =
+      episodeNumber === undefined
+        ? sourceKey("episode", context.seriesKey, childPath)
+        : sourceKey("episode", context.seriesKey, seasonNumber, episodeNumber);
+
+    // The source is back, or was never gone. The real file wins.
+    if (
+      result.items.some(
+        (item) => item.kind === "episode" && item.sourceKey === episodeKey,
+      )
+    ) {
+      continue;
+    }
+
+    const season = ensureSeason(seasonNumber);
+    result.items.push({
+      sourceKey: episodeKey,
+      kind: "episode",
+      title: parsed.title,
+      sortTitle: `${String(seasonNumber).padStart(4, "0")}-${String(
+        episodeNumber ?? 0,
+      ).padStart(5, "0")}`,
+      ...(episodeNumber === undefined ? {} : { indexNumber: episodeNumber }),
+      parentIndexNumber: seasonNumber,
+      parentSourceKey: season.sourceKey,
+      seriesSourceKey: context.seriesKey,
+      files: [],
+      subtitles: [],
+      renditionBacked: true,
     });
   }
 }

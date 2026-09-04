@@ -120,10 +120,34 @@ describe("actions", () => {
     expect(canCancel(job({ state: "succeeded" }))).toBe(false);
   });
 
-  it("does not offer cancel twice", () => {
+  it("does not offer cancel twice while an encoder is stopping itself", () => {
     expect(
-      canCancel(job({ state: "running", cancellationRequested: true })),
+      canCancel(
+        job({
+          state: "running",
+          startedAt: "2026-01-01T10:00:00.000Z",
+          cancellationRequested: true,
+        }),
+      ),
     ).toBe(false);
+  });
+
+  /**
+   * A cancellation asked of a job that never started is a message with no
+   * reader: there is no encoder winding down, and the job that produced this
+   * test sat with the flag set and the button gone for an hour and a half.
+   */
+  it("offers cancel again for a job that never started", () => {
+    expect(
+      canCancel(
+        job({
+          state: "running",
+          stage: "waiting",
+          startedAt: null,
+          cancellationRequested: true,
+        }),
+      ),
+    ).toBe(true);
   });
 
   it("offers pause only while a job is actually encoding", () => {
@@ -197,6 +221,39 @@ describe("job history time", () => {
         Date.parse("2026-01-01T10:02:05.000Z"),
       ),
     ).toBe(125);
+  });
+
+  /**
+   * The figure this page showed beside a job that had never encoded a frame.
+   *
+   * It was counting from `createdAt`, so a job queued at 22:15 and parked
+   * seconds later read an hour and a half of processing at midnight. Waiting
+   * is not work, and a job with no start has no runtime to report.
+   */
+  it("reports no elapsed time for a job that has never started", () => {
+    expect(
+      processingElapsedSeconds(
+        job({
+          state: "queued",
+          createdAt: "2026-01-01T09:00:00.000Z",
+          startedAt: null,
+        }),
+        Date.parse("2026-01-01T10:26:00.000Z"),
+      ),
+    ).toBeNull();
+  });
+
+  it("reports no duration for a job that finished without ever starting", () => {
+    expect(
+      processingDurationSeconds(
+        job({
+          state: "cancelled",
+          createdAt: "2026-01-01T09:00:00.000Z",
+          startedAt: null,
+          finishedAt: "2026-01-01T10:26:00.000Z",
+        }),
+      ),
+    ).toBeNull();
   });
 
   it("formats the recorded finish instant in the requested locale", () => {

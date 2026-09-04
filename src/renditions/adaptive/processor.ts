@@ -23,6 +23,7 @@ import {
   discoverSidecarSubtitles,
   type SidecarSubtitle,
 } from "./sidecarSubtitles";
+import { titleRootFor, type TitleRootLayout } from "./titleRoot";
 import {
   packageAdaptiveRendition,
   type AdaptivePackageResult,
@@ -241,6 +242,29 @@ export async function processAdaptiveReport(
       return registryWrite;
     };
 
+    /*
+     * Which of these sources own their folder, and which share it.
+     *
+     * The offline runner has no catalogue to ask, so it reads the question off
+     * the run itself: a folder holding one source is that source's title, and
+     * its package goes beside it — the movie layout, unchanged. A folder
+     * holding several is a season folder, and each source gets its own nested
+     * root, because publishing them all into one directory would have each
+     * episode's `video/` and manifest silently replace the last one's.
+     */
+    const sourcesPerDirectory = new Map<string, number>();
+    for (const candidate of candidates) {
+      const directory = path.posix.dirname(candidate.relativePath);
+      sourcesPerDirectory.set(
+        directory,
+        (sourcesPerDirectory.get(directory) ?? 0) + 1,
+      );
+    }
+    const layoutFor = (relativePath: string): TitleRootLayout =>
+      (sourcesPerDirectory.get(path.posix.dirname(relativePath)) ?? 1) > 1
+        ? "nested"
+        : "beside";
+
     const workerCount = Math.max(
       1,
       Math.min(4, Math.floor(options.workerCount ?? 1)),
@@ -301,6 +325,7 @@ export async function processAdaptiveReport(
               relativePath: item.relativePath,
               sourceFingerprint: item.sourceFingerprint,
               sourcePath,
+              titleRoot: titleRootFor(sourcePath, layoutFor(item.relativePath)),
               probe: item.probe,
             },
             paths,

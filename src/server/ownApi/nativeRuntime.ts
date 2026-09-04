@@ -58,6 +58,10 @@ import { createProcessingJobStore } from "./processing/jobStore";
 import { createProcessingRoutes } from "./processing/processingRoutes";
 import { createProcessingJobRunner } from "./processing/jobRunner";
 import { pruneLiveProgress } from "./processing/liveProgress";
+import {
+  resolveTitleRoot,
+  titleRootLayoutForKind,
+} from "../../renditions/adaptive/titleRoot";
 import { createStorageWatchdog } from "../../renditions/processing/storageWatchdog";
 import { createStorageIncidentStore } from "./processing/storageIncidentStore";
 import { createStorageGuard } from "./processing/storageGuard";
@@ -470,6 +474,18 @@ export async function createNativeRuntime({
         if (recovery.completedEpochs.length > 0) {
           await processingJobs.update(job.id, checkpointCountersFor(recovery));
         }
+        /*
+         * Where this title publishes, decided by the catalogue exactly as it
+         * is when a job is first queued. Leaving it off made the destination
+         * of a job depend on how it happened to be started: the first attempt
+         * published into the episode's own folder and an automatic requeue
+         * published into the season's, over its neighbours.
+         */
+        const kind = (await catalogue.getItemKind(job.itemId)) ?? "movie";
+        const titleRoot = resolveTitleRoot(
+          sourcePath,
+          titleRootLayoutForKind(kind),
+        );
         const queueJobId = await queue.enqueue({
           jobType: "media.process",
           payload: {
@@ -478,6 +494,7 @@ export async function createNativeRuntime({
             relativePath: file.relativePath,
             sizeBytes: Number(file.sizeBytes),
             mtimeMs: sourceStats.mtimeMs,
+            titleRoot,
           },
           dedupeKey: `processing:${job.mediaFileId}:storage-recovery:${Date.now()}`,
         });

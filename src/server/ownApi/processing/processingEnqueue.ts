@@ -1,0 +1,673 @@
+import { stat } from "node:fs/promises";
+import type { Stats } from "node:fs";
+import path from "node:path";
+import { OwnApiError } from "../ownApiHandler";
+import { isPathInsideRoot } from "../../pathSecurity";
+import { RENDITION_TARGETS } from "../../../renditions/policy";
+import type {
+  CatalogueRepository,
+  MediaFileRow,
+} from "../catalogue/catalogueRepository";
+import type { JobQueue, JobStatus } from "../tasks/jobQueue";
+import type { HardwareReport } from "../../../renditions/hardware/detect";
+import { probeMediaFile } from "../../../renditions/probe";
+import { computeSourceFingerprint } from "../../../renditions/registry";
+import {
+  decideProcessing,
+  freeBytesOn,
+  type ProcessingDecision,
+} from "../../../renditions/processing/decide";
+import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
+import { readTitlePackageManifest } from "../../../renditions/adaptive/publishTitle";
+import {
+  resolveTitleRoot,
+  titleRootLayoutForKind,
+} from "../../../renditions/adaptive/titleRoot";
+import {
+  DuplicateProcessingJobError,
+  type ProcessingJobRecord,
+  type ProcessingJobStore,
+} from "./jobStore";
+import type { StorageGuard } from "./storageGuard";
+import { summarisePackage } from "./packageIndex";
+
+/**
+ * The one way a processing job is created.
+ *
+ * A movie, an episode, a whole season and a whole series all end up here. That
+ * is the point of it: the checks that stand between a button and an encoder —
+ * the source is really there, its bytes are the bytes the plan was made
+ * against, the volume is not quarantined, the ladder actually has something
+ * left to build, no other job is already on this file — are the reason this
+ * system has not destroyed anything, and a second copy of them written for
+ * television would be a second copy that drifts.
+ *
+ * A bulk action is therefore not a different code path. It is this one, run
+ * once per episode, with the outcomes counted.
+ */
+
+export const PROCESSING_JOB_TYPE = "media.process";
+
+export interface ProcessingEnqueueOptions {
+  catalogue: CatalogueRepository;
+  store: ProcessingJobStore;
+  queue: JobQueue;
+  mediaRoot: string;
+  renditionRoot: string;
+  ffprobePath: string;
+  hardware: () => Promise<HardwareReport>;
+  storageGuard: StorageGuard;
+}
+
+export interface LocatedSource {
+  file: MediaFileRow;
+  absolutePath: string;
+}
+
+export interface ExistingPackageView {
+  present: boolean;
+  current?: boolean;
+  sourceMatches?: boolean;
+  profileMatches?: boolean;
+  rungs?: number[];
+  complete?: boolean;
+  hdr?: string;
+  audioTracks?: number;
+  subtitleTracks?: number;
+  totalBytes?: number;
+  missingRungs: number[];
+}
+
+export interface AnalysisResult {
+  decision: ProcessingDecision;
+  fingerprint: string;
+  file: MediaFileRow;
+  absolutePath: string;
+  titleRoot: string;
+  mtimeMs: number;
+  existing: ExistingPackageView;
+}
+
+/** Why one title in a bulk request was not queued. */
+export type EnqueueSkipReason =
+  | "already-queued"
+  | "already-complete"
+  | "source-unavailable"
+  | "rejected"
+  | "insufficient-space"
+  | "error";
+
+export interface BulkEnqueueOutcome {
+  queued: number;
+  alreadyQueued: number;
+  alreadyComplete: number;
+  unavailable: number;
+  failed: number;
+  /** The job ids created, so a caller can report or follow them. */
+  jobIds: string[];
+  /** One line per title that was not queued, for the operator's notice. */
+  skipped: Array<{
+    itemId: string;
+    mediaFileId: string | null;
+    reason: EnqueueSkipReason;
+    detail?: string;
+  }>;
+}
+
+/**
+ * The queue attempt a durable processing job is currently running on.
+ *
+ * `adopted` is true when an executable attempt already existed — a double
+ * press, a concurrent request, or a previous resume that got as far as the
+ * queue before its caller went away.
+ */
+export interface ProcessingAttempt {
+  queueJobId: string;
+  /** True when an executable attempt already existed and was taken over. */
+  adopted: boolean;
+  /** `queued` means nothing has begun; `running` means a worker holds it. */
+  status: JobStatus;
+}
+
+export interface ProcessingEnqueuer {
+  locateSource(itemId: string, mediaFileId?: string): Promise<LocatedSource>;
+  statSource(
+    file: Pick<MediaFileRow, "missingSince">,
+    absolutePath: string,
+  ): Promise<Stats | null>;
+  titleRootFor(itemId: string, absolutePath: string): Promise<string>;
+  existingPackage(
+    titleRoot: string,
+    fingerprint: string | null,
+  ): Promise<ExistingPackageView>;
+  analyse(itemId: string, mediaFileId?: string): Promise<AnalysisResult>;
+  /** Creates and queues one job. Throws the same errors the route always did. */
+  enqueue(
+    itemId: string,
+    mediaFileId?: string,
+  ): Promise<{ job: ProcessingJobRecord; analysis: AnalysisResult }>;
+  /**
+   * Gives an existing durable job one executable attempt, and no more.
+   *
+   * A processing job is the lifetime of an operation; a `media.process` row is
+   * one attempt at it, and an operation may need several — a parked job whose
+   * attempt ended, a job whose worker died, a job an operator resumed. What
+   * this refuses to do is create a second attempt for work that already has
+   * one, and it decides that by asking the queue what is still executable for
+   * this processing job rather than by trusting the id stored beside it, which
+   * names the last attempt and may long since have finished.
+   *
+   * Two presses and two concurrent requests converge on one row: the losing
+   * insert collapses onto the winner through the queue's own dedupe index, so
+   * exactly-once does not depend on this process seeing a consistent read.
+   */
+  ensureAttempt(
+    job: Pick<ProcessingJobRecord, "id" | "itemId" | "mediaFileId">,
+  ): Promise<ProcessingAttempt>;
+  /**
+   * Runs `enqueue` over many titles and counts what happened.
+   *
+   * Sequential on purpose. Each call probes a source and reads a manifest off
+   * the media volume, and eighty of those at once is precisely the burst this
+   * system's storage rules exist to prevent. It also makes the result
+   * deterministic: two presses of the same button produce the same counts
+   * because the second one finds the jobs the first one made.
+   */
+  enqueueAll(
+    targets: ReadonlyArray<{ itemId: string; mediaFileId?: string }>,
+  ): Promise<BulkEnqueueOutcome>;
+}
+
+export function createProcessingEnqueuer({
+  catalogue,
+  store,
+  queue,
+  mediaRoot,
+  renditionRoot,
+  ffprobePath,
+  hardware,
+  storageGuard,
+}: ProcessingEnqueueOptions): ProcessingEnqueuer {
+  const resolvedMediaRoot = path.resolve(mediaRoot);
+
+  /**
+   * Where an item's bytes would live, whether or not they are still there.
+   *
+   * Locating and reading are separate steps because a source can be deleted
+   * while the package built from it stays on disk: the path is still the only
+   * way to find that package, so it is resolved before the file is opened.
+   */
+  const locateSource: ProcessingEnqueuer["locateSource"] = async (
+    itemId,
+    mediaFileId,
+  ) => {
+    const files = await catalogue.listFilesForItem(itemId);
+    /*
+     * `listFilesForItem` returns primary first, largest first — the same order
+     * `getPrimaryFile` picks from — so `files[0]` is the canonical source the
+     * rest of Seyirlik plays. This is what keeps the `.mkv` and the `.mp4` of
+     * one episode from becoming two jobs writing to one package.
+     */
+    const file = mediaFileId
+      ? files.find((candidate) => candidate.id === mediaFileId)
+      : files[0];
+    if (!file) {
+      throw new OwnApiError(
+        "MEDIA_NOT_FOUND",
+        "The requested media could not be found.",
+        404,
+      );
+    }
+    const absolutePath = path.resolve(
+      resolvedMediaRoot,
+      ...file.relativePath.split("/"),
+    );
+    if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
+      throw new OwnApiError(
+        "MEDIA_NOT_FOUND",
+        "The requested media could not be found.",
+        404,
+      );
+    }
+    return { file, absolutePath };
+  };
+
+  /**
+   * The source's stats, or `null` when the source is gone.
+   *
+   * A deleted source is an ordinary state of the library, not a fault: `stat`
+   * raising ENOENT used to reach the page as a bare internal error, which said
+   * nothing about the package the title still has.
+   */
+  const statSource: ProcessingEnqueuer["statSource"] = async (
+    file,
+    absolutePath,
+  ) => {
+    if (file.missingSince !== null) return null;
+    try {
+      return await stat(absolutePath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return null;
+      throw error;
+    }
+  };
+
+  /**
+   * Where this title's package is, or would go.
+   *
+   * A movie folder holds one movie, so its package sits beside it. A season
+   * folder holds a season, so an episode's goes in its own folder inside it.
+   * The kind comes from the catalogue rather than from the shape of the path,
+   * because a path cannot tell the two apart.
+   */
+  const titleRootFor: ProcessingEnqueuer["titleRootFor"] = async (
+    itemId,
+    absolutePath,
+  ) => {
+    const kind = (await catalogue.getItemKind(itemId)) ?? "movie";
+    return resolveTitleRoot(absolutePath, titleRootLayoutForKind(kind));
+  };
+
+  /**
+   * What the title already holds, so a preview can describe the work that is
+   * actually left rather than the work a bare source would need.
+   */
+  const existingPackage: ProcessingEnqueuer["existingPackage"] = async (
+    titleRoot,
+    fingerprint,
+  ) => {
+    const manifest = await readTitlePackageManifest(titleRoot).catch(
+      () => undefined,
+    );
+    const summary = summarisePackage(manifest ?? null, fingerprint);
+    if (!summary) return { present: false, missingRungs: [] };
+    return { ...summary, missingRungs: [] };
+  };
+
+  const analyse: ProcessingEnqueuer["analyse"] = async (
+    itemId,
+    mediaFileId,
+  ) => {
+    const { file, absolutePath } = await locateSource(itemId, mediaFileId);
+    const stats = await statSource(file, absolutePath);
+    if (!stats) {
+      throw new OwnApiError(
+        "SOURCE_UNAVAILABLE",
+        "The source file for this title is no longer on disk.",
+        409,
+      );
+    }
+    const probe = await probeMediaFile(absolutePath, ffprobePath);
+    const report = await hardware();
+    const freeBytes = await freeBytesOn(renditionRoot);
+    const fingerprint = await computeSourceFingerprint(absolutePath, stats);
+    const titleRoot = await titleRootFor(itemId, absolutePath);
+    const existing = await existingPackage(titleRoot, fingerprint);
+    const plan = {
+      probe,
+      container: path.extname(absolutePath).replace(".", ""),
+      sizeBytes: stats.size,
+      hardware: report,
+      ...(freeBytes === undefined ? {} : { freeBytes }),
+    };
+
+    /*
+     * What this source would be built into today, before asking whether the
+     * package on disk already satisfies it.
+     *
+     * The two questions are separate: the profile version says whether a
+     * package is still *readable*, and the ladder says whether it is still
+     * *complete*. Deciding completeness from the profile version alone means a
+     * title that predates a new rung reports "nothing to do" — and moving the
+     * profile version to force the issue is worse, because a mismatch resolves
+     * the package to `missing` and withdraws a perfectly playable title from
+     * delivery. So the ladder is compared directly. `decideProcessing` reads
+     * only the values above, so asking it twice costs nothing.
+     */
+    const planned = decideProcessing(plan);
+    const missingRungs = planned.ladder
+      .map((rung) => rung.qualityHeight)
+      .filter(
+        (height) => !existing.present || !existing.rungs?.includes(height),
+      );
+    const isCurrent =
+      existing.present && existing.current === true && missingRungs.length === 0;
+
+    /*
+     * Re-decided once the outstanding work is known, so the estimate and the
+     * disk preflight describe this job rather than the finished package. A
+     * one-rung job otherwise reported the whole package's size as its own
+     * output and reserved space for seven renditions it was not making.
+     */
+    const incremental =
+      !isCurrent &&
+      existing.present &&
+      existing.current === true &&
+      missingRungs.length > 0;
+    const decision = isCurrent
+      ? decideProcessing({ ...plan, alreadyCurrent: true })
+      : incremental
+        ? decideProcessing({
+            ...plan,
+            renditionsToEncode: missingRungs,
+            // Existing audio is reused whenever the package is otherwise
+            // current, so this run encodes none of it.
+            audioTracksToEncode: 0,
+          })
+        : planned;
+
+    return {
+      decision,
+      fingerprint,
+      file,
+      absolutePath,
+      titleRoot,
+      mtimeMs: stats.mtimeMs,
+      existing: { ...existing, missingRungs },
+    };
+  };
+
+  /**
+   * The payload one attempt runs on.
+   *
+   * Built in one place so every route into an attempt carries the same fields.
+   * `titleRoot` is the one that matters most: without it the worker publishes
+   * beside the source, which for an episode is the season folder — so every
+   * episode of a season would overwrite the last one. It was present on the
+   * first attempt and missing from every requeue, which made the destination
+   * of a job depend on how it happened to be started.
+   */
+  function attemptPayload(input: {
+    processingJobId: string;
+    file: MediaFileRow;
+    absolutePath: string;
+    mtimeMs: number;
+    titleRoot: string;
+  }): Record<string, unknown> {
+    return {
+      processingJobId: input.processingJobId,
+      sourcePath: input.absolutePath,
+      relativePath: input.file.relativePath,
+      sizeBytes: Number(input.file.sizeBytes),
+      mtimeMs: input.mtimeMs,
+      titleRoot: input.titleRoot,
+    };
+  }
+
+  const ensureAttempt: ProcessingEnqueuer["ensureAttempt"] = async (job) => {
+    /*
+     * The same gate a new job meets. A resumed job is new work as far as the
+     * drive is concerned, and routing around the quarantine by resuming
+     * instead of queueing is precisely the thing an operator would try.
+     */
+    if (!storageGuard.mayStartWork()) {
+      throw new OwnApiError(
+        "PROCESSING_STORAGE_GUARDED",
+        `${storageGuard.describe()} Verify and resume the storage before starting this job.`,
+        409,
+      );
+    }
+
+    const existing = await queue.findActive({
+      jobType: PROCESSING_JOB_TYPE,
+      payload: { processingJobId: job.id },
+    });
+    if (existing) {
+      return {
+        queueJobId: existing.id,
+        adopted: true,
+        status: existing.status,
+      };
+    }
+
+    const { file, absolutePath } = await locateSource(
+      job.itemId,
+      job.mediaFileId,
+    );
+    const stats = await statSource(file, absolutePath);
+    if (!stats) {
+      throw new OwnApiError(
+        "SOURCE_UNAVAILABLE",
+        "The source file for this title is no longer on disk.",
+        409,
+      );
+    }
+    const titleRoot = await titleRootFor(job.itemId, absolutePath);
+    const queueJobId = await queue.enqueue({
+      jobType: PROCESSING_JOB_TYPE,
+      payload: attemptPayload({
+        processingJobId: job.id,
+        file,
+        absolutePath,
+        mtimeMs: stats.mtimeMs,
+        titleRoot,
+      }),
+      /*
+       * The same key a first attempt uses, on purpose. It is unique only over
+       * queued and running rows, so a finished attempt never blocks a later
+       * one — and while an attempt *is* live, two simultaneous presses collapse
+       * onto it in the database rather than in whichever process read first.
+       */
+      dedupeKey: `processing:${file.id}`,
+    });
+    /*
+     * Read back rather than assumed. A collapse returns the row it collapsed
+     * onto — which a racing request may already have had leased — and a caller
+     * that assumed `queued` here would tell the page nothing has started while
+     * an encoder was running.
+     */
+    const record = await queue.get(queueJobId);
+    return { queueJobId, adopted: false, status: record?.status ?? "queued" };
+  };
+
+  const enqueue: ProcessingEnqueuer["enqueue"] = async (
+    itemId,
+    mediaFileId,
+  ) => {
+    /*
+     * Refused before the source is even located. Queueing new work against
+     * guarded storage is how a backlog gets built that the moment the
+     * quarantine lifts is thrown at the drive all at once.
+     */
+    if (!storageGuard.mayStartWork()) {
+      throw new OwnApiError(
+        "PROCESSING_STORAGE_GUARDED",
+        `${storageGuard.describe()} Verify and resume the storage before queueing new work.`,
+        409,
+      );
+    }
+
+    const analysis = await analyse(itemId, mediaFileId);
+    const { decision, file, fingerprint, absolutePath, mtimeMs, existing } =
+      analysis;
+
+    if (decision.action.startsWith("reject")) {
+      throw new OwnApiError("PROCESSING_REJECTED", decision.summary, 422);
+    }
+    if (decision.action === "skip-already-current") {
+      /*
+       * Nothing to build. A single press already surfaced this as a card that
+       * offers removal of the source instead of a run; a bulk press has to be
+       * told the same thing in a form it can count.
+       */
+      throw new OwnApiError(
+        "PROCESSING_ALREADY_CURRENT",
+        "A current package for this exact source already exists.",
+        409,
+      );
+    }
+    if (!decision.estimate.sufficient) {
+      throw new OwnApiError(
+        "INSUFFICIENT_DISK_SPACE",
+        "There is not enough free space for this package and its staging copy.",
+        507,
+      );
+    }
+
+    let job: ProcessingJobRecord;
+    try {
+      job = await store.create({
+        itemId,
+        mediaFileId: file.id,
+        sourceFingerprint: fingerprint,
+        profile: ADAPTIVE_PROFILE_VERSION,
+        /*
+         * `decision.renditionsToEncode` already states the work; the flag only
+         * records whether this was an addition to a package that was otherwise
+         * complete, which is what the history reads back.
+         */
+        decision: {
+          ...decision,
+          incremental:
+            existing.present &&
+            decision.renditionsToEncode.length > 0 &&
+            decision.renditionsToEncode.length < decision.ladder.length,
+        } as unknown as Record<string, unknown>,
+        streamDecisions: {
+          audio: decision.streams.audio,
+          subtitles: decision.streams.subtitles,
+        } as unknown as Record<string, unknown>,
+        estimatedOutputBytes: decision.estimate.outputBytes,
+        estimatedStagingBytes: decision.estimate.stagingBytes,
+        hardwareAdapter: decision.hardwareAdapter,
+        videoEncoder: decision.videoEncoder,
+        warnings: decision.warnings,
+      });
+    } catch (error) {
+      if (error instanceof DuplicateProcessingJobError) {
+        throw new OwnApiError(
+          "PROCESSING_JOB_EXISTS",
+          "This file already has a processing job that has not finished.",
+          409,
+        );
+      }
+      throw error;
+    }
+
+    const queueJobId = await queue.enqueue({
+      jobType: PROCESSING_JOB_TYPE,
+      payload: attemptPayload({
+        processingJobId: job.id,
+        file,
+        absolutePath,
+        mtimeMs,
+        titleRoot: analysis.titleRoot,
+      }),
+      /*
+       * The queue's own dedupe key, keyed on the file rather than the item, so
+       * a double press and two overlapping bulk requests converge on one job
+       * exactly as the unique index on `processing_jobs` does.
+       */
+      dedupeKey: `processing:${file.id}`,
+    });
+    await store.attachQueueJob(job.id, queueJobId);
+    await store.appendEvent({
+      processingJobId: job.id,
+      stage: "waiting",
+      message: "Queued for processing.",
+    });
+
+    return { job: (await store.get(job.id)) ?? job, analysis };
+  };
+
+  const enqueueAll: ProcessingEnqueuer["enqueueAll"] = async (targets) => {
+    const outcome: BulkEnqueueOutcome = {
+      queued: 0,
+      alreadyQueued: 0,
+      alreadyComplete: 0,
+      unavailable: 0,
+      failed: 0,
+      jobIds: [],
+      skipped: [],
+    };
+    /*
+     * The same title named twice in one request — which a season and a series
+     * press can both produce — is one attempt, not two.
+     */
+    const seen = new Set<string>();
+
+    for (const target of targets) {
+      const key = `${target.itemId}:${target.mediaFileId ?? ""}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      try {
+        const { job } = await enqueue(target.itemId, target.mediaFileId);
+        outcome.queued += 1;
+        outcome.jobIds.push(job.id);
+      } catch (error) {
+        const code = error instanceof OwnApiError ? error.code : "";
+        const mediaFileId = target.mediaFileId ?? null;
+        if (code === "PROCESSING_JOB_EXISTS") {
+          outcome.alreadyQueued += 1;
+          outcome.skipped.push({
+            itemId: target.itemId,
+            mediaFileId,
+            reason: "already-queued",
+          });
+          continue;
+        }
+        if (code === "PROCESSING_ALREADY_CURRENT") {
+          outcome.alreadyComplete += 1;
+          outcome.skipped.push({
+            itemId: target.itemId,
+            mediaFileId,
+            reason: "already-complete",
+          });
+          continue;
+        }
+        if (code === "SOURCE_UNAVAILABLE" || code === "MEDIA_NOT_FOUND") {
+          outcome.unavailable += 1;
+          outcome.skipped.push({
+            itemId: target.itemId,
+            mediaFileId,
+            reason: "source-unavailable",
+          });
+          continue;
+        }
+        /*
+         * A guarded volume is not one title's problem, it is the whole
+         * request's. Continuing would produce a hundred identical refusals and
+         * hide the one that matters.
+         */
+        if (code === "PROCESSING_STORAGE_GUARDED") throw error;
+
+        outcome.failed += 1;
+        outcome.skipped.push({
+          itemId: target.itemId,
+          mediaFileId,
+          reason:
+            code === "PROCESSING_REJECTED"
+              ? "rejected"
+              : code === "INSUFFICIENT_DISK_SPACE"
+                ? "insufficient-space"
+                : "error",
+          detail: error instanceof Error ? error.message : String(error),
+        });
+        /*
+         * A full disk will be full for the next title too. Stopping is the
+         * honest answer, and it leaves the jobs already queued intact.
+         */
+        if (code === "INSUFFICIENT_DISK_SPACE") break;
+      }
+    }
+
+    return outcome;
+  };
+
+  return {
+    locateSource,
+    statSource,
+    titleRootFor,
+    existingPackage,
+    analyse,
+    enqueue,
+    ensureAttempt,
+    enqueueAll,
+  };
+}
+
+/** Kept here so the route module and the projection agree on the ladder. */
+export const STANDARD_RUNG_HEIGHTS = RENDITION_TARGETS.map(
+  (target) => target.qualityHeight,
+);

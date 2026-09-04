@@ -39,14 +39,19 @@ import {
   adoptProcessingStorage,
   resumeProcessingStorage,
   verifyProcessingStorage,
+  processSeason,
+  processSeries,
   type AssemblyPhaseProgress,
   type AudioPhaseProgress,
   type CompletedPhaseSummary,
   type ProcessingJob,
   type ProcessingJobEvent,
   type ProcessingLiveProgress,
+  type ProcessingEpisode,
   type ProcessingOverview,
   type ProcessingPreview,
+  type ProcessingSeason,
+  type ProcessingSeries,
   type PublishPhaseProgress,
   type VerificationPhaseProgress,
 } from "../../lib/processingApi";
@@ -90,6 +95,13 @@ import {
   summariseLanguages,
 } from "./processingModel";
 import { formatTemplate } from "./libraryMaintenanceModel";
+import { ProcessingSeriesTree } from "./ProcessingSeriesTree";
+import {
+  autoExpandedIds,
+  describeBulkOutcome,
+  filterSeries,
+  jobLabel,
+} from "./processingSeriesModel";
 
 const CARD = "rounded-2xl border border-white/10 bg-white/[0.03] p-4 sm:p-5";
 const LABEL =
@@ -1105,6 +1117,30 @@ export const PhaseDetailForTest = PhaseDetail;
 export function MediaProcessingPage() {
   const { language, t } = useLanguage();
   const [activeTab, setActiveTab] = useState<"titles" | "processes">("titles");
+  /**
+   * Which content kind the Titles tab is showing.
+   *
+   * A switch rather than one merged list: a film is one processing unit and an
+   * episode is one of eighty-six, and flattening the two into a single stream
+   * of cards loses the only structure that makes a show navigable.
+   */
+  const [contentKind, setContentKind] = useState<"movies" | "series">("movies");
+  /*
+   * Which shows and seasons the operator has opened.
+   *
+   * Held by catalogue id rather than by position, and never rebuilt from the
+   * server's response, so the one-second poll that refreshes job state cannot
+   * close a season somebody is reading.
+   */
+  const [expandedSeriesIds, setExpandedSeriesIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [expandedSeasonIds, setExpandedSeasonIds] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const [seriesSearchTerm, setSeriesSearchTerm] = useState("");
+  const [busySeriesId, setBusySeriesId] = useState<string | null>(null);
+  const [busySeasonId, setBusySeasonId] = useState<string | null>(null);
   const [overview, setOverview] = useState<ProcessingOverview | null>(null);
   const [refreshedAt, setRefreshedAt] = useState(() => Date.now());
   /** Serialises the two recovery presses so neither can be double-fired. */
@@ -1435,6 +1471,122 @@ export function MediaProcessingPage() {
   );
 
   /**
+   * Starting one episode.
+   *
+   * The same request a film's button makes, against the episode's own item.
+   * There is deliberately no episode-specific endpoint: an episode is a title
+   * with a canonical source like any other, and the server decides everything
+   * about how it is packaged.
+   */
+  const startEpisode = useCallback(
+    async (episode: ProcessingEpisode) => {
+      setStartingItemId(episode.itemId);
+      try {
+        const { job } = await enqueueProcessing(
+          episode.itemId,
+          episode.mediaFileId ?? undefined,
+        );
+        setOpenJobId(job.id);
+        await refreshOverview();
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+      } finally {
+        setStartingItemId(null);
+      }
+    },
+    [refreshOverview, t],
+  );
+
+  /**
+   * One press, one server-side batch, one job per eligible episode.
+   *
+   * Not eighty browser requests. The server holds the only consistent view of
+   * which episodes already have jobs, so letting it decide is what makes a
+   * double press idempotent instead of a race — and `busy` here only stops the
+   * second press being *sent*, it is not what makes it safe.
+   */
+  const runBulk = useCallback(
+    async (
+      request: () => Promise<{
+        queued: number;
+        alreadyQueued: number;
+        alreadyComplete: number;
+        unavailable: number;
+        failed: number;
+      }>,
+      setBusy: (value: string | null) => void,
+      id: string,
+    ) => {
+      setBusy(id);
+      try {
+        const outcome = await request();
+        notify({
+          tone: outcome.queued > 0 ? "success" : "info",
+          title: describeBulkOutcome(
+            outcome,
+            (key) => t(key as never),
+            formatTemplate,
+          ),
+        });
+        await refreshOverview();
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+      } finally {
+        setBusy(null);
+      }
+    },
+    [refreshOverview, t],
+  );
+
+  const startSeason = useCallback(
+    (season: ProcessingSeason) =>
+      void runBulk(
+        () => processSeason(season.seasonId),
+        setBusySeasonId,
+        season.seasonId,
+      ),
+    [runBulk],
+  );
+
+  const startSeries = useCallback(
+    (series: ProcessingSeries) =>
+      void runBulk(
+        () => processSeries(series.seriesId),
+        setBusySeriesId,
+        series.seriesId,
+      ),
+    [runBulk],
+  );
+
+  const toggleSeries = useCallback((seriesId: string) => {
+    setExpandedSeriesIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(seriesId)) next.add(seriesId);
+      return next;
+    });
+  }, []);
+
+  const toggleSeason = useCallback((seasonId: string) => {
+    setExpandedSeasonIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(seasonId)) next.add(seasonId);
+      return next;
+    });
+  }, []);
+
+  /**
    * Removes a finished title's source file.
    *
    * Only reachable from the armed second press, and only for a title whose
@@ -1517,7 +1669,12 @@ export function MediaProcessingPage() {
     [items],
   );
 
-  const jobs = overview?.jobs ?? [];
+  /*
+   * Memoised so the arrays below have a stable identity between polls that
+   * return equivalent data; without it every dependent memo recomputes on
+   * every render and the tree re-renders while nothing has changed.
+   */
+  const jobs = useMemo(() => overview?.jobs ?? [], [overview]);
   const storage = overview?.storage;
   /*
    * The titles the guard is holding. Read from the pause reason rather than
@@ -1556,6 +1713,43 @@ export function MediaProcessingPage() {
           : true,
       );
   }, [items, language, searchTerm]);
+  /*
+   * The shows, narrowed by the search.
+   *
+   * `useMemo` on the overview's own array, so a poll that returns an
+   * equivalent tree produces an equivalent filtered tree and React re-renders
+   * rows in place. The expansion sets are keyed by catalogue id and are not
+   * touched here at all.
+   */
+  const allSeries = useMemo(() => overview?.series ?? [], [overview]);
+  const filteredSeries = useMemo(
+    () => filterSeries(allSeries, seriesSearchTerm, language),
+    [allSeries, seriesSearchTerm, language],
+  );
+  /*
+   * A search opens what it found, without disturbing what the operator opened.
+   * Clearing the search therefore returns the page to their own expansions
+   * rather than to a collapsed list.
+   */
+  const searchExpansion = useMemo(
+    () => autoExpandedIds(filteredSeries, seriesSearchTerm),
+    [filteredSeries, seriesSearchTerm],
+  );
+  const visibleExpandedSeriesIds = useMemo(
+    () => new Set([...expandedSeriesIds, ...searchExpansion.seriesIds]),
+    [expandedSeriesIds, searchExpansion],
+  );
+  const visibleExpandedSeasonIds = useMemo(
+    () => new Set([...expandedSeasonIds, ...searchExpansion.seasonIds]),
+    [expandedSeasonIds, searchExpansion],
+  );
+  /** Job identity, so the queue tab can say which show's pilot is encoding. */
+  const jobTitlesById = useMemo(
+    () =>
+      new Map((overview?.jobTitles ?? []).map((entry) => [entry.jobId, entry])),
+    [overview],
+  );
+
   const dateLocale = language === "tr" ? "tr-TR" : "en-US";
   const languages = useMemo(
     () =>
@@ -1671,6 +1865,16 @@ export function MediaProcessingPage() {
             <Stat
               label={t("processing.counts.running")}
               value={String(counts?.running ?? 0)}
+            />
+            {/*
+             * Paused work is counted in its own right. Without it this strip
+             * read "0 queued, 0 running" beside a list of jobs that were
+             * plainly there, which invites the conclusion that the page is
+             * broken rather than that the jobs are held.
+             */}
+            <Stat
+              label={t("processing.counts.paused")}
+              value={String(counts?.paused ?? 0)}
             />
             <Stat
               label={t("processing.counts.succeeded")}
@@ -1876,7 +2080,51 @@ export function MediaProcessingPage() {
             className="flex flex-col gap-3"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <span className={LABEL}>{t("processing.chooseTitle")}</span>
+              {/*
+               * Films or shows. Two content kinds with genuinely different
+               * shapes — one title against one source, versus a show whose
+               * seasons each hold a dozen independently processable episodes —
+               * so they get two views rather than one list that suits neither.
+               */}
+              <div
+                role="tablist"
+                aria-label={t("processing.chooseTitle")}
+                className="grid grid-cols-2 rounded-xl border border-white/10 bg-white/[0.03] p-1 sm:w-fit sm:min-w-64"
+              >
+                {(["movies", "series"] as const).map((kind) => {
+                  const selected = contentKind === kind;
+                  return (
+                    <button
+                      key={kind}
+                      type="button"
+                      role="tab"
+                      id={`processing-kind-${kind}`}
+                      aria-selected={selected}
+                      aria-controls={`processing-kind-panel-${kind}`}
+                      tabIndex={selected ? 0 : -1}
+                      onClick={() => setContentKind(kind)}
+                      className={`inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-bold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                        selected
+                          ? "bg-white/[0.1] text-white shadow-sm"
+                          : "text-white/45 hover:bg-white/[0.05] hover:text-white/75"
+                      }`}
+                    >
+                      {t(`processing.kind.${kind}`)}
+                      {kind === "series" && allSeries.length > 0 ? (
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                            selected
+                              ? "bg-[var(--accent)] text-black"
+                              : "bg-white/[0.08] text-white/60"
+                          }`}
+                        >
+                          {allSeries.length}
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
               <label className="relative block w-full sm:max-w-sm">
                 <Search
                   size={16}
@@ -1885,17 +2133,63 @@ export function MediaProcessingPage() {
                 />
                 <input
                   type="search"
-                  value={searchTerm}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                  placeholder={t("processing.search")}
-                  aria-label={t("processing.search")}
+                  value={
+                    contentKind === "series" ? seriesSearchTerm : searchTerm
+                  }
+                  onChange={(event) =>
+                    contentKind === "series"
+                      ? setSeriesSearchTerm(event.target.value)
+                      : setSearchTerm(event.target.value)
+                  }
+                  placeholder={t(
+                    contentKind === "series"
+                      ? "processing.tv.searchSeries"
+                      : "processing.search",
+                  )}
+                  aria-label={t(
+                    contentKind === "series"
+                      ? "processing.tv.searchSeries"
+                      : "processing.search",
+                  )}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-2.5 pl-10 pr-3 text-sm text-white outline-none transition placeholder:text-white/30 hover:border-white/20 focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent-soft)]"
                 />
               </label>
             </div>
 
-            {titlesLoading ? (
+            {contentKind === "series" ? (
               <div
+                id="processing-kind-panel-series"
+                role="tabpanel"
+                aria-labelledby="processing-kind-series"
+              >
+                {filteredSeries.length === 0 ? (
+                  <div className={`${CARD} text-center text-sm text-white/55`}>
+                    {seriesSearchTerm.trim()
+                      ? t("processing.tv.noSearchResults")
+                      : t("processing.tv.emptySeries")}
+                  </div>
+                ) : (
+                  <ProcessingSeriesTree
+                    series={filteredSeries}
+                    expandedSeriesIds={visibleExpandedSeriesIds}
+                    expandedSeasonIds={visibleExpandedSeasonIds}
+                    onToggleSeries={toggleSeries}
+                    onToggleSeason={toggleSeason}
+                    onProcessSeries={startSeries}
+                    onProcessSeason={startSeason}
+                    onStartEpisode={(episode) => void startEpisode(episode)}
+                    busySeriesId={busySeriesId}
+                    busySeasonId={busySeasonId}
+                    startingItemId={startingItemId}
+                    t={(key) => t(key as never)}
+                  />
+                )}
+              </div>
+            ) : titlesLoading ? (
+              <div
+                id="processing-kind-panel-movies"
+                role="tabpanel"
+                aria-labelledby="processing-kind-movies"
                 className="flex flex-col gap-3"
                 aria-label={t("processing.loadingTitles")}
               >
@@ -1910,13 +2204,23 @@ export function MediaProcessingPage() {
                 ))}
               </div>
             ) : filteredItems.length === 0 ? (
-              <div className={`${CARD} text-center text-sm text-white/55`}>
+              <div
+                id="processing-kind-panel-movies"
+                role="tabpanel"
+                aria-labelledby="processing-kind-movies"
+                className={`${CARD} text-center text-sm text-white/55`}
+              >
                 {searchTerm.trim()
                   ? t("processing.noSearchResults")
                   : t("processing.emptyTitles")}
               </div>
             ) : (
-              <ul className="flex flex-col gap-3">
+              <ul
+                id="processing-kind-panel-movies"
+                role="tabpanel"
+                aria-labelledby="processing-kind-movies"
+                className="flex flex-col gap-3"
+              >
                 {filteredItems.map((item) => {
                   const title = getDisplayTitle(item);
                   const state = previews[item.Id] ?? { status: "waiting" };
@@ -2315,9 +2619,32 @@ export function MediaProcessingPage() {
                   return (
                     <li key={job.id} className={`${CARD} flex flex-col gap-3`}>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                        <span className="text-sm font-bold">
-                          {itemTitleFor(job.itemId)}
-                        </span>
+                        {/*
+                          * Who this job belongs to.
+                          *
+                          * A film is its own name. An episode is a show and a
+                          * code: a queue listing three rows called "Pilot" is
+                          * a queue nobody can act on, and the operator has to
+                          * be able to tell which show they would be pausing.
+                          */}
+                        {(() => {
+                          const label = jobLabel(
+                            jobTitlesById.get(job.id),
+                            itemTitleFor(job.itemId),
+                          );
+                          return (
+                            <span className="flex min-w-0 flex-col">
+                              <span className="truncate text-sm font-bold">
+                                {label.primary}
+                              </span>
+                              {label.secondary ? (
+                                <span className="truncate text-[11px] font-semibold text-white/45">
+                                  {label.secondary}
+                                </span>
+                              ) : null}
+                            </span>
+                          );
+                        })()}
                         <Chip
                           tone={
                             job.state === "succeeded"

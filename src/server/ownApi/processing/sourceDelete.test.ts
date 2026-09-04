@@ -117,6 +117,8 @@ async function callDelete(
   } = {},
 ) {
   const catalogue = {
+    // A movie: its package sits beside it, which is what this suite exercises.
+    getItemKind: async () => "movie" as const,
     listFilesForItem: async () => [
       {
         id: FILE,

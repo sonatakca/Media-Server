@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  createDiskutilIdentityProbe,
   describeMedium,
+  parseDfDevice,
   parseDiskutilPlist,
   requiresOperatorAfterUncleanRestart,
   satisfiesRecovery,
@@ -401,5 +403,263 @@ describe("what is and is not a durable storage identity", () => {
     const differentNodeSameUuid = { ...EXPANSION, deviceNode: "/dev/disk11s3" };
     expect(satisfiesRecovery(EXPANSION, sameNodeDifferentUuid).ok).toBe(false);
     expect(satisfiesRecovery(EXPANSION, differentNodeSameUuid).ok).toBe(true);
+  });
+});
+
+/**
+ * The bug that parked a healthy drive.
+ *
+ * The media root is configured as `/Volumes/Expansion/media`, and the probe
+ * handed that straight to `diskutil info -plist`, which only accepts a device
+ * or a mount point and exits 1 on anything else. The probe returned `null`, the
+ * fail-closed identity gate had no identity to gate on, and every processing
+ * job was parked `recovery-pending` against a USB disk with nothing wrong with
+ * it.
+ *
+ * The plists below are trimmed captures of what this machine actually returned
+ * for `/dev/disk4s1` (the Expansion HDD) and `/dev/disk3s5` (the internal APFS
+ * data volume the scratch root lives on) — including the `Internal` key that
+ * current macOS emits in place of the `DeviceInternal` the older fixtures use.
+ */
+describe("resolving an arbitrary path to the volume underneath it", () => {
+  const EXPANSION_PLIST = `<plist><dict>
+     <key>BusProtocol</key><string>USB</string>
+     <key>DeviceIdentifier</key><string>disk4s1</string>
+     <key>DeviceNode</key><string>/dev/disk4s1</string>
+     <key>FilesystemType</key><string>exfat</string>
+     <key>Internal</key><false/>
+     <key>MountPoint</key><string>/Volumes/Expansion</string>
+     <key>VolumeUUID</key><string>885D7C8D-8088-315E-AAFF-0B9537DADFD8</string>
+   </dict></plist>`;
+
+  const INTERNAL_PLIST = `<plist><dict>
+     <key>BusProtocol</key><string>Apple Fabric</string>
+     <key>DeviceIdentifier</key><string>disk3s5</string>
+     <key>DeviceNode</key><string>/dev/disk3s5</string>
+     <key>FilesystemType</key><string>apfs</string>
+     <key>Internal</key><true/>
+     <key>MountPoint</key><string>/System/Volumes/Data</string>
+     <key>VolumeUUID</key><string>A0B2DA7F-6472-4ADA-85A9-7AA6E181686A</string>
+   </dict></plist>`;
+
+  const df = (device: string, mountedOn: string) =>
+    `Filesystem   512-blocks       Used  Available Capacity  Mounted on\n${device} 3906904320 2754344448 1152559872    71%    ${mountedOn}\n`;
+
+  /**
+   * A fake host: `df` answers for the two real paths, `diskutil` answers only
+   * for a device node. Handing it a directory fails exactly as the real tool
+   * does, which is what makes this a regression test rather than a restatement.
+   */
+  function host(overrides: { failDf?: boolean; failDiskutil?: boolean } = {}) {
+    const calls: Array<{ command: string; args: readonly string[] }> = [];
+    const run = async (
+      command: string,
+      args: readonly string[],
+      timeoutMs: number,
+    ) => {
+      calls.push({ command, args });
+      expect(timeoutMs).toBeGreaterThan(0);
+      if (command === "/bin/df") {
+        if (overrides.failDf) throw new Error("df: No such file or directory");
+        const target = args[args.length - 1];
+        if (target?.startsWith("/Volumes/Expansion")) {
+          return df("/dev/disk4s1", "/Volumes/Expansion");
+        }
+        if (target?.startsWith("/Users/")) {
+          return df("/dev/disk3s5", "/System/Volumes/Data");
+        }
+        throw new Error("df: No such file or directory");
+      }
+      if (overrides.failDiskutil) {
+        throw new Error("the volume identity probe failed with exit code 1");
+      }
+      const device = args[args.length - 1];
+      if (device === "/dev/disk4s1") return EXPANSION_PLIST;
+      if (device === "/dev/disk3s5") return INTERNAL_PLIST;
+      // Exactly what the old code hit: diskutil will not take a directory.
+      throw new Error("the volume identity probe failed with exit code 1");
+    };
+    return { run, calls };
+  }
+
+  /** A. The production failure, in the shape it actually occurred. */
+  it("identifies the external volume from a nested path inside it", async () => {
+    const { run, calls } = host();
+    const probe = createDiskutilIdentityProbe({ run });
+
+    const identity = await probe("/Volumes/Expansion/media");
+
+    expect(identity).not.toBeNull();
+    expect(identity?.volumeUuid).toBe("885D7C8D-8088-315E-AAFF-0B9537DADFD8");
+    expect(identity?.medium).toBe("physical-external");
+    expect(identity?.fsType).toBe("exfat");
+    expect(identity?.deviceNode).toBe("/dev/disk4s1");
+    // The volume, not the directory that happened to be configured.
+    expect(identity?.mountPath).toBe("/Volumes/Expansion");
+
+    // Resolution first, and `diskutil` is asked about a device, never a path.
+    expect(calls[0]).toEqual({
+      command: "/bin/df",
+      args: ["-P", "/Volumes/Expansion/media"],
+    });
+    expect(calls[1]).toEqual({
+      command: "/usr/sbin/diskutil",
+      args: ["info", "-plist", "/dev/disk4s1"],
+    });
+  });
+
+  /**
+   * B. The scratch root, which is the same question and must not grow a second
+   * answer: a nested path on an internal APFS volume, reached through a
+   * firmlink, where guessing `/Volumes/<name>` from the pathname gets nowhere.
+   */
+  it("identifies the internal volume behind a nested scratch path", async () => {
+    const probe = createDiskutilIdentityProbe({ run: host().run });
+
+    const identity = await probe(
+      "/Users/sonat/Documents/.seyirlik/processing-scratch",
+    );
+
+    expect(identity?.volumeUuid).toBe("A0B2DA7F-6472-4ADA-85A9-7AA6E181686A");
+    expect(identity?.medium).toBe("physical-internal");
+    expect(identity?.fsType).toBe("apfs");
+  });
+
+  /** C. No resolution, no identity. Nothing is invented from the pathname. */
+  it("returns null when the path cannot be resolved to a filesystem", async () => {
+    const { run, calls } = host({ failDf: true });
+    expect(
+      await createDiskutilIdentityProbe({ run })("/Volumes/Gone"),
+    ).toBeNull();
+    // And it did not fall back to asking diskutil about the path itself.
+    expect(calls.every((call) => call.command === "/bin/df")).toBe(true);
+  });
+
+  it("returns null when df says nothing usable", async () => {
+    const probe = createDiskutilIdentityProbe({
+      run: async () =>
+        "Filesystem 512-blocks Used Available Capacity Mounted on\n",
+    });
+    expect(await probe("/Volumes/Expansion/media")).toBeNull();
+  });
+
+  /** D. `diskutil` itself failing is the same answer: none. */
+  it("returns null when diskutil fails", async () => {
+    const probe = createDiskutilIdentityProbe({
+      run: host({ failDiskutil: true }).run,
+    });
+    expect(await probe("/Volumes/Expansion/media")).toBeNull();
+  });
+
+  it("returns null rather than an empty identity when the plist says nothing", async () => {
+    const probe = createDiskutilIdentityProbe({
+      run: async (command) =>
+        command === "/bin/df"
+          ? df("/dev/disk4s1", "/Volumes/Expansion")
+          : "<plist><dict></dict></plist>",
+    });
+    expect(await probe("/Volumes/Expansion/media")).toBeNull();
+  });
+
+  it("bounds every subprocess it runs", async () => {
+    const timeouts: number[] = [];
+    const inner = host().run;
+    const probe = createDiskutilIdentityProbe({
+      run: async (command, args, timeoutMs) => {
+        timeouts.push(timeoutMs);
+        return inner(command, args, timeoutMs);
+      },
+      timeoutMs: 4_000,
+    });
+    await probe("/Volumes/Expansion/media");
+    expect(timeouts).toEqual([4_000, 4_000]);
+  });
+});
+
+describe("the keys current macOS actually emits", () => {
+  /** The live spelling. This is the second half of the production failure. */
+  it("reads `Internal` for an external volume", () => {
+    const identity = parseDiskutilPlist(
+      `<plist><dict>
+         <key>VolumeUUID</key><string>885D7C8D-8088-315E-AAFF-0B9537DADFD8</string>
+         <key>DeviceIdentifier</key><string>disk4s1</string>
+         <key>BusProtocol</key><string>USB</string>
+         <key>Internal</key><false/>
+         <key>FilesystemType</key><string>exfat</string>
+         <key>MountPoint</key><string>/Volumes/Expansion</string>
+       </dict></plist>`,
+      "/Volumes/Expansion/media",
+    );
+    expect(identity.medium).toBe("physical-external");
+    expect(identity.fsType).toBe("exfat");
+    expect(identity.mountPath).toBe("/Volumes/Expansion");
+    // No DeviceNode in this capture: rebuilt from the identifier, one shape.
+    expect(identity.deviceNode).toBe("/dev/disk4s1");
+  });
+
+  it("reads `Internal` for an internal volume", () => {
+    const identity = parseDiskutilPlist(
+      `<plist><dict>
+         <key>Internal</key><true/>
+         <key>FilesystemType</key><string>apfs</string>
+         <key>VolumeUUID</key><string>A0B2DA7F-6472-4ADA-85A9-7AA6E181686A</string>
+       </dict></plist>`,
+      "/Users/sonat/Documents/.seyirlik/processing-scratch",
+    );
+    expect(identity.medium).toBe("physical-internal");
+  });
+
+  /**
+   * E. The older spelling still decides, because a host that emits it is a host
+   * whose volumes must still be classified — and because the fixtures above in
+   * this file are written that way.
+   */
+  it("still understands DeviceInternal where that is all there is", () => {
+    expect(
+      parseDiskutilPlist(
+        `<plist><dict><key>DeviceInternal</key><false/>
+           <key>VolumeUUID</key><string>1</string></dict></plist>`,
+        "/x",
+      ).medium,
+    ).toBe("physical-external");
+    expect(
+      parseDiskutilPlist(
+        `<plist><dict><key>DeviceInternal</key><true/></dict></plist>`,
+        "/x",
+      ).medium,
+    ).toBe("physical-internal");
+  });
+
+  /** A disk image still wins over `Internal false`, which it also reports. */
+  it("keeps a disk image a disk image under the new key", () => {
+    expect(
+      parseDiskutilPlist(
+        `<plist><dict>
+           <key>BusProtocol</key><string>Disk Image</string>
+           <key>Internal</key><false/>
+           <key>VolumeUUID</key><string>aaaa</string>
+         </dict></plist>`,
+        "/Volumes/Expansion",
+      ).medium,
+    ).toBe("disk-image");
+  });
+
+  it("falls back to the caller's path when the plist has no mount point", () => {
+    expect(
+      parseDiskutilPlist(
+        `<plist><dict><key>VolumeUUID</key><string>1</string></dict></plist>`,
+        "/Volumes/Expansion/media",
+      ).mountPath,
+    ).toBe("/Volumes/Expansion/media");
+  });
+
+  it("reads a df data row and refuses a header-only one", () => {
+    expect(
+      parseDfDevice(
+        "Filesystem 512-blocks Used Available Capacity Mounted on\n/dev/disk4s1 1 1 1 71% /Volumes/Expansion\n",
+      ),
+    ).toBe("/dev/disk4s1");
+    expect(parseDfDevice("Filesystem 512-blocks Mounted on\n")).toBeNull();
+    expect(parseDfDevice("")).toBeNull();
   });
 });

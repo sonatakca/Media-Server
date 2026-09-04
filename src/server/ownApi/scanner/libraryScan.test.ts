@@ -373,6 +373,156 @@ describe("scanLibraryTree — series", () => {
     });
   });
 
+  /*
+   * Everything in a real show folder that is not an episode.
+   *
+   * `trailers/` and `Backdrops/` are extra directories, a `*-thumb.jpg` and a
+   * `.nfo` are not video, and a `*.trickplay/` folder holds only tiles. None
+   * of them may become a processing candidate, and the place that has to be
+   * true is here — before the catalogue, not in a filter over it.
+   */
+  it("catalogues no episode for trailers, themes, trickplay or artwork", async () => {
+    const fileSystem = createFileSystem({
+      Shows: ["Andor/"],
+      "Shows/Andor": [
+        "tvshow.nfo",
+        "Season 1/",
+        "trailers/",
+        "Backdrops/",
+      ],
+      "Shows/Andor/Season 1": [
+        "Andor - S01E01 - Kassa.mp4",
+        "Andor - S01E01 - Kassa.nfo",
+        "Andor - S01E01 - Kassa.tr.srt",
+        "Andor - S01E01 - Kassa-thumb.jpg",
+        "Andor - S01E01 - Kassa.trickplay/",
+        "season.nfo",
+      ],
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa.trickplay": [
+        "320.jpg",
+        "320.bif",
+      ],
+      "Shows/Andor/trailers": ["Andor - Trailer.mp4"],
+      "Shows/Andor/Backdrops": ["theme.mp4"],
+    });
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const episodes = byKind(result.items, "episode");
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]).toMatchObject({ indexNumber: 1, parentIndexNumber: 1 });
+
+    const everyPath = result.items.flatMap((item) =>
+      item.files.map((file) => file.relativePath),
+    );
+    expect(everyPath).not.toContain("Shows/Andor/trailers/Andor - Trailer.mp4");
+    expect(everyPath).not.toContain("Shows/Andor/Backdrops/theme.mp4");
+    expect(
+      everyPath.some((entry) => entry.includes(".trickplay")),
+    ).toBe(false);
+  });
+
+  it("keeps two containers of one episode as one episode's alternates", async () => {
+    const fileSystem = createFileSystem({
+      Shows: ["House of the Dragon/"],
+      "Shows/House of the Dragon": ["Season 3/"],
+      "Shows/House of the Dragon/Season 3": [
+        "House of the Dragon - S03E05 - Unbowed and Unbent.mkv",
+        "House of the Dragon - S03E05 - Unbowed and Unbent.mp4",
+      ],
+    });
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const episodes = byKind(result.items, "episode");
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]!.files).toHaveLength(2);
+  });
+
+  /*
+   * The television half of what the movie suite already proves: a processed
+   * title whose source has been removed must not disappear from the catalogue,
+   * because the catalogue row is the package's only playback identity.
+   */
+  it("recognises an episode package whose source has been removed", async () => {
+    const packageDirectory =
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
+    const fixture = titlePackageFixture(packageDirectory);
+    const fileSystem = createFileSystem(
+      {
+        ...fixture.tree,
+        Shows: ["Andor/"],
+        "Shows/Andor": ["Season 1/"],
+        "Shows/Andor/Season 1": [
+          "Andor - S01E01 - Kassa/",
+          "Andor - S01E02 - That Would Be Me.mp4",
+        ],
+        [packageDirectory]: ["video/", "audio/", ".seyirlik/"],
+      },
+      fixture.sizes,
+      fixture.contents,
+    );
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const episodes = byKind(result.items, "episode");
+    expect(episodes).toHaveLength(2);
+
+    const orphan = episodes.find((episode) => episode.indexNumber === 1);
+    expect(orphan).toMatchObject({
+      renditionBacked: true,
+      parentIndexNumber: 1,
+      files: [],
+    });
+    // The one that still has its source is an ordinary episode.
+    expect(
+      episodes.find((episode) => episode.indexNumber === 2)?.renditionBacked,
+    ).toBeUndefined();
+  });
+
+  it("prefers the real source when both the file and its package exist", async () => {
+    const packageDirectory =
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
+    const fixture = titlePackageFixture(packageDirectory);
+    const fileSystem = createFileSystem(
+      {
+        ...fixture.tree,
+        Shows: ["Andor/"],
+        "Shows/Andor": ["Season 1/"],
+        "Shows/Andor/Season 1": [
+          "Andor - S01E01 - Kassa/",
+          "Andor - S01E01 - Kassa.mp4",
+        ],
+        [packageDirectory]: ["video/", "audio/", ".seyirlik/"],
+      },
+      fixture.sizes,
+      fixture.contents,
+    );
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const episodes = byKind(result.items, "episode");
+    expect(episodes).toHaveLength(1);
+    expect(episodes[0]!.renditionBacked).toBeUndefined();
+    expect(episodes[0]!.files).toHaveLength(1);
+  });
+
   it("infers the season from the folder when the filename omits it", async () => {
     const fileSystem = createFileSystem({
       Shows: ["Babylon 5/"],

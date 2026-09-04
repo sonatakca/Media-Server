@@ -19,6 +19,7 @@ import {
 } from "../renditions/registry";
 import { inspectCompletedRendition } from "../renditions/validation";
 import { inspectAdaptivePackage } from "../renditions/adaptive/inspect";
+import { resolveTitleRoot } from "../renditions/adaptive/titleRoot";
 import { qualityLabel } from "../renditions/adaptive/layout";
 import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
 import { recordedMasterLayoutVersion } from "../renditions/adaptive/repairMaster";
@@ -347,8 +348,13 @@ export function createRenditionService({
       registryItem.adaptiveStatus === "ready" &&
       registryItem.adaptiveProfileVersion === ADAPTIVE_PROFILE_VERSION
         ? inspectAdaptivePackage({
-            // A package lives beside the source it was made from.
-            titleRoot: path.dirname(media.filePath),
+            /*
+             * A movie's package lives beside the source it was made from; an
+             * episode's lives in its own folder inside the season, because a
+             * season folder is shared. Resolved rather than assumed, so this
+             * reader needs no catalogue to find either.
+             */
+            titleRoot: await resolveTitleRoot(media.filePath),
             sourceFingerprint: registryItem.sourceFingerprint,
             profileVersion: ADAPTIVE_PROFILE_VERSION,
           })

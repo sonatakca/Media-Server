@@ -55,10 +55,22 @@ export function isActiveState(state: ProcessingJob["state"]): boolean {
   return ["pending", "queued", "running", "paused"].includes(state);
 }
 
+/**
+ * Cancelling is offered while a job can still be stopped.
+ *
+ * Once asked for, the button goes: a job that is running is being stopped by
+ * its own encoder, and pressing again would say nothing that the first press
+ * did not. The exception is a job that has never started. Nothing is winding
+ * anything down there — there is no encoder, and a cancellation asked of a job
+ * whose worker had already exited is a message nobody will ever read — so the
+ * press stays available, and the route ends such a job outright.
+ */
 export function canCancel(
-  job: Pick<ProcessingJob, "state" | "cancellationRequested">,
+  job: Pick<ProcessingJob, "state" | "cancellationRequested" | "startedAt">,
 ): boolean {
-  return isActiveState(job.state) && !job.cancellationRequested;
+  if (!isActiveState(job.state)) return false;
+  if (!job.cancellationRequested) return true;
+  return job.startedAt === null;
 }
 
 /**
@@ -182,12 +194,21 @@ export function formatSpeed(speed: number | null | undefined): string {
   return `${speed.toFixed(2)}×`;
 }
 
-/** Wall-clock time spent on a finished job, measured from its actual start. */
+/**
+ * Time spent processing, measured from when processing actually began.
+ *
+ * `startedAt` is written by the runner at the moment an attempt starts, and it
+ * is the only thing here that means work. Falling back to `createdAt` — which
+ * this used to do — measured how long ago somebody pressed a button: a job
+ * that sat parked overnight and never encoded a frame reported eleven hours of
+ * runtime, and a cancelled one that never started reported the wait as though
+ * it were work. A job that never started has no duration, and "—" says that.
+ */
 export function processingDurationSeconds(
-  job: Pick<ProcessingJob, "createdAt" | "startedAt" | "finishedAt">,
+  job: Pick<ProcessingJob, "startedAt" | "finishedAt">,
 ): number | null {
-  if (!job.finishedAt) return null;
-  const start = Date.parse(job.startedAt ?? job.createdAt);
+  if (!job.finishedAt || !job.startedAt) return null;
+  const start = Date.parse(job.startedAt);
   const finish = Date.parse(job.finishedAt);
   if (!Number.isFinite(start) || !Number.isFinite(finish) || finish < start) {
     return null;
@@ -195,12 +216,19 @@ export function processingDurationSeconds(
   return (finish - start) / 1000;
 }
 
-/** Wall-clock time already spent on work that has not finished yet. */
+/**
+ * Time already spent on work that has not finished yet.
+ *
+ * Null until an attempt has begun, for the same reason: a queued or paused job
+ * is not accumulating anything, and a clock running beside it is an invitation
+ * to believe an encoder is stuck rather than that nothing has started.
+ */
 export function processingElapsedSeconds(
-  job: Pick<ProcessingJob, "createdAt" | "startedAt">,
+  job: Pick<ProcessingJob, "startedAt">,
   nowMs: number,
 ): number | null {
-  const start = Date.parse(job.startedAt ?? job.createdAt);
+  if (!job.startedAt) return null;
+  const start = Date.parse(job.startedAt);
   if (!Number.isFinite(start) || !Number.isFinite(nowMs) || nowMs < start) {
     return null;
   }

@@ -36,7 +36,7 @@ import type {
 export interface ReconcileInterruptedJobsInput {
   store: Pick<
     ProcessingJobStore,
-    "findInterrupted" | "requestPause" | "appendEvent"
+    "findInterrupted" | "requestPause" | "appendEvent" | "finalizeCancelled"
   >;
   guard: StorageGuard;
   /** The media root, used only to decide whether it can be unplugged. */
@@ -65,6 +65,11 @@ export interface ReconcileInterruptedJobsResult {
   outcomes: InterruptedJobOutcome[];
   /** How many jobs were actually put back on the queue. */
   requeued: number;
+  /**
+   * Jobs ended here because a cancellation had been asked for and the process
+   * that would have carried it out no longer exists.
+   */
+  cancelled: string[];
 }
 
 /**
@@ -119,13 +124,41 @@ export async function reconcileInterruptedJobs({
   identity = null,
 }: ReconcileInterruptedJobsInput): Promise<ReconcileInterruptedJobsResult> {
   const interrupted: ProcessingJobRecord[] = await store.findInterrupted();
-  if (interrupted.length === 0) return { outcomes: [], requeued: 0 };
+  if (interrupted.length === 0)
+    return { outcomes: [], requeued: 0, cancelled: [] };
 
   await guard.observeAvailability(await storageAvailable());
   const externallyBacked = requiresOperatorRecovery(identity, mediaRoot);
   const outcomes: InterruptedJobOutcome[] = [];
+  const cancelled: string[] = [];
 
   for (const job of interrupted) {
+    /*
+     * Somebody asked for this to stop, and the process that would have heard
+     * them is gone. Pausing it instead is what left one of these rows marked
+     * running for ever: `requestPause` refuses a job with a cancellation
+     * pending — rightly, since pausing something on its way out is
+     * meaningless — so the reconciliation quietly did nothing and the job
+     * survived every restart. Nothing can be encoding at this moment, so the
+     * cancellation is simply completed. No file is touched: a package, a
+     * staging directory and a scratch workspace are released by the paths that
+     * own them, and the scratch sweep below runs against the state this sets.
+     */
+    if (job.cancellationRequested) {
+      const ended = await store.finalizeCancelled(job.id);
+      if (ended) {
+        await store.appendEvent({
+          processingJobId: job.id,
+          stage: "waiting",
+          level: "warning",
+          message:
+            "Found still marked as running after a restart, with a cancellation pending. Nothing was executing it, so the cancellation was completed. Any published package is untouched.",
+        });
+        cancelled.push(job.id);
+      }
+      continue;
+    }
+
     /*
      * An unclean restart with an encode in flight is recorded against the
      * storage as well as against the job. It is not evidence of a bad disk — a
@@ -173,5 +206,5 @@ export async function reconcileInterruptedJobs({
    * swept up by a later storage-returned event either.
    */
   const requeued = guard.mayStartWork() ? await requeue() : 0;
-  return { outcomes, requeued };
+  return { outcomes, requeued, cancelled };
 }

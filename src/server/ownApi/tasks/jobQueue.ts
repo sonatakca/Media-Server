@@ -64,6 +64,22 @@ export interface JobQueue {
   requestCancellation(jobId: string): Promise<boolean>;
   isCancellationRequested(jobId: string): Promise<boolean>;
   get(jobId: string): Promise<JobRecord | null>;
+  /**
+   * The attempt of this type that is still executable, found by what it is
+   * *for* rather than by an id somebody wrote down.
+   *
+   * A durable operation outlives its attempts — a processing job can be
+   * queued, parked for storage, and queued again — so the id stored beside it
+   * names the last attempt, not necessarily a live one. Asking the queue
+   * "is anything still due to run for this?" is the only question whose answer
+   * cannot be stale, and it is what stops a second attempt being created for
+   * work that already has one.
+   */
+  findActive(options: {
+    jobType: string;
+    /** Payload fields the attempt must carry, matched by containment. */
+    payload: Record<string, unknown>;
+  }): Promise<JobRecord | null>;
   list(options: {
     jobType?: string;
     status?: JobStatus;
@@ -260,6 +276,26 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
       const result = await pool.query<RawJobRow>(
         `SELECT ${JOB_COLUMNS} FROM jobs WHERE id = $1`,
         [jobId],
+      );
+      const row = result.rows[0];
+      return row ? toRecord(row) : null;
+    },
+
+    findActive: async ({ jobType, payload }) => {
+      /*
+       * `queued` and `running` are exactly the statuses from which work can
+       * still happen, and they are the same two the dedupe index is built on,
+       * so this answer and the collapse an `enqueue` performs cannot disagree.
+       * The newest is returned because that is the one an `enqueue` would have
+       * collapsed onto.
+       */
+      const result = await pool.query<RawJobRow>(
+        `SELECT ${JOB_COLUMNS} FROM jobs
+         WHERE job_type = $1 AND status IN ('queued', 'running')
+           AND payload @> $2::jsonb
+         ORDER BY queued_at DESC
+         LIMIT 1`,
+        [jobType, JSON.stringify(payload)],
       );
       const row = result.rows[0];
       return row ? toRecord(row) : null;

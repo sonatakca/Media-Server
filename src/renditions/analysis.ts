@@ -38,6 +38,7 @@ import {
   inspectAdaptivePackage,
   type AdaptiveInspectionStatus,
 } from "./adaptive/inspect";
+import { resolveTitleRoot } from "./adaptive/titleRoot";
 import { ADAPTIVE_PROFILE_VERSION } from "./adaptive/profile";
 import { SEGMENT_TARGET_SECONDS } from "../lib/playback-planner/gopPolicy";
 
@@ -357,8 +358,13 @@ export async function analyseRenditionLibrary({
                 : "ready"
               : "pending";
       const adaptiveInspection = await inspectAdaptivePackage({
-        // A package lives beside the source it was made from.
-        titleRoot: path.dirname(source.filePath),
+        /*
+         * A movie's package sits beside its source; a source that shares its
+         * folder with others — an episode in a season folder — has its own
+         * nested root. Resolved from what is actually on disk, so this reader
+         * finds either without knowing which it is looking at.
+         */
+        titleRoot: await resolveTitleRoot(source.filePath),
         sourceFingerprint: fingerprint,
         profileVersion: ADAPTIVE_PROFILE_VERSION,
       });

@@ -4,6 +4,7 @@ import { createPauseController } from "../../../renditions/processing/pauseContr
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
 import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
+import { besideTitleRoot } from "../../../renditions/adaptive/titleRoot";
 import { estimateFinalOutputBytes } from "../../../renditions/outputEstimate";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
 import {
@@ -222,12 +223,29 @@ export interface ProcessingJobRunnerDeps {
   now?: () => number;
 }
 
+/**
+ * The published package's location for this run, read in exactly one place so
+ * publishing and its cleanup can never point at different directories.
+ */
+function titleRootForInput(input: RunProcessingJobInput): string {
+  return input.titleRoot ?? besideTitleRoot(input.sourcePath);
+}
+
 export interface RunProcessingJobInput {
   processingJobId: string;
   sourcePath: string;
   relativePath: string;
   sizeBytes: number;
   mtimeMs: number;
+  /**
+   * Where this title's package is published, decided by the catalogue when the
+   * job was queued.
+   *
+   * Absent on jobs queued before episodes existed, and on every offline
+   * caller, which is why it falls back to the directory beside the source —
+   * the layout every package written until now uses.
+   */
+  titleRoot?: string;
   signal?: AbortSignal;
   isCancelled?: () => Promise<boolean>;
 }
@@ -1220,6 +1238,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           relativePath: input.relativePath,
           sourceFingerprint: job.sourceFingerprint,
           sourcePath: input.sourcePath,
+          titleRoot: titleRootForInput(input),
           probe,
         },
         paths,
@@ -2197,7 +2216,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     }
     if (result.publicationIncomingDirectory) {
       await cleanupPublicationIncoming(
-        path.dirname(input.sourcePath),
+        titleRootForInput(input),
         result.publicationIncomingDirectory,
         job.id,
       ).catch(async (error) => {

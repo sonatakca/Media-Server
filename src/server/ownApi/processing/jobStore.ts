@@ -366,8 +366,41 @@ export interface ProcessingJobStore {
   /**
    * Lifts a pause. Pass `onlyReason` to lift only pauses of that kind, so the
    * storage returning does not restart something a person paused on purpose.
+   *
+   * `resumesInto` is what a lifted pause becomes, and the default is the whole
+   * point of it. `running` used to be unconditional here, which meant pressing
+   * Resume *asserted* that an encoder was working — on a job whose worker had
+   * long since exited, leaving a row that said running, waiting, never started,
+   * for ever. `running` is a fact about a process, and only the runner may
+   * claim it. Everything this method can honestly say is that the job is
+   * eligible again, which is `queued`.
    */
-  resume(id: string, onlyReason?: ProcessingPauseReason): Promise<boolean>;
+  resume(
+    id: string,
+    onlyReason?: ProcessingPauseReason,
+    resumesInto?: "queued" | "running",
+  ): Promise<boolean>;
+  /**
+   * Points the durable job at the attempt now responsible for it.
+   *
+   * Unlike `attachQueueJob` this says nothing about state: it is used when an
+   * attempt is adopted rather than created, and the caller — which knows
+   * whether that attempt is merely queued or actually leased — decides what
+   * the job is.
+   */
+  setCurrentAttempt(id: string, queueJobId: string): Promise<void>;
+  /**
+   * Ends an active job as cancelled, in one statement.
+   *
+   * For the case where nothing can observe a cancellation flag: no worker, no
+   * encoder, no lease. `requestCancellation` is a message to a process, and
+   * with no process to read it the job would otherwise stay active for ever.
+   * Guarded to active states, so it is idempotent and can never reopen or
+   * rewrite a job that already finished. It touches no file: a published
+   * package, a staging directory and a scratch workspace all outlive this and
+   * are released by the paths that own them.
+   */
+  finalizeCancelled(id: string): Promise<ProcessingJobRecord | null>;
   listPaused(reason: ProcessingPauseReason): Promise<ProcessingJobRecord[]>;
   listActive(): Promise<ProcessingJobRecord[]>;
   /**
@@ -663,19 +696,54 @@ export function createProcessingJobStore(
      * resumed by the storage coming back: the drive returning answers why the
      * machine paused it, not why a person did.
      */
-    async resume(id, onlyReason) {
-      const conditions = onlyReason ? "AND paused_reason = $3" : "";
-      const values: unknown[] = [id, ACTIVE_STATES];
+    async resume(id, onlyReason, resumesInto = "queued") {
+      const values: unknown[] = [id, ACTIVE_STATES, resumesInto];
+      const conditions = onlyReason ? "AND paused_reason = $4" : "";
       if (onlyReason) values.push(onlyReason);
       const result = await pool.query(
         `UPDATE processing_jobs
             SET pause_requested = false, paused_reason = NULL,
-                state = CASE WHEN state = 'paused' THEN 'running' ELSE state END,
+                state = CASE WHEN state = 'paused' THEN $3 ELSE state END,
                 updated_at = now()
           WHERE id = $1 AND state = ANY($2::text[]) ${conditions}`,
         values,
       );
       return (result.rowCount ?? 0) > 0;
+    },
+
+    async setCurrentAttempt(id, queueJobId) {
+      await pool.query(
+        `UPDATE processing_jobs SET job_id = $2, updated_at = now()
+          WHERE id = $1`,
+        [id, queueJobId],
+      );
+    },
+
+    async finalizeCancelled(id) {
+      const result = await pool.query<RawRow>(
+        `UPDATE processing_jobs SET
+           state = 'cancelled',
+           cancellation_requested = true,
+           pause_requested = false,
+           paused_reason = NULL,
+           error_code = 'CANCELLED',
+           error_message = 'Processing was cancelled.',
+           /*
+            * Live telemetry describes a process that is reporting. There is
+            * none, so a speed and a remaining time left behind here would be
+            * a reading of something that stopped.
+            */
+           speed = NULL,
+           fps = NULL,
+           eta_seconds = NULL,
+           finished_at = COALESCE(finished_at, now()),
+           updated_at = now()
+         WHERE id = $1 AND state = ANY($2::text[])
+         RETURNING ${COLUMNS}`,
+        [id, ACTIVE_STATES],
+      );
+      const row = result.rows[0];
+      return row ? toRecord(row) : null;
     },
 
     async listPaused(reason) {
