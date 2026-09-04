@@ -93,6 +93,22 @@ export async function resolveTitleRoot(
   fallbackLayout: TitleRootLayout = "beside",
   exists: (candidate: string) => Promise<boolean> = defaultManifestExists,
 ): Promise<string> {
+  /*
+   * A caller that KNOWS this is a nested title — currently an episode — must
+   * never inherit a package from the directory beside its source.
+   *
+   * That directory is a season folder shared by many episodes. Accepting its
+   * manifest as a compatibility fallback makes one legacy S01E01 package look
+   * like the package for S01E02, S01E03, and every other sibling.
+   *
+   * Readers without catalogue knowledge still use the beside/default path
+   * below and may probe both candidates for legacy compatibility. Catalogue-
+   * aware episode readers and writers are authoritative: their root is nested.
+   */
+  if (fallbackLayout === "nested") {
+    return nestedTitleRoot(sourcePath);
+  }
+
   for (const candidate of candidateTitleRoots(sourcePath)) {
     if (await exists(titleManifestPath(candidate))) return candidate;
   }

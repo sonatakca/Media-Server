@@ -257,7 +257,12 @@ export function describeJobs(
 ): ProcessingJobTitle[] {
   const byItem = new Map<
     string,
-    { kind: "movie" | "episode"; seriesTitle?: string; code?: string; title: string }
+    {
+      kind: "movie" | "episode";
+      seriesTitle?: string;
+      code?: string;
+      title: string;
+    }
   >();
   for (const movie of view.movies) {
     byItem.set(movie.itemId, { kind: "movie", title: movie.title });
@@ -407,6 +412,98 @@ export function createProcessingRoutes({
     null;
   const packageIndex = createPackageIndex();
 
+  const SOURCE_PRESENCE_TTL_MS = 30_000;
+  const SOURCE_PRESENCE_CONCURRENCY = 4;
+  const sourcePresence = new Map<
+    string,
+    { available: boolean; checkedAt: number }
+  >();
+
+  /**
+   * `media_files.missing_since` cannot answer whether a processed title still
+   * has its original source: rendition-backed titles deliberately keep that
+   * row active so playback can authorize the generated package through its
+   * original file identity.
+   *
+   * Check the actual path only for titles that already own a package, cache the
+   * result, and bound concurrency so an overview poll never turns into a burst
+   * of filesystem operations against the media disk.
+   */
+  async function refreshSourcePresence(
+    rows: ReadonlyArray<{
+      mediaFileId: string | null;
+      relativePath: string | null;
+      fileMissingSince: Date | null;
+    }>,
+  ): Promise<void> {
+    if (!storageAvailable()) return;
+
+    const now = Date.now();
+    const candidates = rows.filter((row) => {
+      if (
+        !row.mediaFileId ||
+        !row.relativePath ||
+        row.fileMissingSince !== null
+      ) {
+        return false;
+      }
+
+      // The catalogue is sufficient for ordinary, source-backed titles.
+      // Physical verification is needed only once a generated package exists.
+      if (packageIndex.get(row.mediaFileId).summary === null) return false;
+
+      const cached = sourcePresence.get(row.mediaFileId);
+      return !cached || now - cached.checkedAt >= SOURCE_PRESENCE_TTL_MS;
+    });
+
+    for (
+      let offset = 0;
+      offset < candidates.length;
+      offset += SOURCE_PRESENCE_CONCURRENCY
+    ) {
+      const batch = candidates.slice(
+        offset,
+        offset + SOURCE_PRESENCE_CONCURRENCY,
+      );
+
+      await Promise.all(
+        batch.map(async (row) => {
+          const mediaFileId = row.mediaFileId;
+          const relativePath = row.relativePath;
+          if (!mediaFileId || !relativePath) return;
+
+          const absolutePath = path.resolve(
+            resolvedMediaRoot,
+            ...relativePath.split("/"),
+          );
+
+          let available = false;
+
+          if (isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
+            try {
+              const stats = await stat(absolutePath);
+              available = stats.isFile();
+            } catch (error) {
+              if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+                /*
+                 * An I/O error is not proof that a source was deleted. Do not
+                 * overwrite a previous verdict; with no previous verdict the
+                 * projection below fails closed and hides destructive actions.
+                 */
+                return;
+              }
+            }
+          }
+
+          sourcePresence.set(mediaFileId, {
+            available,
+            checkedAt: Date.now(),
+          });
+        }),
+      );
+    }
+  }
+
   async function catalogueView(): Promise<ProcessingCatalogueView> {
     const rows = await catalogue.listProcessableTitles();
     /*
@@ -415,6 +512,13 @@ export function createProcessingRoutes({
      * touches a disk and never waits.
      */
     packageIndex.track(packageTargetsFor(rows, resolvedMediaRoot));
+
+    /*
+     * Refresh only stale package-backed source paths. The result is cached
+     * separately from the catalogue identity because the latter deliberately
+     * survives source deletion.
+     */
+    await refreshSourcePresence(rows);
 
     const fileIds = rows
       .map((row) => row.mediaFileId)
@@ -432,6 +536,25 @@ export function createProcessingRoutes({
       hardware: report,
       streamsByFile,
       packageFor: (mediaFileId) => packageIndex.get(mediaFileId),
+      sourceAvailableFor: (row) => {
+        if (!row.mediaFileId || row.fileMissingSince !== null) return false;
+
+        /*
+         * During a storage outage, never advertise a destructive source action.
+         * Nothing is persisted from this verdict.
+         */
+        if (!storageAvailable()) return false;
+
+        const cached = sourcePresence.get(row.mediaFileId);
+        if (cached) return cached.available;
+
+        /*
+         * No package means the ordinary catalogue source semantics are enough.
+         * A package-backed title with no physical verdict fails closed until
+         * the bounded presence check above has confirmed its source.
+         */
+        return packageIndex.get(row.mediaFileId).summary === null;
+      },
       activeJobsByFile,
     });
   }
@@ -783,6 +906,13 @@ export function createProcessingRoutes({
            * that is more useful than failing: a double submission, or a page
            * that lost the response, must not read as a problem.
            */
+          // The source is physically absent. Record that independently
+          // from the catalogue identity, which rendition playback still needs.
+          sourcePresence.set(located.file.id, {
+            available: false,
+            checkedAt: Date.now(),
+          });
+          invalidateCatalogueView(located.file.id);
           sendData(context.response, context.requestId, {
             deleted: false,
             alreadyAbsent: true,
@@ -842,6 +972,18 @@ export function createProcessingRoutes({
         }
 
         await unlink(located.absolutePath);
+
+        /*
+         * Keep the media-file identity for rendition authorization, but record
+         * that its original bytes no longer exist. The next overview therefore
+         * cannot advertise "Remove Source" again.
+         */
+        sourcePresence.set(located.file.id, {
+          available: false,
+          checkedAt: Date.now(),
+        });
+        invalidateCatalogueView(located.file.id);
+
         sendData(context.response, context.requestId, {
           deleted: true,
           alreadyAbsent: false,

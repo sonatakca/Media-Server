@@ -142,6 +142,115 @@ export function episodeAction(episode: ProcessingEpisode): EpisodeAction {
 }
 
 /**
+ * Whether the original source of one episode may be offered for deletion.
+ *
+ * This is only UI eligibility. The server remains authoritative and repeats
+ * the irreversible verification immediately before unlinking the source.
+ */
+export function canDeleteEpisodeSource(episode: ProcessingEpisode): boolean {
+  return (
+    episode.sourceAvailable &&
+    episode.packageState === "complete" &&
+    episode.package !== null &&
+    episode.plan !== null &&
+    episode.plan.missingRungs.length === 0 &&
+    !episode.activeJobId &&
+    !episode.processable
+  );
+}
+
+/** Sources that are both verified complete and still physically present. */
+export function sourceDeletionTargets(
+  episodes: readonly ProcessingEpisode[],
+): ProcessingEpisode[] {
+  return episodes.filter(canDeleteEpisodeSource);
+}
+
+/**
+ * Total bytes of original source media that this delete action would remove.
+ *
+ * sourceDeletionTargets deliberately excludes sources that were already
+ * removed, so season/show totals describe only bytes that will disappear now.
+ */
+export function sourceDeletionBytes(
+  episodes: readonly ProcessingEpisode[],
+): number {
+  return sourceDeletionTargets(episodes).reduce(
+    (total, episode) => total + Math.max(0, episode.source?.sizeBytes ?? 0),
+    0,
+  );
+}
+
+/**
+ * File-size display used specifically beside destructive source actions.
+ *
+ * The requested unit is selected by magnitude:
+ *   >= 1 GiB -> GB
+ *   >= 1 MiB -> MB
+ *   >= 1 KiB -> KB
+ *   otherwise -> B
+ *
+ * Scaled units always keep two decimal places so the amount being deleted is
+ * explicit before the operator confirms the irreversible action.
+ */
+export function formatSourceDeletionSize(bytes: number): string {
+  const safeBytes = Number.isFinite(bytes) && bytes > 0 ? bytes : 0;
+
+  const KB = 1024;
+  const MB = KB * 1024;
+  const GB = MB * 1024;
+
+  if (safeBytes >= GB) {
+    return `${(safeBytes / GB).toFixed(2)} GB`;
+  }
+
+  if (safeBytes >= MB) {
+    return `${(safeBytes / MB).toFixed(2)} MB`;
+  }
+
+  if (safeBytes >= KB) {
+    return `${(safeBytes / KB).toFixed(2)} KB`;
+  }
+
+  return `${Math.round(safeBytes)} B`;
+}
+
+/**
+ * A group action appears only when every episode is safely complete.
+ *
+ * Episodes whose original source was already removed are acceptable only if
+ * their finished package remains complete.
+ */
+export function canDeleteEpisodeGroupSources(
+  episodes: readonly ProcessingEpisode[],
+): boolean {
+  if (episodes.length === 0) return false;
+
+  const targets = sourceDeletionTargets(episodes);
+  if (targets.length === 0) return false;
+
+  return episodes.every((episode) => {
+    if (episode.activeJobId) return false;
+
+    if (!episode.sourceAvailable) {
+      return episode.packageState === "complete";
+    }
+
+    return canDeleteEpisodeSource(episode);
+  });
+}
+
+export function canDeleteSeasonSources(season: ProcessingSeason): boolean {
+  return canDeleteEpisodeGroupSources(season.episodes);
+}
+
+export function canDeleteSeriesSources(series: ProcessingSeries): boolean {
+  return canDeleteEpisodeGroupSources(
+    series.seasons.flatMap((season) => season.episodes),
+  );
+}
+
+/**
  * One line summarising what a bulk press achieved.
  *
  * Deliberately reports every outcome rather than only the successes: a press
@@ -201,7 +310,12 @@ export function describeBulkOutcome(
  */
 export function jobLabel(
   title:
-    | { kind: "movie" | "episode"; seriesTitle?: string; code?: string; title: string }
+    | {
+        kind: "movie" | "episode";
+        seriesTitle?: string;
+        code?: string;
+        title: string;
+      }
     | undefined,
   fallback: string,
 ): { primary: string; secondary: string | null } {

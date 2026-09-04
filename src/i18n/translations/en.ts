@@ -385,6 +385,18 @@ export const en = {
   "processing.deleteSourceHint":
     "Only the source file is removed. The renditions on disk stay, and this title keeps playing from them.",
   "processing.deleteSourceCancel": "Keep the source file",
+  "processing.tv.deleteEpisodeSourceConfirm":
+    "Cannot be undone · delete this episode source",
+  "processing.tv.deleteSeasonSources": "Remove season sources",
+  "processing.tv.deleteSeriesSources": "Remove show sources",
+  "processing.tv.deleteBulkSourcesConfirm":
+    "Cannot be undone · delete {count} source files",
+  "processing.tv.deleteSourcesHint":
+    "Only verified original source files are removed. Packaged renditions stay on disk and playback continues from them.",
+  "processing.tv.deleteSourcesCancel": "Keep source files",
+  "processing.tv.deleteSourcesVerificationFailed":
+    "Deletion stopped: at least one episode is no longer fully verified. No source files were removed.",
+  "processing.tv.sourcesDeleted": "{count} source files removed · {size} freed",
   "processing.sourceDeleted": "Source file removed · {size} freed",
   "processing.sourceAlreadyGone": "The source file was already gone.",
   "processing.alreadyPackaged":

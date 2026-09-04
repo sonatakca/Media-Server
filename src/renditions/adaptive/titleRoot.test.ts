@@ -114,3 +114,46 @@ describe("resolving the root a package is actually at", () => {
     expect(root).toBe("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa");
   });
 });
+
+/*
+ * Regression: a season-level legacy package belongs to at most one episode.
+ * A catalogue-aware episode must not fall back to that shared parent merely
+ * because its own nested package has not been created yet.
+ */
+import {
+  besideTitleRoot as regressionBesideTitleRoot,
+  nestedTitleRoot as regressionNestedTitleRoot,
+  resolveTitleRoot as regressionResolveTitleRoot,
+  titleManifestPath as regressionTitleManifestPath,
+} from "./titleRoot";
+
+describe("strict nested title resolution", () => {
+  it("strict nested titles never inherit a sibling package", async () => {
+    const source =
+      "/media/Series/Arcane/Season 1/Arcane - S01E02 - Some Mysteries Are Better Left Unsolved.mp4";
+
+    const besideManifest = regressionTitleManifestPath(
+      regressionBesideTitleRoot(source),
+    );
+
+    const checked: string[] = [];
+
+    const resolved = await regressionResolveTitleRoot(
+      source,
+      "nested",
+      async (candidate) => {
+        checked.push(candidate);
+
+        // Simulate the exact broken Arcane state:
+        // no S01E02 package, but Season 1/.seyirlik/package.json exists.
+        return candidate === besideManifest;
+      },
+    );
+
+    expect(resolved).toBe(regressionNestedTitleRoot(source));
+
+    // Catalogue-aware episode resolution does not even ask whether the
+    // ambiguous season-level manifest exists.
+    expect(checked).toEqual([]);
+  });
+});

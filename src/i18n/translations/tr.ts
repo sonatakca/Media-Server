@@ -386,6 +386,19 @@ export const tr = {
   "processing.deleteSourceHint":
     "Yalnızca kaynak dosya silinir. Diskteki çözünürlükler kalır ve bu başlık onlardan oynatılmaya devam eder.",
   "processing.deleteSourceCancel": "Kaynak dosyayı koru",
+  "processing.tv.deleteEpisodeSourceConfirm":
+    "Geri alınamaz · bu bölümün kaynağını sil",
+  "processing.tv.deleteSeasonSources": "Sezon kaynaklarını sil",
+  "processing.tv.deleteSeriesSources": "Dizi kaynaklarını sil",
+  "processing.tv.deleteBulkSourcesConfirm":
+    "Geri alınamaz · {count} kaynak dosyayı sil",
+  "processing.tv.deleteSourcesHint":
+    "Yalnızca doğrulanmış özgün kaynak dosyalar silinir. İşlenmiş çözünürlükler diskte kalır ve oynatma onlardan devam eder.",
+  "processing.tv.deleteSourcesCancel": "Kaynak dosyaları koru",
+  "processing.tv.deleteSourcesVerificationFailed":
+    "Silme durduruldu: en az bir bölüm artık tam olarak doğrulanamıyor. Hiçbir kaynak dosya silinmedi.",
+  "processing.tv.sourcesDeleted":
+    "{count} kaynak dosya silindi · {size} boşaldı",
   "processing.sourceDeleted": "Kaynak dosya silindi · {size} boşaldı",
   "processing.sourceAlreadyGone": "Kaynak dosya zaten yoktu.",
   "processing.alreadyPackaged":

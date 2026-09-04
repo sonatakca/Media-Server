@@ -1635,6 +1635,109 @@ export function MediaProcessingPage() {
     [refreshOverview, runPreview, t],
   );
 
+  /**
+   * Deletes episode source files only after a fresh preflight has verified
+   * every member of the requested season/show.
+   *
+   * Actual unlinking still goes through /processing/source/delete, whose server
+   * implementation independently re-checks every individual title immediately
+   * before the irreversible unlink.
+   */
+  const deleteTvSources = useCallback(
+    async (deleteKey: string, itemIds: readonly string[]) => {
+      if (itemIds.length === 0) return;
+
+      setDeletingItemId(deleteKey);
+
+      try {
+        /*
+         * Sequential on purpose. Previewing can fingerprint/probe large files,
+         * so a whole season must not hammer the storage with concurrent reads.
+         */
+        const fresh: ProcessingPreview[] = [];
+
+        for (const itemId of itemIds) {
+          fresh.push(await previewProcessing(itemId));
+        }
+
+        /*
+         * Preflight every episode before deleting the first source.
+         *
+         * A source already removed earlier is acceptable only when its finished
+         * package still exists and is complete.
+         */
+        const unsafe = fresh.find((preview) => {
+          if (preview.activeJobId) return true;
+
+          if (preview.sourceAvailable === false) {
+            return (
+              !preview.existing.present || preview.existing.complete !== true
+            );
+          }
+
+          return (
+            !preview.existing.present ||
+            !preview.existing.current ||
+            preview.existing.missingRungs.length > 0
+          );
+        });
+
+        if (unsafe) {
+          throw new Error(t("processing.tv.deleteSourcesVerificationFailed"));
+        }
+
+        const remaining = fresh.filter(
+          (preview) => preview.sourceAvailable !== false,
+        );
+
+        let removed = 0;
+        let freedBytes = 0;
+
+        for (const preview of remaining) {
+          /*
+           * This endpoint performs the authoritative final checks:
+           * source fingerprint, current profile, missing rungs, active job,
+           * manifest readability, and every package file's existence/size.
+           */
+          const result = await deleteProcessingSource(preview.itemId);
+
+          if (result.deleted) {
+            removed += 1;
+            freedBytes += result.freedBytes;
+          }
+        }
+
+        setConfirmingDeleteItemId(null);
+
+        notify({
+          tone: "success",
+          title:
+            remaining.length === 0
+              ? t("processing.sourceAlreadyGone")
+              : formatTemplate(t("processing.tv.sourcesDeleted"), {
+                  count: String(removed),
+                  size: formatFileSize(freedBytes),
+                }),
+        });
+
+        await refreshOverview();
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+
+        await refreshOverview();
+      } finally {
+        setDeletingItemId(null);
+      }
+    },
+    [refreshOverview, t],
+  );
+
   const removeJob = useCallback(
     async (jobId: string) => {
       setRemovingJobIds((current) => new Set(current).add(jobId));
@@ -2112,7 +2215,7 @@ export function MediaProcessingPage() {
                       {t(`processing.kind.${kind}`)}
                       {kind === "series" && allSeries.length > 0 ? (
                         <span
-                          className={`rounded-full px-1.5 py-0.5 text-[10px] tabular-nums ${
+                          className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
                             selected
                               ? "bg-[var(--accent)] text-black"
                               : "bg-white/[0.08] text-white/60"
@@ -2178,6 +2281,27 @@ export function MediaProcessingPage() {
                     onProcessSeries={startSeries}
                     onProcessSeason={startSeason}
                     onStartEpisode={(episode) => void startEpisode(episode)}
+                    onDeleteEpisodeSource={(episode) =>
+                      void deleteTvSources(episode.itemId, [episode.itemId])
+                    }
+                    onDeleteSeasonSources={(season) =>
+                      void deleteTvSources(
+                        `season:${season.seasonId}`,
+                        season.episodes.map((episode) => episode.itemId),
+                      )
+                    }
+                    onDeleteSeriesSources={(series) =>
+                      void deleteTvSources(
+                        `series:${series.seriesId}`,
+                        series.seasons.flatMap((season) =>
+                          season.episodes.map((episode) => episode.itemId),
+                        ),
+                      )
+                    }
+                    confirmingDeleteKey={confirmingDeleteItemId}
+                    deletingDeleteKey={deletingItemId}
+                    onArmDelete={setConfirmingDeleteItemId}
+                    onCancelDelete={() => setConfirmingDeleteItemId(null)}
                     busySeriesId={busySeriesId}
                     busySeasonId={busySeasonId}
                     startingItemId={startingItemId}
@@ -2620,13 +2744,13 @@ export function MediaProcessingPage() {
                     <li key={job.id} className={`${CARD} flex flex-col gap-3`}>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                         {/*
-                          * Who this job belongs to.
-                          *
-                          * A film is its own name. An episode is a show and a
-                          * code: a queue listing three rows called "Pilot" is
-                          * a queue nobody can act on, and the operator has to
-                          * be able to tell which show they would be pausing.
-                          */}
+                         * Who this job belongs to.
+                         *
+                         * A film is its own name. An episode is a show and a
+                         * code: a queue listing three rows called "Pilot" is
+                         * a queue nobody can act on, and the operator has to
+                         * be able to tell which show they would be pausing.
+                         */}
                         {(() => {
                           const label = jobLabel(
                             jobTitlesById.get(job.id),

@@ -159,6 +159,15 @@ export interface ProjectionContext {
   packageFor: (mediaFileId: string) => PackageIndexEntry;
   /** Unfinished jobs, keyed by the file they are processing. */
   activeJobsByFile: ReadonlyMap<string, ProcessingJobRecord>;
+  /**
+   * Optional physical source-presence verdict.
+   *
+   * Rendition-backed titles deliberately keep their media-file catalogue
+   * identity alive after the original bytes are removed, because rendition
+   * playback authorization still resolves through that identity. Processing
+   * therefore cannot equate `missingSince === null` with "source exists".
+   */
+  sourceAvailableFor?: (row: ProcessableTitleRow) => boolean;
   freeBytes?: number;
 }
 
@@ -261,7 +270,8 @@ export function probeFromCatalogue(
         isForced: stream.isForced,
         isHearingImpaired: false,
         isCommentary: false,
-        isTextBased: stream.isTextSubtitle || isTextSubtitleCodec(stream.codec ?? ""),
+        isTextBased:
+          stream.isTextSubtitle || isTextSubtitleCodec(stream.codec ?? ""),
       })),
     chapters: [],
   };
@@ -316,12 +326,16 @@ export function projectTitle(
     : null;
 
   /*
-   * A source is present when the catalogue has not recorded it as gone. The
-   * item's own `missing_since` is not consulted: an item can be marked missing
-   * while one of its files is back, and the file is what a job reads.
+   * The processing route can provide a physical-presence verdict for
+   * rendition-backed titles. Other callers retain the catalogue fallback.
+   *
+   * This distinction matters because a completed title intentionally keeps
+   * its media-file identity after its original bytes are deleted, so
+   * `fileMissingSince === null` alone does not prove that the source exists.
    */
   const sourceAvailable =
-    row.mediaFileId !== null && row.fileMissingSince === null;
+    context.sourceAvailableFor?.(row) ??
+    (row.mediaFileId !== null && row.fileMissingSince === null);
 
   const probe = probeFromCatalogue(row, streams);
   const container =
