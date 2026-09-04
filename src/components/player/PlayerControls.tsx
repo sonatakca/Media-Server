@@ -163,8 +163,10 @@ export function PlayerControls({
   return (
     <div
       data-mobile-tight-controls
-      className={`seyirlik-player-bottom-chrome pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
-        visible ? "translate-y-0 opacity-100" : "translate-y-28 opacity-0"
+      className={`seyirlik-player-chrome seyirlik-player-bottom-chrome pointer-events-none absolute inset-x-0 bottom-0 z-30 px-[max(0.55rem,env(safe-area-inset-left))] pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-6 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-[max(1.25rem,env(safe-area-inset-bottom))] sm:pt-14 ${
+        visible
+          ? "seyirlik-player-chrome--visible"
+          : "seyirlik-player-chrome--hidden"
       }`}
     >
       <div

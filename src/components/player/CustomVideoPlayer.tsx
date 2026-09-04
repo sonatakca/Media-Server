@@ -3402,7 +3402,9 @@ export function CustomVideoPlayer({
        * to use another.
        */
       const labelAnchorHeight =
-        fileQualityMode === "auto" ? (effective?.height ?? autoAnchorHeight) : autoAnchorHeight;
+        fileQualityMode === "auto"
+          ? (effective?.height ?? autoAnchorHeight)
+          : autoAnchorHeight;
       const displayedModeRungs =
         labelAnchorHeight !== undefined
           ? selectModeRungsFromAutoHeight(ordered, labelAnchorHeight)
@@ -5967,14 +5969,18 @@ export function CustomVideoPlayer({
         <>
           <div
             aria-hidden="true"
-            className={`seyirlik-player-gradient-top pointer-events-none absolute inset-x-0 top-0 z-[8] h-[26%] transition-opacity duration-300 ${
-              shouldRenderPlayerChrome ? "opacity-100" : "opacity-0"
+            className={`seyirlik-player-gradient-top pointer-events-none absolute inset-x-0 top-0 z-[8] transition-opacity h-[26%] ${
+              shouldRenderPlayerChrome
+                ? "opacity-100 duration-[620ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+                : "opacity-0 duration-[420ms] ease-[cubic-bezier(0.45,0,0.75,0.2)]"
             }`}
           />
           <div
             aria-hidden="true"
-            className={`seyirlik-player-gradient-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[8] h-[38%] transition-opacity duration-300 ${
-              shouldRenderPlayerChrome ? "opacity-100" : "opacity-0"
+            className={`seyirlik-player-gradient-bottom pointer-events-none absolute inset-x-0 bottom-0 z-[8] transition-opacity h-[38%] ${
+              shouldRenderPlayerChrome
+                ? "opacity-100 duration-[620ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+                : "opacity-0 duration-[420ms] ease-[cubic-bezier(0.45,0,0.75,0.2)]"
             }`}
           />
         </>

@@ -179,8 +179,10 @@ export function PlayerOverlay({
       </Tooltip>
 
       <div
-        className={`seyirlik-player-top-chrome pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] transition duration-500 sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
-          visible ? "translate-y-0 opacity-100" : "-translate-y-16 opacity-0"
+        className={`seyirlik-player-chrome seyirlik-player-top-chrome pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
+          visible
+            ? "seyirlik-player-chrome--visible"
+            : "seyirlik-player-chrome--hidden"
         }`}
       >
         <div
@@ -348,10 +350,10 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`seyirlik-player-center-toggle absolute backdrop-blur-2xl left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none transition duration-300 hover:scale-110 focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+        className={`seyirlik-player-center-toggle absolute backdrop-blur-2xl left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none hover:scale-110 focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
-            ? "scale-100 opacity-100"
-            : "pointer-events-none scale-0 opacity-0"
+            ? "seyirlik-player-center-toggle--visible scale-100 opacity-100"
+            : "seyirlik-player-center-toggle--hidden pointer-events-none scale-0 opacity-0"
         }`}
         aria-label={
           isPlayPauseLoading

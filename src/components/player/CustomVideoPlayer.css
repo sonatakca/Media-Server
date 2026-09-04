@@ -219,6 +219,19 @@ body:has(.seyirlik-player-shell) {
   );
   padding-top: 1.1rem;
   padding-bottom: max(0.35rem, env(safe-area-inset-bottom));
+  /* The phone bar stays planted -- sliding it would drag it under the home
+     indicator -- so it gets the smear and the fade without the travel. A
+     resting transform here would also re-anchor the position:fixed settings
+     panel nested inside it. */
+  --seyirlik-chrome-smear: 5px;
+  transform: none;
+}
+
+/* The bar itself is planted, so the trailing inner layer has nothing to trail
+   behind -- it would just slide on its own. */
+.seyirlik-player-shell--phone
+  .seyirlik-player-bottom-chrome
+  .seyirlik-player-controls-inner {
   transform: none;
 }
 
@@ -754,4 +767,155 @@ body:has(.seyirlik-player-shell) {
 .seyirlik-player-shell--phone .seyirlik-video {
   height: 100%;
   max-height: var(--seyirlik-player-stage-height);
+}
+
+/* --- Player chrome reveal -------------------------------------------------
+   The top and bottom bars share one motion language: they decelerate into
+   place on the way in and accelerate out of frame on the way out, smearing
+   along the travel axis while they move fastest. The smear is a plain blur()
+   paired with a scaleY stretch anchored to the screen edge the bar sits on --
+   both stay on the compositor, and at these speeds the pairing reads as
+   directional motion blur without an SVG filter pass.
+
+   These are transitions rather than keyframes on purpose. The reveal is
+   interrupted constantly -- the idle timer hides the bars, a mouse twitch
+   brings them straight back -- and a keyframe animation restarts from its 0%
+   frame every time, so an interrupted hide snaps the bar back off-screen
+   before replaying. A transition picks up from wherever the bar actually is.
+   That constraint is what shapes the blur: it belongs to the state (sharp
+   when shown, smeared when hidden) rather than to a moment in a timeline, and
+   the per-property durations below do the shaping instead of keyframe stops.
+
+   Every travel/smear number is a custom property, so a surface that must not
+   move (the phone bottom bar, which would slide under the home indicator)
+   opts out by overriding transform alone and keeps the fade and the smear. */
+.seyirlik-player-chrome {
+  --seyirlik-chrome-travel: 4rem;
+  --seyirlik-chrome-smear: 8px;
+  --seyirlik-chrome-stretch: 1.05;
+  --seyirlik-chrome-inner-travel: calc(var(--seyirlik-chrome-travel) * 0.24);
+  /* No will-change here on purpose: will-change on transform or filter makes
+     the bar a containing block even at rest, which would re-anchor the
+     position:fixed settings panel nested inside it on phones. These are
+     compositor properties anyway, so the hint buys nothing. */
+  backface-visibility: hidden;
+}
+
+.seyirlik-player-top-chrome {
+  --seyirlik-chrome-travel: -4.5rem;
+  transform-origin: 50% 0;
+}
+
+.seyirlik-player-bottom-chrome {
+  --seyirlik-chrome-travel: 7rem;
+  transform-origin: 50% 100%;
+}
+
+/* Arriving: a long expo glide, but opacity and the smear resolve in the first
+   ~280ms, so the bar is sharp and solid well before it stops moving. Resting
+   filter is none rather than blur(0px) -- a filter of any kind would make the
+   visible bar a containing block, which is exactly what the phone bottom bar
+   avoids by dropping its transform. */
+.seyirlik-player-chrome--visible {
+  opacity: 1;
+  transform: translate3d(0, 0, 0) scaleY(1);
+  filter: none;
+  transition:
+    transform 620ms cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 260ms cubic-bezier(0.33, 1, 0.68, 1),
+    filter 280ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+/* Leaving: the travel curve is an ease-in, so most of the movement lands in
+   the back half. Opacity is given a short delay and a shorter run than the
+   travel so the bar is still solid while it picks up speed -- fading it first
+   would hide the very motion the smear exists to sell. */
+.seyirlik-player-chrome--hidden {
+  opacity: 0;
+  transform: translate3d(0, var(--seyirlik-chrome-travel), 0)
+    scaleY(var(--seyirlik-chrome-stretch));
+  filter: blur(var(--seyirlik-chrome-smear));
+  transition:
+    transform 420ms cubic-bezier(0.45, 0, 0.75, 0.2),
+    opacity 340ms cubic-bezier(0.5, 0, 0.9, 0.4) 60ms,
+    filter 400ms cubic-bezier(0.45, 0, 0.75, 0.2);
+}
+
+/* Second layer: the contents trail the bar they sit in by a few pixels, so it
+   reads as a surface carrying controls rather than one flat sprite. The shown
+   state is transform:none, not a zeroed translate -- the phone settings panel
+   is a position:fixed descendant and any resting transform re-anchors it. */
+.seyirlik-player-chrome--visible .seyirlik-player-top-bar,
+.seyirlik-player-chrome--visible .seyirlik-player-controls-inner {
+  transform: none;
+  transition: transform 560ms cubic-bezier(0.16, 1, 0.3, 1) 60ms;
+}
+
+.seyirlik-player-chrome--hidden .seyirlik-player-top-bar,
+.seyirlik-player-chrome--hidden .seyirlik-player-controls-inner {
+  transform: translate3d(0, var(--seyirlik-chrome-inner-travel), 0);
+  transition: transform 420ms cubic-bezier(0.45, 0, 0.75, 0.2);
+}
+
+/* The center toggle is the one control that arrives by scale rather than
+   travel, so its smear is a focus pull: it condenses out of a soft disc and
+   dissolves back into one. Unlike the bars it keeps a blur(0px) at rest: it is
+   the only chrome element carrying its own backdrop-filter, and dropping the
+   filter to none would flip it between two compositing paths on every reveal
+   while the glass layer is live. Holding a no-op filter costs nothing here --
+   it has no positioned descendants that care about the containing block --
+   and it keeps that flip out of a code path WebKit has historically been
+   fussy about. */
+.seyirlik-player-center-toggle {
+  transition:
+    transform 420ms cubic-bezier(0.34, 1.42, 0.64, 1),
+    opacity 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    filter 240ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+.seyirlik-player-center-toggle--visible {
+  filter: blur(0px);
+}
+
+.seyirlik-player-center-toggle--hidden {
+  filter: blur(10px);
+  transition:
+    transform 300ms cubic-bezier(0.5, 0, 0.9, 0.3),
+    opacity 260ms cubic-bezier(0.5, 0, 0.9, 0.4) 40ms,
+    filter 300ms cubic-bezier(0.45, 0, 0.75, 0.2);
+}
+
+/* Hover has to undercut the arrival curve: the springy 420ms that sells the
+   disc condensing into place is far too slow to answer a pointer. */
+.seyirlik-player-center-toggle:hover {
+  transition:
+    transform 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    opacity 200ms cubic-bezier(0.33, 1, 0.68, 1),
+    filter 240ms cubic-bezier(0.33, 1, 0.68, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .seyirlik-player-chrome--visible,
+  .seyirlik-player-chrome--hidden {
+    transform: none;
+    filter: none;
+    transition: opacity 200ms linear;
+  }
+
+  .seyirlik-player-chrome--visible .seyirlik-player-top-bar,
+  .seyirlik-player-chrome--visible .seyirlik-player-controls-inner,
+  .seyirlik-player-chrome--hidden .seyirlik-player-top-bar,
+  .seyirlik-player-chrome--hidden .seyirlik-player-controls-inner {
+    transform: none;
+    transition: none;
+  }
+
+  .seyirlik-player-center-toggle,
+  .seyirlik-player-center-toggle--visible,
+  .seyirlik-player-center-toggle--hidden {
+    filter: none;
+    transition:
+      transform 160ms linear,
+      opacity 160ms linear;
+  }
 }
