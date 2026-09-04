@@ -96,7 +96,7 @@ describe("which half of the tab a job belongs in", () => {
 });
 
 describe("the order of the waiting line", () => {
-  it("puts what is underway first and the rest in queue order", () => {
+  it("puts what is running first and the rest in queue order", () => {
     const ordered = orderQueue([
       job({ id: "third", queuePriority: 102 }),
       job({ id: "first", queuePriority: 100 }),
@@ -107,15 +107,65 @@ describe("the order of the waiting line", () => {
     expect(ids(ordered)).toEqual(["encoding", "first", "second", "third"]);
   });
 
-  it("keeps a paused job at the head rather than in the line", () => {
-    // A paused encode still owns the encoder and its workspace. It is not
-    // waiting for a turn, so it cannot sit among the jobs that are.
+  it("reads running, then waiting, then held", () => {
+    // The three bands are the whole point of the list: what the machine is
+    // doing, what it will do next, and what it has set aside.
     const ordered = orderQueue([
-      job({ id: "waiting", queuePriority: 100 }),
       job({ id: "held", state: "paused", pauseRequested: true }),
+      job({ id: "second", queuePriority: 101 }),
+      job({ id: "encoding", state: "running" }),
+      job({ id: "first", queuePriority: 100 }),
     ]);
 
-    expect(ids(ordered)).toEqual(["held", "waiting"]);
+    expect(ids(ordered)).toEqual(["encoding", "first", "second", "held"]);
+  });
+
+  it("sinks a paused job below the line even when it began first", () => {
+    // A paused encode still owns the encoder, but it will not advance until it
+    // is resumed, so it cannot sit above the jobs that are actually waiting.
+    const ordered = orderQueue([
+      job({
+        id: "held",
+        state: "paused",
+        pauseRequested: true,
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }),
+      job({
+        id: "waiting",
+        queuePriority: 100,
+        createdAt: "2026-09-02T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["waiting", "held"]);
+  });
+
+  it("orders two held jobs among themselves by age", () => {
+    const ordered = orderQueue([
+      job({
+        id: "later",
+        state: "paused",
+        createdAt: "2026-09-02T00:00:00.000Z",
+      }),
+      job({
+        id: "earlier",
+        state: "paused",
+        createdAt: "2026-09-01T00:00:00.000Z",
+      }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["earlier", "later"]);
+  });
+
+  it("keeps a job asked to pause with the running ones until it stops", () => {
+    // `pauseRequested` on a running job is a request the encoder has not
+    // answered yet; the row is still an encode in progress.
+    const ordered = orderQueue([
+      job({ id: "waiting", queuePriority: 100 }),
+      job({ id: "stopping", state: "running", pauseRequested: true }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["stopping", "waiting"]);
   });
 
   it("keeps a job whose attempt has no place, at the end rather than dropped", () => {

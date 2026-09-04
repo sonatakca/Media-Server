@@ -1,4 +1,4 @@
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -724,6 +724,82 @@ describe("processing job runner", () => {
     expect(fake.latest().pauseRequested).toBe(true);
     expect(fake.latest().pausedReason).toBe("operator");
     expect(fake.events.at(-1)?.message).toMatch(/paused/i);
+  });
+
+  /**
+   * The destination the queue carried has to reach the packager.
+   *
+   * It is computed when the job is queued, travels in the payload, and is used
+   * here — and every hop in that chain has now dropped it at least once. This
+   * asserts the last one.
+   */
+  it("publishes where the job says, not beside the source", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Series/Show/Season 1/S01E02.mp4",
+      status: "ready" as const,
+      versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+      storageBytes: 1,
+    }));
+
+    await runner(fake, packageFn).run({
+      ...input,
+      sourcePath: "/media/Series/Show/Season 1/S01E02.mp4",
+      relativePath: "Series/Show/Season 1/S01E02.mp4",
+      titleRoot: "/media/Series/Show/Season 1/S01E02",
+    });
+
+    expect(packageFn.mock.calls.at(0)?.at(0)).toMatchObject({
+      titleRoot: "/media/Series/Show/Season 1/S01E02",
+    });
+  });
+
+  /**
+   * With no destination carried, the folder beside the source is a guess, and
+   * it is only a safe one where that folder holds a single title. A season
+   * folder holds ten, and publishing beside there is how one episode comes to
+   * overwrite its neighbours.
+   */
+  it("refuses to guess a destination in a folder holding several sources", async () => {
+    const shared = mkdtempSync(path.join(tmpdir(), "seyirlik-season-"));
+    for (const name of ["S01E01.mp4", "S01E02.mp4", "S01E03.mp4"]) {
+      writeFileSync(path.join(shared, name), "source");
+    }
+    const packageFn = vi.fn();
+
+    const outcome = await runner(fake, packageFn).run({
+      ...input,
+      sourcePath: path.join(shared, "S01E02.mp4"),
+      relativePath: "Series/Show/Season 1/S01E02.mp4",
+      // No titleRoot: the case every dropped-field bug produced.
+    });
+
+    expect(packageFn).not.toHaveBeenCalled();
+    expect(outcome.status).toBe("failed");
+    expect(fake.latest().errorMessage).toMatch(/holds 3 sources/);
+  });
+
+  /** A movie folder holds one title, so beside it is unambiguous and allowed. */
+  it("still falls back to the folder beside a lone source", async () => {
+    const solo = mkdtempSync(path.join(tmpdir(), "seyirlik-movie-"));
+    writeFileSync(path.join(solo, "Dune.mp4"), "source");
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune/Dune.mp4",
+      status: "ready" as const,
+      versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+      storageBytes: 1,
+    }));
+
+    await runner(fake, packageFn).run({
+      ...input,
+      sourcePath: path.join(solo, "Dune.mp4"),
+      relativePath: "Movies/Dune/Dune.mp4",
+    });
+
+    expect(packageFn.mock.calls.at(0)?.at(0)).toMatchObject({
+      titleRoot: solo,
+    });
   });
 
   it("starts an attempt with fresh progress and no finish time", async () => {

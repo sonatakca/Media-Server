@@ -156,3 +156,64 @@ describe("a source that cannot be read", () => {
     expect(result).toEqual({ status: "succeeded" });
   });
 });
+
+/**
+ * The one hop between the queue row and the encoder.
+ *
+ * The destination a title publishes to is decided when the job is queued and
+ * written into the payload. This handler read every other field and not that
+ * one, so the decision was made, stored, and then dropped here — leaving the
+ * runner to fall back to the folder beside the source, which for an episode is
+ * the season folder it shares with its neighbours.
+ */
+describe("the publish destination a processing job carries", () => {
+  function runnerSpy() {
+    const seen: Array<Record<string, unknown>> = [];
+    const handlers = createJobHandlers({
+      libraries: { get: async () => null, list: async () => [] } as never,
+      scanStore: scanStore(),
+      fileSystem: {} as never,
+      probeService: {} as never,
+      queue: {} as never,
+      processingRunner: {
+        run: async (input: Record<string, unknown>) => {
+          seen.push(input);
+          return { status: "succeeded" as const };
+        },
+      },
+    });
+    return { handlers, seen };
+  }
+
+  async function runWith(payloadExtra: Record<string, unknown>) {
+    const { handlers, seen } = runnerSpy();
+    const job = processingJob();
+    await handlers[JOB_TYPES.mediaProcess]({
+      job: { ...job, payload: { ...job.payload, ...payloadExtra } },
+      reportProgress: async () => undefined,
+      isCancelled: async () => false,
+    });
+    return seen;
+  }
+
+  it("hands it to the runner instead of dropping it", async () => {
+    const seen = await runWith({
+      titleRoot: "/media/Series/Show/Season 1/S01E02",
+    });
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.titleRoot).toBe("/media/Series/Show/Season 1/S01E02");
+  });
+
+  it("leaves it absent when the payload carries none, for the runner to judge", async () => {
+    const seen = await runWith({});
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.titleRoot).toBeUndefined();
+  });
+
+  it("refuses a payload whose destination is not a path", async () => {
+    // The shape a forgotten `await` used to produce.
+    await expect(runWith({ titleRoot: {} })).rejects.toThrow(
+      /unusable publish destination/,
+    );
+  });
+});

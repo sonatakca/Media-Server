@@ -349,6 +349,7 @@ export function createJobHandlers({
       relativePath?: unknown;
       sizeBytes?: unknown;
       mtimeMs?: unknown;
+      titleRoot?: unknown;
     };
     if (
       typeof payload.processingJobId !== "string" ||
@@ -358,6 +359,28 @@ export function createJobHandlers({
       typeof payload.mtimeMs !== "number"
     ) {
       throw new PermanentJobError("The processing task payload is incomplete.");
+    }
+    /*
+     * The publish destination, carried from the queue row to the runner.
+     *
+     * Every caller that queues a processing job works out where the title
+     * publishes and writes it into the payload; this handler is the one hop
+     * between that and the encoder, and while it did not read the field the
+     * work was done and then thrown away. The runner then had nothing to go on
+     * and fell back to the folder beside the source — for an episode, the
+     * season folder its neighbours publish into.
+     *
+     * A payload that genuinely carries no destination is still allowed through:
+     * the runner decides what an absent one means, and refuses the ones it
+     * cannot make safe.
+     */
+    if (
+      payload.titleRoot !== undefined &&
+      typeof payload.titleRoot !== "string"
+    ) {
+      throw new PermanentJobError(
+        "The processing task payload carries an unusable publish destination.",
+      );
     }
     if (!processingRunner) {
       throw new PermanentJobError(
@@ -374,6 +397,9 @@ export function createJobHandlers({
       relativePath: payload.relativePath,
       sizeBytes: payload.sizeBytes,
       mtimeMs: payload.mtimeMs,
+      ...(payload.titleRoot === undefined
+        ? {}
+        : { titleRoot: payload.titleRoot }),
       isCancelled,
     });
     /*

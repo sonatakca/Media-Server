@@ -1,10 +1,14 @@
 import path from "node:path";
-import { rm } from "node:fs/promises";
+import { readdir, rm } from "node:fs/promises";
 import { createPauseController } from "../../../renditions/processing/pauseController";
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
 import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
 import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
 import { besideTitleRoot } from "../../../renditions/adaptive/titleRoot";
+import {
+  SUPPORTED_VIDEO_EXTENSIONS,
+  isDerivativeFileName,
+} from "../../../renditions/policy";
 import { TitleRootConflictError } from "../../../renditions/adaptive/publishTitle";
 import { estimateFinalOutputBytes } from "../../../renditions/outputEstimate";
 import type { AdaptivePackageResult } from "../../../renditions/adaptive/packager";
@@ -236,19 +240,53 @@ export interface ProcessingJobRunnerDeps {
  * present-but-unusable value is a defect in whoever queued the job, and it stops
  * the run instead of choosing a destination on their behalf.
  */
-function titleRootForInput(input: RunProcessingJobInput): string {
+async function titleRootForInput(
+  input: RunProcessingJobInput,
+): Promise<string> {
   const titleRoot = input.titleRoot as unknown;
-  if (titleRoot === undefined || titleRoot === null) {
-    return besideTitleRoot(input.sourcePath);
+  if (titleRoot !== undefined && titleRoot !== null) {
+    if (typeof titleRoot !== "string" || titleRoot.trim() === "") {
+      throw new Error(
+        `Processing job ${input.processingJobId} carries an unusable titleRoot ` +
+          `(${JSON.stringify(titleRoot)}). Refusing to guess a publish ` +
+          `destination for ${input.relativePath}.`,
+      );
+    }
+    return titleRoot;
   }
-  if (typeof titleRoot !== "string" || titleRoot.trim() === "") {
+
+  /*
+   * No destination was carried, so the only one left to infer is the folder
+   * beside the source. That is right for a folder holding one title and wrong
+   * for one holding many — a season folder, where publishing beside means
+   * publishing over the neighbours, one episode at a time, each publish
+   * reporting success.
+   *
+   * The inference is therefore allowed only where it is unambiguous. A caller
+   * that means to publish into a shared folder has to say so, and a caller that
+   * simply forgot gets a stopped job instead of a deleted one. This has been
+   * forgotten twice — once by a requeue that dropped the field, once by a queue
+   * handler that never read it — which is the argument for the check rather
+   * than against it.
+   */
+  const beside = besideTitleRoot(input.sourcePath);
+  const siblings = await readdir(beside).catch(() => null);
+  if (siblings === null) return beside;
+  const sources = siblings.filter(
+    (name) =>
+      !name.startsWith("._") &&
+      SUPPORTED_VIDEO_EXTENSIONS.has(path.extname(name).toLowerCase()) &&
+      !isDerivativeFileName(name),
+  );
+  if (sources.length > 1) {
     throw new Error(
-      `Processing job ${input.processingJobId} carries an unusable titleRoot ` +
-        `(${JSON.stringify(titleRoot)}). Refusing to guess a publish ` +
-        `destination for ${input.relativePath}.`,
+      `Processing job ${input.processingJobId} carries no publish destination, ` +
+        `and ${beside} holds ${sources.length} sources, so the folder beside ` +
+        `the source is not this title's. Refusing to publish ` +
+        `${input.relativePath} over its neighbours.`,
     );
   }
-  return titleRoot;
+  return beside;
 }
 
 export interface RunProcessingJobInput {
@@ -1301,7 +1339,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           relativePath: input.relativePath,
           sourceFingerprint: job.sourceFingerprint,
           sourcePath: input.sourcePath,
-          titleRoot: titleRootForInput(input),
+          titleRoot: await titleRootForInput(input),
           probe,
         },
         paths,
@@ -2288,7 +2326,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     }
     if (result.publicationIncomingDirectory) {
       await cleanupPublicationIncoming(
-        titleRootForInput(input),
+        await titleRootForInput(input),
         result.publicationIncomingDirectory,
         job.id,
       ).catch(async (error) => {

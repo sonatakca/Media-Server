@@ -36,14 +36,23 @@ export function isConcluded(job: Pick<ProcessingJob, "state">): boolean {
 }
 
 /**
- * True while the job is doing the work rather than waiting for its turn.
+ * The band of the queue a job sits in: running, then waiting, then held.
  *
- * `running` alone is not enough: a job that has been asked to pause, or that
- * the storage guard is holding, still owns the encoder and its workspace. None
- * of them can be moved in the queue, and all of them belong at the top of it.
+ * The three read as a sentence about the machine — what it is doing, what it
+ * will do next, and what it has set aside. A paused job still owns the encoder
+ * and its workspace, but it is not going to advance until somebody or the
+ * storage guard says so, so it sits below the line rather than above it. A job
+ * that has merely been *asked* to pause is still `running` and stays in the
+ * top band until the encoder actually stops.
  */
-function isUnderway(job: Pick<ProcessingJob, "state">): boolean {
-  return job.state === "running" || job.state === "paused";
+const RUNNING_BAND = 0;
+const WAITING_BAND = 1;
+const HELD_BAND = 2;
+
+function queueBand(job: Pick<ProcessingJob, "state">): number {
+  if (job.state === "running") return RUNNING_BAND;
+  if (job.state === "paused") return HELD_BAND;
+  return WAITING_BAND;
 }
 
 /**
@@ -72,18 +81,21 @@ function byCreatedAtAscending(
 /**
  * The waiting line, in the order the machine will actually work through it.
  *
- * What is underway comes first — it is the one thing on this page that is
- * happening rather than pending — and the rest follow by the position the
- * queue holds for them. Jobs the server gave no position to sort last by age
- * rather than being dropped: a job whose attempt is missing is still work
- * somebody queued, and hiding it is how a stuck row goes unnoticed.
+ * The encodes that are running come first — they are the only rows on this
+ * page that are happening rather than pending — then the jobs waiting their
+ * turn, by the position the queue holds for them, and last the paused ones,
+ * which will not advance until they are resumed. Jobs the server gave no
+ * position to sort last within their own band by age rather than being
+ * dropped: a job whose attempt is missing is still work somebody queued, and
+ * hiding it is how a stuck row goes unnoticed.
  */
 export function orderQueue(jobs: readonly ProcessingJob[]): ProcessingJob[] {
   return [...jobs].sort((left, right) => {
-    const leftUnderway = isUnderway(left);
-    const rightUnderway = isUnderway(right);
-    if (leftUnderway !== rightUnderway) return leftUnderway ? -1 : 1;
-    if (leftUnderway) return byCreatedAtAscending(left, right);
+    const leftBand = queueBand(left);
+    const rightBand = queueBand(right);
+    if (leftBand !== rightBand) return leftBand - rightBand;
+    // Running jobs hold no queue position; they read in the order they began.
+    if (leftBand === RUNNING_BAND) return byCreatedAtAscending(left, right);
 
     const leftPlace = left.queuePriority;
     const rightPlace = right.queuePriority;
