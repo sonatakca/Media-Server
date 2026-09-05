@@ -9,6 +9,7 @@ import {
   type NfoVideoStream,
 } from "./nfoSerializer";
 import { resolveTitleRoot } from "../metadata/titleRoot";
+import { nestedTitleRootOf } from "../../../renditions/adaptive/titleRoot";
 import type {
   NfoFileRow,
   NfoGenreRow,
@@ -51,11 +52,6 @@ const EXPORTABLE_KINDS = new Set(["movie", "series", "season", "episode"]);
 
 export function isExportableKind(kind: string): boolean {
   return EXPORTABLE_KINDS.has(kind);
-}
-
-function directoryOf(relativePath: string): string {
-  const index = relativePath.lastIndexOf("/");
-  return index === -1 ? "" : relativePath.slice(0, index);
 }
 
 function stemOf(relativePath: string): string {
@@ -355,13 +351,9 @@ function movieFiles(bundle: NfoItemBundle, streams: NfoStreamRow[]): NfoPlan {
    */
   if (files.length > 1) {
     for (const file of files) {
-      push(
-        joinRelative(
-          directoryOf(file.relativePath),
-          `${stemOf(file.relativePath)}.nfo`,
-        ),
-        file,
-      );
+      // The title folder, never the `src/` bucket the file itself may sit in:
+      // an .nfo Kodi cannot see beside the folder-level one is not an export.
+      push(joinRelative(titleRoot, `${stemOf(file.relativePath)}.nfo`), file);
     }
   }
 
@@ -476,10 +468,20 @@ function episodeFiles(bundle: NfoItemBundle, streams: NfoStreamRow[]): NfoPlan {
    * An episode's file is named after its video, so an alternate cut already has
    * a distinct name and each version simply gets its own sidecar. There is no
    * folder-level equivalent of movie.nfo here.
+   *
+   * It goes in the episode's own folder — the same folder its renditions are
+   * published into — rather than loose in a season folder shared with every
+   * other episode. On a library that has not been organised those two are the
+   * same answer for the folder and differ only in the file's name, so this is
+   * where the sidecar has always been for an episode that owns a folder.
    */
+  // One folder per episode, named after the primary cut, exactly as the
+  // renditions of that cut are. An alternate cut is another file in it.
+  const episodeRoot = nestedTitleRootOf((files[0] as NfoFileRow).relativePath);
+
   for (const file of files) {
     const relativePath = joinRelative(
-      directoryOf(file.relativePath),
+      episodeRoot,
       `${stemOf(file.relativePath)}.nfo`,
     );
     if (seen.has(relativePath)) continue;

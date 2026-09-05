@@ -64,7 +64,10 @@ import {
 } from "../../renditions/adaptive/titleRoot";
 import { createStorageWatchdog } from "../../renditions/processing/storageWatchdog";
 import { createStorageIncidentStore } from "./processing/storageIncidentStore";
-import { createStorageGuard } from "./processing/storageGuard";
+import {
+  createStorageGuard,
+  shouldRereadIncident,
+} from "./processing/storageGuard";
 import { createDiskutilIdentityProbe } from "../../renditions/processing/storageIdentity";
 import { runBoundedProcess } from "../../renditions/processExecution";
 import { jobRecordsStorageFault } from "./processing/recoveryPolicy";
@@ -90,8 +93,13 @@ import { createUserRoutes } from "./users/userRoutes";
 import { createSyncplayRepository } from "./syncplay/syncplayRepository";
 import { createSyncplayRoutes } from "./syncplay/syncplayRoutes";
 import { createSyncplayEventBus } from "./syncplay/eventBus";
-import { createNodeScannerFileSystem } from "./scanner/nodeFileSystem";
+import {
+  createNodeOrganizerFileSystem,
+  createNodeScannerFileSystem,
+} from "./scanner/nodeFileSystem";
 import { parseNfoConfig, writesFiles } from "./nfo/nfoConfig";
+import { parseOrganizeMode } from "./scanner/organizeConfig";
+import { createQueuedWorkRetargeter } from "./processing/retargetQueuedWork";
 import { createNfoRepository } from "./nfo/nfoRepository";
 import { createNfoWriter } from "./nfo/nfoWriter";
 import { createNfoService } from "./nfo/nfoService";
@@ -165,6 +173,9 @@ export async function createNativeRuntime({
   // Parsed before the pool opens so an invalid export policy stops the process
   // at the point the mistake was made, not on the first title it writes.
   const nfoConfig = parseNfoConfig(environment);
+  // Same reason: a scan that may move files is not something to discover from
+  // a typo halfway through the first library it reads.
+  const organizeMode = parseOrganizeMode(environment);
 
   const pool: DatabasePool = createDatabasePool(databaseConfig);
   try {
@@ -197,6 +208,7 @@ export async function createNativeRuntime({
 
   const catalogue = createCatalogueRepository(pool);
   const scanStore = createCatalogueScanStore(pool);
+  const queuedWorkRetargeter = createQueuedWorkRetargeter(pool);
   const home = createHomeRepository(pool);
   const images = createImageRepository(pool);
   const userState = createUserStateRepository(pool);
@@ -669,43 +681,66 @@ export async function createNativeRuntime({
   };
 
   /**
-   * Noticing that an operator lifted the hold, from the other process.
+   * Noticing, from the other process, that the hold changed.
    *
-   * The two recovery presses land on the API server, and the encoders run in
-   * the worker — so the worker learns about a resume the only way it can, by
-   * re-reading the row. It polls *only while it is being held*: a healthy
-   * deployment does not run this query at all, and a held one runs one indexed
-   * single-row read every five seconds, which is the "periodically attempt
-   * recovery" this needs and nothing more.
+   * The incident row is the truth and each process serves decisions from a
+   * cached copy of it, so each one has to re-read the row in the state where
+   * its copy can be wrong in the direction that does harm. The two are mirror
+   * images, because raising a hold and lifting one happen in different
+   * processes: only the worker raises (the `!runWorker` returns in the
+   * watchdog above), and only the API server lifts, on the two recovery
+   * presses.
    *
-   * Without it the recovery button appeared to work — the storage went healthy,
-   * the panel cleared — while every held job stayed dormant until the worker
-   * happened to be restarted.
+   * So the worker polls *while it is held*, to notice a lift; and the server
+   * polls *while it believes work may start*, to notice a hold. Neither polls
+   * in both states, and a single-process deployment covers both by being both.
+   *
+   * Without the worker's half the recovery button appeared to work — the
+   * storage went healthy, the panel cleared — while every held job stayed
+   * dormant until the worker happened to be restarted.
+   *
+   * Without the server's half the failure is quieter and worse. The server
+   * came up healthy, the worker raised a hold afterwards, and nothing ever
+   * told the server: it went on believing the volume was fine for as long as
+   * it stayed up. Resuming a job was then accepted by the API and refused by
+   * the worker a second later, so the job flicked to running and fell back to
+   * paused with no error to show for it; and `/processing/storage/resume`,
+   * which lifts the hold, refused with "verify the storage first" because the
+   * guard it asked had never heard of the incident. The operator could see the
+   * incident in the panel — that list is read from the database — and had no
+   * press that could clear it.
    */
-  const releaseTimer = runWorker
-    ? setInterval(() => {
-        if (storageGuard.mayStartWork()) return;
-        void (async () => {
-          const before = storageGuard.health.state;
-          await storageGuard.reload();
-          if (
-            before !== storageGuard.health.state &&
-            storageGuard.mayStartWork()
-          ) {
-            /*
-             * The operator's resume landed in the other process. Held jobs are
-             * released here, which is the only path that touches them.
-             */
-            await releaseOperatorHeldJobs();
-          }
-        })().catch((error) => {
-          console.warn(
-            "[Seyirlik] Could not re-read the storage incident:",
-            error instanceof Error ? error.message : String(error),
-          );
-        });
-      }, 5_000)
-    : undefined;
+  const releaseTimer = setInterval(() => {
+    if (
+      !shouldRereadIncident({
+        runWorker,
+        mayStartWork: storageGuard.mayStartWork(),
+      })
+    ) {
+      return;
+    }
+    void (async () => {
+      const before = storageGuard.health.state;
+      await storageGuard.reload();
+      if (
+        runWorker &&
+        before !== storageGuard.health.state &&
+        storageGuard.mayStartWork()
+      ) {
+        /*
+         * The operator's resume landed in the other process. Held jobs are
+         * released here, which is the only path that touches them, and only
+         * the worker owns the encoders it would be starting.
+         */
+        await releaseOperatorHeldJobs();
+      }
+    })().catch((error) => {
+      console.warn(
+        "[Seyirlik] Could not re-read the storage incident:",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+  }, 5_000);
   releaseTimer?.unref?.();
 
   /**
@@ -851,6 +886,17 @@ export async function createNativeRuntime({
         }),
         scanStore,
         fileSystem: createNodeScannerFileSystem(mediaRoot),
+        organizer: {
+          mode: organizeMode,
+          fileSystem: createNodeOrganizerFileSystem(mediaRoot),
+          recordMoves: async (moves) => {
+            const rows = await scanStore.recordMoves(moves);
+            // Belt and braces: the pass already stands down while anything is
+            // queued, so this normally finds nothing to do.
+            await queuedWorkRetargeter.retarget(moves);
+            return rows;
+          },
+        },
         probeService,
         queue,
         ...(metadataService ? { metadataService } : {}),
@@ -912,7 +958,28 @@ export async function createNativeRuntime({
       sessions,
       passwords: createArgon2PasswordHasher(),
     }),
-    ...createTaskRoutes({ queue, libraries }),
+    ...createTaskRoutes({
+      queue,
+      libraries,
+      processingJobs,
+      /*
+       * The catalogue's own naming fields, passed on unjoined. Composing the
+       * line here would put a page's presentation inside the runtime, and the
+       * task endpoint is the one place that knows how a card names a title.
+       */
+      resolveMediaLabel: async (userId, itemId) => {
+        const item = await catalogue.getItem(userId, itemId);
+        return item
+          ? {
+              kind: item.kind,
+              title: item.title,
+              seriesTitle: item.seriesTitle ?? null,
+              seasonNumber: item.parentIndexNumber ?? null,
+              episodeNumber: item.indexNumber ?? null,
+            }
+          : null;
+      },
+    }),
     ...createNfoRoutes({ service: nfoService, queue }),
     ...(restartController
       ? createSystemRoutes({ restart: restartController })

@@ -511,6 +511,14 @@ export interface ProcessingJobTitle {
   kind: "movie" | "episode";
   seriesTitle?: string;
   code?: string;
+  /*
+   * Optional for the same reason the catalogue itself is: a server that
+   * predates them says nothing rather than zero. The queue reads the code as a
+   * fallback, so grouping a show by season and episode still works — it simply
+   * trusts a label instead of a number.
+   */
+  seasonNumber?: number;
+  episodeNumber?: number | null;
   title: string;
 }
 

@@ -540,7 +540,9 @@ export function attachSourceToVideo(
 
       const estimate = hls.bandwidthEstimate;
       const measured =
-        typeof estimate === "number" && Number.isFinite(estimate) && estimate > 0
+        typeof estimate === "number" &&
+        Number.isFinite(estimate) &&
+        estimate > 0
           ? estimate
           : undefined;
       const target = selectAdaptiveTargetRung(pool, adaptiveMode, {
@@ -577,7 +579,8 @@ export function attachSourceToVideo(
     const evaluateAdaptiveTarget = (force = false) => {
       if (hls.levels.length === 0) return;
       const now = Date.now();
-      if (!force && now - lastEvaluationAt < RUNG_EVALUATION_INTERVAL_MS) return;
+      if (!force && now - lastEvaluationAt < RUNG_EVALUATION_INTERVAL_MS)
+        return;
       lastEvaluationAt = now;
 
       /*
@@ -587,7 +590,11 @@ export function attachSourceToVideo(
        * moment it has to decide, and an empty history reads as "steady".
        */
       const estimate = hls.bandwidthEstimate;
-      if (typeof estimate === "number" && Number.isFinite(estimate) && estimate > 0) {
+      if (
+        typeof estimate === "number" &&
+        Number.isFinite(estimate) &&
+        estimate > 0
+      ) {
         bandwidthSamples.push({ at: now, bps: estimate });
         bandwidthSamples = bandwidthSamples.filter(
           (sample) => now - sample.at <= BANDWIDTH_TREND_WINDOW_MS,
@@ -809,7 +816,11 @@ export function attachSourceToVideo(
            * ladder is then climbed back in seconds if the stall was a blip.
            */
           upswitchBlockedUntil = lastStallAt + STALL_UPSWITCH_BLOCK_MS;
-          if (lockedHeight === null && appliedLevel !== null && appliedLevel > 0) {
+          if (
+            lockedHeight === null &&
+            appliedLevel !== null &&
+            appliedLevel > 0
+          ) {
             upgradeCandidate = null;
             probeHoldUntil = 0;
             driveLevel(appliedLevel - 1);

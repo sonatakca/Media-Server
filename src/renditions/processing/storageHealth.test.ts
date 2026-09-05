@@ -36,7 +36,9 @@ const hardFault = (detail = "EIO on read"): StorageObservation => ({
   kind: "hard-io-fault",
   detail,
 });
-const softFault = (detail = "ambiguous transient signal"): StorageObservation => ({
+const softFault = (
+  detail = "ambiguous transient signal",
+): StorageObservation => ({
   kind: "soft-fault",
   detail,
 });
@@ -228,7 +230,6 @@ describe("an ambiguous soft fault", () => {
     expect(record.state).toBe("suspect");
     expect(record.faultCount).toBe(1);
   });
-
 });
 
 describe("a quarantine, once established", () => {

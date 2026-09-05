@@ -319,6 +319,16 @@ describe("the content-kind switch", () => {
   });
 });
 
+/**
+ * The text a reader would actually be given, ignoring the decoration.
+ *
+ * A show's poster and an episode's still both fall back to drawing the name
+ * they belong to, and both are marked `aria-hidden` because the row already
+ * says it in words. Queries that did not know that found the same show twice
+ * and could not tell which one was the row's title.
+ */
+const DECORATION = 'script, style, [aria-hidden="true"]';
+
 describe("the series tree", () => {
   it("renders each show once, collapsed", async () => {
     const user = userEvent.setup();
@@ -327,7 +337,9 @@ describe("the series tree", () => {
 
     const shows = await screen.findAllByTestId("processing-series");
     expect(shows).toHaveLength(1);
-    expect(within(shows[0]!).getByText("Andor")).toBeInTheDocument();
+    expect(
+      within(shows[0]!).getByText("Andor", { ignore: DECORATION }),
+    ).toBeInTheDocument();
     // Collapsed: no seasons drawn yet.
     expect(screen.queryAllByTestId("processing-season")).toHaveLength(0);
   });
@@ -372,7 +384,9 @@ describe("the series tree", () => {
     );
 
     const [first] = await screen.findAllByTestId("processing-episode");
-    expect(within(first!).getByText("S01E01")).toBeInTheDocument();
+    expect(
+      within(first!).getByText("S01E01", { ignore: DECORATION }),
+    ).toBeInTheDocument();
     expect(within(first!).getByText("Kassa")).toBeInTheDocument();
     expect(within(first!).getByText("1920×1080")).toBeInTheDocument();
     expect(within(first!).getByText("SDR")).toBeInTheDocument();
@@ -505,9 +519,19 @@ describe("episode states", () => {
         },
       }),
     ]);
-    const button = within(nodes[0]!).getByRole("button");
-    expect(button).toBeDisabled();
-    expect(button).toHaveTextContent("processing.tv.nothingToDo");
+    /*
+     * Nothing to run, so nothing offers to run it. What the row offers instead
+     * is to reclaim the space: the package is complete and current, which is
+     * the one condition under which the original file is safe to delete.
+     */
+    expect(
+      within(nodes[0]!).queryByRole("button", { name: /processing.start/ }),
+    ).toBeNull();
+    expect(
+      within(nodes[0]!).getByRole("button", {
+        name: /processing.deleteSource/,
+      }),
+    ).toBeEnabled();
   });
 
   it("shows a source-missing episode, but does not let it be started", async () => {
@@ -554,9 +578,7 @@ describe("episode states", () => {
     const nodes = await renderEpisodes([
       episode(3, 5, "Unbowed and Unbent", { fileCount: 2 }),
     ]);
-    expect(
-      within(nodes[0]!).getByText(/alternateSource/),
-    ).toBeInTheDocument();
+    expect(within(nodes[0]!).getByText(/alternateSource/)).toBeInTheDocument();
   });
 });
 
@@ -571,10 +593,7 @@ describe("search", () => {
     const user = userEvent.setup();
     await renderPage();
     await openSeriesTab(user);
-    await user.type(
-      screen.getByLabelText("processing.tv.searchSeries"),
-      term,
-    );
+    await user.type(screen.getByLabelText("processing.tv.searchSeries"), term);
     return user;
   }
 
@@ -582,7 +601,9 @@ describe("search", () => {
     await searchFor("sopranos");
     const shows = await screen.findAllByTestId("processing-series");
     expect(shows).toHaveLength(1);
-    expect(within(shows[0]!).getByText("The Sopranos")).toBeInTheDocument();
+    expect(
+      within(shows[0]!).getByText("The Sopranos", { ignore: DECORATION }),
+    ).toBeInTheDocument();
     // Matching a show opens it, so the match is visible without another click.
     expect(await screen.findByText("Pilot")).toBeInTheDocument();
   });
@@ -658,7 +679,9 @@ describe("polling", () => {
         .value,
     ).toBe("Kassa");
     // The season the operator opened is still open.
-    expect(screen.getAllByTestId("processing-season").length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId("processing-season").length).toBeGreaterThan(
+      0,
+    );
   });
 });
 
@@ -725,7 +748,9 @@ describe("the queue tab", () => {
 
     const user = userEvent.setup();
     await renderPage();
-    await user.click(await screen.findByRole("tab", { name: /tabs.processes/ }));
+    await user.click(
+      await screen.findByRole("tab", { name: /tabs.processes/ }),
+    );
 
     expect(await screen.findByText("Andor")).toBeInTheDocument();
     expect(await screen.findByText("S01E01 · Kassa")).toBeInTheDocument();

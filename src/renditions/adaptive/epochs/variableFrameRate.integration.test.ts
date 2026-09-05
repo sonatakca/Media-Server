@@ -55,16 +55,18 @@ async function packetTimes(file: string): Promise<number[]> {
     ],
     { maxBuffer: 64 * 1024 * 1024 },
   );
-  return stdout
-    .split("\n")
-    // Blank lines must be dropped *before* conversion: `Number("")` is 0, not
-    // NaN, so filtering afterwards on `isFinite` silently invents a frame at
-    // the start of the timeline.
-    .map((line) => line.replace(/,/g, "").trim())
-    .filter((line) => line !== "")
-    .map((line) => Number(line))
-    .filter((value) => Number.isFinite(value))
-    .sort((left, right) => left - right);
+  return (
+    stdout
+      .split("\n")
+      // Blank lines must be dropped *before* conversion: `Number("")` is 0, not
+      // NaN, so filtering afterwards on `isFinite` silently invents a frame at
+      // the start of the timeline.
+      .map((line) => line.replace(/,/g, "").trim())
+      .filter((line) => line !== "")
+      .map((line) => Number(line))
+      .filter((value) => Number.isFinite(value))
+      .sort((left, right) => left - right)
+  );
 }
 
 function gapsMs(times: readonly number[]): number[] {

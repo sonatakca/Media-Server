@@ -225,23 +225,61 @@ function slotOrder(): string[] {
 const ROW_HEIGHT = 100;
 const ROW_GAP = 8;
 
-/** Gives the rendered rows the heights jsdom will not give them. */
+/** Where a row is sitting in the list right now, from the DOM itself. */
+function slotIndexOf(row: HTMLElement): number {
+  return Array.prototype.indexOf.call(row.parentElement?.children ?? [], row);
+}
+
+/** The vertical part of whatever transform the row is currently carrying. */
+function translateYOf(row: HTMLElement): number {
+  const match = /translate3d\(\s*0(?:px)?\s*,\s*(-?[\d.]+)px/.exec(
+    row.style.transform,
+  );
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Gives the rendered rows the layout jsdom will not give them.
+ *
+ * Both geometries, because the gesture reads both and means different things
+ * by them: the model measures the list in *layout* coordinates, which no
+ * transform can disturb, and the landing measures where rows are actually
+ * *drawn*. So `offsetTop` follows the row's place in the list and the bounding
+ * rect follows its place plus its transform — and both are read at the moment
+ * they are asked for, because a drop moves rows and the whole question is
+ * whether the two agree across it.
+ */
 function stubRowLayout(): void {
-  screen.getAllByRole("listitem").forEach((row, index) => {
-    const top = 100 + index * (ROW_HEIGHT + ROW_GAP);
-    vi.spyOn(row, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: top,
-      top,
-      bottom: top + ROW_HEIGHT,
-      left: 0,
-      right: 900,
-      width: 900,
-      height: ROW_HEIGHT,
-      toJSON: () => ({}),
-    } as DOMRect);
+  screen.getAllByRole("listitem").forEach((row) => {
+    if (stubbed.has(row)) return;
+    stubbed.add(row);
+    const slotTop = () => 100 + slotIndexOf(row) * (ROW_HEIGHT + ROW_GAP);
+    vi.spyOn(row, "getBoundingClientRect").mockImplementation(() => {
+      const top = slotTop() + translateYOf(row);
+      return {
+        x: 0,
+        y: top,
+        top,
+        bottom: top + ROW_HEIGHT,
+        left: 0,
+        right: 900,
+        width: 900,
+        height: ROW_HEIGHT,
+        toJSON: () => ({}),
+      } as DOMRect;
+    });
+    Object.defineProperty(row, "offsetTop", {
+      configurable: true,
+      get: slotTop,
+    });
+    Object.defineProperty(row, "offsetHeight", {
+      configurable: true,
+      value: ROW_HEIGHT,
+    });
   });
 }
+
+const stubbed = new WeakSet<HTMLElement>();
 
 /** Presses a handle and moves the pointer, without letting go. */
 function pickUp(handle: HTMLElement, travel: number): void {
@@ -561,6 +599,65 @@ describe("dragging a card through the queue", () => {
     release(ROW_HEIGHT + ROW_GAP);
   });
 
+  it("lands the card from where it was drawn, not from where it belongs", async () => {
+    /*
+     * The drop, frame by frame, and the reason this list used to glitch.
+     *
+     * A release usually comes while the card is still travelling — the hand
+     * lets go the moment the row underneath has moved aside, not a fifth of a
+     * second later — so at that instant the card is somewhere between the slot
+     * it came from and the slot it is going to. The drop then moves the row in
+     * the DOM and unwinds every transform at once, and unless the landing is
+     * played from where the card was actually *drawn*, that is a teleport: a
+     * whole row's worth of jump, in the same breath as the list rearranging.
+     *
+     * So the animation is measured rather than derived. The keyframe it starts
+     * from, added to where the row has just landed, has to come out at exactly
+     * where the card was a moment ago.
+     */
+    const animations: { row: Element; keyframes: unknown }[] = [];
+    const fake = { finished: Promise.resolve(), cancel: () => {} };
+    const animate = vi.fn(function (this: Element, keyframes: unknown) {
+      animations.push({ row: this, keyframes });
+      return fake as unknown as Animation;
+    });
+    Object.defineProperty(Element.prototype, "animate", {
+      configurable: true,
+      writable: true,
+      value: animate,
+    });
+
+    try {
+      await renderQueue();
+      await waitFor(() => expect(slotOrder()).toEqual(nameOrder));
+
+      pickUp(await firstHandle(), ROW_HEIGHT + ROW_GAP);
+      const held = screen
+        .getAllByRole("listitem")
+        .find((row) => titleOf(row) === "first")!;
+      // Released mid-flight, which is how a drop actually happens: the card is
+      // still on its way to the slot the list has already opened for it.
+      const drawnAt = held.getBoundingClientRect().top;
+      release(ROW_HEIGHT + ROW_GAP);
+
+      const landing = animations.find((entry) => entry.row === held);
+      expect(landing).toBeDefined();
+      const [start, end] = landing!.keyframes as { transform: string }[];
+      // It ends where the row now is, and starts where the card was drawn.
+      expect(end!.transform).toBe("translate3d(0, 0, 0) scale(1)");
+      const offset = Number(
+        /translate3d\(0,\s*(-?[\d.]+)px/.exec(start!.transform)![1],
+      );
+      expect(held.getBoundingClientRect().top + offset).toBeCloseTo(drawnAt, 1);
+      // ...which, on this drop, is a row above where it landed. The card flies
+      // down into its place because that is where it was: what it must never
+      // do is arrive there without having been anywhere.
+      expect(offset).toBeLessThan(-ROW_HEIGHT / 2);
+    } finally {
+      Reflect.deleteProperty(Element.prototype, "animate");
+    }
+  });
+
   it("moves the held row itself and leaves no copy behind", async () => {
     await renderQueue();
     await waitFor(() => expect(slotOrder()).toEqual(nameOrder));
@@ -573,8 +670,13 @@ describe("dragging a card through the queue", () => {
     const displaced = rows.find((row) => titleOf(row) === "second")!;
     // The row under the cursor has gone down and the row it passed has come
     // up. Nothing is left dimmed in the old slot, because nothing was copied.
-    expect(held.style.transform).toContain("108px");
+    //
+    // The held card is awaited and its neighbour is not: the neighbour is put
+    // in its new slot by the render, and the card travels there over the next
+    // few frames, which is the difference between a list that rearranges and
+    // a list that flickers.
     expect(displaced.style.transform).toContain("-108px");
+    await waitFor(() => expect(held.style.transform).toContain("108px"));
     expect(held.style.opacity).toBe("");
     release(ROW_HEIGHT + ROW_GAP);
   });

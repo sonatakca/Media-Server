@@ -253,6 +253,16 @@ export interface ProcessingJobTitle {
   seriesTitle?: string;
   /** `S01E01` for an episode; absent for a movie. */
   code?: string;
+  /*
+   * The same two numbers the code spells out, as numbers.
+   *
+   * Sent as well as the code because the code is a label and these are the
+   * catalogue's answer: the queue's "group by show and episode" sorts on them,
+   * and sorting on a parsed label is how S01E10 lands before S01E09 the day
+   * somebody changes how the label is written.
+   */
+  seasonNumber?: number;
+  episodeNumber?: number | null;
   title: string;
 }
 
@@ -266,6 +276,8 @@ export function describeJobs(
       kind: "movie" | "episode";
       seriesTitle?: string;
       code?: string;
+      seasonNumber?: number;
+      episodeNumber?: number | null;
       title: string;
     }
   >();
@@ -279,6 +291,8 @@ export function describeJobs(
           kind: "episode",
           seriesTitle: series.title,
           code: episode.code,
+          seasonNumber: season.seasonNumber,
+          episodeNumber: episode.episodeNumber,
           title: episode.title,
         });
       }

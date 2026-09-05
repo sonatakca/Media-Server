@@ -8,6 +8,11 @@ import type {
   ProcessingStage,
   ProcessingSubtitleDecision,
 } from "../../lib/processingApi";
+// The clock a card and this page both read from, so the two can never disagree
+// about where an encode has got to.
+import { formatMediaClock } from "../../lib/mediaClock";
+
+export { formatMediaClock };
 
 /**
  * Presentation logic for the Media Processing page.
@@ -74,9 +79,14 @@ export function canCancel(
 }
 
 /**
- * A running job can be suspended. Pausing keeps the encode where it stands
- * rather than discarding it, so it is offered wherever cancelling is — the
- * difference being that this one is reversible.
+ * A job that has not finished can be held. Pausing keeps the encode where it
+ * stands rather than discarding it, so it is offered wherever cancelling is —
+ * the difference being that this one is reversible.
+ *
+ * Offered on a job that is only waiting, too. The runner reads the pause at
+ * the door as well as in the room: a queued job that has been held is passed
+ * over when its turn comes rather than started and stopped, which is what lets
+ * an operator take the machine back without cancelling a backlog to do it.
  */
 export function canPause(
   job: Pick<
@@ -85,13 +95,25 @@ export function canPause(
   >,
 ): boolean {
   return (
-    job.state === "running" && !job.pauseRequested && !job.cancellationRequested
+    ["pending", "queued", "running"].includes(job.state) &&
+    !job.pauseRequested &&
+    !job.cancellationRequested
   );
 }
 
 /**
- * A job paused because the volume went away resumes on its own when it comes
- * back, so offering the button would invite a click that can only fail.
+ * Continuing is offered on anything that is being held and can be let go of.
+ *
+ * Both halves of "held" are read — the state and the request — so a row that
+ * says paused offers the press whichever way it got there: parked by its own
+ * runner at the door, stopped mid-encode, or still queued with a pause waiting
+ * for it. The page counts these to say how many one press would continue, and
+ * a row that reads paused while no button offers to continue it is exactly the
+ * dead end this avoids.
+ *
+ * The exception is the volume going away. That job resumes on its own when the
+ * volume comes back, and the server refuses to do it by hand in the meantime,
+ * so offering the press would invite a click that can only fail.
  */
 export function canResume(
   job: Pick<
@@ -100,7 +122,7 @@ export function canResume(
   >,
 ): boolean {
   return (
-    job.pauseRequested &&
+    (job.pauseRequested || job.state === "paused") &&
     !job.cancellationRequested &&
     job.pausedReason !== "storage-unavailable"
   );
@@ -435,23 +457,6 @@ export function encodedPercent(
   // One decimal, because at feature length a whole percent is a minute and a
   // half of film and a bar that only moves once a minute reads as stuck.
   return Math.round(fraction * 1000) / 10;
-}
-
-/** Position on the source timeline, as a clock. */
-export function formatMediaClock(seconds: number | null | undefined): string {
-  if (
-    seconds === null ||
-    seconds === undefined ||
-    !Number.isFinite(seconds) ||
-    seconds < 0
-  ) {
-    return "--:--:--";
-  }
-  const whole = Math.floor(seconds);
-  const hours = String(Math.floor(whole / 3600)).padStart(2, "0");
-  const minutes = String(Math.floor((whole % 3600) / 60)).padStart(2, "0");
-  const rest = String(whole % 60).padStart(2, "0");
-  return `${hours}:${minutes}:${rest}`;
 }
 
 /**

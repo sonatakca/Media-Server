@@ -4,10 +4,13 @@ import {
   besideTitleRoot,
   candidateTitleRoots,
   nestedTitleRoot,
+  nestedTitleRootOf,
   resolveTitleRoot,
+  titleBaseDirectoryOf,
   titleManifestPath,
   titleRootFor,
   titleRootLayoutForKind,
+  titleSourceDirectory,
 } from "./titleRoot";
 
 const MOVIE = "/media/Movies/Dune (2021)/Dune (2021).mp4";
@@ -155,5 +158,65 @@ describe("strict nested title resolution", () => {
     // Catalogue-aware episode resolution does not even ask whether the
     // ambiguous season-level manifest exists.
     expect(checked).toEqual([]);
+  });
+});
+
+/*
+ * Once a library is organised, sources live in a `src/` bucket inside the
+ * folder they belong to. Every root below is the one that was already on disk
+ * before the move, which is the whole point: organising a library must not
+ * orphan a single published package.
+ */
+describe("sources kept in a src/ folder", () => {
+  const ORGANISED_MOVIE = "/media/Movies/Dune (2021)/src/Dune (2021).mp4";
+  const ORGANISED_EPISODE =
+    "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4";
+
+  it("keeps a movie's package in the movie folder, not in src/", () => {
+    expect(besideTitleRoot(ORGANISED_MOVIE)).toBe("/media/Movies/Dune (2021)");
+    expect(besideTitleRoot(ORGANISED_MOVIE)).toBe(besideTitleRoot(MOVIE));
+  });
+
+  it("keeps an episode's package where it already was", () => {
+    expect(nestedTitleRoot(ORGANISED_EPISODE)).toBe(
+      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
+    );
+    expect(nestedTitleRoot(ORGANISED_EPISODE)).toBe(nestedTitleRoot(EPISODE));
+  });
+
+  it("still keeps every episode of a season apart", () => {
+    const sources = [
+      "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4",
+      "/media/Series/Andor/Season 1/src/Andor - S01E02 - That Would Be Me.mp4",
+      "/media/Series/Andor/Season 2/src/Andor - S02E01 - One Year Later.mp4",
+    ];
+    expect(new Set(sources.map(nestedTitleRoot)).size).toBe(sources.length);
+  });
+
+  it("names the source bucket inside the title folder", () => {
+    expect(titleSourceDirectory("/media/Movies/Dune (2021)")).toBe(
+      path.join("/media/Movies/Dune (2021)", "src"),
+    );
+  });
+
+  /*
+   * A folder that merely has "src" somewhere in its name is a title, not a
+   * bucket; climbing out of it would publish into the library root.
+   */
+  it("only treats a folder actually called src as the bucket", () => {
+    expect(besideTitleRoot("/media/Movies/Srcinko (2011)/Srcinko.mp4")).toBe(
+      "/media/Movies/Srcinko (2011)",
+    );
+  });
+
+  it("answers the same for a library-relative path", () => {
+    expect(titleBaseDirectoryOf("Movies/Dune (2021)/src/Dune (2021).mp4")).toBe(
+      "Movies/Dune (2021)",
+    );
+    expect(
+      nestedTitleRootOf("Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4"),
+    ).toBe("Series/Andor/Season 1/Andor - S01E01 - Kassa");
+    // A loose file at the media root has no directory above it to name.
+    expect(titleBaseDirectoryOf("Dune (2021).mp4")).toBe("");
   });
 });

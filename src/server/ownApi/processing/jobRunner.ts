@@ -270,7 +270,16 @@ async function titleRootForInput(
    * than against it.
    */
   const beside = besideTitleRoot(input.sourcePath);
-  const siblings = await readdir(beside).catch(() => null);
+  /*
+   * How many sources share this file's folder — its *own* folder, which in an
+   * organised library is the `src/` bucket rather than the title folder
+   * `beside` resolves to. Counting in `beside` would find a season folder
+   * holding no loose sources at all now that they live in the bucket, and read
+   * that as "one title here", which is the answer that publishes an episode
+   * over its whole season.
+   */
+  const folder = path.dirname(input.sourcePath);
+  const siblings = await readdir(folder).catch(() => null);
   if (siblings === null) return beside;
   const sources = siblings.filter(
     (name) =>
@@ -281,7 +290,7 @@ async function titleRootForInput(
   if (sources.length > 1) {
     throw new Error(
       `Processing job ${input.processingJobId} carries no publish destination, ` +
-        `and ${beside} holds ${sources.length} sources, so the folder beside ` +
+        `and ${folder} holds ${sources.length} sources, so the folder beside ` +
         `the source is not this title's. Refusing to publish ` +
         `${input.relativePath} over its neighbours.`,
     );

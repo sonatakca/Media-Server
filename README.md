@@ -131,6 +131,9 @@ left to be discovered from a diff:
 |                        | `backdrop.jpg`, `logo.png`      |         | do not use the artwork admin pages      |
 | NFO export (`sidecar`) | `movie.nfo`, `tvshow.nfo`,      | **on**  | Set `SEYIRLIK_NFO_EXPORT=disabled`      |
 |                        | `season.nfo`, `<episode>.nfo`   |         |                                         |
+| Organising folders     | Moves originals into `src/` and | **off** | Leave `SEYIRLIK_MEDIA_ORGANIZE` unset   |
+|                        | episode .nfo files into the     |         |                                         |
+|                        | episode's folder                |         |                                         |
 
 Artwork writes are long-standing behaviour: a cover placed in the title's own
 `content/` folder travels with the title when it is moved or backed up, which a
@@ -204,18 +207,18 @@ Everything is read from the environment. Only `DATABASE_URL` and
 
 ### Core
 
-| Variable                     | Default        | Purpose                                                                     |
-| ---------------------------- | -------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`               | —              | PostgreSQL connection URL. Required.                                        |
-| `SEYIRLIK_MEDIA_ROOT`        | —              | Absolute path to the media volume. Required, and never written to.          |
-| `SEYIRLIK_GENERATED_STORAGE` | temp dir       | Where derived files are cached. Set this in production.                     |
-| `SEYIRLIK_PROCESSING_SCRATCH_ROOT` | unset | Optional fast scratch root. Jobs build and verify under `<root>/jobs/<job-id>` before transactional publication to media storage. |
-| `SEYIRLIK_LIBRARIES`         | none           | JSON array of library definitions. See below.                               |
-| `SEYIRLIK_STATIC_ROOT`       | none           | Directory of the built client to serve. Usually `dist`.                     |
-| `SEYIRLIK_HOST`              | `127.0.0.1`    | Listen address. Set to `0.0.0.0` to accept connections from other machines. |
-| `SEYIRLIK_PORT`              | `43110`        | Listen port.                                                                |
-| `SEYIRLIK_DATABASE_POOL_MAX` | driver default | Maximum pooled connections.                                                 |
-| `SEYIRLIK_RUN_WORKER`        | `true`         | Whether this process also runs background jobs. See "Running it".           |
+| Variable                           | Default        | Purpose                                                                                                                           |
+| ---------------------------------- | -------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                     | —              | PostgreSQL connection URL. Required.                                                                                              |
+| `SEYIRLIK_MEDIA_ROOT`              | —              | Absolute path to the media volume. Required, and never written to.                                                                |
+| `SEYIRLIK_GENERATED_STORAGE`       | temp dir       | Where derived files are cached. Set this in production.                                                                           |
+| `SEYIRLIK_PROCESSING_SCRATCH_ROOT` | unset          | Optional fast scratch root. Jobs build and verify under `<root>/jobs/<job-id>` before transactional publication to media storage. |
+| `SEYIRLIK_LIBRARIES`               | none           | JSON array of library definitions. See below.                                                                                     |
+| `SEYIRLIK_STATIC_ROOT`             | none           | Directory of the built client to serve. Usually `dist`.                                                                           |
+| `SEYIRLIK_HOST`                    | `127.0.0.1`    | Listen address. Set to `0.0.0.0` to accept connections from other machines.                                                       |
+| `SEYIRLIK_PORT`                    | `43110`        | Listen port.                                                                                                                      |
+| `SEYIRLIK_DATABASE_POOL_MAX`       | driver default | Maximum pooled connections.                                                                                                       |
+| `SEYIRLIK_RUN_WORKER`              | `true`         | Whether this process also runs background jobs. See "Running it".                                                                 |
 
 ### Networking and cookies
 
@@ -265,6 +268,15 @@ an explicit opt-out.
 | `SEYIRLIK_NFO_EXPORT`                | `sidecar`      | Scan output: `disabled`, `preview`, `generated`, or `sidecar`.           |
 | `SEYIRLIK_NFO_OVERWRITE`             | `managed-only` | `force` also replaces .nfo files Seyirlik did not write.                 |
 | `SEYIRLIK_NFO_ARR_MANAGED_LIBRARIES` | none           | Library slugs a Radarr/Sonarr instance owns; never exported to natively. |
+
+### Organising the media folders
+
+| Variable                  | Default | Purpose                                                         |
+| ------------------------- | ------- | --------------------------------------------------------------- |
+| `SEYIRLIK_MEDIA_ORGANIZE` | `off`   | Tidying pass at the start of a scan: `off`, `plan`, or `apply`. |
+
+See [Keeping it tidy](#keeping-it-tidy) for the layout it produces and for the
+dry run to check first.
 
 ### Libraries
 
@@ -329,6 +341,64 @@ Artwork comes from TMDB, not from the folder. Images sitting next to your media
 — `folder.jpg`, `backdrop.jpg` — are ignored; use the admin artwork tool to
 override what TMDB supplied.
 
+### Keeping it tidy
+
+A season folder that is halfway through processing is the untidiest thing in a
+library: ten sources, ten subtitles, ten .nfo files and ten generated folders,
+interleaved by name so nothing lines up. Seyirlik can tidy that at the start of
+every scan — off by default, because moving somebody's files is not a thing to
+enable by inference.
+
+Turned on, originals and their sidecar subtitles move into a `src/` bucket, and
+each episode's .nfo is filed inside the folder that already holds that
+episode's renditions:
+
+```
+Series/House of the Dragon/
+  tvshow.nfo
+  Season 1/
+    season.nfo
+    src/
+      House of the Dragon - S01E01 - The Heirs of the Dragon.mp4
+      House of the Dragon - S01E01 - The Heirs of the Dragon.tr.srt
+    House of the Dragon - S01E01 - The Heirs of the Dragon/
+      House of the Dragon - S01E01 - The Heirs of the Dragon.nfo
+      video/  audio/  subtitle/  .seyirlik/
+```
+
+A movie has no season above it and no episode below it, so its folder is the
+title: the originals go to `Gladiator (2000)/src/` and the .nfo stays at the
+folder root, which is where Kodi and Jellyfin look for it. A loose file at the
+library root gains a folder of its own on the way.
+
+Nothing is renamed, nothing is overwritten and nothing is deleted — a move
+whose destination is occupied is reported and skipped. No title changes
+identity either: `src/` is transparent to the scanner and to the code that
+decides where a package lives, so packages already built keep working and the
+catalogue keeps its watch history.
+
+It never moves a file while there is live processing work — **queued as much as
+running**. A running encode re-opens its source at the start of every epoch, and
+a queued attempt froze the absolute path of its source into its queue row when
+it was queued. Both are checked again immediately before the first rename, and
+`npm run media:organize:apply` refuses outright rather than deferring. A paused
+or storage-held job is not live: resuming one rebuilds its path from the
+catalogue, which by then names the new location.
+
+See exactly what it would do before enabling it:
+
+```bash
+npm run media:organize:plan            # every move, against your real library
+npm run media:organize:apply           # carry it out, once — refuses if the
+                                       # processing queue is not empty
+```
+
+Then, to have every scan keep the library tidy:
+
+```bash
+SEYIRLIK_MEDIA_ORGANIZE=apply          # or `plan` to keep reporting only
+```
+
 ---
 
 ## Running it
@@ -385,8 +455,10 @@ Both write to `~/Library/Logs/Seyirlik/`.
 ### Maintenance commands
 
 ```bash
-npm run db:migrate         # apply pending migrations
-npm run admin:provision    # create the first administrator
+npm run db:migrate           # apply pending migrations
+npm run admin:provision      # create the first administrator
+npm run media:organize:plan  # what tidying the media folders would move
+npm run media:organize:apply # move it
 ```
 
 ---

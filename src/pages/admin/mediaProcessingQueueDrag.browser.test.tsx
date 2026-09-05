@@ -28,6 +28,7 @@ import type {
   ProcessingJob,
   ProcessingOverview,
 } from "../../lib/processingApi";
+import { MAGNET_GIVE } from "./queueDragModel";
 
 // The page's real stylesheet: without it these cards have no borders, no gap
 // and no heights, and a geometry test against a stack of bare list items
@@ -192,8 +193,10 @@ function rowFor(title: string): HTMLElement {
 }
 
 function handleFor(title: string): HTMLElement {
+  // Either label: a row that is part of a selection says so on its handle,
+  // because what the press would move is no longer only that row.
   return within(rowFor(title)).getByRole("button", {
-    name: /queueOrder.handle/,
+    name: /queueOrder\.(handle|groupHandle)/,
   });
 }
 
@@ -213,9 +216,27 @@ function overlapOf(a: string, b: string): number {
   return Math.min(left.bottom, right.bottom) - Math.max(left.top, right.top);
 }
 
-/** Long enough for the reflow and the magnet to have finished moving. */
-function settled() {
-  return new Promise((resolve) => setTimeout(resolve, 260));
+/**
+ * Waits until a row has stopped moving, however fast the browser is drawing.
+ *
+ * A fixed pause was what this used to be, and it made the suite a frame-rate
+ * test by accident: the gesture is time-based and converges in a fifth of a
+ * second at sixty frames a second, but a headless WebKit animating at five
+ * frames a second had barely started by then. Reading the row until it holds
+ * still asserts the same thing — the card arrives — without assuming how many
+ * frames the browser took to get it there.
+ */
+async function atRest(title: string, timeout = 3000): Promise<void> {
+  const deadline = Date.now() + timeout;
+  let previous = Number.NaN;
+  let stable = 0;
+  while (Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    const top = rectOf(title).top;
+    stable = Math.abs(top - previous) < 0.5 ? stable + 1 : 0;
+    previous = top;
+    if (stable >= 2) return;
+  }
 }
 
 let Page: typeof import("./MediaProcessingPage").MediaProcessingPage;
@@ -278,7 +299,11 @@ describe("dragging a queued encode with a real mouse", () => {
     await pickUp("alpha", centreOf(rowFor("charlie")).y);
 
     // Still held — and the queue already reads the way the drop will leave it.
-    expect(slotOrder()).toEqual(["bravo", "charlie", "alpha", "delta"]);
+    // Awaited only for the browser's own delivery of the move: nothing here
+    // waits on an animation, and the button is still down throughout.
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["bravo", "charlie", "alpha", "delta"]),
+    );
     // The card settles into the slot rather than appearing in it, so this is
     // awaited: a card that arrived instantly would have had to teleport.
     await waitFor(() =>
@@ -307,6 +332,42 @@ describe("dragging a queued encode with a real mouse", () => {
     expect(reorderProcessingQueue).toHaveBeenCalledTimes(1);
   });
 
+  it("lands the card where it was let go of, not from somewhere else", async () => {
+    /*
+     * The complaint this test is named after: on release the card flew in
+     * from the top of the list. The drop moves the row in the DOM and unwinds
+     * every transform in the same breath, and the landing used to be played
+     * from the gesture's *arithmetic* — where the model thought the card was —
+     * so any disagreement between that and the layout became a card arriving
+     * from a place it had never been drawn.
+     *
+     * The claim here is the strongest one available and it needs no clock: the
+     * card is already sitting in its slot when the button is released, so from
+     * that moment until it comes to rest it can never be drawn more than the
+     * magnet's own slack away from where the hand left it.
+     */
+    await pickUp("alpha", centreOf(rowFor("charlie")).y);
+    await atRest("alpha");
+    const released = rectOf("alpha").top;
+
+    await commands.pointer("up");
+
+    let worst = 0;
+    for (let sample = 0; sample < 12; sample += 1) {
+      worst = Math.max(worst, Math.abs(rectOf("alpha").top - released));
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    await atRest("alpha");
+    worst = Math.max(worst, Math.abs(rectOf("alpha").top - released));
+    expect(worst).toBeLessThan(MAGNET_GIVE + 8);
+
+    // ...and the list it landed in is the list it was showing.
+    expect(paintedOrder()).toEqual(["bravo", "charlie", "alpha", "delta"]);
+    // Nothing is left holding a transform of its own: a row still carrying one
+    // is a row that will jump the next time React writes to it.
+    for (const row of waitingRows()) expect(row.style.transform).toBe("");
+  });
+
   it("walks slot by slot, and back, while the button stays down", async () => {
     const grip = centreOf(handleFor("alpha"));
     await commands.pointer("move", grip.x, grip.y);
@@ -316,13 +377,17 @@ describe("dragging a queued encode with a real mouse", () => {
     expect(slotOrder()).toEqual(WAITING);
 
     await commands.pointer("move", grip.x, centreOf(rowFor("bravo")).y);
-    expect(slotOrder()).toEqual(["bravo", "alpha", "charlie", "delta"]);
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["bravo", "alpha", "charlie", "delta"]),
+    );
 
     await commands.pointer("move", grip.x, centreOf(rowFor("delta")).y);
-    expect(slotOrder()).toEqual(["bravo", "charlie", "delta", "alpha"]);
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["bravo", "charlie", "delta", "alpha"]),
+    );
 
     await commands.pointer("move", grip.x, grip.y + 8);
-    expect(slotOrder()).toEqual(WAITING);
+    await waitFor(() => expect(slotOrder()).toEqual(WAITING));
 
     await commands.pointer("up");
     expect(reorderProcessingQueue).not.toHaveBeenCalled();
@@ -355,17 +420,24 @@ describe("dragging a queued encode with a real mouse", () => {
     await commands.pointer("down");
     await commands.pointer("move", grip.x, grip.y + 20);
     await commands.pointer("move", grip.x, window.innerHeight - 12);
-    await new Promise((resolve) => setTimeout(resolve, 250));
 
-    expect(window.scrollY).toBeGreaterThan(before);
+    // Held at the edge, the page keeps going until there is nowhere left: the
+    // card is on its way to the end of a queue it cannot see all of.
+    await waitFor(() => expect(window.scrollY).toBeGreaterThan(before), {
+      timeout: 5000,
+    });
     // ...and the card went with the page rather than being left behind by it.
-    expect(slotOrder().at(-1)).toBe("alpha");
+    await waitFor(() => expect(slotOrder().at(-1)).toBe("alpha"), {
+      timeout: 5000,
+    });
     await commands.pointer("up");
   });
 
   it("puts everything back when the drag is abandoned", async () => {
     await pickUp("delta", centreOf(rowFor("alpha")).y);
-    expect(slotOrder()).toEqual(["delta", "alpha", "bravo", "charlie"]);
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["delta", "alpha", "bravo", "charlie"]),
+    );
 
     await userEvent.keyboard("{Escape}");
     await commands.pointer("up");
@@ -388,7 +460,7 @@ describe("dragging a queued encode with a real mouse", () => {
     await commands.pointer("down");
     await commands.pointer("move", grip.x, grip.y + 8);
     await commands.pointer("move", grip.x, centreOf(rowFor("bravo")).y);
-    await settled();
+    await atRest("alpha");
 
     expect(slotOrder()).toEqual(["bravo", "alpha", "charlie", "delta"]);
 
@@ -425,7 +497,7 @@ describe("dragging a queued encode with a real mouse", () => {
     let worst = 0;
     for (let step = 1; step <= 24; step += 1) {
       await commands.pointer("move", grip.x, start + (span * step) / 24);
-      await settled();
+      await atRest("alpha");
       const held = rectOf("alpha");
       for (const other of ["bravo", "charlie", "delta"]) {
         worst = Math.max(worst, overlapOf("alpha", other));
@@ -443,6 +515,118 @@ describe("dragging a queued encode with a real mouse", () => {
     expect(worst).toBeLessThan(20);
 
     await commands.pointer("up");
+  });
+
+  it("carries a whole selection when one of its rows is dragged", async () => {
+    /*
+     * The group gesture. A backlog is queued a season at a time and the rows
+     * that need moving are rarely next to each other, so a drag that could
+     * only ever carry one of them was a drag nobody used for the job it was
+     * built for.
+     *
+     * Two rows with another between them, picked up by the lower of the two:
+     * the block gathers under the hand rather than the list opening a gap in
+     * two places, and what the drop saves is both of them, in the order the
+     * queue had them.
+     */
+    await userEvent.click(
+      within(rowFor("alpha")).getByRole("checkbox", {
+        name: /queueOrder.select/,
+      }),
+    );
+    await userEvent.click(
+      within(rowFor("charlie")).getByRole("checkbox", {
+        name: /queueOrder.select/,
+      }),
+    );
+
+    await pickUp("charlie", centreOf(rowFor("delta")).y);
+    await atRest("charlie");
+
+    // Gathered: the two carried rows are drawn as one block, with nothing of
+    // the list between them.
+    const alpha = rectOf("alpha");
+    const charlie = rectOf("charlie");
+    expect(charlie.top - alpha.bottom).toBeGreaterThan(0);
+    expect(charlie.top - alpha.bottom).toBeLessThan(24);
+
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["bravo", "delta", "alpha", "charlie"]),
+    );
+
+    await commands.pointer("up");
+    await waitFor(() =>
+      expect(reorderProcessingQueue).toHaveBeenCalledWith([
+        "bravo",
+        "delta",
+        "alpha",
+        "charlie",
+      ]),
+    );
+    await waitFor(() =>
+      expect(paintedOrder()).toEqual(["bravo", "delta", "alpha", "charlie"]),
+    );
+  });
+
+  it("still carries one row when the one grabbed is not in the selection", async () => {
+    // A selection standing must not turn every drag into a group drag: the
+    // row under the hand is the row that moves unless it is part of the group.
+    await userEvent.click(
+      within(rowFor("alpha")).getByRole("checkbox", {
+        name: /queueOrder.select/,
+      }),
+    );
+    await userEvent.click(
+      within(rowFor("bravo")).getByRole("checkbox", {
+        name: /queueOrder.select/,
+      }),
+    );
+
+    await pickUp("delta", centreOf(rowFor("charlie")).y);
+    await waitFor(() =>
+      expect(slotOrder()).toEqual(["alpha", "bravo", "delta", "charlie"]),
+    );
+
+    await commands.pointer("up");
+    await waitFor(() =>
+      expect(reorderProcessingQueue).toHaveBeenCalledWith([
+        "alpha",
+        "bravo",
+        "delta",
+        "charlie",
+      ]),
+    );
+  });
+
+  it("does not move the queue when a row is selected", async () => {
+    /*
+     * Ticking a box changed the height of the bar above the list — the
+     * selection's own controls are taller than the button they replace — and
+     * every card below shifted down a few pixels. Selecting a row is a
+     * statement about that row, and it has no business moving the one the
+     * operator is reading.
+     */
+    /*
+     * With the bar itself in view. Scrolled past it, the browser's own scroll
+     * anchoring quietly absorbs a change in the height of something above the
+     * viewport — the one case where this cannot be seen, and the opposite of
+     * the operator's, who is looking straight at it.
+     */
+    window.scrollTo(0, 0);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+    const before = waitingRows().map((row) => row.getBoundingClientRect().top);
+
+    await userEvent.click(
+      within(rowFor("alpha")).getByRole("checkbox", {
+        name: /queueOrder.select/,
+      }),
+    );
+    // The bar has actually changed: without this the assertion below could
+    // pass on a page where nothing happened at all.
+    await screen.findByRole("button", { name: /queueOrder.groupToTop/ });
+
+    const after = waitingRows().map((row) => row.getBoundingClientRect().top);
+    expect(after).toEqual(before);
   });
 
   it("treats a click on the handle as a click", async () => {

@@ -358,7 +358,11 @@ describe("the series hierarchy", () => {
   it("sorts series by the catalogue's own sort title", () => {
     const rows = [
       episodeRow(
-        { seriesId: "s-sopranos", title: "The Sopranos", sortTitle: "sopranos" },
+        {
+          seriesId: "s-sopranos",
+          title: "The Sopranos",
+          sortTitle: "sopranos",
+        },
         { seasonId: "sop-1", number: 1 },
         { number: 1, title: "Pilot" },
       ),

@@ -22,9 +22,7 @@ export interface NativeQualityRequest {
 }
 
 /** A comparable form of one request, so two can be judged equal. */
-export function nativeQualityRequestKey(
-  request: NativeQualityRequest,
-): string {
+export function nativeQualityRequestKey(request: NativeQualityRequest): string {
   return `${request.qualityHeight ?? "-"}:${request.maxHeight ?? "-"}`;
 }
 

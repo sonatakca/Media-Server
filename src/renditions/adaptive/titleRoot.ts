@@ -1,5 +1,6 @@
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { TITLE_SOURCE_DIRECTORY } from "./layout";
 import { TITLE_PACKAGE_DIRECTORY, TITLE_PACKAGE_MANIFEST } from "./titleLayout";
 
 /**
@@ -32,9 +33,32 @@ export function titleRootLayoutForKind(kind: string): TitleRootLayout {
   return kind === "episode" ? "nested" : "beside";
 }
 
-/** The folder a `nested` source publishes into: `<dir>/<file stem>/`. */
-export function nestedTitleRoot(sourcePath: string): string {
+/**
+ * The directory a source's title is anchored to.
+ *
+ * Usually the directory the file is in. The exception is an organised library,
+ * where the file has been moved down into a `src/` bucket beside its own
+ * generated folders — there the title is the folder that *contains* `src`, so
+ * that `Dune (2021)/src/Dune (2021).mp4` still belongs to `Dune (2021)/` and
+ * `Season 1/src/Andor - S01E01.mp4` still belongs to `Season 1/`.
+ *
+ * Making `src/` transparent here is what lets a library be reorganised without
+ * moving a single published package: every root computed below is unchanged by
+ * the move.
+ */
+function titleBaseDirectory(sourcePath: string): string {
   const directory = path.dirname(sourcePath);
+  if (path.basename(directory).toLowerCase() !== TITLE_SOURCE_DIRECTORY) {
+    return directory;
+  }
+  const parent = path.dirname(directory);
+  // A `src` at the very top of the tree has nothing above it to belong to.
+  return parent === directory ? directory : parent;
+}
+
+/** The folder a `nested` source publishes into: `<title base>/<file stem>/`. */
+export function nestedTitleRoot(sourcePath: string): string {
+  const directory = titleBaseDirectory(sourcePath);
   const stem = path.basename(sourcePath, path.extname(sourcePath));
   /*
    * A stem that is empty or that would climb out of the directory is not a
@@ -47,9 +71,39 @@ export function nestedTitleRoot(sourcePath: string): string {
   return path.join(directory, stem);
 }
 
-/** The folder a `beside` source publishes into: its own directory. */
+/** The folder a `beside` source publishes into: the folder its title owns. */
 export function besideTitleRoot(sourcePath: string): string {
-  return path.dirname(sourcePath);
+  return titleBaseDirectory(sourcePath);
+}
+
+/** Where the originals belonging to `titleRoot` are kept once organised. */
+export function titleSourceDirectory(titleRoot: string): string {
+  return path.join(titleRoot, TITLE_SOURCE_DIRECTORY);
+}
+
+/**
+ * The same two answers for a library-relative path.
+ *
+ * The scanner, the NFO planner and the organiser all reason in POSIX paths
+ * relative to the media root and never see a host path, but they must place a
+ * title exactly where the writers above place it. Sharing the rule rather than
+ * the code would be the way these two drift apart.
+ */
+export function titleBaseDirectoryOf(relativePath: string): string {
+  return titleBaseDirectory(toPosix(relativePath)).replace(/^\.$/, "");
+}
+
+export function nestedTitleRootOf(relativePath: string): string {
+  return nestedTitleRoot(toPosix(relativePath)).replace(/^\.$/, "");
+}
+
+/**
+ * `path` is the host's separator; a library-relative path is always POSIX.
+ * They agree everywhere this server runs, and this states the assumption
+ * rather than leaving it to be discovered on a Windows box.
+ */
+function toPosix(relativePath: string): string {
+  return relativePath.replace(/\\/g, "/");
 }
 
 export function titleRootFor(

@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -777,6 +777,60 @@ describe("processing job runner", () => {
     expect(packageFn).not.toHaveBeenCalled();
     expect(outcome.status).toBe("failed");
     expect(fake.latest().errorMessage).toMatch(/holds 3 sources/);
+  });
+
+  /*
+   * The same folder, organised: the ten sources now sit in `src/` and the
+   * season folder above holds only their episode folders. Counting sources in
+   * the season folder would find none and read that as "one title here" — the
+   * answer that publishes one episode over the whole season.
+   */
+  it("refuses to guess just as firmly once the sources are in src/", async () => {
+    const season = mkdtempSync(path.join(tmpdir(), "seyirlik-organised-"));
+    const bucket = path.join(season, "src");
+    mkdirSync(bucket);
+    for (const name of ["S01E01.mp4", "S01E02.mp4", "S01E03.mp4"]) {
+      writeFileSync(path.join(bucket, name), "source");
+      mkdirSync(path.join(season, name.replace(".mp4", "")));
+    }
+    const packageFn = vi.fn();
+
+    const outcome = await runner(fake, packageFn).run({
+      ...input,
+      sourcePath: path.join(bucket, "S01E02.mp4"),
+      relativePath: "Series/Show/Season 1/src/S01E02.mp4",
+      // No titleRoot: the case every dropped-field bug produced.
+    });
+
+    expect(packageFn).not.toHaveBeenCalled();
+    expect(outcome.status).toBe("failed");
+    expect(fake.latest().errorMessage).toMatch(/holds 3 sources/);
+  });
+
+  /** An organised movie folder holds one source, so beside it is still safe. */
+  it("falls back to the movie folder when its lone source is in src/", async () => {
+    const movie = mkdtempSync(path.join(tmpdir(), "seyirlik-organised-movie-"));
+    const bucket = path.join(movie, "src");
+    mkdirSync(bucket);
+    writeFileSync(path.join(bucket, "Dune.mp4"), "source");
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune/src/Dune.mp4",
+      status: "ready" as const,
+      versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+      storageBytes: 1,
+    }));
+
+    await runner(fake, packageFn).run({
+      ...input,
+      sourcePath: path.join(bucket, "Dune.mp4"),
+      relativePath: "Movies/Dune/src/Dune.mp4",
+    });
+
+    // The movie folder, not the bucket the source happens to sit in.
+    expect(packageFn.mock.calls.at(0)?.at(0)).toMatchObject({
+      titleRoot: movie,
+    });
   });
 
   /** A movie folder holds one title, so beside it is unambiguous and allowed. */

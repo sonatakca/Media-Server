@@ -98,7 +98,6 @@ describe("decideProcessing", () => {
     expect(decision.summary).toContain("audio");
   });
 
-
   /**
    * Sizing the job, not the finished package.
    *
@@ -123,7 +122,6 @@ describe("decideProcessing", () => {
       whole.estimate.stagingBytes,
     );
   });
-
 
   it("plans the full ladder for a 4K source", () => {
     const decision = input();

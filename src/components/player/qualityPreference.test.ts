@@ -198,9 +198,13 @@ describe("deriving the biased modes from a stable anchor", () => {
   });
 
   it("keeps Higher Quality above the anchor and bounded by the ladder", () => {
-    expect(selectModeRungsFromAutoHeight(ladder, 1080).higher?.id).toBe("1440p");
+    expect(selectModeRungsFromAutoHeight(ladder, 1080).higher?.id).toBe(
+      "1440p",
+    );
     // At the top there is nowhere further to go.
-    expect(selectModeRungsFromAutoHeight(ladder, 2160).higher?.id).toBe("2160p");
+    expect(selectModeRungsFromAutoHeight(ladder, 2160).higher?.id).toBe(
+      "2160p",
+    );
   });
 });
 
@@ -732,8 +736,10 @@ describe("canonicalRungClass", () => {
 });
 
 describe("selectAdaptiveTargetRung", () => {
-  const ladder = (heights: readonly number[], bitrateFor = (h: number) => h * 4000) =>
-    heights.map((height) => ({ height, bitrate: bitrateFor(height) }));
+  const ladder = (
+    heights: readonly number[],
+    bitrateFor = (h: number) => h * 4000,
+  ) => heights.map((height) => ({ height, bitrate: bitrateFor(height) }));
   const full = ladder([144, 240, 360, 480, 720, 1080, 1440, 2160]);
 
   it("stays on the cheapest rung when bandwidth is below the whole ladder", () => {
@@ -745,14 +751,16 @@ describe("selectAdaptiveTargetRung", () => {
   it("takes a rung whose bitrate fits inside the safety margin", () => {
     // 480p costs 1.92 Mbps; two thirds of 3 Mbps is 2 Mbps, so it fits.
     expect(
-      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })?.height,
+      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })
+        ?.height,
     ).toBe(480);
   });
 
   it("does not take a rung that only fits without the safety margin", () => {
     // 720p costs 2.88 Mbps, which fits 3 Mbps raw but not 2 Mbps of budget.
     expect(
-      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })?.height,
+      selectAdaptiveTargetRung(full, "auto", { bandwidthBps: 3_000_000 })
+        ?.height,
     ).not.toBe(720);
   });
 
@@ -780,7 +788,9 @@ describe("selectAdaptiveTargetRung", () => {
     // does not.
     const context = { bandwidthBps: 12_000_000 };
     expect(selectAdaptiveTargetRung(full, "auto", context)?.height).toBe(1440);
-    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(1080);
+    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(
+      1080,
+    );
     expect(
       selectAdaptiveTargetRung(full, "higher-resolution", context)?.height,
     ).toBe(2160);
@@ -799,14 +809,20 @@ describe("selectAdaptiveTargetRung", () => {
   it("never lets Low Data exceed 1080p", () => {
     const context = { bandwidthBps: 500_000_000 };
     expect(selectAdaptiveTargetRung(full, "auto", context)?.height).toBe(2160);
-    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(1080);
+    expect(selectAdaptiveTargetRung(full, "low-data", context)?.height).toBe(
+      1080,
+    );
   });
 
   it("resolves to a rung that exists on an incomplete ladder", () => {
     const sparse = ladder([480, 720, 1080]);
     const context = { bandwidthBps: 12_000_000 };
-    expect(selectAdaptiveTargetRung(sparse, "auto", context)?.height).toBe(1080);
-    expect(selectAdaptiveTargetRung(sparse, "low-data", context)?.height).toBe(720);
+    expect(selectAdaptiveTargetRung(sparse, "auto", context)?.height).toBe(
+      1080,
+    );
+    expect(selectAdaptiveTargetRung(sparse, "low-data", context)?.height).toBe(
+      720,
+    );
     // 1440p does not exist, so the step up settles on the tallest that does.
     expect(
       selectAdaptiveTargetRung(sparse, "higher-resolution", context)?.height,
@@ -819,7 +835,9 @@ describe("selectAdaptiveTargetRung", () => {
     const auto = selectAdaptiveTargetRung(gapped, "auto", context)?.height;
     expect([720, 2160]).toContain(auto);
     // Nothing below 720p exists, so Low Data cannot go lower than the floor.
-    expect(selectAdaptiveTargetRung(gapped, "low-data", context)?.height).toBe(720);
+    expect(selectAdaptiveTargetRung(gapped, "low-data", context)?.height).toBe(
+      720,
+    );
   });
 
   it("honours an explicit save-data preference over any measurement", () => {
@@ -832,7 +850,9 @@ describe("selectAdaptiveTargetRung", () => {
   });
 
   it("returns nothing when the ladder is empty", () => {
-    expect(selectAdaptiveTargetRung([], "auto", { bandwidthBps: 5_000_000 })).toBeUndefined();
+    expect(
+      selectAdaptiveTargetRung([], "auto", { bandwidthBps: 5_000_000 }),
+    ).toBeUndefined();
   });
 
   it("rises and falls with the measured link", () => {

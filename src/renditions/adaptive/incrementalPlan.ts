@@ -105,16 +105,17 @@ function fullPlan(
  * already on disk — their encoding configuration did not change — so it yields
  * one missing rendition rather than a stale package.
  */
-export function planPackageWork(
-  input: PlanPackageWorkInput,
-): PackageWorkPlan {
+export function planPackageWork(input: PlanPackageWorkInput): PackageWorkPlan {
   const { existing, presence } = input;
 
   if (!existing) {
     return fullPlan(input, "No package exists for this title yet.");
   }
   if (existing.sourceFingerprint !== input.sourceFingerprint) {
-    return fullPlan(input, "The source file changed since the package was built.");
+    return fullPlan(
+      input,
+      "The source file changed since the package was built.",
+    );
   }
   if (existing.profileVersion !== input.profileVersion) {
     return fullPlan(
@@ -209,5 +210,7 @@ export function describeIncrementalWork(
   if (subtitleStreamIndexes.length > 0) {
     parts.push(`${subtitleStreamIndexes.length} subtitle track(s)`);
   }
-  return parts.length === 0 ? "Nothing to build." : `Adding ${parts.join(" + ")}.`;
+  return parts.length === 0
+    ? "Nothing to build."
+    : `Adding ${parts.join(" + ")}.`;
 }

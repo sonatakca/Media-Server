@@ -2,14 +2,25 @@ import type { JobHandler } from "./worker";
 import { PermanentJobError } from "./worker";
 import type { JobQueue } from "./jobQueue";
 import type { LibraryRepository } from "../libraries/libraryRepository";
+import type { LibraryKind } from "../scanner/libraryScan";
 import type { CatalogueScanStore } from "../scanner/reconciler";
 import { reconcileLibraryScan } from "../scanner/reconciler";
 import { scanLibraryTree, type ScanResult } from "../scanner/libraryScan";
 import type { ScannerFileSystem } from "../scanner/libraryScan";
+import {
+  applyOrganizationPlan,
+  planLibraryOrganization,
+  type OrganizeMove,
+  type OrganizerFileSystem,
+} from "../scanner/organizeLibrary";
+import { movesFiles, type OrganizeMode } from "../scanner/organizeConfig";
 import type { createProbeService } from "../probe/probeService";
 import type { MetadataService } from "../metadata/metadataService";
 import type { TrickplayService } from "../trickplay/trickplayService";
 import type { NfoService } from "../nfo/nfoService";
+
+/** How many planned moves a scan result carries; the CLI prints them all. */
+const ORGANIZE_REPORT_LIMIT = 200;
 
 export const JOB_TYPES = {
   libraryScan: "library.scan",
@@ -31,6 +42,23 @@ export interface JobHandlerOptions {
   trickplayService?: TrickplayService;
   /** Writes NFO metadata as the final, observable stage of a library scan. */
   nfoService?: NfoService;
+  /**
+   * Tidies the media folders before they are read. Absent, or in `off` mode,
+   * a scan never writes to the media volume.
+   */
+  organizer?: {
+    mode: OrganizeMode;
+    fileSystem: OrganizerFileSystem;
+    /**
+     * Moves the catalogue's file rows with the files.
+     *
+     * Without it a moved source reads as one file gone and another arrived:
+     * the row's identity — and with it the technical probe, the streams and
+     * every processing job that points at it — would be replaced for a file
+     * whose bytes never changed.
+     */
+    recordMoves?(moves: OrganizeMove[]): Promise<number>;
+  };
   /**
    * Runs a media-processing job. Absent when the runtime has no rendition
    * paths configured, in which case queued processing jobs fail cleanly rather
@@ -156,7 +184,95 @@ export function createJobHandlers({
   trickplayService,
   processingRunner,
   nfoService,
+  organizer,
 }: JobHandlerOptions): Record<string, JobHandler> {
+  /**
+   * The tidying pass, run before a library is read.
+   *
+   * It is deliberately the first thing a scan does and deliberately reports
+   * what it did: a scan that quietly rearranged a media volume would be
+   * indistinguishable, from the outside, from one that lost something.
+   *
+   * It stands down entirely while there is live processing work, and "live"
+   * means queued as much as running.
+   *
+   * A running encode re-opens its source at the start of every epoch, so the
+   * file cannot be moved out from under it even between FFmpeg invocations. A
+   * *queued* attempt is the subtler one: its queue row froze an absolute
+   * `sourcePath` at the moment it was queued, and nothing re-reads it, so a
+   * move would leave twenty rows pointing at files that are no longer there.
+   * (A paused or storage-held job is not live — resuming it rebuilds the
+   * payload from the catalogue, which by then names the new path.)
+   */
+  const hasLiveProcessingWork = async (): Promise<boolean> => {
+    for (const status of ["running", "queued"] as const) {
+      const live = await queue.list({
+        jobType: JOB_TYPES.mediaProcess,
+        status,
+        limit: 1,
+      });
+      if (live.length > 0) return true;
+    }
+    return false;
+  };
+
+  const organizeLibraryFolders = async (
+    roots: string[],
+    kind: LibraryKind,
+  ): Promise<Record<string, unknown> | undefined> => {
+    if (!organizer || organizer.mode === "off") return undefined;
+
+    if (movesFiles(organizer.mode) && (await hasLiveProcessingWork())) {
+      return { mode: organizer.mode, deferred: "processing-active" };
+    }
+
+    let planned = 0;
+    let skipped = 0;
+    let moved = 0;
+    let failed = 0;
+    const sample: string[] = [];
+
+    for (const root of roots) {
+      const plan = await planLibraryOrganization({
+        fileSystem: organizer.fileSystem,
+        rootPath: root,
+        kind,
+      });
+      planned += plan.moves.length;
+      skipped += plan.skipped.length;
+      for (const move of plan.moves) {
+        if (sample.length >= ORGANIZE_REPORT_LIMIT) break;
+        sample.push(`${move.from} -> ${move.to}`);
+      }
+
+      if (!movesFiles(organizer.mode) || plan.moves.length === 0) continue;
+
+      /*
+       * Asked again, immediately before the first rename of this root. The
+       * plan above walks a whole library, which takes long enough for someone
+       * to press Process in the admin page while it runs.
+       */
+      if (await hasLiveProcessingWork()) {
+        return { mode: organizer.mode, planned, deferred: "processing-active" };
+      }
+
+      const applied = await applyOrganizationPlan(organizer.fileSystem, plan);
+      moved += applied.moved.length;
+      failed += applied.failed.length;
+      if (applied.moved.length > 0)
+        await organizer.recordMoves?.(applied.moved);
+    }
+
+    return {
+      mode: organizer.mode,
+      planned,
+      moved,
+      skipped,
+      failed,
+      ...(sample.length > 0 ? { moves: sample } : {}),
+    };
+  };
+
   const libraryScan: JobHandler = async ({
     job,
     reportProgress,
@@ -171,6 +287,8 @@ export function createJobHandlers({
     if (!library) {
       throw new PermanentJobError("The library no longer exists.");
     }
+
+    const organized = await organizeLibraryFolders(library.roots, library.kind);
 
     await reportProgress(0.05, "Reading the library folders");
 
@@ -221,7 +339,7 @@ export function createJobHandlers({
         });
       }
       await reportProgress(1, "Scan complete");
-      return { ...summary };
+      return { ...summary, ...(organized ? { organized } : {}) };
     }
 
     // NFO is a scan output, so every source of information it serializes must
@@ -266,6 +384,7 @@ export function createJobHandlers({
     await reportProgress(1, "Scan complete");
     return {
       ...summary,
+      ...(organized ? { organized } : {}),
       probe,
       ...(metadata ? { metadata } : {}),
       ...(nfoExport ? { nfoExport } : {}),
@@ -298,7 +417,7 @@ export function createJobHandlers({
     );
   };
 
-  const metadataRefresh: JobHandler = async ({ job }) => {
+  const metadataRefresh: JobHandler = async ({ job, reportProgress }) => {
     if (!metadataService) {
       throw new PermanentJobError("No metadata provider is configured.");
     }
@@ -307,11 +426,12 @@ export function createJobHandlers({
       throw new PermanentJobError("The task payload is missing an item.");
     }
 
+    await reportProgress(0, "Identifying titles");
     const result = await metadataService.refreshItem(itemId);
     return { ...result };
   };
 
-  const trickplayGenerate: JobHandler = async ({ job }) => {
+  const trickplayGenerate: JobHandler = async ({ job, reportProgress }) => {
     if (!trickplayService) {
       throw new PermanentJobError("Trickplay generation is not available.");
     }
@@ -324,6 +444,7 @@ export function createJobHandlers({
       await trickplayService.deleteForItem(itemId);
     }
 
+    await reportProgress(0, "Generating thumbnails");
     const set = await trickplayService.generateForItem(itemId);
     return set
       ? { generated: true, spriteCount: set.spriteCount }
@@ -436,7 +557,7 @@ export function createJobHandlers({
      * against a disk that is not there.
      */
     if (outcome.status === "waiting-for-storage") {
-      return { status: "cancelled" as const };
+      return { status: "waiting-for-storage" as const };
     }
     return { status: outcome.status };
   };

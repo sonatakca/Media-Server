@@ -161,6 +161,34 @@ export interface StorageGuard {
   incident(): Promise<StorageIncidentRecord | null>;
 }
 
+/**
+ * Whether a process's cached view of the incident row could be out of date in
+ * the direction that does harm, and so is worth a re-read.
+ *
+ * Raising a hold and lifting one happen in different processes: only the worker
+ * raises, and only the API server lifts, on the two recovery presses. Each
+ * process is therefore authoritative about the transition it performs itself
+ * and stale about the other one, which makes the answer a mirror image.
+ *
+ * The worker is right whenever it believes work may start — it is the only
+ * thing that could have said otherwise — so it re-reads only while held, to
+ * notice a lift. The server is the reverse: it performs the lift, so a hold is
+ * the state it cannot have caused, and it re-reads only while it believes work
+ * may start, to notice one raised behind its back.
+ *
+ * Neither polls in both states. A single-process deployment runs as the worker
+ * and covers the server's case by being the process that lifts.
+ */
+export function shouldRereadIncident({
+  runWorker,
+  mayStartWork: work,
+}: {
+  runWorker: boolean;
+  mayStartWork: boolean;
+}): boolean {
+  return runWorker ? !work : work;
+}
+
 const EVENT_FOR_STATE: Readonly<
   Record<StorageHealthRecord["state"], StorageGuardEvent>
 > = {

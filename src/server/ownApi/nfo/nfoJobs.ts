@@ -18,12 +18,13 @@ export const NFO_JOB_TYPES = {
 export function createNfoJobHandlers(
   service: NfoService,
 ): Record<string, JobHandler> {
-  const exportItem: JobHandler = async ({ job }) => {
+  const exportItem: JobHandler = async ({ job, reportProgress }) => {
     const itemId = job.payload.itemId;
     if (typeof itemId !== "string") {
       throw new PermanentJobError("The task payload is missing an item.");
     }
 
+    await reportProgress(0, "Writing NFO metadata");
     const summary = await service.exportItem(itemId, {
       force: job.payload.force === true,
     });

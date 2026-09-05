@@ -401,3 +401,19 @@ img {
     animation: none;
   }
 }
+
+/* A scroller with no bar of its own.
+
+   The notification column is pinned to the right edge, so a bar that appears
+   the moment the pile opens shifts every card sideways by its width. The
+   scrolling stays; only the furniture goes. */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

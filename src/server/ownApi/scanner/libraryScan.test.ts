@@ -384,12 +384,7 @@ describe("scanLibraryTree — series", () => {
   it("catalogues no episode for trailers, themes, trickplay or artwork", async () => {
     const fileSystem = createFileSystem({
       Shows: ["Andor/"],
-      "Shows/Andor": [
-        "tvshow.nfo",
-        "Season 1/",
-        "trailers/",
-        "Backdrops/",
-      ],
+      "Shows/Andor": ["tvshow.nfo", "Season 1/", "trailers/", "Backdrops/"],
       "Shows/Andor/Season 1": [
         "Andor - S01E01 - Kassa.mp4",
         "Andor - S01E01 - Kassa.nfo",
@@ -421,9 +416,7 @@ describe("scanLibraryTree — series", () => {
     );
     expect(everyPath).not.toContain("Shows/Andor/trailers/Andor - Trailer.mp4");
     expect(everyPath).not.toContain("Shows/Andor/Backdrops/theme.mp4");
-    expect(
-      everyPath.some((entry) => entry.includes(".trickplay")),
-    ).toBe(false);
+    expect(everyPath.some((entry) => entry.includes(".trickplay"))).toBe(false);
   });
 
   it("keeps two containers of one episode as one episode's alternates", async () => {
@@ -453,8 +446,7 @@ describe("scanLibraryTree — series", () => {
    * because the catalogue row is the package's only playback identity.
    */
   it("recognises an episode package whose source has been removed", async () => {
-    const packageDirectory =
-      "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
+    const packageDirectory = "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
     const fixture = titlePackageFixture(packageDirectory);
     const fileSystem = createFileSystem(
       {
@@ -493,8 +485,7 @@ describe("scanLibraryTree — series", () => {
   });
 
   it("prefers the real source when both the file and its package exist", async () => {
-    const packageDirectory =
-      "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
+    const packageDirectory = "Shows/Andor/Season 1/Andor - S01E01 - Kassa";
     const fixture = titlePackageFixture(packageDirectory);
     const fileSystem = createFileSystem(
       {
@@ -700,5 +691,130 @@ describe("scanLibraryTree — books and mixed roots", () => {
       relativePath: "Movies/Broken",
       reason: "unreadable",
     });
+  });
+});
+
+/*
+ * An organised library keeps its originals in a `src/` bucket. The scanner has
+ * to read that bucket as if the files were still where they were: the source
+ * keys below are byte-for-byte the ones the same library produced before it was
+ * organised, which is what stops a reorganisation from re-creating every item
+ * in the catalogue and losing its watch history.
+ */
+describe("scanLibraryTree — sources kept in src/", () => {
+  it("gives an organised season exactly the keys it had before", async () => {
+    const organised = createFileSystem({
+      Series: ["House of the Dragon/"],
+      "Series/House of the Dragon": ["Season 1/"],
+      "Series/House of the Dragon/Season 1": [
+        "src/",
+        "House of the Dragon - S01E01 - The Heirs of the Dragon/",
+        "season.nfo",
+      ],
+      "Series/House of the Dragon/Season 1/House of the Dragon - S01E01 - The Heirs of the Dragon":
+        ["House of the Dragon - S01E01 - The Heirs of the Dragon.nfo"],
+      "Series/House of the Dragon/Season 1/src": [
+        "House of the Dragon - S01E01 - The Heirs of the Dragon.mp4",
+        "House of the Dragon - S01E01 - The Heirs of the Dragon.tr.srt",
+        "House of the Dragon - S01E02 - The Rogue Prince.mp4",
+      ],
+    });
+
+    const flat = createFileSystem({
+      Series: ["House of the Dragon/"],
+      "Series/House of the Dragon": ["Season 1/"],
+      "Series/House of the Dragon/Season 1": [
+        "House of the Dragon - S01E01 - The Heirs of the Dragon.mp4",
+        "House of the Dragon - S01E01 - The Heirs of the Dragon.tr.srt",
+        "House of the Dragon - S01E02 - The Rogue Prince.mp4",
+        "season.nfo",
+      ],
+    });
+
+    const [organisedScan, flatScan] = await Promise.all([
+      scanLibraryTree({
+        fileSystem: organised,
+        rootPath: "Series",
+        kind: "series",
+      }),
+      scanLibraryTree({ fileSystem: flat, rootPath: "Series", kind: "series" }),
+    ]);
+
+    expect(organisedScan.items.map((item) => item.sourceKey)).toEqual(
+      flatScan.items.map((item) => item.sourceKey),
+    );
+    expect(byKind(organisedScan.items, "episode")).toHaveLength(2);
+  });
+
+  it("reads an episode's source and subtitle from the bucket", async () => {
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem({
+        Series: ["Andor/"],
+        "Series/Andor": ["Season 1/"],
+        "Series/Andor/Season 1": ["src/"],
+        "Series/Andor/Season 1/src": [
+          "Andor - S01E01 - Kassa.mp4",
+          "Andor - S01E01 - Kassa.tr.srt",
+        ],
+      }),
+      rootPath: "Series",
+      kind: "series",
+    });
+
+    const [episode] = byKind(result.items, "episode");
+    expect(episode?.files[0]?.relativePath).toBe(
+      "Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4",
+    );
+    expect(episode?.subtitles).toEqual([
+      expect.objectContaining({
+        relativePath: "Series/Andor/Season 1/src/Andor - S01E01 - Kassa.tr.srt",
+        language: "tr",
+      }),
+    ]);
+  });
+
+  it("keeps an organised movie's key on its folder, not on the bucket", async () => {
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem({
+        Movies: ["Dune (2021)/"],
+        "Movies/Dune (2021)": ["src/", "Dune (2021).nfo", "video/"],
+        "Movies/Dune (2021)/src": ["Dune (2021).mp4", "Dune (2021).en.srt"],
+        "Movies/Dune (2021)/video": ["1080p.mp4"],
+      }),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")).toEqual([
+      expect.objectContaining({
+        sourceKey: "movie:movies/dune (2021)",
+        title: "Dune",
+        year: 2021,
+        files: [
+          expect.objectContaining({
+            relativePath: "Movies/Dune (2021)/src/Dune (2021).mp4",
+          }),
+        ],
+      }),
+    ]);
+  });
+
+  /*
+   * The bucket belongs to the folder above it and to nothing else. A `src`
+   * inside `src` is an ordinary folder, and scanning it as another title would
+   * be how one movie becomes two.
+   */
+  it("does not treat the bucket as a title of its own", async () => {
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem({
+        Movies: ["Dune (2021)/"],
+        "Movies/Dune (2021)": ["src/"],
+        "Movies/Dune (2021)/src": ["Dune (2021).mp4"],
+      }),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")).toHaveLength(1);
   });
 });

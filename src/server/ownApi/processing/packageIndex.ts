@@ -169,10 +169,7 @@ export function createPackageIndex(
   const resolveRoot =
     options.resolveRoot ??
     ((target: PackageIndexTarget) =>
-      resolveTitleRoot(
-        target.sourcePath,
-        titleRootLayoutForKind(target.kind),
-      ));
+      resolveTitleRoot(target.sourcePath, titleRootLayoutForKind(target.kind)));
 
   const entries = new Map<string, PackageIndexEntry>();
   const pending = new Map<string, PackageIndexTarget>();

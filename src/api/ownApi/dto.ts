@@ -197,6 +197,8 @@ export interface HomeDto {
 }
 
 export interface TaskDto {
+  presentation?: import("../../lib/notifications/taskPresentation").TaskPresentation;
+  /** Queue fraction, 0..1. Convert to a UI percentage only in describeTask. */
   id: string;
   type: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";

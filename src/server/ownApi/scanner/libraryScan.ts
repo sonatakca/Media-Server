@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   TITLE_AUDIO_DIRECTORY,
+  TITLE_SOURCE_DIRECTORY,
   TITLE_SUBTITLE_DIRECTORY,
   TITLE_VIDEO_DIRECTORY,
 } from "../../../renditions/adaptive/layout";
@@ -417,13 +418,39 @@ async function toScannedFile(
   }
 }
 
-interface DirectoryContents {
-  directories: string[];
-  videoFiles: string[];
-  bookFiles: string[];
-  subtitleFiles: string[];
+/**
+ * A file a folder owns, and where it actually is.
+ *
+ * The two differ once a library has been organised: the naming rules are read
+ * from `name`, which is unchanged by the move, while `relativePath` points into
+ * the `src/` bucket the bytes were moved to. Keeping both is what lets a
+ * source folder be introduced without changing a single title's identity.
+ */
+interface DirectoryFile {
+  name: string;
+  relativePath: string;
 }
 
+interface DirectoryContents {
+  directories: string[];
+  videoFiles: DirectoryFile[];
+  bookFiles: DirectoryFile[];
+  subtitleFiles: DirectoryFile[];
+}
+
+function sortByName(files: DirectoryFile[]): void {
+  files.sort((left, right) =>
+    left.name < right.name ? -1 : left.name > right.name ? 1 : 0,
+  );
+}
+
+/**
+ * The files in one directory, sorted, with anything unusable recorded.
+ *
+ * `src/` is not returned as a subdirectory: its files are folded into the
+ * folder above as if they had never been moved, which is exactly how the rest
+ * of the scanner — and every source key it derives — sees them.
+ */
 async function readDirectoryContents(
   fs: ScannerFileSystem,
   relativePath: string,
@@ -436,59 +463,75 @@ async function readDirectoryContents(
     subtitleFiles: [],
   };
 
-  let entries: ScanDirectoryEntry[];
-  try {
-    entries = await fs.readDirectory(relativePath);
-  } catch {
-    skipped.push({ relativePath, reason: "unreadable" });
-    return contents;
-  }
+  let sourceDirectory: string | undefined;
 
-  for (const entry of entries) {
-    if (isIgnoredEntry(entry.name)) continue;
-
-    if (entry.isDirectory) {
-      contents.directories.push(entry.name);
-      continue;
+  const collect = async (directory: string): Promise<void> => {
+    let entries: ScanDirectoryEntry[];
+    try {
+      entries = await fs.readDirectory(directory);
+    } catch {
+      skipped.push({ relativePath: directory, reason: "unreadable" });
+      return;
     }
 
-    const { stem } = splitExtension(entry.name);
-    if (isSampleFile(stem)) {
-      skipped.push({
-        relativePath: joinRelative(relativePath, entry.name),
-        reason: "sample",
-      });
-      continue;
-    }
+    for (const entry of entries) {
+      if (isIgnoredEntry(entry.name)) continue;
 
-    if (isVideoFile(entry.name)) contents.videoFiles.push(entry.name);
-    else if (isBookFile(entry.name)) contents.bookFiles.push(entry.name);
-    else if (isSubtitleFile(entry.name))
-      contents.subtitleFiles.push(entry.name);
-    else {
-      skipped.push({
-        relativePath: joinRelative(relativePath, entry.name),
-        reason: "unsupported-extension",
-      });
+      if (entry.isDirectory) {
+        // Only the folder's own `src/` is folded in; one nested inside it is a
+        // directory like any other and is left alone.
+        if (
+          directory === relativePath &&
+          entry.name.toLowerCase() === TITLE_SOURCE_DIRECTORY
+        ) {
+          sourceDirectory = joinRelative(relativePath, entry.name);
+          continue;
+        }
+        if (directory === relativePath) contents.directories.push(entry.name);
+        continue;
+      }
+
+      const file: DirectoryFile = {
+        name: entry.name,
+        relativePath: joinRelative(directory, entry.name),
+      };
+
+      const { stem } = splitExtension(entry.name);
+      if (isSampleFile(stem)) {
+        skipped.push({ relativePath: file.relativePath, reason: "sample" });
+        continue;
+      }
+
+      if (isVideoFile(entry.name)) contents.videoFiles.push(file);
+      else if (isBookFile(entry.name)) contents.bookFiles.push(file);
+      else if (isSubtitleFile(entry.name)) contents.subtitleFiles.push(file);
+      else {
+        skipped.push({
+          relativePath: file.relativePath,
+          reason: "unsupported-extension",
+        });
+      }
     }
-  }
+  };
+
+  await collect(relativePath);
+  if (sourceDirectory !== undefined) await collect(sourceDirectory);
 
   contents.directories.sort();
-  contents.videoFiles.sort();
-  contents.bookFiles.sort();
-  contents.subtitleFiles.sort();
+  sortByName(contents.videoFiles);
+  sortByName(contents.bookFiles);
+  sortByName(contents.subtitleFiles);
   return contents;
 }
 
 function matchSubtitles(
-  directory: string,
-  subtitleFiles: string[],
+  subtitleFiles: DirectoryFile[],
   videoStem: string,
 ): ScannedSubtitle[] {
   const matches: ScannedSubtitle[] = [];
 
   for (const subtitleFile of subtitleFiles) {
-    const { stem, extension } = splitExtension(subtitleFile);
+    const { stem, extension } = splitExtension(subtitleFile.name);
     const parsed = parseSubtitleSuffix(stem);
     if (parsed.baseStem.toLowerCase() !== videoStem.toLowerCase()) continue;
 
@@ -504,7 +547,7 @@ function matchSubtitles(
               : { codec: extension, isText: true };
 
     matches.push({
-      relativePath: joinRelative(directory, subtitleFile),
+      relativePath: subtitleFile.relativePath,
       codec: format.codec,
       isText: format.isText,
       ...(parsed.language === undefined ? {} : { language: parsed.language }),
@@ -588,26 +631,25 @@ async function scanMovieDirectory(
 
   const contents = await readDirectoryContents(fs, directory, result.skipped);
   const trailerPaths: string[] = [];
-  const featureNames: string[] = [];
+  const featureFiles: DirectoryFile[] = [];
 
   for (const videoFile of contents.videoFiles) {
-    const { stem } = splitExtension(videoFile);
-    if (isTrailerFile(stem))
-      trailerPaths.push(joinRelative(directory, videoFile));
-    else featureNames.push(videoFile);
+    const { stem } = splitExtension(videoFile.name);
+    if (isTrailerFile(stem)) trailerPaths.push(videoFile.relativePath);
+    else featureFiles.push(videoFile);
   }
   trailerPaths.push(
     ...(await canonicalTrailerPaths(fs, directory, result.skipped)),
   );
 
-  if (featureNames.length > 0) {
+  if (featureFiles.length > 0) {
     // Several files in one title folder are alternate cuts of the same movie —
     // but only when they parse to the same title. A folder holding "Movie A"
     // and "Movie B" is a container, not a title, and must not collapse into one
     // item.
     const distinctTitles = new Set(
-      featureNames.map((name) =>
-        parseMovieName(splitExtension(name).stem).title.toLowerCase(),
+      featureFiles.map((file) =>
+        parseMovieName(splitExtension(file.name).stem).title.toLowerCase(),
       ),
     );
     const isTitleFolder = !isLibraryRoot && distinctTitles.size <= 1;
@@ -617,32 +659,31 @@ async function scanMovieDirectory(
           {
             keyPath: directory,
             displayName: directory.split("/").pop() ?? directory,
-            names: featureNames,
+            members: featureFiles,
           },
         ]
-      : featureNames.map((name) => ({
-          keyPath: joinRelative(directory, splitExtension(name).stem),
-          displayName: splitExtension(name).stem,
-          names: [name],
+      : featureFiles.map((member) => ({
+          keyPath: joinRelative(directory, splitExtension(member.name).stem),
+          displayName: splitExtension(member.name).stem,
+          members: [member],
         }));
 
     for (const group of groups) {
       const files: ScannedFile[] = [];
       const subtitles: ScannedSubtitle[] = [];
 
-      for (const name of group.names) {
+      for (const member of group.members) {
         const file = await toScannedFile(
           fs,
-          joinRelative(directory, name),
+          member.relativePath,
           result.skipped,
         );
         if (!file) continue;
         files.push(file);
         subtitles.push(
           ...matchSubtitles(
-            directory,
             contents.subtitleFiles,
-            splitExtension(name).stem,
+            splitExtension(member.name).stem,
           ),
         );
       }
@@ -732,7 +773,7 @@ async function scanEpisodeFiles(
   };
 
   for (const videoFile of contents.videoFiles) {
-    const { stem } = splitExtension(videoFile);
+    const { stem } = splitExtension(videoFile.name);
     if (isTrailerFile(stem)) continue;
 
     const parsed = parseEpisodeName(stem, {
@@ -744,7 +785,7 @@ async function scanEpisodeFiles(
 
     const file = await toScannedFile(
       fs,
-      joinRelative(directory, videoFile),
+      videoFile.relativePath,
       result.skipped,
     );
     if (!file) continue;
@@ -767,9 +808,7 @@ async function scanEpisodeFiles(
       // A second file for the same episode is an alternate cut, not a duplicate.
       existing.files.push(file);
       existing.files.sort((left, right) => right.size - left.size);
-      existing.subtitles.push(
-        ...matchSubtitles(directory, contents.subtitleFiles, stem),
-      );
+      existing.subtitles.push(...matchSubtitles(contents.subtitleFiles, stem));
       continue;
     }
 
@@ -788,7 +827,7 @@ async function scanEpisodeFiles(
       parentSourceKey: season.sourceKey,
       seriesSourceKey: context.seriesKey,
       files: [file],
-      subtitles: matchSubtitles(directory, contents.subtitleFiles, stem),
+      subtitles: matchSubtitles(contents.subtitleFiles, stem),
     });
   }
 
@@ -882,8 +921,8 @@ async function scanSeriesFolder(
 
   const trailerPaths = [
     ...rootContents.videoFiles
-      .filter((videoFile) => isTrailerFile(splitExtension(videoFile).stem))
-      .map((videoFile) => joinRelative(directory, videoFile)),
+      .filter((videoFile) => isTrailerFile(splitExtension(videoFile.name).stem))
+      .map((videoFile) => videoFile.relativePath),
     ...(await canonicalTrailerPaths(fs, directory, result.skipped)),
   ];
   for (const trailerPath of trailerPaths) {
@@ -964,11 +1003,11 @@ async function scanBooksDirectory(
   const contents = await readDirectoryContents(fs, directory, result.skipped);
 
   for (const bookFile of contents.bookFiles) {
-    const relativePath = joinRelative(directory, bookFile);
+    const relativePath = bookFile.relativePath;
     const file = await toScannedFile(fs, relativePath, result.skipped);
     if (!file) continue;
 
-    const parsed = parseMovieName(splitExtension(bookFile).stem);
+    const parsed = parseMovieName(splitExtension(bookFile.name).stem);
     result.items.push({
       sourceKey: sourceKey("book", relativePath),
       kind: "book",

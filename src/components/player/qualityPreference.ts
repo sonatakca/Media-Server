@@ -161,10 +161,7 @@ const LOW_DATA_MAX_HEIGHT = 1080;
 const HIGHER_QUALITY_MIN_HEIGHT = 720;
 const HIGHER_QUALITY_MAX_HEIGHT = 2160;
 
-export type AutomaticQualityMode = Exclude<
-  QualityPreferenceMode,
-  "advanced"
->;
+export type AutomaticQualityMode = Exclude<QualityPreferenceMode, "advanced">;
 
 export interface AdaptiveQualityRequest {
   /** A manual Advanced selection is an exact rendition lock. */

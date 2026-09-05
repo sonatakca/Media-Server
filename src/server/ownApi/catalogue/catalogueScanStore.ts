@@ -3,6 +3,10 @@ import type { DatabasePool } from "../database/databasePool";
 import { BOOK_EXTENSIONS } from "../scanner/nameParser";
 import type { ScannedSubtitle } from "../scanner/libraryScan";
 import type {
+  OrganizeMove,
+  OrganizedFileRecorder,
+} from "../scanner/organizeLibrary";
+import type {
   CatalogueScanStore,
   ExistingFileRow,
   ExistingItemRow,
@@ -20,8 +24,35 @@ import type {
  */
 export function createCatalogueScanStore(
   pool: DatabasePool,
-): CatalogueScanStore {
+): CatalogueScanStore & OrganizedFileRecorder {
   return {
+    /*
+     * Follow a file the organiser moved, one row at a time.
+     *
+     * One statement per move rather than one big update because a move that
+     * cannot be recorded — a row already at that path, put there by something
+     * else — must not take the other two hundred down with it. The scan that
+     * runs next reconciles whatever was missed.
+     */
+    recordMoves: async (moves: OrganizeMove[]) => {
+      let recorded = 0;
+      for (const move of moves) {
+        try {
+          const result = await pool.query(
+            `UPDATE media_files
+               SET relative_path = $2, updated_at = now()
+             WHERE relative_path = $1`,
+            [move.from, move.to],
+          );
+          recorded += result.rowCount ?? 0;
+        } catch {
+          // Reconciliation is the fallback, and it is not destructive: the old
+          // path is marked missing and kept for the grace period.
+        }
+      }
+      return recorded;
+    },
+
     listItems: async (libraryId) => {
       const result = await pool.query<{
         id: string;

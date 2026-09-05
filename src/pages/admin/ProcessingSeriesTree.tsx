@@ -233,7 +233,15 @@ function EpisodeRow({
        * media-browser card.
        */}
       <div className="relative aspect-video w-24 self-start overflow-hidden rounded-lg border border-white/[0.08] bg-[var(--surface)] sm:w-28">
-        <div className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] px-2 text-center text-[10px] font-bold text-white/45">
+        {/*
+         * What the still falls back to when there is no artwork, and only
+         * that: the code is already written beside it, so a reader that took
+         * this one too would announce the episode twice.
+         */}
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] px-2 text-center text-[10px] font-bold text-white/45"
+        >
           {episode.code}
         </div>
 
@@ -577,7 +585,12 @@ export function ProcessingSeriesTree({
               illuminates the whole series card while the poster is hovered.
             */}
               <div className="series-toggle media-card-cinematic relative aspect-[2/3] w-16 cursor-pointer self-start sm:w-[5rem] overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] sm:w-28">
-                <div className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] p-3 text-center text-xs font-bold text-white/80">
+                {/* The poster's fallback, and decorative for the same reason
+                    the poster is: the show is named in full beside it. */}
+                <div
+                  aria-hidden="true"
+                  className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] p-3 text-center text-xs font-bold text-white/80"
+                >
                   {show.title}
                 </div>
 

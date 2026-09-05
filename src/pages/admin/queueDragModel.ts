@@ -19,7 +19,7 @@ export type SortableRect = {
 export type QueueDragPlan = {
   /** The order the queue would be in if the pointer were released now. */
   order: string[];
-  /** Where the dragged row sits in that order. */
+  /** Where the dragged block sits in the list it was lifted out of. */
   index: number;
   /**
    * How far each *other* row has to move to make room, in pixels. Rows that
@@ -27,8 +27,18 @@ export type QueueDragPlan = {
    * "unchanged" from "returned to where it started".
    */
   shifts: Map<string, number>;
-  /** Where the dragged row's own slot is, relative to where it started. */
+  /** Where the dragged block's own slot is, relative to where it started. */
   activeSlotOffset: number;
+  /**
+   * Where each dragged row is drawn, relative to the block's own offset.
+   *
+   * A block of one is a single zero: the row is the block. A block of several
+   * is what turns a scattered selection into something that can be carried —
+   * every member is drawn stacked under the row the pointer is holding, so the
+   * gap the list opens is the size of what is about to go into it, and the
+   * rows in between are not left standing inside their own selection.
+   */
+  memberAnchors: Map<string, number>;
   /**
    * How far the card should actually be drawn from where it started.
    *
@@ -107,16 +117,51 @@ export function measureGap(rects: readonly SortableRect[]): number {
  */
 export function planQueueDrag(
   rects: readonly SortableRect[],
-  activeId: string,
+  active: string | readonly string[],
   offsetY: number,
+  anchorId?: string,
 ): QueueDragPlan | null {
-  const activeIndex = rects.findIndex((rect) => rect.id === activeId);
-  if (activeIndex < 0) return null;
+  const requested = typeof active === "string" ? [active] : active;
+  const chosen = new Set(requested);
+  // In list order, whatever order they were chosen in: a block carries the
+  // arrangement the queue already has, not the order somebody ticked boxes.
+  const members = rects.filter((rect) => chosen.has(rect.id));
+  if (members.length === 0) return null;
+  const anchor =
+    members.find((rect) => rect.id === (anchorId ?? requested[0])) ??
+    members[0]!;
 
-  const active = rects[activeIndex]!;
-  const others = rects.filter((rect) => rect.id !== activeId);
+  const activeIndex = rects.indexOf(members[0]!);
+  const others = rects.filter((rect) => !chosen.has(rect.id));
   const gap = measureGap(rects);
   const listTop = rects[0]!.top;
+
+  /*
+   * The block, as one row: its members stacked in list order with the list's
+   * own spacing between them, and its top placed so that the row the pointer
+   * is holding does not move when the gesture begins. Anchoring on the held
+   * row rather than on the first member is what keeps the card under the
+   * cursor still under the cursor when a selection is picked up by its last
+   * member.
+   */
+  const memberAnchors = new Map<string, number>();
+  let within = 0;
+  let anchorWithin = 0;
+  for (const member of members) {
+    if (member.id === anchor.id) anchorWithin = within;
+    memberAnchors.set(member.id, within);
+    within += member.height + gap;
+  }
+  const blockHeight = Math.max(within - gap, 0);
+  const blockTop = anchor.top - anchorWithin;
+  for (const member of members) {
+    // Restated as a displacement from where the row actually is, which is what
+    // the caller draws with.
+    memberAnchors.set(
+      member.id,
+      blockTop + memberAnchors.get(member.id)! - member.top,
+    );
+  }
 
   /*
    * The top edge of the dragged row's slot for every index it could take.
@@ -131,12 +176,12 @@ export function planQueueDrag(
     if (next) cursor += next.height + gap;
   }
 
-  const draggedCentre = active.top + offsetY + active.height / 2;
+  const draggedCentre = blockTop + offsetY + blockHeight / 2;
   let index = activeIndex;
   let best = Number.POSITIVE_INFINITY;
   for (let candidate = 0; candidate < slotTops.length; candidate += 1) {
     const distance = Math.abs(
-      draggedCentre - (slotTops[candidate]! + active.height / 2),
+      draggedCentre - (slotTops[candidate]! + blockHeight / 2),
     );
     /*
      * Ties go to the slot the row is already in. Two slots are exactly equally
@@ -154,7 +199,7 @@ export function planQueueDrag(
   }
 
   const order = others.map((rect) => rect.id);
-  order.splice(index, 0, activeId);
+  order.splice(index, 0, ...members.map((rect) => rect.id));
 
   /*
    * Where every row ends up under that order, and therefore how far it has to
@@ -168,16 +213,18 @@ export function planQueueDrag(
   for (const id of order) {
     const rect = byId.get(id)!;
     const shift = top - rect.top;
-    if (id === activeId) {
-      activeSlotOffset = shift;
+    // The block's members are not shifted individually: they are drawn from
+    // the block's own offset, and the first of them is where the block is.
+    if (chosen.has(id)) {
+      if (id === members[0]!.id) activeSlotOffset = top - blockTop;
     } else if (shift !== 0) {
       shifts.set(id, shift);
     }
     top += rect.height + gap;
   }
 
-  const firstSlot = slotTops[0]! - active.top;
-  const lastSlot = slotTops[slotTops.length - 1]! - active.top;
+  const firstSlot = slotTops[0]! - blockTop;
+  const lastSlot = slotTops[slotTops.length - 1]! - blockTop;
   const boundedOffset = Math.min(Math.max(offsetY, firstSlot), lastSlot);
 
   return {
@@ -185,6 +232,7 @@ export function planQueueDrag(
     index,
     shifts,
     activeSlotOffset,
+    memberAnchors,
     boundedOffset,
     magneticOffset:
       activeSlotOffset + magnetise(boundedOffset - activeSlotOffset),

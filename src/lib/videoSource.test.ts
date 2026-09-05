@@ -446,7 +446,8 @@ describe("shouldUseManagedHdrFallback", () => {
     window.matchMedia = ((query: string) =>
       ({
         matches:
-          query.includes("dynamic-range: high") && overrides.hdrDisplay === true,
+          query.includes("dynamic-range: high") &&
+          overrides.hdrDisplay === true,
       }) as MediaQueryList) as typeof window.matchMedia;
     try {
       run();
@@ -467,7 +468,9 @@ describe("shouldUseManagedHdrFallback", () => {
 
   it("leaves a package that has an SDR rung on the native path", () => {
     withWindow({ managed: true, hdrDisplay: false }, () => {
-      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: false })).toBe(false);
+      expect(shouldUseManagedHdrFallback({ hdrOnlyPackage: false })).toBe(
+        false,
+      );
     });
   });
 
@@ -655,7 +658,9 @@ describe("the adaptive buffer probe", () => {
     const session = playingInAuto(900_000);
     expect(session.hls.loadLevel).toBe(1);
 
-    for (const estimate of [800_000, 500_000, 300_000, 250_000, 250_000, 240_000]) {
+    for (const estimate of [
+      800_000, 500_000, 300_000, 250_000, 250_000, 240_000,
+    ]) {
       session.tick(estimate);
     }
 

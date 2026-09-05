@@ -56,9 +56,7 @@ function finite(value: number | undefined): value is number {
  * Returns the planned figure until the measurement earns its place, then a
  * blend, then — as the job nears the end — essentially the measurement.
  */
-export function estimateFinalOutputBytes(
-  input: OutputEstimateInput,
-): number {
+export function estimateFinalOutputBytes(input: OutputEstimateInput): number {
   const planned = finite(input.plannedBytes)
     ? Math.max(0, input.plannedBytes)
     : 0;

@@ -1,9 +1,15 @@
 import { useEffect, useRef } from "react";
 import { getTasks } from "../lib/mediaApi";
-import { notify } from "../lib/notifications/notificationStore";
+import {
+  notify,
+  getNotifications,
+  dismissNotification,
+} from "../lib/notifications/notificationStore";
 import {
   describeTask,
+  isSpokenForByLead,
   selectChangedTasks,
+  selectProcessingLead,
 } from "../lib/notifications/taskNotifications";
 import { useLanguage } from "../i18n/LanguageContext";
 
@@ -27,6 +33,8 @@ export function useTaskNotifications(enabled: boolean): void {
   const { t } = useLanguage();
   const seenRef = useRef(new Map<string, string>());
   const hasPolledRef = useRef(false);
+  const cardsRef = useRef(new Map<string, string>());
+  const leadRef = useRef("");
 
   useEffect(() => {
     if (!enabled) return undefined;
@@ -47,25 +55,74 @@ export function useTaskNotifications(enabled: boolean): void {
           !hasPolledRef.current,
         );
         seenRef.current = next;
+        const wasFirstPoll = !hasPolledRef.current;
         hasPolledRef.current = true;
-        hasActiveWork = tasks.some((task) => task.status === "running");
+        hasActiveWork = tasks.some(
+          (task) => task.status === "running" || task.status === "queued",
+        );
 
-        for (const task of changed) {
-          const described = describeTask(task);
+        /*
+         * The waiting line moving is news the lead's own card carries, and
+         * nothing else about that task has to change for the count on it to be
+         * wrong — so a changed count is what re-raises it.
+         */
+        const lead = selectProcessingLead(tasks);
+        const leadSignature = lead ? `${lead.taskId}:${lead.queuedCount}` : "";
+        const leadTask =
+          lead && leadSignature !== leadRef.current && !wasFirstPoll
+            ? tasks.find((task) => task.id === lead.taskId)
+            : undefined;
+        leadRef.current = leadSignature;
+        const due =
+          leadTask && !changed.some((task) => task.id === leadTask.id)
+            ? [...changed, leadTask]
+            : changed;
+
+        /*
+         * A title the lead has taken over for stops being a card and becomes a
+         * number on the lead's. Leaving the old one standing is how a single
+         * press of "pause all" left a column of cards for titles the card at
+         * the front was already counting.
+         */
+        for (const task of tasks) {
+          if (!isSpokenForByLead(task, lead)) continue;
+          const card = cardsRef.current.get(task.id);
+          if (card === undefined) continue;
+          dismissNotification(card);
+          // Forgotten as well as dismissed: this title may yet reach the head
+          // of the line, and a card it raises then is news of its own.
+          cardsRef.current.delete(task.id);
+        }
+
+        // Insert older tasks first so the newest queued work is nearest the bottom.
+        for (const task of [...due].sort(
+          (a, b) =>
+            (Date.parse(a.queuedAt) || 0) - (Date.parse(b.queuedAt) || 0),
+        )) {
+          // One card speaks for the whole waiting line; the titles behind the
+          // lead are a count on it, not a card each.
+          if (isSpokenForByLead(task, lead)) continue;
+          const described = describeTask(
+            task,
+            task.id === lead?.taskId ? lead.queuedCount : 0,
+          );
           if (!described) continue;
 
-          notify({
+          const previousCard = cardsRef.current.get(task.id);
+          if (
+            previousCard &&
+            !getNotifications().some((card) => card.id === previousCard)
+          )
+            continue;
+          const cardId = notify({
             key: described.key,
             tone: described.tone,
             title: t(described.titleKey),
-            ...(described.description === undefined
-              ? {}
-              : { description: described.description }),
-            ...(described.progress === undefined
-              ? {}
-              : { progress: described.progress }),
+            task: described.task,
+            progress: described.progress,
             life: described.life,
           });
+          cardsRef.current.set(task.id, cardId);
         }
       } catch {
         // A failed poll is not itself news — the next one will catch up, and a

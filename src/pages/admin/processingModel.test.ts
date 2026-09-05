@@ -150,10 +150,15 @@ describe("actions", () => {
     ).toBe(true);
   });
 
-  it("offers pause only while a job is actually encoding", () => {
+  it("offers pause on anything that has not finished, encoding or waiting", () => {
     expect(canPause(job({ state: "running" }))).toBe(true);
-    expect(canPause(job({ state: "queued" }))).toBe(false);
+    // A waiting job can be held too: the runner passes over a paused job when
+    // its turn comes instead of starting it.
+    expect(canPause(job({ state: "queued" }))).toBe(true);
+    expect(canPause(job({ state: "pending" }))).toBe(true);
+    expect(canPause(job({ state: "paused" }))).toBe(false);
     expect(canPause(job({ state: "succeeded" }))).toBe(false);
+    expect(canPause(job({ state: "cancelled" }))).toBe(false);
   });
 
   it("does not offer pause twice, or while cancelling", () => {
@@ -165,8 +170,18 @@ describe("actions", () => {
     ).toBe(false);
   });
 
-  it("offers resume once a job is paused", () => {
+  it("offers resume once a job is paused, however it came to be", () => {
     expect(canResume(job({ state: "paused", pauseRequested: true }))).toBe(
+      true,
+    );
+    // A pause asked for on a job that has not started yet: it is held, and it
+    // has to be possible to let it go without waiting for a worker to park it.
+    expect(canResume(job({ state: "queued", pauseRequested: true }))).toBe(
+      true,
+    );
+    // ...and a row that reads paused is offered the press whether or not the
+    // flag that put it there is still standing.
+    expect(canResume(job({ state: "paused", pauseRequested: false }))).toBe(
       true,
     );
     expect(canResume(job({ state: "running" }))).toBe(false);

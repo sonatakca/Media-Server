@@ -4,10 +4,12 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronLeft,
+  ChevronsDown,
+  ChevronsUp,
   Cpu,
   GripVertical,
+  ListOrdered,
   Loader2,
-  Lock,
   Pause,
   Play,
   RefreshCcw,
@@ -105,6 +107,11 @@ import {
   PROCESSING_OUTCOME_TABS,
   type ProcessingOutcomeTab,
 } from "./processingQueueModel";
+import {
+  arrangeByShowAndEpisode,
+  moveToBack,
+  moveToFront,
+} from "./queueArrangement";
 import { useQueueSortable } from "./useQueueSortable";
 import { formatTemplate } from "./libraryMaintenanceModel";
 import { ProcessingSeriesTree } from "./ProcessingSeriesTree";
@@ -1176,6 +1183,19 @@ export function MediaProcessingPage() {
   const [queueOverride, setQueueOverride] = useState<string[] | null>(null);
   const [reorderBusy, setReorderBusy] = useState(false);
   /**
+   * The waiting jobs the operator has ticked, for a move that takes several.
+   *
+   * A season queued out of order is forty rows, and dragging them one at a
+   * time is the reason the queue tab had a reorder nobody used. Held as ids
+   * rather than positions so the one-second poll cannot change what is
+   * selected — and pruned, below, of anything that stops being movable.
+   */
+  const [selectedQueueIds, setSelectedQueueIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  /** Which sweep of the whole queue is in flight, if any. */
+  const [bulkBusy, setBulkBusy] = useState<"resume" | "pause" | null>(null);
+  /**
    * The queue order held still for the length of a drag.
    *
    * The rows rearrange under the cursor by transform, not by moving in the
@@ -2028,6 +2048,10 @@ export function MediaProcessingPage() {
    */
   const nudgeQueueJob = useCallback(
     (jobId: string, delta: -1 | 1) => {
+      // Held off while a reorder is in flight, for the same reason the drag is:
+      // a second order computed from a list the server has not answered for yet
+      // is an order that can arrive out of sequence.
+      if (reorderBusy) return;
       const from = movableQueue.findIndex((job) => job.id === jobId);
       if (from < 0) return;
       const to = from + delta;
@@ -2036,7 +2060,55 @@ export function MediaProcessingPage() {
         moveItem(movableQueue, from, to).map((job) => job.id),
       );
     },
-    [commitQueueOrder, movableQueue],
+    [commitQueueOrder, movableQueue, reorderBusy],
+  );
+
+  /*
+   * The selection, kept honest against a queue that moves on its own.
+   *
+   * A ticked job that has since been claimed by a worker is no longer
+   * something a group move can carry, and leaving it in the set would have the
+   * next press send an order the server refuses. Dropped silently: the row
+   * itself has visibly changed state, which is the explanation.
+   */
+  useEffect(() => {
+    setSelectedQueueIds((current) => {
+      if (current.size === 0) return current;
+      const movable = new Set(movableIds);
+      const kept = [...current].filter((id) => movable.has(id));
+      if (kept.length === current.size) return current;
+      return new Set(kept);
+    });
+  }, [movableIds]);
+
+  /** The selection in queue order, which is the order a group move uses. */
+  const selectedInOrder = useMemo(
+    () => movableIds.filter((id) => selectedQueueIds.has(id)),
+    [movableIds, selectedQueueIds],
+  );
+
+  const toggleQueueSelection = useCallback((jobId: string) => {
+    setSelectedQueueIds((current) => {
+      const next = new Set(current);
+      if (!next.delete(jobId)) next.add(jobId);
+      return next;
+    });
+  }, []);
+
+  /**
+   * The rows a press should carry: the selection when the row is part of it,
+   * and the row alone when it is not.
+   *
+   * Grabbing an unticked row is not a mistake to be corrected — it is the
+   * ordinary single-row drag, and it must keep working while a selection is
+   * standing.
+   */
+  const blockFor = useCallback(
+    (jobId: string) =>
+      selectedQueueIds.has(jobId) && selectedInOrder.length > 1
+        ? selectedInOrder
+        : undefined,
+    [selectedInOrder, selectedQueueIds],
   );
 
   /** Job identity, so the queue tab can say which show's pilot is encoding. */
@@ -2044,6 +2116,90 @@ export function MediaProcessingPage() {
     () =>
       new Map((overview?.jobTitles ?? []).map((entry) => [entry.jobId, entry])),
     [overview],
+  );
+
+  /*
+   * The arrangements that take one press instead of forty drags.
+   *
+   * Each of them is the same shape: work out the whole new order from the one
+   * on screen, and hand it to the same commit the drag uses. Nothing here
+   * knows about the server, and nothing about them is optimistic in a way the
+   * drag is not — a refusal springs the queue back exactly as it does there.
+   */
+  const groupQueueByShow = useCallback(() => {
+    const arranged = arrangeByShowAndEpisode(movableIds, (id) =>
+      jobTitlesById.get(id),
+    );
+    if (arranged.every((id, index) => id === movableIds[index])) return;
+    void commitQueueOrder(arranged);
+  }, [commitQueueOrder, jobTitlesById, movableIds]);
+
+  const sendQueueToFront = useCallback(
+    (jobIds: readonly string[]) => {
+      const arranged = moveToFront(movableIds, jobIds);
+      if (arranged.every((id, index) => id === movableIds[index])) return;
+      void commitQueueOrder(arranged);
+    },
+    [commitQueueOrder, movableIds],
+  );
+
+  const sendQueueToBack = useCallback(
+    (jobIds: readonly string[]) => {
+      const arranged = moveToBack(movableIds, jobIds);
+      if (arranged.every((id, index) => id === movableIds[index])) return;
+      void commitQueueOrder(arranged);
+    },
+    [commitQueueOrder, movableIds],
+  );
+
+  /** Every pause an operator can lift, and everything they can still hold. */
+  const resumableJobs = useMemo(
+    () => activeJobs.filter((job) => canResume(job)),
+    [activeJobs],
+  );
+  const holdableJobs = useMemo(
+    () => activeJobs.filter((job) => job.state !== "running" && canPause(job)),
+    [activeJobs],
+  );
+
+  /**
+   * One press over a whole queue, one request per job.
+   *
+   * Sequential rather than parallel: forty simultaneous writes to the same
+   * table is how a queue tab takes the API down, and the operator is watching
+   * a list that updates when it finishes either way. What failed is counted
+   * rather than thrown — a job that started encoding halfway through the sweep
+   * refuses its pause, and that is a race, not an error worth a dialogue.
+   */
+  const sweepQueue = useCallback(
+    async (
+      kind: "resume" | "pause",
+      jobs: readonly ProcessingJob[],
+      act: (jobId: string) => Promise<unknown>,
+    ) => {
+      if (jobs.length === 0 || bulkBusy) return;
+      setBulkBusy(kind);
+      let failed = 0;
+      try {
+        for (const job of jobs) {
+          await act(job.id).catch(() => {
+            failed += 1;
+          });
+        }
+      } finally {
+        setBulkBusy(null);
+        await refreshOverview();
+      }
+      if (failed > 0) {
+        notify({
+          tone: "warning",
+          title: formatTemplate(t("processing.bulk.failed"), {
+            count: String(failed),
+          }),
+        });
+      }
+    },
+    [bulkBusy, refreshOverview, t],
   );
 
   const dateLocale = language === "tr" ? "tr-TR" : "en-US";
@@ -2962,6 +3118,145 @@ export function MediaProcessingPage() {
                 </p>
               ) : null}
             </div>
+            {/*
+             * The presses that act on the whole queue rather than on one job.
+             *
+             * Each of them appears only when it would do something: a bar of
+             * buttons that are all refusals is a bar an operator learns to
+             * ignore, and the count on the face of each one is the answer to
+             * "how many" before it is pressed rather than after.
+             */}
+            {outcomeTab === "active" &&
+            (resumableJobs.length > 0 ||
+              holdableJobs.length > 0 ||
+              movableQueue.length > 1) ? (
+              <div className="flex min-h-9 flex-wrap items-center gap-2">
+                {resumableJobs.length > 0 ? (
+                  <button
+                    type="button"
+                    disabled={bulkBusy !== null}
+                    title={t("processing.bulk.resumeAllHint")}
+                    onClick={() =>
+                      void sweepQueue(
+                        "resume",
+                        resumableJobs,
+                        resumeProcessingJob,
+                      )
+                    }
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs font-bold text-white/75 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    {bulkBusy === "resume" ? (
+                      <Loader2
+                        size={13}
+                        className="animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Play size={13} aria-hidden="true" />
+                    )}
+                    {t("processing.bulk.resumeAll")}
+                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums text-white/60">
+                      {resumableJobs.length}
+                    </span>
+                  </button>
+                ) : null}
+                {holdableJobs.length > 0 ? (
+                  <button
+                    type="button"
+                    disabled={bulkBusy !== null}
+                    title={t("processing.bulk.pauseAllHint")}
+                    onClick={() =>
+                      void sweepQueue("pause", holdableJobs, pauseProcessingJob)
+                    }
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs font-bold text-white/75 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    {bulkBusy === "pause" ? (
+                      <Loader2
+                        size={13}
+                        className="animate-spin motion-reduce:animate-none"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <Pause size={13} aria-hidden="true" />
+                    )}
+                    {t("processing.bulk.pauseAll")}
+                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums text-white/60">
+                      {holdableJobs.length}
+                    </span>
+                  </button>
+                ) : null}
+                {movableQueue.length > 1 ? (
+                  <button
+                    type="button"
+                    disabled={reorderBusy}
+                    title={t("processing.queueOrder.groupHint")}
+                    onClick={groupQueueByShow}
+                    className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-xs font-bold text-white/75 transition hover:bg-white/[0.08] hover:text-white disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    <ListOrdered size={13} aria-hidden="true" />
+                    {t("processing.queueOrder.groupTitle")}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+            {/*
+             * The selection's controls, on a line of their own and always
+             * present.
+             *
+             * They used to sit at the end of the button row, and ticking a box
+             * moved the whole queue: the controls are taller than the button
+             * they replace and wider than the space left on the line, so the
+             * row grew and sometimes wrapped, and every card below shifted
+             * down. A row that is always there, and always one line high,
+             * cannot do that — whichever of the two states it is showing.
+             */}
+            {outcomeTab === "active" && movableQueue.length > 1 ? (
+              <div className="flex h-9 items-center justify-end gap-2 overflow-x-auto">
+                {selectedInOrder.length > 0 ? (
+                  <div className="flex h-9 shrink-0 items-center gap-2 rounded-xl border border-[var(--accent)]/30 bg-[var(--accent)]/[0.08] px-2">
+                    <span className="px-1 text-xs font-bold tabular-nums text-white/80">
+                      {formatTemplate(
+                        t("processing.queueOrder.selectedCount"),
+                        { count: String(selectedInOrder.length) },
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      disabled={reorderBusy}
+                      onClick={() => sendQueueToFront(selectedInOrder)}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-black/20 px-2 text-xs font-bold text-white/80 transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    >
+                      <ChevronsUp size={12} aria-hidden="true" />
+                      {t("processing.queueOrder.groupToTop")}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={reorderBusy}
+                      onClick={() => sendQueueToBack(selectedInOrder)}
+                      className="inline-flex h-7 items-center gap-1 rounded-lg border border-white/10 bg-black/20 px-2 text-xs font-bold text-white/80 transition hover:bg-white/[0.12] disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    >
+                      <ChevronsDown size={12} aria-hidden="true" />
+                      {t("processing.queueOrder.groupToBottom")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQueueIds(new Set())}
+                      className="h-7 rounded-lg px-2 text-xs font-semibold text-white/55 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                    >
+                      {t("processing.queueOrder.clearSelection")}
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedQueueIds(new Set(movableIds))}
+                    className="h-9 shrink-0 rounded-xl px-2 text-xs font-semibold text-white/40 transition hover:text-white/80 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  >
+                    {t("processing.queueOrder.selectAll")}
+                  </button>
+                )}
+              </div>
+            ) : null}
             {loading ? (
               <div className={`${CARD} flex flex-col gap-3`}>
                 {[0, 1].map((row) => (
@@ -3045,6 +3340,7 @@ export function MediaProcessingPage() {
                       ? (orderDuringDrag ?? movableIds).indexOf(job.id) + 1
                       : 0;
                     const held = movable && sortable.isActive(job.id);
+                    const selected = movable && selectedQueueIds.has(job.id);
                     /*
                      * The lift stays on for the moment the card is landing.
                      * The handle's own grabbing state does not: the button has
@@ -3067,61 +3363,108 @@ export function MediaProcessingPage() {
                         className={`${CARD} flex flex-col gap-3 ${
                           lifted
                             ? "border-white/25 shadow-[0_20px_45px_-18px_rgba(0,0,0,0.9)]"
-                            : ""
+                            : selected
+                              ? "border-[var(--accent)]/40 bg-[var(--accent)]/[0.04]"
+                              : ""
                         }`}
                       >
                         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-                          {outcomeTab === "active" ? (
-                            movable ? (
-                              <button
-                                type="button"
+                          {movable ? (
+                            /*
+                             * The tick that makes a group. A checkbox rather
+                             * than a modifier-click on the row: the rows carry
+                             * buttons of their own, and a queue where clicking
+                             * a card might mean "select" and might mean
+                             * "inspect" is a queue nobody trusts.
+                             */
+                            <label className="-m-1 flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-lg transition-colors hover:bg-white/[0.06]">
+                              {/*
+                               * A dot rather than a tick. Still a checkbox —
+                               * it is one thing being turned on and off, and
+                               * several of them can be on at once — but drawn
+                               * as the queue's own selection mark instead of
+                               * the platform's form control, which is the one
+                               * square corner on a page of round ones.
+                               */}
+                              <input
+                                type="checkbox"
+                                checked={selected}
+                                onChange={() => toggleQueueSelection(job.id)}
                                 aria-label={formatTemplate(
-                                  t("processing.queueOrder.handle"),
-                                  {
-                                    title: label.primary,
-                                    position: String(queuePosition),
-                                    total: String(movableQueue.length),
-                                  },
+                                  t("processing.queueOrder.select"),
+                                  { title: label.primary },
                                 )}
-                                title={t("processing.queueOrder.hint")}
-                                disabled={reorderBusy}
-                                onPointerDown={(event) =>
-                                  sortable.startDrag(event, job.id)
-                                }
-                                onKeyDown={(event) => {
-                                  if (event.key === "ArrowUp") {
-                                    event.preventDefault();
-                                    nudgeQueueJob(job.id, -1);
-                                  } else if (event.key === "ArrowDown") {
-                                    event.preventDefault();
-                                    nudgeQueueJob(job.id, 1);
-                                  }
-                                }}
-                                className={`inline-flex h-7 w-7 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg border text-white/35 transition-colors hover:bg-white/[0.08] hover:text-white/70 active:cursor-grabbing disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-                                  held
-                                    ? "cursor-grabbing border-white/25 bg-white/[0.1] text-white/80"
-                                    : "border-white/10"
+                                className={`h-5 w-5 cursor-pointer appearance-none rounded-full border-2 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                                  selected
+                                    ? "border-[var(--accent)] bg-[var(--accent)] shadow-[inset_0_0_0_3px_rgba(0,0,0,0.6)]"
+                                    : "border-white/25 bg-transparent hover:border-white/50"
                                 }`}
-                              >
-                                <GripVertical size={14} aria-hidden="true" />
-                              </button>
-                            ) : (
+                              />
+                            </label>
+                          ) : null}
+                          {/*
+                           * Only a row that can actually be moved carries a
+                           * handle, and nothing stands in for one that cannot.
+                           * The encode underway is not selectable and not
+                           * draggable, so a slot held open for controls it will
+                           * never have is just an indent on the one row that
+                           * matters most.
+                           */}
+                          {movable ? (
+                            <button
+                              type="button"
+                              aria-label={
+                                selected && selectedInOrder.length > 1
+                                  ? formatTemplate(
+                                      t("processing.queueOrder.groupHandle"),
+                                      {
+                                        count: String(selectedInOrder.length),
+                                        title: label.primary,
+                                      },
+                                    )
+                                  : formatTemplate(
+                                      t("processing.queueOrder.handle"),
+                                      {
+                                        title: label.primary,
+                                        position: String(queuePosition),
+                                        total: String(movableQueue.length),
+                                      },
+                                    )
+                              }
+                              title={t("processing.queueOrder.hint")}
                               /*
-                               * The head of the line keeps the handle's slot so
-                               * the titles below it stay on one vertical edge —
-                               * and says why it cannot be moved rather than
-                               * leaving a gap that reads as a missing control.
+                               * Not disabled while the reorder is in flight.
+                               * The gesture is already refused for that
+                               * moment by the sortable itself, and a
+                               * `disabled` handle dims every card in the
+                               * queue for the length of a request — a flash
+                               * across the whole list every time one is
+                               * dropped.
                                */
-                              <span
-                                title={t("processing.queueOrder.pinned")}
-                                className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-white/[0.06] text-white/20"
-                              >
-                                <Lock size={12} aria-hidden="true" />
-                                <span className="sr-only">
-                                  {t("processing.queueOrder.pinned")}
-                                </span>
-                              </span>
-                            )
+                              onPointerDown={(event) =>
+                                sortable.startDrag(
+                                  event,
+                                  job.id,
+                                  blockFor(job.id),
+                                )
+                              }
+                              onKeyDown={(event) => {
+                                if (event.key === "ArrowUp") {
+                                  event.preventDefault();
+                                  nudgeQueueJob(job.id, -1);
+                                } else if (event.key === "ArrowDown") {
+                                  event.preventDefault();
+                                  nudgeQueueJob(job.id, 1);
+                                }
+                              }}
+                              className={`inline-flex h-9 w-9 shrink-0 cursor-grab touch-none select-none items-center justify-center rounded-lg border text-white/35 transition-colors hover:bg-white/[0.08] hover:text-white/70 active:cursor-grabbing focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                                held
+                                  ? "cursor-grabbing border-white/25 bg-white/[0.1] text-white/80"
+                                  : "border-white/10"
+                              }`}
+                            >
+                              <GripVertical size={20} aria-hidden="true" />
+                            </button>
                           ) : null}
                           <span className="flex min-w-0 flex-col">
                             <span className="truncate text-sm font-bold">
@@ -3139,6 +3482,50 @@ export function MediaProcessingPage() {
                                 t("processing.queueOrder.position"),
                                 { position: String(queuePosition) },
                               )}
+                            </span>
+                          ) : null}
+                          {/*
+                           * The two ends of the queue, which is where a row
+                           * nearly always wants to go. Dragging is for the
+                           * places in between; asking somebody to drag a job
+                           * past thirty others to reach the front is asking
+                           * them to hold a button down for a page and a half.
+                           *
+                           * Hidden on the row that is already at that end,
+                           * rather than shown and refused.
+                           */}
+                          {movable && movableQueue.length > 1 ? (
+                            <span className="flex shrink-0 items-center gap-1">
+                              {queuePosition > 1 ? (
+                                <button
+                                  type="button"
+                                  disabled={reorderBusy}
+                                  aria-label={formatTemplate(
+                                    t("processing.queueOrder.sendNextLabel"),
+                                    { title: label.primary },
+                                  )}
+                                  onClick={() => sendQueueToFront([job.id])}
+                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                                >
+                                  <ChevronsUp size={11} aria-hidden="true" />
+                                  {t("processing.queueOrder.sendNext")}
+                                </button>
+                              ) : null}
+                              {queuePosition < movableQueue.length ? (
+                                <button
+                                  type="button"
+                                  disabled={reorderBusy}
+                                  aria-label={formatTemplate(
+                                    t("processing.queueOrder.sendLastLabel"),
+                                    { title: label.primary },
+                                  )}
+                                  onClick={() => sendQueueToBack([job.id])}
+                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                                >
+                                  <ChevronsDown size={11} aria-hidden="true" />
+                                  {t("processing.queueOrder.sendLast")}
+                                </button>
+                              ) : null}
                             </span>
                           ) : null}
                           <Chip

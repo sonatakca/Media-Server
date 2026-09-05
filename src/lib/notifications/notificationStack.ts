@@ -4,17 +4,18 @@ import type { SeyirlikNotification } from "./notificationStore";
  * How many notifications are laid out as a readable column before the rest
  * collapse behind them.
  *
- * A column that grows without limit eventually covers the page it is reporting
- * on, so past this point the older ones stop being read and start being a pile
- * you can see the depth of.
+ * One. A column that grows without limit eventually covers the page it is
+ * reporting on, and every card past the newest is something the viewer has
+ * already had a chance to read — so the rest become a pile you can see the
+ * depth of, and open when you want it.
  */
-export const MAX_EXPANDED_NOTIFICATIONS = 3;
+export const MAX_EXPANDED_NOTIFICATIONS = 1;
 
 export interface StackedNotification {
   notification: SeyirlikNotification;
   /** Collapsed cards peek out from under the last expanded one. */
   isCollapsed: boolean;
-  /** Downward shift in pixels, applied only to collapsed cards. */
+  /** Upward shift in pixels, applied only to collapsed cards. */
   offsetY: number;
   scale: number;
   opacity: number;
@@ -28,7 +29,7 @@ export interface NotificationStack {
   hiddenCount: number;
 }
 
-/** Each collapsed card sits this far below the one in front of it. */
+/** Each collapsed card sits this far above the one in front of it. */
 const COLLAPSED_STEP_PX = 8;
 /** Only this many peek out; below that they are indistinguishable. */
 const MAX_PEEKING = 2;
@@ -37,7 +38,7 @@ const MAX_PEEKING = 2;
  * Lays out the notification column.
  *
  * Newest first: the one that just happened is the one being looked for, and
- * putting it at the top means its position does not depend on how many came
+ * putting it at the bottom means its position does not depend on how many came
  * before it.
  */
 export function planNotificationStack(
@@ -69,7 +70,7 @@ export function planNotificationStack(
     entries.push({
       notification,
       isCollapsed: true,
-      offsetY: (collapsedIndex + 1) * COLLAPSED_STEP_PX,
+      offsetY: -(collapsedIndex + 1) * COLLAPSED_STEP_PX,
       scale: 1 - (collapsedIndex + 1) * 0.04,
       opacity: 1 - (collapsedIndex + 1) * 0.28,
       zIndex: notifications.length - index,

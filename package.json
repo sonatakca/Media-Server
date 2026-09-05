@@ -29,6 +29,8 @@
     "media:renditions:validate": "node --env-file=.env --import tsx scripts/media-renditions.ts validate",
     "media:renditions:cleanup": "node --env-file=.env --import tsx scripts/media-renditions.ts cleanup",
     "media:lab:verify-http": "bash scripts/verify-media-lab-http.sh",
+    "media:organize:plan": "node --env-file=.env --import tsx scripts/organize-media.ts",
+    "media:organize:apply": "node --env-file=.env --import tsx scripts/organize-media.ts --apply",
     "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\""
   },
   "dependencies": {

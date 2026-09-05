@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
-import { createStorageGuard, type StorageGuardEvent } from "./storageGuard";
+import {
+  createStorageGuard,
+  shouldRereadIncident,
+  type StorageGuardEvent,
+} from "./storageGuard";
 import {
   healthFromIncident,
   type StorageIncidentRecord,
@@ -1154,5 +1158,51 @@ describe("a healthy external volume configured by a path inside it", () => {
     expect(verdict.ok === false && verdict.reason).toContain(
       "could not be established",
     );
+  });
+});
+
+/**
+ * Which process re-reads the incident row, and when.
+ *
+ * The hold is raised in the worker and lifted in the API server, so neither
+ * process sees the whole of it from memory. The worker used to be the only one
+ * that re-read the row, which left the server believing whatever the storage
+ * had been when it started: it went on accepting job resumes the worker then
+ * refused a second later — the job flicking to running and back to paused with
+ * no error — and refused to lift a hold it had never heard of, which left the
+ * operator with an incident on screen and no press that could clear it.
+ */
+describe("re-reading the incident row from the other process", () => {
+  const check = (runWorker: boolean, mayStartWork: boolean) =>
+    shouldRereadIncident({ runWorker, mayStartWork });
+
+  it("has the worker watch for a lift it cannot perform itself", () => {
+    expect(check(true, false)).toBe(true);
+  });
+
+  it("does not have the worker re-read while work may start", () => {
+    // It is the only thing that could have held the storage, so it would be
+    // asking the database to confirm its own last decision.
+    expect(check(true, true)).toBe(false);
+  });
+
+  it("has the server watch for a hold raised behind its back", () => {
+    expect(check(false, true)).toBe(true);
+  });
+
+  it("does not have the server re-read while it is already held", () => {
+    // The server performs the lift, so a hold it knows about stays put until
+    // an operator presses, and that press is its own.
+    expect(check(false, false)).toBe(false);
+  });
+
+  it("covers both directions between the two processes", () => {
+    // Whatever the storage is doing, exactly one of the pair is watching it.
+    for (const mayStartWork of [true, false]) {
+      const watchers = [true, false].filter((runWorker) =>
+        check(runWorker, mayStartWork),
+      );
+      expect(watchers).toHaveLength(1);
+    }
   });
 });

@@ -38,7 +38,11 @@ describe("deciding whether to start a native re-plan", () => {
   it("reports nothing to do once the request has attached", () => {
     const desired = { qualityHeight: 144, maxHeight: null };
     expect(
-      decideNativeReplan(desired, { qualityHeight: 144, maxHeight: null }, null),
+      decideNativeReplan(
+        desired,
+        { qualityHeight: 144, maxHeight: null },
+        null,
+      ),
     ).toBe("attached");
     // Even while still marked pending, an attached request is finished.
     expect(

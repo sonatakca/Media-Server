@@ -22,7 +22,7 @@ describe("laying out the notification column", () => {
     expect(stack.hiddenCount).toBe(0);
   });
 
-  it("keeps the newest at the top so its position never moves", () => {
+  it("keeps the newest first for bottom anchoring so its position never moves", () => {
     // Anchoring the newest means the card just raised is always in the same
     // place, however many were already there.
     const stack = planNotificationStack(feed(3), 3);
@@ -41,8 +41,10 @@ describe("laying out the notification column", () => {
 
     const collapsed = stack.entries.filter((entry) => entry.isCollapsed);
     expect(collapsed).toHaveLength(2);
-    // Each step back is lower, smaller and dimmer, which is what reads as depth.
-    expect(collapsed[0]?.offsetY).toBeLessThan(collapsed[1]?.offsetY as number);
+    // Each step back is higher, smaller and dimmer, which is what reads as depth.
+    expect(collapsed[0]?.offsetY).toBeGreaterThan(
+      collapsed[1]?.offsetY as number,
+    );
     expect(collapsed[0]?.scale).toBeGreaterThan(collapsed[1]?.scale as number);
     expect(collapsed[0]?.opacity).toBeGreaterThan(
       collapsed[1]?.opacity as number,

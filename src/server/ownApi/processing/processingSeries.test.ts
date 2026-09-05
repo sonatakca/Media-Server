@@ -503,6 +503,10 @@ describe("GET /processing/overview", () => {
         kind: "episode",
         seriesTitle: "Show",
         code: "S01E01",
+        // The numbers as well as the label: the queue tab groups a show by
+        // these, and a parsed code is only its fallback.
+        seasonNumber: 1,
+        episodeNumber: 1,
         title: "Kassa",
       },
     ]);

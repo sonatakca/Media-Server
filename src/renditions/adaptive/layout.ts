@@ -27,6 +27,31 @@ export const TITLE_SUBTITLE_DIRECTORY = "subtitle";
 export const TITLE_CONTENT_DIRECTORY = "content";
 
 /**
+ * Where a title's *original* files live once a library has been organised.
+ *
+ * Sources and their sidecar subtitles are the only things in a media folder a
+ * person did not ask this server to create, and they are also the noisiest: a
+ * season folder holds ten of them interleaved with ten generated folders. Put
+ * together in `src/`, the folder someone opens reads as "one entry per episode,
+ * plus the originals", which is the layout the rest of this file assumes:
+ *
+ * ```
+ * Series/Andor/Season 1/
+ *   src/
+ *     Andor - S01E01 - Kassa.mp4       the source, untouched
+ *     Andor - S01E01 - Kassa.tr.srt    its sidecar subtitle
+ *   Andor - S01E01 - Kassa/
+ *     Andor - S01E01 - Kassa.nfo       the episode's own metadata
+ *     video/ audio/ subtitle/          what was generated from it
+ * ```
+ *
+ * A title root is unaffected by the move: `src/` is transparent to the code
+ * that decides where a package goes, so a package written before the library
+ * was organised keeps its address afterwards. See `titleRoot.ts`.
+ */
+export const TITLE_SOURCE_DIRECTORY = "src";
+
+/**
  * Directory names the library scanner must not walk into as if they held
  * separate titles.
  *

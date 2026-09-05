@@ -270,7 +270,7 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
            attempts = attempts + 1,
            lease_owner = $1,
            lease_expires_at = now() + make_interval(secs => $2),
-           started_at = COALESCE(started_at, now())
+           started_at = now(), progress = 0, progress_message = NULL, safe_error = NULL, result = NULL
          WHERE id = (
            SELECT id FROM jobs
            WHERE status = 'queued' AND run_after <= now()
@@ -300,7 +300,7 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
          WHERE id = $1 AND status = 'running'`,
         [
           jobId,
-          Math.min(1, Math.max(0, progress)),
+          Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0,
           message?.slice(0, 300) ?? null,
         ],
       );
@@ -310,7 +310,7 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
       await pool.query(
         `UPDATE jobs SET
            status = 'succeeded', progress = 1, finished_at = now(),
-           lease_owner = NULL, lease_expires_at = NULL, result = $2
+           lease_owner = NULL, lease_expires_at = NULL, result = $2, safe_error = NULL, progress_message = NULL
          WHERE id = $1`,
         [jobId, result ?? null],
       );
@@ -328,7 +328,7 @@ export function createJobQueue(pool: DatabasePool): JobQueue {
              WHEN $3 AND attempts < max_attempts
                THEN now() + make_interval(secs => least(300, power(2, attempts)::int * 15))
              ELSE run_after END,
-           safe_error = $2,
+           safe_error = $2, result = NULL,
            lease_owner = NULL,
            lease_expires_at = NULL,
            finished_at = CASE

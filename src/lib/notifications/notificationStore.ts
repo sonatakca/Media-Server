@@ -1,3 +1,4 @@
+import type { TaskDetail } from "./taskNotifications";
 import { randomUuid } from "../randomId";
 
 /**
@@ -39,6 +40,7 @@ export interface SeyirlikNotification {
   description?: string;
   /** 0–100 while work is in flight; absent when there is nothing to measure. */
   progress?: number;
+  task?: TaskDetail;
   life: NotificationLife;
   createdAt: number;
 }
@@ -48,6 +50,7 @@ export interface NotifyInput {
   title: string;
   description?: string;
   progress?: number;
+  task?: TaskDetail;
   life?: NotificationLife;
   /**
    * Replaces any earlier notification with the same key instead of stacking a
@@ -92,17 +95,30 @@ export function notify(input: NotifyInput): string {
   const existingId = input.key ? keyed.get(input.key) : undefined;
 
   if (existingId && notifications.some((entry) => entry.id === existingId)) {
+    const existing = notifications.find((entry) => entry.id === existingId)!;
+    const sameAttempt =
+      input.task &&
+      existing.task?.attempts === input.task.attempts &&
+      existing.task.status === input.task.status;
+    const progress =
+      sameAttempt &&
+      input.task?.status === "running" &&
+      input.progress !== undefined &&
+      existing.progress !== undefined
+        ? Math.max(existing.progress, input.progress)
+        : input.progress;
     updateNotification(existingId, {
       tone,
       title: input.title,
       // Cleared rather than kept: replacing a card is saying something new, and
       // an old description under a new title would be a lie.
       description: input.description,
-      progress: input.progress,
+      progress,
+      task: input.task,
       life: input.life ?? defaultLife(tone),
-      // The clock restarts. Without this the outcome of a long job inherits the
-      // age of its first progress update and expires the moment it appears.
-      createdAt: Date.now(),
+      // A task outcome starts its lifetime once. Routine updates within the
+      // same state/attempt keep that deadline; generic replacements restart.
+      createdAt: sameAttempt ? existing.createdAt : Date.now(),
     });
     return existingId;
   }
@@ -115,11 +131,15 @@ export function notify(input: NotifyInput): string {
       ? {}
       : { description: input.description }),
     ...(input.progress === undefined ? {} : { progress: input.progress }),
+    task: input.task,
     life: input.life ?? defaultLife(tone),
     createdAt: Date.now(),
   };
 
   notifications = [notification, ...notifications].slice(0, MAX_NOTIFICATIONS);
+  for (const [key, id] of keyed) {
+    if (!notifications.some((entry) => entry.id === id)) keyed.delete(key);
+  }
   if (input.key) keyed.set(input.key, notification.id);
   emit();
   return notification.id;

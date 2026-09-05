@@ -11,6 +11,7 @@ vi.mock("../../i18n/LanguageContext", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }));
 
+let reducedMotion = true;
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
   motion: {
@@ -27,6 +28,10 @@ vi.mock("framer-motion", () => ({
       ...props
     }: Record<string, unknown> & { children?: React.ReactNode }) => (
       <div
+        data-initial-y={String((initial as { y?: number })?.y)}
+        data-initial-x={String((initial as { x?: number })?.x)}
+        data-exit-y={String((exit as { y?: number })?.y)}
+        data-exit-height={String((exit as { height?: number })?.height)}
         data-initial-opacity={String(
           (initial as { opacity?: number })?.opacity,
         )}
@@ -40,10 +45,11 @@ vi.mock("framer-motion", () => ({
       </div>
     ),
   },
-  useReducedMotion: () => true,
+  useReducedMotion: () => reducedMotion,
 }));
 
 beforeEach(() => {
+  reducedMotion = true;
   vi.useFakeTimers();
 });
 
@@ -60,7 +66,11 @@ describe("notification host", () => {
       notify({ title: "Library scan", description: "Reading disc" });
     });
 
-    expect(screen.getByText("Library scan")).toBeInTheDocument();
+    const row = screen.getByRole("button", { name: "Library scan" });
+    expect(row).toBeInTheDocument();
+    act(() => {
+      row.click();
+    });
     expect(screen.getByText("Reading disc")).toBeInTheDocument();
   });
 
@@ -225,9 +235,9 @@ describe("notification host", () => {
       }
     });
 
-    // The fourth card is the first collapsed one.
+    // The newest is the only card laid out; the next two peek out behind it.
     act(() => {
-      screen.getByText("Entry 2").click();
+      screen.getByText("Entry 4").click();
     });
 
     expect(screen.getByText("Entry 0")).toBeInTheDocument();
@@ -299,7 +309,7 @@ describe("notification host", () => {
 
     act(() => {
       // The dismiss control of a collapsed card sits inside its clickable body.
-      const collapsed = screen.getByText("Entry 2").closest("div")
+      const collapsed = screen.getByText("Entry 4").closest("div")
         ?.parentElement as HTMLElement;
       collapsed
         .querySelector<HTMLButtonElement>(
@@ -316,16 +326,124 @@ describe("notification host", () => {
     expect(getNotifications()).toHaveLength(5);
   });
 
-  it("hides the description of a collapsed card, which is only a depth cue", () => {
+  it("keeps a card in the pile shut, because it is a depth cue and not a card", () => {
     render(<NotificationHost />);
     act(() => {
       notify({ title: "Oldest", description: "Buried", tone: "error" });
-      for (let index = 0; index < 3; index += 1) {
-        notify({ title: `Newer ${index}`, tone: "error" });
-      }
+      notify({ title: "Newest", tone: "error" });
+    });
+
+    // Pressing it reaches for the pile it belongs to, not for its own detail.
+    act(() => {
+      screen.getByText("Oldest").click();
     });
 
     expect(screen.getByText("Oldest")).toBeInTheDocument();
     expect(screen.queryByText("Buried")).toBeNull();
   });
+
+  it("opens a card's detail when it is pressed, and shuts it again", () => {
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Library scan", description: "Reading disc" });
+    });
+
+    // A line until it is asked to be more: the detail is one press away and
+    // nothing about a passing cursor counts as asking.
+    expect(screen.queryByText("Reading disc")).toBeNull();
+
+    const row = screen.getByRole("button", { name: "Library scan" });
+    act(() => {
+      row.click();
+    });
+    expect(screen.getByText("Reading disc")).toBeInTheDocument();
+    expect(row).toHaveAttribute("aria-expanded", "true");
+
+    act(() => {
+      row.click();
+    });
+    expect(screen.queryByText("Reading disc")).toBeNull();
+  });
+
+  it("never opens a card by being passed over", () => {
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Library scan", description: "Reading disc" });
+    });
+
+    const row = screen.getByRole("button", { name: "Library scan" });
+    act(() => {
+      row.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }));
+      row.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+    });
+
+    expect(screen.queryByText("Reading disc")).toBeNull();
+  });
+
+  it("holds a card open past its own lifetime", () => {
+    // Opening one is reading it, and four seconds is not long enough to read
+    // an encode's figures — least of all if it disappears mid-sentence.
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Saved", tone: "success" });
+    });
+    act(() => {
+      screen.getByRole("button", { name: "Saved" }).click();
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(30_000);
+    });
+
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+  });
+
+  it("gives its row back on the way out rather than at the end of it", () => {
+    // A card that fades in place and only then stops taking up space is what
+    // left the controls above the column sitting still and then jumping.
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Saved", tone: "success" });
+    });
+
+    expect(screen.getByText("Saved").closest("[data-card]")).toHaveAttribute(
+      "data-exit-height",
+      "0",
+    );
+  });
+});
+
+it.each([true, false])(
+  "uses bottom/right motion, respecting reduced motion = %s",
+  (reduce) => {
+    reducedMotion = reduce;
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Motion" });
+    });
+    const card = screen.getByText("Motion").closest("[data-card]");
+    expect(card).toHaveAttribute("data-initial-y", reduce ? "0" : "16");
+    expect(card).toHaveAttribute("data-initial-x", reduce ? "0" : "16");
+    expect(card).toHaveAttribute("data-exit-y", reduce ? "0" : "10");
+  },
+);
+
+it("moves keyboard focus onto the card behind when a focused one disappears", () => {
+  render(<NotificationHost />);
+  act(() => {
+    notify({ title: "First", tone: "error" });
+    notify({ title: "Second", tone: "error" });
+  });
+  const dismiss = screen.getAllByRole("button", {
+    name: "notifications.dismiss",
+  });
+  act(() => {
+    dismiss[0]!.focus();
+    dismiss[0]!.click();
+  });
+  // Focus lands on the next card's own control rather than falling back to the
+  // document, which is where a keyboard would otherwise have to start again.
+  expect(document.activeElement).toBe(
+    screen.getByRole("button", { name: "First" }),
+  );
 });

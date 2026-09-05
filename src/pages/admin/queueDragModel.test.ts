@@ -264,3 +264,59 @@ describe("scrolling at the edges", () => {
     expect(edgeScrollVelocity(10, 100)).toBe(0);
   });
 });
+
+/**
+ * The same gesture carrying several rows at once.
+ *
+ * A block is the general case and a single row is the degenerate one, so
+ * everything above is also a test of this: what is asserted here is only what
+ * a block does that one row cannot — gather, stay under the cursor, and open a
+ * gap the size of itself.
+ */
+describe("dragging a block of rows", () => {
+  const rects = [
+    { id: "a", top: 0, height: 100 },
+    { id: "b", top: 108, height: 100 },
+    { id: "c", top: 216, height: 100 },
+    { id: "d", top: 324, height: 100 },
+  ];
+
+  it("carries the chosen rows in the order the list has them", () => {
+    // Chosen in the wrong order on purpose: "c" was ticked first, and the
+    // block still reads a, c — the queue's arrangement, not the operator's
+    // clicking.
+    const plan = planQueueDrag(rects, ["c", "a"], 0, "a")!;
+    expect(plan.order).toEqual(["a", "c", "b", "d"]);
+  });
+
+  it("gathers the block under the row the pointer is holding", () => {
+    // Picked up by "c", so "c" does not move and "a" comes to sit above it.
+    const plan = planQueueDrag(rects, ["a", "c"], 0, "c")!;
+    expect(plan.memberAnchors.get("c")).toBe(0);
+    // "a" is drawn one row above "c" — that is, 108px below where it lives.
+    expect(plan.memberAnchors.get("a")).toBe(108);
+  });
+
+  it("opens a gap the height of the whole block", () => {
+    // Two rows and the gap between them, moved to the end of the list.
+    const plan = planQueueDrag(rects, ["a", "b"], 400, "a")!;
+    expect(plan.order).toEqual(["c", "d", "a", "b"]);
+    // "c" and "d" come up by both rows and both gaps: what closes behind a
+    // block is the space it occupied in the list, not the height of its cards.
+    expect(plan.shifts.get("c")).toBe(-216);
+    expect(plan.shifts.get("d")).toBe(-216);
+  });
+
+  it("reads a block of one exactly as it reads a single row", () => {
+    const one = planQueueDrag(rects, ["b"], 120)!;
+    const same = planQueueDrag(rects, "b", 120)!;
+    expect(one.order).toEqual(same.order);
+    expect(one.index).toBe(same.index);
+    expect(one.activeSlotOffset).toBe(same.activeSlotOffset);
+    expect(one.memberAnchors.get("b")).toBe(0);
+  });
+
+  it("says nothing about a selection the list does not hold", () => {
+    expect(planQueueDrag(rects, ["gone"], 0)).toBeNull();
+  });
+});

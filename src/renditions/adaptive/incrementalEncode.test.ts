@@ -309,7 +309,7 @@ async function workWithQhd(): Promise<{
     await writeFile(
       target,
       relative.endsWith(".m3u8")
-        ? "#EXTM3U\n#EXT-X-MAP:URI=\"media.mp4\"\n#EXTINF:2.0,\nmedia.mp4\n#EXT-X-ENDLIST\n"
+        ? '#EXTM3U\n#EXT-X-MAP:URI="media.mp4"\n#EXTINF:2.0,\nmedia.mp4\n#EXT-X-ENDLIST\n'
         : "new-bytes",
     );
   }

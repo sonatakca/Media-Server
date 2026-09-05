@@ -270,10 +270,29 @@ describe("nfo planner", () => {
       seriesTitle: "Şahsiyet",
     });
 
-    it("names the file after the video stem", () => {
+    /*
+     * The episode's own folder — the one its renditions are published into —
+     * rather than loose in a season folder shared with every other episode.
+     */
+    it("puts the file in the episode's own folder", () => {
       const plan = planNfoFiles(episode);
 
-      expect(paths(plan)).toEqual(["Series/Şahsiyet/Season 01/S01E01.nfo"]);
+      expect(paths(plan)).toEqual([
+        "Series/Şahsiyet/Season 01/S01E01/S01E01.nfo",
+      ]);
+    });
+
+    it("finds that folder from a source kept in the src/ bucket", () => {
+      const plan = planNfoFiles({
+        ...episode,
+        files: [
+          file({ relativePath: "Series/Şahsiyet/Season 01/src/S01E01.mkv" }),
+        ],
+      });
+
+      expect(paths(plan)).toEqual([
+        "Series/Şahsiyet/Season 01/S01E01/S01E01.nfo",
+      ]);
     });
 
     it("carries showtitle, season, episode and aired", () => {
@@ -301,9 +320,11 @@ describe("nfo planner", () => {
         ],
       });
 
+      // Both in the one episode folder: an alternate cut is another file of
+      // the same episode, not an episode of its own.
       expect(paths(plan).sort()).toEqual([
-        "Series/Şahsiyet/Season 01/S01E01 - extended.nfo",
-        "Series/Şahsiyet/Season 01/S01E01.nfo",
+        "Series/Şahsiyet/Season 01/S01E01/S01E01 - extended.nfo",
+        "Series/Şahsiyet/Season 01/S01E01/S01E01.nfo",
       ]);
     });
   });
