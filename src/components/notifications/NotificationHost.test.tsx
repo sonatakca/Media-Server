@@ -216,8 +216,10 @@ describe("notification host", () => {
       }
     });
 
-    // Only the peeking few are rendered while it is closed.
-    expect(screen.queryByText("Entry 0")).toBeNull();
+    // The oldest holds the front and the next two peek out behind it; the
+    // newest are the deepest, and are not in the page at all until it opens.
+    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+    expect(screen.queryByText("Entry 8")).toBeNull();
 
     act(() => {
       screen.getByText("notifications.more").click();
@@ -235,12 +237,12 @@ describe("notification host", () => {
       }
     });
 
-    // The newest is the only card laid out; the next two peek out behind it.
+    // The oldest is the only card laid out; the next two peek out behind it.
     act(() => {
-      screen.getByText("Entry 4").click();
+      screen.getByText("Entry 1").click();
     });
 
-    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+    expect(screen.getByText("Entry 5")).toBeInTheDocument();
   });
 
   it("closes again", () => {
@@ -258,7 +260,7 @@ describe("notification host", () => {
       screen.getByText("notifications.showLess").click();
     });
 
-    expect(screen.queryByText("Entry 0")).toBeNull();
+    expect(screen.queryByText("Entry 8")).toBeNull();
   });
 
   it("stops the clock while the pile is open", () => {
@@ -278,7 +280,7 @@ describe("notification host", () => {
       vi.advanceTimersByTime(30_000);
     });
 
-    expect(screen.getByText("Entry 0")).toBeInTheDocument();
+    expect(screen.getByText("Entry 5")).toBeInTheDocument();
   });
 
   it("clears everything at once when asked", () => {
@@ -309,7 +311,7 @@ describe("notification host", () => {
 
     act(() => {
       // The dismiss control of a collapsed card sits inside its clickable body.
-      const collapsed = screen.getByText("Entry 4").closest("div")
+      const collapsed = screen.getByText("Entry 1").closest("div")
         ?.parentElement as HTMLElement;
       collapsed
         .querySelector<HTMLButtonElement>(
@@ -329,16 +331,16 @@ describe("notification host", () => {
   it("keeps a card in the pile shut, because it is a depth cue and not a card", () => {
     render(<NotificationHost />);
     act(() => {
-      notify({ title: "Oldest", description: "Buried", tone: "error" });
-      notify({ title: "Newest", tone: "error" });
+      notify({ title: "Oldest", tone: "error" });
+      notify({ title: "Newest", description: "Buried", tone: "error" });
     });
 
     // Pressing it reaches for the pile it belongs to, not for its own detail.
     act(() => {
-      screen.getByText("Oldest").click();
+      screen.getByText("Newest").click();
     });
 
-    expect(screen.getByText("Oldest")).toBeInTheDocument();
+    expect(screen.getByText("Newest")).toBeInTheDocument();
     expect(screen.queryByText("Buried")).toBeNull();
   });
 
@@ -443,7 +445,8 @@ it("moves keyboard focus onto the card behind when a focused one disappears", ()
   });
   // Focus lands on the next card's own control rather than falling back to the
   // document, which is where a keyboard would otherwise have to start again.
+  // "First" holds the front of the pile, so dismissing it surfaces "Second".
   expect(document.activeElement).toBe(
-    screen.getByRole("button", { name: "First" }),
+    screen.getByRole("button", { name: "Second" }),
   );
 });

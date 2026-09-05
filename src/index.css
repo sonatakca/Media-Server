@@ -417,3 +417,35 @@ img {
   height: 0;
   display: none;
 }
+
+/*
+ * The ends of the opened notification pile.
+ *
+ * A scrolling column that simply stops at its boundary reads as a card sliced
+ * through; fading the last few pixels reads as one that carries on past the
+ * edge, which is what it does.
+ *
+ * Only the ends something is actually running past, though. A gradient at an
+ * edge no card is crossing is not a soft edge at all — it is a veil over the
+ * last card, and the thing it veiled was the progress bar along the foot of
+ * the one at the front. The host measures which ends are overrun and hands the
+ * answer down as these two lengths.
+ */
+.notification-pile-fade {
+  --pile-fade-top: 0px;
+  --pile-fade-bottom: 0px;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--pile-fade-top),
+    #000 calc(100% - var(--pile-fade-bottom)),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0,
+    #000 var(--pile-fade-top),
+    #000 calc(100% - var(--pile-fade-bottom)),
+    transparent 100%
+  );
+}

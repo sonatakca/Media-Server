@@ -22,15 +22,28 @@ describe("laying out the notification column", () => {
     expect(stack.hiddenCount).toBe(0);
   });
 
-  it("keeps the newest first for bottom anchoring so its position never moves", () => {
-    // Anchoring the newest means the card just raised is always in the same
-    // place, however many were already there.
+  it("puts the earliest at the front and stacks later ones in behind it", () => {
+    // The store keeps the newest at the head of its list; the column is read
+    // the other way round, so the card already being read holds its place and
+    // whatever arrives next goes under it rather than taking its position.
     const stack = planNotificationStack(feed(3), 3);
-    expect(stack.entries[0]?.notification.title).toBe("Entry 0");
-    expect(stack.entries[2]?.notification.title).toBe("Entry 2");
+    expect(stack.entries.map((entry) => entry.notification.title)).toEqual([
+      "Entry 2",
+      "Entry 1",
+      "Entry 0",
+    ]);
   });
 
-  it("paints newer cards in front of older ones", () => {
+  it("buries the newest rather than the oldest once the pile is deep", () => {
+    // feed() counts down from the newest, so "Entry 0" is the latest arrival
+    // and belongs at the very back.
+    const shown = planNotificationStack(feed(6), 1).entries.map(
+      (entry) => entry.notification.title,
+    );
+    expect(shown).toEqual(["Entry 5", "Entry 4", "Entry 3"]);
+  });
+
+  it("paints the card at the front over the pile behind it", () => {
     const stack = planNotificationStack(feed(4), 3);
     const depths = stack.entries.map((entry) => entry.zIndex);
     expect(depths).toEqual([...depths].sort((a, b) => b - a));
@@ -68,5 +81,40 @@ describe("laying out the notification column", () => {
   it("keeps at least one card expanded however the limit is set", () => {
     const stack = planNotificationStack(feed(3), 0);
     expect(stack.entries[0]?.isCollapsed).toBe(false);
+  });
+
+  it("rounds the column only at its two ends", () => {
+    /*
+     * The pile is one block. Given a corner each, every card in the middle of
+     * the run cut two notches of the page out of the seam it shares with its
+     * neighbour, which is what made a column read as a handful of torn-off
+     * strips instead of one thing.
+     */
+    const laid = planNotificationStack(feed(4), 4).entries;
+    expect(
+      laid.map((entry) => [entry.isColumnTop, entry.isColumnBottom]),
+    ).toEqual([
+      [false, true],
+      [false, false],
+      [false, false],
+      [true, false],
+    ]);
+  });
+
+  it("gives a lone card both of them", () => {
+    const [only] = planNotificationStack(feed(1), 4).entries;
+    expect([only.isColumnTop, only.isColumnBottom]).toEqual([true, true]);
+  });
+
+  it("never makes a card in the pile an end of the column", () => {
+    // A collapsed card is a strip lying on the run, not part of it.
+    const piled = planNotificationStack(feed(5), 1).entries.filter(
+      (entry) => entry.isCollapsed,
+    );
+    expect(piled).not.toHaveLength(0);
+    for (const entry of piled) {
+      expect(entry.isColumnTop).toBe(false);
+      expect(entry.isColumnBottom).toBe(false);
+    }
   });
 });

@@ -17,6 +17,17 @@ export interface StackedNotification {
   isCollapsed: boolean;
   /** Upward shift in pixels, applied only to collapsed cards. */
   offsetY: number;
+  /**
+   * Whether this card is at the top or the bottom of the run of laid-out
+   * cards, which is the only place the column is allowed a rounded corner.
+   *
+   * A pile is one block of cards lying on each other. Given a corner each,
+   * every card in the middle of the run cut two notches of page out of the
+   * seam it shares with its neighbour — which reads as a list of torn-off
+   * strips rather than as one thing.
+   */
+  isColumnTop: boolean;
+  isColumnBottom: boolean;
   scale: number;
   opacity: number;
   /** Painted back-to-front so a deeper card never covers a shallower one. */
@@ -29,17 +40,31 @@ export interface NotificationStack {
   hiddenCount: number;
 }
 
-/** Each collapsed card sits this far above the one in front of it. */
-const COLLAPSED_STEP_PX = 8;
+/** Each collapsed card shows this much of itself above the one in front. */
+const COLLAPSED_STEP_PX = 6;
 /** Only this many peek out; below that they are indistinguishable. */
 const MAX_PEEKING = 2;
+/**
+ * How far the peeking cards reach above the card at the front.
+ *
+ * The column reserves exactly this much room above its first row: enough for
+ * the pile to show, and not a pixel more, so the rounded corner and the shadow
+ * of the column sit on the pile rather than on empty space above it.
+ */
+export const COLLAPSED_HEADROOM_PX = COLLAPSED_STEP_PX * MAX_PEEKING;
 
 /**
  * Lays out the notification column.
  *
- * Newest first: the one that just happened is the one being looked for, and
- * putting it at the bottom means its position does not depend on how many came
- * before it.
+ * Oldest at the front, newer ones tucked in behind it. The store keeps the
+ * newest at the head of its list, so the pile is built from the back of that
+ * list forwards.
+ *
+ * The card at the front holds its place: whatever arrives next goes *under*
+ * the one already being read rather than taking its position, so a card cannot
+ * be swapped out from beneath a cursor halfway through a sentence. Read as a
+ * column that means the earliest is nearest the anchor at the bottom and the
+ * latest is furthest up it — which is also the order the pile opens into.
  */
 export function planNotificationStack(
   notifications: readonly SeyirlikNotification[],
@@ -47,8 +72,15 @@ export function planNotificationStack(
 ): NotificationStack {
   const limit = Math.max(1, maxExpanded);
   const entries: StackedNotification[] = [];
+  /*
+   * How many cards are laid out rather than piled. The run is read from the
+   * anchor upwards, so the first one placed is the bottom of the column and
+   * the last one placed is its top — which is the pair of edges the column is
+   * rounded at, and nowhere else.
+   */
+  const laidOut = Math.min(notifications.length, limit);
 
-  notifications.forEach((notification, index) => {
+  [...notifications].reverse().forEach((notification, index) => {
     const collapsedIndex = index - limit;
 
     if (collapsedIndex < 0) {
@@ -56,9 +88,11 @@ export function planNotificationStack(
         notification,
         isCollapsed: false,
         offsetY: 0,
+        isColumnBottom: index === 0,
+        isColumnTop: index === laidOut - 1,
         scale: 1,
         opacity: 1,
-        // Later cards paint behind earlier ones, so the newest stays on top.
+        // Later cards paint behind earlier ones, so the front card stays on top.
         zIndex: notifications.length - index,
       });
       return;
@@ -66,13 +100,21 @@ export function planNotificationStack(
 
     if (collapsedIndex >= MAX_PEEKING) return;
 
-    // Each step back is smaller and dimmer, which is what reads as depth.
+    /*
+     * Each step back is a little smaller and a little dimmer, and that is the
+     * whole of the depth cue. Dimmer only slightly: a card faded most of the
+     * way out stops looking like a card behind another one and starts looking
+     * like a rendering fault.
+     */
     entries.push({
       notification,
       isCollapsed: true,
       offsetY: -(collapsedIndex + 1) * COLLAPSED_STEP_PX,
-      scale: 1 - (collapsedIndex + 1) * 0.04,
-      opacity: 1 - (collapsedIndex + 1) * 0.28,
+      // A strip lying on the pile, never an end of the column itself.
+      isColumnBottom: false,
+      isColumnTop: false,
+      scale: 1 - (collapsedIndex + 1) * 0.03,
+      opacity: 1 - (collapsedIndex + 1) * 0.12,
       zIndex: notifications.length - index,
     });
   });
