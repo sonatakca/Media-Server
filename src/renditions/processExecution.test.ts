@@ -22,9 +22,11 @@ import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   BACKGROUND_PROCESS_NICENESS,
+  FFMPEG_GRACEFUL_STOP,
   ProcessAbortedError,
   runBoundedProcess,
   spawnManagedProcess,
+  supportsPosixSignals,
   usesPosixProcessGroup,
 } from "./processExecution";
 
@@ -415,5 +417,212 @@ describe("process groups across platforms", () => {
 
   it("defaults to this host's platform", () => {
     expect(usesPosixProcessGroup(true)).toBe(process.platform !== "win32");
+  });
+});
+
+/**
+ * A child that stops only when it is asked in the one way it understands.
+ *
+ * `SIGTERM` is ignored deliberately. FFmpeg does not ignore `SIGTERM`, but this
+ * fixture has to stand in for a platform where no signal means "please finish",
+ * and refusing the signal is how a POSIX test reproduces a Windows condition
+ * honestly: the graceful path has to succeed through the quit key alone, or it
+ * has not been tested at all.
+ *
+ * "Finalising" is a write and a flush before exit — the moral equivalent of the
+ * `moov` atom, and the thing a hard kill destroys.
+ */
+const COOPERATIVE_FIXTURE = `
+process.on("SIGTERM", () => {});
+process.on("SIGINT", () => {});
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", (chunk) => {
+  if (!chunk.includes("q")) return;
+  process.stdout.write("finalised\\n");
+  process.exit(0);
+});
+process.stdout.write("running\\n");
+setInterval(() => {}, 1000);
+`;
+
+/** Answers nothing at all: neither the signal nor the key. */
+const DEAF_FIXTURE = `
+process.on("SIGTERM", () => {});
+process.on("SIGINT", () => {});
+process.stdin.resume();
+process.stdout.write("running\\n");
+setInterval(() => {}, 1000);
+`;
+
+describe("asking a child to stop before making it", () => {
+  let cooperative = "";
+  let deaf = "";
+
+  beforeAll(async () => {
+    cooperative = path.join(workspace, "cooperative.mjs");
+    deaf = path.join(workspace, "deaf.mjs");
+    await writeFile(cooperative, COOPERATIVE_FIXTURE, "utf8");
+    await writeFile(deaf, DEAF_FIXTURE, "utf8");
+  });
+
+  /** Resolves once the child has said it is up, so no abort races the spawn. */
+  function started(onStdout: (chunk: string) => void) {
+    let seen = "";
+    let ready!: () => void;
+    const running = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    return {
+      running,
+      collect: (chunk: string) => {
+        seen += chunk;
+        onStdout(chunk);
+        if (seen.includes("running")) ready();
+      },
+      get output() {
+        return seen;
+      },
+    };
+  }
+
+  it("lets a child that answers the quit key finish on its own terms", async () => {
+    const stream = started(() => {});
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: [cooperative],
+      gracefulStop: FFMPEG_GRACEFUL_STOP,
+      terminationGraceMs: 10_000,
+      onStdout: stream.collect,
+    });
+    await stream.running;
+
+    managed.abort("caller");
+    const outcome = await managed.completed;
+
+    // Exit 0 and the finalising write both present: it was asked, not killed.
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.signal).toBeNull();
+    expect(outcome.escalated).toBe(false);
+    expect(outcome.aborted).toBe(true);
+    expect(outcome.abortReason).toBe("caller");
+    expect(stream.output).toContain("finalised");
+    // Well inside the ten seconds it was given, so nothing waited it out.
+    expect(outcome.durationMs).toBeLessThan(9_000);
+  }, 30_000);
+
+  it("escalates when the child answers neither the signal nor the key", async () => {
+    const stream = started(() => {});
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: [deaf],
+      gracefulStop: FFMPEG_GRACEFUL_STOP,
+      terminationGraceMs: 200,
+      onStdout: stream.collect,
+    });
+    await stream.running;
+    const pid = managed.pid as number;
+
+    managed.abort("caller");
+    const outcome = await managed.completed;
+
+    expect(outcome.escalated).toBe(true);
+    expect(outcome.aborted).toBe(true);
+    expect(await alive(pid)).toBe(false);
+  }, 30_000);
+
+  it("does not escalate a child that has already gone", async () => {
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: ["-e", "process.exit(0)"],
+      gracefulStop: FFMPEG_GRACEFUL_STOP,
+      terminationGraceMs: 50,
+    });
+    const outcome = await managed.completed;
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.escalated).toBe(false);
+
+    /*
+     * And an abort arriving afterwards changes nothing. A cancellation racing a
+     * natural exit is the ordinary case, not an error, and the pid it names has
+     * by then been handed back to the operating system — which is why the
+     * escalation is guarded on the child's own exit rather than only on the
+     * promise having settled.
+     */
+    expect(() => managed.abort("caller")).not.toThrow();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    expect((await managed.completed).escalated).toBe(false);
+    expect((await managed.completed).aborted).toBe(false);
+  }, 20_000);
+
+  it("keeps the first reason when cancellation and a timeout collide", async () => {
+    const stream = started(() => {});
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: [cooperative],
+      gracefulStop: FFMPEG_GRACEFUL_STOP,
+      terminationGraceMs: 500,
+      onStdout: stream.collect,
+    });
+    await stream.running;
+
+    managed.abort("media-watchdog");
+    managed.abort("caller");
+    managed.abort("wall-clock");
+
+    const outcome = await managed.completed;
+    expect(outcome.abortReason).toBe("media-watchdog");
+    expect(outcome.exitCode).toBe(0);
+  }, 30_000);
+
+  it("survives an abort that lands before the child is up", async () => {
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: [cooperative],
+      gracefulStop: FFMPEG_GRACEFUL_STOP,
+      terminationGraceMs: 300,
+    });
+    managed.abort("caller");
+    const outcome = await managed.completed;
+    expect(outcome.aborted).toBe(true);
+    // Either it heard the key or it was escalated; what it must not do is hang.
+    expect(typeof outcome.durationMs).toBe("number");
+  }, 30_000);
+
+  it("still stops a child with no quit protocol, exactly as it always did", async () => {
+    const stream = started(() => {});
+    const managed = spawnManagedProcess({
+      command: process.execPath,
+      args: [deaf],
+      terminationGraceMs: 200,
+      onStdout: stream.collect,
+    });
+    await stream.running;
+    const pid = managed.pid as number;
+
+    managed.abort("caller");
+    const outcome = await managed.completed;
+
+    expect(outcome.escalated).toBe(true);
+    expect(await alive(pid)).toBe(false);
+  }, 30_000);
+});
+
+/**
+ * The second platform predicate, asserted the same way as the first and for the
+ * same reason: it is the only way to check the Windows branch from a machine
+ * that is not Windows.
+ */
+describe("signal availability across platforms", () => {
+  it("has POSIX signals on POSIX", () => {
+    expect(supportsPosixSignals("darwin")).toBe(true);
+    expect(supportsPosixSignals("linux")).toBe(true);
+  });
+
+  it("has none on Windows, where every accepted signal is a hard kill", () => {
+    expect(supportsPosixSignals("win32")).toBe(false);
+  });
+
+  it("defaults to this host's platform", () => {
+    expect(supportsPosixSignals()).toBe(process.platform !== "win32");
   });
 });

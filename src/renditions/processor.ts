@@ -4,6 +4,7 @@ import {
 } from "./processing/pauseController";
 import {
   EncoderAbortedError,
+  FFMPEG_GRACEFUL_STOP,
   spawnManagedProcess,
   type EncoderWatchdog,
   type ManagedProcessOutcome,
@@ -221,6 +222,12 @@ export async function runFfmpeg(
   const managed = spawnManagedProcess({
     command,
     args,
+    /*
+     * This child is FFmpeg, and FFmpeg has a cooperative stop. Declaring it
+     * here is what gives the child a stdin pipe and what makes cancellation on
+     * Windows something other than an immediate kill.
+     */
+    gracefulStop: FFMPEG_GRACEFUL_STOP,
     ...(signal ? { signal } : {}),
     ...(watchdog?.terminationGraceMs === undefined
       ? {}
@@ -287,6 +294,16 @@ export async function runFfmpeg(
           },
         },
         pauseController,
+        {
+          /*
+           * Said once, and said plainly. A pause this host cannot honour is a
+           * pause an operator must not act on — the encoder keeps reading, and
+           * a drive unplugged on the strength of it is a drive unplugged during
+           * a write.
+           */
+          onUnsupported: (reason) =>
+            console.warn(`[Seyirlik] encoder pause unavailable: ${reason}`),
+        },
       )
     : undefined;
 

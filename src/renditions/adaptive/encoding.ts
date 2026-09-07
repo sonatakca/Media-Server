@@ -625,7 +625,15 @@ export function buildAdaptivePackageFfmpegArgs({
 
   const args = [
     "-hide_banner",
-    "-nostdin",
+    /*
+     * Deliberately no `-nostdin`. FFmpeg's only cooperative stop is `q` on
+     * stdin, and `-nostdin` tells it not to read one — with the flag present
+     * the key is accepted by the pipe and ignored, and a cancelled encode runs
+     * to the end of its grace period and is then killed with no `moov` atom.
+     * The child's stdin is a pipe this process owns, never an inherited
+     * terminal, so there is nothing here for FFmpeg to steal keystrokes from.
+     * See `FFMPEG_GRACEFUL_STOP`.
+     */
     "-progress",
     "pipe:1",
     ...(statsPeriodSeconds === undefined

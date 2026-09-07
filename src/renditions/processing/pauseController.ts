@@ -82,11 +82,38 @@ export function createPauseController(
  * throws, so every send is guarded: a child that finished between the pause
  * request and its delivery is not an error, it is a race that resolved the
  * better way.
+ *
+ * **There is no suspend on Windows.** `SIGSTOP` and `SIGCONT` are not among the
+ * signals Node will deliver there — `process.kill` rejects them with
+ * `ERR_UNKNOWN_SIGNAL` before they reach the process — and Windows exposes no
+ * other way to suspend a process tree without native code. Before this, the
+ * throw was swallowed by the `catch` above and the controller went on reporting
+ * `paused: true` while the encoder ran at full speed: the queue said stopped,
+ * the disk said otherwise, and an operator pausing to unplug a drive would have
+ * been told it was safe. So the binding now refuses to be installed silently —
+ * `onUnsupported` is called once, at bind time, and nothing is ever sent.
+ *
+ * Callers must treat that as what it is: a pause this host cannot honour. It is
+ * a real gap, not a cosmetic one, and the honest options are to keep the
+ * encoder running or to cancel it — not to claim it is asleep.
  */
 export function bindChildToPauseController(
   child: { pid?: number | undefined; kill(signal: NodeJS.Signals): boolean },
   controller: PauseController,
+  options: {
+    /** Called once when this platform cannot suspend a process at all. */
+    onUnsupported?: (reason: string) => void;
+    /** Injected by tests; defaults to this host. */
+    platform?: NodeJS.Platform;
+  } = {},
 ): () => void {
+  const platform = options.platform ?? process.platform;
+  if (platform === "win32") {
+    options.onUnsupported?.(
+      "This platform has no signal that suspends a process, so the encoder cannot be paused where it stands.",
+    );
+    return () => {};
+  }
   return controller.subscribe((paused) => {
     if (child.pid === undefined) return;
     try {

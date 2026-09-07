@@ -44,6 +44,43 @@ export type ProcessAbortReason =
   | "output-limit";
 
 /**
+ * How a child is asked to stop *before* it is made to.
+ *
+ * `SIGTERM` was the whole answer here, and on POSIX it is a good one: measured
+ * against a running FFmpeg, `SIGTERM` produced `Exiting normally, received
+ * signal 15`, exit 255, and a fully decodable file 454 ms later. On Windows
+ * there is no such signal. Node maps every signal it accepts there to
+ * `TerminateProcess`, so the same call took 49 ms and left 2.8 MB of frames
+ * with no `moov` atom — a file nothing can open. Cancelling an encode and
+ * killing it outright were the same operation, and the ten-second grace period
+ * this module is built around never happened.
+ *
+ * FFmpeg does have a cooperative stop that works on both: `q` on stdin. Same
+ * measurement, same host: exit 0, the trailer written, a file that decodes.
+ * It is not a signal and it does not pretend to be one, which is why it is
+ * modelled as a per-child protocol rather than as another platform branch.
+ */
+export type GracefulStop =
+  /**
+   * There is no cooperative protocol; the platform's own terminate is all there
+   * is. The default, because most children have nothing to say.
+   */
+  | { kind: "signal" }
+  /** A key written to the child's stdin, which it is watching. */
+  | { kind: "stdin"; write: string };
+
+/**
+ * FFmpeg's documented quit key.
+ *
+ * Two things have to agree for this to work and they live in different files:
+ * the child needs a stdin pipe, which this module gives it, and the command
+ * must not carry `-nostdin`, which tells FFmpeg not to read one. With
+ * `-nostdin` present the key is accepted by the pipe and ignored by FFmpeg, and
+ * the encode runs to the end of the grace period as if nothing had been asked.
+ */
+export const FFMPEG_GRACEFUL_STOP: GracefulStop = { kind: "stdin", write: "q" };
+
+/**
  * How long a process is given to end politely before it is killed.
  *
  * `SIGTERM` lets FFmpeg finalise what it has written, which is worth waiting
@@ -126,6 +163,15 @@ export interface SpawnManagedProcessInput {
    */
   ownProcessGroup?: boolean;
   /**
+   * The cooperative stop this particular child understands.
+   *
+   * Defaults to `{ kind: "signal" }`, which is what every caller had before and
+   * what a child with no quit protocol still gets. A `stdin` protocol also
+   * changes how the child is spawned — it is given a stdin pipe instead of
+   * nothing — so it is declared here rather than arranged by the caller.
+   */
+  gracefulStop?: GracefulStop;
+  /**
    * Scheduling niceness for the child, 0 (foreground) to 19 (last in line).
    *
    * Defaults to `BACKGROUND_PROCESS_NICENESS`, because everything spawned here
@@ -165,6 +211,27 @@ export function usesPosixProcessGroup(
   platform: NodeJS.Platform = process.platform,
 ): boolean {
   return ownProcessGroup && platform !== "win32";
+}
+
+/**
+ * Whether this platform has POSIX signals at all.
+ *
+ * Separate from `usesPosixProcessGroup` because they answer different
+ * questions: a caller may decline a process group on POSIX, and that must not
+ * be read as "this platform has no signals". Exported for the same reason the
+ * other predicate is — it is the only way to assert the Windows branch from a
+ * machine that is not Windows.
+ *
+ * On Windows Node accepts `SIGINT`, `SIGTERM`, `SIGKILL` and `0`, and every one
+ * of the first three is `TerminateProcess`. Anything else — `SIGSTOP`,
+ * `SIGCONT` — throws `ERR_UNKNOWN_SIGNAL` before it reaches the process. So
+ * there is no signal there that means "please finish", and none that means
+ * "pause".
+ */
+export function supportsPosixSignals(
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return platform !== "win32";
 }
 
 /**
@@ -212,6 +279,7 @@ export function spawnManagedProcess({
   timeoutMs,
   terminationGraceMs = PROCESS_TERMINATION_GRACE_MS,
   ownProcessGroup = true,
+  gracefulStop = { kind: "signal" },
   niceness = BACKGROUND_PROCESS_NICENESS,
   now = Date.now,
 }: SpawnManagedProcessInput): ManagedProcess {
@@ -225,7 +293,12 @@ export function spawnManagedProcess({
   const child: ChildProcess = spawn(command, [...args], {
     shell: false,
     windowsHide: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    /*
+     * stdin only when the child has something to hear. Everything else keeps
+     * the closed stdin it has always had, so nothing gains a pipe — or a way to
+     * block on one — that did not ask for it.
+     */
+    stdio: [gracefulStop.kind === "stdin" ? "pipe" : "ignore", "pipe", "pipe"],
     /*
      * Its own process group. `detached` is doing one job here and it is not
      * the one the name suggests: nothing is being backgrounded, and the child
@@ -261,6 +334,8 @@ export function spawnManagedProcess({
 
   let stderrTail = "";
   let settled = false;
+  /** Set on `exit`, which is earlier than `close` and is when the pid dies. */
+  let childExited = false;
   let abortReason: ProcessAbortReason | undefined;
   let escalated = false;
   let graceTimer: NodeJS.Timeout | undefined;
@@ -297,6 +372,87 @@ export function spawnManagedProcess({
     });
   };
 
+  /**
+   * Ask the child to stop, using the strongest cooperative mechanism it and
+   * this platform actually have.
+   *
+   * Both are attempted where both exist. On POSIX `SIGTERM` will almost always
+   * win the race and the outcome is exactly what it was before this function
+   * existed; the quit key costs nothing and is there for the case where the
+   * signal is blocked. On Windows the quit key is the whole of it, because
+   * every signal Node will deliver there is a hard kill and a hard kill is what
+   * the escalation below is for.
+   */
+  const requestGracefulStop = (pid: number): void => {
+    if (gracefulStop.kind === "stdin") {
+      const stdin = child.stdin;
+      /*
+       * A pipe that has already closed — the child exited, or ended its own
+       * side — is not a failure. It means the cooperative request cannot be
+       * delivered, and the grace period then simply expires into the
+       * escalation, which is the correct outcome for a child that is not
+       * listening.
+       */
+      if (stdin && stdin.writable) {
+        try {
+          stdin.write(gracefulStop.write);
+          stdin.end();
+        } catch {
+          // The pipe went away underneath us. The escalation is the answer.
+        }
+      }
+    }
+
+    if (!supportsPosixSignals()) return;
+
+    /*
+     * A suspended process cannot act on `SIGTERM`. Waking it first is what
+     * makes cancelling a paused encode take effect now rather than leaving a
+     * stopped FFmpeg holding its output files open for ever.
+     */
+    signalGroup(pid, "SIGCONT", posixProcessGroup);
+    signalGroup(pid, "SIGTERM", posixProcessGroup);
+  };
+
+  /**
+   * Stop asking.
+   *
+   * On POSIX this is `SIGKILL` to the group, and then waiting: a `SIGKILL` that
+   * has not taken effect is a kernel operation that has not returned, and
+   * nothing in user space can hurry it. The promise settles when the child is
+   * reaped, however long Darwin takes to unwind the read that wedged it.
+   *
+   * Windows has neither signals nor process groups, and `child.kill()` there
+   * terminates the leaf only — an FFmpeg that had spawned anything would leave
+   * it behind holding a handle on the very volume this system is trying to
+   * release. `taskkill /T` is the platform's own answer for a tree and is
+   * present on every install, so it is used first and the leaf kill is the
+   * fallback for the case where it cannot be spawned at all.
+   */
+  const forceTerminate = (pid: number): void => {
+    if (supportsPosixSignals()) {
+      signalGroup(pid, "SIGKILL", posixProcessGroup);
+      return;
+    }
+    const killLeaf = (): void => {
+      try {
+        child.kill();
+      } catch {
+        // Already reaped.
+      }
+    };
+    try {
+      const killer = spawn("taskkill", ["/PID", String(pid), "/T", "/F"], {
+        shell: false,
+        windowsHide: true,
+        stdio: "ignore",
+      });
+      killer.once("error", killLeaf);
+    } catch {
+      killLeaf();
+    }
+  };
+
   const abort = (reason: ProcessAbortReason): void => {
     if (settled) return;
     /*
@@ -310,25 +466,19 @@ export function spawnManagedProcess({
     const pid = child.pid;
     if (pid === undefined) return;
 
-    /*
-     * A suspended process cannot act on `SIGTERM`. Waking it first is what
-     * makes cancelling a paused encode take effect now rather than leaving a
-     * stopped FFmpeg holding its output files open for ever.
-     */
-    signalGroup(pid, "SIGCONT", posixProcessGroup);
-    signalGroup(pid, "SIGTERM", posixProcessGroup);
+    requestGracefulStop(pid);
 
     graceTimer = setTimeout(() => {
-      if (settled) return;
-      escalated = true;
-      signalGroup(pid, "SIGKILL", posixProcessGroup);
       /*
-       * And then wait. There is deliberately no timer after this one: a
-       * `SIGKILL` that has not taken effect is a kernel operation that has not
-       * returned, and nothing in user space can hurry it. The promise settles
-       * when the child is reaped, however long Darwin takes to unwind the
-       * read that wedged it.
+       * `childExited` and not just `settled`: `exit` fires when the process is
+       * reaped, `close` only once its pipes have drained too, and between the
+       * two the pid belongs to nobody. Killing it there is a kill aimed at
+       * whatever the operating system hands the number to next — a real hazard
+       * on Windows, where pids are recycled quickly.
        */
+      if (settled || childExited) return;
+      escalated = true;
+      forceTerminate(pid);
     }, terminationGraceMs);
     graceTimer.unref?.();
   };
@@ -363,6 +513,9 @@ export function spawnManagedProcess({
    * `close` would never arrive, and a caller waiting for it would wait for
    * ever — which is the failure mode this whole file exists to remove.
    */
+  child.once("exit", () => {
+    childExited = true;
+  });
   child.once("error", () => settle(null, null));
   child.once("close", (code, closeSignal) => settle(code, closeSignal));
 

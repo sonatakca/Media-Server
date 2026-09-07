@@ -145,3 +145,64 @@ describe("noticing the media volume come and go", () => {
     expect(calls).toBe(1);
   });
 });
+
+/**
+ * The platform that cannot suspend anything.
+ *
+ * Windows has no `SIGSTOP`. The old binding subscribed anyway, `process.kill`
+ * threw `ERR_UNKNOWN_SIGNAL`, the `catch` swallowed it, and the controller went
+ * on reporting `paused: true` over an encoder running at full speed. A pause
+ * nobody can honour has to be visible, because the thing an operator does after
+ * pausing is unplug the drive.
+ */
+describe("a platform with no suspend", () => {
+  it("refuses to bind, says why, and sends nothing", () => {
+    const controller = createPauseController();
+    const sent: NodeJS.Signals[] = [];
+    const reasons: string[] = [];
+
+    const unsubscribe = bindChildToPauseController(
+      {
+        pid: 4242,
+        kill: (signal) => {
+          sent.push(signal);
+          return true;
+        },
+      },
+      controller,
+      { platform: "win32", onUnsupported: (reason) => reasons.push(reason) },
+    );
+
+    controller.pause();
+    controller.resume();
+
+    expect(sent).toEqual([]);
+    expect(reasons).toHaveLength(1);
+    expect(reasons[0]).toMatch(/cannot be paused/i);
+    expect(() => unsubscribe()).not.toThrow();
+  });
+
+  it("still suspends where the platform has the signals", () => {
+    const controller = createPauseController();
+    const sent: NodeJS.Signals[] = [];
+    const reasons: string[] = [];
+
+    bindChildToPauseController(
+      {
+        pid: 4242,
+        kill: (signal) => {
+          sent.push(signal);
+          return true;
+        },
+      },
+      controller,
+      { platform: "darwin", onUnsupported: (reason) => reasons.push(reason) },
+    );
+
+    controller.pause();
+    controller.resume();
+
+    expect(sent).toEqual(["SIGCONT", "SIGSTOP", "SIGCONT"]);
+    expect(reasons).toEqual([]);
+  });
+});
