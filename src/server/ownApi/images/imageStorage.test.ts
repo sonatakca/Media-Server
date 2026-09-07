@@ -127,10 +127,10 @@ describe("image storage", () => {
       "media:Movies/Dune (2021)/content/logo.png",
     );
     await expect(
-      sharp(storage.resolve(cover.storageKey)).metadata(),
+      sharp(await readFile(storage.resolve(cover.storageKey))).metadata(),
     ).resolves.toMatchObject({ format: "jpeg" });
     await expect(
-      sharp(storage.resolve(storedLogo.storageKey)).metadata(),
+      sharp(await readFile(storage.resolve(storedLogo.storageKey))).metadata(),
     ).resolves.toMatchObject({ format: "png" });
   });
 
@@ -165,7 +165,7 @@ describe("image storage", () => {
       readFile(storage.resolve(backdrop.storageKey)),
     ).resolves.toEqual(providerBackdrop);
     await expect(
-      sharp(storage.resolve(backdrop.storageKey)).metadata(),
+      sharp(await readFile(storage.resolve(backdrop.storageKey))).metadata(),
     ).resolves.toMatchObject({ width: 3840, height: 2160 });
   });
 
@@ -236,7 +236,8 @@ describe("image storage", () => {
 
     expect(second.storageKey).toBe(first.storageKey);
     await expect(
-      sharp(storage.resolve(first.storageKey)).metadata(),
+      // Through the bytes: see the note on the read-back above.
+      sharp(await readFile(storage.resolve(first.storageKey))).metadata(),
     ).resolves.toMatchObject({ width: 520, format: "webp" });
   });
 
