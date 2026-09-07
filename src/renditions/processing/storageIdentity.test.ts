@@ -190,6 +190,65 @@ describe("which volumes need an operator after an unclean restart", () => {
   });
 });
 
+describe("the fallback heuristic on a Windows host", () => {
+  /**
+   * The regression this fixes. With no probe — which is every Windows
+   * deployment before the Windows implementation, and any host whose probe
+   * fails — identity is `null` and this heuristic is the only thing standing
+   * between an unclean restart and an unattended resume. It knew four POSIX
+   * prefixes and nothing else, so every Windows path answered `false`,
+   * including a network share that had gone away mid-encode.
+   */
+  it("holds work on a vanished network share", () => {
+    expect(requiresOperatorAfterUncleanRestart(null, "\\\\nas\\media")).toBe(
+      true,
+    );
+    expect(requiresOperatorAfterUncleanRestart(null, "//nas/media")).toBe(true);
+    expect(
+      requiresOperatorAfterUncleanRestart(null, "\\\\?\\UNC\\nas\\media"),
+    ).toBe(true);
+  });
+
+  it("does not read a long local path as a network share", () => {
+    // `\\?\D:\media` is the extended-length form of a local drive. Treating
+    // its leading slashes as UNC would hold work on internal storage.
+    expect(requiresOperatorAfterUncleanRestart(null, "\\\\?\\D:\\media")).toBe(
+      false,
+    );
+    expect(requiresOperatorAfterUncleanRestart(null, "\\\\.\\D:\\media")).toBe(
+      false,
+    );
+  });
+
+  it("does not hold work on a lettered volume, which the path cannot classify", () => {
+    // `D:` may be the USB disk or a second internal SSD. Answering `true` for
+    // every letter would prompt after any restart and teach an operator to
+    // dismiss the prompt that matters. The probe is what tells them apart.
+    expect(requiresOperatorAfterUncleanRestart(null, "D:\\media")).toBe(false);
+    expect(requiresOperatorAfterUncleanRestart(null, "C:\\scratch")).toBe(
+      false,
+    );
+  });
+
+  it("still answers for the POSIX prefixes it already knew", () => {
+    expect(
+      requiresOperatorAfterUncleanRestart(null, "/Volumes/Expansion"),
+    ).toBe(true);
+    expect(requiresOperatorAfterUncleanRestart(null, "/mnt/media")).toBe(true);
+    expect(requiresOperatorAfterUncleanRestart(null, "/srv/media")).toBe(false);
+  });
+
+  it("prefers a real identity over the path, on Windows as anywhere", () => {
+    // A UNC path whose probe said "internal" is internal. Identity wins.
+    expect(
+      requiresOperatorAfterUncleanRestart(
+        { ...unknownIdentity("\\\\nas\\media"), medium: "physical-internal" },
+        "\\\\nas\\media",
+      ),
+    ).toBe(false);
+  });
+});
+
 describe("reading a volume's identity from diskutil", () => {
   /** The shape macOS actually returns for an attached USB disk. */
   it("recognises external physical media", () => {

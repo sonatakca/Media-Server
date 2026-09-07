@@ -106,6 +106,24 @@ export function unknownIdentity(
  * making the E2E suite wait for an operator would teach everyone to click
  * through the prompt.
  */
+/**
+ * Whether a path names a Windows network share.
+ *
+ * `\\server\share` is one, and so is `\\?\UNC\server\share`. `\\?\D:\media` is
+ * not — the `\\?\` and `\\.\` prefixes introduce a *local* device path, and
+ * reading the leading pair of slashes as "network" would misclassify every long
+ * local path on the machine.
+ */
+function isUncNetworkPath(candidate: string): boolean {
+  const normalized = candidate.replace(/\//g, "\\");
+  if (!normalized.startsWith("\\\\")) return false;
+  const rest = normalized.slice(2);
+  if (/^[?.]\\UNC\\/i.test(rest)) return true;
+  // `\\?\...` and `\\.\...` are device paths, not shares.
+  if (/^[?.]\\/.test(rest)) return false;
+  return rest !== "" && !rest.startsWith("\\");
+}
+
 export function requiresOperatorAfterUncleanRestart(
   identity: VolumeIdentity | null,
   fallbackPath: string,
@@ -120,8 +138,22 @@ export function requiresOperatorAfterUncleanRestart(
    * implementation. Fall back to the path heuristic, because being cautious
    * about a volume nobody can identify is the safe direction, and it preserves
    * exactly the behaviour that shipped before identity existed.
+   *
+   * A UNC path is included because it is the one Windows path shape that names
+   * its own medium with certainty: `\\server\share` is a network volume and
+   * cannot be anything else. Before this, every Windows path fell through to
+   * `false`, so a share that vanished mid-encode was treated as an ordinary
+   * local disk and work resumed unattended.
+   *
+   * A drive letter is deliberately *not* treated as cautious. `D:` may be a USB
+   * disk or the second internal SSD, the path cannot tell which, and answering
+   * `true` for every lettered volume would hold work on internal scratch after
+   * any unclean restart — which teaches an operator to click through the prompt
+   * that exists for the external drive.  That distinction is what the probe is
+   * for, and when the probe answers this heuristic is not consulted.
    */
   return (
+    isUncNetworkPath(fallbackPath) ||
     fallbackPath.startsWith("/Volumes/") ||
     fallbackPath.startsWith("/media/") ||
     fallbackPath.startsWith("/mnt/") ||

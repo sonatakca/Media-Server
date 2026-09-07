@@ -74,7 +74,7 @@ import {
   createStorageGuard,
   shouldRereadIncident,
 } from "./processing/storageGuard";
-import { createDiskutilIdentityProbe } from "../../renditions/processing/storageIdentity";
+import { createVolumeIdentityProbe } from "../../renditions/processing/volumeIdentityProbe";
 import { runBoundedProcess } from "../../renditions/processExecution";
 import { jobRecordsStorageFault } from "./processing/recoveryPolicy";
 import {
@@ -376,24 +376,42 @@ export async function createNativeRuntime({
    * answering them two different ways is how a path comes to be mistaken for
    * an identity.
    *
-   * Only on Darwin. Elsewhere there is no identity, which is handled
+   * Darwin asks `diskutil`; Windows asks the storage stack through PowerShell.
+   * Both implement the same injected probe, so nothing downstream knows which
+   * platform answered. Elsewhere there is still no identity, which is handled
    * explicitly everywhere it matters: identity-dependent decisions fail closed
    * and an operator clears them with the recorded override.
    */
-  const volumeIdentityProbe =
-    process.platform === "darwin"
-      ? createDiskutilIdentityProbe({
-          run: async (command, args, timeoutMs) =>
-            (
-              await runBoundedProcess({
-                command,
-                args,
-                timeoutMs,
-                describe: "the volume identity probe",
-              })
-            ).stdout,
-        })
-      : undefined;
+  const probeProcess = async (
+    command: string,
+    args: readonly string[],
+    timeoutMs: number,
+  ) =>
+    (
+      await runBoundedProcess({
+        command,
+        args,
+        timeoutMs,
+        /*
+         * A volume record is a few hundred bytes. The 16 MB default belongs to
+         * an encoder reading a source, not to a metadata question asked at the
+         * moment a disk is least worth exercising.
+         */
+        maxOutputBytes: 256 * 1024,
+        describe: "the volume identity probe",
+      })
+    ).stdout;
+
+  const volumeIdentityProbe = createVolumeIdentityProbe({
+    platform: process.platform,
+    run: probeProcess,
+    /*
+     * The reason is worth a line in the log; the command's own output is not,
+     * because it can carry the path it was asked about.
+     */
+    onWindowsFailure: (failure) =>
+      console.warn(`[Seyirlik] volume identity unavailable: ${failure}`),
+  });
 
   const storageGuard = createStorageGuard({
     root: mediaRoot,
