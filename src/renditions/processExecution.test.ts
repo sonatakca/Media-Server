@@ -287,14 +287,21 @@ describe("stopping a process that is not listening", () => {
       const outcome = await managed.completed;
       expect(outcome.aborted).toBe(true);
       /*
-       * The point of the test: the grace period was enough, so the escalation
-       * never ran. On POSIX the child took `SIGTERM`; on Windows it took the
-       * quit key it has no protocol for and then simply ended, which is the
-       * same fact — it stopped without being forced.
+       * This case is about the *signal* path: a child that takes `SIGTERM` and
+       * goes, so the escalation never runs. Windows has no such thing — no
+       * signal there means "please finish", and this child has no quit protocol
+       * to be asked through instead. So the honest Windows expectation is the
+       * opposite one, and it is asserted rather than skipped: with nothing to
+       * ask, the forced step is the only step, and it must happen at once
+       * rather than after a grace period nobody can hear.
        */
-      expect(outcome.escalated).toBe(false);
       if (supportsPosixSignals()) {
+        expect(outcome.escalated).toBe(false);
         expect(outcome.signal).toBe("SIGTERM");
+      } else {
+        expect(outcome.escalated).toBe(true);
+        // 5 s of grace was configured; none of it should have been spent.
+        expect(outcome.durationMs).toBeLessThan(4_000);
       }
     } finally {
       delete process.env.STEPS;

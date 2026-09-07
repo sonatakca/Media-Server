@@ -118,7 +118,14 @@ export interface ManagedProcessOutcome {
   /** True when this process was asked to stop rather than ending on its own. */
   aborted: boolean;
   abortReason?: ProcessAbortReason;
-  /** Whether the escalation actually had to be used. */
+  /**
+   * Whether the process had to be forced.
+   *
+   * `false` means it stopped because it was asked. `true` means the forced step
+   * ran — either because the grace period expired, or because this platform had
+   * no way of asking at all, which is the ordinary case on Windows for a child
+   * with no quit protocol.
+   */
   escalated: boolean;
   /** Bounded tail of everything written to stderr. */
   stderrTail: string;
@@ -383,7 +390,8 @@ export function spawnManagedProcess({
    * every signal Node will deliver there is a hard kill and a hard kill is what
    * the escalation below is for.
    */
-  const requestGracefulStop = (pid: number): void => {
+  const requestGracefulStop = (pid: number): boolean => {
+    let asked = false;
     if (gracefulStop.kind === "stdin") {
       const stdin = child.stdin;
       /*
@@ -397,13 +405,14 @@ export function spawnManagedProcess({
         try {
           stdin.write(gracefulStop.write);
           stdin.end();
+          asked = true;
         } catch {
           // The pipe went away underneath us. The escalation is the answer.
         }
       }
     }
 
-    if (!supportsPosixSignals()) return;
+    if (!supportsPosixSignals()) return asked;
 
     /*
      * A suspended process cannot act on `SIGTERM`. Waking it first is what
@@ -412,6 +421,7 @@ export function spawnManagedProcess({
      */
     signalGroup(pid, "SIGCONT", posixProcessGroup);
     signalGroup(pid, "SIGTERM", posixProcessGroup);
+    return true;
   };
 
   /**
@@ -466,7 +476,21 @@ export function spawnManagedProcess({
     const pid = child.pid;
     if (pid === undefined) return;
 
-    requestGracefulStop(pid);
+    /*
+     * Nothing to wait for if nothing could be asked.
+     *
+     * A child with no quit protocol, on a platform with no signal that means
+     * "please finish", has heard nothing — so the grace period is not a grace
+     * period, it is ten seconds of an encoder still writing to a disk somebody
+     * asked it to stop touching. Waiting it out would be worse than useless: it
+     * is exactly the delay a person cancelling to unplug a drive would take as
+     * permission.
+     */
+    if (!requestGracefulStop(pid)) {
+      escalated = true;
+      forceTerminate(pid);
+      return;
+    }
 
     graceTimer = setTimeout(() => {
       /*

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   mkdir,
+  readFile,
   realpath,
   rename,
   stat,
@@ -356,9 +357,29 @@ export function createImageStorage({
     await mkdir(path.dirname(absolutePath), { recursive: true });
     const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
     try {
-      const result = await sharp(resolveStorageKey(image.storageKey), {
+      /*
+       * Read the bytes here rather than handing sharp a path.
+       *
+       * libvips keeps its own handle on a file it was given by name, and on
+       * Windows a file with an open handle cannot be deleted or moved. Measured
+       * on Windows 11: every recursive removal of a directory containing an
+       * image sharp had opened by path failed with `EBUSY`, six times out of
+       * six and with no timeout; through a `Buffer`, six out of six succeeded.
+       *
+       * For a media server that is the wrong kind of leak. `remove` swallows
+       * the error and reports success, so a deleted image quietly stays on
+       * disk — and worse, a handle on a media file is exactly what stops the
+       * volume it lives on from being released, which is the operation this
+       * system's whole storage-identity design exists to make safe.
+       *
+       * `sequentialRead` goes with it: it is an instruction about how to read a
+       * file, and there is no longer a file being read. Artwork is bounded by
+       * `MAX_IMAGE_PIXELS` and is a few megabytes at worst, which is what
+       * `store` has always held in memory anyway.
+       */
+      const sourceBytes = await readFile(resolveStorageKey(image.storageKey));
+      const result = await sharp(sourceBytes, {
         limitInputPixels: MAX_IMAGE_PIXELS,
-        sequentialRead: true,
       })
         .rotate()
         .resize({ width, fit: "inside", withoutEnlargement: true })

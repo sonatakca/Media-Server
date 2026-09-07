@@ -195,7 +195,15 @@ describe("image storage", () => {
 
     const first = await storage.getVariant(original, 440);
     const second = await storage.getVariant(original, 440);
-    const metadata = await sharp(storage.resolve(first.storageKey)).metadata();
+    /*
+     * Through the bytes, not the path. libvips holds a handle on a file it is
+     * given by name, and on Windows that makes the file undeletable — which is
+     * how this test used to fail in its own `afterEach`, on a leak of its own
+     * making rather than anything the storage did.
+     */
+    const metadata = await sharp(
+      await readFile(storage.resolve(first.storageKey)),
+    ).metadata();
 
     expect(first).toEqual(second);
     expect(first.contentType).toBe("image/webp");
@@ -315,5 +323,40 @@ describe("image storage", () => {
 
     await storage.remove(stored.storageKey);
     await expect(storage.remove(stored.storageKey)).resolves.toBeUndefined();
+  });
+
+  /**
+   * The handle, not the bytes.
+   *
+   * libvips keeps its own file handle when sharp is given a path, and Windows
+   * will not delete or move a file that something has open. Producing a variant
+   * used to leave one on the *source* image, so removing it silently did
+   * nothing — and a handle on a media file is precisely what stops the volume
+   * it lives on from being released.
+   *
+   * Vacuous on POSIX, which is happy to unlink an open file. It is Windows this
+   * has to hold on, and the assertion says so out loud rather than leaving it to
+   * be discovered by an `EBUSY` in somebody else's cleanup.
+   */
+  it("leaves nothing open on the source once a variant is made", async () => {
+    const storage = createImageStorage({ imageRoot });
+    const cover = await sharp({
+      create: {
+        width: 1200,
+        height: 1800,
+        channels: 3,
+        background: "#0f766e",
+      },
+    })
+      .png()
+      .toBuffer();
+    const original = await storage.store(cover, "image/png");
+    await storage.getVariant(original, 440);
+
+    // The whole tree, exactly as an operator releasing a volume would.
+    await expect(
+      rm(imageRoot, { recursive: true, force: true }),
+    ).resolves.toBeUndefined();
+    await mkdir(imageRoot, { recursive: true });
   });
 });
