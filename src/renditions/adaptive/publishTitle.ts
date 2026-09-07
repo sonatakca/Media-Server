@@ -3,6 +3,7 @@ import {
   mkdir,
   open,
   readFile,
+  realpath,
   rename,
   rm,
   rmdir,
@@ -11,6 +12,11 @@ import {
   writeFile,
 } from "node:fs/promises";
 import path from "node:path";
+import {
+  PUBLICATION_GENERATIONS,
+  PUBLICATION_POINTER,
+  resolvePublishedTitleRoot,
+} from "./publishedRoot";
 import type { AdaptivePackageMetadata } from "./metadata";
 import { buildMasterPlaylist, parseMediaPlaylist } from "./playlist";
 import { parseWebVttMediaPlaylist } from "./subtitles";
@@ -73,6 +79,7 @@ export class TitleRootConflictError extends Error {
  * whose it is.
  */
 async function occupantMediaId(titleRoot: string): Promise<string | null> {
+  titleRoot = await resolvePublishedTitleRoot(titleRoot);
   try {
     const raw = await readFile(
       path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
@@ -389,6 +396,8 @@ export interface PublishTitlePackageInput {
   /** Free bytes retained on the destination after the incoming copy. */
   destinationReserveBytes?: number;
   retainIncomingAfterPublish?: boolean;
+  /** Filesystem commit boundary, shared by activation and recovery. */
+  fileSystem?: Pick<typeof import("node:fs/promises"), "rename">;
 }
 
 /**
@@ -468,6 +477,7 @@ export interface PublishTitlePackageResult {
   manifest: TitlePackageManifest;
   plan: TitleLayoutPlan;
   incomingDirectory: string;
+  publishedRoot?: string;
 }
 
 export const TITLE_INCOMING_DIRECTORY = ".seyirlik-incoming";
@@ -539,6 +549,7 @@ export async function publishTitlePackage({
   signal,
   destinationReserveBytes = 0,
   retainIncomingAfterPublish = false,
+  fileSystem = { rename },
 }: PublishTitlePackageInput): Promise<PublishTitlePackageResult> {
   const plan = planTitleLayout(metadata);
   /*
@@ -590,7 +601,32 @@ export async function publishTitlePackage({
     onProgress,
   );
   await assertTitleRootOwnedBy(titleRoot, metadata.mediaId);
+  // Existing readers retain their root. A replacement is built separately and
+  // activated by one atomic file rename, never by retiring their live folders.
+  const previous = await readTitlePackageManifest(titleRoot);
+  const generation = createHash("sha256")
+    .update(JSON.stringify({ publicationId, metadata }))
+    .digest("hex");
+  const publishedRoot = previous
+    ? path.join(titleRoot, PUBLICATION_GENERATIONS, generation)
+    : titleRoot;
+  await mkdir(publishedRoot, { recursive: true });
   const staging = await prepareIncoming(titleRoot, publicationId, metadata);
+  if (
+    previous &&
+    (await resolvePublishedTitleRoot(titleRoot)) ===
+      (await realpath(publishedRoot))
+  ) {
+    await verifyIncomingPackage(publishedRoot, previous);
+    if (!retainIncomingAfterPublish)
+      await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+    return {
+      manifest: previous,
+      plan,
+      incomingDirectory: staging,
+      publishedRoot,
+    };
+  }
 
   const destinationSpace = await statfs(titleRoot);
   const destinationFreeBytes = destinationSpace.bavail * destinationSpace.bsize;
@@ -835,12 +871,28 @@ export async function publishTitlePackage({
     await verifyIncomingPackage(staging, manifest);
     progress.complete("verify");
     progress.begin("swap");
-    await swapPublishedDirectories(titleRoot, staging);
+    await swapPublishedDirectories(publishedRoot, staging, fileSystem.rename);
+    if (publishedRoot !== titleRoot) {
+      const pointer = path.join(titleRoot, PUBLICATION_POINTER);
+      const pending = path.join(staging, ".current.pending");
+      await writeFile(
+        pending,
+        `${JSON.stringify({ schemaVersion: 1, generation })}\n`,
+        "utf8",
+      );
+      const pointerFile = await open(pending, "r+");
+      try {
+        await pointerFile.sync();
+      } finally {
+        await pointerFile.close();
+      }
+      await fileSystem.rename(pending, pointer);
+    }
     progress.complete("swap");
     if (!retainIncomingAfterPublish) {
       await cleanupPublicationIncoming(titleRoot, staging, publicationId);
     }
-    return { manifest, plan, incomingDirectory: staging };
+    return { manifest, plan, incomingDirectory: staging, publishedRoot };
   }
 }
 
@@ -966,6 +1018,7 @@ async function verifyIncomingPackage(
 async function swapPublishedDirectories(
   titleRoot: string,
   staging: string,
+  renameFile: typeof rename,
 ): Promise<void> {
   const retired = `${staging}.retired`;
   await mkdir(retired, { recursive: true });
@@ -985,7 +1038,7 @@ async function swapPublishedDirectories(
       `${JSON.stringify({ schemaVersion: 1, completed: [...completed] })}\n`,
       "utf8",
     );
-    await rename(pending, statePath);
+    await renameFile(pending, statePath);
   };
 
   for (const directory of [
@@ -1013,13 +1066,13 @@ async function swapPublishedDirectories(
     if (!stagedExists) {
       // A package with no subtitles must still clear the previous package's
       // subtitle folder, or a dropped track keeps playing from a stale file.
-      if (liveExists && !oldExists) await rename(live, old);
+      if (liveExists && !oldExists) await renameFile(live, old);
       completed.add(directory);
       await commitState();
       continue;
     }
-    if (liveExists && !oldExists) await rename(live, old);
-    await rename(staged, live);
+    if (liveExists && !oldExists) await renameFile(live, old);
+    await renameFile(staged, live);
     completed.add(directory);
     await commitState();
   }
@@ -1041,6 +1094,7 @@ export async function readTitlePackageManifest(
   titleRoot: string,
 ): Promise<TitlePackageManifest | null> {
   try {
+    titleRoot = await resolvePublishedTitleRoot(titleRoot);
     const raw = await readFile(
       path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_PACKAGE_MANIFEST),
       "utf8",
@@ -1107,7 +1161,10 @@ export async function publishAdditionalRenditions({
   manifest: TitlePackageManifest;
   plan: TitleLayoutPlan;
   incomingDirectory: string;
+  publishedRoot?: string;
 }> {
+  const publicationTitleRoot = titleRoot;
+  titleRoot = await resolvePublishedTitleRoot(titleRoot);
   /*
    * Existing renditions are listed first so the layout planner hands them the
    * stems they already carry: their published paths must come out unchanged,
@@ -1141,7 +1198,11 @@ export async function publishAdditionalRenditions({
     ],
   };
   await assertTitleRootOwnedBy(titleRoot, merged.mediaId);
-  const staging = await prepareIncoming(titleRoot, publicationId, merged);
+  const staging = await prepareIncoming(
+    publicationTitleRoot,
+    publicationId,
+    merged,
+  );
 
   const destinationSpace = await statfs(titleRoot);
   const destinationFreeBytes = destinationSpace.bavail * destinationSpace.bsize;
@@ -1383,10 +1444,19 @@ export async function publishAdditionalRenditions({
   progress.complete("master-playlist");
 
   if (!retainIncomingAfterPublish) {
-    await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+    await cleanupPublicationIncoming(
+      publicationTitleRoot,
+      staging,
+      publicationId,
+    );
   }
 
-  return { manifest, plan, incomingDirectory: staging };
+  return {
+    manifest,
+    plan,
+    incomingDirectory: staging,
+    publishedRoot: titleRoot,
+  };
 }
 
 /** Removes only the owned incoming tree for one confirmed publication. */
@@ -1468,6 +1538,7 @@ export async function readTitleBuildRecord(
   titleRoot: string,
 ): Promise<AdaptivePackageMetadata | null> {
   try {
+    titleRoot = await resolvePublishedTitleRoot(titleRoot);
     const raw = await readFile(
       path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
       "utf8",

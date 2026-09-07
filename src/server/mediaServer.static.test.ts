@@ -10,7 +10,7 @@ import {
   type ServerResponse,
 } from "node:http";
 import { Writable } from "node:stream";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createStaticHandler,
   listenWithRetry,
@@ -166,13 +166,34 @@ describe("binding a busy port", () => {
     expect(replacement.listening).toBe(true);
   });
 
-  it("raises a listen error that waiting cannot fix", async () => {
-    replacement = createServer();
-    await expect(
-      // A port no unprivileged process may bind is not a race with a
-      // predecessor; retrying it would be an infinite loop.
-      listenWithRetry(replacement, 1, "127.0.0.1", 10),
-    ).rejects.toMatchObject({ code: "EACCES" });
+  it.each([
+    "EACCES",
+    "EPERM",
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "EADDRNOTAVAIL",
+    "EINVAL",
+    "EUNEXPECTED",
+  ])("raises a listen error that waiting cannot fix: %s", async (code) => {
+    const server = createServer();
+    const initialListeners = server.listeners("listening");
+    const error = Object.assign(new Error(`listen ${code}`), { code });
+    // Privileged ports are permitted on Windows and under elevated POSIX
+    // identities. Deliver the error at the real server event boundary.
+    const listen = vi.spyOn(server, "listen").mockImplementation(() => {
+      queueMicrotask(() => server.emit("error", error));
+      return server;
+    });
+    try {
+      await expect(listenWithRetry(server, 1, "127.0.0.1", 10)).rejects.toBe(
+        error,
+      );
+      expect(listen).toHaveBeenCalledTimes(1);
+      expect(server.listenerCount("error")).toBe(0);
+      expect(server.listeners("listening")).toEqual(initialListeners);
+    } finally {
+      listen.mockRestore();
+    }
   });
 });
 

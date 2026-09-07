@@ -43,7 +43,8 @@ import {
   TITLE_INCOMING_DIRECTORY,
 } from "./publishTitle";
 import { ensureAdaptiveEpochFixture } from "./testFixtures";
-import { denyWritesInto } from "../../test/unwritableDirectory";
+
+import { rejectPublicationCommit } from "../../test/publicationFault";
 
 const MEDIA_ID = "33333333-3333-4333-8333-333333333333";
 /** Six seconds is three segments, so epoch boundaries land on the grid. */
@@ -202,14 +203,14 @@ describe("the scratch storage lifecycle", () => {
       // Every path the encoder was told to write is under scratch.
       const outputs = args.filter(
         (argument) =>
-          argument.startsWith("/") &&
+          path.isAbsolute(argument) &&
           argument !== input &&
           argument !== harness.sourcePath,
       );
       expect(outputs.length).toBeGreaterThan(0);
       for (const output of outputs) {
-        expect(output.startsWith(`${harness.ssdRoot}/`)).toBe(true);
-        expect(output.startsWith(`${harness.hddRoot}/`)).toBe(false);
+        expect(output.startsWith(`${harness.ssdRoot}${path.sep}`)).toBe(true);
+        expect(output.startsWith(`${harness.hddRoot}${path.sep}`)).toBe(false);
       }
     }
   }, 900_000);
@@ -302,18 +303,20 @@ describe("the scratch storage lifecycle", () => {
     const harness = await createHarness();
 
     /*
-     * A title folder that cannot be written to stands in for a destination
-     * that has gone away or filled up between verification and publication.
-     * Read and traverse are still permitted, so the source remains readable
-     * throughout — which is exactly the asymmetry a failing destination has.
+     * Reject the final filesystem commit after scratch verification. This
+     * boundary is deterministic under elevated tokens as well as ordinary
+     * users; all source reads, encodes, copies and error handling stay real.
      */
-    const unblock = await denyWritesInto(harness.titleRoot);
+    const fault = await rejectPublicationCommit(harness.titleRoot);
     let blocked: Awaited<ReturnType<typeof packageOnce>>;
     try {
-      blocked = await packageOnce(harness);
+      blocked = await packageOnce(harness, {
+        publicationFileSystem: fault.fileSystem,
+      });
     } finally {
-      await unblock();
+      fault.restore();
     }
+    expect(fault.rejected()).toBeGreaterThan(0);
 
     // Nothing was exposed, under any name.
     expect(blocked.status).not.toBe("ready");

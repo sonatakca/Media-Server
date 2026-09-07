@@ -25,6 +25,7 @@ import {
 import { ADAPTIVE_PROFILE_VERSION } from "./profile";
 import { TITLE_PACKAGE_DIRECTORY } from "./titleLayout";
 import { TITLE_BUILD_RECORD } from "./publishTitle";
+import { resolvePublishedTitleRoot } from "./publishedRoot";
 
 export type AdaptiveInspectionStatus =
   | "missing"
@@ -52,11 +53,12 @@ export async function inspectAdaptivePackage({
   sourceFingerprint,
   profileVersion = ADAPTIVE_PROFILE_VERSION,
 }: InspectAdaptiveOptions): Promise<AdaptiveInspection> {
-  const versionRoot = titleRoot;
+  let versionRoot: string;
   let recordText: string;
   try {
+    versionRoot = await resolvePublishedTitleRoot(titleRoot);
     recordText = await readFile(
-      path.join(titleRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
+      path.join(versionRoot, TITLE_PACKAGE_DIRECTORY, TITLE_BUILD_RECORD),
       "utf8",
     );
   } catch (error) {

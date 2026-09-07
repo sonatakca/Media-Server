@@ -527,6 +527,10 @@ describe("the live sample survives an operation that reports nothing", () => {
     const held = new Promise<void>((resolve) => {
       releasePackager = resolve;
     });
+    let sampleReady = () => {};
+    const ready = new Promise<void>((resolve) => {
+      sampleReady = resolve;
+    });
 
     const packageFn = vi.fn(
       async (_request: never, _paths: never, options: never) => {
@@ -545,6 +549,7 @@ describe("the live sample survives an operation that reports nothing", () => {
           },
         });
         // Inside one long probe that reports nothing until it returns.
+        sampleReady();
         await held;
         return {
           status: "ready",
@@ -571,31 +576,32 @@ describe("the live sample survives an operation that reports nothing", () => {
       mtimeMs: 0,
     });
 
-    /*
-     * The runner has real work to do before it reaches the packager — probing,
-     * hardware detection, writing the registry — and fake timers only let that
-     * I/O drain as the clock is advanced. Advance until the first sample lands
-     * rather than assuming one interval is enough.
-     */
+    // Registry I/O owns readiness; advancing a fake clock cannot complete it.
+    // Surface an early job exit rather than waiting for a sample forever.
+    await Promise.race([
+      ready,
+      run.then(() => {
+        throw new Error(
+          "The job ended before publishing its verification sample.",
+        );
+      }),
+    ]);
     // The samples that actually carry a verification measurement, as opposed
     // to the phase-transition sample that precedes them.
     const validating = () =>
       snapshots().filter(
         (sample) => sample.phase === "validating" && sample.verification,
       );
-    for (
-      let attempt = 0;
-      attempt < 40 && validating().length === 0;
-      attempt++
-    ) {
-      await vi.advanceTimersByTimeAsync(50);
-    }
     const before = validating()[validating().length - 1]!;
-    expect(before).toBeDefined();
-    await vi.advanceTimersByTimeAsync(10_000);
-    const after = validating()[validating().length - 1]!;
-    releasePackager();
-    await run;
+    let after: LiveProgressSnapshot;
+    try {
+      expect(before).toBeDefined();
+      await vi.advanceTimersByTimeAsync(10_000);
+      after = validating()[validating().length - 1]!;
+    } finally {
+      releasePackager();
+      await run;
+    }
 
     // Republished, so the reader keeps the panel rather than dropping it.
     expect(after.timestampMs).toBeGreaterThan(before.timestampMs);

@@ -445,6 +445,13 @@ function videoEncoderArgsFor(
     );
   }
 
+  if (encoder === "h264_qsv" || encoder === "hevc_qsv") {
+    // QSV's default B-frame reorder delay shifts the first presentation time
+    // in fragmented MP4. Epoch assembly requires a zero-based local timeline;
+    // progressive MP4 edit lists cannot repair independently joined fragments.
+    args.push(`-bf:${specifier}`, "0");
+  }
+
   args.push(
     `-maxrate:${specifier}`,
     String(policy.maxVideoBitrate),

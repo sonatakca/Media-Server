@@ -48,6 +48,14 @@ function valueAfter(args: string[], flag: string): string | undefined {
 }
 
 describe("per-rung frame rate", () => {
+  it.each(["h264_qsv", "hevc_qsv"] as const)(
+    "keeps %s epoch presentation time free of reorder delay",
+    (encoder) => {
+      const args = build({ encoder });
+      for (const index of LADDER.keys())
+        expect(valueAfter(args, `-bf:v:${index}`)).toBe("0");
+    },
+  );
   /**
    * The small rungs are halved because they exist for scarce bandwidth. The
    * conversion goes in front of the scale so the frames that will not survive

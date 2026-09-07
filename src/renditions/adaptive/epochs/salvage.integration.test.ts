@@ -20,7 +20,6 @@
 
 import { execFile } from "node:child_process";
 import {
-  chmod,
   copyFile,
   mkdir,
   mkdtemp,
@@ -50,6 +49,9 @@ import { checkpointRoot, epochsRoot } from "./checkpoints";
 import type { EpochCheckpointManifest } from "./checkpoints";
 import { readEpochPlanFile } from "./checkpoints";
 import { EPOCH_MANIFEST_FILE, epochDirectoryName } from "./policy";
+import { stallThresholds } from "./stallPolicy";
+
+import { rejectPublicationCommit } from "../../../test/publicationFault";
 
 const run = promisify(execFile);
 const MEDIA_ID = "44444444-4444-4444-8444-444444444444";
@@ -252,7 +254,26 @@ function failingSourceReads(
       seek !== null &&
       seek >= window[0] &&
       seek < window[1];
-    if (!targeted || failed >= times) return runFfmpeg(command, args, options);
+    if (!targeted || failed >= times) {
+      // Only the synthetic hanging child uses the accelerated failure clock.
+      // Real encodes (including audio finalization) retain production budgets.
+      const production = stallThresholds();
+      return runFfmpeg(
+        command,
+        args,
+        mode.startsWith("hang") && options.watchdog
+          ? {
+              ...options,
+              watchdog: {
+                ...options.watchdog,
+                hardStallMs: production.hardStallMs,
+                startupStallMs: production.startupStallMs,
+                terminationGraceMs: production.terminationGraceMs,
+              },
+            }
+          : options,
+      );
+    }
 
     failed += 1;
     if (mode.startsWith("hang")) {
@@ -760,6 +781,7 @@ describe("an encoder that hangs on a damaged region", () => {
       },
     });
 
+    expect(result.error).toBeUndefined();
     expect(result.status).toBe("ready");
     // Bounded. The fixture never exits on its own, so finishing at all is
     // the property under test.
@@ -912,6 +934,7 @@ describe("an encoder that hangs on a damaged region", () => {
       onEvent: (event: { type: string }) => seen.push(event.type),
     });
 
+    expect(result.error).toBeUndefined();
     expect(result.status).toBe("ready");
     expect(seen).toContain("source-stall-abort");
     expect(seen).toContain("epoch-salvaged");
@@ -1108,20 +1131,22 @@ describe("a replacement that is already on disk", () => {
     /*
      * A salvaged build that dies before it can publish, which is exactly the
      * shape of a worker being killed or a machine restarting: the epochs are
-     * durable, the package is not. The title folder is made unwritable so
-     * publication is the step that fails, leaving everything upstream intact.
+     * durable, the package is not. The filesystem rejects the publication
+     * rename, leaving everything upstream intact.
      */
     const { runner } = failingSourceReads(harness, { window: [11, 13] });
-    await chmod(harness.titleRoot, 0o555);
+    const fault = await rejectPublicationCommit(harness.titleRoot);
     try {
       const failed = await runPackage(harness, {
+        publicationFileSystem: fault.fileSystem,
         runEncoder: runner,
         sourceDamagePolicy: "replace-epoch",
       });
       expect(failed.status).not.toBe("ready");
     } finally {
-      await chmod(harness.titleRoot, 0o755);
+      fault.restore();
     }
+    expect(fault.rejected()).toBeGreaterThan(0);
 
     const durable = await durableEpochs(harness);
     expect(durable).toEqual(["000000", "000001", "000002", "000003"]);
@@ -1167,15 +1192,17 @@ describe("a replacement that is already on disk", () => {
     if (!fixture) return;
     const harness = await createHarness();
     const { runner } = failingSourceReads(harness, { window: [11, 13] });
-    await chmod(harness.titleRoot, 0o555);
+    const fault = await rejectPublicationCommit(harness.titleRoot);
     try {
       await runPackage(harness, {
+        publicationFileSystem: fault.fileSystem,
         runEncoder: runner,
         sourceDamagePolicy: "replace-epoch",
       });
     } finally {
-      await chmod(harness.titleRoot, 0o755);
+      fault.restore();
     }
+    expect(fault.rejected()).toBeGreaterThan(0);
     expect((await manifestOf(harness, DAMAGED_EPOCH)).salvage).toBeDefined();
 
     /*

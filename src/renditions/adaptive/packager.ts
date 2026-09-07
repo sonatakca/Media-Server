@@ -323,6 +323,8 @@ export interface AdaptivePackageRequest {
 }
 
 export interface AdaptivePackagerOptions {
+  /** The publication filesystem boundary; encoding and validation stay real. */
+  publicationFileSystem?: Pick<typeof import("node:fs/promises"), "rename">;
   ffmpegPath?: string;
   ffprobePath?: string;
   encoderPreference?: RenditionEncoderPreference;
@@ -755,6 +757,7 @@ export async function packageAdaptiveRendition(
     signal,
     dryRun = false,
     retainWorkspaceAfterPublish = false,
+    publicationFileSystem,
   }: AdaptivePackagerOptions,
 ): Promise<AdaptivePackageResult> {
   const base = { mediaId: request.mediaId, relativePath: request.relativePath };
@@ -1010,7 +1013,7 @@ export async function packageAdaptiveRendition(
             },
           }
         : {};
-      const { manifest, incomingDirectory } = existingBuildRecord
+      const publication = existingBuildRecord
         ? await publishAdditionalRenditions({
             workVersionRoot,
             titleRoot,
@@ -1023,6 +1026,9 @@ export async function packageAdaptiveRendition(
             ...onPublishProgress,
           })
         : await publishTitlePackage({
+            ...(publicationFileSystem
+              ? { fileSystem: publicationFileSystem }
+              : {}),
             workVersionRoot,
             titleRoot,
             metadata,
@@ -1032,6 +1038,11 @@ export async function packageAdaptiveRendition(
             ...(signal ? { signal } : {}),
             ...onPublishProgress,
           });
+      const { manifest, incomingDirectory } = publication;
+      const publishedRoot =
+        "publishedRoot" in publication
+          ? (publication.publishedRoot ?? titleRoot)
+          : titleRoot;
       // The manifest describes the whole title, including renditions this run
       // reused, so it is the honest source for the package's own size.
       const publishedTotalBytes = manifest.storage.totalBytes;
@@ -1078,7 +1089,7 @@ export async function packageAdaptiveRendition(
       ]) {
         for (const relative of [rendition.mediaPath, rendition.playlistPath]) {
           const stats = await stat(
-            path.join(titleRoot, ...relative.split("/")),
+            path.join(publishedRoot, ...relative.split("/")),
           ).catch(() => undefined);
           const expectedSize =
             relative === rendition.mediaPath

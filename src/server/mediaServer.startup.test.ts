@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Server } from "node:http";
+import path from "node:path";
 import { startMediaServer, type RunningMediaServer } from "./mediaServer";
 import type { NativeRuntime } from "./ownApi/nativeRuntime";
 import { buildOwnApiHealthStatus } from "./ownApi/ownApiHandler";
@@ -157,7 +158,7 @@ describe("a media volume that has stopped answering", () => {
     expect(phase).toMatchObject({
       state: "running",
       operation: "stat",
-      resource: "/Volumes/Expansion/media",
+      resource: path.resolve("/Volumes/Expansion/media"),
     });
     expect(phase?.elapsedMs).toBeGreaterThanOrEqual(0);
     expect(probes).toBe(1);

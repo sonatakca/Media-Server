@@ -3,6 +3,8 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
+  rename,
   stat,
   writeFile,
 } from "node:fs/promises";
@@ -16,6 +18,8 @@ import {
   publishTitlePackage,
   readTitlePackageManifest,
 } from "./publishTitle";
+import { rejectPublicationCommit } from "../../test/publicationFault";
+import { resolvePublishedTitleRoot } from "./publishedRoot";
 
 /**
  * Publishing a built package into the folder a person browses.
@@ -466,6 +470,110 @@ describe("resumable cross-volume copy", () => {
  * a bug is fixed; this is what makes the next one cost a failed job instead.
  */
 describe("publishing into a folder another title already occupies", () => {
+  it("reconciles a pointer rename that committed before reporting failure", async () => {
+    const first = await buildWorkPackage();
+    await publishTitlePackage({ ...first, metadata: metadata() });
+    const next = await buildWorkPackage();
+    const input = {
+      workVersionRoot: next.workVersionRoot,
+      titleRoot: first.titleRoot,
+      metadata: { ...metadata(), sourceFingerprint: "b".repeat(64) },
+    };
+    let committed = false;
+    await expect(
+      publishTitlePackage({
+        ...input,
+        fileSystem: {
+          rename: async (from, to) => {
+            await rename(from, to);
+            if (
+              String(to).endsWith(`${path.sep}.seyirlik${path.sep}current.json`)
+            ) {
+              committed = true;
+              throw Object.assign(new Error("Commit outcome unavailable"), {
+                code: "EIO",
+              });
+            }
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EIO" });
+    expect(committed).toBe(true);
+    const active = await resolvePublishedTitleRoot(first.titleRoot);
+    expect(
+      (await readTitlePackageManifest(first.titleRoot))?.sourceFingerprint,
+    ).toBe("b".repeat(64));
+    await expect(
+      publishTitlePackage({
+        ...input,
+        fileSystem: {
+          rename: async () => {
+            throw new Error("Retry must not swap active files");
+          },
+        },
+      }),
+    ).resolves.toMatchObject({ publishedRoot: expect.any(String) });
+    expect(await resolvePublishedTitleRoot(first.titleRoot)).toBe(active);
+  });
+
+  it("keeps every last-valid artifact readable when a replacement commit fails", async () => {
+    const first = await buildWorkPackage();
+    const { manifest } = await publishTitlePackage({
+      ...first,
+      metadata: metadata(),
+    });
+    const files = [
+      manifest.masterPlaylistPath,
+      ...[...manifest.video, ...manifest.audio, ...manifest.subtitle].flatMap(
+        (r) => [r.mediaPath, r.playlistPath],
+      ),
+    ];
+    const before = await Promise.all(
+      files.map((file) => readFile(path.join(first.titleRoot, file))),
+    );
+    const next = await buildWorkPackage();
+    const fault = await rejectPublicationCommit(first.titleRoot);
+    try {
+      await expect(
+        publishTitlePackage({
+          workVersionRoot: next.workVersionRoot,
+          titleRoot: first.titleRoot,
+          metadata: { ...metadata(), sourceFingerprint: "a".repeat(64) },
+          fileSystem: fault.fileSystem,
+        }),
+      ).rejects.toMatchObject({ code: "EACCES" });
+      expect(fault.rejected()).toBeGreaterThan(0);
+      expect(await readTitlePackageManifest(first.titleRoot)).toEqual(manifest);
+      for (const [index, file] of files.entries()) {
+        expect(await readFile(path.join(first.titleRoot, file))).toEqual(
+          before[index],
+        );
+      }
+    } finally {
+      fault.restore();
+    }
+    const recovered = await publishTitlePackage({
+      workVersionRoot: next.workVersionRoot,
+      titleRoot: first.titleRoot,
+      metadata: { ...metadata(), sourceFingerprint: "a".repeat(64) },
+    });
+    expect(
+      (await readTitlePackageManifest(first.titleRoot))?.sourceFingerprint,
+    ).toBe("a".repeat(64));
+    expect(await resolvePublishedTitleRoot(first.titleRoot)).toBe(
+      await realpath(recovered.publishedRoot!),
+    );
+    // An existing consumer retains readable bytes after the new pointer lands.
+    for (const [index, file] of files.entries()) {
+      expect(await readFile(path.join(first.titleRoot, file))).toEqual(
+        before[index],
+      );
+      expect(await readFile(path.join(recovered.publishedRoot!, file))).toEqual(
+        before[index],
+      );
+    }
+  });
+
   it("refuses, and leaves the package that was there untouched", async () => {
     const first = await buildWorkPackage();
     await publishTitlePackage({

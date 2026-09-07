@@ -36,8 +36,9 @@ import {
 } from "../testFixtures";
 import { checkpointRoot, epochsRoot } from "./checkpoints";
 import { epochDirectoryName, EPOCH_MANIFEST_FILE } from "./policy";
-import { denyWritesInto } from "../../../test/unwritableDirectory";
 import { supportsPosixSignals } from "../../processExecution";
+
+import { rejectPublicationCommit } from "../../../test/publicationFault";
 
 const MEDIA_ID = "33333333-3333-4333-8333-333333333333";
 const EPOCH_TARGET_SECONDS = 6;
@@ -489,17 +490,20 @@ describe("publication fails after the encoding is done", () => {
     const harness = await createHarness();
 
     /*
-     * A title folder that cannot be written to. Everything upstream of
+     * A rejected final publication rename. Everything upstream of
      * publication succeeds, so this is the case where hours of encoding are at
      * their most exposed: the work is finished and the last step fails.
      */
-    const unblock = await denyWritesInto(harness.titleRoot);
+    const fault = await rejectPublicationCommit(harness.titleRoot);
     let failed;
     try {
-      failed = await runPackage(harness);
+      failed = await runPackage(harness, {
+        publicationFileSystem: fault.fileSystem,
+      });
     } finally {
-      await unblock();
+      fault.restore();
     }
+    expect(fault.rejected()).toBeGreaterThan(0);
     expect(failed.status).not.toBe("ready");
 
     const durable = await durableEpochs(harness);
