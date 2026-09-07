@@ -1,3 +1,4 @@
+import path from "node:path";
 /**
  * The catalogue, as the processing page must see it.
  *
@@ -659,7 +660,14 @@ describe("a large library stays a catalogue operation", () => {
     const targets = packageTargetsFor(rows, "/media");
     expect(targets).toHaveLength(2);
     expect(targets[1]!.kind).toBe("episode");
-    expect(targets[1]!.sourcePath).toContain("Series/Andor/Season 1/");
+    /*
+     * A host path, so the separator is the host's. The rule under test is that
+     * the episode's own folders are on the way to the file, not how a `/` is
+     * spelled — asserting the POSIX form was asserting the platform.
+     */
+    expect(targets[1]!.sourcePath).toContain(
+      path.join("Series", "Andor", "Season 1") + path.sep,
+    );
   });
 });
 

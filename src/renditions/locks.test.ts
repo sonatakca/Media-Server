@@ -1,9 +1,9 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { tmpdir } from "node:os";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   LOCK_LEASE_TIMEOUT_MS,
   acquireDirectoryLock,
@@ -68,18 +68,46 @@ describe("rendition directory locks", () => {
 });
 
 /**
- * A process that is certainly alive and certainly not this one. `launchd` is
- * always running, and signalling it as an ordinary user fails with `EPERM`,
- * which is how liveness is established without permission to interfere.
+ * A process that is certainly alive and certainly not this one.
+ *
+ * This used to be pid 1, on the grounds that `launchd` is always running and
+ * signalling it as an ordinary user fails with `EPERM` — which is a fine way to
+ * establish liveness, and a fact about POSIX. Windows has no pid 1; the number
+ * names nothing, `process.kill(1, 0)` raises `ESRCH`, and the two tests that
+ * lean on it concluded that a live holder was dead. They were asserting the
+ * platform, not the rule.
+ *
+ * So the live process is one this suite starts and can point at on any host. It
+ * is a child rather than a stranger, which changes nothing for the code under
+ * test: `isProcessAlive` asks `process.kill(pid, 0)`, and that answers the same
+ * for a child as for anything else. The `EPERM` path — a live process this user
+ * may not signal — is exercised separately below, where it exists.
  */
-const LIVE_FOREIGN_PID = 1;
+let liveForeignPid = 0;
+let liveForeign: ReturnType<typeof spawn> | undefined;
 
 /**
  * A pid that named a real process and no longer does — a worker killed
  * mid-encode, in miniature. Taken from a child that has already exited and
  * been reaped, rather than a guessed number that some other process may own.
+ *
+ * `process.execPath` rather than `/usr/bin/true`, which does not exist on every
+ * host this has to run on.
  */
-const DEAD_PID = spawnSync("/usr/bin/true").pid as number;
+const DEAD_PID = spawnSync(process.execPath, ["-e", ""]).pid as number;
+
+beforeAll(async () => {
+  liveForeign = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    stdio: "ignore",
+  });
+  liveForeignPid = liveForeign.pid as number;
+  // Give it long enough to exist before anything asks whether it does.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+});
+
+afterAll(() => {
+  liveForeign?.kill();
+});
 
 describe("deciding whether a rendition lock is still alive", () => {
   /**
@@ -104,15 +132,15 @@ describe("deciding whether a rendition lock is still alive", () => {
   /**
    * A lock being refreshed right now is genuinely held and must be left alone.
    *
-   * Held by a different process — a live one, `launchd`, which stands in for
-   * the other Seyirlik process here. A pid that does not exist would prove
+   * Held by a different process — a live one, which stands in for the other
+   * Seyirlik process here. A pid that does not exist would prove
    * nothing about heartbeats, because a holder this host can see is gone is
    * reclaimed on that evidence alone.
    */
   it("refuses to steal a lock whose holder is still heartbeating", async () => {
     const now = Date.now();
     const lockPath = await lockDir({
-      pid: LIVE_FOREIGN_PID,
+      pid: liveForeignPid,
       hostname: os.hostname(),
       createdAt: new Date(now - 20 * 60_000).toISOString(),
       purpose: "adaptive:7ada79bd",
@@ -130,7 +158,7 @@ describe("deciding whether a rendition lock is still alive", () => {
   it("tolerates a heartbeat that is merely late", async () => {
     const now = Date.now();
     const lockPath = await lockDir({
-      pid: LIVE_FOREIGN_PID,
+      pid: liveForeignPid,
       hostname: os.hostname(),
       createdAt: new Date(now - 20 * 60_000).toISOString(),
       purpose: "adaptive:7ada79bd",

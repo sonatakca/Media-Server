@@ -22,14 +22,34 @@ import {
  * one the packager publishes `video/` and `audio/` with — so trickplay lands as
  * a sibling of them rather than in a tree of its own.
  */
+/**
+ * A host path, written in POSIX for readability.
+ *
+ * Every path below is a path on the machine the server is running on, and the
+ * host is what decides how one is spelled: `path.join` normalises every
+ * separator to `\` on Windows, while `path.dirname` merely truncates and leaves
+ * whatever it was given. Writing the expectations as literal POSIX strings meant
+ * the suite was asserting the separator rather than the rule, and half of these
+ * cases turned red on Windows for a reason that had nothing to do with where a
+ * package goes.
+ *
+ * Both the inputs and the expectations go through this, so every relationship
+ * the tests are actually about holds unchanged on either host — and on POSIX it
+ * returns its argument.
+ */
+const hostPath = (posix: string): string =>
+  posix.startsWith("/")
+    ? path.join(path.sep, ...posix.slice(1).split("/"))
+    : path.join(...posix.split("/"));
+
 describe("resolving a title's trickplay directory", () => {
   it("puts a movie's sheets beside the folders its package published", () => {
-    const source = "/media/Movies/Dune (2021)/src/Dune (2021).mkv";
+    const source = hostPath("/media/Movies/Dune (2021)/src/Dune (2021).mkv");
     const titleRoot = besideTitleRoot(source);
 
-    expect(titleRoot).toBe("/media/Movies/Dune (2021)");
+    expect(titleRoot).toBe(hostPath("/media/Movies/Dune (2021)"));
     expect(trickplayDirectoryFor(titleRoot)).toBe(
-      "/media/Movies/Dune (2021)/trickplay",
+      hostPath("/media/Movies/Dune (2021)/trickplay"),
     );
     // A sibling of the other title-owned directories, not a child of one.
     expect(path.dirname(trickplayDirectoryFor(titleRoot))).toBe(
@@ -38,15 +58,16 @@ describe("resolving a title's trickplay directory", () => {
   });
 
   it("puts an episode's sheets in its own folder, never in the season folder", () => {
-    const source =
-      "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mkv";
+    const source = hostPath(
+      "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mkv",
+    );
     const titleRoot = nestedTitleRoot(source);
 
     expect(titleRoot).toBe(
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
     );
     expect(trickplayDirectoryFor(titleRoot)).toBe(
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa/trickplay",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa/trickplay"),
     );
   });
 
@@ -56,7 +77,9 @@ describe("resolving a title's trickplay directory", () => {
    * visible generated media.
    */
   it("is never under .seyirlik and never under content", () => {
-    const directory = trickplayDirectoryFor("/media/Movies/Dune (2021)");
+    const directory = trickplayDirectoryFor(
+      hostPath("/media/Movies/Dune (2021)"),
+    );
 
     expect(directory).not.toContain(".seyirlik");
     expect(directory).not.toContain("/content/");
@@ -72,11 +95,13 @@ describe("resolving a title's trickplay directory", () => {
 describe("staging directories", () => {
   it("stages inside the title folder, under a hidden name the scanner ignores", () => {
     const staging = trickplayStagingDirectory(
-      "/media/Movies/Dune (2021)",
+      hostPath("/media/Movies/Dune (2021)"),
       "abc",
     );
 
-    expect(staging).toBe("/media/Movies/Dune (2021)/.trickplay-publish-abc");
+    expect(staging).toBe(
+      hostPath("/media/Movies/Dune (2021)/.trickplay-publish-abc"),
+    );
     expect(path.basename(staging).startsWith(".")).toBe(true);
     expect(isTrickplayStagingDirectory(path.basename(staging))).toBe(true);
   });
@@ -133,13 +158,27 @@ describe("telling legacy external trickplay from the managed directory", () => {
 
 describe("containment", () => {
   it("resolves before it compares, so `..` cannot pass", () => {
-    expect(isInsideDirectory("/media", "/media/Movies/a.trickplay")).toBe(true);
-    expect(isInsideDirectory("/media", "/media/../etc/passwd")).toBe(false);
-    expect(isInsideDirectory("/media", "/media/Movies/../../etc")).toBe(false);
+    expect(
+      isInsideDirectory(
+        hostPath("/media"),
+        hostPath("/media/Movies/a.trickplay"),
+      ),
+    ).toBe(true);
+    expect(
+      isInsideDirectory(hostPath("/media"), hostPath("/media/../etc/passwd")),
+    ).toBe(false);
+    expect(
+      isInsideDirectory(
+        hostPath("/media"),
+        hostPath("/media/Movies/../../etc"),
+      ),
+    ).toBe(false);
   });
 
   it("does not read a sibling with a shared prefix as being inside", () => {
-    expect(isInsideDirectory("/media", "/media-old/Movies")).toBe(false);
+    expect(
+      isInsideDirectory(hostPath("/media"), hostPath("/media-old/Movies")),
+    ).toBe(false);
     expect(
       isInsideDirectory(
         "/Volumes/Expansion/media",
@@ -149,6 +188,8 @@ describe("containment", () => {
   });
 
   it("treats a root as inside itself", () => {
-    expect(isInsideDirectory("/media", "/media")).toBe(true);
+    expect(isInsideDirectory(hostPath("/media"), hostPath("/media"))).toBe(
+      true,
+    );
   });
 });

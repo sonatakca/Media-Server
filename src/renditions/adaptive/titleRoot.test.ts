@@ -13,20 +13,44 @@ import {
   titleSourceDirectory,
 } from "./titleRoot";
 
-const MOVIE = "/media/Movies/Dune (2021)/Dune (2021).mp4";
-const EPISODE = "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4";
+/**
+ * A host path, written in POSIX for readability.
+ *
+ * Every path below is a path on the machine the server is running on, and the
+ * host is what decides how one is spelled: `path.join` normalises every
+ * separator to `\` on Windows, while `path.dirname` merely truncates and leaves
+ * whatever it was given. Writing the expectations as literal POSIX strings meant
+ * the suite was asserting the separator rather than the rule, and half of these
+ * cases turned red on Windows for a reason that had nothing to do with where a
+ * package goes.
+ *
+ * Both the inputs and the expectations go through this, so every relationship
+ * the tests are actually about holds unchanged on either host — and on POSIX it
+ * returns its argument.
+ */
+const hostPath = (posix: string): string =>
+  posix.startsWith("/")
+    ? path.join(path.sep, ...posix.slice(1).split("/"))
+    : path.join(...posix.split("/"));
+
+const MOVIE = hostPath("/media/Movies/Dune (2021)/Dune (2021).mp4");
+const EPISODE = hostPath(
+  "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4",
+);
 
 describe("where a title's package lives", () => {
   it("keeps a movie's package beside the movie, as it has always been", () => {
-    expect(besideTitleRoot(MOVIE)).toBe("/media/Movies/Dune (2021)");
-    expect(titleRootFor(MOVIE, "beside")).toBe("/media/Movies/Dune (2021)");
+    expect(besideTitleRoot(MOVIE)).toBe(hostPath("/media/Movies/Dune (2021)"));
+    expect(titleRootFor(MOVIE, "beside")).toBe(
+      hostPath("/media/Movies/Dune (2021)"),
+    );
     expect(titleRootLayoutForKind("movie")).toBe("beside");
   });
 
   it("gives an episode its own folder inside the shared season folder", () => {
     expect(titleRootLayoutForKind("episode")).toBe("nested");
     expect(nestedTitleRoot(EPISODE)).toBe(
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
     );
   });
 
@@ -37,12 +61,18 @@ describe("where a title's package lives", () => {
    */
   it("keeps every episode of every season of every show apart", () => {
     const sources = [
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4",
-      "/media/Series/Andor/Season 1/Andor - S01E02 - That Would Be Me.mp4",
-      "/media/Series/Andor/Season 2/Andor - S02E01 - One Year Later.mp4",
-      "/media/Series/Arcane/Season 1/Arcane - S01E01 - Welcome.mp4",
-      "/media/Series/Ezel/Season 1/Ezel - S01E01 - Episode 1.mp4",
-      "/media/Series/The Sopranos/Season 1/The Sopranos - S01E01 - Pilot.mp4",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4"),
+      hostPath(
+        "/media/Series/Andor/Season 1/Andor - S01E02 - That Would Be Me.mp4",
+      ),
+      hostPath(
+        "/media/Series/Andor/Season 2/Andor - S02E01 - One Year Later.mp4",
+      ),
+      hostPath("/media/Series/Arcane/Season 1/Arcane - S01E01 - Welcome.mp4"),
+      hostPath("/media/Series/Ezel/Season 1/Ezel - S01E01 - Episode 1.mp4"),
+      hostPath(
+        "/media/Series/The Sopranos/Season 1/The Sopranos - S01E01 - Pilot.mp4",
+      ),
     ];
     const roots = sources.map((source) => nestedTitleRoot(source));
     expect(new Set(roots).size).toBe(sources.length);
@@ -57,15 +87,19 @@ describe("where a title's package lives", () => {
    * believing this covers it.
    */
   it("does not, on its own, separate two containers of one episode", () => {
-    const mkv = "/media/Series/House of the Dragon/Season 3/HotD - S03E05.mkv";
-    const mp4 = "/media/Series/House of the Dragon/Season 3/HotD - S03E05.mp4";
+    const mkv = hostPath(
+      "/media/Series/House of the Dragon/Season 3/HotD - S03E05.mkv",
+    );
+    const mp4 = hostPath(
+      "/media/Series/House of the Dragon/Season 3/HotD - S03E05.mp4",
+    );
     expect(nestedTitleRoot(mkv)).toBe(nestedTitleRoot(mp4));
   });
 
   it("offers the nested root before the shared one, and only once", () => {
     expect(candidateTitleRoots(EPISODE)).toEqual([
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
-      "/media/Series/Andor/Season 1",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
+      hostPath("/media/Series/Andor/Season 1"),
     ]);
   });
 
@@ -86,7 +120,7 @@ describe("resolving the root a package is actually at", () => {
       "beside",
       async (candidate) => candidate === besideManifest,
     );
-    expect(root).toBe("/media/Movies/Dune (2021)");
+    expect(root).toBe(hostPath("/media/Movies/Dune (2021)"));
   });
 
   it("finds an episode package in its nested root", async () => {
@@ -95,7 +129,9 @@ describe("resolving the root a package is actually at", () => {
       "beside",
       async (candidate) => candidate === nestedManifest,
     );
-    expect(root).toBe("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa");
+    expect(root).toBe(
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
+    );
   });
 
   /*
@@ -105,16 +141,18 @@ describe("resolving the root a package is actually at", () => {
    */
   it("falls back to the layout it was told, not to the directory", async () => {
     expect(await resolveTitleRoot(EPISODE, "nested", async () => false)).toBe(
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
     );
     expect(await resolveTitleRoot(MOVIE, "beside", async () => false)).toBe(
-      "/media/Movies/Dune (2021)",
+      hostPath("/media/Movies/Dune (2021)"),
     );
   });
 
   it("prefers the nested root when both somehow hold a manifest", async () => {
     const root = await resolveTitleRoot(EPISODE, "beside", async () => true);
-    expect(root).toBe("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa");
+    expect(root).toBe(
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
+    );
   });
 });
 
@@ -132,8 +170,9 @@ import {
 
 describe("strict nested title resolution", () => {
   it("strict nested titles never inherit a sibling package", async () => {
-    const source =
-      "/media/Series/Arcane/Season 1/Arcane - S01E02 - Some Mysteries Are Better Left Unsolved.mp4";
+    const source = hostPath(
+      "/media/Series/Arcane/Season 1/Arcane - S01E02 - Some Mysteries Are Better Left Unsolved.mp4",
+    );
 
     const besideManifest = regressionTitleManifestPath(
       regressionBesideTitleRoot(source),
@@ -168,34 +207,43 @@ describe("strict nested title resolution", () => {
  * orphan a single published package.
  */
 describe("sources kept in a src/ folder", () => {
-  const ORGANISED_MOVIE = "/media/Movies/Dune (2021)/src/Dune (2021).mp4";
-  const ORGANISED_EPISODE =
-    "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4";
+  const ORGANISED_MOVIE = hostPath(
+    "/media/Movies/Dune (2021)/src/Dune (2021).mp4",
+  );
+  const ORGANISED_EPISODE = hostPath(
+    "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4",
+  );
 
   it("keeps a movie's package in the movie folder, not in src/", () => {
-    expect(besideTitleRoot(ORGANISED_MOVIE)).toBe("/media/Movies/Dune (2021)");
+    expect(besideTitleRoot(ORGANISED_MOVIE)).toBe(
+      hostPath("/media/Movies/Dune (2021)"),
+    );
     expect(besideTitleRoot(ORGANISED_MOVIE)).toBe(besideTitleRoot(MOVIE));
   });
 
   it("keeps an episode's package where it already was", () => {
     expect(nestedTitleRoot(ORGANISED_EPISODE)).toBe(
-      "/media/Series/Andor/Season 1/Andor - S01E01 - Kassa",
+      hostPath("/media/Series/Andor/Season 1/Andor - S01E01 - Kassa"),
     );
     expect(nestedTitleRoot(ORGANISED_EPISODE)).toBe(nestedTitleRoot(EPISODE));
   });
 
   it("still keeps every episode of a season apart", () => {
     const sources = [
-      "/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4",
-      "/media/Series/Andor/Season 1/src/Andor - S01E02 - That Would Be Me.mp4",
-      "/media/Series/Andor/Season 2/src/Andor - S02E01 - One Year Later.mp4",
+      hostPath("/media/Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4"),
+      hostPath(
+        "/media/Series/Andor/Season 1/src/Andor - S01E02 - That Would Be Me.mp4",
+      ),
+      hostPath(
+        "/media/Series/Andor/Season 2/src/Andor - S02E01 - One Year Later.mp4",
+      ),
     ];
     expect(new Set(sources.map(nestedTitleRoot)).size).toBe(sources.length);
   });
 
   it("names the source bucket inside the title folder", () => {
-    expect(titleSourceDirectory("/media/Movies/Dune (2021)")).toBe(
-      path.join("/media/Movies/Dune (2021)", "src"),
+    expect(titleSourceDirectory(hostPath("/media/Movies/Dune (2021)"))).toBe(
+      path.join(hostPath("/media/Movies/Dune (2021)"), "src"),
     );
   });
 
@@ -204,9 +252,9 @@ describe("sources kept in a src/ folder", () => {
    * bucket; climbing out of it would publish into the library root.
    */
   it("only treats a folder actually called src as the bucket", () => {
-    expect(besideTitleRoot("/media/Movies/Srcinko (2011)/Srcinko.mp4")).toBe(
-      "/media/Movies/Srcinko (2011)",
-    );
+    expect(
+      besideTitleRoot(hostPath("/media/Movies/Srcinko (2011)/Srcinko.mp4")),
+    ).toBe(hostPath("/media/Movies/Srcinko (2011)"));
   });
 
   it("answers the same for a library-relative path", () => {

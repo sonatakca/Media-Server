@@ -5,6 +5,14 @@ import {
 } from "./pauseController";
 import { createStorageWatchdog } from "./storageWatchdog";
 
+/**
+ * These cases are about the POSIX binding, and they drive it with a fake child,
+ * so the platform has to be stated rather than inherited from whichever machine
+ * runs them. On Windows there is no suspend at all — see the block at the end
+ * of this file, which asserts that separately.
+ */
+const POSIX = { platform: "darwin" } as const;
+
 describe("suspending an encode instead of losing it", () => {
   it("reports the current state to a listener as it subscribes", () => {
     const controller = createPauseController(true);
@@ -18,7 +26,7 @@ describe("suspending an encode instead of losing it", () => {
   it("signals a child to stop and continue", () => {
     const kill = vi.fn();
     const controller = createPauseController();
-    bindChildToPauseController({ pid: 42, kill }, controller);
+    bindChildToPauseController({ pid: 42, kill }, controller, POSIX);
 
     controller.pause();
     controller.resume();
@@ -33,7 +41,7 @@ describe("suspending an encode instead of losing it", () => {
   it("does nothing when asked to repeat a state", () => {
     const kill = vi.fn();
     const controller = createPauseController();
-    bindChildToPauseController({ pid: 42, kill }, controller);
+    bindChildToPauseController({ pid: 42, kill }, controller, POSIX);
     kill.mockClear();
 
     controller.resume();
@@ -54,6 +62,7 @@ describe("suspending an encode instead of losing it", () => {
         },
       },
       controller,
+      POSIX,
     );
 
     expect(() => controller.pause()).not.toThrow();
@@ -70,8 +79,9 @@ describe("suspending an encode instead of losing it", () => {
         },
       },
       controller,
+      POSIX,
     );
-    bindChildToPauseController({ pid: 2, kill: healthy }, controller);
+    bindChildToPauseController({ pid: 2, kill: healthy }, controller, POSIX);
     healthy.mockClear();
 
     controller.pause();

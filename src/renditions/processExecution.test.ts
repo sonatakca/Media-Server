@@ -14,11 +14,9 @@
  * assuming one.
  */
 
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { getPriority, tmpdir } from "node:os";
 import path from "node:path";
-import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   BACKGROUND_PROCESS_NICENESS,
@@ -30,7 +28,6 @@ import {
   usesPosixProcessGroup,
 } from "./processExecution";
 
-const run = promisify(execFile);
 let workspace = "";
 let fixture = "";
 
@@ -53,10 +50,19 @@ if (process.env.IGNORE_TERM === "true") {
 
 if (process.env.SPAWN_CHILD === "true") {
   const { spawn } = await import("node:child_process");
-  // A grandchild in the same process group, which a leaf-only kill would miss.
-  spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
-    stdio: "ignore",
-  });
+  const { writeFileSync } = await import("node:fs");
+  // A grandchild a leaf-only kill would miss. It writes its own pid where the
+  // test can find it, because "the group is empty" is a POSIX way of asking the
+  // question and Windows has no groups to ask about — but "that pid is gone" is
+  // the same invariant on both.
+  const grandchild = spawn(
+    process.execPath,
+    ["-e", "setInterval(() => {}, 1000)"],
+    { stdio: "ignore" },
+  );
+  if (process.env.GRANDCHILD_PID_FILE && grandchild.pid !== undefined) {
+    writeFileSync(process.env.GRANDCHILD_PID_FILE, String(grandchild.pid));
+  }
 }
 
 let seconds = 0;
@@ -105,17 +111,6 @@ async function alive(pid: number): Promise<boolean> {
   }
 }
 
-/** Every pid in a process group, for proving a grandchild went too. */
-async function groupMembers(pid: number): Promise<string[]> {
-  const { stdout } = await run("ps", ["-o", "pid=", "-g", String(pid)]).catch(
-    () => ({ stdout: "" }) as never,
-  );
-  return String(stdout)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0);
-}
-
 function fixtureProcess(
   environment: Record<string, string>,
   options: Parameters<typeof spawnManagedProcess>[0] extends infer T
@@ -141,10 +136,24 @@ afterAll(async () => {
   if (workspace) await rm(workspace, { recursive: true, force: true });
 });
 
-/** The niceness the kernel actually gave a pid, as opposed to the one asked for. */
-async function nicenessOf(pid: number): Promise<number> {
-  const { stdout } = await run("ps", ["-o", "nice=", "-p", String(pid)]);
-  return Number(String(stdout).trim());
+/**
+ * The scheduling priority the OS actually gave a pid, as opposed to the one
+ * asked for.
+ *
+ * `os.getPriority` rather than `ps`, and not only because `ps` does not exist on
+ * Windows: it is the counterpart of the `os.setPriority` the product calls, so
+ * it asks the same layer the same question. It keeps the property the `ps`
+ * version was chosen for — the answer comes from the operating system, so a
+ * call made against a pid that has already been reaped is still caught.
+ *
+ * The scale is not equally fine everywhere. POSIX has forty niceness values;
+ * Windows has priority *classes*, and Node maps a request onto the nearest one
+ * and reports that class back. So the tests below assert the ordering the
+ * feature actually requires rather than an exact number the platform never
+ * promised.
+ */
+function priorityOf(pid: number): number {
+  return getPriority(pid);
 }
 
 describe("scheduling priority", () => {
@@ -155,23 +164,33 @@ describe("scheduling priority", () => {
    * made against a pid that has already been reaped and nothing happens.
    */
   it("runs children behind the interface by default", async () => {
+    const parent = priorityOf(process.pid);
     const managed = fixtureProcess({ STEPS: "1", HOLD: "true" });
     expect(managed.pid).toBeDefined();
-    await expect(nicenessOf(managed.pid as number)).resolves.toBe(
-      BACKGROUND_PROCESS_NICENESS,
-    );
+    const child = priorityOf(managed.pid as number);
+
+    /*
+     * The requirement is an ordering, not a number: the child must lose to the
+     * interface under contention. A larger value is a lower priority on both
+     * platforms, and on POSIX — where the scale is fine enough to promise an
+     * exact answer — it is exactly the value that was asked for.
+     */
+    expect(child).toBeGreaterThan(parent);
+    if (supportsPosixSignals()) {
+      expect(child).toBe(BACKGROUND_PROCESS_NICENESS);
+    }
     managed.abort("caller");
     await managed.completed;
   });
 
   it("leaves a process someone is waiting on at foreground priority", async () => {
-    const parent = await nicenessOf(process.pid);
+    const parent = priorityOf(process.pid);
     const managed = fixtureProcess(
       { STEPS: "1", HOLD: "true" },
       { niceness: 0 },
     );
     expect(managed.pid).toBeDefined();
-    await expect(nicenessOf(managed.pid as number)).resolves.toBe(parent);
+    expect(priorityOf(managed.pid as number)).toBe(parent);
     managed.abort("caller");
     await managed.completed;
   });
@@ -239,7 +258,18 @@ describe("stopping a process that is not listening", () => {
       expect(outcome.aborted).toBe(true);
       expect(outcome.abortReason).toBe("caller");
       expect(outcome.escalated).toBe(true);
-      expect(outcome.signal).toBe("SIGKILL");
+      /*
+       * How it died is a POSIX detail; *that* it died is the requirement, and
+       * the reap is asserted below on both platforms. Windows reports no signal
+       * at all — `TerminateProcess` produces an exit code — so there the
+       * equivalent evidence is that the process ended without exiting normally.
+       */
+      if (supportsPosixSignals()) {
+        expect(outcome.signal).toBe("SIGKILL");
+      } else {
+        expect(outcome.signal).toBeNull();
+        expect(outcome.exitCode).not.toBe(0);
+      }
     } finally {
       delete process.env.IGNORE_TERM;
       delete process.env.STEPS;
@@ -256,36 +286,56 @@ describe("stopping a process that is not listening", () => {
       managed.abort("caller");
       const outcome = await managed.completed;
       expect(outcome.aborted).toBe(true);
+      /*
+       * The point of the test: the grace period was enough, so the escalation
+       * never ran. On POSIX the child took `SIGTERM`; on Windows it took the
+       * quit key it has no protocol for and then simply ended, which is the
+       * same fact — it stopped without being forced.
+       */
       expect(outcome.escalated).toBe(false);
-      expect(outcome.signal).toBe("SIGTERM");
+      if (supportsPosixSignals()) {
+        expect(outcome.signal).toBe("SIGTERM");
+      }
     } finally {
       delete process.env.STEPS;
     }
   }, 30_000);
 
-  it("takes the whole process group, not just the leaf", async () => {
+  it("takes the whole tree, not just the leaf", async () => {
     /*
      * An FFmpeg that leaves a helper behind is an orphan holding a descriptor
      * on a volume this system is trying to give up on. The fixture spawns a
      * child that would outlive a leaf-only kill.
+     *
+     * The grandchild names itself in a file rather than being found through a
+     * process group, because the group is a POSIX way of asking and Windows has
+     * none — but "that pid is gone" is the same invariant on both, and it is the
+     * one the feature is for.
      */
     process.env.SPAWN_CHILD = "true";
     process.env.STEPS = "1";
-    let pid: number | undefined;
+    const pidFile = path.join(workspace, `grandchild-${Date.now()}.pid`);
+    process.env.GRANDCHILD_PID_FILE = pidFile;
+    let grandchild: number | undefined;
     try {
       const managed = fixtureProcess({}, { terminationGraceMs: 200 });
-      pid = managed.pid;
       await new Promise((resolve) => setTimeout(resolve, 500));
-      expect((await groupMembers(pid!)).length).toBeGreaterThan(1);
+      grandchild = Number((await readFile(pidFile, "utf8")).trim());
+      expect(Number.isInteger(grandchild)).toBe(true);
+      expect(await alive(grandchild)).toBe(true);
       managed.abort("caller");
       await managed.completed;
     } finally {
       delete process.env.SPAWN_CHILD;
       delete process.env.STEPS;
+      delete process.env.GRANDCHILD_PID_FILE;
     }
-    // The group is empty, which a leaf kill could not have achieved.
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    expect(await groupMembers(pid!)).toEqual([]);
+    // Reaping the tree is not instant on either platform.
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      if (!(await alive(grandchild as number))) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(await alive(grandchild as number)).toBe(false);
   }, 30_000);
 
   it("keeps the first reason when asked twice", async () => {
