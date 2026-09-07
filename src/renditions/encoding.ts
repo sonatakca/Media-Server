@@ -252,6 +252,62 @@ export function getEncodingPolicy(
  * level does not admit — VideoToolbox refuses to configure the encoder at all
  * and every other decoder is entitled to reject the stream.
  */
+/**
+ * The presets Intel Quick Sync will accept, which are not the presets x264 has.
+ *
+ * `-preset` looks like one option shared by every encoder and is not.
+ * x264 and x265 both offer `ultrafast` and `superfast`; QSV's fastest is
+ * `veryfast`, and it does not merely ignore a name it does not know — it fails
+ * the encode:
+ *
+ *     [h264_qsv] Unable to parse "preset" option value "ultrafast"
+ *     [vost#0:0/h264_qsv] Error applying encoder options: Invalid argument
+ *
+ * On macOS the hardware encoder is VideoToolbox, which takes no preset at all,
+ * so nothing here ever consumed one and the assumption that a preset name is
+ * portable was never tested. Windows is the first platform where the chosen
+ * hardware encoder reads it.
+ */
+const QSV_PRESETS = new Set([
+  "veryfast",
+  "faster",
+  "fast",
+  "medium",
+  "slow",
+  "slower",
+  "veryslow",
+]);
+
+/**
+ * What x264's extra presets mean to an encoder that does not have them.
+ *
+ * Nearest in intent, not nearest in name: somebody asking for `ultrafast` wants
+ * the fastest encode available and should get QSV's fastest, and somebody
+ * asking for `placebo` wants the slowest. Both directions preserve the request.
+ */
+const QSV_PRESET_EQUIVALENT: Record<string, string> = {
+  ultrafast: "veryfast",
+  superfast: "veryfast",
+  placebo: "veryslow",
+};
+
+/**
+ * The preset to hand this encoder, given the one that was asked for.
+ *
+ * Translates only between names that genuinely correspond. A preset this
+ * function does not recognise is passed through untouched rather than clamped
+ * to a default, so a typo in a configured value fails loudly and attributably
+ * instead of being silently reinterpreted as `medium`.
+ */
+export function presetForEncoder(
+  encoder: RenditionVideoEncoder,
+  preset: string,
+): string {
+  if (encoder !== "h264_qsv" && encoder !== "hevc_qsv") return preset;
+  if (QSV_PRESETS.has(preset)) return preset;
+  return QSV_PRESET_EQUIVALENT[preset] ?? preset;
+}
+
 function levelFor(qualityHeight: number, family: RenditionCodecFamily): string {
   if (family === "hevc") {
     if (qualityHeight >= 4320) return "6.1";
@@ -310,7 +366,7 @@ function videoEncoderArgs(
       "-c:v",
       "hevc_qsv",
       "-preset",
-      preset,
+      presetForEncoder(encoder, preset),
       "-profile:v",
       hdr ? "main10" : "main",
       "-global_quality",
@@ -367,7 +423,7 @@ function videoEncoderArgs(
       "-c:v",
       "h264_qsv",
       "-preset",
-      preset,
+      presetForEncoder(encoder, preset),
       "-global_quality",
       String(policy.globalQuality),
       ...shared,

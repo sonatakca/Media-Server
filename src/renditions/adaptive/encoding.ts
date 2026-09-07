@@ -27,6 +27,7 @@ import {
 import {
   codecFamilyForEncoder,
   getEncodingPolicy,
+  presetForEncoder,
   type RenditionHdrSignal,
   type RenditionVideoEncoder,
 } from "../encoding";
@@ -394,7 +395,9 @@ function videoEncoderArgsFor(
     args.push(`-threads:${specifier}`, String(softwareThreads));
   }
   if (!encoder.endsWith("_videotoolbox")) {
-    args.push(`-preset:${specifier}`, preset);
+    // Encoder-aware: QSV's preset vocabulary is not x264's. See
+    // `presetForEncoder`.
+    args.push(`-preset:${specifier}`, presetForEncoder(encoder, preset));
   }
 
   if (encoder === "hevc_qsv") {

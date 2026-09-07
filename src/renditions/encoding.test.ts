@@ -5,6 +5,7 @@ import {
   buildRenditionFilterComplex,
   getEncodingPolicy,
   parseEncoderPreference,
+  presetForEncoder,
 } from "./encoding";
 
 const workRoot = path.join("D:\\media", ".seyirlik", "work", "id");
@@ -168,5 +169,76 @@ describe("standalone rendition encoding commands", () => {
     expect(() => parseEncoderPreference("nvenc")).toThrow(
       /must be `auto`, `qsv`, `videotoolbox` or `software`/,
     );
+  });
+});
+
+/**
+ * `-preset` is not one option shared by every encoder.
+ *
+ * Quick Sync's vocabulary is seven names; x264 and x265 have those seven plus
+ * `ultrafast`, `superfast` and `placebo`. QSV does not ignore a name it lacks,
+ * it refuses the encode: `Unable to parse "preset" option value "ultrafast"`
+ * followed by `Error applying encoder options: Invalid argument`, and the job
+ * fails with a message about the encoder rather than about the configuration.
+ *
+ * Invisible on macOS, where the hardware encoder is VideoToolbox and takes no
+ * preset at all. Windows is the first platform where the chosen hardware
+ * encoder actually reads one.
+ */
+describe("preset names across encoders", () => {
+  const qsvOnly = ["h264_qsv", "hevc_qsv"] as const;
+  const acceptsX264Presets = ["libx264", "libx265"] as const;
+
+  it("translates the presets Quick Sync does not have", () => {
+    for (const encoder of qsvOnly) {
+      expect(presetForEncoder(encoder, "ultrafast")).toBe("veryfast");
+      expect(presetForEncoder(encoder, "superfast")).toBe("veryfast");
+      expect(presetForEncoder(encoder, "placebo")).toBe("veryslow");
+    }
+  });
+
+  it("leaves the seven presets Quick Sync does have alone", () => {
+    for (const encoder of qsvOnly) {
+      for (const preset of [
+        "veryfast",
+        "faster",
+        "fast",
+        "medium",
+        "slow",
+        "slower",
+        "veryslow",
+      ]) {
+        expect(presetForEncoder(encoder, preset)).toBe(preset);
+      }
+    }
+  });
+
+  it("passes an unrecognised preset through rather than clamping it", () => {
+    // A typo should fail loudly and attributably, not be silently reinterpreted
+    // as `medium` — which would encode a whole library at the wrong setting and
+    // report success.
+    expect(presetForEncoder("h264_qsv", "utlrafast")).toBe("utlrafast");
+  });
+
+  it("changes nothing for the encoders whose vocabulary this is", () => {
+    for (const encoder of acceptsX264Presets) {
+      for (const preset of ["ultrafast", "superfast", "placebo", "medium"]) {
+        expect(presetForEncoder(encoder, preset)).toBe(preset);
+      }
+    }
+  });
+
+  it("never puts a preset Quick Sync would refuse on the command line", () => {
+    const args = buildRenditionFfmpegArgs({
+      inputPath: path.join("D:\\media", "source.mkv"),
+      outputs: outputs(),
+      audioStreamIndex: 1,
+      encoder: "h264_qsv",
+      preset: "ultrafast",
+    });
+    const at = args.indexOf("-preset");
+    expect(at).toBeGreaterThan(-1);
+    expect(args[at + 1]).toBe("veryfast");
+    expect(args).not.toContain("ultrafast");
   });
 });
