@@ -17,7 +17,7 @@
  * read, and hold the answer to the wall clock rather than to the reap.
  */
 
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -26,6 +26,11 @@ import {
   ADAPTIVE_EPOCH_FIXTURE_SECONDS,
 } from "../testFixtures";
 import { probeSourceRangeReadable } from "./sourceReadProbe";
+import {
+  HANGING_FIXTURE,
+  recordingFixture,
+  runsNodeFixture,
+} from "../../../test/nodeFixtureProcess";
 
 let fixture: string | null = null;
 let workspace = "";
@@ -35,13 +40,8 @@ let hangingProbe = "";
 beforeAll(async () => {
   fixture = await ensureAdaptiveEpochFixture();
   workspace = await mkdtemp(path.join(tmpdir(), "seyirlik-range-probe-"));
-  hangingProbe = path.join(workspace, "hangs");
-  await writeFile(
-    hangingProbe,
-    ["#!/bin/sh", "while :; do sleep 60; done", ""].join("\n"),
-    "utf8",
-  );
-  await chmod(hangingProbe, 0o755);
+  hangingProbe = path.join(workspace, "hangs.mjs");
+  await writeFile(hangingProbe, HANGING_FIXTURE, "utf8");
 }, 600_000);
 
 afterAll(async () => {
@@ -124,6 +124,7 @@ describe("a probe of a disk that has stopped answering", () => {
       fromSeconds: 100,
       toSeconds: 300,
       ffprobePath: hangingProbe,
+      spawn: runsNodeFixture(hangingProbe),
       timeoutMs: 750,
     });
     const elapsed = Date.now() - started;
@@ -133,24 +134,15 @@ describe("a probe of a disk that has stopped answering", () => {
 
   it("still stops the process it gave up on", async () => {
     const pidFile = path.join(workspace, "pid");
-    const recorder = path.join(workspace, "records-its-pid");
-    await writeFile(
-      recorder,
-      [
-        "#!/bin/sh",
-        `echo $$ > ${JSON.stringify(pidFile)}`,
-        "while :; do sleep 60; done",
-        "",
-      ].join("\n"),
-      "utf8",
-    );
-    await chmod(recorder, 0o755);
+    const recorder = path.join(workspace, "records-its-pid.mjs");
+    await writeFile(recorder, recordingFixture(pidFile), "utf8");
 
     const outcome = await probeSourceRangeReadable({
       sourcePath: "/does/not/matter.mkv",
       fromSeconds: 0,
       toSeconds: 300,
       ffprobePath: recorder,
+      spawn: runsNodeFixture(recorder),
       timeoutMs: 500,
     });
     expect(outcome.verdict).toBe("timeout");
@@ -177,6 +169,7 @@ describe("a probe of a disk that has stopped answering", () => {
       fromSeconds: 0,
       toSeconds: 300,
       ffprobePath: hangingProbe,
+      spawn: runsNodeFixture(hangingProbe),
       timeoutMs: 60_000,
       signal: controller.signal,
     });
@@ -191,26 +184,27 @@ describe("a probe of a disk that has stopped answering", () => {
    * stopped, not a read that is taking its time.
    */
   it("does not blame a disk that is answering, only slowly", async () => {
-    const slow = path.join(workspace, "answers-slowly");
+    const slow = path.join(workspace, "answers-slowly.mjs");
     await writeFile(
       slow,
+      // Keeps producing, steadily, for longer than the silence allowance.
       [
-        "#!/bin/sh",
-        // Keeps producing, steadily, for longer than the silence allowance.
-        "i=0",
-        "while [ $i -lt 40 ]; do echo $i; i=$((i+1)); sleep 0.05; done",
-        "while :; do sleep 60; done",
+        "let i = 0;",
+        "const tick = setInterval(() => {",
+        "  if (i >= 40) { clearInterval(tick); setInterval(() => {}, 1000); return; }",
+        "  process.stdout.write(String(i++) + String.fromCharCode(10));",
+        "}, 50);",
         "",
       ].join("\n"),
       "utf8",
     );
-    await chmod(slow, 0o755);
 
     const outcome = await probeSourceRangeReadable({
       sourcePath: "/does/not/matter.mkv",
       fromSeconds: 0,
       toSeconds: 40,
       ffprobePath: slow,
+      spawn: runsNodeFixture(slow),
       timeoutMs: 400,
     });
     // Never "timeout": the disk was returning data the whole time.
@@ -218,20 +212,17 @@ describe("a probe of a disk that has stopped answering", () => {
   }, 60_000);
 
   it("answers as soon as a producing read goes quiet", async () => {
-    const stalls = path.join(workspace, "stalls-mid-read");
+    const stalls = path.join(workspace, "stalls-mid-read.mjs");
     await writeFile(
       stalls,
       [
-        "#!/bin/sh",
-        "echo 1",
-        "echo 2",
+        'process.stdout.write("1\\n2\\n");',
         // …and then the sector stops coming back.
-        "while :; do sleep 60; done",
+        "setInterval(() => {}, 1000);",
         "",
       ].join("\n"),
       "utf8",
     );
-    await chmod(stalls, 0o755);
 
     const started = Date.now();
     const outcome = await probeSourceRangeReadable({
@@ -239,6 +230,7 @@ describe("a probe of a disk that has stopped answering", () => {
       fromSeconds: 0,
       toSeconds: 300,
       ffprobePath: stalls,
+      spawn: runsNodeFixture(stalls),
       timeoutMs: 600,
     });
     expect(outcome.verdict).toBe("timeout");

@@ -68,13 +68,26 @@ const MAX_PROBE_OUTPUT_BYTES = 16 * 1024 * 1024;
  * group and an escalating termination. An unbounded `await` here would hang the
  * worker in precisely the situation it exists to diagnose.
  */
+/**
+ * The runner this module spawns through.
+ *
+ * Injected so a test can substitute a program of its own without needing one
+ * the host can execute — the fixtures here used to be `/bin/sh` scripts, which
+ * a Windows host cannot run at all, so the spawn failed and every case read the
+ * failure as an answer about the source. Everything else stays on the
+ * production path: the wall clock, the process group, the escalation and the
+ * reap are the real ones.
+ */
+export type BoundedRunner = typeof runBoundedProcess;
+
 async function runProcess(
   command: string,
   args: string[],
   signal?: AbortSignal,
   timeoutMs?: number,
+  run: BoundedRunner = runBoundedProcess,
 ): Promise<string> {
-  const { stdout } = await runBoundedProcess({
+  const { stdout } = await run({
     command,
     args,
     ...(signal ? { signal } : {}),
@@ -122,11 +135,14 @@ export async function probeSourceFrameTimeline({
   ffprobePath = "ffprobe",
   signal,
   timeoutMs,
+  run,
 }: {
   sourcePath: string;
   boundaries: readonly number[];
   ffprobePath?: string;
   signal?: AbortSignal;
+  /** Injected by tests; see `BoundedRunner`. */
+  run?: BoundedRunner;
   /**
    * Wall clock the probe may not exceed.
    *
@@ -165,6 +181,7 @@ export async function probeSourceFrameTimeline({
       ],
       signal,
       timeoutMs,
+      run,
     );
   } catch {
     // A source the prober cannot read is not a reason to refuse to build it:

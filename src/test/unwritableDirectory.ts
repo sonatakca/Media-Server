@@ -59,7 +59,15 @@ export async function blockPaths(
 
   return async () => {
     if (process.platform !== "win32") await chmod(root, 0o700);
-    for (const target of blocked) await rm(target, { force: true });
+    /*
+     * `recursive` matters on the way out too: the blocked path may be a
+     * directory again by now — something upstream can remove the file and
+     * create what it wanted — and `rm` without it refuses a directory with
+     * `ERR_FS_EISDIR`, which would fail the test in its own cleanup.
+     */
+    for (const target of blocked) {
+      await rm(target, { recursive: true, force: true });
+    }
     await mkdir(root, { recursive: true });
   };
 }

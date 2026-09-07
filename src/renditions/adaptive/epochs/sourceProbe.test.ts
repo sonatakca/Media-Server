@@ -12,11 +12,16 @@
  * `SIGTERM` as well, because the real process could not act on it either.
  */
 
-import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { probeSourceFrameTimeline } from "./sourceTimeline";
+import {
+  recordingFixture,
+  runsNodeFixtureBounded,
+  stubbornFixture,
+} from "../../../test/nodeFixtureProcess";
 
 let workspace = "";
 let hangingProbe = "";
@@ -41,24 +46,14 @@ async function recordedPid(): Promise<number | undefined> {
 
 beforeAll(async () => {
   workspace = await mkdtemp(path.join(tmpdir(), "seyirlik-probe-"));
-  hangingProbe = path.join(workspace, "hanging-probe");
-  stubbornProbe = path.join(workspace, "stubborn-probe");
+  hangingProbe = path.join(workspace, "hanging-probe.mjs");
+  stubbornProbe = path.join(workspace, "stubborn-probe.mjs");
   pidFile = path.join(workspace, "probe.pid");
 
   // Arguments ignored on purpose: this stands in for a prober that has issued
   // a read and is waiting for a platter that will not answer.
-  await writeFile(
-    hangingProbe,
-    `#!/bin/sh\necho $$ > "${pidFile}"\nwhile true; do sleep 1; done\n`,
-    "utf8",
-  );
-  await writeFile(
-    stubbornProbe,
-    `#!/bin/sh\ntrap '' TERM\necho $$ > "${pidFile}"\nwhile true; do sleep 1; done\n`,
-    "utf8",
-  );
-  await chmod(hangingProbe, 0o755);
-  await chmod(stubbornProbe, 0o755);
+  await writeFile(hangingProbe, recordingFixture(pidFile), "utf8");
+  await writeFile(stubbornProbe, stubbornFixture(pidFile), "utf8");
 });
 
 afterAll(async () => {
@@ -72,6 +67,7 @@ describe("probing a source that does not answer", () => {
       sourcePath: path.join(workspace, "film.mkv"),
       boundaries: [3000],
       ffprobePath: hangingProbe,
+      run: runsNodeFixtureBounded(hangingProbe),
       /*
        * Long enough for the fixture to record its own pid before the deadline
        * lands on it, and still two orders of magnitude below the ceiling this
@@ -107,6 +103,7 @@ describe("probing a source that does not answer", () => {
       sourcePath: path.join(workspace, "film.mkv"),
       boundaries: [3000],
       ffprobePath: stubbornProbe,
+      run: runsNodeFixtureBounded(stubbornProbe),
       // Same race as the test above: the fixture has to exist to be killed.
       timeoutMs: 2_000,
     });
@@ -124,6 +121,7 @@ describe("probing a source that does not answer", () => {
     const timeline = await probeSourceFrameTimeline({
       sourcePath: path.join(workspace, "film.mkv"),
       ffprobePath: hangingProbe,
+      run: runsNodeFixtureBounded(hangingProbe),
       boundaries: [],
       timeoutMs: 500,
     });
