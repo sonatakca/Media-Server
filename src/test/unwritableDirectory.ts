@@ -35,8 +35,25 @@ export async function denyWritesInto(
     };
   }
 
-  const who = `${process.env.USERDOMAIN ?? "."}\\${process.env.USERNAME ?? ""}`;
-  await run("icacls", [directory, "/deny", `${who}:(WD,AD)`]);
+  /*
+   * The bare account name. `USERDOMAIN` is `WORKGROUP` on a machine that is not
+   * joined to one, and `WORKGROUP\\sonat` resolves to nothing — icacls exits
+   * 1332, "No mapping between account names and security IDs", and the deny is
+   * never applied at all.
+   */
+  const who = process.env.USERNAME ?? "";
+  /*
+   * `(OI)(CI)` so the deny is inherited by everything created underneath, and
+   * `(W)` for the whole write set. Measured on Windows 11 as an elevated
+   * administrator: a file directly inside is refused, and so is a file inside a
+   * subdirectory created afterwards. Creating the subdirectory itself is *not*
+   * refused — an elevated token walks past a deny for that — which is a limit
+   * worth stating rather than discovering: this makes a directory that will not
+   * accept content, not one that will not accept structure. Adding `DE` to deny
+   * deletion changes nothing either, measured; a publisher that renames the
+   * outgoing directory aside is not stopped by an ACL on this host at all.
+   */
+  await run("icacls", [directory, "/deny", `${who}:(OI)(CI)(W)`]);
   return async () => {
     await run("icacls", [directory, "/remove:d", who]).catch(() => undefined);
   };
