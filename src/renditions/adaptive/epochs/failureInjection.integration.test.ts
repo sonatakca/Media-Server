@@ -36,7 +36,7 @@ import {
 } from "../testFixtures";
 import { checkpointRoot, epochsRoot } from "./checkpoints";
 import { epochDirectoryName, EPOCH_MANIFEST_FILE } from "./policy";
-import { blockPublication } from "../../../test/unwritableDirectory";
+import { denyWritesInto } from "../../../test/unwritableDirectory";
 import { supportsPosixSignals } from "../../processExecution";
 
 const MEDIA_ID = "33333333-3333-4333-8333-333333333333";
@@ -493,7 +493,7 @@ describe("publication fails after the encoding is done", () => {
      * publication succeeds, so this is the case where hours of encoding are at
      * their most exposed: the work is finished and the last step fails.
      */
-    const unblock = await blockPublication(harness.titleRoot);
+    const unblock = await denyWritesInto(harness.titleRoot);
     let failed;
     try {
       failed = await runPackage(harness);

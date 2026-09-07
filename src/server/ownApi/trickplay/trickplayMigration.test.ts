@@ -18,8 +18,7 @@ import type { DatabasePool } from "../database/databasePool";
 import { buildTrickplayLayout } from "./trickplayLayout";
 import { migrateLegacyTrickplaySets } from "./trickplayMigration";
 import { jpegBytes, writeTrickplaySheets } from "./trickplayTestFixtures";
-import { blockPaths } from "../../../test/unwritableDirectory";
-import { TITLE_TRICKPLAY_DIRECTORY } from "../../../renditions/adaptive/layout";
+import { denyWritesInto } from "../../../test/unwritableDirectory";
 
 const LAYOUT = buildTrickplayLayout({
   durationMs: 3_600_000,
@@ -228,9 +227,7 @@ describe("migrating this server's own older trickplay sets", () => {
      * succeeded there, the set was migrated anyway, and this case failed
      * asserting that a migration which had in fact happened had not.
      */
-    const unblock = await blockPaths(titleRoot(), [
-      path.join(titleRoot(), TITLE_TRICKPLAY_DIRECTORY),
-    ]);
+    const unblock = await denyWritesInto(titleRoot());
 
     const report = await migrateLegacyTrickplaySets(dependencies());
 
