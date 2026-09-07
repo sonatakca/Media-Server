@@ -1,6 +1,7 @@
 import { copyFile, mkdtemp, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { resolvePublishedTitleRoot } from "./publishedRoot";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { packageAdaptiveRendition } from "./packager";
 import { computeSourceFingerprint } from "../registry";
@@ -118,7 +119,13 @@ describe("incremental packaging against a real encoder", () => {
     expect(jobBytes).toBeGreaterThan(0);
     expect(packageBytes).toBeGreaterThan(jobBytes!);
 
-    const after = JSON.parse(await readFile(manifestPath, "utf8"));
+    const publishedRoot = await resolvePublishedTitleRoot(titleRoot);
+    const after = JSON.parse(
+      await readFile(
+        path.join(publishedRoot, ".seyirlik", "package.json"),
+        "utf8",
+      ),
+    );
     const finalRungs: number[] = after.video.map(
       (rendition: { qualityHeight: number }) => rendition.qualityHeight,
     );
@@ -132,7 +139,7 @@ describe("incremental packaging against a real encoder", () => {
     // The renditions this run did not touch were not rewritten.
     for (const rendition of after.video) {
       const onDisk = await stat(
-        path.join(titleRoot, ...rendition.mediaPath.split("/")),
+        path.join(publishedRoot, ...rendition.mediaPath.split("/")),
       );
       expect(onDisk.size).toBeGreaterThan(0);
     }
@@ -142,14 +149,14 @@ describe("incremental packaging against a real encoder", () => {
      * re-encode that happens to look similar.
      */
     const audioAfter = await stat(
-      path.join(titleRoot, ...after.audio[0].mediaPath.split("/")),
+      path.join(publishedRoot, ...after.audio[0].mediaPath.split("/")),
     );
     expect(audioAfter.size).toBe(audioBefore.size);
     expect(audioAfter.mtimeMs).toBe(audioBefore.mtimeMs);
 
     // ------------------------------------------------------- the master
     const master = await readFile(
-      path.join(titleRoot, ...after.masterPlaylistPath.split("/")),
+      path.join(publishedRoot, ...after.masterPlaylistPath.split("/")),
       "utf8",
     );
     const variantLines = master

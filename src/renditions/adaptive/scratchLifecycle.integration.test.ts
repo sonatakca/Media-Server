@@ -209,8 +209,15 @@ describe("the scratch storage lifecycle", () => {
       );
       expect(outputs.length).toBeGreaterThan(0);
       for (const output of outputs) {
-        expect(output.startsWith(`${harness.ssdRoot}${path.sep}`)).toBe(true);
-        expect(output.startsWith(`${harness.hddRoot}${path.sep}`)).toBe(false);
+        const resolved = path.resolve(output);
+        expect(
+          resolved.startsWith(`${harness.ssdRoot}${path.sep}`),
+          output,
+        ).toBe(true);
+        expect(
+          resolved.startsWith(`${harness.hddRoot}${path.sep}`),
+          output,
+        ).toBe(false);
       }
     }
   }, 900_000);

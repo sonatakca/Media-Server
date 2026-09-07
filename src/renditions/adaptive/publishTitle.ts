@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import {
   mkdir,
+  link,
   open,
   readFile,
+  readdir,
   realpath,
   rename,
   rm,
@@ -397,7 +399,8 @@ export interface PublishTitlePackageInput {
   destinationReserveBytes?: number;
   retainIncomingAfterPublish?: boolean;
   /** Filesystem commit boundary, shared by activation and recovery. */
-  fileSystem?: Pick<typeof import("node:fs/promises"), "rename">;
+  fileSystem?: Pick<typeof import("node:fs/promises"), "rename"> &
+    Partial<Pick<typeof import("node:fs/promises"), "rm">>;
 }
 
 /**
@@ -619,7 +622,12 @@ export async function publishTitlePackage({
   ) {
     await verifyIncomingPackage(publishedRoot, previous);
     if (!retainIncomingAfterPublish)
-      await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+      await cleanupPublicationIncoming(
+        titleRoot,
+        staging,
+        publicationId,
+        fileSystem.rm,
+      );
     return {
       manifest: previous,
       plan,
@@ -890,7 +898,12 @@ export async function publishTitlePackage({
     }
     progress.complete("swap");
     if (!retainIncomingAfterPublish) {
-      await cleanupPublicationIncoming(titleRoot, staging, publicationId);
+      await cleanupPublicationIncoming(
+        titleRoot,
+        staging,
+        publicationId,
+        fileSystem.rm,
+      );
     }
     return { manifest, plan, incomingDirectory: staging, publishedRoot };
   }
@@ -1142,6 +1155,7 @@ export async function publishAdditionalRenditions({
   signal,
   destinationReserveBytes = 0,
   retainIncomingAfterPublish = false,
+  fileSystem = { rename },
 }: {
   workVersionRoot: string;
   titleRoot: string;
@@ -1157,6 +1171,7 @@ export async function publishAdditionalRenditions({
   signal?: AbortSignal;
   destinationReserveBytes?: number;
   retainIncomingAfterPublish?: boolean;
+  fileSystem?: Pick<typeof import("node:fs/promises"), "rename">;
 }): Promise<{
   manifest: TitlePackageManifest;
   plan: TitleLayoutPlan;
@@ -1220,6 +1235,71 @@ export async function publishAdditionalRenditions({
   }
 
   const plan = planTitleLayout(merged);
+  const generation = createHash("sha256")
+    .update(JSON.stringify({ publicationId, merged }))
+    .digest("hex");
+  const generationRoot = path.join(
+    publicationTitleRoot,
+    PUBLICATION_GENERATIONS,
+    generation,
+  );
+  if (
+    (await realpath(generationRoot).catch(() => null)) ===
+    (await realpath(titleRoot))
+  ) {
+    const manifest = await readTitlePackageManifest(publicationTitleRoot);
+    if (!manifest)
+      throw new Error(
+        "The committed incremental publication is missing its manifest.",
+      );
+    if (!retainIncomingAfterPublish)
+      await cleanupPublicationIncoming(
+        publicationTitleRoot,
+        staging,
+        publicationId,
+      );
+    return {
+      manifest,
+      plan,
+      incomingDirectory: staging,
+      publishedRoot: generationRoot,
+    };
+  }
+  // Reuse immutable bytes on the same filesystem. All modifications below use
+  // write-then-rename, so these links never permit a write into an old reader's
+  // files. Unsupported links fail before the active pointer changes.
+  const clone = async (source: string, destination: string): Promise<void> => {
+    await mkdir(destination, { recursive: true });
+    for (const entry of await readdir(source, { withFileTypes: true })) {
+      if (
+        entry.name === "current.json" &&
+        path.basename(source) === TITLE_PACKAGE_DIRECTORY
+      )
+        continue;
+      const from = path.join(source, entry.name);
+      const to = path.join(destination, entry.name);
+      if (entry.isDirectory()) await clone(from, to);
+      else if (entry.isFile())
+        await link(from, to).catch((error: NodeJS.ErrnoException) => {
+          if (error.code !== "EEXIST") throw error;
+        });
+      else
+        throw new Error(
+          "A published package contains an unsupported filesystem entry.",
+        );
+    }
+  };
+  for (const directory of [
+    TITLE_VIDEO_DIRECTORY,
+    TITLE_AUDIO_DIRECTORY,
+    TITLE_SUBTITLE_DIRECTORY,
+    TITLE_PACKAGE_DIRECTORY,
+  ]) {
+    const source = path.join(titleRoot, directory);
+    if (await pathExists(source))
+      await clone(source, path.join(generationRoot, directory));
+  }
+  titleRoot = generationRoot;
   const publishedById = new Map<string, { media: string; playlist: string }>();
   for (const group of [plan.video, plan.audio, plan.subtitle]) {
     for (const entry of group) {
@@ -1443,6 +1523,21 @@ export async function publishAdditionalRenditions({
   );
   progress.complete("master-playlist");
 
+  const pointer = path.join(publicationTitleRoot, PUBLICATION_POINTER);
+  const pendingPointer = path.join(staging, ".current.pending");
+  await writeFile(
+    pendingPointer,
+    `${JSON.stringify({ schemaVersion: 1, generation })}\n`,
+    "utf8",
+  );
+  const pointerFile = await open(pendingPointer, "r+");
+  try {
+    await pointerFile.sync();
+  } finally {
+    await pointerFile.close();
+  }
+  await fileSystem.rename(pendingPointer, pointer);
+
   if (!retainIncomingAfterPublish) {
     await cleanupPublicationIncoming(
       publicationTitleRoot,
@@ -1464,6 +1559,7 @@ export async function cleanupPublicationIncoming(
   titleRoot: string,
   incomingDirectory: string,
   publicationId: string,
+  remove: typeof rm = rm,
 ): Promise<void> {
   const expected = path.resolve(
     titleRoot,
@@ -1483,7 +1579,7 @@ export async function cleanupPublicationIncoming(
       "Refusing to clean an incoming directory owned by another publication.",
     );
   }
-  await rm(expected, { recursive: true, force: true });
+  await remove(expected, { recursive: true, force: true });
   /*
    * The shared `.seyirlik-incoming` parent is removed only when this was the
    * last publication using it, which `rmdir` decides by refusing a directory

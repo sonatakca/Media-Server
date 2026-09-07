@@ -470,6 +470,57 @@ describe("resumable cross-volume copy", () => {
  * a bug is fixed; this is what makes the next one cost a failed job instead.
  */
 describe("publishing into a folder another title already occupies", () => {
+  it("retains owned staging when cleanup fails and retries without touching active bytes", async () => {
+    const first = await buildWorkPackage();
+    await publishTitlePackage({ ...first, metadata: metadata() });
+    const next = await buildWorkPackage();
+    const input = {
+      workVersionRoot: next.workVersionRoot,
+      titleRoot: first.titleRoot,
+      publicationId: "cleanup-retry",
+      metadata: { ...metadata(), sourceFingerprint: "c".repeat(64) },
+    };
+    await expect(
+      publishTitlePackage({
+        ...input,
+        fileSystem: {
+          rename,
+          rm: async () => {
+            throw Object.assign(new Error("Cleanup refused"), {
+              code: "EACCES",
+            });
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "EACCES" });
+    const active = await resolvePublishedTitleRoot(first.titleRoot);
+    expect(
+      (await readTitlePackageManifest(first.titleRoot))?.sourceFingerprint,
+    ).toBe("c".repeat(64));
+    const incoming = path.join(
+      first.titleRoot,
+      ".seyirlik-incoming",
+      input.publicationId,
+    );
+    expect(
+      JSON.parse(
+        await readFile(path.join(incoming, ".publication.json"), "utf8"),
+      ).publicationId,
+    ).toBe(input.publicationId);
+    await expect(
+      publishTitlePackage({
+        ...input,
+        fileSystem: {
+          rename: async () => {
+            throw new Error("Active files must not be renamed on retry");
+          },
+        },
+      }),
+    ).resolves.toBeDefined();
+    expect(await resolvePublishedTitleRoot(first.titleRoot)).toBe(active);
+    await expect(stat(incoming)).rejects.toMatchObject({ code: "ENOENT" });
+  });
+
   it("reconciles a pointer rename that committed before reporting failure", async () => {
     const first = await buildWorkPackage();
     await publishTitlePackage({ ...first, metadata: metadata() });

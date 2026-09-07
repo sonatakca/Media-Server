@@ -1015,6 +1015,9 @@ export async function packageAdaptiveRendition(
         : {};
       const publication = existingBuildRecord
         ? await publishAdditionalRenditions({
+            ...(publicationFileSystem
+              ? { fileSystem: publicationFileSystem }
+              : {}),
             workVersionRoot,
             titleRoot,
             existing: existingBuildRecord,

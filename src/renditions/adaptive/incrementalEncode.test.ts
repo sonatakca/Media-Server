@@ -8,6 +8,8 @@ import {
   type AdaptiveVideoOutput,
 } from "./encoding";
 import { publishAdditionalRenditions } from "./publishTitle";
+import { resolvePublishedTitleRoot } from "./publishedRoot";
+import { rejectPublicationCommit } from "../../test/publicationFault";
 import type { AdaptivePackageMetadata } from "./metadata";
 
 /**
@@ -349,6 +351,38 @@ describe("a master for a video-only incremental run", () => {
 });
 
 describe("publishing one rendition into an existing package", () => {
+  it("keeps the old master and media readable through a failed final commit and retry", async () => {
+    const titleRoot = await publishedTitle();
+    const { root: workVersionRoot, added } = await workWithQhd();
+    const input = {
+      titleRoot,
+      workVersionRoot,
+      added,
+      existing: existingPackage(),
+    };
+    const fault = await rejectPublicationCommit(titleRoot);
+    await expect(
+      publishAdditionalRenditions({ ...input, fileSystem: fault.fileSystem }),
+    ).rejects.toMatchObject({ code: "EACCES" });
+    expect(fault.rejected()).toBe(1);
+    expect(await resolvePublishedTitleRoot(titleRoot)).toBe(titleRoot);
+    for (const file of [
+      ".seyirlik/master.m3u8",
+      "video/2160p HDR.mp4",
+      "audio/english.m4a",
+    ]) {
+      expect(await readFile(path.join(titleRoot, file), "utf8")).toBe(
+        "existing-bytes",
+      );
+    }
+    fault.restore();
+    await expect(publishAdditionalRenditions(input)).resolves.toBeDefined();
+    expect(await resolvePublishedTitleRoot(titleRoot)).not.toBe(titleRoot);
+    expect(
+      await readFile(path.join(titleRoot, ".seyirlik/master.m3u8"), "utf8"),
+    ).toBe("existing-bytes");
+  });
+
   /** TEST 8 — the master describes everything, not just what this run built. */
   it("keeps every existing rendition and adds the new one exactly once", async () => {
     const titleRoot = await publishedTitle();
@@ -369,7 +403,11 @@ describe("publishing one rendition into an existing package", () => {
     expect(manifest.subtitle).toHaveLength(1);
 
     const master = await readFile(
-      path.join(titleRoot, ".seyirlik", "master.m3u8"),
+      path.join(
+        await resolvePublishedTitleRoot(titleRoot),
+        ".seyirlik",
+        "master.m3u8",
+      ),
       "utf8",
     );
     for (const rung of ["2160p", "1440p", "1080p", "720p"]) {
