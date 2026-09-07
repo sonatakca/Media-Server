@@ -1,3 +1,9 @@
+/*
+ * First, for the same reason it is first in `mediaServer.ts`: this module's
+ * body announces the process before the import graph below it is loaded, and
+ * under `tsx` that graph is seconds of otherwise silent transpilation.
+ */
+import "./startup/processBanner";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";

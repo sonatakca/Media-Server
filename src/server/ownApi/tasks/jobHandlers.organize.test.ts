@@ -45,6 +45,9 @@ function job(): JobRecord {
     maxAttempts: 3,
     progress: 0,
     progressMessage: null,
+    progressDetail: null,
+    priority: 100,
+    runAfter: new Date(0),
     safeError: null,
     result: null,
     cancellationRequested: false,
@@ -89,14 +92,14 @@ function memoryVolume(paths: string[]) {
   return { fileSystem, snapshot: () => [...files].sort() };
 }
 
-async function runScan(options: {
+function handlersFor(options: {
   mode: "off" | "plan" | "apply";
   volume: ReturnType<typeof memoryVolume>;
   recordMoves?: (moves: OrganizeMove[]) => Promise<number>;
   /** Statuses the processing queue reports something live under. */
   live?: Array<"queued" | "running">;
 }) {
-  const handlers = createJobHandlers({
+  return createJobHandlers({
     libraries: {
       listAll: async () => [],
       getById: async () => ({
@@ -132,21 +135,23 @@ async function runScan(options: {
       ...(options.recordMoves ? { recordMoves: options.recordMoves } : {}),
     },
   });
+}
 
-  return handlers[JOB_TYPES.libraryScan]?.({
-    job: job(),
+function runOrganize(options: Parameters<typeof handlersFor>[0]) {
+  return handlersFor(options)[JOB_TYPES.libraryOrganize]?.({
+    job: { ...job(), jobType: JOB_TYPES.libraryOrganize },
     reportProgress: async () => undefined,
     isCancelled: async () => false,
   });
 }
 
-describe("the tidying pass inside a library scan", () => {
+describe("the folder organiser, as its own maintenance job", () => {
   it("does not touch the media volume when it is off", async () => {
     const volume = memoryVolume(MEDIA);
 
-    const result = await runScan({ mode: "off", volume });
+    const result = await runOrganize({ mode: "off", volume });
 
-    expect(result).not.toHaveProperty("organized");
+    expect(result).toMatchObject({ mode: "off", disabled: true });
     expect(volume.snapshot()).toEqual([...MEDIA].sort());
   });
 
@@ -157,19 +162,16 @@ describe("the tidying pass inside a library scan", () => {
   it("reports what it would move without moving it", async () => {
     const volume = memoryVolume(MEDIA);
 
-    const result = await runScan({ mode: "plan", volume });
+    const result = await runOrganize({ mode: "plan", volume });
 
     expect(result).toMatchObject({
-      organized: {
-        mode: "plan",
-        planned: 2,
-        moved: 0,
-        moves: [
-          `${SEASON}/Andor - S01E01 - Kassa.nfo -> ${SEASON}/Andor - S01E01 - Kassa/Andor - S01E01 - Kassa.nfo`,
-          `${SEASON}/Andor - S01E01 - Kassa.mp4 -> ${SEASON}/src/Andor - S01E01 - Kassa.mp4`,
-        ],
-      },
+      mode: "plan",
+      planned: 2,
+      moved: 0,
+      planOnly: true,
     });
+    // Counts, never paths: the result reaches a browser through the task DTO.
+    expect(JSON.stringify(result)).not.toContain("Andor");
     expect(volume.snapshot()).toEqual([...MEDIA].sort());
   });
 
@@ -177,7 +179,7 @@ describe("the tidying pass inside a library scan", () => {
     const volume = memoryVolume(MEDIA);
     const recorded: OrganizeMove[][] = [];
 
-    const result = await runScan({
+    const result = await runOrganize({
       mode: "apply",
       volume,
       recordMoves: async (moves) => {
@@ -186,7 +188,11 @@ describe("the tidying pass inside a library scan", () => {
       },
     });
 
-    expect(result).toMatchObject({ organized: { mode: "apply", moved: 2 } });
+    expect(result).toMatchObject({
+      mode: "apply",
+      moved: 2,
+      applied: true,
+    });
     expect(volume.snapshot()).toEqual([
       `${SEASON}/Andor - S01E01 - Kassa/Andor - S01E01 - Kassa.nfo`,
       `${SEASON}/season.nfo`,
@@ -205,14 +211,15 @@ describe("the tidying pass inside a library scan", () => {
   it("stands down while a processing job is running", async () => {
     const volume = memoryVolume(MEDIA);
 
-    const result = await runScan({
+    const result = await runOrganize({
       mode: "apply",
       volume,
       live: ["running"],
     });
 
     expect(result).toMatchObject({
-      organized: { mode: "apply", deferred: "processing-active" },
+      mode: "apply",
+      deferred: "processing-active",
     });
     expect(volume.snapshot()).toEqual([...MEDIA].sort());
   });
@@ -226,10 +233,15 @@ describe("the tidying pass inside a library scan", () => {
   it("stands down while a processing job is merely queued", async () => {
     const volume = memoryVolume(MEDIA);
 
-    const result = await runScan({ mode: "apply", volume, live: ["queued"] });
+    const result = await runOrganize({
+      mode: "apply",
+      volume,
+      live: ["queued"],
+    });
 
     expect(result).toMatchObject({
-      organized: { mode: "apply", deferred: "processing-active" },
+      mode: "apply",
+      deferred: "processing-active",
     });
     expect(volume.snapshot()).toEqual([...MEDIA].sort());
   });
@@ -241,9 +253,41 @@ describe("the tidying pass inside a library scan", () => {
   it("still reports the plan while the queue is busy", async () => {
     const volume = memoryVolume(MEDIA);
 
-    const result = await runScan({ mode: "plan", volume, live: ["running"] });
+    const result = await runOrganize({
+      mode: "plan",
+      volume,
+      live: ["running"],
+    });
 
-    expect(result).toMatchObject({ organized: { mode: "plan", planned: 2 } });
+    expect(result).toMatchObject({ mode: "plan", planned: 2 });
+    expect(volume.snapshot()).toEqual([...MEDIA].sort());
+  });
+
+  /*
+   * The reason organisation is a job of its own. Reading a library and
+   * reconciling rows conflicts with nothing an encoder is doing, and while
+   * both lived in one handler a queued encode of an unrelated title stopped
+   * every library being re-read.
+   */
+  it("does not stop a pure scan from running while an encode is live", async () => {
+    const volume = memoryVolume(MEDIA);
+
+    const result = await handlersFor({
+      mode: "apply",
+      volume,
+      live: ["running", "queued"],
+    })[JOB_TYPES.libraryScan]?.({
+      job: job(),
+      reportProgress: async () => undefined,
+      isCancelled: async () => false,
+    });
+
+    expect(result).toMatchObject({
+      itemsCreated: 0,
+      removalsSuppressed: false,
+    });
+    expect(result).not.toHaveProperty("deferred");
+    // And it moved nothing: a scan no longer writes to the volume at all.
     expect(volume.snapshot()).toEqual([...MEDIA].sort());
   });
 });

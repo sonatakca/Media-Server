@@ -50,7 +50,10 @@ import {
   isWholeWatchedScope,
   resolveLibraryCanonicalPath,
   withWatchedState,
+  type LibrarySortMode,
 } from "../library/libraryModel";
+import { hasCuratedOrder, orderItemsByCuration } from "../../lib/curation";
+import { useCuratedList } from "../../hooks/useCuratedList";
 
 type LibraryFallbackTitleKey =
   | "common.series"
@@ -78,7 +81,7 @@ function compareDates(leftDate?: string, rightDate?: string): number {
 function sortItems(
   left: MediaItem,
   right: MediaItem,
-  sortBy: "name" | "year" | "latest",
+  sortBy: LibrarySortMode,
 ): number {
   if (left.Type === "Season" && right.Type === "Season") {
     return (
@@ -222,11 +225,36 @@ export function MobileLibraryPage({
   const [loadingItemType, setLoadingItemType] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
-  const [sortBy, setSortBy] = useState<"name" | "year" | "latest">("name");
+  const [chosenSortBy, setSortBy] = useState<LibrarySortMode | null>(null);
   const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
   const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
     useState(false);
   const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
+
+  /*
+   * Only a library shelf carries an ordering. The same routes serve a single
+   * title — `/movies/:id` resolves to an item, not a library — and an item id
+   * names no list, so it is not asked about.
+   */
+  const curatedLibraryId =
+    mode === "library" && activeId && data && !data.library
+      ? activeId
+      : undefined;
+  const curatedList = useCuratedList("library", curatedLibraryId);
+
+  /*
+   * Derived rather than stored. A hand-placed order is somebody's decision
+   * about this shelf, so it is the default the moment one loads — but only
+   * until the viewer picks a sort of their own, and never on a shelf that has
+   * no ordering, where `custom` would select an option the dropdown does not
+   * offer.
+   */
+  const preferredSortBy: LibrarySortMode =
+    chosenSortBy ?? (hasCuratedOrder(curatedList) ? "custom" : "name");
+  const effectiveSortBy: LibrarySortMode =
+    preferredSortBy === "custom" && !hasCuratedOrder(curatedList)
+      ? "name"
+      : preferredSortBy;
 
   useEffect(() => {
     let isMounted = true;
@@ -314,8 +342,16 @@ export function MobileLibraryPage({
       return sortCollectionItemsForWatching(items);
     }
 
-    return [...items].sort((left, right) => sortItems(left, right, sortBy));
-  }, [data, searchTerm, sortBy]);
+    // The hand-placed order is a saved sequence rather than a comparison rule,
+    // so it replaces the comparator instead of feeding it.
+    if (effectiveSortBy === "custom") {
+      return orderItemsByCuration(items, curatedList);
+    }
+
+    return [...items].sort((left, right) =>
+      sortItems(left, right, effectiveSortBy),
+    );
+  }, [data, searchTerm, effectiveSortBy, curatedList]);
 
   const libraryRotatingLogoUrls = useMemo(() => {
     if (!data || mode !== "library") {
@@ -748,13 +784,16 @@ export function MobileLibraryPage({
         >
           <SlidersHorizontal size={15} />
           <select
-            value={sortBy}
+            value={effectiveSortBy}
             onChange={(event) =>
-              setSortBy(event.target.value as "name" | "year" | "latest")
+              setSortBy(event.target.value as LibrarySortMode)
             }
             aria-label={t("library.sortBy")}
             className="min-w-0 flex-1 bg-transparent text-white outline-none"
           >
+            {hasCuratedOrder(curatedList) ? (
+              <option value="custom">{t("library.custom")}</option>
+            ) : null}
             <option value="name">{t("library.name")}</option>
             <option value="latest">{t("library.latest")}</option>
             <option value="year">{t("library.year")}</option>

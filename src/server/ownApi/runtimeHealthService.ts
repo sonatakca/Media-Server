@@ -89,6 +89,35 @@ async function probeWritableDirectory(directoryPath: string): Promise<boolean> {
   }
 }
 
+/**
+ * One outstanding attempt per probe, however often the probe is asked for.
+ *
+ * `safelyWithin` gives up on a probe after a couple of seconds and answers
+ * `false`, which keeps `/health` fast — but it does not, and cannot, stop the
+ * work. A `stat` blocked in the kernel on a volume that has stopped answering
+ * holds a libuv worker thread until the volume answers or the process ends, and
+ * the pool has four of them. Vite polls this endpoint continuously; the cache
+ * expires every ten seconds; without this guard each expiry launched a fresh
+ * `stat` against the same dead mount, and inside a minute every libuv worker in
+ * the process was gone — taking the file reads that serve video with them.
+ *
+ * So a probe that has not come back is not started again. The answer stays the
+ * timeout fallback, which is the truthful one, and exactly one thread is lost
+ * rather than all of them.
+ */
+function singleFlight<T>(operation: () => Promise<T>): () => Promise<T> {
+  let inFlight: Promise<T> | undefined;
+
+  return () => {
+    if (inFlight) return inFlight;
+    const running = operation().finally(() => {
+      if (inFlight === running) inFlight = undefined;
+    });
+    inFlight = running;
+    return running;
+  };
+}
+
 async function safelyWithin<T>(
   operation: () => Promise<T>,
   fallback: T,
@@ -131,6 +160,17 @@ export function createRuntimeHealthService({
   let cached: { expiresAt: number; status: OwnApiHealthStatus } | undefined;
   let inFlight: Promise<OwnApiHealthStatus> | undefined;
 
+  const probeDatabase = singleFlight(databaseCheck);
+  const probeJobs = singleFlight(jobsCheck);
+  const probeFfmpeg = singleFlight(() => commandProbe(ffmpegPath));
+  const probeFfprobe = singleFlight(() => commandProbe(ffprobePath));
+  const probeMediaStorage = singleFlight(() =>
+    readableDirectoryProbe(mediaStoragePath),
+  );
+  const probeGeneratedStorage = singleFlight(() =>
+    writableDirectoryProbe(generatedStoragePath),
+  );
+
   const runProbes = async (): Promise<OwnApiHealthStatus> => {
     const [
       database,
@@ -140,20 +180,12 @@ export function createRuntimeHealthService({
       mediaStorageAvailable,
       generatedStorageWritable,
     ] = await Promise.all([
-      safelyWithin(databaseCheck, "unavailable", probeTimeoutMs),
-      safelyWithin(jobsCheck, "unavailable", probeTimeoutMs),
-      safelyWithin(() => commandProbe(ffmpegPath), false, probeTimeoutMs),
-      safelyWithin(() => commandProbe(ffprobePath), false, probeTimeoutMs),
-      safelyWithin(
-        () => readableDirectoryProbe(mediaStoragePath),
-        false,
-        probeTimeoutMs,
-      ),
-      safelyWithin(
-        () => writableDirectoryProbe(generatedStoragePath),
-        false,
-        probeTimeoutMs,
-      ),
+      safelyWithin(probeDatabase, "unavailable", probeTimeoutMs),
+      safelyWithin(probeJobs, "unavailable", probeTimeoutMs),
+      safelyWithin(probeFfmpeg, false, probeTimeoutMs),
+      safelyWithin(probeFfprobe, false, probeTimeoutMs),
+      safelyWithin(probeMediaStorage, false, probeTimeoutMs),
+      safelyWithin(probeGeneratedStorage, false, probeTimeoutMs),
     ]);
 
     return buildOwnApiHealthStatus({

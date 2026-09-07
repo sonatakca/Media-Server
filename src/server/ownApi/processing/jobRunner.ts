@@ -57,7 +57,12 @@ import {
   assertOwnedJobWorkspace,
   verifyOwnedJobWorkspace,
 } from "../../../renditions/storageRoles";
-import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
+import {
+  escalatePauseReason,
+  type ProcessingJobRecord,
+  type ProcessingJobStore,
+  type ProcessingPauseReason,
+} from "./jobStore";
 import {
   createPermissiveStorageGuard,
   type StorageGuard,
@@ -513,12 +518,22 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       await store.update(job.id, {
         state: "paused",
         pauseRequested: true,
-        pausedReason:
+        /*
+         * Escalated, never re-labelled. A job parked by a previous attempt's
+         * `finishStorageInterrupted` keeps its reason but not its pause
+         * request, so it can be leased again and arrive here — and the guard's
+         * state now is not the state that classified the fault then. Writing
+         * the derived reason flat is how a quarantine became automatically
+         * resumable once the drive was merely unplugged.
+         */
+        pausedReason: escalatePauseReason(
+          job.pausedReason,
           storageGuard.health.state === "unavailable"
             ? "storage-unavailable"
             : storageGuard.health.state === "recovery-pending"
               ? "recovery-pending"
               : "storage-quarantined",
+        ),
         finishedAt: null,
         speed: null,
         fps: null,
@@ -551,7 +566,9 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       await store.update(job.id, {
         state: "paused",
         pauseRequested: true,
-        pausedReason: "recovery-pending",
+        // An unidentifiable volume is a reason to hold, never a reason to
+        // soften a hold something else already recorded.
+        pausedReason: escalatePauseReason(job.pausedReason, "recovery-pending"),
         finishedAt: null,
         speed: null,
         fps: null,
@@ -615,13 +632,27 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     };
 
     /**
+     * The reason this attempt has already recorded for its storage pause.
+     *
+     * Declared here rather than beside `storageInterrupted` because
+     * `finishStorageInterrupted` closes over it and is reachable well before
+     * that point. It is a fallback, not the source of truth — the row is —
+     * for the case where the database cannot be read at the moment the encode
+     * is finally reaped.
+     */
+    let storageInterruptedReason: ProcessingPauseReason | null = null;
+
+    /**
      * The encode stopped because its storage went away.
      *
      * Deliberately not a failure: nothing is wrong with the source, the plan
      * or the package, and marking it failed is what forced a person to press
      * Retry after every accidental unplug. The job stays paused with the
      * reason recorded, keeps no finish time because it has not finished, and
-     * is picked up again automatically when the volume returns.
+     * is picked up again automatically when the volume returns — but only if
+     * the reason it ends up with is the clean one. A fault already recorded
+     * against this pause outranks whatever the guard happens to say by the
+     * time the encoder is finally reaped, and holds the job for a person.
      */
     const finishStorageInterrupted = async (
       detail?: string,
@@ -634,13 +665,40 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           processingJobId: job.id,
         });
       }
-      const pausedReason =
+      /*
+       * What the guard says *now* — which is not necessarily what it said when
+       * the encode was stopped.
+       *
+       * This runs once FFmpeg has actually been reaped, and on a wedged
+       * process against a bad region that takes minutes. In that gap a
+       * quarantined volume can read as merely absent, and writing this answer
+       * flat is what turned a quarantine into `storage-unavailable` on job
+       * 21f644c2: nineteen minutes after the supervisor tick had correctly
+       * recorded the fault.
+       */
+      const observed =
         storageGuard.health.state === "quarantined" ||
         storageGuard.health.state === "suspect"
           ? "storage-quarantined"
           : storageGuard.health.state === "recovery-pending"
             ? "recovery-pending"
             : "storage-unavailable";
+      /*
+       * The row is the authority on what has already been decided about this
+       * pause, including by a previous process. The in-memory stamp is the
+       * fallback for the case the row cannot be read — a database that blinks
+       * must not be able to launder a quarantine, and this function is reached
+       * on exactly the paths where the machine is already unwell.
+       */
+      const parked = await store.get(job.id).catch(() => null);
+      const pausedReason = [
+        parked?.pausedReason,
+        storageInterruptedReason,
+      ].reduce<ProcessingPauseReason>(
+        (held, candidate) => escalatePauseReason(candidate, held),
+        observed,
+      );
+      storageInterruptedReason = pausedReason;
       /*
        * The live sample goes but the durable row keeps its epoch position, so
        * a page opened while the drive is missing still says how much work is
@@ -667,17 +725,29 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
         errorCode: null,
         errorMessage: null,
       });
+      /*
+       * The history follows the reason that was actually written, not the
+       * guard's current mood. A job held for a person that says "waiting for
+       * the drive" is the same lie as the chip on the page: it promises a
+       * return nothing is going to deliver.
+       */
+      const heldReason =
+        pausedReason === "operator"
+          ? "A person paused this job; the storage returning does not lift that."
+          : observed === pausedReason
+            ? storageGuard.describe()
+            : "The fault recorded when the encoder was stopped still holds this job for an operator.";
       await store.appendEvent({
         processingJobId: job.id,
         stage: "waiting",
         level: "warning",
         message:
-          storageGuard.health.state === "quarantined" ||
-          storageGuard.health.state === "suspect"
-            ? `Processing stopped. ${storageGuard.describe()} Every completed checkpoint is untouched.`
-            : detail
+          pausedReason === "storage-unavailable"
+            ? detail
               ? `Waiting for storage. ${detail} Every completed checkpoint is untouched; only the epoch that was running will be built again.`
-              : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again.",
+              : "Waiting for storage. Every completed checkpoint is untouched; only the epoch that was running will be built again."
+            : `Processing stopped. ${heldReason} Every completed checkpoint is untouched.`,
+        detail: { storageState: storageGuard.health.state, pausedReason },
       });
       return { status: "waiting-for-storage" as const };
     };
@@ -1253,19 +1323,32 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
           storageInterrupted = true;
           pauseController.resume();
           encodeAbort.abort();
+          /*
+           * This is the classification made at the moment of the fault, and it
+           * is the one that is right. `finishStorageInterrupted` will run again
+           * over the same job once FFmpeg is reaped, so what is written here
+           * has to be a floor rather than a value that a later, calmer reading
+           * of the guard is free to lower.
+           */
+          storageInterruptedReason = escalatePauseReason(
+            latest?.pausedReason,
+            storageGuard.health.state === "unavailable"
+              ? "storage-unavailable"
+              : "storage-quarantined",
+          );
           await store.update(job.id, {
             state: "paused",
-            pausedReason:
-              storageGuard.health.state === "unavailable"
-                ? "storage-unavailable"
-                : "storage-quarantined",
+            pausedReason: storageInterruptedReason,
           });
           await store.appendEvent({
             processingJobId: job.id,
             stage: latest?.stage ?? job.stage,
             level: "warning",
             message: `The encoder was stopped. ${storageGuard.describe()}`,
-            detail: { storageState: storageGuard.health.state },
+            detail: {
+              storageState: storageGuard.health.state,
+              pausedReason: storageInterruptedReason,
+            },
           });
           return;
         }

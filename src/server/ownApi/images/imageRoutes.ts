@@ -12,7 +12,19 @@ import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { ImageRepository } from "./imageRepository";
 import type { ImageStorage } from "./imageStorage";
 
-const IMAGE_TYPES = ["cover", "backdrop", "logo", "thumb", "banner"] as const;
+/**
+ * The artwork roles a title can carry.
+ *
+ * `thumb` here is a real thumbnail — a picture of the title — and is unrelated
+ * to trickplay, which is seek-bar preview sheets and is named for itself.
+ */
+export const IMAGE_TYPES = [
+  "cover",
+  "backdrop",
+  "logo",
+  "thumb",
+  "banner",
+] as const;
 
 export interface ImageRoutesOptions {
   images: ImageRepository;

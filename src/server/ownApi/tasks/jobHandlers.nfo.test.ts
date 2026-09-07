@@ -35,6 +35,9 @@ function job(): JobRecord {
     maxAttempts: 3,
     progress: 0,
     progressMessage: null,
+    progressDetail: null,
+    priority: 100,
+    runAfter: new Date(0),
     safeError: null,
     result: null,
     cancellationRequested: false,
@@ -127,7 +130,16 @@ describe("library scan NFO stage", () => {
       expect.objectContaining({ force: false }),
     );
     expect(stages).toEqual(["probe", "metadata", "nfo"]);
-    expect(reportProgress).toHaveBeenCalledWith(0.9, "Writing NFO metadata");
+    /*
+     * The sentence and the fraction are unchanged; the structured snapshot is
+     * the new third argument, and it names the phase rather than leaving the
+     * page to recognise the sentence.
+     */
+    expect(reportProgress).toHaveBeenCalledWith(
+      0.9,
+      "Writing NFO metadata",
+      expect.objectContaining({ phase: "nfo" }),
+    );
     expect(result).toMatchObject({
       itemsCreated: 0,
       nfoExport: { mode: "sidecar", created: 2 },

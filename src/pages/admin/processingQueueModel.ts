@@ -36,22 +36,49 @@ export function isConcluded(job: Pick<ProcessingJob, "state">): boolean {
 }
 
 /**
+ * True while a job is being held rather than waiting its turn.
+ *
+ * Two things make a job held, and both have to be read. The first is the
+ * state, which a runner writes when it picks a job up and puts it straight
+ * back down. The second is a pause that has only been *asked* for: `state`
+ * turns `paused` when a worker reaches the job, and a worker draining one
+ * encode at a time may not reach a queued job for hours. Until then the hold
+ * lives in the request alone — and reading the state by itself left every job
+ * an operator had paused sitting in the waiting band, numbered as though it
+ * were next, while nothing was ever going to start it.
+ *
+ * The exception is the volume going away. That pause lifts itself when the
+ * drive comes back, so the job is waiting for the disk rather than for a
+ * person; it is still in the line, and its card already carries the storage
+ * panel that says what it is waiting for.
+ */
+function isHeld(
+  job: Pick<ProcessingJob, "state" | "pauseRequested" | "pausedReason">,
+): boolean {
+  if (job.state === "paused") return true;
+  return job.pauseRequested && job.pausedReason !== "storage-unavailable";
+}
+
+/**
  * The band of the queue a job sits in: running, then waiting, then held.
  *
  * The three read as a sentence about the machine — what it is doing, what it
- * will do next, and what it has set aside. A paused job still owns the encoder
+ * will do next, and what it has set aside. A held job still owns the encoder
  * and its workspace, but it is not going to advance until somebody or the
  * storage guard says so, so it sits below the line rather than above it. A job
  * that has merely been *asked* to pause is still `running` and stays in the
- * top band until the encoder actually stops.
+ * top band until the encoder actually stops — which is why the running check
+ * comes first and the hold is asked about second.
  */
 const RUNNING_BAND = 0;
 const WAITING_BAND = 1;
 const HELD_BAND = 2;
 
-function queueBand(job: Pick<ProcessingJob, "state">): number {
+function queueBand(
+  job: Pick<ProcessingJob, "state" | "pauseRequested" | "pausedReason">,
+): number {
   if (job.state === "running") return RUNNING_BAND;
-  if (job.state === "paused") return HELD_BAND;
+  if (isHeld(job)) return HELD_BAND;
   return WAITING_BAND;
 }
 

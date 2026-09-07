@@ -9,7 +9,12 @@ import {
 import type { TaskDto } from "../api/ownApi/dto";
 const getTasks = vi.fn();
 const t = (key: string) => key;
-vi.mock("../lib/mediaApi", () => ({ getTasks: () => getTasks() }));
+vi.mock("../lib/mediaApi", () => ({
+  getTaskObservation: async (since?: string) => {
+    const observedAt = new Date().toISOString();
+    return { tasks: await getTasks(since), observedAt };
+  },
+}));
 vi.mock("../i18n/LanguageContext", () => ({ useLanguage: () => ({ t }) }));
 const task: TaskDto = {
   id: "a",
@@ -201,4 +206,93 @@ it("takes back a card once the lead starts answering for it", async () => {
   expect(
     getNotifications().filter((card) => card.task?.status === "running"),
   ).toHaveLength(1);
+});
+
+it.each([10, 20])(
+  "observes ultra-fast work at second %s across a failed poll without replaying history or duplicating cards",
+  async (second) => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-06T10:00:00.000Z"));
+    const old = {
+      ...task,
+      id: "old",
+      status: "succeeded",
+      finishedAt: "2026-09-05T10:00:00.000Z",
+    } as TaskDto;
+    getTasks
+      .mockResolvedValueOnce([old])
+      .mockRejectedValueOnce(new Error("offline"));
+    renderHook(() => useTaskNotifications(true));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(getNotifications()).toHaveLength(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    const completed: TaskDto = {
+      ...task,
+      id: "fast",
+      type: "library.rename",
+      status: "succeeded",
+      queuedAt: `2026-09-06T10:00:${second}.000Z`,
+      finishedAt: `2026-09-06T10:00:${second}.005Z`,
+      result: { mode: "off", disabled: true },
+    };
+    getTasks.mockResolvedValue([old, { ...old, id: "old-page" }, completed]);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(getTasks).toHaveBeenLastCalledWith("2026-09-06T10:00:00.000Z");
+    expect(getNotifications()).toHaveLength(1);
+    const card = getNotifications()[0];
+    expect(card).toMatchObject({
+      tone: "warning",
+      task: { outcome: "organize-disabled", status: "succeeded" },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15000);
+    });
+    expect(getNotifications()).toHaveLength(1);
+    expect(getNotifications()[0]?.id).toBe(card?.id);
+  },
+);
+
+it("invalidates immediately and follows an in-flight baseline with a fresh read", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-09-06T10:00:00.000Z"));
+  let finish!: (tasks: TaskDto[]) => void;
+  getTasks.mockReturnValueOnce(
+    new Promise<TaskDto[]>((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const completed: TaskDto = {
+    ...task,
+    type: "library.rename",
+    status: "succeeded",
+    queuedAt: "2026-09-06T10:00:00.001Z",
+    finishedAt: "2026-09-06T10:00:00.005Z",
+  };
+  getTasks.mockResolvedValue([completed]);
+  const { unmount } = renderHook(() => useTaskNotifications(true));
+  const { signalTasksChanged } = await import("../lib/tasksChanged");
+  await act(async () => {
+    signalTasksChanged();
+    signalTasksChanged();
+  });
+  expect(getTasks).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    finish([]);
+  });
+  expect(getTasks).toHaveBeenCalledTimes(2);
+  expect(getNotifications()).toHaveLength(1);
+  await act(async () => {
+    signalTasksChanged();
+  });
+  expect(getTasks).toHaveBeenCalledTimes(3);
+  expect(getNotifications()).toHaveLength(1);
+  unmount();
+  signalTasksChanged();
+  expect(getTasks).toHaveBeenCalledTimes(3);
 });

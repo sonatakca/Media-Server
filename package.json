@@ -31,7 +31,12 @@
     "media:lab:verify-http": "bash scripts/verify-media-lab-http.sh",
     "media:organize:plan": "node --env-file=.env --import tsx scripts/organize-media.ts",
     "media:organize:apply": "node --env-file=.env --import tsx scripts/organize-media.ts --apply",
-    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\""
+    "media:artwork:plan": "node --env-file=.env --import tsx scripts/reimport-artwork.ts",
+    "media:artwork:reimport": "node --env-file=.env --import tsx scripts/reimport-artwork.ts --apply",
+    "format": "prettier --write \"src/**/*.{ts,tsx,js,jsx,css}\" \"*.{json,js,ts,css,md}\"",
+    "media:trickplay:migrate:plan": "node --env-file=.env --import tsx scripts/migrate-trickplay-storage.ts --dry-run",
+    "media:trickplay:migrate": "node --env-file=.env --import tsx scripts/migrate-trickplay-storage.ts",
+    "maintenance:archive-legacy-trickplay": "node --env-file=.env --import tsx scripts/archive-legacy-trickplay.ts"
   },
   "dependencies": {
     "animejs": "^4.4.1",

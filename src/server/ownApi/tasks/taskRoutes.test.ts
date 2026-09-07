@@ -15,6 +15,9 @@ const job: JobRecord = {
   maxAttempts: 3,
   progress: 0.42,
   progressMessage: "Analysed 42 of 100 files",
+  progressDetail: null,
+  priority: 100,
+  runAfter: new Date(0),
   safeError: "postgres://private/password",
   result: { itemsCreated: 0, path: "/private/source" },
   cancellationRequested: false,
@@ -36,6 +39,62 @@ describe("safe task endpoint presentation", () => {
     );
     expect(dto.progressMessage).toBeNull();
   });
+  /*
+   * The row already carried this. The card read the sentence next to it and
+   * matched four regular expressions against it, so a trickplay pass — whose
+   * sentence is not one of the four — reached the screen with nothing to show
+   * while the maintenance page beside it drew a bar from the same row.
+   */
+  it("reads the executor's own report rather than the sentence beside it", async () => {
+    const dto = await toTaskDto(
+      {
+        ...job,
+        jobType: "trickplay.generate",
+        progressMessage: "Generating trickplay",
+        progressDetail: {
+          revision: 7,
+          phase: "trickplay",
+          measure: {
+            kind: "exact",
+            completed: 61,
+            total: 144,
+            unit: "frames",
+          },
+          at: "2026-08-11T00:00:03Z",
+        },
+      },
+      libraries,
+    );
+
+    expect(dto.presentation.stage).toBe("trickplay");
+    expect(dto.presentation.determinate).toBe(true);
+    expect(dto.presentation.counts).toEqual({
+      completed: 61,
+      total: 144,
+      unit: "frames",
+    });
+    expect(dto.presentation.phaseFraction).toBeCloseTo(61 / 144, 10);
+  });
+
+  it("says nothing measured for a job that has concluded", async () => {
+    const dto = await toTaskDto(
+      {
+        ...job,
+        status: "succeeded",
+        progressDetail: {
+          revision: 7,
+          phase: "reading",
+          measure: { kind: "exact", completed: 5, total: 9, unit: "roots" },
+          at: "2026-08-11T00:00:03Z",
+        },
+      },
+      libraries,
+    );
+
+    expect(dto.presentation.phaseFraction).toBeUndefined();
+    expect(dto.presentation.counts).toBeUndefined();
+  });
+
   it("handles deleted subjects without exposing identifiers", async () => {
     const dto = await toTaskDto(job, {
       getById: async () => null,
@@ -394,4 +453,295 @@ describe("phases that are not the picture", () => {
     } as never);
     expect(dto.presentation.phaseFraction).toBeUndefined();
   });
+});
+
+/**
+ * The maintenance action group, at the boundary.
+ *
+ * Two things are being checked here and they are different: which libraries an
+ * action selects, and that the reply is an *acceptance*. Nothing below runs a
+ * job — a route that waited for one would hold a request open for the length
+ * of a scan or an FFmpeg run.
+ */
+function maintenanceHarness(
+  kinds: Array<{ id: string; kind: string }>,
+  options: { onEnqueue?: () => void } = {},
+) {
+  const enqueued: Array<Record<string, unknown>> = [];
+  const queue = {
+    enqueue: async (job: Record<string, unknown>) => {
+      options.onEnqueue?.();
+      enqueued.push(job);
+      return `task-${enqueued.length}`;
+    },
+  } as unknown as JobQueue;
+  const repository = {
+    listAll: async () =>
+      kinds.map((entry) => ({
+        ...entry,
+        slug: entry.id,
+        name: entry.id,
+        roots: [entry.id],
+      })),
+    getById: async () => null,
+  } as unknown as LibraryRepository;
+
+  const routes = createTaskRoutes({ queue, libraries: repository });
+  const route = routes.find(
+    (candidate) => candidate.path === "/admin/maintenance/:action",
+  );
+  if (!route) throw new Error("the maintenance route is missing");
+
+  const call = async (action: string) => {
+    const body: { status?: number; payload?: unknown } = {};
+    const response = {
+      statusCode: 200,
+      setHeader: () => undefined,
+      end: (text: string) => {
+        body.payload = JSON.parse(text).data;
+      },
+      writeHead: (status: number) => {
+        body.status = status;
+      },
+    };
+    await route.handle({
+      params: { action },
+      requestId: "request",
+      response,
+      url: new URL("http://host/"),
+      method: "POST",
+      principal: null,
+      requirePrincipal: () => {
+        throw new Error("unused");
+      },
+      readJson: async () => ({}),
+      request: {} as never,
+    } as never);
+    return body.payload as {
+      action: string;
+      taskIds: string[];
+      libraries: number;
+    };
+  };
+
+  return { call, enqueued };
+}
+
+const EVERY_KIND = [
+  { id: "films", kind: "movies" },
+  { id: "shows", kind: "series" },
+  { id: "reading", kind: "books" },
+  { id: "sets", kind: "collections" },
+  { id: "misc", kind: "mixed" },
+];
+
+describe("the Library Maintenance action routes", () => {
+  it("keeps every task route, the new ones included, admin-only", () => {
+    const routes = createTaskRoutes({
+      libraries,
+      queue: {} as JobQueue,
+    });
+    expect(routes.every((route) => route.access === "admin")).toBe(true);
+    expect(
+      routes.some((route) => route.path === "/admin/maintenance/:action"),
+    ).toBe(true);
+  });
+
+  it("refuses an action that is not on the list", async () => {
+    const { call, enqueued } = maintenanceHarness(EVERY_KIND);
+
+    await expect(call("delete-everything")).rejects.toThrow(/invalid/i);
+    expect(enqueued).toEqual([]);
+  });
+
+  it("selects exactly the kind each category names", async () => {
+    for (const [action, libraryId] of [
+      ["scan-movies", "films"],
+      ["scan-shows", "shows"],
+      ["scan-books", "reading"],
+    ] as const) {
+      const { call, enqueued } = maintenanceHarness(EVERY_KIND);
+      const accepted = await call(action);
+
+      expect(accepted.libraries).toBe(1);
+      expect(enqueued).toHaveLength(1);
+      expect(enqueued[0]).toMatchObject({
+        jobType: "library.scan",
+        payload: { libraryId },
+      });
+    }
+  });
+
+  /*
+   * A collection and a mixed library are libraries, not films or shows.
+   * Sweeping either into a category would scan something the button did not
+   * name — and both are still covered by "all in one".
+   */
+  it("never classifies collections or mixed as a category", async () => {
+    for (const action of ["scan-movies", "scan-shows", "scan-books"] as const) {
+      const { call } = maintenanceHarness([
+        { id: "sets", kind: "collections" },
+        { id: "misc", kind: "mixed" },
+      ]);
+      const accepted = await call(action);
+      expect(accepted.libraries).toBe(0);
+    }
+  });
+
+  it("treats an empty category as a no-op that succeeded", async () => {
+    const { call, enqueued } = maintenanceHarness([
+      { id: "films", kind: "movies" },
+    ]);
+
+    const accepted = await call("scan-books");
+
+    expect(accepted).toMatchObject({
+      action: "scan-books",
+      taskIds: [],
+      libraries: 0,
+    });
+    expect(enqueued).toEqual([]);
+  });
+
+  it("gives every library one stably-keyed job per operation", async () => {
+    for (const [action, jobType] of [
+      ["rename", "library.rename"],
+      ["organize", "library.organize"],
+      ["scan-all", "library.scan"],
+    ] as const) {
+      const { call, enqueued } = maintenanceHarness(EVERY_KIND);
+      await call(action);
+
+      expect(enqueued.map((job) => job.jobType)).toEqual(
+        EVERY_KIND.map(() => jobType),
+      );
+      expect(enqueued.map((job) => job.dedupeKey)).toEqual(
+        EVERY_KIND.map((library) => `${jobType}:${library.id}`),
+      );
+    }
+  });
+
+  it("accepts all-in-one and the trickplay sweep as a single durable job", async () => {
+    const everything = maintenanceHarness(EVERY_KIND);
+    const accepted = await everything.call("all");
+    expect(accepted.taskIds).toHaveLength(1);
+    expect(everything.enqueued[0]).toMatchObject({
+      jobType: "library.maintenance",
+      payload: { stage: "scan", pass: 0 },
+      dedupeKey: "library.maintenance:scan:0",
+    });
+
+    const trickplay = maintenanceHarness(EVERY_KIND);
+    await trickplay.call("trickplay");
+    expect(trickplay.enqueued[0]).toMatchObject({
+      jobType: "trickplay.scan",
+      dedupeKey: "trickplay.scan:all:0",
+    });
+  });
+
+  it("returns once the rows are durable and never runs the work itself", async () => {
+    let handlerRan = false;
+    const { call } = maintenanceHarness(EVERY_KIND, {
+      onEnqueue: () => {
+        // A durable enqueue is all the route does; nothing here executes.
+        handlerRan = handlerRan || false;
+      },
+    });
+
+    const accepted = await call("all");
+
+    expect(handlerRan).toBe(false);
+    expect(accepted.taskIds.every((id) => typeof id === "string")).toBe(true);
+  });
+});
+
+function observationHarness() {
+  const list = vi.fn().mockResolvedValue([]);
+  const observationTime = vi.fn().mockResolvedValue("2026-09-06T10:00:00.000Z");
+  const routes = createTaskRoutes({
+    queue: { list, observationTime } as unknown as JobQueue,
+    libraries,
+  });
+  const route = routes.find(
+    (entry) => entry.path === "/admin/tasks" && entry.method === "GET",
+  )!;
+  const call = async (search = "") => {
+    let payload: unknown;
+    await route.handle({
+      url: new URL(`http://test/admin/tasks${search}`),
+      params: {},
+      requestId: "test",
+      response: {
+        setHeader: () => {},
+        writeHead: () => {},
+        end: (text: string) => {
+          payload = JSON.parse(text).data;
+        },
+      },
+      requirePrincipal: () => ({ userId: "admin" }),
+    } as never);
+    return payload;
+  };
+  return { call, list, observationTime };
+}
+
+it("preserves the default generic list response and filters", async () => {
+  const { call, list, observationTime } = observationHarness();
+  expect(await call("?status=succeeded&type=library.rename&limit=20")).toEqual(
+    [],
+  );
+  expect(list).toHaveBeenCalledWith({
+    status: "succeeded",
+    jobType: "library.rename",
+    limit: 20,
+  });
+  expect(observationTime).not.toHaveBeenCalled();
+});
+it("captures the DB boundary before the read and returns a bounded continuation", async () => {
+  const { call, list, observationTime } = observationHarness();
+  const id = "00000000-0000-4000-8000-000000000001";
+  const since = "2026-09-06T09:00:00.000Z";
+  list.mockResolvedValue([{ ...job, id }]);
+  const response = (await call(
+    `?observe=true&since=${since}&after=${id}&limit=1&type=library.rename&status=succeeded`,
+  )) as { tasks: unknown[]; next: string; observedAt: string };
+  expect(response.tasks).toHaveLength(1);
+  expect(response.next).toBe(id);
+  expect(response.observedAt).toBe("2026-09-06T10:00:00.000Z");
+  expect(observationTime.mock.invocationCallOrder[0]).toBeLessThan(
+    list.mock.invocationCallOrder[0]!,
+  );
+  expect(list).toHaveBeenCalledWith({
+    observe: true,
+    since,
+    afterId: id,
+    limit: 1,
+    jobType: "library.rename",
+    status: "succeeded",
+  });
+});
+it.each([
+  "?observe=no",
+  "?since=2026-09-06T10:00:00.000Z",
+  "?after=bad",
+  "?observe=true&since=",
+  "?observe=true&since=yesterday",
+  "?observe=true&since=2026-02-30T10:00:00.000Z",
+  "?observe=true&since=2026-09-06T10:00:00Z",
+  "?observe=true&after=bad",
+  "?observe=true&status=bogus",
+])("strictly rejects malformed observation queries: %s", async (search) => {
+  const { call, list, observationTime } = observationHarness();
+  await expect(call(search)).rejects.toThrow();
+  expect(list).not.toHaveBeenCalled();
+  expect(observationTime).not.toHaveBeenCalled();
+});
+it("establishes an active-only first observation without replaying historical terminal rows", async () => {
+  const { call, list } = observationHarness();
+  expect(await call("?observe=true")).toEqual({
+    tasks: [],
+    next: null,
+    observedAt: "2026-09-06T10:00:00.000Z",
+  });
+  expect(list).toHaveBeenCalledWith({ observe: true, limit: 50 });
 });

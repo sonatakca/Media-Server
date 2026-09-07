@@ -1,0 +1,276 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-05T00:00:00.000Z",
+  "title": "Design System: Seyirlik",
+  "extensions": {
+    "colorMeta": {
+      "seyirlik-teal": {
+        "role": "primary",
+        "displayName": "Seyirlik Teal",
+        "canonical": "#467a6c",
+        "tonalRamp": [
+          "#0e1613",
+          "#1a2a25",
+          "#294038",
+          "#3a5951",
+          "#467a6c",
+          "#5c9484",
+          "#75a27b",
+          "#a9d1b8"
+        ]
+      },
+      "screening-void": {
+        "role": "neutral",
+        "displayName": "Screening Void",
+        "canonical": "#050607",
+        "tonalRamp": [
+          "#000000",
+          "#050607",
+          "#0c0e10",
+          "#16191c",
+          "#22262a",
+          "#34383d",
+          "#4d5258",
+          "#6b7076"
+        ]
+      },
+      "glass-surface": {
+        "role": "neutral",
+        "displayName": "Glass Surface",
+        "canonical": "rgba(255, 255, 255, 0.065)",
+        "tonalRamp": [
+          "rgba(255,255,255,0.02)",
+          "rgba(255,255,255,0.04)",
+          "rgba(255,255,255,0.065)",
+          "rgba(255,255,255,0.09)",
+          "rgba(255,255,255,0.11)",
+          "rgba(255,255,255,0.15)",
+          "rgba(255,255,255,0.20)",
+          "rgba(255,255,255,0.30)"
+        ]
+      },
+      "status-success": {
+        "role": "tertiary",
+        "displayName": "Success (Emerald)",
+        "canonical": "#34d399",
+        "tonalRamp": [
+          "#052e1f",
+          "#0a4a30",
+          "#0f6b45",
+          "#189460",
+          "#34d399",
+          "#6ee7b7",
+          "#a7f3d0",
+          "#d1fae5"
+        ]
+      },
+      "status-warning": {
+        "role": "tertiary",
+        "displayName": "Warning (Amber)",
+        "canonical": "#fbbf24",
+        "tonalRamp": [
+          "#3a2a05",
+          "#5c410a",
+          "#8a5f10",
+          "#b8811a",
+          "#fbbf24",
+          "#fcd34d",
+          "#fde68a",
+          "#fef3c7"
+        ]
+      },
+      "status-critical": {
+        "role": "tertiary",
+        "displayName": "Critical (Red)",
+        "canonical": "#f87171",
+        "tonalRamp": [
+          "#3a0a0a",
+          "#5c1414",
+          "#8a1f1f",
+          "#b83232",
+          "#f87171",
+          "#fca5a5",
+          "#fecaca",
+          "#fee2e2"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Hero titles over backdrop art; always paired with a cinematic drop-shadow for legibility over imagery."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section headers and large tabular stat numbers in the Control Booth."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Card titles, button labels, nav labels."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Descriptions, metadata rows, supporting copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Uppercase tracked eyebrows, category badges, count chips — the system's most-repeated typographic gesture."
+      }
+    },
+    "shadows": [
+      {
+        "name": "cinematic-card",
+        "value": "0 30px 90px rgba(0,0,0,0.42), 0 10px 28px rgba(0,0,0,0.34), 0 0 34px transparent, inset 0 1px 0 rgba(255,255,255,0.06)",
+        "purpose": "Rest-state depth under posters and media cards."
+      },
+      {
+        "name": "cinematic-card-hover",
+        "value": "0 38px 120px rgba(0,0,0,0.58), 0 16px 38px rgba(0,0,0,0.42), 0 0 34px color-mix(in srgb, var(--accent) 12%, transparent), inset 0 1px 0 rgba(255,255,255,0.08)",
+        "purpose": "Deeper, accent-tinted shadow on hover/focus of a media card."
+      },
+      {
+        "name": "floating-panel",
+        "value": "0 28px 100px rgba(0,0,0,0.62), 0 10px 28px rgba(0,0,0,0.44), inset 0 1px 0 rgba(255,255,255,0.09)",
+        "purpose": "Modals, overlays, the notification stack."
+      },
+      {
+        "name": "navbar-glass",
+        "value": "0 18px 56px rgba(0,0,0,0.34), 0 1px 0 rgba(255,255,255,0.055), inset 0 -1px 0 rgba(255,255,255,0.055)",
+        "purpose": "The header once the page has scrolled past the hero."
+      },
+      {
+        "name": "artwork-glow",
+        "value": "0 34px 120px rgba(0,0,0,0.68), 0 12px 36px rgba(0,0,0,0.48), 0 0 54px color-mix(in srgb, var(--accent) 14%, transparent)",
+        "purpose": "Large hero/backdrop artwork."
+      },
+      {
+        "name": "player-controls",
+        "value": "0 24px 84px rgba(0,0,0,0.66), 0 8px 24px rgba(0,0,0,0.46), inset 0 1px 0 rgba(255,255,255,0.11)",
+        "purpose": "Floating playback chrome over video."
+      },
+      {
+        "name": "button-glow",
+        "value": "0 18px 46px rgba(0,0,0,0.44), 0 0 28px color-mix(in srgb, var(--accent) 20%, transparent), inset 0 1px 0 rgba(255,255,255,0.18)",
+        "purpose": "Primary calls to action."
+      },
+      {
+        "name": "soft-inset",
+        "value": "inset 0 1px 0 rgba(255,255,255,0.1), inset 0 -1px 0 rgba(255,255,255,0.035), 0 14px 42px rgba(0,0,0,0.28)",
+        "purpose": "Subtle inner top/bottom highlight inside glass panels."
+      },
+      {
+        "name": "admin-card (Control Booth)",
+        "value": "none — depth via 1px hairline border (rgba(255,255,255,0.12)) and bg-white/[0.03] fill only",
+        "purpose": "Deliberately flat: no shadow, no blur, on operational surfaces."
+      }
+    ],
+    "motion": [
+      {
+        "name": "media-card-hover",
+        "value": "transform 300ms ease-out (lift -1.5, scale 1.012), box-shadow 450ms ease-out, border-color 300ms ease",
+        "purpose": "Media card hover/focus lift."
+      },
+      {
+        "name": "glass-control-press",
+        "value": "transform 150ms ease-out to scale(0.96)",
+        "purpose": "Tactile press feedback on glass icon/pill controls."
+      },
+      {
+        "name": "shimmer-sweep",
+        "value": "background-position 2s linear infinite, 300% background-size diagonal sweep",
+        "purpose": "Accent-tinted loading shimmer on media artwork."
+      },
+      {
+        "name": "reduced-motion-floor",
+        "value": "@media (prefers-reduced-motion: reduce) collapses all animation/transition durations to 0.01ms",
+        "purpose": "Global accessibility floor; respected everywhere, including the shimmer."
+      }
+    ],
+    "breakpoints": [
+      { "name": "sm", "value": "640px" },
+      { "name": "md", "value": "768px" },
+      { "name": "lg", "value": "1024px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The rare, high-emphasis call to action; teal fill, near-black text.",
+      "html": "<button class=\"ds-btn ds-btn-primary\">Play</button>",
+      "css": ".ds-btn { display: inline-flex; min-height: 2.5rem; align-items: center; justify-content: center; gap: 0.5rem; border-radius: 8px; padding: 0.5rem 1rem; font-size: 0.875rem; font-weight: 700; transition: background-color 0.2s ease-out, transform 0.2s ease-out, box-shadow 0.2s ease-out; } .ds-btn:hover { transform: translateY(-1px); } .ds-btn:active { transform: scale(0.98); } .ds-btn:focus-visible { outline: none; box-shadow: 0 0 0 2px #467a6c, 0 0 0 4px #050607; } .ds-btn-primary { background: #467a6c; color: #09090b; } .ds-btn-primary:hover { background: #75a27b; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "Medium-emphasis action on translucent white.",
+      "html": "<button class=\"ds-btn ds-btn-secondary\">Cancel</button>",
+      "css": ".ds-btn-secondary { background: rgba(255,255,255,0.10); color: #f8fafc; border: 1px solid rgba(255,255,255,0.15); } .ds-btn-secondary:hover { background: rgba(255,255,255,0.16); }"
+    },
+    {
+      "name": "Glass Icon Button",
+      "kind": "button",
+      "refersTo": null,
+      "description": "The tactile control family for chrome floated over media — icon buttons, segmented toolbars, pill inputs.",
+      "html": "<button class=\"ds-glass-icon\" aria-label=\"Play\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M8 5v14l11-7z\"/></svg></button>",
+      "css": ".ds-glass-icon { display: inline-flex; align-items: center; justify-content: center; height: 2.5rem; width: 2.5rem; border-radius: 9999px; background: rgba(23,23,25,0.75); color: rgba(255,255,255,0.78); box-shadow: 0 0 0 1px rgba(255,255,255,0.06), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3), 0 10px 35px rgba(0,0,0,0.28); backdrop-filter: blur(24px); transition: background-color 0.15s ease-out, box-shadow 0.15s ease-out, color 0.15s ease-out, transform 0.15s ease-out; } .ds-glass-icon:hover { background: rgba(255,255,255,0.09); color: #fff; } .ds-glass-icon:focus-visible { outline: none; box-shadow: 0 0 0 2px rgba(255,255,255,0.3); } .ds-glass-icon:active { transform: scale(0.96); }"
+    },
+    {
+      "name": "Media Card",
+      "kind": "card",
+      "refersTo": "media-card",
+      "description": "Signature Screening Room component: a poster whose metadata panel is scrimmed over a blurred mirror of its own artwork.",
+      "html": "<a class=\"ds-media-card\" href=\"#\"><img class=\"ds-media-card-art\" src=\"\" alt=\"\" /><div class=\"ds-media-card-panel\"><span class=\"ds-eyebrow\">Movie</span><h3 class=\"ds-media-card-title\">Title</h3><div class=\"ds-media-card-progress\"><div class=\"ds-media-card-progress-fill\" style=\"width:42%\"></div></div></div></a>",
+      "css": ".ds-media-card { position: relative; display: block; overflow: hidden; border-radius: 12px; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.065); box-shadow: 0 30px 90px rgba(0,0,0,0.42), 0 10px 28px rgba(0,0,0,0.34), inset 0 1px 0 rgba(255,255,255,0.06); transition: transform 0.3s ease-out, box-shadow 0.3s ease-out, border-color 0.3s ease; } .ds-media-card:hover { transform: translateY(-6px) scale(1.012); border-color: rgba(255,255,255,0.2); box-shadow: 0 38px 120px rgba(0,0,0,0.58), 0 16px 38px rgba(0,0,0,0.42), 0 0 34px rgba(70,122,108,0.12), inset 0 1px 0 rgba(255,255,255,0.08); } .ds-media-card-art { display: block; width: 100%; object-fit: cover; } .ds-media-card-panel { position: relative; padding: 0.875rem 1rem; background: rgba(0,0,0,0.4); } .ds-eyebrow { font-size: 0.6875rem; font-weight: 900; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(255,255,255,0.62); } .ds-media-card-title { margin-top: 0.25rem; font-weight: 900; color: #f8fafc; } .ds-media-card-progress { height: 0.1rem; width: 50%; background: #4b5563; margin-top: 0.5rem; } .ds-media-card-progress-fill { height: 100%; background: #467a6c; }"
+    },
+    {
+      "name": "Admin Card",
+      "kind": "card",
+      "refersTo": "admin-card",
+      "description": "Control Booth signature: flat, bordered, information-dense — no shadow, no blur.",
+      "html": "<section class=\"ds-admin-card\"><div class=\"ds-admin-card-headline\"><span class=\"ds-headline-number\">128</span><span class=\"ds-admin-card-label\">Succeeded</span></div></section>",
+      "css": ".ds-admin-card { border-radius: 16px; border: 1px solid rgba(255,255,255,0.10); background: rgba(255,255,255,0.03); padding: 1rem 1.25rem; } .ds-admin-card-headline { display: flex; align-items: baseline; gap: 0.5rem; } .ds-headline-number { font-size: 1.5rem; font-weight: 900; font-variant-numeric: tabular-nums; color: #f8fafc; } .ds-admin-card-label { font-size: 0.75rem; color: rgba(226,232,240,0.72); }"
+    },
+    {
+      "name": "Notification Chip",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Signature stacked glass notification with a balanced-ink spinner and mask-faded stack edges.",
+      "html": "<div class=\"ds-notification\"><span class=\"ds-notification-spinner\" aria-hidden=\"true\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M12 2a10 10 0 0 1 10 10\"/></svg></span><span class=\"ds-notification-text\">Scanning library…</span></div>",
+      "css": ".ds-notification { display: flex; align-items: center; gap: 0.625rem; border-radius: 16px; background: rgba(0,0,0,0.7); backdrop-filter: blur(24px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); padding: 0.75rem 1rem; color: #f8fafc; font-size: 0.875rem; font-weight: 600; } .ds-notification-spinner { color: #467a6c; animation: ds-spin 1s linear infinite; } @keyframes ds-spin { to { transform: rotate(360deg); } }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Private Screening Room",
+    "overview": "Seyirlik is one facility with two rooms. The audience-facing side — home, library, hero, the player — is the screening room itself: a dark, immersive space designed to disappear behind the poster art and video it's showing, lit by one restrained signal color. The admin side — scanning, processing, artwork, users — is the projection booth behind the screen: quieter, flatter, information-dense, precise, and built for repeated operational use rather than atmosphere. Both rooms belong to the same building, built from the same materials (near-black ground, Seyirlik Teal, the same heavy-weight Inter type, the same two-radius shape language), but the booth never borrows the screening room's decoration to prove they match.\n\nDeep black, cinematic hierarchy, restrained teal accenting, confident heavy typography, strong media imagery, and a real sense of depth are the durable identity. The exact intensity of glass blur, glow, shadow softness, and gradients are implementation choices within that identity, refinable whenever a change improves clarity, performance, hierarchy, or restraint — they are not, themselves, what makes Seyirlik look like Seyirlik.",
+    "keyCharacteristics": [
+      "Near-black ground throughout, lit by artwork and screen glow rather than by a light UI chrome.",
+      "One accent color (Seyirlik Teal), used sparingly as a signal, never as a fill.",
+      "Type weight is the display system — no separate display face, just Inter pushed to 900.",
+      "Two-radius shape grammar: rounded-full for every control, a small radius step for buttons and cards.",
+      "Screening room surfaces carry cinematic depth (layered shadow, glass blur, accent-tinted glow); control-booth surfaces are flat and dense by design, not by neglect."
+    ],
+    "rules": [
+      { "name": "The One Signal Light Rule", "body": "Seyirlik Teal appears as a glow, a fill, a ring, or a dot — never as a background, never as a large shape. If teal is the first thing you notice on a screen, it's being overused.", "section": "colors" },
+      { "name": "The Ramp-Is-The-Pipeline Rule", "body": "Where a surface must tell several kinds of background work apart, it reads the accent ramp as one scale: the warm end is trouble (Warm Red = failed, Amber = needs a person), and the cool run is healthy work ordered by pipeline position — Gold (discovery) to Olive (description) to Green (encoding) to Teal (export). Status always outranks the job. These are fixed points of the ramp, not the viewer's chosen accent, and the scale steps down in lightness so the order survives without hue.", "section": "colors" },
+      { "name": "The Weight-Not-Face Rule", "body": "Never reach for a second font family to add hierarchy or occasion. Reach for 900 and letter-spacing instead.", "section": "typography" },
+      { "name": "The Booth-Doesn't-Glow Rule", "body": "Admin/operational surfaces never inherit glass blur, glow, or gradient decoration purely to match the browsing side. Shared identity there is carried by color, type, and shape — not by shadow.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep Seyirlik Teal rare: a glow, a fill, a ring, a dot — never a screen's dominant color (The One Signal Light Rule).",
+      "Do build hierarchy from Inter's weight and letter-spacing (900 + tracked uppercase for labels) instead of introducing a second typeface (The Weight-Not-Face Rule).",
+      "Do let Screening Room surfaces (browse, hero, player) carry real cinematic depth — layered shadow, glass blur, accent-tinted glow — proportional to how close the surface sits to the media itself.",
+      "Do keep Control Booth surfaces flat, dense, and fast to scan: hairline borders, tabular numbers, minimal motion, no glow or blur (The Booth-Doesn't-Glow Rule).",
+      "Do use rounded-full for every control the user taps or clicks, and the 8/12/16px step scale for every container."
+    ],
+    "donts": [
+      "Don't let admin/operational UI inherit decorative cinema effects (glow, blur, gradients) merely to look \"consistent\" with the browsing side — Control Booth clarity outranks Screening Room polish there.",
+      "Don't drift toward a generic self-hosted-dashboard or admin-template look: no Bootstrap-style boxed cards, arbitrary borders, blue-primary SaaS chrome, or dashboard chrome that exists for its own sake.",
+      "Don't imitate another streaming product's exact layout, navigation, artwork treatment, typography, or interaction pattern (Netflix, Jellyfin, Plex) — Seyirlik is authored, not a clone of a category.",
+      "Don't add a visual effect that doesn't earn its place through hierarchy, comprehension, feedback, or atmosphere — gratuitous gradients, glow, or glass; oversized empty spacing; decorative analytics for their own sake.",
+      "Don't let dense technical/admin UI leak into the viewing experience, or let cinematic decoration leak into admin."
+    ]
+  }
+}

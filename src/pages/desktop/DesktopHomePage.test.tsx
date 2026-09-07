@@ -7,11 +7,15 @@ import {
   shouldShowDailyHomeConfetti,
 } from "../../lib/homeConfetti";
 import {
-  getAllMovieAndSeriesItems,
+  getAllBookItems,
+  getAllMovieItems,
+  getAllSeriesItems,
+  getCuratedList,
   getFavouriteItems,
   getLatestMediaItems,
   getUserViews,
 } from "../../lib/mediaApi";
+import { emptyCuratedList } from "../../lib/curation";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { DesktopHomePage } from "./DesktopHomePage";
 
@@ -71,16 +75,19 @@ describe("DesktopHomePage confetti", () => {
     vi.mocked(getUserViews).mockResolvedValue([]);
     vi.mocked(getSmartContinueWatchingItems).mockResolvedValue([]);
     vi.mocked(getLatestMediaItems).mockResolvedValue([]);
+    vi.mocked(getCuratedList).mockImplementation(async (surface) =>
+      emptyCuratedList(surface),
+    );
     vi.mocked(getFavouriteItems).mockResolvedValue([]);
-    vi.mocked(getAllMovieAndSeriesItems).mockResolvedValue([]);
+    vi.mocked(getAllMovieItems).mockResolvedValue([]);
+    vi.mocked(getAllSeriesItems).mockResolvedValue([]);
+    vi.mocked(getAllBookItems).mockResolvedValue([]);
     vi.mocked(consumeLoginConfettiPending).mockReturnValue(false);
     vi.mocked(shouldShowDailyHomeConfetti).mockReturnValue(false);
   });
 
   it("does not block the first screen on the full catalog query", async () => {
-    vi.mocked(getAllMovieAndSeriesItems).mockReturnValue(
-      new Promise(() => undefined),
-    );
+    vi.mocked(getAllMovieItems).mockReturnValue(new Promise(() => undefined));
 
     render(<DesktopHomePage />);
 

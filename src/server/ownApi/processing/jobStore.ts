@@ -36,6 +36,58 @@ export type ProcessingPauseReason =
   /** Nothing observed how the last attempt ended. Operator, or policy, decides. */
   | "recovery-pending";
 
+/**
+ * How hard each reason is to lift, as a total order.
+ *
+ * The reason is not a label, it is the authorisation rule: only
+ * `storage-unavailable` is visible to `listPaused(AUTOMATIC_REQUEUE_PAUSE_REASON)`,
+ * so lowering a reason is the same act as granting an automatic path permission
+ * to restart work that was being held for a person.
+ *
+ * That is what happened. Two places record a pause for one storage
+ * interruption — the supervisor tick, which runs at the moment of the fault,
+ * and `finishStorageInterrupted`, which runs once FFmpeg has actually been
+ * reaped and can therefore be many minutes later. The second re-derived the
+ * reason from the guard's state *at that later moment*, so a volume that had
+ * been quarantined at 12:10 and looked merely absent by 12:29 left the job
+ * marked `storage-unavailable`: a quarantine, silently converted into
+ * something the next remount would resume.
+ *
+ * Ordering them and never writing downwards fixes it independently of which
+ * site runs first, of how far apart they run, and of whether they even run in
+ * the same process — which threading the first site's answer through to the
+ * second would not.
+ */
+const PAUSE_REASON_SEVERITY: Readonly<Record<ProcessingPauseReason, number>> = {
+  /** An automatic path may lift it. The only reason that is true of. */
+  "storage-unavailable": 1,
+  /** A person decided this. The storage returning is not an answer to them. */
+  operator: 2,
+  /** Nobody watched the last attempt end. A person, or policy, must decide. */
+  "recovery-pending": 3,
+  /** An established I/O fault. The strongest claim anything here can make. */
+  "storage-quarantined": 4,
+};
+
+/**
+ * The more severe of a recorded reason and one being written now.
+ *
+ * Escalation still works — an `unavailable` job whose volume is then
+ * quarantined becomes quarantined — because this is a maximum and not a
+ * refusal to write. Clearing a pause is unaffected: `resume`, `finalizeCancelled`
+ * and `startAttempt` set the column to NULL in their own statements and never
+ * come through here.
+ */
+export function escalatePauseReason(
+  recorded: ProcessingPauseReason | null | undefined,
+  next: ProcessingPauseReason,
+): ProcessingPauseReason {
+  if (!recorded) return next;
+  return PAUSE_REASON_SEVERITY[recorded] >= PAUSE_REASON_SEVERITY[next]
+    ? recorded
+    : next;
+}
+
 export type ProcessingState =
   | "pending"
   | "queued"

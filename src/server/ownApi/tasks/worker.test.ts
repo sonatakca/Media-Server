@@ -1,11 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createWorker,
+  DeferredJobError,
   PermanentJobError,
   sanitizeJobError,
   type JobHandler,
 } from "./worker";
 import type { JobQueue, JobRecord, JobStatus } from "./jobQueue";
+import type { MaintenanceProgress } from "../../../lib/maintenance/maintenanceTasks";
 
 function job(overrides: Partial<JobRecord> = {}): JobRecord {
   return {
@@ -17,6 +19,9 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
     maxAttempts: 3,
     progress: 0,
     progressMessage: null,
+    progressDetail: null,
+    priority: 100,
+    runAfter: new Date(0),
     safeError: null,
     result: null,
     cancellationRequested: false,
@@ -28,29 +33,52 @@ function job(overrides: Partial<JobRecord> = {}): JobRecord {
 }
 
 interface FakeQueue extends JobQueue {
-  completed: Array<{ id: string; result?: Record<string, unknown> }>;
+  completed: Array<{
+    id: string;
+    leaseOwner: string;
+    result?: Record<string, unknown>;
+  }>;
+  cancelled: Array<{ id: string; leaseOwner: string }>;
   failures: Array<{ id: string; error: string; retry: boolean }>;
+  deferrals: Array<{ id: string; retryAfterMs: number; reason: string }>;
+  progress: Array<{ id: string; detail?: MaintenanceProgress }>;
 }
 
 function fakeQueue(pending: JobRecord[]): FakeQueue {
   const queue: FakeQueue = {
     completed: [],
+    cancelled: [],
     failures: [],
+    deferrals: [],
+    progress: [],
     enqueue: async () => "job-1",
     claim: async () => pending.shift() ?? null,
     heartbeat: async () => true,
-    reportProgress: async () => undefined,
-    complete: async (id, result) => {
-      queue.completed.push({ id, ...(result ? { result } : {}) });
+    reportProgress: async (id, _progress, _message, detail) => {
+      queue.progress.push({ id, ...(detail ? { detail } : {}) });
     },
-    fail: async (id, error, retry) => {
+    complete: async (id, leaseOwner, result) => {
+      queue.completed.push({ id, leaseOwner, ...(result ? { result } : {}) });
+    },
+    concludeCancelled: async (id, leaseOwner) => {
+      queue.cancelled.push({ id, leaseOwner });
+    },
+    fail: async (id, _leaseOwner, error, retry) => {
       queue.failures.push({ id, error, retry });
     },
+    defer: async (id, _leaseOwner, retryAfterMs, reason) => {
+      queue.deferrals.push({ id, retryAfterMs, reason });
+    },
+    countTasks: async () => ({ active: 0, concluded: 0 }),
     requestCancellation: async () => true,
     isCancellationRequested: async () => false,
     get: async () => null,
     findActive: async () => null,
+    observationTime: async () => new Date().toISOString(),
     list: async () => [],
+    listActive: async () => [],
+    listConcluded: async () => [],
+    reorderQueue: async () => [],
     reclaimExpiredLeases: async () => 0,
   };
   return queue;
@@ -175,6 +203,113 @@ describe("sanitizeJobError", () => {
       "The task failed.",
     );
   });
+
+  /*
+   * Every Node `fs` error quotes its path, so this is the shape almost every
+   * real failure arrives in — and the one the original rule, which needed
+   * whitespace in front of the path, let through untouched.
+   */
+  it("strips a path the way node's fs errors actually quote it", () => {
+    expect(
+      sanitizeJobError(
+        new Error("EACCES: permission denied, mkdir '/Volumes/Expansion'"),
+      ),
+    ).toBe("EACCES: permission denied, mkdir");
+  });
+
+  it("strips a quoted path that has spaces in it", () => {
+    // A real title does. A rule that stopped at whitespace left the rest of
+    // the path standing as debris.
+    const leaked = sanitizeJobError(
+      new Error(
+        "ENOENT: no such file or directory, open " +
+          "'/Volumes/Expansion/media/Movies/Dune (2021)/video/2160p HDR.mp4'",
+      ),
+    );
+    expect(leaked).toBe("ENOENT: no such file or directory, open");
+    expect(leaked).not.toContain("Dune");
+    expect(leaked).not.toContain("mp4");
+  });
+
+  it("leaves a message that only looks like it has a path alone", () => {
+    expect(
+      sanitizeJobError(
+        new Error(
+          "This title is HDR, and trickplay for HDR needs an FFmpeg built " +
+            "with the zscale filter (libzimg).",
+        ),
+      ),
+    ).toContain("zscale");
+  });
+});
+
+describe("a deferred job", () => {
+  /*
+   * The distinction that matters: an attempt spent on a volume that was not
+   * plugged in is an attempt gone forever, and 243 sheet jobs lost all three
+   * that way in about a minute. A deferral has to reach `defer`, never `fail`.
+   */
+  it("is handed back rather than failed, with its attempt intact", async () => {
+    const queue = fakeQueue([job({ jobType: "trickplay.generate" })]);
+    const worker = createWorker({
+      queue,
+      handlers: {
+        "trickplay.generate": async () => {
+          throw new DeferredJobError("The volume is not available.", 120_000);
+        },
+      },
+    });
+
+    await worker.runPending();
+
+    expect(queue.failures).toHaveLength(0);
+    expect(queue.completed).toHaveLength(0);
+    expect(queue.deferrals).toEqual([
+      {
+        id: "job-1",
+        retryAfterMs: 120_000,
+        reason: "The volume is not available.",
+      },
+    ]);
+  });
+
+  it("still sanitises the reason it records", async () => {
+    const queue = fakeQueue([job({ jobType: "trickplay.generate" })]);
+    const worker = createWorker({
+      queue,
+      handlers: {
+        "trickplay.generate": async () => {
+          throw new DeferredJobError(
+            "gone: mkdir '/Volumes/Expansion'",
+            60_000,
+          );
+        },
+      },
+    });
+
+    await worker.runPending();
+
+    expect(queue.deferrals[0]?.reason).toBe("gone: mkdir");
+  });
+
+  it("does not swallow an ordinary failure", async () => {
+    const queue = fakeQueue([job()]);
+    const worker = createWorker({
+      queue,
+      handlers: {
+        "library.scan": async () => {
+          throw new Error("something broke");
+        },
+      },
+    });
+
+    await worker.runPending();
+
+    expect(queue.deferrals).toHaveLength(0);
+    expect(queue.failures).toEqual([
+      { id: "job-1", error: "something broke", retry: true },
+    ]);
+  });
 });
 
 describe("job status typing", () => {
@@ -187,5 +322,326 @@ describe("job status typing", () => {
       "cancelled",
     ];
     expect(statuses).toHaveLength(5);
+  });
+});
+
+/**
+ * An in-memory stand-in that honours a lane's claim filter and refuses to hand
+ * the same row to two callers — the two properties `SKIP LOCKED` gives in
+ * PostgreSQL, so a lane bug shows up here rather than only in production.
+ */
+function lanedQueue(pending: JobRecord[]) {
+  const claimed = new Set<string>();
+  const running = new Set<string>();
+  const peakByType = new Map<string, number>();
+  const state: JobQueue & { peak(type: string): number } = {
+    enqueue: async () => "job",
+    claim: async (_owner, _lease, filter) => {
+      const index = pending.findIndex(
+        (job) =>
+          !claimed.has(job.id) &&
+          (!filter?.jobTypes || filter.jobTypes.includes(job.jobType)) &&
+          (!filter?.excludeJobTypes ||
+            !filter.excludeJobTypes.includes(job.jobType)),
+      );
+      if (index === -1) return null;
+      const job = pending[index] as JobRecord;
+      if (claimed.has(job.id)) throw new Error("claimed twice");
+      claimed.add(job.id);
+      return job;
+    },
+    heartbeat: async () => true,
+    defer: async () => undefined,
+    countTasks: async () => ({ active: 0, concluded: 0 }),
+    reportProgress: async () => undefined,
+    concludeCancelled: async () => undefined,
+    listActive: async () => [],
+    listConcluded: async () => [],
+    reorderQueue: async () => [],
+    complete: async () => undefined,
+    fail: async () => undefined,
+    requestCancellation: async () => true,
+    isCancellationRequested: async () => false,
+    get: async () => null,
+    findActive: async () => null,
+    observationTime: async () => new Date().toISOString(),
+    list: async () => [],
+    reclaimExpiredLeases: async () => 0,
+    peak: (type) => peakByType.get(type) ?? 0,
+  };
+
+  const enter = (job: JobRecord) => {
+    running.add(job.id);
+    const live = [...running].filter((id) =>
+      pending.some((row) => row.id === id && row.jobType === job.jobType),
+    ).length;
+    peakByType.set(
+      job.jobType,
+      Math.max(peakByType.get(job.jobType) ?? 0, live),
+    );
+  };
+  const leave = (job: JobRecord) => running.delete(job.id);
+  return { queue: state, enter, leave, running };
+}
+
+const LANES = [
+  { name: "media", jobTypes: ["media.process"], concurrency: 1 },
+  { name: "library", excludeJobTypes: ["media.process"], concurrency: 3 },
+];
+
+describe("worker lanes", () => {
+  it("runs independent library scans concurrently, bounded by the lane", async () => {
+    const scans = [
+      job({ id: "scan-a" }),
+      job({ id: "scan-b" }),
+      job({ id: "scan-c" }),
+      job({ id: "scan-d" }),
+    ];
+    const { queue, enter, leave } = lanedQueue(scans);
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let entered = 0;
+
+    const worker = createWorker({
+      queue,
+      lanes: LANES,
+      handlers: {
+        "library.scan": async ({ job: current }) => {
+          enter(current);
+          entered += 1;
+          // Hold the first wave open so overlap is observable rather than
+          // inferred from ordering.
+          if (entered >= 3) release();
+          await gate;
+          leave(current);
+        },
+      },
+    });
+
+    await worker.runPending();
+
+    expect(queue.peak("library.scan")).toBe(3);
+  });
+
+  it("does not raise media-processing concurrency above one", async () => {
+    const encodes = [
+      job({ id: "encode-a", jobType: "media.process" }),
+      job({ id: "encode-b", jobType: "media.process" }),
+      job({ id: "encode-c", jobType: "media.process" }),
+    ];
+    const { queue, enter, leave } = lanedQueue(encodes);
+
+    await createWorker({
+      queue,
+      lanes: LANES,
+      handlers: {
+        "media.process": async ({ job: current }) => {
+          enter(current);
+          // A real yield, so a second slot would genuinely have time to claim
+          // the next encode if the library lane could see one.
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          leave(current);
+        },
+      },
+    }).runPending();
+
+    expect(queue.peak("media.process")).toBe(1);
+  });
+
+  /*
+   * The whole point of the split. A scan reads directories; an encode holds
+   * the encoder. Draining both from one serial loop is what made a library
+   * un-scannable for the length of an unrelated encode.
+   */
+  it("runs a scan while a media encode is still going", async () => {
+    const rows = [
+      job({ id: "encode", jobType: "media.process" }),
+      job({ id: "scan", jobType: "library.scan" }),
+    ];
+    const { queue } = lanedQueue(rows);
+    const order: string[] = [];
+    let releaseEncode: () => void = () => undefined;
+    const encodeGate = new Promise<void>((resolve) => {
+      releaseEncode = resolve;
+    });
+
+    const pass = createWorker({
+      queue,
+      lanes: LANES,
+      handlers: {
+        "media.process": async () => {
+          order.push("encode-started");
+          await encodeGate;
+          order.push("encode-finished");
+        },
+        "library.scan": async () => {
+          order.push("scan-finished");
+          releaseEncode();
+        },
+      },
+    }).runPending();
+
+    await pass;
+    expect(order).toEqual([
+      "encode-started",
+      "scan-finished",
+      "encode-finished",
+    ]);
+  });
+
+  it("never hands one row to two lanes", async () => {
+    const rows = [
+      job({ id: "scan-a" }),
+      job({ id: "encode", jobType: "media.process" }),
+    ];
+    const { queue } = lanedQueue(rows);
+    const seen: string[] = [];
+
+    await createWorker({
+      queue,
+      lanes: LANES,
+      handlers: {
+        "library.scan": async ({ job: current }) => {
+          seen.push(current.id);
+        },
+        "media.process": async ({ job: current }) => {
+          seen.push(current.id);
+        },
+      },
+    }).runPending();
+
+    expect([...seen].sort()).toEqual(["encode", "scan-a"]);
+  });
+
+  it("keeps a lane's failure from stopping the others", async () => {
+    const rows = [
+      job({ id: "encode", jobType: "media.process" }),
+      job({ id: "scan" }),
+    ];
+    const { queue } = lanedQueue(rows);
+    const original = queue.claim.bind(queue);
+    let scanRan = false;
+    queue.claim = async (owner, lease, filter) => {
+      if (filter?.jobTypes?.includes("media.process")) {
+        throw new Error("the database blinked");
+      }
+      return original(owner, lease, filter);
+    };
+
+    await createWorker({
+      queue,
+      lanes: LANES,
+      handlers: {
+        "library.scan": async () => {
+          scanRan = true;
+        },
+      },
+    }).runPending();
+
+    expect(scanRan).toBe(true);
+  });
+});
+
+/**
+ * The running worker, as opposed to a single drain pass.
+ *
+ * `runPending` resolves only when the slowest lane is done, which is fine for
+ * a one-shot CLI and wrong for a server: if the next poll is scheduled from
+ * that, an encode holding its slot for hours decides when every other lane
+ * next looks at the queue.
+ */
+describe("a started worker", () => {
+  it("claims library work queued while an encode is still running", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending: JobRecord[] = [
+        job({ id: "encode", jobType: "media.process" }),
+      ];
+      const { queue } = lanedQueue(pending);
+      let encodeStarted = false;
+      let scanRan = false;
+
+      const worker = createWorker({
+        queue,
+        lanes: LANES,
+        pollIntervalMs: 1_000,
+        handlers: {
+          // Never resolves: the encode is still going, at 94%, exactly as the
+          // queue page shows it.
+          "media.process": () =>
+            new Promise<void>(() => {
+              encodeStarted = true;
+            }),
+          "library.scan": async () => {
+            scanRan = true;
+          },
+        },
+      });
+
+      worker.start();
+      await vi.advanceTimersByTimeAsync(10);
+      expect(encodeStarted).toBe(true);
+
+      // A minute into the encode, somebody presses "Scan movies".
+      pending.push(job({ id: "scan", jobType: "library.scan" }));
+      await vi.advanceTimersByTimeAsync(2_000);
+
+      expect(scanRan).toBe(true);
+      await worker.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps reclaiming expired leases while a lane is busy", async () => {
+    vi.useFakeTimers();
+    try {
+      const { queue } = lanedQueue([
+        job({ id: "encode", jobType: "media.process" }),
+      ]);
+      const reclaim = vi.spyOn(queue, "reclaimExpiredLeases");
+
+      const worker = createWorker({
+        queue,
+        lanes: LANES,
+        pollIntervalMs: 1_000,
+        handlers: { "media.process": () => new Promise<void>(() => {}) },
+      });
+
+      worker.start();
+      await vi.advanceTimersByTimeAsync(5_000);
+
+      // A crashed worker's jobs must not wait for this one's longest encode.
+      expect(reclaim.mock.calls.length).toBeGreaterThan(1);
+      await worker.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("stops every lane's timer, not just the last one scheduled", async () => {
+    vi.useFakeTimers();
+    try {
+      const { queue } = lanedQueue([]);
+      const claim = vi.spyOn(queue, "claim");
+      const worker = createWorker({
+        queue,
+        lanes: LANES,
+        pollIntervalMs: 1_000,
+        handlers: {},
+      });
+
+      worker.start();
+      await vi.advanceTimersByTimeAsync(2_000);
+      await worker.stop();
+      const afterStop = claim.mock.calls.length;
+      await vi.advanceTimersByTimeAsync(10_000);
+
+      expect(claim.mock.calls.length).toBe(afterStop);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

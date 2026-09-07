@@ -6,9 +6,16 @@ import {
   safeTaskLabel,
   type TaskPresentation,
 } from "./taskPresentation";
+import { measurePercent } from "../maintenance/maintenanceTasks";
 
 export interface TaskDetail extends TaskPresentation {
   titleKey?: TranslationKey;
+  /**
+   * The queue's own name for the work, carried through so the card can colour
+   * itself by the family the job belongs to. Absent on a notification that no
+   * task raised.
+   */
+  type?: string;
   status: TaskDto["status"] | "retrying" | "waiting-for-storage" | "paused";
   attempts: number;
   maxAttempts: number;
@@ -26,6 +33,10 @@ export interface TaskNotification {
 }
 const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
   "library.scan": "tasks.libraryScan",
+  "library.organize": "tasks.libraryOrganize",
+  "library.rename": "tasks.libraryRename",
+  "library.maintenance": "tasks.libraryMaintenance",
+  "trickplay.scan": "tasks.trickplayScan",
   "media.probe": "tasks.probeRun",
   "metadata.scan": "tasks.metadataScan",
   "metadata.refresh": "tasks.metadataRefresh",
@@ -129,16 +140,28 @@ const LINE_STATUSES = new Set<TaskDetail["status"]>([
   "waiting-for-storage",
 ]);
 
+/**
+ * The job types whose waiting line is one thing happening rather than N events.
+ *
+ * Both of these are a queue of titles the server works through, and a person
+ * watching wants the same two facts from either: which title is being worked on
+ * now, and how many are behind it. A thumbnail sweep over a whole library
+ * queues one job per title — two hundred and sixty-six of them here — and
+ * without this every one of them would raise a card of its own.
+ */
+const COLLAPSIBLE_TASK_TYPES = ["media.process", "trickplay.generate"];
+
 export function selectProcessingLead(
   tasks: readonly TaskDto[],
+  jobType = "media.process",
 ): ProcessingLead | null {
   const line = tasks.flatMap((task) => {
-    if (task.type !== "media.process") return [];
+    if (task.type !== jobType) return [];
     const status = describeTask(task).task.status;
     return LINE_STATUSES.has(status) ? [{ task, status }] : [];
   });
   if (line.length === 0) return null;
-  // Whatever is actually encoding leads; with nothing running, the title that
+  // Whatever is actually working leads; with nothing running, the title that
   // has waited longest is the one that runs next — the same title the page
   // puts at the head of its own list.
   const lead =
@@ -149,7 +172,17 @@ export function selectProcessingLead(
         ? entry
         : earliest,
     );
-  const behind = line.filter((entry) => entry.task.id !== lead.task.id);
+  /*
+   * Only what is *waiting* folds into the count. Encoding runs one title at a
+   * time, so for it this is every other member of the line and nothing
+   * changes; trickplay runs three at once, and collapsing the other two would
+   * name one title while three were being decoded — which is the opposite of
+   * what this card is for. Each running title keeps its own card; the line
+   * behind them is the number on the lead's.
+   */
+  const behind = line.filter(
+    (entry) => entry.task.id !== lead.task.id && entry.status !== "running",
+  );
   return {
     taskId: lead.task.id,
     queuedCount: behind.length,
@@ -157,12 +190,22 @@ export function selectProcessingLead(
   };
 }
 
-/** Whether the lead's card already speaks for this task. */
+/** One lead per collapsible kind of work; the kinds do not share a line. */
+export function selectQueueLeads(tasks: readonly TaskDto[]): ProcessingLead[] {
+  return COLLAPSIBLE_TASK_TYPES.flatMap((jobType) => {
+    const lead = selectProcessingLead(tasks, jobType);
+    return lead ? [lead] : [];
+  });
+}
+
+/** Whether a lead's card already speaks for this task. */
 export function isSpokenForByLead(
   task: TaskDto,
-  lead: ProcessingLead | null,
+  leads: ProcessingLead | readonly ProcessingLead[] | null,
 ): boolean {
-  return lead !== null && lead.spokenFor.includes(task.id);
+  if (leads === null) return false;
+  const all = Array.isArray(leads) ? leads : [leads as ProcessingLead];
+  return all.some((lead) => lead.spokenFor.includes(task.id));
 }
 
 export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
@@ -209,14 +252,29 @@ export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
    * each other, so it moves in jumps that mean nothing to a viewer and is
    * never shown as a number.
    */
+  /*
+   * A phase that counts publishes the shared figure rather than deriving its
+   * own from the same two numbers.
+   *
+   * Which reading a card shows is decided exactly as it was — the phase's own
+   * fraction, and only when there is one. What changed is that the fraction is
+   * turned into a percentage by the function the Library Maintenance page uses,
+   * because the two used to round differently: 199 of 356 frames was published
+   * as 55% on the card beside 56% on the page, at the same instant, from the
+   * same row.
+   */
+  const counted = phaseFraction !== undefined ? presentation.counts : undefined;
   const measured = encoding
     ? (encoding.completedSeconds / encoding.totalSeconds) * 100
-    : phaseFraction !== undefined
-      ? phaseFraction * 100
-      : undefined;
+    : counted && counted.total > 0
+      ? measurePercent(counted.completed, counted.total)
+      : phaseFraction !== undefined
+        ? phaseFraction * 100
+        : undefined;
   const detail: TaskDetail = {
     ...presentation,
     titleKey: getTaskTitleKey(task.type),
+    type: task.type,
     subject: presentation.subject
       ? {
           ...presentation.subject,
@@ -261,10 +319,17 @@ export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
           ? "progress"
           : status === "succeeded"
             ? (outcome && outcome !== "matched") ||
+              /*
+               * Only work that actually failed. A skipped conflict is the
+               * `managed-only` overwrite policy doing exactly what it is set
+               * to do — declining to overwrite an NFO file this server did not
+               * write — so it recurs, identically, on every scan of the same
+               * library. Reading it as trouble put a standing amber warning on
+               * a job that had completed correctly and gave a person nothing
+               * to do about it; the count still says so on the opened card.
+               */
               detail.metrics?.some(
-                ({ metric, value }) =>
-                  (metric === "failed" || metric === "skippedConflict") &&
-                  value > 0,
+                ({ metric, value }) => metric === "failed" && value > 0,
               )
               ? "warning"
               : "success"
@@ -288,6 +353,7 @@ export function selectChangedTasks(
   tasks: readonly TaskDto[],
   seen: ReadonlyMap<string, string>,
   isFirstPoll = false,
+  observedSince?: number,
 ): { changed: TaskDto[]; next: Map<string, string> } {
   const next = new Map(seen);
   const changed: TaskDto[] = [];
@@ -303,7 +369,17 @@ export function selectChangedTasks(
     if (isFirstPoll && !active) continue;
     // A previously unseen historical outcome must not replay if pagination
     // reveals it after the first poll either.
-    if (!seen.has(task.id) && !active) continue;
+    const completedAt = Date.parse(
+      task.finishedAt ?? task.startedAt ?? task.queuedAt,
+    );
+    if (
+      !seen.has(task.id) &&
+      !active &&
+      (observedSince === undefined ||
+        !Number.isFinite(completedAt) ||
+        completedAt < observedSince)
+    )
+      continue;
     changed.push(task);
   }
   return { changed, next };

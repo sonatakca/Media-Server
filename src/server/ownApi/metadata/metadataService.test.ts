@@ -314,17 +314,17 @@ describe("metadata identification", () => {
 
     expect(fetchAndStoreTitleArtwork.mock.calls).toEqual([
       [
-        "https://image.tmdb.org/t/p/w780/poster.jpg",
+        "https://image.tmdb.org/t/p/original/poster.jpg",
         "Movies/The Matrix (1999)",
         "cover",
       ],
       [
-        "https://image.tmdb.org/t/p/w500/logo.png",
+        "https://image.tmdb.org/t/p/original/logo.png",
         "Movies/The Matrix (1999)",
         "logo",
       ],
       [
-        "https://image.tmdb.org/t/p/w1280/backdrop.jpg",
+        "https://image.tmdb.org/t/p/original/backdrop.jpg",
         "Movies/The Matrix (1999)",
         "backdrop",
       ],

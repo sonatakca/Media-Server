@@ -69,8 +69,8 @@ const MyListPage = lazy(async () => ({
 const ContentExplorerPage = lazy(async () => ({
   default: (await import("./pages/ContentExplorerPage")).ContentExplorerPage,
 }));
-const HomeCurationPage = lazy(async () => ({
-  default: (await import("./pages/HomeCurationPage")).HomeCurationPage,
+const CurationPage = lazy(async () => ({
+  default: (await import("./pages/admin/CurationPage")).CurationPage,
 }));
 const PlaybackDefaultsPage = lazy(async () => ({
   default: (await import("./pages/PlaybackDefaultsPage")).PlaybackDefaultsPage,
@@ -389,10 +389,10 @@ export default function App() {
                 <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
                 <Route path="/dev/content" element={<ContentExplorerPage />} />
                 <Route path="/dev/users" element={<UserManagementPage />} />
-                <Route
-                  path="/dev/home-curation"
-                  element={<HomeCurationPage />}
-                />
+                <Route path="/dev/curation" element={<CurationPage />} />
+                {/* The editor grew past the home page; the old path is kept so
+                    a bookmark still lands somewhere real. */}
+                <Route path="/dev/home-curation" element={<CurationPage />} />
                 {import.meta.env.DEV ? (
                   <Route
                     path="/dev/skeleton-lab"

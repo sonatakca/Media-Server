@@ -9,6 +9,10 @@ import type { JobQueue } from "../tasks/jobQueue";
 import { JOB_TYPES } from "../tasks/jobHandlers";
 import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
 import {
+  PROVIDER_ARTWORK_SIZES,
+  PROVIDER_PREVIEW_SIZE,
+} from "./providerArtworkSizes";
+import {
   TMDB_IMAGE_BASE_URL,
   type TmdbArtworkKind,
   type TmdbClient,
@@ -24,25 +28,35 @@ export interface ArtworkRoutesOptions {
 
 /**
  * How a provider artwork set maps onto a stored image type, and the width the
- * chosen file is fetched at. These match the automatic pass, so an operator's
- * choice is the same size as the one it replaces and a layout cannot shift
- * simply because a human picked the poster.
+ * newly chosen variant is warmed at.
+ *
+ * The import sizes come from the shared table rather than being restated here:
+ * the two copies drifted once already, and an operator's pick must land at the
+ * same size as the automatic pass so a layout cannot shift simply because a
+ * human chose the poster.
  */
 const ARTWORK_TARGETS: Record<
   TmdbArtworkKind,
   { imageType: string; size: string; uploadPreviewWidth: number }
 > = {
-  poster: { imageType: "cover", size: "w780", uploadPreviewWidth: 440 },
+  poster: {
+    imageType: "cover",
+    size: PROVIDER_ARTWORK_SIZES.poster,
+    uploadPreviewWidth: 440,
+  },
   backdrop: {
     imageType: "backdrop",
-    size: "w1280",
+    size: PROVIDER_ARTWORK_SIZES.backdrop,
     uploadPreviewWidth: 1280,
   },
-  logo: { imageType: "logo", size: "w500", uploadPreviewWidth: 520 },
+  logo: {
+    imageType: "logo",
+    size: PROVIDER_ARTWORK_SIZES.logo,
+    uploadPreviewWidth: 520,
+  },
 };
 
-/** The preview grid wants many images at once, so it asks for small ones. */
-const PREVIEW_SIZE = "w342";
+const PREVIEW_SIZE = PROVIDER_PREVIEW_SIZE;
 
 const ARTWORK_KINDS = Object.keys(ARTWORK_TARGETS) as TmdbArtworkKind[];
 

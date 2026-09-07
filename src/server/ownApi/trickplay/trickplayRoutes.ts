@@ -47,7 +47,13 @@ export function createTrickplayRoutes({
       throw notFound();
     }
 
-    const absolutePath = trickplay.spritePath(set, spriteIndex);
+    /*
+     * The server resolves the file; the client never sees a path. A sprite URL
+     * carries a set id and an index and nothing else, so there is no filesystem
+     * location in it for anyone to walk out of.
+     */
+    const absolutePath = await trickplay.spritePath(set, spriteIndex);
+    if (!absolutePath) throw notFound();
     const stats = await stat(absolutePath).catch(() => null);
     if (!stats?.isFile()) throw notFound();
 

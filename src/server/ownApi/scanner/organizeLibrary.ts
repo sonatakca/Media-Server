@@ -58,7 +58,9 @@ export type OrganizeMoveReason =
   /** A subtitle sitting beside that original. */
   | "sidecar"
   /** An .nfo belonging to a title that owns a folder. */
-  | "metadata";
+  | "metadata"
+  /** A file given its canonical name inside the folder it already lives in. */
+  | "rename";
 
 export interface OrganizeMove {
   from: string;
@@ -543,7 +545,13 @@ export interface OrganizeApplyResult {
  */
 export async function applyOrganizationPlan(
   fileSystem: OrganizerFileSystem,
-  plan: OrganizePlan,
+  /*
+   * Only the moves and the directories they need. Narrowed so the rename
+   * planner — whose skip reasons are its own — can be carried out by exactly
+   * this executor, rather than by a second one that would have to re-derive
+   * the no-overwrite and containment guarantees.
+   */
+  plan: Pick<OrganizePlan, "moves" | "directories">,
 ): Promise<OrganizeApplyResult> {
   const result: OrganizeApplyResult = {
     moved: [],

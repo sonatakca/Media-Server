@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { StartupSnapshot } from "../startup/startupState";
 
 export const OWN_API_V1_BASE_PATH = "/ownAPI/v1";
 
@@ -35,6 +36,17 @@ export interface OwnApiHealthStatus {
   alive: true;
   ready: boolean;
   checks: OwnApiHealthChecks;
+  /**
+   * How far startup has got, when the server is reporting on itself.
+   *
+   * Additive on purpose. Every existing consumer reads `alive`, `ready` and
+   * `checks`, and continues to; this is what lets a new one tell "the process
+   * is up and still initialising" from "the process is up and a dependency is
+   * broken", which the three fields above cannot distinguish. Absent when the
+   * status was built without a startup record — a health service constructed
+   * directly in a test, for instance.
+   */
+  startup?: StartupSnapshot;
 }
 
 export interface OwnApiHealthService {
@@ -99,8 +111,9 @@ export function isOwnApiPath(pathname: string): boolean {
 
 export function buildOwnApiHealthStatus(
   checks: OwnApiHealthChecks,
+  startup?: StartupSnapshot,
 ): OwnApiHealthStatus {
-  const ready =
+  const dependenciesReady =
     checks.database === "available" &&
     checks.jobs === "available" &&
     checks.ffmpeg === "available" &&
@@ -111,8 +124,15 @@ export function buildOwnApiHealthStatus(
   return {
     status: "ok",
     alive: true,
-    ready,
+    /*
+     * Both halves have to agree. Every dependency probing healthy is not
+     * readiness on its own: the startup sequence still has to have finished
+     * installing the routes that would use them, and between the listener
+     * binding and that moment a probe-only answer would have said `true`.
+     */
+    ready: dependenciesReady && (startup?.ready ?? true),
     checks: { ...checks },
+    ...(startup ? { startup } : {}),
   };
 }
 

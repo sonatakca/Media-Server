@@ -74,7 +74,19 @@ export interface NfoService {
     libraryId: string,
     options?: {
       force?: boolean;
-      reportProgress?(fraction: number, message: string): Promise<void>;
+      /**
+       * How far the export has got.
+       *
+       * The counts travel beside the sentence rather than inside it. The task
+       * surface used to recover them by matching the message with a regular
+       * expression, which made a label load-bearing: a reworded sentence would
+       * have silently stopped the page reporting any figure at all.
+       */
+      reportProgress?(
+        fraction: number,
+        message: string,
+        counts: { completed: number; total: number },
+      ): Promise<void>;
       isCancelled?(): Promise<boolean>;
     },
   ): Promise<(NfoExportSummary & { cancelled: boolean }) | null>;
@@ -297,6 +309,7 @@ export function createNfoService({
         await options.reportProgress?.(
           total === 0 ? 1 : Math.min(1, itemsConsidered / total),
           `Exported metadata for ${itemsConsidered} of ${total} titles`,
+          { completed: itemsConsidered, total },
         );
 
         if (ids.length < LIBRARY_PAGE) break;

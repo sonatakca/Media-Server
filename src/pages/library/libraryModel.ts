@@ -5,6 +5,13 @@ import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
 
 type LibraryMode = NonNullable<LibraryPageProps["mode"]>;
+
+/**
+ * `custom` is the hand-placed order saved on the server, and it is offered only
+ * where one exists: a sort option that silently does nothing is worse than an
+ * absent one.
+ */
+export type LibrarySortMode = "custom" | "name" | "year" | "latest";
 type LibraryRouteKind = LibraryPageProps["libraryRouteKind"];
 
 interface ResolveLibraryCanonicalPathOptions {

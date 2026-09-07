@@ -1,3 +1,4 @@
+import React from "react";
 import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationHost } from "./NotificationHost";
@@ -14,6 +15,14 @@ vi.mock("../../i18n/LanguageContext", () => ({
 let reducedMotion = true;
 vi.mock("framer-motion", () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => children,
+  // The lane travel the host puts on its own root: a value it writes to and an
+  // animation it may stop. Neither moves anything here, and both have to exist
+  // for the host to render at all.
+  useMotionValue: (initial: number) => {
+    let current = initial;
+    return { get: () => current, set: (next: number) => (current = next) };
+  },
+  animate: () => ({ stop: () => {} }),
   motion: {
     div: ({
       children,
@@ -25,9 +34,19 @@ vi.mock("framer-motion", () => ({
       animate,
       exit,
       transition: _transition,
+      style,
       ...props
     }: Record<string, unknown> & { children?: React.ReactNode }) => (
       <div
+        // `y` on the host is a motion value, not a CSS length, and React
+        // rejects it as one.
+        style={
+          Object.fromEntries(
+            Object.entries((style ?? {}) as Record<string, unknown>).filter(
+              ([property]) => property !== "y",
+            ),
+          ) as React.CSSProperties
+        }
         data-initial-y={String((initial as { y?: number })?.y)}
         data-initial-x={String((initial as { x?: number })?.x)}
         data-exit-y={String((exit as { y?: number })?.y)}
@@ -72,6 +91,21 @@ describe("notification host", () => {
       row.click();
     });
     expect(screen.getByText("Reading disc")).toBeInTheDocument();
+  });
+
+  it("uses a visually balanced glyph for spinning progress", () => {
+    render(<NotificationHost />);
+    act(() => {
+      notify({ title: "Encoding", tone: "progress" });
+    });
+
+    const spinner = screen
+      .getByRole("button", { name: "Encoding" })
+      .querySelector("[data-notification-spinner]");
+    expect(spinner).not.toHaveClass("animate-spin");
+    const ring = spinner?.querySelector("circle");
+    expect(ring).toHaveClass("notification-spinner-ring");
+    expect(ring).toHaveAttribute("stroke-dasharray", "140 40 140 40");
   });
 
   it("expires a short notification on its own", () => {
@@ -258,6 +292,11 @@ describe("notification host", () => {
     });
     act(() => {
       screen.getByText("notifications.showLess").click();
+    });
+    // The rows fold before they are taken away: they are still mounted, at no
+    // height, until the fold has finished.
+    act(() => {
+      vi.advanceTimersByTime(400);
     });
 
     expect(screen.queryByText("Entry 8")).toBeNull();

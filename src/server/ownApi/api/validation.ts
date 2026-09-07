@@ -1,5 +1,9 @@
 import { OwnApiError } from "../ownApiHandler";
-import { DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT } from "./envelope";
+import {
+  DEFAULT_PAGE_LIMIT,
+  MAX_PAGE_LIMIT,
+  MAX_PAGE_OFFSET,
+} from "./envelope";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -30,6 +34,22 @@ export function parseLimit(
     throw validationError(`limit must be an integer between 1 and ${max}.`);
   }
   return limit;
+}
+
+/**
+ * How many rows a page starts past the beginning.
+ *
+ * Bounded like a limit is, because an unbounded one is a way to ask the
+ * database to walk a table it will then throw away. Zero is the first page and
+ * also the fallback, so a caller that sends nothing gets what it always got.
+ */
+export function parseOffset(raw: string | null, max = MAX_PAGE_OFFSET): number {
+  if (raw === null || raw === "") return 0;
+  const offset = Number(raw);
+  if (!Number.isInteger(offset) || offset < 0 || offset > max) {
+    throw validationError(`offset must be an integer between 0 and ${max}.`);
+  }
+  return offset;
 }
 
 export function parseEnum<T extends string>(

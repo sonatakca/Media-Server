@@ -94,3 +94,54 @@ describe("enqueueing a job", () => {
     expect(query).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * A lane may only take its own kind of work, and the filter has to be applied
+ * by PostgreSQL rather than after the fact: a claim that read a media job and
+ * then put it back would already have leased it, incremented its attempt and
+ * cleared its progress.
+ */
+describe("claiming with a lane filter", () => {
+  it("passes the include and exclude lists to the claim statement", async () => {
+    const { pool, query } = poolThatRecords();
+    const queue = createJobQueue(pool);
+
+    await queue.claim("worker-1", 60_000, { jobTypes: ["media.process"] });
+    expect(query.mock.calls[0]?.[1]).toEqual([
+      "worker-1",
+      60,
+      ["media.process"],
+      null,
+    ]);
+
+    await queue.claim("worker-1", 60_000, {
+      excludeJobTypes: ["media.process"],
+    });
+    expect(query.mock.calls[1]?.[1]).toEqual([
+      "worker-1",
+      60,
+      null,
+      ["media.process"],
+    ]);
+  });
+
+  it("keeps SKIP LOCKED and the queued-only predicate on the filtered claim", async () => {
+    const { pool, query } = poolThatRecords();
+    const queue = createJobQueue(pool);
+
+    await queue.claim("worker-1", 60_000, { jobTypes: ["library.scan"] });
+
+    const sql = String(query.mock.calls[0]?.[0]);
+    expect(sql).toContain("FOR UPDATE SKIP LOCKED");
+    expect(sql).toContain("status = 'queued'");
+    expect(sql).toContain("lease_expires_at");
+  });
+
+  it("claims anything when no filter is given", async () => {
+    const { pool, query } = poolThatRecords();
+    const queue = createJobQueue(pool);
+
+    await queue.claim("worker-1", 60_000);
+    expect(query.mock.calls[0]?.[1]).toEqual(["worker-1", 60, null, null]);
+  });
+});

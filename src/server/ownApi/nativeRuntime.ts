@@ -28,6 +28,8 @@ import { createCatalogueScanStore } from "./catalogue/catalogueScanStore";
 import { createHomeRepository } from "./catalogue/homeRepository";
 import { createCatalogueService } from "./catalogue/catalogueService";
 import { createCatalogueRoutes } from "./catalogue/catalogueRoutes";
+import { createCurationRepository } from "./curation/curationRepository";
+import { createCurationRoutes } from "./curation/curationRoutes";
 import { createImageRepository } from "./images/imageRepository";
 import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
@@ -52,7 +54,11 @@ import {
 } from "./libraries/libraryRepository";
 import { createJobQueue } from "./tasks/jobQueue";
 import { createWorker } from "./tasks/worker";
-import { createJobHandlers } from "./tasks/jobHandlers";
+import {
+  createJobHandlers,
+  MEDIA_LANE_JOB_TYPES,
+  TRICKPLAY_LANE_JOB_TYPES,
+} from "./tasks/jobHandlers";
 import { createTaskRoutes } from "./tasks/taskRoutes";
 import { createProcessingJobStore } from "./processing/jobStore";
 import { createProcessingRoutes } from "./processing/processingRoutes";
@@ -107,9 +113,28 @@ import { createNfoJobHandlers } from "./nfo/nfoJobs";
 import { createNfoRoutes } from "./nfo/nfoRoutes";
 import { createSystemRoutes } from "./system/systemRoutes";
 import type { RestartController } from "../restartController";
+import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
 
 type Environment = Record<string, string | undefined>;
+
+/**
+ * Where the database is, with nothing that could sign in to it.
+ *
+ * The connection string carries a password, and this value is written to the
+ * process log and held in the startup snapshot. Host, port and database name
+ * are what an operator needs to tell "the wrong database" from "the right one,
+ * not up yet"; the credentials are what must never leave the environment.
+ */
+function describeDatabaseTarget(connectionString: string): string {
+  try {
+    const url = new URL(connectionString);
+    const database = url.pathname.replace(/^\//, "");
+    return `${url.hostname}${url.port ? `:${url.port}` : ""}${database ? `/${database}` : ""}`;
+  } catch {
+    return "the configured database";
+  }
+}
 
 export interface NativeRuntime {
   routeHandler: OwnApiRouteHandler;
@@ -133,6 +158,17 @@ export interface CreateNativeRuntimeOptions {
   generatedStoragePath: string;
   /** Set false in tests and in a dedicated worker process. */
   runWorker?: boolean;
+  /**
+   * Where the `database` and `processing` startup phases are reported.
+   *
+   * Reported from in here rather than from the caller because only this
+   * function knows where the database work ends and the processing state work
+   * begins — and the gap between them is minutes on a first run against a large
+   * library, which is precisely the interval an operator was previously left
+   * guessing about. Absent in the worker and in tests, where nothing is
+   * watching.
+   */
+  startup?: StartupPhaseReporter;
   /**
    * Exposes the administrator restart endpoints.
    *
@@ -167,6 +203,7 @@ export async function createNativeRuntime({
   generatedStoragePath,
   runWorker = true,
   restartController,
+  startup,
 }: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
@@ -177,10 +214,17 @@ export async function createNativeRuntime({
   // a typo halfway through the first library it reads.
   const organizeMode = parseOrganizeMode(environment);
 
+  startup?.begin({
+    id: "database",
+    operation: "connect",
+    resource: describeDatabaseTarget(databaseConfig.connectionString),
+  });
   const pool: DatabasePool = createDatabasePool(databaseConfig);
   try {
     await validateDatabaseConnection(pool);
+    startup?.update("database", { operation: "verify-schema" });
     await validateNativeIdentitySchema(pool);
+    startup?.update("database", { operation: "verify-migrations" });
     await validateMigrationsCurrent(pool);
   } catch (error) {
     await pool.end().catch(() => undefined);
@@ -190,6 +234,8 @@ export async function createNativeRuntime({
         : "The database is unavailable.",
     );
   }
+  startup?.complete("database");
+  startup?.begin({ id: "processing", operation: "reconcile" });
 
   const users = createUserRepository(pool);
   const sessions = createSessionRepository(pool);
@@ -207,6 +253,7 @@ export async function createNativeRuntime({
   }
 
   const catalogue = createCatalogueRepository(pool);
+  const curation = createCurationRepository(pool);
   const scanStore = createCatalogueScanStore(pool);
   const queuedWorkRetargeter = createQueuedWorkRetargeter(pool);
   const home = createHomeRepository(pool);
@@ -847,9 +894,35 @@ export async function createNativeRuntime({
 
   const worker = createWorker({
     queue,
+    /*
+     * Three resources, three lanes.
+     *
+     * Encoding holds this machine's video encoder and stays at one job at a
+     * time — the capacity it has always had, and the one figure here that must
+     * not drift upward by accident. Sheet generation holds a decoder and a
+     * source volume for minutes and is likewise one at a time, for reasons
+     * measured beside `TRICKPLAY_LANE_JOB_TYPES`. What is left is discovery,
+     * reconciliation and bookkeeping: several libraries can be read at once,
+     * and none of them has any reason to wait for an encode to finish.
+     */
+    lanes: [
+      { name: "media", jobTypes: MEDIA_LANE_JOB_TYPES, concurrency: 1 },
+      { name: "trickplay", jobTypes: TRICKPLAY_LANE_JOB_TYPES, concurrency: 1 },
+      {
+        name: "library",
+        excludeJobTypes: [...MEDIA_LANE_JOB_TYPES, ...TRICKPLAY_LANE_JOB_TYPES],
+        concurrency: 3,
+      },
+    ],
     handlers: {
       ...createJobHandlers({
         libraries,
+        /*
+         * Sheet generation asks the same gate the encoder asks. It reads the
+         * same volume for just as long, and before this it was the one heavy
+         * consumer of that volume with no opinion about whether it was there.
+         */
+        storageGuard,
         processingRunner: createProcessingJobRunner({
           store: processingJobs,
           paths: renditionPaths,
@@ -885,6 +958,7 @@ export async function createNativeRuntime({
             : { softwareThreads: softwareTranscodeThreads }),
         }),
         scanStore,
+        catalogue,
         fileSystem: createNodeScannerFileSystem(mediaRoot),
         organizer: {
           mode: organizeMode,
@@ -908,6 +982,7 @@ export async function createNativeRuntime({
     logger: console,
   });
   if (runWorker) worker.start();
+  startup?.complete("processing");
 
   /**
    * Bridges the cookie session to the router's principal. Resolving it here,
@@ -940,6 +1015,7 @@ export async function createNativeRuntime({
 
   const routes: RouteDefinition[] = [
     ...createCatalogueRoutes({ service: catalogueService, catalogue }),
+    ...createCurationRoutes({ curation, catalogue }),
     ...createProgressRoutes({ userState, catalogue }),
     ...createPlaybackRoutes({
       catalogue,

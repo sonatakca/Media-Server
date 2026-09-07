@@ -1,3 +1,8 @@
+import type {
+  MaintenanceProgress,
+  MaintenanceUnit,
+} from "../maintenance/maintenanceTasks";
+
 /** Deliberately bounded presentation vocabulary shared by the API and UI. */
 export const TASK_METRICS = {
   "library.scan": [
@@ -11,6 +16,10 @@ export const TASK_METRICS = {
     "filesDeleted",
     "probesQueued",
   ],
+  "library.organize": ["planned", "moved", "movesSkipped", "movesFailed"],
+  "library.rename": ["planned", "renamed", "renamesSkipped", "renamesFailed"],
+  "library.maintenance": [],
+  "trickplay.scan": ["trickplayQueued", "trickplayPending"],
   "media.probe": ["probed", "failed"],
   "metadata.scan": ["matched", "ambiguous", "notFound"],
   "metadata.refresh": [],
@@ -34,17 +43,32 @@ export const TASK_METRICS = {
     "failed",
   ],
 } as const;
+/** The task types the API and UI both know by name. */
+export type TaskType = keyof typeof TASK_METRICS;
 export type TaskMetric =
   (typeof TASK_METRICS)[keyof typeof TASK_METRICS][number];
 export type TaskStage =
   | "reading"
+  | "organizing"
+  | "naming"
+  | "maintenance"
   | "catalogue"
   | "analysing"
   | "identifying"
   | "nfo"
   | "starting"
-  | "thumbnails"
+  | "selecting"
+  | "trickplay"
   | "planning"
+  /*
+   * The three phases the maintenance executors report that the card had no
+   * word for. They are spelled exactly as `MaintenancePhase` spells them, so
+   * the phase a job writes into its queue row is the stage a card shows
+   * without a translation table in between — one that could only ever drift.
+   */
+  | "moving"
+  | "enqueueing"
+  | "waiting"
   | "video"
   | "audio"
   | "subtitles"
@@ -99,8 +123,15 @@ export interface TaskPresentation {
   remainingSeconds?: number;
   /** Further titles waiting behind this one, when a card speaks for a queue. */
   queuedCount?: number;
-  errorCode?: "deleted" | "provider" | "unavailable";
-  counts?: { completed: number; total: number; unit: "files" | "titles" };
+  errorCode?: "deleted" | "provider" | "unavailable" | "hdr-unsupported";
+  /**
+   * The current phase's own fraction, in the things it counts.
+   *
+   * The unit is the executor's, not the card's: a walk counts directories, a
+   * trickplay pass counts the frames it has sampled, and a card that could
+   * only say "files" or "titles" had to drop every measure that was neither.
+   */
+  counts?: { completed: number; total: number; unit: MaintenanceUnit };
   metrics?: { metric: TaskMetric; value: number }[];
   outcome?:
     | "waiting-for-storage"
@@ -121,6 +152,14 @@ export interface TaskPresentation {
     | "failed"
     | "not-generated"
     | "removals-suppressed"
+    /** Writing to the media volume is switched off by configuration. */
+    | "organize-disabled"
+    /** The moves were computed and reported; nothing was moved. */
+    | "plan-only"
+    /** Stood down because an encode owns the paths it would have touched. */
+    | "deferred-processing"
+    /** Bounded out before it finished; the remaining work is still queued. */
+    | "incomplete"
     | "damaged-output";
 }
 export function safeTaskLabel(value: unknown): string | undefined {
@@ -154,6 +193,47 @@ export function resultMetrics(
       : [];
   });
 }
+/**
+ * The executor's own structured report, in the card's vocabulary.
+ *
+ * The maintenance jobs already write a phase and a measure into their queue
+ * row for the Library Maintenance page, and the cards read none of it — they
+ * matched the human sentence beside it against a handful of regular
+ * expressions, so a job whose sentence was not one of the four they knew said
+ * "Progress not measurable yet" while the page beside it drew a bar.
+ *
+ * Only the `exact` shape becomes a fraction, and only when it is one: the
+ * whole point of the shared vocabulary is that a counter without a denominator
+ * stays a counter. Everything else here returns the phase alone, which is
+ * still more than the sentence matcher could say.
+ */
+export function presentMaintenanceProgress(
+  progress: MaintenanceProgress | null | undefined,
+): Partial<TaskPresentation> | null {
+  if (!progress) return null;
+  // The phases are spelled as stages on purpose; this assignment is what makes
+  // the compiler prove it, so a phase added later cannot reach a card unnamed.
+  const stage: TaskStage = progress.phase;
+  const { measure } = progress;
+  if (
+    measure.kind !== "exact" ||
+    measure.total <= 0 ||
+    measure.completed > measure.total
+  ) {
+    return { stage };
+  }
+  return {
+    stage,
+    counts: {
+      completed: measure.completed,
+      total: measure.total,
+      unit: measure.unit,
+    },
+    phaseFraction: measure.completed / measure.total,
+    determinate: true,
+  };
+}
+
 /** Recognize only exact producer templates; never forward arbitrary server text. */
 export function presentTask(
   type: string,
@@ -162,12 +242,16 @@ export function presentTask(
 ): TaskPresentation {
   const stages: Record<string, TaskStage> = {
     "Reading the library folders": "reading",
+    "Organising the library folders": "organizing",
+    "Naming the library files": "naming",
+    "Running library maintenance": "maintenance",
     "Updating the catalogue": "catalogue",
     "Analysing media files": "analysing",
     "Identifying titles": "identifying",
     "Writing NFO metadata": "nfo",
     "Starting media processing": "starting",
-    "Generating thumbnails": "thumbnails",
+    "Generating trickplay": "trickplay",
+    "Scanning for missing trickplay": "selecting",
   };
   const detail: TaskPresentation = {
     determinate: false,
@@ -220,6 +304,15 @@ export function presentTask(
     detail.outcome = "not-generated";
   else if (type === "library.scan" && result?.removalsSuppressed === true)
     detail.outcome = "removals-suppressed";
+  /*
+   * The four things a destructive maintenance job can honestly have done.
+   * "Applied" is the absence of all of them and needs no word of its own; the
+   * other three must never be read as "your files were renamed".
+   */ else if (result?.disabled === true) detail.outcome = "organize-disabled";
+  else if (result?.deferred === "processing-active")
+    detail.outcome = "deferred-processing";
+  else if (result?.planOnly === true) detail.outcome = "plan-only";
+  else if (result?.incomplete === true) detail.outcome = "incomplete";
   if (type === "library.scan" && result) {
     for (const [key, subtype] of [
       ["probe", "media.probe"],

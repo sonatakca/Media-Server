@@ -46,6 +46,20 @@ export type HealthProbeKind =
   /** Nothing answered: DNS, TLS, connection refused, timeout, offline. */
   | "network-error";
 
+/**
+ * How far the server has got through its own startup.
+ *
+ * Coarse on purpose: this is the public health endpoint, and the detail behind
+ * these two fields — which path, which syscall, how long — stays on the server,
+ * where the person diagnosing a stalled mount is looking.
+ */
+export interface HealthStartup {
+  state: "starting" | "degraded" | "ready" | "failed" | "stopping";
+  /** The phase startup is blocked on, when it is blocked on one. */
+  phase?: string;
+  elapsedMs?: number;
+}
+
 export interface HealthProbe {
   endpoint: string;
   kind: HealthProbeKind;
@@ -57,6 +71,8 @@ export interface HealthProbe {
   statusText?: string;
   message?: string;
   checks?: HealthChecks;
+  /** Absent from servers older than the startup-state work. */
+  startup?: HealthStartup;
   /** Correlates this failure with the server's own logs, when it sent one. */
   requestId?: string;
 }
@@ -101,6 +117,30 @@ function toDependencyState(value: unknown): DependencyState {
     value === "disabled"
     ? value
     : "unknown";
+}
+
+const STARTUP_STATES = new Set([
+  "starting",
+  "degraded",
+  "ready",
+  "failed",
+  "stopping",
+]);
+
+function toHealthStartup(value: unknown): HealthStartup | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const startup = value as Record<string, unknown>;
+  if (typeof startup.state !== "string" || !STARTUP_STATES.has(startup.state)) {
+    return undefined;
+  }
+
+  return {
+    state: startup.state as HealthStartup["state"],
+    ...(typeof startup.phase === "string" ? { phase: startup.phase } : {}),
+    ...(typeof startup.elapsedMs === "number"
+      ? { elapsedMs: startup.elapsedMs }
+      : {}),
+  };
 }
 
 function toHealthChecks(value: unknown): HealthChecks | undefined {
@@ -200,6 +240,7 @@ async function probeHealth(fetchImpl: typeof fetch): Promise<HealthProbe> {
       alive?: unknown;
       ready?: unknown;
       checks?: unknown;
+      startup?: unknown;
     };
 
     if (typeof body.alive !== "boolean") {
@@ -225,6 +266,9 @@ async function probeHealth(fetchImpl: typeof fetch): Promise<HealthProbe> {
       status: response.status,
       ...(toHealthChecks(body.checks)
         ? { checks: toHealthChecks(body.checks) }
+        : {}),
+      ...(toHealthStartup(body.startup)
+        ? { startup: toHealthStartup(body.startup) }
         : {}),
       ...(requestId ? { requestId } : {}),
     };
@@ -260,6 +304,20 @@ export function classifyServerConnection(
   }
 
   if (!probe.alive) return "not-alive";
+
+  /*
+   * Startup is asked first, and it has to be.
+   *
+   * A server that is still initialising reports every dependency it has not yet
+   * reached as unavailable — truthfully, because it has not looked. Reading the
+   * dependency list before the startup state therefore turned an ordinary
+   * fifteen-second start into "Seyirlik is missing something it needs", which
+   * is alarming and wrong. A dependency that is genuinely broken still reaches
+   * the branch below, because startup only says `starting` while it is still
+   * making progress: a phase that stops answering becomes `degraded` and a
+   * phase that fails becomes `failed`.
+   */
+  if (probe.startup?.state === "starting") return "starting-up";
   if (failedDependencies.length > 0) return "dependency-unavailable";
   // Readiness covers background work. The interface is usable without it, so
   // this only ever appears alongside a failure the caller already saw.

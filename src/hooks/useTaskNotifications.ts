@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { getTasks } from "../lib/mediaApi";
+import { subscribeTasksChanged } from "../lib/tasksChanged";
+import { getTaskObservation } from "../lib/mediaApi";
 import {
   notify,
   getNotifications,
@@ -9,12 +10,20 @@ import {
   describeTask,
   isSpokenForByLead,
   selectChangedTasks,
-  selectProcessingLead,
+  selectQueueLeads,
 } from "../lib/notifications/taskNotifications";
 import { useLanguage } from "../i18n/LanguageContext";
 
-/** Fast enough to feel live, slow enough not to be a load in its own right. */
-const ACTIVE_POLL_MS = 2_000;
+/*
+ * One second while something is running.
+ *
+ * The executors write their structured report about every one and a half
+ * seconds, so a two-second beat could sit a whole report behind — and it was
+ * the *other* surface's beat that it sat behind, which is what put a card and
+ * the page beside it on visibly different numbers for the same job. Matched to
+ * the Library Maintenance list so the two read the same row at the same rate.
+ */
+const ACTIVE_POLL_MS = 1_000;
 /** Nothing is running; check occasionally in case something is queued. */
 const IDLE_POLL_MS = 15_000;
 
@@ -33,6 +42,7 @@ export function useTaskNotifications(enabled: boolean): void {
   const { t } = useLanguage();
   const seenRef = useRef(new Map<string, string>());
   const hasPolledRef = useRef(false);
+  const watermarkRef = useRef<string>();
   const cardsRef = useRef(new Map<string, string>());
   const leadRef = useRef("");
 
@@ -41,22 +51,40 @@ export function useTaskNotifications(enabled: boolean): void {
 
     let cancelled = false;
     let timer: number | undefined;
+    let inFlight = false;
+    let dirty = false;
 
     const poll = async () => {
+      if (inFlight) {
+        dirty = true;
+        return;
+      }
+      if (timer !== undefined) window.clearTimeout(timer);
+      inFlight = true;
+      dirty = false;
       let hasActiveWork = false;
 
       try {
-        const tasks = await getTasks();
+        const { tasks, observedAt } = await getTaskObservation(
+          watermarkRef.current,
+        );
         if (cancelled) return;
 
         const { changed, next } = selectChangedTasks(
           tasks,
           seenRef.current,
           !hasPolledRef.current,
+          watermarkRef.current === undefined
+            ? undefined
+            : Date.parse(watermarkRef.current),
         );
         seenRef.current = next;
         const wasFirstPoll = !hasPolledRef.current;
         hasPolledRef.current = true;
+        // The server captures DB time before the first page's read. Advance
+        // only after ALL pages succeed. Request-duration overlap is deduped by
+        // signature; a failed page leaves the entire interval available to retry.
+        watermarkRef.current = observedAt;
         hasActiveWork = tasks.some(
           (task) => task.status === "running" || task.status === "queued",
         );
@@ -66,17 +94,24 @@ export function useTaskNotifications(enabled: boolean): void {
          * nothing else about that task has to change for the count on it to be
          * wrong — so a changed count is what re-raises it.
          */
-        const lead = selectProcessingLead(tasks);
-        const leadSignature = lead ? `${lead.taskId}:${lead.queuedCount}` : "";
-        const leadTask =
-          lead && leadSignature !== leadRef.current && !wasFirstPoll
-            ? tasks.find((task) => task.id === lead.taskId)
-            : undefined;
+        const leads = selectQueueLeads(tasks);
+        const leadSignature = leads
+          .map((lead) => `${lead.taskId}:${lead.queuedCount}`)
+          .join("|");
+        const leadTasks =
+          leadSignature !== leadRef.current && !wasFirstPoll
+            ? leads.flatMap((lead) => {
+                const task = tasks.find((entry) => entry.id === lead.taskId);
+                return task ? [task] : [];
+              })
+            : [];
         leadRef.current = leadSignature;
-        const due =
-          leadTask && !changed.some((task) => task.id === leadTask.id)
-            ? [...changed, leadTask]
-            : changed;
+        const due = [
+          ...changed,
+          ...leadTasks.filter(
+            (task) => !changed.some((entry) => entry.id === task.id),
+          ),
+        ];
 
         /*
          * A title the lead has taken over for stops being a card and becomes a
@@ -85,7 +120,7 @@ export function useTaskNotifications(enabled: boolean): void {
          * the front was already counting.
          */
         for (const task of tasks) {
-          if (!isSpokenForByLead(task, lead)) continue;
+          if (!isSpokenForByLead(task, leads)) continue;
           const card = cardsRef.current.get(task.id);
           if (card === undefined) continue;
           dismissNotification(card);
@@ -101,10 +136,10 @@ export function useTaskNotifications(enabled: boolean): void {
         )) {
           // One card speaks for the whole waiting line; the titles behind the
           // lead are a count on it, not a card each.
-          if (isSpokenForByLead(task, lead)) continue;
+          if (isSpokenForByLead(task, leads)) continue;
           const described = describeTask(
             task,
-            task.id === lead?.taskId ? lead.queuedCount : 0,
+            leads.find((lead) => lead.taskId === task.id)?.queuedCount ?? 0,
           );
           if (!described) continue;
 
@@ -130,16 +165,25 @@ export function useTaskNotifications(enabled: boolean): void {
         // noise.
       }
 
+      inFlight = false;
       if (cancelled) return;
+      if (dirty) {
+        void poll();
+        return;
+      }
       timer = window.setTimeout(
         () => void poll(),
         hasActiveWork ? ACTIVE_POLL_MS : IDLE_POLL_MS,
       );
     };
 
+    const unsubscribe = subscribeTasksChanged(() => {
+      void poll();
+    });
     void poll();
 
     return () => {
+      unsubscribe();
       cancelled = true;
       if (timer !== undefined) window.clearTimeout(timer);
     };

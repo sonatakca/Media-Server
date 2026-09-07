@@ -134,6 +134,41 @@ describe("image storage", () => {
     ).resolves.toMatchObject({ format: "png" });
   });
 
+  it("stores a provider JPEG backdrop byte-for-byte", async () => {
+    const mediaRoot = path.join(imageRoot, "media");
+    const titleRoot = "Movies/Dune (2021)";
+    await mkdir(path.join(mediaRoot, titleRoot), { recursive: true });
+    const storage = createImageStorage({ imageRoot, mediaRoot });
+    // What a provider serves: a full-size JPEG with no EXIF orientation. Every
+    // re-encode of one of these costs a generation of detail, and the pixels
+    // lost that way can never be recovered from the stored file.
+    const providerBackdrop = await sharp({
+      create: {
+        width: 3840,
+        height: 2160,
+        channels: 3,
+        background: "#7a1f1f",
+      },
+    })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+
+    const backdrop = await storage.storeTitleArtwork(
+      providerBackdrop,
+      "image/jpeg",
+      titleRoot,
+      "backdrop",
+    );
+
+    expect(backdrop.sizeBytes).toBe(providerBackdrop.length);
+    await expect(
+      readFile(storage.resolve(backdrop.storageKey)),
+    ).resolves.toEqual(providerBackdrop);
+    await expect(
+      sharp(storage.resolve(backdrop.storageKey)).metadata(),
+    ).resolves.toMatchObject({ width: 3840, height: 2160 });
+  });
+
   it("refuses a title artwork path outside the media root", async () => {
     const mediaRoot = path.join(imageRoot, "media");
     await mkdir(mediaRoot, { recursive: true });
@@ -232,6 +267,24 @@ describe("image storage", () => {
       "https://images.test/poster.jpg",
     );
     expect(stored.contentType).toBe("image/jpeg");
+  });
+
+  it("types a download by its bytes when the CDN mislabels the response", async () => {
+    // TMDB's CDN negotiates on the Accept header and answers `image/webp` for
+    // the PNG it then sends. Believing that header cost a title its logo.
+    const storage = createImageStorage({
+      imageRoot,
+      fetchImpl: (async () =>
+        new Response(PNG, {
+          status: 200,
+          headers: { "content-type": "image/webp" },
+        })) as unknown as typeof fetch,
+    });
+
+    const stored = await storage.fetchAndStore("https://images.test/logo.png");
+
+    expect(stored.contentType).toBe("image/png");
+    expect(stored.storageKey.endsWith(".png")).toBe(true);
   });
 
   it("refuses to fetch artwork over plaintext HTTP", async () => {

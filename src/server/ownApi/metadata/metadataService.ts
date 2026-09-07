@@ -2,6 +2,7 @@ import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
 import { selectBestMatch, type MatchCandidate } from "./matcher";
 import type { MetadataRepository, MetadataTarget } from "./metadataRepository";
+import { PROVIDER_ARTWORK_SIZES } from "./providerArtworkSizes";
 import {
   TmdbError,
   type TmdbClient,
@@ -28,10 +29,10 @@ export interface IdentifyResult {
   confidence?: "high" | "medium" | "low";
 }
 
-const POSTER_SIZE = "w780";
-const BACKDROP_SIZE = "w1280";
-const LOGO_SIZE = "w500";
-const STILL_SIZE = "w300";
+const POSTER_SIZE = PROVIDER_ARTWORK_SIZES.poster;
+const BACKDROP_SIZE = PROVIDER_ARTWORK_SIZES.backdrop;
+const LOGO_SIZE = PROVIDER_ARTWORK_SIZES.logo;
+const STILL_SIZE = PROVIDER_ARTWORK_SIZES.still;
 
 /**
  * Identification and metadata application.

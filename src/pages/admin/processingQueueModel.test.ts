@@ -120,6 +120,59 @@ describe("the order of the waiting line", () => {
     expect(ids(ordered)).toEqual(["encoding", "first", "second", "held"]);
   });
 
+  it("holds a queued job whose pause has been asked for but not yet seen", () => {
+    /*
+     * The case the band used to miss. A pause on a job that is still waiting
+     * writes the request and nothing else — `state` turns `paused` only when a
+     * worker leases the job and puts it back down, and a worker part-way
+     * through a long encode will not lease anything for hours. Read by state
+     * alone, an operator-held job sat in the waiting band numbered as if it
+     * were next, while nothing was ever going to start it.
+     */
+    const ordered = orderQueue([
+      job({
+        id: "held",
+        state: "queued",
+        pauseRequested: true,
+        pausedReason: "operator",
+        queuePriority: 100,
+      }),
+      job({ id: "waiting", state: "queued", queuePriority: 101 }),
+      job({ id: "encoding", state: "running" }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["encoding", "waiting", "held"]);
+  });
+
+  it("leaves a job waiting on the drive in the line it is still in", () => {
+    // The one pause that lifts itself. The volume coming back resumes this job
+    // without anybody pressing anything, so it is waiting for the disk rather
+    // than for a person — and its card already says so.
+    const ordered = orderQueue([
+      job({
+        id: "on-the-drive",
+        state: "queued",
+        pauseRequested: true,
+        pausedReason: "storage-unavailable",
+        queuePriority: 100,
+      }),
+      job({ id: "waiting", state: "queued", queuePriority: 101 }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["on-the-drive", "waiting"]);
+  });
+
+  it("keeps a running job that has been asked to pause in the top band", () => {
+    // The encoder has not stopped yet, and a row that says running belongs
+    // where the running work is until it does.
+    const ordered = orderQueue([
+      job({ id: "waiting", state: "queued", queuePriority: 100 }),
+      job({ id: "stopping", state: "running", pauseRequested: true }),
+    ]);
+
+    expect(ids(ordered)).toEqual(["stopping", "waiting"]);
+  });
+
   it("sinks a paused job below the line even when it began first", () => {
     // A paused encode still owns the encoder, but it will not advance until it
     // is resumed, so it cannot sit above the jobs that are actually waiting.

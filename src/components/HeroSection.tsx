@@ -1,5 +1,13 @@
 import { createPortal } from "react-dom";
-import { useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type MouseEvent,
+} from "react";
 import {
   AnimatePresence,
   motion,
@@ -29,6 +37,11 @@ import {
 } from "../lib/itemMetadataPreferences";
 import { getRouteForItem } from "../lib/routes";
 import { getPlayTargetForItem } from "../lib/playTarget";
+import {
+  BOTTOM_CHROME_MOTION,
+  claimBottomChrome,
+  releaseBottomChrome,
+} from "../lib/layout/bottomChrome";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { MediaItem } from "../lib/types";
@@ -79,6 +92,29 @@ type IndicatorsPlacement =
   | "bottom-right"
   | "bottom-left-quarter"
   | "bottom-right-quarter";
+
+/*
+ * The breathing room kept between the carousel control and whatever the
+ * notification pile stacks on top of it. Anything less and the two read as one
+ * ragged column rather than two separate pieces of chrome.
+ */
+const INDICATOR_CLEARANCE_PX = 12;
+
+/*
+ * How far the control travels in and out of the corner, as a share of its own
+ * height — and it has to be farther than the notification pile travels, or the
+ * pile catches it.
+ *
+ * The pile ends above this control and rests below it, so on the way in it
+ * crosses the whole strip the control occupies. Both move on the same curve
+ * over the same second (`BOTTOM_CHROME_MOTION`), so whichever starts lower
+ * stays lower only while it also travels farther: a control that appears in
+ * place, or slides a shorter distance, is laid out through the pile for as
+ * long as the pile is climbing past it. At this distance it starts a little
+ * below the pile's resting foot and lands `INDICATOR_CLEARANCE_PX` above it,
+ * with the gap never closing in between.
+ */
+const INDICATOR_TRAVEL = "280%";
 
 interface HeroSectionProps {
   /**
@@ -505,8 +541,6 @@ export function HeroSection({
   }, [enablePreview]);
 
   const [showStickyIndicators, setShowStickyIndicators] = useState(true);
-  const [hasHiddenStickyIndicators, setHasHiddenStickyIndicators] =
-    useState(false);
   const [isCompactHeroViewport, setIsCompactHeroViewport] = useState(false);
   const episodeMetadata =
     item?.Type === "Episode" ? getEpisodeDisplayMetadata(item, language) : null;
@@ -667,6 +701,95 @@ export function HeroSection({
     ? 0
     : Math.min(Math.max(currentIndex, 0), Math.max(carouselItemCount - 1, 0));
   const showHeroIndicators = showCarouselDots && showStickyIndicators;
+  /*
+   * The carousel control and the notification pile both want the bottom-right
+   * corner, and on desktop they were laid out into each other: the control
+   * rises to roughly 7rem off the bottom edge while the pile drops to 1.5rem
+   * and grows up through it. Publishing the strip this control occupies lets
+   * the pile stack above it, which is the arrangement the mobile breakpoint
+   * has always had by way of its fixed 6rem lane.
+   */
+  const heroIndicatorsRef = useRef<HTMLDivElement | null>(null);
+  const bottomChromeClaimId = useId();
+
+  /*
+   * A layout effect, not a passive one, and that is the whole of it.
+   *
+   * The pile travels the lane on the same curve, duration and delay this
+   * control moves on (`BOTTOM_CHROME_MOTION`), so the only thing that can put
+   * the two out of step is starting at different moments — and the curve is a
+   * hard ease-out that covers about a third of its travel in the first
+   * hundred milliseconds, so a single frame of daylight between them is a
+   * frame of the pile sitting in the control's path. Motion starts its own
+   * animations in a layout effect; a passive effect hands the corner over
+   * after the next paint, which is exactly the frame the pile was late by.
+   */
+  useLayoutEffect(() => {
+    const element = heroIndicatorsRef.current;
+
+    if (!showHeroIndicators || !element) {
+      /*
+       * Handed back as the control starts leaving, not once it has finished,
+       * so the two descend together. Waiting for the exit to complete instead
+       * left the pile standing in mid-air for a second and then dropping into
+       * a corner nothing was in any more.
+       *
+       * `onExitComplete` below still releases, for the exits that never reach
+       * this branch, and for a release this one somehow missed.
+       */
+      releaseBottomChrome(bottomChromeClaimId);
+      return;
+    }
+
+    const measure = () => {
+      /*
+       * `offsetHeight` and the computed `bottom` are both untouched by the
+       * transforms the control animates in and out with, so what gets reserved
+       * is its resting strip rather than a moving one the pile would chase
+       * down the screen on every exit.
+       */
+      const restingBottom =
+        Number.parseFloat(window.getComputedStyle(element).bottom) || 0;
+
+      claimBottomChrome(
+        bottomChromeClaimId,
+        restingBottom + element.offsetHeight + INDICATOR_CLEARANCE_PX,
+      );
+    };
+
+    measure();
+
+    const sizes =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    sizes?.observe(element);
+    /*
+     * Its offset is a clamp() on viewport height and its height changes at the
+     * `sm` breakpoint, so a resize moves it even when its own box does not.
+     */
+    window.addEventListener("resize", measure);
+
+    return () => {
+      sizes?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [showHeroIndicators, bottomChromeClaimId]);
+
+  /*
+   * The other way the control can go: torn out rather than animated away —
+   * the carousel drops to a single slide, or the hero unmounts. Neither runs
+   * an exit animation, so neither reaches `onExitComplete`.
+   */
+  useEffect(() => {
+    if (showCarouselDots) {
+      return () => releaseBottomChrome(bottomChromeClaimId);
+    }
+
+    releaseBottomChrome(bottomChromeClaimId);
+    return undefined;
+  }, [showCarouselDots, bottomChromeClaimId]);
+
   const indicatorPlacementClasses: Record<IndicatorsPlacement, string> = {
     "top-center":
       "inset-x-0 top-[calc(0.85rem+env(safe-area-inset-top))] justify-center",
@@ -691,26 +814,28 @@ export function HeroSection({
   };
 
   const heroIndicators = showCarouselDots ? (
-    <AnimatePresence>
+    <AnimatePresence
+      onExitComplete={() => {
+        /*
+         * Guarded, because scrolling back up cancels the exit and brings the
+         * control straight back. Releasing on a cancelled exit would hand the
+         * lane away while the control still stands in it.
+         */
+        if (!showHeroIndicators) releaseBottomChrome(bottomChromeClaimId);
+      }}
+    >
       {showHeroIndicators ? (
         <motion.div
           key="hero-carousel-indicators"
+          ref={heroIndicatorsRef}
           layout
           data-hero-carousel-indicators
           className={`pointer-events-none fixed z-[99999] flex px-3 sm:px-4 ${indicatorPlacementClasses[indicatorPlacement]}`}
-          initial={
-            hasHiddenStickyIndicators
-              ? {
-                  opacity: 0,
-                  y: 0,
-                  scale: 1,
-                }
-              : {
-                  opacity: 0,
-                  y: shouldReduceMotion ? 0 : "140%",
-                  scale: shouldReduceMotion ? 1 : 0.96,
-                }
-          }
+          initial={{
+            opacity: 0,
+            y: shouldReduceMotion ? 0 : INDICATOR_TRAVEL,
+            scale: shouldReduceMotion ? 1 : 0.96,
+          }}
           animate={{
             opacity: 1,
             y: 0,
@@ -718,13 +843,19 @@ export function HeroSection({
           }}
           exit={{
             opacity: 0,
-            y: shouldReduceMotion ? 0 : "222%",
-            scale: shouldReduceMotion ? 1 : 1,
+            y: shouldReduceMotion ? 0 : INDICATOR_TRAVEL,
+            scale: 1,
           }}
+          /*
+           * Shared with the notification pile, which travels the lane this
+           * control frees or takes. The two only read as one movement while
+           * they keep exactly the same time, so the numbers live next to the
+           * reservation itself rather than once at each end.
+           */
           transition={{
-            duration: shouldReduceMotion ? 0 : 1,
-            delay: shouldReduceMotion || hasHiddenStickyIndicators ? 0 : 0.1,
-            ease: softEase,
+            duration: shouldReduceMotion ? 0 : BOTTOM_CHROME_MOTION.durationS,
+            delay: shouldReduceMotion ? 0 : BOTTOM_CHROME_MOTION.delayS,
+            ease: BOTTOM_CHROME_MOTION.ease,
           }}
         >
           <div className="pointer-events-auto max-w-[calc(100vw-1.5rem)] -translate-x-7 overflow-hidden rounded-full border border-white/25 bg-black/80 p-1 shadow-[0_24px_90px_rgba(0,0,0,0.78),0_0_0_1px_rgba(255,255,255,0.08)] sm:max-w-[calc(100vw-2rem)] sm:-translate-x-8 sm:p-1.5">
@@ -820,17 +951,6 @@ export function HeroSection({
   useEffect(() => {
     setIsLogoLoaded(false);
   }, [croppedLogoUrl]);
-
-  useEffect(() => {
-    if (!showCarouselDots) {
-      setHasHiddenStickyIndicators(false);
-      return;
-    }
-
-    if (!showHeroIndicators) {
-      setHasHiddenStickyIndicators(true);
-    }
-  }, [showCarouselDots, showHeroIndicators]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia("(max-width: 640px)");

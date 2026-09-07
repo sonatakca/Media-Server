@@ -133,6 +133,51 @@ export function canRetry(job: Pick<ProcessingJob, "state">): boolean {
 }
 
 /**
+ * Whether the reason a job is held is one only a person can lift.
+ *
+ * The two held reasons behave identically from the row's point of view —
+ * nothing polls them, no press on the job itself releases them, and the way
+ * out is the storage panel — so the page asks this rather than listing them
+ * at each site that needs to know.
+ */
+export function isOperatorHeld(
+  job: Pick<ProcessingJob, "pausedReason">,
+): boolean {
+  return (
+    job.pausedReason === "storage-quarantined" ||
+    job.pausedReason === "recovery-pending"
+  );
+}
+
+/**
+ * What the row's chip says about a pause, and how loudly.
+ *
+ * Four reasons reach the client and they ask different things of the reader,
+ * but the row used to name only two of them: anything that was not the volume
+ * going away was labelled "Paused". A quarantine raised by a real I/O fault
+ * therefore read exactly like a person pressing the button — the one case
+ * where the label has to carry alarm, because it is the one case where the
+ * drive may be failing and nothing moves until someone looks at it.
+ *
+ * The tone carries the same distinction: a quarantine is the only reason that
+ * is evidence of a fault, so it is the only one that reads as bad.
+ */
+export function pausedReasonChip(
+  reason: NonNullable<ProcessingJob["pausedReason"]>,
+): { labelKey: string; tone: "warn" | "bad" | "muted" } {
+  switch (reason) {
+    case "storage-quarantined":
+      return { labelKey: "processing.pausedByQuarantine", tone: "bad" };
+    case "recovery-pending":
+      return { labelKey: "processing.pausedByRecovery", tone: "warn" };
+    case "storage-unavailable":
+      return { labelKey: "processing.pausedByStorage", tone: "muted" };
+    case "operator":
+      return { labelKey: "processing.pausedByOperator", tone: "muted" };
+  }
+}
+
+/**
  * Progress as a whole number, clamped and never reported as complete before the
  * job actually is.
  *

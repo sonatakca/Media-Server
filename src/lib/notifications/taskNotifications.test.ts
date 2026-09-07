@@ -6,13 +6,21 @@ import {
   isSpokenForByLead,
   selectChangedTasks,
   selectProcessingLead,
+  selectQueueLeads,
 } from "./taskNotifications";
 import {
+  presentMaintenanceProgress,
   presentTask,
   resultMetrics,
   safeTaskLabel,
   type TaskPresentation,
 } from "./taskPresentation";
+import {
+  MAINTENANCE_PHASES,
+  MAINTENANCE_UNITS,
+  describeOverall,
+  type MaintenanceProgress,
+} from "../maintenance/maintenanceTasks";
 import { JOB_TYPES } from "../../server/ownApi/tasks/jobHandlers";
 import { NFO_JOB_TYPES } from "../../server/ownApi/nfo/nfoJobs";
 import { translations } from "../../i18n/translations";
@@ -276,6 +284,133 @@ it("distinguishes a successful metadata match from partial failures", () => {
   ).toBe("warning");
 });
 
+it("does not raise a warning for the overwrite policy declining a foreign file", () => {
+  /*
+   * `managed-only` is the default: an NFO file this server did not write is
+   * left where it is. That is the configuration working, and it recurs
+   * identically on every scan of the same library — so a card that read it as
+   * trouble was permanently amber over a job that had nothing wrong with it.
+   */
+  const scan = describeTask(
+    task({
+      type: "nfo.export.library",
+      status: "succeeded",
+      result: { itemsConsidered: 28, unchanged: 4, skippedConflict: 24 },
+    }),
+  );
+  expect(scan.tone).toBe("success");
+  // Still reported, on the card, as a figure rather than as an alarm.
+  expect(scan.task.metrics).toContainEqual({
+    metric: "skippedConflict",
+    value: 24,
+  });
+  expect(
+    describeTask(
+      task({
+        type: "nfo.export.library",
+        status: "succeeded",
+        result: { skippedConflict: 24, failed: 1 },
+      }),
+    ).tone,
+  ).toBe("warning");
+});
+
+/**
+ * The cards used to read the sentence beside the report rather than the report.
+ *
+ * Every maintenance executor writes a phase and a measure into its queue row —
+ * the Library Maintenance page has drawn bars from them all along — and the
+ * notification layer matched four regular expressions against the human
+ * sentence instead. Everything they did not recognise, trickplay included,
+ * came out as "Progress not measurable yet".
+ */
+describe("a maintenance report, read as a card reads it", () => {
+  const report = (
+    overrides: Partial<MaintenanceProgress> = {},
+  ): MaintenanceProgress => ({
+    revision: 4,
+    phase: "trickplay",
+    measure: { kind: "exact", completed: 61, total: 144, unit: "frames" },
+    at: "2026-08-11T00:00:03Z",
+    ...overrides,
+  });
+
+  it("carries an exact measure through as the phase's own fraction", () => {
+    expect(presentMaintenanceProgress(report())).toEqual({
+      stage: "trickplay",
+      counts: { completed: 61, total: 144, unit: "frames" },
+      phaseFraction: 61 / 144,
+      determinate: true,
+    });
+  });
+
+  it("gives the phase and no fraction for every other shape", () => {
+    for (const measure of [
+      { kind: "indeterminate" } as const,
+      { kind: "counter", counted: 4_012, unit: "directories" } as const,
+      // Not a fraction: a denominator of nought, and a numerator past its own
+      // denominator, are upstream defects rather than positions.
+      { kind: "exact", completed: 0, total: 0, unit: "files" } as const,
+      { kind: "exact", completed: 812, total: 742, unit: "files" } as const,
+    ]) {
+      expect(
+        presentMaintenanceProgress(report({ phase: "reading", measure })),
+      ).toEqual({ stage: "reading" });
+    }
+    expect(presentMaintenanceProgress(null)).toBeNull();
+  });
+
+  /*
+   * The two vocabularies have to stay in step: a phase a card cannot name
+   * renders as a missing key, and a unit it cannot name renders a count with
+   * no noun after it.
+   */
+  it("has a word in both languages for every phase and every unit", () => {
+    for (const phase of MAINTENANCE_PHASES) {
+      expect(translations.en[`tasks.${phase}`]).toBeTruthy();
+      expect(translations.tr[`tasks.${phase}`]).toBeTruthy();
+    }
+    for (const unit of MAINTENANCE_UNITS) {
+      for (const dictionary of [translations.en, translations.tr]) {
+        const sentence = dictionary[`tasks.${unit}`];
+        expect(sentence).toContain("{count}");
+        expect(sentence).toContain("{total}");
+      }
+    }
+  });
+
+  it("puts a bar on the card, which is what the whole chain is for", () => {
+    const card = describeTask(
+      task({
+        type: "trickplay.generate",
+        progressMessage: "Generating trickplay",
+        presentation: {
+          ...presentTask("trickplay.generate", "Generating trickplay", null),
+          ...presentMaintenanceProgress(report()),
+        },
+      }),
+    );
+
+    expect(card.task.determinate).toBe(true);
+    /*
+     * The number on the card is the number on the page, not a second reading
+     * of the same row. Both go through `measurePercent`, so 61 of 144 frames
+     * is 42 in both places rather than 42 beside 43.
+     */
+    const overall = describeOverall(report());
+    expect(overall.kind).toBe("exact");
+    expect(card.progress).toBe(
+      overall.kind === "exact" ? overall.percent : NaN,
+    );
+    expect(card.progress).toBe(42);
+    expect(card.task.counts).toEqual({
+      completed: 61,
+      total: 144,
+      unit: "frames",
+    });
+  });
+});
+
 describe("one card for the waiting line", () => {
   const media = (id: string, status: TaskDto["status"], queuedAt: string) =>
     ({
@@ -443,4 +578,139 @@ describe("what a media job actually measures", () => {
     });
     expect(described.task.remainingSeconds).toBeUndefined();
   });
+});
+
+/**
+ * A thumbnail sweep queues one job per title — two hundred and sixty-six of
+ * them over a whole library — and the pile has to stay readable through it.
+ * The two facts a person actually wants are which titles are being decoded now
+ * and how many are behind them.
+ */
+describe("one card for the thumbnail line too", () => {
+  const thumbnail = (id: string, status: TaskDto["status"], queuedAt: string) =>
+    ({
+      id,
+      type: "trickplay.generate",
+      status,
+      progress: 0,
+      progressMessage: null,
+      attempts: 0,
+      maxAttempts: 3,
+      result: null,
+      error: null,
+      queuedAt,
+      startedAt: null,
+      finishedAt: null,
+    }) as TaskDto;
+
+  it("keeps a card for every title actually being decoded, and counts the rest", () => {
+    // Three run at once in the library lane; the other two hundred wait.
+    const tasks = [
+      thumbnail("run-a", "running", "2026-09-06T08:00:00Z"),
+      thumbnail("run-b", "running", "2026-09-06T08:00:01Z"),
+      thumbnail("run-c", "running", "2026-09-06T08:00:02Z"),
+      thumbnail("q1", "queued", "2026-09-06T08:00:03Z"),
+      thumbnail("q2", "queued", "2026-09-06T08:00:04Z"),
+    ];
+
+    const leads = selectQueueLeads(tasks);
+    const trickplay = leads.find((lead) => lead.taskId.startsWith("run"));
+
+    expect(trickplay).toEqual({
+      taskId: "run-a",
+      queuedCount: 2,
+      spokenFor: ["q1", "q2"],
+    });
+    // The other two decoders keep their own cards: three titles are being
+    // worked on, and a single card naming one of them would be a lie.
+    expect(isSpokenForByLead(tasks[1] as TaskDto, leads)).toBe(false);
+    expect(isSpokenForByLead(tasks[2] as TaskDto, leads)).toBe(false);
+    expect(isSpokenForByLead(tasks[3] as TaskDto, leads)).toBe(true);
+  });
+
+  it("gives encoding and trickplay a lead each, never a shared line", () => {
+    const leads = selectQueueLeads([
+      thumbnail("thumb", "running", "2026-09-06T08:00:00Z"),
+      thumbnail("thumb-q", "queued", "2026-09-06T08:00:01Z"),
+      {
+        ...thumbnail("encode", "running", "2026-09-06T07:00:00Z"),
+        type: "media.process",
+      } as TaskDto,
+    ]);
+
+    expect(leads.map((lead) => lead.taskId).sort()).toEqual([
+      "encode",
+      "thumb",
+    ]);
+    expect(leads.find((lead) => lead.taskId === "encode")?.queuedCount).toBe(0);
+    expect(leads.find((lead) => lead.taskId === "thumb")?.queuedCount).toBe(1);
+  });
+
+  it("names the title on the card rather than a bare job", () => {
+    const card = describeTask(
+      {
+        ...thumbnail("run-a", "running", "2026-09-06T08:00:00Z"),
+        progressMessage: "Generating trickplay",
+        presentation: {
+          determinate: false,
+          stage: "trickplay",
+          subject: { type: "media", label: "Dune" },
+        },
+      } as TaskDto,
+      265,
+    );
+
+    expect(card.titleKey).toBe("tasks.trickplayGenerate");
+    expect(card.task.subject?.label).toBe("Dune");
+    expect(card.task.stage).toBe("trickplay");
+    expect(card.task.queuedCount).toBe(265);
+    /*
+     * Honest: nothing measures a sprite sheet's decode, so the card must not
+     * draw a figure. `determinate` is what suppresses it — the raw `progress`
+     * channel still carries the queue's own zero for legacy consumers.
+     */
+    expect(card.task.determinate).toBe(false);
+  });
+
+  it("still leaves a single encode's line exactly as it was", () => {
+    const leads = selectQueueLeads([
+      {
+        ...thumbnail("run", "running", "2026-09-05T09:00:00Z"),
+        type: "media.process",
+      } as TaskDto,
+      {
+        ...thumbnail("q1", "queued", "2026-09-05T10:00:00Z"),
+        type: "media.process",
+      } as TaskDto,
+      {
+        ...thumbnail("q2", "queued", "2026-09-05T10:01:00Z"),
+        type: "media.process",
+      } as TaskDto,
+    ]);
+
+    expect(leads).toEqual([
+      { taskId: "run", queuedCount: 2, spokenFor: ["q1", "q2"] },
+    ]);
+  });
+});
+
+it("reports an unseen completion inside the successful observation window only once", () => {
+  const boundary = Date.parse("2026-09-06T10:00:00.000Z");
+  const completed = task({
+    type: "library.rename",
+    status: "succeeded",
+    queuedAt: "2026-09-06T10:00:00.100Z",
+    finishedAt: "2026-09-06T10:00:00.105Z",
+  });
+  const observed = selectChangedTasks([completed], new Map(), false, boundary);
+  expect(observed.changed).toEqual([completed]);
+  expect(
+    selectChangedTasks([completed], observed.next, false, boundary).changed,
+  ).toEqual([]);
+  expect(
+    selectChangedTasks([completed], new Map(), true, boundary).changed,
+  ).toEqual([]);
+  expect(
+    selectChangedTasks([completed], new Map(), false, boundary + 1000).changed,
+  ).toEqual([]);
 });

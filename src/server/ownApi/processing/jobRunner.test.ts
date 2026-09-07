@@ -6,6 +6,16 @@ import type { RenditionMediaProbe } from "../../../renditions/probe";
 import type { HardwareReport } from "../../../renditions/hardware/detect";
 import { createProcessingJobRunner } from "./jobRunner";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
+import { AUTOMATIC_REQUEUE_PAUSE_REASON } from "./interruptedJobs";
+import type { StorageGuard } from "./storageGuard";
+import {
+  demandsStop,
+  initialStorageHealth,
+  mayStartWork,
+  resumesAutomatically,
+  type StorageHealthRecord,
+  type StorageHealthState,
+} from "../../../renditions/processing/storageHealth";
 import type { ProcessingStage } from "./stages";
 
 function record(
@@ -188,6 +198,61 @@ function fakeStore() {
       };
     },
     latest: () => current,
+  };
+}
+
+/**
+ * A guard whose state a test can move, because the bug lives in the gap
+ * between two readings of it.
+ *
+ * The real guard reaches `quarantined` through an incident row and a fault
+ * count, and cannot be walked back to `unavailable` from the outside — which
+ * is precisely the sequence the drive produces on its own and which no test
+ * could otherwise stage. The predicates are the real ones, so the only thing
+ * faked here is the clock.
+ */
+function fakeGuard(initial: StorageHealthState = "healthy") {
+  let state = initial;
+  const health = (): StorageHealthRecord => ({
+    ...initialStorageHealth("/media", 0),
+    state,
+    reason: `The media volume is ${state}.`,
+  });
+  const guard: StorageGuard = {
+    get health() {
+      return health();
+    },
+    mayStartWork: () => mayStartWork(state),
+    demandsStop: () => demandsStop(state),
+    resumesAutomatically: () => resumesAutomatically(state),
+    describe: () => `The media volume is ${state}.`,
+    observeAvailability: async () => health(),
+    reportFailure: async () => health(),
+    reportUncleanRestart: async () => health(),
+    verify: async () => ({
+      ok: false,
+      detail: "not asked in this test",
+      outcome: "unavailable" as const,
+      health: health(),
+    }),
+    resume: async () => health(),
+    ensureIdentity: async () => null,
+    identity: { recorded: null, cached: null },
+    adopt: async () => ({
+      ok: false,
+      detail: "not asked in this test",
+      adopted: null,
+      health: health(),
+    }),
+    identityPermitsWork: () => ({ ok: true }),
+    reload: async () => health(),
+    incident: async () => null,
+  };
+  return {
+    guard,
+    becomes: (next: StorageHealthState) => {
+      state = next;
+    },
   };
 }
 
@@ -669,6 +734,87 @@ describe("processing job runner", () => {
     expect(final.finishedAt ?? null).toBeNull();
     // And it is not an error the operator has to clear.
     expect(final.errorCode ?? null).toBeNull();
+  });
+
+  /**
+   * A quarantine is recorded at the moment of the fault, and finished long
+   * afterwards.
+   *
+   * Two places write `pausedReason` for one interruption. The supervisor tick
+   * runs while the fault is happening and classifies it correctly. Then FFmpeg
+   * has to actually die, and on a bad region that takes minutes — nineteen of
+   * them, on job 21f644c2 — during which the drive drops off the bus and the
+   * guard stops saying "quarantined" and starts saying "unavailable".
+   * `finishStorageInterrupted` re-derived the reason from that second reading
+   * and overwrote the first.
+   *
+   * The reason is not a label. `storage-unavailable` is the one reason
+   * `requeueStorageInterruptedJobs` can see, so the rewrite handed a
+   * quarantined volume back to the automatic requeue and left the page saying
+   * the drive was merely being waited for.
+   */
+  it("keeps a quarantine recorded at fault time when the encoder is reaped later", async () => {
+    const storage = fakeGuard();
+    const packageFn = vi.fn(async () => {
+      // The fault, while the encode is in flight. The runner polls once a
+      // second, so the tick has to be given a chance to land.
+      storage.becomes("quarantined");
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      // And by the time the encoder is finally reaped, the drive is simply
+      // gone — which reads as a clean absence, not as a fault.
+      storage.becomes("unavailable");
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "interrupted" as const,
+      };
+    });
+
+    const outcome = await createProcessingJobRunner({
+      store: fake.store,
+      paths,
+      mediaRoot: "/media",
+      detectHardwareFn: vi.fn(async () => hardware) as never,
+      probeFn: vi.fn(async () => probe()) as never,
+      packageFn: packageFn as never,
+      storageGuard: storage.guard,
+    } as never).run(input);
+
+    expect(outcome.status).toBe("waiting-for-storage");
+    expect(fake.latest().pausedReason).toBe("storage-quarantined");
+    // Which is what keeps it out of the automatic requeue's query entirely.
+    expect(fake.latest().pausedReason).not.toBe(AUTOMATIC_REQUEUE_PAUSE_REASON);
+  });
+
+  /**
+   * The other direction has to keep working, or the fix is just a different
+   * wrong answer: a job parked as a clean absence whose volume is *then* found
+   * faulty must become quarantined.
+   */
+  it("still escalates a clean absence to a quarantine found while reaping", async () => {
+    const storage = fakeGuard();
+    const packageFn = vi.fn(async () => {
+      storage.becomes("unavailable");
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      storage.becomes("quarantined");
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "interrupted" as const,
+      };
+    });
+
+    await createProcessingJobRunner({
+      store: fake.store,
+      paths,
+      mediaRoot: "/media",
+      detectHardwareFn: vi.fn(async () => hardware) as never,
+      probeFn: vi.fn(async () => probe()) as never,
+      packageFn: packageFn as never,
+      storageGuard: storage.guard,
+    } as never).run(input);
+
+    expect(fake.latest().pausedReason).toBe("storage-quarantined");
   });
 
   /** A person cancelling still cancels; the two paths must stay distinct. */

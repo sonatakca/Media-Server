@@ -80,6 +80,22 @@ export interface OwnApiHealthResponse {
     mediaStorage: "available" | "unavailable";
     generatedStorage: "writable" | "unavailable";
   };
+  /**
+   * How far the server has got through startup.
+   *
+   * Optional because it is additive: a server from before the startup-state
+   * work answers without it, and every field above means exactly what it always
+   * meant. Left loosely typed here — the shape that matters to the app is
+   * parsed in `serverConnectionDiagnostics`, which is the only consumer.
+   */
+  startup?: {
+    live?: boolean;
+    ready?: boolean;
+    state?: string;
+    phase?: string | null;
+    elapsedMs?: number;
+    phases?: unknown[];
+  };
 }
 
 interface OwnApiSuccessEnvelope<T> {

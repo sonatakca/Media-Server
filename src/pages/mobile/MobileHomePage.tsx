@@ -21,10 +21,10 @@ import {
   getPrimaryImageUrl,
 } from "../../lib/mediaApi";
 import { FAVOURITE_CHANGED_EVENT } from "../../lib/favouriteActions";
-import {
-  filterLatestMediaItems,
-  loadHomeCurationPreferences,
-} from "../../lib/homeCuration";
+import { applyCuration } from "../../lib/curation";
+import { buildLatestRow } from "../../lib/homeShelves";
+import { useCataloguePools } from "../../hooks/useCataloguePools";
+import { useHomeCuratedLists } from "../../hooks/useCuratedList";
 import { getRouteForItem } from "../../lib/routes";
 import { setSeoMetadata } from "../../lib/seo";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
@@ -239,18 +239,28 @@ export function MobileHomePage() {
     Date.now(),
   );
 
+  const curatedLists = useHomeCuratedLists();
+  const pools = useCataloguePools();
+
   const heroItems = useMemo(() => {
     if (!data) {
       return [];
     }
 
-    return getFeaturedItems([
-      ...data.continueWatching,
-      ...data.latestMedia.filter(
-        (item) => item.Type === "Movie" || item.Type === "Series",
-      ),
-    ]);
-  }, [data]);
+    // The hand-placed carousel order is house-wide, so it outranks the phone's
+    // own scoring here exactly as it does on the desktop hero.
+    return applyCuration(
+      getFeaturedItems([
+        ...data.continueWatching,
+        ...(pools.loaded
+          ? [...pools.movies, ...pools.series]
+          : data.latestMedia.filter(
+              (item) => item.Type === "Movie" || item.Type === "Series",
+            )),
+      ]),
+      curatedLists.hero,
+    );
+  }, [data, pools, curatedLists.hero]);
 
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
@@ -334,18 +344,14 @@ export function MobileHomePage() {
       }
 
       setRowWarnings(warnings);
-      const homeCurationPreferences = loadHomeCurationPreferences();
 
+      // Stored raw: each Latest row carries its own ordering, so the curation
+      // is applied per row at render rather than to the mixed pool here.
       setData({
         continueWatching:
           continueResult.status === "fulfilled" ? continueResult.value : [],
         latestMedia:
-          latestResult.status === "fulfilled"
-            ? filterLatestMediaItems(
-                latestResult.value,
-                homeCurationPreferences,
-              )
-            : [],
+          latestResult.status === "fulfilled" ? latestResult.value : [],
         favourites:
           favouritesResult.status === "fulfilled" ? favouritesResult.value : [],
       });
@@ -468,7 +474,26 @@ export function MobileHomePage() {
   };
 
   const selectedHeroIndex = heroIndex < heroItems.length ? heroIndex : 0;
-  const latestMediaGroups = groupLatestMediaItems(data.latestMedia);
+  /*
+   * Each row draws from the whole library once the catalogue has arrived, and
+   * from the server's Latest page until then. The fallback is what keeps the
+   * first paint honest on a phone, where the full fetch is slowest.
+   */
+  const groupedLatestMedia = groupLatestMediaItems(data.latestMedia);
+  const latestMediaGroups = {
+    movies: buildLatestRow(
+      pools.loaded ? pools.movies : groupedLatestMedia.movies,
+      curatedLists.movies,
+    ),
+    shows: buildLatestRow(
+      pools.loaded ? pools.series : groupedLatestMedia.shows,
+      curatedLists.shows,
+    ),
+    books: buildLatestRow(
+      pools.loaded ? pools.books : groupedLatestMedia.books,
+      curatedLists.books,
+    ),
+  };
   const heroItem =
     heroItems[selectedHeroIndex] ??
     getFeaturedItem([...data.continueWatching, ...data.latestMedia]);

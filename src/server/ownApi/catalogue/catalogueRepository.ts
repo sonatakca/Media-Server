@@ -216,7 +216,7 @@ export interface MediaStreamRow {
  * they are allowed all libraries or hold an explicit grant. Applied inside SQL
  * rather than after the fact so that pagination totals and cursors stay correct.
  */
-const LIBRARY_VISIBILITY_PREDICATE = `
+export const LIBRARY_VISIBILITY_PREDICATE = `
   EXISTS (
     SELECT 1
     FROM libraries visible_library
@@ -390,6 +390,8 @@ export interface ProcessableTitleRow {
 }
 
 export interface ListProcessableTitlesOptions {
+  /** Restrict to one library's titles. */
+  libraryId?: string;
   /** Restrict to one series' episodes. */
   seriesId?: string;
   /** Restrict to one season's episodes. */
@@ -850,6 +852,10 @@ export function createCatalogueRepository(
       const kinds = options.kinds ?? ["movie", "episode"];
       const values: unknown[] = [kinds];
       const conditions = ["item.kind = ANY($1::text[])"];
+      if (options.libraryId) {
+        values.push(options.libraryId);
+        conditions.push(`item.library_id = $${values.length}`);
+      }
       if (options.seriesId) {
         values.push(options.seriesId);
         conditions.push(`item.series_id = $${values.length}`);

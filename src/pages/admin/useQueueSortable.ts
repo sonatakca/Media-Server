@@ -14,7 +14,10 @@ import {
 } from "./queueDragModel";
 
 /**
- * A vertical sortable list driven by the pointer, for the processing queue.
+ * A vertical sortable list driven by the pointer.
+ *
+ * Written for the processing queue and now also used by the curation editor;
+ * it knows nothing about either, only about ids and the rows they name.
  *
  * The browser's own drag and drop was what made the old queue read as broken:
  * it takes a picture of the card, floats the picture under the cursor, and

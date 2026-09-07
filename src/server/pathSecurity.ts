@@ -79,10 +79,26 @@ export function isPathInsideRoot(
   );
 }
 
+export interface AssertMediaRootOptions {
+  /**
+   * Called immediately before each syscall, with its name.
+   *
+   * This function is two blocking calls against a volume that may be an
+   * external disk, and on the day one stopped answering the process sat inside
+   * the first of them for over nine minutes with nothing to say. Naming the
+   * call as it is entered is what lets startup report `stat` rather than
+   * "checking storage", and it is the difference between a diagnosis and a
+   * debugger session on a live process.
+   */
+  onOperation?: (operation: "stat" | "realpath") => void;
+}
+
 export async function assertMediaRootDirectory(
   mediaRoot: string,
+  { onOperation }: AssertMediaRootOptions = {},
 ): Promise<string> {
   const resolvedRoot = path.resolve(mediaRoot);
+  onOperation?.("stat");
   const rootStat = await stat(resolvedRoot).catch(() => null);
 
   if (!rootStat?.isDirectory()) {
@@ -93,6 +109,7 @@ export async function assertMediaRootDirectory(
     );
   }
 
+  onOperation?.("realpath");
   return realpath(resolvedRoot);
 }
 

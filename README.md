@@ -90,9 +90,9 @@ media server being installed.
      ┌─────┴──────┬──────────────┬──────────────┐
      ▼            ▼              ▼              ▼
  PostgreSQL   media root   generated storage   TMDB
- catalogue,   (media and   (artwork cache,     (optional
- users,       NFO source   trickplay,          metadata)
- progress     of truth)    transcode temp)
+ catalogue,   (media, NFO, (artwork cache,     (optional
+ users,       artwork and  transcode temp)     metadata)
+ progress     trickplay)
            ▲
            │
 ┌──────────┴──────────┐
@@ -114,9 +114,9 @@ Three storage locations, with different rules:
 - **The media root** is the source of truth. Playback, discovery, probing and
   transcoding treat media files as read-only; only the two explicitly listed
   features below write adjacent metadata or artwork.
-- **Generated storage** holds everything derived: cached artwork and its
-  resized variants, trickplay sprites, and transcode scratch space. Safe to
-  delete; it will be rebuilt.
+- **Generated storage** holds everything derived that a title does not own
+  itself: cached artwork and its resized variants, and transcode scratch space.
+  Safe to delete; it will be rebuilt.
 - **PostgreSQL** holds the catalogue, users, sessions, watch progress, and the
   job queue.
 
@@ -125,15 +125,16 @@ Three storage locations, with different rules:
 Two narrowly scoped features write there, and both are named here rather than
 left to be discovered from a diff:
 
-| Feature                | Writes                          | Default | How to turn it off                      |
-| ---------------------- | ------------------------------- | ------- | --------------------------------------- |
-| Title-owned artwork    | `<Title>/content/cover.jpg` and | **on**  | Leave `SEYIRLIK_TMDB_API_KEY` unset, or |
-|                        | `backdrop.jpg`, `logo.png`      |         | do not use the artwork admin pages      |
-| NFO export (`sidecar`) | `movie.nfo`, `tvshow.nfo`,      | **on**  | Set `SEYIRLIK_NFO_EXPORT=disabled`      |
-|                        | `season.nfo`, `<episode>.nfo`   |         |                                         |
-| Organising folders     | Moves originals into `src/` and | **off** | Leave `SEYIRLIK_MEDIA_ORGANIZE` unset   |
-|                        | episode .nfo files into the     |         |                                         |
-|                        | episode's folder                |         |                                         |
+| Feature                | Writes                           | Default | How to turn it off                      |
+| ---------------------- | -------------------------------- | ------- | --------------------------------------- |
+| Title-owned artwork    | `<Title>/content/cover.jpg` and  | **on**  | Leave `SEYIRLIK_TMDB_API_KEY` unset, or |
+|                        | `backdrop.jpg`, `logo.png`       |         | do not use the artwork admin pages      |
+| NFO export (`sidecar`) | `movie.nfo`, `tvshow.nfo`,       | **on**  | Set `SEYIRLIK_NFO_EXPORT=disabled`      |
+|                        | `season.nfo`, `<episode>.nfo`    |         |                                         |
+| Organising folders     | Moves originals into `src/` and  | **off** | Leave `SEYIRLIK_MEDIA_ORGANIZE` unset   |
+|                        | episode .nfo files into the      |         |                                         |
+|                        | episode's folder                 |         |                                         |
+| Trickplay              | `<Title>/trickplay/sprite_N.jpg` | **on**  | Do not queue trickplay generation       |
 
 Artwork writes are long-standing behaviour: a cover placed in the title's own
 `content/` folder travels with the title when it is moved or backed up, which a
@@ -141,8 +142,14 @@ hash-named cache file does not. NFO sidecars are generated during scans by
 default and use managed-only replacement, so files from another application or
 a person are preserved.
 
-Everything else — trickplay, variants, renditions, transcode scratch — stays on
-generated storage.
+Trickplay sheets are title-owned for the same reason artwork is: they are
+derived from one source, they are meaningless beside any other, and a library
+that can be moved or backed up without the server has to carry them along. See
+[docs/trickplay-storage.md](docs/trickplay-storage.md), which also covers the
+Jellyfin-era `*.trickplay` folders and how they are archived out of the library.
+
+Everything else — variants, renditions, transcode scratch — stays on generated
+storage.
 
 The client is a React app under `src/`, split into `pages/desktop` and
 `pages/mobile` where the two need to differ. Shared logic lives in `src/lib`,
@@ -414,6 +421,55 @@ The server speaks plain HTTP and expects to sit behind a reverse proxy that
 terminates TLS. Set `SEYIRLIK_PUBLIC_ORIGIN` to the origin browsers actually
 use so cookies and CORS line up.
 
+### Watching it start
+
+Startup binds the port first and brings the dependencies up behind it, so from
+a second or two after launch there is always something to ask. In a terminal it
+narrates itself:
+
+```
+Seyirlik — starting
+  · modules loaded in 1.4 s
+
+  ✓ Runtime configuration                  1 ms
+  ✓ HTTP listener                          4 ms
+  ⠋ Media storage   stat  /Volumes/Expansion/media   2.1 s
+```
+
+A step that takes longer than five seconds says so, repeats every thirty, and
+after a minute is marked degraded — at which point the server is **live but not
+ready**. Degraded is not failed: nothing was cancelled, and if the volume
+answers at minute four the step completes and startup carries on. Under launchd
+the same events are written to `~/Library/Logs/Seyirlik/server.log` one
+timestamped line at a time, with no cursor control:
+
+```
+2026-09-06T13:29:22.473Z [Seyirlik startup] media-storage started operation=stat resource="/Volumes/Expansion/media"
+2026-09-06T13:29:27.474Z [Seyirlik startup] media-storage slow operation=stat elapsedMs=5001 resource="/Volumes/Expansion/media"
+```
+
+`/ownAPI/v1/health` answers throughout, and separates the two questions:
+
+```
+{
+  "alive": true,    // the listener is answering
+  "ready": false,   // a dependency has not finished
+  "startup": { "state": "starting", "phase": "media-storage", "elapsedMs": 9412 }
+}
+```
+
+Every other `/ownAPI/v1` route answers `503` with `error.code` of
+`SERVER_STARTING`, `SERVER_STARTUP_FAILED` or `SERVER_STOPPING` until startup
+finishes. The built frontend is served the whole time, so the app can load and
+say what the server is waiting for. No storage path ever leaves the process
+through these responses; the paths are in the terminal and the log, where the
+person diagnosing a stalled mount is looking.
+
+An unmounted media root or generated-storage directory is waited for on a
+backoff that tops out at thirty seconds, not exited over — and a probe that has
+not answered is never re-issued, because a `stat` blocked in the kernel holds a
+libuv worker thread and there are only four of them.
+
 ### Splitting the worker out
 
 By default one process does everything, which is the right shape for one
@@ -499,6 +555,7 @@ src/
   server/
     mediaServer.ts    HTTP entry point
     mediaWorker.ts    job-queue entry point
+    startup/          startup phases, terminal/log reporting, readiness gate
     ownApi/           auth, catalogue, images, playback, scanner,
                       metadata, progress, syncplay, tasks, users
 scripts/          migrations, admin provisioning, rendition CLI

@@ -407,7 +407,8 @@ try {
         };
       };
     };
-    for (const quality of sessionPayload.data.qualityManifest?.qualities ?? []) {
+    for (const quality of sessionPayload.data.qualityManifest?.qualities ??
+      []) {
       const qualityUrl = relativeUrl(quality.playbackUrl);
       const headResponse = await fetch(qualityUrl, {
         method: "HEAD",
@@ -557,7 +558,9 @@ try {
     const audioRows = audioPlaylist
       .split(/\r?\n/)
       .filter((line) => line.includes("TYPE=AUDIO"));
-    const defaultRows = audioRows.filter((line) => line.includes("DEFAULT=YES"));
+    const defaultRows = audioRows.filter((line) =>
+      line.includes("DEFAULT=YES"),
+    );
     if (defaultRows.length !== 1) {
       throw new Error(
         `Selecting audio stream ${track.sourceStreamIndex} produced ${defaultRows.length} default renditions.`,

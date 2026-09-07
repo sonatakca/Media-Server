@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   GENERATED_TITLE_DIRECTORIES,
+  TITLE_TRICKPLAY_DIRECTORY,
   LADDER_QUALITY_CLASSES,
   audioFileStem,
   frameRateForClass,
@@ -142,7 +143,25 @@ describe("what the scanner must not walk into", () => {
       "audio",
       "content",
       "subtitle",
+      "trickplay",
       "video",
     ]);
+  });
+
+  /*
+   * Trickplay is the newest member of that set and the one with a lookalike.
+   * The managed directory is the bare word; the Jellyfin-era folders a library
+   * is full of are `<title>.trickplay`, and they are a different population
+   * entirely. Naming the constant here keeps the two from being conflated by
+   * anyone reading the exclusion list.
+   */
+  it("names the managed trickplay directory, and nothing that merely ends in it", () => {
+    expect(TITLE_TRICKPLAY_DIRECTORY).toBe("trickplay");
+    expect(GENERATED_TITLE_DIRECTORIES.has(TITLE_TRICKPLAY_DIRECTORY)).toBe(
+      true,
+    );
+    expect(GENERATED_TITLE_DIRECTORIES.has("Dune (2021).trickplay")).toBe(
+      false,
+    );
   });
 });

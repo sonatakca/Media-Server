@@ -419,6 +419,54 @@ describe("scanLibraryTree — series", () => {
     expect(everyPath.some((entry) => entry.includes(".trickplay"))).toBe(false);
   });
 
+  /*
+   * The managed trickplay directory is title-owned generated content, like
+   * `video/` and `audio/` beside it. Its sheets are JPEGs rather than video, so
+   * nothing here would have become an item — but the point is that the scanner
+   * does not walk into it at all, for the same reason and through the same
+   * exclusion list as every other generated directory.
+   */
+  it("never walks into a title's managed trickplay directory", async () => {
+    const fileSystem = createFileSystem({
+      Shows: ["Andor/"],
+      "Shows/Andor": ["Season 1/"],
+      "Shows/Andor/Season 1": ["src/", "Andor - S01E01 - Kassa/"],
+      "Shows/Andor/Season 1/src": ["Andor - S01E01 - Kassa.mp4"],
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa": [
+        "trickplay/",
+        // A staging directory left by an interrupted generation. Hidden, so it
+        // is ignored before the exclusion list is even consulted.
+        ".trickplay-publish-abc/",
+      ],
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa/trickplay": [
+        "sprite_0.jpg",
+        "sprite_1.jpg",
+      ],
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa/.trickplay-publish-abc": [
+        "sprite_0.jpg",
+      ],
+    });
+
+    const result = await scanLibraryTree({
+      fileSystem,
+      rootPath: "Shows",
+      kind: "series",
+    });
+
+    const everyPath = result.items.flatMap((item) =>
+      item.files.map((file) => file.relativePath),
+    );
+    expect(everyPath.some((entry) => entry.includes("sprite_"))).toBe(false);
+    expect(everyPath.some((entry) => entry.includes("/trickplay/"))).toBe(
+      false,
+    );
+    expect(
+      everyPath.some((entry) => entry.includes(".trickplay-publish")),
+    ).toBe(false);
+    // The episode itself is still catalogued, from its source in `src/`.
+    expect(byKind(result.items, "episode")).toHaveLength(1);
+  });
+
   it("keeps two containers of one episode as one episode's alternates", async () => {
     const fileSystem = createFileSystem({
       Shows: ["House of the Dragon/"],

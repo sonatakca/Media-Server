@@ -383,7 +383,7 @@ describe("artwork routes", () => {
 
     expect(result.sent.statusCode).toBe(200);
     expect(fetchAndStoreTitleArtwork).toHaveBeenCalledWith(
-      "https://image.tmdb.org/t/p/w1280/wide.jpg",
+      "https://image.tmdb.org/t/p/original/wide.jpg",
       "Movies/Dune (2021)",
       "backdrop",
     );

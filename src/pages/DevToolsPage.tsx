@@ -17,13 +17,45 @@ import {
   Users,
 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 import { useLanguage } from "../i18n/LanguageContext";
 import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
 
 export function DevToolsPage() {
   const { t } = useLanguage();
+  // The route arrives while its own chunk, the admin check and the icon set are
+  // still landing, so a run started at mount is a run started underneath a page
+  // that is still changing. Waiting for the document's load event — and then a
+  // frame, for the case where the document was already complete and this is a
+  // client-side navigation — means the pieces fall over a page that has settled
+  // and painted, and the celebration is seen from its first frame.
+  const [canCelebrate, setCanCelebrate] = useState(false);
+
+  useEffect(() => {
+    let animationFrame = 0;
+    let isCancelled = false;
+
+    function armCelebration() {
+      animationFrame = window.requestAnimationFrame(() => {
+        if (!isCancelled) {
+          setCanCelebrate(true);
+        }
+      });
+    }
+
+    if (document.readyState === "complete") {
+      armCelebration();
+    } else {
+      window.addEventListener("load", armCelebration, { once: true });
+    }
+
+    return () => {
+      isCancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("load", armCelebration);
+    };
+  }, []);
 
   useEffect(() => {
     setPageTitle(`${t("devtools.title")} · Seyirlik`, {
@@ -94,11 +126,11 @@ export function DevToolsPage() {
       tag: t("devtools.card.contentExplorer.tag"),
     },
     {
-      title: t("devtools.card.homeCuration.title"),
-      description: t("devtools.card.homeCuration.description"),
-      to: "/dev/home-curation",
+      title: t("devtools.card.curation.title"),
+      description: t("devtools.card.curation.description"),
+      to: "/dev/curation",
       icon: ListOrdered,
-      tag: t("devtools.card.homeCuration.tag"),
+      tag: t("devtools.card.curation.tag"),
     },
     {
       title: t("devtools.card.playbackDefaults.title"),
@@ -156,9 +188,13 @@ export function DevToolsPage() {
         glowFadeOutDuration={2.2}
         glowMaxOpacity={0.72}
       /> */}
-      <ConfettiAnimation startDelay={0} pieceCount={250} />
+      {canCelebrate ? (
+        <>
+          <ConfettiAnimation startDelay={0} pieceCount={250} />
 
-      <SparkleAnimation startDelay={1} sparkleDuration={1.5} />
+          <SparkleAnimation startDelay={1} sparkleDuration={1.5} />
+        </>
+      ) : null}
 
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-[var(--accent)]/20 blur-3xl" />

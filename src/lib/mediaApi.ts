@@ -4,6 +4,7 @@ import {
   ownApiUrl,
 } from "../api/ownApi/client";
 import { nextProgressSequence } from "./progressSequence";
+import type { CuratedEntry, CuratedList, CuratedSurface } from "./curation";
 import {
   toMediaItem,
   toMediaItems,
@@ -998,6 +999,38 @@ export async function deleteUser(userId: string): Promise<void> {
   );
 }
 
+/**
+ * The Library Maintenance action group.
+ *
+ * Every one of these returns as soon as the durable jobs exist — the browser
+ * never waits for a scan, an FFmpeg run or a filesystem move — so the reply
+ * carries what was accepted, not what was completed.
+ */
+export type MaintenanceAction =
+  | "all"
+  | "scan-movies"
+  | "scan-shows"
+  | "scan-books"
+  | "trickplay"
+  | "rename"
+  | "organize";
+
+export interface MaintenanceAcceptance {
+  action: MaintenanceAction;
+  taskIds: string[];
+  /** Libraries the action applied to; zero is a successful no-op. */
+  libraries: number;
+}
+
+export async function runLibraryMaintenance(
+  action: MaintenanceAction,
+): Promise<MaintenanceAcceptance> {
+  return ownApiClient.request<MaintenanceAcceptance>(
+    `/admin/maintenance/${encodeURIComponent(action)}`,
+    { method: "POST", body: {} },
+  );
+}
+
 export async function scanAllLibraries(): Promise<void> {
   await ownApiClient.request<{ taskIds: string[] }>(
     "/admin/libraries/scan-all",
@@ -1049,6 +1082,80 @@ export async function updateItemMetadata(
   );
 }
 
+export interface TaskObservation {
+  tasks: TaskDto[];
+  observedAt: string;
+}
+
+/** Read every bounded page before committing a successful observation. */
+export async function getTaskObservation(
+  since?: string,
+): Promise<TaskObservation> {
+  const tasks = new Map<string, TaskDto>();
+  let after: string | null = null;
+  let observedAt: string | undefined;
+  do {
+    const query = new URLSearchParams({ observe: "true", limit: "200" });
+    if (since) query.set("since", since);
+    if (after) query.set("after", after);
+    const page: TaskObservation & { next: string | null } =
+      await ownApiClient.request(`/admin/tasks?${query}`);
+    observedAt ??= page.observedAt;
+    for (const task of page.tasks) tasks.set(task.id, task);
+    if (page.next !== null && after !== null && page.next <= after) {
+      throw new Error("Task observation cursor did not advance.");
+    }
+    after = page.next;
+  } while (after !== null);
+  return { tasks: [...tasks.values()], observedAt: observedAt! };
+}
+
 export async function getTasks(): Promise<TaskDto[]> {
   return ownApiClient.request<TaskDto[]>("/admin/tasks");
+}
+
+/*
+ * Hand-placed ordering for the home shelves and the library grids.
+ *
+ * Server-side and shared: the order is a property of the house's library, not
+ * of the browser looking at it, so it has to survive a cleared cache and be the
+ * same on the television as on the phone.
+ */
+function curationPath(surface: CuratedSurface, libraryId?: string): string {
+  const path = `/curation/${encodeURIComponent(surface)}`;
+  return libraryId
+    ? `${path}?libraryId=${encodeURIComponent(libraryId)}`
+    : path;
+}
+
+export async function getCuratedList(
+  surface: CuratedSurface,
+  libraryId?: string,
+): Promise<CuratedList> {
+  return ownApiClient.request<CuratedList>(curationPath(surface, libraryId));
+}
+
+export async function saveCuratedList(
+  surface: CuratedSurface,
+  entries: CuratedEntry[],
+  libraryId?: string,
+): Promise<void> {
+  await ownApiClient.request<unknown>(
+    `/admin/curation/${encodeURIComponent(surface)}`,
+    {
+      method: "PUT",
+      body: { ...(libraryId ? { libraryId } : {}), entries },
+    },
+  );
+}
+
+export async function clearCuratedList(
+  surface: CuratedSurface,
+  libraryId?: string,
+): Promise<void> {
+  const query = libraryId ? `?libraryId=${encodeURIComponent(libraryId)}` : "";
+  await ownApiClient.request<void>(
+    `/admin/curation/${encodeURIComponent(surface)}${query}`,
+    { method: "DELETE" },
+  );
 }

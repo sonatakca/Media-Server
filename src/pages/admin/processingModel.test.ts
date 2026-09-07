@@ -28,8 +28,10 @@ import {
   formatDuration,
   formatFinishedAt,
   formatSpeed,
+  isOperatorHeld,
   lastSequence,
   mergeEvents,
+  pausedReasonChip,
   mergeJobFrame,
   progressPercent,
   processingDurationSeconds,
@@ -208,6 +210,51 @@ describe("actions", () => {
     expect(canRetry(job({ state: "cancelled" }))).toBe(true);
     expect(canRetry(job({ state: "succeeded" }))).toBe(false);
     expect(canRetry(job({ state: "running" }))).toBe(false);
+  });
+});
+
+describe("why a job is held", () => {
+  /**
+   * The regression this exists for: every reason that was not the volume going
+   * away rendered as "Paused", so a quarantine raised by a real I/O fault was
+   * indistinguishable from a person pressing the button.
+   */
+  it("names each reason separately", () => {
+    const keys = (
+      [
+        "operator",
+        "storage-unavailable",
+        "storage-quarantined",
+        "recovery-pending",
+      ] as const
+    ).map((reason) => pausedReasonChip(reason).labelKey);
+    expect(new Set(keys).size).toBe(4);
+  });
+
+  it("reads as bad only for a quarantine, which is the only recorded fault", () => {
+    expect(pausedReasonChip("storage-quarantined").tone).toBe("bad");
+    expect(pausedReasonChip("recovery-pending").tone).toBe("warn");
+    expect(pausedReasonChip("storage-unavailable").tone).toBe("muted");
+    expect(pausedReasonChip("operator").tone).toBe("muted");
+  });
+
+  /**
+   * The two held reasons are exactly the two `canResume` refuses to offer a
+   * button for *and* that no poll can lift, so the detail panel and the button
+   * rule have to agree about which they are.
+   */
+  it("treats the two operator-held reasons as one case", () => {
+    expect(isOperatorHeld(job({ pausedReason: "storage-quarantined" }))).toBe(
+      true,
+    );
+    expect(isOperatorHeld(job({ pausedReason: "recovery-pending" }))).toBe(
+      true,
+    );
+    expect(isOperatorHeld(job({ pausedReason: "storage-unavailable" }))).toBe(
+      false,
+    );
+    expect(isOperatorHeld(job({ pausedReason: "operator" }))).toBe(false);
+    expect(isOperatorHeld(job({ pausedReason: null }))).toBe(false);
   });
 });
 

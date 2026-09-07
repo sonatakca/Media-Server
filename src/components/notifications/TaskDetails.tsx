@@ -60,6 +60,18 @@ export function TaskDetails({
     task.remainingSeconds === undefined
       ? undefined
       : formatDuration(task.remainingSeconds, language);
+  /*
+   * Only the figures that moved.
+   *
+   * A scan reports every outcome it is capable of having, and on a library
+   * that is already in order almost all of them are zero: twenty-one rows of
+   * "0" ran a completed book scan the full height of the window to say that
+   * ten items had been updated. A count of nothing happening is not news — the
+   * card already says the job completed — so a metric still at its starting
+   * value is left out, and a run in which nothing at all moved shows no table
+   * rather than a table of zeroes.
+   */
+  const reported = task.metrics?.filter(({ value }) => value > 0) ?? [];
   return (
     <div className="mt-1 space-y-1 text-xs leading-5 text-white/80">
       {/* The kind of work, which the card's own line gives up to the title of
@@ -103,9 +115,9 @@ export function TaskDetails({
             .replace("{total}", formatMediaClock(task.encoding.totalSeconds))}
         </p>
       )}
-      {task.metrics?.length ? (
+      {reported.length ? (
         <dl className="grid grid-cols-[1fr_auto] gap-x-3">
-          {task.metrics.map(({ metric, value }, index) => (
+          {reported.map(({ metric, value }, index) => (
             <div className="contents" key={`${metric}:${index}`}>
               <dt>{text(metric)}</dt>
               <dd className="tabular-nums">{number.format(value)}</dd>

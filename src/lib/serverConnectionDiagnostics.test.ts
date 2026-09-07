@@ -278,3 +278,91 @@ describe("classification helpers", () => {
     expect(classifyServerConnection(base, [])).toBe("none");
   });
 });
+
+/**
+ * A starting server reports every dependency it has not reached yet as
+ * unavailable, truthfully — it has not looked. Read in the wrong order that
+ * turned an ordinary fifteen-second start into "Seyirlik is missing something
+ * it needs", which is alarming and wrong.
+ */
+describe("a server that is still starting", () => {
+  const STARTING_CHECKS: HealthChecks = {
+    database: "unavailable",
+    jobs: "unavailable",
+    ffmpeg: "unavailable",
+    ffprobe: "unavailable",
+    mediaStorage: "unavailable",
+    generatedStorage: "unavailable",
+  };
+
+  it("is reported as starting up, not as missing its dependencies", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(
+        healthBody({
+          ready: false,
+          checks: STARTING_CHECKS,
+          startup: {
+            live: true,
+            ready: false,
+            state: "starting",
+            phase: "media-storage",
+            elapsedMs: 9_412,
+          },
+        }),
+      ),
+    );
+
+    const result = await diagnoseServerConnection({ fetchImpl });
+
+    expect(result.problem).toBe("starting-up");
+    expect(result.probe.startup).toEqual({
+      state: "starting",
+      phase: "media-storage",
+      elapsedMs: 9_412,
+    });
+  });
+
+  it("still reports a broken dependency once startup stops progressing", async () => {
+    for (const state of ["degraded", "failed", "ready"] as const) {
+      const fetchImpl = vi.fn(async () =>
+        jsonResponse(
+          healthBody({
+            ready: false,
+            checks: { ...HEALTHY_CHECKS, mediaStorage: "unavailable" },
+            startup: {
+              live: true,
+              ready: false,
+              state,
+              phase: "media-storage",
+            },
+          }),
+        ),
+      );
+
+      const result = await diagnoseServerConnection({ fetchImpl });
+      expect(result.problem).toBe("dependency-unavailable");
+    }
+  });
+
+  it("behaves as before against a server that sends no startup block", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(healthBody({ ready: false })),
+    );
+
+    const result = await diagnoseServerConnection({ fetchImpl });
+
+    expect(result.probe.startup).toBeUndefined();
+    expect(result.problem).toBe("starting-up");
+  });
+
+  it("ignores a startup block it does not recognise", async () => {
+    const fetchImpl = vi.fn(async () =>
+      jsonResponse(healthBody({ startup: { state: "who knows" } })),
+    );
+
+    const result = await diagnoseServerConnection({ fetchImpl });
+
+    expect(result.probe.startup).toBeUndefined();
+    expect(result.problem).toBe("none");
+  });
+});

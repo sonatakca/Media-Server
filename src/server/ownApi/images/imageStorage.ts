@@ -27,6 +27,14 @@ import { isPathInsideRoot } from "../../pathSecurity";
 
 const MAX_IMAGE_BYTES = 12 * 1_024 * 1_024;
 
+/**
+ * File-byte limits alone do not stop a highly compressed image from
+ * expanding to unreasonable dimensions during decoding. Comfortably above
+ * the largest artwork a provider publishes: a 3840x2160 backdrop decodes to
+ * roughly 8.3 megapixels.
+ */
+const MAX_IMAGE_PIXELS = 40_000_000;
+
 const ALLOWED_CONTENT_TYPES: Record<string, string> = {
   "image/jpeg": "jpg",
   "image/png": "png",
@@ -94,6 +102,30 @@ export function detectImageType(bytes: Buffer): string | null {
     return "image/webp";
   }
   return null;
+}
+
+/**
+ * Whether downloaded bytes can become the canonical file untouched.
+ *
+ * Re-encoding a provider JPEG at quality 92 spends a generation of detail for
+ * nothing — the bytes already are the format the canonical file uses. Only a
+ * format change, or an EXIF orientation that `.rotate()` has to bake into the
+ * pixels, earns a trip through the encoder.
+ */
+async function isCanonicalAlready(
+  bytes: Buffer,
+  actualType: string,
+  canonicalType: string,
+): Promise<boolean> {
+  if (actualType !== canonicalType) return false;
+  try {
+    const { orientation } = await sharp(bytes, {
+      limitInputPixels: MAX_IMAGE_PIXELS,
+    }).metadata();
+    return orientation === undefined || orientation === 1;
+  } catch {
+    return false;
+  }
 }
 
 export interface CreateImageStorageOptions {
@@ -198,11 +230,16 @@ export function createImageStorage({
       throw new Error("The artwork is empty or too large.");
     }
 
+    const bytes = Buffer.from(await response.arrayBuffer());
     return {
-      bytes: Buffer.from(await response.arrayBuffer()),
-      contentType:
-        (response.headers.get("content-type") ?? "").split(";", 1)[0]?.trim() ??
-        "",
+      bytes,
+      // A downloaded image is typed by its bytes, not by its header. TMDB's
+      // CDN negotiates on Accept and will answer `image/webp` for the PNG it
+      // then sends, which the declared-vs-actual guard rejected outright as a
+      // mislabelled image — intermittently, on whichever titles happened to
+      // negotiate that way. The guard still binds an operator's upload, where
+      // the declared type really is an assertion worth checking.
+      contentType: detectImageType(bytes) ?? "",
     };
   }
 
@@ -228,9 +265,7 @@ export function createImageStorage({
       throw new Error("Title artwork storage has no media root.");
     }
 
-    // Validate the supplied bytes before sharp sees them. The canonical files
-    // deliberately use stable formats and names: JPEG for photographic art,
-    // PNG for a logo that may carry transparency.
+    // Validate the supplied bytes before sharp sees them.
     const actualType = detectImageType(bytes);
     if (
       bytes.length === 0 ||
@@ -258,18 +293,26 @@ export function createImageStorage({
       throw new Error("The title content directory escapes the media root.");
     }
 
+    // The canonical files deliberately use stable formats and names: JPEG for
+    // photographic art, PNG for a logo that may carry transparency.
     const isLogo = imageType === "logo";
-    const canonicalBytes = isLogo
-      ? await sharp(bytes, { limitInputPixels: 40_000_000 })
-          .rotate()
-          .png({ compressionLevel: 9 })
-          .toBuffer()
-      : await sharp(bytes, { limitInputPixels: 40_000_000 })
-          .rotate()
-          .jpeg({ quality: 92, mozjpeg: true })
-          .toBuffer();
     const extension = isLogo ? "png" : "jpg";
     const contentType = isLogo ? "image/png" : "image/jpeg";
+    const canonicalBytes = (await isCanonicalAlready(
+      bytes,
+      actualType,
+      contentType,
+    ))
+      ? bytes
+      : isLogo
+        ? await sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS })
+            .rotate()
+            .png({ compressionLevel: 9 })
+            .toBuffer()
+        : await sharp(bytes, { limitInputPixels: MAX_IMAGE_PIXELS })
+            .rotate()
+            .jpeg({ quality: 92, mozjpeg: true })
+            .toBuffer();
     const fileName = `${imageType}.${extension}`;
     const absolutePath = path.join(realContentDirectory, fileName);
     const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
@@ -314,9 +357,7 @@ export function createImageStorage({
     const temporaryPath = `${absolutePath}.${process.pid}.${Date.now()}.tmp`;
     try {
       const result = await sharp(resolveStorageKey(image.storageKey), {
-        // File-byte limits alone do not stop a highly compressed image from
-        // expanding to unreasonable dimensions during decoding.
-        limitInputPixels: 40_000_000,
+        limitInputPixels: MAX_IMAGE_PIXELS,
         sequentialRead: true,
       })
         .rotate()

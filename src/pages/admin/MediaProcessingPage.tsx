@@ -14,6 +14,7 @@ import {
   Play,
   RefreshCcw,
   Search,
+  ShieldAlert,
   Trash2,
   X,
   XCircle,
@@ -82,9 +83,11 @@ import {
   formatMediaClock,
   formatSpeed,
   hasResumableCheckpoints,
+  isOperatorHeld,
   isSalvaged,
   isWaitingForStorage,
   lastSequence,
+  pausedReasonChip,
   mergeEvents,
   mergeJobFrame,
   PROCESSING_STAGE_ORDER,
@@ -2202,6 +2205,36 @@ export function MediaProcessingPage() {
     [bulkBusy, refreshOverview, t],
   );
 
+  /**
+   * One press against one job, and what to say when the server refuses it.
+   *
+   * These four presses used to swallow their errors, which turned every
+   * refusal the server has a sentence for — a source no longer on disk, a
+   * volume under quarantine, an attempt already cancelling — into a button
+   * that could be pressed all evening without doing anything or saying why.
+   * The refresh stays in `finally`: a press that failed still leaves the row
+   * to be re-read, because the reason it failed is usually something that has
+   * changed since the page last asked.
+   */
+  const runJobAction = useCallback(
+    async (act: () => Promise<unknown>) => {
+      try {
+        await act();
+      } catch (error) {
+        notify({
+          tone: "error",
+          title:
+            error instanceof Error
+              ? error.message
+              : t("common.somethingWentWrong"),
+        });
+      } finally {
+        await refreshOverview();
+      }
+    },
+    [refreshOverview, t],
+  );
+
   const dateLocale = language === "tr" ? "tr-TR" : "en-US";
   const languages = useMemo(
     () =>
@@ -2340,12 +2373,19 @@ export function MediaProcessingPage() {
         </section>
 
         {/* ------------------------------------------ storage quarantine */}
+        {/*
+          Severity is carried by the whole border and a faint wash of the status
+          hue, not by a bar down one edge. Amber is a far brighter hue than red,
+          so the two are tuned to their luminance rather than to matching
+          numbers: equal alphas would make the recoverable warning shout louder
+          than the blocking fault.
+        */}
         {storage && storage.state !== "healthy" ? (
           <section
-            className={`${CARD} flex flex-col gap-4 border-l-4 ${
+            className={`flex flex-col gap-4 rounded-2xl border p-4 sm:p-5 ${
               storage.automaticResumeBlocked
-                ? "border-l-red-400/70"
-                : "border-l-amber-400/70"
+                ? "border-red-400/50 bg-red-400/[0.06]"
+                : "border-amber-400/30 bg-amber-400/[0.035]"
             }`}
             aria-live="polite"
           >
@@ -3541,15 +3581,22 @@ export function MediaProcessingPage() {
                           >
                             {t(`processing.state.${job.state}` as never)}
                           </Chip>
-                          {job.pausedReason ? (
-                            <Chip tone="muted">
-                              {t(
-                                job.pausedReason === "storage-unavailable"
-                                  ? "processing.pausedByStorage"
-                                  : "processing.pausedByOperator",
-                              )}
-                            </Chip>
-                          ) : null}
+                          {job.pausedReason
+                            ? (() => {
+                                const chip = pausedReasonChip(job.pausedReason);
+                                return (
+                                  <Chip tone={chip.tone}>
+                                    {chip.tone === "bad" ? (
+                                      <ShieldAlert
+                                        size={11}
+                                        aria-hidden="true"
+                                      />
+                                    ) : null}
+                                    {t(chip.labelKey as never)}
+                                  </Chip>
+                                );
+                              })()
+                            : null}
                           {job.warnings.length > 0 ? (
                             <Chip tone="warn">
                               <AlertTriangle size={11} aria-hidden="true" />
@@ -3570,12 +3617,11 @@ export function MediaProcessingPage() {
                             {canPause(job) ? (
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  await pauseProcessingJob(job.id).catch(
-                                    () => undefined,
-                                  );
-                                  await refreshOverview();
-                                }}
+                                onClick={() =>
+                                  void runJobAction(() =>
+                                    pauseProcessingJob(job.id),
+                                  )
+                                }
                                 className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                               >
                                 <Pause size={12} aria-hidden="true" />
@@ -3585,12 +3631,11 @@ export function MediaProcessingPage() {
                             {canResume(job) ? (
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  await resumeProcessingJob(job.id).catch(
-                                    () => undefined,
-                                  );
-                                  await refreshOverview();
-                                }}
+                                onClick={() =>
+                                  void runJobAction(() =>
+                                    resumeProcessingJob(job.id),
+                                  )
+                                }
                                 className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                               >
                                 <Play size={12} aria-hidden="true" />
@@ -3600,12 +3645,11 @@ export function MediaProcessingPage() {
                             {canCancel(job) ? (
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  await cancelProcessingJob(job.id).catch(
-                                    () => undefined,
-                                  );
-                                  await refreshOverview();
-                                }}
+                                onClick={() =>
+                                  void runJobAction(() =>
+                                    cancelProcessingJob(job.id),
+                                  )
+                                }
                                 className="rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                               >
                                 {t("processing.cancel")}
@@ -3614,12 +3658,11 @@ export function MediaProcessingPage() {
                             {canRetry(job) ? (
                               <button
                                 type="button"
-                                onClick={async () => {
-                                  await retryProcessingJob(job.id).catch(
-                                    () => undefined,
-                                  );
-                                  await refreshOverview();
-                                }}
+                                onClick={() =>
+                                  void runJobAction(() =>
+                                    retryProcessingJob(job.id),
+                                  )
+                                }
                                 className="inline-flex items-center gap-1 rounded-lg border border-white/10 px-2.5 py-1 text-xs font-semibold text-white/70 transition hover:bg-white/[0.08] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                               >
                                 <RefreshCcw size={12} aria-hidden="true" />
@@ -3710,6 +3753,87 @@ export function MediaProcessingPage() {
                             ) : null}
                             <span className="text-amber-100/60">
                               {t("processing.storage.noAction")}
+                            </span>
+                          </div>
+                        ) : null}
+
+                        {isOperatorHeld(job) ? (
+                          /*
+                           * The opposite of the panel above, and it has to read
+                           * that way. Nothing here resumes on its own, the drive
+                           * may genuinely be failing, and the row's own buttons
+                           * cannot release it — so this says which of the two
+                           * holds it is, what the guard actually recorded, and
+                           * where the way out is.
+                           */
+                          <div className="flex flex-col gap-1 rounded-xl border border-rose-400/30 bg-rose-400/[0.08] p-3 text-xs text-rose-100">
+                            <span className="inline-flex items-center gap-1.5 font-bold">
+                              <ShieldAlert size={13} aria-hidden="true" />
+                              {t(
+                                job.pausedReason === "storage-quarantined"
+                                  ? "processing.storage.held.quarantined"
+                                  : "processing.storage.held.recoveryPending",
+                              )}
+                            </span>
+                            <span className="text-rose-100/75">
+                              {t(
+                                job.pausedReason === "storage-quarantined"
+                                  ? "processing.storage.summary.quarantined"
+                                  : "processing.storage.summary.recovery-pending",
+                              )}
+                            </span>
+                            {/*
+                             * The guard's own sentence, printed verbatim. It is
+                             * the only place the *cause* appears — which fault,
+                             * at which offset — and it is already written for an
+                             * operator, so paraphrasing it here would only lose
+                             * the detail that makes it worth reading.
+                             */}
+                            {storage && !storage.mayStartWork ? (
+                              <>
+                                <span className="text-rose-100/90">
+                                  {storage.reason}
+                                </span>
+                                {storage.faultCount > 0 ? (
+                                  <span className="tabular-nums text-rose-100/60">
+                                    {t("processing.storage.faults")}:{" "}
+                                    {storage.faultCount}
+                                    {storage.firstFaultAt
+                                      ? ` · ${t("processing.storage.firstFault")} ${formatFinishedAt(storage.firstFaultAt, language)}`
+                                      : ""}
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : (
+                              /*
+                               * The two can disagree, and silence about it is
+                               * what makes the row look stuck for no reason: the
+                               * hold lives in the worker while the incident row
+                               * the panel reads says healthy, so nothing on this
+                               * page can lift it and nothing on this page said so.
+                               */
+                              <span className="text-rose-100/90">
+                                {t("processing.storage.heldButHealthy")}
+                              </span>
+                            )}
+                            {job.protectedSeconds > 0 ? (
+                              <span className="tabular-nums text-rose-100/75">
+                                {formatTemplate(
+                                  t("processing.epoch.protectedThrough"),
+                                  {
+                                    time: formatMediaClock(
+                                      job.protectedSeconds,
+                                    ),
+                                  },
+                                )}
+                                {job.epochStartSeconds !== null &&
+                                job.epochEndSeconds !== null
+                                  ? ` · ${t("processing.storage.willRetry")}: ${formatMediaClock(job.epochStartSeconds)} → ${formatMediaClock(job.epochEndSeconds)}`
+                                  : ""}
+                              </span>
+                            ) : null}
+                            <span className="text-rose-100/60">
+                              {t("processing.storage.heldAction")}
                             </span>
                           </div>
                         ) : null}

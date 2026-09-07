@@ -5,19 +5,12 @@ import { HeroSection } from "../../components/HeroSection";
 import { MediaRow } from "../../components/MediaRow";
 import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
-import {
-  getAllMovieAndSeriesItems,
-  getFavouriteItems,
-  getLatestMediaItems,
-} from "../../lib/mediaApi";
+import { getFavouriteItems, getLatestMediaItems } from "../../lib/mediaApi";
 import { FAVOURITE_CHANGED_EVENT } from "../../lib/favouriteActions";
-import {
-  applyHomeCarouselCuration,
-  buildHomeCarouselPool,
-  filterLatestMediaItems,
-  loadHomeCurationPreferences,
-  type HomeCurationPreferences,
-} from "../../lib/homeCuration";
+import { applyCuration, buildHomeCarouselPool } from "../../lib/curation";
+import { buildLatestRow } from "../../lib/homeShelves";
+import { useCataloguePools } from "../../hooks/useCataloguePools";
+import { useHomeCuratedLists } from "../../hooks/useCuratedList";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
 import { getRouteForItem } from "../../lib/routes";
@@ -80,20 +73,16 @@ export function DesktopHomePage() {
     timeoutId: null as number | null,
   });
 
-  const [homeCurationPreferences, setHomeCurationPreferences] =
-    useState<HomeCurationPreferences>(() => loadHomeCurationPreferences());
+  const curatedLists = useHomeCuratedLists();
+  const pools = useCataloguePools();
 
   const featuredPool = useMemo(() => {
-    const heroItems =
-      data?.heroItems && data.heroItems.length > 0
-        ? data.heroItems
-        : (data?.latestMedia ?? []);
+    const heroItems = pools.loaded
+      ? [...pools.movies, ...pools.series]
+      : (data?.latestMedia ?? []);
 
-    return applyHomeCarouselCuration(
-      buildHomeCarouselPool(heroItems),
-      homeCurationPreferences,
-    );
-  }, [data?.heroItems, data?.latestMedia]);
+    return applyCuration(buildHomeCarouselPool(heroItems), curatedLists.hero);
+  }, [pools, data?.latestMedia, curatedLists.hero]);
 
   const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
   const heroItem = featuredPool[selectedHeroIndex];
@@ -171,16 +160,11 @@ export function DesktopHomePage() {
       }
 
       setRowWarnings(warnings);
-      const nextHomeCurationPreferences = loadHomeCurationPreferences();
-      setHomeCurationPreferences(nextHomeCurationPreferences);
 
+      // Stored raw: each Latest row carries its own ordering, so the curation
+      // is applied per row at render rather than to the mixed pool here.
       const latestMedia =
-        latestResult.status === "fulfilled"
-          ? filterLatestMediaItems(
-              latestResult.value,
-              nextHomeCurationPreferences,
-            )
-          : [];
+        latestResult.status === "fulfilled" ? latestResult.value : [];
       setData({
         continueWatching:
           continueResult.status === "fulfilled" ? continueResult.value : [],
@@ -189,19 +173,6 @@ export function DesktopHomePage() {
         favourites:
           favouritesResult.status === "fulfilled" ? favouritesResult.value : [],
       });
-
-      // Render the useful first screen as soon as the small, critical queries
-      // finish. The complete catalog only improves carousel variety and must
-      // not keep the whole home page behind a skeleton.
-      void getAllMovieAndSeriesItems()
-        .then((heroItems) => {
-          if (!isMounted || heroItems.length === 0) return;
-
-          setData((currentData) =>
-            currentData ? { ...currentData, heroItems } : currentData,
-          );
-        })
-        .catch(() => undefined);
     }
     void loadHome();
     return () => {
@@ -338,7 +309,27 @@ export function DesktopHomePage() {
   }
 
   const showContinueWatchingRow = data.continueWatching.length > 0;
-  const latestMediaGroups = groupLatestMediaItems(data.latestMedia);
+  /*
+   * Each row draws from the whole library once the catalogue has arrived, and
+   * from the server's Latest page until then. The fallback is what keeps the
+   * first paint honest: a row that renders empty for a second while nine
+   * hundred films are fetched is worse than a row that starts short.
+   */
+  const groupedLatestMedia = groupLatestMediaItems(data.latestMedia);
+  const latestMediaGroups = {
+    movies: buildLatestRow(
+      pools.loaded ? pools.movies : groupedLatestMedia.movies,
+      curatedLists.movies,
+    ),
+    shows: buildLatestRow(
+      pools.loaded ? pools.series : groupedLatestMedia.shows,
+      curatedLists.shows,
+    ),
+    books: buildLatestRow(
+      pools.loaded ? pools.books : groupedLatestMedia.books,
+      curatedLists.books,
+    ),
+  };
 
   return (
     <div

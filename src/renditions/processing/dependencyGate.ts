@@ -28,6 +28,8 @@
  * every process at each step.
  */
 
+import { describeErrorSafely } from "../../lib/safeErrorText";
+
 export type DependencyState = "available" | "unavailable";
 
 export interface DependencyGateOptions {
@@ -91,16 +93,7 @@ export const DEFAULT_JITTER = 0.2;
 
 /** Bounded, single-line, no paths: this text reaches a browser. */
 function describeError(error: unknown): string {
-  const raw = error instanceof Error ? error.message : String(error);
-  return (
-    raw
-      .split("\n", 1)[0]
-      ?.replace(/(^|\s)(?:[A-Za-z]:)?[\\/][^\s]*/g, " ")
-      .replace(/\b[a-z][a-z0-9+.-]*:\/\/\S*/gi, " ")
-      .replace(/\s{2,}/g, " ")
-      .trim()
-      .slice(0, 240) || "The dependency did not answer."
-  );
+  return describeErrorSafely(error, "The dependency did not answer.");
 }
 
 export function createDependencyGate({

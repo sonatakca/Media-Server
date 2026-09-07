@@ -24,7 +24,7 @@ function openCard() {
   });
 }
 it.each(["en", "tr"] as const)(
-  "renders localized stage, verified counts, zero results and percentage in %s",
+  "renders localized stage, verified counts and percentage in %s",
   (lang) => {
     language = lang;
     notify({
@@ -36,7 +36,10 @@ it.each(["en", "tr"] as const)(
         status: "running",
         stage: "analysing",
         counts: { completed: 42, total: 100, unit: "files" },
-        metrics: [{ metric: "probed", value: 0 }],
+        metrics: [
+          { metric: "probed", value: 7 },
+          { metric: "failed", value: 0 },
+        ],
         attempts: 1,
         maxAttempts: 3,
         startedAt: null,
@@ -57,9 +60,45 @@ it.each(["en", "tr"] as const)(
           : "100 dosyanın 42 tanesi incelendi",
       ),
     ).toBeInTheDocument();
-    expect(screen.getByText("0")).toBeInTheDocument();
+    expect(screen.getByText("7")).toBeInTheDocument();
+    /*
+     * A count of nothing having happened is not a result. A scan reports every
+     * outcome it can have, and on a library already in order nearly all of
+     * them are zero — a table of them buried the one or two figures that moved
+     * under twenty rows saying that nothing did.
+     */
+    expect(screen.queryByText("0")).toBeNull();
+    expect(
+      screen.queryByText(
+        translations[lang]["tasks.failed" as TranslationKey] as string,
+      ),
+    ).toBeNull();
   },
 );
+
+it("shows no table at all when every figure is still at zero", () => {
+  language = "en";
+  notify({
+    title: "Library scan",
+    tone: "success",
+    task: {
+      determinate: true,
+      status: "succeeded",
+      metrics: [
+        { metric: "itemsCreated", value: 0 },
+        { metric: "itemsUpdated", value: 0 },
+        { metric: "failed", value: 0 },
+      ],
+      attempts: 1,
+      maxAttempts: 3,
+      startedAt: null,
+      finishedAt: null,
+    },
+  });
+  render(<NotificationHost />);
+  openCard();
+  expect(document.querySelector("dl")).toBeNull();
+});
 it("announces meaningful changes but does not repeat the card at each poll", () => {
   language = "en";
   render(<NotificationHost />);
@@ -181,11 +220,16 @@ it("names the title a card is about, in the card and in the announcement", () =>
   expect(
     screen.getByRole("button", { name: /House of the Dragon/ }),
   ).toHaveTextContent("S01E03");
-  // Name, then this title's own figure, then the line behind it. The count
-  // read as part of neither while it sat between the two.
+  // Name, then this title's own episode, then this title's own figure. The
+  // count of what is waiting is not on the line: it is not about this title,
+  // it moved the figure off the line every other card puts it on, and it took
+  // the room the name needed.
   expect(
     screen.getByRole("button", { name: /House of the Dragon/ }).textContent,
-  ).toMatch(/House of the Dragon.*S01E03.*36\.4%.*\+9/);
+  ).toMatch(/House of the Dragon.*S01E03.*36\.4%/);
+  expect(
+    screen.getByRole("button", { name: /House of the Dragon/ }).textContent,
+  ).not.toContain("+9");
   expect(screen.getByRole("status").textContent).toContain(
     "House of the Dragon",
   );
@@ -194,9 +238,10 @@ it("names the title a card is about, in the card and in the announcement", () =>
   openCard();
   expect(screen.getByText("S01E03 · Second of His Name")).toBeInTheDocument();
   expect(screen.getByText("About 32 min 55 sec left")).toBeInTheDocument();
-  // The waiting line is the badge on the card's line, and only that.
-  expect(screen.getByText("+9")).toBeInTheDocument();
-  expect(screen.queryByText(/more waiting/)).toBeNull();
+  // The waiting line is stated once, with the controls that are about the
+  // queue rather than on the card of whichever title happens to lead it.
+  const waiting = screen.getByText("+9 waiting");
+  expect(waiting.closest("[data-card]")).toBeNull();
   // A phase that already says the job is running does not say it twice.
   expect(screen.getByText("Encoding video")).toBeInTheDocument();
   expect(screen.getByRole("progressbar")).toHaveAttribute(
