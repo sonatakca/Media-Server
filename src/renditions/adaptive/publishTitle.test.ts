@@ -451,7 +451,8 @@ describe("resumable cross-volume copy", () => {
     });
     expect(samples[0]).toBe(0);
     expect(await readFile(destination)).toEqual(await readFile(source));
-  });
+    /* Two megabytes really copied, twice; 5 s is a macOS budget. */
+  }, 30_000);
 });
 
 /**

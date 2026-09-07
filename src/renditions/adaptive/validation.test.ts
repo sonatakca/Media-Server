@@ -650,7 +650,8 @@ describe("verification reports the work it is actually doing", () => {
         .filter((kind): kind is NonNullable<typeof kind> => Boolean(kind)),
     );
     expect(kinds.has("seek-decode")).toBe(true);
-  });
+    /* Two real validation passes, one of them decoding; 5 s is a macOS budget. */
+  }, 60_000);
 
   /**
    * A package that fails is not reported as complete. The count stops where the
