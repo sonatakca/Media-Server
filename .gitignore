@@ -25,3 +25,17 @@ service-account*.json
 .vitest-attachments
 **/__screenshots__
 .env.backup-*
+
+# Environment files: every variant is ignored by default, including backups the
+# earlier rules did not match — `.env.bak` was untracked only by luck, and a
+# `git add -A` would have committed real secrets to a public repository. Only the
+# intentional, secret-free templates are tracked.
+.env*
+!.env.example
+!.env.sample
+
+# Private migration evidence. docs/windows-migration/ mixes host inventory,
+# infrastructure detail and screenshots of a personal media library, and is not
+# publishable as it stands. Any public migration documentation must be written
+# separately, after sanitisation, in its own directory.
+docs/windows-migration/
