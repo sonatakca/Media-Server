@@ -10,6 +10,7 @@ import {
   resolveWindowsVolumeTarget,
 } from "./windowsStorageIdentity";
 import { satisfiesRecovery, type VolumeIdentity } from "./storageIdentity";
+import { ProcessAbortedError } from "../processExecution";
 
 /**
  * The Windows half of volume identity.
@@ -359,16 +360,50 @@ describe("the Windows identity probe end to end", () => {
     expect(result).toMatchObject({ ok: false, failure: "probe-failed" });
   });
 
+  /**
+   * The error is the runner's own class, built from the outcome the runner
+   * actually produces when `timeoutMs` expires — not a literal shaped to match
+   * the check.
+   *
+   * That distinction is the whole test. The first version of this suite threw
+   * `{ name: "ProcessAbortedError", reason: "timeout" }`, the probe looked for
+   * exactly that, and both agreed on a value `ProcessAbortReason` has never
+   * had. It passed for months and was worth nothing: on a real Windows host
+   * every expired probe was classified `probe-failed`, which tells an operator
+   * the storage would not answer when in fact nobody waited long enough.
+   */
   it("distinguishes a timeout from an ordinary failure", async () => {
-    const aborted = Object.assign(new Error("stopped"), {
-      name: "ProcessAbortedError",
-      reason: "timeout",
+    const aborted = new ProcessAbortedError("stopped", {
+      exitCode: null,
+      signal: "SIGKILL",
+      aborted: true,
+      abortReason: "wall-clock",
+      escalated: true,
+      stderrTail: "",
+      durationMs: 10_000,
     });
     const run = async () => {
       throw aborted;
     };
     const result = await createWindowsVolumeIdentityQuery({ run })("D:\\media");
     expect(result).toMatchObject({ ok: false, failure: "probe-timeout" });
+  });
+
+  it("does not mistake an ordinary abort for a timeout", async () => {
+    const cancelled = new ProcessAbortedError("stopped", {
+      exitCode: null,
+      signal: "SIGTERM",
+      aborted: true,
+      abortReason: "caller",
+      escalated: false,
+      stderrTail: "",
+      durationMs: 4,
+    });
+    const run = async () => {
+      throw cancelled;
+    };
+    const result = await createWindowsVolumeIdentityQuery({ run })("D:\\media");
+    expect(result).toMatchObject({ ok: false, failure: "probe-failed" });
   });
 
   it("never puts the command's own output into an operator-facing message", async () => {

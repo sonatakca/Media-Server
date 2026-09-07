@@ -17,7 +17,8 @@
  *  - **The leaf is not the tree.** Without `detached`, a child joins the
  *    worker's own process group, so `kill(-pid)` is unavailable and any
  *    grandchild survives. Every spawn here becomes its own group leader
- *    instead, and signals go to the group.
+ *    instead, and signals go to the group — on POSIX, which is the only place
+ *    the flag means that; see `usesPosixProcessGroup`.
  *  - **Nobody was watching.** Nothing had a wall clock. FFmpeg sat for minutes
  *    walking from one bad block to the next while the only reaction anywhere in
  *    the system was a label on a web page.
@@ -137,6 +138,36 @@ export interface SpawnManagedProcessInput {
 }
 
 /**
+ * Whether this platform can give a child its own process group.
+ *
+ * A separate, exported predicate rather than an inline `process.platform` test,
+ * because a platform choice buried inside a spawn call is one nothing can
+ * assert on without being on that platform — which is exactly how the bug
+ * below survived being written.
+ *
+ * On POSIX, `detached` makes the child a group leader so `kill(-pid)` reaches
+ * it and every grandchild. Windows has no such group and no `kill(-pid)`, and
+ * the flag there does something else entirely: Node maps it to
+ * `DETACHED_PROCESS`, which starts the child with **no console**. A program
+ * hosted by the console — `powershell.exe`, which is how the Windows identity
+ * probe asks what a volume is — then writes nothing at all to the stdout pipe
+ * it was given and exits `0`. Measured on Windows 11 with PowerShell 5.1: the
+ * identical query returns a 184-byte JSON document with `detached: false` and
+ * an empty string with `detached: true`, so every Windows volume came back
+ * unidentified and every identity-dependent decision failed closed for a
+ * reason that had nothing to do with storage.
+ *
+ * So the flag is POSIX-only. It buys nothing on Windows and costs the output of
+ * anything the console hosts.
+ */
+export function usesPosixProcessGroup(
+  ownProcessGroup: boolean,
+  platform: NodeJS.Platform = process.platform,
+): boolean {
+  return ownProcessGroup && platform !== "win32";
+}
+
+/**
  * Signals a process group, falling back to the process itself.
  *
  * The negative pid addresses the group. It fails with `ESRCH` once everything
@@ -185,6 +216,12 @@ export function spawnManagedProcess({
   now = Date.now,
 }: SpawnManagedProcessInput): ManagedProcess {
   const startedAt = now();
+  /*
+   * What was asked for, narrowed to what this platform can actually provide.
+   * Used for the spawn and for every signal afterwards, so the two can never
+   * disagree about whether there is a group to address.
+   */
+  const posixProcessGroup = usesPosixProcessGroup(ownProcessGroup);
   const child: ChildProcess = spawn(command, [...args], {
     shell: false,
     windowsHide: true,
@@ -194,8 +231,12 @@ export function spawnManagedProcess({
      * the one the name suggests: nothing is being backgrounded, and the child
      * is never `unref`ed. It makes the child a group leader so a single
      * `kill(-pid)` reaches it and anything it spawns.
+     *
+     * POSIX only — see `usesPosixProcessGroup`. On Windows the same flag means
+     * "no console", which silently empties the output of anything the console
+     * hosts.
      */
-    detached: ownProcessGroup,
+    detached: posixProcessGroup,
   });
 
   /*
@@ -274,13 +315,13 @@ export function spawnManagedProcess({
      * makes cancelling a paused encode take effect now rather than leaving a
      * stopped FFmpeg holding its output files open for ever.
      */
-    signalGroup(pid, "SIGCONT", ownProcessGroup);
-    signalGroup(pid, "SIGTERM", ownProcessGroup);
+    signalGroup(pid, "SIGCONT", posixProcessGroup);
+    signalGroup(pid, "SIGTERM", posixProcessGroup);
 
     graceTimer = setTimeout(() => {
       if (settled) return;
       escalated = true;
-      signalGroup(pid, "SIGKILL", ownProcessGroup);
+      signalGroup(pid, "SIGKILL", posixProcessGroup);
       /*
        * And then wait. There is deliberately no timer after this one: a
        * `SIGKILL` that has not taken effect is a kernel operation that has not

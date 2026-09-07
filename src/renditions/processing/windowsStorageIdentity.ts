@@ -1,3 +1,4 @@
+import type { ProcessAbortReason } from "../processExecution";
 import type {
   StorageIdentityProbe,
   StorageMedium,
@@ -381,16 +382,33 @@ export function parseWindowsVolumeDocument(
 /* --------------------------------------------------------------------- probe */
 
 /**
+ * The abort reasons that mean "it ran out of time", named by the type that
+ * defines them.
+ *
+ * `import type` is erased at build time, so this module still carries no
+ * runtime dependency on the process layer — but the strings are now checked by
+ * the compiler instead of being remembered. That distinction is not academic:
+ * the first version of this file tested for `"timeout"`, which
+ * `ProcessAbortReason` has never had. Nothing failed, because the only thing
+ * that ever produced that shape was the fake in the test beside it, and on a
+ * real Windows host every expired probe was reported as `probe-failed` — the
+ * one classification that tells an operator to go and look at the storage.
+ */
+const TIMEOUT_ABORT_REASONS = new Set<ProcessAbortReason>(["wall-clock"]);
+
+/**
  * Whether a rejection was the runner terminating a process that overran.
  *
- * Duck-typed rather than imported, so this module stays free of a dependency on
- * the process layer and remains testable with a plain fake.
+ * Duck-typed rather than imported, so this module stays free of a runtime
+ * dependency on the process layer and remains testable with a plain fake.
  */
 function isTimeout(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
   const candidate = error as { name?: unknown; reason?: unknown };
   return (
-    candidate.name === "ProcessAbortedError" && candidate.reason === "timeout"
+    candidate.name === "ProcessAbortedError" &&
+    typeof candidate.reason === "string" &&
+    TIMEOUT_ABORT_REASONS.has(candidate.reason as ProcessAbortReason)
   );
 }
 

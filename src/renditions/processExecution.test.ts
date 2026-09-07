@@ -25,6 +25,7 @@ import {
   ProcessAbortedError,
   runBoundedProcess,
   spawnManagedProcess,
+  usesPosixProcessGroup,
 } from "./processExecution";
 
 const run = promisify(execFile);
@@ -378,4 +379,41 @@ describe("runBoundedProcess", () => {
     expect(error).toBeInstanceOf(ProcessAbortedError);
     expect((error as ProcessAbortedError).reason).toBe("output-limit");
   }, 30_000);
+});
+/**
+ * The one platform decision this module makes, asserted directly.
+ *
+ * There is no way to spawn a Windows child from a POSIX test, and the previous
+ * arrangement — `detached: ownProcessGroup`, inline in the spawn call — meant
+ * there was no way to assert the decision either. So the decision is a pure
+ * function and this is a test of it, in the same spirit as the identity probe's
+ * platform factory.
+ *
+ * What it protects is not theoretical. `detached` on Windows is not a process
+ * group at all: Node maps it to `DETACHED_PROCESS`, the child gets no console,
+ * and a program the console hosts writes nothing to the stdout pipe it was
+ * handed and exits `0`. Measured on Windows 11 / PowerShell 5.1, the identity
+ * probe's own query returned a 184-byte document with the flag off and an empty
+ * string with it on — so every Windows volume was unidentifiable, and every
+ * decision that depends on identity failed closed for a reason that had nothing
+ * to do with the storage.
+ */
+describe("process groups across platforms", () => {
+  it("gives a child its own group on POSIX", () => {
+    expect(usesPosixProcessGroup(true, "darwin")).toBe(true);
+    expect(usesPosixProcessGroup(true, "linux")).toBe(true);
+  });
+
+  it("never detaches on Windows, where the flag means no console", () => {
+    expect(usesPosixProcessGroup(true, "win32")).toBe(false);
+  });
+
+  it("still honours a caller that did not ask for a group", () => {
+    expect(usesPosixProcessGroup(false, "darwin")).toBe(false);
+    expect(usesPosixProcessGroup(false, "win32")).toBe(false);
+  });
+
+  it("defaults to this host's platform", () => {
+    expect(usesPosixProcessGroup(true)).toBe(process.platform !== "win32");
+  });
 });
