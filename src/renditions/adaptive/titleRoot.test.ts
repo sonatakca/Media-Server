@@ -219,4 +219,39 @@ describe("sources kept in a src/ folder", () => {
     // A loose file at the media root has no directory above it to name.
     expect(titleBaseDirectoryOf("Dune (2021).mp4")).toBe("");
   });
+
+  /**
+   * A library-relative path is POSIX on every host, and this is the assertion
+   * that says so out loud.
+   *
+   * It is not decoration. These two functions are what the scanner, the NFO
+   * planner and the organiser use to name a title, and the catalogue stores the
+   * answer. Normalising the *input* was not enough: `path.win32.join` rewrites
+   * every separator it is given, so on Windows this returned
+   * `Series\Andor\Season 1\Andor - S01E01 - Kassa` where macOS had written
+   * `Series/Andor/Season 1/Andor - S01E01 - Kassa`. Nothing would have thrown.
+   * The Windows deployment would simply have stopped recognising every title
+   * the macOS deployment had already published, and republished all of them.
+   *
+   * Vacuous on POSIX, where the two flavours are the same object. That is the
+   * point: it is the Windows host that needs telling.
+   */
+  it("keeps a library-relative answer POSIX whatever the host separator is", () => {
+    const answers = [
+      titleBaseDirectoryOf("Movies/Dune (2021)/src/Dune (2021).mp4"),
+      nestedTitleRootOf("Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4"),
+      nestedTitleRootOf("Series/Andor/Season 1/src/Andor - S01E01 - Kassa.mp4"),
+      titleBaseDirectoryOf("Series/Andor/Season 1/Andor - S01E01 - Kassa.mp4"),
+    ];
+    for (const answer of answers) {
+      expect(answer).not.toContain("\\");
+    }
+    expect(answers[1]).toBe("Series/Andor/Season 1/Andor - S01E01 - Kassa");
+
+    // A caller that hands over a Windows-shaped relative path gets the same
+    // POSIX answer, rather than having its separators propagated.
+    expect(
+      nestedTitleRootOf("Series\\Andor\\Season 1\\Andor - S01E01 - Kassa.mp4"),
+    ).toBe("Series/Andor/Season 1/Andor - S01E01 - Kassa");
+  });
 });

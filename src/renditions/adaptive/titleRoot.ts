@@ -46,29 +46,44 @@ export function titleRootLayoutForKind(kind: string): TitleRootLayout {
  * moving a single published package: every root computed below is unchanged by
  * the move.
  */
-function titleBaseDirectory(sourcePath: string): string {
-  const directory = path.dirname(sourcePath);
-  if (path.basename(directory).toLowerCase() !== TITLE_SOURCE_DIRECTORY) {
+function titleBaseDirectoryIn(
+  flavour: PathFlavour,
+  sourcePath: string,
+): string {
+  const directory = flavour.dirname(sourcePath);
+  if (flavour.basename(directory).toLowerCase() !== TITLE_SOURCE_DIRECTORY) {
     return directory;
   }
-  const parent = path.dirname(directory);
+  const parent = flavour.dirname(directory);
   // A `src` at the very top of the tree has nothing above it to belong to.
   return parent === directory ? directory : parent;
 }
 
-/** The folder a `nested` source publishes into: `<title base>/<file stem>/`. */
-export function nestedTitleRoot(sourcePath: string): string {
-  const directory = titleBaseDirectory(sourcePath);
-  const stem = path.basename(sourcePath, path.extname(sourcePath));
+function titleBaseDirectory(sourcePath: string): string {
+  return titleBaseDirectoryIn(path, sourcePath);
+}
+
+function nestedTitleRootIn(flavour: PathFlavour, sourcePath: string): string {
+  const directory = titleBaseDirectoryIn(flavour, sourcePath);
+  const stem = flavour.basename(sourcePath, flavour.extname(sourcePath));
   /*
    * A stem that is empty or that would climb out of the directory is not a
    * name this can build a root from. Falling back to the directory keeps the
    * old behaviour rather than inventing a path outside the library.
+   *
+   * The separator comes from the flavour, not from the host: a `\\` is an
+   * ordinary character in a POSIX filename and must stay one, and a `/` is an
+   * ordinary character in no Windows filename at all.
    */
-  if (!stem || stem === "." || stem === ".." || stem.includes(path.sep)) {
+  if (!stem || stem === "." || stem === ".." || stem.includes(flavour.sep)) {
     return directory;
   }
-  return path.join(directory, stem);
+  return flavour.join(directory, stem);
+}
+
+/** The folder a `nested` source publishes into: `<title base>/<file stem>/`. */
+export function nestedTitleRoot(sourcePath: string): string {
+  return nestedTitleRootIn(path, sourcePath);
 }
 
 /** The folder a `beside` source publishes into: the folder its title owns. */
@@ -90,12 +105,38 @@ export function titleSourceDirectory(titleRoot: string): string {
  * the code would be the way these two drift apart.
  */
 export function titleBaseDirectoryOf(relativePath: string): string {
-  return titleBaseDirectory(toPosix(relativePath)).replace(/^\.$/, "");
+  return titleBaseDirectoryIn(path.posix, toPosix(relativePath)).replace(
+    /^\.$/,
+    "",
+  );
 }
 
 export function nestedTitleRootOf(relativePath: string): string {
-  return nestedTitleRoot(toPosix(relativePath)).replace(/^\.$/, "");
+  return nestedTitleRootIn(path.posix, toPosix(relativePath)).replace(
+    /^\.$/,
+    "",
+  );
 }
+
+/**
+ * The part of `node:path` these rules need, so the same rule can be applied in
+ * either flavour.
+ *
+ * The two functions above take a **library-relative** path, which is POSIX
+ * everywhere by contract — it is what the catalogue stores, what the scanner
+ * emits, and what the NFO planner compares against. Normalising the input was
+ * not enough: `path.win32.join` rewrites every separator, so on Windows
+ * `nestedTitleRootOf("Series/Andor/Season 1/Andor - S01E01.mkv")` answered
+ * `Series\Andor\Season 1\Andor - S01E01` — a key that matches nothing a
+ * macOS deployment wrote, and would silently split a migrated library in two.
+ *
+ * So the flavour is chosen by the caller's contract rather than by the host:
+ * `path` for the host paths above, `path.posix` for the relative ones.
+ */
+type PathFlavour = Pick<
+  typeof path,
+  "dirname" | "basename" | "extname" | "join" | "sep"
+>;
 
 /**
  * `path` is the host's separator; a library-relative path is always POSIX.
