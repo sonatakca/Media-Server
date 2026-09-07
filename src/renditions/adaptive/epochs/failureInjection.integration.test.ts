@@ -12,7 +12,6 @@
  */
 
 import {
-  chmod,
   copyFile,
   mkdir,
   mkdtemp,
@@ -37,6 +36,8 @@ import {
 } from "../testFixtures";
 import { checkpointRoot, epochsRoot } from "./checkpoints";
 import { epochDirectoryName, EPOCH_MANIFEST_FILE } from "./policy";
+import { blockPublication } from "../../../test/unwritableDirectory";
+import { supportsPosixSignals } from "../../processExecution";
 
 const MEDIA_ID = "33333333-3333-4333-8333-333333333333";
 const EPOCH_TARGET_SECONDS = 6;
@@ -492,12 +493,12 @@ describe("publication fails after the encoding is done", () => {
      * publication succeeds, so this is the case where hours of encoding are at
      * their most exposed: the work is finished and the last step fails.
      */
-    await chmod(harness.titleRoot, 0o555);
+    const unblock = await blockPublication(harness.titleRoot);
     let failed;
     try {
       failed = await runPackage(harness);
     } finally {
-      await chmod(harness.titleRoot, 0o755);
+      await unblock();
     }
     expect(failed.status).not.toBe("ready");
 
@@ -579,14 +580,28 @@ describe("pausing a live encoder", () => {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     const whilePaused = samples[samples.length - 1] ?? 0;
 
-    // A suspended encoder produces nothing: the counter stops rather than
-    // creeping, which is what makes a pause honest on the page.
-    expect(whilePaused).toBe(atPause);
+    if (supportsPosixSignals()) {
+      // A suspended encoder produces nothing: the counter stops rather than
+      // creeping, which is what makes a pause honest on the page.
+      expect(whilePaused).toBe(atPause);
+    } else {
+      /*
+       * Windows has no signal that suspends a process, and nothing in Node or
+       * in a stock install can do it another way — so the honest expectation is
+       * the opposite one, and it is asserted rather than skipped. The encoder
+       * keeps going, which is exactly why `bindChildToPauseController` refuses
+       * to install there and says so: the danger is not that the pause fails,
+       * it is an operator being told it worked.
+       */
+      expect(whilePaused).toBeGreaterThan(atPause);
+    }
 
     controller.resume();
     await encode;
     const finished = samples[samples.length - 1] ?? 0;
     expect(finished).toBeGreaterThan(whilePaused);
+    // Either way the encode is correct and complete: a pause that this platform
+    // could not honour must not cost the title its output.
     expect((await stat(output)).size).toBeGreaterThan(0);
   }, 300_000);
 });

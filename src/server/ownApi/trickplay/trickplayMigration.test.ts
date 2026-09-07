@@ -18,6 +18,8 @@ import type { DatabasePool } from "../database/databasePool";
 import { buildTrickplayLayout } from "./trickplayLayout";
 import { migrateLegacyTrickplaySets } from "./trickplayMigration";
 import { jpegBytes, writeTrickplaySheets } from "./trickplayTestFixtures";
+import { blockPaths } from "../../../test/unwritableDirectory";
+import { TITLE_TRICKPLAY_DIRECTORY } from "../../../renditions/adaptive/layout";
 
 const LAYOUT = buildTrickplayLayout({
   durationMs: 3_600_000,
@@ -218,12 +220,21 @@ describe("migrating this server's own older trickplay sets", () => {
    * deleted that has not been proved to exist somewhere else.
    */
   it("keeps the old set when the destination cannot be written", async () => {
-    // The destination's parent is made unwritable, so staging fails.
-    await chmod(titleRoot(), 0o500);
+    /*
+     * A destination that cannot be written. On POSIX that is the mode change
+     * this test always made; everywhere it is also a plain file standing where
+     * the trickplay directory has to go, because Windows honours the read-only
+     * attribute on files and effectively ignores it on directories — the chmod
+     * succeeded there, the set was migrated anyway, and this case failed
+     * asserting that a migration which had in fact happened had not.
+     */
+    const unblock = await blockPaths(titleRoot(), [
+      path.join(titleRoot(), TITLE_TRICKPLAY_DIRECTORY),
+    ]);
 
     const report = await migrateLegacyTrickplaySets(dependencies());
 
-    await chmod(titleRoot(), 0o755);
+    await unblock();
     expect(report.outcomes[0]?.status).toBe("failed");
     expect(await readdir(legacySet())).toHaveLength(LAYOUT.spriteCount);
     expect(updates).toEqual([]);

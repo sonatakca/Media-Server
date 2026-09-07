@@ -20,7 +20,6 @@
 
 import {
   copyFile,
-  chmod,
   mkdir,
   mkdtemp,
   readdir,
@@ -44,6 +43,7 @@ import {
   TITLE_INCOMING_DIRECTORY,
 } from "./publishTitle";
 import { ensureAdaptiveEpochFixture } from "./testFixtures";
+import { blockPublication } from "../../test/unwritableDirectory";
 
 const MEDIA_ID = "33333333-3333-4333-8333-333333333333";
 /** Six seconds is three segments, so epoch boundaries land on the grid. */
@@ -307,12 +307,12 @@ describe("the scratch storage lifecycle", () => {
      * Read and traverse are still permitted, so the source remains readable
      * throughout — which is exactly the asymmetry a failing destination has.
      */
-    await chmod(harness.titleRoot, 0o500);
+    const unblock = await blockPublication(harness.titleRoot);
     let blocked: Awaited<ReturnType<typeof packageOnce>>;
     try {
       blocked = await packageOnce(harness);
     } finally {
-      await chmod(harness.titleRoot, 0o700);
+      await unblock();
     }
 
     // Nothing was exposed, under any name.
