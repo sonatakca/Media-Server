@@ -167,6 +167,33 @@ describe("binding a busy port", () => {
     expect(replacement.listening).toBe(true);
   });
 
+  it("names the likely cause on the first failed attempt, not only later", async () => {
+    incumbent = createServer();
+    await new Promise<void>((resolve) => {
+      incumbent?.listen(0, "127.0.0.1", resolve);
+    });
+    const address = incumbent.address();
+    if (typeof address === "string" || address === null) {
+      throw new Error("Expected a TCP address.");
+    }
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      replacement = createServer();
+      const bound = listenWithRetry(replacement, address.port, "127.0.0.1", 10);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      const first = warn.mock.calls[0]?.[0];
+      expect(String(first)).toContain("another process is holding it");
+      // The hint has to name a command this platform actually has.
+      expect(String(first)).toContain(
+        process.platform === "win32" ? "sc query" : "launchctl",
+      );
+      await new Promise<void>((resolve) => incumbent?.close(() => resolve()));
+      await bound;
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it("stays alive while it waits, instead of running out of work and exiting", async () => {
     /*
      * The wait is the only thing this process has left to do. Nothing bound, so
@@ -212,7 +239,9 @@ describe("binding a busy port", () => {
           setTimeout(() => resolve("waiting"), 4_000),
         ),
       ]);
-      expect(`${outcome} ${stderr}`.trim()).toBe("waiting");
+      // stderr carries the wait notice, which is expected; the claim under test
+      // is only that the process is still there to have printed it.
+      expect(outcome, stderr).toBe("waiting");
     } finally {
       child.kill("SIGKILL");
     }

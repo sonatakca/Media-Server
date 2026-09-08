@@ -411,6 +411,10 @@ export async function listenWithRetry(
 ): Promise<void> {
   const startedAt = Date.now();
   let lastLoggedAt = 0;
+  // Not `waitedMs === 0`: the first attempt still takes a few milliseconds, so
+  // that test never held and the one message naming the likely cause — another
+  // Seyirlik already running — was never printed.
+  let announced = false;
 
   for (;;) {
     const error = await new Promise<NodeJS.ErrnoException | undefined>(
@@ -433,10 +437,9 @@ export async function listenWithRetry(
     if (error.code !== "EADDRINUSE") throw error;
 
     const waitedMs = Date.now() - startedAt;
-    if (
-      waitedMs === 0 ||
-      waitedMs - lastLoggedAt >= LISTEN_RETRY_LOG_INTERVAL_MS
-    ) {
+    if (!announced || waitedMs - lastLoggedAt >= LISTEN_RETRY_LOG_INTERVAL_MS) {
+      const first = !announced;
+      announced = true;
       lastLoggedAt = waitedMs;
       /*
        * Named on the first attempt, not after half a minute of silence.
@@ -449,7 +452,7 @@ export async function listenWithRetry(
        * because a predecessor still draining is the far more common case.
        */
       console.warn(
-        waitedMs === 0
+        first
           ? `[Seyirlik] Could not bind ${host}:${port}: another process is holding it. ` +
               `Another Seyirlik server may already be running (check \`${supervisorListCommand()}\`). ` +
               "Waiting for the port to be released."
