@@ -9,16 +9,16 @@ whatever it is called.
 
 ## The map
 
-| Artefact | Path shape | Owner | How ownership is proven |
-|---|---|---|---|
-| Video, and the container's own streams | `<title>/<name>.mkv` | the **importer** | The catalogue records the file it committed. Nothing else writes media. |
-| `.nfo` | `<title>/<name>.nfo` | the **NFO service** | A marker inside the file — `Seyirlik nfo-export`. A file without it is `foreign` and is never overwritten. |
-| Poster, backdrop, logo | `<title>/content/…` | the **image service** | Written to a temporary name and renamed into place; the catalogue records the storage key. |
-| Trickplay sheets | `<title>/trickplay/` | the **trickplay service** | Staged in `.trickplay-staging-<id>` and published by rename. |
-| Rendition package | `<title>/.seyirlik/`, `video/`, `audio/` | the **packager** | The package manifest. |
-| **Subtitle that arrived with a download** | `<title>/<name>.<lang>.srt` | the **importer** | An `import_files` row with role `subtitle`. |
-| **Subtitle this system fetched** | `<title>/<name>.<lang>[.forced][.sdh].srt` | the **subtitle service** | A `subtitle_installations` row carrying the path *and the digest of the bytes written*. |
-| Anything else | — | **nobody** | Left alone. |
+| Artefact                                  | Path shape                                 | Owner                     | How ownership is proven                                                                                    |
+| ----------------------------------------- | ------------------------------------------ | ------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Video, and the container's own streams    | `<title>/<name>.mkv`                       | the **importer**          | The catalogue records the file it committed. Nothing else writes media.                                    |
+| `.nfo`                                    | `<title>/<name>.nfo`                       | the **NFO service**       | A marker inside the file — `Seyirlik nfo-export`. A file without it is `foreign` and is never overwritten. |
+| Poster, backdrop, logo                    | `<title>/content/…`                        | the **image service**     | Written to a temporary name and renamed into place; the catalogue records the storage key.                 |
+| Trickplay sheets                          | `<title>/trickplay/`                       | the **trickplay service** | Staged in `.trickplay-staging-<id>` and published by rename.                                               |
+| Rendition package                         | `<title>/.seyirlik/`, `video/`, `audio/`   | the **packager**          | The package manifest.                                                                                      |
+| **Subtitle that arrived with a download** | `<title>/<name>.<lang>.srt`                | the **importer**          | An `import_files` row with role `subtitle`.                                                                |
+| **Subtitle this system fetched**          | `<title>/<name>.<lang>[.forced][.sdh].srt` | the **subtitle service**  | A `subtitle_installations` row carrying the path _and the digest of the bytes written_.                    |
+| Anything else                             | —                                          | **nobody**                | Left alone.                                                                                                |
 
 ## Two boundaries worth stating out loud
 
@@ -39,7 +39,7 @@ and this is the one genuinely new overlap in Phase 7. They are separated by
 evidence, not by naming:
 
 - The subtitle service will replace a file **only** when
-  `subtitle_installations` holds a row for that exact path *and* the digest in
+  `subtitle_installations` holds a row for that exact path _and_ the digest in
   it still matches the bytes on disk. A subtitle that came in with a download
   has no such row, so it is refused as `destination-occupied`.
 - A file whose digest no longer matches has been edited by somebody since, and

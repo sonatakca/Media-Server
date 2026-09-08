@@ -129,7 +129,10 @@ import {
 import { createAcquisitionRoutes } from "./acquisition/acquisitionRoutes";
 import { parseImportConfig } from "./imports/importConfig";
 import { parseSubtitleConfig } from "./subtitles/subtitleConfig";
-import { createSubtitleRuntime, disabledSubtitleJobTypes } from "./subtitles/subtitleRuntime";
+import {
+  createSubtitleRuntime,
+  disabledSubtitleJobTypes,
+} from "./subtitles/subtitleRuntime";
 import { createSubtitleRoutes } from "./subtitles/subtitleRoutes";
 import type {
   SubtitleProvider,
@@ -1073,7 +1076,11 @@ export async function createNativeRuntime({
       { name: "trickplay", jobTypes: TRICKPLAY_LANE_JOB_TYPES, concurrency: 1 },
       {
         name: "library",
-        excludeJobTypes: [...MEDIA_LANE_JOB_TYPES, ...TRICKPLAY_LANE_JOB_TYPES, ...disabledSubtitleJobTypes(subtitleConfig)],
+        excludeJobTypes: [
+          ...MEDIA_LANE_JOB_TYPES,
+          ...TRICKPLAY_LANE_JOB_TYPES,
+          ...disabledSubtitleJobTypes(subtitleConfig),
+        ],
         concurrency: 3,
       },
     ],
