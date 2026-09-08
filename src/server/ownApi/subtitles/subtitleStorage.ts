@@ -106,9 +106,25 @@ export interface SubtitleStorage {
   /** The external tracks currently beside a media file. */
   inspect(mediaFileId: string): Promise<SubtitleTrack[]>;
   install(request: SubtitleInstallRequest): Promise<SubtitleInstallOutcome>;
+  reconcile?(intent: SubtitleWriteIntent): Promise<SubtitleInstallOutcome>;
+}
+
+export interface SubtitleWriteIntent {
+  readonly mediaFileId: string;
+  readonly language: string;
+  readonly flags: SubtitleFlags;
+  readonly format: "srt" | "vtt";
+  readonly sha256: string;
+  readonly sizeBytes: number;
+  readonly cueCount: number;
+  readonly fileIdentity: string;
+  readonly operationId: string;
 }
 
 export interface SubtitleStorageOptions {
+  /** Durable execution owner; supplied only by the server service. */
+  readonly operationId?: string;
+  readonly prepare?: (intent: SubtitleWriteIntent) => Promise<void>;
   /**
    * The only directory this writer will touch. Absolute, and authorised by the
    * deployment rather than by anything that arrives in a request.
@@ -379,6 +395,25 @@ export function createSubtitleStorage(
         try {
           await handle.writeFile(validated.bytes);
           await handle.sync();
+          if (options.prepare && options.operationId) {
+            const stat = await handle.stat({ bigint: true });
+            await lock.writeFile(options.operationId, "utf8");
+            await lock.sync();
+            await options.prepare({
+              mediaFileId,
+              language,
+              flags: {
+                forced: flags.forced,
+                hearingImpaired: flags.hearingImpaired,
+              },
+              format: validated.format,
+              sha256,
+              sizeBytes: validated.bytes.length,
+              cueCount: validated.cueCount,
+              fileIdentity: `${stat.dev}:${stat.ino}`,
+              operationId: options.operationId,
+            });
+          }
         } finally {
           await handle.close();
         }
@@ -460,6 +495,58 @@ export function createSubtitleStorage(
             await unlink(lockPath).catch(() => undefined);
           }
         }
+      }
+    },
+    async reconcile(intent) {
+      try {
+        if (
+          intent.operationId !== options.operationId ||
+          !/^[a-z]{2,3}$/.test(intent.language) ||
+          !["srt", "vtt"].includes(intent.format)
+        )
+          throw new Error("Invalid intent");
+        const source = await locateMedia(intent.mediaFileId);
+        const root = await rootPath();
+        const target =
+          source.slice(0, source.length - path.extname(source).length) +
+          `.${intent.language}${intent.flags.forced ? ".forced" : ""}${intent.flags.hearingImpaired ? ".sdh" : ""}.${intent.format}`;
+        if (!VIDEO_EXTENSIONS.test(source) || !isPathInsideRoot(root, target))
+          throw new Error("Invalid target");
+        const bytes = await existingAt(target);
+        if (!bytes || subtitleDigest(bytes) !== intent.sha256)
+          throw new Error("Receipt mismatch");
+        const stat = await lstat(target, { bigint: true });
+        if (`${stat.dev}:${stat.ino}` !== intent.fileIdentity)
+          throw new Error("Identity mismatch");
+        const lockPath = `${source}.seyirlik-subtitle.lock`;
+        const lockStat = await lstat(lockPath).catch(
+          (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return null;
+            throw error;
+          },
+        );
+        if (lockStat) {
+          if (
+            !lockStat.isFile() ||
+            lockStat.isSymbolicLink() ||
+            lockStat.size > 128 ||
+            (await readFile(lockPath, "utf8")) !== intent.operationId
+          )
+            throw new Error("Different lock owner");
+          await unlink(lockPath);
+        }
+        return {
+          outcome: "installed",
+          relativePath: path.relative(root, target).split(path.sep).join("/"),
+          sha256: intent.sha256,
+          cueCount: intent.cueCount,
+        };
+      } catch {
+        return {
+          outcome: "error",
+          failure: "commit-ambiguous",
+          reason: "The pending installation needs operator reconciliation.",
+        };
       }
     },
   };

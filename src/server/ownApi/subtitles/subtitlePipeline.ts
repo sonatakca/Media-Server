@@ -94,7 +94,9 @@ export async function runSubtitlePipeline(input: {
   timeoutMs: number;
   replace?: boolean;
   signal?: AbortSignal;
-  progress?: (event: SubtitleProgress) => void;
+  progress?: (event: SubtitleProgress) => void | Promise<void>;
+  resumeCandidate?: ScoredCandidate;
+  selected?: (candidate: ScoredCandidate) => Promise<void>;
 }): Promise<SubtitlePipelineResult> {
   if (
     !Number.isFinite(input.timeoutMs) ||
@@ -148,12 +150,12 @@ export async function runSubtitlePipeline(input: {
   };
   try {
     if (input.signal?.aborted) return { outcome: "cancelled" };
-    phase("detecting", 0, 1);
+    await phase("detecting", 0, 1);
     const tracks = [
       ...input.embeddedTracks.filter((t) => t.origin === "embedded"),
       ...(await input.storage.inspect(input.mediaFileId)),
     ];
-    phase("detecting", 1, 1);
+    await phase("detecting", 1, 1);
     if (tracks.some((t) => wantIsSatisfiedBy(want, t)) && !input.replace)
       return { outcome: "existing" };
     const providers = providersFor(input.providers, want.language);
@@ -164,13 +166,15 @@ export async function runSubtitlePipeline(input: {
         reason: "No configured provider carries this language.",
       };
     }
-    const candidates: ScoredCandidate[] = [];
+    const candidates: ScoredCandidate[] = input.resumeCandidate
+      ? [input.resumeCandidate]
+      : [];
     let pendingAuth: string | undefined;
     let failure: SubtitleFailureClass | undefined;
     /* Why the last candidate was turned down, for the operator-facing reason. */
     let lastRejection: string | undefined;
-    phase("searching", 0, providers.length);
-    for (let i = 0; i < providers.length; i++) {
+    await phase("searching", 0, providers.length);
+    for (let i = 0; i < (input.resumeCandidate ? 0 : providers.length); i++) {
       const provider = providers[i]!;
       try {
         const result = await providerCall(provider, (session, signal) =>
@@ -201,7 +205,7 @@ export async function runSubtitlePipeline(input: {
             ? (error.failure as SubtitleFailureClass)
             : "provider-error";
       }
-      phase("searching", i + 1, providers.length);
+      await phase("searching", i + 1, providers.length);
     }
     const ordered = orderCandidates(candidates);
     const seen = new Set<string>();
@@ -217,7 +221,8 @@ export async function runSubtitlePipeline(input: {
         (p) => p.id === selected.candidate.providerId,
       )!;
       try {
-        phase("downloading", i, ordered.length);
+        await input.selected?.(selected);
+        await phase("downloading", i, ordered.length);
         const result = await providerCall(provider, (session, signal) =>
           provider.download(selected.candidate, session, signal),
         );
@@ -233,16 +238,16 @@ export async function runSubtitlePipeline(input: {
                 : "provider-error";
           continue;
         }
-        phase("validating", 0, 1);
+        await phase("validating", 0, 1);
         try {
           validateSubtitle(result.value);
         } catch {
           failure = "payload-invalid";
           continue;
         }
-        phase("validating", 1, 1);
+        await phase("validating", 1, 1);
         if (input.signal?.aborted) return { outcome: "cancelled" };
-        phase("installing", 0, 1);
+        await phase("installing", 0, 1);
         const installed = await input.storage.install({
           mediaFileId: input.mediaFileId,
           language: want.language,
@@ -255,7 +260,7 @@ export async function runSubtitlePipeline(input: {
           installed.outcome === "installed" ||
           installed.outcome === "duplicate"
         )
-          phase("installing", 1, 1);
+          await phase("installing", 1, 1);
         return installed.outcome === "installed" ||
           installed.outcome === "duplicate"
           ? { ...installed, selection: selected }

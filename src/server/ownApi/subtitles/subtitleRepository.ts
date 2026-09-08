@@ -80,6 +80,7 @@ export class SubtitleAttemptMovedError extends Error {
 }
 
 export interface SubtitleRepository {
+  getAttempt(attemptId: string): Promise<SubtitleAttemptRow | null>;
   ensureWant(mediaFileId: string, want: SubtitleWant): Promise<SubtitleWantRow>;
   activeWants(mediaFileId: string): Promise<SubtitleWantRow[]>;
   deactivateWant(wantId: string): Promise<void>;
@@ -159,6 +160,15 @@ export function createSubtitleRepository(
   pool: Pick<DatabasePool, "query">,
 ): SubtitleRepository {
   return {
+    async getAttempt(attemptId) {
+      const result = await pool.query<AttemptRecord>(
+        `SELECT id, want_id, state, attempt, provider_id, candidate_id,
+                score, failure_class, failure_detail, awaiting_provider_id, run_after
+           FROM subtitle_attempts WHERE id = $1`,
+        [attemptId],
+      );
+      return result.rows[0] ? toAttempt(result.rows[0]) : null;
+    },
     /*
      * Idempotent by the same unique index the domain's identity uses:
      * (media file, language, forced). The hearing-impaired preference is

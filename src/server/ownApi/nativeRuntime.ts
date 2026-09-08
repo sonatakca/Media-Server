@@ -128,6 +128,14 @@ import {
 } from "./acquisition/acquisitionJobs";
 import { createAcquisitionRoutes } from "./acquisition/acquisitionRoutes";
 import { parseImportConfig } from "./imports/importConfig";
+import { parseSubtitleConfig } from "./subtitles/subtitleConfig";
+import { createSubtitleRuntime, disabledSubtitleJobTypes } from "./subtitles/subtitleRuntime";
+import { createSubtitleRoutes } from "./subtitles/subtitleRoutes";
+import type {
+  SubtitleProvider,
+  ProviderSessionManager,
+} from "./subtitles/subtitleProvider";
+import type { PlaybackRefreshBoundary } from "./playback/playbackRefresh";
 import { createImportRepository } from "./imports/importRepository";
 import { createImportService } from "./imports/importService";
 import { createImportOperations } from "./imports/importOperations";
@@ -170,6 +178,9 @@ export interface NativeRuntime {
 }
 
 export interface CreateNativeRuntimeOptions {
+  subtitleProviders?: readonly SubtitleProvider[];
+  subtitleSessions?: ProviderSessionManager;
+  playbackRefresh?: PlaybackRefreshBoundary;
   environment?: Environment;
   publicOrigin?: string;
   /** Explicitly allowed browser origins; trusted for mutations as well as CORS. */
@@ -245,6 +256,9 @@ export async function createNativeRuntime({
   runWorker = true,
   restartController,
   startup,
+  subtitleProviders,
+  subtitleSessions,
+  playbackRefresh,
 }: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
@@ -263,6 +277,7 @@ export async function createNativeRuntime({
   // And for the importer: a download root that is not absolute would resolve
   // against whatever directory the service happened to start in.
   const importConfig = parseImportConfig(environment);
+  const subtitleConfig = parseSubtitleConfig(environment);
 
   startup?.begin({
     id: "database",
@@ -1032,6 +1047,14 @@ export async function createNativeRuntime({
       })()
     : undefined;
 
+  const subtitles = createSubtitleRuntime({
+    config: subtitleConfig,
+    pool,
+    providers: subtitleProviders,
+    sessions: subtitleSessions,
+    playback: playbackRefresh,
+  });
+
   const worker = createWorker({
     queue,
     /*
@@ -1050,7 +1073,7 @@ export async function createNativeRuntime({
       { name: "trickplay", jobTypes: TRICKPLAY_LANE_JOB_TYPES, concurrency: 1 },
       {
         name: "library",
-        excludeJobTypes: [...MEDIA_LANE_JOB_TYPES, ...TRICKPLAY_LANE_JOB_TYPES],
+        excludeJobTypes: [...MEDIA_LANE_JOB_TYPES, ...TRICKPLAY_LANE_JOB_TYPES, ...disabledSubtitleJobTypes(subtitleConfig)],
         concurrency: 3,
       },
     ],
@@ -1118,6 +1141,7 @@ export async function createNativeRuntime({
         ...(writesFiles(nfoConfig.mode) ? { nfoService } : {}),
       }),
       ...createNfoJobHandlers(nfoService),
+      ...(subtitles?.handlers ?? {}),
       ...(acquisition
         ? createAcquisitionJobHandlers(
             acquisition.service,
@@ -1178,6 +1202,7 @@ export async function createNativeRuntime({
     ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ syncplay, catalogue, events: syncplayEvents }),
+    ...(subtitles ? createSubtitleRoutes(subtitles.repository, queue) : []),
     ...createUserRoutes({
       users,
       sessions,
