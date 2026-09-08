@@ -34,13 +34,21 @@ function tokenize(title: string): string {
   return ` ${title.replace(/[[\]{}()]/g, " ").replace(SEPARATOR, " ")} `;
 }
 
+/*
+ * Explicit line counts are checked before the loose ones, because a title
+ * saying "Hybrid 1080p UHD BluRay" means a 1080p encode from a UHD source. A
+ * table that matched UHD first would call that release 2160p and offer it to a
+ * profile that asked for 4K.
+ */
 const RESOLUTIONS: ReadonlyArray<readonly [Resolution, RegExp]> = [
-  ["2160p", /\b(?:2160p|4k|uhd(?=\s|$)|3840x2160)\b/i],
+  ["2160p", /\b(?:2160p|3840x2160)\b/i],
   ["1080i", /\b1080i\b/i],
   ["1080p", /\b(?:1080p|1920x1080)\b/i],
   ["720p", /\b(?:720p|1280x720)\b/i],
   ["576p", /\b576[pi]\b/i],
   ["480p", /\b(?:480[pi]|ntsc)\b/i],
+  // Only when nothing said a line count at all.
+  ["2160p", /\b(?:4k|uhd)\b/i],
 ];
 
 /**

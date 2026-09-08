@@ -71,6 +71,24 @@ describe("reading a movie release title", () => {
     expect(parseRelease(title).hdr).toEqual(expected);
   });
 
+  it("believes an explicit line count over a loose UHD", () => {
+    /*
+     * Found in live results: "Hybrid.1080p.UHD.BluRay" is a 1080p encode from
+     * a UHD source. Reading it as 2160p offered it to a profile that had asked
+     * for 4K.
+     */
+    expect(
+      parseRelease("Movie.2017.Hybrid.1080p.UHD.BluRay.DDP7.1-G").resolution,
+    ).toBe("1080p");
+    expect(parseRelease("Movie.2017.UHD.BluRay.TrueHD-G").resolution).toBe(
+      "2160p",
+    );
+    expect(parseRelease("Movie.2017.4K.WEB-DL-G").resolution).toBe("2160p");
+    expect(parseRelease("Movie.2017.2160p.UHD.BluRay-G").resolution).toBe(
+      "2160p",
+    );
+  });
+
   it("says nothing about HDR when the title says nothing", () => {
     // Not SDR. A fact invented here is one no later layer can tell from a real
     // one, and "the release did not say" is a different thing from "it is SDR".
