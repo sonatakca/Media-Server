@@ -276,7 +276,7 @@ describe("which files an import claims", () => {
   it.each([
     ["media", true],
     ["subtitle", true],
-    ["metadata", true],
+    ["metadata", false],
     ["artwork", false],
     ["sample", false],
     ["trailer", false],
@@ -295,7 +295,8 @@ describe("which files an import claims", () => {
      * `ignored` and `unclaimed` are both left alone but mean different things
      * — a file the policy recognises and declines, versus one it does not
      * recognise at all — and only the second is worth telling an operator
-     * about. Neither is ever moved.
+     * about. Neither is ever moved, and nor is a release's `.nfo`: the
+     * library's own are written by the NFO service.
      */
     const roles: ImportFileRole[] = [
       "media",
@@ -308,7 +309,7 @@ describe("which files an import claims", () => {
       "ignored",
       "unclaimed",
     ];
-    expect(roles.filter(isImported)).toEqual(["media", "subtitle", "metadata"]);
-    expect(IMPORTED_ROLES).toHaveLength(3);
+    expect(roles.filter(isImported)).toEqual(["media", "subtitle"]);
+    expect(IMPORTED_ROLES).toHaveLength(2);
   });
 });

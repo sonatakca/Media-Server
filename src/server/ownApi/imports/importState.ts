@@ -364,12 +364,16 @@ export type ImportFileRole =
   | "ignored"
   | "unclaimed";
 
-/** Roles this phase moves into the library. Everything else is left alone. */
-export const IMPORTED_ROLES: readonly ImportFileRole[] = [
-  "media",
-  "subtitle",
-  "metadata",
-];
+/**
+ * Roles this phase moves into the library. Everything else is left alone.
+ *
+ * `metadata` is recognised and deliberately not among them. A release's `.nfo`
+ * is usually a note about the release, and the library's `.nfo` files are
+ * written by Seyirlik's own NFO service — importing one would put a scene text
+ * file exactly where that service expects to own the name. It stays in the
+ * download, where it can still be read by anyone who wants it.
+ */
+export const IMPORTED_ROLES: readonly ImportFileRole[] = ["media", "subtitle"];
 
 export function isImported(role: ImportFileRole): boolean {
   return IMPORTED_ROLES.includes(role);
