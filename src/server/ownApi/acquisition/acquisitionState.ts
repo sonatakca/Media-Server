@@ -62,7 +62,23 @@ const TRANSITIONS: Readonly<
   Record<AcquisitionState, readonly AcquisitionState[]>
 > = {
   planned: ["resolving", "cancelled", "superseded", "failed"],
-  resolving: ["submitting", "awaiting_retry", "failed", "cancelled"],
+  /*
+   * The forward skips are the crash-recovery path. Before sending anything,
+   * submission looks for a job already carrying this acquisition's name — and
+   * a job left behind by an earlier attempt may be at any point in its life,
+   * including finished. Refusing to adopt it would mean sending the NZB a
+   * second time, which is the duplicate all of this exists to prevent.
+   */
+  resolving: [
+    "submitting",
+    "queued",
+    "downloading",
+    "processing",
+    "downloaded",
+    "awaiting_retry",
+    "failed",
+    "cancelled",
+  ],
   submitting: [
     // Forward skips: a poll may first see the job already running or done.
     "queued",

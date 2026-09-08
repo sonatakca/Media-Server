@@ -43,6 +43,23 @@ describe("the shape of the state machine", () => {
     expect(canTransition("downloading", "downloaded")).toBe(true);
   });
 
+  it("can adopt a job found in any state before submitting", () => {
+    /*
+     * Crash recovery: an earlier attempt may have left a job that is already
+     * downloading, or even finished. Refusing to adopt it would mean sending
+     * the NZB again.
+     */
+    for (const found of [
+      "queued",
+      "downloading",
+      "processing",
+      "downloaded",
+      "failed",
+    ] as const) {
+      expect(canTransition("resolving", found)).toBe(true);
+    }
+  });
+
   it("never allows a backward move", () => {
     expect(canTransition("downloading", "queued")).toBe(false);
     expect(canTransition("processing", "downloading")).toBe(false);
