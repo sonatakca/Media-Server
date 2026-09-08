@@ -286,8 +286,15 @@ function parseYear(
 ): { year?: number; index: number } {
   const limit = titleEndsAt <= 0 ? title.length : titleEndsAt;
   const searchArea = title.slice(0, limit);
+  /*
+   * Bounded by the present. "Blade Runner 2049" has no second year token, so
+   * 2049 would otherwise be read as the film's year — but no release exists
+   * for a film that has not come out. 2160 is excluded separately because it
+   * is a resolution far more often than it is a year.
+   */
+  const latest = new Date().getUTCFullYear() + 1;
   const matches = [...searchArea.matchAll(/\b(19\d{2}|20\d{2})\b/g)].filter(
-    (match) => Number(match[1]) !== 2160,
+    (match) => Number(match[1]) !== 2160 && Number(match[1]) <= latest,
   );
   const last = matches[matches.length - 1];
   if (!last) return { index: -1 };
