@@ -112,6 +112,10 @@ import { createNfoService } from "./nfo/nfoService";
 import { createNfoJobHandlers } from "./nfo/nfoJobs";
 import { createNfoRoutes } from "./nfo/nfoRoutes";
 import { createSystemRoutes } from "./system/systemRoutes";
+import { parseIndexerConfig } from "./indexers/indexerConfig";
+import { createIndexerRegistry } from "./indexers/indexerRegistry";
+import { createIndexerSearchService } from "./indexers/searchService";
+import { createIndexerRoutes } from "./indexers/indexerRoutes";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -213,6 +217,9 @@ export async function createNativeRuntime({
   // Same reason: a scan that may move files is not something to discover from
   // a typo halfway through the first library it reads.
   const organizeMode = parseOrganizeMode(environment);
+  // Same reason again: an indexer declared with no key would otherwise look
+  // like an indexer that finds nothing.
+  const indexerEntries = parseIndexerConfig(environment);
 
   startup?.begin({
     id: "database",
@@ -899,6 +906,12 @@ export async function createNativeRuntime({
    * Always constructed so preview and manual repair endpoints remain available.
    * The scan handler receives it only for modes that actually write files.
    */
+  const indexerRegistry = createIndexerRegistry({
+    entries: indexerEntries,
+    environment,
+  });
+  const indexerSearch = createIndexerSearchService(indexerRegistry);
+
   const nfoService = createNfoService({
     repository: createNfoRepository(pool),
     writer: createNfoWriter({
@@ -1075,6 +1088,10 @@ export async function createNativeRuntime({
       },
     }),
     ...createNfoRoutes({ service: nfoService, queue }),
+    ...createIndexerRoutes({
+      registry: indexerRegistry,
+      search: indexerSearch,
+    }),
     ...(restartController
       ? createSystemRoutes({ restart: restartController })
       : []),
