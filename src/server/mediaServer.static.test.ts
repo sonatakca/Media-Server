@@ -2,6 +2,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { Readable } from "node:stream";
 import {
   createServer,
@@ -165,6 +166,57 @@ describe("binding a busy port", () => {
     await bound;
     expect(replacement.listening).toBe(true);
   });
+
+  it("stays alive while it waits, instead of running out of work and exiting", async () => {
+    /*
+     * The wait is the only thing this process has left to do. Nothing bound, so
+     * there is no listening handle; if the retry timer does not hold the event
+     * loop open, Node runs out of work and exits 0 without a word — and the
+     * supervisor relaunches straight back into the busy port, which is the
+     * relaunch storm the waiting exists to prevent. Asserted in a real child
+     * process because "the process is still there" is the whole claim; an
+     * in-process check would be satisfied by the test runner's own handles.
+     */
+    incumbent = createServer();
+    await new Promise<void>((resolve) => {
+      incumbent?.listen(0, "127.0.0.1", resolve);
+    });
+    const address = incumbent.address();
+    if (typeof address === "string" || address === null) {
+      throw new Error("Expected a TCP address.");
+    }
+
+    const moduleUrl = new URL("./mediaServer.ts", import.meta.url).href;
+    const child = spawn(
+      process.execPath,
+      [
+        "--import",
+        "tsx",
+        "-e",
+        `const { createServer } = await import("node:http");` +
+          `const { listenWithRetry } = await import(${JSON.stringify(moduleUrl)});` +
+          `await listenWithRetry(createServer(), ${address.port}, "127.0.0.1", 200);`,
+      ],
+      { stdio: ["ignore", "ignore", "pipe"] },
+    );
+    let stderr = "";
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    try {
+      const outcome = await Promise.race([
+        new Promise<string>((resolve) =>
+          child.once("exit", (code) => resolve(`exited(${code})`)),
+        ),
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("waiting"), 4_000),
+        ),
+      ]);
+      expect(`${outcome} ${stderr}`.trim()).toBe("waiting");
+    } finally {
+      child.kill("SIGKILL");
+    }
+  }, 30_000);
 
   it.each([
     "EACCES",

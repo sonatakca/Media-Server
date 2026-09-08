@@ -369,9 +369,25 @@ function parseOptionalPositiveInteger(
   return value;
 }
 
+/*
+ * Referenced deliberately. Every caller is a retry the process has to survive:
+ * waiting for a held port, for a storage root, for a database. During the first
+ * of those nothing else is open — the bind failed, so there is no listening
+ * handle — and an unreferenced timer leaves Node with no work, so it exits 0
+ * without a word and the supervisor relaunches straight back into the busy
+ * port. Shutdown is unaffected: `stop` exits explicitly and keeps its own
+ * deadline, so a pending wait can never hold the process open.
+ */
+/** The command that lists this platform's supervised Seyirlik processes. */
+function supervisorListCommand(): string {
+  return process.platform === "win32"
+    ? "sc query state= all | findstr /i seyirlik"
+    : "launchctl list | grep seyirlik";
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
-    setTimeout(resolve, ms).unref();
+    setTimeout(resolve, ms);
   });
 }
 
@@ -435,7 +451,7 @@ export async function listenWithRetry(
       console.warn(
         waitedMs === 0
           ? `[Seyirlik] Could not bind ${host}:${port}: another process is holding it. ` +
-              "Another Seyirlik server may already be running (check `launchctl list | grep seyirlik`). " +
+              `Another Seyirlik server may already be running (check \`${supervisorListCommand()}\`). ` +
               "Waiting for the port to be released."
           : `[Seyirlik] ${host}:${port} is still held by another process; waiting for it (${Math.round(waitedMs / 1000)}s).`,
       );
