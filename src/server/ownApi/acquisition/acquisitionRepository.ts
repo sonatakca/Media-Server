@@ -67,6 +67,14 @@ export interface AcquisitionEvent {
 
 export interface AcquisitionRepository extends AcquisitionStore {
   create(input: CreateAcquisitionInput): Promise<AcquisitionSummary>;
+  /**
+   * Narrower than the store's, and truthfully so.
+   *
+   * `AcquisitionStore` is what the service needs — the state machine's fields
+   * and nothing else. The repository has always returned the whole summary,
+   * and the import phase needs the target it names.
+   */
+  get(id: string): Promise<AcquisitionSummary | null>;
   list(limit?: number): Promise<AcquisitionSummary[]>;
   detail(id: string): Promise<{
     acquisition: AcquisitionSummary;

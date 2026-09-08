@@ -136,6 +136,7 @@ import {
   createImportJobHandlers,
   IMPORT_JOB_TYPES,
 } from "./imports/importJobs";
+import { createImportRoutes } from "./imports/importRoutes";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -1220,6 +1221,47 @@ export async function createNativeRuntime({
           indexers: indexerRegistry,
           queue,
           sab: acquisition.sab,
+        })
+      : []),
+    ...(importing && importConfig
+      ? createImportRoutes({
+          repository: importing.repository,
+          service: importing.service,
+          queue,
+          downloadRoot: importConfig.downloadRoot,
+          /*
+           * The library a kind of media belongs in, from the configured
+           * definitions. A caller cannot influence it; asking for a kind
+           * nothing is configured for is refused rather than guessed at.
+           */
+          libraryRootFor: (kind) => {
+            const wanted = kind === "movie" ? "movies" : "series";
+            const definition = definitions.find(
+              (entry) => entry.kind === wanted && entry.roots.length > 0,
+            );
+            return definition
+              ? path.join(mediaRoot, definition.roots[0]!)
+              : undefined;
+          },
+          /*
+           * What the acquisition actually downloaded. Read from Seyirlik's own
+           * record rather than from the request, which is the whole reason a
+           * client can name an acquisition and not a path.
+           */
+          resolveAcquisition: async (acquisitionId) => {
+            if (!acquisition) return null;
+            const record = await acquisition.repository.get(acquisitionId);
+            if (!record?.downloadPath || record.state !== "downloaded") {
+              return null;
+            }
+            return {
+              downloadPath: record.downloadPath,
+              target: {
+                kind: record.targetKind as "movie" | "season" | "episode",
+                title: record.targetTitle,
+              },
+            };
+          },
         })
       : []),
     ...(restartController
