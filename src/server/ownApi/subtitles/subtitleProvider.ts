@@ -167,6 +167,11 @@ export interface SubtitleQuery {
 
 /** One subtitle a provider says it has. */
 export interface SubtitleCandidate extends SubtitleFlags {
+  /** Explicit evidence from the provider; absent evidence cannot win a search. */
+  readonly identity?: Pick<
+    SubtitleQuery,
+    "title" | "year" | "season" | "episode"
+  >;
   readonly providerId: string;
   /** Opaque to everything but the provider that issued it. */
   readonly candidateId: string;
@@ -248,11 +253,13 @@ export interface SubtitleProvider {
   search(
     query: SubtitleQuery,
     session: ProviderSession | null,
+    signal?: AbortSignal,
   ): Promise<ProviderResult<readonly SubtitleCandidate[]>>;
 
   download(
     candidate: SubtitleCandidate,
     session: ProviderSession | null,
+    signal?: AbortSignal,
   ): Promise<ProviderResult<SubtitlePayload>>;
 }
 
