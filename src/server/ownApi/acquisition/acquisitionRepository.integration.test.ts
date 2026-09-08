@@ -1,4 +1,5 @@
 // @vitest-environment node
+import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDatabasePool } from "../database/databasePool";
 import { runMigrations } from "../database/migrationRunner";
@@ -58,7 +59,10 @@ integration("acquisitions in PostgreSQL", () => {
     const created = await repository.create(input);
     expect(created.state).toBe("planned");
     expect(created.idempotencyKey).toBe(`seyirlik-${created.id}`);
-    expect(created.attempt).toBe(1);
+    // Attempts made, not the attempt about to be made: nothing has been sent
+    // yet, and `submit` is what raises it. Counting from one here would give
+    // every release one retry more than the cap allows.
+    expect(created.attempt).toBe(0);
     expect(created.externalId).toBeUndefined();
   });
 
@@ -67,10 +71,10 @@ integration("acquisitions in PostgreSQL", () => {
     await expect(
       pool.query(
         `INSERT INTO acquisitions
-           (target_kind, target_title, indexer_id, release_guid,
+           (id, target_kind, target_title, indexer_id, release_guid,
             release_title, state, origin, idempotency_key)
-         VALUES ('movie','Copy','nzbgeek','abc123','Copy','planned','manual',$1)`,
-        [created.idempotencyKey],
+         VALUES ($1,'movie','Copy','nzbgeek','abc123','Copy','planned','manual',$2)`,
+        [randomUUID(), created.idempotencyKey],
       ),
     ).rejects.toThrow(/duplicate key|unique/i);
   });
