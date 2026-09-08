@@ -127,6 +127,15 @@ import {
   createAcquisitionJobHandlers,
 } from "./acquisition/acquisitionJobs";
 import { createAcquisitionRoutes } from "./acquisition/acquisitionRoutes";
+import { parseImportConfig } from "./imports/importConfig";
+import { createImportRepository } from "./imports/importRepository";
+import { createImportService } from "./imports/importService";
+import { createImportOperations } from "./imports/importOperations";
+import { createNodeReadFileSystem } from "./imports/importFileSystem";
+import {
+  createImportJobHandlers,
+  IMPORT_JOB_TYPES,
+} from "./imports/importJobs";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -204,6 +213,14 @@ const EXPIRED_SESSION_CLEANUP_INTERVAL_MS = 15 * 60_000;
  * backlog is not answering a queue listing every few seconds.
  */
 const ACQUISITION_RECONCILE_INTERVAL_MS = 30_000;
+/**
+ * How often to ask what became of an import whose outcome is unknown.
+ *
+ * Longer than the download reconciler's interval on purpose. These rows are
+ * created only by a process dying inside an activation, and nothing about them
+ * changes on its own between one look and the next.
+ */
+const IMPORT_RECONCILE_INTERVAL_MS = 120_000;
 const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
 
 /**
@@ -242,6 +259,9 @@ export async function createNativeRuntime({
   // And once more for the downloader: a declared client whose key is missing
   // would present as downloads that are accepted and never start.
   const sabnzbdConfig = parseSabnzbdConfig(environment);
+  // And for the importer: a download root that is not absolute would resolve
+  // against whatever directory the service happened to start in.
+  const importConfig = parseImportConfig(environment);
 
   startup?.begin({
     id: "database",
@@ -977,6 +997,40 @@ export async function createNativeRuntime({
     config: nfoConfig,
   });
 
+  /*
+   * The importer, when a download root is configured.
+   *
+   * Absent throughout when it is not. Every path it touches is proven against
+   * the two roots frozen onto the import row at plan time, so this factory
+   * hands out operations bound to those roots and to nothing else.
+   */
+  const importing = importConfig
+    ? (() => {
+        const repository = createImportRepository(pool);
+        return {
+          repository,
+          service: createImportService({
+            repository,
+            operationsFor: (source, library) =>
+              createImportOperations(source, library),
+            sourceFileSystemFor: (root) => createNodeReadFileSystem(root),
+            targetFor: async (importId) => {
+              const record = await repository.get(importId);
+              if (!record) return null;
+              return {
+                kind: record.targetKind as "movie" | "season" | "episode",
+                title: record.targetTitle,
+              };
+            },
+            policy: {
+              retainSource: importConfig.retainSource,
+              ...(importConfig.forceCopy ? { forceCopy: true } : {}),
+            },
+          }),
+        };
+      })()
+    : undefined;
+
   const worker = createWorker({
     queue,
     /*
@@ -1068,6 +1122,9 @@ export async function createNativeRuntime({
             acquisition.service,
             acquisition.repository,
           )
+        : {}),
+      ...(importing
+        ? createImportJobHandlers(importing.service, importing.repository)
         : {}),
     },
     logger: console,
@@ -1259,6 +1316,26 @@ export async function createNativeRuntime({
    * tick that arrives while the last one is still running is collapsed instead
    * of stacking up behind an unreachable client.
    */
+  /*
+   * Asks the filesystem what became of the imports nobody can account for.
+   *
+   * Rarer than the download reconciler, because the rows it looks at only
+   * appear when a process died inside an activation — and its work is reading,
+   * not polling something that changes on its own.
+   */
+  const importReconcileTimer =
+    importing && runWorker
+      ? setInterval(() => {
+          void queue
+            .enqueue({
+              jobType: IMPORT_JOB_TYPES.reconcile,
+              dedupeKey: IMPORT_JOB_TYPES.reconcile,
+            })
+            .catch(() => undefined);
+        }, IMPORT_RECONCILE_INTERVAL_MS)
+      : undefined;
+  importReconcileTimer?.unref();
+
   const acquisitionReconcileTimer =
     acquisition && runWorker
       ? setInterval(() => {
@@ -1299,6 +1376,7 @@ export async function createNativeRuntime({
       clearInterval(playbackCleanupTimer);
       clearInterval(syncplayCleanupTimer);
       if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
+      if (importReconcileTimer) clearInterval(importReconcileTimer);
       storageWatchdog.stop();
       if (releaseTimer) clearInterval(releaseTimer);
       await worker.stop();
