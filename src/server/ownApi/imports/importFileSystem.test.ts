@@ -138,6 +138,22 @@ describe("reading a tree", () => {
     );
   });
 
+  it("reports whole milliseconds, because the column that stores them is a bigint", async () => {
+    /*
+     * Node reports `mtimeMs` as a float with sub-millisecond precision.
+     * PostgreSQL rejects `1788872345698.8457` for a bigint rather than
+     * truncating it, so the rounding has to happen before the value is stored
+     * — and it happens here so the stored number and the compared number are
+     * the same one.
+     */
+    const fileSystem = createNodeReadFileSystem(root);
+    const entry = await fileSystem.stat("Dune (2021)/Dune.nfo");
+    expect(Number.isInteger(entry!.mtimeMs)).toBe(true);
+    for (const listed of await fileSystem.list("Dune (2021)")) {
+      expect(Number.isInteger(listed.mtimeMs)).toBe(true);
+    }
+  });
+
   it("returns nothing for a directory that is not there", async () => {
     const fileSystem = createNodeReadFileSystem(root);
     expect(await fileSystem.list("no-such-release")).toEqual([]);

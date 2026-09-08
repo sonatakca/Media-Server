@@ -115,7 +115,14 @@ function toEntry(
     isDirectory: stats.isDirectory(),
     isSymbolicLink: stats.isSymbolicLink(),
     sizeBytes: stats.size,
-    mtimeMs: stats.mtimeMs,
+    /*
+     * Whole milliseconds. Node reports `mtimeMs` as a float with sub-
+     * millisecond precision, and the column that stores it is a bigint — so an
+     * unrounded value is rejected by PostgreSQL rather than truncated. Rounding
+     * here keeps the stored value and the compared value the same number,
+     * which is what stability depends on.
+     */
+    mtimeMs: Math.round(stats.mtimeMs),
   };
 }
 

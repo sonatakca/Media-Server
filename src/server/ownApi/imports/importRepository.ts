@@ -449,8 +449,10 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
             file.sourceRelative,
             file.destinationRelative ?? null,
             file.destinationKey ?? null,
-            file.sizeBytes ?? null,
-            file.sourceMtimeMs ?? null,
+            file.sizeBytes === undefined ? null : Math.round(file.sizeBytes),
+            file.sourceMtimeMs === undefined
+              ? null
+              : Math.round(file.sourceMtimeMs),
           ],
         );
         created.push(toFileRecord(inserted.rows[0]!));
