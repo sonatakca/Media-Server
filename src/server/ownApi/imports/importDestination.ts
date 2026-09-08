@@ -44,10 +44,16 @@ const MAX_SEGMENT_LENGTH = 180;
 /**
  * How long the whole library-relative path may be.
  *
- * Windows' classic limit is 260 characters for the *absolute* path, and long
- * path support is neither universal nor something an import should depend on.
- * Budgeting the relative part leaves room for a library root without having to
- * know where the library will be.
+ * Windows' classic limit is 260 characters for the *absolute* path. Node is
+ * not bound by it — it passes long paths with the `\\?\` prefix, and on the
+ * target host, with `LongPathsEnabled` set to `0`, it wrote a 297-character
+ * path without complaint. Ordinary Win32 applications still obey the limit,
+ * so a library file written past it is one Explorer, most players and most
+ * backup tools cannot open.
+ *
+ * The ceiling here is therefore what everything *else* can read, not what this
+ * process can write. Budgeting the relative part leaves room for a library
+ * root without having to know where the library will be.
  */
 const MAX_RELATIVE_LENGTH = 200;
 
