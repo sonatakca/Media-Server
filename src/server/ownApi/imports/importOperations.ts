@@ -47,6 +47,12 @@ export class ImportOperationError extends Error {
 /** What a filesystem error means for an import. */
 export function classifyFsError(error: unknown): ImportOperationError {
   const code = (error as NodeJS.ErrnoException).code;
+  /*
+   * Which call failed, not just how. Windows overloads two codes badly enough
+   * that the code alone leads the wrong way, and `syscall` is on every Node
+   * filesystem error, so nothing has to be threaded down from the call site.
+   */
+  const syscall = (error as NodeJS.ErrnoException).syscall;
   const message = error instanceof Error ? error.message : String(error);
   switch (code) {
     case "ENOENT":
@@ -54,7 +60,31 @@ export function classifyFsError(error: unknown): ImportOperationError {
     case "EXDEV":
       return new ImportOperationError("cross-volume", message);
     case "EPERM":
+      /*
+       * A rename whose destination another process holds open is refused with
+       * `EPERM` on Windows, not `EBUSY`. Measured on Windows 11 against a real
+       * open handle, on exFAT and on NTFS, and for a holder that shares
+       * deletion as well as one that does not: `EBUSY` did not occur at all.
+       *
+       * The two codes lead opposite ways — `destination-locked` is retried,
+       * `permission-denied` asks a person — and a player or a scanner holding a
+       * file open for a few seconds is the commonest reason an upgrade cannot
+       * be written. It was being escalated to a human instead of being tried
+       * again.
+       *
+       * Narrowed to `rename` deliberately. `EPERM` from opening a source, or
+       * from a mkdir, is a permission problem and still reads as one. The cost
+       * of being wrong in this direction is bounded: a genuine permission
+       * failure now takes `MAX_IMPORT_ATTEMPTS` tries before it asks, rather
+       * than asking at once.
+       */
+      if (syscall === "rename") {
+        return new ImportOperationError("destination-locked", message);
+      }
+      return new ImportOperationError("permission-denied", message);
     case "EACCES":
+      // Windows distinguishes the two, and only `EPERM` carries the sharing
+      // meaning above.
       return new ImportOperationError("permission-denied", message);
     case "EBUSY":
     case "ETXTBSY":
@@ -67,6 +97,23 @@ export function classifyFsError(error: unknown): ImportOperationError {
     case "ENOSYS":
     case "EOPNOTSUPP":
       return new ImportOperationError("hardlink-unsupported", message);
+    case "EISDIR":
+      /*
+       * What exFAT answers when asked for a hardlink: `EISDIR`, on two operands
+       * that are both plainly files. Measured on a synthetic exFAT volume with
+       * the same 128 KB cluster size as the media disk. It is Windows' way of
+       * saying the filesystem has no hardlinks at all, and it was not among the
+       * codes that mean that.
+       *
+       * The capability probe catches everything and answers `false`, so
+       * strategy selection was never wrong — this is about a link that fails
+       * anywhere else being described truthfully rather than as `unknown`.
+       * `EISDIR` from any other call still means what it says.
+       */
+      if (syscall === "link") {
+        return new ImportOperationError("hardlink-unsupported", message);
+      }
+      return new ImportOperationError("unknown", message);
     case "EEXIST":
       return new ImportOperationError("destination-occupied", message);
     case "EIO":

@@ -20,6 +20,7 @@ import {
   stagingNameFor,
   type ImportOperations,
 } from "./importOperations";
+import { dispositionFor } from "./importState";
 
 /*
  * Real files throughout. What a hardlink is, what a rename does to an existing
@@ -328,6 +329,85 @@ describe("what an error means", () => {
     const classified = classifyFsError(error);
     expect(classified.failure).toBe(failure);
     expect(classified.ambiguous).toBe(ambiguous);
+  });
+
+  /**
+   * Measured on Windows 11, on both exFAT and NTFS, against a real open handle:
+   *
+   *   fs.rename over a destination another process holds open
+   *     -> { code: "EPERM", syscall: "rename" }
+   *
+   * for a holder that shares deletion and for one that does not. `EBUSY` did
+   * not occur at all. That matters because the two codes lead opposite ways:
+   * `destination-locked` is retried, `permission-denied` asks a person. A
+   * player or a scanner holding a file open for a few seconds is the single
+   * commonest reason an upgrade cannot be written, and it was being escalated
+   * to a human instead of being tried again.
+   *
+   * The distinction is the syscall, which is on every Node filesystem error. An
+   * `EPERM` from anything but a rename keeps its old meaning.
+   */
+  it("reads a rename refused by an open destination as a lock, not a permission", () => {
+    const locked = classifyFsError(
+      Object.assign(new Error("EPERM: operation not permitted, rename"), {
+        code: "EPERM",
+        syscall: "rename",
+      }),
+    );
+    expect(locked.failure).toBe("destination-locked");
+    expect(dispositionFor(locked.failure)).toBe("retry");
+  });
+
+  it.each(["open", "unlink", "mkdir", "copyfile"] as const)(
+    "still reads EPERM from %s as a permission problem",
+    (syscall) => {
+      const denied = classifyFsError(
+        Object.assign(new Error("EPERM"), { code: "EPERM", syscall }),
+      );
+      expect(denied.failure).toBe("permission-denied");
+    },
+  );
+
+  it("keeps EACCES a permission problem even on a rename", () => {
+    // Windows distinguishes them, and only EPERM carries the sharing meaning.
+    const denied = classifyFsError(
+      Object.assign(new Error("EACCES"), { code: "EACCES", syscall: "rename" }),
+    );
+    expect(denied.failure).toBe("permission-denied");
+  });
+
+  /**
+   * Also measured, on a synthetic exFAT volume with the same 128 KB cluster
+   * size as the real media disk:
+   *
+   *   fs.link on exFAT -> { code: "EISDIR", syscall: "link" }
+   *
+   * on two operands that are both plainly files. It is Windows' way of saying
+   * the filesystem has no hardlinks at all, and it was not in the list of codes
+   * that mean that — `EMLINK`, `ENOSYS`, `EOPNOTSUPP`. The capability probe
+   * catches everything and answers `false`, so strategy selection was never
+   * wrong; this is about the classification being truthful when a link fails
+   * anywhere else.
+   */
+  it("reads a link refused by the filesystem as an unsupported hardlink", () => {
+    const unsupported = classifyFsError(
+      Object.assign(
+        new Error("EISDIR: illegal operation on a directory, link"),
+        {
+          code: "EISDIR",
+          syscall: "link",
+        },
+      ),
+    );
+    expect(unsupported.failure).toBe("hardlink-unsupported");
+  });
+
+  it("leaves EISDIR from anything else alone", () => {
+    expect(
+      classifyFsError(
+        Object.assign(new Error("EISDIR"), { code: "EISDIR", syscall: "read" }),
+      ).failure,
+    ).toBe("unknown");
   });
 
   it("marks only the genuinely unknowable as ambiguous", () => {
