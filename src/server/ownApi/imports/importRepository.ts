@@ -64,6 +64,14 @@ export interface ImportRecord {
 
 export type ImportFileState =
   | "planned"
+  /**
+   * Claimed by a worker that is putting it beside its destination.
+   *
+   * The claim exists because staging is the one phase with no other lock on
+   * it. Without it a second worker discards the first one's half-written
+   * staging file, and the first then activates nothing.
+   */
+  | "staging"
   | "staged"
   | "committed"
   | "skipped"

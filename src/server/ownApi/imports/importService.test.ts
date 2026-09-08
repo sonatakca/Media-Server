@@ -115,14 +115,20 @@ describe("an import that goes to plan", () => {
     await svc.execute(importId);
     await svc.cleanup(importId);
 
+    /*
+     * Two `staging` entries and two `committed` ones: the import's own state,
+     * and the file's. The file is claimed before it is staged, which is what
+     * stops a second worker discarding a half-written staging file.
+     */
     expect(repository.trail(importId)).toEqual([
       "planned",
       "validating",
-      "staging",
+      "staging", // the import
+      "staging", // the file, claimed
       "staged",
       "committing",
-      "committed",
-      "committed",
+      "committed", // the file
+      "committed", // the import
       "cleaning",
       "complete",
     ]);

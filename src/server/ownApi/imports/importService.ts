@@ -148,13 +148,32 @@ export function createImportService({
     }
   }
 
-  /** Puts one file beside its destination and records what it now is. */
+  /**
+   * Puts one file beside its destination and records what it now is.
+   *
+   * Claims the row first. Staging is the only phase with no other lock on it,
+   * and without a claim a second worker discards the first one's half-written
+   * staging file — after which the first activates nothing and the library
+   * ends up empty rather than merely duplicated. Returns false when another
+   * worker holds the file.
+   */
   async function stageFile(
     operations: ImportOperations,
     idempotencyKey: string,
     file: ImportFileRecord,
     strategy: ImportStrategy,
-  ): Promise<void> {
+  ): Promise<boolean> {
+    if (
+      !(await repository.updateFile(
+        file.id,
+        "planned",
+        { state: "staging", strategy },
+        "Claimed for staging.",
+      ))
+    ) {
+      return false;
+    }
+
     const destination = file.destinationRelative!;
     const staged = stagingNameFor(idempotencyKey, destination);
     await operations.ensureDirectory(destination);
@@ -185,10 +204,11 @@ export function createImportService({
     }
     await repository.updateFile(
       file.id,
-      file.state,
+      "staging",
       { state: "staged", strategy, destinationIdentity: identity.key },
       "Staged beside its destination.",
     );
+    return true;
   }
 
   /**
@@ -369,10 +389,11 @@ export function createImportService({
       if (fresh.length > 0) await repository.addFiles(record.id, fresh);
       // Anything that failed last time is offered to this attempt again.
       for (const file of existing) {
-        if (file.state === "failed") {
+        // `staging` here is a claim whose worker never came back.
+        if (file.state === "failed" || file.state === "staging") {
           await repository.updateFile(
             file.id,
-            "failed",
+            file.state,
             { state: "planned" },
             "Re-planned.",
           );
@@ -458,6 +479,24 @@ export function createImportService({
               operational.message,
             );
           }
+        }
+
+        /*
+         * The declaration waits for every file, including any another worker
+         * is still staging. Declaring while a file is half-copied would let
+         * this worker activate an incomplete file.
+         */
+        const ready = await repository.listFiles(importId);
+        if (
+          ready.some(
+            (file) =>
+              file.destinationRelative &&
+              file.state !== "staged" &&
+              file.state !== "committed" &&
+              file.state !== "skipped",
+          )
+        ) {
+          return { state: "staging", committed: 0, failed: 0 };
         }
 
         // ---- step 3: the declaration, before the first rename.
