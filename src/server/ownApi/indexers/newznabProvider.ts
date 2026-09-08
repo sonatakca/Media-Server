@@ -9,6 +9,7 @@
 import {
   IndexerError,
   isRetryable,
+  type ReleasePayload,
   type IndexerCapabilities,
   type IndexerProtocol,
   type IndexerProvider,
@@ -17,9 +18,11 @@ import {
 } from "./indexerTypes";
 import {
   buildSearchParams,
+  classifyNewznabCode,
   parseCapabilities,
   parseSearchResults,
 } from "./newznab";
+import { releaseIdFromGuid } from "./releaseId";
 
 export const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 /** Capabilities change about as often as a provider is reconfigured. */
@@ -152,6 +155,81 @@ export function createNewznabProvider(
     }
   }
 
+  /**
+   * The same request, returning bytes.
+   *
+   * Kept separate from the text path rather than sharing it: an NZB is a
+   * payload to hand on untouched, and decoding it to a string and back is a
+   * corruption waiting to happen the first time a provider sends something
+   * that is not UTF-8.
+   */
+  async function requestBytes(
+    params: URLSearchParams,
+    signal: AbortSignal | undefined,
+  ): Promise<ReleasePayload> {
+    const url = new URL(endpoint);
+    for (const [key, value] of params) url.searchParams.set(key, value);
+    url.searchParams.set("apikey", apiKey);
+
+    const controller = new AbortController();
+    let timedOut = false;
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    const timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
+    try {
+      const response = await fetchImpl(url, {
+        signal: controller.signal,
+        headers: { Accept: "application/x-nzb, application/xml, */*" },
+      });
+      if (!response.ok) {
+        throw new IndexerError(
+          classifyStatus(response.status),
+          `The provider answered ${response.status}.`,
+        );
+      }
+      const buffer = await response.arrayBuffer();
+      if (buffer.byteLength === 0) {
+        throw new IndexerError("not-found", "The provider returned nothing.");
+      }
+      if (buffer.byteLength > MAX_RESPONSE_BYTES) {
+        throw new IndexerError(
+          "malformed-response",
+          "The provider's payload is implausibly large.",
+        );
+      }
+      const bytes = new Uint8Array(buffer);
+      /*
+       * A refusal arrives as HTTP 200 with an <error> body here too, and it is
+       * small. Checking only the first bytes avoids decoding a real NZB.
+       */
+      const head = new TextDecoder().decode(bytes.subarray(0, 512));
+      if (/<error\s/i.test(head)) {
+        const code = head.match(/code="(\d+)"/)?.[1] ?? "";
+        const description =
+          head.match(/description="([^"]*)"/)?.[1] ??
+          "The provider refused to supply the release.";
+        throw new IndexerError(classifyNewznabCode(code), description, code);
+      }
+      const disposition = response.headers?.get?.("content-disposition") ?? "";
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1];
+      return {
+        bytes,
+        ...(filename ? { filename: filename.trim() } : {}),
+        ...(response.headers?.get?.("content-type")
+          ? { contentType: response.headers.get("content-type")! }
+          : {}),
+      };
+    } catch (error) {
+      throw classifyTransportError(error, signal, timedOut);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+    }
+  }
+
   /** Bounded: `maxAttempts` in total, and only for reasons that can pass. */
   async function request(
     params: URLSearchParams,
@@ -223,6 +301,19 @@ export function createNewznabProvider(
         offset: query.offset ?? 0,
         limit: Number(params.get("limit") ?? 0),
       });
+    },
+    async fetchRelease(guid: string, signal?: AbortSignal) {
+      const releaseId = releaseIdFromGuid(guid);
+      if (!releaseId) {
+        throw new IndexerError(
+          "bad-request",
+          "That release identifier cannot be turned into a provider request.",
+        );
+      }
+      return requestBytes(
+        new URLSearchParams({ t: "get", id: releaseId }),
+        signal,
+      );
     },
   };
 }

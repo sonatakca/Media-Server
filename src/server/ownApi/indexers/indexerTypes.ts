@@ -141,6 +141,22 @@ export interface IndexerProvider {
     query: IndexerSearchQuery,
     signal?: AbortSignal,
   ): Promise<IndexerSearchResult>;
+  /**
+   * The NZB for a release this provider returned.
+   *
+   * Takes the identifier rather than a URL. The URL that fetches it carries
+   * the provider's API key, so it is built inside the adapter at the moment of
+   * the request and never stored, returned, or accepted from a caller — a
+   * caller that could supply the URL could supply any URL.
+   */
+  fetchRelease(guid: string, signal?: AbortSignal): Promise<ReleasePayload>;
+}
+
+export interface ReleasePayload {
+  readonly bytes: Uint8Array;
+  /** What the provider called it, when it said. Never contains the key. */
+  readonly filename?: string;
+  readonly contentType?: string;
 }
 
 /** The wire shape. `downloadUrl` is absent by construction, not by omission. */
