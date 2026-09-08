@@ -268,6 +268,37 @@ describe("installing a subtitle beside media", () => {
       expect(await readFile(target, "utf8")).toContain("Hand made.");
     });
 
+    /*
+     * The one genuinely new ownership overlap in this phase. Both the importer
+     * and this service write subtitles into the same folder, and they are
+     * separated by evidence rather than by naming: a subtitle that arrived with
+     * a download has no installation record, so it is refused — which also
+     * means it cannot currently be upgraded. That is deliberate, and
+     * `docs/library-file-ownership.md` says so.
+     */
+    it("will not replace a subtitle the importer placed", async () => {
+      const target = path.join(
+        root,
+        "Movies",
+        "Dune (2021)",
+        "Dune (2021).tur.srt",
+      );
+      await writeFile(target, SRT);
+      // Byte-identical, but no record: this service did not write it.
+      expect(await install({ replace: true })).toMatchObject({
+        outcome: "duplicate",
+      });
+
+      const different = SRT.replace("Merhaba.", "Selam.");
+      expect(
+        await install({ payload: payloadOf(different), replace: true }),
+      ).toMatchObject({
+        outcome: "error",
+        failure: "destination-occupied",
+      });
+      expect(await readFile(target, "utf8")).toBe(SRT);
+    });
+
     it("replaces one it does own, but only when asked to", async () => {
       const first = await install();
       expect(first.outcome).toBe("installed");
