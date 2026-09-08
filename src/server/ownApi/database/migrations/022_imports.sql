@@ -50,6 +50,15 @@ CREATE TABLE imports (
   -- supports; recorded because the safe recovery differs for each.
   strategy text,
 
+  /*
+   * Whether this import is allowed to replace media already in the library.
+   *
+   * Off by default, and set by whoever decided this release is better than
+   * what is there. An importer that worked it out for itself would be an
+   * importer that can overwrite a film because a name matched.
+   */
+  is_upgrade boolean NOT NULL DEFAULT false,
+
   attempt integer NOT NULL DEFAULT 0,
   failure_class text,
   failure_detail text,

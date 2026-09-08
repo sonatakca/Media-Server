@@ -40,6 +40,7 @@ import {
   chooseStrategy,
   ImportOperationError,
   isStagingName,
+  retirementNameFor,
   stagingNameFor,
   type ImportOperations,
   type StrategyPolicy,
@@ -145,6 +146,11 @@ export function createImportService({
           stagingNameFor(idempotencyKey, file.destinationRelative),
         )
         .catch(() => undefined);
+      await operations
+        .discardStaging(
+          retirementNameFor(idempotencyKey, file.destinationRelative),
+        )
+        .catch(() => undefined);
     }
   }
 
@@ -224,10 +230,18 @@ export function createImportService({
     idempotencyKey: string,
     file: ImportFileRecord,
     strategy: ImportStrategy,
-  ): Promise<"committed" | "occupied"> {
+    upgrade: boolean,
+  ): Promise<"committed" | "occupied" | "replaced"> {
     const destination = file.destinationRelative!;
     const staged = stagingNameFor(idempotencyKey, destination);
 
+    const retired = retirementNameFor(idempotencyKey, destination);
+
+    /*
+     * An interrupted replacement is finished rather than restarted. The old
+     * file is already aside under a name that says which import moved it, so
+     * the only thing left is to put the new one in place.
+     */
     const present = await operations.identity(destination);
     if (present) {
       if (
@@ -246,9 +260,29 @@ export function createImportService({
         }
         // Whatever was staged is now redundant; the destination is the file.
         await operations.discardStaging(staged).catch(() => undefined);
+        await operations.discardStaging(retired).catch(() => undefined);
         return "committed";
       }
-      return "occupied";
+
+      /*
+       * Something else is at the destination. Whether that may be replaced is
+       * not this function's judgement: an import replaces media only when it
+       * was told the release is an upgrade, and only when the file it would
+       * replace is one Seyirlik itself put there.
+       */
+      if (!upgrade) return "occupied";
+      const owner = file.destinationKey
+        ? await repository.findCommittedDestination(file.destinationKey)
+        : null;
+      if (!owner) return "occupied";
+
+      /*
+       * Aside, not deleted. The old bytes stay whole under a retirement name
+       * until the replacement is recorded, so a crash in the two syscalls
+       * between here and the activation leaves both files on disk under names
+       * that say exactly what they are.
+       */
+      await operations.retire(destination, retired);
     }
 
     const identity =
@@ -261,6 +295,18 @@ export function createImportService({
       );
     }
 
+    const replacing = await operations.exists(retired);
+    if (replacing && file.destinationKey) {
+      /*
+       * The row for the file just renamed aside still claims this destination,
+       * and the unique index counts only committed rows — so until it is
+       * superseded the replacement cannot be recorded at all.
+       */
+      await repository.supersedeCommittedDestination(
+        file.destinationKey,
+        file.id,
+      );
+    }
     await operations.activate(staged, destination);
     try {
       await repository.commitFile(file.id, file.state, identity, strategy);
@@ -274,6 +320,14 @@ export function createImportService({
         return "occupied";
       }
       throw error;
+    }
+    /*
+     * Only now. The replacement is recorded, so the file it replaced is no
+     * longer the library's last valid copy of anything.
+     */
+    if (replacing) {
+      await operations.discardStaging(retired).catch(() => undefined);
+      return "replaced";
     }
     return "committed";
   }
@@ -512,6 +566,35 @@ export function createImportService({
         }
       }
 
+      /*
+       * Every destination is judged before any of them is written.
+       *
+       * Deciding per file as the loop reached it meant a subtitle could be
+       * published beside a film the import turned out not to own, because the
+       * subtitle sorted first. An import either claims the whole release or
+       * leaves the library exactly as it found it.
+       */
+      const pending = await repository.listFiles(importId);
+      for (const file of pending) {
+        if (file.state === "committed" || !file.destinationRelative) continue;
+        const present = await operations.identity(file.destinationRelative);
+        if (!present) continue;
+        if (present.key === file.destinationIdentity) continue;
+        const owner = file.destinationKey
+          ? await repository.findCommittedDestination(file.destinationKey)
+          : null;
+        // Replaceable only if this system put it there and was told to.
+        if (record.isUpgrade && owner) continue;
+        await discardStagingFor(operations, record.idempotencyKey, pending);
+        return settle(
+          importId,
+          "committing",
+          "needs_attention",
+          "destination-occupied",
+          "A destination holds a file this import did not put there.",
+        );
+      }
+
       // ---- steps 4 and 5: activate, and record each as committed.
       let committed = 0;
       let occupied = 0;
@@ -527,9 +610,10 @@ export function createImportService({
             record.idempotencyKey,
             file,
             strategy,
+            record.isUpgrade,
           );
-          if (result === "committed") committed += 1;
-          else occupied += 1;
+          if (result === "occupied") occupied += 1;
+          else committed += 1;
         } catch (error) {
           const operational = operationalFrom(error);
           if (operational.ambiguous) {
@@ -568,6 +652,11 @@ export function createImportService({
       }
 
       if (occupied > 0) {
+        await discardStagingFor(
+          operations,
+          record.idempotencyKey,
+          await repository.listFiles(importId),
+        );
         return settle(
           importId,
           "committing",
@@ -628,6 +717,19 @@ export function createImportService({
               actual.key,
               (file.strategy ?? strategy) as ImportStrategy,
             );
+            /*
+             * The staging and any retired file are now redundant: the
+             * destination is the file, and it is recorded as such.
+             */
+            for (const spent of [
+              stagingNameFor(record.idempotencyKey, file.destinationRelative),
+              retirementNameFor(
+                record.idempotencyKey,
+                file.destinationRelative,
+              ),
+            ]) {
+              await operations.discardStaging(spent).catch(() => undefined);
+            }
             committed += 1;
           } catch (error) {
             if (error instanceof DestinationAlreadyCommittedError) {

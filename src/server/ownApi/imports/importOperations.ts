@@ -122,8 +122,10 @@ export interface ImportOperations {
   identity(libraryRelative: string): Promise<FileIdentity | null>;
   sourceIdentity(sourceRelative: string): Promise<FileIdentity | null>;
   exists(libraryRelative: string): Promise<boolean>;
-  /** Removes a library path. Only ever used on this import's own staging. */
+  /** Removes a library path. Only this import's own staging or retirement. */
   discardStaging(libraryRelative: string): Promise<void>;
+  /** Renames the file being replaced aside, keeping its bytes. */
+  retire(destinationRelative: string, retiredRelative: string): Promise<void>;
   /** Removes a source path, once a destination is proven durable. */
   removeSource(sourceRelative: string): Promise<void>;
   /**
@@ -156,6 +158,32 @@ export function stagingNameFor(
 
 export function isStagingName(relative: string): boolean {
   return (relative.split("/").at(-1) ?? "").startsWith(STAGING_PREFIX);
+}
+
+const RETIRED_PREFIX = ".seyirlik-retired";
+
+/**
+ * Where the file being replaced is put while the replacement goes in.
+ *
+ * An upgrade never deletes the old media and then hopes. The old file is
+ * renamed aside — one atomic operation, its bytes entirely intact — the new
+ * one is renamed into place, and only once that is recorded is the old one
+ * removed. A reader in the gap between the two renames sees no file rather
+ * than half of one, and a crash there leaves both files on disk under names
+ * that say exactly what they are.
+ */
+export function retirementNameFor(
+  idempotencyKey: string,
+  destinationRelative: string,
+): string {
+  const directory = destinationRelative.split("/").slice(0, -1).join("/");
+  const base = destinationRelative.split("/").at(-1) ?? "file";
+  const name = `${RETIRED_PREFIX}-${idempotencyKey}-${base}`;
+  return directory ? `${directory}/${name}` : name;
+}
+
+export function isRetiredName(relative: string): boolean {
+  return (relative.split("/").at(-1) ?? "").startsWith(RETIRED_PREFIX);
 }
 
 async function refuseIfPresent(
@@ -259,6 +287,22 @@ export function createImportOperations(
       }
     },
 
+    retire: async (destinationRelative, retiredRelative) => {
+      if (!isRetiredName(retiredRelative)) {
+        throw new ImportOperationError(
+          "path-escape",
+          "A file may only be retired under a retirement name.",
+        );
+      }
+      const from = library.resolve(destinationRelative);
+      const to = await refuseIfPresent(library, retiredRelative);
+      try {
+        await rename(from, to);
+      } catch (error) {
+        throw classifyFsError(error);
+      }
+    },
+
     identity: async (libraryRelative) =>
       identityOf(library.resolve(libraryRelative)),
 
@@ -275,10 +319,10 @@ export function createImportOperations(
        * name, and a deletion helper that would take any path is a deletion
        * helper that will eventually be given the wrong one.
        */
-      if (!isStagingName(libraryRelative)) {
+      if (!isStagingName(libraryRelative) && !isRetiredName(libraryRelative)) {
         throw new ImportOperationError(
           "path-escape",
-          "Only an import's own staging file may be discarded.",
+          "Only an import's own staging or retired file may be discarded.",
         );
       }
       await rm(library.resolve(libraryRelative), { force: true });

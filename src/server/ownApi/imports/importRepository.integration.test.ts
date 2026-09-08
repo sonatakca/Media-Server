@@ -239,6 +239,50 @@ integration("one committed file per destination", () => {
     expect(await repository.findCommittedDestination("c:\\nobody")).toBeNull();
   });
 
+  it("frees the destination when an upgrade supersedes what was there", async () => {
+    /*
+     * The unique index counts only committed rows, so superseding is what lets
+     * a replacement be recorded at all. Without it the upgrade renames the old
+     * file aside, puts the new one in place, and is then refused by the
+     * database — leaving the library correct and the record wrong.
+     */
+    const key = "c:\\seyirliklibrary\\dune (2021)/upgrade.mkv";
+    const original = await plannedFile(key);
+    await repository.commitFile(
+      original,
+      "planned",
+      "dev:1;ino:70",
+      "hardlink",
+    );
+
+    const better = await plannedFile(key);
+    await expect(
+      repository.commitFile(better, "planned", "dev:1;ino:71", "hardlink"),
+    ).rejects.toBeInstanceOf(DestinationAlreadyCommittedError);
+
+    expect(await repository.supersedeCommittedDestination(key, better)).toBe(1);
+    expect(
+      await repository.commitFile(
+        better,
+        "planned",
+        "dev:1;ino:71",
+        "hardlink",
+      ),
+    ).toBe(true);
+
+    const owner = await repository.findCommittedDestination(key);
+    expect(owner?.id).toBe(better);
+  });
+
+  it("supersedes nothing when the destination is not claimed", async () => {
+    expect(
+      await repository.supersedeCommittedDestination(
+        "c:\\seyirliklibrary\\nobody.mkv",
+        "00000000-0000-4000-8000-000000000000",
+      ),
+    ).toBe(0);
+  });
+
   it("refuses two files of one import targeting the same destination", async () => {
     const record = await repository.create(base);
     await expect(

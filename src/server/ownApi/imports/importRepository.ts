@@ -39,6 +39,13 @@ export interface CreateImportInput {
   readonly sourceRoot: string;
   readonly libraryRoot: string;
   readonly sourceRelative: string;
+  /**
+   * Set by whoever decided this release is better than what is in the library.
+   *
+   * An importer that worked this out for itself would be an importer that can
+   * overwrite a film because a name matched.
+   */
+  readonly isUpgrade?: boolean;
 }
 
 export interface ImportRecord {
@@ -53,6 +60,8 @@ export interface ImportRecord {
   readonly sourceRoot: string;
   readonly libraryRoot: string;
   readonly sourceRelative: string;
+  /** Whether this import may replace media already in the library. */
+  readonly isUpgrade: boolean;
   readonly attempt: number;
   readonly failureClass?: string;
   readonly failureDetail?: string;
@@ -74,6 +83,15 @@ export type ImportFileState =
   | "staging"
   | "staged"
   | "committed"
+  /**
+   * Committed once, and replaced since by an upgrade.
+   *
+   * A distinct state rather than a deletion, because the row is the record of
+   * a file that really was in the library — and because the unique index only
+   * counts `committed`, superseding is what frees the destination for the
+   * release that replaced it.
+   */
+  | "superseded"
   | "skipped"
   | "failed";
 
@@ -183,6 +201,18 @@ export interface ImportRepository extends ImportStore {
   findCommittedDestination(
     destinationKey: string,
   ): Promise<ImportFileRecord | null>;
+  /**
+   * Marks the file an upgrade replaced, so the destination is free again.
+   *
+   * Returns how many rows moved. Called after the old file has been renamed
+   * aside and before the new one is recorded, which is the only ordering in
+   * which neither a crash nor the unique index can leave the destination
+   * claimed by a file that is no longer there.
+   */
+  supersedeCommittedDestination(
+    destinationKey: string,
+    exceptFileId: string,
+  ): Promise<number>;
 }
 
 interface Row {
@@ -197,6 +227,7 @@ interface Row {
   source_root: string;
   library_root: string;
   source_relative: string;
+  is_upgrade: boolean;
   attempt: number;
   failure_class: string | null;
   failure_detail: string | null;
@@ -224,7 +255,7 @@ interface FileRow {
 
 const COLUMNS = `id, acquisition_id, idempotency_key, state, strategy,
   target_kind, target_title, target_item_id, source_root, library_root,
-  source_relative, attempt, failure_class, failure_detail, retry_after,
+  source_relative, is_upgrade, attempt, failure_class, failure_detail, retry_after,
   committed_at, created_at, updated_at`;
 
 const FILE_COLUMNS = `id, import_id, role, source_relative,
@@ -250,6 +281,7 @@ function toRecord(row: Row): ImportRecord {
     sourceRoot: row.source_root,
     libraryRoot: row.library_root,
     sourceRelative: row.source_relative,
+    isUpgrade: row.is_upgrade,
     attempt: row.attempt,
     ...(row.failure_class ? { failureClass: row.failure_class } : {}),
     ...(row.failure_detail ? { failureDetail: row.failure_detail } : {}),
@@ -301,6 +333,19 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
     );
   }
 
+  async function recordEventForFile(
+    fileId: string,
+    fromState: string,
+    toState: string,
+  ): Promise<void> {
+    await pool.query(
+      `INSERT INTO import_events (import_id, import_file_id, from_state, to_state, detail)
+       SELECT import_id, id, $2, $3, 'Replaced by an upgrade.'
+         FROM import_files WHERE id = $1`,
+      [fileId, fromState, toState],
+    );
+  }
+
   const repository: ImportRepository = {
     async create(input) {
       const id = randomUUID();
@@ -314,8 +359,8 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
         `INSERT INTO imports
            (id, acquisition_id, target_kind, target_item_id, target_title,
             target_year, target_season, target_episode, source_root,
-            library_root, source_relative, state, idempotency_key)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'planned',$12)
+            library_root, source_relative, state, idempotency_key, is_upgrade)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'planned',$12,$13)
          RETURNING ${COLUMNS}`,
         [
           id,
@@ -330,6 +375,7 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
           input.libraryRoot,
           input.sourceRelative,
           idempotencyKey,
+          input.isUpgrade ?? false,
         ],
       );
       await recordEvent(id, null, "", "planned", null, "Import planned.");
@@ -495,6 +541,19 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
         [destinationKey],
       );
       return result.rows[0] ? toFileRecord(result.rows[0]) : null;
+    },
+
+    async supersedeCommittedDestination(destinationKey, exceptFileId) {
+      const result = await pool.query<{ id: string }>(
+        `UPDATE import_files SET state = 'superseded', updated_at = now()
+          WHERE destination_key = $1 AND state = 'committed' AND id <> $2
+        RETURNING id`,
+        [destinationKey, exceptFileId],
+      );
+      for (const row of result.rows) {
+        await recordEventForFile(row.id, "committed", "superseded");
+      }
+      return result.rows.length;
     },
 
     async list(limit = 100) {

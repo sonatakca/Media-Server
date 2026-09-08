@@ -68,6 +68,7 @@ export function createMemoryRepository(): MemoryRepository {
         sourceRoot: input.sourceRoot,
         libraryRoot: input.libraryRoot,
         sourceRelative: input.sourceRelative,
+        isUpgrade: input.isUpgrade ?? false,
         attempt: 0,
         createdAtMs: now,
         updatedAtMs: now,
@@ -211,6 +212,28 @@ export function createMemoryRepository(): MemoryRepository {
         { state: "committed", destinationIdentity: identity, strategy },
         "Destination activated.",
       );
+    },
+
+    async supersedeCommittedDestination(destinationKey, exceptFileId) {
+      let moved = 0;
+      for (const file of [...files.values()]) {
+        if (
+          file.id !== exceptFileId &&
+          file.state === "committed" &&
+          file.destinationKey === destinationKey
+        ) {
+          files.set(file.id, { ...file, state: "superseded" });
+          record(
+            file.importId,
+            "committed",
+            "superseded",
+            undefined,
+            "Replaced by an upgrade.",
+          );
+          moved += 1;
+        }
+      }
+      return moved;
     },
 
     async findCommittedDestination(destinationKey) {

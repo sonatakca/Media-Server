@@ -69,8 +69,9 @@ function harness(options: {
   const listConcluded = vi.fn(
     async (_options: ListOptions) => options.concluded ?? [],
   );
-  const countTasks = vi.fn(async (_options: { excludeJobTypes?: string[] }) =>
-    options.totals ?? { active: 0, concluded: 0 },
+  const countTasks = vi.fn(
+    async (_options: { excludeJobTypes?: string[] }) =>
+      options.totals ?? { active: 0, concluded: 0 },
   );
   const reorderQueue = vi.fn(
     async (
