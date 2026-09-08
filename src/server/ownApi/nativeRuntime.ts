@@ -116,6 +116,8 @@ import { parseIndexerConfig } from "./indexers/indexerConfig";
 import { createIndexerRegistry } from "./indexers/indexerRegistry";
 import { createIndexerSearchService } from "./indexers/searchService";
 import { createIndexerRoutes } from "./indexers/indexerRoutes";
+import { createPolicyRepository } from "./releases/policyRepository";
+import { createReleaseRoutes } from "./releases/releaseRoutes";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -1091,6 +1093,10 @@ export async function createNativeRuntime({
     ...createIndexerRoutes({
       registry: indexerRegistry,
       search: indexerSearch,
+    }),
+    ...createReleaseRoutes({
+      search: indexerSearch,
+      policies: createPolicyRepository(pool),
     }),
     ...(restartController
       ? createSystemRoutes({ restart: restartController })
