@@ -118,6 +118,15 @@ import { createIndexerSearchService } from "./indexers/searchService";
 import { createIndexerRoutes } from "./indexers/indexerRoutes";
 import { createPolicyRepository } from "./releases/policyRepository";
 import { createReleaseRoutes } from "./releases/releaseRoutes";
+import { parseSabnzbdConfig } from "./acquisition/acquisitionConfig";
+import { createSabnzbdClient } from "./acquisition/sabnzbd";
+import { createAcquisitionRepository } from "./acquisition/acquisitionRepository";
+import { createAcquisitionService } from "./acquisition/acquisitionService";
+import {
+  ACQUISITION_JOB_TYPES,
+  createAcquisitionJobHandlers,
+} from "./acquisition/acquisitionJobs";
+import { createAcquisitionRoutes } from "./acquisition/acquisitionRoutes";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -187,6 +196,14 @@ export interface CreateNativeRuntimeOptions {
 }
 
 const EXPIRED_SESSION_CLEANUP_INTERVAL_MS = 15 * 60_000;
+/**
+ * How often to ask SABnzbd what became of Seyirlik's jobs.
+ *
+ * Frequent enough that a finished download is noticed while somebody is still
+ * watching the page, and rare enough that a downloader working through a large
+ * backlog is not answering a queue listing every few seconds.
+ */
+const ACQUISITION_RECONCILE_INTERVAL_MS = 30_000;
 const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
 
 /**
@@ -222,6 +239,9 @@ export async function createNativeRuntime({
   // Same reason again: an indexer declared with no key would otherwise look
   // like an indexer that finds nothing.
   const indexerEntries = parseIndexerConfig(environment);
+  // And once more for the downloader: a declared client whose key is missing
+  // would present as downloads that are accepted and never start.
+  const sabnzbdConfig = parseSabnzbdConfig(environment);
 
   startup?.begin({
     id: "database",
@@ -914,6 +934,38 @@ export async function createNativeRuntime({
   });
   const indexerSearch = createIndexerSearchService(indexerRegistry);
 
+  /*
+   * The download client, when one is configured.
+   *
+   * Absent throughout when it is not: no routes, no handlers, no timer. A
+   * media server with no downloader serves everything it already has, and
+   * making playback depend on SABnzbd would be a worse outage than the one it
+   * would be reporting.
+   */
+  const acquisition = sabnzbdConfig
+    ? (() => {
+        const repository = createAcquisitionRepository(pool);
+        const sab = createSabnzbdClient({
+          baseUrl: sabnzbdConfig.baseUrl,
+          // Read here and held nowhere else. Startup already proved it is set.
+          apiKey: environment[sabnzbdConfig.apiKeyEnv] as string,
+          ...(sabnzbdConfig.timeoutMs === undefined
+            ? {}
+            : { timeoutMs: sabnzbdConfig.timeoutMs }),
+        });
+        return {
+          repository,
+          sab,
+          service: createAcquisitionService({
+            store: repository,
+            indexers: indexerRegistry,
+            sab,
+            category: sabnzbdConfig.category,
+          }),
+        };
+      })()
+    : undefined;
+
   const nfoService = createNfoService({
     repository: createNfoRepository(pool),
     writer: createNfoWriter({
@@ -1011,6 +1063,12 @@ export async function createNativeRuntime({
         ...(writesFiles(nfoConfig.mode) ? { nfoService } : {}),
       }),
       ...createNfoJobHandlers(nfoService),
+      ...(acquisition
+        ? createAcquisitionJobHandlers(
+            acquisition.service,
+            acquisition.repository,
+          )
+        : {}),
     },
     logger: console,
   });
@@ -1098,6 +1156,15 @@ export async function createNativeRuntime({
       search: indexerSearch,
       policies: createPolicyRepository(pool),
     }),
+    ...(acquisition
+      ? createAcquisitionRoutes({
+          repository: acquisition.repository,
+          service: acquisition.service,
+          indexers: indexerRegistry,
+          queue,
+          sab: acquisition.sab,
+        })
+      : []),
     ...(restartController
       ? createSystemRoutes({ restart: restartController })
       : []),
@@ -1183,6 +1250,28 @@ export async function createNativeRuntime({
   }, 60_000);
   syncplayCleanupTimer.unref();
 
+  /*
+   * Asks SABnzbd what became of the jobs Seyirlik handed it.
+   *
+   * A poll rather than a subscription, because SABnzbd offers no callback that
+   * survives a restart of either side. The job is enqueued rather than run
+   * here so it holds a lease like any other work, and the dedupe key means a
+   * tick that arrives while the last one is still running is collapsed instead
+   * of stacking up behind an unreachable client.
+   */
+  const acquisitionReconcileTimer =
+    acquisition && runWorker
+      ? setInterval(() => {
+          void queue
+            .enqueue({
+              jobType: ACQUISITION_JOB_TYPES.reconcile,
+              dedupeKey: ACQUISITION_JOB_TYPES.reconcile,
+            })
+            .catch(() => undefined);
+        }, ACQUISITION_RECONCILE_INTERVAL_MS)
+      : undefined;
+  acquisitionReconcileTimer?.unref();
+
   let closed = false;
 
   return {
@@ -1209,6 +1298,7 @@ export async function createNativeRuntime({
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
       clearInterval(syncplayCleanupTimer);
+      if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
       storageWatchdog.stop();
       if (releaseTimer) clearInterval(releaseTimer);
       await worker.stop();

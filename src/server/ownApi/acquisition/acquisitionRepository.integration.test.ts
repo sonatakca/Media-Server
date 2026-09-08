@@ -1,0 +1,273 @@
+// @vitest-environment node
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { createDatabasePool } from "../database/databasePool";
+import { runMigrations } from "../database/migrationRunner";
+import { createAcquisitionRepository } from "./acquisitionRepository";
+import type { CreateAcquisitionInput } from "./acquisitionRepository";
+
+/*
+ * The parts of an acquisition that only PostgreSQL can answer: that migration
+ * 021 produces the schema the repository writes, that the unique idempotency
+ * key really is unique, and — the one that matters — that a conditional update
+ * lets exactly one of two workers win a row.
+ *
+ * Requires a disposable database. The schema is dropped.
+ */
+const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
+const integration = databaseUrl ? describe : describe.skip;
+
+integration("acquisitions in PostgreSQL", () => {
+  const pool = createDatabasePool({
+    connectionString: databaseUrl as string,
+    maxConnections: 4,
+  });
+  const repository = createAcquisitionRepository(pool);
+
+  const input: CreateAcquisitionInput = {
+    target: { kind: "movie", title: "Big Buck Bunny", year: 2008 },
+    indexerId: "nzbgeek",
+    releaseGuid: "abc123",
+    releaseTitle: "Big.Buck.Bunny.2008.1080p.WEB-DL",
+    origin: "manual",
+    evidence: {
+      profileName: "HD-1080p",
+      policySnapshot: { cutoff: "webdl-1080p" },
+      releaseFacts: { resolution: 1080 },
+      score: 42,
+      reasons: [{ code: "quality", detail: "Meets the cutoff." }],
+      rejected: [],
+    },
+  };
+
+  beforeAll(async () => {
+    await pool.query("DROP SCHEMA public CASCADE");
+    await pool.query("CREATE SCHEMA public");
+    await runMigrations(pool);
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  it("creates an acquisition with an idempotency key already on it", async () => {
+    /*
+     * The key exists before anything could be submitted under it. Generating
+     * it later — at submission — would leave a window in which two workers
+     * invent two different keys for one acquisition and send it twice.
+     */
+    const created = await repository.create(input);
+    expect(created.state).toBe("planned");
+    expect(created.idempotencyKey).toBe(`seyirlik-${created.id}`);
+    expect(created.attempt).toBe(1);
+    expect(created.externalId).toBeUndefined();
+  });
+
+  it("refuses two rows with the same idempotency key", async () => {
+    const created = await repository.create(input);
+    await expect(
+      pool.query(
+        `INSERT INTO acquisitions
+           (target_kind, target_title, indexer_id, release_guid,
+            release_title, state, origin, idempotency_key)
+         VALUES ('movie','Copy','nzbgeek','abc123','Copy','planned','manual',$1)`,
+        [created.idempotencyKey],
+      ),
+    ).rejects.toThrow(/duplicate key|unique/i);
+  });
+
+  it("records the decision that chose the release", async () => {
+    const created = await repository.create(input);
+    const decisions = await pool.query<{
+      profile_name: string;
+      score: number;
+      policy_snapshot: unknown;
+    }>(
+      `SELECT profile_name, score, policy_snapshot
+         FROM acquisition_decisions WHERE acquisition_id = $1`,
+      [created.id],
+    );
+    expect(decisions.rows).toHaveLength(1);
+    expect(decisions.rows[0]).toMatchObject({
+      profile_name: "HD-1080p",
+      score: 42,
+      // A snapshot, not a reference: the policy may be edited afterwards, and
+      // the record must still say what was decided at the time.
+      policy_snapshot: { cutoff: "webdl-1080p" },
+    });
+  });
+
+  it("lets exactly one of two workers move the same row", async () => {
+    // The whole of the concurrency argument, against a real database.
+    const created = await repository.create(input);
+    const [first, second] = await Promise.all([
+      repository.update(created.id, "planned", { state: "resolving" }, "A"),
+      repository.update(created.id, "planned", { state: "resolving" }, "B"),
+    ]);
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    expect((await repository.get(created.id))?.state).toBe("resolving");
+  });
+
+  it("refuses an update from a state the row has left", async () => {
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", { state: "resolving" });
+    expect(
+      await repository.update(created.id, "planned", { state: "submitting" }),
+    ).toBe(false);
+    expect((await repository.get(created.id))?.state).toBe("resolving");
+  });
+
+  it("writes one event per state change, and none for a repeated observation", async () => {
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", { state: "resolving" });
+    await repository.update(created.id, "resolving", { state: "queued" });
+    // A poll that finds nothing new must not grow the audit trail.
+    await repository.update(created.id, "queued", { state: "queued" });
+
+    const detail = await repository.detail(created.id);
+    expect(detail?.events.map((event) => event.toState)).toEqual([
+      "planned",
+      "resolving",
+      "queued",
+    ]);
+    expect(detail?.events[0]!.fromState).toBeNull();
+  });
+
+  it("keeps a failure class and detail with the event that recorded it", async () => {
+    const created = await repository.create(input);
+    await repository.update(
+      created.id,
+      "planned",
+      {
+        state: "failed",
+        failureClass: "missing-articles",
+        failureDetail: "SABnzbd could not find enough of it.",
+      },
+      "Failed during download.",
+    );
+    const detail = await repository.detail(created.id);
+    expect(detail?.acquisition).toMatchObject({
+      state: "failed",
+      failureClass: "missing-articles",
+    });
+    expect(detail?.events.at(-1)).toMatchObject({
+      toState: "failed",
+      failureClass: "missing-articles",
+      detail: "Failed during download.",
+    });
+  });
+
+  it("leaves a field alone when the patch does not mention it", async () => {
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", {
+      state: "queued",
+      externalId: "SABnzbd_nzo_1",
+    });
+    await repository.update(created.id, "queued", { state: "downloading" });
+    expect((await repository.get(created.id))?.externalId).toBe(
+      "SABnzbd_nzo_1",
+    );
+  });
+
+  it("clears a retry delay when asked to, and only then", async () => {
+    /*
+     * `retry_after` is the one field a patch must be able to blank, so a
+     * person pressing retry gets it now. `COALESCE` cannot express that, which
+     * is why the statement carries an explicit "was it mentioned" flag.
+     */
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", {
+      state: "awaiting_retry",
+      retryAfterMs: Date.now() + 60_000,
+    });
+    const withDelay = await pool.query<{ retry_after: Date | null }>(
+      "SELECT retry_after FROM acquisitions WHERE id = $1",
+      [created.id],
+    );
+    expect(withDelay.rows[0]!.retry_after).not.toBeNull();
+
+    await repository.update(created.id, "awaiting_retry", { attempt: 2 });
+    const untouched = await pool.query<{ retry_after: Date | null }>(
+      "SELECT retry_after FROM acquisitions WHERE id = $1",
+      [created.id],
+    );
+    expect(untouched.rows[0]!.retry_after).not.toBeNull();
+
+    await repository.update(created.id, "awaiting_retry", {
+      retryAfterMs: null,
+    });
+    const cleared = await pool.query<{ retry_after: Date | null }>(
+      "SELECT retry_after FROM acquisitions WHERE id = $1",
+      [created.id],
+    );
+    expect(cleared.rows[0]!.retry_after).toBeNull();
+  });
+
+  it("stores a size larger than a 32-bit integer", async () => {
+    // A UHD remux is comfortably past 2 GB, and past 2^31 bytes.
+    const created = await repository.create(input);
+    const huge = 80_000_000_000;
+    await repository.update(created.id, "planned", {
+      state: "downloading",
+      sizeBytes: huge,
+    });
+    expect((await repository.get(created.id))?.sizeBytes).toBe(huge);
+  });
+
+  it("offers only finished downloads to the import phase", async () => {
+    const finished = await repository.create(input);
+    await repository.update(finished.id, "planned", {
+      state: "downloaded",
+      downloadPath: "C:/SeyirlikDownloads/complete/seyirlik/Big Buck Bunny",
+    });
+    const running = await repository.create(input);
+    await repository.update(running.id, "planned", { state: "downloading" });
+
+    const ready = await repository.listReadyForImport();
+    const ids = ready.map((row) => row.id);
+    expect(ids).toContain(finished.id);
+    expect(ids).not.toContain(running.id);
+    expect(ready.every((row) => row.downloadPath)).toBe(true);
+  });
+
+  it("does not offer a finished download that has no path yet", async () => {
+    // Completion is observed before the path is known; a handoff without one
+    // would tell the import phase to go looking for nothing.
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", { state: "downloaded" });
+    const ready = await repository.listReadyForImport();
+    expect(ready.map((row) => row.id)).not.toContain(created.id);
+  });
+
+  it("lists what is still running and nothing that has finished", async () => {
+    const active = await repository.create(input);
+    await repository.update(active.id, "planned", { state: "downloading" });
+    const done = await repository.create(input);
+    await repository.update(done.id, "planned", { state: "downloaded" });
+    const stopped = await repository.create(input);
+    await repository.update(stopped.id, "planned", { state: "cancelled" });
+
+    const ids = (await repository.listActive()).map((row) => row.id);
+    expect(ids).toContain(active.id);
+    expect(ids).not.toContain(done.id);
+    expect(ids).not.toContain(stopped.id);
+  });
+
+  it("stamps a completion time when the download finishes", async () => {
+    const created = await repository.create(input);
+    await repository.update(created.id, "planned", { state: "downloaded" });
+    const completed = await pool.query<{ completed_at: Date | null }>(
+      "SELECT completed_at FROM acquisitions WHERE id = $1",
+      [created.id],
+    );
+    expect(completed.rows[0]!.completed_at).toBeInstanceOf(Date);
+  });
+
+  it("returns nothing for an acquisition that does not exist", async () => {
+    const absent = "00000000-0000-4000-8000-000000000000";
+    expect(await repository.get(absent)).toBeNull();
+    expect(await repository.detail(absent)).toBeNull();
+    expect(
+      await repository.update(absent, "planned", { state: "queued" }),
+    ).toBe(false);
+  });
+});
