@@ -80,3 +80,63 @@ describe("FFmpeg runtime selection", () => {
     expect(profile.softwareThreads).toBeGreaterThan(0);
   });
 });
+
+describe("encoders that are listed but cannot run", () => {
+  it("passes over an encoder the machine cannot drive and takes the next one", async () => {
+    const probed: string[] = [];
+    const profile = await detectFfmpegRuntime({
+      encoderOutput: ENCODER_OUTPUT,
+      filterOutput: FILTER_OUTPUT,
+      platform: "win32",
+      canRunEncoder: async (encoder) => {
+        probed.push(encoder);
+        return encoder !== "h264_nvenc";
+      },
+    });
+
+    expect(profile.videoEncoder).toBe("h264_qsv");
+    expect(profile.hardwareAccelerated).toBe(true);
+    expect(probed).toEqual(["h264_nvenc", "h264_qsv"]);
+    expect(profile.availableVideoEncoders).not.toContain("h264_nvenc");
+  });
+
+  it("stops probing once one works", async () => {
+    const probed: string[] = [];
+    const profile = await detectFfmpegRuntime({
+      encoderOutput: ENCODER_OUTPUT,
+      filterOutput: FILTER_OUTPUT,
+      platform: "win32",
+      canRunEncoder: async (encoder) => {
+        probed.push(encoder);
+        return true;
+      },
+    });
+
+    expect(profile.videoEncoder).toBe("h264_nvenc");
+    expect(probed).toEqual(["h264_nvenc"]);
+  });
+
+  it("falls back to software when no hardware encoder can run", async () => {
+    const profile = await detectFfmpegRuntime({
+      encoderOutput: ENCODER_OUTPUT,
+      filterOutput: FILTER_OUTPUT,
+      platform: "win32",
+      canRunEncoder: async () => false,
+    });
+
+    expect(profile.videoEncoder).toBe("libx264");
+    expect(profile.hardwareAccelerated).toBe(false);
+  });
+
+  it("ignores an explicit preference for an encoder that cannot run", async () => {
+    const profile = await detectFfmpegRuntime({
+      encoderOutput: ENCODER_OUTPUT,
+      filterOutput: FILTER_OUTPUT,
+      platform: "win32",
+      preferredVideoEncoder: "h264_nvenc",
+      canRunEncoder: async (encoder) => encoder === "h264_qsv",
+    });
+
+    expect(profile.videoEncoder).toBe("h264_qsv");
+  });
+});

@@ -168,6 +168,13 @@ function hasHardwareEncoderFailure(stderr: string): boolean {
     "qsv device",
     "qsv hw device",
     "error opening encoder",
+    // NVENC on a machine with no NVIDIA driver. The runtime probe should keep
+    // this encoder from ever being chosen; if one is chosen anyway, the retry
+    // below is what stops the viewer seeing a dead session.
+    "cannot load nvcuda.dll",
+    "cannot load nvencodeapi",
+    "no capable devices found",
+    "error while opening encoder",
   ].some((fragment) => normalized.includes(fragment));
 }
 

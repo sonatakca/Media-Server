@@ -3,6 +3,7 @@ import {
   defaultSoftwareEncoderThreads,
   defaultSoftwareFilterThreads,
 } from "../../server/cpuTopology";
+import { probeEncoder } from "../../renditions/hardware/adapters";
 
 export const H264_VIDEO_ENCODERS = [
   "h264_videotoolbox",
@@ -32,6 +33,11 @@ export interface DetectFfmpegRuntimeOptions {
   filterOutput?: string;
   /** Used only for the automatic default; an explicit thread override wins. */
   maxConcurrentSoftwareTranscodes?: number;
+  /**
+   * Whether an encoder can actually run here. Injectable so a test can decide
+   * without spawning FFmpeg; the default runs a real one-frame encode.
+   */
+  canRunEncoder?: (encoder: H264VideoEncoder) => Promise<boolean>;
 }
 
 export function parseFfmpegVideoEncoders(output: string): Set<string> {
@@ -158,6 +164,67 @@ function readFfmpegOutput(
   });
 }
 
+/**
+ * Drops hardware encoders the build advertises but the machine cannot drive.
+ *
+ * `-encoders` lists everything FFmpeg was compiled with, not everything that
+ * can run here. A stock Windows build offers `h264_nvenc` on a box with no
+ * NVIDIA driver at all, and because it is first in the automatic order every
+ * live transcode was handed to it and died on `Cannot load nvcuda.dll` before
+ * a single frame — on a machine whose Intel iGPU would have encoded it.
+ *
+ * The offline rendition pipeline already refuses to trust the name and probes
+ * with a real encode; this is the same probe, applied to the encoder live
+ * playback is about to commit to.
+ *
+ * Probing stops at the first encoder that works, so the ordinary case costs one
+ * fraction-of-a-second encode of a black frame and the rest are never spawned.
+ * `libx264` is never probed: it is the fallback, and nothing beyond it in the
+ * order would be reached anyway.
+ */
+async function withoutUndriveableEncoders(
+  detected: Set<string>,
+  ffmpegPath: string,
+  options: DetectFfmpegRuntimeOptions,
+): Promise<Set<string>> {
+  const preference = (options.preferredVideoEncoder ?? "").trim().toLowerCase();
+
+  /*
+   * Nothing to validate when the answer cannot be a hardware encoder, and
+   * nothing to validate when the caller is simulating detection: supplying
+   * `encoderOutput` is a claim about what FFmpeg reports here, and inventing a
+   * live probe underneath it would make that claim unusable.
+   */
+  const canRun =
+    options.canRunEncoder ??
+    (preference === "software" || options.encoderOutput !== undefined
+      ? undefined
+      : async (encoder: H264VideoEncoder) =>
+          (await probeEncoder(ffmpegPath, encoder)).ok);
+  if (!canRun) return detected;
+
+  const order = [
+    ...(isKnownEncoder(preference) ? [preference] : []),
+    ...getAutomaticEncoderOrder(options.platform ?? process.platform),
+  ];
+
+  const usable = new Set(detected);
+  const probed = new Set<string>();
+
+  for (const encoder of order) {
+    if (encoder === "libx264") break;
+    if (probed.has(encoder) || !usable.has(encoder)) continue;
+    probed.add(encoder);
+    if (await canRun(encoder)) break;
+    usable.delete(encoder);
+    console.warn(
+      `[Seyirlik Playback Backend] FFmpeg lists ${encoder} but it cannot run on this machine; it will not be used.`,
+    );
+  }
+
+  return usable;
+}
+
 export async function detectFfmpegRuntime(
   options: DetectFfmpegRuntimeOptions = {},
 ): Promise<FfmpegRuntimeProfile> {
@@ -201,13 +268,19 @@ export async function detectFfmpegRuntime(
   // not list encoders successfully; startup failure remains visible to callers.
   detected.add("libx264");
 
-  const videoEncoder = selectH264VideoEncoder(
+  const usable = await withoutUndriveableEncoders(
     detected,
+    ffmpegPath,
+    options,
+  );
+
+  const videoEncoder = selectH264VideoEncoder(
+    usable,
     options.preferredVideoEncoder,
     options.platform,
   );
   const availableVideoEncoders = H264_VIDEO_ENCODERS.filter((encoder) =>
-    detected.has(encoder),
+    usable.has(encoder),
   );
 
   const softwareThreads =
