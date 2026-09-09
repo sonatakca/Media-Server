@@ -366,3 +366,27 @@ describe("a server that is still starting", () => {
     expect(result.problem).toBe("none");
   });
 });
+
+describe("a deployment whose app and API are on different hosts", () => {
+  it("diagnoses the server, not the static host in front of it", async () => {
+    // The front end answers every same-origin request, including this one. A
+    // probe that went there would report the front end's opinion of a server
+    // it does not run.
+    vi.resetModules();
+    vi.stubEnv("VITE_OWN_API_BASE_URL", "https://playback.seyirlik.org");
+
+    const module = await import("./serverConnectionDiagnostics");
+    const fetchImpl = vi.fn(async () => jsonResponse(healthBody()));
+    const result = await module.diagnoseServerConnection({ fetchImpl });
+
+    expect(requestedUrls(fetchImpl)).toEqual([
+      "https://playback.seyirlik.org/ownAPI/v1/health",
+    ]);
+    expect(result.probe.endpoint).toBe(
+      "https://playback.seyirlik.org/ownAPI/v1/health",
+    );
+
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+});

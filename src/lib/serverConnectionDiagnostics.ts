@@ -1,13 +1,19 @@
+import { ownApiUrl } from "../api/ownApi/client";
 import { type ServerUnavailableEventDetail } from "./mediaApi";
 
 /**
  * Works out why the app cannot reach its own server.
  *
- * Seyirlik serves its API from the page's origin, so there is nothing to
- * configure and nothing to choose: the only question is which layer between
- * the browser and the server is failing. `/ownAPI/v1/health` answers that in
- * one request, because it reports liveness, readiness, and the state of each
- * dependency the server needs.
+ * The only question is which layer between the browser and the server is
+ * failing. `/ownAPI/v1/health` answers that in one request, because it reports
+ * liveness, readiness, and the state of each dependency the server needs.
+ *
+ * It has to be asked of the *server*, which is not always the page's origin. A
+ * deployment that serves the app from a static host and the API from this
+ * server behind it has a front end that answers every same-origin request —
+ * including this one, with its own idea of what is wrong. Diagnosing the
+ * static host instead of the server is how "your server is unreachable" gets
+ * shown to someone whose server is fine.
  *
  * Nothing here reports a filesystem path, a connection string, or any other
  * server detail. The health endpoint deliberately returns coarse states, and
@@ -190,7 +196,7 @@ function readRequestId(response: Response): string | undefined {
 }
 
 async function probeHealth(fetchImpl: typeof fetch): Promise<HealthProbe> {
-  const endpoint = HEALTH_ENDPOINT;
+  const endpoint = ownApiUrl(HEALTH_ENDPOINT);
   const { controller, cancel } = createAbortController(DIAGNOSTIC_TIMEOUT_MS);
 
   try {
@@ -338,7 +344,7 @@ function probeFromFailure(
   const isGateway = [502, 503, 504].includes(failure.status);
 
   return {
-    endpoint: failure.requestUrl ?? HEALTH_ENDPOINT,
+    endpoint: failure.requestUrl ?? ownApiUrl(HEALTH_ENDPOINT),
     kind: isGateway ? "gateway-error" : "http-error",
     reachable: true,
     alive: false,
@@ -358,7 +364,7 @@ export async function diagnoseServerConnection({
   const probe = resolvedFetch
     ? await probeHealth(resolvedFetch)
     : ({
-        endpoint: HEALTH_ENDPOINT,
+        endpoint: ownApiUrl(HEALTH_ENDPOINT),
         kind: "network-error",
         reachable: false,
         alive: false,
