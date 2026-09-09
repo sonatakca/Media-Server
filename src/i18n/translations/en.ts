@@ -1922,4 +1922,65 @@ export const en = {
   "admin.health.signal.subtitlesNeedingAuthentication":
     "Subtitles waiting to sign in",
   "admin.health.signal.failedJobs": "Failed jobs",
+  "admin.acquisitions.title": "Acquisitions",
+  "admin.acquisitions.description":
+    "Every download Seyirlik asked for, which release it chose, and why.",
+  "admin.acquisitions.tag": "Operations",
+  "admin.acquisitions.refresh": "Refresh",
+  "admin.acquisitions.empty": "Seyirlik has not asked for any downloads yet.",
+  "admin.acquisitions.loadFailed":
+    "The list of acquisitions could not be loaded.",
+  "admin.acquisitions.bucket.needsAttention": "Needs you",
+  "admin.acquisitions.bucket.active": "In progress",
+  "admin.acquisitions.bucket.finished": "Finished",
+  "admin.acquisitions.origin": "Asked for by",
+  "admin.acquisitions.originValue.manual": "you",
+  "admin.acquisitions.originValue.monitoring": "monitoring",
+  "admin.acquisitions.originValue.upgrade": "an upgrade",
+  "admin.acquisitions.attempt": "attempt",
+  "admin.acquisitions.retry": "Try again",
+  "admin.acquisitions.cancel": "Cancel",
+  "admin.acquisitions.why": "Why this release",
+  "admin.acquisitions.score": "score",
+  "admin.acquisitions.rejected": "Passed over",
+  "admin.acquisitions.noDecision":
+    "No decision was recorded for this download.",
+  "admin.acquisitions.history": "What happened",
+  "admin.acquisitions.state.planned": "Planned",
+  "admin.acquisitions.state.resolving": "Fetching the NZB",
+  "admin.acquisitions.state.submitting": "Handing to the download client",
+  "admin.acquisitions.state.queued": "Queued",
+  "admin.acquisitions.state.downloading": "Downloading",
+  "admin.acquisitions.state.processing": "Unpacking",
+  "admin.acquisitions.state.downloaded": "Downloaded",
+  "admin.acquisitions.state.awaiting_retry": "Waiting to try again",
+  "admin.acquisitions.state.failed": "Failed",
+  "admin.acquisitions.state.cancelled": "Cancelled",
+  "admin.acquisitions.state.superseded": "Superseded",
+  "admin.acquisitions.remedy.waits": "Seyirlik will try again by itself",
+  "admin.acquisitions.remedy.another-release":
+    "this release will not work; another is needed",
+  "admin.acquisitions.remedy.operator": "this one needs you",
+  "admin.acquisitions.failure.indexer-unavailable":
+    "The indexer did not answer",
+  "admin.acquisitions.failure.indexer-auth": "The indexer rejected the API key",
+  "admin.acquisitions.failure.nzb-unavailable":
+    "The NZB is no longer available",
+  "admin.acquisitions.failure.sab-unavailable":
+    "The download client did not answer",
+  "admin.acquisitions.failure.sab-auth":
+    "The download client rejected the API key",
+  "admin.acquisitions.failure.submission-timeout":
+    "The download client did not reply in time",
+  "admin.acquisitions.failure.disk-full": "The disk is full",
+  "admin.acquisitions.failure.missing-articles":
+    "Parts of the release are missing",
+  "admin.acquisitions.failure.repair-failed": "Repair failed",
+  "admin.acquisitions.failure.unpack-failed": "Unpacking failed",
+  "admin.acquisitions.failure.password-required":
+    "The release is password-protected",
+  "admin.acquisitions.failure.removed-externally":
+    "Something else removed the job",
+  "admin.acquisitions.failure.cancelled": "It was cancelled",
+  "admin.acquisitions.failure.unknown": "Something unrecognised went wrong",
 };

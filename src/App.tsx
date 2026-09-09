@@ -48,6 +48,9 @@ const RequireAdminAuth = lazy(async () => {
 const PlaybackAuditPage = lazy(async () => ({
   default: (await import("./pages/PlaybackAuditPage")).PlaybackAuditPage,
 }));
+const AcquisitionsPage = lazy(async () => ({
+  default: (await import("./pages/admin/AcquisitionsPage")).AcquisitionsPage,
+}));
 const OperationsHealthPage = lazy(async () => ({
   default: (await import("./pages/admin/OperationsHealthPage"))
     .OperationsHealthPage,
@@ -380,6 +383,10 @@ export default function App() {
                 <Route
                   path="/admin/health"
                   element={<OperationsHealthPage />}
+                />
+                <Route
+                  path="/admin/acquisitions"
+                  element={<AcquisitionsPage />}
                 />
                 <Route
                   path="/dev/playback-audit"
