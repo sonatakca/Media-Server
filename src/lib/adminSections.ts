@@ -11,24 +11,45 @@
  * naming a key that does not exist fails to compile instead of rendering the
  * key to an operator.
  *
- * It is also grouped, which is the point of the exercise. Thirteen equally
- * prominent cards were already hard to scan, and the subsystems built since —
- * acquisitions, imports, subtitles — would have made nineteen. Grouping asks
- * the reader to choose between four kinds of task instead of nineteen tasks.
+ * It is also grouped, which is the point of the exercise. Twenty equally
+ * prominent cards are unreadable, and worse, they ask the reader to know which
+ * subsystem owns a task before they can find it. The groups are errands
+ * instead: the reader chooses between seven kinds of work, and the vocabulary
+ * of the backend never has to be learned.
  */
 
 import type { TranslationKey } from "../i18n/translations";
 
-/** What a section is for, which is what decides where it is listed. */
+/**
+ * What a section is for, which is what decides where it is listed.
+ *
+ * The groups name tasks an operator already has a word for, not the
+ * subsystems behind them. "Wanted & downloads" is one group because wanting a
+ * film, choosing a release for it and downloading it is one errand — it was
+ * three groups' worth of vocabulary (monitoring, decisions, acquisitions)
+ * before anyone could find where to ask for a film.
+ */
 export type AdminGroupId =
-  /** Running the pipeline: what it is doing, and what needs a person. */
-  | "operations"
-  /** The library's own contents: processing, tidying, artwork, ordering. */
+  /** The catalogue itself: scanning it, describing it, taking things into it. */
   | "library"
-  /** What the server is connected to, and how it behaves. */
-  | "configuration"
-  /** Looking inside the machine. Genuinely developer-facing. */
-  | "diagnostics";
+  /** Asking for something and getting it: wanted, releases, downloads. */
+  | "downloads"
+  /** Subtitles, which are their own errand and their own failure modes. */
+  | "subtitles"
+  /** Playing things: what broke, what is being prepared, what the defaults are. */
+  | "playback"
+  /** The machine and who may use it. */
+  | "system"
+  /** What the library looks like to someone browsing it. */
+  | "curation"
+  /**
+   * Building Seyirlik, not running it.
+   *
+   * Deliberately last and deliberately its own group: "Wanted features" is a
+   * development backlog and must never be mistaken for wanted *media*, which
+   * lives under downloads.
+   */
+  | "development";
 
 export interface AdminSection {
   /** Stable identity, independent of the route or the title. */
@@ -83,24 +104,39 @@ export interface AdminGroup {
 
 export const ADMIN_GROUPS: readonly AdminGroup[] = [
   {
-    id: "operations",
-    titleKey: "admin.group.operations.title",
-    descriptionKey: "admin.group.operations.description",
-  },
-  {
     id: "library",
     titleKey: "admin.group.library.title",
     descriptionKey: "admin.group.library.description",
   },
   {
-    id: "configuration",
-    titleKey: "admin.group.configuration.title",
-    descriptionKey: "admin.group.configuration.description",
+    id: "downloads",
+    titleKey: "admin.group.downloads.title",
+    descriptionKey: "admin.group.downloads.description",
   },
   {
-    id: "diagnostics",
-    titleKey: "admin.group.diagnostics.title",
-    descriptionKey: "admin.group.diagnostics.description",
+    id: "subtitles",
+    titleKey: "admin.group.subtitles.title",
+    descriptionKey: "admin.group.subtitles.description",
+  },
+  {
+    id: "playback",
+    titleKey: "admin.group.playback.title",
+    descriptionKey: "admin.group.playback.description",
+  },
+  {
+    id: "system",
+    titleKey: "admin.group.system.title",
+    descriptionKey: "admin.group.system.description",
+  },
+  {
+    id: "curation",
+    titleKey: "admin.group.curation.title",
+    descriptionKey: "admin.group.curation.description",
+  },
+  {
+    id: "development",
+    titleKey: "admin.group.development.title",
+    descriptionKey: "admin.group.development.description",
   },
 ];
 
@@ -109,91 +145,21 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
  * `/admin/...` would break every bookmark and every link back from a dozen
  * pages, for a gain that is entirely cosmetic — the grouping and the naming on
  * the page are what make this an operations surface rather than a toolbox.
+ *
+ * Order within a group is the order an operator meets the work, not
+ * alphabetical: scan the library before describing what is in it, want a film
+ * before choosing a release for it, choose a release before downloading it.
  */
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
-  // ---- operations
-  {
-    id: "health",
-    group: "operations",
-    path: "/admin/health",
-    titleKey: "admin.health.title",
-    descriptionKey: "admin.health.description",
-    tagKey: "admin.health.tag",
-    icon: "heartPulse",
-  },
-  {
-    id: "acquisitions",
-    group: "operations",
-    path: "/admin/acquisitions",
-    titleKey: "admin.acquisitions.title",
-    descriptionKey: "admin.acquisitions.description",
-    tagKey: "admin.acquisitions.tag",
-    icon: "download",
-  },
-  {
-    id: "monitoring",
-    group: "operations",
-    path: "/admin/monitoring",
-    titleKey: "admin.monitoring.title",
-    descriptionKey: "admin.monitoring.description",
-    tagKey: "admin.monitoring.tag",
-    icon: "target",
-  },
-  {
-    id: "decisions",
-    group: "operations",
-    path: "/admin/decisions",
-    titleKey: "admin.decisions.title",
-    descriptionKey: "admin.decisions.description",
-    tagKey: "admin.decisions.tag",
-    icon: "target",
-  },
-  {
-    id: "subtitles",
-    group: "operations",
-    path: "/admin/subtitles",
-    titleKey: "admin.subtitles.title",
-    descriptionKey: "admin.subtitles.description",
-    tagKey: "admin.subtitles.tag",
-    icon: "subtitles",
-  },
-  {
-    id: "imports",
-    group: "operations",
-    path: "/admin/imports",
-    titleKey: "admin.imports.title",
-    descriptionKey: "admin.imports.description",
-    tagKey: "admin.imports.tag",
-    icon: "hardDrive",
-  },
-  {
-    id: "media-processing",
-    group: "operations",
-    path: "/dev/media-processing",
-    titleKey: "devtools.card.mediaProcessing.title",
-    descriptionKey: "devtools.card.mediaProcessing.description",
-    tagKey: "devtools.card.mediaProcessing.tag",
-    icon: "fileVideo",
-  },
+  // ---- library: the catalogue, and getting things into it
   {
     id: "library-maintenance",
-    group: "operations",
+    group: "library",
     path: "/dev/library-maintenance",
     titleKey: "devtools.card.libraryMaintenance.title",
     descriptionKey: "devtools.card.libraryMaintenance.description",
     tagKey: "devtools.card.libraryMaintenance.tag",
     icon: "databaseZap",
-  },
-
-  // ---- library
-  {
-    id: "curation",
-    group: "library",
-    path: "/dev/curation",
-    titleKey: "devtools.card.curation.title",
-    descriptionKey: "devtools.card.curation.description",
-    tagKey: "devtools.card.curation.tag",
-    icon: "listOrdered",
   },
   {
     id: "tmdb-artwork",
@@ -213,49 +179,60 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     tagKey: "devtools.card.contentExplorer.tag",
     icon: "database",
   },
-
-  // ---- configuration
   {
-    id: "integrations",
-    group: "configuration",
-    path: "/admin/integrations",
-    titleKey: "admin.integrations.title",
-    descriptionKey: "admin.integrations.description",
-    tagKey: "admin.integrations.tag",
-    icon: "plug",
-  },
-  {
-    id: "playback-defaults",
-    group: "configuration",
-    path: "/dev/playback-defaults",
-    titleKey: "devtools.card.playbackDefaults.title",
-    descriptionKey: "devtools.card.playbackDefaults.description",
-    tagKey: "devtools.card.playbackDefaults.tag",
-    icon: "languages",
-  },
-  {
-    id: "users",
-    group: "configuration",
-    path: "/dev/users",
-    titleKey: "devtools.card.userManagement.title",
-    descriptionKey: "devtools.card.userManagement.description",
-    tagKey: "devtools.card.userManagement.tag",
-    icon: "users",
+    id: "imports",
+    group: "library",
+    path: "/admin/imports",
+    titleKey: "admin.imports.title",
+    descriptionKey: "admin.imports.description",
+    tagKey: "admin.imports.tag",
+    icon: "hardDrive",
   },
 
-  // ---- diagnostics
+  // ---- downloads: want it, choose a release, fetch it
   {
-    id: "server-control",
-    group: "diagnostics",
-    path: "/dev/server-control",
-    titleKey: "devtools.card.serverControl.title",
-    descriptionKey: "devtools.card.serverControl.description",
-    tagKey: "devtools.card.serverControl.tag",
-    icon: "serverCog",
+    id: "monitoring",
+    group: "downloads",
+    path: "/admin/monitoring",
+    titleKey: "admin.monitoring.title",
+    descriptionKey: "admin.monitoring.description",
+    tagKey: "admin.monitoring.tag",
+    icon: "target",
   },
+  {
+    id: "decisions",
+    group: "downloads",
+    path: "/admin/decisions",
+    titleKey: "admin.decisions.title",
+    descriptionKey: "admin.decisions.description",
+    tagKey: "admin.decisions.tag",
+    icon: "listOrdered",
+  },
+  {
+    id: "acquisitions",
+    group: "downloads",
+    path: "/admin/acquisitions",
+    titleKey: "admin.acquisitions.title",
+    descriptionKey: "admin.acquisitions.description",
+    tagKey: "admin.acquisitions.tag",
+    icon: "download",
+  },
+
+  // ---- subtitles
+  {
+    id: "subtitles",
+    group: "subtitles",
+    path: "/admin/subtitles",
+    titleKey: "admin.subtitles.title",
+    descriptionKey: "admin.subtitles.description",
+    tagKey: "admin.subtitles.tag",
+    icon: "subtitles",
+  },
+
+  // ---- playback: what broke, what is being prepared, what the defaults are
   {
     id: "playback-health",
-    group: "diagnostics",
+    group: "playback",
     path: "/dev/playback-health",
     titleKey: "devtools.card.playbackHealth.title",
     descriptionKey: "devtools.card.playbackHealth.description",
@@ -264,7 +241,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   },
   {
     id: "playback-audit",
-    group: "diagnostics",
+    group: "playback",
     path: "/dev/playback-audit",
     titleKey: "devtools.card.playbackAudit.title",
     descriptionKey: "devtools.card.playbackAudit.description",
@@ -272,8 +249,77 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     icon: "activity",
   },
   {
+    id: "media-processing",
+    group: "playback",
+    path: "/dev/media-processing",
+    titleKey: "devtools.card.mediaProcessing.title",
+    descriptionKey: "devtools.card.mediaProcessing.description",
+    tagKey: "devtools.card.mediaProcessing.tag",
+    icon: "fileVideo",
+  },
+  {
+    id: "playback-defaults",
+    group: "playback",
+    path: "/dev/playback-defaults",
+    titleKey: "devtools.card.playbackDefaults.title",
+    descriptionKey: "devtools.card.playbackDefaults.description",
+    tagKey: "devtools.card.playbackDefaults.tag",
+    icon: "languages",
+  },
+
+  // ---- system: the machine, what it is wired to, and who may use it
+  {
+    id: "health",
+    group: "system",
+    path: "/admin/health",
+    titleKey: "admin.health.title",
+    descriptionKey: "admin.health.description",
+    tagKey: "admin.health.tag",
+    icon: "heartPulse",
+  },
+  {
+    id: "integrations",
+    group: "system",
+    path: "/admin/integrations",
+    titleKey: "admin.integrations.title",
+    descriptionKey: "admin.integrations.description",
+    tagKey: "admin.integrations.tag",
+    icon: "plug",
+  },
+  {
+    id: "server-control",
+    group: "system",
+    path: "/dev/server-control",
+    titleKey: "devtools.card.serverControl.title",
+    descriptionKey: "devtools.card.serverControl.description",
+    tagKey: "devtools.card.serverControl.tag",
+    icon: "serverCog",
+  },
+  {
+    id: "users",
+    group: "system",
+    path: "/dev/users",
+    titleKey: "devtools.card.userManagement.title",
+    descriptionKey: "devtools.card.userManagement.description",
+    tagKey: "devtools.card.userManagement.tag",
+    icon: "users",
+  },
+
+  // ---- curation
+  {
+    id: "curation",
+    group: "curation",
+    path: "/dev/curation",
+    titleKey: "devtools.card.curation.title",
+    descriptionKey: "devtools.card.curation.description",
+    tagKey: "devtools.card.curation.tag",
+    icon: "listOrdered",
+  },
+
+  // ---- development: building Seyirlik, not running it
+  {
     id: "known-bugs",
-    group: "diagnostics",
+    group: "development",
     path: "/dev/known-bugs",
     titleKey: "devtools.card.knownBugs.title",
     descriptionKey: "devtools.card.knownBugs.description",
@@ -282,7 +328,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   },
   {
     id: "wanted-features",
-    group: "diagnostics",
+    group: "development",
     path: "/dev/wanted-features",
     titleKey: "devtools.card.wantedFeatures.title",
     descriptionKey: "devtools.card.wantedFeatures.description",
@@ -291,7 +337,7 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
   },
   {
     id: "skeleton-lab",
-    group: "diagnostics",
+    group: "development",
     path: "/dev/skeleton-lab",
     titleKey: "devtools.card.skeletonLab.title",
     descriptionKey: "devtools.card.skeletonLab.description",
@@ -322,4 +368,47 @@ export function visibleGroups({
     group,
     sections: sectionsInGroup(group.id, { includeDevOnly }),
   })).filter((entry) => entry.sections.length > 0);
+}
+
+/**
+ * Routes that render a section they are not named after.
+ *
+ * `/dev/home-curation` is the curation editor under the name it had when it
+ * only edited the home page. It is kept so old links land somewhere real, and
+ * mapped here so opening it still highlights Curation in the navigation
+ * instead of highlighting nothing.
+ */
+export const ADMIN_PATH_ALIASES: Readonly<Record<string, string>> = {
+  "/dev/home-curation": "/dev/curation",
+};
+
+/** Routes that render the administration index rather than a section. */
+export const ADMIN_INDEX_PATHS: readonly string[] = ["/admin", "/dev"];
+
+/** Strips a trailing slash so `/admin/health/` matches `/admin/health`. */
+function normalisePath(pathname: string): string {
+  const trimmed = pathname.replace(/\/+$/, "");
+  return trimmed === "" ? "/" : trimmed;
+}
+
+/** The section a route belongs to, or undefined for the index and for anything else. */
+export function sectionForPath(pathname: string): AdminSection | undefined {
+  const normalised = normalisePath(pathname);
+  const resolved = ADMIN_PATH_ALIASES[normalised] ?? normalised;
+  return ADMIN_SECTIONS.find((section) => section.path === resolved);
+}
+
+/** Whether a route is the administration index itself. */
+export function isAdminIndexPath(pathname: string): boolean {
+  return ADMIN_INDEX_PATHS.includes(normalisePath(pathname));
+}
+
+/** The group a section sits in, for a breadcrumb that names where you are. */
+export function groupForSection(section: AdminSection): AdminGroup {
+  const group = ADMIN_GROUPS.find(
+    (candidate) => candidate.id === section.group,
+  );
+  /* istanbul ignore next -- the registry test proves every group exists. */
+  if (!group) throw new Error(`Unknown administration group: ${section.group}`);
+  return group;
 }

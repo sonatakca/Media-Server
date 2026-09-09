@@ -4,7 +4,11 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ADMIN_GROUPS,
+  ADMIN_INDEX_PATHS,
+  ADMIN_PATH_ALIASES,
   ADMIN_SECTIONS,
+  sectionForPath,
+  isAdminIndexPath,
   sectionsInGroup,
   visibleGroups,
 } from "./adminSections";
@@ -45,15 +49,41 @@ describe("the administration registry", () => {
     ).toBeGreaterThan(shipped.length);
   });
 
-  it("orders groups so the running system comes before the toolbox", () => {
-    // An operator arrives to find out what the server is doing, not to open a
-    // skeleton lab.
+  it("orders groups by errand, and leaves development until last", () => {
+    // An operator arrives to run a library, not to open a skeleton lab. The
+    // last group is the one that is about building Seyirlik rather than using
+    // it, and it must stay visibly apart from the rest.
     expect(ADMIN_GROUPS.map((group) => group.id)).toEqual([
-      "operations",
       "library",
-      "configuration",
-      "diagnostics",
+      "downloads",
+      "subtitles",
+      "playback",
+      "system",
+      "curation",
+      "development",
     ]);
+  });
+
+  it("keeps wanted media and the wanted-features backlog in different groups", () => {
+    // "Wanted features" is a development board. Listing it beside monitoring
+    // would put a feature request next to a film someone is waiting for.
+    const byId = new Map(
+      ADMIN_SECTIONS.map((section) => [section.id, section]),
+    );
+    expect(byId.get("wanted-features")?.group).toBe("development");
+    expect(byId.get("monitoring")?.group).toBe("downloads");
+  });
+
+  it("keeps the errand of getting a film in one group", () => {
+    // Monitoring, decisions and acquisitions are three backend concepts and
+    // one human task. Splitting them across groups is what made "from where do
+    // I download a wanted movie?" unanswerable from the UI.
+    for (const id of ["monitoring", "decisions", "acquisitions"]) {
+      expect(
+        ADMIN_SECTIONS.find((section) => section.id === id)?.group,
+        `${id} belongs with the rest of the download errand`,
+      ).toBe("downloads");
+    }
   });
 });
 
@@ -76,6 +106,43 @@ describe("the registry and the router agree", () => {
         `${section.id} is listed in administration but has no route`,
       ).toBe(true);
     }
+  });
+
+  it("lists every administrative route, so none can be orphaned", async () => {
+    /*
+     * The reverse of the check above, and the one that matters for
+     * discoverability: a page can be added to the router, work perfectly, and
+     * be reachable only by someone who already knows the URL. Every
+     * administrative route has to be either a listed section, the index, or a
+     * deliberately recorded alias.
+     */
+    const app = await readFile(
+      fileURLToPath(new URL("../App.tsx", import.meta.url)),
+      "utf8",
+    );
+    const routed = [...app.matchAll(/path="(\/(?:admin|dev)[^"]*)"/g)].map(
+      (match) => match[1] as string,
+    );
+    expect(routed.length).toBeGreaterThan(15);
+
+    const accounted = new Set<string>([
+      ...ADMIN_SECTIONS.map((section) => section.path),
+      ...ADMIN_INDEX_PATHS,
+      ...Object.keys(ADMIN_PATH_ALIASES),
+    ]);
+
+    const orphans = routed.filter((path) => !accounted.has(path));
+    expect(orphans, "administrative routes nothing links to").toEqual([]);
+  });
+
+  it("resolves a route to the section the navigation should highlight", () => {
+    expect(sectionForPath("/admin/subtitles")?.id).toBe("subtitles");
+    expect(sectionForPath("/admin/subtitles/")?.id).toBe("subtitles");
+    // The alias renders curation, so it highlights curation.
+    expect(sectionForPath("/dev/home-curation")?.id).toBe("curation");
+    expect(sectionForPath("/admin")).toBeUndefined();
+    expect(isAdminIndexPath("/dev")).toBe(true);
+    expect(isAdminIndexPath("/admin/health")).toBe(false);
   });
 
   it("keeps the administration index itself reachable", async () => {

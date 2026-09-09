@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowRight, ChevronLeft, Eye, PanelsTopLeft } from "lucide-react";
+import { ArrowRight, Eye, PanelsTopLeft } from "lucide-react";
 import { Link } from "react-router-dom";
 import { MediaCardSkeleton } from "../components/Skeletons";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -67,15 +67,7 @@ export function SkeletonLabPage() {
   }, [t]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6 pb-20">
-      <Link
-        to="/dev"
-        className="inline-flex items-center gap-2 text-sm font-bold text-white/60 transition hover:text-white"
-      >
-        <ChevronLeft size={18} />
-        {t("devtools.backToDevtools")}
-      </Link>
-
+    <div className="w-full space-y-6 pb-20">
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl sm:p-8">
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-3xl">

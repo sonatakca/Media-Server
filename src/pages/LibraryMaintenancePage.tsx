@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { ChevronLeft, DatabaseZap } from "lucide-react";
-import { Link, useSearchParams } from "react-router-dom";
+import { DatabaseZap } from "lucide-react";
+import { useSearchParams } from "react-router-dom";
 import { setPageTitle } from "../lib/pageTitle";
 import { useLanguage } from "../i18n/LanguageContext";
 import { LibraryMaintenanceActions } from "./admin/LibraryMaintenanceActions";
@@ -51,20 +51,11 @@ export function LibraryMaintenancePage() {
   };
 
   return (
-    <div className="relative mx-auto max-w-7xl space-y-6">
+    <div className="relative w-full space-y-6">
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] shadow-2xl backdrop-blur-xl">
         <div className="relative p-6 sm:p-7">
           <div className="pointer-events-none absolute -right-16 -top-24 h-56 w-56 rounded-full bg-[var(--accent)]/20 blur-3xl" />
           <div className="pointer-events-none absolute -bottom-28 left-10 h-56 w-56 rounded-full bg-white/10 blur-3xl" />
-
-          <Link
-            to="/dev"
-            className="relative inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/25 px-3 py-2 text-sm font-bold text-white/66 transition hover:border-[var(--accent)]/35 hover:text-white"
-          >
-            <ChevronLeft size={16} />
-            {t("maintenance.back")}
-          </Link>
-
           <div className="relative mt-6 flex items-center gap-3">
             <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[var(--accent)]/10 text-[var(--accent)]">
               <DatabaseZap size={23} />

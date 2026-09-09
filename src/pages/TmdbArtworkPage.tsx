@@ -1,9 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   Move,
   ChevronDown,
-  ChevronLeft,
   Check,
   ImageIcon,
   Images,
@@ -478,15 +476,7 @@ export default function TmdbArtworkPage() {
 
   return (
     <div className="min-h-screen bg-[#07070b] px-4 py-8 text-white sm:px-8">
-      <div className="mx-auto max-w-[1400px]">
-        <Link
-          to="/dev"
-          className="inline-flex items-center gap-2 text-sm font-bold text-white/45 transition hover:text-white/80"
-        >
-          <ChevronLeft className="h-4 w-4" />
-          {t("devtools.title")}
-        </Link>
-
+      <div className="w-full">
         <header className="mt-6">
           <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-sky-300/70">
             {t("tmdbArtwork.eyebrow")}

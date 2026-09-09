@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   AlertTriangle,
-  ChevronLeft,
   Loader2,
   Power,
   RotateCcw,
@@ -155,16 +153,8 @@ export function ServerControlPage() {
   const available = status ? status.available : true;
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6">
+    <div className="w-full space-y-6">
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
-        <Link
-          to="/dev"
-          className="inline-flex items-center gap-2 text-sm font-black text-white/55 transition hover:text-white"
-        >
-          <ChevronLeft size={16} />
-          {t("devtools.backToDevtools")}
-        </Link>
-
         <div className="mt-5 flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[var(--accent)]/10 text-[var(--accent)]">
             <ServerCog size={22} />

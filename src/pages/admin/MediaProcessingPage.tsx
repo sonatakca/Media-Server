@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronLeft,
   ChevronsDown,
   ChevronsUp,
   Cpu,
@@ -2251,13 +2249,6 @@ export function MediaProcessingPage() {
     <div className="min-h-screen bg-black px-4 pb-24 pt-6 text-white sm:px-8">
       <div className="mx-auto flex max-w-6xl flex-col gap-6">
         <header className="flex flex-col gap-3">
-          <Link
-            to="/dev"
-            className="inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-1 text-sm text-white/50 transition hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          >
-            <ChevronLeft size={16} aria-hidden="true" />
-            {t("processing.back")}
-          </Link>
           <div>
             <h1 className="text-3xl font-black tracking-tight">
               {t("processing.title")}

@@ -42,6 +42,15 @@ const RequireAdminAuth = lazy(async () => {
   return { default: module.RequireAdminAuth };
 });
 
+// The frame every administrative tool renders inside. Lazy like the pages it
+// wraps, and resolved inside the same Suspense boundary as RequireAdminAuth,
+// so there is one fallback for the whole area rather than one per level.
+const DevToolsLayout = lazy(async () => {
+  const module = await import("./components/admin/DevToolsLayout");
+
+  return { default: module.DevToolsLayout };
+});
+
 // Admin/dev pages are only reachable behind RequireAdminAuth, so they stay out
 // of the initial bundle. They resolve inside the Suspense boundary that already
 // wraps RequireAdminAuth.
@@ -392,74 +401,88 @@ export default function App() {
                   </Suspense>
                 }
               >
-                {/* `/admin` is the name; `/dev` is kept because a dozen
+                {/* One shell for the whole area: the breadcrumb, the tool
+                    navigation and the content width live here, so a page only
+                    renders its own work. */}
+                <Route element={<DevToolsLayout />}>
+                  {/* `/admin` is the name; `/dev` is kept because a dozen
                     pages link back to it and every bookmark points at it. */}
-                <Route path="/admin" element={<DevToolsPage />} />
-                <Route path="/dev" element={<DevToolsPage />} />
-                <Route
-                  path="/admin/health"
-                  element={<OperationsHealthPage />}
-                />
-                <Route
-                  path="/admin/acquisitions"
-                  element={<AcquisitionsPage />}
-                />
-                <Route
-                  path="/admin/decisions"
-                  element={<ReleaseDecisionsPage />}
-                />
-                <Route path="/admin/subtitles" element={<SubtitlesPage />} />
-                <Route path="/admin/imports" element={<ImportsPage />} />
-                <Route path="/admin/monitoring" element={<MonitoringPage />} />
-                <Route
-                  path="/admin/integrations"
-                  element={<IntegrationsPage />}
-                />
-                <Route
-                  path="/dev/playback-audit"
-                  element={<PlaybackAuditPage />}
-                />
-                <Route
-                  path="/dev/playback-health"
-                  element={<PlaybackHealthPage />}
-                />
-                <Route
-                  path="/dev/media-processing"
-                  element={<MediaProcessingPage />}
-                />
-                <Route
-                  path="/dev/library-maintenance"
-                  element={<LibraryMaintenancePage />}
-                />
-                <Route path="/dev/tmdb-artwork" element={<TmdbArtworkPage />} />
-                <Route path="/dev/content" element={<ContentExplorerPage />} />
-                <Route path="/dev/users" element={<UserManagementPage />} />
-                <Route path="/dev/curation" element={<CurationPage />} />
-                {/* The editor grew past the home page; the old path is kept so
-                    a bookmark still lands somewhere real. */}
-                <Route path="/dev/home-curation" element={<CurationPage />} />
-                {import.meta.env.DEV ? (
+                  <Route path="/admin" element={<DevToolsPage />} />
+                  <Route path="/dev" element={<DevToolsPage />} />
                   <Route
-                    path="/dev/skeleton-lab"
-                    element={<SkeletonLabPage />}
+                    path="/admin/health"
+                    element={<OperationsHealthPage />}
                   />
-                ) : null}
-                <Route
-                  path="/dev/playback-defaults"
-                  element={<PlaybackDefaultsPage />}
-                />
-                <Route
-                  path="/dev/server-control"
-                  element={<ServerControlPage />}
-                />
-                <Route
-                  path="/dev/known-bugs"
-                  element={<DevToolsBoardPage type="bugs" />}
-                />
-                <Route
-                  path="/dev/wanted-features"
-                  element={<DevToolsBoardPage type="features" />}
-                />
+                  <Route
+                    path="/admin/acquisitions"
+                    element={<AcquisitionsPage />}
+                  />
+                  <Route
+                    path="/admin/decisions"
+                    element={<ReleaseDecisionsPage />}
+                  />
+                  <Route path="/admin/subtitles" element={<SubtitlesPage />} />
+                  <Route path="/admin/imports" element={<ImportsPage />} />
+                  <Route
+                    path="/admin/monitoring"
+                    element={<MonitoringPage />}
+                  />
+                  <Route
+                    path="/admin/integrations"
+                    element={<IntegrationsPage />}
+                  />
+                  <Route
+                    path="/dev/playback-audit"
+                    element={<PlaybackAuditPage />}
+                  />
+                  <Route
+                    path="/dev/playback-health"
+                    element={<PlaybackHealthPage />}
+                  />
+                  <Route
+                    path="/dev/media-processing"
+                    element={<MediaProcessingPage />}
+                  />
+                  <Route
+                    path="/dev/library-maintenance"
+                    element={<LibraryMaintenancePage />}
+                  />
+                  <Route
+                    path="/dev/tmdb-artwork"
+                    element={<TmdbArtworkPage />}
+                  />
+                  <Route
+                    path="/dev/content"
+                    element={<ContentExplorerPage />}
+                  />
+                  <Route path="/dev/users" element={<UserManagementPage />} />
+                  <Route path="/dev/curation" element={<CurationPage />} />
+                  {/* The editor grew past the home page; the old path is kept so
+                    a bookmark still lands somewhere real. */}
+                  <Route path="/dev/home-curation" element={<CurationPage />} />
+                  {import.meta.env.DEV ? (
+                    <Route
+                      path="/dev/skeleton-lab"
+                      element={<SkeletonLabPage />}
+                    />
+                  ) : null}
+                  <Route
+                    path="/dev/playback-defaults"
+                    element={<PlaybackDefaultsPage />}
+                  />
+                  <Route
+                    path="/dev/server-control"
+                    element={<ServerControlPage />}
+                  />
+                  <Route
+                    path="/dev/known-bugs"
+                    element={<DevToolsBoardPage type="bugs" />}
+                  />
+                  <Route
+                    path="/dev/wanted-features"
+                    element={<DevToolsBoardPage type="features" />}
+                  />
+                </Route>
               </Route>
               <Route
                 path="/my-list"

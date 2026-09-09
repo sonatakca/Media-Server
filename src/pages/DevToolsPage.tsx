@@ -1,100 +1,39 @@
+import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import {
-  Activity,
-  ArrowRight,
-  Bug,
-  Database,
-  DatabaseZap,
-  Download,
-  FileVideo,
-  HardDrive,
-  HeartPulse,
-  Images,
-  Languages,
-  Lightbulb,
-  ListOrdered,
-  PanelsTopLeft,
-  Plug,
-  Save,
-  ServerCog,
-  ShieldAlert,
-  ShieldCheck,
-  Subtitles,
-  Target,
-  Users,
-  type LucideIcon,
-} from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { setPageTitle } from "../lib/pageTitle";
-import { useEffect, useState } from "react";
-import { SparkleAnimation } from "../components/animations/SparkleAnimation";
 import { useLanguage } from "../i18n/LanguageContext";
-import { ConfettiAnimation } from "../components/animations/ConfettiAnimation";
-import { visibleGroups, type AdminIconName } from "../lib/adminSections";
+import { visibleGroups } from "../lib/adminSections";
+import { ADMIN_ICONS } from "../components/admin/adminIcons";
+import { useDevToolsStatus } from "../components/admin/useDevToolsStatus";
 
 /**
- * The icon set, resolved here rather than in the registry.
+ * The administration index: what is happening, and everything you can open.
  *
- * The registry names an icon; this page knows what to draw. That keeps the
- * description of the administration surface free of a UI dependency, so it can
- * be read by a test without pulling in an icon library.
+ * It is a page an operator opens several times a day, so it leads with state
+ * rather than with decoration — the old full-width hero and its confetti cost
+ * a third of the screen and told nobody anything. What replaced them is two
+ * facts the server can answer cheaply, and the one route through the system
+ * that was impossible to guess: wanted, releases, downloads, imports.
  */
-const ICONS: Record<AdminIconName, LucideIcon> = {
-  activity: Activity,
-  bug: Bug,
-  database: Database,
-  databaseZap: DatabaseZap,
-  download: Download,
-  fileVideo: FileVideo,
-  hardDrive: HardDrive,
-  heartPulse: HeartPulse,
-  images: Images,
-  languages: Languages,
-  lightbulb: Lightbulb,
-  listOrdered: ListOrdered,
-  panelsTopLeft: PanelsTopLeft,
-  plug: Plug,
-  save: Save,
-  serverCog: ServerCog,
-  shieldAlert: ShieldAlert,
-  subtitles: Subtitles,
-  target: Target,
-  users: Users,
+
+/** The errand the grouping alone could not explain: how a film actually arrives. */
+const WORKFLOW = [
+  { path: "/admin/monitoring", labelKey: "admin.workflow.wanted" },
+  { path: "/admin/decisions", labelKey: "admin.workflow.releases" },
+  { path: "/admin/acquisitions", labelKey: "admin.workflow.downloads" },
+  { path: "/admin/imports", labelKey: "admin.workflow.imports" },
+] as const;
+
+const SERVER_TONE: Record<string, string> = {
+  ready: "text-emerald-300",
+  degraded: "text-amber-300",
+  unreachable: "text-rose-300",
 };
 
 export function DevToolsPage() {
   const { t } = useLanguage();
-  // The route arrives while its own chunk, the admin check and the icon set are
-  // still landing, so a run started at mount is a run started underneath a page
-  // that is still changing. Waiting for the document's load event — and then a
-  // frame, for the case where the document was already complete and this is a
-  // client-side navigation — means the pieces fall over a page that has settled
-  // and painted, and the celebration is seen from its first frame.
-  const [canCelebrate, setCanCelebrate] = useState(false);
-
-  useEffect(() => {
-    let animationFrame = 0;
-    let isCancelled = false;
-
-    function armCelebration() {
-      animationFrame = window.requestAnimationFrame(() => {
-        if (!isCancelled) {
-          setCanCelebrate(true);
-        }
-      });
-    }
-
-    if (document.readyState === "complete") {
-      armCelebration();
-    } else {
-      window.addEventListener("load", armCelebration, { once: true });
-    }
-
-    return () => {
-      isCancelled = true;
-      window.cancelAnimationFrame(animationFrame);
-      window.removeEventListener("load", armCelebration);
-    };
-  }, []);
+  const status = useDevToolsStatus();
 
   useEffect(() => {
     setPageTitle(`${t("admin.title")} · Seyirlik`, {
@@ -105,41 +44,110 @@ export function DevToolsPage() {
 
   const groups = visibleGroups({ includeDevOnly: import.meta.env.DEV });
 
+  const downloadsLabel = () => {
+    if (status.loading) return t("admin.overview.status.checking");
+    if (!status.downloads) return t("admin.overview.status.unavailable");
+    if (status.downloads.failed > 0) {
+      return t("admin.overview.downloads.failed").replace(
+        "{count}",
+        String(status.downloads.failed),
+      );
+    }
+    if (status.downloads.active > 0) {
+      return t("admin.overview.downloads.active").replace(
+        "{count}",
+        String(status.downloads.active),
+      );
+    }
+    return t("admin.overview.downloads.idle");
+  };
+
   return (
-    <div className="relative mx-auto max-w-5xl space-y-6">
-      {canCelebrate ? (
-        <>
-          <ConfettiAnimation startDelay={0} pieceCount={250} />
+    <div className="space-y-6">
+      <section aria-labelledby="admin-status" className="space-y-3">
+        <h2
+          id="admin-status"
+          className="px-1 text-xs font-black uppercase tracking-[0.2em] text-white/35"
+        >
+          {t("admin.overview.status.heading")}
+        </h2>
 
-          <SparkleAnimation startDelay={1} sparkleDuration={1.5} />
-        </>
-      ) : null}
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Link
+            to="/admin/health"
+            className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 transition hover:border-[var(--accent)]/35 hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <span className="text-sm font-bold text-white/55">
+              {t("admin.overview.system.label")}
+            </span>
+            <span
+              className={`flex items-center gap-2 text-sm font-black ${
+                status.server
+                  ? (SERVER_TONE[status.server] ?? "")
+                  : "text-white/45"
+              }`}
+            >
+              {status.loading ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : null}
+              {status.loading
+                ? t("admin.overview.status.checking")
+                : t(
+                    status.server === "ready"
+                      ? "admin.overview.system.ready"
+                      : status.server === "degraded"
+                        ? "admin.overview.system.degraded"
+                        : "admin.overview.system.unreachable",
+                  )}
+            </span>
+          </Link>
 
-      <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
-        <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-[var(--accent)]/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-32 left-8 h-60 w-60 rounded-full bg-white/10 blur-3xl" />
-
-        <div className="relative">
-          <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-            Seyirlik
-          </p>
-
-          <div className="mt-3 flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[var(--accent)]/10 text-[var(--accent)]">
-              <ShieldCheck size={22} />
-            </div>
-
-            <div>
-              <h1 className="text-3xl font-black text-white sm:text-4xl">
-                {t("admin.title")}
-              </h1>
-
-              <p className="mt-1 text-sm font-semibold text-white/50">
-                {t("admin.pageDescription")}
-              </p>
-            </div>
-          </div>
+          <Link
+            to="/admin/acquisitions"
+            className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black/30 px-4 py-3 transition hover:border-[var(--accent)]/35 hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <span className="text-sm font-bold text-white/55">
+              {t("admin.overview.downloads.label")}
+            </span>
+            <span
+              className={`text-sm font-black ${
+                status.downloads && status.downloads.failed > 0
+                  ? "text-rose-300"
+                  : "text-white/80"
+              }`}
+            >
+              {downloadsLabel()}
+            </span>
+          </Link>
         </div>
+      </section>
+
+      <section
+        aria-labelledby="admin-workflow"
+        className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+      >
+        <h2 id="admin-workflow" className="text-sm font-black text-white">
+          {t("admin.overview.workflow.heading")}
+        </h2>
+        <p className="mt-1 text-sm font-medium leading-6 text-white/45">
+          {t("admin.overview.workflow.description")}
+        </p>
+
+        <ol className="mt-3 flex flex-wrap items-center gap-1.5">
+          {WORKFLOW.map((step, index) => (
+            <li key={step.path} className="flex items-center gap-1.5">
+              {index > 0 ? (
+                <ArrowRight size={14} className="shrink-0 text-white/25" />
+              ) : null}
+              <Link
+                to={step.path}
+                className="rounded-full border border-white/10 bg-black/30 px-3 py-1.5 text-sm font-bold text-white/70 transition hover:border-[var(--accent)]/35 hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                {t(step.labelKey)}
+              </Link>
+            </li>
+          ))}
+        </ol>
       </section>
 
       {groups.map(({ group, sections }) => (
@@ -147,52 +155,37 @@ export function DevToolsPage() {
           <div className="px-1">
             <h2
               id={`admin-group-${group.id}`}
-              className="text-lg font-black text-white"
+              className="text-base font-black text-white"
             >
               {t(group.titleKey)}
             </h2>
-
-            <p className="mt-1 text-sm font-medium text-white/45">
+            <p className="mt-0.5 text-sm font-medium text-white/45">
               {t(group.descriptionKey)}
             </p>
           </div>
 
-          <div className="mt-3 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             {sections.map((section) => {
-              const Icon = ICONS[section.icon];
+              const Icon = ADMIN_ICONS[section.icon];
 
               return (
                 <Link
                   key={section.id}
                   to={section.path}
-                  className="group relative overflow-hidden rounded-3xl border border-white/10 bg-black/30 p-5 shadow-2xl backdrop-blur-xl transition hover:border-[var(--accent)]/35 hover:bg-white/[0.075] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                  className="group flex gap-3 rounded-2xl border border-white/10 bg-black/30 p-4 transition hover:border-[var(--accent)]/35 hover:bg-white/[0.06] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                 >
-                  <div className="pointer-events-none absolute -right-12 -top-12 h-32 w-32 rounded-full bg-[var(--accent)]/0 blur-3xl transition group-hover:bg-[var(--accent)]/15" />
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/[0.07] text-white/75 transition group-hover:text-[var(--accent)]">
+                    <Icon size={17} />
+                  </span>
 
-                  <div className="relative">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/10 text-white/82 transition duration-300 ease-out group-hover:scale-110 group-hover:text-[var(--accent)]">
-                        <Icon size={20} />
-                      </div>
-
-                      <ArrowRight
-                        size={18}
-                        className="mt-2 text-white/35 transition group-hover:translate-x-1 group-hover:text-[var(--accent)]"
-                      />
-                    </div>
-
-                    <p className="mt-5 w-fit rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-xs font-black uppercase tracking-[0.12em] text-white/40">
-                      {t(section.tagKey)}
-                    </p>
-
-                    <h3 className="mt-3 text-xl font-black text-white transition group-hover:text-[var(--accent)]">
+                  <span className="min-w-0">
+                    <span className="block text-sm font-black text-white transition group-hover:text-[var(--accent)]">
                       {t(section.titleKey)}
-                    </h3>
-
-                    <p className="mt-2 text-sm font-medium leading-6 text-white/55">
+                    </span>
+                    <span className="mt-1 block text-sm font-medium leading-6 text-white/50">
                       {t(section.descriptionKey)}
-                    </p>
-                  </div>
+                    </span>
+                  </span>
                 </Link>
               );
             })}

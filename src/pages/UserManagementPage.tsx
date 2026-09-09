@@ -1,8 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   CheckCircle2,
-  ChevronLeft,
   CircleAlert,
   KeyRound,
   Loader2,
@@ -389,15 +387,7 @@ export function UserManagementPage() {
         : "border-white/10 bg-white/[0.06] text-white/62";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <Link
-        to="/dev"
-        className="inline-flex items-center gap-2 text-sm font-bold text-white/55 transition hover:text-white"
-      >
-        <ChevronLeft size={17} />
-        {t("devtools.backToDevtools")}
-      </Link>
-
+    <div className="w-full space-y-6">
       <section className="relative overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
         <div className="pointer-events-none absolute -right-20 -top-24 h-60 w-60 rounded-full bg-[var(--accent)]/20 blur-3xl" />
         <div className="relative flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">

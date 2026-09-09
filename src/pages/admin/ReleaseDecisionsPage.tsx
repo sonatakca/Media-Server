@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ArrowLeft, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { setPageTitle } from "../../lib/pageTitle";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { WorkflowSteps } from "../../components/admin/WorkflowSteps";
 import {
   canAcquire,
   orderCandidates,
@@ -111,15 +111,8 @@ export function ReleaseDecisionsPage() {
   const counts = candidates ? summarise(candidates) : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
-      <Link
-        to="/admin"
-        className="inline-flex items-center gap-2 text-sm font-bold text-white/50 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-      >
-        <ArrowLeft size={16} />
-        {t("admin.title")}
-      </Link>
-
+    <div className="w-full space-y-6">
+      <WorkflowSteps current="/admin/decisions" />
       <header>
         <h1 className="text-3xl font-black text-white">
           {t("admin.decisions.title")}

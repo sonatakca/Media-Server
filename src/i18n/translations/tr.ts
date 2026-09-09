@@ -1866,18 +1866,54 @@ export const tr = {
   "admin.title": "Yönetim",
   "admin.pageDescription":
     "Sunucunun ne yaptığı, neye bağlı olduğu ve neyin sizi beklediği.",
-  "admin.group.operations.title": "İşleyiş",
-  "admin.group.operations.description":
-    "Sunucunun şu anda üzerinde çalıştığı ve sizi bekleyen işler.",
+  "admin.nav.label": "Yönetim araçları",
+  "admin.nav.overview": "Genel bakış",
+  "admin.nav.open": "Araçları göster",
+  "admin.nav.close": "Araçları gizle",
+  "admin.shell.breadcrumb": "Buradasınız",
+  "admin.shell.root": "DevTools",
+  "admin.entry": "Yönetim",
+  "admin.overview.status.heading": "Şu anda",
+  "admin.overview.status.checking": "Denetleniyor…",
+  "admin.overview.status.unavailable": "Bilgi yok",
+  "admin.overview.system.label": "Sunucu",
+  "admin.overview.system.ready": "Hazır",
+  "admin.overview.system.degraded": "İlgi bekliyor",
+  "admin.overview.system.unreachable": "Ulaşılamıyor",
+  "admin.overview.downloads.label": "İndirmeler",
+  "admin.overview.downloads.active": "{count} sürüyor",
+  "admin.overview.downloads.failed": "{count} başarısız",
+  "admin.overview.downloads.idle": "İnen bir şey yok",
+  "admin.overview.workflow.heading": "Bir film kitaplığa nasıl ulaşır",
+  "admin.overview.workflow.description":
+    "İsteyin, bir sürüm seçin, inmesini bekleyin, sonra kitaplığa alın. Her adım aşağıdaki bir araç.",
+  "admin.workflow.wanted": "İstenenler",
+  "admin.workflow.releases": "Sürümler",
+  "admin.workflow.downloads": "İndirmeler",
+  "admin.workflow.imports": "İçe aktarma",
+  "admin.workflow.next": "Sonraki adım",
+  "admin.workflow.previous": "Önceki adım",
   "admin.group.library.title": "Kitaplık",
   "admin.group.library.description":
-    "İçeriğin kendisi: sıralama, görseller ve kataloğun tuttukları.",
-  "admin.group.configuration.title": "Yapılandırma",
-  "admin.group.configuration.description":
-    "Seyirlik'in neye bağlı olduğu ve varsayılan davranışı.",
-  "admin.group.diagnostics.title": "Tanılama",
-  "admin.group.diagnostics.description":
-    "Makinenin içine bakmak. Nadiren gerekir, gerektiğinde burada.",
+    "Kataloğu taramak, içindekileri tanımlamak ve yeni dosyaları içeri almak.",
+  "admin.group.downloads.title": "İstenenler ve indirmeler",
+  "admin.group.downloads.description":
+    "Bir film ya da bölüm isteyin, ona bir sürüm seçin ve gelişini izleyin.",
+  "admin.group.subtitles.title": "Altyazılar",
+  "admin.group.subtitles.description":
+    "Altyazısı olanlar, eksik olanlar ve bir sağlayıcının geri çevirdikleri.",
+  "admin.group.playback.title": "Oynatma",
+  "admin.group.playback.description":
+    "Oynatılamayanlar, hazırlananlar ve oynatmanın varsayılan davranışı.",
+  "admin.group.system.title": "Sistem",
+  "admin.group.system.description":
+    "Sunucunun kendisi, bağlı olduğu servisler ve kimin kullanabileceği.",
+  "admin.group.curation.title": "Derleme",
+  "admin.group.curation.description":
+    "Kitaplığa göz atan herkes için içeriklerin görünme sırası.",
+  "admin.group.development.title": "Geliştirme",
+  "admin.group.development.description":
+    "Seyirlik'i çalıştırmak değil, geliştirmek. Günlük işleyişin parçası değil.",
   "admin.health.title": "Sağlık",
   "admin.health.description":
     "Sunucunun hizmet verip vermediği, neyin çalışmadığı ve neyin sizi beklediği.",

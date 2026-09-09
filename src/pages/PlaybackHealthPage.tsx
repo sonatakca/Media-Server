@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
-  ChevronLeft,
   CheckCircle2,
   Copy,
   FileJson,
@@ -329,16 +328,8 @@ export function PlaybackHealthPage() {
   const context = report?.context;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div>
-        <Link
-          to="/dev"
-          className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-4 text-sm font-bold text-white/78 transition hover:bg-white/[0.10] hover:text-white"
-        >
-          <ChevronLeft size={16} />
-          Devtools
-        </Link>
-      </div>
+    <div className="w-full space-y-6">
+      <div></div>
 
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-5 shadow-2xl backdrop-blur-xl sm:p-6">
         <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">

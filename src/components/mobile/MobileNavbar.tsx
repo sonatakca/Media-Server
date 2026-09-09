@@ -1,5 +1,12 @@
 import { useEffect, useState } from "react";
-import { Book, Bookmark, LogOut, Palette, Search } from "lucide-react";
+import {
+  Book,
+  Bookmark,
+  LogOut,
+  Palette,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
@@ -149,6 +156,20 @@ export function MobileNavbar() {
               <Palette size={18} />
             </button>
           </Tooltip>
+          {session?.isAdministrator ? (
+            /* Mobile had no route into administration at all: the desktop
+               easter egg needs a pointer device and five taps on a name that
+               is not rendered here. */
+            <Tooltip content={t("admin.entry")}>
+              <Link
+                to="/admin"
+                aria-label={t("admin.entry")}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
+              >
+                <ShieldCheck size={18} />
+              </Link>
+            </Tooltip>
+          ) : null}
           {session ? (
             <Tooltip content={t("nav.logout")}>
               <button

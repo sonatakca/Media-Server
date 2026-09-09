@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
 import {
   ArrowDown,
   ArrowDownToLine,
-  ChevronLeft,
   ArrowUp,
   ArrowUpToLine,
   Check,
@@ -772,7 +770,7 @@ export function CurationPage() {
 
   if (error) {
     return (
-      <div className="mx-auto max-w-4xl">
+      <div className="w-full">
         <ErrorMessage title={t("curation.unavailable")} message={error} />
       </div>
     );
@@ -796,14 +794,6 @@ export function CurationPage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6">
       <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
-        <Link
-          to="/dev"
-          className="inline-flex items-center gap-2 text-sm font-black text-white/55 transition hover:text-white"
-        >
-          <ChevronLeft size={16} />
-          {t("devtools.backToDevtools")}
-        </Link>
-
         <div className="mt-5">
           <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
             {t("curation.eyebrow")}

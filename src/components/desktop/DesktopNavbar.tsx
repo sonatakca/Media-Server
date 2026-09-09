@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Palette, Search, UserRound } from "lucide-react";
+import { LogOut, Palette, Search, ShieldCheck, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
 import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -221,6 +221,24 @@ export function DesktopNavbar() {
               <Palette size={18} className="shrink-0" />
             </button>
           </Tooltip>
+
+          {session?.isAdministrator ? (
+            /*
+             * The way in. Administration was reachable only by clicking the
+             * user name five times, which is a fine easter egg and was the
+             * only door — so every tool behind it may as well not have
+             * existed. The easter egg stays; this is the door.
+             */
+            <Tooltip content={t("admin.entry")}>
+              <Link
+                to="/admin"
+                aria-label={t("admin.entry")}
+                className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
+              >
+                <ShieldCheck size={17} className="shrink-0" />
+              </Link>
+            </Tooltip>
+          ) : null}
 
           {session ? (
             <>

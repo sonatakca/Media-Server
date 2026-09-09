@@ -1869,18 +1869,54 @@ export const en = {
   "admin.title": "Administration",
   "admin.pageDescription":
     "What the server is doing, what it is connected to, and what needs a person.",
-  "admin.group.operations.title": "Operations",
-  "admin.group.operations.description":
-    "What the server is working on right now, and what is waiting on you.",
+  "admin.nav.label": "Administration tools",
+  "admin.nav.overview": "Overview",
+  "admin.nav.open": "Show tools",
+  "admin.nav.close": "Hide tools",
+  "admin.shell.breadcrumb": "You are here",
+  "admin.shell.root": "DevTools",
+  "admin.entry": "Administration",
+  "admin.overview.status.heading": "Right now",
+  "admin.overview.status.checking": "Checking…",
+  "admin.overview.status.unavailable": "Not available",
+  "admin.overview.system.label": "Server",
+  "admin.overview.system.ready": "Ready",
+  "admin.overview.system.degraded": "Needs attention",
+  "admin.overview.system.unreachable": "Unreachable",
+  "admin.overview.downloads.label": "Downloads",
+  "admin.overview.downloads.active": "{count} in progress",
+  "admin.overview.downloads.failed": "{count} failed",
+  "admin.overview.downloads.idle": "Nothing downloading",
+  "admin.overview.workflow.heading": "How a film reaches the library",
+  "admin.overview.workflow.description":
+    "Ask for it, choose a release, let it download, then take it into the library. Each step is a tool below.",
+  "admin.workflow.wanted": "Wanted",
+  "admin.workflow.releases": "Releases",
+  "admin.workflow.downloads": "Downloads",
+  "admin.workflow.imports": "Imports",
+  "admin.workflow.next": "Next step",
+  "admin.workflow.previous": "Previous step",
   "admin.group.library.title": "Library",
   "admin.group.library.description":
-    "The contents themselves: ordering, artwork and what the catalogue holds.",
-  "admin.group.configuration.title": "Configuration",
-  "admin.group.configuration.description":
-    "What Seyirlik is connected to, and how it behaves by default.",
-  "admin.group.diagnostics.title": "Diagnostics",
-  "admin.group.diagnostics.description":
-    "Looking inside the machine. Rarely needed, and here when it is.",
+    "Scanning the catalogue, describing what is in it, and taking new files into it.",
+  "admin.group.downloads.title": "Wanted & downloads",
+  "admin.group.downloads.description":
+    "Ask for a film or an episode, choose a release for it, and watch it arrive.",
+  "admin.group.subtitles.title": "Subtitles",
+  "admin.group.subtitles.description":
+    "What is subtitled, what is missing, and what a provider is refusing.",
+  "admin.group.playback.title": "Playback",
+  "admin.group.playback.description":
+    "What failed to play, what is being prepared, and how playback behaves by default.",
+  "admin.group.system.title": "System",
+  "admin.group.system.description":
+    "The server itself, what it is wired to, and who may use it.",
+  "admin.group.curation.title": "Curation",
+  "admin.group.curation.description":
+    "The order things appear in, for everyone browsing the library.",
+  "admin.group.development.title": "Development",
+  "admin.group.development.description":
+    "Building Seyirlik rather than running it. Not part of day-to-day operation.",
   "admin.health.title": "Health",
   "admin.health.description":
     "Whether the server is serving, what is not working, and what is waiting for you.",
