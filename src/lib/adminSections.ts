@@ -149,6 +149,15 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     icon: "subtitles",
   },
   {
+    id: "imports",
+    group: "operations",
+    path: "/admin/imports",
+    titleKey: "admin.imports.title",
+    descriptionKey: "admin.imports.description",
+    tagKey: "admin.imports.tag",
+    icon: "hardDrive",
+  },
+  {
     id: "media-processing",
     group: "operations",
     path: "/dev/media-processing",
