@@ -118,6 +118,8 @@ import { createIndexerSearchService } from "./indexers/searchService";
 import { createIndexerRoutes } from "./indexers/indexerRoutes";
 import { createPolicyRepository } from "./releases/policyRepository";
 import { createReleaseRoutes } from "./releases/releaseRoutes";
+import { createMonitoringRepository } from "./releases/monitoringRepository";
+import { createMonitoringRoutes } from "./releases/monitoringRoutes";
 import { parseSabnzbdConfig } from "./acquisition/acquisitionConfig";
 import { createSabnzbdClient } from "./acquisition/sabnzbd";
 import { createAcquisitionRepository } from "./acquisition/acquisitionRepository";
@@ -1250,6 +1252,7 @@ export async function createNativeRuntime({
       search: indexerSearch,
       policies: createPolicyRepository(pool),
     }),
+    ...createMonitoringRoutes(createMonitoringRepository(pool)),
     ...(acquisition
       ? createAcquisitionRoutes({
           repository: acquisition.repository,
