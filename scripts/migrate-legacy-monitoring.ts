@@ -52,6 +52,22 @@ function folderKey(pathValue: string): string {
   return (parts[parts.length - 1] ?? "").toLowerCase();
 }
 
+/**
+ * Collapses runs of whitespace, for a second attempt at matching.
+ *
+ * One folder here is `Pirates Of The Caribbean -  Dead Men Tell No Tales
+ * (2017)` — two spaces after the dash — while Radarr recorded the path with
+ * one. The disc is the authority on its own directory names, so rather than
+ * correcting either side this matches on a form that ignores the difference.
+ * Used only after an exact match fails, and only when exactly one item
+ * normalizes to the same key: an ambiguous collapse means two titles differ
+ * only by spacing, and guessing between them would attach a monitoring
+ * decision to the wrong film.
+ */
+function collapseWhitespace(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 interface SeasonFlag {
   seasonNumber: number;
   monitored: boolean;
@@ -105,6 +121,24 @@ async function main(): Promise<void> {
       items.rows.map((row) => [row.source_key, row.id]),
     );
 
+    /* Built once, and only with keys that are unambiguous after collapsing. */
+    const relaxedKeyCounts = new Map<string, number>();
+    for (const row of items.rows) {
+      const relaxed = collapseWhitespace(row.source_key);
+      relaxedKeyCounts.set(relaxed, (relaxedKeyCounts.get(relaxed) ?? 0) + 1);
+    }
+    const itemByRelaxedKey = new Map<string, string>();
+    for (const row of items.rows) {
+      const relaxed = collapseWhitespace(row.source_key);
+      if (relaxedKeyCounts.get(relaxed) === 1) {
+        itemByRelaxedKey.set(relaxed, row.id);
+      }
+    }
+
+    const resolveItem = (sourceKey: string): string | undefined =>
+      itemBySourceKey.get(sourceKey) ??
+      itemByRelaxedKey.get(collapseWhitespace(sourceKey));
+
     const profiles = await pool.query<{ id: string; name: string }>(
       "SELECT id, name FROM quality_profiles",
     );
@@ -140,7 +174,7 @@ async function main(): Promise<void> {
 
       for (const movie of movies) {
         const sourceKey = `movie:movies/${folderKey(String(movie.path ?? ""))}`;
-        const itemId = itemBySourceKey.get(sourceKey);
+        const itemId = resolveItem(sourceKey);
         if (!itemId) {
           unresolved.push(`movie ${String(movie.title ?? movie.path)}`);
           continue;
@@ -187,7 +221,7 @@ async function main(): Promise<void> {
 
       for (const series of allSeries) {
         const sourceKey = `series:series/${folderKey(String(series.path ?? ""))}`;
-        const itemId = itemBySourceKey.get(sourceKey);
+        const itemId = resolveItem(sourceKey);
         if (!itemId) {
           unresolved.push(`series ${String(series.title ?? series.path)}`);
           continue;
