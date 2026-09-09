@@ -39,6 +39,57 @@ async function loadMigrationFiles(
   );
 }
 
+/** The schema a database is actually carrying. */
+export interface SchemaState {
+  /** How many migrations the database has recorded. */
+  readonly applied: number;
+  /** The newest one, or null for a database that has never been migrated. */
+  readonly latest: string | null;
+  /** True when the recorded set matches the migrations shipped with this code. */
+  readonly current: boolean;
+  /** Shipped but not recorded. Non-empty means the code is ahead of the schema. */
+  readonly pending: string[];
+}
+
+/**
+ * Reads the schema state, for reporting rather than for gating.
+ *
+ * The name of the table matters more than it looks. Operational scripts have
+ * asked `schema_migrations` — which has never existed here — and got an empty
+ * answer back, so a restore-verification step that reported a migration count
+ * as its evidence was reporting nothing at all. Any caller that needs this
+ * figure should take it from here rather than writing the query again.
+ */
+export async function readSchemaState(
+  database: Pick<Pool, "query">,
+  migrationsDirectory = DEFAULT_MIGRATIONS_DIRECTORY,
+): Promise<SchemaState> {
+  const shipped = await loadMigrationFiles(migrationsDirectory);
+  let recorded: string[];
+  try {
+    const result = await database.query<{ version: string }>(
+      "SELECT version FROM seyirlik_migrations ORDER BY version",
+    );
+    recorded = result.rows.map((row) => row.version);
+  } catch {
+    // A database that has never been migrated has no table to read, which is a
+    // state to report rather than an error to raise.
+    recorded = [];
+  }
+
+  const applied = new Set(recorded);
+  const pending = shipped
+    .map((file) => file.version)
+    .filter((version) => !applied.has(version));
+
+  return {
+    applied: recorded.length,
+    latest: recorded.length > 0 ? recorded[recorded.length - 1]! : null,
+    current: pending.length === 0,
+    pending,
+  };
+}
+
 export async function validateMigrationsCurrent(
   database: Pick<Pool, "query">,
   migrationsDirectory = DEFAULT_MIGRATIONS_DIRECTORY,
