@@ -154,6 +154,7 @@ import {
   createConfigurationRoutes,
   describeHost,
 } from "./system/configurationRoutes";
+import { createBackupRepository } from "./system/backupRepository";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -1305,6 +1306,7 @@ export async function createNativeRuntime({
       : []),
     ...createConfigurationRoutes({
       pool,
+      backups: createBackupRepository(pool),
       /*
        * Built from the same parsed configuration the runtime uses, so what an
        * operator is told is configured is what is actually configured. Every

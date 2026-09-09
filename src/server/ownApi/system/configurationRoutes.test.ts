@@ -7,6 +7,7 @@ import {
 } from "./configurationRoutes";
 import type { DatabasePool } from "../database/databasePool";
 import type { RouteContext, RouteDefinition } from "../api/router";
+import type { BackupRepository } from "./backupRepository";
 
 function invoke(definition: RouteDefinition): Promise<{
   status: number;
@@ -49,8 +50,19 @@ const pool = {
   })),
 } as unknown as DatabasePool;
 
+const backups = {
+  record: vi.fn(),
+  list: vi.fn(async () => []),
+  latest: vi.fn(async () => null),
+  latestVerified: vi.fn(async () => null),
+} as unknown as BackupRepository;
+
 function routes(integrations: IntegrationStatus[]): RouteDefinition[] {
-  return createConfigurationRoutes({ pool, integrations: () => integrations });
+  return createConfigurationRoutes({
+    pool,
+    backups,
+    integrations: () => integrations,
+  });
 }
 
 const route = (list: RouteDefinition[], path: string) =>
@@ -120,6 +132,21 @@ describe("describing a host without its query string", () => {
   it("says nothing rather than guessing at a malformed URL", () => {
     expect(describeHost("not a url")).toBeUndefined();
     expect(describeHost(undefined)).toBeUndefined();
+  });
+});
+
+describe("reporting what a backup proved", () => {
+  it("does not call an absent backup healthy", async () => {
+    /*
+     * Never-run and verified must not look the same. A panel that went green
+     * on the presence of a file would read as reassurance and carry none.
+     */
+    const { payload } = await invoke(route(routes([]), "/admin/backups"));
+    expect(payload?.data?.health).toEqual({
+      healthy: false,
+      reason: "never-run",
+    });
+    expect(payload?.data?.latest).toBeNull();
   });
 });
 

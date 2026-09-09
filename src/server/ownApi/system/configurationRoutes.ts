@@ -16,6 +16,7 @@ import { sendData } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import type { DatabasePool } from "../database/databasePool";
 import { readSchemaState } from "../database/migrationRunner";
+import { backupHealth, type BackupRepository } from "./backupRepository";
 
 export interface IntegrationStatus {
   readonly id: string;
@@ -33,11 +34,13 @@ export interface ConfigurationSnapshotOptions {
   readonly pool: DatabasePool;
   /** Built at startup from the same parsers the runtime uses. */
   readonly integrations: () => IntegrationStatus[];
+  readonly backups: BackupRepository;
 }
 
 export function createConfigurationRoutes({
   pool,
   integrations,
+  backups,
 }: ConfigurationSnapshotOptions): RouteDefinition[] {
   return [
     {
@@ -70,6 +73,34 @@ export function createConfigurationRoutes({
           latest: state.latest,
           current: state.current,
           pending: state.pending,
+        });
+      },
+    },
+    {
+      /**
+       * What the last backup actually proved.
+       *
+       * `healthy` is deliberately not "a file exists": it requires a run that
+       * finished, carried both a dump and its configuration, and had a restore
+       * rehearsed whose table count matched the live database. A panel that
+       * went green on the presence of a file would read as reassurance and
+       * carry none.
+       */
+      method: "GET",
+      path: "/admin/backups",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const [latest, verified, history] = await Promise.all([
+          backups.latest(),
+          backups.latestVerified(),
+          backups.list(20),
+        ]);
+        sendData(context.response, context.requestId, {
+          health: backupHealth(latest),
+          latest,
+          latestVerified: verified,
+          history,
         });
       },
     },
