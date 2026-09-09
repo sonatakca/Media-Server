@@ -71,9 +71,12 @@ async function main(): Promise<void> {
       [PROFILE_NAME],
     );
     const profileId = existing.rows[0]?.id ?? randomUUID();
-    console.info(
-      `profile "${PROFILE_NAME}": ${existing.rows[0] ? `exists (${profileId})` : `would be created (${profileId})`}`,
-    );
+    const disposition = existing.rows[0]
+      ? "exists"
+      : apply
+        ? "creating"
+        : "would be created";
+    console.info(`profile "${PROFILE_NAME}": ${disposition} (${profileId})`);
     console.info(`  tiers=${JSON.stringify(TIERS)}`);
     console.info(
       `  cutoff=${CUTOFF_QUALITY_ID} upgradeAllowed=${UPGRADE_ALLOWED} ${PREFERENCE_RULE_NAME}=${PREFERENCE_SCORE}`,
