@@ -71,6 +71,15 @@ function harness(
       return found
         ? {
             acquisition: found,
+            decision: {
+              profileName: "HD-1080p",
+              score: 120,
+              reasons: [{ code: "codec", detail: "Preferred codec" }],
+              rejected: [
+                { title: "Other.720p", reason: "quality-not-allowed" },
+              ],
+              decidedAtMs: 1_700_000_000_000,
+            },
             events: [
               {
                 fromState: null,
@@ -251,6 +260,56 @@ describe("what the wire shape carries", () => {
       expect.objectContaining({ toState: "planned" }),
       expect.objectContaining({ fromState: "submitting", toState: "queued" }),
     ]);
+  });
+
+  it("explains why this release was chosen", async () => {
+    /*
+     * The evidence was recorded from Phase 4 onward and never read, so an
+     * operator could see that a download happened and not why it was this
+     * release. Score alone would not answer it either — the reasons are the
+     * answer, and the rejections are the other half of it.
+     */
+    const h = harness();
+    const { payload } = await invoke(
+      route(h, "GET", "/acquisitions/:acquisitionId"),
+      { params: { acquisitionId: summary().id } },
+    );
+    expect(payload?.data?.decision).toMatchObject({
+      profileName: "HD-1080p",
+      score: 120,
+      reasons: [{ code: "codec", detail: "Preferred codec" }],
+      rejected: [{ title: "Other.720p", reason: "quality-not-allowed" }],
+    });
+  });
+
+  it("never carries the download path in a list or a history", async () => {
+    /*
+     * It names a directory on the operator's disk. The import phase reads it
+     * from the repository on the server, so carrying it here disclosed a
+     * filesystem layout to nobody's benefit.
+     */
+    const h = harness([
+      summary({ state: "downloaded", downloadPath: "C:/Downloads/Dune" }),
+    ]);
+    const listed = await invoke(h.routes[0]!);
+    expect(JSON.stringify(listed.payload)).not.toContain("C:/Downloads");
+
+    const detail = await invoke(
+      route(h, "GET", "/acquisitions/:acquisitionId"),
+      { params: { acquisitionId: summary().id } },
+    );
+    expect(JSON.stringify(detail.payload)).not.toContain("C:/Downloads");
+  });
+
+  it("publishes the path only where handing it over is the point", async () => {
+    const h = harness([
+      summary({ state: "downloaded", downloadPath: "C:/Downloads/Dune" }),
+    ]);
+    const { payload } = await invoke(
+      route(h, "GET", "/acquisitions/ready-for-import"),
+    );
+    const ready = payload?.data?.ready as Array<Record<string, unknown>>;
+    expect(ready[0]?.downloadPath).toBe("C:/Downloads/Dune");
   });
 
   it("answers 404 for an acquisition that does not exist", async () => {

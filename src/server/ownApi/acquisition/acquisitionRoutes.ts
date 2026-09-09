@@ -67,8 +67,6 @@ interface AcquisitionDto {
   readonly failureClass?: string;
   readonly failureDetail?: string;
   readonly sizeBytes?: number;
-  /** Present once downloading has finished. Read by the import phase. */
-  readonly downloadPath?: string;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -79,6 +77,11 @@ interface AcquisitionDto {
  * Carries neither the release's download URL nor SABnzbd's job identifier: the
  * first is credential-bearing and the second is an internal handle a client
  * has no use for and could otherwise quote back at a cancellation.
+ *
+ * Nor the download path. It names a directory on the operator's disk, and
+ * neither a list of acquisitions nor one acquisition's history has any use for
+ * it — so carrying it there disclosed a filesystem layout to nobody's benefit.
+ * The one endpoint whose whole purpose is that handoff says so itself.
  */
 function toDto(summary: AcquisitionSummary): AcquisitionDto {
   return {
@@ -94,7 +97,6 @@ function toDto(summary: AcquisitionSummary): AcquisitionDto {
     ...(summary.sizeBytes === undefined
       ? {}
       : { sizeBytes: summary.sizeBytes }),
-    ...(summary.downloadPath ? { downloadPath: summary.downloadPath } : {}),
     createdAt: new Date(summary.createdAtMs).toISOString(),
     updatedAt: new Date(summary.updatedAtMs).toISOString(),
   };
@@ -141,6 +143,20 @@ export function createAcquisitionRoutes({
         }
         sendData(context.response, context.requestId, {
           acquisition: toDto(detail.acquisition),
+          /*
+           * Why this release, in the words the decision engine used at the
+           * time. Without it an operator can see that a download happened and
+           * not why it was this release rather than another one.
+           */
+          decision: detail.decision
+            ? {
+                profileName: detail.decision.profileName,
+                score: detail.decision.score,
+                reasons: detail.decision.reasons,
+                rejected: detail.decision.rejected,
+                decidedAt: new Date(detail.decision.decidedAtMs).toISOString(),
+              }
+            : null,
           // The audit trail: every state it passed through, and why.
           events: detail.events.map((event) => ({
             fromState: event.fromState,
@@ -153,14 +169,24 @@ export function createAcquisitionRoutes({
       },
     },
     {
-      /** The handoff the import phase reads. Nothing here acts on it. */
+      /**
+       * The handoff the import phase reads. Nothing here acts on it.
+       *
+       * The only place the download path is published, because it is the only
+       * place it is the point. Admin-only, like everything else here.
+       */
       method: "GET",
       path: "/acquisitions/ready-for-import",
       access: "admin",
       handle: async (context) => {
         context.requirePrincipal();
         sendData(context.response, context.requestId, {
-          ready: (await repository.listReadyForImport()).map(toDto),
+          ready: (await repository.listReadyForImport()).map((summary) => ({
+            ...toDto(summary),
+            ...(summary.downloadPath
+              ? { downloadPath: summary.downloadPath }
+              : {}),
+          })),
         });
       },
     },

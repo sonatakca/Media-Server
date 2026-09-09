@@ -57,6 +57,22 @@ export interface AcquisitionSummary extends AcquisitionRecord {
   readonly createdAtMs: number;
 }
 
+/**
+ * Why this release was chosen, as it was recorded at the time.
+ *
+ * Written since Phase 4 and, until now, never read: the evidence existed in
+ * the database with no way out of it, so an operator could see that a download
+ * happened and not why. The policy is a snapshot rather than a reference, so
+ * this answers what was decided then, not what the profile says today.
+ */
+export interface AcquisitionDecision {
+  readonly profileName: string;
+  readonly score: number;
+  readonly reasons: unknown;
+  readonly rejected: unknown;
+  readonly decidedAtMs: number;
+}
+
 export interface AcquisitionEvent {
   readonly fromState: string | null;
   readonly toState: string;
@@ -79,6 +95,7 @@ export interface AcquisitionRepository extends AcquisitionStore {
   detail(id: string): Promise<{
     acquisition: AcquisitionSummary;
     events: AcquisitionEvent[];
+    decision: AcquisitionDecision | null;
   } | null>;
   /** Acquisitions finished downloading and not yet handed on. */
   listReadyForImport(limit?: number): Promise<AcquisitionSummary[]>;
@@ -283,8 +300,29 @@ export function createAcquisitionRepository(
            FROM acquisition_events WHERE acquisition_id = $1 ORDER BY id`,
         [id],
       );
+      const decision = await pool.query<{
+        profile_name: string;
+        score: number;
+        reasons: unknown;
+        rejected: unknown;
+        decided_at: Date;
+      }>(
+        `SELECT profile_name, score, reasons, rejected, decided_at
+           FROM acquisition_decisions WHERE acquisition_id = $1`,
+        [id],
+      );
+
       return {
         acquisition: acquisition as AcquisitionSummary,
+        decision: decision.rows[0]
+          ? {
+              profileName: decision.rows[0].profile_name,
+              score: decision.rows[0].score,
+              reasons: decision.rows[0].reasons,
+              rejected: decision.rows[0].rejected,
+              decidedAtMs: decision.rows[0].decided_at.getTime(),
+            }
+          : null,
         events: events.rows.map((row) => ({
           fromState: row.from_state,
           toState: row.to_state,
