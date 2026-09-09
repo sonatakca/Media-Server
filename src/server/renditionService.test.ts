@@ -682,6 +682,61 @@ describe("complete-file rendition routes", () => {
   });
 });
 
+describe("describePackagedSource", () => {
+  it("reports the package duration for a title whose source bytes are gone", async () => {
+    const { service, sourcePath } = await fixture({
+      includeGenerated: false,
+      includeAdaptive: true,
+    });
+    const sourceStats = await stat(sourcePath);
+    await unlink(sourcePath);
+
+    await expect(
+      service.describePackagedSource({
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      }),
+    ).resolves.toMatchObject({
+      durationSeconds: 60,
+      video: { codecName: "h264", width: 1920, height: 1080, isHdr: false },
+    });
+  });
+
+  it("reports nothing for a title with no adaptive package", async () => {
+    const { service, sourcePath } = await fixture();
+    const sourceStats = await stat(sourcePath);
+
+    await expect(
+      service.describePackagedSource({
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      }),
+    ).resolves.toBeNull();
+  });
+
+  it("reports nothing for a package built under an older profile", async () => {
+    const { service, sourcePath } = await fixture({
+      includeGenerated: false,
+      includeAdaptive: true,
+      adaptiveProfileVersion: "cmaf-hls-aligned-v0",
+    });
+    const sourceStats = await stat(sourcePath);
+
+    await expect(
+      service.describePackagedSource({
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("adaptiveVersionIdFor", () => {
   const base = {
     profileVersion: ADAPTIVE_PROFILE_VERSION,

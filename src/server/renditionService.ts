@@ -6,6 +6,11 @@ import type {
   PlaybackResolvedMedia,
 } from "../lib/playback-planner/playbackRoutes";
 import type {
+  AudioStreamAnalysis,
+  SubtitleStreamAnalysis,
+  VideoStreamAnalysis,
+} from "../lib/playback-planner/types";
+import type {
   AvailableQualityFile,
   MediaQualityManifest,
 } from "../renditions/contracts";
@@ -114,6 +119,22 @@ export interface ResolvedRenditionFile {
   contentType?: string;
 }
 
+/**
+ * What a package still knows about the source it replaced.
+ *
+ * The catalogue row of a packaged title carries no duration and no streams:
+ * it was written from a registry record of a file that is gone, and the probe
+ * that would have filled it in has nothing left to read. The package recorded
+ * all of it at build time, so this is the source's own description, not a
+ * reconstruction of it.
+ */
+export interface PackagedSourceDescription {
+  durationSeconds: number;
+  video: VideoStreamAnalysis;
+  audio: AudioStreamAnalysis[];
+  subtitles: SubtitleStreamAnalysis[];
+}
+
 export interface RenditionService {
   createManifest(
     media: PlaybackResolvedMedia,
@@ -136,6 +157,19 @@ export interface RenditionService {
     versionId: string,
     assetPath: string,
   ): Promise<ResolvedRenditionFile | null>;
+  /**
+   * The complete package a title kept after packaging consumed its source, or
+   * null when there is none.
+   *
+   * Playback's readiness gate asks this before refusing a file whose probe
+   * failed. A fully processed title can never be probed again — the bytes
+   * ffprobe would read are gone — yet the package that replaced them is
+   * exactly what playback is about to serve, and it carries the source
+   * duration the catalogue row no longer holds.
+   */
+  describePackagedSource(
+    media: PlaybackResolvedMedia,
+  ): Promise<PackagedSourceDescription | null>;
 }
 
 /**
@@ -286,6 +320,95 @@ export function createRenditionService({
     }
   };
 
+  /**
+   * The registry record that describes exactly these bytes, if there is one.
+   *
+   * A record that disagrees with the file describes some other version of it,
+   * and its renditions must not be offered. Size is decisive.
+   *
+   * The modification time is only consulted when the record actually carries
+   * one. A record written without it — a recovery path that had no stats to
+   * hand, an import — would otherwise fail this comparison against every real
+   * file and return nothing, which withdraws the entire ladder and leaves the
+   * player direct-playing the source as the only quality on offer. A zero is an
+   * absent measurement, not evidence that the file changed, and the package's
+   * own fingerprint is checked by the inspection in any case.
+   */
+  const findRegistryItem = async (
+    media: PlaybackResolvedMedia,
+  ): Promise<RenditionRegistry["items"][number] | undefined> => {
+    const relativePath = mediaRelativePath(mediaRoot, media.filePath);
+    if (!relativePath) return undefined;
+    const registryItems = await loadRegistryItems();
+    const registryItem = registryItems.find(
+      (item) => item.relativePath.toLowerCase() === relativePath.toLowerCase(),
+    );
+    const registeredMtime = Math.trunc(registryItem?.mtimeMs ?? 0);
+    if (
+      !registryItem ||
+      registryItem.size !== media.size ||
+      (registeredMtime > 0 && registeredMtime !== Math.trunc(media.mtimeMs))
+    ) {
+      return undefined;
+    }
+    return registryItem;
+  };
+
+  const describePackagedSource: RenditionService["describePackagedSource"] =
+    async (media) => {
+      const registryItem = await findRegistryItem(media);
+      if (
+        !registryItem ||
+        registryItem.adaptiveStatus !== "ready" ||
+        registryItem.adaptiveProfileVersion !== ADAPTIVE_PROFILE_VERSION
+      ) {
+        return null;
+      }
+      const inspection = await inspectAdaptivePackage({
+        titleRoot: await resolveTitleRoot(media.filePath),
+        sourceFingerprint: registryItem.sourceFingerprint,
+        profileVersion: ADAPTIVE_PROFILE_VERSION,
+      });
+      if (inspection.status !== "ready" || !inspection.metadata) return null;
+      const metadata = inspection.metadata;
+      return {
+        durationSeconds: metadata.sourceDurationSeconds,
+        video: {
+          index: 0,
+          codecName: metadata.source.codec,
+          width: metadata.source.width,
+          height: metadata.source.height,
+          ...(metadata.source.frameRate === undefined
+            ? {}
+            : { framerate: metadata.source.frameRate }),
+          isHdr: metadata.source.isHdr,
+          // The package records whether the source was HDR, not which HDR
+          // system it used. Claiming Dolby Vision on that would put a client
+          // through a tone-mapping decision nothing here can support.
+          hasDolbyVision: false,
+        },
+        audio: metadata.audioRenditions.map((rendition) => ({
+          index: rendition.sourceStreamIndex,
+          codecName: rendition.codec,
+          channels: rendition.channels,
+          sampleRate: rendition.sampleRate,
+          bitrate: rendition.averageBitrate,
+          ...(rendition.language ? { language: rendition.language } : {}),
+          ...(rendition.title ? { title: rendition.title } : {}),
+          isDefault: rendition.isDefault,
+        })),
+        subtitles: (metadata.subtitleRenditions ?? []).map((rendition) => ({
+          index: rendition.sourceStreamIndex,
+          codecName: rendition.codec,
+          ...(rendition.language ? { language: rendition.language } : {}),
+          ...(rendition.title ? { title: rendition.title } : {}),
+          isDefault: rendition.isDefault,
+          isForced: rendition.isForced,
+          isImageBased: false,
+        })),
+      };
+    };
+
   const createManifest: RenditionService["createManifest"] = async (
     media,
     original,
@@ -303,33 +426,8 @@ export function createRenditionService({
         switching: "complete-file-rebuffer",
       },
     };
-    const relativePath = mediaRelativePath(mediaRoot, media.filePath);
-    if (!relativePath) return emptyManifest;
-    const registryItems = await loadRegistryItems();
-    const registryItem = registryItems.find(
-      (item) => item.relativePath.toLowerCase() === relativePath.toLowerCase(),
-    );
-    /*
-     * A registry record that disagrees with the file describes some other
-     * version of it, and its renditions must not be offered. Size is decisive.
-     *
-     * The modification time is only consulted when the record actually carries
-     * one. A record written without it — a recovery path that had no stats to
-     * hand, an import — would otherwise fail this comparison against every
-     * real file and return an empty manifest, which withdraws the entire
-     * ladder and leaves the player direct-playing the source as the only
-     * quality on offer. A zero is an absent measurement, not evidence that the
-     * file changed, and the package's own fingerprint is checked below in any
-     * case.
-     */
-    const registeredMtime = Math.trunc(registryItem?.mtimeMs ?? 0);
-    if (
-      !registryItem ||
-      registryItem.size !== media.size ||
-      (registeredMtime > 0 && registeredMtime !== Math.trunc(media.mtimeMs))
-    ) {
-      return emptyManifest;
-    }
+    const registryItem = await findRegistryItem(media);
+    if (!registryItem) return emptyManifest;
     const packageRoot = path.join(renditionRoot, registryItem.id);
     const [inspection, adaptiveInspection] = await Promise.all([
       REJECTED_REGISTRY_STATUSES.has(registryItem.status ?? "") ||
@@ -598,5 +696,10 @@ export function createRenditionService({
     }
   };
 
-  return { createManifest, resolveFile, resolveAdaptiveAsset };
+  return {
+    createManifest,
+    resolveFile,
+    resolveAdaptiveAsset,
+    describePackagedSource,
+  };
 }

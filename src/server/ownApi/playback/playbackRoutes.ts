@@ -219,14 +219,6 @@ export function createPlaybackRoutes({
         404,
       );
     }
-    if (file.probeState !== "probed") {
-      throw new OwnApiError(
-        "MEDIA_NOT_READY",
-        "The media has not finished analysis yet.",
-        409,
-      );
-    }
-
     const absolutePath = path.resolve(
       resolvedMediaRoot,
       ...file.relativePath.split("/"),
@@ -239,20 +231,74 @@ export function createPlaybackRoutes({
       );
     }
 
+    /*
+     * A probe that never succeeded is usually a file that is not ready yet.
+     * For one class of title it is a file that will never be probed again: once
+     * packaging has replaced the source with a complete adaptive package the
+     * source bytes are removed, and ffprobe has nothing left to read. Those
+     * titles are entirely playable — the package is what playback serves — so
+     * refusing them here made every fully processed film permanently
+     * unplayable.
+     *
+     * The package is consulted rather than trusted from a flag: it is the same
+     * artefact the session will stream, so if it is not there the refusal below
+     * is the honest answer.
+     */
+    const packaged =
+      file.probeState === "failed" && renditions
+        ? await renditions.describePackagedSource({
+            mediaId: file.id,
+            filePath: absolutePath,
+            size: Number(file.sizeBytes),
+            mtimeMs: Number(file.mtimeMs),
+          })
+        : null;
+
+    if (file.probeState !== "probed" && !packaged) {
+      throw file.probeState === "failed"
+        ? // Analysis ran and the file itself was rejected. Saying it "has not
+          // finished" invites a client to keep asking for something that will
+          // never arrive.
+          new OwnApiError(
+            "MEDIA_UNPLAYABLE",
+            "This file could not be read and cannot be played.",
+            422,
+          )
+        : new OwnApiError(
+            "MEDIA_NOT_READY",
+            "The media has not finished analysis yet.",
+            409,
+          );
+    }
+
     const [streams, chapters] = await Promise.all([
       catalogue.listStreams(file.id),
       catalogue.listChapters(itemId),
     ]);
 
+    const analysis = buildAnalysisFromInventory({
+      file,
+      streams,
+      filePath: absolutePath,
+      chapters,
+    });
+
     return {
       file,
       absolutePath,
-      analysis: buildAnalysisFromInventory({
-        file,
-        streams,
-        filePath: absolutePath,
-        chapters,
-      }),
+      // The catalogue row of a packaged title has no duration and no streams:
+      // it was written from a registry record of a file that is gone, and the
+      // planner refuses media with no video stream. The package recorded the
+      // source's own description at build time, so use that.
+      analysis: packaged
+        ? {
+            ...analysis,
+            durationSeconds: packaged.durationSeconds,
+            videoStreams: [packaged.video],
+            audioStreams: packaged.audio,
+            subtitleStreams: packaged.subtitles,
+          }
+        : analysis,
     };
   }
 

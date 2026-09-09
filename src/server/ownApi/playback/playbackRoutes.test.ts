@@ -1,7 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
+import { createCsrfToken } from "../auth/csrf";
 import { createOwnApiRouter, type RouteContext } from "../api/router";
-import { sendOwnApiJson } from "../ownApiHandler";
+import { sendOwnApiJson, type OwnApiError } from "../ownApiHandler";
 import {
   buildAdaptiveRenditionPlan,
   createPlaybackRoutes,
@@ -467,5 +469,165 @@ describe("rendition delivery", () => {
     expect((notAUuid.error as { statusCode?: number }).statusCode).toBe(422);
 
     expect(served).toEqual([]);
+  });
+});
+
+describe("playback readiness", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const ITEM = "55555555-5555-4555-8555-555555555555";
+  const FILE = "66666666-6666-4666-8666-666666666666";
+  const CSRF_SECRET = "s".repeat(32);
+  const SESSION_HASH = Buffer.alloc(32);
+
+  function buildRouter(options: {
+    probeState: "pending" | "probed" | "failed";
+    packagedDurationSeconds?: number;
+  }) {
+    const catalogue = {
+      canUserAccessItem: async () => true,
+      getFileById: async () => ({
+        id: FILE,
+        itemId: ITEM,
+        missingSince: null,
+        probeState: options.probeState,
+        relativePath: "Movies/Film (2000)/Film (2000).mp4",
+        container: "mp4",
+        sizeBytes: "1024",
+        mtimeMs: "1700000000000",
+        durationMs: null,
+        bitrateBps: null,
+      }),
+      getPrimaryFile: async () => null,
+      listStreams: async () => [],
+      listChapters: async () => [],
+    } as unknown as Parameters<typeof createPlaybackRoutes>[0]["catalogue"];
+
+    const renditions = {
+      createManifest: async () => ({ mediaId: FILE, qualities: [] }),
+      resolveFile: async () => null,
+      resolveAdaptiveAsset: async () => null,
+      describePackagedSource: async () =>
+        options.packagedDurationSeconds === undefined
+          ? null
+          : {
+              durationSeconds: options.packagedDurationSeconds,
+              video: {
+                index: 0,
+                codecName: "h264",
+                width: 1920,
+                height: 1080,
+                isHdr: false,
+                hasDolbyVision: false,
+              },
+              audio: [
+                {
+                  index: 1,
+                  codecName: "aac",
+                  channels: 2,
+                  sampleRate: 48_000,
+                  isDefault: true,
+                },
+              ],
+              subtitles: [],
+            },
+    } as unknown as NonNullable<
+      Parameters<typeof createPlaybackRoutes>[0]["renditions"]
+    >;
+
+    return createOwnApiRouter({
+      csrfSecret: CSRF_SECRET,
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async () => ({
+        userId: VIEWER,
+        username: "viewer",
+        displayName: "Viewer",
+        isAdministrator: false,
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionTokenHash: SESSION_HASH,
+      }),
+      routes: createPlaybackRoutes({
+        catalogue,
+        sessions: {} as never,
+        sessionManager: {} as never,
+        mediaRoot: "/media",
+        renditions,
+      }),
+    });
+  }
+
+  async function requestPlan(router: ReturnType<typeof buildRouter>) {
+    const payload = JSON.stringify({
+      itemId: ITEM,
+      mediaFileId: FILE,
+      clientCapabilities: {
+        supportsHlsNative: false,
+        supportsMediaSource: true,
+        directFileContainers: ["mp4"],
+        mseContainers: ["mp4"],
+        video: { h264: { supported: true } },
+        audio: { aac: { supported: true } },
+        subtitles: { webvtt: { supported: true } },
+      },
+    });
+    const csrfToken = createCsrfToken(SESSION_HASH, CSRF_SECRET);
+    const request = Object.assign(Readable.from([Buffer.from(payload)]), {
+      method: "POST",
+      url: "/ownAPI/v1/playback/plan",
+      headers: {
+        host: "seyirlik.test",
+        "content-type": "application/json",
+        origin: "https://seyirlik.test",
+        cookie: `seyirlik_csrf=${csrfToken}`,
+        "x-csrf-token": csrfToken,
+      },
+      socket: { remoteAddress: "127.0.0.1" },
+    }) as unknown as IncomingMessage;
+
+    let body = "";
+    const response = {
+      statusCode: 200,
+      setHeader() {},
+      getHeader() {
+        return undefined;
+      },
+      end(chunk?: string) {
+        body = chunk ?? "";
+      },
+    } as unknown as ServerResponse;
+
+    let error: unknown;
+    try {
+      await router.handler(request, response, {
+        requestId: "req-1",
+        url: new URL("/ownAPI/v1/playback/plan", "https://seyirlik.test"),
+      });
+    } catch (caught) {
+      error = caught;
+    }
+    return { error, json: body ? JSON.parse(body) : undefined };
+  }
+
+  it("plans playback for a title whose source was replaced by its package", async () => {
+    const { error, json } = await requestPlan(
+      buildRouter({ probeState: "failed", packagedDurationSeconds: 7200 }),
+    );
+
+    expect(error).toBeUndefined();
+    expect(json?.data).toBeDefined();
+  });
+
+  it("says a file that failed analysis cannot be played, not that it is pending", async () => {
+    const { error } = await requestPlan(buildRouter({ probeState: "failed" }));
+
+    expect((error as OwnApiError).code).toBe("MEDIA_UNPLAYABLE");
+    expect((error as OwnApiError).statusCode).toBe(422);
+  });
+
+  it("still reports an unprobed file as not ready yet", async () => {
+    const { error } = await requestPlan(buildRouter({ probeState: "pending" }));
+
+    expect((error as OwnApiError).code).toBe("MEDIA_NOT_READY");
+    expect((error as OwnApiError).statusCode).toBe(409);
   });
 });
