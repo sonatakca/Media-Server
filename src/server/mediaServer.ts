@@ -83,6 +83,11 @@ export interface MediaServerOptions {
   libraryRoots?: readonly string[];
   allowedOrigins?: string[];
   publicOrigin?: string;
+  /**
+   * Hostnames that are this deployment reached by a name it does not want to
+   * be. Each is permanently redirected to `publicOrigin`.
+   */
+  canonicalRedirectHosts?: string[];
   ffmpegPath?: string;
   ffprobePath?: string;
   generatedStoragePath?: string;
@@ -210,6 +215,38 @@ export function parseAllowedOrigins(
             );
           }
           return parsed;
+        }),
+    ),
+  );
+}
+
+/**
+ * Hostnames to redirect at the canonical origin, declared rather than inferred.
+ *
+ * Inferring the list is what makes this dangerous: "everything that is not the
+ * public origin" catches `127.0.0.1`, which is how the deployment script polls
+ * health, and it catches an alias kept alive on purpose during a cutover. An
+ * operator naming the hosts is the only version with no host it silently
+ * breaks.
+ */
+export function parseCanonicalRedirectHosts(
+  rawHosts: string | undefined,
+): string[] {
+  if (!rawHosts) return [];
+
+  return Array.from(
+    new Set(
+      rawHosts
+        .split(",")
+        .map((host) => host.trim().toLowerCase())
+        .filter(Boolean)
+        .map((host) => {
+          if (host.includes("/") || host.includes(":")) {
+            throw new Error(
+              "SEYIRLIK_CANONICAL_REDIRECT_HOSTS must contain bare hostnames, without a scheme or port.",
+            );
+          }
+          return host;
         }),
     ),
   );
@@ -508,6 +545,26 @@ function createMediaServerShell(
     throw new Error("SEYIRLIK_PUBLIC_ORIGIN must be a valid HTTP(S) origin.");
   }
 
+  /*
+   * A canonical redirect needs somewhere canonical to send people, and it must
+   * never name the host it redirects to — that is an infinite loop served at
+   * the speed of the network, and it would be discovered in production.
+   */
+  const canonicalRedirectHosts = new Set(options.canonicalRedirectHosts ?? []);
+  if (canonicalRedirectHosts.size > 0) {
+    if (!publicOrigin) {
+      throw new Error(
+        "SEYIRLIK_CANONICAL_REDIRECT_HOSTS needs SEYIRLIK_PUBLIC_ORIGIN to redirect to.",
+      );
+    }
+    const canonicalHost = new URL(publicOrigin).hostname.toLowerCase();
+    if (canonicalRedirectHosts.has(canonicalHost)) {
+      throw new Error(
+        "SEYIRLIK_CANONICAL_REDIRECT_HOSTS must not contain the public origin's own host.",
+      );
+    }
+  }
+
   const logger = options.logger ?? console;
   const serveStatic = options.staticRoot
     ? createStaticHandler(options.staticRoot)
@@ -535,6 +592,26 @@ function createMediaServerShell(
 
     if (isOwnApiPath(url.pathname)) {
       response.setHeader("X-Request-Id", resolveOwnApiRequestId(request));
+    }
+
+    /*
+     * Reached by a name this deployment does not want to answer to. Sent on
+     * before anything else runs, so a non-canonical host never sets a cookie,
+     * starts a session or is told its origin is untrusted — it simply is not
+     * where the site lives. 308 rather than 301: the method and body survive,
+     * and nothing here knows the request was safe to retry as a GET.
+     */
+    if (
+      publicOrigin &&
+      canonicalRedirectHosts.has(
+        (request.headers.host ?? "").split(":")[0]?.toLowerCase() ?? "",
+      )
+    ) {
+      response.statusCode = 308;
+      response.setHeader("Location", `${publicOrigin}${request.url ?? "/"}`);
+      response.setHeader("Content-Type", "text/plain; charset=utf-8");
+      response.end("Moved to the canonical origin.\n");
+      return;
     }
 
     if (!applyCors(request, response, allowedOrigins, publicOrigin)) return;
@@ -1101,6 +1178,9 @@ async function startFromEnvironment(
     ...(process.env.SEYIRLIK_PUBLIC_ORIGIN
       ? { publicOrigin: process.env.SEYIRLIK_PUBLIC_ORIGIN }
       : {}),
+    canonicalRedirectHosts: parseCanonicalRedirectHosts(
+      process.env.SEYIRLIK_CANONICAL_REDIRECT_HOSTS,
+    ),
     ...(process.env.SEYIRLIK_FFMPEG_PATH
       ? { ffmpegPath: process.env.SEYIRLIK_FFMPEG_PATH }
       : {}),

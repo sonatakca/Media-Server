@@ -1,8 +1,12 @@
 // @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Server } from "node:http";
+import { request as httpRequest, type Server } from "node:http";
 import path from "node:path";
-import { startMediaServer, type RunningMediaServer } from "./mediaServer";
+import {
+  parseCanonicalRedirectHosts,
+  startMediaServer,
+  type RunningMediaServer,
+} from "./mediaServer";
 import type { NativeRuntime } from "./ownApi/nativeRuntime";
 import { buildOwnApiHealthStatus } from "./ownApi/ownApiHandler";
 import { createStartupCoordinator } from "./startup/startupCoordinator";
@@ -499,5 +503,129 @@ describe("the app shell", () => {
     expect(
       ((await response.json()) as Record<string, never>).error,
     ).toMatchObject({ code: "NOT_FOUND" });
+  });
+});
+
+/**
+ * The apex reaching the same deployment as the canonical host, which is how a
+ * cutover leaves a domain: one service, two names, and only one of them the
+ * one the site should be using.
+ */
+describe("a host this deployment does not want to answer to", () => {
+  /** `fetch` refuses to set Host, and Host is the whole subject here. */
+  function get(
+    origin: string,
+    pathname: string,
+    hostHeader: string,
+  ): Promise<{ status: number; location: string | undefined }> {
+    const url = new URL(origin);
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: url.hostname,
+          port: url.port,
+          path: pathname,
+          method: "GET",
+          headers: { host: hostHeader },
+        },
+        (response) => {
+          response.resume();
+          response.once("end", () =>
+            resolve({
+              status: response.statusCode ?? 0,
+              location: response.headers.location,
+            }),
+          );
+        },
+      );
+      req.once("error", reject);
+      req.end();
+    });
+  }
+
+  it("sends a named host to the canonical origin, path and query intact", async () => {
+    const harness = await start({
+      publicOrigin: "https://www.seyirlik.org",
+      canonicalRedirectHosts: ["seyirlik.org"],
+    });
+
+    const response = await get(
+      harness.origin,
+      "/series/some-id?season=2",
+      "seyirlik.org",
+    );
+
+    expect(response.status).toBe(308);
+    expect(response.location).toBe(
+      "https://www.seyirlik.org/series/some-id?season=2",
+    );
+  });
+
+  it("leaves the loopback health check alone, which is what deploys poll", async () => {
+    const harness = await start({
+      publicOrigin: "https://www.seyirlik.org",
+      canonicalRedirectHosts: ["seyirlik.org"],
+    });
+
+    const response = await get(
+      harness.origin,
+      "/ownAPI/v1/health",
+      "127.0.0.1",
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("leaves an alias kept alive on purpose alone", async () => {
+    const harness = await start({
+      publicOrigin: "https://www.seyirlik.org",
+      canonicalRedirectHosts: ["seyirlik.org"],
+      allowedOrigins: ["https://playback.seyirlik.org"],
+    });
+
+    const response = await get(
+      harness.origin,
+      "/ownAPI/v1/health",
+      "playback.seyirlik.org",
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("refuses to start when the list names the host it redirects to", async () => {
+    await expect(
+      start({
+        publicOrigin: "https://www.seyirlik.org",
+        canonicalRedirectHosts: ["www.seyirlik.org"],
+      }),
+    ).rejects.toThrow(/must not contain the public origin/i);
+  });
+
+  it("refuses to start with nowhere canonical to send anyone", async () => {
+    await expect(
+      start({ canonicalRedirectHosts: ["seyirlik.org"] }),
+    ).rejects.toThrow(/SEYIRLIK_PUBLIC_ORIGIN/);
+  });
+});
+
+describe("parseCanonicalRedirectHosts", () => {
+  it("reads a comma-separated list, lowercased and deduplicated", () => {
+    expect(
+      parseCanonicalRedirectHosts(" seyirlik.org , SEYIRLIK.ORG ,old.example "),
+    ).toEqual(["seyirlik.org", "old.example"]);
+  });
+
+  it("is empty when nothing is configured", () => {
+    expect(parseCanonicalRedirectHosts(undefined)).toEqual([]);
+    expect(parseCanonicalRedirectHosts("")).toEqual([]);
+  });
+
+  it("rejects anything that is not a bare hostname", () => {
+    expect(() => parseCanonicalRedirectHosts("https://seyirlik.org")).toThrow(
+      /bare hostnames/,
+    );
+    expect(() => parseCanonicalRedirectHosts("seyirlik.org:443")).toThrow(
+      /bare hostnames/,
+    );
   });
 });
