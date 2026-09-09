@@ -2065,4 +2065,25 @@ export const en = {
   "admin.imports.state.uncertain": "Outcome unknown",
   "admin.imports.state.needs_attention": "Needs you",
   "admin.imports.state.cancelled": "Cancelled",
+  "admin.integrations.title": "Integrations",
+  "admin.integrations.description":
+    "What Seyirlik is connected to, and what its database is carrying.",
+  "admin.integrations.tag": "Configuration",
+  "admin.integrations.connected": "Connected services",
+  "admin.integrations.configured": "Configured",
+  "admin.integrations.notConfigured": "Not configured",
+  "admin.integrations.loadFailed": "The configuration could not be read.",
+  "admin.integrations.readOnly":
+    "Keys and passwords are never shown here, and cannot be changed from a browser: they live in a file only the server accounts can read. To replace one, edit that file and restart the services.",
+  "admin.integrations.name.indexers": "Indexers",
+  "admin.integrations.name.downloadClient": "Download client",
+  "admin.integrations.name.importer": "Importer",
+  "admin.integrations.name.subtitles": "Subtitle providers",
+  "admin.integrations.schema": "Database schema",
+  "admin.integrations.schemaApplied": "migrations applied",
+  "admin.integrations.schemaNone": "never migrated",
+  "admin.integrations.schemaCurrent":
+    "Up to date with this version of Seyirlik.",
+  "admin.integrations.schemaBehind":
+    "The code expects migrations the database does not have. The services will refuse to start until these are applied.",
 };

@@ -148,6 +148,10 @@ import {
   IMPORT_JOB_TYPES,
 } from "./imports/importJobs";
 import { createImportRoutes } from "./imports/importRoutes";
+import {
+  createConfigurationRoutes,
+  describeHost,
+} from "./system/configurationRoutes";
 import type { RestartController } from "../restartController";
 import type { StartupPhaseReporter } from "../startup/startupCoordinator";
 import type { PlaybackSessionManager } from "../../lib/playback-planner/playbackSessionManager";
@@ -1296,6 +1300,56 @@ export async function createNativeRuntime({
           },
         })
       : []),
+    ...createConfigurationRoutes({
+      pool,
+      /*
+       * Built from the same parsed configuration the runtime uses, so what an
+       * operator is told is configured is what is actually configured. Every
+       * value here is a name or a host — the keys live in the secrets file and
+       * are never read back out over HTTP.
+       */
+      integrations: () => [
+        {
+          id: "indexers",
+          configured: indexerEntries.length > 0,
+          ...(indexerEntries.length > 0
+            ? {
+                detail: indexerEntries.map((entry) => entry.name).join(", "),
+              }
+            : {}),
+        },
+        {
+          id: "downloadClient",
+          configured: sabnzbdConfig !== undefined,
+          ...(sabnzbdConfig
+            ? {
+                detail: [
+                  describeHost(sabnzbdConfig.baseUrl),
+                  sabnzbdConfig.category,
+                ]
+                  .filter(Boolean)
+                  .join(" · "),
+              }
+            : {}),
+        },
+        {
+          id: "importer",
+          configured: importConfig !== undefined,
+          ...(importConfig
+            ? {
+                detail: importConfig.forceCopy ? "copy" : "link where possible",
+              }
+            : {}),
+        },
+        {
+          id: "subtitles",
+          configured: subtitleConfig !== undefined,
+          ...(subtitleConfig
+            ? { detail: subtitleConfig.providerIds.join(", ") }
+            : {}),
+        },
+      ],
+    }),
     ...(restartController
       ? createSystemRoutes({ restart: restartController })
       : []),

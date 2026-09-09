@@ -207,6 +207,15 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
 
   // ---- configuration
   {
+    id: "integrations",
+    group: "configuration",
+    path: "/admin/integrations",
+    titleKey: "admin.integrations.title",
+    descriptionKey: "admin.integrations.description",
+    tagKey: "admin.integrations.tag",
+    icon: "plug",
+  },
+  {
     id: "playback-defaults",
     group: "configuration",
     path: "/dev/playback-defaults",

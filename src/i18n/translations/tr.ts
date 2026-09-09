@@ -2055,4 +2055,24 @@ export const tr = {
   "admin.imports.state.uncertain": "Sonuç bilinmiyor",
   "admin.imports.state.needs_attention": "Sizi bekliyor",
   "admin.imports.state.cancelled": "İptal edildi",
+  "admin.integrations.title": "Entegrasyonlar",
+  "admin.integrations.description":
+    "Seyirlik'in neye bağlı olduğu ve veritabanının taşıdığı şema.",
+  "admin.integrations.tag": "Yapılandırma",
+  "admin.integrations.connected": "Bağlı servisler",
+  "admin.integrations.configured": "Yapılandırıldı",
+  "admin.integrations.notConfigured": "Yapılandırılmadı",
+  "admin.integrations.loadFailed": "Yapılandırma okunamadı.",
+  "admin.integrations.readOnly":
+    "Anahtarlar ve parolalar burada asla gösterilmez ve tarayıcıdan değiştirilemez: yalnızca sunucu hesaplarının okuyabildiği bir dosyada dururlar. Birini değiştirmek için o dosyayı düzenleyip servisleri yeniden başlatın.",
+  "admin.integrations.name.indexers": "Dizinleyiciler",
+  "admin.integrations.name.downloadClient": "İndirme istemcisi",
+  "admin.integrations.name.importer": "İçe aktarıcı",
+  "admin.integrations.name.subtitles": "Altyazı sağlayıcıları",
+  "admin.integrations.schema": "Veritabanı şeması",
+  "admin.integrations.schemaApplied": "geçiş uygulandı",
+  "admin.integrations.schemaNone": "hiç geçiş yapılmadı",
+  "admin.integrations.schemaCurrent": "Seyirlik'in bu sürümüyle güncel.",
+  "admin.integrations.schemaBehind":
+    "Kod, veritabanında olmayan geçişleri bekliyor. Bunlar uygulanana kadar servisler başlamayı reddedecek.",
 };
