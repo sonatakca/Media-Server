@@ -182,8 +182,9 @@ integration("monitoring in PostgreSQL", () => {
   it("keeps a profile association when a later write does not mention one", async () => {
     const profileId = randomUUID();
     await pool.query(
-      `INSERT INTO quality_profiles (id, name) VALUES ($1, 'HD-1080p')`,
-      [profileId],
+      `INSERT INTO quality_profiles (id, name, items, cutoff_quality_id)
+       VALUES ($1, 'HD-1080p', $2::jsonb, 'webdl-1080p')`,
+      [profileId, JSON.stringify([["webdl-1080p"]])],
     );
     await repository.setTitle(seriesId, { monitored: true, profileId });
     await repository.setTitle(seriesId, { monitored: false });
