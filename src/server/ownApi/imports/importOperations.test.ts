@@ -87,9 +87,67 @@ describe("what this pair of roots can actually do", () => {
     );
     expect(await impossible.probeHardlink()).toBe(false);
   });
+
+  it("proves a rename separately from a link", async () => {
+    // Same volume here, so both are true. They are measured apart because a
+    // filesystem can refuse one and allow the other.
+    expect(await operations.probeRename()).toBe(true);
+  });
+
+  it("says no when the download cannot be renamed into the library", async () => {
+    const impossible = createImportOperations(
+      sourceRoot,
+      path.join(workspace, "not-there"),
+    );
+    expect(await impossible.probeRename()).toBe(false);
+  });
+
+  it("leaves nothing behind after probing a rename", async () => {
+    await operations.probeRename();
+    const fs = await import("node:fs/promises");
+    const [sources, libraries] = await Promise.all([
+      fs.readdir(sourceRoot),
+      fs.readdir(libraryRoot),
+    ]);
+    expect(sources.filter((name) => name.includes("probe"))).toEqual([]);
+    expect(libraries.filter((name) => name.includes("probe"))).toEqual([]);
+  });
 });
 
 describe("choosing the operation from that fact", () => {
+  /*
+   * The download directory sits on the system disk and the library on external
+   * media, so a move is a rename across a volume boundary. That produced EXDEV
+   * at the moment of writing — after the plan was recorded and the destination
+   * directory created — and no acquisition could be imported at all.
+   */
+  it("copies rather than moving when the download cannot be renamed across", () => {
+    const choice = chooseStrategy(false, { retainSource: false }, false);
+    expect(choice.strategy).toBe("copy");
+    expect(choice.reason).toContain("cannot be renamed");
+  });
+
+  it("still moves when a rename is possible", () => {
+    expect(chooseStrategy(false, { retainSource: false }, true).strategy).toBe(
+      "move",
+    );
+  });
+
+  it("prefers a link even where a rename would also work", () => {
+    expect(chooseStrategy(true, { retainSource: false }, true).strategy).toBe(
+      "hardlink",
+    );
+  });
+
+  it("keeps the source when asked, whatever a rename could do", () => {
+    expect(chooseStrategy(false, { retainSource: true }, false).strategy).toBe(
+      "copy",
+    );
+    expect(chooseStrategy(false, { retainSource: true }, true).strategy).toBe(
+      "copy",
+    );
+  });
+
   it("links when links work", () => {
     expect(chooseStrategy(true, { retainSource: false }).strategy).toBe(
       "hardlink",

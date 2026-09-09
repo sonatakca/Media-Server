@@ -183,6 +183,15 @@ export interface ImportOperations {
    * not of anything an import knows.
    */
   probeHardlink(): Promise<boolean>;
+  /**
+   * Whether the download can be renamed into the library at all.
+   *
+   * A failed hardlink probe does not answer this. exFAT refuses links on a
+   * volume it will happily rename within, and a download on another volume
+   * refuses both — the two cases need different strategies and look identical
+   * from `probeHardlink` alone.
+   */
+  probeRename(): Promise<boolean>;
 }
 
 const STAGING_PREFIX = ".seyirlik-import";
@@ -261,6 +270,7 @@ export function createImportOperations(
   const source = createRootResolver(sourceRoot);
   const library = createRootResolver(libraryRoot);
   let hardlinkSupport: Promise<boolean> | undefined;
+  let renameSupport: Promise<boolean> | undefined;
 
   async function readableSource(relative: string): Promise<string> {
     const absolute = await source.resolveReal(relative);
@@ -410,6 +420,27 @@ export function createImportOperations(
       })();
       return hardlinkSupport;
     },
+
+    probeRename: async () => {
+      renameSupport ??= (async () => {
+        const token = `${STAGING_PREFIX}-rename-probe-${process.pid}-${Date.now()}`;
+        const from = source.resolve(token);
+        const to = library.resolve(token);
+        try {
+          await writeFile(from, "seyirlik rename probe");
+          await rename(from, to);
+          return true;
+        } catch {
+          // EXDEV, or anything else that stops a rename. Either way the
+          // importer must not plan a move it cannot carry out.
+          return false;
+        } finally {
+          await rm(from, { force: true }).catch(() => undefined);
+          await rm(to, { force: true }).catch(() => undefined);
+        }
+      })();
+      return renameSupport;
+    },
   };
 }
 
@@ -441,6 +472,13 @@ export interface StrategyChoice {
 export function chooseStrategy(
   hardlinkSupported: boolean,
   policy: StrategyPolicy,
+  /**
+   * Whether a rename from the download into the library can succeed.
+   *
+   * Defaulted to true so existing callers and tests keep their meaning; the
+   * importer passes the probe's answer.
+   */
+  renameSupported = true,
 ): StrategyChoice {
   if (policy.forceCopy) {
     return { strategy: "copy", reason: "Copies were asked for." };
@@ -455,6 +493,21 @@ export function chooseStrategy(
     return {
       strategy: "copy",
       reason: "No link is possible and the download must be kept.",
+    };
+  }
+  /*
+   * A move is a rename, and a rename cannot cross a volume boundary. The
+   * download directory here sits on the system disk while the library is on
+   * external media, so planning a move produced EXDEV at the moment of
+   * writing — after the plan had been recorded and the destination directory
+   * created. Copying reaches the same end state: cleanup removes the download
+   * afterwards, because the strategy is no longer `move`.
+   */
+  if (!renameSupported) {
+    return {
+      strategy: "copy",
+      reason:
+        "The download cannot be renamed into the library, so it is copied and then removed.",
     };
   }
   return {

@@ -379,7 +379,11 @@ export function createImportService({
       }
 
       const operations = operationsFor(record.sourceRoot, record.libraryRoot);
-      const choice = chooseStrategy(await operations.probeHardlink(), policy);
+      const choice = chooseStrategy(
+        await operations.probeHardlink(),
+        policy,
+        await operations.probeRename(),
+      );
 
       const planned = [];
       for (const file of [...inspection.media, ...inspection.subtitles]) {
