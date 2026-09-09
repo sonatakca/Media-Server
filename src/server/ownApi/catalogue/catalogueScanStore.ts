@@ -60,8 +60,9 @@ export function createCatalogueScanStore(
         kind: string;
         locked_fields: string[];
         missing_since: Date | null;
+        desired: boolean;
       }>(
-        `SELECT id, source_key, kind, locked_fields, missing_since
+        `SELECT id, source_key, kind, locked_fields, missing_since, desired
          FROM items WHERE library_id = $1`,
         [libraryId],
       );
@@ -71,6 +72,7 @@ export function createCatalogueScanStore(
         kind: row.kind,
         lockedFields: row.locked_fields ?? [],
         missingSince: row.missing_since,
+        desired: row.desired,
       }));
     },
 

@@ -339,6 +339,115 @@ describe("reconcileLibraryScan", () => {
     expect(store.items.size).toBe(1);
   });
 
+  it("never removes a title that is wanted rather than found", async () => {
+    /*
+     * A desired item is absent from every scan by definition — nothing is on
+     * disk yet. Without the exemption it would be marked missing on the first
+     * pass and deleted on the second, taking the monitoring, the profile and
+     * the intent with it, which is exactly what migrating away from Radarr
+     * would otherwise have destroyed.
+     */
+    const store = createStore();
+    const start = new Date("2026-01-01T00:00:00Z");
+    store.items.set("wanted-1", {
+      id: "wanted-1",
+      libraryId: LIBRARY,
+      sourceKey: "movie:movies/oppenheimer (2023)",
+      kind: "movie",
+      title: "Oppenheimer",
+      lockedFields: [],
+      missingSince: null,
+      desired: true,
+    });
+
+    const first = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([movie("movie:a", "Alien", "Movies/a.mkv")]),
+      now: () => start,
+    });
+    expect(first.itemsMarkedMissing).toBe(0);
+
+    const wellAfterGrace = new Date(
+      start.getTime() + 90 * 24 * 60 * 60 * 1_000,
+    );
+    const later = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([movie("movie:a", "Alien", "Movies/a.mkv")]),
+      now: () => wellAfterGrace,
+    });
+    expect(later.itemsDeleted).toBe(0);
+    expect(store.items.has("wanted-1")).toBe(true);
+  });
+
+  it("still removes an ordinary item whose files really went away", async () => {
+    // The exemption must be about being wanted, not about being fileless.
+    const store = createStore();
+    const start = new Date("2026-01-01T00:00:00Z");
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        movie("movie:a", "Alien", "Movies/a.mkv"),
+        movie("movie:b", "Aliens", "Movies/b.mkv"),
+      ]),
+      now: () => start,
+    });
+    await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([movie("movie:a", "Alien", "Movies/a.mkv")]),
+      now: () => start,
+    });
+    const afterGrace = new Date(start.getTime() + 8 * 24 * 60 * 60 * 1_000);
+    const result = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([movie("movie:a", "Alien", "Movies/a.mkv")]),
+      now: () => afterGrace,
+    });
+    expect(result.itemsDeleted).toBe(1);
+  });
+
+  it("attaches media to the same row when a wanted title arrives", async () => {
+    /*
+     * The point of reserving the scanner's own key: the import is an update to
+     * the existing row, not a second one to reconcile against it.
+     */
+    const store = createStore();
+    store.items.set("wanted-2", {
+      id: "wanted-2",
+      libraryId: LIBRARY,
+      sourceKey: "movie:movies/oppenheimer (2023)",
+      kind: "movie",
+      title: "Oppenheimer",
+      lockedFields: [],
+      missingSince: null,
+      desired: true,
+    });
+
+    const result = await reconcileLibraryScan({
+      store,
+      libraryId: LIBRARY,
+      scan: scan([
+        movie(
+          "movie:movies/oppenheimer (2023)",
+          "Oppenheimer",
+          "Movies/Oppenheimer (2023)/Oppenheimer (2023).mkv",
+        ),
+      ]),
+      now: () => new Date("2026-01-02T00:00:00Z"),
+    });
+
+    expect(result.itemsCreated).toBe(0);
+    expect(result.itemsUpdated).toBe(1);
+    expect(store.items.size).toBe(1);
+    const files = [...store.files.values()];
+    expect(files).toHaveLength(1);
+    expect(files[0]!.itemId).toBe("wanted-2");
+  });
+
   it("suppresses removals when most of the library disappears at once", async () => {
     const store = createStore();
     await reconcileLibraryScan({

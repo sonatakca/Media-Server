@@ -18,6 +18,14 @@ export interface ExistingItemRow {
   kind: string;
   lockedFields: string[];
   missingSince: Date | null;
+  /**
+   * The item exists because somebody wants it, not because a file was found.
+   *
+   * Such an item is absent from every scan by definition, so without this it
+   * would be marked missing on the first pass and deleted on the second —
+   * taking the monitoring, the profile and the intent with it.
+   */
+  desired?: boolean;
 }
 
 export interface ExistingFileRow {
@@ -261,8 +269,14 @@ export async function reconcileLibraryScan({
 
   const seenItemIdSet = new Set(seenItemIds);
   const seenFileIdSet = new Set(seenFileIds);
+  /*
+   * A desired item is not missing; it was never expected on disk. It drops out
+   * of the removal path entirely rather than being given a longer grace, because
+   * no amount of grace makes "never had a file" eventually true — the item would
+   * simply be deleted a week later instead of a minute later.
+   */
   const vanishedItems = existingItems.filter(
-    (item) => !seenItemIdSet.has(item.id),
+    (item) => !seenItemIdSet.has(item.id) && item.desired !== true,
   );
   const vanishedFiles = existingFiles.filter(
     (file) => !seenFileIdSet.has(file.id),
