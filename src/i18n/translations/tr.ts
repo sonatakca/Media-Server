@@ -1878,4 +1878,46 @@ export const tr = {
   "admin.group.diagnostics.title": "Tanılama",
   "admin.group.diagnostics.description":
     "Makinenin içine bakmak. Nadiren gerekir, gerektiğinde burada.",
+  "admin.health.title": "Sağlık",
+  "admin.health.description":
+    "Sunucunun hizmet verip vermediği, neyin çalışmadığı ve neyin sizi beklediği.",
+  "admin.health.tag": "İşleyiş",
+  "admin.health.refresh": "Yeniden bak",
+  "admin.health.checking": "Bakılıyor…",
+  "admin.health.checkedAt": "Bakılma saati",
+  "admin.health.needsOperator": "Bu sizi bekliyor. Oynatma etkileniyor.",
+  "admin.health.waiting": "Sizi bekleyenler",
+  "admin.health.notAnswered": "Yanıt vermedi",
+  "admin.health.verdict.serving": "Hizmet veriyor",
+  "admin.health.verdict.degraded": "Hizmet veriyor, bir şey çalışmıyor",
+  "admin.health.verdict.starting": "Başlatılıyor",
+  "admin.health.verdict.not-serving": "Hizmet veremiyor",
+  "admin.health.verdict.unreachable": "Sunucudan yanıt yok",
+  "admin.health.tier.core": "Seyirlik'in kendisi",
+  "admin.health.tier.capability": "Yapabildikleri",
+  "admin.health.tier.dependency": "Konuştuğu programlar",
+  "admin.health.tierDescription.core":
+    "Bunlardan biri çökerse sunucu hizmet veremez.",
+  "admin.health.tierDescription.capability":
+    "Bunlar yapabileceklerini kısıtlar; elindekini sunmayı durdurmaz.",
+  "admin.health.tierDescription.dependency":
+    "Başka programlar. Birinin kapalı olması Seyirlik'i hasta yapmaz.",
+  "admin.health.state.ok": "Çalışıyor",
+  "admin.health.state.degraded": "Kısıtlı",
+  "admin.health.state.down": "Çalışmıyor",
+  "admin.health.state.off": "Yapılandırılmadı",
+  "admin.health.state.unknown": "Bilinmiyor",
+  "admin.health.signal.server": "Sunucu",
+  "admin.health.signal.database": "Veritabanı",
+  "admin.health.signal.jobs": "İşçi",
+  "admin.health.signal.ffmpeg": "FFmpeg",
+  "admin.health.signal.ffprobe": "FFprobe",
+  "admin.health.signal.mediaStorage": "Medya deposu",
+  "admin.health.signal.generatedStorage": "Üretilen dosya deposu",
+  "admin.health.signal.downloadClient": "İndirme istemcisi",
+  "admin.health.signal.importsNeedingAttention":
+    "Karar bekleyen içe aktarmalar",
+  "admin.health.signal.subtitlesNeedingAuthentication":
+    "Girişi bekleyen altyazılar",
+  "admin.health.signal.failedJobs": "Başarısız işler",
 };

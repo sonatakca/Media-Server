@@ -48,6 +48,10 @@ const RequireAdminAuth = lazy(async () => {
 const PlaybackAuditPage = lazy(async () => ({
   default: (await import("./pages/PlaybackAuditPage")).PlaybackAuditPage,
 }));
+const OperationsHealthPage = lazy(async () => ({
+  default: (await import("./pages/admin/OperationsHealthPage"))
+    .OperationsHealthPage,
+}));
 const DevToolsPage = lazy(async () => ({
   default: (await import("./pages/DevToolsPage")).DevToolsPage,
 }));
@@ -373,6 +377,10 @@ export default function App() {
                     pages link back to it and every bookmark points at it. */}
                 <Route path="/admin" element={<DevToolsPage />} />
                 <Route path="/dev" element={<DevToolsPage />} />
+                <Route
+                  path="/admin/health"
+                  element={<OperationsHealthPage />}
+                />
                 <Route
                   path="/dev/playback-audit"
                   element={<PlaybackAuditPage />}

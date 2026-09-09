@@ -113,6 +113,15 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
   // ---- operations
   {
+    id: "health",
+    group: "operations",
+    path: "/admin/health",
+    titleKey: "admin.health.title",
+    descriptionKey: "admin.health.description",
+    tagKey: "admin.health.tag",
+    icon: "heartPulse",
+  },
+  {
     id: "media-processing",
     group: "operations",
     path: "/dev/media-processing",
