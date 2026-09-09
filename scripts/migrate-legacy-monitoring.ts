@@ -181,6 +181,7 @@ async function main(): Promise<void> {
     let seasons = 0;
     let episodes = 0;
     let desiredCreated = 0;
+    let desiredAlreadyWanted = 0;
 
     if (radarrPath) {
       const radarr = new DatabaseSync(radarrPath, { readOnly: true });
@@ -224,8 +225,10 @@ async function main(): Promise<void> {
            * will derive when the film is imported, so the monitoring written
            * below is still attached to it on that day.
            */
-          desiredCreated += 1;
-          if (!apply) continue;
+          if (!apply) {
+            desiredCreated += 1;
+            continue;
+          }
           const created = await desired.desire({
             libraryId: library.id,
             libraryRoot: library.relative_path,
@@ -236,6 +239,8 @@ async function main(): Promise<void> {
               : {}),
             profileId,
           });
+          if (created.created) desiredCreated += 1;
+          else desiredAlreadyWanted += 1;
           itemId = created.id;
         }
 
@@ -297,8 +302,10 @@ async function main(): Promise<void> {
            * season and episode rows below are written only for a series the
            * catalogue actually holds.
            */
-          desiredCreated += 1;
-          if (!apply) continue;
+          if (!apply) {
+            desiredCreated += 1;
+            continue;
+          }
           const created = await desired.desire({
             libraryId: library.id,
             libraryRoot: library.relative_path,
@@ -306,6 +313,8 @@ async function main(): Promise<void> {
             title: name,
             profileId,
           });
+          if (created.created) desiredCreated += 1;
+          else desiredAlreadyWanted += 1;
           itemId = created.id;
         }
         titles += 1;
@@ -360,7 +369,8 @@ async function main(): Promise<void> {
         `${seasons} season row(s), ${episodes} explicit episode override(s).`,
     );
     console.info(
-      `${apply ? "Created" : "Would create"} ${desiredCreated} desired title(s) with no media yet.`,
+      `${apply ? "Created" : "Would create"} ${desiredCreated} desired title(s) with no media yet` +
+        (apply ? `; ${desiredAlreadyWanted} were already wanted.` : "."),
     );
     console.info(`Unresolved (no catalogue item): ${unresolved.length}`);
     for (const name of unresolved) console.info(`  - ${name}`);

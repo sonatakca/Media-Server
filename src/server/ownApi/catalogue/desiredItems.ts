@@ -38,6 +38,17 @@ export interface DesiredItem {
   readonly hasMedia: boolean;
 }
 
+export interface DesireOutcome extends DesiredItem {
+  /**
+   * Whether this call created the row.
+   *
+   * A migration that reports "created 15" on every run is not a count anybody
+   * can act on. `xmax = 0` is true only for a tuple this statement inserted,
+   * which distinguishes a new title from one already wanted.
+   */
+  readonly created: boolean;
+}
+
 /**
  * The folder a title will occupy, as the importer would name it.
  *
@@ -69,7 +80,7 @@ export function desiredSourceKey(input: {
 
 export interface DesiredItemRepository {
   /** Creates the desired title, or returns the item already holding its key. */
-  desire(input: DesiredTitleInput): Promise<DesiredItem>;
+  desire(input: DesiredTitleInput): Promise<DesireOutcome>;
   /** Everything wanted, with whether media has since arrived. */
   list(libraryId?: string): Promise<DesiredItem[]>;
   /** Wanted and still without media — the acquisition side's queue. */
@@ -129,7 +140,7 @@ export function createDesiredItemRepository(
        * nothing for every title that was genuinely new, which is precisely the
        * case this function exists for.
        */
-      const upserted = await pool.query<{ id: string }>(
+      const upserted = await pool.query<{ id: string; inserted: boolean }>(
         `INSERT INTO items
            (id, library_id, kind, source_key, title, sort_title,
             production_year, desired, desired_since)
@@ -139,7 +150,7 @@ export function createDesiredItemRepository(
                 desired_since = COALESCE(items.desired_since, now()),
                 missing_since = NULL,
                 updated_at = now()
-         RETURNING id`,
+         RETURNING id, (xmax = 0) AS inserted`,
         [
           randomUUID(),
           input.libraryId,
@@ -153,7 +164,10 @@ export function createDesiredItemRepository(
       const result = await pool.query<Row>(`${SELECT} WHERE i.id = $1`, [
         upserted.rows[0]!.id,
       ]);
-      return toItem(result.rows[0]!);
+      return {
+        ...toItem(result.rows[0]!),
+        created: upserted.rows[0]!.inserted,
+      };
     },
 
     async list(libraryId) {
