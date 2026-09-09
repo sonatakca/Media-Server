@@ -55,6 +55,14 @@ export interface SubtitleAttemptRow {
   readonly runAfter: Date | null;
 }
 
+/** An attempt and the want it was made for, which is what names the language. */
+export interface SubtitleAttemptWithWant extends SubtitleAttemptRow {
+  readonly mediaFileId: string;
+  readonly language: string;
+  readonly forced: boolean;
+  readonly hearingImpaired: string;
+}
+
 export interface RecordInstallationInput {
   readonly mediaFileId: string;
   readonly wantId: string | null;
@@ -101,6 +109,14 @@ export interface SubtitleRepository {
   }): Promise<SubtitleAttemptRow>;
   /** Attempts a crash could have left with bytes nothing has recorded. */
   uncertainAttempts(limit?: number): Promise<SubtitleAttemptRow[]>;
+  /**
+   * Recent attempts, with the want each belongs to.
+   *
+   * For the operations surface, which needs to show what is in progress, what
+   * failed and — the reason this exists at all — what is sitting waiting for
+   * somebody to sign in to a provider. Newest first.
+   */
+  recentAttempts(limit?: number): Promise<SubtitleAttemptWithWant[]>;
   recordInstallation(input: RecordInstallationInput): Promise<string>;
   /** The digest this system recorded for a path, or `null` if it wrote none. */
   managedDigest(
@@ -285,6 +301,34 @@ export function createSubtitleRepository(
         [limit],
       );
       return result.rows.map(toAttempt);
+    },
+
+    async recentAttempts(limit = 100) {
+      const result = await pool.query<
+        AttemptRecord & {
+          media_file_id: string;
+          language: string;
+          forced: boolean;
+          hearing_impaired: string;
+        }
+      >(
+        `SELECT a.id, a.want_id, a.state, a.attempt, a.provider_id,
+                a.candidate_id, a.score, a.failure_class, a.failure_detail,
+                a.awaiting_provider_id, a.run_after,
+                w.media_file_id, w.language, w.forced, w.hearing_impaired
+           FROM subtitle_attempts a
+           JOIN subtitle_wants w ON w.id = a.want_id
+          ORDER BY a.updated_at DESC
+          LIMIT $1`,
+        [Math.min(Math.max(limit, 1), 500)],
+      );
+      return result.rows.map((row) => ({
+        ...toAttempt(row),
+        mediaFileId: row.media_file_id,
+        language: row.language,
+        forced: row.forced,
+        hearingImpaired: row.hearing_impaired,
+      }));
     },
 
     /*

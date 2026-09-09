@@ -2004,4 +2004,31 @@ export const en = {
   "admin.decisions.score": "score",
   "admin.decisions.acquire": "Download this",
   "admin.decisions.asked": "Asked for",
+  "admin.subtitles.title": "Subtitles",
+  "admin.subtitles.description":
+    "What the subtitle system is doing, and what it is waiting for.",
+  "admin.subtitles.tag": "Operations",
+  "admin.subtitles.refresh": "Refresh",
+  "admin.subtitles.empty": "No subtitle work has been attempted yet.",
+  "admin.subtitles.loadFailed": "The subtitle attempts could not be loaded.",
+  "admin.subtitles.waitingBanner":
+    "Waiting for somebody to sign in to a provider",
+  "admin.subtitles.authExplanation":
+    "This is stopped until somebody signs in to the provider. Seyirlik has no sign-in window of its own yet, so it has to be done in the provider's own site; the attempt then continues from where it stopped.",
+  "admin.subtitles.resume": "I have signed in — continue",
+  "admin.subtitles.resumeRefused":
+    "The server says this is not waiting for a sign-in.",
+  "admin.subtitles.forced": "forced",
+  "admin.subtitles.sdh": "SDH",
+  "admin.subtitles.score": "score",
+  "admin.subtitles.attempt": "attempt",
+  "admin.subtitles.state.wanted": "Wanted",
+  "admin.subtitles.state.searching": "Searching",
+  "admin.subtitles.state.selected": "Chosen",
+  "admin.subtitles.state.downloading": "Downloading",
+  "admin.subtitles.state.validating": "Checking",
+  "admin.subtitles.state.installed": "Installed",
+  "admin.subtitles.state.needs-authentication": "Waiting for a sign-in",
+  "admin.subtitles.state.failed": "Failed",
+  "admin.subtitles.state.superseded": "Superseded",
 };

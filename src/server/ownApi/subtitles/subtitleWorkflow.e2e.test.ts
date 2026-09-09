@@ -277,6 +277,10 @@ async function createWorld(
     async getAttempt(id) {
       return attempts.get(id) ?? null;
     },
+    // The operations listing; this workflow does not exercise it.
+    async recentAttempts() {
+      return [];
+    },
     async ensureWant() {
       throw new Error("not exercised");
     },

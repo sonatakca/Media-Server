@@ -64,6 +64,37 @@ export function createSubtitleRoutes(
       },
     },
     {
+      /**
+       * What the subtitle system is doing, for an operator.
+       *
+       * Carries no provider session, no cookie and no candidate URL: the
+       * provider abstraction holds those, and an attempt is identified to a
+       * client by its own id and nothing else.
+       */
+      method: "GET",
+      path: "/subtitles",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const attempts = await repository.recentAttempts();
+        sendData(context.response, context.requestId, {
+          attempts: attempts.map((attempt) => ({
+            attemptId: attempt.id,
+            mediaFileId: attempt.mediaFileId,
+            language: attempt.language,
+            forced: attempt.forced,
+            hearingImpaired: attempt.hearingImpaired,
+            state: attempt.state,
+            attempt: attempt.attempt,
+            providerId: attempt.providerId,
+            score: attempt.score,
+            failureClass: attempt.failureClass,
+            awaitingProviderId: attempt.awaitingProviderId,
+          })),
+        });
+      },
+    },
+    {
       method: "GET",
       path: "/subtitles/:attemptId",
       access: "admin",
