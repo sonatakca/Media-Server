@@ -47,12 +47,13 @@ integration("desired items in PostgreSQL", () => {
       title: "Oppenheimer",
       year: 2023,
     });
+    expect(created.created).toBe(true);
     expect(created.desired).toBe(true);
     expect(created.hasMedia).toBe(false);
     expect(created.sourceKey).toBe("movie:movies/oppenheimer (2023)");
   });
 
-  it("is idempotent, and does not duplicate the title", async () => {
+  it("is idempotent, and says it did not create the row again", async () => {
     const again = await repository.desire({
       libraryId,
       libraryRoot: "Movies",
@@ -60,6 +61,9 @@ integration("desired items in PostgreSQL", () => {
       title: "Oppenheimer",
       year: 2023,
     });
+    // A migration reporting "created 15" on a run that created nothing is not
+    // a count anybody can act on.
+    expect(again.created).toBe(false);
     const all = await repository.list(libraryId);
     expect(
       all.filter((item) => item.sourceKey === again.sourceKey),
