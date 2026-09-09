@@ -18,7 +18,8 @@ import path from "node:path";
 import { createReadStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+
+import { isMainEntrypoint } from "./startup/mainEntrypoint";
 import { parseLibraryDefinitions } from "./ownApi/libraries/libraryRepository";
 import {
   assertMediaRootDirectory,
@@ -1211,10 +1212,7 @@ async function startFromEnvironment(
   return server;
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
-) {
+if (isMainEntrypoint(import.meta.url)) {
   let serving: RunningMediaServer | undefined;
   installProcessSafetyNet(() => serving?.server.listening === true);
 

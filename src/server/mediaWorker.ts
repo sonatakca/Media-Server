@@ -4,9 +4,9 @@
  * under `tsx` that graph is seconds of otherwise silent transpilation.
  */
 import "./startup/processBanner";
-import path from "node:path";
 import { tmpdir } from "node:os";
-import { fileURLToPath } from "node:url";
+
+import { isMainEntrypoint } from "./startup/mainEntrypoint";
 import { PlaybackSessionManager } from "../lib/playback-planner/playbackSessionManager";
 import { createNativeRuntime } from "./ownApi/nativeRuntime";
 import { installProcessSafetyNet } from "./processSafetyNet";
@@ -163,10 +163,7 @@ export async function startMediaWorkerFromEnv(): Promise<() => Promise<void>> {
   return runtime.close;
 }
 
-if (
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
-) {
+if (isMainEntrypoint(import.meta.url)) {
   let started = false;
   installProcessSafetyNet(() => started);
 
