@@ -19,6 +19,7 @@ import { createReadStream } from "node:fs";
 import { mkdir, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
+import { parseLibraryDefinitions } from "./ownApi/libraries/libraryRepository";
 import {
   assertMediaRootDirectory,
   type AssertMediaRootOptions,
@@ -72,6 +73,13 @@ export interface MediaServerOptions {
   host?: string;
   port?: number;
   mediaRoot: string;
+  /**
+   * Library directories, relative to the media root, that readiness requires.
+   *
+   * Taken from the configured libraries, so this server calls storage usable
+   * only when the directories it actually reads can be opened.
+   */
+  libraryRoots?: readonly string[];
   allowedOrigins?: string[];
   publicOrigin?: string;
   ffmpegPath?: string;
@@ -842,6 +850,7 @@ export async function startMediaServer(
       async (report) => {
         resolvedMediaRoot = await probeMediaRoot(options.mediaRoot, {
           onOperation: report,
+          requiredLibraryRoots: options.libraryRoots ?? [],
         });
       },
     );
@@ -1011,6 +1020,26 @@ export async function startMediaServer(
  * moment a fault is something to report rather than something to exit over, and
  * `/ownAPI/v1/health` can describe whatever happens next.
  */
+/**
+ * The library directories readiness must be able to open.
+ *
+ * Parsed from the same declaration the catalogue uses, so the two cannot drift.
+ * A malformed declaration is left to fail where it already fails with a useful
+ * message — during runtime construction — rather than being turned into a
+ * storage error here.
+ */
+export function configuredLibraryRoots(
+  declaration: string | undefined,
+): readonly string[] {
+  let definitions;
+  try {
+    definitions = parseLibraryDefinitions(declaration);
+  } catch {
+    return [];
+  }
+  return [...new Set(definitions.flatMap((library) => library.roots))];
+}
+
 export async function startMediaServerFromEnv(): Promise<RunningMediaServer> {
   const reporter = createStartupReporter();
   const startup = createStartupCoordinator({ observer: reporter });
@@ -1066,6 +1095,7 @@ async function startFromEnvironment(
     host: process.env.SEYIRLIK_HOST ?? DEFAULT_HOST,
     port: parsePort(process.env.SEYIRLIK_PORT),
     mediaRoot,
+    libraryRoots: configuredLibraryRoots(process.env.SEYIRLIK_LIBRARIES),
     allowedOrigins: parseAllowedOrigins(process.env.SEYIRLIK_ALLOWED_ORIGINS),
     ...(process.env.SEYIRLIK_PUBLIC_ORIGIN
       ? { publicOrigin: process.env.SEYIRLIK_PUBLIC_ORIGIN }

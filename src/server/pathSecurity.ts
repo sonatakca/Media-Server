@@ -1,9 +1,10 @@
 import { constants } from "node:fs";
-import { access, realpath, stat } from "node:fs/promises";
+import { access, opendir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 
 export type TrustedPathErrorCode =
   | "MEDIA_ROOT_INVALID"
+  | "MEDIA_LIBRARY_UNREADABLE"
   | "MEDIA_OUTSIDE_ROOT"
   | "MEDIA_NOT_FOUND"
   | "MEDIA_NOT_FILE"
@@ -90,12 +91,20 @@ export interface AssertMediaRootOptions {
    * "checking storage", and it is the difference between a diagnosis and a
    * debugger session on a live process.
    */
-  onOperation?: (operation: "stat" | "realpath") => void;
+  onOperation?: (operation: "stat" | "realpath" | "opendir") => void;
+  /**
+   * Library directories, relative to the media root, that must be readable.
+   *
+   * Seyirlik's own libraries only. Empty by default so callers that are merely
+   * resolving a path — rather than deciding whether storage is usable — keep
+   * the cheap check they had.
+   */
+  requiredLibraryRoots?: readonly string[];
 }
 
 export async function assertMediaRootDirectory(
   mediaRoot: string,
-  { onOperation }: AssertMediaRootOptions = {},
+  { onOperation, requiredLibraryRoots = [] }: AssertMediaRootOptions = {},
 ): Promise<string> {
   const resolvedRoot = path.resolve(mediaRoot);
   onOperation?.("stat");
@@ -107,6 +116,54 @@ export async function assertMediaRootDirectory(
       "SEYIRLIK_MEDIA_ROOT must point to an existing media directory.",
       400,
     );
+  }
+
+  /*
+   * The media root answering is not the same as the library being readable,
+   * and treating them as one thing let a failing disk read as healthy for
+   * hours. `D:\media` kept answering `stat` — plausibly from cached directory
+   * metadata — while `Movies`, `Series` and every other child returned
+   * "I/O device error" on ten attempts out of ten. Startup reported
+   * `mediaStorage=available` and `ready=true` throughout.
+   *
+   * So each configured library root is opened and one entry is read from it.
+   * Opening a directory is what fails on a volume in that state, and reading a
+   * single entry is bounded whether the folder holds seven titles or seven
+   * thousand — this runs on a poll and must never become a directory walk.
+   *
+   * Only Seyirlik's own libraries are checked. A library it does not own —
+   * Books, which Jellyfin serves — is not listed here, because failing this
+   * server's readiness on a directory it never reads would be a false alarm.
+   */
+  for (const relative of requiredLibraryRoots) {
+    const libraryPath = path.resolve(resolvedRoot, relative);
+    onOperation?.("opendir");
+    let directory;
+    try {
+      directory = await opendir(libraryPath);
+    } catch (error) {
+      throw new TrustedPathError(
+        "MEDIA_LIBRARY_UNREADABLE",
+        `The library directory ${relative} could not be opened: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+        503,
+      );
+    }
+    try {
+      // An empty library is readable; the read is what exercises the volume.
+      await directory.read();
+    } catch (error) {
+      throw new TrustedPathError(
+        "MEDIA_LIBRARY_UNREADABLE",
+        `The library directory ${relative} could not be read: ${
+          error instanceof Error ? error.message : "unknown error"
+        }`,
+        503,
+      );
+    } finally {
+      await directory.close().catch(() => undefined);
+    }
   }
 
   onOperation?.("realpath");
