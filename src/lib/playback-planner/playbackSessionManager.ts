@@ -427,6 +427,17 @@ export class PlaybackSessionManager {
       });
       const child = this.spawnProcess(command.command, command.args, {
         stdio: ["ignore", "pipe", "pipe"],
+        /*
+         * The fMP4 init segment is named relatively on purpose — an absolute
+         * path makes the HLS muxer prepend the playlist directory a second
+         * time. FFmpeg then resolves it against its working directory, which
+         * it inherits from this process: on Windows that is the release
+         * directory, which the service account may only read, and every
+         * transcode died on `Failed to open segment 'init.mp4'` before a
+         * frame. Running from the session's own directory is what the relative
+         * name always meant.
+         */
+        cwd: outputDir,
       });
       const now = new Date();
       const nextSession: PlaybackSession = {

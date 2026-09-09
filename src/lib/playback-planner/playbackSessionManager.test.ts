@@ -19,6 +19,7 @@ interface FakeChildProcess extends EventEmitter {
 }
 
 const outputDirs: string[] = [];
+const spawnCwds: Array<string | undefined> = [];
 
 function createFakeChildProcess(): FakeChildProcess {
   const child = new EventEmitter() as FakeChildProcess;
@@ -140,11 +141,14 @@ function createManager(options: {
           availableVideoEncoders: ["libx264"],
           supportsHdrToneMapping: true,
         })),
-    spawnProcess: (_command, args) => {
+    spawnProcess: (_command, args, spawnOptions) => {
       options.onSpawn?.(args);
       const outputDir = path.dirname(String(args[args.length - 1]));
 
       outputDirs.push(outputDir);
+      spawnCwds.push(
+        typeof spawnOptions?.cwd === "string" ? spawnOptions.cwd : undefined,
+      );
       return child as never;
     },
   });
@@ -182,6 +186,7 @@ afterEach(async () => {
   const dirs = [...outputDirs];
 
   outputDirs.length = 0;
+  spawnCwds.length = 0;
   await Promise.all(
     dirs.map((dir) => rm(dir, { recursive: true, force: true })),
   );
@@ -221,6 +226,22 @@ describe("PlaybackSessionManager HLS readiness", () => {
     expect(resolved).toBe(true);
     expect(session.outputDir).toBe(path.dirname(playlistPath));
     expect(manager.getSession(session.sessionId)).toBe(session);
+  });
+
+  it("runs FFmpeg from the session directory the relative init segment lands in", async () => {
+    let playlistPath = "";
+    const { manager } = createManager({
+      onSpawn: (args) => {
+        playlistPath = String(args[args.length - 1]);
+      },
+    });
+    const sessionPromise = manager.createSession(hlsPlan(), mediaAnalysis());
+
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    await writeReadyPlaylist(playlistPath);
+    const session = await sessionPromise;
+
+    expect(spawnCwds).toEqual([session.outputDir]);
   });
 
   /**
