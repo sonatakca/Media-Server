@@ -35,7 +35,11 @@ param(
   [string] $AppRoot = 'C:\ProgramData\Seyirlik\app',
 
   # Defaults to a dated, sequenced name. Explicit for a rehearsal.
-  [string] $Version
+  [string] $Version,
+
+  # The virtual accounts the services run as. They need to read a release and
+  # must not be able to write one.
+  [string[]] $ServiceAccounts = @('NT SERVICE\SeyirlikServer', 'NT SERVICE\SeyirlikWorker')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -44,6 +48,38 @@ if (-not (Test-Path -LiteralPath $SourceCheckout)) { throw "source checkout not 
 
 $releases = Join-Path $AppRoot 'releases'
 New-Item -ItemType Directory -Force -Path $releases | Out-Null
+
+<#
+Phase 1 granted the service accounts access one directory at a time, with no
+inheritance flags — `config` is readable, `logs` is writable, and each grant
+stops at that folder. It is a good pattern and it means a new directory under
+`C:\ProgramData\Seyirlik` starts with no service access at all: the first
+release staged here was readable only by SYSTEM and Administrators, and the
+services would have failed to start against it.
+
+So the app root carries one inheritable read grant, and every release under it
+inherits exactly that. Read and execute, never write: a release the running
+service could modify would not be immutable in the sense that matters.
+#>
+$rootAcl = Get-Acl $AppRoot
+$changed = $false
+foreach ($account in $ServiceAccounts) {
+  $existing = $rootAcl.Access | Where-Object {
+    $_.IdentityReference.Value -eq $account -and
+    $_.AccessControlType -eq 'Allow' -and
+    $_.InheritanceFlags -band [Security.AccessControl.InheritanceFlags]::ContainerInherit
+  }
+  if (-not $existing) {
+    $rootAcl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule(
+      $account,
+      [Security.AccessControl.FileSystemRights]::ReadAndExecute,
+      'ContainerInherit, ObjectInherit',
+      'None',
+      'Allow')))
+    $changed = $true
+  }
+}
+if ($changed) { Set-Acl -Path $AppRoot -AclObject $rootAcl; Write-Output "APPROOT_ACL=granted" }
 
 # A release names the day it was cut and its order within that day, so two
 # releases on one day cannot collide and the sequence reads chronologically.
@@ -88,6 +124,19 @@ foreach ($dir in 'node_modules', 'dist') {
   & robocopy $from (Join-Path $target $dir) /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
   # robocopy exits 0-7 for success; 8 and above is a genuine failure.
   if ($LASTEXITCODE -ge 8) { throw "copying $dir failed (robocopy $LASTEXITCODE)" }
+}
+
+# A release the services cannot read is a failed deployment discovered at
+# restart, when the previous version has already been stopped. Discover it
+# here instead, while nothing is at stake.
+$releaseAcl = (Get-Acl $target).Access
+foreach ($account in $ServiceAccounts) {
+  $canRead = $releaseAcl | Where-Object {
+    $_.IdentityReference.Value -eq $account -and
+    $_.AccessControlType -eq 'Allow' -and
+    ($_.FileSystemRights -band [Security.AccessControl.FileSystemRights]::ReadAndExecute)
+  }
+  if (-not $canRead) { throw "staged release is not readable by $account; the services would not start against it" }
 }
 
 # Evidence, not intent: what this release actually is, recorded beside it so
