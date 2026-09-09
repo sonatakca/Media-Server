@@ -27,6 +27,13 @@
  * they are wants to re-create once acquisition is authoritative, not data to
  * invent an item for.
  *
+ * A title the legacy side watches but this catalogue has no item for is not
+ * dropped any more. With `--desire-missing` it becomes a desired item: a real
+ * catalogue row carrying the monitoring and the profile, reserving the source
+ * key the scanner will derive once the media lands, and holding no media file
+ * because there is none. Without the flag those titles are only listed, which
+ * is what the first migration did.
+ *
  * Idempotent: every write is an upsert keyed by item, so a second run changes
  * nothing. Default is a dry run; pass `--apply` to write.
  */
@@ -34,6 +41,7 @@ import { DatabaseSync } from "node:sqlite";
 import { createDatabasePool } from "../src/server/ownApi/database/databasePool";
 import { parseDatabaseConfig } from "../src/server/ownApi/database/databaseConfig";
 import { createMonitoringRepository } from "../src/server/ownApi/releases/monitoringRepository";
+import { createDesiredItemRepository } from "../src/server/ownApi/catalogue/desiredItems";
 import type { MonitoringChoice } from "../src/server/ownApi/releases/monitoring";
 
 function argumentValue(name: string): string | undefined {
@@ -110,9 +118,31 @@ async function main(): Promise<void> {
   }
   console.info(apply ? "Applying." : "Dry run; pass --apply to write.");
 
+  const desireMissing = process.argv.includes("--desire-missing");
   const pool = createDatabasePool(parseDatabaseConfig({ ...process.env }));
   try {
     const monitoring = createMonitoringRepository(pool);
+    const desired = createDesiredItemRepository(pool);
+
+    /*
+     * Which library a wanted title belongs in, and under which root. Taken from
+     * the database rather than assumed, so a deployment that names its film
+     * library something else still lands the row in the right place.
+     */
+    const libraries = await pool.query<{
+      id: string;
+      kind: string;
+      relative_path: string;
+    }>(
+      `SELECT l.id, l.kind, r.relative_path
+         FROM libraries l
+         JOIN library_roots r ON r.library_id = l.id
+        WHERE l.kind IN ('movies', 'series')`,
+    );
+    const libraryFor = (kind: "movie" | "series") =>
+      libraries.rows.find(
+        (row) => row.kind === (kind === "movie" ? "movies" : "series"),
+      );
 
     const items = await pool.query<{ id: string; source_key: string }>(
       "SELECT id, source_key FROM items WHERE kind IN ('movie','series')",
@@ -150,6 +180,7 @@ async function main(): Promise<void> {
     let titles = 0;
     let seasons = 0;
     let episodes = 0;
+    let desiredCreated = 0;
 
     if (radarrPath) {
       const radarr = new DatabaseSync(radarrPath, { readOnly: true });
@@ -174,15 +205,39 @@ async function main(): Promise<void> {
 
       for (const movie of movies) {
         const sourceKey = `movie:movies/${folderKey(String(movie.path ?? ""))}`;
-        const itemId = resolveItem(sourceKey);
-        if (!itemId) {
-          unresolved.push(`movie ${String(movie.title ?? movie.path)}`);
-          continue;
-        }
         const profileName = legacyProfiles.get(Number(movie.profileId));
         const profileId = profileName
           ? (profileByName.get(profileName.toLowerCase()) ?? null)
           : null;
+        let itemId = resolveItem(sourceKey);
+
+        if (!itemId) {
+          const library = libraryFor("movie");
+          const name = String(movie.title ?? "").trim();
+          if (!desireMissing || !library || name === "") {
+            unresolved.push(`movie ${String(movie.title ?? movie.path)}`);
+            continue;
+          }
+          /*
+           * Wanted, with nothing on disk. The row reserves the key the scanner
+           * will derive when the film is imported, so the monitoring written
+           * below is still attached to it on that day.
+           */
+          desiredCreated += 1;
+          if (!apply) continue;
+          const created = await desired.desire({
+            libraryId: library.id,
+            libraryRoot: library.relative_path,
+            kind: "movie",
+            title: name,
+            ...(typeof movie.year === "number" && movie.year > 0
+              ? { year: movie.year }
+              : {}),
+            profileId,
+          });
+          itemId = created.id;
+        }
+
         titles += 1;
         if (apply) {
           await monitoring.setTitle(itemId, {
@@ -221,16 +276,37 @@ async function main(): Promise<void> {
 
       for (const series of allSeries) {
         const sourceKey = `series:series/${folderKey(String(series.path ?? ""))}`;
-        const itemId = resolveItem(sourceKey);
-        if (!itemId) {
-          unresolved.push(`series ${String(series.title ?? series.path)}`);
-          continue;
-        }
         const seriesMonitored = Number(series.monitored) === 1;
         const profileName = legacyProfiles.get(Number(series.profileId));
         const profileId = profileName
           ? (profileByName.get(profileName.toLowerCase()) ?? null)
           : null;
+        let itemId = resolveItem(sourceKey);
+
+        if (!itemId) {
+          const library = libraryFor("series");
+          const name = String(series.title ?? "").trim();
+          if (!desireMissing || !library || name === "") {
+            unresolved.push(`series ${String(series.title ?? series.path)}`);
+            continue;
+          }
+          /*
+           * A wanted series carries no seasons or episodes: none has aired into
+           * this library yet, and inventing them would be inventing media. The
+           * season and episode rows below are written only for a series the
+           * catalogue actually holds.
+           */
+          desiredCreated += 1;
+          if (!apply) continue;
+          const created = await desired.desire({
+            libraryId: library.id,
+            libraryRoot: library.relative_path,
+            kind: "series",
+            title: name,
+            profileId,
+          });
+          itemId = created.id;
+        }
         titles += 1;
         if (apply) {
           await monitoring.setTitle(itemId, {
@@ -281,6 +357,9 @@ async function main(): Promise<void> {
     console.info(
       `\n${apply ? "Migrated" : "Would migrate"}: ${titles} title(s), ` +
         `${seasons} season row(s), ${episodes} explicit episode override(s).`,
+    );
+    console.info(
+      `${apply ? "Created" : "Would create"} ${desiredCreated} desired title(s) with no media yet.`,
     );
     console.info(`Unresolved (no catalogue item): ${unresolved.length}`);
     for (const name of unresolved) console.info(`  - ${name}`);
