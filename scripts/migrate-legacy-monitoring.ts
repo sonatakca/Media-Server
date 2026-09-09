@@ -197,7 +197,8 @@ async function main(): Promise<void> {
       const movies = radarr
         .prepare(
           `SELECT m.Path AS path, m.Monitored AS monitored,
-                  m.QualityProfileId AS profileId, md.Title AS title
+                  m.QualityProfileId AS profileId, md.Title AS title,
+                  md.Year AS year
              FROM Movies m LEFT JOIN MovieMetadata md ON md.Id = m.MovieMetadataId`,
         )
         .all() as Array<Record<string, unknown>>;

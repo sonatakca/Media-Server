@@ -122,20 +122,24 @@ export function createDesiredItemRepository(
        * item it already holds came from the media, and a legacy application's
        * spelling should not rewrite it.
        */
-      const result = await pool.query<Row>(
-        `WITH upserted AS (
-           INSERT INTO items
-             (id, library_id, kind, source_key, title, sort_title,
-              production_year, desired, desired_since)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, true, now())
-           ON CONFLICT (library_id, source_key) DO UPDATE
-              SET desired = true,
-                  desired_since = COALESCE(items.desired_since, now()),
-                  missing_since = NULL,
-                  updated_at = now()
-           RETURNING id
-         )
-         ${SELECT} WHERE i.id = (SELECT id FROM upserted)`,
+      /*
+       * Two statements rather than one, deliberately. A data-modifying CTE's
+       * insert is not visible to the SELECT beside it — they share the
+       * statement's snapshot — so reading the row back through a CTE returned
+       * nothing for every title that was genuinely new, which is precisely the
+       * case this function exists for.
+       */
+      const upserted = await pool.query<{ id: string }>(
+        `INSERT INTO items
+           (id, library_id, kind, source_key, title, sort_title,
+            production_year, desired, desired_since)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, true, now())
+         ON CONFLICT (library_id, source_key) DO UPDATE
+            SET desired = true,
+                desired_since = COALESCE(items.desired_since, now()),
+                missing_since = NULL,
+                updated_at = now()
+         RETURNING id`,
         [
           randomUUID(),
           input.libraryId,
@@ -146,6 +150,9 @@ export function createDesiredItemRepository(
           input.year ?? null,
         ],
       );
+      const result = await pool.query<Row>(`${SELECT} WHERE i.id = $1`, [
+        upserted.rows[0]!.id,
+      ]);
       return toItem(result.rows[0]!);
     },
 
