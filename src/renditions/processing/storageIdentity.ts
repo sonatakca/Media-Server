@@ -66,6 +66,21 @@ export interface VolumeIdentity {
    * nothing compares it, because a path is never evidence of identity.
    */
   mountPath: string | null;
+  /**
+   * The serial of the physical device underneath, when the platform reports one.
+   *
+   * Optional, and absent is the normal case rather than a fault: Darwin does
+   * not supply it here, and an identity recorded before this field existed has
+   * none. That is what makes it safe to add — it can only ever strengthen a
+   * comparison, never fail one that would otherwise have passed.
+   *
+   * A volume UUID identifies a filesystem; this identifies the hardware it sits
+   * on. They answer different questions, and the pair catches the case neither
+   * catches alone: a volume restored or cloned onto a different physical disk
+   * keeps its UUID while being, in every sense that matters to a failing drive,
+   * somewhere else.
+   */
+  physicalSerial?: string | null;
 }
 
 /**
@@ -240,6 +255,24 @@ export function satisfiesRecovery(
     return {
       ok: false,
       reason: "The volume at that path has been reformatted.",
+    };
+  }
+
+  /*
+   * Both sides must actually report a serial. A one-sided comparison would
+   * turn every identity recorded before this field existed — and every
+   * platform that does not supply one — into an unsatisfiable quarantine,
+   * which is a false negative introduced by a check meant to prevent one.
+   */
+  if (
+    recorded.physicalSerial != null &&
+    current.physicalSerial != null &&
+    recorded.physicalSerial !== current.physicalSerial
+  ) {
+    return {
+      ok: false,
+      reason:
+        "The volume at that path is on a different physical disk than the one that was quarantined.",
     };
   }
 

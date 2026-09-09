@@ -33,6 +33,7 @@ function volumeJson(overrides: Record<string, unknown> = {}): string {
     driveType: "Fixed",
     driveLetter: "D",
     busType: "USB",
+    serialNumber: "00000000NT1FJWY0",
     diskNumber: 1,
     partitionNumber: 2,
     ...overrides,
@@ -158,6 +159,11 @@ describe("the command the probe runs", () => {
     expect(args).toContain("-NonInteractive");
   });
 
+  it("asks for the physical disk's serial as well as its bus", () => {
+    const { args } = buildVolumeQuery("D");
+    expect(args.join(" ")).toContain("$d.SerialNumber");
+  });
+
   it("refuses anything that is not a single letter", () => {
     for (const bad of ["D:", "DD", "", "1", "D;Remove-Item", "../"]) {
       expect(() => buildVolumeQuery(bad)).toThrow();
@@ -261,6 +267,23 @@ describe("reading a volume document", () => {
     expect(result.ok && result.identity.deviceNode).toBe(
       "\\\\.\\PhysicalDrive1#2",
     );
+  });
+
+  it("keeps the physical disk's serial alongside the volume's own identity", () => {
+    const result = parseWindowsVolumeDocument(volumeJson(), "D:\\");
+    expect(result.ok && result.identity.physicalSerial).toBe(
+      "00000000NT1FJWY0",
+    );
+  });
+
+  it("reports no serial rather than an empty one when the controller is silent", () => {
+    // Some USB bridges report nothing. That is "not known", and must never
+    // compare equal to another disk that also reported nothing.
+    const result = parseWindowsVolumeDocument(
+      volumeJson({ serialNumber: "   " }),
+      "D:\\",
+    );
+    expect(result.ok && result.identity.physicalSerial).toBeNull();
   });
 
   it("rejects output that is not JSON", () => {

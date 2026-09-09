@@ -130,6 +130,46 @@ describe("what can satisfy recovery for a quarantined drive", () => {
     expect(verdict.ok).toBe(false);
     expect(verdict.ok === false && verdict.reason).toContain("reformatted");
   });
+
+  /*
+   * A restore onto replacement hardware keeps the filesystem's UUID while
+   * changing the disk underneath it. Every check above this one passes, which
+   * is exactly why the serial is worth recording.
+   */
+  it("refuses the same filesystem sitting on a different physical disk", () => {
+    const verdict = satisfiesRecovery(
+      { ...EXPANSION, physicalSerial: "00000000NT1FJWY0" },
+      { ...EXPANSION, physicalSerial: "SOMEOTHERDISK123" },
+    );
+    expect(verdict.ok).toBe(false);
+    expect(verdict.ok === false && verdict.reason).toContain("physical disk");
+  });
+
+  it("accepts the same disk when both readings agree on its serial", () => {
+    const withSerial = { ...EXPANSION, physicalSerial: "00000000NT1FJWY0" };
+    expect(satisfiesRecovery(withSerial, { ...withSerial }).ok).toBe(true);
+  });
+
+  /*
+   * The backward-compatible half, and the reason the check is null-guarded on
+   * both sides. Identities recorded before this field existed carry no serial,
+   * and a platform that does not report one never will; neither may become an
+   * unsatisfiable quarantine.
+   */
+  it("does not hold a missing serial against a volume on either side", () => {
+    expect(
+      satisfiesRecovery(EXPANSION, {
+        ...EXPANSION,
+        physicalSerial: "00000000NT1FJWY0",
+      }).ok,
+    ).toBe(true);
+    expect(
+      satisfiesRecovery(
+        { ...EXPANSION, physicalSerial: "00000000NT1FJWY0" },
+        { ...EXPANSION, physicalSerial: null },
+      ).ok,
+    ).toBe(true);
+  });
 });
 
 describe("which volumes need an operator after an unclean restart", () => {

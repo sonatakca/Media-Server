@@ -171,6 +171,7 @@ export function buildVolumeQuery(letter: string): {
     "driveType=[string]$v.DriveType;",
     "driveLetter=[string]$v.DriveLetter;",
     "busType=[string]$d.BusType;",
+    "serialNumber=[string]$d.SerialNumber;",
     "diskNumber=$p.DiskNumber;",
     "partitionNumber=$p.PartitionNumber",
     "}|ConvertTo-Json -Compress -Depth 3",
@@ -375,6 +376,16 @@ export function parseWindowsVolumeDocument(
        * volume.
        */
       mountPath: letter ? `${letter.toUpperCase()}:\\` : fallbackMountPath,
+      /*
+       * The physical disk's own serial. Unlike the disk number beside it this
+       * does not move: Windows renumbers disks on every enumeration, and the
+       * serial is stamped on the device.
+       *
+       * `Get-Disk` pads it on some controllers, and `asText` has already
+       * trimmed it; a controller that reports nothing yields null, which every
+       * consumer treats as "not known" rather than as a mismatch.
+       */
+      physicalSerial: asText("serialNumber"),
     },
   };
 }
