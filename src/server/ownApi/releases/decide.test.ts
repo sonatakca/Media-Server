@@ -401,3 +401,98 @@ describe("invariants the engine must not break", () => {
     expect(trail).not.toContain("SECRET");
   });
 });
+
+/*
+ * Title identity.
+ *
+ * The case that prompted these: a season search for `Chernobyl` accepted, and
+ * then recommended, `Chernobyl.Inside.the.Meltdown.S01` — a different
+ * programme sharing a first word. A film target had been surviving the same
+ * flaw only because the year check caught the impostor a step later, which is
+ * luck rather than a title test, and a season target has no year at all.
+ */
+describe("deciding whether a release names the thing that was asked for", () => {
+  const wide2160 = profileFromIds(
+    "any",
+    "Any",
+    [
+      ["hdtv-1080p", "webrip-1080p", "webdl-1080p", "bluray-1080p"],
+      ["webrip-2160p", "webdl-2160p", "bluray-2160p"],
+    ],
+    { cutoffQualityId: "webrip-2160p" },
+  );
+  const open = { profile: wide2160, preferences: [], current: null };
+
+  const season: MediaTarget = { kind: "season", title: "Chernobyl", season: 1 };
+  const episode: MediaTarget = {
+    kind: "episode",
+    title: "Chernobyl",
+    season: 1,
+    episode: 1,
+  };
+
+  it("refuses a longer title that merely begins with the one asked for", () => {
+    const result = selectRelease(
+      season,
+      [release("Chernobyl.Inside.the.Meltdown.S01.1080p.WEB-DL.H.264-playWEB")],
+      open,
+    );
+    expect(result.candidates[0]!.rejection).toBe("title-mismatch");
+    expect(result.winner).toBeUndefined();
+  });
+
+  it("refuses a shorter title that the one asked for begins with", () => {
+    // The other direction of the same mistake: a franchise name is not one of
+    // its films.
+    const result = selectRelease(
+      {
+        kind: "movie",
+        title: "Pirates of the Caribbean The Curse of the Black Pearl",
+        year: 2003,
+      },
+      [release("Pirates.of.the.Caribbean.2003.1080p.BluRay.x264-X")],
+      open,
+    );
+    expect(result.candidates[0]!.rejection).toBe("title-mismatch");
+  });
+
+  it("refuses a sequel on its title rather than relying on the year", () => {
+    // No year on the target, so nothing downstream can catch this one.
+    const result = selectRelease(
+      { kind: "movie", title: "Gladiator" },
+      [release("Gladiator.II.2024.1080p.WEB-DL.H.264-ViSTA")],
+      open,
+    );
+    expect(result.candidates[0]!.rejection).toBe("title-mismatch");
+  });
+
+  it.each([
+    "Chernobyl.2019.S01.COMPLETE.1080p.WEB-DL.H.264-X",
+    "Chernobyl.S01.1080p.HMAX.WEB-DL.DDP5.1.H.264-FUZEER",
+  ])("still accepts the season pack %s", (title) => {
+    const result = selectRelease(season, [release(title)], open);
+    expect(result.candidates[0]!.rejection).toBeUndefined();
+    expect(result.winner).toBeDefined();
+  });
+
+  it.each([
+    "Chernobyl.2019.S01E01.1.23.45.1080p.HMAX.WEB-DL.MULTi.DDP5.1.H.265-FUZEER",
+    "Chernobyl.S01E01.2160p.UHD.BluRay.HDR.x265-Y",
+    "Chernobyl.S01E01.1080p.WEB-DL.EXTENDED.PROPER.x264-Z",
+  ])("still accepts the episode %s", (title) => {
+    const result = selectRelease(episode, [release(title)], open);
+    expect(result.candidates[0]!.rejection).toBeUndefined();
+    expect(result.winner).toBeDefined();
+  });
+
+  it("still normalizes punctuation and articles rather than demanding them", () => {
+    // Over-tightening would show up here first: none of these differences are
+    // part of a title's identity.
+    const result = selectRelease(
+      { kind: "movie", title: "The Lock, Stock & Two Barrels", year: 1998 },
+      [release("Lock.Stock.and.Two.Barrels.1998.1080p.BluRay.x264-Q")],
+      open,
+    );
+    expect(result.candidates[0]!.rejection).toBeUndefined();
+  });
+});

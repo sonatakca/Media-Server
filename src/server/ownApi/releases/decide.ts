@@ -88,15 +88,33 @@ function comparableTitle(value: string): string {
     .trim();
 }
 
+/**
+ * Whether two titles name the same work.
+ *
+ * This used to accept either title as a prefix of the other, and that is not
+ * an identity test in either direction. A season search for `Chernobyl`
+ * accepted — and recommended — `Chernobyl.Inside.the.Meltdown.S01`, a
+ * different programme entirely; the same rule would take `Gladiator II` for
+ * `Gladiator`, and in the other direction `Pirates of the Caribbean` for a
+ * specific film in that series. A film target usually survived it only
+ * because the year check caught the impostor afterwards, and a season target
+ * has no year to be caught by.
+ *
+ * Equality is the right rule here precisely because the comparison does not
+ * run on raw release names. `parseRelease` has already lifted out the year,
+ * the season and episode, the edition, the source, the resolution, the codec
+ * and the release group, and `comparableTitle` then removes punctuation and
+ * articles. A word still standing after all of that is part of the title, and
+ * a title with an extra word in it is a different title.
+ *
+ * So this rejects extra words while leaving every legitimate decoration to be
+ * stripped where it is already understood, rather than tolerated here.
+ */
 function titlesMatch(candidate: string, wanted: string): boolean {
   const left = comparableTitle(candidate);
   const right = comparableTitle(wanted);
   if (left === "" || right === "") return false;
-  return (
-    left === right ||
-    left.startsWith(`${right} `) ||
-    right.startsWith(`${left} `)
-  );
+  return left === right;
 }
 
 /**
