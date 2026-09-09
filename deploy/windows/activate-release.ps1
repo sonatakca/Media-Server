@@ -116,17 +116,23 @@ foreach ($line in Get-Content (Join-Path $SecretsDir 'secrets.env')) {
 }
 if (-not $url) { throw 'DATABASE_URL not found in secrets.env' }
 
-& $PgDump --dbname=$url --format=custom --file=(Join-Path $backup 'seyirlik.dump')
+# Each of these has to be one argument. PowerShell does not join a bare
+# token to a parenthesised expression that follows it — it passes two — so
+# the path is built before the call rather than inside it.
+$dumpFile = Join-Path $backup 'seyirlik.dump'
+& $PgDump "--dbname=$url" '--format=custom' "--file=$dumpFile"
 if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed; refusing to continue without a backup' }
 Copy-Item (Join-Path $ConfigDir 'settings.env') $backup
 Copy-Item (Join-Path $SecretsDir 'secrets.env') $backup
 Write-Output ("BACKUP=" + $backup)
 
+$settingsArg = '--env-file=' + (Join-Path $ConfigDir 'settings.env')
+$secretsArg = '--env-file=' + (Join-Path $SecretsDir 'secrets.env')
+
 # --- 4. migrate, with the new release's migrator ---------------------------
 Push-Location $target
 try {
-  & node --env-file=(Join-Path $ConfigDir 'settings.env') --env-file=(Join-Path $SecretsDir 'secrets.env') `
-      --import tsx scripts/run-own-api-migrations.ts
+  & node $settingsArg $secretsArg --import tsx scripts/run-own-api-migrations.ts
   if ($LASTEXITCODE -ne 0) { throw 'migration failed; nothing has been switched' }
 }
 finally { Pop-Location }
@@ -137,8 +143,7 @@ finally { Pop-Location }
 # clean pass means current *and* unaltered.
 Push-Location $target
 try {
-  & node --env-file=(Join-Path $ConfigDir 'settings.env') --env-file=(Join-Path $SecretsDir 'secrets.env') `
-      --import tsx scripts/run-own-api-migrations.ts
+  & node $settingsArg $secretsArg --import tsx scripts/run-own-api-migrations.ts
   if ($LASTEXITCODE -ne 0) { throw 'schema did not verify as current; nothing has been switched' }
 }
 finally { Pop-Location }
