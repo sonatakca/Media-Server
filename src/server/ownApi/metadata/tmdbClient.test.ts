@@ -217,3 +217,48 @@ describe("artwork listing", () => {
     );
   });
 });
+
+describe("IMDb identity", () => {
+  /*
+   * A movie's details carry `imdb_id`; a series' do not. Without asking for
+   * external ids, every show ends up with a TMDB id and no IMDb one, which
+   * stays invisible until something has to match a show against the identity
+   * another application recorded against it.
+   */
+  it("asks TMDB for external ids so a series can carry an IMDb id", async () => {
+    const { calls, fetchImpl } = captureFetch({
+      id: 1398,
+      name: "The Sopranos",
+    });
+    await createTmdbClient({ apiKey: V3_KEY, fetchImpl }).getSeries("1398");
+    expect(calls[0]?.url.searchParams.get("append_to_response")).toContain(
+      "external_ids",
+    );
+  });
+
+  it("reads a series IMDb id from external ids", async () => {
+    const { fetchImpl } = captureFetch({
+      id: 1398,
+      name: "The Sopranos",
+      external_ids: { imdb_id: "tt0141842" },
+    });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getSeries("1398");
+    expect(details.imdbId).toBe("tt0141842");
+  });
+
+  it("still reads a movie IMDb id from the details themselves", async () => {
+    const { fetchImpl } = captureFetch({
+      id: 550,
+      title: "Fight Club",
+      imdb_id: "tt0137523",
+    });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getMovie("550");
+    expect(details.imdbId).toBe("tt0137523");
+  });
+});

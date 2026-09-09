@@ -342,6 +342,19 @@ export function createTmdbClient({
     return paths;
   }
 
+  /** A movie states its IMDb id directly; a series only does under `external_ids`. */
+  function readImdbId(details: Record<string, unknown>): string | undefined {
+    if (typeof details.imdb_id === "string" && details.imdb_id) {
+      return details.imdb_id;
+    }
+    const external = details.external_ids;
+    if (external && typeof external === "object") {
+      const value = (external as Record<string, unknown>).imdb_id;
+      if (typeof value === "string" && value) return value;
+    }
+    return undefined;
+  }
+
   async function getTitle(
     kind: "movie" | "tv",
     providerId: string,
@@ -351,7 +364,15 @@ export function createTmdbClient({
     const details = await request<Record<string, unknown>>(
       `/${kind}/${encodeURIComponent(providerId)}`,
       {
-        append_to_response: "credits,images,release_dates,content_ratings",
+        /*
+         * `external_ids` is only needed for series. A movie carries `imdb_id`
+         * on its own details; a series does not, and without it every show
+         * ends up with a TMDB id and no IMDb one — which is invisible until
+         * something tries to match on the identity another application
+         * recorded.
+         */
+        append_to_response:
+          "credits,images,release_dates,content_ratings,external_ids",
         // Language-neutral artwork is included so a logo exists even when the
         // localized set is empty.
         include_image_language: `${effectiveLanguage.slice(0, 2)},en,null`,
@@ -414,9 +435,7 @@ export function createTmdbClient({
       ...(extractLogoPath(details.images)
         ? { logoPath: extractLogoPath(details.images) as string }
         : {}),
-      ...(typeof details.imdb_id === "string" && details.imdb_id
-        ? { imdbId: details.imdb_id }
-        : {}),
+      ...(readImdbId(details) ? { imdbId: readImdbId(details) as string } : {}),
     };
   }
 
