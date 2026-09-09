@@ -80,8 +80,27 @@ function Set-Current([string] $to) {
   New-Item -ItemType Junction -Path $current -Target $to | Out-Null
 }
 
+<#
+What to go back to is not always a previous release. The first activation
+replaces a git checkout, and a rollback that only knew about junctions would
+have nothing to say — it would leave the services pointed at a release that
+just failed to start.
+
+So rollback restores the two things the switch changes: where `current` points,
+and what the services call their working directory. Recording the second from
+the registry covers the checkout case and the junction case with one path.
+#>
+function Get-AppDirectory([string] $service) {
+  (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Services\$service\Parameters" -ErrorAction SilentlyContinue).AppDirectory
+}
+
 $previous = Get-CurrentTarget
-Write-Output "PREVIOUS=$previous"
+$previousAppDir = @{
+  $ServerService = Get-AppDirectory $ServerService
+  $WorkerService = Get-AppDirectory $WorkerService
+}
+Write-Output "PREVIOUS_RELEASE=$previous"
+Write-Output ("PREVIOUS_APPDIR=" + $previousAppDir[$ServerService])
 
 # --- 3. backup -------------------------------------------------------------
 # Before anything irreversible, and covering the two environment files as well
@@ -166,17 +185,24 @@ if (-not $failure) {
 # --- 9. roll back on failure ----------------------------------------------
 if ($failure) {
   Write-Output "FAILED=$failure"
-  if ($previous) {
-    & sc.exe stop $WorkerService | Out-Null; Wait-Svc $WorkerService 'Stopped' | Out-Null
-    & sc.exe stop $ServerService | Out-Null; Wait-Svc $ServerService 'Stopped' | Out-Null
-    Set-Current $previous
-    & sc.exe start $ServerService | Out-Null; Wait-Svc $ServerService 'Running' | Out-Null
-    & sc.exe start $WorkerService | Out-Null; Wait-Svc $WorkerService 'Running' | Out-Null
-    Write-Output "ROLLED_BACK_TO=$previous"
+
+  & sc.exe stop $WorkerService | Out-Null; Wait-Svc $WorkerService 'Stopped' | Out-Null
+  & sc.exe stop $ServerService | Out-Null; Wait-Svc $ServerService 'Stopped' | Out-Null
+
+  # The junction goes back only if there was one. On a first activation there
+  # was not, and leaving it pointing at the failed release is harmless once
+  # the services no longer resolve through it.
+  if ($previous) { Set-Current $previous }
+
+  foreach ($svc in $ServerService, $WorkerService) {
+    if ($previousAppDir[$svc]) { & $Nssm set $svc AppDirectory $previousAppDir[$svc] | Out-Null }
   }
-  else {
-    Write-Output 'NO_PREVIOUS_RELEASE: the services are pointed at the failed release and are not serving'
-  }
+
+  & sc.exe start $ServerService | Out-Null; $backUp = Wait-Svc $ServerService 'Running'
+  & sc.exe start $WorkerService | Out-Null; Wait-Svc $WorkerService 'Running' | Out-Null
+
+  Write-Output ("ROLLED_BACK_TO=" + $previousAppDir[$ServerService])
+  if (-not $backUp) { Write-Output 'ROLLBACK_INCOMPLETE: the previous version did not come back up either' }
   exit 1
 }
 
