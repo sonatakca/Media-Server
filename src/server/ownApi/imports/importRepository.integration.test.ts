@@ -56,6 +56,37 @@ integration("imports in PostgreSQL", () => {
     expect(created.committedAtMs).toBeUndefined();
   });
 
+  it("reads the target's year back, not only writes it", async () => {
+    /*
+     * The destination is `Title (Year)`. The year was being written to the row
+     * and never read out of it, so the runtime built destinations from the
+     * title alone and an import landed in `Night of the Living Dead` beside a
+     * library of `Title (Year)` folders.
+     */
+    const created = await repository.create(input);
+    expect(created.targetYear).toBe(2008);
+    const reread = await repository.get(created.id);
+    expect(reread?.targetYear).toBe(2008);
+    expect(reread?.targetSeason).toBeUndefined();
+    expect(reread?.targetEpisode).toBeUndefined();
+  });
+
+  it("reads a season and episode back for television", async () => {
+    const created = await repository.create({
+      ...input,
+      target: {
+        kind: "episode",
+        title: "Example Show",
+        year: 2019,
+        season: 2,
+        episode: 5,
+      },
+    });
+    const reread = await repository.get(created.id);
+    expect(reread?.targetSeason).toBe(2);
+    expect(reread?.targetEpisode).toBe(5);
+  });
+
   it("freezes the authorised roots onto the row", async () => {
     /*
      * The roots are what containment is re-proven against on every later

@@ -1046,6 +1046,18 @@ export async function createNativeRuntime({
               return {
                 kind: record.targetKind as "movie" | "season" | "episode",
                 title: record.targetTitle,
+                // The destination is `Title (Year)`, and a season or episode
+                // needs its numbers; dropping them here put an import in a
+                // folder shaped unlike every other one in the library.
+                ...(record.targetYear === undefined
+                  ? {}
+                  : { year: record.targetYear }),
+                ...(record.targetSeason === undefined
+                  ? {}
+                  : { season: record.targetSeason }),
+                ...(record.targetEpisode === undefined
+                  ? {}
+                  : { episode: record.targetEpisode }),
               };
             },
             policy: {

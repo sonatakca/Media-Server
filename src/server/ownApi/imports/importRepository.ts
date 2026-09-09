@@ -56,6 +56,15 @@ export interface ImportRecord {
   readonly strategy?: ImportStrategy;
   readonly targetKind: string;
   readonly targetTitle: string;
+  /*
+   * Read back as well as written. Without these the destination is built from
+   * the title alone, so an import lands in `Night of the Living Dead` beside a
+   * library of `Title (Year)` folders — and the year the row was created with
+   * is sitting unused in the same row.
+   */
+  readonly targetYear?: number;
+  readonly targetSeason?: number;
+  readonly targetEpisode?: number;
   readonly targetItemId?: string;
   readonly sourceRoot: string;
   readonly libraryRoot: string;
@@ -223,6 +232,9 @@ interface Row {
   strategy: string | null;
   target_kind: string;
   target_title: string;
+  target_year: number | null;
+  target_season: number | null;
+  target_episode: number | null;
   target_item_id: string | null;
   source_root: string;
   library_root: string;
@@ -254,7 +266,8 @@ interface FileRow {
 }
 
 const COLUMNS = `id, acquisition_id, idempotency_key, state, strategy,
-  target_kind, target_title, target_item_id, source_root, library_root,
+  target_kind, target_title, target_year, target_season, target_episode,
+  target_item_id, source_root, library_root,
   source_relative, is_upgrade, attempt, failure_class, failure_detail, retry_after,
   committed_at, created_at, updated_at`;
 
@@ -277,6 +290,11 @@ function toRecord(row: Row): ImportRecord {
     ...(row.strategy ? { strategy: row.strategy as ImportStrategy } : {}),
     targetKind: row.target_kind,
     targetTitle: row.target_title,
+    ...(row.target_year === null ? {} : { targetYear: row.target_year }),
+    ...(row.target_season === null ? {} : { targetSeason: row.target_season }),
+    ...(row.target_episode === null
+      ? {}
+      : { targetEpisode: row.target_episode }),
     ...(row.target_item_id ? { targetItemId: row.target_item_id } : {}),
     sourceRoot: row.source_root,
     libraryRoot: row.library_root,
