@@ -1,0 +1,300 @@
+import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
+import { ArrowLeft, Search } from "lucide-react";
+import { setPageTitle } from "../../lib/pageTitle";
+import { useLanguage } from "../../i18n/LanguageContext";
+import {
+  canAcquire,
+  orderCandidates,
+  summarise,
+  type JudgedRelease,
+} from "../../lib/releaseDecisionPresentation";
+import {
+  acquireRelease,
+  evaluateReleases,
+  listProfiles,
+  type QualityProfile,
+} from "../../lib/releaseDecisionsApi";
+
+/**
+ * What Seyirlik would download for a title, and why it would not download the
+ * rest.
+ *
+ * The point of the page is the explanation. A list of releases with coloured
+ * scores tells an operator which one won and nothing about why, which is
+ * exactly the state of affairs the decision engine was built to replace.
+ */
+export function ReleaseDecisionsPage() {
+  const { t } = useLanguage();
+  const [profiles, setProfiles] = useState<QualityProfile[]>([]);
+  const [profileId, setProfileId] = useState("");
+  const [kind, setKind] = useState<"movie" | "tv">("movie");
+  const [title, setTitle] = useState("");
+  const [year, setYear] = useState("");
+  const [candidates, setCandidates] = useState<JudgedRelease[] | null>(null);
+  const [winnerGuid, setWinnerGuid] = useState<string | null>(null);
+  const [isSearching, setIsSearching] = useState(false);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [asked, setAsked] = useState<string[]>([]);
+
+  useEffect(() => {
+    setPageTitle(`${t("admin.decisions.title")} · Seyirlik`, {
+      canonicalPath: "/admin/decisions",
+      robots: "noindex, nofollow",
+    });
+  }, [t]);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    void (async () => {
+      try {
+        const rows = await listProfiles();
+        if (isCancelled) return;
+        setProfiles(rows);
+        if (rows[0]) setProfileId(rows[0].id);
+      } catch {
+        if (!isCancelled) setFailure("admin.decisions.profilesFailed");
+      }
+    })();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  const search = useCallback(async () => {
+    setIsSearching(true);
+    setFailure(null);
+    try {
+      const result = await evaluateReleases({
+        kind,
+        title: title.trim(),
+        ...(year.trim() ? { year: Number(year) } : {}),
+        ...(profileId ? { profileId } : {}),
+      });
+      setCandidates(result.candidates);
+      setWinnerGuid(result.winner?.guid ?? null);
+    } catch {
+      // Never the thrown message: it can carry the indexer request URL.
+      setFailure("admin.decisions.searchFailed");
+      setCandidates(null);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [kind, profileId, title, year]);
+
+  const ask = useCallback(
+    async (candidate: JudgedRelease) => {
+      /*
+       * The release is named by indexer and guid. The server resolves it and
+       * fetches the NZB with its own credentials; a URL never crosses this
+       * boundary in either direction.
+       */
+      await acquireRelease({
+        kind: kind === "movie" ? "movie" : "season",
+        title: title.trim(),
+        ...(year.trim() ? { year: Number(year) } : {}),
+        indexerId: candidate.indexerId,
+        releaseGuid: candidate.guid,
+        releaseTitle: candidate.title,
+        ...(profileId ? { profileId } : {}),
+        score: candidate.score,
+        reasons: candidate.reasons,
+      });
+      setAsked((previous) => [...previous, candidate.guid]);
+    },
+    [kind, profileId, title, year],
+  );
+
+  const ordered = candidates ? orderCandidates(candidates, winnerGuid) : [];
+  const counts = candidates ? summarise(candidates) : null;
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-6">
+      <Link
+        to="/admin"
+        className="inline-flex items-center gap-2 text-sm font-bold text-white/50 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+      >
+        <ArrowLeft size={16} />
+        {t("admin.title")}
+      </Link>
+
+      <header>
+        <h1 className="text-3xl font-black text-white">
+          {t("admin.decisions.title")}
+        </h1>
+
+        <p className="mt-1 text-sm font-semibold text-white/50">
+          {t("admin.decisions.description")}
+        </p>
+      </header>
+
+      <form
+        className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-5 sm:grid-cols-[1fr_7rem_10rem_auto]"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void search();
+        }}
+      >
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-black uppercase tracking-wide text-white/45">
+            {t("admin.decisions.titleField")}
+          </span>
+          <input
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+            required
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-black uppercase tracking-wide text-white/45">
+            {t("admin.decisions.yearField")}
+          </span>
+          <input
+            value={year}
+            onChange={(event) => setYear(event.target.value)}
+            inputMode="numeric"
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          />
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-black uppercase tracking-wide text-white/45">
+            {t("admin.decisions.profileField")}
+          </span>
+          <select
+            value={profileId}
+            onChange={(event) => setProfileId(event.target.value)}
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            {profiles.map((profile) => (
+              <option key={profile.id} value={profile.id}>
+                {profile.name}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <div className="flex items-end gap-2">
+          <select
+            aria-label={t("admin.decisions.kindField")}
+            value={kind}
+            onChange={(event) =>
+              setKind(event.target.value === "tv" ? "tv" : "movie")
+            }
+            className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <option value="movie">{t("admin.decisions.kind.movie")}</option>
+            <option value="tv">{t("admin.decisions.kind.tv")}</option>
+          </select>
+
+          <button
+            type="submit"
+            disabled={isSearching || title.trim() === ""}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/15 bg-white/[0.08] px-4 py-2 text-sm font-black text-white/85 transition hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            <Search size={15} />
+            {t("admin.decisions.search")}
+          </button>
+        </div>
+      </form>
+
+      {failure ? (
+        <p
+          role="alert"
+          className="rounded-2xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm font-bold text-red-200"
+        >
+          {t(failure as "admin.decisions.searchFailed")}
+        </p>
+      ) : null}
+
+      {counts ? (
+        <p className="text-sm font-semibold text-white/50">
+          {t("admin.decisions.counts")}: {counts.accepted}/{counts.total}
+        </p>
+      ) : null}
+
+      {candidates && candidates.length === 0 ? (
+        <p className="rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-8 text-center text-sm font-semibold text-white/45">
+          {t("admin.decisions.noResults")}
+        </p>
+      ) : null}
+
+      <ul className="space-y-2">
+        {ordered.map((candidate) => (
+          <li
+            key={`${candidate.indexerId}:${candidate.guid}`}
+            className={`rounded-2xl border p-4 ${
+              candidate.isWinner
+                ? "border-emerald-400/35 bg-emerald-400/[0.07]"
+                : candidate.accepted
+                  ? "border-white/10 bg-black/25"
+                  : "border-white/[0.06] bg-black/15"
+            }`}
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+              {/* Provider text, rendered as text. */}
+              <p className="break-all text-sm font-black text-white">
+                {candidate.title}
+              </p>
+
+              <span
+                className={`text-xs font-black uppercase tracking-wide ${
+                  candidate.accepted ? "text-emerald-300" : "text-white/40"
+                }`}
+              >
+                {candidate.isWinner
+                  ? t("admin.decisions.recommended")
+                  : candidate.accepted
+                    ? t("admin.decisions.accepted")
+                    : t("admin.decisions.rejected")}
+              </span>
+            </div>
+
+            <p className="mt-1 text-xs font-semibold text-white/50">
+              {candidate.quality}
+              {candidate.score !== 0
+                ? ` · ${t("admin.decisions.score")} ${candidate.score > 0 ? "+" : ""}${candidate.score}`
+                : ""}
+            </p>
+
+            {candidate.rejection ? (
+              <p className="mt-2 text-xs font-bold text-amber-200">
+                {candidate.rejection}
+              </p>
+            ) : null}
+
+            {candidate.reasons.length > 0 ? (
+              <ul className="mt-2 space-y-0.5">
+                {candidate.reasons.map((reason, index) => (
+                  <li
+                    key={`${reason.code}-${index}`}
+                    className="text-xs font-medium text-white/45"
+                  >
+                    {reason.detail}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            {canAcquire(candidate) ? (
+              <button
+                type="button"
+                disabled={asked.includes(candidate.guid)}
+                onClick={() => void ask(candidate)}
+                className="mt-3 rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white/80 transition hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              >
+                {asked.includes(candidate.guid)
+                  ? t("admin.decisions.asked")
+                  : t("admin.decisions.acquire")}
+              </button>
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
