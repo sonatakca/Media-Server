@@ -143,6 +143,7 @@ describe("scanLibraryTree — movies", () => {
         year: 2019,
         files: [],
         renditionBacked: true,
+        packageDirectory: "Movies/Ford v Ferrari (2019)",
       }),
     ]);
   });
@@ -526,6 +527,14 @@ describe("scanLibraryTree — series", () => {
       parentIndexNumber: 1,
       files: [],
     });
+    /*
+     * An episode's source key is series:season:episode and names no path, so
+     * the directory the manifest lives in has to be reported rather than
+     * reconstructed. Anything that opens the package depends on this.
+     */
+    expect(orphan?.packageDirectory).toBe(
+      "Shows/Andor/Season 1/Andor - S01E01 - Kassa",
+    );
     // The one that still has its source is an ordinary episode.
     expect(
       episodes.find((episode) => episode.indexNumber === 2)?.renditionBacked,

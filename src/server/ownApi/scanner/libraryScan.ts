@@ -99,6 +99,16 @@ export interface ScannedItem {
    * catalogue item from this marker alone.
    */
   renditionBacked?: boolean;
+  /**
+   * The folder holding that package, when there is one.
+   *
+   * Only a movie's package directory can be recovered from its `sourceKey`; an
+   * episode's key is `series:season:episode` and names no path at all. Anything
+   * that has to open the manifest — a migration recovering the source identity
+   * of a title whose bytes are gone — would otherwise have to guess, so the
+   * scanner reports the directory it actually looked in.
+   */
+  packageDirectory?: string;
 }
 
 export interface ScanSkip {
@@ -723,6 +733,7 @@ async function scanMovieDirectory(
     result.items.push({
       ...buildMovieItem(directory, displayName, [], []),
       renditionBacked: true,
+      packageDirectory: directory,
     });
   }
 
@@ -888,6 +899,7 @@ async function scanEpisodeFiles(
       files: [],
       subtitles: [],
       renditionBacked: true,
+      packageDirectory: childPath,
     });
   }
 }
