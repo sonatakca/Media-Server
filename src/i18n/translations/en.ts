@@ -1866,4 +1866,19 @@ export const en = {
   "search.groupOther": "Other",
   "search.suggestions": "Suggestions",
   "search.resultCount": "{count} results",
+  "admin.title": "Administration",
+  "admin.pageDescription":
+    "What the server is doing, what it is connected to, and what needs a person.",
+  "admin.group.operations.title": "Operations",
+  "admin.group.operations.description":
+    "What the server is working on right now, and what is waiting on you.",
+  "admin.group.library.title": "Library",
+  "admin.group.library.description":
+    "The contents themselves: ordering, artwork and what the catalogue holds.",
+  "admin.group.configuration.title": "Configuration",
+  "admin.group.configuration.description":
+    "What Seyirlik is connected to, and how it behaves by default.",
+  "admin.group.diagnostics.title": "Diagnostics",
+  "admin.group.diagnostics.description":
+    "Looking inside the machine. Rarely needed, and here when it is.",
 };

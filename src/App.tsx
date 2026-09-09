@@ -369,6 +369,9 @@ export default function App() {
                   </Suspense>
                 }
               >
+                {/* `/admin` is the name; `/dev` is kept because a dozen
+                    pages link back to it and every bookmark points at it. */}
+                <Route path="/admin" element={<DevToolsPage />} />
                 <Route path="/dev" element={<DevToolsPage />} />
                 <Route
                   path="/dev/playback-audit"

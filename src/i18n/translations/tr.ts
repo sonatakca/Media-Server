@@ -1863,4 +1863,19 @@ export const tr = {
   "search.groupOther": "Diğer",
   "search.suggestions": "Öneriler",
   "search.resultCount": "{count} sonuç",
+  "admin.title": "Yönetim",
+  "admin.pageDescription":
+    "Sunucunun ne yaptığı, neye bağlı olduğu ve neyin sizi beklediği.",
+  "admin.group.operations.title": "İşleyiş",
+  "admin.group.operations.description":
+    "Sunucunun şu anda üzerinde çalıştığı ve sizi bekleyen işler.",
+  "admin.group.library.title": "Kitaplık",
+  "admin.group.library.description":
+    "İçeriğin kendisi: sıralama, görseller ve kataloğun tuttukları.",
+  "admin.group.configuration.title": "Yapılandırma",
+  "admin.group.configuration.description":
+    "Seyirlik'in neye bağlı olduğu ve varsayılan davranışı.",
+  "admin.group.diagnostics.title": "Tanılama",
+  "admin.group.diagnostics.description":
+    "Makinenin içine bakmak. Nadiren gerekir, gerektiğinde burada.",
 };
