@@ -37,6 +37,10 @@ param(
   # Defaults to a dated, sequenced name. Explicit for a rehearsal.
   [string] $Version,
 
+  # Consulted only to keep release numbers from being reused: a deployment
+  # backup is named after its release, so it still spends that name.
+  [string] $BackupRoot = 'C:\ProgramData\Seyirlik\backups',
+
   # The virtual accounts the services run as. They need to read a release and
   # must not be able to write one.
   [string[]] $ServiceAccounts = @('NT SERVICE\SeyirlikServer', 'NT SERVICE\SeyirlikWorker')
@@ -85,9 +89,29 @@ if ($changed) { Set-Acl -Path $AppRoot -AclObject $rootAcl; Write-Output "APPROO
 # releases on one day cannot collide and the sequence reads chronologically.
 if (-not $Version) {
   $day = Get-Date -Format 'yyyy.MM.dd'
-  $n = 1
-  while (Test-Path -LiteralPath (Join-Path $releases "$day-$n")) { $n++ }
-  $Version = "$day-$n"
+
+  <#
+  The sequence is the highest number ever used today plus one, not the first
+  free slot. Pruning a release must not hand its name to a different one: the
+  deployment backups are named after the release they were taken for, and two
+  releases sharing a name make that record ambiguous exactly when somebody is
+  reading it to decide what to roll back to.
+
+  So the backups are consulted as well as the releases directory. A pruned
+  release leaves its backup behind, and that is enough to keep its name spent.
+  #>
+  $used = @()
+  foreach ($name in (Get-ChildItem -LiteralPath $releases -Directory -ErrorAction SilentlyContinue).Name) {
+    if ($name -match "^$([regex]::Escape($day))-(\d+)$") { $used += [int]$Matches[1] }
+  }
+  if (Test-Path -LiteralPath $BackupRoot) {
+    foreach ($name in (Get-ChildItem -LiteralPath $BackupRoot -Directory -ErrorAction SilentlyContinue).Name) {
+      if ($name -match "^release-$([regex]::Escape($day))-(\d+)-") { $used += [int]$Matches[1] }
+    }
+  }
+  $next = 1
+  if ($used.Count -gt 0) { $next = (($used | Measure-Object -Maximum).Maximum + 1) }
+  $Version = "$day-$next"
 }
 
 $target = Join-Path $releases $Version
