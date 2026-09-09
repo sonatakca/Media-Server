@@ -2075,4 +2075,21 @@ export const tr = {
   "admin.integrations.schemaCurrent": "Seyirlik'in bu sürümüyle güncel.",
   "admin.integrations.schemaBehind":
     "Kod, veritabanında olmayan geçişleri bekliyor. Bunlar uygulanana kadar servisler başlamayı reddedecek.",
+  "admin.monitoring.title": "İzleme",
+  "admin.monitoring.description":
+    "Seyirlik'in neyi beklediği ve her yanıtı hangi düzeyin verdiği.",
+  "admin.monitoring.tag": "İşleyiş",
+  "admin.monitoring.series": "Dizi",
+  "admin.monitoring.choose": "Bir dizi seçin…",
+  "admin.monitoring.titleLevel": "Dizi",
+  "admin.monitoring.seasons": "Sezonlar",
+  "admin.monitoring.episodes": "Bölümler",
+  "admin.monitoring.season": "Sezon",
+  "admin.monitoring.monitored": "İzleniyor",
+  "admin.monitoring.isMonitored": "İzleniyor",
+  "admin.monitoring.isNotMonitored": "İzlenmiyor",
+  "admin.monitoring.loadFailed": "İzleme durumu yüklenemedi.",
+  "admin.monitoring.choice.inherit": "Üst düzeyi izle",
+  "admin.monitoring.choice.monitored": "İzle",
+  "admin.monitoring.choice.unmonitored": "İzleme",
 };

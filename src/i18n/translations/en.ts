@@ -2086,4 +2086,21 @@ export const en = {
     "Up to date with this version of Seyirlik.",
   "admin.integrations.schemaBehind":
     "The code expects migrations the database does not have. The services will refuse to start until these are applied.",
+  "admin.monitoring.title": "Monitoring",
+  "admin.monitoring.description":
+    "What Seyirlik is watching for, and which level decides each answer.",
+  "admin.monitoring.tag": "Operations",
+  "admin.monitoring.series": "Series",
+  "admin.monitoring.choose": "Choose a series…",
+  "admin.monitoring.titleLevel": "The series",
+  "admin.monitoring.seasons": "Seasons",
+  "admin.monitoring.episodes": "Episodes",
+  "admin.monitoring.season": "Season",
+  "admin.monitoring.monitored": "Monitored",
+  "admin.monitoring.isMonitored": "Monitored",
+  "admin.monitoring.isNotMonitored": "Not monitored",
+  "admin.monitoring.loadFailed": "The monitoring state could not be loaded.",
+  "admin.monitoring.choice.inherit": "Follow the level above",
+  "admin.monitoring.choice.monitored": "Monitored",
+  "admin.monitoring.choice.unmonitored": "Not monitored",
 };

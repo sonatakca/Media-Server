@@ -131,6 +131,15 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     icon: "download",
   },
   {
+    id: "monitoring",
+    group: "operations",
+    path: "/admin/monitoring",
+    titleKey: "admin.monitoring.title",
+    descriptionKey: "admin.monitoring.description",
+    tagKey: "admin.monitoring.tag",
+    icon: "target",
+  },
+  {
     id: "decisions",
     group: "operations",
     path: "/admin/decisions",
