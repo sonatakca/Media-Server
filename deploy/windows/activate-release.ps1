@@ -1,0 +1,185 @@
+<#
+.SYNOPSIS
+Makes a staged release the one the services run, and puts the previous one
+back if it does not come up.
+
+.DESCRIPTION
+Steps 3 to 9 of docs/deployment-model.md. The ordering is the point: every
+step before the junction switch is reversible by doing nothing, and the switch
+itself is a single rename.
+
+The invariant this script exists to keep:
+
+    the database's schema must be current
+            BEFORE
+    code that requires it is activated
+
+and its less obvious corollary — the migration must be run by the *new*
+release's migrator, because the new release is what ships the migration files.
+So step 4 runs node from the staged release directory, not from whatever is
+currently serving.
+
+Rollback restores the code, not the schema. Migrations are additive across a
+rollback by design; a migration that removes what the previous version reads
+would make this script's recovery path a lie.
+#>
+[CmdletBinding()]
+param(
+  [Parameter(Mandatory = $true)]
+  [string] $Version,
+
+  [string] $AppRoot = 'C:\ProgramData\Seyirlik\app',
+  [string] $ConfigDir = 'C:\ProgramData\Seyirlik\config',
+  [string] $SecretsDir = 'C:\ProgramData\Seyirlik\secrets',
+  [string] $BackupRoot = 'C:\ProgramData\Seyirlik\backups',
+  [string] $Nssm = 'C:\Program Files\Seyirlik\bin\nssm.exe',
+  [string] $PgDump = 'C:\Program Files\PostgreSQL\17\bin\pg_dump.exe',
+  [string] $HealthUrl = 'http://127.0.0.1:43111/ownAPI/v1/health',
+
+  # Service names, so a rehearsal can drive disposable services instead of
+  # production ones.
+  [string] $ServerService = 'SeyirlikServer',
+  [string] $WorkerService = 'SeyirlikWorker'
+)
+
+$ErrorActionPreference = 'Stop'
+
+$releases = Join-Path $AppRoot 'releases'
+$target = Join-Path $releases $Version
+$current = Join-Path $AppRoot 'current'
+
+if (-not (Test-Path -LiteralPath (Join-Path $target 'RELEASE.json'))) {
+  throw "no staged release at $target (stage it first)"
+}
+
+function Get-SvcState([string] $n) {
+  $s = Get-CimInstance Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue
+  if ($s) { $s.State } else { $null }
+}
+
+function Wait-Svc([string] $n, [string] $want, [int] $secs = 90) {
+  for ($i = 0; $i -lt $secs; $i++) {
+    if ((Get-SvcState $n) -eq $want) { return $true }
+    Start-Sleep -Seconds 1
+  }
+  return $false
+}
+
+# The junction is the pointer the services resolve. Reading where it points is
+# how rollback knows what to go back to.
+function Get-CurrentTarget {
+  if (-not (Test-Path -LiteralPath $current)) { return $null }
+  (Get-Item -LiteralPath $current -Force).Target | Select-Object -First 1
+}
+
+function Set-Current([string] $to) {
+  # Remove-Item on a junction removes the link, not what it points at, but
+  # only when the path is not treated as a directory to recurse into. -Force
+  # without -Recurse is the form that stays on the link itself.
+  if (Test-Path -LiteralPath $current) { (Get-Item -LiteralPath $current -Force).Delete() }
+  New-Item -ItemType Junction -Path $current -Target $to | Out-Null
+}
+
+$previous = Get-CurrentTarget
+Write-Output "PREVIOUS=$previous"
+
+# --- 3. backup -------------------------------------------------------------
+# Before anything irreversible, and covering the two environment files as well
+# as the database, because a rollback that restored the schema but not the
+# configuration would be a different system.
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$backup = Join-Path $BackupRoot "release-$Version-$stamp"
+New-Item -ItemType Directory -Force -Path $backup | Out-Null
+
+$url = $null
+foreach ($line in Get-Content (Join-Path $SecretsDir 'secrets.env')) {
+  if ($line -match '^\s*DATABASE_URL\s*=\s*(.+?)\s*$') { $url = $Matches[1].Trim().Trim('"') }
+}
+if (-not $url) { throw 'DATABASE_URL not found in secrets.env' }
+
+& $PgDump --dbname=$url --format=custom --file=(Join-Path $backup 'seyirlik.dump')
+if ($LASTEXITCODE -ne 0) { throw 'pg_dump failed; refusing to continue without a backup' }
+Copy-Item (Join-Path $ConfigDir 'settings.env') $backup
+Copy-Item (Join-Path $SecretsDir 'secrets.env') $backup
+Write-Output ("BACKUP=" + $backup)
+
+# --- 4. migrate, with the new release's migrator ---------------------------
+Push-Location $target
+try {
+  & node --env-file=(Join-Path $ConfigDir 'settings.env') --env-file=(Join-Path $SecretsDir 'secrets.env') `
+      --import tsx scripts/run-own-api-migrations.ts
+  if ($LASTEXITCODE -ne 0) { throw 'migration failed; nothing has been switched' }
+}
+finally { Pop-Location }
+
+# --- 5. verify the schema is current ---------------------------------------
+# Re-running the migrator is the check: it validates every recorded checksum
+# against the files this release ships and refuses on a mismatch, so a second
+# clean pass means current *and* unaltered.
+Push-Location $target
+try {
+  & node --env-file=(Join-Path $ConfigDir 'settings.env') --env-file=(Join-Path $SecretsDir 'secrets.env') `
+      --import tsx scripts/run-own-api-migrations.ts
+  if ($LASTEXITCODE -ne 0) { throw 'schema did not verify as current; nothing has been switched' }
+}
+finally { Pop-Location }
+
+# --- 6. switch -------------------------------------------------------------
+# Services stop worker-first so nothing is mid-job while the server goes, and
+# start server-first so the worker never races an absent API.
+& sc.exe stop $WorkerService | Out-Null
+if (-not (Wait-Svc $WorkerService 'Stopped')) { throw "$WorkerService would not stop" }
+& sc.exe stop $ServerService | Out-Null
+if (-not (Wait-Svc $ServerService 'Stopped')) { throw "$ServerService would not stop" }
+
+Set-Current $target
+
+# Only needed the first time; harmless afterwards, and it keeps the services
+# pointed at the pointer rather than at a version.
+& $Nssm set $ServerService AppDirectory $current | Out-Null
+& $Nssm set $WorkerService AppDirectory $current | Out-Null
+
+# --- 7 and 8. restart, then prove it is actually serving -------------------
+$failure = $null
+& sc.exe start $ServerService | Out-Null
+if (-not (Wait-Svc $ServerService 'Running')) { $failure = "$ServerService would not start" }
+if (-not $failure) {
+  & sc.exe start $WorkerService | Out-Null
+  if (-not (Wait-Svc $WorkerService 'Running')) { $failure = "$WorkerService would not start" }
+}
+
+if (-not $failure) {
+  # Running is not the same as serving. Readiness is, and it is what the deep
+  # storage probe reports through.
+  $ready = $false
+  for ($i = 0; $i -lt 60; $i++) {
+    try {
+      $j = (Invoke-WebRequest -UseBasicParsing -Uri $HealthUrl -TimeoutSec 10).Content | ConvertFrom-Json
+      if ($j.data.ready) { $ready = $true; Write-Output ("HEALTH=" + ($j.data.checks | ConvertTo-Json -Compress)); break }
+    }
+    catch { }
+    Start-Sleep -Seconds 2
+  }
+  if (-not $ready) { $failure = 'service started but never reported ready' }
+}
+
+# --- 9. roll back on failure ----------------------------------------------
+if ($failure) {
+  Write-Output "FAILED=$failure"
+  if ($previous) {
+    & sc.exe stop $WorkerService | Out-Null; Wait-Svc $WorkerService 'Stopped' | Out-Null
+    & sc.exe stop $ServerService | Out-Null; Wait-Svc $ServerService 'Stopped' | Out-Null
+    Set-Current $previous
+    & sc.exe start $ServerService | Out-Null; Wait-Svc $ServerService 'Running' | Out-Null
+    & sc.exe start $WorkerService | Out-Null; Wait-Svc $WorkerService 'Running' | Out-Null
+    Write-Output "ROLLED_BACK_TO=$previous"
+  }
+  else {
+    Write-Output 'NO_PREVIOUS_RELEASE: the services are pointed at the failed release and are not serving'
+  }
+  exit 1
+}
+
+Write-Output "ACTIVE=$Version"
+Write-Output ("CURRENT=" + (Get-CurrentTarget))
+Write-Output 'ACTIVATED'
