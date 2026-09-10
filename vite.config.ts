@@ -106,6 +106,10 @@ export default defineConfig(({ mode }) => {
           ],
         },
         workbox: {
+          // Script registration needs explicit activation; otherwise updated
+          // workers wait indefinitely behind an open streaming tab.
+          skipWaiting: true,
+          clientsClaim: true,
           globPatterns: [
             "index.html",
             "registerSW.js",
