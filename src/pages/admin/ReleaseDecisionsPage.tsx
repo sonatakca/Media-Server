@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
+import { useSearchParams, Link } from "react-router-dom";
 import { Search } from "lucide-react";
 import { setPageTitle } from "../../lib/pageTitle";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -26,16 +27,29 @@ import {
  */
 export function ReleaseDecisionsPage() {
   const { t } = useLanguage();
+  const [params] = useSearchParams();
   const [profiles, setProfiles] = useState<QualityProfile[]>([]);
   const [profileId, setProfileId] = useState("");
-  const [kind, setKind] = useState<"movie" | "tv">("movie");
-  const [title, setTitle] = useState("");
-  const [year, setYear] = useState("");
+  const [kind, setKind] = useState<"movie" | "tv">(
+    params.get("kind") === "series" ? "tv" : "movie",
+  );
+  const [title, setTitle] = useState(params.get("title") ?? "");
+  const [year, setYear] = useState(params.get("year") ?? "");
+  const [season, setSeason] = useState("1");
   const [candidates, setCandidates] = useState<JudgedRelease[] | null>(null);
   const [winnerGuid, setWinnerGuid] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
   const [asked, setAsked] = useState<string[]>([]);
+  const [resultQuery, setResultQuery] = useState("");
+  const searchVersion = useRef(0);
+  const queryKey = JSON.stringify([
+    kind,
+    title.trim(),
+    year.trim(),
+    profileId,
+    season,
+  ]);
 
   useEffect(() => {
     setPageTitle(`${t("admin.decisions.title")} · Seyirlik`, {
@@ -64,15 +78,20 @@ export function ReleaseDecisionsPage() {
   }, []);
 
   const search = useCallback(async () => {
+    const version = ++searchVersion.current;
     setIsSearching(true);
     setFailure(null);
     try {
       const result = await evaluateReleases({
-        kind,
+        kind: kind === "tv" ? "season" : "movie",
+        ...(kind === "tv" ? { season: Number(season) } : {}),
         title: title.trim(),
         ...(year.trim() ? { year: Number(year) } : {}),
         ...(profileId ? { profileId } : {}),
       });
+      if (version !== searchVersion.current) return;
+      setResultQuery(queryKey);
+      setAsked([]);
       setCandidates(result.candidates);
       setWinnerGuid(result.winner?.guid ?? null);
     } catch {
@@ -82,7 +101,7 @@ export function ReleaseDecisionsPage() {
     } finally {
       setIsSearching(false);
     }
-  }, [kind, profileId, title, year]);
+  }, [kind, profileId, title, year, season, queryKey]);
 
   const ask = useCallback(
     async (candidate: JudgedRelease) => {
@@ -93,8 +112,15 @@ export function ReleaseDecisionsPage() {
        */
       await acquireRelease({
         kind: kind === "movie" ? "movie" : "season",
+        ...(kind === "tv" ? { season: Number(season) } : {}),
         title: title.trim(),
         ...(year.trim() ? { year: Number(year) } : {}),
+        ...(params.get("itemId") &&
+        title === params.get("title") &&
+        year === (params.get("year") ?? "") &&
+        kind === (params.get("kind") === "series" ? "tv" : "movie")
+          ? { itemId: params.get("itemId")! }
+          : {}),
         indexerId: candidate.indexerId,
         releaseGuid: candidate.guid,
         releaseTitle: candidate.title,
@@ -104,11 +130,14 @@ export function ReleaseDecisionsPage() {
       });
       setAsked((previous) => [...previous, candidate.guid]);
     },
-    [kind, profileId, title, year],
+    [kind, profileId, title, year, season, params],
   );
 
-  const ordered = candidates ? orderCandidates(candidates, winnerGuid) : [];
-  const counts = candidates ? summarise(candidates) : null;
+  const visibleCandidates = resultQuery === queryKey ? candidates : null;
+  const ordered = visibleCandidates
+    ? orderCandidates(visibleCandidates, winnerGuid)
+    : [];
+  const counts = visibleCandidates ? summarise(visibleCandidates) : null;
 
   return (
     <div className="w-full space-y-6">
@@ -123,8 +152,14 @@ export function ReleaseDecisionsPage() {
         </p>
       </header>
 
+      <Link
+        to="/admin/monitoring"
+        className="inline-block text-sm text-white/70 underline"
+      >
+        {t("wanted.chooseTmdb")}
+      </Link>
       <form
-        className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-5 sm:grid-cols-[1fr_7rem_10rem_auto]"
+        className="grid gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-5 md:grid-cols-2 xl:grid-cols-[minmax(10rem,1fr)_7rem_10rem_auto]"
         onSubmit={(event) => {
           event.preventDefault();
           void search();
@@ -171,7 +206,21 @@ export function ReleaseDecisionsPage() {
           </select>
         </label>
 
-        <div className="flex items-end gap-2">
+        <div className="flex flex-wrap items-end gap-2">
+          {kind === "tv" ? (
+            <label className="flex w-20 flex-col gap-1 text-xs text-white/70">
+              {t("admin.decisions.season")}
+              <input
+                type="number"
+                min="0"
+                max="10000"
+                required
+                value={season}
+                onChange={(event) => setSeason(event.target.value)}
+                className="min-w-0 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-white"
+              />
+            </label>
+          ) : null}
           <select
             aria-label={t("admin.decisions.kindField")}
             value={kind}
@@ -210,7 +259,7 @@ export function ReleaseDecisionsPage() {
         </p>
       ) : null}
 
-      {candidates && candidates.length === 0 ? (
+      {visibleCandidates && visibleCandidates.length === 0 ? (
         <p className="rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-8 text-center text-sm font-semibold text-white/45">
           {t("admin.decisions.noResults")}
         </p>
@@ -248,7 +297,12 @@ export function ReleaseDecisionsPage() {
             </div>
 
             <p className="mt-1 text-xs font-semibold text-white/50">
-              {candidate.quality}
+              {candidate.sizeBytes !== undefined &&
+              Number.isFinite(candidate.sizeBytes) &&
+              candidate.sizeBytes > 0
+                ? `${(candidate.sizeBytes / 1024 ** 3).toFixed(2)} GiB`
+                : t("admin.decisions.sizeUnknown")}{" "}
+              · {candidate.quality}
               {candidate.score !== 0
                 ? ` · ${t("admin.decisions.score")} ${candidate.score > 0 ? "+" : ""}${candidate.score}`
                 : ""}

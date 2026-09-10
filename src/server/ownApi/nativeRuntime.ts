@@ -119,6 +119,7 @@ import { createIndexerRoutes } from "./indexers/indexerRoutes";
 import { createPolicyRepository } from "./releases/policyRepository";
 import { createReleaseRoutes } from "./releases/releaseRoutes";
 import { createMonitoringRepository } from "./releases/monitoringRepository";
+import { createWantedRoutes } from "./catalogue/wantedRoutes";
 import { createMonitoringRoutes } from "./releases/monitoringRoutes";
 import { parseSabnzbdConfig } from "./acquisition/acquisitionConfig";
 import { createSabnzbdClient } from "./acquisition/sabnzbd";
@@ -1266,6 +1267,7 @@ export async function createNativeRuntime({
       policies: createPolicyRepository(pool),
     }),
     ...createMonitoringRoutes(createMonitoringRepository(pool)),
+    ...createWantedRoutes(pool, tmdb),
     ...(acquisition
       ? createAcquisitionRoutes({
           repository: acquisition.repository,

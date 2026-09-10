@@ -1,3 +1,7 @@
+import {
+  dismissAllNotifications,
+  clearNotificationHistory,
+} from "./notifications/notificationStore";
 /**
  * Browser-side session state.
  *
@@ -79,6 +83,8 @@ export function setAuthSession(session: {
 }
 
 export function clearAuthSession(): void {
+  dismissAllNotifications();
+  clearNotificationHistory();
   clearCachedSession();
 }
 

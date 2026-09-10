@@ -29,9 +29,16 @@ export interface TaskNotification {
   titleKey: TranslationKey;
   progress?: number;
   task: TaskDetail;
-  life: "long" | "persistent";
+  life: "short" | "long" | "persistent";
 }
 const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
+  "acquisition.submit": "tasks.acquisitionSubmit",
+  "acquisition.reconcile": "tasks.acquisitionReconcile",
+  "import.run": "tasks.importRun",
+  "import.reconcile": "tasks.importReconcile",
+  "subtitle.run": "tasks.subtitleRun",
+  "subtitle.reconcile": "tasks.subtitleReconcile",
+  "subtitle.auth-resume": "tasks.subtitleResume",
   "library.scan": "tasks.libraryScan",
   "library.organize": "tasks.libraryOrganize",
   "library.rename": "tasks.libraryRename",
@@ -346,7 +353,9 @@ export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
     life:
       active || status === "failed" || status === "waiting-for-storage"
         ? "persistent"
-        : "long",
+        : task.type.endsWith(".reconcile")
+          ? "short"
+          : "long",
   };
 }
 export function selectChangedTasks(

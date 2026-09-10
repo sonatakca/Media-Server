@@ -1,3 +1,4 @@
+import { mediaAvailableSql } from "./mediaAvailability";
 import type { DatabasePool } from "../database/databasePool";
 
 /**
@@ -72,7 +73,7 @@ export function createHomeRepository(pool: DatabasePool): HomeRepository {
            JOIN items item
              ON item.series_id = last_watched.series_id
             AND item.kind = 'episode'
-            AND item.missing_since IS NULL
+            AND ${mediaAvailableSql()}
             -- Specials are never offered as the next episode.
             AND COALESCE(item.parent_index_number, 0) > 0
             AND (COALESCE(item.parent_index_number, 0), COALESCE(item.index_number, 0))
@@ -106,7 +107,7 @@ export function createHomeRepository(pool: DatabasePool): HomeRepository {
         `SELECT item.id
          FROM items item
          WHERE item.kind IN ('movie', 'series', 'book')
-           AND item.missing_since IS NULL
+           AND ${mediaAvailableSql()}
            ${libraryFilter}
            AND ${VISIBLE_TO_VIEWER}
          ORDER BY item.date_created DESC, item.id DESC
@@ -128,7 +129,7 @@ export function createHomeRepository(pool: DatabasePool): HomeRepository {
              ) AS position
            FROM items item
            WHERE item.kind IN ('movie', 'series', 'book')
-             AND item.missing_since IS NULL
+             AND ${mediaAvailableSql()}
              AND ${VISIBLE_TO_VIEWER}
          ) ranked
          WHERE position <= $2
@@ -153,7 +154,7 @@ export function createHomeRepository(pool: DatabasePool): HomeRepository {
            ON state.user_id = $1 AND state.item_id = item.id
          WHERE item.series_id = $2
            AND item.kind = 'episode'
-           AND item.missing_since IS NULL
+           AND ${mediaAvailableSql()}
            AND COALESCE(item.parent_index_number, 0) > 0
            AND COALESCE(state.played, false) = false
            AND ${VISIBLE_TO_VIEWER}
@@ -178,7 +179,7 @@ export function createHomeRepository(pool: DatabasePool): HomeRepository {
          FROM items item
          JOIN current ON current.series_id = item.series_id
          WHERE item.kind = 'episode'
-           AND item.missing_since IS NULL
+           AND ${mediaAvailableSql()}
            AND COALESCE(item.parent_index_number, 0) > 0
            AND (COALESCE(item.parent_index_number, 0), COALESCE(item.index_number, 0))
                > (current.season_number, current.episode_number)

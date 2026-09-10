@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { KeyRound, RefreshCw } from "lucide-react";
 import { setPageTitle } from "../../lib/pageTitle";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -32,6 +33,7 @@ export function SubtitlesPage() {
   const [attempts, setAttempts] = useState<SubtitleAttempt[] | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
+  const [unconfigured, setUnconfigured] = useState(false);
   const [resumeFailed, setResumeFailed] = useState<string | null>(null);
 
   useEffect(() => {
@@ -44,10 +46,12 @@ export function SubtitlesPage() {
   const load = useCallback(async () => {
     setIsLoading(true);
     setFailure(null);
+    setUnconfigured(false);
     try {
       setAttempts(await listSubtitleAttempts());
-    } catch {
-      setFailure("admin.subtitles.loadFailed");
+    } catch (error) {
+      if ((error as { status?: number }).status === 404) setUnconfigured(true);
+      else setFailure("admin.subtitles.loadFailed");
     } finally {
       setIsLoading(false);
     }
@@ -60,8 +64,12 @@ export function SubtitlesPage() {
       try {
         const rows = await listSubtitleAttempts();
         if (!isCancelled) setAttempts(rows);
-      } catch {
-        if (!isCancelled) setFailure("admin.subtitles.loadFailed");
+      } catch (error) {
+        if (!isCancelled) {
+          if ((error as { status?: number }).status === 404)
+            setUnconfigured(true);
+          else setFailure("admin.subtitles.loadFailed");
+        }
       } finally {
         if (!isCancelled) setIsLoading(false);
       }
@@ -125,6 +133,18 @@ export function SubtitlesPage() {
         <p className="rounded-2xl border border-amber-400/30 bg-amber-400/10 px-4 py-3 text-sm font-bold text-amber-200">
           {t("admin.subtitles.waitingBanner")} ({waiting})
         </p>
+      ) : null}
+
+      {unconfigured ? (
+        <section className="max-w-2xl rounded-2xl border border-white/10 p-5 text-white/70">
+          <p>{t("admin.subtitles.unconfigured")}</p>
+          <Link
+            className="mt-3 inline-block underline"
+            to="/admin/integrations"
+          >
+            {t("admin.integrations.title")}
+          </Link>
+        </section>
       ) : null}
 
       {failure ? (

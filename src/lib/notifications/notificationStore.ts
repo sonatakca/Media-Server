@@ -43,6 +43,8 @@ export interface SeyirlikNotification {
   task?: TaskDetail;
   life: NotificationLife;
   createdAt: number;
+  firstShownAt?: number;
+  updatedAt?: number;
 }
 
 export interface NotifyInput {
@@ -58,11 +60,15 @@ export interface NotifyInput {
    * near-identical cards behind it.
    */
   key?: string;
+  /** Update a retained history entry without raising another toast. */
+  historyOnly?: boolean;
 }
 
 type Listener = () => void;
 
 let notifications: SeyirlikNotification[] = [];
+let history: SeyirlikNotification[] = [];
+const MAX_HISTORY = 100;
 const keyed = new Map<string, string>();
 const listeners = new Set<Listener>();
 
@@ -83,6 +89,30 @@ export function getNotifications(): SeyirlikNotification[] {
   return notifications;
 }
 
+export function getNotificationHistory(): SeyirlikNotification[] {
+  return history;
+}
+
+export function clearNotificationHistory(): void {
+  history = [];
+  keyed.clear();
+  emit();
+}
+
+function retain(entry: SeyirlikNotification): void {
+  history = [entry, ...history.filter((item) => item.id !== entry.id)].slice(
+    0,
+    MAX_HISTORY,
+  );
+  for (const [key, id] of keyed) {
+    if (
+      !history.some((item) => item.id === id) &&
+      !notifications.some((item) => item.id === id)
+    )
+      keyed.delete(key);
+  }
+}
+
 function defaultLife(tone: NotificationTone): NotificationLife {
   // Progress has no natural end until the work does, and an error is the one
   // thing a viewer should never miss because they blinked.
@@ -92,10 +122,17 @@ function defaultLife(tone: NotificationTone): NotificationLife {
 
 export function notify(input: NotifyInput): string {
   const tone = input.tone ?? "info";
-  const existingId = input.key ? keyed.get(input.key) : undefined;
+  const key =
+    input.key ?? `message:${tone}:${input.title}:${input.description ?? ""}`;
+  const existingId = keyed.get(key);
+  const existing = history.find((entry) => entry.id === existingId);
 
-  if (existingId && notifications.some((entry) => entry.id === existingId)) {
-    const existing = notifications.find((entry) => entry.id === existingId)!;
+  if (existingId && existing) {
+    if (
+      !input.historyOnly &&
+      !notifications.some((entry) => entry.id === existingId)
+    )
+      notifications = [existing, ...notifications].slice(0, MAX_NOTIFICATIONS);
     const sameAttempt =
       input.task &&
       existing.task?.attempts === input.task.attempts &&
@@ -108,6 +145,7 @@ export function notify(input: NotifyInput): string {
         ? Math.max(existing.progress, input.progress)
         : input.progress;
     updateNotification(existingId, {
+      updatedAt: Date.now(),
       tone,
       title: input.title,
       // Cleared rather than kept: replacing a card is saying something new, and
@@ -134,13 +172,17 @@ export function notify(input: NotifyInput): string {
     task: input.task,
     life: input.life ?? defaultLife(tone),
     createdAt: Date.now(),
+    firstShownAt: Date.now(),
+    updatedAt: Date.now(),
   };
 
-  notifications = [notification, ...notifications].slice(0, MAX_NOTIFICATIONS);
-  for (const [key, id] of keyed) {
-    if (!notifications.some((entry) => entry.id === id)) keyed.delete(key);
-  }
-  if (input.key) keyed.set(input.key, notification.id);
+  if (!input.historyOnly)
+    notifications = [notification, ...notifications].slice(
+      0,
+      MAX_NOTIFICATIONS,
+    );
+  retain(notification);
+  keyed.set(key, notification.id);
   emit();
   return notification.id;
 }
@@ -155,28 +197,30 @@ export function updateNotification(
     changed = true;
     return { ...entry, ...patch };
   });
+  const previous = history.find((entry) => entry.id === id);
+  if (previous) {
+    retain({ ...previous, ...patch });
+    changed = true;
+  }
   if (changed) emit();
 }
 
 export function dismissNotification(id: string): void {
   const before = notifications.length;
   notifications = notifications.filter((entry) => entry.id !== id);
-  for (const [key, value] of keyed) {
-    if (value === id) keyed.delete(key);
-  }
   if (notifications.length !== before) emit();
 }
 
 export function dismissAllNotifications(): void {
   if (notifications.length === 0) return;
   notifications = [];
-  keyed.clear();
   emit();
 }
 
 /** Test seam; production code never needs to reset the store. */
 export function resetNotificationsForTests(): void {
   notifications = [];
+  history = [];
   keyed.clear();
   listeners.clear();
 }

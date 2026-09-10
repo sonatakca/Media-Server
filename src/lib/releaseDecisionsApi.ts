@@ -15,7 +15,8 @@ export interface QualityProfile {
 }
 
 export interface EvaluateQuery {
-  readonly kind: "movie" | "tv";
+  readonly kind: "movie" | "season";
+  readonly season?: number;
   readonly title: string;
   readonly year?: number;
   readonly profileId?: string;
@@ -44,9 +45,11 @@ export function evaluateReleases(
 }
 
 export interface AcquireRequest {
+  readonly itemId?: string;
   readonly kind: "movie" | "season" | "episode";
   readonly title: string;
   readonly year?: number;
+  readonly season?: number;
   readonly indexerId: string;
   readonly releaseGuid: string;
   readonly releaseTitle: string;

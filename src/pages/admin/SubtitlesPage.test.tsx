@@ -153,3 +153,10 @@ describe("the subtitles page", () => {
     expect(await screen.findByText("admin.subtitles.empty")).toBeTruthy();
   });
 });
+
+it("explains disabled subtitle routes instead of reporting a load failure", async () => {
+  api.listSubtitleAttempts.mockRejectedValue({ status: 404 });
+  renderPage();
+  expect(await screen.findByText("admin.subtitles.unconfigured")).toBeTruthy();
+  expect(screen.queryByText("admin.subtitles.loadFailed")).toBeNull();
+});

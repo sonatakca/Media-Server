@@ -1,3 +1,4 @@
+import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
 import { useEffect, useRef, useState } from "react";
 import { LogOut, Palette, Search, ShieldCheck, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
@@ -211,6 +212,7 @@ export function DesktopNavbar() {
 
           <LanguageSwitch />
 
+          <NotificationHistoryButton />
           <Tooltip content={t("nav.changeTheme")}>
             <button
               type="button"

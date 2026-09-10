@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { setPageTitle } from "../../lib/pageTitle";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { WantedCatalogue } from "../../components/admin/WantedCatalogue";
 import { WorkflowSteps } from "../../components/admin/WorkflowSteps";
 import {
   getMonitoring,
@@ -79,6 +80,8 @@ export function MonitoringPage() {
           {t("admin.monitoring.description")}
         </p>
       </header>
+
+      <WantedCatalogue />
 
       {failure ? (
         <p

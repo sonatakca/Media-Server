@@ -1,3 +1,4 @@
+import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
 import { useEffect, useState } from "react";
 import {
   Book,
@@ -117,14 +118,14 @@ export function MobileNavbar() {
         <Link
           to="/home"
           aria-label={t("nav.brandHome")}
-          className="flex h-10 items-center"
+          className="flex h-10 min-w-0 flex-1 items-center pr-2"
         >
           {!logoFailed ? (
             <img
               src={logoOnSide}
               alt="Seyirlik"
               draggable={false}
-              className="h-12 w-auto max-w-40 object-contain object-left"
+              className="max-h-12 w-full max-w-40 object-contain object-left"
               onError={() => setLogoFailed(true)}
             />
           ) : (
@@ -134,7 +135,7 @@ export function MobileNavbar() {
           )}
         </Link>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-1">
           <Tooltip content={t("search.open")}>
             <button
               type="button"
@@ -146,6 +147,7 @@ export function MobileNavbar() {
             </button>
           </Tooltip>
           <LanguageSwitch />
+          <NotificationHistoryButton />
           <Tooltip content={t("nav.changeTheme")}>
             <button
               type="button"

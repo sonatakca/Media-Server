@@ -74,6 +74,7 @@ export function TaskDetails({
   const reported = task.metrics?.filter(({ value }) => value > 0) ?? [];
   return (
     <div className="mt-1 space-y-1 text-xs leading-5 text-white/80">
+      {notification.description ? <p>{notification.description}</p> : null}
       {/* The kind of work, which the card's own line gives up to the title of
           whatever the work is about. */}
       {task.titleKey && task.subject ? (

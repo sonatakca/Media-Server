@@ -5,6 +5,18 @@ import type {
 
 /** Deliberately bounded presentation vocabulary shared by the API and UI. */
 export const TASK_METRICS = {
+  "acquisition.submit": [],
+  "acquisition.reconcile": [
+    "examined",
+    "changed",
+    "retried",
+    "awaitingAlternative",
+  ],
+  "import.run": [],
+  "import.reconcile": ["examined", "committed", "retried", "needsAttention"],
+  "subtitle.run": [],
+  "subtitle.reconcile": ["examined"],
+  "subtitle.auth-resume": [],
   "library.scan": [
     "itemsCreated",
     "itemsUpdated",

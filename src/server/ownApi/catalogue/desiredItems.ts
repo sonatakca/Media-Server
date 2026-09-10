@@ -112,7 +112,7 @@ const SELECT = `SELECT i.id, i.source_key, i.title, i.kind, i.desired,
   FROM items i`;
 
 export function createDesiredItemRepository(
-  pool: DatabasePool,
+  pool: Pick<DatabasePool, "query">,
 ): DesiredItemRepository {
   return {
     async desire(input) {

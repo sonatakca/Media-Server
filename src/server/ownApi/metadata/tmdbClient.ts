@@ -78,7 +78,26 @@ export interface TmdbArtworkCandidate {
   voteCount: number;
 }
 
+export interface TmdbCatalogueTitle {
+  providerId: string;
+  kind: "movie" | "series";
+  title: string;
+  year?: number;
+  overview?: string;
+  posterUrl?: string;
+}
+export interface TmdbCataloguePage {
+  items: TmdbCatalogueTitle[];
+  page: number;
+  totalPages: number;
+}
+
 export interface TmdbClient {
+  catalogue?(
+    kind: "movie" | "tv",
+    query: string,
+    page: number,
+  ): Promise<TmdbCataloguePage>;
   searchMovies(title: string, year?: number): Promise<MatchCandidate[]>;
   searchSeries(title: string, year?: number): Promise<MatchCandidate[]>;
   getMovie(providerId: string, language?: string): Promise<TmdbTitleDetails>;
@@ -117,6 +136,7 @@ interface TmdbImagesResponse {
 }
 
 interface TmdbSearchResponse {
+  total_pages?: number;
   results?: Array<{
     id: number;
     title?: string;
@@ -126,6 +146,8 @@ interface TmdbSearchResponse {
     release_date?: string;
     first_air_date?: string;
     popularity?: number;
+    overview?: string;
+    poster_path?: string;
   }>;
 }
 
@@ -440,6 +462,30 @@ export function createTmdbClient({
   }
 
   return {
+    catalogue: async (kind, query, page) => {
+      const response = await request<TmdbSearchResponse>(
+        query ? `/search/${kind}` : `/${kind}/popular`,
+        { page: String(page), ...(query ? { query } : {}) },
+      );
+      return {
+        page,
+        totalPages: Math.min(500, response.total_pages ?? 1),
+        items: (response.results ?? []).map((row) => ({
+          providerId: String(row.id),
+          kind: kind === "movie" ? "movie" : "series",
+          title: (kind === "movie" ? row.title : row.name) ?? "",
+          year: yearFromDate(
+            kind === "movie" ? row.release_date : row.first_air_date,
+          ),
+          overview: row.overview,
+          posterUrl:
+            row.poster_path &&
+            /^\/[a-zA-Z0-9_-]+\.(jpg|png|webp)$/.test(row.poster_path)
+              ? `${TMDB_IMAGE_BASE_URL}/w185${row.poster_path}`
+              : undefined,
+        })),
+      };
+    },
     searchMovies: async (title, year) =>
       toCandidates(
         await request<TmdbSearchResponse>("/search/movie", {

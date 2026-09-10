@@ -86,8 +86,24 @@ export interface SeriesSummary {
 }
 
 export async function listSeries(): Promise<SeriesSummary[]> {
-  const data = await ownApiClient.request<
-    { Items?: SeriesSummary[] } | SeriesSummary[]
-  >("/series?limit=200");
-  return Array.isArray(data) ? data : (data.Items ?? []);
+  const rows: SeriesSummary[] = [];
+  let cursor: string | undefined;
+  do {
+    const query = new URLSearchParams({ limit: "200" });
+    if (cursor) query.set("cursor", cursor);
+    const page = await ownApiClient.requestCollection<{
+      id: string;
+      title: string;
+      productionYear?: number;
+    }>(`/series?${query}`);
+    rows.push(
+      ...page.data.map((item) => ({
+        Id: item.id,
+        Name: item.title,
+        ProductionYear: item.productionYear,
+      })),
+    );
+    cursor = page.pagination.nextCursor ?? undefined;
+  } while (cursor);
+  return rows;
 }

@@ -32,6 +32,13 @@ export type TaskFamily = "discovery" | "description" | "encoding" | "export";
  * until it is placed.
  */
 export const TASK_FAMILIES: Record<TaskType, TaskFamily> = {
+  "acquisition.submit": "discovery",
+  "acquisition.reconcile": "discovery",
+  "import.run": "export",
+  "import.reconcile": "export",
+  "subtitle.run": "description",
+  "subtitle.reconcile": "description",
+  "subtitle.auth-resume": "description",
   // Finding out what is on the disk at all.
   "library.scan": "discovery",
   "library.maintenance": "discovery",

@@ -197,3 +197,38 @@ describe("the release decision page", () => {
     expect(await screen.findByText("admin.decisions.noResults")).toBeTruthy();
   });
 });
+
+it("searches and acquires Arcane as a season, with the same season number", async () => {
+  renderPage();
+  fireEvent.change(screen.getByLabelText("admin.decisions.kindField"), {
+    target: { value: "tv" },
+  });
+  fireEvent.change(screen.getByLabelText("admin.decisions.season"), {
+    target: { value: "2" },
+  });
+  await searchFor("Arcane");
+  await waitFor(() =>
+    expect(api.evaluateReleases).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "season", season: 2, title: "Arcane" }),
+    ),
+  );
+  fireEvent.click(await screen.findByText("admin.decisions.acquire"));
+  await waitFor(() =>
+    expect(api.acquireRelease).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "season", season: 2, title: "Arcane" }),
+    ),
+  );
+});
+it("shows release sizes and withdraws old results when the title changes", async () => {
+  api.evaluateReleases.mockResolvedValue({
+    candidates: [release({ sizeBytes: 10 * 1024 ** 3 })],
+    winner: release(),
+  });
+  renderPage();
+  await searchFor("Fight Club");
+  expect(await screen.findByText(/10.00 GiB/)).toBeTruthy();
+  fireEvent.change(screen.getByLabelText("admin.decisions.titleField"), {
+    target: { value: "Arcane" },
+  });
+  expect(screen.queryByText("admin.decisions.acquire")).toBeNull();
+});

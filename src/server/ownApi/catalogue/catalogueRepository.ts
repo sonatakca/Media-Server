@@ -1,3 +1,4 @@
+import { mediaAvailableSql } from "./mediaAvailability";
 import type { DatabasePool } from "../database/databasePool";
 import type { SearchCandidate } from "./searchRanking";
 
@@ -483,7 +484,7 @@ export function createCatalogueRepository(
              FROM items counted
              WHERE counted.library_id = library.id
                AND counted.kind IN ('movie', 'series', 'book')
-               AND counted.missing_since IS NULL
+               AND ${mediaAvailableSql("counted")}
            ) AS item_count
          FROM libraries library
          JOIN native_users viewer ON viewer.id = $1
@@ -525,7 +526,7 @@ export function createCatalogueRepository(
              SELECT count(*) FROM items counted
              WHERE counted.library_id = library.id
                AND counted.kind IN ('movie', 'series', 'book')
-               AND counted.missing_since IS NULL
+               AND ${mediaAvailableSql("counted")}
            ) AS item_count
          FROM libraries library
          JOIN native_users viewer ON viewer.id = $1
@@ -567,7 +568,7 @@ export function createCatalogueRepository(
     getItemsByIds: async (userId, itemIds) => {
       if (itemIds.length === 0) return [];
       return selectItems(
-        `item.id = ANY($2) AND ${LIBRARY_VISIBILITY_PREDICATE}`,
+        `item.id = ANY($2) AND ${mediaAvailableSql()} AND ${LIBRARY_VISIBILITY_PREDICATE}`,
         [userId, itemIds],
         "item.sort_title",
       );
@@ -600,7 +601,7 @@ export function createCatalogueRepository(
       const values: unknown[] = [userId];
       const conditions = [LIBRARY_VISIBILITY_PREDICATE];
 
-      if (!includeMissing) conditions.push("item.missing_since IS NULL");
+      if (!includeMissing) conditions.push(mediaAvailableSql());
       if (libraryId) {
         values.push(libraryId);
         conditions.push(`item.library_id = $${values.length}`);
@@ -651,14 +652,14 @@ export function createCatalogueRepository(
 
     listChildren: async (userId, parentId, kind) =>
       selectItems(
-        `item.parent_id = $2 AND item.kind = $3 AND item.missing_since IS NULL AND ${LIBRARY_VISIBILITY_PREDICATE}`,
+        `item.parent_id = $2 AND item.kind = $3 AND ${mediaAvailableSql()} AND ${LIBRARY_VISIBILITY_PREDICATE}`,
         [userId, parentId, kind],
         "COALESCE(item.index_number, 0), item.sort_title",
       ),
 
     listSeriesEpisodes: async (userId, seriesId) =>
       selectItems(
-        `item.series_id = $2 AND item.kind = 'episode' AND item.missing_since IS NULL AND ${LIBRARY_VISIBILITY_PREDICATE}`,
+        `item.series_id = $2 AND item.kind = 'episode' AND ${mediaAvailableSql()} AND ${LIBRARY_VISIBILITY_PREDICATE}`,
         [userId, seriesId],
         "COALESCE(item.parent_index_number, 0), COALESCE(item.index_number, 0)",
       ),
@@ -667,7 +668,7 @@ export function createCatalogueRepository(
       const pattern = `%${searchQuery.toLowerCase().replace(/[%_\\]/g, "\\$&")}%`;
       return selectItems(
         `item.kind IN ('movie', 'series', 'episode', 'book')
-         AND item.missing_since IS NULL
+         AND ${mediaAvailableSql()}
          AND (lower(item.title) LIKE $2 ESCAPE '\\' OR lower(COALESCE(item.original_title, '')) LIKE $2 ESCAPE '\\')
          AND ${LIBRARY_VISIBILITY_PREDICATE}`,
         [userId, pattern],
@@ -690,7 +691,7 @@ export function createCatalogueRepository(
          FROM items item
          LEFT JOIN items series ON series.id = item.series_id
          WHERE item.kind IN ('movie', 'series', 'episode', 'book')
-           AND item.missing_since IS NULL
+           AND ${mediaAvailableSql()}
            AND ${LIBRARY_VISIBILITY_PREDICATE}
          ORDER BY item.sort_title
          LIMIT ${Math.trunc(limit)}`,
@@ -834,7 +835,7 @@ export function createCatalogueRepository(
          FROM item_genres item_genre
          JOIN genres genre ON genre.id = item_genre.genre_id
          JOIN items item ON item.id = item_genre.item_id
-         WHERE item.missing_since IS NULL
+         WHERE ${mediaAvailableSql()}
            AND item.kind IN ('movie', 'series', 'book')
            ${libraryFilter}
            AND ${LIBRARY_VISIBILITY_PREDICATE}

@@ -1,4 +1,79 @@
 export const tr = {
+  "wanted.addMovie": "Film ekle",
+  "wanted.addShow": "Dizi ekle",
+  "wanted.unmonitor": "İzlemeyi durdur",
+  "wanted.allStatuses": "Tüm durumlar",
+  "media.statusFilter": "Durum",
+  "media.status.wanted": "İstenen",
+  "media.status.downloading": "İndiriliyor",
+  "media.status.downloaded": "İndirildi",
+  "media.status.ready": "Oynatmaya hazır",
+  "media.status.missing": "Medya yok",
+  "media.status.processing": "İşleniyor",
+  "media.status.paused": "Duraklatıldı",
+  "media.status.awaiting-import": "İndirildi · içe aktarma bekliyor",
+
+  "notifications.history": "Bildirim geçmişi",
+  "notifications.historyEmpty": "Henüz bildirim yok.",
+  "notifications.historyNote":
+    "Bu oturumdaki son etkinlikler. Tekrarlanan güncellemeler bir kez gösterilir.",
+  "notifications.firstShown": "İlk gösterim",
+  "notifications.updated": "Güncelleme",
+  "tasks.acquisitionSubmit": "İndirme başlatılıyor",
+  "tasks.acquisitionReconcile": "İndirmeler kontrol ediliyor",
+  "tasks.importRun": "Medya içe aktarılıyor",
+  "tasks.importReconcile": "İçe aktarmalar kontrol ediliyor",
+  "tasks.subtitleRun": "Altyazılar aranıyor ve yükleniyor",
+  "tasks.subtitleReconcile": "Altyazı denemeleri kontrol ediliyor",
+  "tasks.subtitleResume": "Altyazı indirmesi sürdürülüyor",
+  "tasks.downloadCheckDetail":
+    "SABnzbd ilerlemesi kontrol edilip indirme sonuçları güncelleniyor.",
+  "tasks.importCheckDetail":
+    "Bekleyen içe aktarmalar ve müdahale gereksinimleri kontrol ediliyor.",
+  "tasks.subtitleDetail":
+    "İstenen altyazı dilleri ve sağlayıcı denemeleri kontrol ediliyor.",
+  "tasks.examined": "Kontrol edilen",
+  "tasks.changed": "Güncellenen",
+  "tasks.retried": "Yeniden deneme planlanan",
+  "tasks.awaitingAlternative": "Başka sürüm gereken",
+  "tasks.committed": "İçe aktarılan",
+  "tasks.needsAttention": "Müdahale gereken",
+
+  "wanted.catalogue": "Film ve dizi bul",
+  "wanted.description":
+    "Popüler yapımlara göz atın veya kütüphanenizde olmayan yapımlar dahil TMDB kataloğunda arayın.",
+  "wanted.searchLabel": "TMDB’de ara",
+  "wanted.all": "Filmler ve diziler",
+  "wanted.movies": "Film",
+  "wanted.shows": "Dizi",
+  "wanted.library": "Kütüphane",
+  "wanted.saveFailed":
+    "İstenen yapımlar kaydedilemedi veya yüklenemedi. Tekrar deneyin.",
+  "wanted.loadFailed":
+    "TMDB yüklenemedi. Entegrasyonları kontrol edip tekrar deneyin.",
+  "wanted.loading": "TMDB yükleniyor…",
+  "wanted.saved": "İstenenlere eklendi",
+  "wanted.saving": "Ekleniyor…",
+  "wanted.add": "İstenenlere ekle",
+  "wanted.releases": "Sürümleri ara",
+  "wanted.noLibrary": "Bu tür için hedef kütüphane yapılandırılmamış.",
+  "wanted.noResults": "Eşleşen TMDB yapımı yok. Başka bir ad deneyin.",
+  "wanted.previous": "Önceki",
+  "wanted.next": "Sonraki",
+  "wanted.attribution":
+    "Meta veriler TMDB tarafından sağlanır. Bu ürün TMDB API’sini kullanır ancak TMDB tarafından onaylanmış veya sertifikalandırılmış değildir.",
+  "wanted.list": "Kütüphaneyi yönet",
+  "wanted.intentOnly":
+    "Yapım eklemek isteğinizi kaydeder. İndirmeyi başlatmak için bir sürüm seçin.",
+  "wanted.available": "Medya mevcut",
+  "wanted.missing": "İndirilmedi",
+
+  "admin.subtitles.unconfigured":
+    "Bu sunucuda otomatik altyazı indirme yapılandırılmamış. Yüklenecek etkin sağlayıcı denemesi yok. Mevcut altyazılar oynatmada kullanılabilir.",
+  "admin.decisions.season": "Sezon",
+  "admin.decisions.sizeUnknown": "Boyut bilgisi yok",
+  "wanted.chooseTmdb": "TMDB’den bir film veya dizi seç",
+
   "nav.home": "Ana Sayfa",
   "nav.brandHome": "Seyirlik ana sayfa",
   "nav.movies": "Filmler",
@@ -621,6 +696,8 @@ export const tr = {
   "processing.state.queued": "Sırada",
   "processing.state.running": "Çalışıyor",
   "processing.state.paused": "Duraklatıldı",
+  "processing.state.pausing": "Duraklatılıyor…",
+  "processing.state.resuming": "Devam ettiriliyor…",
   "processing.state.succeeded": "Tamamlandı",
   "processing.state.failed": "Başarısız",
   "processing.state.cancelled": "İptal edildi",

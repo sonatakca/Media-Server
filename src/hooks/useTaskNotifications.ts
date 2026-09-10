@@ -144,15 +144,28 @@ export function useTaskNotifications(enabled: boolean): void {
           if (!described) continue;
 
           const previousCard = cardsRef.current.get(task.id);
-          if (
-            previousCard &&
-            !getNotifications().some((card) => card.id === previousCard)
-          )
-            continue;
+          const dismissed =
+            !!previousCard &&
+            !getNotifications().some((card) => card.id === previousCard);
           const cardId = notify({
-            key: described.key,
+            key: task.type.endsWith(".reconcile")
+              ? `routine:${task.type}`
+              : described.key,
+            historyOnly:
+              dismissed ||
+              (task.type.endsWith(".reconcile") &&
+                described.tone === "success" &&
+                !described.task.metrics?.some((metric) => metric.value > 0)),
             tone: described.tone,
             title: t(described.titleKey),
+            description:
+              task.type === "acquisition.reconcile"
+                ? t("tasks.downloadCheckDetail")
+                : task.type === "import.reconcile"
+                  ? t("tasks.importCheckDetail")
+                  : task.type.startsWith("subtitle.")
+                    ? t("tasks.subtitleDetail")
+                    : undefined,
             task: described.task,
             progress: described.progress,
             life: described.life,
