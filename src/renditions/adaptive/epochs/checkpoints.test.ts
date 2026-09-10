@@ -110,6 +110,72 @@ async function completeEpoch(index: number): Promise<string> {
   return target;
 }
 
+/**
+ * An epoch carrying an explicit encoder configuration and completion time.
+ *
+ * `manifestFor` deliberately writes no join key — that is the shape of a
+ * checkpoint from before joinability was recorded, and the cases below need
+ * both shapes.
+ */
+async function completeEpochWithConfig(
+  index: number,
+  configDigest: string,
+  completedAt: string,
+  extraRendition?: { id: string; configDigest: string },
+): Promise<string> {
+  const base = manifestFor(index);
+  const first = base.renditions[0]!;
+  const manifest: EpochCheckpointManifest = {
+    ...base,
+    completedAt,
+    renditions: [
+      {
+        ...first,
+        joinKey: {
+          mediaTimescale: 24000,
+          sampleFormat: "avc1",
+          width: first.width,
+          height: first.height,
+          configDigest,
+        },
+      },
+      ...(extraRendition
+        ? [
+            {
+              ...first,
+              id: extraRendition.id,
+              mediaPath: `video/${extraRendition.id}/media.m4s`,
+              playlistPath: `video/${extraRendition.id}/playlist.m3u8`,
+              joinKey: {
+                mediaTimescale: 24000,
+                sampleFormat: "avc1",
+                width: first.width,
+                height: first.height,
+                configDigest: extraRendition.configDigest,
+              },
+            },
+          ]
+        : []),
+    ],
+  };
+  const handle = await beginPartialEpoch({ root, index });
+  await writeEpochMedia(handle.directory);
+  if (extraRendition) {
+    await mkdir(path.join(handle.directory, "video", extraRendition.id), {
+      recursive: true,
+    });
+    await writeFile(
+      path.join(handle.directory, "video", extraRendition.id, "media.m4s"),
+      "media",
+    );
+    await writeFile(
+      path.join(handle.directory, "video", extraRendition.id, "playlist.m3u8"),
+      "#EXTM3U",
+    );
+  }
+  return handle.promote(manifest);
+}
+
 beforeEach(async () => {
   root = await mkdtemp(path.join(tmpdir(), "seyirlik-checkpoints-"));
 });
@@ -507,5 +573,133 @@ describe("manifest durability", () => {
     const target = await handle.promote(manifestFor(0));
     const raw = await readFile(path.join(target, EPOCH_MANIFEST_FILE), "utf8");
     expect(JSON.parse(raw).epochIndex).toBe(0);
+  });
+});
+
+/**
+ * The trap that cost a twenty-two epoch title its whole assembly.
+ *
+ * A checkpointed encode assumes the encoder's configuration holds for the life
+ * of the job, and nothing enforced it. A QSV preset change was deployed at
+ * 02:57 between epoch 2 and epoch 3; the new parameter sets gave epochs 3-21 a
+ * different `configDigest` from epochs 0-2. Every epoch encoded fine. Two hours
+ * later the assembler compared them for the first time, said "epoch 3 wrote
+ * 1440p with a different decoder configuration from the reference", and the job
+ * failed — four times over, once per remaining attempt.
+ *
+ * The comparison belongs here instead, where the manifests already hold the
+ * answer and nothing has been re-encoded yet.
+ */
+describe("checkpoints an encoder change has left behind", () => {
+  const OLD = "aaaa1111";
+  const NEW = "bbbb2222";
+
+  it("keeps every epoch while they all agree", async () => {
+    await completeEpochWithConfig(0, OLD, "2026-09-10T00:00:00.000Z");
+    await completeEpochWithConfig(1, OLD, "2026-09-10T00:10:00.000Z");
+
+    const outcome = await reconcileCheckpoints({
+      root,
+      plan: plan(),
+      identity: IDENTITY,
+      requiredRenditionIds: ["360p"],
+    });
+
+    expect(outcome.complete).toEqual([0, 1]);
+    expect(outcome.invalidated).toEqual([]);
+  });
+
+  it("drops the epochs from the older configuration and schedules them again", async () => {
+    await completeEpochWithConfig(0, OLD, "2026-09-09T23:49:44.544Z");
+    await completeEpochWithConfig(1, OLD, "2026-09-10T00:14:20.937Z");
+    await completeEpochWithConfig(2, NEW, "2026-09-10T02:03:02.998Z");
+    await completeEpochWithConfig(3, NEW, "2026-09-10T02:08:00.435Z");
+
+    const outcome = await reconcileCheckpoints({
+      root,
+      plan: plan(),
+      identity: IDENTITY,
+      requiredRenditionIds: ["360p"],
+    });
+
+    expect(outcome.complete).toEqual([2, 3]);
+    expect(outcome.pending).toEqual([0, 1]);
+    expect(outcome.invalidated).toEqual([
+      { index: 0, reason: "encoder-config-changed" },
+      { index: 1, reason: "encoder-config-changed" },
+    ]);
+    // Removed from disk, not merely un-listed: the next attempt has to encode
+    // them, and a directory left behind would be re-adopted.
+    expect(await listCompletedEpochIndexes(root)).toEqual([2, 3]);
+  });
+
+  /**
+   * The newest group wins, not the largest.
+   *
+   * Both rules keep the right epochs in the case above, and only this one
+   * converges: the newest epochs came from the most recent configuration, which
+   * is the one the next epoch will be encoded with. Keeping the larger group
+   * would discard the epochs that actually match what is about to be produced,
+   * and could hand the same decision back unchanged on the next attempt.
+   */
+  it("keeps the newest configuration even when fewer epochs share it", async () => {
+    await completeEpochWithConfig(0, OLD, "2026-09-10T00:00:00.000Z");
+    await completeEpochWithConfig(1, OLD, "2026-09-10T00:10:00.000Z");
+    await completeEpochWithConfig(2, OLD, "2026-09-10T00:20:00.000Z");
+    await completeEpochWithConfig(3, NEW, "2026-09-10T02:00:00.000Z");
+
+    const outcome = await reconcileCheckpoints({
+      root,
+      plan: plan(),
+      identity: IDENTITY,
+      requiredRenditionIds: ["360p"],
+    });
+
+    expect(outcome.complete).toEqual([3]);
+    expect(outcome.pending).toEqual([0, 1, 2]);
+  });
+
+  it("compares every rung, not just the first", async () => {
+    // The rung that disagreed in production was 1440p, and a ladder can agree
+    // on one rung and differ on another. Checking only the first would let the
+    // same two-hour failure through by a different route.
+    await completeEpochWithConfig(0, OLD, "2026-09-10T00:00:00.000Z", {
+      id: "720p",
+      configDigest: "same",
+    });
+    await completeEpochWithConfig(1, OLD, "2026-09-10T02:00:00.000Z", {
+      id: "720p",
+      configDigest: "different",
+    });
+
+    const outcome = await reconcileCheckpoints({
+      root,
+      plan: plan(),
+      identity: IDENTITY,
+      requiredRenditionIds: ["360p"],
+    });
+
+    expect(outcome.complete).toEqual([1]);
+    expect(outcome.invalidated).toEqual([
+      { index: 0, reason: "encoder-config-changed" },
+    ]);
+  });
+
+  it("leaves checkpoints written before join keys were recorded alone", async () => {
+    // No join key is not evidence of a change, and these are already re-derived
+    // from the media itself at assembly. Discarding them would throw away hours
+    // of good work to answer a question nobody asked.
+    await completeEpoch(0);
+    await completeEpoch(1);
+
+    const outcome = await reconcileCheckpoints({
+      root,
+      plan: plan(),
+      identity: IDENTITY,
+      requiredRenditionIds: ["360p"],
+    });
+
+    expect(outcome.complete).toEqual([0, 1]);
+    expect(outcome.invalidated).toEqual([]);
   });
 });

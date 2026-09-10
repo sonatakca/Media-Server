@@ -276,6 +276,24 @@ function pixelFormatFor(
 }
 
 /**
+ * Select the software scaler used before the adaptive encoder.
+ *
+ * Intel QSV on the Windows media server is throughput-sensitive when the
+ * complete rendition ladder is encoded concurrently. Preserve Lanczos for
+ * non-QSV encoders. QSV uses bilinear on large/visible rungs and fast
+ * bilinear on the smaller bandwidth-oriented rungs.
+ */
+function scaleFlagsForAdaptiveOutput(
+  output: AdaptiveVideoOutput,
+  encoder: RenditionVideoEncoder,
+): "lanczos" | "bilinear" | "fast_bilinear" {
+  if (encoder === "h264_qsv" || encoder === "hevc_qsv") {
+    return output.qualityHeight >= 720 ? "bilinear" : "fast_bilinear";
+  }
+  return "lanczos";
+}
+
+/**
  * Decode once, scale into every rendition.
  *
  * No tone mapping branch exists here on purpose. An HDR master is packaged as
@@ -347,12 +365,12 @@ export function buildAdaptiveFilterComplex({
     );
     videoOutputs.forEach((output, index) => {
       chains.push(
-        `[${branches[index]}]${rateFilterFor(output)}scale=${output.width}:${output.height}:flags=lanczos,format=${pixelFormat}[out${index}]`,
+        `[${branches[index]}]${rateFilterFor(output)}scale=${output.width}:${output.height}:flags=${scaleFlagsForAdaptiveOutput(output, encoder)},format=${pixelFormat}[out${index}]`,
       );
     });
   } else {
     chains.push(
-      `[${head}]${rateFilterFor(videoOutputs[0])}scale=${videoOutputs[0].width}:${videoOutputs[0].height}:flags=lanczos,format=${pixelFormat}[out0]`,
+      `[${head}]${rateFilterFor(videoOutputs[0])}scale=${videoOutputs[0].width}:${videoOutputs[0].height}:flags=${scaleFlagsForAdaptiveOutput(videoOutputs[0], encoder)},format=${pixelFormat}[out0]`,
     );
   }
 
@@ -449,7 +467,12 @@ function videoEncoderArgsFor(
     // QSV's default B-frame reorder delay shifts the first presentation time
     // in fragmented MP4. Epoch assembly requires a zero-based local timeline;
     // progressive MP4 edit lists cannot repair independently joined fragments.
-    args.push(`-bf:${specifier}`, "0");
+    args.push(
+      `-bf:${specifier}`,
+      "0",
+      `-async_depth:${specifier}`,
+      "1",
+    );
   }
 
   args.push(

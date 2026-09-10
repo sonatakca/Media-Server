@@ -71,6 +71,7 @@ import {
   canCancel,
   canPause,
   canResume,
+  pauseTransition,
   canRetry,
   completedEpochs,
   encodedPercent,
@@ -3570,7 +3571,18 @@ export function MediaProcessingPage() {
                                     : "warn"
                             }
                           >
-                            {t(`processing.state.${job.state}` as never)}
+                            {/*
+                             * The journey, where there is one. Suspending a live
+                             * encoder is a round trip through the operating
+                             * system and it can fail; showing Paused before it
+                             * has come back is precisely the claim that let an
+                             * operator unplug a drive under a running FFmpeg.
+                             */}
+                            {t(
+                              `processing.state.${
+                                pauseTransition(job) ?? job.state
+                              }` as never,
+                            )}
                           </Chip>
                           {job.pausedReason
                             ? (() => {
@@ -3965,7 +3977,11 @@ export function MediaProcessingPage() {
                   {itemTitleFor(detail.itemId)}
                 </h2>
                 <p className="mt-0.5 text-xs text-white/40">
-                  {t(`processing.state.${detail.state}` as never)}
+                  {t(
+                    `processing.state.${
+                      pauseTransition(detail) ?? detail.state
+                    }` as never,
+                  )}
                   {streamState === "reconnecting"
                     ? ` · ${t("processing.reconnecting")}`
                     : ""}

@@ -733,7 +733,7 @@ export async function packageAdaptiveRendition(
     hdrVideoEncoder,
     reserveBytes,
     segmentSeconds = SEGMENT_TARGET_SECONDS,
-    preset = "medium",
+    preset,
     softwareThreads = defaultSoftwareEncoderThreads(),
     allAudioTracks = false,
     audioStreamIndexes,
@@ -1473,14 +1473,24 @@ export async function packageAdaptiveRendition(
         hdrState: hdrStateFor(probe),
         ...(gopFrameRate === undefined ? {} : { frameRate: gopFrameRate }),
         segmentSeconds,
-        preset,
+        preset:
+          preset ??
+          (encoder === "h264_qsv" || encoder === "hevc_qsv"
+            ? "veryfast"
+            : "medium"),
         ...(encoder === "libx264" || encoder === "libx265"
           ? {
               softwareThreads,
               filterComplexThreads:
                 defaultSoftwareFilterThreads(softwareThreads),
             }
-          : {}),
+          : encoder === "h264_qsv" || encoder === "hevc_qsv"
+            ? {
+                // Measured on the Windows Intel UHD 630 server. Two filter
+                // workers gave the best sustained full-ladder throughput.
+                filterComplexThreads: 2,
+              }
+            : {}),
         ffmpegPath,
         ffprobePath,
         logPath: path.join(paths.logsRoot, `${request.mediaId}.adaptive.log`),

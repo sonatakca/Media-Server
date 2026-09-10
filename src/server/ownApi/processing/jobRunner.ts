@@ -1243,6 +1243,33 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     let storageInterrupted = false;
 
     /**
+     * Whether the durable record already says what the encoder is doing.
+     *
+     * The tick used to derive this from the database row on every pass, which
+     * was fine while a pause was a boolean flip. It is not fine now: a
+     * suspension takes a round trip through the operating system, and during it
+     * a newly spawned epoch encoder can leave and re-enter the confirmed-paused
+     * state on its own. Without a local memory of what was last written, every
+     * one of those produced another `state = "paused"` write and another
+     * "Paused." line in the job's history.
+     */
+    let persistedPaused: boolean | null = null;
+    /**
+     * The last transition failure reported to the operator, so a suspension
+     * that keeps failing produces one line rather than one per second.
+     */
+    let reportedTransitionFailure: string | null = null;
+    /**
+     * Whether a tick is still running.
+     *
+     * Awaiting the operating system inside a one-second interval means a tick
+     * can outlive its own period. Two overlapping ticks would race two pause
+     * transitions and two database writes for one operator press; the
+     * controller serialises the first and nothing serialised the second.
+     */
+    let ticking = false;
+
+    /**
      * The pause poll's memory of whether the database is answering.
      *
      * This tick used to be an unconditional `store.get` every second with a
@@ -1279,6 +1306,90 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     const databaseGraceMs = 120_000;
     let databaseLostAtMs: number | null = null;
 
+    /** Writes the confirmed pause down, once per genuine transition. */
+    const recordPaused = async (stage: ProcessingStage): Promise<void> => {
+      if (persistedPaused === true) return;
+      persistedPaused = true;
+      await store.update(job.id, {
+        state: "paused",
+        /*
+         * Live telemetry describes a process that is reporting. A suspended one
+         * is not, and a speed left behind here is a reading of something that
+         * stopped.
+         */
+        speed: null,
+        fps: null,
+        etaSeconds: null,
+      });
+      await clearLiveProgress(job.id).catch(() => undefined);
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage,
+        level: "warning",
+        message: "Paused.",
+      });
+    };
+
+    /** Writes the confirmed resume down, once per genuine transition. */
+    const recordRunning = async (stage: ProcessingStage): Promise<void> => {
+      if (persistedPaused === false) return;
+      persistedPaused = false;
+      await store.update(job.id, { state: "running" });
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage,
+        level: "info",
+        message: "Resumed.",
+      });
+    };
+
+    /**
+     * Says a transition failed, once, however long it keeps failing.
+     *
+     * A pause that cannot be honoured is retried by the next tick, and a
+     * suspension that is refused because of a permissions problem will be
+     * refused every second for as long as the encode lasts. One line per
+     * distinct failure is what an operator can read; three thousand is what
+     * hides it.
+     */
+    const reportTransitionFailure = async (
+      stage: ProcessingStage,
+      message: string,
+    ): Promise<void> => {
+      if (reportedTransitionFailure === message) return;
+      reportedTransitionFailure = message;
+      console.warn(`[Seyirlik] ${message}`);
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage,
+        level: "error",
+        message,
+      });
+    };
+
+    /**
+     * Undoes a pause request the operating system would not honour.
+     *
+     * Only an operator's own pause is withdrawn. A storage hold is not this
+     * tick's to clear — it is recorded by the guard, it authorises the recovery
+     * path, and lowering it here would hand an automatic requeue permission it
+     * was never given.
+     */
+    const clearFailedPause = async (
+      latest: ProcessingJobRecord,
+      reason: string,
+    ): Promise<void> => {
+      await reportTransitionFailure(
+        latest.stage,
+        `The encoder could not be paused and is still running. ${reason}`,
+      );
+      if (latest.pausedReason !== "operator") return;
+      await store.update(job.id, {
+        pauseRequested: false,
+        pausedReason: null,
+      });
+    };
+
     const cancellationWatch = setInterval(() => {
       /*
        * Every line below talks to the database, and a database that blinks —
@@ -1288,6 +1399,8 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
        * the server mid-encode. The tick is a poll: missing one costs a second
        * of latency on a pause request, and nothing else.
        */
+      if (ticking) return;
+      ticking = true;
       void (async () => {
         /*
          * Cheap and from memory while the database is known to be away, so a
@@ -1304,7 +1417,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
              * and which would have been abandoned anyway the moment anyone
              * tried to write down that it had finished.
              */
-            pauseController.resume();
+            await pauseController.resume();
             encodeAbort.abort();
           }
           return;
@@ -1321,7 +1434,15 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
          */
         if (storageGuard.demandsStop() && !storageInterrupted) {
           storageInterrupted = true;
-          pauseController.resume();
+          /*
+           * Awaited, not fired off. A suspended process cannot notice an abort,
+           * cannot read FFmpeg's quit key, and on Windows cannot be reaped
+           * without being forced — so the resume has to have actually landed
+           * before the abort goes out. This is the same `resume → abort`
+           * ordering the Unix audit already depends on, made explicit because
+           * on Windows it is a round trip rather than a signal.
+           */
+          await pauseController.resume();
           encodeAbort.abort();
           /*
            * This is the classification made at the moment of the fault, and it
@@ -1368,7 +1489,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
            * every published rendition is left exactly as it is.
            */
           storageInterrupted = true;
-          pauseController.resume();
+          await pauseController.resume();
           encodeAbort.abort();
           await store.update(job.id, { state: "paused" });
           await store.appendEvent({
@@ -1378,41 +1499,85 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
             message:
               "Storage became unavailable; the encoder was stopped and the job is waiting for it to return.",
           });
-        } else if (latest?.pauseRequested && !pauseController.paused) {
-          pauseController.pause();
-          await store.update(job.id, { state: "paused" });
-          await store.appendEvent({
-            processingJobId: job.id,
-            stage: latest.stage,
-            level: "warning",
-            message: "Paused.",
-          });
+        } else if (
+          latest?.pauseRequested &&
+          !pauseController.paused &&
+          /*
+           * Nothing is paused on its way out.
+           *
+           * A cancel arriving while the encoder is suspended lifts the pause
+           * and aborts, and the pause request outlives both — it is cleared
+           * when the cancellation is finalised, which is after FFmpeg has
+           * actually been reaped. Without this the next tick reads that
+           * surviving request, tries to suspend a process that is being
+           * terminated, is correctly refused by the binding, and writes "the
+           * encoder could not be paused" into the job's history. The refusal is
+           * right; the question was the wrong one to ask.
+           */
+          !encodeAbort.signal.aborted
+        ) {
+          /*
+           * The order here is the whole fix.
+           *
+           * What this used to be was `pause()` — a boolean flip — followed
+           * immediately by `state = "paused"`. On Windows the flip was all
+           * there was: the binding refused to install, nothing was ever
+           * suspended, and the row said paused over an encoder running at full
+           * speed. The durable state is now written *after* the operating
+           * system has confirmed the suspension and never before it, so a row
+           * that reads paused is a process that is genuinely stopped.
+           */
+          const transition = await pauseController.pause();
+          if (transition.ok) {
+            reportedTransitionFailure = null;
+            await recordPaused(latest.stage);
+          } else {
+            /*
+             * Nothing was suspended, so nothing may say it was. The request is
+             * cleared rather than left standing: an intent that cannot be
+             * honoured would have this tick retry for ever, and would leave the
+             * page showing an operator a pause that is never going to arrive.
+             */
+            await clearFailedPause(latest, transition.reason);
+          }
         } else if (latest && !latest.pauseRequested && pauseController.paused) {
-          pauseController.resume();
-          await store.update(job.id, { state: "running" });
-          await store.appendEvent({
-            processingJobId: job.id,
-            stage: latest.stage,
-            level: "info",
-            message: "Resumed.",
-          });
+          const transition = await pauseController.resume();
+          if (transition.ok) {
+            reportedTransitionFailure = null;
+            await recordRunning(latest.stage);
+          } else {
+            /*
+             * Still suspended. The row stays `paused`, the watchdog stays
+             * suppressed, and the operator is told — because the one thing that
+             * must never happen here is the system claiming a process is
+             * running when it is frozen.
+             */
+            await reportTransitionFailure(
+              latest.stage,
+              `The encoder could not be resumed. ${transition.reason}`,
+            );
+          }
         }
 
         if ((await cancelled()) && !encodeAbort.signal.aborted) {
           // A suspended encoder cannot notice an abort, so lift the pause
-          // first and let the abort reach it.
-          pauseController.resume();
+          // first — and wait for it to have happened — before the abort.
+          await pauseController.resume();
           encodeAbort.abort();
         }
-      })().catch((error) => {
-        /*
-         * Reported through the gate rather than logged here. A failure that
-         * reaches this point during an outage is the same failure the gate is
-         * already counting, and writing a line for it would restore exactly the
-         * storm the gate was added to remove.
-         */
-        databaseGate.reportFailure(error);
-      });
+      })()
+        .catch((error) => {
+          /*
+           * Reported through the gate rather than logged here. A failure that
+           * reaches this point during an outage is the same failure the gate is
+           * already counting, and writing a line for it would restore exactly
+           * the storm the gate was added to remove.
+           */
+          databaseGate.reportFailure(error);
+        })
+        .finally(() => {
+          ticking = false;
+        });
     }, 1000);
     if (typeof cancellationWatch.unref === "function")
       cancellationWatch.unref();
@@ -2013,12 +2178,25 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
               }
 
               case "epoch-invalid": {
+                /*
+                 * One reason is not a failed check and must not read like one.
+                 * `encoder-config-changed` says the epoch is perfectly good and
+                 * simply belongs to an older encoder configuration than the
+                 * epochs beside it — which happens when a change is deployed
+                 * into a job that is already running, and which used to be
+                 * discovered only at assembly, after every epoch had been paid
+                 * for.
+                 */
+                const message =
+                  event.reason === "encoder-config-changed"
+                    ? `Epoch ${event.index + 1} was encoded with different encoder settings from the newer epochs and cannot be joined to them; it will be built again.`
+                    : `Epoch ${event.index + 1} did not pass its checks and will be built again: ${event.reason}`;
                 void store
                   .appendEvent({
                     processingJobId: job.id,
                     stage: "video",
                     level: "warning",
-                    message: `Epoch ${event.index + 1} did not pass its checks and will be built again: ${event.reason}`,
+                    message,
                   })
                   .catch(() => undefined);
                 return;

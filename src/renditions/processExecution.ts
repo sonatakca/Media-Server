@@ -136,6 +136,15 @@ export interface ManagedProcessOutcome {
 export interface ManagedProcess {
   readonly pid: number | undefined;
   /**
+   * True from the moment something asked this process to stop.
+   *
+   * Exposed because "is it still a process worth acting on" is a question the
+   * layers above genuinely have: suspending a child that is on its way out
+   * would hold the queue in a pause nothing is going to lift, and would spend
+   * the grace period on a process that is not scheduled to hear anything.
+   */
+  readonly aborting: boolean;
+  /**
    * Asks the process to stop, and keeps asking.
    *
    * Idempotent: the first reason wins and later calls are recorded but change
@@ -186,6 +195,19 @@ export interface SpawnManagedProcessInput {
    * Pass `0` for a process whose latency a person is actually waiting on.
    */
   niceness?: number;
+  /**
+   * Called once, the moment this process is first asked to stop, before any
+   * signal or key goes out.
+   *
+   * The hook exists for one invariant: a suspended process cannot act on a
+   * request to stop, so whatever suspended it has to be told *first*. POSIX
+   * gets that for free below — `SIGCONT` precedes `SIGTERM` in
+   * `requestGracefulStop` — and Windows cannot, because resuming there is an
+   * asynchronous round trip through a helper process. This is where the caller
+   * that owns the suspension starts undoing it, on every abort path there is:
+   * a cancellation, the media watchdog, a wall clock, an output ceiling.
+   */
+  onAbort?: (reason: ProcessAbortReason) => void;
   /** Injected by tests so a grace period does not cost real seconds. */
   now?: () => number;
 }
@@ -288,6 +310,7 @@ export function spawnManagedProcess({
   ownProcessGroup = true,
   gracefulStop = { kind: "signal" },
   niceness = BACKGROUND_PROCESS_NICENESS,
+  onAbort,
   now = Date.now,
 }: SpawnManagedProcessInput): ManagedProcess {
   const startedAt = now();
@@ -473,6 +496,16 @@ export function spawnManagedProcess({
      */
     if (abortReason !== undefined) return;
     abortReason = reason;
+    /*
+     * Before anything is asked of the process, so a caller holding it suspended
+     * can start letting it go. Never allowed to change what happens next: a
+     * hook that throws must not stop the escalation this function exists for.
+     */
+    try {
+      onAbort?.(reason);
+    } catch {
+      // The stop is not negotiable.
+    }
     const pid = child.pid;
     if (pid === undefined) return;
 
@@ -546,6 +579,9 @@ export function spawnManagedProcess({
   return {
     get pid() {
       return child.pid;
+    },
+    get aborting() {
+      return abortReason !== undefined;
     },
     abort,
     completed,

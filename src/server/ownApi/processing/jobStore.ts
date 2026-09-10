@@ -511,11 +511,17 @@ export interface ProcessingJobStore {
    * for ever. `running` is a fact about a process, and only the runner may
    * claim it. Everything this method can honestly say is that the job is
    * eligible again, which is `queued`.
+   *
+   * `paused` is the third answer, and it is not a contradiction: it lifts the
+   * *request* while leaving the state alone, which is the shape of a job whose
+   * encoder is suspended in an operating system somewhere and has been asked to
+   * wake. The worker writes `running` once it actually has. Between the two the
+   * row reads paused with nothing requesting it, and the page says "Resuming".
    */
   resume(
     id: string,
     onlyReason?: ProcessingPauseReason,
-    resumesInto?: "queued" | "running",
+    resumesInto?: "queued" | "running" | "paused",
   ): Promise<boolean>;
   /**
    * Points the durable job at the attempt now responsible for it.

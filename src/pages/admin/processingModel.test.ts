@@ -39,6 +39,7 @@ import {
   stageStateFor,
   subtitleDecisionKey,
   summariseLanguages,
+  pauseTransition,
 } from "./processingModel";
 
 function job(overrides: Partial<ProcessingJob> = {}): ProcessingJob {
@@ -1033,5 +1034,44 @@ describe("sourceIoNotice", () => {
       values: { from: "00:55:00" },
       tentative: false,
     });
+  });
+});
+
+/**
+ * The journey, not the destination.
+ *
+ * Suspending a live encoder is a round trip through the operating system, and
+ * the durable row is deliberately written only at the ends of it. The two
+ * in-between combinations are legible and used to be shown as the destination:
+ * "Paused" over an encoder that was still writing is the exact claim an
+ * operator unplugged a drive on the strength of.
+ */
+describe("a pause that is still on its way", () => {
+  it("calls a requested pause on a running encoder pausing", () => {
+    expect(pauseTransition({ state: "running", pauseRequested: true })).toBe(
+      "pausing",
+    );
+  });
+
+  it("calls a lifted pause on a suspended encoder resuming", () => {
+    expect(pauseTransition({ state: "paused", pauseRequested: false })).toBe(
+      "resuming",
+    );
+  });
+
+  it("calls a settled state nothing", () => {
+    expect(pauseTransition({ state: "running", pauseRequested: false })).toBe(
+      null,
+    );
+    expect(pauseTransition({ state: "paused", pauseRequested: true })).toBe(
+      null,
+    );
+  });
+
+  it("does not call a held queue entry a transition", () => {
+    // Nothing is running, so the hold is complete the moment it is recorded.
+    expect(pauseTransition({ state: "queued", pauseRequested: true })).toBe(
+      null,
+    );
   });
 });

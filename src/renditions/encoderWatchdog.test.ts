@@ -304,13 +304,62 @@ describe("an encoder that is still working", () => {
       },
     );
     await new Promise((resolve) => setTimeout(resolve, 300));
-    pauseController.pause();
+    // Awaited, because the suspension is now something the operating system
+    // acknowledges rather than a boolean this process flips. The watchdog is
+    // only allowed to stand down once it has.
+    await pauseController.pause();
+    expect(pauseController.paused).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 1_500));
     expect(stalls).toEqual([]);
-    pauseController.resume();
+    await pauseController.resume();
     await new Promise((resolve) => setTimeout(resolve, 200));
     controller.abort();
     await runPromise;
+  }, 30_000);
+
+  it("keeps watching an encoder whose pause has only been asked for", async () => {
+    /*
+     * The other half of the same rule, and the one that matters on a bad drive.
+     *
+     * A pause request is not a pause. Until the operating system has confirmed
+     * the suspension the encoder is an ordinary running process — it can wedge
+     * on an unreadable sector exactly as it always could — and standing the
+     * watchdog down on the strength of the request alone would be the old bug
+     * with a new name: nothing suspended, nothing watching, and a label on a
+     * web page saying it was fine.
+     */
+    const pauseController = createPauseController();
+    /*
+     * A suspension that never lands. Bound first, so the serialised transition
+     * queue never reaches the real child behind it — which is exactly what a
+     * genuine helper process taking its time looks like from here.
+     */
+    pauseController.bind({
+      describe: "The encoder could not be suspended:",
+      apply: () => new Promise(() => {}),
+    });
+
+    void pauseController.pause();
+    expect(pauseController.pauseRequested).toBe(true);
+    expect(pauseController.paused).toBe(false);
+
+    const stalls: number[] = [];
+    const { error } = await runFixture(
+      { steps: 2, keepMoving: false },
+      {
+        logPath,
+        pauseController,
+        watchdog: {
+          hardStallMs: 500,
+          terminationGraceMs: 300,
+          onStall: (detail) => stalls.push(detail.stalledForMs),
+        },
+      },
+    );
+
+    expect(pauseController.paused).toBe(false);
+    expect(stalls).toHaveLength(1);
+    expect((error as EncoderAbortedError).reason).toBe("media-watchdog");
   }, 30_000);
 
   it("still reports an ordinary success", async () => {

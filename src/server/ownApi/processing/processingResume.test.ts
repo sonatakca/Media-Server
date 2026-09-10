@@ -639,7 +639,22 @@ describe("resume, on the shape the incident left behind", () => {
     expect(store.job.jobId).toBe(live);
   });
 
-  it("lifts a pause in place when a worker still holds the attempt", async () => {
+  /**
+   * A worker still holds the attempt, so there is an encoder to wake — and
+   * waking it is not this request's to claim.
+   *
+   * This used to write `running` on the spot, which read as harmless because an
+   * encoder really was there. It is not harmless: suspension on Windows is
+   * `NtSuspendProcess` on a handle, and coming back from it is a round trip
+   * through a helper process that can fail. For that round trip the page would
+   * have said Running over a process that was still frozen — the mirror of the
+   * bug where it said Paused over one that was still encoding.
+   *
+   * So the route lifts the *request* and leaves the state alone. The row then
+   * reads paused with nothing requesting it, which is exactly "resuming", and
+   * the worker writes `running` when the operating system has agreed.
+   */
+  it("hands the resume to the worker when one still holds the attempt", async () => {
     const { queue, job } = historicalShape();
     await queue.enqueue({
       jobType: "media.process",
@@ -651,9 +666,9 @@ describe("resume, on the shape the incident left behind", () => {
 
     await resume(routes);
 
-    // An encoder is genuinely there, suspended, so `running` is a fact.
-    expect(store.job.state).toBe("running");
+    expect(store.job.state).toBe("paused");
     expect(store.job.pauseRequested).toBe(false);
+    expect(store.job.pausedReason).toBeNull();
     expect(queue.liveAttemptsFor(JOB)).toHaveLength(1);
   });
 

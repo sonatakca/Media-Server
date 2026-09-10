@@ -2,57 +2,376 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bindChildToPauseController,
   createPauseController,
+  type EncoderSuspender,
 } from "./pauseController";
+import type {
+  WindowsProcessSuspender,
+  WindowsSuspendResult,
+} from "./windowsProcessSuspend";
 import { createStorageWatchdog } from "./storageWatchdog";
 
 /**
- * These cases are about the POSIX binding, and they drive it with a fake child,
- * so the platform has to be stated rather than inherited from whichever machine
- * runs them. On Windows there is no suspend at all — see the block at the end
- * of this file, which asserts that separately.
+ * These cases drive the bindings with a fake child, so the platform has to be
+ * stated rather than inherited from whichever machine runs them. That is the
+ * only way the Windows path in this project has ever been kept honest: it is
+ * developed on a Mac and it runs on a Windows server.
  */
 const POSIX = { platform: "darwin" } as const;
 
-describe("suspending an encode instead of losing it", () => {
-  it("reports the current state to a listener as it subscribes", () => {
-    const controller = createPauseController(true);
-    const seen: boolean[] = [];
-    controller.subscribe((paused) => seen.push(paused));
-    // An encoder that starts while the queue is already paused has to suspend
-    // itself, not run until something else changes.
-    expect(seen).toEqual([true]);
+/** A Windows suspender that always agrees, and records what it was asked. */
+function agreeableWindows(): {
+  suspend: WindowsProcessSuspender;
+  calls: { action: string; pid: number; imageName?: string }[];
+} {
+  const calls: { action: string; pid: number; imageName?: string }[] = [];
+  return {
+    calls,
+    suspend: async (action, pid, imageName) => {
+      calls.push({ action, pid, ...(imageName ? { imageName } : {}) });
+      return { ok: true, gone: false };
+    },
+  };
+}
+
+/** A suspender whose answers a test scripts one at a time. */
+function scriptedWindows(answers: WindowsSuspendResult[]): {
+  suspend: WindowsProcessSuspender;
+  calls: string[];
+} {
+  const calls: string[] = [];
+  let index = 0;
+  return {
+    calls,
+    suspend: async (action) => {
+      calls.push(action);
+      return answers[index++] ?? { ok: true, gone: false };
+    },
+  };
+}
+
+const windowsChild = { pid: 4242, kill: () => true };
+
+describe("what `paused` is allowed to mean", () => {
+  /**
+   * The bug this whole redesign exists for.
+   *
+   * The old controller flipped a boolean, and on Windows nothing behind that
+   * boolean ever suspended anything: the queue wrote `paused`, the watchdog
+   * stood down, and FFmpeg carried on writing to the disk an operator was about
+   * to unplug. `paused` now means the operating system has confirmed it, and
+   * a request on its own must never be enough.
+   */
+  it("does not report paused while the suspension is still in flight", async () => {
+    let release: (() => void) | undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: async () => {
+        await gate;
+        return { ok: true, gone: false };
+      },
+    });
+
+    const pausing = controller.pause();
+    // The intent is immediate and worth nothing on its own.
+    expect(controller.pauseRequested).toBe(true);
+    expect(controller.paused).toBe(false);
+
+    release?.();
+    await expect(pausing).resolves.toEqual({ ok: true });
+    expect(controller.paused).toBe(true);
   });
 
-  it("signals a child to stop and continue", () => {
-    const kill = vi.fn();
+  it("reports paused when the operating system confirms it", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+      imageName: "ffmpeg.exe",
+    });
+
+    await expect(controller.pause()).resolves.toEqual({ ok: true });
+
+    expect(controller.paused).toBe(true);
+    expect(windows.calls).toEqual([
+      { action: "suspend", pid: 4242, imageName: "ffmpeg.exe" },
+    ]);
+  });
+
+  it("keeps reporting running when the suspension fails", async () => {
+    const windows = scriptedWindows([
+      {
+        ok: false,
+        failure: "access-denied",
+        detail: "the handle was refused.",
+      },
+    ]);
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+
+    const transition = await controller.pause();
+
+    expect(transition.ok).toBe(false);
+    expect(transition).toMatchObject({ reason: /refused/ as never });
+    // Not paused, and no longer even claiming to be trying: an intent that
+    // cannot be honoured is not left standing.
+    expect(controller.paused).toBe(false);
+    expect(controller.pauseRequested).toBe(false);
+  });
+
+  it("keeps reporting paused when the resume fails", async () => {
+    const windows = scriptedWindows([
+      { ok: true, gone: false },
+      { ok: false, failure: "nt-failed", detail: "the resume was refused." },
+    ]);
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+
+    await controller.pause();
+    const transition = await controller.resume();
+
+    expect(transition.ok).toBe(false);
+    /*
+     * The process is still frozen. Saying "running" here would put the media
+     * watchdog back on a process that cannot answer it, and would tell an
+     * operator the encode had picked up when it had not.
+     */
+    expect(controller.paused).toBe(true);
+  });
+
+  it("is paused with nothing bound, because nothing is running", async () => {
+    // A job held between two epochs, or before its first encoder started. There
+    // is no process, so there is nothing to suspend and nothing encoding.
+    const controller = createPauseController();
+    await controller.pause();
+    expect(controller.paused).toBe(true);
+  });
+
+  it("stops claiming paused once the encoder it suspended is gone", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    const unbind = bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+
+    await controller.pause();
+    expect(controller.paused).toBe(true);
+
+    // The encoder was reaped and the caller unbound it. The intent survives —
+    // the job is still held — and it is the intent that answers now.
+    unbind();
+    expect(controller.paused).toBe(true);
+    await controller.resume();
+    expect(controller.paused).toBe(false);
+  });
+
+  it("treats a process that has already exited as suspended enough", async () => {
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: async () => ({ ok: true, gone: true }),
+    });
+
+    await expect(controller.pause()).resolves.toEqual({ ok: true });
+    expect(controller.paused).toBe(true);
+  });
+
+  it("refuses to suspend an encoder that is being stopped", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+      isAborting: () => true,
+    });
+
+    const transition = await controller.pause();
+
+    expect(transition.ok).toBe(false);
+    expect(controller.paused).toBe(false);
+    // Nothing was sent. A process on its way out must not be frozen on the way.
+    expect(windows.calls).toEqual([]);
+  });
+
+  it("still resumes an encoder that is being stopped", async () => {
+    /*
+     * The abort ordering the whole cancellation path depends on. Suspending a
+     * dying process is refused above; letting go of one is exactly what has to
+     * keep working, or a cancelled encode is a frozen orphan.
+     */
+    let aborting = false;
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+      isAborting: () => aborting,
+    });
+
+    await controller.pause();
+    aborting = true;
+    await expect(controller.resume()).resolves.toEqual({ ok: true });
+
+    expect(windows.calls.map((call) => call.action)).toEqual([
+      "suspend",
+      "resume",
+    ]);
+  });
+});
+
+describe("one transition at a time", () => {
+  it("does not run two operations against one process at once", async () => {
+    let inFlight = 0;
+    let overlapped = false;
+    const order: string[] = [];
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: async (action) => {
+        inFlight += 1;
+        if (inFlight > 1) overlapped = true;
+        order.push(action);
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        inFlight -= 1;
+        return { ok: true, gone: false };
+      },
+    });
+
+    // Pause → Continue → Pause, as fast as a person can press it.
+    const first = controller.pause();
+    const second = controller.resume();
+    const third = controller.pause();
+    await Promise.all([first, second, third]);
+
+    expect(overlapped).toBe(false);
+    // And the last press is the one the process ends up at.
+    expect(controller.paused).toBe(true);
+    expect(order.at(-1)).toBe("suspend");
+  });
+
+  it("does nothing when asked to repeat a pause", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+
+    await controller.pause();
+    await controller.pause();
+    await controller.pause();
+
+    expect(windows.calls.map((call) => call.action)).toEqual(["suspend"]);
+    expect(controller.paused).toBe(true);
+  });
+
+  it("does nothing when asked to repeat a resume", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+
+    await controller.pause();
+    await controller.resume();
+    await controller.resume();
+
+    expect(windows.calls.map((call) => call.action)).toEqual([
+      "suspend",
+      "resume",
+    ]);
+    expect(controller.paused).toBe(false);
+  });
+
+  it("suspends an encoder that starts while the queue is already paused", async () => {
+    const windows = agreeableWindows();
+    const controller = createPauseController(true);
+
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+    });
+    // Binding queues the transition rather than awaiting it, because spawning
+    // an encoder must not wait on a helper process. Until it lands the encoder
+    // is running, and the controller says so.
+    expect(controller.paused).toBe(false);
+
+    await controller.settled();
+
+    expect(controller.paused).toBe(true);
+    expect(windows.calls.map((call) => call.action)).toEqual(["suspend"]);
+  });
+
+  it("rolls a partial failure back rather than leaving half an encode stopped", async () => {
+    const first = agreeableWindows();
+    const controller = createPauseController();
+    bindChildToPauseController({ pid: 11, kill: () => true }, controller, {
+      platform: "win32",
+      suspendWindows: first.suspend,
+    });
+    bindChildToPauseController({ pid: 12, kill: () => true }, controller, {
+      platform: "win32",
+      suspendWindows: async () => ({
+        ok: false,
+        failure: "access-denied",
+        detail: "the handle was refused.",
+      }),
+    });
+
+    const transition = await controller.pause();
+
+    expect(transition.ok).toBe(false);
+    expect(controller.paused).toBe(false);
+    // The one that did suspend was put back, so the caller's "nothing happened"
+    // is true of the whole encode rather than of half of it.
+    expect(first.calls.map((call) => call.action)).toEqual([
+      "suspend",
+      "resume",
+    ]);
+  });
+});
+
+describe("the POSIX signals, unchanged", () => {
+  it("signals a child to stop and continue", async () => {
+    const kill = vi.fn((_signal: NodeJS.Signals) => true);
     const controller = createPauseController();
     bindChildToPauseController({ pid: 42, kill }, controller, POSIX);
 
-    controller.pause();
-    controller.resume();
+    await controller.pause();
+    await controller.resume();
 
     expect(kill.mock.calls.map(([signal]) => signal)).toEqual([
-      "SIGCONT",
       "SIGSTOP",
       "SIGCONT",
     ]);
   });
 
-  it("does nothing when asked to repeat a state", () => {
-    const kill = vi.fn();
+  it("does nothing when asked to repeat a state", async () => {
+    const kill = vi.fn((_signal: NodeJS.Signals) => true);
     const controller = createPauseController();
     bindChildToPauseController({ pid: 42, kill }, controller, POSIX);
-    kill.mockClear();
 
-    controller.resume();
-    controller.pause();
-    controller.pause();
+    await controller.resume();
+    await controller.pause();
+    await controller.pause();
 
     expect(kill.mock.calls.map(([signal]) => signal)).toEqual(["SIGSTOP"]);
   });
 
   /** A child that exited between the request and its delivery is a race, not a fault. */
-  it("survives signalling a process that has already exited", () => {
+  it("survives signalling a process that has already exited", async () => {
     const controller = createPauseController();
     bindChildToPauseController(
       {
@@ -65,11 +384,14 @@ describe("suspending an encode instead of losing it", () => {
       POSIX,
     );
 
-    expect(() => controller.pause()).not.toThrow();
+    await expect(controller.pause()).resolves.toEqual({ ok: true });
+    // Gone is not running, so the pause is honest — and it is not evidence of
+    // a suspension either, which is why the process is retired from the count.
+    expect(controller.paused).toBe(true);
   });
 
-  it("keeps signalling the remaining children when one throws", () => {
-    const healthy = vi.fn();
+  it("keeps signalling the remaining children when one has gone", async () => {
+    const healthy = vi.fn(() => true);
     const controller = createPauseController();
     bindChildToPauseController(
       {
@@ -82,11 +404,39 @@ describe("suspending an encode instead of losing it", () => {
       POSIX,
     );
     bindChildToPauseController({ pid: 2, kill: healthy }, controller, POSIX);
-    healthy.mockClear();
 
-    controller.pause();
+    await controller.pause();
 
     expect(healthy).toHaveBeenCalledWith("SIGSTOP");
+  });
+
+  it("does not reach for the Windows helper on POSIX", async () => {
+    const suspendWindows = vi.fn();
+    const controller = createPauseController();
+    bindChildToPauseController({ pid: 42, kill: () => true }, controller, {
+      platform: "darwin",
+      suspendWindows: suspendWindows as never,
+    });
+
+    await controller.pause();
+
+    expect(suspendWindows).not.toHaveBeenCalled();
+  });
+});
+
+describe("a controller with no child at all", () => {
+  it("lets a suspender retire itself without stranding the controller", async () => {
+    const controller = createPauseController();
+    const suspender: EncoderSuspender = {
+      describe: "The encoder could not be suspended:",
+      apply: async () => ({ ok: true }),
+    };
+    const unbind = controller.bind(suspender);
+    await controller.pause();
+    expect(controller.paused).toBe(true);
+    unbind();
+    await controller.resume();
+    expect(controller.paused).toBe(false);
   });
 });
 
@@ -157,62 +507,61 @@ describe("noticing the media volume come and go", () => {
 });
 
 /**
- * The platform that cannot suspend anything.
+ * The platform that has no signal for this.
  *
- * Windows has no `SIGSTOP`. The old binding subscribed anyway, `process.kill`
- * threw `ERR_UNKNOWN_SIGNAL`, the `catch` swallowed it, and the controller went
- * on reporting `paused: true` over an encoder running at full speed. A pause
- * nobody can honour has to be visible, because the thing an operator does after
- * pausing is unplug the drive.
+ * Windows has no `SIGSTOP`. The original binding subscribed anyway,
+ * `process.kill` threw `ERR_UNKNOWN_SIGNAL`, a `catch` swallowed it, and the
+ * controller reported `paused: true` over an encoder running at full speed. The
+ * binding after that refused to install at all and said so, which was honest
+ * and still left the platform unable to pause anything. This is the third
+ * answer: the operation Windows actually has, through ntdll, acknowledged
+ * before anything is claimed.
  */
-describe("a platform with no suspend", () => {
-  it("refuses to bind, says why, and sends nothing", () => {
+describe("Windows, using the operation the platform really has", () => {
+  it("names the image so a recycled pid cannot be frozen by mistake", async () => {
+    const windows = agreeableWindows();
     const controller = createPauseController();
-    const sent: NodeJS.Signals[] = [];
-    const reasons: string[] = [];
+    bindChildToPauseController({ pid: 11396, kill: () => true }, controller, {
+      platform: "win32",
+      suspendWindows: windows.suspend,
+      imageName: "ffmpeg.exe",
+    });
 
-    const unsubscribe = bindChildToPauseController(
-      {
-        pid: 4242,
-        kill: (signal) => {
-          sent.push(signal);
-          return true;
-        },
-      },
-      controller,
-      { platform: "win32", onUnsupported: (reason) => reasons.push(reason) },
-    );
+    await controller.pause();
+    await controller.resume();
 
-    controller.pause();
-    controller.resume();
-
-    expect(sent).toEqual([]);
-    expect(reasons).toHaveLength(1);
-    expect(reasons[0]).toMatch(/cannot be paused/i);
-    expect(() => unsubscribe()).not.toThrow();
+    expect(windows.calls).toEqual([
+      { action: "suspend", pid: 11396, imageName: "ffmpeg.exe" },
+      { action: "resume", pid: 11396, imageName: "ffmpeg.exe" },
+    ]);
   });
 
-  it("still suspends where the platform has the signals", () => {
+  it("carries the helper's own words out to the caller", async () => {
     const controller = createPauseController();
-    const sent: NodeJS.Signals[] = [];
-    const reasons: string[] = [];
+    bindChildToPauseController(windowsChild, controller, {
+      platform: "win32",
+      suspendWindows: async () => ({
+        ok: false,
+        failure: "helper-missing",
+        detail: "The process-suspend helper is missing from this installation.",
+      }),
+    });
 
-    bindChildToPauseController(
-      {
-        pid: 4242,
-        kill: (signal) => {
-          sent.push(signal);
-          return true;
-        },
-      },
-      controller,
-      { platform: "darwin", onUnsupported: (reason) => reasons.push(reason) },
-    );
+    const transition = await controller.pause();
 
-    controller.pause();
-    controller.resume();
+    expect(transition.ok).toBe(false);
+    expect(!transition.ok && transition.reason).toMatch(/helper is missing/i);
+  });
 
-    expect(sent).toEqual(["SIGCONT", "SIGSTOP", "SIGCONT"]);
-    expect(reasons).toEqual([]);
+  it("does nothing at all for a child with no pid", async () => {
+    const suspendWindows = vi.fn();
+    const controller = createPauseController();
+    bindChildToPauseController({ kill: () => true }, controller, {
+      platform: "win32",
+      suspendWindows: suspendWindows as never,
+    });
+
+    await expect(controller.pause()).resolves.toEqual({ ok: true });
+    expect(suspendWindows).not.toHaveBeenCalled();
   });
 });

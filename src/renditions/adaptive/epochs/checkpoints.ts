@@ -545,6 +545,111 @@ export interface ReconciliationOutcome {
  * owns and checkpoints that failed their own identity or presence checks, so
  * running it twice in a row does the same thing as running it once.
  */
+/**
+ * One epoch's encoder configuration, as a single comparable string.
+ *
+ * Every rendition's join key in plan order, because a ladder can disagree on
+ * one rung and agree on the rest — the 1440p rung is where this was found, and
+ * checking only the first rung would have let a 480p difference through to the
+ * same failure two hours later.
+ *
+ * `null` when the epoch predates join keys being recorded. Those are compared
+ * by nothing and kept, which is the existing contract: they are re-derived from
+ * the media itself at assembly time.
+ */
+function encoderConfigSignature(
+  manifest: EpochCheckpointManifest,
+): string | null {
+  const parts: string[] = [];
+  for (const rendition of manifest.renditions) {
+    const key = rendition.joinKey;
+    if (!key) return null;
+    parts.push(
+      [
+        rendition.id,
+        key.mediaTimescale,
+        key.sampleFormat,
+        key.width,
+        key.height,
+        key.configDigest,
+      ].join(":"),
+    );
+  }
+  return parts.length > 0 ? parts.join("|") : null;
+}
+
+/**
+ * Drops checkpoints an encoder change has left unjoinable.
+ *
+ * A checkpointed encode assumes the encoder's configuration is stable for the
+ * life of the job, and nothing enforced that. Deploying a performance change
+ * mid-job is enough to break it: measured on this system, a QSV preset change
+ * landed at 02:57 between epoch 2 and epoch 3 of a twenty-two epoch title, and
+ * the new parameter sets gave epochs 3-21 a different `configDigest` from
+ * epochs 0-2. Every epoch encoded successfully. The job then spent two hours
+ * finishing, reached assembly, and failed — "epoch 3 wrote 1440p with a
+ * different decoder configuration from the reference" — four times over,
+ * because the only thing that ever compared the two groups was the assembler,
+ * and by then all the work was already paid for.
+ *
+ * So the comparison moves to the front, where it costs nothing: the manifests
+ * already record each rendition's join key, so the groups are visible before a
+ * single frame is re-encoded.
+ *
+ * **The newest group wins**, not the largest. Both rules keep epochs 3-21 here,
+ * and only this one converges: the newest epochs were written by the most
+ * recent configuration, which is the one this attempt is about to use, so the
+ * epochs that survive are the ones the next ones will match. Keeping the
+ * largest group would discard nineteen good epochs whenever the *first* few
+ * happened to outnumber them, and could oscillate between two attempts.
+ */
+async function dropEpochsFromAnotherEncoderConfiguration(
+  root: string,
+  complete: readonly number[],
+): Promise<Array<{ index: number; reason: string }>> {
+  if (complete.length < 2) return [];
+
+  const groups = new Map<string, { indexes: number[]; newest: string }>();
+  for (const index of complete) {
+    const manifest = await readEpochManifest(root, index);
+    if (!manifest) continue;
+    const signature = encoderConfigSignature(manifest);
+    // Not comparable, so not evidence of a change. Left exactly as it is.
+    if (signature === null) return [];
+    const group = groups.get(signature);
+    if (group) {
+      group.indexes.push(index);
+      if (manifest.completedAt > group.newest)
+        group.newest = manifest.completedAt;
+    } else {
+      groups.set(signature, {
+        indexes: [index],
+        newest: manifest.completedAt,
+      });
+    }
+  }
+
+  if (groups.size < 2) return [];
+
+  let keep: { indexes: number[]; newest: string } | undefined;
+  for (const group of groups.values()) {
+    if (!keep || group.newest > keep.newest) keep = group;
+  }
+
+  const dropped: Array<{ index: number; reason: string }> = [];
+  for (const group of groups.values()) {
+    if (group === keep) continue;
+    for (const index of group.indexes) {
+      await rm(completedEpochPath(root, index), {
+        recursive: true,
+        force: true,
+      }).catch(() => undefined);
+      dropped.push({ index, reason: "encoder-config-changed" });
+    }
+  }
+  return dropped;
+}
+
 export async function reconcileCheckpoints({
   root,
   plan,
@@ -596,6 +701,23 @@ export async function reconcileCheckpoints({
       }).catch(() => undefined);
     }
     outcome.pending.push(epoch.index);
+  }
+
+  /*
+   * Every surviving checkpoint is individually valid by this point. What is not
+   * yet established is whether they agree with *each other* about how they were
+   * encoded — which is a different question, and the one that costs a whole job
+   * when it is left to the assembler to ask.
+   */
+  const stale = await dropEpochsFromAnotherEncoderConfiguration(
+    root,
+    outcome.complete,
+  );
+  if (stale.length > 0) {
+    const dropped = new Set(stale.map((entry) => entry.index));
+    outcome.complete = outcome.complete.filter((index) => !dropped.has(index));
+    outcome.pending = [...outcome.pending, ...dropped].sort((a, b) => a - b);
+    outcome.invalidated.push(...stale);
   }
 
   /*

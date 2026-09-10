@@ -181,9 +181,12 @@ export async function runFfmpeg(
      */
     onStderr?: (chunk: string) => void;
     /**
-     * Suspends this encoder with SIGSTOP while paused. Progress is kept: the
-     * process holds its memory, its output files and its position, so resuming
-     * costs nothing where cancelling would cost the whole encode.
+     * Suspends this encoder while paused. Progress is kept: the process holds
+     * its memory, its output files and its position, so resuming costs nothing
+     * where cancelling would cost the whole encode.
+     *
+     * `SIGSTOP` on POSIX, `NtSuspendProcess` on Windows — and on both the
+     * controller only reports `paused` once the operating system has agreed.
      */
     pauseController?: PauseController;
     /**
@@ -228,6 +231,25 @@ export async function runFfmpeg(
      * Windows something other than an immediate kill.
      */
     gracefulStop: FFMPEG_GRACEFUL_STOP,
+    ...(pauseController
+      ? {
+          /*
+           * Resume before terminate, on every path that terminates.
+           *
+           * A suspended process cannot read the quit key, cannot act on a
+           * signal, and — on Windows — cannot be reaped without being forced.
+           * The queue already lifts the pause before the aborts it initiates;
+           * this covers the ones it does not: the media watchdog, a wall clock,
+           * an output ceiling, and a caller's `AbortSignal` arriving from
+           * anywhere at all. Fire and forget by design — the escalation below
+           * is not allowed to wait on a helper process, and if the resume fails
+           * the forced termination still ends a suspended process.
+           */
+          onAbort: () => {
+            void pauseController.resume().catch(() => undefined);
+          },
+        }
+      : {}),
     ...(signal ? { signal } : {}),
     ...(watchdog?.terminationGraceMs === undefined
       ? {}
@@ -275,7 +297,9 @@ export async function runFfmpeg(
   const unbindPause = pauseController
     ? bindChildToPauseController(
         {
-          pid: managed.pid,
+          get pid() {
+            return managed.pid;
+          },
           kill: (sig: NodeJS.Signals) => {
             const pid = managed.pid;
             if (pid === undefined) return false;
@@ -296,13 +320,13 @@ export async function runFfmpeg(
         pauseController,
         {
           /*
-           * Said once, and said plainly. A pause this host cannot honour is a
-           * pause an operator must not act on — the encoder keeps reading, and
-           * a drive unplugged on the strength of it is a drive unplugged during
-           * a write.
+           * What this pid is believed to be, checked by the Windows helper
+           * before it suspends anything. Windows recycles pids quickly, and a
+           * suspend aimed at a recycled one freezes whichever process the
+           * operating system handed the number to next.
            */
-          onUnsupported: (reason) =>
-            console.warn(`[Seyirlik] encoder pause unavailable: ${reason}`),
+          imageName: path.basename(command),
+          isAborting: () => managed.aborting,
         },
       )
     : undefined;

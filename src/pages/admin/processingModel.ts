@@ -128,6 +128,35 @@ export function canResume(
   );
 }
 
+/**
+ * The two states a job passes *through* when an encoder is being stopped or
+ * started, as opposed to the two it rests in.
+ *
+ * Suspending a live encoder is not instant and it is not certain. On Windows it
+ * is a handle, two ntdll calls and a read-back of the thread states, in a
+ * short-lived helper process; the worker writes `paused` only once that has
+ * come back, and writes `running` only once the wake has. So the row carries
+ * two legible in-between combinations, and both of them used to be shown as the
+ * destination rather than the journey:
+ *
+ * - `running` with a pause requested — asked for, not yet honoured. The encoder
+ *   is still reading the disk, and calling that Paused is the exact claim that
+ *   made this whole area untrustworthy.
+ * - `paused` with no pause requested — the operator pressed Continue and the
+ *   process has not woken yet.
+ *
+ * A job that is merely queued is not in transition: nothing is running, so the
+ * hold is complete the moment it is recorded, and the queue already shows it as
+ * held.
+ */
+export function pauseTransition(
+  job: Pick<ProcessingJob, "state" | "pauseRequested">,
+): "pausing" | "resuming" | null {
+  if (job.state === "running" && job.pauseRequested) return "pausing";
+  if (job.state === "paused" && !job.pauseRequested) return "resuming";
+  return null;
+}
+
 export function canRetry(job: Pick<ProcessingJob, "state">): boolean {
   return ["failed", "cancelled"].includes(job.state);
 }

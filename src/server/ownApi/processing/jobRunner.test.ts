@@ -6,6 +6,7 @@ import type { RenditionMediaProbe } from "../../../renditions/probe";
 import type { HardwareReport } from "../../../renditions/hardware/detect";
 import { createProcessingJobRunner } from "./jobRunner";
 import type { ProcessingJobRecord, ProcessingJobStore } from "./jobStore";
+import type { PauseController } from "../../../renditions/processing/pauseController";
 import { AUTOMATIC_REQUEUE_PAUSE_REASON } from "./interruptedJobs";
 import type { StorageGuard } from "./storageGuard";
 import {
@@ -871,6 +872,198 @@ describe("processing job runner", () => {
     expect(fake.latest().pausedReason).toBe("operator");
     expect(fake.events.at(-1)?.message).toMatch(/paused/i);
   });
+
+  /* ------------------------------------------------- pausing a live encoder */
+
+  /**
+   * The bug this whole area was rebuilt for.
+   *
+   * `state = "paused"` used to be written the instant the request was seen,
+   * from a controller that had flipped a boolean and told nobody. On Windows
+   * nothing behind that boolean suspended anything, so the row said paused, the
+   * watchdog stood down, and FFmpeg carried on writing to the disk the operator
+   * was about to unplug. The durable state now waits for the operating system.
+   */
+  it("does not write paused until the encoder is actually suspended", async () => {
+    let release: (() => void) | undefined;
+    const suspended = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let sawPausedWhileSuspending = false;
+
+    const packageFn = vi.fn(async (_input, _paths, options: never) => {
+      const controller = (options as { pauseController: PauseController })
+        .pauseController;
+      controller.bind({
+        describe: "The encoder could not be suspended:",
+        apply: async () => {
+          await suspended;
+          return { ok: true };
+        },
+      });
+      fake.setOperatorPaused();
+      // Two ticks' worth: long enough that a runner writing the state from the
+      // request alone would certainly have done it by now.
+      await new Promise((resolve) => setTimeout(resolve, 2_300));
+      sawPausedWhileSuspending = fake.latest().state === "paused";
+      release?.();
+      await new Promise((resolve) => setTimeout(resolve, 1_300));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "ready" as const,
+        versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+        storageBytes: 1,
+      };
+    });
+
+    await runner(fake, packageFn as never).run(input);
+
+    expect(sawPausedWhileSuspending).toBe(false);
+    // And once the suspension landed, it was recorded.
+    expect(fake.updates.some((update) => update.state === "paused")).toBe(true);
+    expect(fake.events.some((event) => event.message === "Paused.")).toBe(true);
+  }, 20_000);
+
+  /**
+   * A suspension the operating system refuses.
+   *
+   * The encoder is still running, so nothing may say otherwise: not the row,
+   * not the history, and not the pause request, which is withdrawn rather than
+   * left standing over a process that has already declined it.
+   */
+  it("keeps a job running when the encoder cannot be suspended", async () => {
+    const packageFn = vi.fn(async (_input, _paths, options: never) => {
+      const controller = (options as { pauseController: PauseController })
+        .pauseController;
+      controller.bind({
+        describe: "The encoder could not be suspended:",
+        apply: async () => ({ ok: false, reason: "the handle was refused." }),
+      });
+      fake.setOperatorPaused();
+      await new Promise((resolve) => setTimeout(resolve, 2_300));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "ready" as const,
+        versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+        storageBytes: 1,
+      };
+    });
+
+    await runner(fake, packageFn as never).run(input);
+
+    expect(fake.updates.some((update) => update.state === "paused")).toBe(
+      false,
+    );
+    // Said once, however many times it was retried.
+    const failures = fake.events.filter((event) =>
+      /could not be paused/i.test(event.message),
+    );
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.level).toBe("error");
+    // And the request is withdrawn, so the page stops promising a pause that
+    // is not coming.
+    expect(fake.updates.some((update) => update.pauseRequested === false)).toBe(
+      true,
+    );
+  }, 20_000);
+
+  /**
+   * Cancelling something that is asleep.
+   *
+   * A suspended process cannot read FFmpeg's quit key, cannot act on a signal
+   * and — on Windows — cannot be reaped without being forced. Cancel therefore
+   * has to wake it *first*, and the ordering has to hold across the await, not
+   * merely be initiated before it. A cancel that terminated a frozen encoder is
+   * how an orphan holding handles on the media volume gets made.
+   */
+  it("wakes a suspended encoder before it aborts it", async () => {
+    const order: string[] = [];
+    const packageFn = vi.fn(async (_input, _paths, options: never) => {
+      const opts = options as {
+        pauseController: PauseController;
+        signal: AbortSignal;
+      };
+      opts.signal.addEventListener("abort", () => order.push("abort"));
+      opts.pauseController.bind({
+        describe: "The encoder could not be suspended:",
+        apply: async (paused) => {
+          // A round trip through a helper process, not a signal.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          order.push(paused ? "suspend" : "resume");
+          return { ok: true };
+        },
+      });
+      fake.setOperatorPaused();
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      fake.setCancelled();
+      // Several ticks past the abort. The pause request outlives the cancel —
+      // it is cleared only when the cancellation is finalised, which is after
+      // FFmpeg has been reaped — so this is exactly the window in which the
+      // poll used to keep asking a dying process to suspend itself.
+      await new Promise((resolve) => setTimeout(resolve, 3_500));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "cancelled" as const,
+      };
+    });
+
+    await runner(fake, packageFn as never).run(input);
+
+    expect(order).toEqual(["suspend", "resume", "abort"]);
+  }, 20_000);
+
+  /**
+   * The volume going away while the encoder is asleep.
+   *
+   * Same invariant, different trigger, and the one the Unix audit already
+   * depends on: the encoder is woken before it is ended, so it can be reaped
+   * rather than left frozen with descriptors open on a disk that is no longer
+   * there.
+   */
+  it("wakes a suspended encoder before storage ends it", async () => {
+    const order: string[] = [];
+    const guard = fakeGuard("healthy");
+    const packageFn = vi.fn(async (_input, _paths, options: never) => {
+      const opts = options as {
+        pauseController: PauseController;
+        signal: AbortSignal;
+      };
+      opts.signal.addEventListener("abort", () => order.push("abort"));
+      opts.pauseController.bind({
+        describe: "The encoder could not be suspended:",
+        apply: async (paused) => {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          order.push(paused ? "suspend" : "resume");
+          return { ok: true };
+        },
+      });
+      fake.setOperatorPaused();
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      guard.becomes("unavailable");
+      await new Promise((resolve) => setTimeout(resolve, 1_500));
+      return {
+        mediaId: "file-1",
+        relativePath: "Movies/Dune.mp4",
+        status: "interrupted" as const,
+      };
+    });
+
+    await createProcessingJobRunner({
+      store: fake.store,
+      paths,
+      mediaRoot: "/media",
+      detectHardwareFn: vi.fn(async () => hardware) as never,
+      probeFn: vi.fn(async () => probe()) as never,
+      packageFn: packageFn as never,
+      storageGuard: guard.guard,
+    }).run(input);
+
+    expect(order.indexOf("resume")).toBeGreaterThan(order.indexOf("suspend"));
+    expect(order.indexOf("abort")).toBeGreaterThan(order.indexOf("resume"));
+  }, 20_000);
 
   /**
    * The destination the queue carried has to reach the packager.

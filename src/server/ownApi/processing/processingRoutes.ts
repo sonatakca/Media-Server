@@ -1622,25 +1622,30 @@ export function createProcessingRoutes({
          * leases it in that window must refuse it, because refusing to start
          * paused work is precisely what it is for, and the resume then finishes
          * into a job that is eligible with nothing left to run it.
+         *
+         * What is lifted is the *request*; the state is left exactly where it
+         * is.
+         *
+         * This used to resume into `queued` and then, for an attempt a worker
+         * still held, write `running` on the spot. That second write was a
+         * claim about an operating-system process made by a web request that
+         * had not touched one: on Windows the encoder was suspended by ntdll and
+         * takes a round trip through a helper to wake, and for that round trip
+         * the page would have said Running over a frozen process. The worker
+         * writes `running` when the resume has actually been acknowledged, and
+         * until then the row reads `paused` with no pause requested — which is
+         * precisely "resuming", and is what the queue page renders.
          */
-        await store.resume(id, undefined, "queued");
+        await store.resume(id, undefined, "paused");
         const attempt = await enqueuer.ensureAttempt(job);
         const executing = attempt.status === "running";
         /*
-         * `running` only when a worker genuinely holds this attempt — the case
-         * where an encoder is suspended in place and about to carry on.
-         * Everything else stays `queued`, which is the honest description of a
-         * job waiting to be leased, and covers the job left `running` by a
-         * worker that died: it is not running, and saying so is the whole point
-         * of this route.
+         * A job nobody is holding has no encoder to wake, so there is nothing to
+         * wait for and `queued` is the honest description of it. That also
+         * covers the job left `running` by a worker that died: it is not
+         * running, and saying so is the whole point of this route.
          */
-        if (executing) {
-          await store.update(id, { state: "running" });
-        } else if (job.state === "running") {
-          /*
-           * A job left `running` by a worker that died is not paused, so the
-           * resume above did not touch it. It is nonetheless not running.
-           */
+        if (!executing) {
           await store.update(id, { state: "queued" });
         }
         await store.setCurrentAttempt(id, attempt.queueJobId);
