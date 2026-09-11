@@ -105,15 +105,15 @@ function renderBoard() {
 it("colours each title by what it holds and says what is on disk", async () => {
   renderBoard();
   const held = (await screen.findByText("Held")).closest("li")!;
-  expect(held.className).toContain("border-l-emerald-400");
+  expect(held.className).toContain("border-emerald-400/30");
   expect(
     within(held).getByText(/1080p · 5\.0 GB · library\.audio TUR, ENG/),
   ).toBeTruthy();
   expect(screen.getByText("Coming").closest("li")!.className).toContain(
-    "border-l-violet-400",
+    "border-violet-400/30",
   );
   expect(screen.getByText("Wanted").closest("li")!.className).toContain(
-    "border-l-red-400",
+    "border-red-400/30",
   );
 });
 

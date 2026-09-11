@@ -33,27 +33,27 @@ const TONE_STYLE: Record<
   { bar: string; dot: string; pill: string }
 > = {
   held: {
-    bar: "border-l-emerald-400",
+    bar: "border-emerald-400/30 bg-emerald-400/[0.04]",
     dot: "bg-emerald-400",
     pill: "bg-emerald-400/15 text-emerald-200",
   },
   downloading: {
-    bar: "border-l-violet-400",
+    bar: "border-violet-400/30 bg-violet-400/[0.04]",
     dot: "bg-violet-400",
     pill: "bg-violet-400/15 text-violet-200",
   },
   wanted: {
-    bar: "border-l-red-400",
+    bar: "border-red-400/30 bg-red-400/[0.04]",
     dot: "bg-red-400",
     pill: "bg-red-400/15 text-red-200",
   },
   absent: {
-    bar: "border-l-white/20",
+    bar: "border-white/10 bg-white/[0.03]",
     dot: "bg-white/25",
     pill: "bg-white/10 text-white/60",
   },
   unaired: {
-    bar: "border-l-white/10",
+    bar: "border-white/10 bg-white/[0.02]",
     dot: "border border-white/35 bg-transparent",
     pill: "bg-white/5 text-white/45",
   },
@@ -501,7 +501,7 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
             return (
               <li
                 key={title.id}
-                className={`rounded-xl border border-l-4 border-white/10 bg-white/[0.04] p-3 ${TONE_STYLE[tone].bar}`}
+                className={`rounded-xl border p-3 ${TONE_STYLE[tone].bar}`}
               >
                 <div className="flex gap-3">
                   {title.hasMedia ? (
