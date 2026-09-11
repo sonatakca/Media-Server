@@ -78,9 +78,9 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         [id, itemId, relative, bytes.length],
       );
       await pool.query(
-        `INSERT INTO media_streams (media_file_id, stream_index, kind, codec, language, height)
-         VALUES ($1, 0, 'video', 'h264', NULL, 1080), ($1, 1, 'audio', 'aac', 'tur', NULL),
-                ($1, 2, 'subtitle', 'subrip', 'eng', NULL)`,
+        `INSERT INTO media_streams (media_file_id, stream_index, kind, codec, language, width, height)
+         VALUES ($1, 0, 'video', 'h264', NULL, 3840, 1608), ($1, 1, 'audio', 'aac', 'tur', NULL, NULL),
+                ($1, 2, 'audio', 'aac', 'tr', NULL, NULL), ($1, 3, 'subtitle', 'subrip', 'eng', NULL, NULL)`,
         [id],
       );
       return id;
@@ -140,7 +140,8 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         ["Wanted", "wanted", false, true],
       ]);
       expect(titles[0]).toMatchObject({
-        resolution: 1080,
+        // A scope frame is still 2160p, and `tr` and `tur` are one language.
+        resolution: 2160,
         audioLanguages: ["tur"],
         subtitleLanguages: ["eng"],
         sizeBytes: 5,

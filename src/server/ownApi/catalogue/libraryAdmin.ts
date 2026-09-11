@@ -15,6 +15,7 @@ import {
   resolveEpisodeMonitoring,
   type MonitoringChoice,
 } from "../releases/monitoring";
+import { normalizeLanguage } from "../../../renditions/processing/languages";
 import { MEDIA_STATUS_SQL, mediaAvailableSql } from "./mediaAvailability";
 
 export type LibraryTitleKind = "movie" | "series";
@@ -86,7 +87,11 @@ const HOLDING_COLUMNS = `
     WHERE ${FAMILY("item")} AND p.state IN ('running', 'queued', 'pending', 'paused')) AS processing,
   (SELECT COALESCE(sum(f.size_bytes), 0)::bigint FROM media_files f JOIN items fam ON fam.id = f.item_id
     WHERE ${FAMILY("item")} AND f.missing_since IS NULL) AS "sizeBytes",
-  (SELECT max(s.height) FROM media_streams s JOIN media_files f ON f.id = s.media_file_id JOIN items fam ON fam.id = f.item_id
+  -- The resolution class, read from the width: a scope film at 3840x1608 is
+  -- 2160p, not "1608p".
+  (SELECT CASE WHEN max(s.width) >= 3200 THEN 2160 WHEN max(s.width) >= 1800 THEN 1080
+      WHEN max(s.width) >= 1200 THEN 720 WHEN max(s.width) >= 960 THEN 576 ELSE max(s.height) END
+    FROM media_streams s JOIN media_files f ON f.id = s.media_file_id JOIN items fam ON fam.id = f.item_id
     WHERE ${FAMILY("item")} AND f.missing_since IS NULL AND s.kind = 'video') AS resolution,
   ARRAY(SELECT DISTINCT COALESCE(NULLIF(s.language, ''), 'und') FROM media_streams s JOIN media_files f ON f.id = s.media_file_id
     JOIN items fam ON fam.id = f.item_id
@@ -108,6 +113,14 @@ type HoldingRow = Omit<HoldingFacts, "sizeBytes"> & {
   sizeBytes: string | number;
 };
 
+/**
+ * One code per language. Probes and sidecars write `tr` and `tur`, `en` and
+ * `eng` for the same thing; a row that listed both would look like two tracks.
+ */
+function languageSet(codes: readonly string[]): string[] {
+  return [...new Set(codes.map((code) => normalizeLanguage(code)))].sort();
+}
+
 function holding(row: HoldingRow): HoldingFacts {
   return {
     status: row.status,
@@ -117,9 +130,9 @@ function holding(row: HoldingRow): HoldingFacts {
     processing: row.processing,
     sizeBytes: Number(row.sizeBytes),
     resolution: row.resolution === null ? null : Number(row.resolution),
-    audioLanguages: row.audioLanguages,
-    subtitleLanguages: row.subtitleLanguages,
-    pendingSubtitles: row.pendingSubtitles,
+    audioLanguages: languageSet(row.audioLanguages),
+    subtitleLanguages: languageSet(row.subtitleLanguages),
+    pendingSubtitles: languageSet(row.pendingSubtitles),
   };
 }
 

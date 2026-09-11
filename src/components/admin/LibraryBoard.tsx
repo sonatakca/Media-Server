@@ -61,11 +61,20 @@ const TONE_STYLE: Record<
 
 const TONES: HoldingTone[] = ["held", "downloading", "wanted", "absent"];
 
-function languages(list: string[]): string {
-  return list
+/** Turkish and English first, then a count: a film can carry thirty tracks. */
+const FIRST_LANGUAGES = ["tur", "eng"];
+function languages(list: string[], shown = 4): string {
+  const known = list
     .filter((language) => language !== "und")
-    .map((language) => language.toUpperCase())
-    .join(", ");
+    .sort(
+      (a, b) =>
+        (FIRST_LANGUAGES.indexOf(a) + 1 || 99) -
+          (FIRST_LANGUAGES.indexOf(b) + 1 || 99) || a.localeCompare(b),
+    );
+  const head = known.slice(0, shown).map((language) => language.toUpperCase());
+  return known.length > shown
+    ? `${head.join(", ")} +${known.length - shown}`
+    : head.join(", ");
 }
 
 function Facts({ facts }: { facts: HoldingFacts }) {
