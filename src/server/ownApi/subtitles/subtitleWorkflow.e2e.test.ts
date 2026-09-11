@@ -281,6 +281,16 @@ async function createWorld(
     async recentAttempts() {
       return [];
     },
+    // Request routes; this workflow starts attempts directly.
+    async openAttempt() {
+      return null;
+    },
+    async titleMediaFiles() {
+      return [];
+    },
+    async attemptsAwaiting() {
+      return [];
+    },
     async ensureWant() {
       throw new Error("not exercised");
     },

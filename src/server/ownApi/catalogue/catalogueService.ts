@@ -118,7 +118,9 @@ export function createCatalogueService({
       userId: string,
       itemId: string,
     ): Promise<ItemDto | null> => {
-      const row = await catalogue.getItem(userId, itemId);
+      // The batch read carries the availability rule browse pages use, so a
+      // wanted title with nothing to play is as absent here as in a list.
+      const [row] = await catalogue.getItemsByIds(userId, [itemId]);
       if (!row) return null;
       const [dto] = await enrich(userId, [row]);
       return dto ?? null;

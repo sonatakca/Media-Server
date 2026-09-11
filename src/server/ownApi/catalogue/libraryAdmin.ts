@@ -1,0 +1,403 @@
+/**
+ * The administrator's view of the library: every movie and show the catalogue
+ * holds, whether or not there is anything to play yet.
+ *
+ * Browse pages hide a title with no source (`mediaAvailableSql`); this is the
+ * one place that deliberately does not, because a wanted film and a film that
+ * is downloading are exactly what an administrator comes here to see.
+ *
+ * A title's "family" is itself and its seasons and episodes, so a show is
+ * described by what its episodes hold. Aliases are code-owned SQL identifiers.
+ */
+import type { DatabaseExecutor } from "../database/databaseTypes";
+import type { TmdbClient } from "../metadata/tmdbClient";
+import {
+  resolveEpisodeMonitoring,
+  type MonitoringChoice,
+} from "../releases/monitoring";
+import { MEDIA_STATUS_SQL, mediaAvailableSql } from "./mediaAvailability";
+
+export type LibraryTitleKind = "movie" | "series";
+
+/** What a title or episode holds, summarised for one row. */
+export interface HoldingFacts {
+  status: string;
+  hasMedia: boolean;
+  downloading: number;
+  importing: number;
+  processing: number;
+  sizeBytes: number;
+  resolution: number | null;
+  audioLanguages: string[];
+  subtitleLanguages: string[];
+  /** Subtitle languages Seyirlik is still looking for. */
+  pendingSubtitles: string[];
+}
+
+export interface LibraryTitle extends HoldingFacts {
+  id: string;
+  kind: LibraryTitleKind;
+  title: string;
+  year: number | null;
+  desired: boolean;
+  tmdbId: string | null;
+  imdbId: string | null;
+  episodeCount: number;
+  availableEpisodeCount: number;
+}
+
+export interface LibraryEpisode extends HoldingFacts {
+  id: string | null;
+  seasonNumber: number;
+  episodeNumber: number;
+  title: string | null;
+  airDate: string | null;
+  mediaFileId: string | null;
+  fileName: string | null;
+  /** Whether a missing episode is wanted, and which level decided that. */
+  monitored: boolean;
+}
+
+export interface LibrarySeason {
+  seasonNumber: number;
+  episodes: LibraryEpisode[];
+}
+
+export interface LibraryTitleDetail extends LibraryTitle {
+  mediaFileId: string | null;
+  fileName: string | null;
+  seasons: LibrarySeason[];
+  /** False when TMDB could not be asked, so only what is on disk is listed. */
+  catalogueComplete: boolean;
+}
+
+const FAMILY = (alias: string) =>
+  `(fam.id = ${alias}.id OR fam.series_id = ${alias}.id OR fam.parent_id = ${alias}.id)`;
+
+/** Facts about one item's family. `item` must be the row alias in scope. */
+const HOLDING_COLUMNS = `
+  ${MEDIA_STATUS_SQL} AS status,
+  ${mediaAvailableSql()} AS "hasMedia",
+  (SELECT count(*)::int FROM acquisitions a JOIN items fam ON fam.id = a.target_item_id
+    WHERE ${FAMILY("item")} AND a.state NOT IN ('downloaded', 'cancelled', 'superseded', 'failed')) AS downloading,
+  (SELECT count(*)::int FROM imports imp JOIN items fam ON fam.id = imp.target_item_id
+    WHERE ${FAMILY("item")} AND imp.state NOT IN ('complete', 'cancelled', 'failed')) AS importing,
+  (SELECT count(*)::int FROM processing_jobs p JOIN items fam ON fam.id = p.item_id
+    WHERE ${FAMILY("item")} AND p.state IN ('running', 'queued', 'pending', 'paused')) AS processing,
+  (SELECT COALESCE(sum(f.size_bytes), 0)::bigint FROM media_files f JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND f.missing_since IS NULL) AS "sizeBytes",
+  (SELECT max(s.height) FROM media_streams s JOIN media_files f ON f.id = s.media_file_id JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND f.missing_since IS NULL AND s.kind = 'video') AS resolution,
+  ARRAY(SELECT DISTINCT COALESCE(NULLIF(s.language, ''), 'und') FROM media_streams s JOIN media_files f ON f.id = s.media_file_id
+    JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND f.missing_since IS NULL AND s.kind = 'audio' ORDER BY 1) AS "audioLanguages",
+  ARRAY(SELECT DISTINCT language FROM (
+      SELECT COALESCE(NULLIF(s.language, ''), 'und') AS language FROM media_streams s JOIN media_files f ON f.id = s.media_file_id
+        JOIN items fam ON fam.id = f.item_id
+        WHERE ${FAMILY("item")} AND f.missing_since IS NULL AND s.kind = 'subtitle'
+      UNION
+      SELECT si.language FROM subtitle_installations si JOIN media_files f ON f.id = si.media_file_id
+        JOIN items fam ON fam.id = f.item_id
+        WHERE ${FAMILY("item")} AND f.missing_since IS NULL
+    ) languages ORDER BY 1) AS "subtitleLanguages",
+  ARRAY(SELECT DISTINCT w.language FROM subtitle_wants w JOIN media_files f ON f.id = w.media_file_id
+    JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND w.active ORDER BY 1) AS "pendingSubtitles"`;
+
+type HoldingRow = Omit<HoldingFacts, "sizeBytes"> & {
+  sizeBytes: string | number;
+};
+
+function holding(row: HoldingRow): HoldingFacts {
+  return {
+    status: row.status,
+    hasMedia: row.hasMedia,
+    downloading: row.downloading,
+    importing: row.importing,
+    processing: row.processing,
+    sizeBytes: Number(row.sizeBytes),
+    resolution: row.resolution === null ? null : Number(row.resolution),
+    audioLanguages: row.audioLanguages,
+    subtitleLanguages: row.subtitleLanguages,
+    pendingSubtitles: row.pendingSubtitles,
+  };
+}
+
+/** Nothing held, nothing moving: a TMDB episode the disk has never seen. */
+const NOTHING_HELD = (status: string): HoldingFacts => ({
+  status,
+  hasMedia: false,
+  downloading: 0,
+  importing: 0,
+  processing: 0,
+  sizeBytes: 0,
+  resolution: null,
+  audioLanguages: [],
+  subtitleLanguages: [],
+  pendingSubtitles: [],
+});
+
+type TitleRow = HoldingRow & {
+  id: string;
+  kind: LibraryTitleKind;
+  title: string;
+  year: number | null;
+  desired: boolean;
+  tmdbId: string | null;
+  imdbId: string | null;
+  episodeCount: number;
+  availableEpisodeCount: number;
+};
+
+const TITLE_SELECT = `SELECT item.id, item.kind, item.title, item.production_year AS year, item.desired,
+    item.provider_ids->>'tmdb' AS "tmdbId", item.provider_ids->>'imdb' AS "imdbId",
+    (SELECT count(*)::int FROM items e WHERE e.series_id = item.id AND e.kind = 'episode') AS "episodeCount",
+    (SELECT count(*)::int FROM items e WHERE e.series_id = item.id AND e.kind = 'episode'
+      AND ${mediaAvailableSql("e")}) AS "availableEpisodeCount",
+    ${HOLDING_COLUMNS}
+  FROM items item`;
+
+function toTitle(row: TitleRow): LibraryTitle {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    year: row.year,
+    desired: row.desired,
+    tmdbId: row.tmdbId,
+    imdbId: row.imdbId,
+    episodeCount: row.episodeCount,
+    availableEpisodeCount: row.availableEpisodeCount,
+    ...holding(row),
+  };
+}
+
+export function createLibraryAdminRepository(db: DatabaseExecutor) {
+  return {
+    async listTitles(kind: LibraryTitleKind): Promise<LibraryTitle[]> {
+      const result = await db.query<TitleRow>(
+        `${TITLE_SELECT} WHERE item.kind = $1 ORDER BY item.sort_title, item.id`,
+        [kind],
+      );
+      return result.rows.map(toTitle);
+    },
+
+    async getTitle(itemId: string): Promise<LibraryTitle | null> {
+      const result = await db.query<TitleRow>(
+        `${TITLE_SELECT} WHERE item.id = $1 AND item.kind IN ('movie', 'series')`,
+        [itemId],
+      );
+      return result.rows[0] ? toTitle(result.rows[0]) : null;
+    },
+
+    /** The file a subtitle or a detail line is about: the largest live one. */
+    async primaryFiles(
+      itemIds: readonly string[],
+    ): Promise<Map<string, { id: string; relativePath: string }>> {
+      const files = new Map<string, { id: string; relativePath: string }>();
+      if (itemIds.length === 0) return files;
+      const result = await db.query<{
+        item_id: string;
+        id: string;
+        relative_path: string;
+      }>(
+        `SELECT DISTINCT ON (item_id) item_id, id, relative_path FROM media_files
+         WHERE item_id = ANY($1::uuid[]) AND missing_since IS NULL AND size_bytes > 0
+         ORDER BY item_id, is_primary DESC, size_bytes DESC`,
+        [[...itemIds]],
+      );
+      for (const row of result.rows)
+        files.set(row.item_id, { id: row.id, relativePath: row.relative_path });
+      return files;
+    },
+
+    async listEpisodes(seriesId: string) {
+      const result = await db.query<
+        HoldingRow & {
+          id: string;
+          title: string;
+          season: number | null;
+          episode: number | null;
+          airDate: string | null;
+        }
+      >(
+        `SELECT item.id, item.title, item.parent_index_number AS season, item.index_number AS episode,
+           to_char(item.premiere_date, 'YYYY-MM-DD') AS "airDate",
+           ${HOLDING_COLUMNS}
+         FROM items item WHERE item.series_id = $1 AND item.kind = 'episode'
+         ORDER BY item.parent_index_number NULLS LAST, item.index_number NULLS LAST, item.sort_title`,
+        [seriesId],
+      );
+      return result.rows;
+    },
+
+    async monitoring(seriesId: string) {
+      const [series, seasons, episodes] = await Promise.all([
+        db.query<{ monitored: boolean }>(
+          `SELECT COALESCE(m.monitored, item.desired) AS monitored FROM items item
+           LEFT JOIN monitored_items m ON m.item_id = item.id WHERE item.id = $1`,
+          [seriesId],
+        ),
+        db.query<{ season_number: number; monitoring: MonitoringChoice }>(
+          "SELECT season_number, monitoring FROM monitored_seasons WHERE series_item_id = $1",
+          [seriesId],
+        ),
+        db.query<{
+          season_number: number;
+          episode_number: number;
+          monitoring: MonitoringChoice;
+        }>(
+          "SELECT season_number, episode_number, monitoring FROM monitored_episodes WHERE series_item_id = $1",
+          [seriesId],
+        ),
+      ]);
+      return {
+        series: { monitored: series.rows[0]?.monitored ?? false },
+        seasons: new Map(
+          seasons.rows.map((row) => [
+            row.season_number,
+            { seasonNumber: row.season_number, monitoring: row.monitoring },
+          ]),
+        ),
+        episodes: new Map(
+          episodes.rows.map((row) => [
+            `${row.season_number}:${row.episode_number}`,
+            { monitoring: row.monitoring },
+          ]),
+        ),
+      };
+    },
+  };
+}
+
+export type LibraryAdminRepository = ReturnType<
+  typeof createLibraryAdminRepository
+>;
+
+function baseName(relativePath: string | undefined): string | null {
+  if (!relativePath) return null;
+  return relativePath.split("/").pop() ?? null;
+}
+
+/**
+ * A title with everything under it.
+ *
+ * A show's seasons are what TMDB says it has, merged with what the disk holds,
+ * so a missing episode is a row rather than a gap. An episode on disk that TMDB
+ * does not know (a special, a double episode) is kept: the disk is never hidden
+ * because a catalogue disagrees with it.
+ */
+export async function loadTitleDetail(
+  repository: LibraryAdminRepository,
+  tmdb: TmdbClient | undefined,
+  itemId: string,
+  now = new Date(),
+): Promise<LibraryTitleDetail | null> {
+  const title = await repository.getTitle(itemId);
+  if (!title) return null;
+  if (title.kind === "movie") {
+    const file = (await repository.primaryFiles([title.id])).get(title.id);
+    return {
+      ...title,
+      mediaFileId: file?.id ?? null,
+      fileName: baseName(file?.relativePath),
+      seasons: [],
+      catalogueComplete: true,
+    };
+  }
+
+  const [rows, monitoring] = await Promise.all([
+    repository.listEpisodes(title.id),
+    repository.monitoring(title.id),
+  ]);
+  const files = await repository.primaryFiles(rows.map((row) => row.id));
+  const episodes = new Map<string, LibraryEpisode>();
+  const unnumbered: LibraryEpisode[] = [];
+  for (const row of rows) {
+    const file = files.get(row.id);
+    const episode: LibraryEpisode = {
+      id: row.id,
+      seasonNumber: row.season ?? 0,
+      episodeNumber: row.episode ?? 0,
+      title: row.title,
+      airDate: row.airDate,
+      mediaFileId: file?.id ?? null,
+      fileName: baseName(file?.relativePath),
+      monitored: true,
+      ...holding(row),
+    };
+    if (row.season === null || row.episode === null) unnumbered.push(episode);
+    else episodes.set(`${row.season}:${row.episode}`, episode);
+  }
+
+  let catalogueComplete = !title.tmdbId;
+  if (tmdb && title.tmdbId) {
+    try {
+      const series = await tmdb.getSeries(title.tmdbId);
+      const seasons = (series.seasons ?? []).filter(
+        (season) => season.seasonNumber > 0 && season.episodeCount > 0,
+      );
+      const listed = await Promise.all(
+        seasons.map((season) =>
+          tmdb.getSeasonEpisodes(title.tmdbId!, season.seasonNumber),
+        ),
+      );
+      for (const known of listed.flat()) {
+        const key = `${known.seasonNumber}:${known.episodeNumber}`;
+        const held = episodes.get(key);
+        if (held) {
+          held.title ??= known.title ?? null;
+          held.airDate ??= known.airDate ?? null;
+          continue;
+        }
+        const aired =
+          known.airDate !== undefined && new Date(known.airDate) <= now;
+        const monitored = resolveEpisodeMonitoring(
+          monitoring.series,
+          monitoring.seasons.get(known.seasonNumber),
+          monitoring.episodes.get(key),
+        ).monitored;
+        episodes.set(key, {
+          id: null,
+          seasonNumber: known.seasonNumber,
+          episodeNumber: known.episodeNumber,
+          title: known.title ?? null,
+          airDate: known.airDate ?? null,
+          mediaFileId: null,
+          fileName: null,
+          monitored,
+          ...NOTHING_HELD(
+            known.airDate !== undefined && !aired
+              ? "unaired"
+              : monitored
+                ? "wanted"
+                : "missing",
+          ),
+        });
+      }
+      catalogueComplete = true;
+    } catch {
+      // The disk is still the truth; TMDB only adds the rows it is missing.
+      catalogueComplete = false;
+    }
+  }
+
+  const bySeason = new Map<number, LibraryEpisode[]>();
+  for (const episode of [...episodes.values(), ...unnumbered]) {
+    const list = bySeason.get(episode.seasonNumber) ?? [];
+    list.push(episode);
+    bySeason.set(episode.seasonNumber, list);
+  }
+  return {
+    ...title,
+    mediaFileId: null,
+    fileName: null,
+    catalogueComplete,
+    seasons: [...bySeason.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([seasonNumber, list]) => ({
+        seasonNumber,
+        episodes: list.sort((a, b) => a.episodeNumber - b.episodeNumber),
+      })),
+  };
+}

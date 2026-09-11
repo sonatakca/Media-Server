@@ -72,6 +72,86 @@ export const en = {
   "admin.decisions.season": "Season",
   "admin.decisions.sizeUnknown": "Size unavailable",
   "wanted.chooseTmdb": "Choose a movie or show from TMDB",
+  "library.title": "Library",
+  "library.description":
+    "Every movie and show Seyirlik holds or wants. Green is on disk, purple is on its way, red is wanted but missing. Titles without a source appear only here, never on the Movies or Shows pages.",
+  "library.movies": "Movies",
+  "library.shows": "Shows",
+  "library.tone.held": "In library",
+  "library.tone.downloading": "Downloading",
+  "library.tone.wanted": "Wanted",
+  "library.tone.absent": "Not wanted",
+  "library.tone.unaired": "Not aired yet",
+  "library.filter": "Filter by title",
+  "library.loading": "Loading the library…",
+  "library.loadFailed": "The library could not be loaded. Try again.",
+  "library.detailFailed": "The details could not be loaded.",
+  "library.empty": "Nothing here matches.",
+  "library.audio": "Audio",
+  "library.subtitles": "Subtitles",
+  "library.lookingFor": "Looking for",
+  "library.processing": "Processing",
+  "library.episodes": "episodes",
+  "library.seasons": "Seasons",
+  "library.details": "Details",
+  "library.season": "Season",
+  "library.specials": "Specials",
+  "library.noFile": "No file on disk.",
+  "library.catalogueOffline":
+    "TMDB could not be reached, so only the episodes on disk are listed.",
+  "library.findTurkish": "Find Turkish subtitles",
+  "library.subtitlesQueued": "Subtitle search started for",
+  "library.subtitlesNoFiles": "There is no file to find subtitles for yet.",
+  "library.subtitlesUnconfigured":
+    "Automatic subtitles are not configured on this server.",
+  "library.subtitlesFailed": "The subtitle search could not be started.",
+  "library.saveFailed": "The change could not be saved. Try again.",
+  "library.remove": "Remove",
+  "library.removeHeading": "Remove",
+  "library.removeExplanation":
+    "This deletes the title from the library: its source files, renditions, artwork, trickplay, subtitles and NFO files, any download in progress, and everyone's watch history for it.",
+  "library.removeSize": "Space freed:",
+  "library.removeIrreversible": "This cannot be undone.",
+  "library.removeType": "Type the title to confirm:",
+  "library.removeConfirm": "Remove permanently",
+  "library.removing": "Removing…",
+  "library.cancel": "Cancel",
+  "library.removed": "Removed",
+  "library.removedWithLeftovers":
+    "Removed from the library, but these could not be deleted:",
+  "library.removeFailed":
+    "The title could not be removed. Nothing was deleted.",
+  "library.removeBusy":
+    "Something is still using this title — processing, an import, or playback. Stop it and try again. Nothing was deleted.",
+  "library.removeMismatch": "The typed title does not match.",
+  "library.removeUnsafe":
+    "The title's folder is not an ordinary folder inside the library, so it was not touched. Remove it by hand.",
+  "admin.integrations.session.title": "Subtitle provider sign-in",
+  "admin.integrations.session.description":
+    "TürkçeAltyazı has no API keys. It is asked without a sign-in until Cloudflare starts checking; then a person signs in in their own browser and hands the session over here.",
+  "admin.integrations.session.state.anonymous": "Working without a sign-in",
+  "admin.integrations.session.state.active": "Signed in",
+  "admin.integrations.session.state.rejected": "Needs a sign-in",
+  "admin.integrations.session.state.signed-out": "Not signed in",
+  "admin.integrations.session.updated": "Updated",
+  "admin.integrations.session.signIn": "Sign in",
+  "admin.integrations.session.forget": "Forget session",
+  "admin.integrations.session.step1":
+    "In this browser, open the site, pass the Cloudflare check and sign in:",
+  "admin.integrations.session.step2":
+    "Open the developer tools, Network tab, reload the page and select the first request to the site.",
+  "admin.integrations.session.step3":
+    "Copy the value of its Cookie request header and paste it below.",
+  "admin.integrations.session.cookie": "Cookie header",
+  "admin.integrations.session.userAgent": "User agent",
+  "admin.integrations.session.userAgentHint":
+    "Filled in from this browser. It must be the browser you signed in with.",
+  "admin.integrations.session.save": "Save session",
+  "admin.integrations.session.saved":
+    "Session saved. Waiting subtitle searches resumed:",
+  "admin.integrations.session.invalid":
+    "That does not look like a Cookie header. Paste the header value as one line.",
+  "admin.integrations.session.failed": "The session could not be saved.",
 
   "nav.home": "Home",
   "nav.brandHome": "Seyirlik home",
@@ -2126,7 +2206,7 @@ export const en = {
   "admin.subtitles.waitingBanner":
     "Waiting for somebody to sign in to a provider",
   "admin.subtitles.authExplanation":
-    "This is stopped until somebody signs in to the provider. Seyirlik has no sign-in window of its own yet, so it has to be done in the provider's own site; the attempt then continues from where it stopped.",
+    "This is stopped until somebody signs in to the provider. Sign in in your own browser and hand the session over under Integrations; the attempt then continues from where it stopped.",
   "admin.subtitles.resume": "I have signed in — continue",
   "admin.subtitles.resumeRefused":
     "The server says this is not waiting for a sign-in.",

@@ -61,6 +61,10 @@ export interface SubtitleAttemptWithWant extends SubtitleAttemptRow {
   readonly language: string;
   readonly forced: boolean;
   readonly hearingImpaired: string;
+  /** What the file is, for a person: the film, or the show and episode. */
+  readonly title: string | null;
+  readonly seasonNumber: number | null;
+  readonly episodeNumber: number | null;
 }
 
 export interface RecordInstallationInput {
@@ -117,6 +121,12 @@ export interface SubtitleRepository {
    * somebody to sign in to a provider. Newest first.
    */
   recentAttempts(limit?: number): Promise<SubtitleAttemptWithWant[]>;
+  /** An attempt for this want that has not finished, if one exists. */
+  openAttempt(wantId: string): Promise<string | null>;
+  /** The playable file of a film, or of every episode under a show or season. */
+  titleMediaFiles(itemId: string): Promise<string[]>;
+  /** Attempts paused for a sign-in to this provider. */
+  attemptsAwaiting(providerId: string): Promise<string[]>;
   recordInstallation(input: RecordInstallationInput): Promise<string>;
   /** The digest this system recorded for a path, or `null` if it wrote none. */
   managedDigest(
@@ -310,14 +320,23 @@ export function createSubtitleRepository(
           language: string;
           forced: boolean;
           hearing_impaired: string;
+          title: string | null;
+          season_number: number | null;
+          episode_number: number | null;
         }
       >(
         `SELECT a.id, a.want_id, a.state, a.attempt, a.provider_id,
                 a.candidate_id, a.score, a.failure_class, a.failure_detail,
                 a.awaiting_provider_id, a.run_after,
-                w.media_file_id, w.language, w.forced, w.hearing_impaired
+                w.media_file_id, w.language, w.forced, w.hearing_impaired,
+                COALESCE(series.title, i.title) AS title,
+                CASE WHEN i.kind = 'episode' THEN i.parent_index_number END AS season_number,
+                CASE WHEN i.kind = 'episode' THEN i.index_number END AS episode_number
            FROM subtitle_attempts a
            JOIN subtitle_wants w ON w.id = a.want_id
+           LEFT JOIN media_files f ON f.id = w.media_file_id
+           LEFT JOIN items i ON i.id = f.item_id
+           LEFT JOIN items series ON series.id = i.series_id
           ORDER BY a.updated_at DESC
           LIMIT $1`,
         [Math.min(Math.max(limit, 1), 500)],
@@ -328,7 +347,43 @@ export function createSubtitleRepository(
         language: row.language,
         forced: row.forced,
         hearingImpaired: row.hearing_impaired,
+        title: row.title,
+        seasonNumber: row.season_number,
+        episodeNumber: row.episode_number,
       }));
+    },
+
+    async openAttempt(wantId) {
+      const result = await pool.query<{ id: string }>(
+        `SELECT id FROM subtitle_attempts WHERE want_id = $1
+           AND state NOT IN ('installed', 'superseded', 'unavailable', 'failed')
+         ORDER BY updated_at DESC LIMIT 1`,
+        [wantId],
+      );
+      return result.rows[0]?.id ?? null;
+    },
+
+    async titleMediaFiles(itemId) {
+      const result = await pool.query<{ id: string }>(
+        `SELECT DISTINCT ON (f.item_id) f.id FROM media_files f JOIN items i ON i.id = f.item_id
+          WHERE (i.id = $1 OR i.series_id = $1 OR i.parent_id = $1)
+            AND i.kind IN ('movie', 'episode')
+            AND f.missing_since IS NULL AND f.size_bytes > 0
+          ORDER BY f.item_id, f.is_primary DESC, f.size_bytes DESC
+          LIMIT 1000`,
+        [itemId],
+      );
+      return result.rows.map((row) => row.id);
+    },
+
+    async attemptsAwaiting(providerId) {
+      const result = await pool.query<{ id: string }>(
+        `SELECT id FROM subtitle_attempts
+          WHERE state = 'needs-authentication' AND awaiting_provider_id = $1
+          LIMIT 1000`,
+        [providerId],
+      );
+      return result.rows.map((row) => row.id);
     },
 
     /*

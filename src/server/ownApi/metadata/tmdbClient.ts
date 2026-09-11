@@ -50,6 +50,14 @@ export interface TmdbTitleDetails {
   backdropPaths: string[];
   logoPath?: string;
   imdbId?: string;
+  /** A series' seasons as TMDB numbers them. Absent for a film. */
+  seasons?: TmdbSeasonSummary[];
+}
+
+export interface TmdbSeasonSummary {
+  seasonNumber: number;
+  episodeCount: number;
+  airDate?: string;
 }
 
 export interface TmdbEpisodeDetails {
@@ -377,6 +385,24 @@ export function createTmdbClient({
     return undefined;
   }
 
+  function readSeasons(value: unknown[]): TmdbSeasonSummary[] {
+    return value
+      .filter(
+        (season): season is Record<string, unknown> =>
+          !!season &&
+          typeof season === "object" &&
+          typeof (season as Record<string, unknown>).season_number === "number",
+      )
+      .map((season) => ({
+        seasonNumber: season.season_number as number,
+        episodeCount:
+          typeof season.episode_count === "number" ? season.episode_count : 0,
+        ...(typeof season.air_date === "string" && season.air_date
+          ? { airDate: season.air_date }
+          : {}),
+      }));
+  }
+
   async function getTitle(
     kind: "movie" | "tv",
     providerId: string,
@@ -458,6 +484,9 @@ export function createTmdbClient({
         ? { logoPath: extractLogoPath(details.images) as string }
         : {}),
       ...(readImdbId(details) ? { imdbId: readImdbId(details) as string } : {}),
+      ...(kind === "tv" && Array.isArray(details.seasons)
+        ? { seasons: readSeasons(details.seasons) }
+        : {}),
     };
   }
 

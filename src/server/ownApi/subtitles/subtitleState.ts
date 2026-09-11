@@ -479,6 +479,11 @@ export const SCORE_DIMENSIONS = {
   hashMatch: 60,
   /** Same release group. */
   releaseGroup: 25,
+  /**
+   * Timed against the same frame rate. A 25 fps subtitle on a 23.976 fps film
+   * drifts by four percent — a minute off by the end — however good it is.
+   */
+  frameRate: 20,
   /** Same source — BluRay, WEB-DL, HDTV. */
   source: 15,
   /** Same resolution. */

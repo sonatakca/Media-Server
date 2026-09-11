@@ -120,6 +120,9 @@ import { createPolicyRepository } from "./releases/policyRepository";
 import { createReleaseRoutes } from "./releases/releaseRoutes";
 import { createMonitoringRepository } from "./releases/monitoringRepository";
 import { createWantedRoutes } from "./catalogue/wantedRoutes";
+import { createLibraryAdminRepository } from "./catalogue/libraryAdmin";
+import { createLibraryAdminRoutes } from "./catalogue/libraryAdminRoutes";
+import { createTitleRemoval } from "./catalogue/titleRemoval";
 import { createMonitoringRoutes } from "./releases/monitoringRoutes";
 import { parseSabnzbdConfig } from "./acquisition/acquisitionConfig";
 import { createSabnzbdClient } from "./acquisition/sabnzbd";
@@ -137,6 +140,12 @@ import {
   disabledSubtitleJobTypes,
 } from "./subtitles/subtitleRuntime";
 import { createSubtitleRoutes } from "./subtitles/subtitleRoutes";
+import { createProviderSessionVault } from "./subtitles/providerSessionVault";
+import {
+  createTurkceAltyaziProvider,
+  SEYIRLIK_USER_AGENT,
+  TURKCE_ALTYAZI_ID,
+} from "./subtitles/turkceAltyaziProvider";
 import type {
   SubtitleProvider,
   ProviderSessionManager,
@@ -1070,11 +1079,27 @@ export async function createNativeRuntime({
       })()
     : undefined;
 
+  /*
+   * The providers this build can talk to, and the vault their browser
+   * sessions are sealed in. Constructed only when subtitles are configured, so
+   * a server that never enabled them never reads or writes a session row.
+   */
+  const availableSubtitleProviders = subtitleProviders ?? [
+    createTurkceAltyaziProvider(),
+  ];
+  const subtitleVault = subtitleConfig
+    ? createProviderSessionVault({
+        db: pool,
+        secret: authConfig.sessionHashSecret,
+        // Answered anonymously until Cloudflare says otherwise.
+        anonymous: { [TURKCE_ALTYAZI_ID]: { userAgent: SEYIRLIK_USER_AGENT } },
+      })
+    : undefined;
   const subtitles = createSubtitleRuntime({
     config: subtitleConfig,
     pool,
-    providers: subtitleProviders,
-    sessions: subtitleSessions,
+    providers: availableSubtitleProviders,
+    sessions: subtitleSessions ?? subtitleVault?.manager,
     playback: playbackRefresh,
   });
 
@@ -1229,7 +1254,20 @@ export async function createNativeRuntime({
     ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ syncplay, catalogue, events: syncplayEvents }),
-    ...(subtitles ? createSubtitleRoutes(subtitles.repository, queue) : []),
+    ...(subtitles
+      ? createSubtitleRoutes(
+          subtitles.repository,
+          queue,
+          subtitleVault && subtitleConfig
+            ? {
+                providers: availableSubtitleProviders.filter((provider) =>
+                  subtitleConfig.providerIds.includes(provider.id),
+                ),
+                vault: subtitleVault,
+              }
+            : undefined,
+        )
+      : []),
     ...createUserRoutes({
       users,
       sessions,
@@ -1268,6 +1306,23 @@ export async function createNativeRuntime({
     }),
     ...createMonitoringRoutes(createMonitoringRepository(pool)),
     ...createWantedRoutes(pool, tmdb),
+    ...createLibraryAdminRoutes({
+      repository: createLibraryAdminRepository(pool),
+      tmdb,
+      removal: createTitleRemoval({
+        pool,
+        mediaRoot,
+        renditionRoot,
+        stateRoot: renditionStateRoot,
+        removeImage: (storageKey) => imageStorage.remove(storageKey),
+        ...(acquisition
+          ? {
+              cancelAcquisition: (acquisitionId: string) =>
+                acquisition.service.cancel(acquisitionId),
+            }
+          : {}),
+      }),
+    }),
     ...(acquisition
       ? createAcquisitionRoutes({
           repository: acquisition.repository,

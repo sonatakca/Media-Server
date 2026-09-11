@@ -294,3 +294,123 @@ describe("resuming after somebody has signed in", () => {
     },
   );
 });
+
+describe("subtitles for a whole title", () => {
+  const ITEM = "33333333-4444-4555-8666-777777777777";
+
+  it("asks once per episode file, skipping files already being searched", async () => {
+    const h = harness();
+    const repository = h.repository as unknown as Record<string, unknown>;
+    repository.titleMediaFiles = vi.fn(async () => ["f1", "f2", "f3"]);
+    repository.openAttempt = vi.fn(async () => null);
+    (repository.openAttempt as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+      "already-running",
+    );
+    const captured = await invoke(
+      route(h.routes, "POST", "/subtitles/items/:itemId"),
+      { params: { itemId: ITEM }, body: { language: "tr" } },
+    );
+    expect(captured.payload?.data).toEqual({ files: 3, queued: 2 });
+    expect(h.wants.every((want) => want.language === "tur")).toBe(true);
+    expect(h.enqueued).toHaveLength(2);
+  });
+
+  it("refuses a request that names no known language", async () => {
+    const h = harness();
+    await expect(
+      invoke(route(h.routes, "POST", "/subtitles/items/:itemId"), {
+        params: { itemId: ITEM },
+        body: { language: "zz-nothing" },
+      }),
+    ).rejects.toThrow();
+  });
+});
+
+describe("a provider sign-in", () => {
+  function sessionHarness() {
+    const h = harness();
+    const stored: unknown[] = [];
+    const repository = h.repository as unknown as Record<string, unknown>;
+    repository.attemptsAwaiting = vi.fn(async () => ["a1", "a2"]);
+    const vault = {
+      store: vi.fn(async (_id: string, material: unknown) => {
+        stored.push(material);
+      }),
+      clear: vi.fn(async () => undefined),
+      status: vi.fn(async (providerId: string) => ({
+        providerId,
+        state: "active",
+        updatedAt: null,
+        reason: null,
+      })),
+    };
+    const routes = createSubtitleRoutes(
+      h.repository,
+      {
+        enqueue: (options: Record<string, unknown>) => (
+          h.enqueued.push(options),
+          Promise.resolve("job")
+        ),
+      } as unknown as JobQueue,
+      {
+        providers: [
+          {
+            id: "turkcealtyazi",
+            label: "TürkçeAltyazı",
+            requiresSession: true,
+            languages: ["tur"],
+          },
+        ],
+        vault: vault as never,
+      },
+    );
+    return { ...h, routes, stored, vault };
+  }
+
+  it("stores the pasted session, answers without it, and resumes what was waiting", async () => {
+    const h = sessionHarness();
+    const captured = await invoke(
+      route(h.routes, "PUT", "/subtitles/providers/:providerId/session"),
+      {
+        params: { providerId: "turkcealtyazi" },
+        body: { cookie: "cf_clearance=secret", userAgent: "Mozilla/5.0" },
+      },
+    );
+    expect(h.stored).toEqual([
+      { cookie: "cf_clearance=secret", userAgent: "Mozilla/5.0" },
+    ]);
+    expect(JSON.stringify(captured.payload)).not.toContain("secret");
+    expect(captured.payload?.data).toMatchObject({ resumed: 2 });
+    expect(h.enqueued.map((job) => job.jobType)).toEqual([
+      SUBTITLE_JOB_TYPES.resume,
+      SUBTITLE_JOB_TYPES.resume,
+    ]);
+  });
+
+  it("refuses a paste that would inject a header, and stores nothing", async () => {
+    const h = sessionHarness();
+    await expect(
+      invoke(
+        route(h.routes, "PUT", "/subtitles/providers/:providerId/session"),
+        {
+          params: { providerId: "turkcealtyazi" },
+          body: { cookie: "a=1\r\nX-Evil: 1", userAgent: "Mozilla/5.0" },
+        },
+      ),
+    ).rejects.toThrow();
+    expect(h.stored).toEqual([]);
+  });
+
+  it("does not accept a session for a provider it does not ask", async () => {
+    const h = sessionHarness();
+    await expect(
+      invoke(
+        route(h.routes, "PUT", "/subtitles/providers/:providerId/session"),
+        {
+          params: { providerId: "elsewhere" },
+          body: { cookie: "a=1", userAgent: "UA" },
+        },
+      ),
+    ).rejects.toThrow();
+  });
+});

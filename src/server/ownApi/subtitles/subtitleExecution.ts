@@ -55,6 +55,13 @@ export interface SubtitleExecutionRepository {
   ): Promise<T | undefined>;
 }
 
+/** A path's last segment without its extension: `…/Dune.2021.2160p-X.mkv` → `Dune.2021.2160p-X`. */
+export function releaseNameOf(relativePath: string): string | null {
+  const name = relativePath.split(/[\\/]/).pop() ?? "";
+  const bare = name.replace(/\.[A-Za-z0-9]{2,4}$/, "");
+  return bare || null;
+}
+
 /** A PostgreSQL session lock serializes all wants for one media file, across workers. */
 export function createSubtitleExecutionRepository(
   pool: DatabasePool,
@@ -97,12 +104,21 @@ export function createSubtitleExecutionRepository(
           pending_installation: SubtitleWriteIntent | null;
           resume_stage: SubtitleWork["resumeStage"];
           replace_existing: boolean;
+          imdb_id: string | null;
+          frame_rate: number | null;
+          release_name: string | null;
         }>(
           `SELECT jsonb_build_object('id',w.id,'mediaFileId',w.media_file_id,'language',w.language,'forced',w.forced,'hearingImpaired',w.hearing_impaired,'active',w.active) AS want,
             f.relative_path, COALESCE(series.title,i.title) AS title, COALESCE(series.production_year,i.production_year) AS production_year,
             CASE WHEN i.kind='episode' THEN i.parent_index_number END AS season,
             CASE WHEN i.kind='episode' THEN i.index_number END AS episode, f.duration_ms,
-            a.selected_candidate,a.pending_installation,a.resume_stage,a.replace_existing
+            a.selected_candidate,a.pending_installation,a.resume_stage,a.replace_existing,
+            COALESCE(series.provider_ids->>'imdb',i.provider_ids->>'imdb') AS imdb_id,
+            (SELECT s.frame_rate FROM media_streams s WHERE s.media_file_id=f.id AND s.kind='video' AND NOT s.is_external ORDER BY s.stream_index LIMIT 1) AS frame_rate,
+            (SELECT ifl.source_relative FROM import_files ifl JOIN imports imp ON imp.id=ifl.import_id
+              WHERE imp.target_item_id IN (i.id,i.parent_id,i.series_id) AND ifl.role='media' AND ifl.destination_relative IS NOT NULL
+                AND right(lower(replace(f.relative_path,'\\','/')),length(ifl.destination_relative))=lower(replace(ifl.destination_relative,'\\','/'))
+              ORDER BY ifl.updated_at DESC LIMIT 1) AS release_name
           FROM subtitle_attempts a JOIN subtitle_wants w ON w.id=a.want_id
           JOIN media_files f ON f.id=w.media_file_id JOIN items i ON i.id=f.item_id
           LEFT JOIN items series ON series.id=i.series_id
@@ -126,13 +142,20 @@ export function createSubtitleExecutionRepository(
             episode: row.episode,
             language: row.want.language,
             wantForced: row.want.forced,
-            releaseTitle: null,
+            // The release a download was named for says more than the tidy
+            // name the importer gave the file, so it is preferred when known.
+            releaseTitle: releaseNameOf(row.release_name ?? row.relative_path),
             releaseGroup: null,
             source: null,
             resolution: null,
             videoHash: null,
             durationSeconds:
               row.duration_ms === null ? null : Number(row.duration_ms) / 1000,
+            imdbId:
+              row.imdb_id && /^tt\d{1,10}$/.test(row.imdb_id)
+                ? row.imdb_id
+                : null,
+            frameRate: row.frame_rate === null ? null : Number(row.frame_rate),
           },
           embedded: tracksFromStreams(streams.rows),
           selected: row.selected_candidate,

@@ -8,6 +8,7 @@ import {
   type IntegrationStatus,
   type SchemaStatus,
 } from "../../lib/configurationApi";
+import { SubtitleProvidersPanel } from "../../components/admin/SubtitleProvidersPanel";
 
 /**
  * What the server is connected to, and what its database is carrying.
@@ -18,6 +19,10 @@ import {
  * this page says what is set up and what is not, and changing it is editing a
  * protected file and restarting — which is also why no secret is ever shown:
  * an operator replaces a key, they never need to read one back.
+ *
+ * The one thing written from here is a subtitle provider's browser session.
+ * It points the server nowhere new — the provider is fixed in configuration —
+ * and it is write-only: sealed on arrival and never sent back.
  */
 export function IntegrationsPage() {
   const { t } = useLanguage();
@@ -118,6 +123,8 @@ export function IntegrationsPage() {
           {t("admin.integrations.readOnly")}
         </p>
       </section>
+
+      <SubtitleProvidersPanel />
 
       <section className="rounded-3xl border border-white/10 bg-white/[0.05] p-5">
         <h2 className="text-lg font-black text-white">

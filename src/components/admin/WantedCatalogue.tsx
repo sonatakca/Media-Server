@@ -3,7 +3,6 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   addWanted,
-  setWanted as updateWanted,
   listWanted,
   searchWanted,
   releaseSearchUrl,
@@ -11,13 +10,13 @@ import {
   type WantedLibrary,
   type WantedTitle,
 } from "../../lib/wantedApi";
+import { LibraryBoard } from "./LibraryBoard";
 
 export function WantedCatalogue() {
   const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [kind, setKind] = useState("movie");
-  const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [titles, setTitles] = useState<WantedTitle[]>([]);
@@ -28,6 +27,7 @@ export function WantedCatalogue() {
   const [failure, setFailure] = useState(false);
   const [saveFailure, setSaveFailure] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
+  const [libraryRefresh, setLibraryRefresh] = useState(0);
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
@@ -84,19 +84,7 @@ export function WantedCatalogue() {
       await addWanted(title, libraryId);
       const data = await listWanted();
       setWanted(data.items);
-    } catch {
-      setSaveFailure(true);
-    } finally {
-      setSaving(null);
-    }
-  }
-  async function toggle(item: WantedItem) {
-    setSaving(item.id);
-    setSaveFailure(false);
-    try {
-      await updateWanted(item.id, !item.desired);
-      const data = await listWanted();
-      setWanted(data.items);
+      setLibraryRefresh((value) => value + 1);
     } catch {
       setSaveFailure(true);
     } finally {
@@ -293,66 +281,7 @@ export function WantedCatalogue() {
         </>
       )}
       <p className="text-xs text-white/50">{t("wanted.attribution")}</p>
-      <section className="border-t border-white/10 pt-5">
-        <h2 className="text-xl font-bold text-white">{t("wanted.list")}</h2>
-        <p className="mt-1 text-sm text-white/65">{t("wanted.intentOnly")}</p>
-        <label className="mt-3 flex max-w-xs flex-col gap-1 text-sm text-white/70">
-          {t("media.statusFilter")}
-          <select
-            className={control}
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">{t("wanted.allStatuses")}</option>
-            {(
-              [
-                "wanted",
-                "downloading",
-                "awaiting-import",
-                "downloaded",
-                "processing",
-                "paused",
-                "ready",
-                "missing",
-              ] as const
-            ).map((status) => (
-              <option key={status} value={status}>
-                {t(`media.status.${status}`)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <ul className="mt-3 divide-y divide-white/10">
-          {wanted
-            .filter(
-              (item) => statusFilter === "all" || item.status === statusFilter,
-            )
-            .map((item) => (
-              <li
-                className="flex flex-wrap items-center justify-between gap-2 py-3 text-sm text-white/80"
-                key={item.id}
-              >
-                <span>
-                  {item.title} ·{" "}
-                  {t(item.kind === "movie" ? "wanted.movies" : "wanted.shows")}{" "}
-                  · {t(`media.status.${item.status}`)}
-                </span>
-                <div className="flex flex-wrap items-center gap-3">
-                  <button
-                    className={control}
-                    disabled={saving !== null}
-                    onClick={() => void toggle(item)}
-                  >
-                    {t(item.desired ? "wanted.unmonitor" : "wanted.add")}
-                  </button>
-                  <Link className="py-2 underline" to={releaseSearchUrl(item)}>
-                    {t("wanted.releases")}
-                  </Link>
-                </div>
-              </li>
-            ))}
-        </ul>
-      </section>
+      <LibraryBoard refreshKey={libraryRefresh} />
     </section>
   );
 }

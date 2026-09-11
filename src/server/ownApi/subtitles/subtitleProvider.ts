@@ -75,7 +75,9 @@ export function createProviderSession(input: {
 }): ProviderSession {
   const headers: Record<string, string> = {
     ...(input.extraHeaders ?? {}),
-    cookie: input.cookie,
+    // An anonymous session is a user agent and no cookie at all, never an
+    // empty `cookie:` header.
+    ...(input.cookie ? { cookie: input.cookie } : {}),
     "user-agent": input.userAgent,
   };
   return {
@@ -114,12 +116,10 @@ export type SessionLookup =
 /**
  * Where sessions come from.
  *
- * Deliberately an interface with no implementation in this checkpoint. A real
- * one means an embedded browser window — a substantial runtime dependency — and
- * committing to that before the pipeline that consumes it exists would be
- * building the expensive half first. The boundary is what the rest of the
- * subsystem needs in order to be finished and tested; the window plugs in
- * behind it.
+ * The implementation is `providerSessionVault.ts`: a person signs in in their
+ * own browser and pastes the session, which is sealed in the database. There
+ * is no embedded browser; the boundary would take one without the pipeline
+ * noticing.
  */
 export interface ProviderSessionManager {
   /**
@@ -163,6 +163,10 @@ export interface SubtitleQuery {
    */
   readonly videoHash: string | null;
   readonly durationSeconds: number | null;
+  /** The IMDb id (`tt…`) of the film or series, when the catalogue has one. */
+  readonly imdbId?: string | null;
+  /** Frames per second of the video, which decides whether cue times line up. */
+  readonly frameRate?: number | null;
 }
 
 /** One subtitle a provider says it has. */
@@ -186,6 +190,8 @@ export interface SubtitleCandidate extends SubtitleFlags {
   readonly hashMatched: boolean;
   /** Whatever the provider says about popularity or rating, for tie-breaks. */
   readonly providerRating: number | null;
+  /** The frame rate the subtitle was timed against, when the provider says. */
+  readonly frameRate?: number | null;
 }
 
 /** A candidate with the score this deployment gave it. */

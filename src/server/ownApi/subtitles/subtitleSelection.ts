@@ -65,6 +65,21 @@ function equalFact(
 }
 
 /**
+ * Whether two frame rates are the same rate.
+ *
+ * Providers round: `23.976`, `23.98` and `24000/1001` are one rate, while
+ * `23.976` and `24` are not — the difference is a tenth of a percent, about
+ * seven seconds over two hours, which is out of sync by the end.
+ */
+function sameFrameRate(
+  left: number | null | undefined,
+  right: number | null | undefined,
+): boolean {
+  if (!left || !right) return false;
+  return Math.abs(left - right) < 0.01;
+}
+
+/**
  * What became of one candidate.
  *
  * A rejection carries a reason in words rather than a code, because its only
@@ -94,6 +109,10 @@ const DIMENSION_DETAILS: Record<ScoreDimension, readonly [string, string]> = {
   releaseGroup: [
     "A different release group, or neither says.",
     "The same release group.",
+  ],
+  frameRate: [
+    "A different frame rate, or neither says.",
+    "Timed for the same frame rate.",
   ],
   source: ["A different source, or neither says.", "The same source."],
   resolution: [
@@ -170,6 +189,7 @@ export function assessCandidate(
       query.releaseGroup ?? sourceFacts.releaseGroup,
       candidate.releaseGroup ?? facts.releaseGroup,
     ),
+    frameRate: sameFrameRate(query.frameRate, candidate.frameRate),
     source: equalFact(
       query.source ?? sourceFacts.source,
       candidate.source ?? facts.source,
@@ -200,8 +220,9 @@ export function assessCandidate(
 /**
  * Best first, and stable.
  *
- * Provider then candidate id break a tie, so two runs of one search choose the
- * same subtitle. An unstable order there reads as a scoring bug and is not one.
+ * A provider's popularity figure breaks a tie first, then provider and candidate
+ * id, so two runs of one search choose the same subtitle. An unstable order
+ * there reads as a scoring bug and is not one.
  */
 export function orderCandidates(
   candidates: readonly ScoredCandidate[],
@@ -209,6 +230,8 @@ export function orderCandidates(
   return [...candidates].sort(
     (a, b) =>
       b.score.total - a.score.total ||
+      // Equal fit: the one more people downloaded has more often been right.
+      (b.candidate.providerRating ?? 0) - (a.candidate.providerRating ?? 0) ||
       a.candidate.providerId.localeCompare(b.candidate.providerId) ||
       a.candidate.candidateId.localeCompare(b.candidate.candidateId),
   );

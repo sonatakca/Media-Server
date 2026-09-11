@@ -66,6 +66,7 @@ function checkpointCandidate(selected: ScoredCandidate): ScoredCandidate {
       resolution: c.resolution,
       hashMatched: c.hashMatched,
       providerRating: c.providerRating,
+      ...(c.frameRate ? { frameRate: c.frameRate } : {}),
       ...(c.identity
         ? {
             identity: {

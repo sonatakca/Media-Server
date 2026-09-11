@@ -33,6 +33,59 @@ export interface SubtitleAttempt {
   readonly failureClass: string | null;
   /** Which provider is waiting to be signed in to, when one is. */
   readonly awaitingProviderId: string | null;
+  /** The film, or the show the episode belongs to. */
+  readonly title?: string | null;
+  readonly seasonNumber?: number | null;
+  readonly episodeNumber?: number | null;
+}
+
+export type ProviderSessionState =
+  | "anonymous"
+  | "active"
+  | "rejected"
+  | "signed-out";
+
+export interface SubtitleProviderStatus {
+  readonly id: string;
+  readonly label: string;
+  readonly languages: string[] | null;
+  readonly requiresSession: boolean;
+  /** Whether the provider can be asked now. Never the session itself. */
+  readonly session: {
+    readonly state: ProviderSessionState;
+    readonly updatedAt: string | null;
+    readonly reason: string | null;
+  } | null;
+}
+
+export async function listSubtitleProviders(): Promise<
+  SubtitleProviderStatus[]
+> {
+  const { providers } = await ownApiClient.request<{
+    providers: SubtitleProviderStatus[];
+  }>("/subtitles/providers");
+  return providers;
+}
+
+/**
+ * Hands the server the session a browser earned by passing the provider's
+ * check and signing in. Write-only: the server seals it and never returns it.
+ */
+export function saveProviderSession(
+  providerId: string,
+  material: { cookie: string; userAgent: string },
+): Promise<{ resumed: number }> {
+  return ownApiClient.request(
+    `/subtitles/providers/${encodeURIComponent(providerId)}/session`,
+    { method: "PUT", body: material },
+  );
+}
+
+export function clearProviderSession(providerId: string): Promise<unknown> {
+  return ownApiClient.request(
+    `/subtitles/providers/${encodeURIComponent(providerId)}/session`,
+    { method: "DELETE" },
+  );
 }
 
 export async function listSubtitleAttempts(): Promise<SubtitleAttempt[]> {

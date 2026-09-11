@@ -140,11 +140,58 @@ the provider contract declares rather than whatever an adapter happened to
 attach.
 
 What is **not** implemented, on purpose: there is no Cloudflare bypass, no
-CAPTCHA solving, no fingerprint or stealth evasion, and no hard-coded cookie.
-`ProviderSessionManager` is an interface with no browser behind it. A real one
-means an embedded browser window — a substantial runtime dependency — and
-committing to that before the pipeline that consumes it existed would have been
-building the expensive half first.
+CAPTCHA solving, no fingerprint or stealth evasion, no embedded browser, and no
+hard-coded cookie.
+
+## TürkçeAltyazı and signing in
+
+`turkceAltyaziProvider.ts` is the one registered provider (`turkcealtyazi`,
+Turkish and English). It finds a title by the catalogue's IMDb id — the site's
+`/mov/<n>/` id _is_ the IMDb number — or, without one, by name and year from
+the site's search. It reads the title page's subtitle list, fetches the detail
+pages of the five likeliest rows for their full release names, and downloads by
+posting the page's own form to `/ind`. Season packs are unpacked and the
+episode's file chosen by name (`S01E02`, `1x02`, or a bare `E02` inside a
+season's pack). ZIP only: RAR and 7z are refused so the next candidate is
+tried. Turkish text that is not UTF-8 is decoded as Windows-1254, which is what
+the site's uploads are.
+
+"Best fitting" is the scorer in `subtitleSelection.ts`, now with **frame rate**
+as a dimension (a 25 fps subtitle drifts a minute over a 23.976 fps film) and
+the provider's download count as the first tie-break. The query carries the
+release the file was imported from (`import_files.source_relative`), falling
+back to the file's own name.
+
+The site usually answers anonymous requests, so it is asked anonymously, under
+an honest `Seyirlik/1.0` user agent, until Cloudflare answers with a challenge
+(`cf-mitigated: challenge`, or the interstitial on a 403/503). That is
+`needs-authentication`, and the session is marked **rejected**. A person then:
+
+1. opens turkcealtyazi.org in their own browser, passes the check and signs in;
+2. copies the `Cookie` request header from the browser's developer tools;
+3. pastes it under **Integrations → Subtitle provider sign-in**. The page fills
+   in that browser's user agent, because the cookie is only honoured from the
+   browser that earned it (and, in practice, from the same public IP — sign in
+   from the home network the server is on).
+
+Saving resumes every attempt waiting for that provider.
+
+**Where it is kept.** Migration 027 adds `provider_sessions`. The cookie and
+user agent are sealed with AES-256-GCM under a key derived (HKDF) from
+`SEYIRLIK_SESSION_HASH_SECRET`, with the provider id as associated data. The
+database never holds the material in the clear, and the routes never return it —
+`GET /subtitles/providers` reports only the state (`anonymous`, `active`,
+`rejected`, `signed-out`). A refusal of an older session cannot wipe one pasted
+after it: invalidation only applies to the row version that process handed out.
+Rotating the session-hash secret makes a stored session unreadable, which reads
+as "needs a sign-in" rather than an error.
+
+| Route                                     | What it does                                                  |
+| ----------------------------------------- | ------------------------------------------------------------- |
+| `GET /subtitles/providers`                | Configured providers and each one's session state.            |
+| `PUT /subtitles/providers/:id/session`    | Body `cookie`, `userAgent`. Sealed; waiting attempts resumed. |
+| `DELETE /subtitles/providers/:id/session` | Forget it; the provider is asked anonymously again.           |
+| `POST /subtitles/items/:itemId`           | Wants a language for a film, or every episode file of a show. |
 
 ## How far it has been proven
 
@@ -187,5 +234,7 @@ Nor has any of it run against real media. That waits on the storage phase.
 
 2. Run the execution repository against a real database.
 3. Point `libraryRoot` at a synthetic directory first, not at the library.
-4. Register at least one provider adapter. A configured provider id with no
-   registered adapter is refused at startup rather than discovered at run time.
+4. Name the provider: `"providerIds": ["turkcealtyazi"]`. A configured
+   provider id with no registered adapter is refused at startup rather than
+   discovered at run time.
+5. Apply migration 027 with the code that uses it.

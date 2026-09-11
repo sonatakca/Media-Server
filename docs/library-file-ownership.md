@@ -56,6 +56,21 @@ A subtitle has nowhere to carry a marker of its own — unlike an NFO, which has
 its text — which is why ownership here is a database record rather than a
 property of the file.
 
+## Removing a title
+
+The one operation that deletes a title's folder outright is **Remove** on the
+library board (`catalogue/titleRemoval.ts`). It deletes a folder only when it is
+provably that title's alone: every recorded file of the title is inside it, no
+other title keeps a file there, it is not a library root, and it is not a link.
+Otherwise it deletes the title's recorded files one by one and leaves the folder.
+
+It renames the folder to `.seyirlik-removing-<id>` first, deletes the catalogue
+rows in one transaction, and only then deletes the bytes, so a crash never
+leaves rows a rescan could resurrect from files. A staged folder left by a crash
+is swept by the next removal. It refuses while the title is being processed or
+imported, and cancels its downloads first so nothing imports it straight back.
+Legacy packages under the rendition root and their registry records go with it.
+
 ## What a new writer has to do
 
 Anything that writes into a title folder must:

@@ -174,6 +174,18 @@ export function SubtitlesPage() {
           >
             <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
               <span className="text-sm font-black text-white">
+                {row.title ? (
+                  <>
+                    {row.title}
+                    {row.seasonNumber !== null &&
+                    row.seasonNumber !== undefined &&
+                    row.episodeNumber !== null &&
+                    row.episodeNumber !== undefined
+                      ? ` S${String(row.seasonNumber).padStart(2, "0")}E${String(row.episodeNumber).padStart(2, "0")}`
+                      : ""}
+                    {" · "}
+                  </>
+                ) : null}
                 {row.language.toUpperCase()}
                 {row.forced ? ` · ${t("admin.subtitles.forced")}` : ""}
                 {row.hearingImpaired === "prefer"
@@ -205,14 +217,18 @@ export function SubtitlesPage() {
             {row.state === "needs-authentication" ? (
               <div className="mt-3">
                 {/*
-                  Deliberately truthful. There is no embedded browser to open
-                  yet, so the page says the operation is waiting for a sign-in
-                  that has to happen elsewhere, rather than offering a button
-                  that would pretend to perform one.
+                  The sign-in happens in the person's own browser; Integrations
+                  is where its session is handed over, and saving it there
+                  resumes every attempt waiting here.
                 */}
                 <p className="text-xs font-medium text-white/60">
                   {t("admin.subtitles.authExplanation")}
-                  {row.awaitingProviderId ? ` (${row.awaitingProviderId})` : ""}
+                  {row.awaitingProviderId
+                    ? ` (${row.awaitingProviderId})`
+                    : ""}{" "}
+                  <Link className="underline" to="/admin/integrations">
+                    {t("admin.integrations.session.signIn")}
+                  </Link>
                 </p>
 
                 <button
