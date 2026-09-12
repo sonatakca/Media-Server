@@ -10,6 +10,7 @@ import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
 import type { TitlePackageManifest } from "../../../renditions/adaptive/publishTitle";
 import {
   createPackageIndex,
+  manifestIdentity,
   packageStateOf,
   summarisePackage,
   type PackageIndexTarget,
@@ -226,5 +227,81 @@ describe("the index", () => {
     index.track([target("a")]);
     await index.settle();
     expect(readManifest).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * The sweep reads manifests and nothing else, so a rendition that is on disk
+ * but short reads as a whole package: the list offers to remove the source and
+ * hides the button that would rebuild the rung. What an on-demand check saw is
+ * therefore recorded here, and expires when the title is published again.
+ */
+describe("what an on-demand check found", () => {
+  const damaged = { manifestId: "", rungs: [2160], elsewhere: false };
+
+  it("drops a damaged rung from the ladder and from completeness", () => {
+    const whole = manifest([2160, 1440, 1080, 720, 480, 360, 240, 144]);
+    const summary = summarisePackage(whole, "fp", {
+      rungs: [2160],
+      elsewhere: false,
+    });
+
+    expect(summary?.rungs).not.toContain(2160);
+    expect(summary?.rungs).toContain(1440);
+  });
+
+  it("calls a package with a damaged master incomplete, rungs intact", () => {
+    const summary = summarisePackage(
+      manifest([1080, 720, 480, 360, 240, 144]),
+      "fp",
+      {
+        rungs: [],
+        elsewhere: true,
+      },
+    );
+
+    expect(summary?.rungs).toHaveLength(6);
+    expect(summary?.complete).toBe(false);
+    expect(packageStateOf(summary)).toBe("partial");
+  });
+
+  it("holds the finding against the package it was measured on", async () => {
+    const published = manifest([2160, 1440, 1080, 720, 480, 360, 240, 144]);
+    const readManifest = vi.fn(async () => published);
+    const index = createPackageIndex({
+      readManifest,
+      resolveRoot: async () => "/media/title",
+    });
+
+    const before = await index.refresh(target("f1"));
+    expect(before.summary?.rungs).toContain(2160);
+
+    index.noteDamage("f1", {
+      ...damaged,
+      manifestId: manifestIdentity(published),
+    });
+    const after = await index.refresh(target("f1"));
+    expect(after.summary?.rungs).not.toContain(2160);
+  });
+
+  it("forgets the finding once the title is published again", async () => {
+    const published = manifest([2160, 1440]);
+    let current = published;
+    const index = createPackageIndex({
+      readManifest: async () => current,
+      resolveRoot: async () => "/media/title",
+    });
+
+    index.noteDamage("f1", {
+      ...damaged,
+      manifestId: manifestIdentity(published),
+    });
+    expect((await index.refresh(target("f1"))).summary?.rungs).not.toContain(
+      2160,
+    );
+
+    // A rebuild writes a new manifest, and the finding was about the old one.
+    current = manifest([2160, 1440], { createdAt: "2099-01-01T00:00:00.000Z" });
+    expect((await index.refresh(target("f1"))).summary?.rungs).toContain(2160);
   });
 });

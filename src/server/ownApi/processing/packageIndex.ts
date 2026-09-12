@@ -49,6 +49,29 @@ export interface ProcessingPackageSummary {
   totalBytes: number;
 }
 
+/**
+ * What a real look at the files found, as opposed to what the manifest claims.
+ *
+ * Produced by the on-demand single-title analysis, which is the only reader
+ * that can afford a stat per rendition, and handed to the index so the library
+ * list stops advertising a rung the disk does not have. Carried with the
+ * identity of the manifest it was measured against: a title that is published
+ * again writes a new manifest, and the finding is then about a package that no
+ * longer exists.
+ */
+export interface PackageDamage {
+  manifestId: string;
+  /** Rungs whose media or playlist is gone or the wrong size. */
+  rungs: readonly number[];
+  /** Damage outside any rung — the master playlist, an audio or subtitle track. */
+  elsewhere: boolean;
+}
+
+/** Which published package a finding is about. */
+export function manifestIdentity(manifest: TitlePackageManifest): string {
+  return `${manifest.profileVersion}|${manifest.sourceFingerprint}|${manifest.createdAt}`;
+}
+
 export interface PackageIndexEntry {
   state: ProcessingPackageState;
   summary: ProcessingPackageSummary | null;
@@ -95,8 +118,23 @@ export const UNKNOWN_PACKAGE: PackageIndexEntry = {
 export function summarisePackage(
   manifest: TitlePackageManifest | null,
   fingerprint: string | null,
+  damage?: Pick<PackageDamage, "rungs" | "elsewhere">,
 ): ProcessingPackageSummary | null {
   if (!manifest) return null;
+  /*
+   * A rung whose files are gone or short is not a rung the title has. Removing
+   * it here rather than at each caller is what keeps the ladder, the state and
+   * completeness telling one story.
+   */
+  if (damage && damage.rungs.length > 0) {
+    const damaged = new Set(damage.rungs);
+    manifest = {
+      ...manifest,
+      video: manifest.video.filter(
+        (rendition) => !damaged.has(rendition.qualityHeight),
+      ),
+    };
+  }
   const sourceMatches =
     fingerprint !== null && manifest.sourceFingerprint === fingerprint;
   const profileMatches = manifest.profileVersion === ADAPTIVE_PROFILE_VERSION;
@@ -119,7 +157,8 @@ export function summarisePackage(
     sourceMatches,
     profileMatches,
     rungs,
-    complete,
+    // Damage the ladder cannot describe still means the package is not whole.
+    complete: complete && !damage?.elsewhere,
     hdr:
       manifest.video.find((rendition) => rendition.hdr !== "sdr")?.hdr ?? "sdr",
     audioTracks: manifest.audio.length,
@@ -155,6 +194,16 @@ export interface PackageIndex {
   refresh(target: PackageIndexTarget): Promise<PackageIndexEntry>;
   /** Forgets a title, so the next read is a fresh one. */
   invalidate(mediaFileId: string): void;
+  /**
+   * Remembers what an on-demand check saw on disk for one title.
+   *
+   * The sweep reads manifests and nothing else, on purpose: it covers the whole
+   * library on a clock and a stat per rendition would turn that into hundreds
+   * of metadata reads a second against a spinning disk. So the expensive truth
+   * is not swept for — it is recorded when something has already paid for it,
+   * and it expires by itself when the title is published again.
+   */
+  noteDamage(mediaFileId: string, damage: PackageDamage): void;
   /** Waits for the current background sweep. Tests only. */
   settle(): Promise<void>;
 }
@@ -172,6 +221,7 @@ export function createPackageIndex(
       resolveTitleRoot(target.sourcePath, titleRootLayoutForKind(target.kind)));
 
   const entries = new Map<string, PackageIndexEntry>();
+  const damaged = new Map<string, PackageDamage>();
   const pending = new Map<string, PackageIndexTarget>();
   const inFlight = new Set<string>();
   let sweep: Promise<void> | null = null;
@@ -180,9 +230,20 @@ export function createPackageIndex(
     let summary: ProcessingPackageSummary | null = null;
     try {
       const titleRoot = await resolveRoot(target);
+      const manifest = await readManifest(titleRoot);
+      /*
+       * A finding is about one published package. Reading a different manifest
+       * than the one it was measured against means the title was published
+       * again, so the finding is discarded rather than held against bytes
+       * nobody has looked at.
+       */
+      const note = damaged.get(target.mediaFileId);
+      if (note && (!manifest || note.manifestId !== manifestIdentity(manifest)))
+        damaged.delete(target.mediaFileId);
       summary = summarisePackage(
-        await readManifest(titleRoot),
+        manifest,
         target.fingerprint,
+        damaged.get(target.mediaFileId),
       );
     } catch {
       /*
@@ -251,6 +312,16 @@ export function createPackageIndex(
     invalidate: (mediaFileId) => {
       entries.delete(mediaFileId);
       pending.delete(mediaFileId);
+    },
+
+    noteDamage: (mediaFileId, damage) => {
+      if (damage.rungs.length === 0 && !damage.elsewhere) {
+        damaged.delete(mediaFileId);
+      } else {
+        damaged.set(mediaFileId, damage);
+      }
+      // The entry standing now was summarised without this, so it is wrong.
+      entries.delete(mediaFileId);
     },
 
     settle: async () => {

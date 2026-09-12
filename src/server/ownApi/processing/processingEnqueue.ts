@@ -29,7 +29,11 @@ import {
   type ProcessingJobStore,
 } from "./jobStore";
 import type { StorageGuard } from "./storageGuard";
-import { summarisePackage } from "./packageIndex";
+import {
+  manifestIdentity,
+  summarisePackage,
+  type PackageDamage,
+} from "./packageIndex";
 import { missingPackageAssets } from "./packageAssets";
 
 /**
@@ -77,6 +81,11 @@ export interface ExistingPackageView {
   subtitleTracks?: number;
   totalBytes?: number;
   missingRungs: number[];
+  /**
+   * What a real look at the files found, when one was taken. Absent means the
+   * package was not inspected, never that it was inspected and found whole.
+   */
+  damage?: PackageDamage;
 }
 
 export interface AnalysisResult {
@@ -296,32 +305,23 @@ export function createProcessingEnqueuer({
      * reported as an incomplete package instead of being quietly excused.
      */
     const missing = await missingPackageAssets(titleRoot, manifest);
-    if (missing.length === 0) return { ...summary, missingRungs: [] };
-
-    const damagedRungs = new Set(
-      missing
-        .map((asset) => asset.qualityHeight)
-        .filter((height): height is number => height !== undefined),
-    );
-    const elsewhere = missing.some(
-      (asset) => asset.qualityHeight === undefined,
-    );
-    // Summarised again from what survives, so completeness is judged by the
-    // one predicate rather than by a second copy of it written here.
-    const verified =
-      summarisePackage(
-        {
-          ...manifest,
-          video: manifest.video.filter(
-            (rendition) => !damagedRungs.has(rendition.qualityHeight),
-          ),
-        },
-        fingerprint,
-      ) ?? summary;
+    const damage: PackageDamage = {
+      manifestId: manifestIdentity(manifest),
+      rungs: [
+        ...new Set(
+          missing
+            .map((asset) => asset.qualityHeight)
+            .filter((height): height is number => height !== undefined),
+        ),
+      ],
+      elsewhere: missing.some((asset) => asset.qualityHeight === undefined),
+    };
+    // Summarised again from what survives, so the ladder, the state and
+    // completeness are decided by one predicate rather than by a copy of it.
     return {
-      ...verified,
-      complete: verified.complete && !elsewhere,
+      ...(summarisePackage(manifest, fingerprint, damage) ?? summary),
       missingRungs: [],
+      damage,
     };
   };
 

@@ -33,7 +33,7 @@ import {
   PROCESSING_JOB_TYPE,
   createProcessingEnqueuer,
 } from "./processingEnqueue";
-import { createPackageIndex } from "./packageIndex";
+import { createPackageIndex, manifestIdentity } from "./packageIndex";
 import {
   packageTargetsFor,
   projectCatalogue,
@@ -783,6 +783,8 @@ export function createProcessingRoutes({
             await enqueuer.titleRootFor(itemId, located.absolutePath),
             null,
           );
+          if (existing.damage)
+            packageIndex.noteDamage(located.file.id, existing.damage);
           const activeJob = await store.findActiveForFile(located.file.id);
           sendData(context.response, context.requestId, {
             itemId,
@@ -801,6 +803,14 @@ export function createProcessingRoutes({
           itemId,
           mediaFileId,
         );
+        /*
+         * The one reader that looks at the files tells the index what it saw,
+         * so the library list stops offering to remove a source whose package
+         * is short a rung, and starts offering to encode that rung instead.
+         * The sweep cannot find this out for itself without a stat per
+         * rendition across the whole library.
+         */
+        if (existing.damage) packageIndex.noteDamage(file.id, existing.damage);
         const active = await store.findActiveForFile(file.id);
         sendData(context.response, context.requestId, {
           itemId,
@@ -916,6 +926,19 @@ export function createProcessingRoutes({
         }
         const missing = await missingPackageAssets(titleRoot, manifest);
         if (missing.length > 0) {
+          packageIndex.noteDamage(located.file.id, {
+            manifestId: manifestIdentity(manifest),
+            rungs: [
+              ...new Set(
+                missing
+                  .map((asset) => asset.qualityHeight)
+                  .filter((height): height is number => height !== undefined),
+              ),
+            ],
+            elsewhere: missing.some(
+              (asset) => asset.qualityHeight === undefined,
+            ),
+          });
           throw new OwnApiError(
             "PROCESSING_PACKAGE_INCOMPLETE",
             `This title's package is incomplete on disk, so its source is still the only whole copy: ${describeMissingPackageAssets(missing)}.`,
