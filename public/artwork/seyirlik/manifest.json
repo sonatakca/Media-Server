@@ -1,0 +1,198 @@
+{
+  "generator": "Built-in image_gen",
+  "date": "2026-09-12",
+  "status": "Artwork exploration only; not integrated into website UI.",
+  "paletteSources": [
+    "src/lib/accentTheme.ts",
+    "src/index.css"
+  ],
+  "palette": {
+    "warmRed": "#bd3f28",
+    "amber": "#fa9b1d",
+    "gold": "#d3ca22",
+    "olive": "#bacb7d",
+    "green": "#67a478",
+    "teal": "#337b6c",
+    "white": "#f8fafc",
+    "background": "#050607"
+  },
+  "colorNote": "Hex values are generation targets. Generated raster pixels have slight texture and color variation; these are not color-calibrated vector masters.",
+  "references": [
+    "User-supplied SEYİRLİK concept board (composition and shapes only)",
+    "2020-klei.jpg (style inspiration only)",
+    "Klei_Entertainment.svg.webp (style inspiration only)"
+  ],
+  "assets": [
+    {
+      "name": "marks/primary-s",
+      "file": "marks/primary-s.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Square near-white angular monumental S monogram on near-black background. Use the large S from upper left concept, without wordmark.",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 875981,
+      "sha256": "2ff81b4eb2e0d0b242b0ca47cc192745763c6ba7a1254d0d2ac6360f43e70773"
+    },
+    {
+      "name": "lockups/primary-vertical",
+      "file": "lockups/primary-vertical.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Portrait composition: large near-white angular S monogram above near-white SEYİRLİK wordmark, as left of concept. Near-black background.",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1110587,
+      "sha256": "cf7b3ce9f9380bddd72f726fc6de8bc94ee0f33d58bd12fc4d831b7669a94dc8"
+    },
+    {
+      "name": "lockups/horizontal",
+      "file": "lockups/horizontal.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide horizontal composition: near-white angular S monogram at left, slender near-white divider, near-white SEYİRLİK wordmark at right. Near-black background.",
+      "width": 1942,
+      "height": 809,
+      "bytes": 955478,
+      "sha256": "059c6a2d8705d057b4d4ef7bba5bc8969745892e09b16f595b95d45710557b3c"
+    },
+    {
+      "name": "icons/app",
+      "file": "icons/app.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Square app icon: near-white softly rounded square encloses black angular S cutout as concept upper right. Near-black outer background. No text.",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 855022,
+      "sha256": "1e3e560db9df690aed15a38e9a85886842370742a996b2950f3208522ed8afdc"
+    },
+    {
+      "name": "contained/warm-red",
+      "file": "contained/warm-red.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Portrait rectangular #bd3f28 card, black angular S monogram above black condensed SEYİRLİK wordmark. Card fills canvas, broad colored margins.",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1186779,
+      "sha256": "d1c51c6e8abbd30a40604b6435a4218512bd0012a242a4394c20d631e39aa7a1"
+    },
+    {
+      "name": "contained/white",
+      "file": "contained/white.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Portrait near-white #f8fafc card, black angular S monogram above black condensed SEYİRLİK wordmark. Card fills canvas, broad near-white margins.",
+      "width": 1024,
+      "height": 1536,
+      "bytes": 1099195,
+      "sha256": "684fd1014c5dd43b64cfffe63f5b6db582a092a23d0062e76edf732d09d88bb2"
+    },
+    {
+      "name": "poster/spectrum",
+      "file": "poster/spectrum.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide near-white SEYİRLİK wordmark on near-black, with a single thin row of six equally sized color rectangles below, left to right #bd3f28 #fa9b1d #d3ca22 #bacb7d #67a478 #337b6c. No other text.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1185160,
+      "sha256": "28308ae16b6caf2e880a70b525132767b541236f7060bc92c67d1fc722f4cb06"
+    },
+    {
+      "name": "wordmarks/white-on-warm-red",
+      "file": "wordmarks/white-on-warm-red.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide near-white SEYİRLİK wordmark centered on solid vermilion #bd3f28 background.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1244329,
+      "sha256": "dc1824a6fad3bc1a0bd4a46dba77eb4559b0c2b3670c8d042c539b204b71e7d2"
+    },
+    {
+      "name": "wordmarks/warm-red",
+      "file": "wordmarks/warm-red.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide vermilion #bd3f28 SEYİRLİK wordmark on near-black.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1178298,
+      "sha256": "2e84241e96752bb254fdd4f3d971299ffbc313db236cb5a106e8f0de4aff2d07"
+    },
+    {
+      "name": "wordmarks/gold",
+      "file": "wordmarks/gold.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide gold #d3ca22 SEYİRLİK wordmark on near-black.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1189991,
+      "sha256": "ce53d65614d4a1967d2eca0d76b7d48c6a8d296353bbca6540e7137c0a5dc58a"
+    },
+    {
+      "name": "wordmarks/green",
+      "file": "wordmarks/green.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide sage green #67a478 SEYİRLİK wordmark on near-black.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1181718,
+      "sha256": "7edd0331563e8cdad1854c0a36f34dfd1694c7686b8379ed6a059b7900e0a269"
+    },
+    {
+      "name": "wordmarks/teal",
+      "file": "wordmarks/teal.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide teal #337b6c SEYİRLİK wordmark on near-black.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1138537,
+      "sha256": "5fd6b2431fb16141fb0b17e29f1d1f49a3fd8d8d6510e7794e53aedab0fb4e40"
+    },
+    {
+      "name": "explorations/wordmark-compact",
+      "file": "explorations/wordmark-compact.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide black SEYİRLİK wordmark on near-white, matching first bottom-left wordmark exploration: squat compact uneven carved lettering.",
+      "width": 1774,
+      "height": 887,
+      "bytes": 865851,
+      "sha256": "71e03ac82d1079f68c32a14337a9b53edd3765af305460217f7a03b3597dee06"
+    },
+    {
+      "name": "explorations/wordmark-tall",
+      "file": "explorations/wordmark-tall.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide black SEYİRLİK wordmark on near-white, matching middle bottom wordmark exploration: taller narrower rhythmic lettering, curved S and emphatic round dots.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1100080,
+      "sha256": "53cba2abfbabaef9c718f44ddac52b87cf345e886ba70ebd706c865eae998c17"
+    },
+    {
+      "name": "explorations/wordmark-angular",
+      "file": "explorations/wordmark-angular.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide black SEYİRLİK wordmark on near-white, matching third bottom wordmark exploration: angular leaning chunky lettering with a kicked-out K leg.",
+      "width": 1774,
+      "height": 887,
+      "bytes": 914356,
+      "sha256": "dc7bac73e02cfc9bf61841039a374f60043587c6279dd1a18c8cddc28beba210"
+    },
+    {
+      "name": "explorations/icon-ribbon",
+      "file": "explorations/icon-ribbon.png",
+      "prompt": "Use case: logo-brand. Create only the MIDDLE tiny icon from BOTTOM RIGHT of reference concept. A narrow lightning-bolt-like FOLDED RIBBON zigzag S: two slanted parallel white bands, upper band climbs toward upper right, lower band climbs toward center right, linked by a tight diamond-shaped angular fold at center. Narrow diagonal negative spaces create the folded geometry. NOT a conventional block letter S. Bold white #f8fafc angular ribbon on solid square dark #050607 field. No text, no letters, no frame, no texture, no shading, no gradient. Broad clear margins. Reference image is composition guide, disregard cream palette.",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 839678,
+      "sha256": "f60d31fc988259525f3919fc6e31075e26015f0b7cc732037a23fe7944009ce2"
+    },
+    {
+      "name": "explorations/icon-stripes",
+      "file": "explorations/icon-stripes.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Square near-black tile with six near-white horizontal stacked strips, forming a compact cinema-screen emblem, matching the last bottom-right icon exploration. No text.",
+      "width": 1254,
+      "height": 1254,
+      "bytes": 826213,
+      "sha256": "49c7dc761c3b8ab92d3758bdcca36cb1e40040878dbc1993faa1a501ef402fec"
+    },
+    {
+      "name": "wordmarks/amber",
+      "file": "wordmarks/amber.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide Amber #fa9b1d SEYİRLİK wordmark on near-black #050607.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1198082,
+      "sha256": "286e57728ac5a372c845a5737124dfa13284eaeba16acd0e899cdf2ccac6bbf7"
+    },
+    {
+      "name": "wordmarks/olive",
+      "file": "wordmarks/olive.png",
+      "prompt": "Use case: logo-brand. Generate ONE standalone finished SEYİRLİK brand artwork, based closely on the supplied SEYİRLİK concept board. Reference 1 is the design concept; references 2 and 3 are Klei stylistic inspiration only. Original SEYİRLİK identity with bold irregular hand-cut paper silhouettes, angular condensed playful lettering, near-white #f8fafc, near-black #050607, subtle print texture, crisp edges. If text is present it must read exactly SEYİRLİK (S E Y İ R L İ K, both uppercase İ have round dots). No Klei letters or name. No sheet, panels, labels, captions, mockups, extra text, watermarks or surrounding presentation. Keep generous clear margins and all artwork inside frame.  IMPORTANT: Ignore ALL reference image colors. Use only the website palette in this prompt. Flat solid color fills, no lighting or texture that changes the specified palette. Near-black always #050607.Wide Olive #bacb7d SEYİRLİK wordmark on near-black #050607.",
+      "width": 1536,
+      "height": 1024,
+      "bytes": 1193810,
+      "sha256": "03fbc7061e1e3b2b8d28683161ec5859fd4bedad7a59f604b5ebb7a246f43773"
+    }
+  ]
+}
