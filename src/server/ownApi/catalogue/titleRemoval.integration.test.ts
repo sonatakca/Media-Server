@@ -157,6 +157,38 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         trickplayFiles: 1,
       });
       expect(titles[1]).toMatchObject({ files: 0, trickplayFiles: 0 });
+      // No cover at all reads as missing artwork, for TMDB to fill in.
+      expect(titles[1]!.artwork).toMatchObject({
+        coverTag: null,
+        missing: true,
+      });
+    });
+
+    it("treats a cover whose file is gone as missing, and lists it for TMDB", async () => {
+      const film = await item({
+        kind: "movie",
+        title: "Gone Cover",
+        library: movies,
+        sourceKey: "movie:movies/gone cover (2001)",
+        desired: true,
+        tmdb: "7",
+      });
+      await pool.query(
+        `INSERT INTO item_images (id, item_id, image_type, content_hash, content_type, size_bytes, storage_key, source)
+         VALUES ($1, $2, 'cover', 'hash', 'image/webp', 1, 'ab/cd/abcd.webp', 'tmdb')`,
+        [randomUUID(), film],
+      );
+      const repository = createLibraryAdminRepository(pool, {
+        artworkExists: async () => false,
+      });
+      const [title] = await repository.listTitles("movie");
+      expect(title!.artwork).toMatchObject({ coverTag: null, missing: true });
+      expect(await repository.titlesMissingArtwork()).toEqual([film]);
+      expect(
+        await createLibraryAdminRepository(pool, {
+          artworkExists: async () => true,
+        }).titlesMissingArtwork(),
+      ).toEqual([]);
     });
 
     it("shows a show's missing episodes from TMDB beside the ones on disk", async () => {

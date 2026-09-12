@@ -8,6 +8,7 @@ import {
 } from "../../lib/libraryAdminApi";
 import { Facts } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
+import { Tooltip } from "../ui/Tooltip";
 
 export interface SeasonActions {
   busy: boolean;
@@ -25,7 +26,16 @@ function EpisodeRow({
   actions: SeasonActions;
 }) {
   const { t } = useLanguage();
-  const tone = toneOf(episode, wanted && episode.monitored);
+  // A show's aired episode that is not on disk is missing, whatever the
+  // show's own wanted flag says; only one unmonitored on purpose is grey.
+  const tone = toneOf(
+    episode,
+    wanted || episode.monitored || !episode.hasMedia,
+  );
+  const label =
+    !episode.hasMedia && tone === "wanted"
+      ? t("library.missingEpisode")
+      : t(`library.tone.${tone}` as TranslationKey);
   const code = `E${String(episode.episodeNumber).padStart(2, "0")}`;
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
@@ -37,42 +47,44 @@ function EpisodeRow({
         <p className="text-sm font-bold text-white/85">
           <span className="tabular-nums text-white/50">{code}</span>{" "}
           {episode.title ?? ""}
-          <span className="sr-only">
-            {" "}
-            · {t(`library.tone.${tone}` as TranslationKey)}
-          </span>
+          <span className="sr-only"> · {label}</span>
         </p>
         {episode.hasMedia ? (
           <Facts facts={episode} />
         ) : (
-          <p className="mt-0.5 text-xs text-white/40">
-            {t(`library.tone.${tone}` as TranslationKey)}
+          <p
+            className={`mt-0.5 text-xs ${tone === "wanted" ? "text-red-200/80" : "text-white/40"}`}
+          >
+            {label}
             {episode.airDate ? ` · ${episode.airDate}` : ""}
           </p>
         )}
       </div>
       {episode.id && episode.mediaFileId ? (
         <div className="flex gap-1.5">
-          <button
-            type="button"
-            className={actionButton}
-            disabled={actions.busy}
-            onClick={() => actions.onTrickplay(episode.id!)}
-            aria-label={`${t("library.generateTrickplay")} · ${code}`}
-            title={t("library.generateTrickplay")}
-          >
-            <Images size={13} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={actionButton}
-            disabled={actions.busy}
-            onClick={() => actions.onSubtitles(episode.id!)}
-            aria-label={`${t("library.findTurkish")} · ${code}`}
-          >
-            <Captions size={13} aria-hidden="true" />
-            TR
-          </button>
+          <Tooltip content={t("library.generateTrickplay")}>
+            <button
+              type="button"
+              className={actionButton}
+              disabled={actions.busy}
+              onClick={() => actions.onTrickplay(episode.id!)}
+              aria-label={`${t("library.generateTrickplay")} · ${code}`}
+            >
+              <Images size={13} aria-hidden="true" />
+            </button>
+          </Tooltip>
+          <Tooltip content={t("library.findTurkish")}>
+            <button
+              type="button"
+              className={actionButton}
+              disabled={actions.busy}
+              onClick={() => actions.onSubtitles(episode.id!)}
+              aria-label={`${t("library.findTurkish")} · ${code}`}
+            >
+              <Captions size={13} aria-hidden="true" />
+              TR
+            </button>
+          </Tooltip>
         </div>
       ) : null}
     </li>
@@ -118,41 +130,42 @@ export function TitleSeasons({
                   <span
                     key={episode.episodeNumber}
                     className={`h-1.5 max-w-6 flex-1 rounded-full ${
-                      TONE_STYLE[
-                        toneOf(episode, detail.desired && episode.monitored)
-                      ].dot
+                      TONE_STYLE[toneOf(episode, true)].dot
                     }`}
                   />
                 ))}
               </span>
               {season.id && held > 0 ? (
                 <span className="flex gap-1.5">
-                  <button
-                    type="button"
-                    className={actionButton}
-                    disabled={actions.busy}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      actions.onTrickplay(season.id!);
-                    }}
-                    aria-label={`${t("library.generateTrickplay")} · ${label}`}
-                    title={t("library.generateTrickplay")}
-                  >
-                    <Images size={13} aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    className={actionButton}
-                    disabled={actions.busy}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      actions.onSubtitles(season.id!);
-                    }}
-                    aria-label={`${t("library.findTurkish")} · ${label}`}
-                  >
-                    <Captions size={13} aria-hidden="true" />
-                    TR
-                  </button>
+                  <Tooltip content={t("library.generateTrickplaySeason")}>
+                    <button
+                      type="button"
+                      className={actionButton}
+                      disabled={actions.busy}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        actions.onTrickplay(season.id!);
+                      }}
+                      aria-label={`${t("library.generateTrickplay")} · ${label}`}
+                    >
+                      <Images size={13} aria-hidden="true" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content={t("library.findTurkishSeason")}>
+                    <button
+                      type="button"
+                      className={actionButton}
+                      disabled={actions.busy}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        actions.onSubtitles(season.id!);
+                      }}
+                      aria-label={`${t("library.findTurkish")} · ${label}`}
+                    >
+                      <Captions size={13} aria-hidden="true" />
+                      TR
+                    </button>
+                  </Tooltip>
                 </span>
               ) : null}
             </summary>

@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Tooltip } from "../components/ui/Tooltip";
 import {
   CheckCircle2,
   CircleAlert,
@@ -553,14 +554,16 @@ export function UserManagementPage() {
               </h2>
             </div>
             {isEditing ? (
-              <button
-                type="button"
-                onClick={beginCreating}
-                aria-label={t("userManagement.cancelEditing")}
-                className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-white/55 transition hover:text-white"
-              >
-                <X size={17} />
-              </button>
+              <Tooltip content={t("userManagement.cancelEditing")}>
+                <button
+                  type="button"
+                  onClick={beginCreating}
+                  aria-label={t("userManagement.cancelEditing")}
+                  className="flex h-10 w-10 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.06] text-white/55 transition hover:text-white"
+                >
+                  <X size={17} />
+                </button>
+              </Tooltip>
             ) : null}
           </div>
 

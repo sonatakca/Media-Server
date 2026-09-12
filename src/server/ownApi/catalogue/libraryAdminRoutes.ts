@@ -7,6 +7,8 @@ import {
   validationError,
 } from "../api/validation";
 import type { TmdbClient } from "../metadata/tmdbClient";
+import type { JobQueue } from "../tasks/jobQueue";
+import { JOB_TYPES } from "../tasks/jobHandlers";
 import { OwnApiError } from "../ownApiHandler";
 import { loadTitleDetail, type LibraryAdminRepository } from "./libraryAdmin";
 import { TitleRemovalError, type TitleRemoval } from "./titleRemoval";
@@ -23,8 +25,32 @@ export function createLibraryAdminRoutes(options: {
   repository: LibraryAdminRepository;
   tmdb: TmdbClient | undefined;
   removal: TitleRemoval;
+  queue: JobQueue;
 }): RouteDefinition[] {
   return [
+    {
+      /**
+       * Fetches TMDB artwork for every matched title whose cover is missing or
+       * whose stored file is gone. One metadata refresh per title, keyed as a
+       * hand-pressed refresh is, so pressing this twice queues nothing new.
+       */
+      method: "POST",
+      path: "/library/titles/artwork",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const missing = await options.repository.titlesMissingArtwork();
+        for (const itemId of missing)
+          await options.queue.enqueue({
+            jobType: JOB_TYPES.metadataRefresh,
+            payload: { itemId },
+            dedupeKey: `${JOB_TYPES.metadataRefresh}:${itemId}`,
+          });
+        sendData(context.response, context.requestId, {
+          queued: missing.length,
+        });
+      },
+    },
     {
       method: "GET",
       path: "/library/titles",

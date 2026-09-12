@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   removeLibraryTitle: vi.fn(),
   requestTitleSubtitles: vi.fn(),
   generateTrickplay: vi.fn(),
+  importMissingArtwork: vi.fn(async () => ({ queued: 0 })),
 }));
 vi.mock("../../lib/libraryAdminApi", async (importActual) => ({
   ...(await importActual<typeof import("../../lib/libraryAdminApi")>()),
@@ -55,6 +56,7 @@ const title = (over: Partial<LibraryTitle>): LibraryTitle => ({
   imdbId: null,
   episodeCount: 0,
   availableEpisodeCount: 0,
+  artwork: { coverTag: "c1", logoTag: null, logoLayout: null, missing: false },
   ...over,
 });
 
@@ -299,4 +301,56 @@ it("offers trickplay per season and per episode of a show", async () => {
   await waitFor(() =>
     expect(api.generateTrickplay).toHaveBeenCalledWith("e1", false),
   );
+});
+
+it("asks TMDB once for artwork when a matched title has no readable cover", async () => {
+  api.importMissingArtwork.mockResolvedValue({ queued: 1 });
+  api.listLibraryTitles.mockImplementation(async (kind: string) =>
+    kind === "movie"
+      ? [
+          title({
+            id: "gone",
+            title: "Oppenheimer",
+            desired: true,
+            status: "wanted",
+            tmdbId: "872585",
+            artwork: {
+              coverTag: null,
+              logoTag: null,
+              logoLayout: null,
+              missing: true,
+            },
+          }),
+        ]
+      : [],
+  );
+  renderBoard();
+  expect(await screen.findByText("library.artworkImporting 1")).toBeTruthy();
+  expect(api.importMissingArtwork).toHaveBeenCalledTimes(1);
+});
+
+it("places a title's logo where it was adjusted to sit", async () => {
+  api.listLibraryTitles.mockImplementation(async (kind: string) =>
+    kind === "movie"
+      ? [
+          title({
+            id: "logo",
+            title: "Dune",
+            hasMedia: true,
+            artwork: {
+              coverTag: "c",
+              logoTag: "l",
+              logoLayout: { x: 0.5, y: 0.25, width: 0.6, shadow: 1 },
+              missing: false,
+            },
+          }),
+        ]
+      : [],
+  );
+  const { container } = renderBoard();
+  await screen.findByText("Dune");
+  const placed = container.querySelector('[style*="left: 50%"]') as HTMLElement;
+  expect(placed?.style.top).toBe("25%");
+  expect(placed?.style.width).toBe("60%");
+  expect(placed?.querySelector("img")).toBeTruthy();
 });

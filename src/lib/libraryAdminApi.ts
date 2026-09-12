@@ -32,6 +32,15 @@ export interface LibraryTitle extends HoldingFacts {
   imdbId: string | null;
   episodeCount: number;
   availableEpisodeCount: number;
+  artwork: TitleArtwork;
+}
+
+export interface TitleArtwork {
+  coverTag: string | null;
+  logoTag: string | null;
+  logoLayout: { x: number; y: number; width: number; shadow: number } | null;
+  /** No cover, or its file is gone; TMDB can fill it in. */
+  missing: boolean;
 }
 
 export interface LibraryEpisode extends HoldingFacts {
@@ -103,6 +112,14 @@ export function requestTitleSubtitles(
       body: { language },
     },
   );
+}
+
+/** Fetches TMDB artwork for every matched title whose cover is missing. */
+export function importMissingArtwork(): Promise<{ queued: number }> {
+  return ownApiClient.request("/library/titles/artwork", {
+    method: "POST",
+    body: {},
+  });
 }
 
 /**

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { Captions, ChevronDown, Download, Images, Trash2 } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
   getLibraryTitle,
+  importMissingArtwork,
   listLibraryTitles,
   toneOf,
   type HoldingTone,
@@ -13,9 +14,10 @@ import {
   type LibraryTitleKind,
 } from "../../lib/libraryAdminApi";
 import { releaseSearchUrl } from "../../lib/wantedApi";
-import { getPrimaryImageUrl } from "../../lib/mediaApi";
 import { downloadInventory } from "../../lib/inventoryExport";
 import { RemoveTitleDialog } from "./RemoveTitleDialog";
+import { TitlePoster } from "./TitlePoster";
+import { Tooltip } from "../ui/Tooltip";
 import { TitleSeasons } from "./TitleSeasons";
 import { Facts, NoticeLine, StatusPill } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
@@ -111,6 +113,29 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
   };
   const actions = useTitleActions(reload);
 
+  /*
+   * Once per visit: a matched title with no readable cover gets its TMDB
+   * artwork. The server dedupes the refreshes, so a second visit while they
+   * run queues nothing, and the list's own polling shows the posters arrive.
+   */
+  const artworkAsked = useRef(false);
+  const missingArtwork = KINDS.flatMap((value) => titles[value] ?? []).filter(
+    (title) => title.kind !== "book" && title.tmdbId && title.artwork.missing,
+  ).length;
+  useEffect(() => {
+    if (artworkAsked.current || missingArtwork === 0) return;
+    artworkAsked.current = true;
+    void importMissingArtwork()
+      .then(({ queued }) => {
+        if (queued > 0)
+          actions.setNotice({
+            tone: "ok",
+            text: `${t("library.artworkImporting")} ${queued}`,
+          });
+      })
+      .catch(() => undefined);
+  }, [actions, missingArtwork, t]);
+
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
@@ -169,16 +194,22 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
         </div>
         <div className="flex gap-2">
           {(["csv", "json"] as const).map((format) => (
-            <button
+            <Tooltip
               key={format}
-              type="button"
-              className={actionButton}
-              disabled={everything.length === 0}
-              onClick={() => downloadInventory(everything, format)}
+              content={t(
+                format === "csv" ? "library.exportCsv" : "library.exportJson",
+              )}
             >
-              <Download size={13} aria-hidden="true" />
-              {format.toUpperCase()}
-            </button>
+              <button
+                type="button"
+                className={actionButton}
+                disabled={everything.length === 0}
+                onClick={() => downloadInventory(everything, format)}
+              >
+                <Download size={13} aria-hidden="true" />
+                {format.toUpperCase()}
+              </button>
+            </Tooltip>
           ))}
         </div>
       </div>
@@ -274,22 +305,12 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                 className={`rounded-xl border p-3 ${TONE_STYLE[tone].card}`}
               >
                 <div className="flex gap-3">
-                  {title.hasMedia ? (
-                    <img
-                      src={getPrimaryImageUrl(title.id, undefined, 120)}
-                      alt=""
-                      loading="lazy"
-                      className="h-[72px] w-12 shrink-0 rounded-md bg-white/5 object-cover"
-                      onError={(event) => {
-                        event.currentTarget.style.visibility = "hidden";
-                      }}
-                    />
-                  ) : (
-                    <div
-                      aria-hidden="true"
-                      className="h-[72px] w-12 shrink-0 rounded-md bg-white/[0.04]"
-                    />
-                  )}
+                  <TitlePoster
+                    itemId={title.id}
+                    title={title.title}
+                    artwork={title.artwork}
+                    className="h-[72px] w-12 rounded-md"
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
                       <h3 className="break-words font-bold text-white">

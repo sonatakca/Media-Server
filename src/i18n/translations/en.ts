@@ -108,6 +108,14 @@ export const en = {
   "library.tab.monitoring": "Monitoring",
   "maintenance.libraryWideHint":
     "Work across the whole library. To work on one title — its trickplay, subtitles, artwork or metadata — open it from",
+  "library.missingEpisode": "Missing",
+  "library.exportCsv": "Export the library as a spreadsheet (CSV)",
+  "library.exportJson": "Export the library as JSON",
+  "library.artworkImporting":
+    "Fetching TMDB artwork for titles without a poster:",
+  "library.closeSearch": "Close the TMDB search",
+  "library.generateTrickplaySeason": "Generate trickplay for this season",
+  "library.findTurkishSeason": "Find Turkish subtitles for this season",
   "library.title": "Library",
   "library.description":
     "Every movie and show Seyirlik holds or wants. Green is on disk, purple is on its way, red is wanted but missing. Titles without a source appear only here, never on the Movies or Shows pages.",

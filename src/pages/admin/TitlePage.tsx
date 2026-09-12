@@ -21,10 +21,11 @@ import {
   toneOf,
   type LibraryTitleDetail,
 } from "../../lib/libraryAdminApi";
-import { getPrimaryImageUrl, refreshItemMetadata } from "../../lib/mediaApi";
+import { refreshItemMetadata } from "../../lib/mediaApi";
 import { releaseSearchUrl } from "../../lib/wantedApi";
 import { RemoveTitleDialog } from "../../components/admin/RemoveTitleDialog";
 import { TitleSeasons } from "../../components/admin/TitleSeasons";
+import { TitlePoster } from "../../components/admin/TitlePoster";
 import { SeriesMonitoringPanel } from "../../components/admin/SeriesMonitoringPanel";
 import {
   Facts,
@@ -122,16 +123,12 @@ export function TitlePage() {
       </Link>
 
       <header className="flex gap-4">
-        {detail.hasMedia ? (
-          <img
-            src={getPrimaryImageUrl(detail.id, undefined, 240)}
-            alt=""
-            className="h-36 w-24 shrink-0 rounded-xl bg-white/5 object-cover"
-            onError={(event) => {
-              event.currentTarget.style.visibility = "hidden";
-            }}
-          />
-        ) : null}
+        <TitlePoster
+          itemId={detail.id}
+          title={detail.title}
+          artwork={detail.artwork}
+          className="h-36 w-24 rounded-xl"
+        />
         <div className="min-w-0 flex-1">
           <h1 className="break-words text-3xl font-black text-white">
             {detail.title}

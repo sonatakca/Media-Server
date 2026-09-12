@@ -20,6 +20,7 @@ vi.mock("../../lib/wantedApi", () => ({
 }));
 vi.mock("../../lib/mediaApi", () => ({
   getPrimaryImageUrl: () => "",
+  getLogoImageUrl: () => "",
   refreshItemMetadata: vi.fn(async () => undefined),
 }));
 vi.mock("../../lib/pageTitle", () => ({ setPageTitle: vi.fn() }));
@@ -58,6 +59,7 @@ const detail = (
   pendingSubtitles: [],
   files: 1,
   trickplayFiles: 0,
+  artwork: { coverTag: null, logoTag: null, logoLayout: null, missing: true },
   mediaFileId: "f",
   fileName: "Dune.2021.mkv",
   seasons: [],

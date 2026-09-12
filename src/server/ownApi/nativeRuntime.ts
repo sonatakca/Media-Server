@@ -1307,8 +1307,15 @@ export async function createNativeRuntime({
     ...createMonitoringRoutes(createMonitoringRepository(pool)),
     ...createWantedRoutes(pool, tmdb),
     ...createLibraryAdminRoutes({
-      repository: createLibraryAdminRepository(pool),
+      repository: createLibraryAdminRepository(pool, {
+        artworkExists: (storageKey) =>
+          stat(imageStorage.resolve(storageKey)).then(
+            (stats) => stats.isFile(),
+            () => false,
+          ),
+      }),
       tmdb,
+      queue,
       removal: createTitleRemoval({
         pool,
         mediaRoot,

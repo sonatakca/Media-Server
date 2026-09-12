@@ -109,6 +109,14 @@ export const tr = {
   "library.tab.monitoring": "İzleme",
   "maintenance.libraryWideHint":
     "Tüm kütüphane üzerinde yapılan işler. Tek bir başlık için — trickplay'i, altyazısı, görselleri ya da üst verisi — onu şuradan açın:",
+  "library.missingEpisode": "Eksik",
+  "library.exportCsv": "Kütüphaneyi tablo olarak dışa aktar (CSV)",
+  "library.exportJson": "Kütüphaneyi JSON olarak dışa aktar",
+  "library.artworkImporting":
+    "Afişi olmayan başlıklar için TMDB görselleri getiriliyor:",
+  "library.closeSearch": "TMDB aramasını kapat",
+  "library.generateTrickplaySeason": "Bu sezon için trickplay oluştur",
+  "library.findTurkishSeason": "Bu sezon için Türkçe altyazı bul",
   "library.title": "Kütüphane",
   "library.description":
     "Seyirlik'in sahip olduğu ya da istediği her film ve dizi. Yeşil diskte, mor yolda, kırmızı istenen ama eksik. Kaynağı olmayan başlıklar yalnızca burada görünür, Filmler ya da Diziler sayfalarında asla.",

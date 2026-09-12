@@ -11,8 +11,6 @@ const api = vi.hoisted(() => ({
     `/admin/decisions?kind=${title.kind}&title=${title.title}`,
 }));
 vi.mock("../../lib/wantedApi", () => api);
-// The library half of the page has its own tests.
-vi.mock("./LibraryBoard", () => ({ LibraryBoard: () => null }));
 vi.mock("../../i18n/LanguageContext", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }));
@@ -40,13 +38,12 @@ beforeEach(() => {
   }));
   api.addWanted.mockResolvedValue({ item: { id: "saved" } });
 });
-it("has separate movie/show discovery, artwork, and a real wanted action", async () => {
+it("searches the kind it was opened for, with artwork and a real wanted action", async () => {
   render(
     <MemoryRouter>
-      <WantedCatalogue />
+      <WantedCatalogue kind="tv" />
     </MemoryRouter>,
   );
-  fireEvent.click(screen.getByText("wanted.addShow"));
   expect(await screen.findByText("Two sisters in Piltover.")).toBeTruthy();
   await waitFor(() =>
     expect(api.searchWanted).toHaveBeenCalledWith("tv", "", 1),

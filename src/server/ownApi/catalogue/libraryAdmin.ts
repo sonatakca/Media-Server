@@ -48,6 +48,16 @@ export interface LibraryTitle extends HoldingFacts {
   imdbId: string | null;
   episodeCount: number;
   availableEpisodeCount: number;
+  artwork: TitleArtwork;
+}
+
+/** What a poster needs: the cover and logo as stored, and where the logo sits. */
+export interface TitleArtwork {
+  coverTag: string | null;
+  logoTag: string | null;
+  logoLayout: { x: number; y: number; width: number; shadow: number } | null;
+  /** No cover, or a stored cover whose file is gone; TMDB can fill it in. */
+  missing: boolean;
 }
 
 export interface LibraryEpisode extends HoldingFacts {
@@ -167,6 +177,13 @@ const NOTHING_HELD = (status: string): HoldingFacts => ({
 });
 
 type TitleRow = HoldingRow & {
+  coverTag: string | null;
+  coverKey: string | null;
+  logoTag: string | null;
+  logo_offset_x: number | null;
+  logo_offset_y: number | null;
+  logo_width: number | null;
+  logo_shadow: number | null;
   id: string;
   kind: LibraryTitleKind;
   title: string;
@@ -183,10 +200,14 @@ const TITLE_SELECT = `SELECT item.id, item.kind, item.title, item.production_yea
     (SELECT count(*)::int FROM items e WHERE e.series_id = item.id AND e.kind = 'episode') AS "episodeCount",
     (SELECT count(*)::int FROM items e WHERE e.series_id = item.id AND e.kind = 'episode'
       AND ${mediaAvailableSql("e")}) AS "availableEpisodeCount",
+    (SELECT im.content_hash FROM item_images im WHERE im.item_id = item.id AND im.image_type = 'cover' AND im.image_index = 0) AS "coverTag",
+    (SELECT im.storage_key FROM item_images im WHERE im.item_id = item.id AND im.image_type = 'cover' AND im.image_index = 0) AS "coverKey",
+    (SELECT im.content_hash FROM item_images im WHERE im.item_id = item.id AND im.image_type = 'logo' AND im.image_index = 0) AS "logoTag",
+    item.logo_offset_x, item.logo_offset_y, item.logo_width, item.logo_shadow,
     ${HOLDING_COLUMNS}
   FROM items item`;
 
-function toTitle(row: TitleRow): LibraryTitle {
+function toTitle(row: TitleRow, coverPresent: boolean): LibraryTitle {
   return {
     id: row.id,
     kind: row.kind,
@@ -197,18 +218,51 @@ function toTitle(row: TitleRow): LibraryTitle {
     imdbId: row.imdbId,
     episodeCount: row.episodeCount,
     availableEpisodeCount: row.availableEpisodeCount,
+    artwork: {
+      coverTag: coverPresent ? row.coverTag : null,
+      logoTag: row.logoTag,
+      logoLayout:
+        row.logo_offset_x === null ||
+        row.logo_offset_y === null ||
+        row.logo_width === null ||
+        row.logo_shadow === null
+          ? null
+          : {
+              x: row.logo_offset_x,
+              y: row.logo_offset_y,
+              width: row.logo_width,
+              shadow: row.logo_shadow,
+            },
+      missing: !coverPresent,
+    },
     ...holding(row),
   };
 }
 
-export function createLibraryAdminRepository(db: DatabaseExecutor) {
+export function createLibraryAdminRepository(
+  db: DatabaseExecutor,
+  options: {
+    /**
+     * Whether a stored image's file is still there. Generated storage is
+     * rebuilt rather than backed up, so a row can outlive its file — which
+     * reads as a title with no poster.
+     */
+    artworkExists?: (storageKey: string) => Promise<boolean>;
+  } = {},
+) {
+  const present = async (row: TitleRow) =>
+    row.coverKey !== null &&
+    (options.artworkExists ? await options.artworkExists(row.coverKey) : true);
+  const toTitles = (rows: TitleRow[]) =>
+    Promise.all(rows.map(async (row) => toTitle(row, await present(row))));
+
   return {
     async listTitles(kind: LibraryTitleKind): Promise<LibraryTitle[]> {
       const result = await db.query<TitleRow>(
         `${TITLE_SELECT} WHERE item.kind = $1 ORDER BY item.sort_title, item.id`,
         [kind],
       );
-      return result.rows.map(toTitle);
+      return toTitles(result.rows);
     },
 
     async getTitle(itemId: string): Promise<LibraryTitle | null> {
@@ -216,7 +270,17 @@ export function createLibraryAdminRepository(db: DatabaseExecutor) {
         `${TITLE_SELECT} WHERE item.id = $1 AND item.kind IN ('movie', 'series', 'book')`,
         [itemId],
       );
-      return result.rows[0] ? toTitle(result.rows[0]) : null;
+      return result.rows[0] ? (await toTitles(result.rows))[0]! : null;
+    },
+
+    /** Films and shows matched to TMDB whose cover is missing or unreadable. */
+    async titlesMissingArtwork(): Promise<string[]> {
+      const result = await db.query<TitleRow>(
+        `${TITLE_SELECT} WHERE item.kind IN ('movie', 'series') AND item.provider_ids ? 'tmdb'`,
+      );
+      return (await toTitles(result.rows))
+        .filter((title) => title.artwork.missing)
+        .map((title) => title.id);
     },
 
     /** The file a subtitle or a detail line is about: the largest live one. */

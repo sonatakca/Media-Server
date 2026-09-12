@@ -10,13 +10,21 @@ import {
   type WantedLibrary,
   type WantedTitle,
 } from "../../lib/wantedApi";
-import { LibraryBoard } from "./LibraryBoard";
 
-export function WantedCatalogue() {
+/**
+ * Finding a title on TMDB to want. Opened from the library page's "Add a
+ * movie" and "Add a show", above the library rather than in front of it.
+ */
+export function WantedCatalogue({
+  kind,
+  onAdded,
+}: {
+  kind: "movie" | "tv";
+  onAdded?: () => void;
+}) {
   const { t } = useLanguage();
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
-  const [kind, setKind] = useState("movie");
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
   const [titles, setTitles] = useState<WantedTitle[]>([]);
@@ -27,7 +35,6 @@ export function WantedCatalogue() {
   const [failure, setFailure] = useState(false);
   const [saveFailure, setSaveFailure] = useState(false);
   const [saving, setSaving] = useState<string | null>(null);
-  const [libraryRefresh, setLibraryRefresh] = useState(0);
   useEffect(() => {
     let cancelled = false;
     const refresh = () =>
@@ -59,9 +66,7 @@ export function WantedCatalogue() {
     let cancelled = false;
     setLoading(true);
     setFailure(false);
-    const kinds: Array<"movie" | "tv"> =
-      kind === "all" ? ["movie", "tv"] : [kind as "movie" | "tv"];
-    void Promise.all(kinds.map((type) => searchWanted(type, search, page)))
+    void Promise.all([searchWanted(kind, search, page)])
       .then((results) => {
         if (cancelled) return;
         setTitles(results.flatMap((result) => result.items));
@@ -84,7 +89,7 @@ export function WantedCatalogue() {
       await addWanted(title, libraryId);
       const data = await listWanted();
       setWanted(data.items);
-      setLibraryRefresh((value) => value + 1);
+      onAdded?.();
     } catch {
       setSaveFailure(true);
     } finally {
@@ -102,32 +107,6 @@ export function WantedCatalogue() {
         <p className="mt-1 max-w-2xl text-sm text-white/65">
           {t("wanted.description")}
         </p>
-      </div>
-      <div
-        className="flex flex-wrap gap-2"
-        role="group"
-        aria-label={t("wanted.catalogue")}
-      >
-        <button
-          className={`${control} ${kind === "movie" ? "bg-white/15 ring-1 ring-white/50" : ""}`}
-          aria-pressed={kind === "movie"}
-          onClick={() => {
-            setKind("movie");
-            setPage(1);
-          }}
-        >
-          {t("wanted.addMovie")}
-        </button>
-        <button
-          className={`${control} ${kind === "tv" ? "bg-white/15 ring-1 ring-white/50" : ""}`}
-          aria-pressed={kind === "tv"}
-          onClick={() => {
-            setKind("tv");
-            setPage(1);
-          }}
-        >
-          {t("wanted.addShow")}
-        </button>
       </div>
       <form
         className="flex flex-wrap gap-3"
@@ -281,7 +260,6 @@ export function WantedCatalogue() {
         </>
       )}
       <p className="text-xs text-white/50">{t("wanted.attribution")}</p>
-      <LibraryBoard refreshKey={libraryRefresh} />
     </section>
   );
 }
