@@ -80,6 +80,11 @@ export interface CatalogueScanStore {
   deleteItems(itemIds: string[]): Promise<void>;
   deleteFiles(fileIds: string[]): Promise<void>;
   queueProbe(fileIds: string[]): Promise<void>;
+  /**
+   * Records that these files' titles are served from a complete package and
+   * their source bytes are gone on purpose, so no probe will ever read them.
+   */
+  markPackaged(fileIds: string[]): Promise<void>;
   refreshItemCounts(libraryId: string): Promise<void>;
 }
 
@@ -216,6 +221,9 @@ export async function reconcileLibraryScan({
       // media file row. Keep that row active after the source bytes are removed;
       // the scanner has already proven the replacement package is complete.
       seenFileIds.push(...existingIdentityFiles.map((file) => file.id));
+      // And say why the file is not there, or the prober finds nothing, marks
+      // it failed, and availability drops a fully playable title.
+      await store.markPackaged(existingIdentityFiles.map((file) => file.id));
     }
 
     for (const [index, file] of scanned.files.entries()) {

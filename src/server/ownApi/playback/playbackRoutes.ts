@@ -245,7 +245,8 @@ export function createPlaybackRoutes({
      * is the honest answer.
      */
     const packaged =
-      file.probeState === "failed" && renditions
+      (file.probeState === "failed" || file.probeState === "packaged") &&
+      renditions
         ? await renditions.describePackagedSource({
             mediaId: file.id,
             filePath: absolutePath,

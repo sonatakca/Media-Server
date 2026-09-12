@@ -103,6 +103,7 @@ function emptyScanStore(items: Array<{ id: string; sourceKey: string }> = []) {
     deleteItems: async () => undefined,
     deleteFiles: async () => undefined,
     queueProbe: async () => undefined,
+    markPackaged: async () => undefined,
     refreshItemCounts: async () => undefined,
   } as unknown as CatalogueScanStore;
 }

@@ -119,7 +119,7 @@ export interface MediaSourceDto {
   durationMs: number | null;
   bitrateBps: number | null;
   isPrimary: boolean;
-  probeState: "pending" | "probed" | "failed";
+  probeState: "pending" | "probed" | "failed" | "packaged";
   streams: MediaStreamDto[];
 }
 

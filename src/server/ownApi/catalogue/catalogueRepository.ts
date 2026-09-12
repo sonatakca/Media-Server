@@ -181,7 +181,7 @@ export interface MediaFileRow {
   durationMs: string | null;
   bitrateBps: string | null;
   isPrimary: boolean;
-  probeState: "pending" | "probed" | "failed";
+  probeState: "pending" | "probed" | "failed" | "packaged";
   missingSince: Date | null;
 }
 

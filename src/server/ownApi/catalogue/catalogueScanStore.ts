@@ -300,6 +300,17 @@ export function createCatalogueScanStore(
       await pool.query(`DELETE FROM media_files WHERE id = ANY($1)`, [fileIds]);
     },
 
+    markPackaged: async (fileIds) => {
+      if (fileIds.length === 0) return;
+      // A probe that succeeded before packaging keeps its streams; only a row
+      // that was waiting for, or failed, a probe of the vanished source changes.
+      await pool.query(
+        `UPDATE media_files SET probe_state = 'packaged', probe_error = NULL, updated_at = now()
+         WHERE id = ANY($1) AND probe_state IN ('pending', 'failed')`,
+        [fileIds],
+      );
+    },
+
     queueProbe: async (fileIds) => {
       if (fileIds.length === 0) return;
       // A book is reported as changed like any other file, but there is still

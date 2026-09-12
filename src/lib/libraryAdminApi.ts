@@ -52,6 +52,8 @@ export interface LibraryEpisode extends HoldingFacts {
   mediaFileId: string | null;
   fileName: string | null;
   monitored: boolean;
+  hasThumb: boolean;
+  stillUrl: string | null;
 }
 
 export interface LibraryTitleDetail extends LibraryTitle {

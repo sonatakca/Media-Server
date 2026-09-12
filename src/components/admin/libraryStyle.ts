@@ -33,7 +33,7 @@ export const TONE_STYLE: Record<
 };
 
 export const actionButton =
-  "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/12 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/80 transition hover:bg-white/[0.11] hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]";
+  "inline-flex min-h-9 items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.06] px-3 py-1.5 text-xs font-bold text-white/80 transition hover:bg-white/[0.11] hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]";
 
 /** Turkish and English first, then a count: a film can carry thirty tracks. */
 const FIRST_LANGUAGES = ["tur", "eng"];

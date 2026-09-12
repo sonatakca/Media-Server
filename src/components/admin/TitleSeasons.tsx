@@ -9,6 +9,30 @@ import {
 import { Facts } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
 import { Tooltip } from "../ui/Tooltip";
+import { getThumbImageUrl } from "../../lib/mediaApi";
+
+/** The episode's own still when the catalogue has one, TMDB's when it does not. */
+function EpisodeStill({ episode }: { episode: LibraryEpisode }) {
+  const src =
+    episode.id && episode.hasThumb
+      ? getThumbImageUrl(episode.id, undefined, 320)
+      : episode.stillUrl;
+  return (
+    <div className="aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-white/[0.04]">
+      {src ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          className="h-full w-full object-cover"
+          onError={(event) => {
+            event.currentTarget.style.visibility = "hidden";
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
 
 export interface SeasonActions {
   busy: boolean;
@@ -39,6 +63,7 @@ function EpisodeRow({
   const code = `E${String(episode.episodeNumber).padStart(2, "0")}`;
   return (
     <li className="flex flex-wrap items-start gap-x-3 gap-y-1 py-2">
+      <EpisodeStill episode={episode} />
       <span
         aria-hidden="true"
         className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${TONE_STYLE[tone].dot}`}

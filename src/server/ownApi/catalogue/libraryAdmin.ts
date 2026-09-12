@@ -70,6 +70,10 @@ export interface LibraryEpisode extends HoldingFacts {
   fileName: string | null;
   /** Whether a missing episode is wanted, and which level decided that. */
   monitored: boolean;
+  /** Whether the catalogue holds the episode's own still. */
+  hasThumb: boolean;
+  /** TMDB's still, for an episode the catalogue has none for. */
+  stillUrl: string | null;
 }
 
 export interface LibrarySeason {
@@ -278,9 +282,22 @@ export function createLibraryAdminRepository(
       const result = await db.query<TitleRow>(
         `${TITLE_SELECT} WHERE item.kind IN ('movie', 'series') AND item.provider_ids ? 'tmdb'`,
       );
-      return (await toTitles(result.rows))
-        .filter((title) => title.artwork.missing)
-        .map((title) => title.id);
+      // A show whose episodes on disk have no stills: its refresh imports them.
+      const stills = await db.query<{ id: string }>(
+        `SELECT DISTINCT series.id FROM items series
+         JOIN items episode ON episode.series_id = series.id AND episode.kind = 'episode'
+         WHERE series.kind = 'series' AND series.provider_ids ? 'tmdb'
+           AND EXISTS (SELECT 1 FROM media_files f WHERE f.item_id = episode.id AND f.missing_since IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM item_images thumb WHERE thumb.item_id = episode.id AND thumb.image_type = 'thumb')`,
+      );
+      return [
+        ...new Set([
+          ...(await toTitles(result.rows))
+            .filter((title) => title.artwork.missing)
+            .map((title) => title.id),
+          ...stills.rows.map((row) => row.id),
+        ]),
+      ];
     },
 
     /** The file a subtitle or a detail line is about: the largest live one. */
@@ -313,11 +330,13 @@ export function createLibraryAdminRepository(
           episode: number | null;
           airDate: string | null;
           seasonId: string | null;
+          hasThumb: boolean;
         }
       >(
         `SELECT item.id, item.title, item.parent_index_number AS season, item.index_number AS episode,
            (SELECT parent.id FROM items parent WHERE parent.id = item.parent_id AND parent.kind = 'season') AS "seasonId",
            to_char(item.premiere_date, 'YYYY-MM-DD') AS "airDate",
+           EXISTS (SELECT 1 FROM item_images thumb WHERE thumb.item_id = item.id AND thumb.image_type = 'thumb') AS "hasThumb",
            ${HOLDING_COLUMNS}
          FROM items item WHERE item.series_id = $1 AND item.kind = 'episode'
          ORDER BY item.parent_index_number NULLS LAST, item.index_number NULLS LAST, item.sort_title`,
@@ -423,6 +442,8 @@ export async function loadTitleDetail(
       mediaFileId: file?.id ?? null,
       fileName: baseName(file?.relativePath),
       monitored: true,
+      hasThumb: row.hasThumb,
+      stillUrl: null,
       ...holding(row),
     };
     if (row.season === null || row.episode === null) unnumbered.push(episode);
@@ -443,10 +464,14 @@ export async function loadTitleDetail(
       );
       for (const known of listed.flat()) {
         const key = `${known.seasonNumber}:${known.episodeNumber}`;
+        const still = known.stillPath
+          ? tmdb.buildImageUrl(known.stillPath, "w300")
+          : null;
         const held = episodes.get(key);
         if (held) {
           held.title ??= known.title ?? null;
           held.airDate ??= known.airDate ?? null;
+          held.stillUrl ??= still;
           continue;
         }
         const aired =
@@ -465,6 +490,8 @@ export async function loadTitleDetail(
           mediaFileId: null,
           fileName: null,
           monitored,
+          hasThumb: false,
+          stillUrl: still,
           ...NOTHING_HELD(
             known.airDate !== undefined && !aired
               ? "unaired"

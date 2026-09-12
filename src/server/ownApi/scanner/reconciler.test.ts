@@ -15,6 +15,7 @@ function createStore(): CatalogueScanStore & {
   items: Map<string, ExistingItemRow & { title: string; libraryId: string }>;
   files: Map<string, StoredFile>;
   probeQueue: string[];
+  packaged: string[];
 } {
   const items = new Map<
     string,
@@ -22,12 +23,14 @@ function createStore(): CatalogueScanStore & {
   >();
   const files = new Map<string, StoredFile>();
   const probeQueue: string[] = [];
+  const packaged: string[] = [];
   let nextId = 1;
 
   return {
     items,
     files,
     probeQueue,
+    packaged,
     listItems: async (libraryId) =>
       [...items.values()].filter((item) => item.libraryId === libraryId),
     listFiles: async (libraryId) =>
@@ -114,6 +117,9 @@ function createStore(): CatalogueScanStore & {
     },
     queueProbe: async (ids) => {
       probeQueue.push(...ids);
+    },
+    markPackaged: async (ids) => {
+      packaged.push(...ids);
     },
     refreshItemCounts: async () => undefined,
   };
@@ -206,10 +212,13 @@ describe("reconcileLibraryScan", () => {
       (item) => item.title === "Ford v Ferrari",
     );
     expect(ford?.missingSince).toBeNull();
-    expect(
-      [...store.files.values()].find((file) => file.itemId === ford?.id)
-        ?.missingSince,
-    ).toBeNull();
+    const fordFile = [...store.files.values()].find(
+      (file) => file.itemId === ford?.id,
+    );
+    expect(fordFile?.missingSince).toBeNull();
+    // Recorded as packaged, so the prober does not mark the vanished source
+    // failed and availability does not drop a playable film.
+    expect(store.packaged).toEqual([fordFile?.id]);
   });
 
   it("does not create an unplayable item from a package with no catalogue identity", async () => {
