@@ -85,7 +85,7 @@ describe("the administration index", () => {
     );
 
     expect(order.map((link) => link.getAttribute("href"))).toEqual([
-      "/admin/monitoring",
+      "/admin/library",
       "/admin/decisions",
       "/admin/acquisitions",
       "/admin/imports",
@@ -138,27 +138,23 @@ describe("the administration index", () => {
     ).toBeTruthy();
   });
 
-  it("keeps the wanted-features backlog away from wanted media", async () => {
-    // The two live in different groups on purpose: one is a film someone is
-    // waiting for, the other is a development board.
+  it("opens the library first, beside what fetches titles into it", async () => {
     renderPage();
-    const development = await screen.findByRole("heading", {
-      name: "admin.group.development.title",
+    const library = await screen.findByRole("heading", {
+      name: "admin.group.library.title",
     });
     const downloads = screen.getByRole("heading", {
       name: "admin.group.downloads.title",
     });
-
-    const groupOf = (heading: HTMLElement) =>
-      heading.closest("section") as HTMLElement;
-
     const hrefsIn = (heading: HTMLElement) =>
-      Array.from(groupOf(heading).querySelectorAll("a")).map((link) =>
-        link.getAttribute("href"),
-      );
-
-    expect(hrefsIn(development)).toContain("/dev/wanted-features");
-    expect(hrefsIn(downloads)).not.toContain("/dev/wanted-features");
-    expect(hrefsIn(downloads)).toContain("/admin/monitoring");
+      Array.from(
+        (heading.closest("section") as HTMLElement).querySelectorAll("a"),
+      ).map((link) => link.getAttribute("href"));
+    expect(hrefsIn(library)[0]).toBe("/admin/library");
+    expect(hrefsIn(downloads)).toEqual([
+      "/admin/decisions",
+      "/admin/acquisitions",
+      "/admin/imports",
+    ]);
   });
 });

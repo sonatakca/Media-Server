@@ -14,7 +14,6 @@ const t = (key: string) =>
 vi.mock("../i18n/LanguageContext", () => ({
   useLanguage: () => ({ t, language: "en" }),
 }));
-vi.mock("./admin/MetadataEditPanel", () => ({ MetadataEditPanel: () => null }));
 const id = "00000000-0000-4000-8000-000000000001";
 const finished: MaintenanceTaskDto = {
   id,

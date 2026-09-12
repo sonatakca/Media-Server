@@ -11,7 +11,6 @@ import {
   queueWaitSeconds,
   runSiblings,
   sinceProgressSeconds,
-  tabFromSearch,
 } from "./maintenanceView";
 
 function task(
@@ -288,17 +287,5 @@ describe("the tasks of one run", () => {
 
   it("never folds a task with no run into somebody else's", () => {
     expect(runSiblings([task({ id: "loose" })], undefined)).toEqual([]);
-  });
-});
-
-describe("which mode the URL names", () => {
-  it("reads the metadata tab", () => {
-    expect(tabFromSearch("metadata")).toBe("metadata");
-  });
-
-  it("falls back to the operational tab", () => {
-    expect(tabFromSearch(null)).toBe("scan");
-    expect(tabFromSearch("scan")).toBe("scan");
-    expect(tabFromSearch("nonsense")).toBe("scan");
   });
 });

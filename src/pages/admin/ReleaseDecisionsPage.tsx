@@ -153,7 +153,7 @@ export function ReleaseDecisionsPage() {
       </header>
 
       <Link
-        to="/admin/monitoring"
+        to="/admin/library"
         className="inline-block text-sm text-white/70 underline"
       >
         {t("wanted.chooseTmdb")}

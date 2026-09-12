@@ -32,8 +32,8 @@ export function createLibraryAdminRoutes(options: {
       handle: async (context) => {
         context.requirePrincipal();
         const kind = context.url.searchParams.get("kind") ?? "movie";
-        if (kind !== "movie" && kind !== "series")
-          throw validationError("Choose movies or shows.");
+        if (kind !== "movie" && kind !== "series" && kind !== "book")
+          throw validationError("Choose movies, shows or books.");
         sendData(context.response, context.requestId, {
           items: await options.repository.listTitles(kind),
         });

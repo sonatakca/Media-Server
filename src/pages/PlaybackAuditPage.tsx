@@ -523,7 +523,7 @@ export function PlaybackAuditPage() {
 
   useEffect(() => {
     setPageTitle(`${t("audit.title")} · Seyirlik`, {
-      canonicalPath: "/dev/playback-audit",
+      canonicalPath: "/dev/playback",
       robots: "noindex, nofollow",
     });
   }, [t]);

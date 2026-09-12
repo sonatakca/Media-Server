@@ -123,7 +123,15 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         library: movies,
         sourceKey: "movie:movies/held (2000)",
       });
-      await file(held, "Movies/Held (2000)/src/Held.2000.1080p-GRP.mkv");
+      const heldFile = await file(
+        held,
+        "Movies/Held (2000)/src/Held.2000.1080p-GRP.mkv",
+      );
+      await pool.query(
+        `INSERT INTO trickplay_sets (id, media_file_id, tile_width, tile_height, columns, rows, interval_ms, thumbnail_count, sprite_count)
+         VALUES ($1, $2, 320, 180, 10, 10, 10000, 5, 1)`,
+        [randomUUID(), heldFile],
+      );
       await item({
         kind: "movie",
         title: "Wanted",
@@ -145,7 +153,10 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         audioLanguages: ["tur"],
         subtitleLanguages: ["eng"],
         sizeBytes: 5,
+        files: 1,
+        trickplayFiles: 1,
       });
+      expect(titles[1]).toMatchObject({ files: 0, trickplayFiles: 0 });
     });
 
     it("shows a show's missing episodes from TMDB beside the ones on disk", async () => {
@@ -157,12 +168,21 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         desired: true,
         tmdb: "42",
       });
+      const season = await item({
+        kind: "season",
+        title: "Season 1",
+        library: series,
+        sourceKey: "season:series:series/show:1",
+        seriesId: show,
+        parentId: show,
+      });
       const episode = await item({
         kind: "episode",
         title: "Pilot",
         library: series,
         sourceKey: "episode:series:series/show:1:1",
         seriesId: show,
+        parentId: season,
         season: 1,
         episode: 1,
       });
@@ -193,6 +213,8 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         [3, "unaired"],
       ]);
       expect(detail!.seasons[0]!.episodes[0]!.mediaFileId).not.toBeNull();
+      // The season's own row, so a season can be asked for as a whole.
+      expect(detail!.seasons[0]!.id).toBe(season);
     });
 
     it("removes a film's folder, its rows, its package record and its legacy package", async () => {

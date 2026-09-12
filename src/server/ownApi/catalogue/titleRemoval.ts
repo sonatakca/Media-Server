@@ -196,7 +196,7 @@ export function createTitleRemoval(dependencies: TitleRemovalDependencies) {
         title: string;
         source_key: string;
       }>(
-        "SELECT id, kind, title, source_key FROM items WHERE id = $1 AND kind IN ('movie', 'series')",
+        "SELECT id, kind, title, source_key FROM items WHERE id = $1 AND kind IN ('movie', 'series', 'book')",
         [itemId],
       );
       const item = found.rows[0];

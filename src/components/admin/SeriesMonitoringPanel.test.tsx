@@ -1,15 +1,10 @@
-vi.mock("../../components/admin/WantedCatalogue", () => ({
-  WantedCatalogue: () => null,
-}));
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { MonitoringPage } from "./MonitoringPage";
+import { SeriesMonitoringPanel } from "./SeriesMonitoringPanel";
 import type { MonitoringView } from "../../lib/monitoringApi";
 
 const api = vi.hoisted(() => ({
   getMonitoring: vi.fn(),
-  listSeries: vi.fn(),
   setTitleMonitoring: vi.fn(),
   setSeasonMonitoring: vi.fn(),
   setEpisodeMonitoring: vi.fn(),
@@ -56,18 +51,10 @@ function view(over: Partial<MonitoringView> = {}): MonitoringView {
   };
 }
 
-const renderPage = () =>
-  render(
-    <MemoryRouter>
-      <MonitoringPage />
-    </MemoryRouter>,
-  );
+const renderPage = () => render(<SeriesMonitoringPanel itemId={ITEM} />);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listSeries.mockResolvedValue([
-    { Id: ITEM, Name: "House of the Dragon", ProductionYear: 2022 },
-  ]);
   api.getMonitoring.mockResolvedValue(view());
   api.setTitleMonitoring.mockResolvedValue({});
   api.setSeasonMonitoring.mockResolvedValue({});
@@ -75,12 +62,10 @@ beforeEach(() => {
 });
 
 async function choose() {
-  const select = await screen.findByLabelText("admin.monitoring.series");
-  fireEvent.change(select, { target: { value: ITEM } });
   await screen.findByText("admin.monitoring.titleLevel");
 }
 
-describe("the monitoring page", () => {
+describe("a show's monitoring", () => {
   it("says why each level is what it is, not just whether it is on", async () => {
     /*
      * A season monitored because its series is, and one set monitored
@@ -158,20 +143,11 @@ describe("the monitoring page", () => {
     );
   });
 
-  it("fabricates nothing before a series is chosen", async () => {
-    renderPage();
-    await screen.findByLabelText("admin.monitoring.series");
-    expect(screen.queryByText("admin.monitoring.titleLevel")).toBeNull();
-    expect(api.getMonitoring).not.toHaveBeenCalled();
-  });
-
   it("reports a failure without repeating what was thrown", async () => {
     api.getMonitoring.mockRejectedValue(
       new Error("fetch http://127.0.0.1:43111 failed"),
     );
     renderPage();
-    const select = await screen.findByLabelText("admin.monitoring.series");
-    fireEvent.change(select, { target: { value: ITEM } });
 
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toBe("admin.monitoring.loadFailed");

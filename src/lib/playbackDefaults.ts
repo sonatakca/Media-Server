@@ -14,11 +14,6 @@ const SUBTITLE_PROVIDER_ID_KEY = "SeyirlikDefaultSubtitleStreamIndex";
 
 type SubtitlePreferenceMap = Record<string, number>;
 
-export interface SubtitlePreferenceUpdate {
-  itemId: string;
-  subtitleStreamIndex: number;
-}
-
 export interface ItemPlaybackDefaults {
   audioStreamIndex?: number;
   subtitleStreamIndex?: number;
@@ -78,17 +73,6 @@ function readLegacySubtitlePreferenceMap(): SubtitlePreferenceMap {
   } catch {
     return {};
   }
-}
-
-function writeLegacySubtitlePreferenceMap(
-  preferences: SubtitlePreferenceMap,
-): void {
-  if (!canUseLocalStorage()) return;
-
-  window.localStorage.setItem(
-    LEGACY_SUBTITLE_PREFERENCES_STORAGE_KEY,
-    JSON.stringify(preferences),
-  );
 }
 
 function getStreamsOfType(
@@ -152,17 +136,6 @@ export function getStoredDefaultSubtitleStreamIndex(
   return Object.prototype.hasOwnProperty.call(preferences, itemId)
     ? preferences[itemId]
     : null;
-}
-
-export function getDefaultAudioStreamIndexForItem(
-  item: MediaItem,
-): number | undefined {
-  const storedDefaults = getStoredItemPlaybackDefaults(item);
-
-  return (
-    storedDefaults.audioStreamIndex ??
-    getFallbackDefaultAudioStreamIndex(item.MediaSources?.[0])
-  );
 }
 
 export function getDefaultAudioStreamIndexForSource(
@@ -230,17 +203,4 @@ export function buildItemWithPlaybackDefaults(
     ...item,
     ProviderIds: providerIds,
   };
-}
-
-export function saveDefaultSubtitleStreamPreferences(
-  updates: SubtitlePreferenceUpdate[],
-): void {
-  const preferences = readLegacySubtitlePreferenceMap();
-
-  updates.forEach(({ itemId, subtitleStreamIndex }) => {
-    if (!itemId) return;
-    preferences[itemId] = Math.trunc(subtitleStreamIndex);
-  });
-
-  writeLegacySubtitlePreferenceMap(preferences);
 }

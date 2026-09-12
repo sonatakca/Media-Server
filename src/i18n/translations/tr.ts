@@ -73,6 +73,42 @@ export const tr = {
   "admin.decisions.season": "Sezon",
   "admin.decisions.sizeUnknown": "Boyut bilgisi yok",
   "wanted.chooseTmdb": "TMDB’den bir film veya dizi seç",
+  "devtools.card.playbackDiagnostics.title": "Oynatma tanılama",
+  "devtools.card.playbackDiagnostics.description":
+    "Bir şey neden oynamıyor: sunucunun her başlıkla ne yaptığı ve bu tarayıcının sunucuya ulaşıp ulaşamadığı.",
+  "devtools.card.playbackDiagnostics.tag": "Tanılama",
+  "library.tag": "Kütüphane",
+  "library.pageDescription":
+    "Her film, dizi ve kitap, durumu ve üzerinde yapılabilecek her şey.",
+  "library.books": "Kitaplar",
+  "library.actionFailed": "Başlatılamadı. Yeniden deneyin.",
+  "library.generateTrickplay": "Trickplay",
+  "library.trickplay": "Trickplay",
+  "library.trickplayCoverage": "dosyanın trickplay'i var.",
+  "library.generateMissing": "Eksikleri üret",
+  "library.rebuildAll": "Hepsini yeniden üret",
+  "library.trickplayQueued": "Trickplay sıraya alındı:",
+  "library.trickplayUpToDate": "Her dosyanın zaten trickplay'i var.",
+  "library.trickplayNothing":
+    "Henüz trickplay'e hazır dosya yok — dosyaların incelenmesi gerekiyor.",
+  "library.metadata": "Üst veri",
+  "library.metadataHint":
+    "TMDB'den yenileyin ya da eşleşmeyi, görselleri ve başlıkları Üst veri ve görseller sekmesinde değiştirin.",
+  "library.refreshMetadata": "TMDB'den yenile",
+  "library.metadataQueued": "Üst veri yenilemesi sıraya alındı.",
+  "library.noArtwork": "Bu başlığın düzenlenecek kendi görseli yok.",
+  "library.processingTitle": "İşleme",
+  "library.processingHint":
+    "Kalite basamakları Medya İşleme altında üretilir ve izlenir.",
+  "library.titleMissing": "Bu başlık artık kütüphanede değil.",
+  "library.unwanted": "Artık istenmiyor.",
+  "library.nowWanted": "İstenenlere eklendi.",
+  "library.tab.overview": "Genel bakış",
+  "library.tab.episodes": "Sezonlar ve bölümler",
+  "library.tab.artwork": "Üst veri ve görseller",
+  "library.tab.monitoring": "İzleme",
+  "maintenance.libraryWideHint":
+    "Tüm kütüphane üzerinde yapılan işler. Tek bir başlık için — trickplay'i, altyazısı, görselleri ya da üst verisi — onu şuradan açın:",
   "library.title": "Kütüphane",
   "library.description":
     "Seyirlik'in sahip olduğu ya da istediği her film ve dizi. Yeşil diskte, mor yolda, kırmızı istenen ama eksik. Kaynağı olmayan başlıklar yalnızca burada görünür, Filmler ya da Diziler sayfalarında asla.",
@@ -1101,14 +1137,6 @@ export const tr = {
   "devtools.card.libraryMaintenance.description":
     "Kütüphaneleri tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
   "devtools.card.libraryMaintenance.tag": "Bakım",
-  "devtools.card.serverControl.title": "Sunucu Denetimi",
-  "devtools.card.serverControl.description":
-    "Medya sunucusunu yeniden başlat ve yanıt vermeye başlayınca uygulamayı yeniden yükle.",
-  "devtools.card.serverControl.tag": "Yaşam Döngüsü",
-  "serverControl.eyebrow": "Sunucu",
-  "serverControl.title": "Sunucu Denetimi",
-  "serverControl.description":
-    "Medya sunucusu sürecini durdurup başlatır. Süren oynatmalar sona erer ve izleyen herkesin baştan başlaması gerekir.",
   "serverControl.loading": "Sunucu durumu okunuyor",
   "serverControl.loadFailed": "Sunucu durumu okunamadı.",
   "serverControl.statusUnavailable": "Sunucu durumu okunamadı",
@@ -1134,30 +1162,10 @@ export const tr = {
   "serverControl.requestFailed": "Yeniden başlatma isteği gönderilemedi.",
   "serverControl.timedOut":
     "Sunucu zamanında dönmedi. Yeniden denemeden önce terminali veya servis günlüklerini kontrol edin.",
-  "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
-  "devtools.card.tmdbArtwork.description":
-    "Film, dizi ve kitaplar için TMDB görsellerini seçin veya özel kapak, arka plan ve logo yükleyin.",
-  "devtools.card.tmdbArtwork.tag": "Görsel",
-  "devtools.card.contentExplorer.title": "İçerik Gezgini",
-  "devtools.card.contentExplorer.description":
-    "Bu kullanıcıya açık tüm içerikleri; filmler, diziler, sezonlar, bölümler, klasörler ve bilinmeyen türlerle birlikte listele.",
-  "devtools.card.contentExplorer.tag": "Envanter",
   "devtools.card.curation.title": "Düzenleme",
   "devtools.card.curation.description":
     "Carousel'in, Son Eklenenler satırlarının ve film ile dizi kitaplıklarının sırasını elle belirle.",
   "devtools.card.curation.tag": "Raflar",
-  "devtools.card.playbackDefaults.title": "Oynatma Varsayılanları",
-  "devtools.card.playbackDefaults.description":
-    "Seyirlik kullanan herkes için film/dizi bazlı ses ve altyazı varsayılanlarını seç.",
-  "devtools.card.playbackDefaults.tag": "Akışlar",
-  "devtools.card.knownBugs.title": "Bilinen Hatalar",
-  "devtools.card.knownBugs.description":
-    "Eksik kütüphane içerikleri, Se7en ses sorunları ve pikselli dönüştürme gibi mevcut bozuk davranışları takip et.",
-  "devtools.card.knownBugs.tag": "Hata takibi",
-  "devtools.card.wantedFeatures.title": "İstenen Özellikler",
-  "devtools.card.wantedFeatures.description":
-    "Dönen hero şablonları, daha iyi UX fikirleri ve planlanan Seyirlik geliştirmeleri gibi gelecekteki iyileştirmeleri topla.",
-  "devtools.card.wantedFeatures.tag": "Yol haritası",
   "userManagement.eyebrow": "Hesaplar",
   "userManagement.title": "Kullanıcı Yönetimi",
   "userManagement.description":
@@ -1221,36 +1229,6 @@ export const tr = {
   "userManagement.never": "Hiçbir zaman",
   "userManagement.lastActive": "Son etkinlik: {date}",
   "userManagement.you": "Sen",
-  "devtools.bugs.title": "Bilinen Hatalar",
-  "devtools.bugs.eyebrow": "Hata Takibi",
-  "devtools.bugs.description":
-    "Bozuk davranışları, oynatma sorunlarını, kütüphane problemlerini ve incelenmesi gereken her şeyi takip et.",
-  "devtools.bugs.emptyTitle": "Takip edilen hata yok",
-  "devtools.bugs.emptyDescription":
-    "Bu sayfadaki düzenleyiciyle ilk bilinen hatayı ekle.",
-  "devtools.features.title": "İstenen Özellikler",
-  "devtools.features.eyebrow": "Ürün Fikirleri",
-  "devtools.features.description":
-    "Gelecek fikirlerini, UX iyileştirmelerini ve Seyirlik'e eklemek istediğin özellikleri topla.",
-  "devtools.features.emptyTitle": "Henüz istenen özellik yok",
-  "devtools.features.emptyDescription":
-    "Bu sayfadaki düzenleyiciyle ilk özellik fikrini ekle.",
-  "devtools.defaultBug.libraryMissingMovies.title":
-    "Kütüphane tüm filmleri getirmiyor",
-  "devtools.defaultBug.libraryMissingMovies.description":
-    "Tarayıcı kataloglamış olmasına rağmen bazı filmler kütüphane görünümünde görünmüyor. Yerel sunucuda doğrulanmadı: /libraries/:id/items imleç sayfalaması, içerik türü filtresi, üst ID'ler ve katalog sorgusunun sınırının sonuçları kesip kesmediği kontrol edilmeli.",
-  "devtools.defaultBug.sevenNoEnglishAudio.title":
-    "Se7en varsayılan olarak sessiz açılıyor",
-  "devtools.defaultBug.sevenNoEnglishAudio.description":
-    "Se7en filminde beklenen şekilde yerleşik İngilizce ses yok. Varsayılan olarak sessiz açılıyor. Başka bir ses parçası seçmek dönüştürme başlatıyor.",
-  "devtools.defaultBug.transcodePixelated.title":
-    "Dönüştürülmüş video pikselli",
-  "devtools.defaultBug.transcodePixelated.description":
-    "Dönüştürme hızı yüksekken bile video pikselli görünüyor. Oynatıcı kaliteyi korumak için önce makul en yüksek dönüştürme kalitesini denemeli, yalnızca sunucu yavaşsa daha düşük kaliteye düşmeli.",
-  "devtools.defaultFeature.rotatingHero.title":
-    "Hero şablonu zamanla değişmeli",
-  "devtools.defaultFeature.rotatingHero.description":
-    "Hero bölümü sabit kalmamalı. Ana sayfayı daha canlı hissettirmek için öne çıkan içerikleri döndürmeli veya sunumunu zamanla değiştirmeli.",
   "curation.unavailable": "Düzenleme kullanılamıyor",
   "curation.loading": "Kitaplık yükleniyor...",
   "curation.loadFailed": "Kitaplık yüklenemedi.",
@@ -1303,49 +1281,6 @@ export const tr = {
   "curation.moveBottomItem": "{title} en alta taşı",
   "curation.showMore": "{remaining} tane daha göster",
   "curation.noMatches": "Bu aramayla eşleşen içerik yok.",
-  "playbackDefaults.unavailable": "Oynatma varsayılanları kullanılamıyor",
-  "playbackDefaults.loading": "Film ve diziler yükleniyor...",
-  "playbackDefaults.loadFailed": "Film ve diziler yüklenemedi.",
-  "playbackDefaults.targetLoadFailed": "Bu içerik için akışlar yüklenemedi.",
-  "playbackDefaults.eyebrow": "İçerik Oynatması",
-  "playbackDefaults.title": "Oynatma Varsayılanları",
-  "playbackDefaults.description":
-    "Bir film veya dizi seç ve Seyirlik'in herkes için tercih edeceği ses/altyazı akışlarını ayarla.",
-  "playbackDefaults.titles": "İçerik",
-  "playbackDefaults.formTitle": "Bu içerik için varsayılanlar",
-  "playbackDefaults.previewSummary": "Ses {audio} · Altyazı {subtitles}",
-  "playbackDefaults.searchPlaceholder": "Film, dizi, yıl veya ID ara...",
-  "playbackDefaults.searchLabel": "Oynatma varsayılanı içeriklerinde ara",
-  "playbackDefaults.noMatches": "Bu aramayla eşleşen içerik yok.",
-  "playbackDefaults.noTitleSelected": "Bir film veya dizi seç",
-  "playbackDefaults.noTitleSelectedDescription":
-    "Varsayılan ses ve altyazı akışlarını seçmek için listeden bir içerik seç.",
-  "playbackDefaults.movieTargetSummary":
-    "Bu varsayılan herkes bu filmi oynattığında uygulanır.",
-  "playbackDefaults.seriesTargetSummary":
-    "Bu varsayılan dizideki {count} bölüme uygulanır.",
-  "playbackDefaults.loadingTargets": "Akış seçenekleri yükleniyor...",
-  "playbackDefaults.audioStream": "Ses akışı",
-  "playbackDefaults.subtitleStream": "Altyazı akışı",
-  "playbackDefaults.mixed": "Bölümlerde farklı",
-  "playbackDefaults.noAudioStreams": "Ses akışı döndürülmedi.",
-  "playbackDefaults.noSubtitleStreams": "Altyazı akışı döndürülmedi.",
-  "playbackDefaults.subtitlesOff": "Altyazılar kapalı",
-  "playbackDefaults.streamMissing":
-    "Akış #{index} (geçerli medya akışlarında yok)",
-  "playbackDefaults.saveToItems": "{count} içerik için kaydet",
-  "playbackDefaults.saving": "Oynatma varsayılanları kaydediliyor...",
-  "playbackDefaults.saveFailed": "Bu içerik güncellenemedi.",
-  "playbackDefaults.saveSuccess":
-    "Oynatma varsayılanları {count} içerik için kaydedildi.",
-  "playbackDefaults.savePartial": "{success} kaydedildi · {failed} başarısız",
-  "playbackDefaults.applyWarning":
-    "Bu işlem Seyirlik varsayılanlarını içerik metadata'sına yazar.",
-  "playbackDefaults.adminRequiredTitle": "Admin izni gerekli",
-  "playbackDefaults.adminRequired":
-    "Oturum açmış hesap içerik metadata'sını düzenleyemiyorsa kayıt reddedilir. Kaydedildikten sonra Seyirlik bu varsayılanları tüm kullanıcılar için kullanır.",
-  "playbackDefaults.results": "Sonuçlar",
-  "playbackDefaults.resultSummary": "{success} kaydedildi · {failed} başarısız",
   "tmdbArtwork.eyebrow": "Görsel Tercihi",
   "tmdbArtwork.title": "TMDB Görselleri",
   "tmdbArtwork.description":
@@ -1619,41 +1554,8 @@ export const tr = {
   "audit.noPlaybackSource": "Oynatma kaynak adayı döndürülmedi.",
   "audit.noCandidate": "Aday yok",
   "audit.playbackInfoFailed": "PlaybackInfo isteği başarısız.",
-  "content.unavailable": "İçerik Gezgini kullanılamıyor",
-  "content.loadFailed": "İçerikler yüklenemedi.",
-  "content.eyebrow": "Kütüphane Envanteri",
-  "content.title": "İçerik Gezgini",
-  "content.description":
-    "Bu kullanıcıya açık tüm içerikleri; filmler, diziler, sezonlar, bölümler, klasörler, kütüphaneler ve bilinmeyen türler dahil listeler.",
-  "content.searchContent": "İçerik ara",
-  "content.searchPlaceholder":
-    "Başlık, tür, dizi, yıl veya içerik ID'si ara...",
-  "content.filter.otherVideos": "Diğer videolar",
-  "content.filter.foldersLibraries": "Klasörler / kütüphaneler",
-  "content.exportJson": "JSON dışa aktar",
-  "content.exportCsv": "CSV dışa aktar",
-  "content.exportSummarySingular":
-    "Yalnızca geçerli arama/filtre dışa aktarılır · {count} içerik",
-  "content.exportSummaryPlural":
-    "Yalnızca geçerli arama/filtre dışa aktarılır · {count} içerik",
-  "content.loadingAll": "Tüm içerikler yükleniyor...",
-  "content.table.item": "İçerik",
-  "content.table.parent": "Üst",
-  "content.table.id": "ID",
-  "content.copyItemId": "İçerik ID'sini kopyala",
-  "content.copyRawJson": "Ham JSON'u kopyala",
-  "content.openDetails": "Detayları aç",
-  "content.noSubtitle": "Alt başlık yok",
-  "content.noContentMatched": "Eşleşen içerik yok",
-  "content.noContentHint":
-    "Aramayı temizlemeyi veya filtreyi Tümü'ne almayı dene.",
-  "content.libraryType": "Kütüphane · {type}",
-  "maintenance.back": "Devtools'a dön",
   "maintenance.eyebrow": "Kütüphane Bakımı",
   "maintenance.title": "Kütüphane Taraması ve Metadata",
-  "maintenance.description":
-    "Kütüphaneleri tara, içerik metadata'sını yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
-  "maintenance.scanAllLibraries": "Tüm kütüphaneleri tara",
   "maintenance.actionsLabel": "Kütüphane bakım işlemleri",
   "maintenance.allInOne": "Hepsi bir arada",
   "maintenance.allInOneHint":
@@ -1673,17 +1575,10 @@ export const tr = {
   "maintenance.actionStarting": "Kuyruğa alınıyor...",
   "maintenance.actionFailed": "Bu bakım işlemi kuyruğa alınamadı.",
   "maintenance.tasks.refresh": "Yenile",
-  "maintenance.tabs.label": "Kütüphane bakımı bölümleri",
   "maintenance.tab.scan": "Kütüphane Taraması",
   "maintenance.tab.metadata": "Üstveri Düzenleme",
-  "maintenance.tab.scanHint":
-    "Bakımı çalıştırın ve sunucunun ne yaptığını izleyin.",
-  "maintenance.tab.metadataHint":
-    "Katalogda arayın; başlığın üstverisini ve görsellerini düzenleyin.",
   "maintenance.tasks.title": "Görevler",
   "maintenance.tasks.label": "Bakım görevi durumu",
-  "maintenance.tasks.active": "Sürüyor",
-  "maintenance.tasks.concluded": "Sonuçlandı",
   "maintenance.tasks.activeCount": "Sürüyor ({count})",
   "maintenance.tasks.concludedCount": "Sonuçlandı ({count})",
   "maintenance.tasks.pagerLabel": "Görev sayfaları",
@@ -1700,7 +1595,6 @@ export const tr = {
   "maintenance.tasks.emptyConcluded": "Henüz tamamlanan bakım yok.",
   "maintenance.tasks.emptyConcludedHint":
     "Tamamlanan, başarısız olan ve iptal edilen işler sunucuda burada saklanır.",
-  "maintenance.tasks.refreshedAt": "Güncellendi {time}",
   "maintenance.tasks.details": "Ayrıntılar",
   "maintenance.tasks.hideDetails": "Ayrıntıları gizle",
   "maintenance.tasks.cancel": "İptal et",
@@ -1751,7 +1645,6 @@ export const tr = {
     "şimdilik {total} {unit} içinden {completed}",
   "maintenance.measure.counter": "{count} {unit}",
   "maintenance.measure.phase": "{count} aşamadan {index}.",
-  "maintenance.measure.unknown": "Henüz ölçülebilir ilerleme yok",
   "maintenance.measure.provisionalHint":
     "Yeni işler bulundukça toplam değişmeye devam ediyor.",
   "maintenance.measure.unknownHint":
@@ -1769,7 +1662,6 @@ export const tr = {
   "maintenance.timing.elapsed": "Geçen süre",
   "maintenance.timing.elapsedValue": "{value} geçti",
   "maintenance.timing.silentFor": "{value} boyunca güncelleme yok",
-  "maintenance.timing.retryAt": "Sonraki deneme {time}",
   "maintenance.detail.identity": "Kimlik",
   "maintenance.detail.timing": "Zamanlama",
   "maintenance.detail.execution": "Şu anki çalışma",
@@ -1788,7 +1680,6 @@ export const tr = {
   "maintenance.detail.failureList": "Yapılamayan öğeler",
   "maintenance.detail.failuresTruncated":
     "Yalnızca ilk {count} tanesi saklanıyor.",
-  "maintenance.detail.noFailures": "Başarısız olan bir şey yok.",
   "maintenance.counter.filesDiscovered": "Bulunan dosya",
   "maintenance.counter.filesSkipped": "Atlanan dosya",
   "maintenance.counter.itemsCreated": "Eklenen başlık",
@@ -1849,7 +1740,6 @@ export const tr = {
   "maintenance.reason.filesystem-error": "Dosya sistemi hatası",
   "maintenance.reason.database-error": "Veritabanı hatası",
   "maintenance.reason.unknown": "Bilinmeyen neden",
-  "maintenance.queueOrder.title": "Kuyruk sırası",
   "maintenance.queueOrder.hint":
     "Sıralamak için sürükleyin veya ok tuşlarını kullanın.",
   "maintenance.queueOrder.handle":
@@ -1865,132 +1755,9 @@ export const tr = {
   "maintenance.queueOrder.failed": "Kuyruk sırası kabul edilmedi.",
   "maintenance.queueOrder.position": "#{position}",
   "maintenance.libraryItems": "Kütüphane İçerikleri",
-  "maintenance.visibleItemSingular": "{count} görünen içerik",
-  "maintenance.visibleItemPlural": "{count} görünen içerik",
-  "maintenance.scanSelected": "Seçileni tara",
-  "maintenance.allLibraries": "Tüm kütüphaneler",
-  "maintenance.unnamedLibrary": "Adsız kütüphane",
-  "maintenance.searchPlaceholder": "Film, bölüm, dizi ara...",
-  "maintenance.noSubtitleAvailable": "Alt başlık yok.",
   "maintenance.metadataEditor": "Metadata Düzenleyici",
-  "maintenance.refreshMetadata": "Metadata yenile",
-  "maintenance.metadataMode": "Metadata modu",
-  "maintenance.fullRefresh": "Tam yenileme",
-  "maintenance.replaceMetadata": "Metadata'yı değiştir",
-  "maintenance.replaceImages": "Görselleri değiştir",
-  "maintenance.displayMetadataPreview": "Metadata önizlemesi",
-  "maintenance.previewTitle":
-    "Görseller, trickplay, medya kaynağı ve ham kimlikler",
-  "maintenance.previewDescription":
-    "Bu bölüm salt okunur. Sunucunun bu içerik için tuttuğu verileri gösterir.",
-  "maintenance.primaryPoster": "Ana poster",
-  "maintenance.backdropBanner": "Arka plan / banner",
-  "maintenance.logo": "Logo",
-  "maintenance.trickplaySample": "Trickplay örneği",
-  "maintenance.noBackdrop": "Arka plan yok",
-  "maintenance.noLogo": "Logo yok",
-  "maintenance.noMediaSource": "Medya kaynağı yok",
-  "maintenance.trickplayAvailable": "Oluşturuldu / mevcut",
-  "maintenance.trickplayMissing": "Oluşturulmadı veya kullanılamıyor",
-  "maintenance.checking": "Kontrol ediliyor...",
-  "maintenance.itemId": "İçerik ID'si",
-  "maintenance.mediaType": "Medya türü",
-  "maintenance.sortName": "Sıralama adı",
-  "maintenance.productionYear": "Yapım yılı",
-  "maintenance.officialRating": "Resmi yaş sınırı",
-  "maintenance.communityRating": "Topluluk puanı",
-  "maintenance.genres": "Türler",
-  "maintenance.primaryImageTag": "Kapak görseli etiketi",
-  "maintenance.logoImageTag": "Logo görsel etiketi",
-  "maintenance.backdropImageTags": "Arka plan görsel etiketleri",
-  "maintenance.parentId": "Üst ID",
-  "maintenance.seriesId": "Dizi ID",
-  "maintenance.seasonId": "Sezon ID",
-  "maintenance.userPlayed": "Kullanıcı izledi",
-  "maintenance.playbackPosition": "Oynatma konumu",
-  "maintenance.chapters": "Bölümler",
-  "maintenance.chapterSingular": "{count} bölüm",
-  "maintenance.chapterPlural": "{count} bölüm",
-  "maintenance.mediaSourceId": "Medya kaynağı ID",
-  "maintenance.path": "Yol",
-  "maintenance.size": "Boyut",
-  "maintenance.bitrate": "Bit hızı",
-  "maintenance.directPlay": "Doğrudan oynatma",
-  "maintenance.directStream": "Doğrudan akış",
-  "maintenance.transcoding": "Dönüştürme",
-  "maintenance.defaultAudioIndex": "Varsayılan ses indeksi",
-  "maintenance.defaultSubtitleIndex": "Varsayılan altyazı indeksi",
-  "maintenance.defaultSubtitlePreference": "Varsayılan altyazı tercihi",
-  "maintenance.defaultSubtitlePreferenceDescription":
-    "Bu içerik oynatılırken hangi altyazı parçasının tercih edileceğini seç.",
-  "maintenance.defaultSubtitlePreferenceSeriesDescription":
-    "Bu dizinin her bölümü oynatılırken Seyirlik'in hangi altyazı parçasını tercih edeceğini seç.",
-  "maintenance.subtitlePreferenceOff": "Kapalı / Altyazı yok",
-  "maintenance.subtitlePreferenceMixed": "Bölümlerde farklı tercihler var",
-  "maintenance.noSubtitleStreams":
-    "Bu medya kaynağı için altyazı akışı dönmedi.",
-  "maintenance.noSeriesEpisodes": "Bu dizi için bölüm bulunamadı.",
-  "maintenance.loadingSeriesEpisodes": "Dizi bölümleri yükleniyor...",
-  "maintenance.subtitleTrackMissing":
-    "Akış #{index} (geçerli medya akışlarında yok)",
-  "maintenance.saveSubtitlePreference": "Altyazı tercihini kaydet",
-  "maintenance.chooseSubtitlePreferenceToSave":
-    "Kaydetmeden önce Kapalı'yı veya bir altyazı parçasını seç.",
-  "maintenance.noMediaSourceForSubtitlePreference":
-    "Bu içerikte altyazı tercihi için medya kaynağı yok.",
-  "maintenance.mediaStreams": "Medya akışları",
-  "maintenance.streamFallback": "Akış",
-  "maintenance.codec": "Codec",
-  "maintenance.profile": "Profil",
-  "maintenance.language": "Dil",
-  "maintenance.displayTitle": "Görünen başlık",
   "maintenance.forced": "Zorunlu",
   "maintenance.external": "Harici",
-  "maintenance.channels": "Kanallar",
-  "maintenance.resolution": "Çözünürlük",
-  "maintenance.frameRate": "Kare hızı",
-  "maintenance.videoRange": "Video aralığı",
-  "maintenance.rating": "Yaş sınırı",
-  "maintenance.ratingPlaceholder": "R, PG-13...",
-  "maintenance.communityRatingPlaceholder": "8.5",
-  "maintenance.genresPlaceholder": "Suç, Dram, Gerilim",
-  "maintenance.saveMetadata": "Metadata'yı kaydet",
-  "maintenance.selectItem": "Bir içerik seç",
-  "maintenance.selectItemDescription":
-    "Metadata'sını yenilemek veya yaygın alanlarını düzenlemek için soldan bir film ya da bölüm seç.",
-  "maintenance.adminRequired": "Admin izni gerekebilir",
-  "maintenance.loadingLibraries":
-    "Kütüphaneler ve video içerikleri yükleniyor...",
-  "maintenance.libraryFailedToLoad": "Bir kütüphane yüklenemedi.",
-  "maintenance.libraryLoadTimeout": "{label} çok uzun sürede yüklendi.",
-  "maintenance.loadedItemsSingular": "{count} video içerik yüklendi.",
-  "maintenance.loadedItemsPlural": "{count} video içerik yüklendi.",
-  "maintenance.loadedWithFailures":
-    "{count} video içerik yüklendi ama {failedCount} {libraryLabel} başarısız oldu: {failures}",
-  "maintenance.librarySingular": "kütüphane",
-  "maintenance.libraryPlural": "kütüphane",
-  "maintenance.couldNotLoadData": "Kütüphane verisi yüklenemedi.",
-  "maintenance.startingFullScan": "Tam kütüphane taraması başlatılıyor...",
-  "maintenance.fullScanStarted": "Tam kütüphane taraması başlatıldı.",
-  "maintenance.couldNotStartScan": "Kütüphane taraması başlatılamadı.",
-  "maintenance.startingSelectedScan":
-    "Seçili kütüphane taraması başlatılıyor...",
-  "maintenance.selectedScanStarted": "Seçili kütüphane taraması başlatıldı.",
-  "maintenance.couldNotScanSelected": "Seçili kütüphane taranamadı.",
-  "maintenance.refreshingSelected": "Seçili içerik metadata'sı yenileniyor...",
-  "maintenance.refreshStarted": "Bu içerik için metadata yenileme başlatıldı.",
-  "maintenance.couldNotRefresh": "İçerik metadata'sı yenilenemedi.",
-  "maintenance.nameCannotBeEmpty": "Ad boş olamaz.",
-  "maintenance.savingMetadata": "Metadata kaydediliyor...",
-  "maintenance.metadataSaved": "Metadata kaydedildi.",
-  "maintenance.couldNotSave": "Metadata kaydedilemedi.",
-  "maintenance.savingSubtitlePreference": "Altyazı tercihi kaydediliyor...",
-  "maintenance.subtitlePreferenceSaved": "Altyazı tercihi kaydedildi.",
-  "maintenance.subtitlePreferenceSavedForEpisodes":
-    "Altyazı tercihi {count} bölüm için kaydedildi.",
-  "maintenance.couldNotSaveSubtitlePreference":
-    "Altyazı tercihi kaydedilemedi.",
-  "maintenance.couldNotLoadSeriesEpisodes": "Bu dizinin bölümleri yüklenemedi.",
   // Listem
   "myList.title": "Listem",
   "myList.addToMyList": "Listeme ekle",
@@ -2267,12 +2034,6 @@ export const tr = {
   "admin.integrations.schemaCurrent": "Seyirlik'in bu sürümüyle güncel.",
   "admin.integrations.schemaBehind":
     "Kod, veritabanında olmayan geçişleri bekliyor. Bunlar uygulanana kadar servisler başlamayı reddedecek.",
-  "admin.monitoring.title": "İzleme",
-  "admin.monitoring.description":
-    "Seyirlik'in neyi beklediği ve her yanıtı hangi düzeyin verdiği.",
-  "admin.monitoring.tag": "İşleyiş",
-  "admin.monitoring.series": "Dizi",
-  "admin.monitoring.choose": "Bir dizi seçin…",
   "admin.monitoring.titleLevel": "Dizi",
   "admin.monitoring.seasons": "Sezonlar",
   "admin.monitoring.episodes": "Bölümler",

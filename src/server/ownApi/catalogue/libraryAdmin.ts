@@ -18,7 +18,7 @@ import {
 import { normalizeLanguage } from "../../../renditions/processing/languages";
 import { MEDIA_STATUS_SQL, mediaAvailableSql } from "./mediaAvailability";
 
-export type LibraryTitleKind = "movie" | "series";
+export type LibraryTitleKind = "movie" | "series" | "book";
 
 /** What a title or episode holds, summarised for one row. */
 export interface HoldingFacts {
@@ -33,6 +33,9 @@ export interface HoldingFacts {
   subtitleLanguages: string[];
   /** Subtitle languages Seyirlik is still looking for. */
   pendingSubtitles: string[];
+  /** Files on disk, and how many of them have trickplay sheets. */
+  files: number;
+  trickplayFiles: number;
 }
 
 export interface LibraryTitle extends HoldingFacts {
@@ -60,6 +63,8 @@ export interface LibraryEpisode extends HoldingFacts {
 }
 
 export interface LibrarySeason {
+  /** The season's own catalogue row, when the scanner made one. */
+  id: string | null;
   seasonNumber: number;
   episodes: LibraryEpisode[];
 }
@@ -105,6 +110,11 @@ const HOLDING_COLUMNS = `
         JOIN items fam ON fam.id = f.item_id
         WHERE ${FAMILY("item")} AND f.missing_since IS NULL
     ) languages ORDER BY 1) AS "subtitleLanguages",
+  (SELECT count(*)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND fam.kind IN ('movie', 'episode') AND f.missing_since IS NULL AND f.size_bytes > 0) AS files,
+  (SELECT count(*)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
+    WHERE ${FAMILY("item")} AND fam.kind IN ('movie', 'episode') AND f.missing_since IS NULL AND f.size_bytes > 0
+      AND EXISTS (SELECT 1 FROM trickplay_sets ts WHERE ts.media_file_id = f.id)) AS "trickplayFiles",
   ARRAY(SELECT DISTINCT w.language FROM subtitle_wants w JOIN media_files f ON f.id = w.media_file_id
     JOIN items fam ON fam.id = f.item_id
     WHERE ${FAMILY("item")} AND w.active ORDER BY 1) AS "pendingSubtitles"`;
@@ -133,6 +143,8 @@ function holding(row: HoldingRow): HoldingFacts {
     audioLanguages: languageSet(row.audioLanguages),
     subtitleLanguages: languageSet(row.subtitleLanguages),
     pendingSubtitles: languageSet(row.pendingSubtitles),
+    files: row.files,
+    trickplayFiles: row.trickplayFiles,
   };
 }
 
@@ -148,6 +160,8 @@ const NOTHING_HELD = (status: string): HoldingFacts => ({
   audioLanguages: [],
   subtitleLanguages: [],
   pendingSubtitles: [],
+  files: 0,
+  trickplayFiles: 0,
 });
 
 type TitleRow = HoldingRow & {
@@ -197,7 +211,7 @@ export function createLibraryAdminRepository(db: DatabaseExecutor) {
 
     async getTitle(itemId: string): Promise<LibraryTitle | null> {
       const result = await db.query<TitleRow>(
-        `${TITLE_SELECT} WHERE item.id = $1 AND item.kind IN ('movie', 'series')`,
+        `${TITLE_SELECT} WHERE item.id = $1 AND item.kind IN ('movie', 'series', 'book')`,
         [itemId],
       );
       return result.rows[0] ? toTitle(result.rows[0]) : null;
@@ -232,9 +246,11 @@ export function createLibraryAdminRepository(db: DatabaseExecutor) {
           season: number | null;
           episode: number | null;
           airDate: string | null;
+          seasonId: string | null;
         }
       >(
         `SELECT item.id, item.title, item.parent_index_number AS season, item.index_number AS episode,
+           (SELECT parent.id FROM items parent WHERE parent.id = item.parent_id AND parent.kind = 'season') AS "seasonId",
            to_char(item.premiere_date, 'YYYY-MM-DD') AS "airDate",
            ${HOLDING_COLUMNS}
          FROM items item WHERE item.series_id = $1 AND item.kind = 'episode'
@@ -308,7 +324,7 @@ export async function loadTitleDetail(
 ): Promise<LibraryTitleDetail | null> {
   const title = await repository.getTitle(itemId);
   if (!title) return null;
-  if (title.kind === "movie") {
+  if (title.kind !== "series") {
     const file = (await repository.primaryFiles([title.id])).get(title.id);
     return {
       ...title,
@@ -324,6 +340,10 @@ export async function loadTitleDetail(
     repository.monitoring(title.id),
   ]);
   const files = await repository.primaryFiles(rows.map((row) => row.id));
+  const seasonIds = new Map<number, string>();
+  for (const row of rows)
+    if (row.seasonId && row.season !== null)
+      seasonIds.set(row.season, row.seasonId);
   const episodes = new Map<string, LibraryEpisode>();
   const unnumbered: LibraryEpisode[] = [];
   for (const row of rows) {
@@ -409,6 +429,7 @@ export async function loadTitleDetail(
     seasons: [...bySeason.entries()]
       .sort(([a], [b]) => a - b)
       .map(([seasonNumber, list]) => ({
+        id: seasonIds.get(seasonNumber) ?? null,
         seasonNumber,
         episodes: list.sort((a, b) => a.episodeNumber - b.episodeNumber),
       })),

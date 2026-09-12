@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { setPageTitle } from "../../lib/pageTitle";
+import { ServerControlPage } from "../ServerControlPage";
 import { useLanguage } from "../../i18n/LanguageContext";
 import {
   attentionCount,
@@ -243,6 +244,9 @@ export function OperationsHealthPage() {
           </p>
         </section>
       ) : null}
+
+      {/* Restarting belongs beside the answer to "is it serving". */}
+      <ServerControlPage />
     </div>
   );
 }

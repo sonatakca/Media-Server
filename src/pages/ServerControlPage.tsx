@@ -1,16 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Loader2,
-  Power,
-  RotateCcw,
-  ServerCog,
-} from "lucide-react";
+import { AlertTriangle, Loader2, Power, RotateCcw } from "lucide-react";
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
 import { useLanguage } from "../i18n/LanguageContext";
-import { setPageTitle } from "../lib/pageTitle";
 import {
   getServerRestartStatus,
   requestServerRestart,
@@ -31,6 +24,7 @@ import {
 
 type Stage = "idle" | "confirming" | "requesting" | "waiting" | "failed";
 
+/** The restart section of the Health page; Health renders the page heading. */
 export function ServerControlPage() {
   const { t } = useLanguage();
   const [status, setStatus] = useState<ServerRestartStatus | null>(null);
@@ -51,13 +45,6 @@ export function ServerControlPage() {
   // A restart in flight must not be cancelled by a re-render, and the reload
   // must not fire from a component that has gone away.
   const restarting = useRef(false);
-
-  useEffect(() => {
-    setPageTitle(`${t("serverControl.title")} · Seyirlik`, {
-      canonicalPath: "/dev/server-control",
-      robots: "noindex, nofollow",
-    });
-  }, [t]);
 
   const [reloadStatusKey, setReloadStatusKey] = useState(0);
 
@@ -154,27 +141,6 @@ export function ServerControlPage() {
 
   return (
     <div className="w-full space-y-6">
-      <section className="overflow-hidden rounded-3xl border border-white/10 bg-white/[0.055] p-6 shadow-2xl backdrop-blur-xl">
-        <div className="mt-5 flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-[color-mix(in_srgb,var(--accent)_30%,transparent)] bg-[var(--accent)]/10 text-[var(--accent)]">
-            <ServerCog size={22} />
-          </div>
-
-          <div>
-            <p className="text-sm font-black uppercase tracking-[0.22em] text-[var(--accent)]">
-              {t("serverControl.eyebrow")}
-            </p>
-            <h1 className="mt-1 text-3xl font-black text-white sm:text-4xl">
-              {t("serverControl.title")}
-            </h1>
-          </div>
-        </div>
-
-        <p className="mt-3 max-w-2xl text-sm font-semibold leading-6 text-white/55">
-          {t("serverControl.description")}
-        </p>
-      </section>
-
       {loadError ? (
         <ErrorMessage
           title={t("serverControl.statusUnavailable")}

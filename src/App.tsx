@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { ADMIN_REDIRECTS } from "./lib/adminSections";
 import { Layout } from "./components/Layout";
 import { LoadingSpinner } from "./components/LoadingSpinner";
 import { RouteColorTransition } from "./components/RouteColorTransition";
@@ -54,12 +55,6 @@ const DevToolsLayout = lazy(async () => {
 // Admin/dev pages are only reachable behind RequireAdminAuth, so they stay out
 // of the initial bundle. They resolve inside the Suspense boundary that already
 // wraps RequireAdminAuth.
-const PlaybackAuditPage = lazy(async () => ({
-  default: (await import("./pages/PlaybackAuditPage")).PlaybackAuditPage,
-}));
-const MonitoringPage = lazy(async () => ({
-  default: (await import("./pages/admin/MonitoringPage")).MonitoringPage,
-}));
 const IntegrationsPage = lazy(async () => ({
   default: (await import("./pages/admin/IntegrationsPage")).IntegrationsPage,
 }));
@@ -76,15 +71,22 @@ const ReleaseDecisionsPage = lazy(async () => ({
 const AcquisitionsPage = lazy(async () => ({
   default: (await import("./pages/admin/AcquisitionsPage")).AcquisitionsPage,
 }));
+const AdminLibraryPage = lazy(async () => ({
+  default: (await import("./pages/admin/LibraryPage")).LibraryPage,
+}));
+const TitlePage = lazy(async () => ({
+  default: (await import("./pages/admin/TitlePage")).TitlePage,
+}));
+const PlaybackDiagnosticsPage = lazy(async () => ({
+  default: (await import("./pages/admin/PlaybackDiagnosticsPage"))
+    .PlaybackDiagnosticsPage,
+}));
 const OperationsHealthPage = lazy(async () => ({
   default: (await import("./pages/admin/OperationsHealthPage"))
     .OperationsHealthPage,
 }));
 const DevToolsPage = lazy(async () => ({
   default: (await import("./pages/DevToolsPage")).DevToolsPage,
-}));
-const DevToolsBoardPage = lazy(async () => ({
-  default: (await import("./pages/DevToolsBoardPage")).DevToolsBoardPage,
 }));
 const MediaProcessingPage = lazy(async () => ({
   default: (await import("./pages/admin/MediaProcessingPage"))
@@ -94,27 +96,14 @@ const LibraryMaintenancePage = lazy(async () => ({
   default: (await import("./pages/LibraryMaintenancePage"))
     .LibraryMaintenancePage,
 }));
-const TmdbArtworkPage = lazy(() => import("./pages/TmdbArtworkPage"));
 const MyListPage = lazy(async () => ({
   default: (await import("./pages/MyListPage")).MyListPage,
-}));
-const ContentExplorerPage = lazy(async () => ({
-  default: (await import("./pages/ContentExplorerPage")).ContentExplorerPage,
 }));
 const CurationPage = lazy(async () => ({
   default: (await import("./pages/admin/CurationPage")).CurationPage,
 }));
-const PlaybackDefaultsPage = lazy(async () => ({
-  default: (await import("./pages/PlaybackDefaultsPage")).PlaybackDefaultsPage,
-}));
-const PlaybackHealthPage = lazy(async () => ({
-  default: (await import("./pages/PlaybackHealthPage")).PlaybackHealthPage,
-}));
 const SkeletonLabPage = lazy(async () => ({
   default: (await import("./pages/SkeletonLabPage")).SkeletonLabPage,
-}));
-const ServerControlPage = lazy(async () => ({
-  default: (await import("./pages/ServerControlPage")).ServerControlPage,
 }));
 const UserManagementPage = lazy(async () => ({
   default: (await import("./pages/UserManagementPage")).UserManagementPage,
@@ -423,21 +412,18 @@ export default function App() {
                   />
                   <Route path="/admin/subtitles" element={<SubtitlesPage />} />
                   <Route path="/admin/imports" element={<ImportsPage />} />
+                  <Route path="/admin/library" element={<AdminLibraryPage />} />
                   <Route
-                    path="/admin/monitoring"
-                    element={<MonitoringPage />}
+                    path="/admin/library/:itemId"
+                    element={<TitlePage />}
                   />
                   <Route
                     path="/admin/integrations"
                     element={<IntegrationsPage />}
                   />
                   <Route
-                    path="/dev/playback-audit"
-                    element={<PlaybackAuditPage />}
-                  />
-                  <Route
-                    path="/dev/playback-health"
-                    element={<PlaybackHealthPage />}
+                    path="/dev/playback"
+                    element={<PlaybackDiagnosticsPage />}
                   />
                   <Route
                     path="/dev/media-processing"
@@ -446,14 +432,6 @@ export default function App() {
                   <Route
                     path="/dev/library-maintenance"
                     element={<LibraryMaintenancePage />}
-                  />
-                  <Route
-                    path="/dev/tmdb-artwork"
-                    element={<TmdbArtworkPage />}
-                  />
-                  <Route
-                    path="/dev/content"
-                    element={<ContentExplorerPage />}
                   />
                   <Route path="/dev/users" element={<UserManagementPage />} />
                   <Route path="/dev/curation" element={<CurationPage />} />
@@ -466,22 +444,15 @@ export default function App() {
                       element={<SkeletonLabPage />}
                     />
                   ) : null}
-                  <Route
-                    path="/dev/playback-defaults"
-                    element={<PlaybackDefaultsPage />}
-                  />
-                  <Route
-                    path="/dev/server-control"
-                    element={<ServerControlPage />}
-                  />
-                  <Route
-                    path="/dev/known-bugs"
-                    element={<DevToolsBoardPage type="bugs" />}
-                  />
-                  <Route
-                    path="/dev/wanted-features"
-                    element={<DevToolsBoardPage type="features" />}
-                  />
+                  {/* Tools that were merged into another keep their old
+                    address, which opens the tool that absorbed them. */}
+                  {Object.entries(ADMIN_REDIRECTS).map(([from, to]) => (
+                    <Route
+                      key={from}
+                      path={from}
+                      element={<Navigate to={to} replace />}
+                    />
+                  ))}
                 </Route>
               </Route>
               <Route

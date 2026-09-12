@@ -151,7 +151,16 @@ export const ADMIN_GROUPS: readonly AdminGroup[] = [
  * before choosing a release for it, choose a release before downloading it.
  */
 export const ADMIN_SECTIONS: readonly AdminSection[] = [
-  // ---- library: the catalogue, and getting things into it
+  // ---- library: every title, and the work done across all of them
+  {
+    id: "library",
+    group: "library",
+    path: "/admin/library",
+    titleKey: "library.title",
+    descriptionKey: "library.pageDescription",
+    tagKey: "library.tag",
+    icon: "database",
+  },
   {
     id: "library-maintenance",
     group: "library",
@@ -161,44 +170,8 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     tagKey: "devtools.card.libraryMaintenance.tag",
     icon: "databaseZap",
   },
-  {
-    id: "tmdb-artwork",
-    group: "library",
-    path: "/dev/tmdb-artwork",
-    titleKey: "devtools.card.tmdbArtwork.title",
-    descriptionKey: "devtools.card.tmdbArtwork.description",
-    tagKey: "devtools.card.tmdbArtwork.tag",
-    icon: "images",
-  },
-  {
-    id: "content-explorer",
-    group: "library",
-    path: "/dev/content",
-    titleKey: "devtools.card.contentExplorer.title",
-    descriptionKey: "devtools.card.contentExplorer.description",
-    tagKey: "devtools.card.contentExplorer.tag",
-    icon: "database",
-  },
-  {
-    id: "imports",
-    group: "library",
-    path: "/admin/imports",
-    titleKey: "admin.imports.title",
-    descriptionKey: "admin.imports.description",
-    tagKey: "admin.imports.tag",
-    icon: "hardDrive",
-  },
 
-  // ---- downloads: want it, choose a release, fetch it
-  {
-    id: "monitoring",
-    group: "downloads",
-    path: "/admin/monitoring",
-    titleKey: "admin.monitoring.title",
-    descriptionKey: "admin.monitoring.description",
-    tagKey: "admin.monitoring.tag",
-    icon: "target",
-  },
+  // ---- downloads: choose a release, fetch it, take it in
   {
     id: "decisions",
     group: "downloads",
@@ -217,6 +190,15 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     tagKey: "admin.acquisitions.tag",
     icon: "download",
   },
+  {
+    id: "imports",
+    group: "downloads",
+    path: "/admin/imports",
+    titleKey: "admin.imports.title",
+    descriptionKey: "admin.imports.description",
+    tagKey: "admin.imports.tag",
+    icon: "hardDrive",
+  },
 
   // ---- subtitles
   {
@@ -229,23 +211,14 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     icon: "subtitles",
   },
 
-  // ---- playback: what broke, what is being prepared, what the defaults are
+  // ---- playback: why something will not play, and what is being prepared
   {
-    id: "playback-health",
+    id: "playback-diagnostics",
     group: "playback",
-    path: "/dev/playback-health",
-    titleKey: "devtools.card.playbackHealth.title",
-    descriptionKey: "devtools.card.playbackHealth.description",
-    tagKey: "devtools.card.playbackHealth.tag",
-    icon: "shieldAlert",
-  },
-  {
-    id: "playback-audit",
-    group: "playback",
-    path: "/dev/playback-audit",
-    titleKey: "devtools.card.playbackAudit.title",
-    descriptionKey: "devtools.card.playbackAudit.description",
-    tagKey: "devtools.card.playbackAudit.tag",
+    path: "/dev/playback",
+    titleKey: "devtools.card.playbackDiagnostics.title",
+    descriptionKey: "devtools.card.playbackDiagnostics.description",
+    tagKey: "devtools.card.playbackDiagnostics.tag",
     icon: "activity",
   },
   {
@@ -256,15 +229,6 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     descriptionKey: "devtools.card.mediaProcessing.description",
     tagKey: "devtools.card.mediaProcessing.tag",
     icon: "fileVideo",
-  },
-  {
-    id: "playback-defaults",
-    group: "playback",
-    path: "/dev/playback-defaults",
-    titleKey: "devtools.card.playbackDefaults.title",
-    descriptionKey: "devtools.card.playbackDefaults.description",
-    tagKey: "devtools.card.playbackDefaults.tag",
-    icon: "languages",
   },
 
   // ---- system: the machine, what it is wired to, and who may use it
@@ -285,15 +249,6 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     descriptionKey: "admin.integrations.description",
     tagKey: "admin.integrations.tag",
     icon: "plug",
-  },
-  {
-    id: "server-control",
-    group: "system",
-    path: "/dev/server-control",
-    titleKey: "devtools.card.serverControl.title",
-    descriptionKey: "devtools.card.serverControl.description",
-    tagKey: "devtools.card.serverControl.tag",
-    icon: "serverCog",
   },
   {
     id: "users",
@@ -318,24 +273,6 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
 
   // ---- development: building Seyirlik, not running it
   {
-    id: "known-bugs",
-    group: "development",
-    path: "/dev/known-bugs",
-    titleKey: "devtools.card.knownBugs.title",
-    descriptionKey: "devtools.card.knownBugs.description",
-    tagKey: "devtools.card.knownBugs.tag",
-    icon: "bug",
-  },
-  {
-    id: "wanted-features",
-    group: "development",
-    path: "/dev/wanted-features",
-    titleKey: "devtools.card.wantedFeatures.title",
-    descriptionKey: "devtools.card.wantedFeatures.description",
-    tagKey: "devtools.card.wantedFeatures.tag",
-    icon: "lightbulb",
-  },
-  {
     id: "skeleton-lab",
     group: "development",
     path: "/dev/skeleton-lab",
@@ -346,6 +283,27 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     devOnly: true,
   },
 ];
+
+/**
+ * Tools that were merged into another, and where their address now leads.
+ *
+ * Monitoring, Content Explorer and TMDB Artwork became the Library and its
+ * title workspace; Playback Audit and Playback Health became the two tabs of
+ * Playback diagnostics; Server Control became a section of Health. Playback
+ * Defaults saved nothing the server kept, and the two development boards were
+ * notes held in one browser's storage, so they were removed rather than moved.
+ */
+export const ADMIN_REDIRECTS: Readonly<Record<string, string>> = {
+  "/admin/monitoring": "/admin/library",
+  "/dev/content": "/admin/library",
+  "/dev/tmdb-artwork": "/admin/library",
+  "/dev/playback-defaults": "/admin/library",
+  "/dev/playback-audit": "/dev/playback?tab=titles",
+  "/dev/playback-health": "/dev/playback?tab=network",
+  "/dev/server-control": "/admin/health",
+  "/dev/known-bugs": "/admin",
+  "/dev/wanted-features": "/admin",
+};
 
 /** The sections of one group, in registry order. */
 export function sectionsInGroup(
@@ -395,7 +353,11 @@ function normalisePath(pathname: string): string {
 export function sectionForPath(pathname: string): AdminSection | undefined {
   const normalised = normalisePath(pathname);
   const resolved = ADMIN_PATH_ALIASES[normalised] ?? normalised;
-  return ADMIN_SECTIONS.find((section) => section.path === resolved);
+  return (
+    ADMIN_SECTIONS.find((section) => section.path === resolved) ??
+    // A page beneath a section — one title under Library — belongs to it.
+    ADMIN_SECTIONS.find((section) => resolved.startsWith(`${section.path}/`))
+  );
 }
 
 /** Whether a route is the administration index itself. */

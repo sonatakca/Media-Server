@@ -6,7 +6,7 @@ import type { TranslationKey } from "../../i18n/translations";
 /**
  * The four stops between wanting a film and having it.
  *
- * Monitoring, decisions, acquisitions and imports are four backend subsystems
+ * Wanting, decisions, acquisitions and imports are four backend subsystems
  * and one human errand, and until now the UI only ever showed one of them at a
  * time with no indication that the others existed — which is what made "from
  * where do I download a wanted movie?" a question the interface could not
@@ -17,7 +17,7 @@ import type { TranslationKey } from "../../i18n/translations";
  * only stops them from looking like four unrelated tools.
  */
 const STEPS: ReadonlyArray<{ path: string; labelKey: TranslationKey }> = [
-  { path: "/admin/monitoring", labelKey: "admin.workflow.wanted" },
+  { path: "/admin/library", labelKey: "admin.workflow.wanted" },
   { path: "/admin/decisions", labelKey: "admin.workflow.releases" },
   { path: "/admin/acquisitions", labelKey: "admin.workflow.downloads" },
   { path: "/admin/imports", labelKey: "admin.workflow.imports" },

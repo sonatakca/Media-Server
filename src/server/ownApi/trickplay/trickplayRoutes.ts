@@ -1,9 +1,9 @@
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { OwnApiError } from "../ownApiHandler";
-import { sendAccepted, sendData } from "../api/envelope";
+import { sendData } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
-import { requireUuid, validationError } from "../api/validation";
+import { asObjectBody, requireUuid, validationError } from "../api/validation";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { JobQueue } from "../tasks/jobQueue";
 import { JOB_TYPES } from "../tasks/jobHandlers";
@@ -163,18 +163,78 @@ export function createTrickplayRoutes({
     },
 
     {
+      /**
+       * Trickplay for one title: a film, an episode, a season or a whole show.
+       *
+       * A season or a show fans out to its episodes, one job each, keyed per
+       * title exactly as the library-wide pass keys them, so pressing this
+       * while that pass is running collapses onto the same attempts instead of
+       * decoding a file twice. Without `force` an episode that already has
+       * sheets is left alone; with it the sheets are rebuilt, and the service
+       * swaps the new set in only once it has been validated.
+       */
       method: "POST",
-      path: "/admin/items/:itemId/trickplay/regenerate",
+      path: "/admin/items/:itemId/trickplay",
       access: "admin",
       handle: async (context) => {
+        context.requirePrincipal();
         const itemId = requireUuid(context.params.itemId, "itemId");
-        const taskId = await queue.enqueue({
-          jobType: JOB_TYPES.trickplayGenerate,
-          payload: { itemId, force: true },
-          dedupeKey: `${JOB_TYPES.trickplayGenerate}:${itemId}`,
-          priority: 400,
+        const body = asObjectBody((await context.readJson()) ?? {}, ["force"]);
+        if (body.force !== undefined && typeof body.force !== "boolean")
+          throw validationError("Choose whether to rebuild existing sheets.");
+        const force = body.force === true;
+        const kind = await catalogue.getItemKind(itemId);
+        if (!kind) throw notFound();
+        const titles =
+          kind === "movie" || kind === "episode"
+            ? (await catalogue.listProcessableTitles({ kinds: [kind] })).filter(
+                (title) => title.itemId === itemId,
+              )
+            : kind === "series"
+              ? await catalogue.listProcessableTitles({
+                  kinds: ["episode"],
+                  seriesId: itemId,
+                })
+              : kind === "season"
+                ? await catalogue.listProcessableTitles({
+                    kinds: ["episode"],
+                    seasonId: itemId,
+                  })
+                : [];
+        // The same eligibility the library-wide pass uses: a probed file that is there.
+        const ready = titles.filter(
+          (title) =>
+            title.mediaFileId !== null &&
+            title.fileMissingSince === null &&
+            title.itemMissingSince === null &&
+            title.probeState === "probed" &&
+            title.durationMs !== null &&
+            (title.width ?? 0) > 0,
+        );
+        const generated = force
+          ? new Set<string>()
+          : await trickplay.listGeneratedMediaFileIds(
+              ready.map((title) => title.mediaFileId as string),
+            );
+        let queued = 0;
+        for (const title of ready) {
+          if (generated.has(title.mediaFileId as string)) continue;
+          await queue.enqueue({
+            jobType: JOB_TYPES.trickplayGenerate,
+            payload: {
+              itemId: title.itemId,
+              ...(force ? { force: true } : {}),
+            },
+            dedupeKey: `${JOB_TYPES.trickplayGenerate}:${title.itemId}`,
+            priority: 400,
+          });
+          queued += 1;
+        }
+        sendData(context.response, context.requestId, {
+          queued,
+          alreadyGenerated: generated.size,
+          notReady: titles.length - ready.length,
         });
-        sendAccepted(context.response, context.requestId, taskId);
       },
     },
   ];

@@ -17,21 +17,6 @@ import {
  * asserted without a browser.
  */
 
-/**
- * The two modes of the Library Maintenance page.
- *
- * Held in the query string rather than in component state, so the back button,
- * a reload and a pasted link all land where the operator expects. The
- * operational tab writes no parameter at all, which keeps the plain URL plain.
- */
-export const MAINTENANCE_TABS = ["scan", "metadata"] as const;
-export type MaintenanceTab = (typeof MAINTENANCE_TABS)[number];
-
-/** The tab the URL names, or the operational one, which is the default. */
-export function tabFromSearch(value: string | null): MaintenanceTab {
-  return MAINTENANCE_TABS.find((tab) => tab === value) ?? "scan";
-}
-
 /** The two halves of the Tasks panel. */
 export type MaintenanceOutcomeTab = "active" | "concluded";
 

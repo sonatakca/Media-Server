@@ -219,7 +219,7 @@ describe("the route from wanting a film to having it", () => {
     );
 
     expect(stops).toEqual([
-      "/admin/monitoring",
+      "/admin/library",
       "current",
       "/admin/acquisitions",
       "/admin/imports",

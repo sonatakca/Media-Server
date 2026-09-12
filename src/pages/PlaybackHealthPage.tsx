@@ -272,7 +272,7 @@ export function PlaybackHealthPage() {
 
   useEffect(() => {
     setPageTitle("Playback Health · Devtools · Seyirlik", {
-      canonicalPath: "/dev/playback-health",
+      canonicalPath: "/dev/playback",
       robots: "noindex, nofollow",
     });
   }, []);

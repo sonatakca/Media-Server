@@ -19,7 +19,7 @@ import { useDevToolsStatus } from "../components/admin/useDevToolsStatus";
 
 /** The errand the grouping alone could not explain: how a film actually arrives. */
 const WORKFLOW = [
-  { path: "/admin/monitoring", labelKey: "admin.workflow.wanted" },
+  { path: "/admin/library", labelKey: "admin.workflow.wanted" },
   { path: "/admin/decisions", labelKey: "admin.workflow.releases" },
   { path: "/admin/acquisitions", labelKey: "admin.workflow.downloads" },
   { path: "/admin/imports", labelKey: "admin.workflow.imports" },

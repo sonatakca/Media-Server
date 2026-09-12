@@ -6,6 +6,7 @@ import {
   ADMIN_GROUPS,
   ADMIN_INDEX_PATHS,
   ADMIN_PATH_ALIASES,
+  ADMIN_REDIRECTS,
   ADMIN_SECTIONS,
   sectionForPath,
   isAdminIndexPath,
@@ -64,26 +65,56 @@ describe("the administration registry", () => {
     ]);
   });
 
-  it("keeps wanted media and the wanted-features backlog in different groups", () => {
-    // "Wanted features" is a development board. Listing it beside monitoring
-    // would put a feature request next to a film someone is waiting for.
-    const byId = new Map(
-      ADMIN_SECTIONS.map((section) => [section.id, section]),
-    );
-    expect(byId.get("wanted-features")?.group).toBe("development");
-    expect(byId.get("monitoring")?.group).toBe("downloads");
-  });
-
   it("keeps the errand of getting a film in one group", () => {
-    // Monitoring, decisions and acquisitions are three backend concepts and
-    // one human task. Splitting them across groups is what made "from where do
-    // I download a wanted movie?" unanswerable from the UI.
-    for (const id of ["monitoring", "decisions", "acquisitions"]) {
+    // Decisions, acquisitions and imports are three backend concepts and one
+    // human task. Splitting them across groups is what made "from where do I
+    // download a wanted movie?" unanswerable from the UI.
+    for (const id of ["decisions", "acquisitions", "imports"]) {
       expect(
         ADMIN_SECTIONS.find((section) => section.id === id)?.group,
         `${id} belongs with the rest of the download errand`,
       ).toBe("downloads");
     }
+  });
+
+  it("gives every title one place, first in the library group", () => {
+    expect(sectionsInGroup("library", { includeDevOnly: false })[0]?.id).toBe(
+      "library",
+    );
+  });
+});
+
+describe("tools that were merged away", () => {
+  it("send their old address to a tool that still exists", () => {
+    const destinations = new Set<string>([
+      ...ADMIN_SECTIONS.map((section) => section.path),
+      ...ADMIN_INDEX_PATHS,
+    ]);
+    for (const [from, to] of Object.entries(ADMIN_REDIRECTS)) {
+      expect(destinations.has(to.split("?")[0]!), `${from} leads nowhere`).toBe(
+        true,
+      );
+      expect(
+        ADMIN_SECTIONS.some((section) => section.path === from),
+        `${from} is both a tool and a redirect`,
+      ).toBe(false);
+    }
+  });
+
+  it("no longer lists tools that saved nothing or lived in one browser", () => {
+    const ids = ADMIN_SECTIONS.map((section) => section.id);
+    for (const gone of [
+      "monitoring",
+      "content-explorer",
+      "tmdb-artwork",
+      "playback-defaults",
+      "playback-audit",
+      "playback-health",
+      "server-control",
+      "known-bugs",
+      "wanted-features",
+    ])
+      expect(ids).not.toContain(gone);
   });
 });
 
@@ -123,7 +154,7 @@ describe("the registry and the router agree", () => {
     const routed = [...app.matchAll(/path="(\/(?:admin|dev)[^"]*)"/g)].map(
       (match) => match[1] as string,
     );
-    expect(routed.length).toBeGreaterThan(15);
+    expect(routed.length).toBeGreaterThan(10);
 
     const accounted = new Set<string>([
       ...ADMIN_SECTIONS.map((section) => section.path),
@@ -131,13 +162,21 @@ describe("the registry and the router agree", () => {
       ...Object.keys(ADMIN_PATH_ALIASES),
     ]);
 
-    const orphans = routed.filter((path) => !accounted.has(path));
+    const orphans = routed.filter(
+      (path) =>
+        !accounted.has(path) &&
+        // A page beneath a listed section, like one title under Library.
+        !ADMIN_SECTIONS.some((section) => path.startsWith(`${section.path}/`)),
+    );
     expect(orphans, "administrative routes nothing links to").toEqual([]);
   });
 
   it("resolves a route to the section the navigation should highlight", () => {
     expect(sectionForPath("/admin/subtitles")?.id).toBe("subtitles");
     expect(sectionForPath("/admin/subtitles/")?.id).toBe("subtitles");
+    expect(
+      sectionForPath("/admin/library/11111111-1111-4111-8111-111111111111")?.id,
+    ).toBe("library");
     // The alias renders curation, so it highlights curation.
     expect(sectionForPath("/dev/home-curation")?.id).toBe("curation");
     expect(sectionForPath("/admin")).toBeUndefined();

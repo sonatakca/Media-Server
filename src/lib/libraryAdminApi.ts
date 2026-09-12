@@ -5,7 +5,7 @@
  */
 import { ownApiClient } from "../api/ownApi/client";
 
-export type LibraryTitleKind = "movie" | "series";
+export type LibraryTitleKind = "movie" | "series" | "book";
 
 export interface HoldingFacts {
   status: string;
@@ -18,6 +18,8 @@ export interface HoldingFacts {
   audioLanguages: string[];
   subtitleLanguages: string[];
   pendingSubtitles: string[];
+  files: number;
+  trickplayFiles: number;
 }
 
 export interface LibraryTitle extends HoldingFacts {
@@ -46,7 +48,11 @@ export interface LibraryEpisode extends HoldingFacts {
 export interface LibraryTitleDetail extends LibraryTitle {
   mediaFileId: string | null;
   fileName: string | null;
-  seasons: Array<{ seasonNumber: number; episodes: LibraryEpisode[] }>;
+  seasons: Array<{
+    id: string | null;
+    seasonNumber: number;
+    episodes: LibraryEpisode[];
+  }>;
   catalogueComplete: boolean;
 }
 
@@ -96,6 +102,20 @@ export function requestTitleSubtitles(
       method: "POST",
       body: { language },
     },
+  );
+}
+
+/**
+ * Trickplay for a film, an episode, a season or a whole show. Without `force`
+ * only what has no sheets yet is generated.
+ */
+export function generateTrickplay(
+  itemId: string,
+  force = false,
+): Promise<{ queued: number; alreadyGenerated: number; notReady: number }> {
+  return ownApiClient.request(
+    `/admin/items/${encodeURIComponent(itemId)}/trickplay`,
+    { method: "POST", body: { force } },
   );
 }
 

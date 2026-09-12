@@ -84,7 +84,12 @@ function messageOf(error: unknown, fallback: string): string {
   return error instanceof Error && error.message ? error.message : fallback;
 }
 
-export default function TmdbArtworkPage() {
+/**
+ * Identify a title against TMDB, choose its artwork, and edit what it is
+ * called. Given an `itemId` it is that title's editor inside the title
+ * workspace, with no picker of its own.
+ */
+export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
   const { t } = useLanguage();
 
   const [titles, setTitles] = useState<MediaItem[]>([]);
@@ -132,8 +137,8 @@ export default function TmdbArtworkPage() {
   });
 
   useEffect(() => {
-    setPageTitle(t("tmdbArtwork.title"));
-  }, [t]);
+    if (!itemId) setPageTitle(t("tmdbArtwork.title"));
+  }, [itemId, t]);
 
   useEffect(() => {
     let isMounted = true;
@@ -234,6 +239,15 @@ export default function TmdbArtworkPage() {
     },
     [loadArtwork],
   );
+
+  // Embedded: the workspace names the title, so it is chosen here once loaded.
+  const embeddedTitle = itemId
+    ? titles.find((item) => item.Id === itemId)
+    : undefined;
+  useEffect(() => {
+    if (embeddedTitle && selectedId !== embeddedTitle.Id)
+      selectTitle(embeddedTitle);
+  }, [embeddedTitle, selectedId, selectTitle]);
 
   const selectedSupportsTmdb = supportsTmdbArtwork(selectedTitle);
   const selectedPrimaryTag = artwork
@@ -475,81 +489,101 @@ export default function TmdbArtworkPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#07070b] px-4 py-8 text-white sm:px-8">
+    <div
+      className={
+        itemId
+          ? "text-white"
+          : "min-h-screen bg-[#07070b] px-4 py-8 text-white sm:px-8"
+      }
+    >
       <div className="w-full">
-        <header className="mt-6">
-          <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-sky-300/70">
-            {t("tmdbArtwork.eyebrow")}
-          </p>
-          <h1 className="mt-2 text-3xl font-black tracking-tight">
-            {t("tmdbArtwork.title")}
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/50">
-            {t("tmdbArtwork.description")}
-          </p>
-        </header>
-
-        <div className="mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-          <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
-            <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white/70">
-              {t("tmdbArtwork.libraryTitles")}
-            </h2>
-            <p
-              className={`mt-1 text-xs font-bold ${getStatusClasses(titlesStatus.tone)}`}
-            >
-              {titlesStatus.message}
+        {itemId ? null : (
+          <header className="mt-6">
+            <p className="text-[0.68rem] font-black uppercase tracking-[0.18em] text-sky-300/70">
+              {t("tmdbArtwork.eyebrow")}
             </p>
-
-            <label className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
-              <Search className="h-4 w-4 shrink-0 text-white/35" />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder={t("tmdbArtwork.itemSearchPlaceholder")}
-                className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/25"
-              />
-            </label>
-            <p className="mt-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-white/30">
-              {formatTemplate(t("tmdbArtwork.visibleItems"), {
-                count: visibleTitles.length,
-              })}
+            <h1 className="mt-2 text-3xl font-black tracking-tight">
+              {t("tmdbArtwork.title")}
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-white/50">
+              {t("tmdbArtwork.description")}
             </p>
+          </header>
+        )}
 
-            <ul className="mt-3 max-h-[60vh] space-y-1 overflow-y-auto pr-1">
-              {visibleTitles.map((item) => (
-                <li key={item.Id}>
-                  <button
-                    type="button"
-                    onClick={() => selectTitle(item)}
-                    className={`flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition ${
-                      item.Id === selectedId
-                        ? "bg-sky-400/15 ring-1 ring-sky-300/40"
-                        : "hover:bg-white/[0.06]"
-                    }`}
-                  >
-                    <img
-                      src={getPrimaryImageUrl(
-                        item.Id,
-                        item.ImageTags?.Primary,
-                        80,
-                      )}
-                      alt=""
-                      loading="lazy"
-                      className="h-14 w-10 shrink-0 rounded-lg object-cover"
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm font-bold">
-                        {getDisplayTitle(item)}
+        {itemId && titlesStatus.tone === "success" && !embeddedTitle ? (
+          <p className="text-sm text-white/55">{t("library.noArtwork")}</p>
+        ) : null}
+
+        <div
+          className={
+            itemId
+              ? "grid gap-6"
+              : "mt-8 grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]"
+          }
+        >
+          {itemId ? null : (
+            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-4">
+              <h2 className="text-sm font-black uppercase tracking-[0.14em] text-white/70">
+                {t("tmdbArtwork.libraryTitles")}
+              </h2>
+              <p
+                className={`mt-1 text-xs font-bold ${getStatusClasses(titlesStatus.tone)}`}
+              >
+                {titlesStatus.message}
+              </p>
+
+              <label className="mt-3 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/40 px-3 py-2">
+                <Search className="h-4 w-4 shrink-0 text-white/35" />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder={t("tmdbArtwork.itemSearchPlaceholder")}
+                  className="w-full bg-transparent text-sm font-semibold outline-none placeholder:text-white/25"
+                />
+              </label>
+              <p className="mt-2 text-[0.68rem] font-bold uppercase tracking-[0.12em] text-white/30">
+                {formatTemplate(t("tmdbArtwork.visibleItems"), {
+                  count: visibleTitles.length,
+                })}
+              </p>
+
+              <ul className="mt-3 max-h-[60vh] space-y-1 overflow-y-auto pr-1">
+                {visibleTitles.map((item) => (
+                  <li key={item.Id}>
+                    <button
+                      type="button"
+                      onClick={() => selectTitle(item)}
+                      className={`flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left transition ${
+                        item.Id === selectedId
+                          ? "bg-sky-400/15 ring-1 ring-sky-300/40"
+                          : "hover:bg-white/[0.06]"
+                      }`}
+                    >
+                      <img
+                        src={getPrimaryImageUrl(
+                          item.Id,
+                          item.ImageTags?.Primary,
+                          80,
+                        )}
+                        alt=""
+                        loading="lazy"
+                        className="h-14 w-10 shrink-0 rounded-lg object-cover"
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm font-bold">
+                          {getDisplayTitle(item)}
+                        </span>
+                        <span className="block text-xs font-semibold text-white/35">
+                          {item.Type} · {item.ProductionYear ?? "—"}
+                        </span>
                       </span>
-                      <span className="block text-xs font-semibold text-white/35">
-                        {item.Type} · {item.ProductionYear ?? "—"}
-                      </span>
-                    </span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </section>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <div className="space-y-6">
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5">

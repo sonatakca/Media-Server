@@ -15,11 +15,13 @@ const api = vi.hoisted(() => ({
   getLibraryTitle: vi.fn(),
   removeLibraryTitle: vi.fn(),
   requestTitleSubtitles: vi.fn(),
+  generateTrickplay: vi.fn(),
 }));
 vi.mock("../../lib/libraryAdminApi", async (importActual) => ({
   ...(await importActual<typeof import("../../lib/libraryAdminApi")>()),
   ...api,
 }));
+vi.mock("../../lib/inventoryExport", () => ({ downloadInventory: vi.fn() }));
 vi.mock("../../lib/wantedApi", () => ({
   setWanted: vi.fn(),
   releaseSearchUrl: () => "/admin/decisions",
@@ -39,6 +41,8 @@ const facts = {
   audioLanguages: [],
   subtitleLanguages: [],
   pendingSubtitles: [],
+  files: 0,
+  trickplayFiles: 0,
 };
 const title = (over: Partial<LibraryTitle>): LibraryTitle => ({
   ...facts,
@@ -57,40 +61,43 @@ const title = (over: Partial<LibraryTitle>): LibraryTitle => ({
 beforeEach(() => {
   vi.clearAllMocks();
   api.listLibraryTitles.mockImplementation(async (kind: string) =>
-    kind === "movie"
-      ? [
-          title({
-            id: "held",
-            title: "Held",
-            hasMedia: true,
-            sizeBytes: 5 * 1024 ** 3,
-            resolution: 1080,
-            audioLanguages: ["tur", "eng"],
-            subtitleLanguages: ["tur"],
-          }),
-          title({
-            id: "coming",
-            title: "Coming",
-            downloading: 1,
-            status: "downloading",
-          }),
-          title({
-            id: "wanted",
-            title: "Wanted",
-            desired: true,
-            status: "wanted",
-          }),
-        ]
-      : [
-          title({
-            id: "show",
-            kind: "series",
-            title: "Show",
-            hasMedia: true,
-            episodeCount: 2,
-            availableEpisodeCount: 1,
-          }),
-        ],
+    kind === "book"
+      ? []
+      : kind === "movie"
+        ? [
+            title({
+              id: "held",
+              title: "Held",
+              hasMedia: true,
+              sizeBytes: 5 * 1024 ** 3,
+              resolution: 1080,
+              audioLanguages: ["tur", "eng"],
+              subtitleLanguages: ["tur"],
+              files: 1,
+            }),
+            title({
+              id: "coming",
+              title: "Coming",
+              downloading: 1,
+              status: "downloading",
+            }),
+            title({
+              id: "wanted",
+              title: "Wanted",
+              desired: true,
+              status: "wanted",
+            }),
+          ]
+        : [
+            title({
+              id: "show",
+              kind: "series",
+              title: "Show",
+              hasMedia: true,
+              episodeCount: 2,
+              availableEpisodeCount: 1,
+            }),
+          ],
   );
 });
 
@@ -125,11 +132,13 @@ it("switches to shows and lists a show's seasons and episodes", async () => {
     catalogueComplete: true,
     seasons: [
       {
+        id: "s1",
         seasonNumber: 1,
         episodes: [
           {
             ...facts,
             hasMedia: true,
+            files: 1,
             id: "e1",
             seasonNumber: 1,
             episodeNumber: 1,
@@ -217,4 +226,77 @@ it("starts a subtitle search for a whole title", async () => {
     expect(api.requestTitleSubtitles).toHaveBeenCalledWith("held", "tur"),
   );
   expect(await screen.findByText("library.subtitlesQueued 1/1")).toBeTruthy();
+});
+
+it("generates trickplay for one film from its row", async () => {
+  api.generateTrickplay.mockResolvedValue({
+    queued: 1,
+    alreadyGenerated: 0,
+    notReady: 0,
+  });
+  renderBoard();
+  const row = (await screen.findByText("Held")).closest("li")!;
+  fireEvent.click(
+    within(row).getByRole("button", { name: /library\.generateTrickplay/ }),
+  );
+  await waitFor(() =>
+    expect(api.generateTrickplay).toHaveBeenCalledWith("held", false),
+  );
+  expect(await screen.findByText("library.trickplayQueued 1")).toBeTruthy();
+});
+
+it("offers trickplay per season and per episode of a show", async () => {
+  api.getLibraryTitle.mockResolvedValue({
+    ...title({ id: "show", kind: "series", title: "Show", hasMedia: true }),
+    mediaFileId: null,
+    fileName: null,
+    catalogueComplete: true,
+    seasons: [
+      {
+        id: "season-1",
+        seasonNumber: 1,
+        episodes: [
+          {
+            ...facts,
+            hasMedia: true,
+            files: 1,
+            id: "e1",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: "Pilot",
+            airDate: null,
+            mediaFileId: "f1",
+            fileName: null,
+            monitored: true,
+          },
+        ],
+      },
+    ],
+  });
+  api.generateTrickplay.mockResolvedValue({
+    queued: 1,
+    alreadyGenerated: 0,
+    notReady: 0,
+  });
+  renderBoard();
+  fireEvent.click(await screen.findByRole("tab", { name: /library\.shows/ }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /library\.seasons/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "library.generateTrickplay · library.season 1",
+    }),
+  );
+  await waitFor(() =>
+    expect(api.generateTrickplay).toHaveBeenCalledWith("season-1", false),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: "library.generateTrickplay · E01",
+    }),
+  );
+  await waitFor(() =>
+    expect(api.generateTrickplay).toHaveBeenCalledWith("e1", false),
+  );
 });

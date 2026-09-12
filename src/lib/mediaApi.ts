@@ -273,15 +273,6 @@ export async function getAllVideoItems(): Promise<MediaItem[]> {
   return getAllMovieAndSeriesItems();
 }
 
-export async function getAllContentItems(): Promise<MediaItem[]> {
-  const [movies, series, collections] = await Promise.all([
-    getAllMovieItems(),
-    getAllSeriesItems(),
-    getAllBoxSetItems(),
-  ]);
-  return [...movies, ...series, ...collections];
-}
-
 export async function getAllBoxSetItems(): Promise<MediaItem[]> {
   return collectAll("/collections");
 }
@@ -1031,26 +1022,12 @@ export async function runLibraryMaintenance(
   );
 }
 
-export async function scanAllLibraries(): Promise<void> {
-  await ownApiClient.request<{ taskIds: string[] }>(
-    "/admin/libraries/scan-all",
-    { method: "POST", body: {} },
-  );
-}
-
 export async function scanLibrary(libraryId: string): Promise<string> {
   const task = await ownApiClient.request<{ taskId: string }>(
     `/admin/libraries/${encodeURIComponent(libraryId)}/scan`,
     { method: "POST", body: {} },
   );
   return task.taskId;
-}
-
-export async function refreshLibraryMetadata(libraryId: string): Promise<void> {
-  await ownApiClient.request<{ taskId: string }>(
-    `/admin/metadata/refresh?libraryId=${encodeURIComponent(libraryId)}`,
-    { method: "POST", body: {} },
-  );
 }
 
 export async function refreshItemMetadata(
@@ -1060,25 +1037,6 @@ export async function refreshItemMetadata(
   await ownApiClient.request<{ taskId: string }>(
     `/admin/items/${encodeURIComponent(itemId)}/metadata/refresh`,
     { method: "POST", body: {} },
-  );
-}
-
-export async function updateItemMetadata(
-  itemId: string,
-  item: MediaItem,
-): Promise<void> {
-  await ownApiClient.request<unknown>(
-    `/admin/items/${encodeURIComponent(itemId)}/metadata`,
-    {
-      method: "PATCH",
-      body: {
-        ...(item.Name ? { title: item.Name } : {}),
-        ...(item.OriginalTitle ? { originalTitle: item.OriginalTitle } : {}),
-        ...(item.Overview ? { overview: item.Overview } : {}),
-        ...(item.Taglines?.[0] ? { tagline: item.Taglines[0] } : {}),
-        ...(item.OfficialRating ? { officialRating: item.OfficialRating } : {}),
-      },
-    },
   );
 }
 
