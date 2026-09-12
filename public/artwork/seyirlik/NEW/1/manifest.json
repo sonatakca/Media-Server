@@ -1,0 +1,110 @@
+{
+  "batch": 1,
+  "palette": {
+    "warm-red": "#bd3f28",
+    "amber": "#fa9b1d",
+    "gold": "#d3ca22",
+    "olive": "#bacb7d",
+    "green": "#67a478",
+    "teal": "#337b6c"
+  },
+  "neutral": {
+    "dark": "#050607",
+    "white": "#f8fafc"
+  },
+  "excluded": [
+    "icon-ribbon"
+  ],
+  "assets": [
+    {
+      "file": "templates/wordmark-angular-mask.png",
+      "method": "Coverage mask extracted once from original wordmark-angular; white is foreground.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "0ef49842e52b511ebd5aaabc86189263b1fda3f7d87b8173e4183b08a63fe730"
+    },
+    {
+      "file": "wordmarks/warm-red.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "8b0982b8ed98df83fba54d1f930a14a69a7db0edd9a6dffc89b4e64e430ca553"
+    },
+    {
+      "file": "wordmarks/amber.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "bf8103d15edf8905eb185ead055996e8dacaa718cb00e585f9c8ffe134070b1d"
+    },
+    {
+      "file": "wordmarks/gold.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "ff8289d27658491954eb2d3c06902416af2ebe29012c2742765eef74f49c770c"
+    },
+    {
+      "file": "wordmarks/olive.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "bc4e007e03f4e3c669a6c70fb8e7eb427cee27a6531fa493e9942562f3243781"
+    },
+    {
+      "file": "wordmarks/green.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "349c1b1c9139fdd50e6f6c1988972dfcfdacfe7a43468404f2f519105c39857b"
+    },
+    {
+      "file": "wordmarks/teal.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "a5ab45d55248d62190048d647507bf1021d436e0ca9da792f690ca355436944c"
+    },
+    {
+      "file": "wordmarks/white-on-warm-red.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "9abfb65fc65945ddb088df7be0bf8e99e8f191bae7588e0ecb88071cb435ba4a"
+    },
+    {
+      "file": "wordmarks/white-on-dark.png",
+      "method": "Exact shared angular coverage mask; only foreground/background RGB changes.",
+      "width": 1774,
+      "height": 887,
+      "sha256": "f123115875ad736457033f04a6b1960dab0010d165bd84e8b9f97f99113bc5c8"
+    },
+    {
+      "file": "lockups/primary-vertical-top-exact.png",
+      "method": "Original RGB pixels, cropped 208 empty top rows only; no rescaling or redrawing.",
+      "width": 1024,
+      "height": 1328,
+      "sha256": "c8f959ed6fc85988b4e05ca6501b681a05f14c7e99c44ce5dc7ce1f79eb3ce2d"
+    },
+    {
+      "file": "icons/stripes-spectrum-exact.png",
+      "method": "Original six stripe silhouettes recolored top-to-bottom using website accent order.",
+      "width": 1254,
+      "height": 1254,
+      "sha256": "135b93bc9e025f2b3f09a773d05c234b3b20658440315e15f7a3790d2442cefe"
+    },
+    {
+      "file": "poster/spectrum-irregular-exact.png",
+      "method": "Original spectrum rows 0–689 unchanged; image-generated irregular tiles below, recolored to website accents.",
+      "width": 1536,
+      "height": 1024,
+      "sha256": "ee4f4ed6ddbd6990e0044ea43e05903dc8369d3c054645ff78d60e19e04855de"
+    }
+  ],
+  "preservedDrafts": [
+    "icons/stripes-spectrum.png",
+    "lockups/primary-vertical-top.png",
+    "poster/spectrum-irregular.png"
+  ],
+  "verification": "All 19 original assets unchanged. Wordmarks share one coverage mask. Vertical crop and spectrum lettering verified byte-for-byte."
+}

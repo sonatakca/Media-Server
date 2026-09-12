@@ -1,0 +1,24 @@
+[
+  {
+    "file": "icons/stripes-spectrum.png",
+    "prompt": "Edit the supplied image. Preserve the six existing horizontal irregular hand-cut stripe shapes and spacing exactly. Change only each stripe fill. TOP TO BOTTOM: Warm Red #bd3f28, Amber #fa9b1d, Gold #d3ca22, Olive #bacb7d, Green #67a478, Teal #337b6c. Keep dark #050607 background. Same square composition, no text, no new elements. Six stripes only. Flat exact colors.",
+    "references": [
+      "explorations/icon-stripes.png"
+    ]
+  },
+  {
+    "file": "lockups/primary-vertical-top.png",
+    "prompt": "Edit this exact vertical SEYİRLİK lockup. Remove the empty dark margin ABOVE the S by cropping canvas down to the highest existing pixel of the S. The top of S MUST TOUCH the top edge of the resulting canvas. Do not redraw, stretch, extend or change S shape at all. Preserve its original silhouette including slanted top and clipped upper-left corner. Preserve the SEYİRLİK wordmark below unchanged, both dotted İ, spacing and relative position. Only change canvas top boundary to eliminate top padding, like a bleed-to-top Klei brand layout. No new elements. Same original colors.",
+    "references": [
+      "lockups/primary-vertical.png"
+    ]
+  },
+  {
+    "file": "poster/spectrum-irregular.png",
+    "prompt": "Edit IMAGE 1 only. IMAGE 2 is shape inspiration for stripes only. Preserve the SEYİRLİK lettering in IMAGE 1 exactly unchanged: every letter, position, size, dotted İ and silhouette. Change ONLY the six colored tiles BELOW the lettering: make each tile a subtly irregular hand-cut quadrilateral with differently slanted edges, slight variation in height and vertical offset, as the strips in IMAGE 2. Keep them a single horizontal row, SIX separated tiles, roughly same overall size and location as IMAGE 1. Do not stack them. Color order left to right #bd3f28 #fa9b1d #d3ca22 #bacb7d #67a478 #337b6c. Crisp handmade shapes, no perfectly aligned common top or bottom edge. Keep rest of image unchanged.",
+    "references": [
+      "poster/spectrum.png",
+      "explorations/icon-stripes.png"
+    ]
+  }
+]
