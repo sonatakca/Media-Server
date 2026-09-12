@@ -309,7 +309,8 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                     itemId={title.id}
                     title={title.title}
                     artwork={title.artwork}
-                    className="h-[72px] w-12 rounded-md"
+                    width={48}
+                    className="rounded-md"
                   />
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1">

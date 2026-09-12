@@ -1298,22 +1298,28 @@ export const en = {
   "curation.moveBottomItem": "Move {title} to bottom",
   "curation.showMore": "Show {remaining} more",
   "curation.noMatches": "No title matched this search.",
-  "tmdbArtwork.eyebrow": "Artwork Override",
+  "tmdbArtwork.allLanguages": "All",
+  "tmdbArtwork.sectionLanguage": "Image language",
+  "tmdbArtwork.metadataLanguage": "Load names and description in",
+  "tmdbArtwork.kindFilter.all": "All",
+  "tmdbArtwork.kindFilter.label": "Show titles of kind",
+  "tmdbArtwork.clearSearch": "Clear search",
+  "tmdbArtwork.changeMatch": "Change TMDB match",
+  "tmdbArtwork.jumpTo": "Jump to a section",
+  "tmdbArtwork.artworkApplied": "Saved. The title now uses this image.",
+  "tmdbArtwork.fieldTitle": "Title",
+  "tmdbArtwork.fieldTagline": "Tagline",
+  "tmdbArtwork.fieldOverview": "Overview",
   "tmdbArtwork.title": "TMDB Artwork",
   "tmdbArtwork.description":
     "Choose TMDB artwork or upload your own cover, backdrop, and logo for movies, shows, and books.",
-  "tmdbArtwork.languageFilter": "Filter by image language",
   "tmdbArtwork.loadingItems": "Loading movies, shows, and books...",
-  "tmdbArtwork.loadedItems": "Loaded {count} titles.",
   "tmdbArtwork.couldNotLoadItems": "Could not load movies, shows, and books.",
   "tmdbArtwork.libraryTitles": "Library Titles",
   "tmdbArtwork.visibleItems": "{count} visible titles",
   "tmdbArtwork.itemSearchPlaceholder":
     "Search movie, show, book, year, or ID...",
-  "tmdbArtwork.tmdbMatch": "TMDB Match",
   "tmdbArtwork.noItemSelected": "Select a title",
-  "tmdbArtwork.selectItemFirst":
-    "Pick a title from the list before searching TMDB.",
   "tmdbArtwork.selectedTmdb": "Selected TMDB ID {id}",
   "tmdbArtwork.searchQuery": "TMDB search",
   "tmdbArtwork.tmdbSearchPlaceholder": "Search title on TMDB",
@@ -1324,23 +1330,14 @@ export const en = {
   "tmdbArtwork.couldNotSearch": "Could not search TMDB.",
   "tmdbArtwork.tmdbUnavailableForBooks":
     "Books are not matched through TMDB. Upload custom artwork below.",
-  "tmdbArtwork.artworkSelection": "Artwork Selection",
-  "tmdbArtwork.noTmdbSelected": "No TMDB title selected",
-  "tmdbArtwork.noTmdbSelectedDescription":
-    "Select a TMDB match to load artwork choices.",
-  "tmdbArtwork.currentArtwork": "Currently applied",
-  "tmdbArtwork.currentArtworkDescription":
-    "This is the image Seyirlik currently serves for {target}.",
   "tmdbArtwork.noCurrentArtwork": "No current image found for this slot.",
   "tmdbArtwork.loadingImages": "Loading TMDB images...",
-  "tmdbArtwork.loadedImages": "{count} choices for {target}",
   "tmdbArtwork.noImages": "No images matched this language filter.",
   "tmdbArtwork.noProviderImages":
     "No provider images are available. You can upload your own image above.",
   "tmdbArtwork.couldNotLoadImages": "Could not load TMDB images.",
   "tmdbArtwork.replaceFile": "Use this image",
   "tmdbArtwork.savingArtwork": "Storing the chosen image...",
-  "tmdbArtwork.artworkSaved": "Saved. {file} is now used for this title.",
   "tmdbArtwork.couldNotSaveArtwork": "Could not save artwork.",
   "tmdbArtwork.uploadCustom.poster": "Upload cover",
   "tmdbArtwork.uploadCustom.backdrop": "Upload backdrop",
@@ -1359,16 +1356,12 @@ export const en = {
   "tmdbArtwork.kind.logoDescription":
     "The title treatment drawn over the backdrop.",
   "tmdbArtwork.itemMetadata": "Title Metadata",
-  "tmdbArtwork.itemLanguages": "Names and descriptions",
   "tmdbArtwork.itemLanguagesDescription":
     "Loads the title and description as TMDB writes them in one language, so you can compare before overwriting what is stored.",
-  "tmdbArtwork.loadItemMetadata": "Load title metadata",
   "tmdbArtwork.saveItemDisplay": "Save title display",
   "tmdbArtwork.loadingItemMetadata": "Loading title metadata...",
   "tmdbArtwork.itemMetadataLoaded":
     "Loaded English and Turkish title metadata.",
-  "tmdbArtwork.itemMetadataUnavailable":
-    "No title metadata was returned by TMDB.",
   "tmdbArtwork.couldNotLoadItemMetadata": "Could not load title metadata.",
   "tmdbArtwork.itemMetadataRequiresMatch":
     "Match this title to TMDB before loading its metadata.",
@@ -1378,9 +1371,6 @@ export const en = {
   "tmdbArtwork.language.english": "English",
   "tmdbArtwork.language.turkish": "Turkish",
   "tmdbArtwork.language.none": "No language",
-  "tmdbArtwork.voteSummary": "Rating {rating} · {count} votes",
-  "tmdbArtwork.showingTopChoices":
-    "Showing {shown} of {total}, best rated first.",
   "tmdbArtwork.loadMoreChoices": "Load {count} more",
   "tmdbArtwork.lockedBadge": "Chosen by you",
   "tmdbArtwork.lockedExplanation":

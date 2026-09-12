@@ -16,6 +16,10 @@ import {
   nextVisibleCount,
   selectCandidates,
   supportsTmdbArtwork,
+  filterByKind,
+  languageName,
+  languageOptions,
+  titleArtworkOf,
 } from "./tmdbArtworkModel";
 
 function candidate(
@@ -209,5 +213,77 @@ describe("artwork errors", () => {
     expect(getArtworkErrorKey(undefined)).toBe(
       "tmdbArtwork.couldNotLoadImages",
     );
+  });
+});
+
+describe("each section's own languages", () => {
+  const candidate = (
+    kind: "poster" | "logo",
+    language: string | null,
+  ): ArtworkCandidate =>
+    ({
+      kind,
+      imageType: kind === "poster" ? "cover" : "logo",
+      filePath: `/${kind}-${language}-${Math.random()}.png`,
+      language,
+      width: 500,
+      height: 750,
+      aspectRatio: 0.667,
+      voteAverage: 5,
+      voteCount: 1,
+      previewUrl: "x",
+    }) as ArtworkCandidate;
+
+  it("offers only the languages a section has, Turkish and English first, with counts", () => {
+    const pool = [
+      candidate("logo", "ja"),
+      candidate("logo", "ja"),
+      candidate("logo", "en"),
+      candidate("logo", null),
+      candidate("logo", "tr"),
+      candidate("poster", "de"),
+    ];
+    expect(languageOptions(pool, "logo")).toEqual([
+      { value: "all", count: 5 },
+      { value: "tr", count: 1 },
+      { value: "en", count: 1 },
+      { value: "none", count: 1 },
+      { value: "ja", count: 2 },
+    ]);
+    expect(
+      selectCandidates(pool, "logo", "ja").every((c) => c.language === "ja"),
+    ).toBe(true);
+  });
+
+  it("names any language in the interface's language", () => {
+    expect(languageName("ja", "en")).toBe("Japanese");
+    expect(languageName("tr", "tr")).toBe("Türkçe");
+    expect(languageName("zz-not-a-code!", "en")).toBe("ZZ-NOT-A-CODE!");
+  });
+});
+
+describe("the title list", () => {
+  it("draws a title from its own cover, logo and placement", () => {
+    expect(
+      titleArtworkOf({
+        Id: "a",
+        ImageTags: { Primary: "c", Logo: "l" },
+        LogoLayout: { x: 0.5, y: 0.2, width: 0.6, shadow: 1 },
+      } as MediaItem),
+    ).toEqual({
+      coverTag: "c",
+      logoTag: "l",
+      logoLayout: { x: 0.5, y: 0.2, width: 0.6, shadow: 1 },
+    });
+  });
+
+  it("narrows to one kind of title", () => {
+    const items = [
+      { Id: "m", Type: "Movie" },
+      { Id: "s", Type: "Series" },
+      { Id: "b", Type: "Book" },
+    ] as MediaItem[];
+    expect(filterByKind(items, "Series").map((item) => item.Id)).toEqual(["s"]);
+    expect(filterByKind(items, "all")).toHaveLength(3);
   });
 });

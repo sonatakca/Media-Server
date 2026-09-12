@@ -127,7 +127,8 @@ export function TitlePage() {
           itemId={detail.id}
           title={detail.title}
           artwork={detail.artwork}
-          className="h-36 w-24 rounded-xl"
+          width={96}
+          className="rounded-xl"
         />
         <div className="min-w-0 flex-1">
           <h1 className="break-words text-3xl font-black text-white">

@@ -168,15 +168,27 @@ export const LOGO_NUDGE_STEP = 0.01;
  * Returns undefined at zero rather than a no-op filter, so a logo that needs no
  * shadow does not pay for one being composited.
  */
-export function getLogoShadowFilter(shadow: number): string | undefined {
+/**
+ * How far a shadow reaches is measured in pixels, and those pixels were chosen
+ * for a card about this wide. A poster drawn smaller passes its own width over
+ * this as `scale`, so its shadow keeps the same proportion to the artwork
+ * instead of spilling over the whole thumbnail.
+ */
+export const LOGO_SHADOW_REFERENCE_WIDTH = 200;
+
+export function getLogoShadowFilter(
+  shadow: number,
+  sizeScale = 1,
+): string | undefined {
   const strength = Number.isFinite(shadow)
     ? Math.min(MAX_LOGO_SHADOW, Math.max(MIN_LOGO_SHADOW, shadow))
     : DEFAULT_LOGO_SHADOW;
   if (strength <= 0) return undefined;
+  const size = Number.isFinite(sizeScale) && sizeScale > 0 ? sizeScale : 1;
 
-  const spread = Math.round(34 * strength);
-  const glow = Math.round(18 * strength);
-  const drop = Math.round(14 * strength);
+  const spread = Math.max(1, Math.round(34 * strength * size));
+  const glow = Math.max(1, Math.round(18 * strength * size));
+  const drop = Math.max(1, Math.round(14 * strength * size));
   const far = Math.min(0.9, 0.9 * strength).toFixed(2);
   const near = Math.min(0.65, 0.65 * strength).toFixed(2);
 
@@ -191,7 +203,10 @@ export function getLogoShadowFilter(shadow: number): string | undefined {
  * background. This field gives those custom images the same adjustable
  * separation from the artwork without changing the image itself.
  */
-export function getLogoShadowBackdropStyle(shadow: number):
+export function getLogoShadowBackdropStyle(
+  shadow: number,
+  sizeScale = 1,
+):
   | {
       backgroundColor: string;
       filter: string;
@@ -202,9 +217,10 @@ export function getLogoShadowBackdropStyle(shadow: number):
     ? Math.min(MAX_LOGO_SHADOW, Math.max(MIN_LOGO_SHADOW, shadow))
     : DEFAULT_LOGO_SHADOW;
   if (strength <= 0) return undefined;
+  const size = Number.isFinite(sizeScale) && sizeScale > 0 ? sizeScale : 1;
 
   const opacity = Math.min(0.76, 0.38 * strength).toFixed(2);
-  const blur = Math.round(18 * strength);
+  const blur = Math.max(1, Math.round(18 * strength * size));
   const scale = (1 + 0.12 * strength).toFixed(2);
 
   return {

@@ -1293,21 +1293,28 @@ export const tr = {
   "curation.moveBottomItem": "{title} en alta taşı",
   "curation.showMore": "{remaining} tane daha göster",
   "curation.noMatches": "Bu aramayla eşleşen içerik yok.",
-  "tmdbArtwork.eyebrow": "Görsel Tercihi",
+  "tmdbArtwork.allLanguages": "Tümü",
+  "tmdbArtwork.sectionLanguage": "Görsel dili",
+  "tmdbArtwork.metadataLanguage": "Adları ve açıklamayı şu dilde yükle",
+  "tmdbArtwork.kindFilter.all": "Tümü",
+  "tmdbArtwork.kindFilter.label": "Gösterilecek başlık türü",
+  "tmdbArtwork.clearSearch": "Aramayı temizle",
+  "tmdbArtwork.changeMatch": "TMDB eşleşmesini değiştir",
+  "tmdbArtwork.jumpTo": "Bir bölüme git",
+  "tmdbArtwork.artworkApplied":
+    "Kaydedildi. Başlık artık bu görseli kullanıyor.",
+  "tmdbArtwork.fieldTitle": "Başlık",
+  "tmdbArtwork.fieldTagline": "Slogan",
+  "tmdbArtwork.fieldOverview": "Açıklama",
   "tmdbArtwork.title": "TMDB Görselleri",
   "tmdbArtwork.description":
     "Film, dizi ve kitaplar için TMDB görsellerini seçin veya kendi kapak, arka plan ve logonuzu yükleyin.",
-  "tmdbArtwork.languageFilter": "Görsel diline göre süz",
   "tmdbArtwork.loadingItems": "Film, dizi ve kitaplar yükleniyor...",
-  "tmdbArtwork.loadedItems": "{count} içerik yüklendi.",
   "tmdbArtwork.couldNotLoadItems": "Film, dizi ve kitaplar yüklenemedi.",
   "tmdbArtwork.libraryTitles": "Kütüphane Yapımları",
   "tmdbArtwork.visibleItems": "{count} görünen içerik",
   "tmdbArtwork.itemSearchPlaceholder": "Film, dizi, kitap, yıl veya ID ara...",
-  "tmdbArtwork.tmdbMatch": "TMDB Eşleşmesi",
   "tmdbArtwork.noItemSelected": "Bir içerik seç",
-  "tmdbArtwork.selectItemFirst":
-    "TMDB'de arama yapmadan önce listeden bir içerik seç.",
   "tmdbArtwork.selectedTmdb": "Seçili TMDB ID {id}",
   "tmdbArtwork.searchQuery": "TMDB araması",
   "tmdbArtwork.tmdbSearchPlaceholder": "Başlığı TMDB'de ara",
@@ -1318,24 +1325,14 @@ export const tr = {
   "tmdbArtwork.couldNotSearch": "TMDB aranamadı.",
   "tmdbArtwork.tmdbUnavailableForBooks":
     "Kitaplar TMDB ile eşleştirilmez. Aşağıdan özel görsel yükleyebilirsiniz.",
-  "tmdbArtwork.artworkSelection": "Görsel Seçimi",
-  "tmdbArtwork.noTmdbSelected": "TMDB içeriği seçilmedi",
-  "tmdbArtwork.noTmdbSelectedDescription":
-    "Görsel seçeneklerini yüklemek için bir TMDB eşleşmesi seç.",
-  "tmdbArtwork.currentArtwork": "Şu anda uygulanan",
-  "tmdbArtwork.currentArtworkDescription":
-    "Seyirlik şu anda {target} için bu görseli sunuyor.",
   "tmdbArtwork.noCurrentArtwork": "Bu alan için mevcut görsel bulunamadı.",
   "tmdbArtwork.loadingImages": "TMDB görselleri yükleniyor...",
-  "tmdbArtwork.loadedImages": "{target} için {count} seçenek",
   "tmdbArtwork.noImages": "Bu dil filtresine uyan görsel yok.",
   "tmdbArtwork.noProviderImages":
     "Sağlayıcı görseli bulunmuyor. Yukarıdan kendi görselinizi yükleyebilirsiniz.",
   "tmdbArtwork.couldNotLoadImages": "TMDB görselleri yüklenemedi.",
   "tmdbArtwork.replaceFile": "Bu görseli kullan",
   "tmdbArtwork.savingArtwork": "Seçilen görsel kaydediliyor...",
-  "tmdbArtwork.artworkSaved":
-    "Kaydedildi. {file} artık bu yapım için kullanılıyor.",
   "tmdbArtwork.couldNotSaveArtwork": "Görsel kaydedilemedi.",
   "tmdbArtwork.uploadCustom.poster": "Kapak yükle",
   "tmdbArtwork.uploadCustom.backdrop": "Arka plan yükle",
@@ -1355,15 +1352,12 @@ export const tr = {
   "tmdbArtwork.kind.logoDescription":
     "Arka planın üzerine çizilen başlık görseli.",
   "tmdbArtwork.itemMetadata": "İçerik Metadata'sı",
-  "tmdbArtwork.itemLanguages": "Adlar ve açıklamalar",
   "tmdbArtwork.itemLanguagesDescription":
     "Başlığı ve açıklamayı TMDB'nin o dilde yazdığı haliyle yükler; kayıtlı olanın üzerine yazmadan önce karşılaştırabilirsiniz.",
-  "tmdbArtwork.loadItemMetadata": "İçerik metadata'sını yükle",
   "tmdbArtwork.saveItemDisplay": "İçerik görünümünü kaydet",
   "tmdbArtwork.loadingItemMetadata": "İçerik metadata'sı yükleniyor...",
   "tmdbArtwork.itemMetadataLoaded":
     "İngilizce ve Türkçe içerik metadata'sı yüklendi.",
-  "tmdbArtwork.itemMetadataUnavailable": "TMDB içerik metadata'sı döndürmedi.",
   "tmdbArtwork.couldNotLoadItemMetadata": "İçerik metadata'sı yüklenemedi.",
   "tmdbArtwork.itemMetadataRequiresMatch":
     "Bu yapımın verilerini yüklemeden önce TMDB eşleşmesini seçin.",
@@ -1374,9 +1368,6 @@ export const tr = {
   "tmdbArtwork.language.english": "İngilizce",
   "tmdbArtwork.language.turkish": "Türkçe",
   "tmdbArtwork.language.none": "Dilsiz",
-  "tmdbArtwork.voteSummary": "Puan {rating} · {count} oy",
-  "tmdbArtwork.showingTopChoices":
-    "{total} görselin {shown} tanesi gösteriliyor, en yüksek puanlıdan başlayarak.",
   "tmdbArtwork.loadMoreChoices": "{count} tane daha yükle",
   "tmdbArtwork.lockedBadge": "Sizin seçiminiz",
   "tmdbArtwork.lockedExplanation":

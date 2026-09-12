@@ -17,7 +17,12 @@ export const STORED_TYPE_BY_KIND: Record<ArtworkKind, string> = {
 };
 
 /** `null` means artwork with no text, which TMDB reports as a blank language. */
-export type ImageLanguageFilter = "all" | "en" | "tr" | "none";
+/**
+ * Which images a section shows: all of them, those with no text, or those in
+ * one ISO 639-1 language. Any language TMDB has is a valid filter, not only
+ * the two the interface is written in.
+ */
+export type ImageLanguageFilter = "all" | "none" | (string & {});
 
 export function getKindLabelKey(kind: ArtworkKind): TranslationKey {
   return `tmdbArtwork.kind.${kind}` as TranslationKey;
@@ -190,4 +195,95 @@ export function getArtworkErrorKey(code: unknown): TranslationKey {
     return "tmdbArtwork.artworkNotApplicable";
   }
   return "tmdbArtwork.couldNotLoadImages";
+}
+
+export interface LanguageOption {
+  /** `all`, `none`, or an ISO 639-1 code. */
+  readonly value: ImageLanguageFilter;
+  readonly count: number;
+}
+
+/** The interface's own languages first; after them, the rest by how many images. */
+const FAVOURED_LANGUAGES = ["tr", "en"];
+
+/**
+ * The languages one section's images come in, with how many of each.
+ *
+ * Built from what TMDB actually returned for this title and this kind, so a
+ * section never offers a language it has nothing in, and a Japanese film's
+ * logo section offers Japanese without anybody having listed it.
+ */
+export function languageOptions(
+  candidates: readonly ArtworkCandidate[],
+  kind: ArtworkKind,
+): LanguageOption[] {
+  const counts = new Map<string, number>();
+  let total = 0;
+  for (const candidate of candidates) {
+    if (candidate.kind !== kind) continue;
+    total += 1;
+    const key = candidate.language ?? "none";
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  const rank = (code: string) => {
+    const favoured = FAVOURED_LANGUAGES.indexOf(code);
+    if (favoured >= 0) return favoured;
+    return code === "none" ? FAVOURED_LANGUAGES.length : 99;
+  };
+  const languages = [...counts.entries()]
+    .sort(
+      ([a, countA], [b, countB]) =>
+        rank(a) - rank(b) || countB - countA || a.localeCompare(b),
+    )
+    .map(([value, count]) => ({ value, count }));
+  return [{ value: "all", count: total }, ...languages];
+}
+
+/**
+ * A language's name in the interface's language: "Türkçe", "Japanese".
+ *
+ * `Intl.DisplayNames` knows every code TMDB uses; the code itself is the
+ * fallback for one it does not.
+ */
+export function languageName(code: string, uiLanguage: string): string {
+  try {
+    const names = new Intl.DisplayNames([uiLanguage], { type: "language" });
+    const name = names.of(code);
+    if (name && name !== code)
+      return name.charAt(0).toLocaleUpperCase(uiLanguage) + name.slice(1);
+  } catch {
+    // An invalid code: fall through to the code itself.
+  }
+  return code.toUpperCase();
+}
+
+/** What a list thumbnail needs to draw a title as its card does. */
+export function titleArtworkOf(item: MediaItem): {
+  coverTag: string | null;
+  logoTag: string | null;
+  logoLayout: NonNullable<MediaItem["LogoLayout"]> | null;
+} {
+  return {
+    coverTag: item.ImageTags?.Primary ?? null,
+    logoTag: item.ImageTags?.Logo ?? null,
+    logoLayout: item.LogoLayout ?? null,
+  };
+}
+
+export type TitleKindFilter = "all" | "Movie" | "Series" | "Book";
+
+export const TITLE_KIND_FILTERS: readonly TitleKindFilter[] = [
+  "all",
+  "Movie",
+  "Series",
+  "Book",
+];
+
+export function filterByKind(
+  items: readonly MediaItem[],
+  kind: TitleKindFilter,
+): MediaItem[] {
+  return kind === "all"
+    ? [...items]
+    : items.filter((item) => item.Type === kind);
 }
