@@ -12,6 +12,10 @@ import {
   validationError,
 } from "../api/validation";
 import { isPathInsideRoot } from "../../pathSecurity";
+import {
+  describeMissingPackageAssets,
+  missingPackageAssets,
+} from "./packageAssets";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { JobQueue } from "../tasks/jobQueue";
 import {
@@ -19,10 +23,7 @@ import {
   type HardwareReport,
 } from "../../../renditions/hardware/detect";
 import { ADAPTIVE_PROFILE_VERSION } from "../../../renditions/adaptive/profile";
-import {
-  readTitlePackageManifest,
-  type TitlePackageManifest,
-} from "../../../renditions/adaptive/publishTitle";
+import { readTitlePackageManifest } from "../../../renditions/adaptive/publishTitle";
 import {
   type ProcessingJobRecord,
   type ProcessingJobStore,
@@ -182,60 +183,6 @@ function toJobDto(job: ProcessingJobRecord) {
     finishedAt: job.finishedAt?.toISOString() ?? null,
     updatedAt: job.updatedAt.toISOString(),
   };
-}
-
-/**
- * Every file the manifest claims, checked against what is actually on disk.
- *
- * Read before a source file is deleted, which is the one action here that
- * cannot be taken back. A manifest is only a record of what publishing meant
- * to leave behind: an interrupted swap or a hand-deleted rendition leaves it
- * describing files that are no longer there, and trusting it at that moment
- * would trade a recoverable package for nothing at all. Sizes are compared as
- * well as existence, because a truncated segment file still opens.
- */
-async function missingPackageAssets(
-  titleRoot: string,
-  manifest: TitlePackageManifest,
-): Promise<string[]> {
-  const renditions = [
-    ...manifest.video,
-    ...manifest.audio,
-    ...manifest.subtitle,
-  ];
-  const expected: Array<{ relativePath: string; sizeBytes?: number }> = [
-    { relativePath: manifest.masterPlaylistPath },
-    ...renditions.flatMap((rendition) => [
-      { relativePath: rendition.mediaPath, sizeBytes: rendition.fileSizeBytes },
-      { relativePath: rendition.playlistPath },
-    ]),
-  ];
-
-  const missing: string[] = [];
-  for (const entry of expected) {
-    const absolutePath = path.resolve(
-      titleRoot,
-      ...entry.relativePath.split("/"),
-    );
-    // The manifest is a file on disk like any other, so its paths are treated
-    // as data rather than as instructions about what to open.
-    if (!isPathInsideRoot(titleRoot, absolutePath)) {
-      missing.push(entry.relativePath);
-      continue;
-    }
-    try {
-      const stats = await stat(absolutePath);
-      if (
-        !stats.isFile() ||
-        (entry.sizeBytes !== undefined && stats.size !== entry.sizeBytes)
-      ) {
-        missing.push(entry.relativePath);
-      }
-    } catch {
-      missing.push(entry.relativePath);
-    }
-  }
-  return missing;
 }
 
 /**
@@ -947,20 +894,6 @@ export function createProcessingRoutes({
           );
         }
 
-        const { existing } = await analyse(itemId, mediaFileId);
-        if (
-          !existing.present ||
-          !existing.sourceMatches ||
-          !existing.profileMatches ||
-          existing.missingRungs.length > 0
-        ) {
-          throw new OwnApiError(
-            "PROCESSING_PACKAGE_INCOMPLETE",
-            "This title still needs its source: its package is missing renditions, was built from different bytes, or was built by an older profile.",
-            409,
-          );
-        }
-
         /*
          * The package's real location, which for an episode is its own folder
          * inside the season rather than the season folder itself. Removing a
@@ -985,7 +918,26 @@ export function createProcessingRoutes({
         if (missing.length > 0) {
           throw new OwnApiError(
             "PROCESSING_PACKAGE_INCOMPLETE",
-            `This title's package is incomplete on disk: ${missing.length} of its files are missing or the wrong size.`,
+            `This title's package is incomplete on disk, so its source is still the only whole copy: ${describeMissingPackageAssets(missing)}.`,
+            409,
+          );
+        }
+
+        /*
+         * Then the questions the files cannot answer: whether these are still
+         * the bytes the package was built from, and whether today's ladder
+         * would give the title a rung it does not have.
+         */
+        const { existing } = await analyse(itemId, mediaFileId);
+        if (
+          !existing.present ||
+          !existing.sourceMatches ||
+          !existing.profileMatches ||
+          existing.missingRungs.length > 0
+        ) {
+          throw new OwnApiError(
+            "PROCESSING_PACKAGE_INCOMPLETE",
+            "This title still needs its source: its package is missing renditions, was built from different bytes, or was built by an older profile.",
             409,
           );
         }

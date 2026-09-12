@@ -54,9 +54,18 @@ interface Fixture {
 
 /** A title folder holding a source and a complete one-rung package. */
 async function fixture(
-  options: { withSource?: boolean; withMedia?: boolean } = {},
+  options: {
+    withSource?: boolean;
+    withMedia?: boolean;
+    /** Writes the rendition short, as an interrupted copy leaves it. */
+    truncateMedia?: boolean;
+  } = {},
 ): Promise<Fixture> {
-  const { withSource = true, withMedia = true } = options;
+  const {
+    withSource = true,
+    withMedia = true,
+    truncateMedia = false,
+  } = options;
   const root = await mkdtemp(path.join(tmpdir(), "seyirlik-source-delete-"));
   const titleRoot = path.join(root, "Movies", "Solaris (1972)");
   await mkdir(path.join(titleRoot, ".seyirlik", "video"), { recursive: true });
@@ -68,7 +77,10 @@ async function fixture(
   const media = "video/1080p.mp4";
   const mediaBytes = "pretend rendition";
   if (withMedia) {
-    await writeFile(path.join(titleRoot, ...media.split("/")), mediaBytes);
+    await writeFile(
+      path.join(titleRoot, ...media.split("/")),
+      truncateMedia ? mediaBytes.slice(0, 5) : mediaBytes,
+    );
   }
   await writeFile(path.join(titleRoot, ".seyirlik", "master.m3u8"), "#EXTM3U");
   await writeFile(
@@ -270,6 +282,30 @@ describe("POST /processing/source/delete", () => {
 
     expect(result.error?.code).toBe("PROCESSING_PACKAGE_INCOMPLETE");
     expect(await exists(data.sourcePath)).toBe(true);
+  });
+
+  /*
+   * The failure House of the Dragon S01E01 arrived as: every file the manifest
+   * names is present, and one of them is 68 MB shorter than it was published
+   * at. Nothing opens wrong, nothing logs, and the last three minutes of the
+   * 4K rung simply are not there — so the source is the only whole copy left
+   * and must not be removed.
+   */
+  it("keeps the source when a rendition on disk is shorter than the package records", async () => {
+    const data = await fixture({ truncateMedia: true });
+    const result = await callDelete(data);
+
+    expect(result.error?.code).toBe("PROCESSING_PACKAGE_INCOMPLETE");
+    expect(await exists(data.sourcePath)).toBe(true);
+  });
+
+  it("names the damaged file and both sizes, so the message can be acted on", async () => {
+    const data = await fixture({ truncateMedia: true });
+    const result = await callDelete(data);
+
+    expect(result.error?.message).toContain("video/1080p.mp4");
+    expect(result.error?.message).toContain("5 bytes on disk");
+    expect(result.error?.message).toContain("17");
   });
 
   it("keeps the source while the media volume is unavailable", async () => {

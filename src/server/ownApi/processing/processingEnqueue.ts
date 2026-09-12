@@ -30,6 +30,7 @@ import {
 } from "./jobStore";
 import type { StorageGuard } from "./storageGuard";
 import { summarisePackage } from "./packageIndex";
+import { missingPackageAssets } from "./packageAssets";
 
 /**
  * The one way a processing job is created.
@@ -280,8 +281,48 @@ export function createProcessingEnqueuer({
       () => undefined,
     );
     const summary = summarisePackage(manifest ?? null, fingerprint);
-    if (!summary) return { present: false, missingRungs: [] };
-    return { ...summary, missingRungs: [] };
+    if (!summary || !manifest) return { present: false, missingRungs: [] };
+
+    /*
+     * The manifest is what publishing meant to leave behind; this is what it
+     * actually left. One title, on demand, so the stats cost nothing next to
+     * the probe of the source that surrounds them — the background index that
+     * sweeps the whole library on a clock deliberately does not do this.
+     *
+     * A rung whose media file is gone or short is dropped from the package, so
+     * the ladder reports it as missing and the ordinary incremental job encodes
+     * it again. Damage anywhere else — the master playlist, an audio or
+     * subtitle track — cannot be repaired by re-encoding one rung, so it is
+     * reported as an incomplete package instead of being quietly excused.
+     */
+    const missing = await missingPackageAssets(titleRoot, manifest);
+    if (missing.length === 0) return { ...summary, missingRungs: [] };
+
+    const damagedRungs = new Set(
+      missing
+        .map((asset) => asset.qualityHeight)
+        .filter((height): height is number => height !== undefined),
+    );
+    const elsewhere = missing.some(
+      (asset) => asset.qualityHeight === undefined,
+    );
+    // Summarised again from what survives, so completeness is judged by the
+    // one predicate rather than by a second copy of it written here.
+    const verified =
+      summarisePackage(
+        {
+          ...manifest,
+          video: manifest.video.filter(
+            (rendition) => !damagedRungs.has(rendition.qualityHeight),
+          ),
+        },
+        fingerprint,
+      ) ?? summary;
+    return {
+      ...verified,
+      complete: verified.complete && !elsewhere,
+      missingRungs: [],
+    };
   };
 
   const analyse: ProcessingEnqueuer["analyse"] = async (
