@@ -170,6 +170,17 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     tagKey: "devtools.card.libraryMaintenance.tag",
     icon: "databaseZap",
   },
+  {
+    // Going down the whole list choosing covers and logos is its own errand;
+    // the title workspace edits one title at a time.
+    id: "tmdb-artwork",
+    group: "library",
+    path: "/dev/tmdb-artwork",
+    titleKey: "devtools.card.tmdbArtwork.title",
+    descriptionKey: "devtools.card.tmdbArtwork.description",
+    tagKey: "devtools.card.tmdbArtwork.tag",
+    icon: "images",
+  },
 
   // ---- downloads: choose a release, fetch it, take it in
   {
@@ -287,8 +298,8 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
 /**
  * Tools that were merged into another, and where their address now leads.
  *
- * Monitoring, Content Explorer and TMDB Artwork became the Library and its
- * title workspace; Playback Audit and Playback Health became the two tabs of
+ * Monitoring and Content Explorer became the Library and its title
+ * workspace; Playback Audit and Playback Health became the two tabs of
  * Playback diagnostics; Server Control became a section of Health. Playback
  * Defaults saved nothing the server kept, and the two development boards were
  * notes held in one browser's storage, so they were removed rather than moved.
@@ -296,7 +307,6 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
 export const ADMIN_REDIRECTS: Readonly<Record<string, string>> = {
   "/admin/monitoring": "/admin/library",
   "/dev/content": "/admin/library",
-  "/dev/tmdb-artwork": "/admin/library",
   "/dev/playback-defaults": "/admin/library",
   "/dev/playback-audit": "/dev/playback?tab=titles",
   "/dev/playback-health": "/dev/playback?tab=network",

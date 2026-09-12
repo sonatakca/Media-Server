@@ -106,7 +106,6 @@ describe("tools that were merged away", () => {
     for (const gone of [
       "monitoring",
       "content-explorer",
-      "tmdb-artwork",
       "playback-defaults",
       "playback-audit",
       "playback-health",

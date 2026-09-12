@@ -96,6 +96,7 @@ const LibraryMaintenancePage = lazy(async () => ({
   default: (await import("./pages/LibraryMaintenancePage"))
     .LibraryMaintenancePage,
 }));
+const TmdbArtworkPage = lazy(() => import("./pages/TmdbArtworkPage"));
 const MyListPage = lazy(async () => ({
   default: (await import("./pages/MyListPage")).MyListPage,
 }));
@@ -432,6 +433,10 @@ export default function App() {
                   <Route
                     path="/dev/library-maintenance"
                     element={<LibraryMaintenancePage />}
+                  />
+                  <Route
+                    path="/dev/tmdb-artwork"
+                    element={<TmdbArtworkPage />}
                   />
                   <Route path="/dev/users" element={<UserManagementPage />} />
                   <Route path="/dev/curation" element={<CurationPage />} />

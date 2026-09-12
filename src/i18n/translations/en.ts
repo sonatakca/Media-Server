@@ -1145,6 +1145,10 @@ export const en = {
   "devtools.card.userManagement.description":
     "Create users and manage their names, passwords, access, and account status.",
   "devtools.card.userManagement.tag": "Accounts",
+  "devtools.card.tmdbArtwork.title": "TMDB Artwork",
+  "devtools.card.tmdbArtwork.description":
+    "Choose TMDB artwork or upload a custom cover, backdrop, and logo for movies, shows, and books.",
+  "devtools.card.tmdbArtwork.tag": "Artwork",
   "devtools.card.libraryMaintenance.title": "Library Maintenance",
   "devtools.card.libraryMaintenance.description":
     "Scan libraries, refresh metadata, replace images, and edit common item metadata.",

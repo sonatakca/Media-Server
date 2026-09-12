@@ -1141,6 +1141,10 @@ export const tr = {
   "devtools.card.userManagement.description":
     "Kullanıcılar oluştur; adlarını, parolalarını, erişimlerini ve hesap durumlarını yönet.",
   "devtools.card.userManagement.tag": "Hesaplar",
+  "devtools.card.tmdbArtwork.title": "TMDB Görselleri",
+  "devtools.card.tmdbArtwork.description":
+    "Film, dizi ve kitaplar için TMDB görsellerini seçin veya özel kapak, arka plan ve logo yükleyin.",
+  "devtools.card.tmdbArtwork.tag": "Görsel",
   "devtools.card.libraryMaintenance.title": "Kütüphane Bakımı",
   "devtools.card.libraryMaintenance.description":
     "Kütüphaneleri tara, metadata yenile, görselleri değiştir ve yaygın içerik alanlarını düzenle.",
