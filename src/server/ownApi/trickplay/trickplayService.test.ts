@@ -297,6 +297,8 @@ describe("generating a set into the title's own folder", () => {
     findPackagedVideo?: Parameters<
       typeof createTrickplayService
     >[0]["findPackagedVideo"];
+    /** Probe this binary's filters for real instead of injecting the answer. */
+    probeFiltersOf?: string;
   }
 
   function service(options: ServiceOptions = {}) {
@@ -393,7 +395,9 @@ describe("generating a set into the title's own folder", () => {
       },
       // Every filter present unless a test says otherwise, so no process is
       // spawned to find out.
-      hasFilter: options.hasFilter ?? (async () => true),
+      ...(options.probeFiltersOf
+        ? { ffmpegPath: options.probeFiltersOf }
+        : { hasFilter: options.hasFilter ?? (async () => true) }),
       ...(options.findPackagedVideo
         ? { findPackagedVideo: options.findPackagedVideo }
         : {}),
@@ -655,6 +659,17 @@ describe("generating a set into the title's own folder", () => {
     // Nothing spawned, nothing written: the check happens before both.
     expect(calls).toEqual([]);
     expect(await readdir(movieTitleRoot())).toEqual(["src"]);
+  });
+
+  it("does not call an FFmpeg it cannot start an HDR limitation", async () => {
+    streams = [videoStream(HDR10)];
+    const pending = service({
+      probeFiltersOf: path.join(mediaRoot, "no-such-ffmpeg"),
+    }).generateForItem(MOVIE_SOURCE.itemId);
+
+    await expect(pending).rejects.toThrow("FFmpeg could not be started.");
+    await expect(pending).rejects.not.toBeInstanceOf(TrickplayUnsupportedError);
+    expect(calls).toEqual([]);
   });
 
   it("says what to do, and names no file", async () => {

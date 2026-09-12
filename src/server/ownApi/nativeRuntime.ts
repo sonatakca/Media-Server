@@ -971,6 +971,7 @@ export async function createNativeRuntime({
     mediaRoot,
     generatedStoragePath,
     findPackagedVideo: renditions.findPackagedVideo,
+    ...(ffmpegPath ? { ffmpegPath } : {}),
   });
 
   const probeService = createProbeService({

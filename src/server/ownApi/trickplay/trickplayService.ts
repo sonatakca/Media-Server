@@ -403,7 +403,7 @@ export function createTrickplayService({
    */
   let filters: Promise<Set<string>> | undefined;
   const listFilters = (): Promise<Set<string>> => {
-    filters ??= new Promise<Set<string>>((resolve) => {
+    filters ??= new Promise<Set<string>>((resolve, reject) => {
       const child = spawn(ffmpegPath, ["-hide_banner", "-filters"], {
         stdio: ["ignore", "pipe", "ignore"],
       });
@@ -411,7 +411,16 @@ export function createTrickplayService({
       child.stdout?.on("data", (chunk: Buffer) => {
         output += chunk.toString();
       });
-      child.on("error", () => resolve(new Set()));
+      /*
+       * Not an empty list. A binary that cannot be started has said nothing
+       * about its filters, and reading it as "no zscale" reported a missing
+       * FFmpeg as an unsupported HDR title — permanently, since the answer
+       * was cached. Uncached, so the next job asks again.
+       */
+      child.on("error", () => {
+        filters = undefined;
+        reject(new Error("FFmpeg could not be started."));
+      });
       child.on("close", () =>
         resolve(
           new Set(
