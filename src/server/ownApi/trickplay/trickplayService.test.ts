@@ -294,6 +294,9 @@ describe("generating a set into the title's own folder", () => {
      * than reporting whichever one spoke last.
      */
     announce?: number[][];
+    findPackagedVideo?: Parameters<
+      typeof createTrickplayService
+    >[0]["findPackagedVideo"];
   }
 
   function service(options: ServiceOptions = {}) {
@@ -391,6 +394,9 @@ describe("generating a set into the title's own folder", () => {
       // Every filter present unless a test says otherwise, so no process is
       // spawned to find out.
       hasFilter: options.hasFilter ?? (async () => true),
+      ...(options.findPackagedVideo
+        ? { findPackagedVideo: options.findPackagedVideo }
+        : {}),
     });
   }
 
@@ -424,6 +430,64 @@ describe("generating a set into the title's own folder", () => {
     expect(args.some((arg) => arg.includes("|") || arg.includes(";"))).toBe(
       false,
     );
+  });
+
+  describe("a title whose source packaging consumed", () => {
+    const PACKAGED: MediaFileRow = {
+      ...MOVIE_SOURCE,
+      probeState: "packaged",
+      durationMs: null,
+    };
+    const rendition = () =>
+      path.join(movieTitleRoot(), "video", "2160p", "media.mp4");
+    const packagedVideo = async () => ({
+      path: rendition(),
+      width: 3840,
+      height: 2160,
+      durationSeconds: 3_600,
+      colorTransfer: "smpte2084",
+      colorPrimaries: "bt2020",
+    });
+
+    it("samples the package's best rendition, colour-corrected by its own transfer", async () => {
+      file = PACKAGED;
+      streams = [];
+      const set = await service({
+        findPackagedVideo: packagedVideo,
+      }).generateForItem(PACKAGED.itemId);
+
+      expect(set?.spriteCount).toBe(LAYOUT.spriteCount);
+      const args = calls[0] as string[];
+      expect(args[args.indexOf("-i") + 1]).toBe(rendition());
+      expect(args[args.indexOf("-map") + 1]).toBe("0:v:0");
+      expect(args[args.indexOf("-vf") + 1]).toContain("tonemap");
+      expect(rows).toHaveLength(1);
+    });
+
+    it("keeps sampling the source while it is still on disk", async () => {
+      await writeFile(
+        path.resolve(mediaRoot, MOVIE_SOURCE.relativePath),
+        "source",
+      );
+      await service({ findPackagedVideo: packagedVideo }).generateForItem(
+        MOVIE_SOURCE.itemId,
+      );
+
+      const args = calls[0] as string[];
+      expect(args[args.indexOf("-i") + 1]).toBe(
+        path.resolve(mediaRoot, MOVIE_SOURCE.relativePath),
+      );
+    });
+
+    it("has nothing to sample when there is no package either", async () => {
+      file = PACKAGED;
+      expect(
+        await service({
+          findPackagedVideo: async () => null,
+        }).generateForItem(PACKAGED.itemId),
+      ).toBeNull();
+      expect(calls).toEqual([]);
+    });
   });
 
   it("maps the very stream whose colours and size the layout came from", async () => {

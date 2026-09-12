@@ -24,6 +24,7 @@ import {
 } from "../renditions/registry";
 import { inspectCompletedRendition } from "../renditions/validation";
 import { inspectAdaptivePackage } from "../renditions/adaptive/inspect";
+import type { AdaptivePackageMetadata } from "../renditions/adaptive/metadata";
 import { resolveTitleRoot } from "../renditions/adaptive/titleRoot";
 import { qualityLabel } from "../renditions/adaptive/layout";
 import { ADAPTIVE_PROFILE_VERSION } from "../renditions/adaptive/profile";
@@ -170,6 +171,23 @@ export interface RenditionService {
   describePackagedSource(
     media: PlaybackResolvedMedia,
   ): Promise<PackagedSourceDescription | null>;
+  /**
+   * The best picture a packaged title still has, for a reader that must
+   * decode one — trickplay — once the source it would have used is gone.
+   */
+  findPackagedVideo(
+    media: PlaybackResolvedMedia,
+  ): Promise<PackagedVideo | null>;
+}
+
+/** The highest video rendition of a ready package, as a decoder input. */
+export interface PackagedVideo {
+  path: string;
+  width: number;
+  height: number;
+  durationSeconds: number;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
 }
 
 /**
@@ -354,23 +372,71 @@ export function createRenditionService({
     return registryItem;
   };
 
+  /** The complete, current package these source bytes were built into. */
+  const readyPackageFor = async (
+    media: PlaybackResolvedMedia,
+  ): Promise<{
+    metadata: AdaptivePackageMetadata;
+    versionRoot: string;
+  } | null> => {
+    const registryItem = await findRegistryItem(media);
+    if (
+      !registryItem ||
+      registryItem.adaptiveStatus !== "ready" ||
+      registryItem.adaptiveProfileVersion !== ADAPTIVE_PROFILE_VERSION
+    ) {
+      return null;
+    }
+    const inspection = await inspectAdaptivePackage({
+      titleRoot: await resolveTitleRoot(media.filePath),
+      sourceFingerprint: registryItem.sourceFingerprint,
+      profileVersion: ADAPTIVE_PROFILE_VERSION,
+    });
+    if (
+      inspection.status !== "ready" ||
+      !inspection.metadata ||
+      !inspection.versionRoot
+    ) {
+      return null;
+    }
+    return {
+      metadata: inspection.metadata,
+      versionRoot: inspection.versionRoot,
+    };
+  };
+
+  const findPackagedVideo: RenditionService["findPackagedVideo"] = async (
+    media,
+  ) => {
+    const ready = await readyPackageFor(media);
+    if (!ready) return null;
+    const best = [...ready.metadata.videoRenditions].sort(
+      (a, b) => b.height - a.height || b.width - a.width,
+    )[0];
+    if (!best) return null;
+    return {
+      path: path.join(ready.versionRoot, ...best.mediaPath.split("/")),
+      width: best.width,
+      height: best.height,
+      durationSeconds: best.durationSeconds,
+      // An older manifest may carry only the HDR state; the filter graph
+      // decides from the transfer, so name the one that state implies.
+      colorTransfer:
+        best.colorTransfer ??
+        (best.hdr === "hdr10"
+          ? "smpte2084"
+          : best.hdr === "hlg"
+            ? "arib-std-b67"
+            : null),
+      colorPrimaries: best.colorPrimaries ?? null,
+    };
+  };
+
   const describePackagedSource: RenditionService["describePackagedSource"] =
     async (media) => {
-      const registryItem = await findRegistryItem(media);
-      if (
-        !registryItem ||
-        registryItem.adaptiveStatus !== "ready" ||
-        registryItem.adaptiveProfileVersion !== ADAPTIVE_PROFILE_VERSION
-      ) {
-        return null;
-      }
-      const inspection = await inspectAdaptivePackage({
-        titleRoot: await resolveTitleRoot(media.filePath),
-        sourceFingerprint: registryItem.sourceFingerprint,
-        profileVersion: ADAPTIVE_PROFILE_VERSION,
-      });
-      if (inspection.status !== "ready" || !inspection.metadata) return null;
-      const metadata = inspection.metadata;
+      const ready = await readyPackageFor(media);
+      if (!ready) return null;
+      const metadata = ready.metadata;
       return {
         durationSeconds: metadata.sourceDurationSeconds,
         video: {
@@ -701,5 +767,6 @@ export function createRenditionService({
     resolveFile,
     resolveAdaptiveAsset,
     describePackagedSource,
+    findPackagedVideo,
   };
 }

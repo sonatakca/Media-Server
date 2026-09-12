@@ -95,6 +95,13 @@ describe("trickplay for one title", () => {
     ]);
   });
 
+  it("queues an episode whose source packaging consumed", async () => {
+    const h = harness("series", [
+      episode("e1", { probeState: "packaged", durationMs: null, width: null }),
+    ]);
+    expect(await h.call({})).toMatchObject({ queued: 1, notReady: 0 });
+  });
+
   it("rebuilds every episode when asked to", async () => {
     const h = harness("season", [episode("e1"), episode("e2")]);
     expect((await h.call({ force: true })).queued).toBe(2);

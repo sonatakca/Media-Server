@@ -8,7 +8,10 @@ import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type { JobQueue } from "../tasks/jobQueue";
 import { JOB_TYPES } from "../tasks/jobHandlers";
 import { tilesInSprite } from "./trickplayLayout";
-import type { TrickplayService } from "./trickplayService";
+import {
+  isTrickplayCandidate,
+  type TrickplayService,
+} from "./trickplayService";
 
 export interface TrickplayRoutesOptions {
   trickplay: TrickplayService;
@@ -201,16 +204,8 @@ export function createTrickplayRoutes({
                     seasonId: itemId,
                   })
                 : [];
-        // The same eligibility the library-wide pass uses: a probed file that is there.
-        const ready = titles.filter(
-          (title) =>
-            title.mediaFileId !== null &&
-            title.fileMissingSince === null &&
-            title.itemMissingSince === null &&
-            title.probeState === "probed" &&
-            title.durationMs !== null &&
-            (title.width ?? 0) > 0,
-        );
+        // The same eligibility the library-wide pass uses.
+        const ready = titles.filter(isTrickplayCandidate);
         const generated = force
           ? new Set<string>()
           : await trickplay.listGeneratedMediaFileIds(

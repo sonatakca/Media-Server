@@ -970,6 +970,7 @@ export async function createNativeRuntime({
     catalogue,
     mediaRoot,
     generatedStoragePath,
+    findPackagedVideo: renditions.findPackagedVideo,
   });
 
   const probeService = createProbeService({

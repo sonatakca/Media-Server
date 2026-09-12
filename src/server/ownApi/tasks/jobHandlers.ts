@@ -20,6 +20,7 @@ import { movesFiles, type OrganizeMode } from "../scanner/organizeConfig";
 import type { createProbeService } from "../probe/probeService";
 import type { MetadataService } from "../metadata/metadataService";
 import {
+  isTrickplayCandidate,
   TrickplayUnsupportedError,
   type TrickplayFrameProgress,
   type TrickplayService,
@@ -744,25 +745,17 @@ export function createJobHandlers({
       ...(libraryId ? { libraryId } : {}),
     });
 
-    const ready = titles.filter(
-      (title) =>
-        title.mediaFileId !== null &&
-        title.relativePath !== null &&
-        title.fileMissingSince === null &&
-        title.itemMissingSince === null &&
-        title.probeState === "probed" &&
-        title.durationMs !== null &&
-        (title.width ?? 0) > 0 &&
-        (title.height ?? 0) > 0,
-    );
+    const ready = titles.filter(isTrickplayCandidate);
     // Awaiting the probe rather than ineligible: counted so the pass knows
-    // whether it still has a reason to come back.
+    // whether it still has a reason to come back. A packaged title is never
+    // probed, so waiting for one would keep the pass returning for nothing.
     const awaitingProbe = titles.filter(
       (title) =>
         title.mediaFileId !== null &&
         title.fileMissingSince === null &&
         title.itemMissingSince === null &&
-        title.probeState !== "probed",
+        title.probeState !== "probed" &&
+        title.probeState !== "packaged",
     ).length;
 
     const generated = await trickplayService.listGeneratedMediaFileIds(

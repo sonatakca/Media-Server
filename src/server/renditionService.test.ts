@@ -737,6 +737,47 @@ describe("describePackagedSource", () => {
   });
 });
 
+describe("findPackagedVideo", () => {
+  it("names the package's highest video rendition once the source is gone", async () => {
+    const { service, sourcePath } = await fixture({
+      includeGenerated: false,
+      includeAdaptive: true,
+    });
+    const sourceStats = await stat(sourcePath);
+    await unlink(sourcePath);
+
+    const video = await service.findPackagedVideo({
+      mediaId,
+      filePath: sourcePath,
+      size: sourceStats.size,
+      mtimeMs: sourceStats.mtimeMs,
+    });
+    expect(video).toMatchObject({
+      width: 1280,
+      height: 720,
+      colorTransfer: null,
+    });
+    expect(video?.path.split(path.sep).join("/")).toMatch(
+      /\/video\/720p\.mp4$/,
+    );
+    expect((await stat(video!.path)).isFile()).toBe(true);
+  });
+
+  it("names nothing for a title with no adaptive package", async () => {
+    const { service, sourcePath } = await fixture();
+    const sourceStats = await stat(sourcePath);
+
+    await expect(
+      service.findPackagedVideo({
+        mediaId,
+        filePath: sourcePath,
+        size: sourceStats.size,
+        mtimeMs: sourceStats.mtimeMs,
+      }),
+    ).resolves.toBeNull();
+  });
+});
+
 describe("adaptiveVersionIdFor", () => {
   const base = {
     profileVersion: ADAPTIVE_PROFILE_VERSION,

@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { rm } from "node:fs/promises";
+import { rm, stat } from "node:fs/promises";
 import { setPriority } from "node:os";
 import path from "node:path";
 import { BACKGROUND_PROCESS_NICENESS } from "../../../renditions/processExecution";
@@ -19,7 +19,9 @@ import type {
   CatalogueRepository,
   MediaFileRow,
   MediaStreamRow,
+  ProcessableTitleRow,
 } from "../catalogue/catalogueRepository";
+import type { RenditionService } from "../../renditionService";
 import { buildTrickplayLayout, type TrickplayLayout } from "./trickplayLayout";
 import { planTrickplaySegments } from "./trickplaySegments";
 import {
@@ -55,6 +57,54 @@ export function isGeneratedMediaPath(relativePath: string): boolean {
         segment === TITLE_CONTENT_DIRECTORY ||
         GENERATED_TITLE_DIRECTORIES.has(segment.toLowerCase()),
     );
+}
+
+/**
+ * Whether a title can be given sheets now: the one rule the per-title button
+ * and the library-wide pass both apply.
+ *
+ * A packaged title qualifies without a probe. Packaging removed the source, so
+ * it can never be probed again, and the service samples its package instead.
+ */
+export function isTrickplayCandidate(
+  title: Pick<
+    ProcessableTitleRow,
+    | "mediaFileId"
+    | "relativePath"
+    | "fileMissingSince"
+    | "itemMissingSince"
+    | "probeState"
+    | "durationMs"
+    | "width"
+    | "height"
+  >,
+): boolean {
+  if (
+    title.mediaFileId === null ||
+    title.relativePath === null ||
+    title.fileMissingSince !== null ||
+    title.itemMissingSince !== null
+  ) {
+    return false;
+  }
+  if (title.probeState === "packaged") return true;
+  return (
+    title.probeState === "probed" &&
+    title.durationMs !== null &&
+    (title.width ?? 0) > 0 &&
+    (title.height ?? 0) > 0
+  );
+}
+
+/** What FFmpeg is pointed at, and the facts the layout and colour come from. */
+interface SamplingInput {
+  path: string;
+  map: string;
+  durationMs: number;
+  width: number;
+  height: number;
+  colorTransfer: string | null;
+  colorPrimaries: string | null;
 }
 
 /**
@@ -320,6 +370,14 @@ export interface CreateTrickplayServiceOptions {
    * injected in tests so no process is spawned.
    */
   hasFilter?: (name: string) => Promise<boolean>;
+  /**
+   * The package a title was built into, for when its source is gone.
+   *
+   * A fully processed title keeps only its adaptive package, so the highest
+   * rendition is the best picture left to sample. Without this, such a title
+   * can never have sheets at all.
+   */
+  findPackagedVideo?: RenditionService["findPackagedVideo"];
 }
 
 export function createTrickplayService({
@@ -330,6 +388,7 @@ export function createTrickplayService({
   ffmpegPath = "ffmpeg",
   runFfmpeg,
   hasFilter,
+  findPackagedVideo,
 }: CreateTrickplayServiceOptions): TrickplayService {
   const legacyTrickplayRoot = path.join(generatedStoragePath, "trickplay");
   const resolvedMediaRoot = path.resolve(mediaRoot);
@@ -440,6 +499,68 @@ export function createTrickplayService({
   }
 
   /**
+   * The source while it is on disk; the package once packaging consumed it.
+   *
+   * The source wins whenever it is there, for the reason on
+   * `isGeneratedMediaPath`. Only a title with nothing else left is sampled
+   * from its own highest rendition — a copy, but the copy the viewer watches.
+   */
+  async function samplingInputFor(
+    file: MediaFileRow,
+  ): Promise<SamplingInput | null> {
+    const sourcePath = sourcePathOf(file);
+    const probed = file.probeState === "probed" && file.durationMs !== null;
+    const sourcePresent = await stat(sourcePath).then(
+      (stats) => stats.isFile(),
+      () => false,
+    );
+
+    const fromSource = async (): Promise<SamplingInput | null> => {
+      const streams = await catalogue.listStreams(file.id);
+      const video: MediaStreamRow | undefined = streams.find(
+        (stream) => stream.kind === "video",
+      );
+      if (!video?.width || !video.height) return null;
+      return {
+        path: sourcePath,
+        // The very stream the layout and the colour decision were made from,
+        // named by index so a cover-art picture cannot be sampled instead.
+        map: `0:${video.streamIndex}`,
+        durationMs: Number(file.durationMs),
+        width: video.width,
+        height: video.height,
+        colorTransfer: video.colorTransfer,
+        colorPrimaries: video.colorPrimaries,
+      };
+    };
+
+    if (probed && sourcePresent) return fromSource();
+
+    if (!sourcePresent && findPackagedVideo) {
+      const packaged = await findPackagedVideo({
+        mediaId: file.id,
+        filePath: sourcePath,
+        size: Number(file.sizeBytes),
+        mtimeMs: Number(file.mtimeMs),
+      });
+      if (packaged && packaged.durationSeconds > 0) {
+        return {
+          path: packaged.path,
+          // A rendition carries exactly one video stream.
+          map: "0:v:0",
+          durationMs: Math.round(packaged.durationSeconds * 1_000),
+          width: packaged.width,
+          height: packaged.height,
+          colorTransfer: packaged.colorTransfer,
+          colorPrimaries: packaged.colorPrimaries,
+        };
+      }
+    }
+
+    return probed ? fromSource() : null;
+  }
+
+  /**
    * The one place a title's trickplay directory is decided.
    *
    * The kind comes from the catalogue rather than from the shape of the path,
@@ -535,30 +656,25 @@ export function createTrickplayService({
 
     generateForItem: async (itemId, options = {}) => {
       const file = await catalogue.getPrimaryFile(itemId);
-      if (!file || file.probeState !== "probed" || file.durationMs === null) {
-        return null;
-      }
+      if (!file) return null;
       // The catalogue only ever holds originals, but a marker item or a
       // hand-inserted row must never be able to point the sampler at a
       // rendition; the check is here because this is the sole decoder.
       if (isGeneratedMediaPath(file.relativePath)) return null;
 
+      const input = await samplingInputFor(file);
+      if (!input) return null;
+
       const existing = await findByMediaFile(file.id);
       if (existing && !options.force) return existing;
-
-      const streams = await catalogue.listStreams(file.id);
-      const video: MediaStreamRow | undefined = streams.find(
-        (stream) => stream.kind === "video",
-      );
-      if (!video?.width || !video.height) return null;
 
       const placement = await trickplayDirectoryForFile(file);
       if (!placement) return null;
 
       const layout = buildTrickplayLayout({
-        durationMs: Number(file.durationMs),
-        sourceWidth: video.width,
-        sourceHeight: video.height,
+        durationMs: input.durationMs,
+        sourceWidth: input.width,
+        sourceHeight: input.height,
       });
 
       /*
@@ -570,8 +686,8 @@ export function createTrickplayService({
       const filterGraph = buildTrickplayFilterGraph(
         layout,
         {
-          colorTransfer: video.colorTransfer,
-          colorPrimaries: video.colorPrimaries,
+          colorTransfer: input.colorTransfer,
+          colorPrimaries: input.colorPrimaries,
         },
         { announceFrames },
       );
@@ -637,12 +753,9 @@ export function createTrickplayService({
                   ? []
                   : ["-t", segment.durationSeconds.toFixed(6)]),
                 "-i",
-                sourcePathOf(file),
-                // The very stream the layout and the colour decision were made
-                // from, named by index so a cover-art picture cannot be sampled
-                // instead.
+                input.path,
                 "-map",
-                `0:${video.streamIndex}`,
+                input.map,
                 "-vf",
                 filterGraph,
                 "-an",

@@ -244,6 +244,25 @@ describe("the bulk trickplay pass", () => {
     expect(enqueued).toEqual([]);
   });
 
+  it("queues a packaged title, and does not wait for a probe it will never get", async () => {
+    const { queue, enqueued } = recordingQueue();
+
+    const result = await run(
+      handlers({
+        queue,
+        titles: [
+          title({ probeState: "packaged", durationMs: null, width: null }),
+        ],
+      }),
+      JOB_TYPES.trickplayScan,
+    );
+
+    expect(result).toMatchObject({ trickplayQueued: 1, trickplayPending: 0 });
+    expect(
+      enqueued.some((entry) => entry.jobType === JOB_TYPES.trickplayScan),
+    ).toBe(false);
+  });
+
   /*
    * The silent-miss case. A pass that ran seconds after a scan sees half the
    * library unprobed; declaring those ineligible and finishing would leave
