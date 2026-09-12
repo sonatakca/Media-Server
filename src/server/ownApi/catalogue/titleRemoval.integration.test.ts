@@ -187,6 +187,8 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
         episode: 1,
       });
       await file(episode, "Series/Show/Season 1/Show - S01E01.mkv");
+      // A second copy of the same episode is still one episode to trickplay.
+      await file(episode, "Series/Show/Season 1/Show - S01E01.mp4");
       const tmdb = {
         getSeries: async () => ({
           seasons: [
@@ -215,6 +217,7 @@ const databaseUrl = process.env.SEYIRLIK_TEST_DATABASE_URL;
       expect(detail!.seasons[0]!.episodes[0]!.mediaFileId).not.toBeNull();
       // The season's own row, so a season can be asked for as a whole.
       expect(detail!.seasons[0]!.id).toBe(season);
+      expect(detail).toMatchObject({ files: 1, trickplayFiles: 0 });
     });
 
     it("removes a film's folder, its rows, its package record and its legacy package", async () => {

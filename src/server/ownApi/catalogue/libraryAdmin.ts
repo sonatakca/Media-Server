@@ -33,7 +33,7 @@ export interface HoldingFacts {
   subtitleLanguages: string[];
   /** Subtitle languages Seyirlik is still looking for. */
   pendingSubtitles: string[];
-  /** Files on disk, and how many of them have trickplay sheets. */
+  /** Playable titles (a film, or each episode) on disk, and how many have trickplay sheets. */
   files: number;
   trickplayFiles: number;
 }
@@ -110,9 +110,11 @@ const HOLDING_COLUMNS = `
         JOIN items fam ON fam.id = f.item_id
         WHERE ${FAMILY("item")} AND f.missing_since IS NULL
     ) languages ORDER BY 1) AS "subtitleLanguages",
-  (SELECT count(*)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
+  -- Counted per playable title, not per file: trickplay is generated for a
+  -- title, and an episode kept in two containers is still one episode.
+  (SELECT count(DISTINCT fam.id)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
     WHERE ${FAMILY("item")} AND fam.kind IN ('movie', 'episode') AND f.missing_since IS NULL AND f.size_bytes > 0) AS files,
-  (SELECT count(*)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
+  (SELECT count(DISTINCT fam.id)::int FROM media_files f JOIN items fam ON fam.id = f.item_id
     WHERE ${FAMILY("item")} AND fam.kind IN ('movie', 'episode') AND f.missing_since IS NULL AND f.size_bytes > 0
       AND EXISTS (SELECT 1 FROM trickplay_sets ts WHERE ts.media_file_id = f.id)) AS "trickplayFiles",
   ARRAY(SELECT DISTINCT w.language FROM subtitle_wants w JOIN media_files f ON f.id = w.media_file_id
