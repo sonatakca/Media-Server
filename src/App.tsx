@@ -281,7 +281,7 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
         }`}
       >
         <div className="text-center">
-          <LoadingSpinner label="" />
+          <LoadingSpinner label="" variant="brand" />
         </div>
       </main>
     );

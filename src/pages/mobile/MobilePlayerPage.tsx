@@ -202,7 +202,7 @@ export function MobilePlayerPage() {
         ) : null}
 
         <div className="relative z-10 flex min-h-screen items-center justify-center">
-          <LoadingSpinner label="" />
+          <LoadingSpinner label="" variant="brand" />
         </div>
       </main>
     );

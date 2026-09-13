@@ -259,7 +259,7 @@ function LoadingView({ label }: { label: string }) {
       aria-label={label}
     >
       <div className="text-center">
-        <LoadingSpinner label="" />
+        <LoadingSpinner label="" variant="brand" />
       </div>
     </main>
   );

@@ -5959,7 +5959,7 @@ export function CustomVideoPlayer({
             <div className="absolute inset-0 bg-gradient-to-t from-black via-black/20 to-black/45" />
 
             <div className="absolute inset-0 z-10 grid place-items-center">
-              <LoadingSpinner label="" />
+              <LoadingSpinner label="" variant="brand" />
             </div>
           </motion.div>
         ) : null}
