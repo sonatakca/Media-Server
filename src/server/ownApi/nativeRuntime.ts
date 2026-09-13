@@ -140,6 +140,7 @@ import {
   disabledSubtitleJobTypes,
 } from "./subtitles/subtitleRuntime";
 import { createSubtitleRoutes } from "./subtitles/subtitleRoutes";
+import { createSubtitleUploader } from "./subtitles/subtitleUpload";
 import { createProviderSessionVault } from "./subtitles/providerSessionVault";
 import {
   createTurkceAltyaziProvider,
@@ -1267,6 +1268,15 @@ export async function createNativeRuntime({
                 ),
                 vault: subtitleVault,
               }
+            : undefined,
+          subtitleConfig
+            ? createSubtitleUploader({
+                libraryRoot: subtitleConfig.libraryRoot,
+                repository: subtitles.repository,
+                // Recorded against the file at once, so an uploaded subtitle is
+                // offered by the player without waiting for a library scan.
+                catalogue: scanStore,
+              })
             : undefined,
         )
       : []),

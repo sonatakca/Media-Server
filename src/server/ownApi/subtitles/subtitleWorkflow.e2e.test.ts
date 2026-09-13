@@ -288,6 +288,10 @@ async function createWorld(
     async titleMediaFiles() {
       return [];
     },
+    // The upload route resolves its own path; this workflow does not.
+    async mediaFileRelativePath() {
+      return null;
+    },
     async attemptsAwaiting() {
       return [];
     },

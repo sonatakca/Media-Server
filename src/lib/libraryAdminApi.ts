@@ -116,6 +116,45 @@ export function requestTitleSubtitles(
   );
 }
 
+/** Four megabytes, matching the ceiling the server writes subtitles under. */
+export const MAX_SUBTITLE_UPLOAD_BYTES = 4 * 1024 * 1024;
+
+export interface SubtitleUploadReport {
+  outcome: "installed" | "duplicate";
+  relativePath: string;
+  /** What the file was renamed to, which is the part worth showing. */
+  fileName: string;
+  language: string;
+  cueCount: number | null;
+  /** Whether the player can offer it now, or only after the next scan. */
+  attached: boolean;
+}
+
+/**
+ * Hands over a subtitle file for one film or one episode.
+ *
+ * The file's own name is deliberately not sent. Where it lands and what it is
+ * called are derived on the server from the media file the item resolves to,
+ * so a subtitle named `[YTS] dune.2021.tr.srt` still arrives as
+ * `Dune (2021).tur.srt` beside the film.
+ */
+export function uploadTitleSubtitle(
+  itemId: string,
+  file: File,
+  policy: { language: "tur" | "eng"; forced?: boolean; replace?: boolean },
+): Promise<SubtitleUploadReport> {
+  if (file.size === 0 || file.size > MAX_SUBTITLE_UPLOAD_BYTES) {
+    throw new Error("Upload a subtitle file no larger than 4 MiB.");
+  }
+  const query = new URLSearchParams({ language: policy.language });
+  if (policy.forced) query.set("forced", "true");
+  if (policy.replace) query.set("replace", "true");
+  return ownApiClient.request<SubtitleUploadReport>(
+    `/subtitles/items/${encodeURIComponent(itemId)}/upload?${query}`,
+    { method: "POST", binaryBody: file },
+  );
+}
+
 /** Fetches TMDB artwork for every matched title whose cover is missing. */
 export function importMissingArtwork(): Promise<{ queued: number }> {
   return ownApiClient.request("/library/titles/artwork", {

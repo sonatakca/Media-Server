@@ -9,6 +9,7 @@ const api = vi.hoisted(() => ({
   generateTrickplay: vi.fn(),
   requestTitleSubtitles: vi.fn(),
   removeLibraryTitle: vi.fn(),
+  uploadTitleSubtitle: vi.fn(),
 }));
 vi.mock("../../lib/libraryAdminApi", async (importActual) => ({
   ...(await importActual<typeof import("../../lib/libraryAdminApi")>()),
@@ -126,4 +127,186 @@ it("says so when the title is gone", async () => {
   api.getLibraryTitle.mockRejectedValue({ status: 404 });
   renderAt();
   expect(await screen.findByText("library.titleMissing")).toBeTruthy();
+});
+
+/**
+ * The file the operator already has.
+ *
+ * What is checked is the contract the control exists for: the file's own name
+ * never leaves the page, the policy chosen beside the button is what is sent,
+ * and the name the server gave the file is what comes back to the operator.
+ */
+it("uploads a subtitle for a film under the policy beside the button", async () => {
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "installed",
+    relativePath: "Movies/Dune (2021)/Dune (2021).tur.srt",
+    fileName: "Dune (2021).tur.srt",
+    language: "tur",
+    cueCount: 812,
+    attached: true,
+  });
+  renderAt();
+
+  const picker = (await screen.findByLabelText(
+    "library.uploadSubtitle",
+  )) as HTMLElement;
+  fireEvent.click(picker);
+  const input = document.querySelector(
+    'input[type="file"]',
+  ) as HTMLInputElement;
+  const file = new File(
+    ["1\n00:00:01,000 --> 00:00:02,000\nHi\n\n"],
+    "[YTS] dune.tr.srt",
+    {
+      type: "application/x-subrip",
+    },
+  );
+  fireEvent.change(input, { target: { files: [file] } });
+
+  await waitFor(() =>
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith(ID, file, {
+      language: "tur",
+      forced: false,
+      replace: false,
+    }),
+  );
+  // The renamed file is the answer worth showing.
+  expect(await screen.findByText(/Dune \(2021\)\.tur\.srt/)).toBeTruthy();
+});
+
+it("sends the chosen language rather than the default", async () => {
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "duplicate",
+    relativePath: "x",
+    fileName: "Dune (2021).eng.srt",
+    language: "eng",
+    cueCount: null,
+    attached: false,
+  });
+  renderAt();
+
+  fireEvent.change(await screen.findByLabelText("library.subtitleLanguage"), {
+    target: { value: "eng" },
+  });
+  fireEvent.click(screen.getByLabelText("library.subtitleForced"));
+  const input = document.querySelector(
+    'input[type="file"]',
+  ) as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { files: [new File(["x"], "s.srt")] },
+  });
+
+  await waitFor(() =>
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith(
+      ID,
+      expect.anything(),
+      { language: "eng", forced: true, replace: false },
+    ),
+  );
+});
+
+it("shows the server's own refusal, which is the only thing that says what to do", async () => {
+  api.uploadTitleSubtitle.mockRejectedValue(
+    Object.assign(
+      new Error(
+        "The destination holds a subtitle this system did not install.",
+      ),
+      { status: 409 },
+    ),
+  );
+  renderAt();
+
+  const input = (await screen
+    .findByLabelText("library.uploadSubtitle")
+    .then(() =>
+      document.querySelector('input[type="file"]'),
+    )) as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { files: [new File(["x"], "s.srt")] },
+  });
+
+  expect(await screen.findByText(/did not install/)).toBeTruthy();
+});
+
+it("sends a show's operator to the episode the subtitle belongs to", async () => {
+  api.getLibraryTitle.mockResolvedValue(
+    detail({ kind: "series", title: "Andor", files: 2, episodeCount: 2 }),
+  );
+  renderAt();
+
+  expect(await screen.findByText("library.uploadPerEpisode")).toBeTruthy();
+  // No film-level picker on a show: it would file the file against one episode.
+  expect(screen.queryByLabelText("library.subtitleLanguage")).toBeNull();
+});
+
+it("uploads to the episode a file belongs to, under the list's one policy", async () => {
+  const episodeId = "22222222-2222-4222-8222-222222222222";
+  api.getLibraryTitle.mockResolvedValue(
+    detail({
+      kind: "series",
+      title: "Andor",
+      files: 2,
+      episodeCount: 1,
+      seasons: [
+        {
+          id: "s1",
+          seasonNumber: 1,
+          episodes: [
+            {
+              id: episodeId,
+              seasonNumber: 1,
+              episodeNumber: 1,
+              title: "Kassa",
+              airDate: null,
+              mediaFileId: "file-1",
+              fileName: "Andor - S01E01.mkv",
+              monitored: true,
+              hasThumb: false,
+              stillUrl: null,
+              status: "downloaded",
+              hasMedia: true,
+              downloading: 0,
+              importing: 0,
+              processing: 0,
+              sizeBytes: 1,
+              resolution: 1080,
+              audioLanguages: ["eng"],
+              subtitleLanguages: [],
+              pendingSubtitles: [],
+              files: 1,
+              trickplayFiles: 0,
+            },
+          ],
+        },
+      ],
+    }),
+  );
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "installed",
+    relativePath: "Series/Andor/Season 1/Andor - S01E01.eng.srt",
+    fileName: "Andor - S01E01.eng.srt",
+    language: "eng",
+    cueCount: 400,
+    attached: true,
+  });
+  renderAt(`/admin/library/${ID}?tab=episodes`);
+
+  fireEvent.change(await screen.findByLabelText("library.subtitleLanguage"), {
+    target: { value: "eng" },
+  });
+  const input = document.querySelector(
+    'input[type="file"]',
+  ) as HTMLInputElement;
+  fireEvent.change(input, {
+    target: { files: [new File(["x"], "whatever.srt")] },
+  });
+
+  await waitFor(() =>
+    // The episode's own id, never the show's.
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith(
+      episodeId,
+      expect.anything(),
+      { language: "eng", forced: false, replace: false },
+    ),
+  );
 });

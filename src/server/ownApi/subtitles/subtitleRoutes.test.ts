@@ -9,6 +9,7 @@ import type {
   SubtitleWantRow,
 } from "./subtitleRepository";
 import { createSubtitleRoutes } from "./subtitleRoutes";
+import type { SubtitleUploader } from "./subtitleUpload";
 import type { SubtitleWant } from "./subtitleState";
 
 /**
@@ -42,7 +43,12 @@ function attemptRow(
   };
 }
 
-function harness(over: { attempt?: SubtitleAttemptRow | null } = {}) {
+function harness(
+  over: {
+    attempt?: SubtitleAttemptRow | null;
+    uploader?: SubtitleUploader;
+  } = {},
+) {
   const wants: SubtitleWant[] = [];
   const enqueued: Record<string, unknown>[] = [];
   const repository = {
@@ -69,7 +75,7 @@ function harness(over: { attempt?: SubtitleAttemptRow | null } = {}) {
     }),
   } as unknown as JobQueue;
   return {
-    routes: createSubtitleRoutes(repository, queue),
+    routes: createSubtitleRoutes(repository, queue, undefined, over.uploader),
     wants,
     enqueued,
     repository,
@@ -93,11 +99,26 @@ interface Captured {
 
 function invoke(
   definition: RouteDefinition,
-  options: { body?: unknown; params?: Record<string, string> } = {},
+  options: {
+    body?: unknown;
+    params?: Record<string, string>;
+    /** Query the upload route reads its policy from. */
+    search?: string;
+    /** Raw request bytes, for the routes that take a file rather than JSON. */
+    bytes?: Uint8Array;
+  } = {},
 ): Promise<Captured> {
   const captured: Captured = { status: 0, payload: undefined };
+  const bytes = options.bytes;
   const context = {
-    request: { once: () => undefined, off: () => undefined },
+    request: {
+      once: () => undefined,
+      off: () => undefined,
+      headers: bytes ? { "content-length": String(bytes.length) } : {},
+      async *[Symbol.asyncIterator]() {
+        if (bytes) yield Buffer.from(bytes);
+      },
+    },
     response: {
       setHeader: () => undefined,
       end: (chunk?: string) => {
@@ -114,7 +135,7 @@ function invoke(
       },
     },
     requestId: "req",
-    url: new URL("http://localhost/ownAPI/v1/subtitles"),
+    url: new URL(`http://localhost/ownAPI/v1/subtitles${options.search ?? ""}`),
     params: options.params ?? {},
     method: definition.method,
     principal: { userId: "u", isAdministrator: true },
@@ -412,5 +433,117 @@ describe("a provider sign-in", () => {
         },
       ),
     ).rejects.toThrow();
+  });
+});
+
+/**
+ * A subtitle a person hands over.
+ *
+ * The route is checked for the two things it alone decides: that the policy is
+ * read from the query and nothing in the request names a destination, and that
+ * a refusal from the writer reaches the client as a refusal rather than as a
+ * success with an error inside it.
+ */
+describe("uploading a subtitle", () => {
+  const uploaderThat = (
+    result: Awaited<ReturnType<SubtitleUploader["upload"]>>,
+  ) => {
+    const calls: Parameters<SubtitleUploader["upload"]>[0][] = [];
+    return {
+      calls,
+      uploader: {
+        upload: async (request: Parameters<SubtitleUploader["upload"]>[0]) => {
+          calls.push(request);
+          return result;
+        },
+      } satisfies SubtitleUploader,
+    };
+  };
+
+  const ITEM = "44444444-5555-4666-8777-888888888888";
+  const SRT = new TextEncoder().encode(
+    "1\n00:00:01,000 --> 00:00:02,000\nHi\n\n",
+  );
+
+  it("is not mounted at all when no uploader is wired in", () => {
+    expect(harness().routes.some((r) => r.path.endsWith("/upload"))).toBe(
+      false,
+    );
+  });
+
+  it("passes the bytes and the query's policy, and never a path", async () => {
+    const spy = uploaderThat({
+      outcome: "installed",
+      relativePath: "Movies/Dune (2021)/Dune (2021).tur.srt",
+      fileName: "Dune (2021).tur.srt",
+      language: "tur",
+      cueCount: 1,
+      attached: true,
+    });
+    const h = harness({ uploader: spy.uploader });
+    const captured = await invoke(
+      route(h.routes, "POST", "/subtitles/items/:itemId/upload"),
+      {
+        params: { itemId: ITEM },
+        search: "?language=tr&forced=true&replace=true",
+        bytes: SRT,
+      },
+    );
+
+    expect(spy.calls).toHaveLength(1);
+    expect(spy.calls[0]).toMatchObject({
+      itemId: ITEM,
+      // Normalised to ISO 639-2 at the edge, as every other route does.
+      language: "tur",
+      forced: true,
+      hearingImpaired: false,
+      replace: true,
+    });
+    expect(Object.keys(spy.calls[0] as object)).not.toContain("path");
+    expect(captured.payload?.data).toMatchObject({
+      fileName: "Dune (2021).tur.srt",
+      attached: true,
+    });
+  });
+
+  it("refuses a language the player would never show", async () => {
+    const spy = uploaderThat({
+      outcome: "duplicate",
+      relativePath: "x",
+      fileName: "x",
+      language: "fra",
+      cueCount: null,
+      attached: false,
+    });
+    const h = harness({ uploader: spy.uploader });
+
+    await expect(
+      invoke(route(h.routes, "POST", "/subtitles/items/:itemId/upload"), {
+        params: { itemId: ITEM },
+        search: "?language=fr",
+        bytes: SRT,
+      }),
+    ).rejects.toThrow(/Turkish or English/);
+    expect(spy.calls).toHaveLength(0);
+  });
+
+  it("turns a refusal from the writer into a refusal to the client", async () => {
+    const spy = uploaderThat({
+      outcome: "error",
+      failure: "destination-occupied",
+      reason: "The destination holds a subtitle this system did not install.",
+    });
+    const h = harness({ uploader: spy.uploader });
+
+    await expect(
+      invoke(route(h.routes, "POST", "/subtitles/items/:itemId/upload"), {
+        params: { itemId: ITEM },
+        search: "?language=tur",
+        bytes: SRT,
+      }),
+    ).rejects.toMatchObject({
+      code: "SUBTITLE_UPLOAD_REFUSED",
+      statusCode: 409,
+    });
   });
 });

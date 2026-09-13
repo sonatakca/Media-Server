@@ -22,9 +22,28 @@ import type {
  * relative path, and locked fields are preserved by the SQL itself rather than
  * by a read-modify-write that could race a concurrent metadata edit.
  */
+/**
+ * Recording one sidecar outside a scan.
+ *
+ * Kept off `CatalogueScanStore` on purpose: the reconciler does not need it,
+ * and widening the scanner's contract with an operation only the subtitle
+ * upload uses would invite a future scan to reach for the single-row write
+ * where it should be rewriting the set.
+ */
+export interface ExternalSubtitleRecorder {
+  attachExternalSubtitle(input: {
+    mediaFileId: string;
+    relativePath: string;
+    codec: string;
+    isText: boolean;
+    language: string | null;
+    isForced: boolean;
+  }): Promise<void>;
+}
+
 export function createCatalogueScanStore(
   pool: DatabasePool,
-): CatalogueScanStore & OrganizedFileRecorder {
+): CatalogueScanStore & OrganizedFileRecorder & ExternalSubtitleRecorder {
   return {
     /*
      * Follow a file the organiser moved, one row at a time.
@@ -203,6 +222,61 @@ export function createCatalogueScanStore(
       const row = result.rows[0];
       if (!row) throw new Error("Media file upsert returned no row.");
       return { id: row.id, changed: row.changed };
+    },
+
+    /**
+     * One sidecar, recorded against one file, without touching the others.
+     *
+     * `replaceExternalSubtitles` is the scan's operation: it knows the whole
+     * set for a title and rewrites it. A subtitle somebody has just uploaded is
+     * the opposite case — one new file among however many are already recorded
+     * — and rewriting the set from a single addition would drop every row the
+     * scan had put there. Idempotent by path, so uploading the same subtitle
+     * twice records it once, and a later scan renumbers the whole set anyway.
+     */
+    attachExternalSubtitle: async (input: {
+      mediaFileId: string;
+      relativePath: string;
+      codec: string;
+      isText: boolean;
+      language: string | null;
+      isForced: boolean;
+    }) => {
+      const existing = await pool.query(
+        `SELECT 1 FROM media_streams
+          WHERE media_file_id = $1 AND is_external = true
+            AND external_relative_path = $2`,
+        [input.mediaFileId, input.relativePath],
+      );
+      if ((existing.rowCount ?? 0) > 0) return;
+      /*
+       * The next index above whatever is already there, in the range the scan
+       * reserves for sidecars, so a synthetic index can never collide with a
+       * real stream's.
+       */
+      const used = await pool.query<{ next: number | null }>(
+        `SELECT MAX(stream_index) + 1 AS next FROM media_streams
+          WHERE media_file_id = $1 AND is_external = true`,
+        [input.mediaFileId],
+      );
+      const streamIndex = Math.max(10_000, used.rows[0]?.next ?? 10_000);
+      await pool.query(
+        `INSERT INTO media_streams (
+           media_file_id, stream_index, kind, codec, language, is_default, is_forced,
+           is_external, is_text_subtitle, external_relative_path
+         )
+         VALUES ($1, $2, 'subtitle', $3, $4, false, $5, true, $6, $7)
+         ON CONFLICT (media_file_id, stream_index) DO NOTHING`,
+        [
+          input.mediaFileId,
+          streamIndex,
+          input.codec,
+          input.language,
+          input.isForced,
+          input.isText,
+          input.relativePath,
+        ],
+      );
     },
 
     replaceExternalSubtitles: async (

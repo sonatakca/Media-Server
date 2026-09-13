@@ -192,6 +192,47 @@ as "needs a sign-in" rather than an error.
 | `PUT /subtitles/providers/:id/session`    | Body `cookie`, `userAgent`. Sealed; waiting attempts resumed. |
 | `DELETE /subtitles/providers/:id/session` | Forget it; the provider is asked anonymously again.           |
 | `POST /subtitles/items/:itemId`           | Wants a language for a film, or every episode file of a show. |
+| `POST /subtitles/items/:itemId/upload`    | Files a subtitle the operator already has. See below.         |
+
+## Uploading one by hand
+
+Finding a subtitle is slow, uncertain and worth retrying, which is what the want,
+the attempt and the state machine are for. A file somebody already has is none of
+those things: they know the title and the language and they want an answer now.
+So `POST /subtitles/items/:itemId/upload` is a plain request-scoped operation —
+no want, no attempt, no queue — and it answers with where the file went.
+
+The bytes are the request body; the policy is the query
+(`language`, `forced`, `hearingImpaired`, `replace`). Nothing about the file's
+own name is read. The item must resolve to exactly **one** media file, so a film
+or one episode: a show is refused rather than having the subtitle filed against
+whichever episode sorted first.
+
+What is unchanged is the writing. It goes through `subtitleStorage.install`, so
+the destination is derived from the media file, containment is checked after
+resolution, a link on the way down is refused, a new file goes in with a
+no-clobber `link`, and a subtitle this system did not install is never replaced
+whatever `replace` says. `[YTS] dune.2021.tr.srt` therefore arrives as
+`Dune (2021).tur.srt`.
+
+Two things differ from a downloaded subtitle, both deliberate:
+
+- **Windows-1254 is accepted.** The payload validator takes UTF-8 only and must
+  not guess, which is right for a provider's bytes and wrong for a person's own
+  file — Turkish subtitles in the wild are overwhelmingly CP1254. The route
+  applies `toUtf8` first, and the language the operator chose is what makes that
+  a decision rather than a guess. ASS is still refused: installing one means
+  owning its styling, fonts and script directives.
+- **The sidecar is recorded against the media file at once**, through
+  `attachExternalSubtitle`. The player's track list is built from
+  `media_streams`, and only a library scan writes external rows — so without
+  this the file would be correctly named, correctly placed and invisible until
+  the next scan. Failing to attach does not fail the upload; the scan still
+  picks it up.
+
+Only Turkish and English are accepted, because those are the only languages the
+player offers. Filing a third correctly and then never showing it is a worse
+answer than a refusal that says so.
 
 ## How far it has been proven
 

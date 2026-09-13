@@ -149,6 +149,16 @@ export const en = {
   "library.subtitlesUnconfigured":
     "Automatic subtitles are not configured on this server.",
   "library.subtitlesFailed": "The subtitle search could not be started.",
+  "library.uploadSubtitle": "Upload subtitle",
+  "library.uploadSubtitleHint":
+    "Choose a .srt or .vtt file. It is renamed and filed beside the video.",
+  "library.subtitleUploaded": "Subtitle added as",
+  "library.subtitleAlreadyThere": "That subtitle was already there:",
+  "library.subtitleLanguage": "Subtitle language",
+  "library.subtitleForced": "Forced (signs only)",
+  "library.subtitleReplace": "Replace one added here before",
+  "library.uploadPerEpisode":
+    "Upload a subtitle from the episode it belongs to, on the Episodes tab.",
   "library.saveFailed": "The change could not be saved. Try again.",
   "library.remove": "Remove",
   "library.removeHeading": "Remove",

@@ -3,6 +3,7 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import {
   generateTrickplay,
   requestTitleSubtitles,
+  uploadTitleSubtitle,
 } from "../../lib/libraryAdminApi";
 import { setWanted } from "../../lib/wantedApi";
 
@@ -26,13 +27,25 @@ export function useTitleActions(onChanged: () => void | Promise<void>) {
       setNotice({ tone: "ok", text: await work() });
       await onChanged();
     } catch (error) {
+      const status = (error as { status?: number }).status;
       setNotice({
         tone: "error",
         text:
-          (error as { status?: number }).status === 404 &&
-          key.startsWith("subtitles:")
+          status === 404 && key.startsWith("subtitles:")
             ? t("library.subtitlesUnconfigured")
-            : t("library.actionFailed"),
+            : status === 404 && key.startsWith("subtitle-upload:")
+              ? t("library.subtitlesUnconfigured")
+              : /*
+                 * A refused upload carries the only sentence that says what to
+                 * do about it — which file is in the way, or what the bytes
+                 * turned out to be — so it is shown rather than flattened into
+                 * "the action failed".
+                 */
+                key.startsWith("subtitle-upload:") &&
+                  error instanceof Error &&
+                  error.message
+                ? error.message
+                : t("library.actionFailed"),
       });
     } finally {
       setBusy(null);
@@ -49,6 +62,24 @@ export function useTitleActions(onChanged: () => void | Promise<void>) {
         return result.files === 0
           ? t("library.subtitlesNoFiles")
           : `${t("library.subtitlesQueued")} ${result.queued}/${result.files}`;
+      }),
+    /**
+     * A subtitle the operator already has.
+     *
+     * Reports the name the file was given rather than the one it arrived
+     * under: renaming it into the library's convention is the whole point, and
+     * seeing the new name is how somebody knows it worked.
+     */
+    uploadSubtitle: (
+      itemId: string,
+      file: File,
+      policy: { language: "tur" | "eng"; forced?: boolean; replace?: boolean },
+    ) =>
+      run(`subtitle-upload:${itemId}`, async () => {
+        const report = await uploadTitleSubtitle(itemId, file, policy);
+        return report.outcome === "duplicate"
+          ? `${t("library.subtitleAlreadyThere")} ${report.fileName}`
+          : `${t("library.subtitleUploaded")} ${report.fileName}`;
       }),
     trickplay: (itemId: string, force = false) =>
       run(`trickplay:${itemId}`, async () => {

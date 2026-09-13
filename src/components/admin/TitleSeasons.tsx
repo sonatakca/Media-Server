@@ -9,6 +9,7 @@ import {
 import { Facts } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
 import { Tooltip } from "../ui/Tooltip";
+import { SubtitleUploadButton } from "./SubtitleUploadControl";
 import { getThumbImageUrl } from "../../lib/mediaApi";
 
 /** The episode's own still when the catalogue has one, TMDB's when it does not. */
@@ -38,6 +39,14 @@ export interface SeasonActions {
   busy: boolean;
   onSubtitles: (itemId: string) => void;
   onTrickplay: (itemId: string) => void;
+  /**
+   * A subtitle file for one episode, under the policy chosen above the list.
+   *
+   * Absent where there is nowhere to choose that policy — the library board
+   * shows the same rows without the workspace's controls — and the row then
+   * offers no upload rather than guessing a language.
+   */
+  onUploadSubtitle?: (itemId: string, file: File) => void;
 }
 
 function EpisodeRow({
@@ -110,6 +119,14 @@ function EpisodeRow({
               TR
             </button>
           </Tooltip>
+          {actions.onUploadSubtitle ? (
+            <SubtitleUploadButton
+              iconOnly
+              disabled={actions.busy}
+              label={`${t("library.uploadSubtitle")} · ${code}`}
+              onPick={(file) => actions.onUploadSubtitle?.(episode.id!, file)}
+            />
+          ) : null}
         </div>
       ) : null}
     </li>

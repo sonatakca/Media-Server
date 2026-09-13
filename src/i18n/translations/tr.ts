@@ -150,6 +150,16 @@ export const tr = {
   "library.subtitlesUnconfigured":
     "Otomatik altyazı bu sunucuda yapılandırılmamış.",
   "library.subtitlesFailed": "Altyazı araması başlatılamadı.",
+  "library.uploadSubtitle": "Altyazı yükle",
+  "library.uploadSubtitleHint":
+    "Bir .srt veya .vtt dosyası seçin. Videonun yanına adlandırılarak yerleştirilir.",
+  "library.subtitleUploaded": "Altyazı şu adla eklendi:",
+  "library.subtitleAlreadyThere": "Bu altyazı zaten vardı:",
+  "library.subtitleLanguage": "Altyazı dili",
+  "library.subtitleForced": "Zorunlu (yalnızca yazılar)",
+  "library.subtitleReplace": "Daha önce buradan eklenmiş olanı değiştir",
+  "library.uploadPerEpisode":
+    "Altyazıyı ait olduğu bölümden, Bölümler sekmesinde yükleyin.",
   "library.saveFailed": "Değişiklik kaydedilemedi. Yeniden deneyin.",
   "library.remove": "Kaldır",
   "library.removeHeading": "Kaldır:",

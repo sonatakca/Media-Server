@@ -26,6 +26,11 @@ import { releaseSearchUrl } from "../../lib/wantedApi";
 import { RemoveTitleDialog } from "../../components/admin/RemoveTitleDialog";
 import { TitleSeasons } from "../../components/admin/TitleSeasons";
 import { TitlePoster } from "../../components/admin/TitlePoster";
+import {
+  SubtitleUploadButton,
+  SubtitleUploadPolicyFields,
+  type SubtitleUploadPolicy,
+} from "../../components/admin/SubtitleUploadControl";
 import { SeriesMonitoringPanel } from "../../components/admin/SeriesMonitoringPanel";
 import {
   Facts,
@@ -66,6 +71,12 @@ export function TitlePage() {
     }
   }, [itemId]);
   const actions = useTitleActions(load);
+  /** Chosen once and applied to whichever film or episode a file is dropped on. */
+  const [uploadPolicy, setUploadPolicy] = useState<SubtitleUploadPolicy>({
+    language: "tur",
+    forced: false,
+    replace: false,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -271,6 +282,37 @@ export function TitlePage() {
                   {t("admin.subtitles.title")}
                 </Link>
               </div>
+              {/*
+                A subtitle belongs to one video. A film is one video, so it can
+                be uploaded here; a show is many, and choosing one on the
+                operator's behalf would file the file against whichever episode
+                sorted first — so a show is sent to its episodes instead.
+              */}
+              {detail.kind === "series" ? (
+                <p className="mt-3 text-xs font-semibold text-white/35">
+                  {t("library.uploadPerEpisode")}
+                </p>
+              ) : (
+                <>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <SubtitleUploadPolicyFields
+                      policy={uploadPolicy}
+                      onChange={setUploadPolicy}
+                      disabled={busy}
+                    />
+                    <SubtitleUploadButton
+                      disabled={busy}
+                      label={t("library.uploadSubtitle")}
+                      onPick={(file) =>
+                        actions.uploadSubtitle(detail.id, file, uploadPolicy)
+                      }
+                    />
+                  </div>
+                  <p className="mt-2 text-xs font-semibold text-white/35">
+                    {t("library.uploadSubtitleHint")}
+                  </p>
+                </>
+              )}
             </section>
           ) : null}
 
@@ -334,14 +376,37 @@ export function TitlePage() {
       ) : null}
 
       {tab === "episodes" ? (
-        <TitleSeasons
-          detail={detail}
-          actions={{
-            busy,
-            onSubtitles: (id) => void actions.findSubtitles(id),
-            onTrickplay: (id) => void actions.trickplay(id),
-          }}
-        />
+        <>
+          {/*
+            One policy for the whole list. Subtitles are added to a season an
+            episode at a time, and choosing the language again on every row
+            would be the same answer typed ten times.
+          */}
+          <div className="mb-3 flex flex-wrap items-center gap-2 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3">
+            <Captions size={16} aria-hidden="true" className="text-white/45" />
+            <span className="text-xs font-black uppercase tracking-[0.12em] text-white/45">
+              {t("library.uploadSubtitle")}
+            </span>
+            <SubtitleUploadPolicyFields
+              policy={uploadPolicy}
+              onChange={setUploadPolicy}
+              disabled={busy}
+            />
+            <p className="w-full text-xs font-semibold text-white/35">
+              {t("library.uploadSubtitleHint")}
+            </p>
+          </div>
+          <TitleSeasons
+            detail={detail}
+            actions={{
+              busy,
+              onSubtitles: (id) => void actions.findSubtitles(id),
+              onTrickplay: (id) => void actions.trickplay(id),
+              onUploadSubtitle: (id, file) =>
+                void actions.uploadSubtitle(id, file, uploadPolicy),
+            }}
+          />
+        </>
       ) : null}
 
       {tab === "artwork" ? (

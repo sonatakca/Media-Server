@@ -18,6 +18,7 @@ whatever it is called.
 | Rendition package                         | `<title>/.seyirlik/`, `video/`, `audio/`   | the **packager**          | The package manifest.                                                                                      |
 | **Subtitle that arrived with a download** | `<title>/<name>.<lang>.srt`                | the **importer**          | An `import_files` row with role `subtitle`.                                                                |
 | **Subtitle this system fetched**          | `<title>/<name>.<lang>[.forced][.sdh].srt` | the **subtitle service**  | A `subtitle_installations` row carrying the path _and the digest of the bytes written_.                    |
+| **Subtitle a person uploaded**            | `<title>/<name>.<lang>[.forced][.sdh].srt` | the **subtitle service**  | The same row, with no want, attempt or provider: uploading goes through the same writer.                   |
 | Anything else                             | —                                          | **nobody**                | Left alone.                                                                                                |
 
 ## Two boundaries worth stating out loud
@@ -55,6 +56,13 @@ import time, which is a change to the import pipeline rather than to this one.
 A subtitle has nowhere to carry a marker of its own — unlike an NFO, which has
 its text — which is why ownership here is a database record rather than a
 property of the file.
+
+An **uploaded** subtitle is the fetched kind, not a third kind. It goes through
+`subtitleStorage.install` like any other, so it is named by the same convention,
+contained by the same root check, refused by the same no-clobber rule, and
+recorded in `subtitle_installations` with `want_id`, `attempt_id` and
+`provider_id` all null. That record is what lets a corrected file be uploaded
+over it later; without it a re-upload would be refused as somebody else's.
 
 ## Removing a title
 

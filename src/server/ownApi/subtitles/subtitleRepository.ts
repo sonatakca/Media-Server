@@ -125,6 +125,13 @@ export interface SubtitleRepository {
   openAttempt(wantId: string): Promise<string | null>;
   /** The playable file of a film, or of every episode under a show or season. */
   titleMediaFiles(itemId: string): Promise<string[]>;
+  /**
+   * Where one media file is, library-relative and POSIX.
+   *
+   * The storage writer derives every destination from this, so it is read from
+   * the catalogue and never from anything that arrived in a request.
+   */
+  mediaFileRelativePath(mediaFileId: string): Promise<string | null>;
   /** Attempts paused for a sign-in to this provider. */
   attemptsAwaiting(providerId: string): Promise<string[]>;
   recordInstallation(input: RecordInstallationInput): Promise<string>;
@@ -374,6 +381,14 @@ export function createSubtitleRepository(
         [itemId],
       );
       return result.rows.map((row) => row.id);
+    },
+
+    async mediaFileRelativePath(mediaFileId) {
+      const result = await pool.query<{ relative_path: string }>(
+        `SELECT relative_path FROM media_files WHERE id = $1`,
+        [mediaFileId],
+      );
+      return result.rows[0]?.relative_path ?? null;
     },
 
     async attemptsAwaiting(providerId) {

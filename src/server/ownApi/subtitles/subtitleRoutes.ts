@@ -16,6 +16,10 @@ import {
 } from "./providerSessionVault";
 import type { SubtitleProvider } from "./subtitleProvider";
 import { OwnApiError } from "../ownApiHandler";
+import { readBinaryBody } from "../api/http";
+import { normalizeLanguage } from "../../../renditions/processing/languages";
+import { MAX_SUBTITLE_BYTES } from "./subtitlePayload";
+import type { SubtitleUploader } from "./subtitleUpload";
 
 /** The providers this deployment asks, and where their sign-ins are kept. */
 export interface SubtitleSessionRoutesOptions {
@@ -50,11 +54,70 @@ function parsePolicy(body: Record<string, unknown>) {
   return want;
 }
 
+/**
+ * The languages an uploaded subtitle may be filed under.
+ *
+ * The player only ever offers English and Turkish tracks, so accepting a third
+ * would file a subtitle correctly and then never show it — a worse answer than
+ * a refusal that says so.
+ */
+const UPLOADABLE_LANGUAGES = new Set(["eng", "tur"]);
+
 export function createSubtitleRoutes(
   repository: SubtitleRepository,
   queue: JobQueue,
   sessions?: SubtitleSessionRoutesOptions,
+  uploader?: SubtitleUploader,
 ): RouteDefinition[] {
+  const uploadRoutes: RouteDefinition[] = uploader
+    ? [
+        {
+          /**
+           * A subtitle somebody already has, filed and named by this system.
+           *
+           * The bytes arrive as the request body and the policy in the query,
+           * which is the same shape the custom-artwork upload uses. A caller
+           * never names a path: the destination is derived from the media file
+           * the item resolves to, exactly as it is for a downloaded one.
+           */
+          method: "POST",
+          path: "/subtitles/items/:itemId/upload",
+          access: "admin",
+          handle: async (context) => {
+            context.requirePrincipal();
+            const itemId = requireUuid(context.params.itemId, "itemId");
+            const language = normalizeLanguage(
+              context.url.searchParams.get("language") ?? "",
+            );
+            if (!UPLOADABLE_LANGUAGES.has(language))
+              throw validationError(
+                "Subtitles can be uploaded as Turkish or English.",
+              );
+            const flag = (name: string) =>
+              context.url.searchParams.get(name) === "true";
+            const bytes = await readBinaryBody(
+              context.request,
+              MAX_SUBTITLE_BYTES,
+            );
+            const result = await uploader.upload({
+              itemId,
+              language,
+              forced: flag("forced"),
+              hearingImpaired: flag("hearingImpaired"),
+              replace: flag("replace"),
+              bytes,
+            });
+            if (result.outcome === "error")
+              throw new OwnApiError(
+                "SUBTITLE_UPLOAD_REFUSED",
+                result.reason,
+                409,
+              );
+            sendData(context.response, context.requestId, result);
+          },
+        },
+      ]
+    : [];
   const sessionRoutes: RouteDefinition[] = sessions
     ? [
         {
@@ -146,6 +209,7 @@ export function createSubtitleRoutes(
     : [];
   return [
     ...sessionRoutes,
+    ...uploadRoutes,
     {
       /**
        * Subtitles for a whole title: the film, or every episode of a show or
