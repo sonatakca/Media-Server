@@ -5772,6 +5772,9 @@ export function CustomVideoPlayer({
       isWaitingForAudioTranscodeReady ||
       fullscreenSeekPreview !== null) &&
     !error;
+  const shouldShowBrandLoadingOverlay =
+    showPreparingArtwork ||
+    ((progress.isBuffering || isWaitingForAudioTranscodeReady) && !error);
   const isCompactPhonePlayer =
     Math.min(viewport.width, viewport.height) < 640 &&
     Math.max(viewport.width, viewport.height) < 1024;
@@ -5911,7 +5914,7 @@ export function CustomVideoPlayer({
       />
 
       <AnimatePresence initial={false}>
-        {showPreparingArtwork ? (
+        {shouldShowBrandLoadingOverlay ? (
           <motion.div
             key="player-preparing-artwork"
             aria-hidden="true"
