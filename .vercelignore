@@ -3,5 +3,18 @@
 .impeccable
 .scratch
 .vitest-attachments
+.git
+.vercel
+dist
+node_modules
+.env
+.env.*
+.DS_Store
+*.tsbuildinfo
+.ProjectStructure
+.ProjectStructure.txt
+.FileContents
+.FileContents.txt
+docs/windows-migration
 public/artwork/seyirlik/animations/Seyirlik Loading Animation 0.5s.mov
 public/artwork/seyirlik/animations/Seyirlik Loading Animation 2.5s.mov
