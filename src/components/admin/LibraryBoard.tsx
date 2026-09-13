@@ -19,6 +19,11 @@ import { RemoveTitleDialog } from "./RemoveTitleDialog";
 import { TitlePoster } from "./TitlePoster";
 import { Tooltip } from "../ui/Tooltip";
 import { TitleSeasons } from "./TitleSeasons";
+import {
+  SubtitleUploadButton,
+  SubtitleUploadPolicyFields,
+  type SubtitleUploadPolicy,
+} from "./SubtitleUploadControl";
 import { Facts, NoticeLine, StatusPill } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
 import { useTitleActions } from "./useTitleActions";
@@ -49,9 +54,11 @@ async function fetchAll(): Promise<Titles> {
 function SeasonsInline({
   title,
   actions,
+  uploadPolicy,
 }: {
   title: LibraryTitle;
   actions: ReturnType<typeof useTitleActions>;
+  uploadPolicy: SubtitleUploadPolicy;
 }) {
   const { t } = useLanguage();
   const [detail, setDetail] = useState<LibraryTitleDetail | null>(null);
@@ -84,6 +91,8 @@ function SeasonsInline({
         busy: actions.busy !== null,
         onSubtitles: (itemId) => void actions.findSubtitles(itemId),
         onTrickplay: (itemId) => void actions.trickplay(itemId),
+        onUploadSubtitle: (itemId, file) =>
+          void actions.uploadSubtitle(itemId, file, uploadPolicy),
       }}
     />
   );
@@ -92,6 +101,16 @@ function SeasonsInline({
 export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
   const { t } = useLanguage();
   const [kind, setKind] = useState<LibraryTitleKind>("movie");
+  /*
+   * Chosen once for the board rather than on every row. Subtitles are added a
+   * file at a time to a season being worked through, and asking for the
+   * language again on each of them is the same answer typed ten times.
+   */
+  const [uploadPolicy, setUploadPolicy] = useState<SubtitleUploadPolicy>({
+    language: "tur",
+    forced: false,
+    replace: false,
+  });
   const [titles, setTitles] = useState<Titles>({
     movie: null,
     series: null,
@@ -282,6 +301,23 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
         />
       </div>
 
+      {kind !== "book" ? (
+        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-3 py-2">
+          <Captions size={14} aria-hidden="true" className="text-white/40" />
+          <span className="text-xs font-black uppercase tracking-[0.12em] text-white/45">
+            {t("library.uploadSubtitle")}
+          </span>
+          <SubtitleUploadPolicyFields
+            policy={uploadPolicy}
+            onChange={setUploadPolicy}
+            disabled={actions.busy !== null}
+          />
+          <p className="w-full text-xs font-semibold text-white/35">
+            {t("library.uploadSubtitleHint")}
+          </p>
+        </div>
+      ) : null}
+
       <NoticeLine notice={actions.notice} />
 
       {failed ? (
@@ -402,6 +438,25 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                             <Captions size={13} aria-hidden="true" />
                             {t("library.findTurkish")}
                           </button>
+                          {/*
+                            A film is one video, so a subtitle can be dropped on
+                            it here. A show is many, and its episodes carry their
+                            own buttons under Seasons — dropping one on the show
+                            would file it against whichever episode sorted first.
+                          */}
+                          {title.kind === "series" ? null : (
+                            <SubtitleUploadButton
+                              disabled={actions.busy !== null}
+                              label={`${t("library.uploadSubtitle")} · ${title.title}`}
+                              onPick={(file) =>
+                                void actions.uploadSubtitle(
+                                  title.id,
+                                  file,
+                                  uploadPolicy,
+                                )
+                              }
+                            />
+                          )}
                         </>
                       ) : null}
                       <button
@@ -417,7 +472,11 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                 </div>
                 {expanded ? (
                   <div className="mt-3 border-t border-white/10 pt-3">
-                    <SeasonsInline title={title} actions={actions} />
+                    <SeasonsInline
+                      title={title}
+                      actions={actions}
+                      uploadPolicy={uploadPolicy}
+                    />
                   </div>
                 ) : null}
               </li>

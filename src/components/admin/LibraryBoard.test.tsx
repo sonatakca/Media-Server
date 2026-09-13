@@ -17,6 +17,7 @@ const api = vi.hoisted(() => ({
   requestTitleSubtitles: vi.fn(),
   generateTrickplay: vi.fn(),
   importMissingArtwork: vi.fn(async () => ({ queued: 0 })),
+  uploadTitleSubtitle: vi.fn(),
 }));
 vi.mock("../../lib/libraryAdminApi", async (importActual) => ({
   ...(await importActual<typeof import("../../lib/libraryAdminApi")>()),
@@ -353,4 +354,135 @@ it("places a title's logo where it was adjusted to sit", async () => {
   expect(placed?.style.top).toBe("25%");
   expect(placed?.style.width).toBe("60%");
   expect(placed?.querySelector("img")).toBeTruthy();
+});
+
+/**
+ * The board is where an operator actually works, so the upload has to be here
+ * and not only on a title's own page. Pinned because it was missing from this
+ * screen once already.
+ */
+it("takes a subtitle for a film from the board itself", async () => {
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "installed",
+    relativePath: "Movies/Held/Held.tur.srt",
+    fileName: "Held.tur.srt",
+    language: "tur",
+    cueCount: 12,
+    attached: true,
+  });
+  renderBoard();
+
+  const held = (await screen.findByText("Held")).closest("li")!;
+  const input = within(held)
+    .getByLabelText("library.uploadSubtitle · Held")
+    .parentElement!.querySelector('input[type="file"]') as HTMLInputElement;
+  const file = new File(["1\n00:00:01,000 --> 00:00:02,000\nHi\n\n"], "x.srt");
+  fireEvent.change(input, { target: { files: [file] } });
+
+  await waitFor(() =>
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith("held", file, {
+      language: "tur",
+      forced: false,
+      replace: false,
+    }),
+  );
+  expect(await screen.findByText(/Held\.tur\.srt/)).toBeTruthy();
+});
+
+it("offers no film-level upload on a show, whose episodes carry their own", async () => {
+  renderBoard();
+  fireEvent.click(await screen.findByText("library.shows"));
+
+  const show = (await screen.findByText("Show")).closest("li")!;
+  expect(
+    within(show).queryByLabelText("library.uploadSubtitle · Show"),
+  ).toBeNull();
+});
+
+it("uses the board's one language for whatever is uploaded next", async () => {
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "duplicate",
+    relativePath: "x",
+    fileName: "Held.eng.srt",
+    language: "eng",
+    cueCount: null,
+    attached: false,
+  });
+  renderBoard();
+  await screen.findByText("Held");
+
+  fireEvent.change(screen.getByLabelText("library.subtitleLanguage"), {
+    target: { value: "eng" },
+  });
+  const held = screen.getByText("Held").closest("li")!;
+  const input = within(held)
+    .getByLabelText("library.uploadSubtitle · Held")
+    .parentElement!.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["x"], "x.srt")] } });
+
+  await waitFor(() =>
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith(
+      "held",
+      expect.anything(),
+      { language: "eng", forced: false, replace: false },
+    ),
+  );
+});
+
+it("takes a subtitle for one episode from the expanded season", async () => {
+  api.getLibraryTitle.mockResolvedValue({
+    ...title({ id: "show", kind: "series", title: "Show", hasMedia: true }),
+    mediaFileId: null,
+    fileName: null,
+    catalogueComplete: true,
+    seasons: [
+      {
+        id: "s1",
+        seasonNumber: 1,
+        episodes: [
+          {
+            ...facts,
+            hasMedia: true,
+            files: 1,
+            id: "e1",
+            seasonNumber: 1,
+            episodeNumber: 1,
+            title: "Pilot",
+            airDate: null,
+            mediaFileId: "f1",
+            fileName: "Show.S01E01.mkv",
+            monitored: true,
+          },
+        ],
+      },
+    ],
+  });
+  api.uploadTitleSubtitle.mockResolvedValue({
+    outcome: "installed",
+    relativePath: "Series/Show/Season 1/Show.S01E01.tur.srt",
+    fileName: "Show.S01E01.tur.srt",
+    language: "tur",
+    cueCount: 9,
+    attached: true,
+  });
+  renderBoard();
+  fireEvent.click(await screen.findByRole("tab", { name: /library\.shows/ }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: /library\.seasons/ }),
+  );
+
+  const episode = (await screen.findByText("Pilot")).closest("li")!;
+  const input = within(episode)
+    .getByLabelText("library.uploadSubtitle · E01")
+    .parentElement!.querySelector('input[type="file"]') as HTMLInputElement;
+  fireEvent.change(input, { target: { files: [new File(["x"], "x.srt")] } });
+
+  await waitFor(() =>
+    // The episode's own id, never the show's.
+    expect(api.uploadTitleSubtitle).toHaveBeenCalledWith(
+      "e1",
+      expect.anything(),
+      { language: "tur", forced: false, replace: false },
+    ),
+  );
 });

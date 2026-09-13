@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useId, useRef } from "react";
 import { Upload } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { MAX_SUBTITLE_UPLOAD_BYTES } from "../../lib/libraryAdminApi";
@@ -32,13 +32,16 @@ export function SubtitleUploadPolicyFields({
   disabled: boolean;
 }) {
   const { t } = useLanguage();
+  // Generated, because the board and the title workspace each render a set and
+  // a fixed id would make one of them label the other's control.
+  const selectId = useId();
   return (
     <>
-      <label className="sr-only" htmlFor="subtitle-upload-language">
+      <label className="sr-only" htmlFor={selectId}>
         {t("library.subtitleLanguage")}
       </label>
       <select
-        id="subtitle-upload-language"
+        id={selectId}
         value={policy.language}
         disabled={disabled}
         onChange={(event) =>
