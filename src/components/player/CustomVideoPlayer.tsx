@@ -5915,7 +5915,7 @@ export function CustomVideoPlayer({
           <motion.div
             key="player-preparing-artwork"
             aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-[12] overflow-hidden bg-black"
+            className="pointer-events-none absolute inset-0 z-[100] overflow-hidden bg-black"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
