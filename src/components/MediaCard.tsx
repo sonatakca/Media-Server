@@ -20,6 +20,7 @@ import {
 } from "../lib/routes";
 import type { MediaItem } from "../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../lib/watchStatus";
+import { getMediaPoseStyle, type MediaPoseKind } from "../lib/mediaPose";
 import {
   DEFAULT_LOGO_SHADOW,
   getLogoLayout,
@@ -312,6 +313,14 @@ export function MediaCard({
 
   const isLandscape = variant === "landscape" || isEpisode;
   const isGrid = layout === "grid";
+  const poseKind: MediaPoseKind = isContinueWatchingCard
+    ? "dense"
+    : isLandscape
+      ? "landscape"
+      : item.Type === "Book"
+        ? "cover"
+        : "poster";
+  const poseStyle = getMediaPoseStyle(item.Id, poseKind);
 
   const sizeClass = isGrid
     ? "w-full"
@@ -388,7 +397,8 @@ export function MediaCard({
         {...motionProps}
       >
         <div
-          className={`media-card-cinematic group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:-translate-y-1.5 hover:scale-[1.012] hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
+          style={poseStyle}
+          className={`media-card-cinematic media-pose media-pose--dense group relative grid aspect-[4/3] h-full min-w-0 grid-cols-2 scroll-ml-4 overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card hover:border-white/20 ${
             isWatched
               ? "border-emerald-300/70 ring-2 ring-emerald-300/45"
               : "border-white/10"
@@ -607,10 +617,9 @@ export function MediaCard({
       {...motionProps}
     >
       <div
-        className={`media-card-cinematic group relative h-full w-full min-w-0 scroll-ml-4 transform-gpu overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card transition-[border-color,box-shadow,transform] duration-300 will-change-transform hover:border-white/20 motion-reduce:hover:translate-y-0 motion-reduce:hover:scale-100 ${
-          isEpisode
-            ? "flex flex-col hover:-translate-y-1"
-            : `block ${aspectClass} hover:-translate-y-1.5 hover:scale-[1.025]`
+        style={poseStyle}
+        className={`media-card-cinematic media-pose media-pose--${poseKind} group relative h-full w-full min-w-0 scroll-ml-4 overflow-hidden rounded-xl border bg-[var(--surface)] shadow-cinematic-card hover:border-white/20 ${
+          isEpisode ? "flex flex-col" : `block ${aspectClass}`
         } ${
           isWatched
             ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.28),0_22px_60px_rgba(16,185,129,0.2)]"
@@ -620,7 +629,8 @@ export function MediaCard({
         <Link
           to={primaryCardTo}
           aria-label={`${primaryActionLabel} ${title}`}
-          className="absolute inset-0 z-30 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+          // Inset: the card clips its overflow, so an outer ring never showed.
+          className="absolute inset-0 z-30 rounded-[inherit] focus:outline-none focus:ring-2 focus:ring-inset focus:ring-[var(--accent)]"
         />
 
         <div
