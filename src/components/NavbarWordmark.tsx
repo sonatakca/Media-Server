@@ -24,6 +24,9 @@ const FRAMES = [
 // One full lap in half a second, the pace of the brand loading animation.
 export const WORDMARK_FRAME_MS = 500 / FRAMES.length;
 
+// How long the cycle keeps going after loading has finished.
+export const WORDMARK_LOADING_TAIL_MS = 2500;
+
 function subscribeAccentTheme(listener: () => void): () => void {
   const observer = new MutationObserver(listener);
   observer.observe(document.documentElement, {
@@ -39,9 +42,9 @@ function getAccentThemeName(): string | undefined {
 
 /**
  * The wordmark in the current accent colour. While anything is loading it
- * cycles through the palette; once loading ends it carries on until it comes
- * round to the accent colour again, so it never stops on a stranger's colour
- * and never jumps. A load shorter than one frame does not animate at all.
+ * cycles through the palette, and keeps cycling for a further 2.5 seconds
+ * once loading ends. Then it carries on until it comes round to the accent
+ * colour again, so it never stops on a stranger's colour and never jumps.
  */
 export function NavbarWordmark({ className = "" }: { className?: string }) {
   const accentName = useSyncExternalStore(
@@ -68,6 +71,11 @@ export function NavbarWordmark({ className = "" }: { className?: string }) {
   useEffect(() => {
     latestRef.current = { accentIndex, isLoading, reduceMotion };
   });
+  // When the most recent load finished; null while one is in progress.
+  const loadEndedAtRef = useRef<number | null>(null);
+  useEffect(() => {
+    loadEndedAtRef.current = isLoading ? null : Date.now();
+  }, [isLoading]);
 
   useEffect(() => {
     if (!isLoading || reduceMotion || timerRef.current !== null) return;
@@ -75,8 +83,12 @@ export function NavbarWordmark({ className = "" }: { className?: string }) {
     shownRef.current = latestRef.current.accentIndex;
     timerRef.current = window.setInterval(() => {
       const latest = latestRef.current;
+      const loadEndedAt = loadEndedAtRef.current;
+      const inTail =
+        loadEndedAt !== null &&
+        Date.now() - loadEndedAt < WORDMARK_LOADING_TAIL_MS;
       const settled =
-        !latest.isLoading && shownRef.current === latest.accentIndex;
+        !latest.isLoading && !inTail && shownRef.current === latest.accentIndex;
 
       if (settled || latest.reduceMotion) {
         window.clearInterval(timerRef.current ?? undefined);

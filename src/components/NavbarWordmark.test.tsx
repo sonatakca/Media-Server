@@ -1,7 +1,11 @@
 import { act, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { beginLoadingActivity } from "../lib/loadingActivity";
-import { NavbarWordmark, WORDMARK_FRAME_MS } from "./NavbarWordmark";
+import {
+  NavbarWordmark,
+  WORDMARK_FRAME_MS,
+  WORDMARK_LOADING_TAIL_MS,
+} from "./NavbarWordmark";
 
 function shownAccent(container: HTMLElement): string | null {
   return container
@@ -34,7 +38,7 @@ describe("NavbarWordmark", () => {
     expect(shownAccent(container)).toBe("Gold");
   });
 
-  it("cycles in palette order while loading and comes round to the accent", () => {
+  it("cycles in palette order while loading, then 2.5s more, then lands on the accent", () => {
     const { container } = render(<NavbarWordmark />);
     let end = () => {};
     act(() => {
@@ -49,24 +53,50 @@ describe("NavbarWordmark", () => {
     expect(shownAccent(container)).toBe("Warm Red");
 
     act(() => end());
-    // Still mid-lap: it keeps going rather than snapping back.
+    // The tail: five full laps after loading ends, still cycling.
+    advanceFrames(30);
+    expect(shownAccent(container)).toBe("Warm Red");
     advanceFrames(1);
     expect(shownAccent(container)).toBe("Amber");
+    // Past the tail it comes round to the accent and stays there.
     advanceFrames(1);
     expect(shownAccent(container)).toBe("Gold");
-    advanceFrames(6);
+    advanceFrames(12);
     expect(shownAccent(container)).toBe("Gold");
   });
 
-  it("does not animate for a load shorter than one frame", () => {
+  it("stops within half a second of the tail ending", () => {
+    const { container } = render(<NavbarWordmark />);
+    let end = () => {};
+    act(() => {
+      end = beginLoadingActivity();
+    });
+    act(() => end());
+
+    // 28 frames in, well inside the tail, it is still off the accent.
+    advanceFrames(28);
+    expect(shownAccent(container)).toBe("Warm Red");
+    // To the end of the tail, plus at most one lap to come round.
+    act(() => {
+      vi.advanceTimersByTime(
+        WORDMARK_LOADING_TAIL_MS - 28 * WORDMARK_FRAME_MS + 500,
+      );
+    });
+    expect(shownAccent(container)).toBe("Gold");
+    advanceFrames(12);
+    expect(shownAccent(container)).toBe("Gold");
+  });
+
+  it("keeps cycling after even a very short load", () => {
     const { container } = render(<NavbarWordmark />);
 
+    let end = () => {};
     act(() => {
-      const end = beginLoadingActivity();
-      end();
+      end = beginLoadingActivity();
     });
+    act(() => end());
     advanceFrames(1);
-    expect(shownAccent(container)).toBe("Gold");
+    expect(shownAccent(container)).toBe("Olive");
   });
 
   it("follows an accent change", async () => {
