@@ -1,4 +1,5 @@
 import { randomUuid } from "../../lib/randomId";
+import { trackLoadingActivity } from "../../lib/loadingActivity";
 
 export const OWN_API_V1_BASE_PATH = "/ownAPI/v1";
 
@@ -42,6 +43,8 @@ export interface OwnApiRequestOptions {
   signal?: AbortSignal;
   headers?: Record<string, string>;
   csrf?: boolean;
+  /** A poll or other unprompted read, which should not count as the page loading. */
+  background?: boolean;
 }
 
 export interface OwnApiNativeUser {
@@ -405,6 +408,7 @@ export function createOwnApiClient({
       binaryBody,
       signal,
       headers: additionalHeaders = {},
+      background = false,
       // Every unsafe method needs CSRF evidence. Making this opt-in meant each
       // new mutation had to remember, and every one of them forgot.
       csrf = method !== "GET",
@@ -490,13 +494,16 @@ export function createOwnApiClient({
     let response: Response;
 
     try {
-      response = await fetchImpl(`${normalizedBasePath}${safePath}`, {
+      const pendingResponse = fetchImpl(`${normalizedBasePath}${safePath}`, {
         method,
         credentials: "include",
         headers,
         body: serializedBody,
         signal,
       });
+      response = await (background
+        ? pendingResponse
+        : trackLoadingActivity(pendingResponse));
     } catch {
       throw new OwnApiClientError({
         status: 0,

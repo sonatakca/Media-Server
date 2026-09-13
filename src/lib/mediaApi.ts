@@ -1057,7 +1057,9 @@ export async function getTaskObservation(
     if (since) query.set("since", since);
     if (after) query.set("after", after);
     const page: TaskObservation & { next: string | null } =
-      await ownApiClient.request(`/admin/tasks?${query}`);
+      await ownApiClient.request(`/admin/tasks?${query}`, {
+        background: true,
+      });
     observedAt ??= page.observedAt;
     for (const task of page.tasks) tasks.set(task.id, task);
     if (page.next !== null && after !== null && page.next <= after) {

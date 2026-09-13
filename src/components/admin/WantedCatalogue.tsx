@@ -37,8 +37,8 @@ export function WantedCatalogue({
   const [saving, setSaving] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const refresh = () =>
-      void listWanted()
+    const refresh = (background: boolean) =>
+      void listWanted({ background })
         .then((data) => {
           if (!cancelled) {
             setWanted(data.items);
@@ -48,8 +48,8 @@ export function WantedCatalogue({
         .catch(() => {
           if (!cancelled) setSaveFailure(true);
         });
-    refresh();
-    const interval = window.setInterval(refresh, 15000);
+    refresh(false);
+    const interval = window.setInterval(() => refresh(true), 15000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);

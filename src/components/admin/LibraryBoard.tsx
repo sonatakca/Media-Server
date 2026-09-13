@@ -46,8 +46,10 @@ const KIND_LABEL: Record<LibraryTitleKind, TranslationKey> = {
 
 type Titles = Record<LibraryTitleKind, LibraryTitle[] | null>;
 
-async function fetchAll(): Promise<Titles> {
-  const [movie, series, book] = await Promise.all(KINDS.map(listLibraryTitles));
+async function fetchAll({ background = false } = {}): Promise<Titles> {
+  const [movie, series, book] = await Promise.all(
+    KINDS.map((kind) => listLibraryTitles(kind, { background })),
+  );
   return { movie: movie!, series: series!, book: book! };
 }
 
@@ -157,8 +159,8 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
 
   useEffect(() => {
     let cancelled = false;
-    const refresh = () =>
-      void fetchAll()
+    const refresh = (background: boolean) =>
+      void fetchAll({ background })
         .then((value) => {
           if (cancelled) return;
           setTitles(value);
@@ -167,8 +169,8 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
         .catch(() => {
           if (!cancelled) setFailed(true);
         });
-    refresh();
-    const interval = window.setInterval(refresh, 15000);
+    refresh(false);
+    const interval = window.setInterval(() => refresh(true), 15000);
     return () => {
       cancelled = true;
       window.clearInterval(interval);

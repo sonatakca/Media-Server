@@ -40,6 +40,8 @@ export interface MaintenanceTaskQuery {
   active?: number;
   activeOffset?: number;
   taskIds?: readonly string[];
+  /** A poll, which should not count as the page loading. */
+  background?: boolean;
 }
 
 /** What the server assumes when a caller names neither page size. */
@@ -77,6 +79,7 @@ export async function getMaintenanceTasks(
       query.set("include", ids.slice(offset, offset + 100).join(","));
     const snapshot = await ownApiClient.request<MaintenanceSnapshot>(
       `/admin/maintenance/tasks${query.size ? `?${query}` : ""}`,
+      options.background ? { background: true } : undefined,
     );
     for (const task of snapshot.tasks) tasks.set(task.id, task);
     queue = snapshot.queue;

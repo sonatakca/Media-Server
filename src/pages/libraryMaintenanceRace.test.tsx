@@ -59,7 +59,8 @@ it("connects sibling actions to the canonical reader and reveals ultra-fast work
     </MemoryRouter>,
   );
   await waitFor(() =>
-    expect(request).toHaveBeenCalledWith("/admin/maintenance/tasks"),
+    // The first read is foreground, so it carries no background option.
+    expect(request).toHaveBeenCalledWith("/admin/maintenance/tasks", undefined),
   );
   await userEvent.click(
     screen.getByRole("button", { name: t("maintenance.renameFiles") }),

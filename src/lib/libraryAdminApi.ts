@@ -78,9 +78,11 @@ export interface TitleRemovalReport {
 
 export async function listLibraryTitles(
   kind: LibraryTitleKind,
+  { background = false } = {},
 ): Promise<LibraryTitle[]> {
   const { items } = await ownApiClient.request<{ items: LibraryTitle[] }>(
     `/library/titles?${new URLSearchParams({ kind })}`,
+    background ? { background } : undefined,
   );
   return items;
 }

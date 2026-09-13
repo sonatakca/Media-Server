@@ -27,11 +27,11 @@ export interface WantedLibrary {
   name: string;
   kind: "movies" | "series";
 }
-export function listWanted() {
+export function listWanted({ background = false } = {}) {
   return ownApiClient.request<{
     items: WantedItem[];
     libraries: WantedLibrary[];
-  }>("/wanted");
+  }>("/wanted", background ? { background } : undefined);
 }
 export function searchWanted(
   kind: "movie" | "tv",

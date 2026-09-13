@@ -77,6 +77,8 @@ export function useMaintenanceTasks(options?: {
   const idsKey = (options?.taskIds ?? []).join(",");
   const activeOffset = options?.activeOffset ?? 0;
   const historyOffset = options?.historyOffset ?? 0;
+  // Only the first read is the panel loading; the rest are polls.
+  const hasReadRef = useRef(false);
   const load =
     options?.load ??
     (() =>
@@ -84,6 +86,7 @@ export function useMaintenanceTasks(options?: {
         taskIds: options?.taskIds ?? [],
         activeOffset,
         historyOffset,
+        background: hasReadRef.current,
       }));
   const poll = options?.poll ?? true;
 
@@ -130,6 +133,7 @@ export function useMaintenanceTasks(options?: {
           if (snapshot.pages) setPages(snapshot.pages);
           setFailed(false);
           setRefreshedAt(Date.now());
+          hasReadRef.current = true;
         } catch {
           // Kept quiet rather than raised as a toast: this runs on a timer, and
           // a server restart would otherwise stack a notification every beat.

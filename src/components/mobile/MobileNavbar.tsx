@@ -12,10 +12,10 @@ import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
-import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
 import { LanguageSwitch } from "../LanguageSwitch";
+import { NavbarWordmark } from "../NavbarWordmark";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
@@ -61,7 +61,6 @@ export function MobileNavbar() {
   const location = useLocation();
   const session = getCachedSession();
   const { t } = useLanguage();
-  const [logoFailed, setLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [bottomNavBlurred, setBottomNavBlurred] = useState(false);
   const libraryRoutes = {
@@ -120,19 +119,7 @@ export function MobileNavbar() {
           aria-label={t("nav.brandHome")}
           className="flex h-10 min-w-0 flex-1 items-center pr-2"
         >
-          {!logoFailed ? (
-            <img
-              src={logoOnSide}
-              alt="Seyirlik"
-              draggable={false}
-              className="max-h-12 w-full max-w-40 object-contain object-left"
-              onError={() => setLogoFailed(true)}
-            />
-          ) : (
-            <span className="text-base font-black tracking-wide text-white">
-              Seyirlik
-            </span>
-          )}
+          <NavbarWordmark className="h-9" />
         </Link>
 
         <div className="flex shrink-0 items-center gap-1">

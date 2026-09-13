@@ -2,12 +2,12 @@ import { NotificationHistoryButton } from "../notifications/NotificationHistoryB
 import { useEffect, useRef, useState } from "react";
 import { LogOut, Palette, Search, ShieldCheck, UserRound } from "lucide-react";
 import { Link, NavLink, useNavigate } from "react-router-dom";
-import logoOnSide from "../../assets/Seyirlik-Logo-OnSide-cropped.png";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
+import { NavbarWordmark } from "../NavbarWordmark";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { Tooltip } from "../ui/Tooltip";
@@ -22,7 +22,6 @@ export function DesktopNavbar() {
   const navigate = useNavigate();
   const session = getCachedSession();
   const { t } = useLanguage();
-  const [desktopLogoFailed, setDesktopLogoFailed] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const libraryRoutes = {
     movies: "/movies",
@@ -93,25 +92,8 @@ export function DesktopNavbar() {
           className="flex min-w-0 shrink-0 items-center"
           aria-label={t("nav.brandHome")}
         >
-          <span className="flex h-10 w-[6.25rem] shrink-0 items-center max-[360px]:w-[5.65rem] sm:h-12 sm:w-[10.5rem] lg:w-[11.5rem]">
-            {!desktopLogoFailed ? (
-              <img
-                src={logoOnSide}
-                alt="Seyirlik"
-                draggable={false}
-                className="h-8 w-full object-contain object-left sm:h-11"
-                onError={() => setDesktopLogoFailed(true)}
-              />
-            ) : (
-              <span className="flex items-center gap-3">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white text-sm font-black text-zinc-950 shadow-cinematic-card">
-                  S
-                </span>
-                <span className="text-base font-black tracking-wide text-white sm:text-lg">
-                  Seyirlik
-                </span>
-              </span>
-            )}
+          <span className="flex h-10 shrink-0 items-center sm:h-12">
+            <NavbarWordmark className="h-8 sm:h-11" />
           </span>
         </Link>
 

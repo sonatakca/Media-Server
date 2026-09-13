@@ -1,4 +1,6 @@
+import { useEffect } from "react";
 import { useLanguage } from "../i18n/LanguageContext";
+import { beginLoadingActivity } from "../lib/loadingActivity";
 
 interface LoadingSpinnerProps {
   label?: string;
@@ -19,6 +21,9 @@ export function LoadingSpinner({
   const { t } = useLanguage();
   const displayLabel = label ?? t("common.loading");
   const accessibleLabel = displayLabel || t("common.loading");
+
+  // A spinner on screen is something loading, including a lazy route's fallback.
+  useEffect(() => beginLoadingActivity(), []);
 
   return (
     <div
