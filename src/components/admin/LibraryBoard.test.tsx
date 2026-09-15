@@ -18,6 +18,7 @@ const api = vi.hoisted(() => ({
   generateTrickplay: vi.fn(),
   importMissingArtwork: vi.fn(async () => ({ queued: 0 })),
   uploadTitleSubtitle: vi.fn(),
+  getSubtitleSyncTracks: vi.fn(),
 }));
 vi.mock("../../lib/libraryAdminApi", async (importActual) => ({
   ...(await importActual<typeof import("../../lib/libraryAdminApi")>()),
@@ -485,4 +486,36 @@ it("takes a subtitle for one episode from the expanded season", async () => {
       { language: "tur", forced: false, replace: false },
     ),
   );
+});
+
+it("opens a film's subtitle sync under its own row, and not on a show", async () => {
+  api.getSubtitleSyncTracks.mockResolvedValue({
+    mediaFileId: "f",
+    subtitles: [],
+    audio: [],
+  });
+  render(
+    <MemoryRouter>
+      <LibraryBoard />
+    </MemoryRouter>,
+  );
+  const open = await screen.findByRole("button", {
+    name: "library.syncSubtitle · Held",
+  });
+  expect(open.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(open);
+  expect(open.getAttribute("aria-expanded")).toBe("true");
+  await waitFor(() =>
+    expect(api.getSubtitleSyncTracks).toHaveBeenCalledWith("held"),
+  );
+  // Opened straight to the choice, not to a second button.
+  expect(await screen.findByText("library.syncNoTarget")).toBeTruthy();
+  fireEvent.click(open);
+  expect(screen.queryByText("library.syncNoTarget")).toBeNull();
+
+  fireEvent.click(screen.getByRole("tab", { name: /library\.shows/ }));
+  await screen.findByText("Show");
+  expect(
+    screen.queryByRole("button", { name: /^library\.syncSubtitle · / }),
+  ).toBeNull();
 });

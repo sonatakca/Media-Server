@@ -112,14 +112,17 @@ function preferredReference(
 export function SubtitleSyncPanel({
   itemId,
   onSynced,
+  initiallyOpen = false,
 }: {
   itemId: string;
   /** Called after a file was actually rewritten. */
   onSynced: () => void | Promise<void>;
+  /** For a caller that already has its own button, such as a library row. */
+  initiallyOpen?: boolean;
 }) {
   const { t } = useLanguage();
   const ids = { target: useId(), reference: useId() };
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initiallyOpen);
   const [tracks, setTracks] = useState<SubtitleSyncTracks | null>(null);
   const [target, setTarget] = useState<number | null>(null);
   const [kind, setKind] = useState<ReferenceKind>("subtitle");

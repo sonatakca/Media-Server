@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { Captions, ChevronDown, Download, Images, Trash2 } from "lucide-react";
+import {
+  Captions,
+  ChevronDown,
+  Download,
+  Images,
+  Timer,
+  Trash2,
+} from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import {
@@ -24,6 +31,7 @@ import {
   SubtitleUploadPolicyFields,
   type SubtitleUploadPolicy,
 } from "./SubtitleUploadControl";
+import { SubtitleSyncPanel } from "./SubtitleSyncPanel";
 import { Facts, NoticeLine, StatusPill } from "./libraryPresentation";
 import { actionButton, TONE_STYLE } from "./libraryStyle";
 import { useTitleActions } from "./useTitleActions";
@@ -123,6 +131,8 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [removing, setRemoving] = useState<LibraryTitle | null>(null);
+  /** The film whose subtitle sync panel is open under its row. */
+  const [syncing, setSyncing] = useState<string | null>(null);
 
   const reload = async () => {
     try {
@@ -447,17 +457,33 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                             would file it against whichever episode sorted first.
                           */}
                           {title.kind === "series" ? null : (
-                            <SubtitleUploadButton
-                              disabled={actions.busy !== null}
-                              label={`${t("library.uploadSubtitle")} · ${title.title}`}
-                              onPick={(file) =>
-                                void actions.uploadSubtitle(
-                                  title.id,
-                                  file,
-                                  uploadPolicy,
-                                )
-                              }
-                            />
+                            <>
+                              <SubtitleUploadButton
+                                disabled={actions.busy !== null}
+                                label={`${t("library.uploadSubtitle")} · ${title.title}`}
+                                onPick={(file) =>
+                                  void actions.uploadSubtitle(
+                                    title.id,
+                                    file,
+                                    uploadPolicy,
+                                  )
+                                }
+                              />
+                              <button
+                                type="button"
+                                className={actionButton}
+                                aria-expanded={syncing === title.id}
+                                aria-label={`${t("library.syncSubtitle")} · ${title.title}`}
+                                onClick={() =>
+                                  setSyncing(
+                                    syncing === title.id ? null : title.id,
+                                  )
+                                }
+                              >
+                                <Timer size={13} aria-hidden="true" />
+                                {t("library.syncSubtitle")}
+                              </button>
+                            </>
                           )}
                         </>
                       ) : null}
@@ -472,6 +498,18 @@ export function LibraryBoard({ refreshKey = 0 }: { refreshKey?: number }) {
                     </div>
                   </div>
                 </div>
+                {/*
+                  Opened under the row it belongs to, so the film being
+                  corrected is never in doubt; one at a time, because each
+                  panel follows its own running task.
+                */}
+                {syncing === title.id && title.kind !== "series" ? (
+                  <SubtitleSyncPanel
+                    itemId={title.id}
+                    initiallyOpen
+                    onSynced={reload}
+                  />
+                ) : null}
                 {expanded ? (
                   <div className="mt-3 border-t border-white/10 pt-3">
                     <SeasonsInline
