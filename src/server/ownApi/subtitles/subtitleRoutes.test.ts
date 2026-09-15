@@ -10,6 +10,8 @@ import type {
 } from "./subtitleRepository";
 import { createSubtitleRoutes } from "./subtitleRoutes";
 import type { SubtitleUploader } from "./subtitleUpload";
+import type { SubtitleSyncService } from "./subtitleSync";
+import type { JobRecord } from "../tasks/jobQueue";
 import type { SubtitleWant } from "./subtitleState";
 
 /**
@@ -545,5 +547,191 @@ describe("uploading a subtitle", () => {
       code: "SUBTITLE_UPLOAD_REFUSED",
       statusCode: 409,
     });
+  });
+});
+
+describe("re-timing a subtitle", () => {
+  const SYNC_ITEM = "33333333-4444-4555-8666-777777777777";
+  const TASK = "44444444-5555-4666-8777-888888888888";
+
+  function syncHarness(job: Partial<JobRecord> | null = {}) {
+    const enqueued: Record<string, unknown>[] = [];
+    const repository = {
+      titleMediaFiles: vi.fn(async () => [MEDIA]),
+    } as unknown as SubtitleRepository;
+    const queue = {
+      enqueue: vi.fn(async (options: Record<string, unknown>) => {
+        enqueued.push(options);
+        return TASK;
+      }),
+      get: vi.fn(async () =>
+        job === null
+          ? null
+          : ({
+              id: TASK,
+              jobType: SUBTITLE_JOB_TYPES.sync,
+              payload: { mediaFileId: MEDIA },
+              status: "succeeded",
+              progressMessage: null,
+              result: {
+                outcome: "applied",
+                relativePath: "movies/Film (2020)/Film (2020).tur.srt",
+                fileName: "Film (2020).tur.srt",
+                offsetSeconds: -14.56,
+                rate: 1,
+                confidence: 0.76,
+              },
+              ...job,
+            } as JobRecord),
+      ),
+    } as unknown as JobQueue;
+    const sync = {
+      tracks: vi.fn(async (mediaFileId: string) => ({
+        mediaFileId,
+        subtitles: [],
+        audio: [],
+      })),
+      sync: vi.fn(),
+    } satisfies SubtitleSyncService;
+    return {
+      routes: createSubtitleRoutes(
+        repository,
+        queue,
+        undefined,
+        undefined,
+        sync,
+      ),
+      enqueued,
+      sync,
+    };
+  }
+
+  it("is not mounted on a deployment that cannot sync", () => {
+    const h = harness();
+    expect(
+      h.routes.some((r) => r.path.startsWith("/subtitles/items/:itemId/sync")),
+    ).toBe(false);
+  });
+
+  it("lists the tracks of the title's one file", async () => {
+    const h = syncHarness();
+    const captured = await invoke(
+      route(h.routes, "GET", "/subtitles/items/:itemId/sync"),
+      { params: { itemId: SYNC_ITEM } },
+    );
+    expect(h.sync.tracks).toHaveBeenCalledWith(MEDIA);
+    expect(captured.payload?.data).toEqual({
+      mediaFileId: MEDIA,
+      subtitles: [],
+      audio: [],
+    });
+  });
+
+  it("queues one correction per track and answers with the task", async () => {
+    const h = syncHarness();
+    const captured = await invoke(
+      route(h.routes, "POST", "/subtitles/items/:itemId/sync"),
+      {
+        params: { itemId: SYNC_ITEM },
+        body: {
+          targetStreamIndex: 3,
+          reference: { kind: "subtitle", streamIndex: 2 },
+        },
+      },
+    );
+    expect(captured.status).toBe(202);
+    expect(captured.payload?.data).toMatchObject({ taskId: TASK });
+    expect(h.enqueued).toEqual([
+      {
+        jobType: SUBTITLE_JOB_TYPES.sync,
+        payload: {
+          mediaFileId: MEDIA,
+          targetStreamIndex: 3,
+          reference: { kind: "subtitle", streamIndex: 2 },
+          dryRun: false,
+        },
+        dedupeKey: `subtitle-sync:${MEDIA}:3`,
+      },
+    ]);
+  });
+
+  it("refuses a request that names a path or an unknown reference", async () => {
+    const h = syncHarness();
+    const post = route(h.routes, "POST", "/subtitles/items/:itemId/sync");
+    await expect(
+      invoke(post, {
+        params: { itemId: SYNC_ITEM },
+        body: {
+          targetStreamIndex: 3,
+          reference: { kind: "subtitle", streamIndex: 2 },
+          relativePath: "../../elsewhere.srt",
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    await expect(
+      invoke(post, {
+        params: { itemId: SYNC_ITEM },
+        body: {
+          targetStreamIndex: 3,
+          reference: { kind: "video", streamIndex: 0 },
+        },
+      }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    expect(h.enqueued).toEqual([]);
+  });
+
+  it("reports what a finished sync did, without its library path", async () => {
+    const h = syncHarness();
+    const captured = await invoke(
+      route(h.routes, "GET", "/subtitles/items/:itemId/sync/:taskId"),
+      { params: { itemId: SYNC_ITEM, taskId: TASK } },
+    );
+    expect(captured.payload?.data).toEqual({
+      taskId: TASK,
+      status: "succeeded",
+      message: null,
+      result: {
+        outcome: "applied",
+        fileName: "Film (2020).tur.srt",
+        offsetSeconds: -14.56,
+        rate: 1,
+        confidence: 0.76,
+      },
+    });
+  });
+
+  it("gives a running sync's sentence and no result yet", async () => {
+    const h = syncHarness({
+      status: "running",
+      progressMessage: "Listening to the audio",
+      result: null,
+    });
+    const captured = await invoke(
+      route(h.routes, "GET", "/subtitles/items/:itemId/sync/:taskId"),
+      { params: { itemId: SYNC_ITEM, taskId: TASK } },
+    );
+    expect(captured.payload?.data).toMatchObject({
+      status: "running",
+      message: "Listening to the audio",
+      result: null,
+    });
+  });
+
+  it("answers only for a sync task of this title", async () => {
+    for (const job of [
+      null,
+      { payload: { mediaFileId: "99999999-9999-4999-8999-999999999999" } },
+      { jobType: SUBTITLE_JOB_TYPES.run },
+    ]) {
+      const h = syncHarness(job);
+      await expect(
+        invoke(
+          route(h.routes, "GET", "/subtitles/items/:itemId/sync/:taskId"),
+          {
+            params: { itemId: SYNC_ITEM, taskId: TASK },
+          },
+        ),
+      ).rejects.toMatchObject({ statusCode: 404 });
+    }
   });
 });

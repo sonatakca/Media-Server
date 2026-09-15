@@ -20,6 +20,7 @@ import { readBinaryBody } from "../api/http";
 import { normalizeLanguage } from "../../../renditions/processing/languages";
 import { MAX_SUBTITLE_BYTES } from "./subtitlePayload";
 import type { SubtitleUploader } from "./subtitleUpload";
+import type { SubtitleSyncService } from "./subtitleSync";
 
 /** The providers this deployment asks, and where their sign-ins are kept. */
 export interface SubtitleSessionRoutesOptions {
@@ -63,12 +64,184 @@ function parsePolicy(body: Record<string, unknown>) {
  */
 const UPLOADABLE_LANGUAGES = new Set(["eng", "tur"]);
 
+/**
+ * The correction a client may ask for, read out of a request body.
+ *
+ * A client names *tracks*, by the stream indexes the catalogue gave them, and
+ * never a path — the same rule the upload route follows, for the same reason:
+ * the destination of every byte this subsystem writes is derived on the server
+ * from the media file, and letting a request body name one would undo that.
+ */
+function parseSyncBody(body: Record<string, unknown>) {
+  const reference = body.reference as Record<string, unknown> | undefined;
+  const index = (value: unknown) =>
+    Number.isSafeInteger(value) && (value as number) >= 0
+      ? (value as number)
+      : null;
+  const targetStreamIndex = index(body.targetStreamIndex);
+  const referenceStreamIndex = index(reference?.streamIndex);
+  if (
+    targetStreamIndex === null ||
+    !reference ||
+    (reference.kind !== "subtitle" && reference.kind !== "audio") ||
+    referenceStreamIndex === null
+  )
+    throw validationError(
+      "A subtitle sync names a subtitle track and what to time it against.",
+    );
+  /*
+   * A hand-given correction is passed through as the operator wrote it and is
+   * only checked for being a correction at all. The bounds are wide on purpose:
+   * this is the escape hatch for the case the aligner cannot serve, and
+   * narrowing it to what seems reasonable is how an escape hatch stops working.
+   */
+  if (
+    (body.offsetSeconds !== undefined &&
+      (typeof body.offsetSeconds !== "number" ||
+        !Number.isFinite(body.offsetSeconds) ||
+        Math.abs(body.offsetSeconds) > 24 * 3600)) ||
+    (body.rate !== undefined &&
+      (typeof body.rate !== "number" ||
+        !Number.isFinite(body.rate) ||
+        body.rate <= 0.5 ||
+        body.rate >= 2)) ||
+    (body.dryRun !== undefined && typeof body.dryRun !== "boolean")
+  )
+    throw validationError("That correction is not a plausible one.");
+  return {
+    targetStreamIndex,
+    reference: { kind: reference.kind, streamIndex: referenceStreamIndex },
+    ...(body.offsetSeconds === undefined
+      ? {}
+      : { offsetSeconds: body.offsetSeconds }),
+    ...(body.rate === undefined ? {} : { rate: body.rate }),
+    dryRun: body.dryRun === true,
+  };
+}
+
 export function createSubtitleRoutes(
   repository: SubtitleRepository,
   queue: JobQueue,
   sessions?: SubtitleSessionRoutesOptions,
   uploader?: SubtitleUploader,
+  sync?: SubtitleSyncService,
 ): RouteDefinition[] {
+  /**
+   * The one media file a sync request can mean.
+   *
+   * A film is one video and one subtitle belongs to one video, so a whole show
+   * is refused here rather than resolved to whichever episode sorted first —
+   * the same refusal the upload route makes, and for the same reason: a
+   * translation timed to one episode is wrong against every other.
+   */
+  const soleMediaFile = async (itemId: string): Promise<string> => {
+    const files = await repository.titleMediaFiles(itemId);
+    if (files.length === 0)
+      throw new OwnApiError(
+        "NOT_FOUND",
+        "This title has no playable file.",
+        404,
+      );
+    if (files.length > 1)
+      throw validationError(
+        "This title has more than one file. Sync the subtitle from the episode it belongs to.",
+      );
+    return files[0] as string;
+  };
+
+  const syncRoutes: RouteDefinition[] = sync
+    ? [
+        {
+          /** Which subtitle can be corrected, and what it can be timed against. */
+          method: "GET",
+          path: "/subtitles/items/:itemId/sync",
+          access: "admin",
+          handle: async (context) => {
+            context.requirePrincipal();
+            const itemId = requireUuid(context.params.itemId, "itemId");
+            sendData(
+              context.response,
+              context.requestId,
+              await sync.tracks(await soleMediaFile(itemId)),
+            );
+          },
+        },
+        {
+          /**
+           * Move one subtitle onto the film's timeline.
+           *
+           * Queued rather than answered, because the work is bounded by a disk
+           * rather than by arithmetic: reading the audio out of a twenty-gigabyte
+           * remux took most of six minutes on the deployed host, which no HTTP
+           * request between here and a browser survives. The proposal and what
+           * was done with it come back as the task's own result.
+           */
+          method: "POST",
+          path: "/subtitles/items/:itemId/sync",
+          access: "admin",
+          handle: async (context) => {
+            context.requirePrincipal();
+            const itemId = requireUuid(context.params.itemId, "itemId");
+            const body = asObjectBody(await context.readJson(), [
+              "targetStreamIndex",
+              "reference",
+              "offsetSeconds",
+              "rate",
+              "dryRun",
+            ]);
+            const mediaFileId = await soleMediaFile(itemId);
+            const request = parseSyncBody(body);
+            const jobId = await queue.enqueue({
+              jobType: SUBTITLE_JOB_TYPES.sync,
+              payload: { mediaFileId, ...request },
+              // One correction of one track at a time. A second press of the
+              // button joins the first rather than racing it for the lock.
+              dedupeKey: `subtitle-sync:${mediaFileId}:${request.targetStreamIndex}`,
+            });
+            sendAccepted(context.response, context.requestId, jobId);
+          },
+        },
+        {
+          /**
+           * What became of one correction.
+           *
+           * The task list says a task finished; it deliberately forwards
+           * nothing of a result but counters, so it cannot say whether the file
+           * was rewritten, by how much, or why it was refused. The operator who
+           * pressed the button needs exactly that, so this answers it — for a
+           * sync task of this title and nothing else, and without the
+           * library-relative path the result carries.
+           */
+          method: "GET",
+          path: "/subtitles/items/:itemId/sync/:taskId",
+          access: "admin",
+          handle: async (context) => {
+            context.requirePrincipal();
+            const itemId = requireUuid(context.params.itemId, "itemId");
+            const taskId = requireUuid(context.params.taskId, "taskId");
+            const mediaFileId = await soleMediaFile(itemId);
+            const job = await queue.get(taskId);
+            if (
+              !job ||
+              job.jobType !== SUBTITLE_JOB_TYPES.sync ||
+              job.payload.mediaFileId !== mediaFileId
+            )
+              throw new OwnApiError(
+                "TASK_NOT_FOUND",
+                "That subtitle sync could not be found.",
+                404,
+              );
+            const { relativePath: _path, ...result } = job.result ?? {};
+            sendData(context.response, context.requestId, {
+              taskId: job.id,
+              status: job.status,
+              message: job.status === "running" ? job.progressMessage : null,
+              result: job.status === "succeeded" && job.result ? result : null,
+            });
+          },
+        },
+      ]
+    : [];
   const uploadRoutes: RouteDefinition[] = uploader
     ? [
         {
@@ -210,6 +383,7 @@ export function createSubtitleRoutes(
   return [
     ...sessionRoutes,
     ...uploadRoutes,
+    ...syncRoutes,
     {
       /**
        * Subtitles for a whole title: the film, or every episode of a show or

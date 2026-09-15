@@ -39,6 +39,7 @@ export const TASK_FAMILIES: Record<TaskType, TaskFamily> = {
   "subtitle.run": "description",
   "subtitle.reconcile": "description",
   "subtitle.auth-resume": "description",
+  "subtitle.sync": "description",
   // Finding out what is on the disk at all.
   "library.scan": "discovery",
   "library.maintenance": "discovery",

@@ -1104,6 +1104,14 @@ export async function createNativeRuntime({
     providers: availableSubtitleProviders,
     sessions: subtitleSessions ?? subtitleVault?.manager,
     playback: playbackRefresh,
+    /*
+     * Re-timing an existing subtitle needs two things searching for one does
+     * not: the catalogue's own list of a file's tracks, which is what an
+     * operator picks from, and an FFmpeg to read a reference that lives inside
+     * the container. Named here rather than reached for inside the subsystem,
+     * so a deployment without them mounts no sync routes at all.
+     */
+    sync: { catalogue, ffmpegPath: ffmpegPath ?? "ffmpeg" },
   });
 
   const worker = createWorker({
@@ -1278,6 +1286,7 @@ export async function createNativeRuntime({
                 catalogue: scanStore,
               })
             : undefined,
+          subtitles.sync,
         )
       : []),
     ...createUserRoutes({

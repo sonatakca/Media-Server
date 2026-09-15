@@ -83,6 +83,18 @@ export interface RecordInstallationInput {
   readonly syncState?: SubtitleSyncState;
 }
 
+export interface RecordRetimingInput {
+  readonly mediaFileId: string;
+  readonly relativePath: string;
+  /** Only used when there is no row yet; an existing one keeps its own. */
+  readonly language: string;
+  readonly forced: boolean;
+  readonly format: "srt" | "vtt";
+  readonly sha256: string;
+  readonly sizeBytes: number;
+  readonly cueCount: number | null;
+}
+
 /** Raised when a conditional write matched no row. */
 export class SubtitleAttemptMovedError extends Error {
   constructor(attemptId: string, from: SubtitleState) {
@@ -135,6 +147,23 @@ export interface SubtitleRepository {
   /** Attempts paused for a sign-in to this provider. */
   attemptsAwaiting(providerId: string): Promise<string[]>;
   recordInstallation(input: RecordInstallationInput): Promise<string>;
+  /**
+   * Records that a subtitle already on disk was moved onto the media's timeline.
+   *
+   * Separate from `recordInstallation` because retiming is not an installation
+   * and must not be written as one. The bytes changed, so the digest that
+   * establishes ownership has to move with them or the next upgrade will refuse
+   * to touch a file this system itself wrote. Everything else about the
+   * installation — which want it answered, which attempt produced it, which
+   * provider it came from — is unchanged by moving it and is left alone, which
+   * an upsert built for a fresh install would overwrite with nulls.
+   *
+   * An insert when there is no row is the case where somebody put the subtitle
+   * there by hand: correcting it is the moment this system starts being
+   * responsible for those bytes, and saying so is what lets it correct them
+   * again later.
+   */
+  recordRetiming(input: RecordRetimingInput): Promise<void>;
   /** The digest this system recorded for a path, or `null` if it wrote none. */
   managedDigest(
     mediaFileId: string,
@@ -447,6 +476,33 @@ export function createSubtitleRepository(
         ],
       );
       return (result.rows[0] as { id: string }).id;
+    },
+
+    async recordRetiming(input) {
+      await pool.query(
+        `INSERT INTO subtitle_installations
+           (id, media_file_id, relative_path, language, forced,
+            hearing_impaired, format, sha256, size_bytes, cue_count, sync_state)
+         VALUES ($1, $2, $3, $4, $5, false, $6, $7, $8, $9, 'assumed-in-sync')
+         ON CONFLICT (media_file_id, relative_path) DO UPDATE
+           SET sha256 = EXCLUDED.sha256,
+               size_bytes = EXCLUDED.size_bytes,
+               cue_count = EXCLUDED.cue_count,
+               format = EXCLUDED.format,
+               sync_state = 'assumed-in-sync',
+               updated_at = now()`,
+        [
+          randomUUID(),
+          input.mediaFileId,
+          input.relativePath,
+          input.language,
+          input.forced,
+          input.format,
+          input.sha256,
+          input.sizeBytes,
+          input.cueCount,
+        ],
+      );
     },
 
     async managedDigest(mediaFileId, relativePath) {

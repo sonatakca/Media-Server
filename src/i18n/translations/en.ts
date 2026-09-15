@@ -26,6 +26,7 @@ export const en = {
   "tasks.subtitleRun": "Finding and installing subtitles",
   "tasks.subtitleReconcile": "Checking subtitle attempts",
   "tasks.subtitleResume": "Resuming subtitle download",
+  "tasks.subtitleSync": "Timing a subtitle to the film",
   "tasks.downloadCheckDetail":
     "Checking SABnzbd progress and reconciling download outcomes.",
   "tasks.importCheckDetail":
@@ -159,6 +160,32 @@ export const en = {
   "library.subtitleReplace": "Replace one added here before",
   "library.uploadPerEpisode":
     "Upload a subtitle from the episode it belongs to, on the Episodes tab.",
+  "library.syncSubtitle": "Sync subtitle",
+  "library.syncHint":
+    "Re-times a subtitle file against a track that is already in time. Nothing is written unless the match is convincing.",
+  "library.syncTarget": "Subtitle to correct",
+  "library.syncAgainst": "Sync against",
+  "library.syncAgainstSubtitle": "Existing subtitle",
+  "library.syncAgainstAudio": "Audio",
+  "library.syncReference": "Reference",
+  "library.syncAudioSlow": "Reading the audio takes a few minutes.",
+  "library.syncNoTarget":
+    "There is no subtitle file beside the video to correct. Subtitles inside the video can only be used as a reference.",
+  "library.syncNoReference": "There is nothing of this kind to sync against.",
+  "library.syncInVideo": "inside the video",
+  "library.syncDefault": "default",
+  "library.syncQueued": "Waiting for the worker…",
+  "library.syncRunning": "Syncing…",
+  "library.syncApplied": "Synced",
+  "library.syncEarlier": "moved earlier by",
+  "library.syncLater": "moved later by",
+  "library.syncSpeed": "speed ×",
+  "library.syncConfidence": "confidence",
+  "library.syncUnchanged":
+    "That subtitle is already in time. Nothing was changed.",
+  "library.syncFailed": "The sync could not finish.",
+  "library.syncCancelled": "The sync was cancelled. Nothing was changed.",
+  "library.syncTracksFailed": "The tracks of this video could not be read.",
   "library.saveFailed": "The change could not be saved. Try again.",
   "library.remove": "Remove",
   "library.removeHeading": "Remove",

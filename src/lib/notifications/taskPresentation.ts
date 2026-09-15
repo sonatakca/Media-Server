@@ -17,6 +17,7 @@ export const TASK_METRICS = {
   "subtitle.run": [],
   "subtitle.reconcile": ["examined"],
   "subtitle.auth-resume": [],
+  "subtitle.sync": [],
   "library.scan": [
     "itemsCreated",
     "itemsUpdated",

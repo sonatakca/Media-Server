@@ -32,6 +32,7 @@ import {
   type SubtitleUploadPolicy,
 } from "../../components/admin/SubtitleUploadControl";
 import { SeriesMonitoringPanel } from "../../components/admin/SeriesMonitoringPanel";
+import { SubtitleSyncPanel } from "../../components/admin/SubtitleSyncPanel";
 import {
   Facts,
   NoticeLine,
@@ -311,6 +312,9 @@ export function TitlePage() {
                   <p className="mt-2 text-xs font-semibold text-white/35">
                     {t("library.uploadSubtitleHint")}
                   </p>
+                  <div className="mt-3">
+                    <SubtitleSyncPanel itemId={detail.id} onSynced={load} />
+                  </div>
                 </>
               )}
             </section>

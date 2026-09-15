@@ -68,7 +68,7 @@ describe("when nothing is declared", () => {
     expect(disabledSubtitleJobTypes(undefined)).toEqual(
       Object.values(SUBTITLE_JOB_TYPES),
     );
-    expect(disabledSubtitleJobTypes(undefined)).toHaveLength(3);
+    expect(disabledSubtitleJobTypes(undefined)).toHaveLength(4);
   });
 });
 

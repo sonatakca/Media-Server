@@ -39,6 +39,7 @@ const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
   "subtitle.run": "tasks.subtitleRun",
   "subtitle.reconcile": "tasks.subtitleReconcile",
   "subtitle.auth-resume": "tasks.subtitleResume",
+  "subtitle.sync": "tasks.subtitleSync",
   "library.scan": "tasks.libraryScan",
   "library.organize": "tasks.libraryOrganize",
   "library.rename": "tasks.libraryRename",

@@ -102,10 +102,38 @@ export interface SubtitleInstallRequest {
   readonly signal?: AbortSignal;
 }
 
+export interface SubtitleRewriteRequest {
+  readonly mediaFileId: string;
+  /** Library-relative POSIX, from the catalogue. Never from a request body. */
+  readonly relativePath: string;
+  readonly bytes: Uint8Array;
+  /**
+   * The digest the caller read before deciding what to write.
+   *
+   * Retiming is read-decide-write with an operator's attention in the middle,
+   * so the file can change underneath it in a way an install never can. The
+   * write is refused rather than applied to bytes nobody looked at.
+   */
+  readonly expectedSha256: string;
+}
+
 export interface SubtitleStorage {
   /** The external tracks currently beside a media file. */
   inspect(mediaFileId: string): Promise<SubtitleTrack[]>;
   install(request: SubtitleInstallRequest): Promise<SubtitleInstallOutcome>;
+  /** The bytes of one subtitle file beside this media, proven to be inside the root. */
+  read(mediaFileId: string, relativePath: string): Promise<Uint8Array>;
+  /**
+   * Replaces a subtitle beside this media with new bytes for the same track.
+   *
+   * Unlike `install` this writes to a path the caller names, because the
+   * operation is "correct *that* file" rather than "file a new one" — so the
+   * path comes from the catalogue and is re-derived and re-contained here
+   * regardless. Nothing else is relaxed: the bytes are validated as a subtitle
+   * before the write, the one-writer lock is the same one, and the commit is
+   * still a rename over a file this writer proved was the one it read.
+   */
+  rewrite(request: SubtitleRewriteRequest): Promise<SubtitleInstallOutcome>;
   reconcile?(intent: SubtitleWriteIntent): Promise<SubtitleInstallOutcome>;
 }
 
@@ -288,6 +316,58 @@ export function createSubtitleStorage(
           "The media path does not name a file.",
         );
       }
+    }
+    return target;
+  }
+
+  /**
+   * A subtitle file beside this media file, named by a path from the catalogue.
+   *
+   * The containment rules are `locateMedia`'s, applied again rather than
+   * assumed, plus one the media path does not need: the file has to be in the
+   * media's **own directory**. A subtitle two folders away is not a sidecar of
+   * this film whatever a row says, and refusing that here means a corrupted or
+   * mis-scanned catalogue row cannot aim a write at another title's work.
+   */
+  async function locateSidecar(
+    mediaFileId: string,
+    relativePath: string,
+  ): Promise<string> {
+    const media = await locateMedia(mediaFileId);
+    const root = await rootPath();
+    const segments = relativePath.split("/");
+    const unsafe =
+      relativePath === "" ||
+      segments.some(
+        (segment) =>
+          segment === "" ||
+          segment === "." ||
+          segment === ".." ||
+          UNSAFE_SEGMENT.test(segment) ||
+          TRAILING_DOT_OR_SPACE.test(segment),
+      );
+    if (unsafe) {
+      throw new StorageFailure(
+        "path-escape",
+        "The catalogue path is not a safe library-relative path.",
+      );
+    }
+    const target = path.join(root, ...segments);
+    if (
+      !isPathInsideRoot(root, target) ||
+      path.dirname(target) !== path.dirname(media)
+    ) {
+      throw new StorageFailure(
+        "path-escape",
+        "That subtitle is not beside this media file.",
+      );
+    }
+    const entry = await lstat(target).catch(() => null);
+    if (entry === null || entry.isSymbolicLink() || !entry.isFile()) {
+      throw new StorageFailure(
+        "media-missing",
+        "The subtitle file is not there.",
+      );
     }
     return target;
   }
@@ -536,6 +616,122 @@ export function createSubtitleStorage(
         }
       }
     },
+    async read(mediaFileId, relativePath) {
+      const target = await locateSidecar(mediaFileId, relativePath);
+      const bytes = await existingAt(target);
+      if (bytes === null)
+        throw new StorageFailure(
+          "media-missing",
+          "The subtitle file is not there.",
+        );
+      return bytes;
+    },
+
+    async rewrite(request) {
+      const { mediaFileId, relativePath, bytes, expectedSha256 } = request;
+      let temporary: string | undefined;
+      let lockPath: string | undefined;
+      let lock: Awaited<ReturnType<typeof open>> | undefined;
+      try {
+        /*
+         * Validated before anything is opened. The retimed bytes were produced
+         * from this file's own cues, so they should always pass — and that is
+         * exactly why the check belongs here: the one way this feature could
+         * destroy a subtitle is by writing a document its own serialiser got
+         * wrong, and the writer is the last place able to notice.
+         */
+        const validated = validateSubtitle({
+          bytes,
+          declaredFormat: null,
+          declaredFileName: null,
+        });
+        const source = await locateMedia(mediaFileId);
+        const target = await locateSidecar(mediaFileId, relativePath);
+
+        lockPath = `${source}.seyirlik-subtitle.lock`;
+        try {
+          lock = await open(lockPath, "wx", 0o600);
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+            return {
+              outcome: "error",
+              failure: "commit-ambiguous",
+              reason: "Another writer holds this media file.",
+            };
+          }
+          throw error;
+        }
+
+        const previous = await existingAt(target);
+        if (previous === null || subtitleDigest(previous) !== expectedSha256) {
+          throw new StorageFailure(
+            "destination-occupied",
+            "The subtitle changed since it was read; nothing was written.",
+          );
+        }
+        const sha256 = subtitleDigest(validated.bytes);
+        if (sha256 === expectedSha256)
+          return { outcome: "duplicate", relativePath, sha256 };
+
+        temporary = `${target}.${randomUUID()}.tmp`;
+        const handle = await open(temporary, "wx", 0o644);
+        try {
+          await handle.writeFile(validated.bytes);
+          await handle.sync();
+        } finally {
+          await handle.close();
+        }
+
+        // The same narrowing `install` does: re-read immediately before the
+        // rename, so the window in which somebody else's write is lost is the
+        // rename itself rather than the whole operation.
+        const latest = await existingAt(target);
+        if (latest === null || subtitleDigest(latest) !== expectedSha256) {
+          throw new StorageFailure(
+            "destination-occupied",
+            "The subtitle changed while it was being rewritten.",
+          );
+        }
+        await rename(temporary, target);
+        temporary = undefined;
+        return {
+          outcome: "installed",
+          relativePath,
+          sha256,
+          cueCount: validated.cueCount,
+        };
+      } catch (error) {
+        if (error instanceof StorageFailure) {
+          return {
+            outcome: "error",
+            failure: error.failure,
+            reason: error.reason,
+          };
+        }
+        if (error instanceof InvalidSubtitleError) {
+          return {
+            outcome: "error",
+            failure: error.failure,
+            reason: error.reason,
+          };
+        }
+        const classified = classifyFsError(error);
+        return {
+          outcome: "error",
+          failure: classified.failure === "disk-full" ? "disk-full" : "unknown",
+          reason: "The subtitle could not be rewritten.",
+        };
+      } finally {
+        if (temporary !== undefined)
+          await unlink(temporary).catch(() => undefined);
+        if (lock !== undefined) {
+          await lock.close();
+          if (lockPath !== undefined)
+            await unlink(lockPath).catch(() => undefined);
+        }
+      }
+    },
+
     async reconcile(intent) {
       try {
         if (

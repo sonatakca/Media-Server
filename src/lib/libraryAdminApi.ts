@@ -157,6 +157,103 @@ export function uploadTitleSubtitle(
   );
 }
 
+export interface SubtitleSyncTrack {
+  streamIndex: number;
+  language: string | null;
+  title: string | null;
+  forced: boolean;
+  external: boolean;
+  fileName: string | null;
+  /** A subtitle inside the video can be timed *against*, never re-timed. */
+  retimable: boolean;
+}
+
+export interface SubtitleSyncAudioTrack {
+  streamIndex: number;
+  language: string | null;
+  title: string | null;
+  codec: string | null;
+  channels: number | null;
+  isDefault: boolean;
+}
+
+export interface SubtitleSyncTracks {
+  mediaFileId: string;
+  subtitles: SubtitleSyncTrack[];
+  audio: SubtitleSyncAudioTrack[];
+}
+
+/** Which subtitle of one film can be corrected, and what it can be timed against. */
+export function getSubtitleSyncTracks(
+  itemId: string,
+): Promise<SubtitleSyncTracks> {
+  return ownApiClient.request<SubtitleSyncTracks>(
+    `/subtitles/items/${encodeURIComponent(itemId)}/sync`,
+  );
+}
+
+/**
+ * Moves one subtitle onto the film's timeline.
+ *
+ * Queued rather than awaited. Reading a film's audio is minutes of work on the
+ * media volume, so the answer — how far it moved, how sure the server was, and
+ * whether it wrote anything — arrives on the task card rather than here.
+ */
+export function syncTitleSubtitle(
+  itemId: string,
+  request: {
+    targetStreamIndex: number;
+    reference: { kind: "subtitle" | "audio"; streamIndex: number };
+    /** Apply exactly this instead of working one out. */
+    offsetSeconds?: number;
+    rate?: number;
+    /** Report the correction without writing it. */
+    dryRun?: boolean;
+  },
+): Promise<{ taskId: string }> {
+  return ownApiClient.request(
+    `/subtitles/items/${encodeURIComponent(itemId)}/sync`,
+    { method: "POST", body: request },
+  );
+}
+
+/** What a finished sync did, or why it did nothing. */
+export type SubtitleSyncOutcome =
+  | {
+      outcome: "applied" | "analysed" | "unchanged";
+      fileName: string;
+      referenceKind: "subtitle" | "audio";
+      referenceLabel: string;
+      offsetSeconds: number;
+      rate: number;
+      /** How far above chance the alignment stands, 0 to 1. */
+      confidence: number;
+      matchedCues: number;
+      consideredCues: number;
+      cueCount: number;
+      droppedCues: number;
+      clampedCues: number;
+    }
+  | { outcome: "refused"; failure: string; reason: string };
+
+export interface SubtitleSyncTask {
+  taskId: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  /** What a running sync is doing now, in a sentence. */
+  message: string | null;
+  result: SubtitleSyncOutcome | null;
+}
+
+export function getSubtitleSyncTask(
+  itemId: string,
+  taskId: string,
+): Promise<SubtitleSyncTask> {
+  return ownApiClient.request<SubtitleSyncTask>(
+    `/subtitles/items/${encodeURIComponent(itemId)}/sync/${encodeURIComponent(taskId)}`,
+    { background: true },
+  );
+}
+
 /** Fetches TMDB artwork for every matched title whose cover is missing. */
 export function importMissingArtwork(): Promise<{ queued: number }> {
   return ownApiClient.request("/library/titles/artwork", {

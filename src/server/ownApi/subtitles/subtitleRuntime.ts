@@ -9,6 +9,11 @@ import type {
 } from "./subtitleProvider";
 import { createSubtitleRepository } from "./subtitleRepository";
 import { createSubtitleService } from "./subtitleService";
+import {
+  createSubtitleSyncService,
+  type SubtitleSyncCatalogue,
+} from "./subtitleSync";
+import { createSubtitleStorage } from "./subtitleStorage";
 
 /**
  * What to answer when no interactive session host is wired in.
@@ -47,6 +52,16 @@ export function createSubtitleRuntime(options: {
   providers?: readonly SubtitleProvider[];
   sessions?: ProviderSessionManager;
   playback?: PlaybackRefreshBoundary;
+  /**
+   * What syncing needs and searching does not: the catalogue's own view of a
+   * file's tracks, and an FFmpeg to read the ones that are inside it. Absent on
+   * a deployment that has neither, which leaves the sync routes unmounted and
+   * the job type refused rather than half-built.
+   */
+  sync?: {
+    catalogue: SubtitleSyncCatalogue;
+    ffmpegPath: string;
+  };
 }) {
   if (!options.config) return undefined;
   const providers = options.providers ?? [];
@@ -59,16 +74,44 @@ export function createSubtitleRuntime(options: {
   const sessions: ProviderSessionManager =
     options.sessions ?? unattendedSessionManager();
   const repository = createSubtitleRepository(options.pool);
+  const config = options.config;
   const service = createSubtitleService({
-    config: options.config,
+    config,
     execution: createSubtitleExecutionRepository(options.pool),
     providers,
     sessions,
     playback: options.playback,
   });
+  const sync = options.sync
+    ? createSubtitleSyncService({
+        libraryRoot: config.libraryRoot,
+        ffmpegPath: options.sync.ffmpegPath,
+        catalogue: options.sync.catalogue,
+        repository,
+        /*
+         * A writer bound to the one media file the request named. The storage
+         * module resolves every destination through `resolveMedia`, so binding
+         * it here is what keeps a sync unable to reach any other title's files
+         * even if a catalogue row were wrong about which video it belongs to.
+         */
+        storageFactory: (relativeMedia, mediaFileId) =>
+          createSubtitleStorage({
+            libraryRoot: config.libraryRoot,
+            resolveMedia: async (id) => {
+              if (id !== mediaFileId)
+                throw new Error("Unknown subtitle media ID.");
+              return relativeMedia;
+            },
+            managedDigest: (id, relative) =>
+              repository.managedDigest(id, relative),
+          }),
+        ...(options.playback ? { playback: options.playback } : {}),
+      })
+    : undefined;
   return {
     repository,
     service,
-    handlers: createSubtitleJobHandlers(service, repository),
+    sync,
+    handlers: createSubtitleJobHandlers(service, repository, sync),
   };
 }

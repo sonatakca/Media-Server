@@ -345,6 +345,31 @@ async function createWorld(
       );
       return found?.sha256 ?? null;
     },
+    async recordRetiming(input) {
+      const index = installs.findIndex(
+        (i) =>
+          i.mediaFileId === input.mediaFileId &&
+          i.relativePath === input.relativePath,
+      );
+      const previous = installs[index];
+      const record: RecordInstallationInput = {
+        wantId: previous?.wantId ?? null,
+        attemptId: previous?.attemptId ?? null,
+        hearingImpaired: previous?.hearingImpaired ?? false,
+        providerId: previous?.providerId ?? null,
+        mediaFileId: input.mediaFileId,
+        relativePath: input.relativePath,
+        language: previous?.language ?? input.language,
+        forced: previous?.forced ?? input.forced,
+        format: input.format,
+        sha256: input.sha256,
+        sizeBytes: input.sizeBytes,
+        cueCount: input.cueCount,
+        syncState: "assumed-in-sync",
+      };
+      if (index >= 0) installs.splice(index, 1, record);
+      else installs.push(record);
+    },
     async forgetInstallation(mediaFileId, relativePath) {
       const index = installs.findIndex(
         (i) => i.mediaFileId === mediaFileId && i.relativePath === relativePath,

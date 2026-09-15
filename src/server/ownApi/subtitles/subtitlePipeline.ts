@@ -90,7 +90,13 @@ export async function runSubtitlePipeline(input: {
   embeddedTracks: readonly SubtitleTrack[];
   providers: readonly SubtitleProvider[];
   sessions: ProviderSessionManager;
-  storage: SubtitleStorage;
+  /*
+   * Only the two operations a search performs. Narrowed rather than taking the
+   * whole writer, because retiming an existing subtitle is a different feature
+   * with a different authority, and a pipeline that could reach it would be one
+   * refusal away from rewriting a file it was only ever meant to add beside.
+   */
+  storage: Pick<SubtitleStorage, "inspect" | "install">;
   timeoutMs: number;
   replace?: boolean;
   signal?: AbortSignal;
