@@ -29,6 +29,7 @@ import type { PlaybackSessionStore } from "./playbackSessionStore";
 import type { RenditionService } from "../../renditionService";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
 import { extractSubtitleAsWebVtt } from "./subtitleDelivery";
+import { captureFrameAsPng, isHdrTransfer } from "./frameCapture";
 import {
   applyAdaptiveMasterSelection,
   parseAdaptiveMasterSelection,
@@ -461,14 +462,15 @@ export function createPlaybackRoutes({
   }
 
   /**
-   * A subtitle track must outlive the idle reaper. Adaptive renditions are
-   * served by media-file token and never touch the session, so a few minutes
-   * into HLS playback the session is `ended` while the film is still on
-   * screen — and every later track pick, even the one first shown, came back
-   * 404. Here the session only names the file; access is re-checked on every
-   * request, as it is for renditions, and a failed session stays refused.
+   * For reads that must outlive the idle reaper: subtitle tracks and saved
+   * frames. Adaptive renditions are served by media-file token and never touch
+   * the session, so a few minutes into HLS playback — or into a pause — the
+   * session is `ended` while the film is still on screen, and every later
+   * track pick came back 404. Here the session only names the file; access is
+   * re-checked on every request, as it is for renditions, and a failed session
+   * stays refused.
    */
-  async function requireSubtitleSession(userId: string, sessionId: string) {
+  async function requireViewableSession(userId: string, sessionId: string) {
     const session = await sessions.get(sessionId);
     if (
       !session ||
@@ -807,7 +809,7 @@ export function createPlaybackRoutes({
       skipCsrf: true,
       handle: async (context) => {
         const principal = context.requirePrincipal();
-        const session = await requireSubtitleSession(
+        const session = await requireViewableSession(
           principal.userId,
           requireUuid(context.params.sessionId, "sessionId"),
         );
@@ -880,6 +882,88 @@ export function createPlaybackRoutes({
         context.response.setHeader("Cache-Control", "private, max-age=300");
         context.response.setHeader("X-Content-Type-Options", "nosniff");
         context.response.end(context.method === "HEAD" ? undefined : webVtt);
+      },
+    },
+
+    {
+      method: "GET",
+      path: "/playback/sessions/:sessionId/frame.png",
+      access: "authenticated",
+      // Fetched by the player as a blob, which carries no CSRF header. Safe:
+      // the method is read-only and the session cookie still authorizes it.
+      skipCsrf: true,
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const session = await requireViewableSession(
+          principal.userId,
+          requireUuid(context.params.sessionId, "sessionId"),
+        );
+
+        const rawAt = context.url.searchParams.get("at") ?? "";
+        const atSeconds = Number(rawAt);
+        if (
+          rawAt.trim() === "" ||
+          !Number.isFinite(atSeconds) ||
+          atSeconds < 0 ||
+          atSeconds > 86_400
+        ) {
+          throw validationError("The frame time is invalid.");
+        }
+
+        const file = await catalogue.getFileById(session.mediaFileId);
+        if (!file || file.missingSince !== null) {
+          throw new OwnApiError(
+            "MEDIA_NOT_FOUND",
+            "The requested media could not be found.",
+            404,
+          );
+        }
+
+        const absolutePath = path.resolve(
+          resolvedMediaRoot,
+          ...file.relativePath.split("/"),
+        );
+        if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
+          throw new OwnApiError(
+            "MEDIA_NOT_FOUND",
+            "The requested media could not be found.",
+            404,
+          );
+        }
+
+        const streams = await catalogue.listStreams(file.id);
+        const toneMap = streams.some(
+          (stream) =>
+            stream.kind === "video" && isHdrTransfer(stream.colorTransfer),
+        );
+
+        let png: Buffer;
+        try {
+          png = await captureFrameAsPng(
+            absolutePath,
+            atSeconds,
+            { toneMap },
+            ffmpegPath,
+          );
+        } catch {
+          png = Buffer.alloc(0);
+        }
+        // Empty also means `at` was past the last frame.
+        if (png.length === 0) {
+          throw new OwnApiError(
+            "FRAME_UNAVAILABLE",
+            "The frame could not be captured.",
+            422,
+          );
+        }
+
+        await sessions.touch(session.id);
+        context.response.statusCode = 200;
+        context.response.setHeader("Content-Type", "image/png");
+        context.response.setHeader("Content-Length", String(png.length));
+        context.response.setHeader("Cache-Control", "private, max-age=300");
+        context.response.setHeader("X-Content-Type-Options", "nosniff");
+        context.response.end(png);
       },
     },
 

@@ -472,7 +472,7 @@ describe("rendition delivery", () => {
   });
 });
 
-describe("subtitle delivery after the session goes idle", () => {
+describe("session reads after the session goes idle", () => {
   const VIEWER = "11111111-1111-4111-8111-111111111111";
   const OTHER_USER = "55555555-5555-4555-8555-555555555555";
   const FILE = "22222222-2222-4222-8222-222222222222";
@@ -541,8 +541,10 @@ describe("subtitle delivery after the session goes idle", () => {
     });
   }
 
-  async function requestTrack(router: ReturnType<typeof buildSubtitleRouter>) {
-    const pathname = `/ownAPI/v1/playback/sessions/${SESSION}/subtitles/2.vtt`;
+  async function requestTrack(
+    router: ReturnType<typeof buildSubtitleRouter>,
+    pathname = `/ownAPI/v1/playback/sessions/${SESSION}/subtitles/2.vtt`,
+  ) {
     try {
       await router.handler(
         {
@@ -600,6 +602,30 @@ describe("subtitle delivery after the session goes idle", () => {
         }),
       ),
     ).toBe("SESSION_NOT_FOUND");
+  });
+
+  it("reaches the original file for a frame after the pause outlasted the session", async () => {
+    // A frame can only be saved while paused, which is exactly when the idle
+    // reaper ends the session.
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({ userId: VIEWER, status: "ended" }),
+        `/ownAPI/v1/playback/sessions/${SESSION}/frame.png?at=284.5`,
+      ),
+    ).toBe("FRAME_UNAVAILABLE");
+  });
+
+  it("refuses a frame time that is missing, negative or not a number", async () => {
+    const router = buildSubtitleRouter({ userId: VIEWER, status: "active" });
+
+    for (const query of ["", "?at=", "?at=-1", "?at=abc", "?at=Infinity"]) {
+      expect(
+        await requestTrack(
+          router,
+          `/ownAPI/v1/playback/sessions/${SESSION}/frame.png${query}`,
+        ),
+      ).toBe("VALIDATION_FAILED");
+    }
   });
 });
 

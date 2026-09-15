@@ -418,6 +418,12 @@ export const en = {
   "player.setCheckpoint": "Set checkpoint",
   "player.returnToCheckpoint": "Return to checkpoint",
   "player.checkpointActive": "Checkpoint active",
+  "player.saveFrame": "Save frame",
+  "player.saveFramePauseFirst":
+    "Pause the video first — only a stopped frame can be saved.",
+  "player.saveFrameSaving": "Saving the frame at full resolution…",
+  "player.saveFrameSaved": "Frame saved to your device.",
+  "player.saveFrameFailed": "The frame could not be saved.",
   "player.missingItemId": "Missing item id.",
   "player.couldNotLoadItem": "Could not load item for playback.",
   "player.subtitleEditPlaceholder": "Example subtitle to edit.",

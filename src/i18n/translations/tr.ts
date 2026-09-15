@@ -415,6 +415,12 @@ export const tr = {
   "player.setCheckpoint": "Kontrol noktası koy",
   "player.returnToCheckpoint": "Kontrol noktasına dön",
   "player.checkpointActive": "Kontrol noktası aktif",
+  "player.saveFrame": "Kareyi kaydet",
+  "player.saveFramePauseFirst":
+    "Önce videoyu durdurun — yalnızca durdurulmuş bir kare kaydedilebilir.",
+  "player.saveFrameSaving": "Kare tam çözünürlükte kaydediliyor…",
+  "player.saveFrameSaved": "Kare cihazınıza kaydedildi.",
+  "player.saveFrameFailed": "Kare kaydedilemedi.",
   "player.missingItemId": "İçerik ID'si eksik.",
   "player.couldNotLoadItem": "Oynatılacak içerik yüklenemedi.",
   "player.subtitleEditPlaceholder": "Altyazı düzenleme örneği.",

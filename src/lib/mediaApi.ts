@@ -773,6 +773,28 @@ export function buildSubtitleStreamUrl(
   );
 }
 
+/**
+ * The frame at `atSeconds`, cut from the original file at full resolution.
+ *
+ * Fetched rather than linked: the API can live on another origin, where an
+ * `<a download>` navigates instead of saving and drops the session cookie.
+ */
+export async function fetchOriginalFrame(
+  sessionId: string,
+  atSeconds: number,
+): Promise<Blob> {
+  const frameUrl = `${ownApiUrl(
+    `/ownAPI/v1/playback/sessions/${encodeURIComponent(sessionId)}/frame.png`,
+  )}?at=${atSeconds.toFixed(3)}`;
+  const response = await fetch(frameUrl, { credentials: "include" });
+
+  if (!response.ok) {
+    throw new Error(`Frame request failed with ${response.status}`);
+  }
+
+  return response.blob();
+}
+
 export function getItemFileUrl(sessionId: string): string {
   return ownApiUrl(
     `/ownAPI/v1/playback/sessions/${encodeURIComponent(sessionId)}/file`,
