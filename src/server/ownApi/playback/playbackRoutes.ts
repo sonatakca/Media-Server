@@ -460,6 +460,31 @@ export function createPlaybackRoutes({
     return session;
   }
 
+  /**
+   * A subtitle track must outlive the idle reaper. Adaptive renditions are
+   * served by media-file token and never touch the session, so a few minutes
+   * into HLS playback the session is `ended` while the film is still on
+   * screen — and every later track pick, even the one first shown, came back
+   * 404. Here the session only names the file; access is re-checked on every
+   * request, as it is for renditions, and a failed session stays refused.
+   */
+  async function requireSubtitleSession(userId: string, sessionId: string) {
+    const session = await sessions.get(sessionId);
+    if (
+      !session ||
+      session.userId !== userId ||
+      session.status === "failed" ||
+      !(await catalogue.canUserAccessItem(userId, session.itemId))
+    ) {
+      throw new OwnApiError(
+        "SESSION_NOT_FOUND",
+        "The playback session could not be found.",
+        404,
+      );
+    }
+    return session;
+  }
+
   async function resolveAuthorizedAdaptiveAsset(
     context: Parameters<RouteDefinition["handle"]>[0],
     assetPath: string,
@@ -782,7 +807,7 @@ export function createPlaybackRoutes({
       skipCsrf: true,
       handle: async (context) => {
         const principal = context.requirePrincipal();
-        const session = await requireOwnedSession(
+        const session = await requireSubtitleSession(
           principal.userId,
           requireUuid(context.params.sessionId, "sessionId"),
         );

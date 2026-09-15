@@ -472,6 +472,137 @@ describe("rendition delivery", () => {
   });
 });
 
+describe("subtitle delivery after the session goes idle", () => {
+  const VIEWER = "11111111-1111-4111-8111-111111111111";
+  const OTHER_USER = "55555555-5555-4555-8555-555555555555";
+  const FILE = "22222222-2222-4222-8222-222222222222";
+  const SESSION = "66666666-6666-4666-8666-666666666666";
+
+  function buildSubtitleRouter(session: {
+    userId: string;
+    status: "active" | "ended" | "failed";
+    itemId?: string;
+  }) {
+    const catalogue = {
+      getFileById: async () => ({
+        id: FILE,
+        itemId: "item-visible",
+        relativePath: "Film/Film.mp4",
+        missingSince: null,
+      }),
+      listStreams: async () => [
+        {
+          kind: "subtitle",
+          streamIndex: 2,
+          isTextSubtitle: true,
+          isExternal: true,
+          externalRelativePath: "Film/Film.tr.srt",
+        },
+      ],
+      canUserAccessItem: async (_userId: string, itemId: string) =>
+        itemId === "item-visible",
+    } as unknown as Parameters<typeof createPlaybackRoutes>[0]["catalogue"];
+
+    const sessions = {
+      get: async (id: string) =>
+        id === SESSION
+          ? {
+              id: SESSION,
+              itemId: "item-visible",
+              mediaFileId: FILE,
+              ...session,
+            }
+          : null,
+      touch: async () => {},
+    } as unknown as Parameters<typeof createPlaybackRoutes>[0]["sessions"];
+
+    return createOwnApiRouter({
+      csrfSecret: "s".repeat(32),
+      csrfCookieName: "seyirlik_csrf",
+      publicOrigin: "https://seyirlik.test",
+      resolveSession: async () => ({
+        userId: VIEWER,
+        username: "viewer",
+        displayName: "Viewer",
+        isAdministrator: false,
+        sessionId: "44444444-4444-4444-8444-444444444444",
+        sessionTokenHash: Buffer.alloc(32),
+      }),
+      routes: createPlaybackRoutes({
+        catalogue,
+        sessions,
+        sessionManager: {} as never,
+        mediaRoot: "/media",
+        // Extraction itself is covered where it lives. A binary that cannot
+        // start turns a request that got past the session into a 422, which is
+        // what separates "reached the track" from "refused at the door".
+        ffmpegPath: "/nonexistent/ffmpeg",
+      }),
+    });
+  }
+
+  async function requestTrack(router: ReturnType<typeof buildSubtitleRouter>) {
+    const pathname = `/ownAPI/v1/playback/sessions/${SESSION}/subtitles/2.vtt`;
+    try {
+      await router.handler(
+        {
+          method: "GET",
+          url: pathname,
+          headers: { host: "seyirlik.test" },
+          socket: { remoteAddress: "127.0.0.1" },
+        } as unknown as IncomingMessage,
+        {
+          statusCode: 200,
+          setHeader() {},
+          getHeader() {
+            return undefined;
+          },
+          end() {},
+        } as unknown as ServerResponse,
+        {
+          requestId: "req-1",
+          url: new URL(pathname, "https://seyirlik.test"),
+        },
+      );
+    } catch (caught) {
+      return (caught as OwnApiError).code;
+    }
+    return "served";
+  }
+
+  it("still serves a track once the idle reaper has ended the session", async () => {
+    // HLS renditions never touch the session, so it ends mid-film. Picking a
+    // track after that used to 404 and the overlay stayed empty.
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({ userId: VIEWER, status: "ended" }),
+      ),
+    ).toBe("SUBTITLE_UNAVAILABLE");
+  });
+
+  it("refuses another viewer's session, a failed one, and a revoked title", async () => {
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({ userId: OTHER_USER, status: "ended" }),
+      ),
+    ).toBe("SESSION_NOT_FOUND");
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({ userId: VIEWER, status: "failed" }),
+      ),
+    ).toBe("SESSION_NOT_FOUND");
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({
+          userId: VIEWER,
+          status: "ended",
+          itemId: "item-hidden",
+        }),
+      ),
+    ).toBe("SESSION_NOT_FOUND");
+  });
+});
+
 describe("playback readiness", () => {
   const VIEWER = "11111111-1111-4111-8111-111111111111";
   const ITEM = "55555555-5555-4555-8555-555555555555";
