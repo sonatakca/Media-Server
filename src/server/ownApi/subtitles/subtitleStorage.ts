@@ -160,6 +160,45 @@ class StorageFailure extends Error {
   }
 }
 
+/**
+ * Commits a freshly written temporary to a name nothing holds yet.
+ *
+ * A hardlink is the first choice because it fails rather than clobbers, which
+ * is the whole point: two workers racing produce one file and one loser. The
+ * media volume on the deployed host is **exFAT**, which has no hardlinks at
+ * all — it answers `EISDIR` on two operands that are plainly files, the same
+ * condition the importer already classifies — so the link is not available
+ * where this actually runs, and an unconditional one refused every upload with
+ * nothing but "The subtitle could not be written."
+ *
+ * The fallback keeps both properties the link was chosen for. `wx` is an
+ * exclusive create, which is as atomic on exFAT as it is anywhere: whoever
+ * gets it owns the name, and the loser sees `EEXIST` rather than a torn file.
+ * The rename then puts the complete bytes over this writer's own empty
+ * reservation, so no reader ever sees a partial subtitle at a name that was
+ * not already ours.
+ */
+async function claim(temporary: string, target: string): Promise<void> {
+  try {
+    await link(temporary, target);
+    return;
+  } catch (error) {
+    if (classifyFsError(error).failure !== "hardlink-unsupported") throw error;
+  }
+  try {
+    await (await open(target, "wx", 0o644)).close();
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+      throw new StorageFailure(
+        "destination-occupied",
+        "The destination changed while this subtitle was being written.",
+      );
+    }
+    throw error;
+  }
+  await rename(temporary, target);
+}
+
 export function createSubtitleStorage(
   options: SubtitleStorageOptions,
 ): SubtitleStorage {
@@ -441,7 +480,7 @@ export function createSubtitleStorage(
 
         if (previous === null) {
           // No-clobber: two workers racing produce one file and one loser.
-          await link(temporary, target);
+          await claim(temporary, target);
         } else {
           await rename(temporary, target);
         }
