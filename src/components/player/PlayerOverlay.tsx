@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   ChevronLeft,
   LoaderCircle,
@@ -47,6 +47,7 @@ const SEEK_FEEDBACK_SPIN_MS = 1000;
 const SEEK_FEEDBACK_NUMBER_SWAP_MS = 600;
 const SEEK_FEEDBACK_SPIN_EASE = [0.16, 1, 0.3, 1] as const;
 const SEEK_FEEDBACK_NUMBER_EASE = [0.22, 1, 0.36, 1] as const;
+const CENTER_STATE_EASE = [0.16, 1, 0.3, 1] as const;
 
 function isSubtitleMetadataPart(part: string): boolean {
   const normalized = part.trim().toLowerCase().replace(/\s+/g, "");
@@ -99,6 +100,7 @@ export function PlayerOverlay({
   seekFeedback,
 }: PlayerOverlayProps) {
   const { t } = useLanguage();
+  const shouldReduceMotion = useReducedMotion();
   const displaySubtitle = episodeName?.trim() || getCleanSubtitleLine(subtitle);
 
   const wasPlayPausePendingRef = useRef(isPlayPausePending);
@@ -351,10 +353,10 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`seyirlik-player-center-toggle absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center text-white shadow-none focus:outline-none focus:ring-0 focus:ring-[var(--accent)] cursor-pointer ${
+        className={`seyirlik-player-center-toggle absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center bg-transparent text-white shadow-none focus:outline-none focus:ring-0 focus:ring-[var(--accent)] ${
           isPlayPauseLoading
-            ? "h-28 w-28 bg-transparent sm:h-36 sm:w-36"
-            : "h-16 w-16 rounded-full bg-white/[0.15] backdrop-blur-2xl hover:scale-110 sm:h-20 sm:w-20"
+            ? "h-28 w-28 sm:h-36 sm:w-36"
+            : "h-16 w-16 hover:scale-110 sm:h-20 sm:w-20"
         } ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
             ? "seyirlik-player-center-toggle--visible scale-100 opacity-100"
@@ -368,46 +370,74 @@ export function PlayerOverlay({
               : t("common.play")
         }
       >
-        {isPlayPauseLoading ? (
-          <BrandLoadingMark className="w-24 sm:w-32" />
-        ) : (
-          <span className="relative flex items-center justify-center">
-            {showPlayPauseWave ? (
-              <span className="seyirlik-play-pause-wave" />
-            ) : null}
-
-            {isPlayPausePending ? (
-              <LoaderCircle
-                aria-hidden="true"
-                className="pointer-events-none absolute h-14 w-14 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] opacity-90 [filter:drop-shadow(0_0_10px_rgba(255,153,31,0.28))] sm:h-[6.5rem] sm:w-[6.5rem]"
-                strokeWidth={1.4}
-              />
-            ) : null}
-
-            <span
-              className={`flex items-center justify-center transition-transform ease-out ${
-                isIconScaledOut ? "scale-0" : "scale-100"
-              }`}
-              style={{
-                transitionDuration: `${PLAY_PAUSE_ICON_SWAP_DURATION_MS}ms`,
+        <AnimatePresence initial={false}>
+          {isPlayPauseLoading ? (
+            <motion.span
+              key="loading"
+              data-testid="player-loading-state"
+              className="pointer-events-none absolute flex items-center justify-center"
+              initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.96 }}
+              transition={{
+                duration: shouldReduceMotion ? 0.12 : 0.22,
+                ease: CENTER_STATE_EASE,
               }}
             >
-              {displayedIsPlaying ? (
-                <Pause
-                  className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
-                  fill="currentColor"
-                  strokeWidth={2.2}
-                />
-              ) : (
-                <Play
-                  className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
-                  fill="currentColor"
-                  strokeWidth={2.2}
-                />
-              )}
-            </span>
-          </span>
-        )}
+              <BrandLoadingMark className="w-24 sm:w-32" />
+            </motion.span>
+          ) : (
+            <motion.span
+              key="play-pause"
+              data-testid="player-play-pause-state"
+              className="absolute flex h-16 w-16 items-center justify-center rounded-full bg-white/[0.15] backdrop-blur-2xl sm:h-20 sm:w-20"
+              initial={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.94 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: shouldReduceMotion ? 1 : 0.96 }}
+              transition={{
+                duration: shouldReduceMotion ? 0.12 : 0.18,
+                ease: CENTER_STATE_EASE,
+              }}
+            >
+              <span className="relative flex items-center justify-center">
+                {showPlayPauseWave ? (
+                  <span className="seyirlik-play-pause-wave" />
+                ) : null}
+
+                {isPlayPausePending ? (
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="pointer-events-none absolute h-14 w-14 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] opacity-90 [filter:drop-shadow(0_0_10px_rgba(255,153,31,0.28))] sm:h-[6.5rem] sm:w-[6.5rem]"
+                    strokeWidth={1.4}
+                  />
+                ) : null}
+
+                <span
+                  className={`flex items-center justify-center transition-transform ease-out ${
+                    isIconScaledOut ? "scale-0" : "scale-100"
+                  }`}
+                  style={{
+                    transitionDuration: `${PLAY_PAUSE_ICON_SWAP_DURATION_MS}ms`,
+                  }}
+                >
+                  {displayedIsPlaying ? (
+                    <Pause
+                      className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
+                      fill="currentColor"
+                      strokeWidth={2.2}
+                    />
+                  ) : (
+                    <Play
+                      className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
+                      fill="currentColor"
+                      strokeWidth={2.2}
+                    />
+                  )}
+                </span>
+              </span>
+            </motion.span>
+          )}
+        </AnimatePresence>
       </button>
     </>
   );
