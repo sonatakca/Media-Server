@@ -8,10 +8,38 @@ interface LoadingSpinnerProps {
   variant?: "compact" | "brand";
 }
 
+interface BrandLoadingMarkProps {
+  className?: string;
+}
+
 const BRAND_ANIMATION_URL =
   "/artwork/seyirlik/animations/seyirlik-loading.webp";
 const BRAND_STILL_URL =
   "/artwork/seyirlik/animations/seyirlik-loading-still.webp";
+
+export function BrandLoadingMark({ className }: BrandLoadingMarkProps) {
+  return (
+    <span
+      aria-hidden="true"
+      className={`relative block aspect-square ${className ?? "w-[min(10rem,36vw)]"}`}
+    >
+      <img
+        src={BRAND_ANIMATION_URL}
+        alt=""
+        draggable={false}
+        decoding="async"
+        className="absolute inset-0 h-full w-full object-contain motion-reduce:hidden"
+      />
+      <img
+        src={BRAND_STILL_URL}
+        alt=""
+        draggable={false}
+        decoding="async"
+        className="absolute inset-0 hidden h-full w-full object-contain motion-reduce:block"
+      />
+    </span>
+  );
+}
 
 export function LoadingSpinner({
   label,
@@ -35,24 +63,7 @@ export function LoadingSpinner({
       } ${displayLabel ? "gap-3" : ""}`}
     >
       {variant === "brand" ? (
-        <span className="relative block aspect-square w-[min(10rem,36vw)]">
-          <img
-            src={BRAND_ANIMATION_URL}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            decoding="async"
-            className="absolute inset-0 h-full w-full object-contain motion-reduce:hidden"
-          />
-          <img
-            src={BRAND_STILL_URL}
-            alt=""
-            aria-hidden="true"
-            draggable={false}
-            decoding="async"
-            className="absolute inset-0 hidden h-full w-full object-contain motion-reduce:block"
-          />
-        </span>
+        <BrandLoadingMark />
       ) : (
         <span
           aria-hidden="true"

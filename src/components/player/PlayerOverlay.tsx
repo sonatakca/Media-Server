@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { BrandLoadingMark } from "../LoadingSpinner";
 import { Tooltip } from "../ui/Tooltip";
 
 interface SeekFeedbackItem {
@@ -350,7 +351,11 @@ export function PlayerOverlay({
         onMouseLeave={onControlsHoverEnd}
         onPointerEnter={onControlsHoverStart}
         onPointerLeave={onControlsHoverEnd}
-        className={`seyirlik-player-center-toggle absolute backdrop-blur-2xl left-1/2 top-1/2 z-20 flex h-16 w-16 shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/[0.15] text-white shadow-none hover:scale-110 focus:outline-none focus:ring-0 focus:ring-[var(--accent)] sm:h-20 sm:w-20 cursor-pointer ${
+        className={`seyirlik-player-center-toggle absolute left-1/2 top-1/2 z-20 flex shrink-0 -translate-x-1/2 -translate-y-1/2 items-center justify-center text-white shadow-none focus:outline-none focus:ring-0 focus:ring-[var(--accent)] cursor-pointer ${
+          isPlayPauseLoading
+            ? "h-28 w-28 bg-transparent sm:h-36 sm:w-36"
+            : "h-16 w-16 rounded-full bg-white/[0.15] backdrop-blur-2xl hover:scale-110 sm:h-20 sm:w-20"
+        } ${
           visible || !isPlaying || isPlayPausePending || isPlayPauseLoading
             ? "seyirlik-player-center-toggle--visible scale-100 opacity-100"
             : "seyirlik-player-center-toggle--hidden pointer-events-none scale-0 opacity-0"
@@ -363,47 +368,46 @@ export function PlayerOverlay({
               : t("common.play")
         }
       >
-        <span className="relative flex items-center justify-center">
-          {showPlayPauseWave ? (
-            <span className="seyirlik-play-pause-wave" />
-          ) : null}
+        {isPlayPauseLoading ? (
+          <BrandLoadingMark className="w-24 sm:w-32" />
+        ) : (
+          <span className="relative flex items-center justify-center">
+            {showPlayPauseWave ? (
+              <span className="seyirlik-play-pause-wave" />
+            ) : null}
 
-          {isPlayPausePending ? (
-            <LoaderCircle
-              aria-hidden="true"
-              className="pointer-events-none absolute h-14 w-14 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] opacity-90 [filter:drop-shadow(0_0_10px_rgba(255,153,31,0.28))] sm:h-[6.5rem] sm:w-[6.5rem]"
-              strokeWidth={1.4}
-            />
-          ) : null}
-
-          <span
-            className={`flex items-center justify-center transition-transform ease-out ${
-              isIconScaledOut ? "scale-0" : "scale-100"
-            }`}
-            style={{
-              transitionDuration: `${PLAY_PAUSE_ICON_SWAP_DURATION_MS}ms`,
-            }}
-          >
-            {isPlayPauseLoading ? (
+            {isPlayPausePending ? (
               <LoaderCircle
-                className="h-7 w-7 animate-[spin_1.2s_linear_infinite] text-white] [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,153,31,0.28))] sm:h-[42px] sm:w-[42px]"
-                strokeWidth={2.2}
+                aria-hidden="true"
+                className="pointer-events-none absolute h-14 w-14 animate-[spin_1.2s_linear_infinite] text-[var(--accent)] opacity-90 [filter:drop-shadow(0_0_10px_rgba(255,153,31,0.28))] sm:h-[6.5rem] sm:w-[6.5rem]"
+                strokeWidth={1.4}
               />
-            ) : displayedIsPlaying ? (
-              <Pause
-                className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
-                fill="currentColor"
-                strokeWidth={2.2}
-              />
-            ) : (
-              <Play
-                className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
-                fill="currentColor"
-                strokeWidth={2.2}
-              />
-            )}
+            ) : null}
+
+            <span
+              className={`flex items-center justify-center transition-transform ease-out ${
+                isIconScaledOut ? "scale-0" : "scale-100"
+              }`}
+              style={{
+                transitionDuration: `${PLAY_PAUSE_ICON_SWAP_DURATION_MS}ms`,
+              }}
+            >
+              {displayedIsPlaying ? (
+                <Pause
+                  className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
+                  fill="currentColor"
+                  strokeWidth={2.2}
+                />
+              ) : (
+                <Play
+                  className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
+                  fill="currentColor"
+                  strokeWidth={2.2}
+                />
+              )}
+            </span>
           </span>
-        </span>
+        )}
       </button>
     </>
   );
