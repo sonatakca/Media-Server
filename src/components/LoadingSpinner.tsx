@@ -35,7 +35,7 @@ export function LoadingSpinner({
       } ${displayLabel ? "gap-3" : ""}`}
     >
       {variant === "brand" ? (
-        <span className="relative block aspect-video w-[min(20rem,76vw)]">
+        <span className="relative block aspect-square w-[min(10rem,36vw)]">
           <img
             src={BRAND_ANIMATION_URL}
             alt=""
