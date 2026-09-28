@@ -23,11 +23,21 @@ export function AnimatedWidth({
       return;
     }
 
-    if (!measureRef.current) return;
+    const node = measureRef.current;
+    if (!node) return;
 
-    const nextWidth =
-      Math.ceil(measureRef.current.getBoundingClientRect().width) + safetyPx;
-    setWidth(nextWidth);
+    const measure = () =>
+      setWidth(Math.ceil(node.getBoundingClientRect().width) + safetyPx);
+    measure();
+
+    // The measured copy also changes size when `value` has not: the web font
+    // swapping in over its fallback, or a breakpoint stepping the font size.
+    // A width taken only on `value` stays pinned to the first of those and
+    // clips the text for good.
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
   }, [prefersReducedMotion, value, safetyPx]);
 
   return (
