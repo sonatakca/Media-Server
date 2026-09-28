@@ -25,7 +25,6 @@ import {
 } from "../../lib/routes";
 import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
-import { getMediaPoseStyle, type MediaPoseKind } from "../../lib/mediaPose";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
 import { WatchedIndicator } from "../WatchedIndicator";
 
@@ -92,7 +91,6 @@ export function MobileMediaCard({
   layout = "row",
   collectionItems,
   animateRemoval = false,
-  onClearContinueWatching,
 }: MobileMediaCardProps) {
   const { language, t } = useLanguage();
   const labels = {
@@ -109,15 +107,6 @@ export function MobileMediaCard({
   const isLandscape = variant === "landscape";
   const isRow = layout === "row";
   const isWatched = isItemCompleted(item);
-  // A phone's Continue Watching card is a poster with its details under it,
-  // not the wide desktop panel, so it leans like any other shelf card with
-  // text — less than a bare poster, more than the desktop panel could.
-  const poseKind: MediaPoseKind =
-    isLandscape || isEpisode || onClearContinueWatching
-      ? "landscape"
-      : item.Type === "Book"
-        ? "cover"
-        : "poster";
 
   const itemMetadata = getItemDisplayMetadata(item, language);
   const baseTitle =
@@ -224,8 +213,7 @@ export function MobileMediaCard({
       }
     >
       <div
-        style={getMediaPoseStyle(item.Id, poseKind)}
-        className={`media-pose media-pose--${poseKind} flex flex-1 flex-col overflow-hidden rounded-lg border bg-[#141416] shadow-cinematic-card ${
+        className={`flex flex-1 flex-col overflow-hidden rounded-lg border bg-[#141416] shadow-cinematic-card ${
           isWatched
             ? "border-emerald-300/70 ring-2 ring-emerald-300/45 shadow-[0_0_0_1px_rgba(52,211,153,0.25),0_18px_48px_rgba(16,185,129,0.18)]"
             : "border-white/10"

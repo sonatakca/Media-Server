@@ -6,7 +6,6 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "Ice Cream Man",
           "Inter",
           "ui-sans-serif",
           "system-ui",

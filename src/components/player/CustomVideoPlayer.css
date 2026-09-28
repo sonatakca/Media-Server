@@ -391,7 +391,6 @@ body:has(.seyirlik-player-shell) {
   color: transparent;
   background: transparent;
   font-family:
-    "Ice Cream Man",
     Inter,
     ui-sans-serif,
     system-ui,
@@ -562,7 +561,6 @@ body:has(.seyirlik-player-shell) {
   padding: 0.25rem 0.5rem;
   color: rgba(255, 255, 255, 0.97);
   font-family:
-    "Ice Cream Man",
     Inter,
     ui-sans-serif,
     system-ui,

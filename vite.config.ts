@@ -113,7 +113,7 @@ export default defineConfig(({ mode }) => {
           globPatterns: [
             "index.html",
             "registerSW.js",
-            "assets/**/*.{js,css,svg,png,webp,woff}",
+            "assets/**/*.{js,css,svg,png,webp}",
           ],
           globIgnores: ["**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}"],
           maximumFileSizeToCacheInBytes: 1024 * 1024,

@@ -32,11 +32,7 @@ export function MobileMediaRow({
       </h2>
 
       {items.length > 0 ? (
-        // A scroller clips vertically too; the block padding is the room a
-        // leaning card's corners need. The scroll padding makes a snap land a
-        // card at the row's inset rather than hard against the screen edge,
-        // where its corner would be cut.
-        <div className="media-scroll -mx-4 flex snap-x scroll-px-4 gap-3 overflow-x-auto px-4 pb-4 pt-3">
+        <div className="media-scroll -mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-2">
           <AnimatePresence initial={false}>
             {items.map((item) => (
               <MobileMediaCard
