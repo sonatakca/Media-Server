@@ -16,31 +16,33 @@ colors:
   status-danger-action: "#fda4af"
 typography:
   display:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Archivo Variable', 'Archivo Fallback', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "clamp(2.25rem, 4vw + 1rem, 4.5rem)"
     fontWeight: 900
+    fontStretch: "78%"
     lineHeight: 0.95
     letterSpacing: "normal"
   headline:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Archivo Variable', 'Archivo Fallback', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "1.5rem"
     fontWeight: 900
+    fontStretch: "78%"
     lineHeight: 1.2
     letterSpacing: "normal"
   title:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Archivo Variable', 'Archivo Fallback', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "1rem"
     fontWeight: 700
     lineHeight: 1.3
     letterSpacing: "normal"
   body:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Archivo Variable', 'Archivo Fallback', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "0.8125rem"
     fontWeight: 600
     lineHeight: 1.45
     letterSpacing: "normal"
   label:
-    fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+    fontFamily: "'Archivo Variable', 'Archivo Fallback', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
     fontSize: "0.6875rem"
     fontWeight: 900
     lineHeight: 1.15
@@ -86,7 +88,7 @@ components:
 
 **Creative North Star: "The Private Screening Room"**
 
-Seyirlik is one facility with two rooms. The audience-facing side — home, library, hero, the player — is the screening room itself: a dark, immersive space designed to disappear behind the poster art and video it's showing, lit by one restrained signal color. The admin side — scanning, processing, artwork, users — is the projection booth behind the screen: quieter, flatter, information-dense, precise, and built for repeated operational use rather than atmosphere. Both rooms belong to the same building, built from the same materials (near-black ground, Seyirlik Teal, the same heavy-weight Inter type, the same two-radius shape language), but the booth never borrows the screening room's decoration to prove they match.
+Seyirlik is one facility with two rooms. The audience-facing side — home, library, hero, the player — is the screening room itself: a dark, immersive space designed to disappear behind the poster art and video it's showing, lit by one restrained signal color. The admin side — scanning, processing, artwork, users — is the projection booth behind the screen: quieter, flatter, information-dense, precise, and built for repeated operational use rather than atmosphere. Both rooms belong to the same building, built from the same materials (near-black ground, Seyirlik Teal, the same heavy-weight Archivo type, the same two-radius shape language), but the booth never borrows the screening room's decoration to prove they match.
 
 Deep black, cinematic hierarchy, restrained teal accenting, confident heavy typography, strong media imagery, and a real sense of depth are the durable identity. The exact intensity of glass blur, glow, shadow softness, and gradients are implementation choices within that identity, refinable whenever a change improves clarity, performance, hierarchy, or restraint — they are not, themselves, what makes Seyirlik look like Seyirlik.
 
@@ -94,7 +96,7 @@ Deep black, cinematic hierarchy, restrained teal accenting, confident heavy typo
 
 - Near-black ground throughout, lit by artwork and screen glow rather than by a light UI chrome.
 - One accent color (Seyirlik Teal), used sparingly as a signal, never as a fill.
-- Type weight _is_ the display system — no separate display face, just Inter pushed to 900.
+- Weight and width _are_ the display system — no separate display face, just Archivo pushed to 900 and, for titles, condensed.
 - Two-radius shape grammar: `rounded-full` for every control, a small radius step for buttons and cards.
 - Screening room surfaces carry cinematic depth (layered shadow, glass blur, accent-tinted glow); control-booth surfaces are flat and dense by design, not by neglect.
 
@@ -132,21 +134,23 @@ The six selectable accents (`src/lib/accentTheme.ts`) are the six bars of the lo
 
 ## Typography
 
-**Body & Display Font:** Inter (with `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`).
+**Body & Display Font:** Archivo, self-hosted as a variable font with both axes (`@fontsource-variable/archivo/wdth.css`: weight 100–900, width 62–125%), falling back to `Archivo Fallback` — local Arial reshaped to Archivo's metrics so the swap does not reflow — then `ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`.
 
-**Character:** One typeface carries the whole system; hierarchy is built from weight, size, and letter-spacing rather than a second display face. Heavy weight (900, `font-black`) is the system's display device — it's what a hero title, a stat number, and an eyebrow label all reach for.
+**Character:** One typeface carries the whole system; hierarchy is built from weight, width, size, and letter-spacing rather than a second display face. Heavy weight (900, `font-black`) is the system's display device — it's what a hero title, a stat number, and a label all reach for — and width separates what a person *reads as a title* from what they *operate*: titles are condensed, everything else is set at normal width. Archivo is a grotesque with a poster lineage, so a condensed 900 title sits naturally over film art, while its normal width stays plain and legible down to the 10–11px labels. The hand-cut Seyirlik lettering belongs to the wordmark and loader artwork alone; it is never set as text.
 
 ### Hierarchy
 
-- **Display** (900, `clamp(2.25rem, 4vw + 1rem, 4.5rem)`, leading 0.95): hero titles over backdrop art, always paired with a cinematic drop-shadow so it stays legible over busy imagery.
-- **Headline** (900, `1.5rem`, tabular-nums where numeric): section headers and the large stat numbers in the Control Booth.
+- **Display** (900, 78% width, `clamp(2.25rem, 4vw + 1rem, 4.5rem)`, leading 0.95): hero titles over backdrop art, always paired with a cinematic drop-shadow so it stays legible over busy imagery.
+- **Headline** (900, 78% width on title-size `h1`/`h2`, `1.5rem`, tabular-nums where numeric): page and row titles, section headers and the large stat numbers in the Control Booth.
 - **Title** (700, `1rem`–`1.125rem`): card titles, button labels, nav labels.
 - **Body** (600, `0.75rem`–`0.875rem`, leading 1.4–1.5): descriptions, metadata rows, supporting copy — set in Text Secondary more often than Text Primary.
 - **Label** (900, `0.66rem`–`0.6875rem`, tracking `0.08em`–`0.18em`, uppercase): eyebrows, category badges, and count chips. This is the system's most-repeated typographic gesture.
 
 ### Named Rules
 
-**The Weight-Not-Face Rule.** Never reach for a second font family to add hierarchy or occasion (a title card, a stat, a badge). Reach for 900 and letter-spacing instead.
+**The Weight-Not-Face Rule.** Never reach for a second font family to add hierarchy or occasion (a title card, a stat, a badge). Reach for 900, width, and letter-spacing instead.
+
+**The Two-Widths Rule.** Titles are condensed; controls, copy, data, and labels are not. The rule lives in one place in `src/index.css`: an `h1` or `h2` set at title size (`text-lg`, 1.125rem, and up) is condensed to 78%, so a title is condensed by being a heading at title size, not by a class someone remembered. A small card or panel heading keeps normal width, and so does an uppercase heading — a label doing a label's job — because tracked caps and small text need the open counters. Never condense running text, numbers in a table, or anything below 1.125rem.
 
 ## Layout
 
@@ -220,7 +224,7 @@ Transparent over the hero, becomes an opaque glass bar (`navbar-glass` shadow, `
 ### Do:
 
 - **Do** keep Seyirlik Teal rare: a glow, a fill, a ring, a dot — never a screen's dominant color (**The One Signal Light Rule**).
-- **Do** build hierarchy from Inter's weight and letter-spacing (900 + tracked uppercase for labels) instead of introducing a second typeface (**The Weight-Not-Face Rule**).
+- **Do** build hierarchy from Archivo's weight, width, and letter-spacing (900 condensed for titles, 900 + tracked uppercase for labels) instead of introducing a second typeface (**The Weight-Not-Face Rule**).
 - **Do** let Screening Room surfaces (browse, hero, player) carry real cinematic depth — layered shadow, glass blur, accent-tinted glow — proportional to how close the surface sits to the media itself.
 - **Do** keep Control Booth surfaces flat, dense, and fast to scan: hairline borders, tabular numbers, minimal motion, no glow or blur (**The Booth-Doesn't-Glow Rule**).
 - **Do** use `rounded-full` for every control the user taps or clicks, and the `8/12/16px` step scale for every container.

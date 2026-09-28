@@ -1,6 +1,43 @@
+/*
+ * Arial reshaped to Archivo's advance and vertical metrics (measured in
+ * Chromium at weight 400), so text laid out before the web font arrives does
+ * not reflow when it swaps in.
+ */
+@font-face {
+  font-family: "Archivo Fallback";
+  src: local("Arial"), local("ArialMT");
+  size-adjust: 98.88%;
+  ascent-override: 88.99%;
+  descent-override: 21.24%;
+  line-gap-override: 0%;
+}
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/*
+ * Two widths, one family. Titles — the hero, a page, a row — set Archivo
+ * condensed, so a title reads like one on a poster; everything a person
+ * operates stays at normal width. A heading is condensed only once it is set
+ * at title size (text-lg, 1.125rem, and up): a small card or panel heading
+ * and an uppercase tracked label both need the open counters of the normal
+ * width to stay legible.
+ */
+@layer base {
+  :is(h1, h2):is(
+      .text-lg,
+      .text-xl,
+      .text-2xl,
+      .text-3xl,
+      .text-4xl,
+      .text-5xl,
+      .text-6xl,
+      .text-7xl
+    ):not(.uppercase) {
+    font-stretch: 78%;
+  }
+}
 
 @property --accent {
   syntax: "<color>";

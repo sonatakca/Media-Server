@@ -391,7 +391,8 @@ body:has(.seyirlik-player-shell) {
   color: transparent;
   background: transparent;
   font-family:
-    Inter,
+    "Archivo Variable",
+    "Archivo Fallback",
     ui-sans-serif,
     system-ui,
     -apple-system,
@@ -561,7 +562,8 @@ body:has(.seyirlik-player-shell) {
   padding: 0.25rem 0.5rem;
   color: rgba(255, 255, 255, 0.97);
   font-family:
-    Inter,
+    "Archivo Variable",
+    "Archivo Fallback",
     ui-sans-serif,
     system-ui,
     -apple-system,

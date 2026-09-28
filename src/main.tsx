@@ -2,6 +2,10 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import "flag-icons/css/flag-icons.min.css";
+// Archivo, self-hosted with both axes: weight for hierarchy, width for the
+// condensed display role. Subsets load by unicode-range, so Turkish letters
+// fetch latin-ext only when a page actually uses them.
+import "@fontsource-variable/archivo/wdth.css";
 import App from "./App";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import { applyStoredAccentTheme } from "./lib/accentTheme";

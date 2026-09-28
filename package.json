@@ -39,6 +39,7 @@
     "maintenance:archive-legacy-trickplay": "node --env-file=.env --import tsx scripts/archive-legacy-trickplay.ts"
   },
   "dependencies": {
+    "@fontsource-variable/archivo": "^5.3.0",
     "animejs": "^4.4.1",
     "argon2": "^0.45.1",
     "embla-carousel-autoplay": "^8.6.0",

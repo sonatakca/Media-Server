@@ -6,7 +6,8 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          "Inter",
+          "Archivo Variable",
+          "Archivo Fallback",
           "ui-sans-serif",
           "system-ui",
           "-apple-system",
