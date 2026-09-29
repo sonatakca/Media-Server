@@ -169,8 +169,8 @@ export function HeroComposition({
     if (presence <= 0) return "none";
     return `inset 0 0 0 ${1 / scale}px rgba(255,255,255,${0.18 * presence})`;
   });
-  // The scrim is for copy, and a miniature has none: it shows the artwork
-  // clean, and the shade grows in with the frame.
+  // The scrim is for the menu, and a miniature has none: it shows the
+  // artwork clean, and the shade grows in with the frame.
   const scrimOpacity = useTransform(
     m.scale,
     [slotScale, Math.max(slotScale + 0.01, 0.6)],
@@ -265,14 +265,15 @@ export function HeroComposition({
         />
       ) : null}
 
-      {/* Legibility for the title and the copy under it, bottom-left. */}
+      {/* Legibility for the menu, in a band as tall as the hand-over at
+          the foot, so the artwork between them is not dimmed. */}
       <motion.div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
           opacity: scrimOpacity,
           background:
-            "radial-gradient(95% 80% at 0% 100%, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0.6) 38%, rgba(5,6,7,0) 70%), linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 11%, rgba(5,6,7,0) 24%)",
+            "linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 5.5%, rgba(5,6,7,0) 12%)",
         }}
       />
 
