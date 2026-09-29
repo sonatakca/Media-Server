@@ -15,8 +15,8 @@ import {
 
 /** Sizes of the hero's own controls, as it renders them. */
 const ACTIONS = {
-  playPx: 124,
-  detailsPx: 133,
+  playPx: 114,
+  detailsPx: 135,
   roundPx: 48,
   gapPx: 10,
 } as const;
@@ -37,7 +37,14 @@ export function HomeHeroSkeletonBackdrop() {
 }
 
 /** The placeholders alone, for a stage of a known size. */
-export function HomeHeroSkeletonPieces({ stage }: { stage: StageSize }) {
+export function HomeHeroSkeletonPieces({
+  stage,
+  withQueue = true,
+}: {
+  stage: StageSize;
+  /** A title's own page has the same copy and no queue. */
+  withQueue?: boolean;
+}) {
   const layout = heroLayout(stage);
   const slots = queueSlots(stage);
   const head = slots[0]!;
@@ -96,35 +103,39 @@ export function HomeHeroSkeletonPieces({ stage }: { stage: StageSize }) {
         />
       </div>
 
-      {slots.map((slot, index) => (
-        <div
-          key={index}
-          className="shimmer absolute rounded-[12px]"
-          style={{
-            left: slot.x,
-            top: slot.y,
-            width: slot.width,
-            height: slot.height,
-          }}
-        />
-      ))}
-      <div
-        className="absolute h-[2px] rounded-full bg-white/15"
-        style={{
-          left: head.x,
-          top: head.y + head.height + 10,
-          width: head.width,
-        }}
-      />
-      <div
-        className="shimmer absolute rounded-full"
-        style={{
-          right: stage.width - (last.x + last.width),
-          top: head.y - CONTROLS.abovePx,
-          width: CONTROLS.widthPx,
-          height: CONTROLS.heightPx,
-        }}
-      />
+      {withQueue ? (
+        <>
+          {slots.map((slot, index) => (
+            <div
+              key={index}
+              className="shimmer absolute rounded-[12px]"
+              style={{
+                left: slot.x,
+                top: slot.y,
+                width: slot.width,
+                height: slot.height,
+              }}
+            />
+          ))}
+          <div
+            className="absolute h-[2px] rounded-full bg-white/15"
+            style={{
+              left: head.x,
+              top: head.y + head.height + 10,
+              width: head.width,
+            }}
+          />
+          <div
+            className="shimmer absolute rounded-full"
+            style={{
+              right: stage.width - (last.x + last.width),
+              top: head.y - CONTROLS.abovePx,
+              width: CONTROLS.widthPx,
+              height: CONTROLS.heightPx,
+            }}
+          />
+        </>
+      ) : null}
     </div>
   );
 }
@@ -152,6 +163,38 @@ export function HomeHeroSkeleton() {
     >
       <HomeHeroSkeletonBackdrop />
       {stage ? <HomeHeroSkeletonPieces stage={stage} /> : null}
+    </section>
+  );
+}
+
+/**
+ * A title page's hero while it loads: the home hero's skeleton without the
+ * queue, so each placeholder is where the title hero's own piece will be.
+ */
+export function TitleHeroSkeleton() {
+  const ref = useRef<HTMLElement>(null);
+  const [stage, setStage] = useState<StageSize | null>(null);
+  useLayoutEffect(() => {
+    const section = ref.current;
+    if (!section) return undefined;
+    const measure = () =>
+      setStage({ width: section.clientWidth, height: section.clientHeight });
+    measure();
+    if (typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <section
+      ref={ref}
+      className="relative h-[100svh] min-h-[38rem] w-full overflow-hidden"
+    >
+      <HomeHeroSkeletonBackdrop />
+      {stage ? (
+        <HomeHeroSkeletonPieces stage={stage} withQueue={false} />
+      ) : null}
     </section>
   );
 }

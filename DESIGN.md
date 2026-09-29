@@ -217,7 +217,7 @@ The desktop home hero is a stage with its queue in view. Every featured title is
 
 ### Title Hero
 
-A film's or series' own page opens on the home hero's stage with nothing queued (`src/components/home/TitleHero.tsx`): the same composition, top and bottom bands, logo sizing and halo, facts line, overview on request and actions, sharing the home hero's copy block (`src/components/home/HeroCopy.tsx`). There is no rotation and nothing travels; the trailer, when there is one, starts once after the artwork and copy have had their moment, never while the overview is open, and its controls sit alone in the glass pill at the right, level with the actions. "Details" scrolls to the details further down the page rather than linking to the page it is on.
+A film's or series' own page opens on the home hero's stage with nothing queued (`src/components/home/TitleHero.tsx`): the same composition, top and bottom bands, logo sizing and halo, facts line, overview on request and actions, sharing the home hero's copy block (`src/components/home/HeroCopy.tsx`). There is no rotation and nothing travels; the trailer, when there is one, starts once after the artwork and copy have had their moment, never while the overview is open, and its controls sit alone in the glass pill at the right, level with the actions. "Details" scrolls to the details further down the page rather than linking to the page it is on. Its loading skeleton is the home hero's without the queue (`TitleHeroSkeleton`), with the page's back button, mark-watched pill and scroll chevron where the page puts them, so nothing moves when the page arrives.
 
 ### Notifications (signature)
 
