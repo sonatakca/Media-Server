@@ -272,7 +272,7 @@ export function HeroComposition({
         style={{
           opacity: scrimOpacity,
           background:
-            "radial-gradient(95% 80% at 0% 100%, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0.6) 38%, rgba(5,6,7,0) 70%), linear-gradient(0deg, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0) 30%), linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 11%, rgba(5,6,7,0) 24%)",
+            "radial-gradient(95% 80% at 0% 100%, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0.6) 38%, rgba(5,6,7,0) 70%), linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 11%, rgba(5,6,7,0) 24%)",
         }}
       />
 

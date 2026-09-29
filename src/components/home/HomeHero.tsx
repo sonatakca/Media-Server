@@ -114,6 +114,10 @@ const Z: Record<Role, number> = {
   leaving: 4,
 };
 
+/** Quartic ease-in (alpha = t⁴) from clear to the page's background. */
+const HANDOVER_GRADIENT =
+  "linear-gradient(180deg, rgba(5,6,7,0) 0%, rgba(5,6,7,0.008) 30%, rgba(5,6,7,0.041) 45%, rgba(5,6,7,0.13) 60%, rgba(5,6,7,0.24) 70%, rgba(5,6,7,0.41) 80%, rgba(5,6,7,0.573) 87%, rgba(5,6,7,0.748) 93%, #050607 100%)";
+
 /** The queue's resting shade: none, the miniatures show their artwork clean. */
 const QUEUE_DIM = 0;
 
@@ -1129,10 +1133,13 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         </motion.div>
       ) : null}
 
-      {/* The page continues below; the hero hands over to it. */}
+      {/* The page continues below; the hero hands over to it in a short
+          band that stays clear until near the edge, so the artwork above it
+          is not dimmed. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-24 bg-gradient-to-b from-transparent to-[#050607]"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-[12%]"
+        style={{ background: HANDOVER_GRADIENT }}
       />
     </section>
   );
