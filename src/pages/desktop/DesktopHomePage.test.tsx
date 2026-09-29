@@ -41,9 +41,9 @@ vi.mock("../../i18n/LanguageContext", () => {
     useLanguage: () => ({ t }),
   };
 });
-vi.mock("../../components/HeroSection", () => ({
-  HeroSection: ({ onHeroReady }: { onHeroReady?: () => void }) => (
-    <button type="button" onClick={onHeroReady}>
+vi.mock("../../components/home/HomeHero", () => ({
+  HomeHero: ({ onReady }: { onReady?: () => void }) => (
+    <button type="button" onClick={onReady}>
       hero-ready
     </button>
   ),

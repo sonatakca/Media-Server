@@ -211,6 +211,10 @@ There are no sharp corners anywhere in the system, and no radius values outside 
 
 Icon buttons, segmented toolbars, and pill inputs floated over media share one recipe: near-black translucent fill (`~75%` opacity), `backdrop-blur-2xl`, a one-pixel white hairline plus an inset top highlight and a soft drop shadow, brightening fill and shadow on hover, scaling down slightly on press. This is the system's one truly tactile control family — everything that lives on top of video or artwork uses it.
 
+### Home Hero (signature)
+
+The desktop home hero is a stage with its queue in view. Every featured title is one composition (artwork, legibility scrim, logo or condensed title) drawn at the stage's full size; the next three wait bottom-right as that same composition scaled into slots of the stage's own aspect ratio, 12px corners and a hairline that stay constant on screen at any scale. A change is always a move, never a swap: the next title grows out of its slot over the stage while the outgoing one recedes beneath it (scale 0.94, darkened), the queue closes up, and a newcomer enters from beyond the right edge; going back reverses it. The first arrival opens from a horizontal slit like a projector gate. Copy (facts, three lines of story, actions) rises a line at a time from its own clip after the title lands and drops out the same way before it leaves. Travel uses a sine in-out curve and is lengthened as needed so no edge moves more than 32px per frame on a 1080-tall frame (`src/components/home/homeHeroModel.ts`); the accent appears only as the up-next progress line and focus rings; controls (previous, pause, next, position, trailer and sound when a trailer exists) sit in one glass pill above the queue.
+
 ### Notifications (signature)
 
 A stack of glass chips (rounded, black/70, backdrop-blur) anchored bottom-right, collapsing into a pile with a mask-faded top/bottom edge rather than a hard-clipped scroll boundary. A balanced-ink spinner (two opposed arcs of equal weight) keeps its optical center still while it spins. Count badges are small pill chips in translucent white, heavy weight, tabular numerals.

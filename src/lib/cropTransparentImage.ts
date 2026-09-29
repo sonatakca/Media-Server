@@ -80,31 +80,41 @@ async function performTransparentCrop(
 
     const pixels = imageData.data;
 
-    let left = bitmap.width;
-    let right = -1;
-    let top = bitmap.height;
-    let bottom = -1;
-
-    for (let y = 0; y < bitmap.height; y += 1) {
-      for (let x = 0; x < bitmap.width; x += 1) {
-        const alphaIndex = (y * bitmap.width + x) * 4 + 3;
-        const alpha = pixels[alphaIndex];
-
-        if (alpha <= alphaThreshold) {
-          continue;
-        }
-
-        left = Math.min(left, x);
-        right = Math.max(right, x);
-        top = Math.min(top, y);
-        bottom = Math.max(bottom, y);
+    const width = bitmap.width;
+    const height = bitmap.height;
+    const rowIsClear = (y: number) => {
+      const end = (y + 1) * width * 4;
+      for (let index = y * width * 4 + 3; index < end; index += 4) {
+        if (pixels[index]! > alphaThreshold) return false;
       }
-    }
+      return true;
+    };
+
+    // Walked in from each edge, stopping at the first opaque pixel, so only
+    // the transparent margin is read. Visiting every pixel of a full-size logo
+    // took over a second on the main thread, long enough to freeze any
+    // animation running while a logo loaded.
+    let top = 0;
+    while (top < height && rowIsClear(top)) top += 1;
 
     // The whole image is transparent.
-    if (right < left || bottom < top) {
+    if (top === height) {
       return sourceUrl;
     }
+
+    let bottom = height - 1;
+    while (bottom > top && rowIsClear(bottom)) bottom -= 1;
+
+    const columnIsClear = (x: number) => {
+      for (let y = top; y <= bottom; y += 1) {
+        if (pixels[(y * width + x) * 4 + 3]! > alphaThreshold) return false;
+      }
+      return true;
+    };
+    let left = 0;
+    while (left < width && columnIsClear(left)) left += 1;
+    let right = width - 1;
+    while (right > left && columnIsClear(right)) right -= 1;
 
     left = Math.max(0, left - padding);
     right = Math.min(bitmap.width - 1, right + padding);

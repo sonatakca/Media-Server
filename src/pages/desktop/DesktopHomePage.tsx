@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { HeroSection } from "../../components/HeroSection";
+import { HomeHero } from "../../components/home/HomeHero";
 import { MediaRow } from "../../components/MediaRow";
 import { HomeSkeleton } from "../../components/Skeletons";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -33,8 +33,6 @@ import {
 
 type HomeRowLabelKey = "home.continueWatching" | "home.latestMedia";
 
-const HERO_ROTATION_INTERVAL_MS = 12000;
-
 interface HomeData {
   continueWatching: MediaItem[];
   latestMedia: MediaItem[];
@@ -55,23 +53,9 @@ export function DesktopHomePage() {
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
 
-  const [slideDuration, setSlideDuration] = useState(HERO_ROTATION_INTERVAL_MS);
-
-  const [heroIndex, setHeroIndex] = useState(0);
-  const [isHeroPaused, setIsHeroPaused] = useState(false);
-  const [heroProgressResetKey, setHeroProgressResetKey] = useState(0);
-
-  const [effectiveStartMs, setEffectiveStartMs] = useState(() => Date.now());
   const [isHeroReady, setIsHeroReady] = useState(false);
   const [shouldShowConfetti, setShouldShowConfetti] = useState(false);
   const hasEvaluatedConfetti = useRef(false);
-
-  const timerRef = useRef({
-    startMs: Date.now(),
-    accumulatedPause: 0,
-    pauseBeganMs: null as number | null,
-    timeoutId: null as number | null,
-  });
 
   const curatedLists = useHomeCuratedLists();
   const pools = useCataloguePools();
@@ -83,11 +67,6 @@ export function DesktopHomePage() {
 
     return applyCuration(buildHomeCarouselPool(heroItems), curatedLists.hero);
   }, [pools, data?.latestMedia, curatedLists.hero]);
-
-  const selectedHeroIndex = heroIndex < featuredPool.length ? heroIndex : 0;
-  const heroItem = featuredPool[selectedHeroIndex];
-
-  const isHeroCarouselPaused = isHeroPaused || !isHeroReady;
 
   const refreshSmartContinueWatching = useCallback(async () => {
     const smartContinueItems = await getSmartContinueWatchingItems();
@@ -213,82 +192,6 @@ export function DesktopHomePage() {
       );
   }, []);
 
-  const advanceSlide = useCallback(() => {
-    timerRef.current.startMs = Date.now();
-    timerRef.current.accumulatedPause = 0;
-    timerRef.current.pauseBeganMs = null;
-    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
-    setHeroIndex((currentIndex) => (currentIndex + 1) % featuredPool.length);
-    setHeroProgressResetKey((current) => current + 1);
-    setEffectiveStartMs(Date.now());
-  }, [featuredPool.length]);
-
-  useEffect(() => {
-    timerRef.current.startMs = Date.now();
-    timerRef.current.accumulatedPause = 0;
-    timerRef.current.pauseBeganMs = null;
-    setHeroIndex(0);
-    setIsHeroPaused(false);
-    setIsHeroReady(false);
-    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
-    setHeroProgressResetKey((current) => current + 1);
-    setEffectiveStartMs(Date.now());
-  }, [featuredPool]);
-
-  useEffect(() => {
-    if (featuredPool.length <= 1) return;
-
-    if (isHeroCarouselPaused) {
-      if (timerRef.current.pauseBeganMs === null) {
-        timerRef.current.pauseBeganMs = Date.now();
-      }
-      if (timerRef.current.timeoutId) {
-        window.clearTimeout(timerRef.current.timeoutId);
-        timerRef.current.timeoutId = null;
-      }
-    } else {
-      if (timerRef.current.pauseBeganMs !== null) {
-        timerRef.current.accumulatedPause +=
-          Date.now() - timerRef.current.pauseBeganMs;
-        timerRef.current.pauseBeganMs = null;
-        setEffectiveStartMs(
-          timerRef.current.startMs + timerRef.current.accumulatedPause,
-        );
-      }
-
-      const elapsedMs =
-        Date.now() -
-        timerRef.current.startMs -
-        timerRef.current.accumulatedPause;
-      const remainingMs = Math.max(0, slideDuration - elapsedMs);
-
-      timerRef.current.timeoutId = window.setTimeout(() => {
-        advanceSlide();
-      }, remainingMs);
-    }
-
-    return () => {
-      if (timerRef.current.timeoutId) {
-        window.clearTimeout(timerRef.current.timeoutId);
-        timerRef.current.timeoutId = null;
-      }
-    };
-  }, [isHeroCarouselPaused, featuredPool.length, slideDuration, advanceSlide]);
-
-  const handleSelectHeroIndex = (index: number) => {
-    timerRef.current.startMs = Date.now();
-    timerRef.current.accumulatedPause = 0;
-    timerRef.current.pauseBeganMs = isHeroCarouselPaused ? Date.now() : null;
-    setHeroIndex(index);
-    setSlideDuration(HERO_ROTATION_INTERVAL_MS);
-    setHeroProgressResetKey((current) => current + 1);
-    setEffectiveStartMs(Date.now());
-  };
-
-  const handleToggleHeroPaused = () => {
-    setIsHeroPaused((current) => !current);
-  };
-
   const handleClearContinueWatching = (clearedItem: MediaItem) => {
     setData((currentData) =>
       removeContinueWatchingItem(currentData, clearedItem.Id),
@@ -343,20 +246,7 @@ export function DesktopHomePage() {
       ) : null}
 
       <div className="min-h-[100svh] full-bleed ">
-        <HeroSection
-          item={heroItem}
-          currentIndex={selectedHeroIndex}
-          totalItems={featuredPool.length}
-          durationMs={slideDuration}
-          progressStartedAtMs={effectiveStartMs}
-          progressResetKey={isHeroReady ? heroProgressResetKey : "hero-loading"}
-          isPaused={isHeroCarouselPaused}
-          onTogglePaused={handleToggleHeroPaused}
-          showPauseButton={isHeroReady}
-          onSelectIndex={handleSelectHeroIndex}
-          onHeroReady={() => setIsHeroReady(true)}
-          onSlideDurationChange={setSlideDuration}
-        />
+        <HomeHero items={featuredPool} onReady={() => setIsHeroReady(true)} />
       </div>
 
       <div className="mx-auto w-full max-w-[1600px] px-4 sm:px-6 lg:px-8">
