@@ -123,7 +123,12 @@ export function DesktopNavbar() {
               }
             >
               <AnimatedWidth value={link.label}>
-                <AnimatedText value={link.label} />
+                {/* What the underline measures: the text itself. The
+                    AnimatedWidth frame around it is a few pixels wider on
+                    the right, so centring on the link was centring off it. */}
+                <span data-nav-label>
+                  <AnimatedText value={link.label} />
+                </span>
               </AnimatedWidth>
             </NavLink>
           ))}
@@ -133,7 +138,7 @@ export function DesktopNavbar() {
               the accent: "you are here" is never a signal colour. */}
           <SlidingIndicator
             containerRef={navLinksRef}
-            activeSelector='a[aria-current="page"]'
+            activeSelector='a[aria-current="page"] [data-nav-label]'
             measureKey={location.pathname}
           >
             <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
