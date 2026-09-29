@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, Play } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ErrorMessage } from "./ErrorMessage";
 import { MediaCard } from "./MediaCard";
+import { EpisodeCardSkeleton } from "./Skeletons";
 import { MobileMediaCard } from "./mobile/MobileMediaCard";
 import { MotionReveal } from "./MotionReveal";
 import { WatchedStatusButton } from "./WatchedStatusButton";
@@ -692,16 +693,18 @@ export function SeriesLibraryDetails({
           variant={variant}
         >
           {isLoadingEpisodes ? (
-            Array.from({ length: 4 }, (_, index) => (
-              <div
-                key={index}
-                className={
-                  isDesktop
-                    ? "shimmer aspect-video w-80 shrink-0 rounded-xl"
-                    : "shimmer aspect-video w-[78vw] shrink-0 rounded-xl"
-                }
-              />
-            ))
+            Array.from({ length: 4 }, (_, index) =>
+              isDesktop ? (
+                <div key={index} className="snap-start">
+                  <EpisodeCardSkeleton />
+                </div>
+              ) : (
+                <div
+                  key={index}
+                  className="shimmer aspect-video w-[78vw] shrink-0 rounded-xl"
+                />
+              ),
+            )
           ) : episodes.length > 0 ? (
             episodes.map((episode, index) => (
               <div key={episode.Id} className="snap-start">

@@ -72,14 +72,39 @@ export function MediaCardSkeleton({
   );
 }
 
+/**
+ * An episode card while its season loads: the card's own shell (width steps,
+ * border, 16:9 still and the text panel with its padding and minimum height)
+ * with a placeholder on each line the card will draw, so the row does not
+ * change size or shape when the episodes arrive. Mirrors the episode layout
+ * in `MediaCard`.
+ */
 export function EpisodeCardSkeleton() {
   return (
-    <div className="w-72 shrink-0 sm:w-80 lg:w-96">
-      <div className="shimmer aspect-video rounded-xl" />
-
-      <div className="px-1 pt-3">
-        <div className="shimmer h-5 w-4/5 rounded-md" />
-        <div className="shimmer mt-2 h-4 w-2/5 rounded-md" />
+    <div className="h-full w-60 min-w-0 shrink-0 sm:w-80 lg:w-96">
+      <div className="relative flex h-full w-full min-w-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-[var(--surface)] shadow-cinematic-card">
+        <div className="shimmer aspect-video w-full shrink-0 [--shimmer-base:rgb(var(--shimmer-color)/1.5%)]" />
+        <div className="relative flex min-h-[8.5rem] flex-col border-t border-white/16 bg-black/40 px-4 pb-4 pt-3 sm:min-h-[9.75rem] sm:px-5 sm:pb-5 sm:pt-4">
+          {/* Episode number, title, two lines of story, then the runtime. */}
+          <div className="mb-1 flex h-[0.99rem] items-center sm:h-4">
+            <div className="shimmer h-2.5 w-16 rounded-md" />
+          </div>
+          <div className="flex h-5 items-center sm:h-6">
+            <div className="shimmer h-3.5 w-3/5 rounded-md sm:h-4" />
+          </div>
+          <div className="mt-1.5 flex h-[1.8225rem] flex-col justify-around sm:h-[2.025rem]">
+            <div className="shimmer h-2.5 w-full rounded-md" />
+            <div className="shimmer h-2.5 w-4/5 rounded-md" />
+          </div>
+          <div className="mt-auto flex h-[1.4375rem] items-end justify-between gap-3 pt-2 sm:h-6">
+            <div className="flex h-4 items-center">
+              <div className="shimmer h-3 w-12 rounded-md" />
+            </div>
+            <div className="flex h-4 items-center">
+              <div className="shimmer h-1.5 w-4 rounded-full" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -321,23 +346,27 @@ function EpisodeShelfSkeleton({ mobile }: { mobile: boolean }) {
         {!mobile && <div className="shimmer h-9 w-20 rounded-full" />}
       </div>
       <div className="flex gap-4 overflow-hidden pb-5">
-        {Array.from({ length: 5 }, (_, index) => (
-          <div
-            key={index}
-            className={`shrink-0 overflow-hidden rounded-xl border border-white/10 ${
-              mobile ? "w-[78vw]" : "w-60 sm:w-80 lg:w-96"
-            }`}
-          >
-            <div className="shimmer aspect-video w-full [--shimmer-base:rgb(var(--shimmer-color)/1.5%)]" />
-            <div className="min-h-[8.5rem] space-y-2 p-4 sm:min-h-[9.75rem] sm:p-5">
-              <div className="shimmer h-3 w-20 rounded-md" />
-              <div className="shimmer h-5 w-3/5 rounded-md" />
-              <div className="shimmer h-3 w-full rounded-md" />
-              <div className="shimmer h-3 w-4/5 rounded-md" />
-              <div className="shimmer mt-4 h-3 w-14 rounded-md" />
+        {Array.from({ length: 5 }, (_, index) =>
+          mobile ? (
+            <div
+              key={index}
+              className={`shrink-0 overflow-hidden rounded-xl border border-white/10 ${
+                mobile ? "w-[78vw]" : "w-60 sm:w-80 lg:w-96"
+              }`}
+            >
+              <div className="shimmer aspect-video w-full [--shimmer-base:rgb(var(--shimmer-color)/1.5%)]" />
+              <div className="min-h-[8.5rem] space-y-2 p-4 sm:min-h-[9.75rem] sm:p-5">
+                <div className="shimmer h-3 w-20 rounded-md" />
+                <div className="shimmer h-5 w-3/5 rounded-md" />
+                <div className="shimmer h-3 w-full rounded-md" />
+                <div className="shimmer h-3 w-4/5 rounded-md" />
+                <div className="shimmer mt-4 h-3 w-14 rounded-md" />
+              </div>
             </div>
-          </div>
-        ))}
+          ) : (
+            <EpisodeCardSkeleton key={index} />
+          ),
+        )}
       </div>
     </section>
   );
