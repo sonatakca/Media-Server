@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   motion,
   motionValue,
@@ -13,9 +13,17 @@ import {
 } from "../../lib/itemMetadataPreferences";
 import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentImage";
 import type { MediaItem } from "../../lib/types";
+import {
+  DEFAULT_LOGO_SHADOW,
+  measureLogoShadow,
+  type LogoShadow,
+} from "../../lib/logoShadow";
 import { getHeroImageCandidates } from "../hero/heroModel";
 import {
+  QUEUE_TITLE_BOX,
   TITLE_SCALE,
+  queueTitleTransform,
+  stageness,
   type HeroLayout,
   type Placement,
   type StageSize,
@@ -63,6 +71,43 @@ export function createCompositionMotion(
 /** The corner radius a miniature shows on screen, whatever its scale. */
 const QUEUE_RADIUS_PX = 12;
 
+/** The logo's shadow in a miniature, as it appears on screen. */
+const QUEUE_SHADOW_BLUR_PX = 5;
+const QUEUE_SHADOW_DROP_PX = 2;
+
+/** A small copy of the artwork, enough to measure the brightness behind a logo. */
+function sampleUrl(url: string): string {
+  try {
+    const parsed = new URL(url, window.location.href);
+    if (parsed.searchParams.has("maxWidth"))
+      parsed.searchParams.set("maxWidth", "160");
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+/** The shadow a miniature's logo needs against the artwork behind it. */
+function useLogoShadow(logoUrl: string, artworkUrl: string | undefined) {
+  const [shadow, setShadow] = useState<LogoShadow>(DEFAULT_LOGO_SHADOW);
+  useEffect(() => {
+    if (!logoUrl || !artworkUrl) return undefined;
+    let cancelled = false;
+    void measureLogoShadow(logoUrl, sampleUrl(artworkUrl), {
+      left: QUEUE_TITLE_BOX.left,
+      top: 1 - QUEUE_TITLE_BOX.bottom - QUEUE_TITLE_BOX.height,
+      width: QUEUE_TITLE_BOX.width,
+      height: QUEUE_TITLE_BOX.height,
+    }).then((next) => {
+      if (!cancelled) setShadow(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [artworkUrl, logoUrl]);
+  return shadow;
+}
+
 interface HeroCompositionProps {
   item: MediaItem;
   stage: StageSize;
@@ -74,7 +119,6 @@ interface HeroCompositionProps {
   zIndex: number;
   /** The one on stage speaks to assistive technology; miniatures do not. */
   isStage: boolean;
-  clipPath?: MotionValue<string>;
   trailerUrl?: string | null;
   isTrailerPlaying?: boolean;
   isTrailerMuted?: boolean;
@@ -90,7 +134,6 @@ export function HeroComposition({
   slotScale,
   zIndex,
   isStage,
-  clipPath,
   trailerUrl,
   isTrailerPlaying = false,
   isTrailerMuted = true,
@@ -135,6 +178,32 @@ export function HeroComposition({
   );
   const titleOpacity = useTransform(m.trailer, [0, 1], [1, 0.92]);
 
+  // In a slot the logo is drawn large at the miniature's bottom-left so it
+  // reads at that size; on stage it is at its own place and size. Between
+  // the two it follows the frame's scale, so a lift carries it smoothly.
+  const queueMove = useMemo(
+    () => queueTitleTransform(stage, titleBox),
+    [stage, titleBox],
+  );
+  const toStage = useTransform(m.scale, (scale) => stageness(scale, slotScale));
+  const titleX = useTransform(toStage, (p) => queueMove.x * (1 - p));
+  const titleY = useTransform([toStage, m.titleY], (values: number[]) => {
+    const [p = 1, rise = 0] = values;
+    return queueMove.y * (1 - p) + rise * p;
+  });
+  const titleScale = useTransform(
+    [toStage, m.titleScale],
+    (values: number[]) => {
+      const [p = 1, scale = TITLE_SCALE.rest] = values;
+      return queueMove.scale + (scale - queueMove.scale) * p;
+    },
+  );
+  // A silhouette of the logo under it, dark or light against the artwork,
+  // for as long as the frame is a miniature.
+  const shadow = useLogoShadow(logoUrl, artwork?.url);
+  const silhouetteOpacity = useTransform(toStage, (p) => 1 - p);
+  const onScreen = slotScale * queueMove.scale;
+
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
@@ -158,7 +227,6 @@ export function HeroComposition({
         transformOrigin: "0 0",
         borderRadius: radius,
         boxShadow: frameShadow,
-        clipPath,
         zIndex,
         willChange: "transform",
       }}
@@ -215,22 +283,44 @@ export function HeroComposition({
           bottom: titleBox.bottom,
           width: titleBox.width,
           height: titleBox.height,
-          scale: m.titleScale,
-          y: m.titleY,
+          x: titleX,
+          y: titleY,
+          scale: titleScale,
           opacity: titleOpacity,
           transformOrigin: "0% 100%",
         }}
       >
         {logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={isStage ? title : ""}
-            draggable={false}
-            onLoad={() => setIsLogoLoaded(true)}
-            className={`block max-h-full max-w-full select-none object-contain object-left-bottom drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)] transition-opacity duration-500 ${
+          <div
+            className={`relative flex max-h-full max-w-full transition-opacity duration-500 ${
               isLogoLoaded ? "opacity-100" : "opacity-0"
             }`}
-          />
+          >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0"
+              style={{ opacity: shadow.strength }}
+            >
+              <motion.img
+                src={logoUrl}
+                alt=""
+                draggable={false}
+                className="h-full w-full select-none object-contain object-left-bottom"
+                style={{
+                  opacity: silhouetteOpacity,
+                  y: QUEUE_SHADOW_DROP_PX / onScreen,
+                  filter: `brightness(0)${shadow.tone === "light" ? " invert(1)" : ""} blur(${QUEUE_SHADOW_BLUR_PX / onScreen}px)`,
+                }}
+              />
+            </div>
+            <img
+              src={logoUrl}
+              alt={isStage ? title : ""}
+              draggable={false}
+              onLoad={() => setIsLogoLoaded(true)}
+              className="relative block max-h-full max-w-full select-none object-contain object-left-bottom drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]"
+            />
+          </div>
         ) : (
           <h2
             className="text-cinematic-title font-black uppercase leading-[0.9] text-white"

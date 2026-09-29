@@ -56,9 +56,10 @@ export const HERO_MOTION = {
   /** What the outgoing title does under the incoming one: it recedes. */
   pushBackScale: 0.95,
   pushBackDim: 0.5,
-  /** The first arrival: the frame opens like a projector gate. */
-  gateOpenS: 0.95,
-  /** Copy leaving and arriving, a line at a time. */
+  /** The first arrival: the copy fades up, then the queue rises in. */
+  openCopyDelayS: 0.25,
+  openQueueDelayS: 0.4,
+  /** Copy under the title fading out and back in as the title changes. */
   copyExitS: 0.18,
   copyExitStaggerS: 0.025,
   copyEnterS: 0.46,
@@ -316,4 +317,53 @@ export function heroLayout(stage: StageSize): HeroLayout {
     overviewHeight,
     overviewLift: overviewHeight + COPY_ROWS.factsGapPx,
   };
+}
+
+/**
+ * Where a title's logo sits inside a queue miniature, as shares of the frame:
+ * bottom-left and far larger than true to scale, so a miniature can be read
+ * at its size. On stage the logo is at its own place and size; between the
+ * two it is interpolated with the frame's scale.
+ */
+export const QUEUE_TITLE_BOX = {
+  left: 0.07,
+  bottom: 0.1,
+  width: 0.4,
+  height: 0.21,
+} as const;
+
+export interface TitleTransform {
+  /** Move of the title box's bottom-left corner, in frame px. */
+  x: number;
+  y: number;
+  /** Scale about that corner. */
+  scale: number;
+}
+
+/** What turns the stage's title box into the queue's, in the frame's own px. */
+export function queueTitleTransform(
+  stage: StageSize,
+  title: HeroLayout["title"],
+): TitleTransform {
+  const box = {
+    left: stage.width * QUEUE_TITLE_BOX.left,
+    bottom: stage.height * QUEUE_TITLE_BOX.bottom,
+    width: stage.width * QUEUE_TITLE_BOX.width,
+    height: stage.height * QUEUE_TITLE_BOX.height,
+  };
+  return {
+    x: box.left - title.left,
+    y: title.bottom - box.bottom,
+    scale: Math.min(box.width / title.width, box.height / title.height),
+  };
+}
+
+/**
+ * How far a frame is from being a miniature: 0 in a slot, 1 by the time it
+ * nearly fills the stage (a receding title, at 0.95, stays at 1).
+ */
+export function stageness(scale: number, slotScale: number): number {
+  const end = 0.9;
+  if (end <= slotScale) return 1;
+  return Math.min(1, Math.max(0, (scale - slotScale) / (end - slotScale)));
 }

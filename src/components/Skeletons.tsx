@@ -1,4 +1,5 @@
 import { useLanguage } from "../i18n/LanguageContext";
+import { HomeHeroSkeleton } from "./home/HomeHeroSkeleton";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
@@ -208,41 +209,9 @@ export function HomeSkeleton() {
   return (
     <div className="layout-no-offset">
       <div className="min-h-[100svh] full-bleed">
-        <section className="relative min-h-[100svh] w-full overflow-hidden bg-zinc-950">
-          <div className="absolute inset-0" />
-          <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/[0.55] to-black/20" />
-          <div className="absolute inset-0 bg-gradient-to-t from-[var(--background)] via-black/10 to-black/[0.24]" />
-          <div className="absolute bottom-0 left-0 right-0 h-48 bg-gradient-to-t from-[var(--background)] to-transparent" />
-
-          <div className="shimmer relative z-20 mx-auto flex min-h-[100svh] w-full flex-col justify-end px-4 pb-[clamp(2rem,6vh,4rem)] pt-28 sm:px-6 lg:px-8">
-            <div className="relative z-10 max-w-3xl ml-16">
-              <div className="shimmer h-32 w-[min(45rem,72vw)] rounded-lg sm:h-40 lg:h-60" />
-              <div className="flex gap-1 mt-2 max-w-2xl origin-left text-xs font-semibold leading-5 tracking-[0.01em] text-white/[0.84] sm:mt-3 sm:text-sm sm:leading-6">
-                <div className="shimmer mt-2 h-5 w-[10%] max-w-2xl rounded-md" />
-                .
-                <div className="shimmer mt-2 h-5 w-[15%] max-w-2xl rounded-md" />
-                .
-                <div className="shimmer mt-2 h-5 w-[12.5%] max-w-2xl rounded-md" />
-              </div>
-              <div className="mt-10 space-y-2">
-                <div className="shimmer h-5 w-10/12 max-w-2xl rounded-md" />
-                <div className="shimmer h-5 w-full max-w-2xl rounded-md" />
-                <div className="shimmer h-5 w-full max-w-xl rounded-md" />
-              </div>
-
-              <div className="mt-5 flex flex-wrap gap-2">
-                <div className="shimmer h-8 w-20 rounded-full" />
-                <div className="shimmer h-8 w-24 rounded-full" />
-                <div className="shimmer h-8 w-20 rounded-full" />
-              </div>
-
-              <div className="mt-5 flex gap-3">
-                <div className="shimmer h-16 w-48 rounded-xl" />
-                <div className="shimmer h-16 w-48 rounded-xl" />
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* Placed from the hero's own geometry, so nothing moves when it
+            arrives. */}
+        <HomeHeroSkeleton />
       </div>
 
       <div className="mx-auto w-full  max-w-[1600px] px-4 sm:px-6 lg:px-8 2xl:mt-0">

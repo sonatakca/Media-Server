@@ -55,6 +55,10 @@ import {
 } from "../hero/heroModel";
 import { Tooltip } from "../ui/Tooltip";
 import {
+  HomeHeroSkeletonBackdrop,
+  HomeHeroSkeletonPieces,
+} from "./HomeHeroSkeleton";
+import {
   HeroComposition,
   createCompositionMotion,
   type CompositionMotion,
@@ -200,6 +204,10 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   const busyRef = useRef(false);
   const [copyItemId, setCopyItemId] = useState<string | null>(null);
   const [hasOpened, setHasOpened] = useState(false);
+  // The loading skeleton stays over the hero until the first artwork is in,
+  // then fades; its pieces sit exactly where the real ones do.
+  const [isArtworkReady, setIsArtworkReady] = useState(false);
+  const [isSkeletonGone, setIsSkeletonGone] = useState(false);
   const [isTravelling, setIsTravelling] = useState(false);
   const readyRef = useRef(false);
 
@@ -209,9 +217,6 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     typeof document === "undefined" ? true : !document.hidden,
   );
   const progress = useMotionValue(0);
-  const gate = useMotionValue(
-    reduceMotion ? "inset(0% 0% 0% 0%)" : "inset(50% 0% 50% 0%)",
-  );
 
   const [areTrailersEnabled, setAreTrailersEnabled] = useState(
     readHeroTrailersEnabledPreference,
@@ -340,7 +345,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     const first = items[0]!;
     motionFor(first.Id, stagePlacement());
     queue.forEach((index, position) => {
-      motionFor(items[index]!.Id, droppedPlacement(size, slots[position]!), 1);
+      motionFor(items[index]!.Id, slotPlacement(size, slots[position]!), 1);
     });
     setLayers([
       { id: first.Id, role: "stage" },
@@ -366,7 +371,6 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       const entry = motions.current.get(stageId);
       if (entry) place(entry, stagePlacement());
     }
-    if (!hasOpened) return;
     queue.forEach((index, position) => {
       const entry = motions.current.get(items[index]!.Id);
       if (entry) place(entry, slotPlacement(stage, slots[position]!));
@@ -381,44 +385,32 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     const slots = queueSlots(size);
     const queue = queueIndices(0, total);
     const first = items[0];
-    const gateOpening = animate(gate, "inset(0% 0% 0% 0%)", {
-      duration: reduceMotion ? 0 : HERO_MOTION.gateOpenS,
-      ease: HERO_MOTION.travelEase,
-    });
+    // No ceremony: the skeleton fades off as the artwork fades in, and the
+    // copy and the queue fade up in the places their placeholders held.
     window.setTimeout(
       () => setCopyItemId(first?.Id ?? null),
-      reduceMotion ? 0 : HERO_MOTION.gateOpenS * 550,
+      reduceMotion ? 0 : HERO_MOTION.openCopyDelayS * 1000,
     );
     queue.forEach((index, position) => {
       const entry = motions.current.get(items[index]!.Id);
       if (!entry) return;
-      const target = slotPlacement(size, slots[position]!);
-      const delay = reduceMotion
-        ? 0
-        : HERO_MOTION.gateOpenS * 0.6 + position * 0.06;
-      void animate(entry.y, target.y, {
-        duration: reduceMotion ? 0 : 0.6,
-        delay,
-        ease: HERO_MOTION.settleEase,
-      });
-      entry.x.set(target.x);
-      entry.scale.set(target.scale);
+      place(entry, slotPlacement(size, slots[position]!));
       void animate(entry.dim, QUEUE_DIM, {
-        duration: reduceMotion ? 0 : 0.45,
-        delay,
-        ease: "linear",
+        duration: reduceMotion ? 0 : 0.5,
+        delay: reduceMotion ? 0 : HERO_MOTION.openQueueDelayS + position * 0.06,
+        ease: "easeOut",
       });
     });
-    await run(gateOpening);
-    await wait(reduceMotion ? 0 : 350);
+    await wait(reduceMotion ? 0 : (HERO_MOTION.openQueueDelayS + 0.7) * 1000);
     setHasOpened(true);
     busyRef.current = false;
-  }, [gate, hasOpened, items, reduceMotion, total]);
+  }, [hasOpened, items, reduceMotion, total]);
 
   const handleArtworkReady = useCallback(
     (id: string) => {
       if (id !== items[0]?.Id || readyRef.current) return;
       readyRef.current = true;
+      setIsArtworkReady(true);
       onReady?.();
       void open();
     },
@@ -882,7 +874,6 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
                 slotScale={slotScale}
                 zIndex={Z[layer.role]}
                 isStage={isStage}
-                clipPath={isStage && !hasOpened ? gate : undefined}
                 trailerUrl={isStage ? trailerUrl : null}
                 isTrailerPlaying={
                   isStage && isTrailerPlaying && isInView && isDocumentVisible
@@ -1015,7 +1006,8 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
           }}
           initial={{ opacity: 0 }}
           animate={{
-            opacity: hasOpened && !isTravelling && !isTrailerPlaying ? 1 : 0,
+            opacity:
+              isArtworkReady && !isTravelling && !isTrailerPlaying ? 1 : 0,
           }}
           transition={{ duration: reduceMotion ? 0 : 0.35 }}
         >
@@ -1035,11 +1027,12 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
               (slots[slots.length - 1]!.x + slots[slots.length - 1]!.width),
             top: controlsTop,
           }}
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: hasOpened ? 1 : 0, y: hasOpened ? 0 : 10 }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: isArtworkReady ? 1 : 0 }}
           transition={{
-            duration: reduceMotion ? 0 : 0.6,
-            ease: HERO_MOTION.settleEase,
+            duration: reduceMotion ? 0 : 0.5,
+            delay: reduceMotion ? 0 : HERO_MOTION.openQueueDelayS,
+            ease: "easeOut",
           }}
         >
           <HeroControlButton
@@ -1115,6 +1108,24 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
               ) : null}
             </>
           ) : null}
+        </motion.div>
+      ) : null}
+
+      {/* Loading: the skeleton, piece for piece where the hero's own pieces
+          will be, fading off as the first artwork fades in. */}
+      {stage && !isSkeletonGone ? (
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[7]"
+          initial={false}
+          animate={{ opacity: isArtworkReady ? 0 : 1 }}
+          transition={{ duration: reduceMotion ? 0 : 0.5, ease: "easeOut" }}
+          onAnimationComplete={() => {
+            if (isArtworkReady) setIsSkeletonGone(true);
+          }}
+        >
+          <HomeHeroSkeletonBackdrop />
+          <HomeHeroSkeletonPieces stage={stage} />
         </motion.div>
       ) : null}
 
@@ -1228,24 +1239,24 @@ function HeroCopy({
     navigate(await getPlayTargetForItem(playItem));
   };
 
+  // The copy changes with the title by fading in place: only the title and
+  // the artwork travel.
   const line = (index: number) => ({
-    initial: { y: reduceMotion ? 0 : "130%", opacity: reduceMotion ? 0 : 1 },
+    initial: { opacity: 0 },
     animate: {
-      y: "0%",
       opacity: 1,
       transition: {
         duration: reduceMotion ? 0.2 : HERO_MOTION.copyEnterS,
         delay: reduceMotion ? 0 : index * HERO_MOTION.copyEnterStaggerS,
-        ease: HERO_MOTION.settleEase,
+        ease: "easeOut" as const,
       },
     },
     exit: {
-      y: reduceMotion ? 0 : "130%",
-      opacity: reduceMotion ? 0 : 1,
+      opacity: 0,
       transition: {
         duration: reduceMotion ? 0.15 : HERO_MOTION.copyExitS,
         delay: reduceMotion ? 0 : index * HERO_MOTION.copyExitStaggerS,
-        ease: HERO_MOTION.travelEase,
+        ease: "easeIn" as const,
       },
     },
   });

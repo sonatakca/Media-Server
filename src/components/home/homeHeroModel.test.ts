@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   HERO_MOTION,
+  TITLE_SCALE,
+  queueTitleTransform,
+  stageness,
   arrivalPlacement,
   heroLayout,
   liftDurationS,
@@ -170,4 +173,39 @@ describe("layout", () => {
       expect(layout.overviewLift).toBeGreaterThan(layout.overviewHeight);
     },
   );
+});
+
+describe("the logo in a miniature", () => {
+  it.each(DESKTOP_SIZES)(
+    "is far larger than true to scale and sits bottom-left inside the frame ($width)",
+    (stage) => {
+      const layout = heroLayout(stage);
+      const slot = queueSlots(stage)[0]!;
+      const slotScale = slot.width / stage.width;
+      const move = queueTitleTransform(stage, layout.title);
+      // On screen, the logo box in a miniature against the true-scale one.
+      expect(move.scale).toBeGreaterThan(TITLE_SCALE.rest * 1.5);
+      const onScreenWidth = layout.title.width * move.scale * slotScale;
+      expect(onScreenWidth).toBeGreaterThan(slot.width * 0.3);
+      expect(onScreenWidth).toBeLessThanOrEqual(slot.width * 0.41);
+      const left = layout.title.left + move.x;
+      const bottom = layout.title.bottom - move.y;
+      expect(left).toBeGreaterThan(0);
+      expect(left + layout.title.width * move.scale).toBeLessThanOrEqual(
+        stage.width,
+      );
+      expect(bottom).toBeGreaterThan(0);
+      expect(bottom + layout.title.height * move.scale).toBeLessThan(
+        stage.height * 0.4,
+      );
+    },
+  );
+
+  it("belongs to the miniature in a slot and to the stage once it nearly fills it", () => {
+    expect(stageness(0.12, 0.12)).toBe(0);
+    expect(stageness(0.5, 0.12)).toBeGreaterThan(0);
+    expect(stageness(0.5, 0.12)).toBeLessThan(1);
+    expect(stageness(0.95, 0.12)).toBe(1);
+    expect(stageness(1, 0.12)).toBe(1);
+  });
 });
