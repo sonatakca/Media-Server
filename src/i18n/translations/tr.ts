@@ -271,6 +271,7 @@ export const tr = {
   "hero.resume": "Döngüyü sürdür",
   "hero.showOverview": "Özeti göster",
   "hero.hideOverview": "Özeti gizle",
+  "hero.timeLeft": "{time} kaldı",
   "hero.nowStreaming": "Şimdi Yayında",
   "hero.enableTrailers": "Fragmanları aç",
   "hero.disableTrailers": "Fragmanları kapat",

@@ -113,6 +113,13 @@ interface HeroCompositionProps {
   stage: StageSize;
   /** Where the title sits in the frame; the copy overlay reads the same. */
   titleBox: HeroLayout["title"];
+  /**
+   * The tallest a logo may be drawn at full size. Every logo takes the title
+   * box's width and grows upward as its own proportions ask; only a logo
+   * close to square, which would rise into the menu when the overview opens,
+   * is held to this.
+   */
+  logoMaxHeight: number;
   motion: CompositionMotion;
   /** The scale a slot holds a composition at; corners round in step with it. */
   slotScale: number;
@@ -130,6 +137,7 @@ export function HeroComposition({
   item,
   stage,
   titleBox,
+  logoMaxHeight,
   motion: m,
   slotScale,
   zIndex,
@@ -293,7 +301,7 @@ export function HeroComposition({
       >
         {logoUrl ? (
           <div
-            className={`relative flex max-h-full max-w-full transition-opacity duration-500 ${
+            className={`relative w-full transition-opacity duration-500 ${
               isLogoLoaded ? "opacity-100" : "opacity-0"
             }`}
           >
@@ -319,7 +327,8 @@ export function HeroComposition({
               alt={isStage ? title : ""}
               draggable={false}
               onLoad={() => setIsLogoLoaded(true)}
-              className="relative block max-h-full max-w-full select-none object-contain object-left-bottom drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]"
+              className="relative block h-auto w-full select-none object-contain object-left-bottom drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]"
+              style={{ maxHeight: logoMaxHeight }}
             />
           </div>
         ) : (

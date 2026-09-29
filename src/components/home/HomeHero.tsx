@@ -22,11 +22,8 @@ import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
-  AlignLeft,
-  Info,
   Pause,
   Play,
-  RotateCcw,
   Video,
   VideoOff,
   Volume2,
@@ -45,9 +42,8 @@ import { getRouteForItem } from "../../lib/routes";
 import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import type { MediaItem } from "../../lib/types";
 import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
-import { ButtonLink } from "../Button";
-import { FavouriteButton } from "../FavouriteButton";
 import { canStartOverFromHero } from "../HeroSection";
+import { HeroActions } from "./HeroActions";
 import {
   getHeroImageCandidates,
   readHeroTrailersEnabledPreference,
@@ -126,6 +122,12 @@ const QUEUE_DIM = 0;
  * passing over it on the way somewhere else opens nothing.
  */
 const OVERVIEW_HOVER_INTENT_MS = 260;
+
+/**
+ * How far below the stage's top a fully open logo may reach: the menu's
+ * height and a margin under it.
+ */
+const LOGO_MENU_CLEARANCE_PX = 112;
 
 /** Space kept above the controls for the notification pile. */
 const CHROME_CLEARANCE_PX = 14;
@@ -665,7 +667,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   );
   useEffect(() => {
     const controls = animate(overview, isOverviewOpen ? 1 : 0, {
-      duration: reduceMotion ? 0 : isOverviewOpen ? 0.46 : 0.32,
+      duration: reduceMotion ? 0 : 0.32,
       ease: isOverviewOpen ? HERO_MOTION.settleEase : HERO_MOTION.travelEase,
     });
     return () => controls.stop();
@@ -874,6 +876,12 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
                 item={item}
                 stage={stage}
                 titleBox={layout!.title}
+                logoMaxHeight={
+                  stage.height -
+                  LOGO_MENU_CLEARANCE_PX -
+                  layout!.title.bottom -
+                  layout!.overviewLift
+                }
                 motion={entry}
                 slotScale={slotScale}
                 zIndex={Z[layer.role]}
@@ -1231,6 +1239,13 @@ function HeroCopy({
       ? getRouteForItem(playItem)
       : `/watch/${playItem.Id}`;
   const canStartOver = canStartOverFromHero(playItem);
+  const position = continueTarget?.UserData?.PlaybackPositionTicks ?? 0;
+  const length = continueTarget?.RunTimeTicks ?? 0;
+  const left =
+    hasProgress && length > position
+      ? formatRuntime(length - position, labels)
+      : null;
+  const progress = left ? { share: position / length, left } : null;
 
   const overviewId = useId();
   const factsY = useTransform(
@@ -1310,75 +1325,29 @@ function HeroCopy({
           </motion.p>
         </div>
       ) : null}
-      <div
-        className="absolute -inset-x-2 -bottom-3 overflow-hidden px-2 pb-3"
-        style={{ height: COPY_ROWS.actionsPx + 12 }}
+      <motion.div
+        variants={line(1)}
+        className="absolute inset-x-0 bottom-0"
+        style={{ height: COPY_ROWS.actionsPx }}
       >
-        <motion.div
-          variants={line(1)}
-          className="flex flex-nowrap items-center gap-2.5"
-        >
-          <ButtonLink
-            to={playTo}
-            onClick={handlePlay}
-            className="min-h-12 rounded-full bg-white px-7 text-base text-black shadow-button-glow hover:translate-y-0 hover:bg-white/85"
-          >
-            <Play size={20} fill="currentColor" />
-            {playLabel}
-          </ButtonLink>
-          {canStartOver ? (
-            <ButtonLink
-              to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
-              variant="secondary"
-              className="min-h-12 rounded-full px-5 hover:translate-y-0"
-              tooltip={t("details.playFromBeginning")}
-              aria-label={t("details.playFromBeginning")}
-            >
-              <RotateCcw size={18} />
-            </ButtonLink>
-          ) : null}
-          <ButtonLink
-            to={getRouteForItem(item)}
-            variant="secondary"
-            className="min-h-12 rounded-full border-white/[0.14] bg-black/35 px-6 backdrop-blur-xl hover:translate-y-0 hover:bg-white/[0.14]"
-          >
-            <Info size={19} />
-            {t("common.details")}
-          </ButtonLink>
-          <FavouriteButton
-            item={item}
-            iconSize={20}
-            className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/[0.14] bg-black/35 text-white/85 backdrop-blur-xl transition hover:bg-white hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
-          />
-          {metadata.overview ? (
-            <Tooltip
-              content={
-                isOverviewOpen ? t("hero.hideOverview") : t("hero.showOverview")
-              }
-              placement="top"
-            >
-              <button
-                type="button"
-                aria-label={
-                  isOverviewOpen
-                    ? t("hero.hideOverview")
-                    : t("hero.showOverview")
-                }
-                aria-expanded={isOverviewOpen}
-                aria-controls={overviewId}
-                onClick={onToggleOverview}
-                className={`inline-flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
-                  isOverviewOpen
-                    ? "border-white bg-white text-zinc-950 hover:bg-white/85"
-                    : "border-white/[0.14] bg-black/35 text-white/85 hover:bg-white/[0.14] hover:text-white"
-                }`}
-              >
-                <AlignLeft size={19} />
-              </button>
-            </Tooltip>
-          ) : null}
-        </motion.div>
-      </div>
+        <HeroActions
+          item={item}
+          playTo={playTo}
+          playLabel={playLabel}
+          onPlay={handlePlay}
+          startOverTo={
+            canStartOver
+              ? `${playTo}${playTo.includes("?") ? "&" : "?"}start=0`
+              : null
+          }
+          detailsTo={getRouteForItem(item)}
+          progress={progress}
+          overviewId={overviewId}
+          hasOverview={Boolean(metadata.overview)}
+          isOverviewOpen={isOverviewOpen}
+          onToggleOverview={onToggleOverview}
+        />
+      </motion.div>
     </motion.div>
   );
 }

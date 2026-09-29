@@ -272,6 +272,7 @@ export const en = {
   "hero.resume": "Resume rotation",
   "hero.showOverview": "Show overview",
   "hero.hideOverview": "Hide overview",
+  "hero.timeLeft": "{time} left",
   "hero.nowStreaming": "Now Streaming",
   "hero.enableTrailers": "Enable trailers",
   "hero.disableTrailers": "Disable trailers",
