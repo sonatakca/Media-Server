@@ -270,6 +270,8 @@ export const en = {
   "hero.next": "Next",
   "hero.pause": "Pause rotation",
   "hero.resume": "Resume rotation",
+  "hero.showOverview": "Show overview",
+  "hero.hideOverview": "Hide overview",
   "hero.nowStreaming": "Now Streaming",
   "hero.enableTrailers": "Enable trailers",
   "hero.disableTrailers": "Disable trailers",

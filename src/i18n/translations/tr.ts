@@ -269,6 +269,8 @@ export const tr = {
   "hero.next": "Sonraki",
   "hero.pause": "Döngüyü duraklat",
   "hero.resume": "Döngüyü sürdür",
+  "hero.showOverview": "Özeti göster",
+  "hero.hideOverview": "Özeti gizle",
   "hero.nowStreaming": "Şimdi Yayında",
   "hero.enableTrailers": "Fragmanları aç",
   "hero.disableTrailers": "Fragmanları kapat",

@@ -14,12 +14,15 @@ import {
   motion,
   useMotionValue,
   useReducedMotion,
+  useTransform,
   type AnimationPlaybackControls,
+  type MotionValue,
 } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
+  AlignLeft,
   Info,
   Pause,
   Play,
@@ -46,13 +49,13 @@ import { ButtonLink } from "../Button";
 import { FavouriteButton } from "../FavouriteButton";
 import { canStartOverFromHero } from "../HeroSection";
 import {
+  getHeroImageCandidates,
   readHeroTrailersEnabledPreference,
   saveHeroTrailersEnabledPreference,
 } from "../hero/heroModel";
 import { Tooltip } from "../ui/Tooltip";
 import {
   HeroComposition,
-  TITLE_BOX,
   createCompositionMotion,
   type CompositionMotion,
 } from "./HeroComposition";
@@ -60,15 +63,21 @@ import {
   HERO_DWELL_MS,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
+  QUEUE_LENGTH,
+  TITLE_SCALE,
+  arrivalPlacement,
   droppedPlacement,
-  offstagePlacement,
+  heroLayout,
+  liftDurationS,
   previousIndex,
   pushedBackPlacement,
   queueIndices,
   queueSlots,
+  sharedDurationS,
   slotPlacement,
   stagePlacement,
-  travelDurationS,
+  COPY_ROWS,
+  type HeroLayout,
   type Placement,
   type StageSize,
 } from "./homeHeroModel";
@@ -101,8 +110,14 @@ const Z: Record<Role, number> = {
   leaving: 4,
 };
 
-/** The queue's resting shade; a hovered miniature lifts it. */
-const QUEUE_DIM = 0.22;
+/** The queue's resting shade: none, the miniatures show their artwork clean. */
+const QUEUE_DIM = 0;
+
+/**
+ * How long the pointer rests on the title before its overview opens, so
+ * passing over it on the way somewhere else opens nothing.
+ */
+const OVERVIEW_HOVER_INTENT_MS = 260;
 
 /** Space kept above the controls for the notification pile. */
 const CHROME_CLEARANCE_PX = 14;
@@ -117,6 +132,12 @@ function uniqueById(items: MediaItem[]): MediaItem[] {
   return items.filter((item) =>
     seen.has(item.Id) ? false : (seen.add(item.Id), true),
   );
+}
+
+interface Timing {
+  duration: number;
+  delay?: number;
+  ease: [number, number, number, number];
 }
 
 function wait(ms: number) {
@@ -202,6 +223,23 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   /** Titles whose trailer has already played on this visit to the page. */
   const trailersSeen = useRef(new Set<string>());
 
+  // The overview opens only when asked for: a pointer resting on the title,
+  // focus inside its copy, or its button. It closes whenever the title leaves.
+  const [isOverviewHovered, setIsOverviewHovered] = useState(false);
+  const [isOverviewPinned, setIsOverviewPinned] = useState(false);
+  const [isOverviewFocused, setIsOverviewFocused] = useState(false);
+  const isOverviewOpen =
+    isOverviewHovered || isOverviewPinned || isOverviewFocused;
+  const overviewIntentRef = useRef(0);
+  const overview = useMotionValue(0);
+  const overviewLiftRef = useRef(0);
+  const closeOverview = useCallback(() => {
+    window.clearTimeout(overviewIntentRef.current);
+    setIsOverviewHovered(false);
+    setIsOverviewPinned(false);
+    setIsOverviewFocused(false);
+  }, []);
+
   const stageItem = items[stageIndex];
   // Once for the hero, not once per title: each title's copy asking again put
   // a page-loading bar on screen at every change.
@@ -271,8 +309,8 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         const existing = motions.current.get(id);
         if (existing) {
           const options = {
-            duration: reduceMotion ? 0 : HERO_MOTION.shiftS,
-            ease: HERO_MOTION.settleEase,
+            duration: reduceMotion ? 0 : HERO_MOTION.slideS,
+            ease: HERO_MOTION.slideEase,
           };
           void animate(existing.x, target.x, options);
           void animate(existing.y, target.y, options);
@@ -280,7 +318,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         } else {
           const entry = motionFor(id, target, 1);
           void animate(entry.dim, QUEUE_DIM, {
-            duration: reduceMotion ? 0 : 0.6,
+            duration: reduceMotion ? 0 : 0.4,
             ease: "linear",
           });
         }
@@ -343,23 +381,13 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     const slots = queueSlots(size);
     const queue = queueIndices(0, total);
     const first = items[0];
-    if (first && !reduceMotion) {
-      const entry = motions.current.get(first.Id);
-      entry?.drift.set(1.04);
-      if (entry) {
-        void animate(entry.drift, 1, {
-          duration: HERO_MOTION.gateOpenS * 1.6,
-          ease: HERO_MOTION.settleEase,
-        });
-      }
-    }
     const gateOpening = animate(gate, "inset(0% 0% 0% 0%)", {
       duration: reduceMotion ? 0 : HERO_MOTION.gateOpenS,
       ease: HERO_MOTION.travelEase,
     });
     window.setTimeout(
       () => setCopyItemId(first?.Id ?? null),
-      reduceMotion ? 0 : HERO_MOTION.gateOpenS * 650,
+      reduceMotion ? 0 : HERO_MOTION.gateOpenS * 550,
     );
     queue.forEach((index, position) => {
       const entry = motions.current.get(items[index]!.Id);
@@ -367,22 +395,22 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       const target = slotPlacement(size, slots[position]!);
       const delay = reduceMotion
         ? 0
-        : HERO_MOTION.gateOpenS * 0.7 + position * 0.09;
+        : HERO_MOTION.gateOpenS * 0.6 + position * 0.06;
       void animate(entry.y, target.y, {
-        duration: reduceMotion ? 0 : 0.9,
+        duration: reduceMotion ? 0 : 0.6,
         delay,
         ease: HERO_MOTION.settleEase,
       });
       entry.x.set(target.x);
       entry.scale.set(target.scale);
       void animate(entry.dim, QUEUE_DIM, {
-        duration: reduceMotion ? 0 : 0.7,
+        duration: reduceMotion ? 0 : 0.45,
         delay,
         ease: "linear",
       });
     });
     await run(gateOpening);
-    await wait(reduceMotion ? 0 : 700);
+    await wait(reduceMotion ? 0 : 350);
     setHasOpened(true);
     busyRef.current = false;
   }, [gate, hasOpened, items, reduceMotion, total]);
@@ -405,6 +433,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       busyRef.current = true;
       setIsTravelling(true);
       setIsTrailerPlaying(false);
+      closeOverview();
       progress.set(0);
 
       const fromIndex = stageIndexRef.current;
@@ -420,63 +449,71 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       const newQueueIds = newQueue.map((index) => items[index]!.Id);
       const oldQueueIds = oldQueue.map((index) => items[index]!.Id);
 
-      // Copy leaves first, a line at a time, so the frame is clear to move.
+      // Copy leaves a line at a time while the lift starts under it.
       setCopyItemId(null);
-      await wait(reduceMotion ? 0 : 140);
+      const lift = reduceMotion ? 0 : liftDurationS(size);
+      const liftOptions = { duration: lift, ease: HERO_MOTION.travelEase };
+      const copyTimer = window.setTimeout(
+        () => setCopyItemId(incoming.Id),
+        lift * HERO_MOTION.copyLeadIn * 1000,
+      );
 
       const animations: Array<Promise<void>> = [];
-      const shift = (id: string, position: number) => {
-        const entry = motions.current.get(id);
-        if (!entry) return;
-        const target = slotPlacement(size, slots[position]!);
-        const from = {
-          x: entry.x.get(),
-          y: entry.y.get(),
-          scale: entry.scale.get(),
-        };
-        const duration = reduceMotion
-          ? 0
-          : travelDurationS(size, from, target, HERO_MOTION.shiftS);
-        const options = {
-          duration,
-          delay: reduceMotion ? 0 : HERO_MOTION.shiftDelayS,
-          ease: HERO_MOTION.settleEase,
-        };
-        animations.push(run(animate(entry.x, target.x, options)));
-        void animate(entry.y, target.y, options);
-        void animate(entry.scale, target.scale, options);
-        void animate(entry.dim, QUEUE_DIM, options);
+      const current = (entry: CompositionMotion): Placement => ({
+        x: entry.x.get(),
+        y: entry.y.get(),
+        scale: entry.scale.get(),
+      });
+      const moveTo = (
+        entry: CompositionMotion,
+        to: Placement,
+        options: Timing,
+      ) => {
+        animations.push(run(animate(entry.x, to.x, options)));
+        void animate(entry.y, to.y, options);
+        void animate(entry.scale, to.scale, options);
       };
-      const enterFromEdge = (id: string, position: number) => {
-        const entry = motionFor(id, offstagePlacement(size), QUEUE_DIM);
-        place(entry, offstagePlacement(size));
-        entry.dim.set(QUEUE_DIM);
-        entry.drift.set(1);
-        entry.titleScale.set(1);
-        const target = slotPlacement(size, slots[position]!);
+      /**
+       * The queue slides as one row: every miniature that moves along it,
+       * closing up or arriving from beyond the edge, shares one start, one
+       * duration and one curve. Starting in order and ending in order, none
+       * can pass another on the way.
+       */
+      const slide = (
+        moves: Array<{ entry: CompositionMotion; to: Placement }>,
+      ) => {
+        if (moves.length === 0) return;
         const duration = reduceMotion
           ? 0
-          : travelDurationS(
+          : sharedDurationS(
               size,
-              offstagePlacement(size),
-              target,
-              HERO_MOTION.shiftS,
+              moves.map(({ entry, to }) => ({ from: current(entry), to })),
+              HERO_MOTION.slideS,
+              HERO_MOTION.slideEase,
             );
         const options = {
           duration,
-          delay: reduceMotion ? 0 : HERO_MOTION.enterDelayS,
-          ease: HERO_MOTION.settleEase,
+          delay: reduceMotion ? 0 : HERO_MOTION.slideDelayS,
+          ease: HERO_MOTION.slideEase,
         };
-        animations.push(run(animate(entry.x, target.x, options)));
-        void animate(entry.y, target.y, options);
-        void animate(entry.scale, target.scale, options);
+        for (const { entry, to } of moves) {
+          moveTo(entry, to, options);
+          void animate(entry.dim, QUEUE_DIM, options);
+        }
+      };
+      /** A title joining the queue, waiting in line beyond the right edge. */
+      const arrival = (id: string, order: number) => {
+        const start = arrivalPlacement(size, order);
+        const entry = motionFor(id, start, QUEUE_DIM);
+        place(entry, start);
+        entry.dim.set(QUEUE_DIM);
+        entry.titleScale.set(TITLE_SCALE.rest);
+        entry.titleY.set(0);
+        entry.trailer.set(0);
+        return entry;
       };
 
       if (direction === "forward") {
-        const skipped = oldQueueIds.slice(
-          0,
-          Math.min(queuePosition, oldQueueIds.length),
-        );
         const leaving = oldQueueIds.filter(
           (id) => id !== incoming.Id && !newQueueIds.includes(id),
         );
@@ -491,62 +528,62 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
 
         // The incoming title grows out of its slot over the stage.
         const rising = motions.current.get(incoming.Id)!;
-        const from = {
-          x: rising.x.get(),
-          y: rising.y.get(),
-          scale: rising.scale.get(),
-        };
-        const duration = reduceMotion
-          ? 0
-          : travelDurationS(size, from, stagePlacement());
-        const travelOptions = { duration, ease: HERO_MOTION.travelEase };
-        rising.drift.set(1);
-        animations.push(run(animate(rising.x, 0, travelOptions)));
-        void animate(rising.y, 0, travelOptions);
-        void animate(rising.scale, 1, travelOptions);
-        void animate(rising.dim, 0, {
-          duration: duration * 0.6,
-          ease: "linear",
-        });
+        moveTo(rising, stagePlacement(), liftOptions);
+        void animate(rising.dim, 0, { duration: lift * 0.5, ease: "linear" });
 
         // The outgoing one recedes beneath it.
         const under = motions.current.get(outgoing.Id)!;
-        const back = pushedBackPlacement(size);
-        void animate(under.x, back.x, travelOptions);
-        void animate(under.y, back.y, travelOptions);
-        void animate(under.scale, back.scale, travelOptions);
-        void animate(under.dim, HERO_MOTION.pushBackDim, travelOptions);
+        void animate(under.x, pushedBackPlacement(size).x, liftOptions);
+        void animate(under.y, pushedBackPlacement(size).y, liftOptions);
+        void animate(under.scale, pushedBackPlacement(size).scale, liftOptions);
+        void animate(under.dim, HERO_MOTION.pushBackDim, liftOptions);
 
-        // Titles jumped over drop out of the queue; the rest close up.
+        // Titles jumped over sink out of the queue.
         for (const id of leaving) {
           const entry = motions.current.get(id);
           const position = oldQueueIds.indexOf(id);
           if (!entry || position < 0) continue;
-          const target = droppedPlacement(size, slots[position]!);
           const options = {
-            duration: reduceMotion ? 0 : 0.6,
+            duration: reduceMotion ? 0 : HERO_MOTION.dropS,
             ease: HERO_MOTION.travelEase,
           };
-          void animate(entry.y, target.y, options);
+          void animate(
+            entry.y,
+            droppedPlacement(size, slots[position]!).y,
+            options,
+          );
           void animate(entry.dim, 1, options);
         }
-        newQueueIds.forEach((id, position) => {
-          if (id === outgoing.Id) return;
-          if (oldQueueIds.includes(id)) shift(id, position);
-          else enterFromEdge(id, position);
-        });
-        void skipped;
+
+        // The rest close up, and newcomers line up behind them.
+        let arrivals = 0;
+        slide(
+          newQueueIds.flatMap((id, position) => {
+            if (id === outgoing.Id) return [];
+            const entry = oldQueueIds.includes(id)
+              ? motions.current.get(id)
+              : arrival(id, arrivals++);
+            return entry
+              ? [{ entry, to: slotPlacement(size, slots[position]!) }]
+              : [];
+          }),
+        );
 
         await Promise.all(animations);
 
         // The outgoing title, if it is due again soon, joins the queue's end.
         const outgoingPosition = newQueueIds.indexOf(outgoing.Id);
         if (outgoingPosition >= 0) {
-          setLayers((current) => [
-            ...current.filter((layer) => layer.id !== outgoing.Id),
+          setLayers((layers) => [
+            ...layers.filter((layer) => layer.id !== outgoing.Id),
             { id: outgoing.Id, role: "queue" },
           ]);
-          enterFromEdge(outgoing.Id, outgoingPosition);
+          slide([
+            {
+              entry: arrival(outgoing.Id, 0),
+              to: slotPlacement(size, slots[outgoingPosition]!),
+            },
+          ]);
           await Promise.all(animations);
         }
       } else {
@@ -559,8 +596,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         );
         place(previous, pushedBackPlacement(size));
         previous.dim.set(HERO_MOTION.pushBackDim);
-        previous.drift.set(1);
-        previous.titleScale.set(1);
+        previous.titleScale.set(TITLE_SCALE.rest);
         const leavingId = oldQueueIds.find((id) => !newQueueIds.includes(id));
         setLayers([
           { id: incoming.Id, role: "stage" },
@@ -571,39 +607,30 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
           ...(leavingId ? [{ id: leavingId, role: "leaving" as Role }] : []),
         ]);
         const shrinking = motions.current.get(outgoing.Id)!;
-        const target = slotPlacement(size, slots[0]!);
-        const duration = reduceMotion
-          ? 0
-          : travelDurationS(size, stagePlacement(), target);
-        const travelOptions = { duration, ease: HERO_MOTION.travelEase };
-        animations.push(run(animate(shrinking.x, target.x, travelOptions)));
-        void animate(shrinking.y, target.y, travelOptions);
-        void animate(shrinking.scale, target.scale, travelOptions);
-        void animate(shrinking.dim, QUEUE_DIM, travelOptions);
-        void animate(shrinking.drift, 1, travelOptions);
-        void animate(shrinking.titleScale, 1, travelOptions);
-        void animate(previous.x, 0, travelOptions);
-        void animate(previous.y, 0, travelOptions);
-        void animate(previous.scale, 1, travelOptions);
-        void animate(previous.dim, 0, travelOptions);
-        oldQueueIds.forEach((id, position) => {
-          if (id === leavingId || id === incoming.Id) return;
-          shift(id, position + 1);
-        });
-        if (leavingId) {
-          const entry = motions.current.get(leavingId);
-          if (entry) {
-            const edge = offstagePlacement(size);
-            const options = {
-              duration: reduceMotion ? 0 : HERO_MOTION.shiftS,
-              delay: reduceMotion ? 0 : HERO_MOTION.shiftDelayS,
-              ease: HERO_MOTION.settleEase,
-            };
-            animations.push(run(animate(entry.x, edge.x, options)));
-          }
-        }
+        moveTo(shrinking, slotPlacement(size, slots[0]!), liftOptions);
+        void animate(shrinking.dim, QUEUE_DIM, liftOptions);
+        void animate(shrinking.titleScale, TITLE_SCALE.rest, liftOptions);
+        void animate(shrinking.trailer, 0, liftOptions);
+        moveTo(previous, stagePlacement(), liftOptions);
+        void animate(previous.dim, 0, liftOptions);
+
+        // The queue makes room at its head; its last title slides out past
+        // the edge, on the same clock, so the row stays a row.
+        slide(
+          oldQueueIds.flatMap((id, position) => {
+            if (id === incoming.Id) return [];
+            const entry = motions.current.get(id);
+            if (!entry) return [];
+            const to =
+              id === leavingId || !slots[position + 1]
+                ? arrivalPlacement(size, 0)
+                : slotPlacement(size, slots[position + 1]!);
+            return [{ entry, to }];
+          }),
+        );
         await Promise.all(animations);
       }
+      window.clearTimeout(copyTimer);
 
       // Settle: the incoming title owns the stage; everything else is queue.
       for (const [id] of motions.current) {
@@ -620,8 +647,45 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       setIsTravelling(false);
       busyRef.current = false;
     },
-    [hasOpened, items, motionFor, progress, reduceMotion, total],
+    [closeOverview, hasOpened, items, motionFor, progress, reduceMotion, total],
   );
+
+  // The overview opening: one value drives the title's rise and growth, the
+  // facts' rise and the text coming up under them, so none can disagree. It
+  // lifts whichever title holds the stage until the next one settles, so a
+  // closing overview carries the outgoing title's logo back down with it.
+  useEffect(
+    () =>
+      overview.on("change", (value) => {
+        const id = items[stageIndexRef.current]?.Id;
+        const entry = id ? motions.current.get(id) : undefined;
+        if (!entry) return;
+        entry.titleY.set(-value * overviewLiftRef.current);
+        entry.titleScale.set(
+          TITLE_SCALE.rest + (TITLE_SCALE.open - TITLE_SCALE.rest) * value,
+        );
+      }),
+    [items, overview],
+  );
+  useEffect(() => {
+    const controls = animate(overview, isOverviewOpen ? 1 : 0, {
+      duration: reduceMotion ? 0 : isOverviewOpen ? 0.46 : 0.32,
+      ease: isOverviewOpen ? HERO_MOTION.settleEase : HERO_MOTION.travelEase,
+    });
+    return () => controls.stop();
+  }, [isOverviewOpen, overview, reduceMotion]);
+  useEffect(() => () => window.clearTimeout(overviewIntentRef.current), []);
+
+  // Artwork for the titles about to arrive, fetched before they slide in, so
+  // no newcomer crosses the frame as an empty card.
+  useEffect(() => {
+    if (total < 2) return;
+    for (let offset = 1; offset <= QUEUE_LENGTH * 2; offset += 1) {
+      const item = items[(stageIndex + offset) % total];
+      const url = item ? getHeroImageCandidates(item)[0]?.url : undefined;
+      if (url) new Image().src = url;
+    }
+  }, [items, stageIndex, total]);
 
   // ------------------------------------------------------------- the clock
   const isRunning =
@@ -631,6 +695,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     isDocumentVisible &&
     !isTravelling &&
     !isTrailerPlaying &&
+    !isOverviewOpen &&
     total > 1;
 
   useEffect(() => {
@@ -650,18 +715,6 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     frame = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(frame);
   }, [isRunning, progress, travel]);
-
-  // The slow push-in, for as long as a title holds the stage.
-  useEffect(() => {
-    if (!stageItem || reduceMotion || !hasOpened) return undefined;
-    const entry = motions.current.get(stageItem.Id);
-    if (!entry) return undefined;
-    const controls = animate(entry.drift, HERO_MOTION.drift, {
-      duration: (HERO_DWELL_MS + 4_000) / 1_000,
-      ease: "linear",
-    });
-    return () => controls.stop();
-  }, [hasOpened, reduceMotion, stageItem]);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -724,11 +777,15 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     const entry = motions.current.get(stageItem.Id);
     if (!entry) return;
     const options = {
-      duration: reduceMotion ? 0 : 1.2,
+      duration: reduceMotion ? 0 : 0.8,
       ease: HERO_MOTION.travelEase,
     };
     void animate(entry.trailer, isTrailerPlaying ? 1 : 0, options);
-    void animate(entry.titleScale, isTrailerPlaying ? 0.58 : 1, options);
+    void animate(
+      entry.titleScale,
+      isTrailerPlaying ? TITLE_SCALE.trailer : TITLE_SCALE.rest,
+      options,
+    );
     if (isTrailerPlaying) setCopyItemId(null);
     else if (!busyRef.current && hasOpened) setCopyItemId(stageItem.Id);
   }, [hasOpened, isTrailerPlaying, reduceMotion, stageItem]);
@@ -764,6 +821,8 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   // --------------------------------------------------------------- render
   const slots = stage ? queueSlots(stage) : [];
   const slotScale = stage && slots[0] ? slots[0].width / stage.width : 0.12;
+  const layout = stage ? heroLayout(stage) : null;
+  overviewLiftRef.current = layout?.overviewLift ?? 0;
   const queueIds = queueIndices(stageIndex, total).map(
     (index) => items[index]!.Id,
   );
@@ -779,12 +838,11 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     const position = queueIds.indexOf(id);
     const slot = slots[position];
     if (!slot) return;
-    const lift = active ? slot.height * 0.05 : 0;
+    const lift = active ? slot.height * 0.06 : 0;
     const options = {
-      duration: reduceMotion ? 0 : 0.45,
+      duration: reduceMotion ? 0 : 0.3,
       ease: HERO_MOTION.settleEase,
     };
-    void animate(entry.dim, active ? 0 : QUEUE_DIM, options);
     void animate(entry.y, slot.y - lift, options);
   };
 
@@ -819,6 +877,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
                 key={layer.id}
                 item={item}
                 stage={stage}
+                titleBox={layout!.title}
                 motion={entry}
                 slotScale={slotScale}
                 zIndex={Z[layer.role]}
@@ -836,28 +895,76 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
           })
         : null}
 
-      {/* The copy, under the title, a line at a time. */}
-      {stage ? (
+      {/* The title and its copy, bottom-left. The block reaches up over the
+          resting title, so resting the pointer on it opens the overview; once
+          open it also covers the risen, grown title. */}
+      {layout ? (
         <div
-          className="pointer-events-none absolute z-[6]"
+          className="absolute z-[6]"
           style={{
-            left: stage.width * TITLE_BOX.left,
-            top:
-              stage.height * (1 - TITLE_BOX.bottom) +
-              Math.max(14, stage.height * 0.022),
-            width: Math.min(stage.width * 0.4, 600),
+            left: layout.copy.left - 16,
+            bottom: layout.copy.bottom,
+            width: Math.max(layout.copy.width, layout.title.width) + 32,
+            // The resting title and its copy; while open, the risen, full-size
+            // title too, so the pointer can move onto it without closing it.
+            height:
+              layout.title.bottom -
+              layout.copy.bottom +
+              12 +
+              (isOverviewOpen
+                ? layout.title.height + layout.overviewLift
+                : layout.title.height * TITLE_SCALE.rest),
+            pointerEvents: copyItem ? "auto" : "none",
+          }}
+          onMouseEnter={() => {
+            window.clearTimeout(overviewIntentRef.current);
+            overviewIntentRef.current = window.setTimeout(() => {
+              if (!busyRef.current) setIsOverviewHovered(true);
+            }, OVERVIEW_HOVER_INTENT_MS);
+          }}
+          onMouseLeave={() => {
+            window.clearTimeout(overviewIntentRef.current);
+            setIsOverviewHovered(false);
+          }}
+          onFocus={(event) => {
+            if (event.target.matches(":focus-visible"))
+              setIsOverviewFocused(true);
+          }}
+          onBlur={(event) => {
+            if (
+              !(event.relatedTarget instanceof Node) ||
+              !event.currentTarget.contains(event.relatedTarget)
+            )
+              setIsOverviewFocused(false);
           }}
         >
-          <AnimatePresence mode="wait">
-            {copyItem ? (
-              <HeroCopy
-                key={copyItem.Id}
-                item={copyItem}
-                reduceMotion={reduceMotion}
-                smartContinueItems={smartContinueItems}
-              />
-            ) : null}
-          </AnimatePresence>
+          <div
+            className="absolute"
+            style={{
+              left: 16,
+              bottom: 0,
+              width: layout.copy.width,
+              height: layout.copy.height,
+            }}
+          >
+            <AnimatePresence mode="wait">
+              {copyItem ? (
+                <HeroCopy
+                  key={copyItem.Id}
+                  item={copyItem}
+                  layout={layout}
+                  overview={overview}
+                  isOverviewOpen={isOverviewOpen}
+                  onToggleOverview={() => {
+                    if (isOverviewOpen) closeOverview();
+                    else setIsOverviewPinned(true);
+                  }}
+                  reduceMotion={reduceMotion}
+                  smartContinueItems={smartContinueItems}
+                />
+              ) : null}
+            </AnimatePresence>
+          </div>
         </div>
       ) : null}
 
@@ -1014,7 +1121,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
       {/* The page continues below; the hero hands over to it. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-x-0 bottom-0 z-[4] h-24 bg-gradient-to-b from-transparent to-[#050607]"
+        className="pointer-events-none absolute inset-x-0 bottom-0 z-[3] h-24 bg-gradient-to-b from-transparent to-[#050607]"
       />
     </section>
   );
@@ -1049,10 +1156,19 @@ function HeroControlButton({
 /** What to show under the title: facts, a few lines of story, and the ways in. */
 function HeroCopy({
   item,
+  layout,
+  overview,
+  isOverviewOpen,
+  onToggleOverview,
   reduceMotion,
   smartContinueItems,
 }: {
   item: MediaItem;
+  layout: HeroLayout;
+  /** 0–1: the overview opening under the facts. */
+  overview: MotionValue<number>;
+  isOverviewOpen: boolean;
+  onToggleOverview: () => void;
   reduceMotion: boolean;
   smartContinueItems: MediaItem[];
 }) {
@@ -1098,13 +1214,22 @@ function HeroCopy({
       : `/watch/${playItem.Id}`;
   const canStartOver = canStartOverFromHero(playItem);
 
+  const overviewId = useId();
+  const factsY = useTransform(
+    overview,
+    (value) => -value * layout.overviewLift,
+  );
+  // The overview comes up from under the facts as they rise off it.
+  const overviewY = useTransform(overview, [0, 1], ["100%", "0%"]);
+  const overviewOpacity = useTransform(overview, [0, 0.45, 1], [0, 0.7, 1]);
+
   const handlePlay = async (event: MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     navigate(await getPlayTargetForItem(playItem));
   };
 
   const line = (index: number) => ({
-    initial: { y: reduceMotion ? 0 : "105%", opacity: reduceMotion ? 0 : 1 },
+    initial: { y: reduceMotion ? 0 : "130%", opacity: reduceMotion ? 0 : 1 },
     animate: {
       y: "0%",
       opacity: 1,
@@ -1115,7 +1240,7 @@ function HeroCopy({
       },
     },
     exit: {
-      y: reduceMotion ? 0 : "105%",
+      y: reduceMotion ? 0 : "130%",
       opacity: reduceMotion ? 0 : 1,
       transition: {
         duration: reduceMotion ? 0.15 : HERO_MOTION.copyExitS,
@@ -1127,35 +1252,53 @@ function HeroCopy({
 
   return (
     <motion.div
-      className="pointer-events-auto"
+      className="relative h-full"
       initial="initial"
       animate="animate"
       exit="exit"
     >
-      {facts ? (
-        <div className="overflow-hidden pb-0.5">
-          <motion.p
-            variants={line(0)}
-            className="text-[0.8125rem] font-bold tracking-[0.04em] text-white/70 drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]"
-          >
-            {facts}
-          </motion.p>
-        </div>
-      ) : null}
+      {/* Fixed rows: the title above sits at the same height for every
+          title. The facts ride up with the title as the overview opens. */}
+      <motion.div
+        className="absolute inset-x-0 top-0 overflow-hidden"
+        style={{ height: COPY_ROWS.factsPx, y: factsY }}
+      >
+        <motion.p
+          variants={line(0)}
+          className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em] text-white/70 drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]"
+        >
+          {facts}
+        </motion.p>
+      </motion.div>
       {metadata.overview ? (
-        <div className="mt-3 overflow-hidden">
+        <div
+          id={overviewId}
+          className="absolute inset-x-0 overflow-hidden"
+          style={{
+            bottom: COPY_ROWS.actionsPx + COPY_ROWS.actionsGapPx,
+            height: layout.overviewHeight,
+          }}
+        >
           <motion.p
-            variants={line(1)}
-            className="line-clamp-3 max-w-[46ch] text-sm font-semibold leading-[1.6] text-white/80 drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)] xl:text-base"
+            className="line-clamp-3 max-w-[46ch] font-semibold text-white/80 drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)]"
+            style={{
+              fontSize: layout.overviewFontPx,
+              lineHeight: COPY_ROWS.overviewLineHeight,
+              y: overviewY,
+              opacity: overviewOpacity,
+            }}
           >
             {metadata.overview}
           </motion.p>
         </div>
       ) : null}
-      <div className="-mx-2 mt-6 overflow-hidden px-2 pb-3 pt-1">
+      <div
+        className="absolute -inset-x-2 -bottom-3 overflow-hidden px-2 pb-3"
+        style={{ height: COPY_ROWS.actionsPx + 12 }}
+      >
         <motion.div
-          variants={line(2)}
-          className="flex flex-wrap items-center gap-2.5"
+          variants={line(1)}
+          className="flex flex-nowrap items-center gap-2.5"
         >
           <ButtonLink
             to={playTo}
@@ -1189,6 +1332,33 @@ function HeroCopy({
             iconSize={20}
             className="inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/[0.14] bg-black/35 text-white/85 backdrop-blur-xl transition hover:bg-white hover:text-zinc-950 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           />
+          {metadata.overview ? (
+            <Tooltip
+              content={
+                isOverviewOpen ? t("hero.hideOverview") : t("hero.showOverview")
+              }
+              placement="top"
+            >
+              <button
+                type="button"
+                aria-label={
+                  isOverviewOpen
+                    ? t("hero.hideOverview")
+                    : t("hero.showOverview")
+                }
+                aria-expanded={isOverviewOpen}
+                aria-controls={overviewId}
+                onClick={onToggleOverview}
+                className={`inline-flex h-12 w-12 items-center justify-center rounded-full border backdrop-blur-xl transition focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] ${
+                  isOverviewOpen
+                    ? "border-white bg-white text-zinc-950 hover:bg-white/85"
+                    : "border-white/[0.14] bg-black/35 text-white/85 hover:bg-white/[0.14] hover:text-white"
+                }`}
+              >
+                <AlignLeft size={19} />
+              </button>
+            </Tooltip>
+          ) : null}
         </motion.div>
       </div>
     </motion.div>

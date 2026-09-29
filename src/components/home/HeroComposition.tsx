@@ -14,7 +14,12 @@ import {
 import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentImage";
 import type { MediaItem } from "../../lib/types";
 import { getHeroImageCandidates } from "../hero/heroModel";
-import type { Placement, StageSize } from "./homeHeroModel";
+import {
+  TITLE_SCALE,
+  type HeroLayout,
+  type Placement,
+  type StageSize,
+} from "./homeHeroModel";
 
 /**
  * One featured title, drawn once at the stage's full size.
@@ -30,12 +35,12 @@ export interface CompositionMotion {
   x: MotionValue<number>;
   y: MotionValue<number>;
   scale: MotionValue<number>;
-  /** Black over the whole frame, 0–1: receding, waiting, or leaving. */
+  /** Black over the whole frame, 0–1: receding or leaving. */
   dim: MotionValue<number>;
-  /** The slow push-in on the artwork while on stage. */
-  drift: MotionValue<number>;
-  /** The title's own scale inside the frame, for the trailer hand-off. */
+  /** The title's own scale inside the frame: resting, open, or trailer. */
   titleScale: MotionValue<number>;
+  /** The title's rise, in px, while the overview is open under it. */
+  titleY: MotionValue<number>;
   /** 0–1: the trailer over the artwork. */
   trailer: MotionValue<number>;
 }
@@ -49,8 +54,8 @@ export function createCompositionMotion(
     y: motionValue(placement.y),
     scale: motionValue(placement.scale),
     dim: motionValue(dim),
-    drift: motionValue(1),
-    titleScale: motionValue(1),
+    titleScale: motionValue<number>(TITLE_SCALE.rest),
+    titleY: motionValue(0),
     trailer: motionValue(0),
   };
 }
@@ -58,20 +63,11 @@ export function createCompositionMotion(
 /** The corner radius a miniature shows on screen, whatever its scale. */
 const QUEUE_RADIUS_PX = 12;
 
-/**
- * Where the title sits within the frame, as shares of the stage. The copy
- * overlay reads the same numbers, so the text always starts under the title.
- */
-export const TITLE_BOX = {
-  left: 0.052,
-  bottom: 0.41,
-  width: 0.36,
-  height: 0.21,
-} as const;
-
 interface HeroCompositionProps {
   item: MediaItem;
   stage: StageSize;
+  /** Where the title sits in the frame; the copy overlay reads the same. */
+  titleBox: HeroLayout["title"];
   motion: CompositionMotion;
   /** The scale a slot holds a composition at; corners round in step with it. */
   slotScale: number;
@@ -89,6 +85,7 @@ interface HeroCompositionProps {
 export function HeroComposition({
   item,
   stage,
+  titleBox,
   motion: m,
   slotScale,
   zIndex,
@@ -122,13 +119,20 @@ export function HeroComposition({
     const towardsSlot = Math.min(1, Math.max(0, (1 - scale) / (1 - slotScale)));
     return (QUEUE_RADIUS_PX * towardsSlot) / scale;
   });
-  // A hairline and a lift that stay one pixel and one shadow on screen at any
-  // scale, and fade out as the frame grows into the stage.
+  // A hairline that stays one pixel on screen at any scale, gone by the time
+  // the frame fills the stage.
   const frameShadow = useTransform(m.scale, (scale) => {
     const presence = Math.min(1, Math.max(0, (0.55 - scale) / 0.35));
     if (presence <= 0) return "none";
-    return `inset 0 0 0 ${1 / scale}px rgba(255,255,255,${0.16 * presence}), 0 ${18 / scale}px ${44 / scale}px rgba(0,0,0,${0.55 * presence})`;
+    return `inset 0 0 0 ${1 / scale}px rgba(255,255,255,${0.18 * presence})`;
   });
+  // The scrim is for copy, and a miniature has none: it shows the artwork
+  // clean, and the shade grows in with the frame.
+  const scrimOpacity = useTransform(
+    m.scale,
+    [slotScale, Math.max(slotScale + 0.01, 0.6)],
+    [0, 1],
+  );
   const titleOpacity = useTransform(m.trailer, [0, 1], [1, 0.92]);
 
   useEffect(() => {
@@ -161,17 +165,16 @@ export function HeroComposition({
       aria-hidden={isStage ? undefined : true}
     >
       {artwork ? (
-        <motion.img
+        <img
           src={artwork.url}
           alt=""
           draggable={false}
           loading="eager"
           decoding="async"
           fetchPriority={isStage ? "high" : "auto"}
-          className={`absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-700 ${
+          className={`absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-500 ${
             isArtworkLoaded ? "opacity-100" : "opacity-0"
           } ${artwork.type === "primary" ? "blur-2xl" : ""}`}
-          style={{ scale: m.drift, transformOrigin: "62% 38%" }}
           onLoad={() => {
             setIsArtworkLoaded(true);
             onArtworkReady?.();
@@ -194,25 +197,26 @@ export function HeroComposition({
         />
       ) : null}
 
-      {/* Legibility for the title and the copy under it, part of the frame so
-          the miniature reads exactly as the stage will. */}
-      <div
+      {/* Legibility for the title and the copy under it, bottom-left. */}
+      <motion.div
         aria-hidden="true"
         className="pointer-events-none absolute inset-0"
         style={{
+          opacity: scrimOpacity,
           background:
-            "radial-gradient(120% 90% at 0% 100%, rgba(5,6,7,0.92) 0%, rgba(5,6,7,0.62) 34%, rgba(5,6,7,0) 64%), linear-gradient(0deg, rgba(5,6,7,0.95) 0%, rgba(5,6,7,0) 34%), linear-gradient(180deg, rgba(5,6,7,0.72) 0%, rgba(5,6,7,0.32) 12%, rgba(5,6,7,0) 28%)",
+            "radial-gradient(95% 80% at 0% 100%, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0.6) 38%, rgba(5,6,7,0) 70%), linear-gradient(0deg, rgba(5,6,7,0.9) 0%, rgba(5,6,7,0) 30%), linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 11%, rgba(5,6,7,0) 24%)",
         }}
       />
 
       <motion.div
         className="absolute flex items-end"
         style={{
-          left: `${TITLE_BOX.left * 100}%`,
-          bottom: `${TITLE_BOX.bottom * 100}%`,
-          width: `${TITLE_BOX.width * 100}%`,
-          height: `${TITLE_BOX.height * 100}%`,
+          left: titleBox.left,
+          bottom: titleBox.bottom,
+          width: titleBox.width,
+          height: titleBox.height,
           scale: m.titleScale,
+          y: m.titleY,
           opacity: titleOpacity,
           transformOrigin: "0% 100%",
         }}

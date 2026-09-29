@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   HERO_MOTION,
+  arrivalPlacement,
+  heroLayout,
+  liftDurationS,
+  sharedDurationS,
+  slotPitch,
   travelBudgetPxPerFrame,
-  travelDurationS,
-  offstagePlacement,
   peakTravelPxPerFrame,
   previousIndex,
   pushedBackPlacement,
@@ -64,19 +67,18 @@ describe("queue geometry", () => {
 });
 
 describe("motion budget", () => {
-  // No edge may move more than 32 px between two frames at 60 fps; beyond
-  // that, a move stops reading as motion and starts reading as a jump.
+  // Beyond the budget a move stops reading as motion and starts reading as a
+  // jump; under it, the hero is fast.
   it.each(DESKTOP_SIZES)(
-    "lifts any queued title to the stage within budget ($width)",
+    "lifts from every slot in the same, short time, within budget ($width)",
     (stage) => {
+      const duration = liftDurationS(stage);
+      expect(duration).toBeGreaterThanOrEqual(HERO_MOTION.travelS);
+      expect(duration).toBeLessThan(1);
       for (const slot of queueSlots(stage)) {
-        const from = slotPlacement(stage, slot);
-        const duration = travelDurationS(stage, from, stagePlacement());
-        expect(duration).toBeGreaterThanOrEqual(HERO_MOTION.travelS);
-        expect(duration).toBeLessThan(1.8);
         const peak = peakTravelPxPerFrame(
           stage,
-          from,
+          slotPlacement(stage, slot),
           stagePlacement(),
           duration,
         );
@@ -85,29 +87,87 @@ describe("motion budget", () => {
     },
   );
 
+  it.each(DESKTOP_SIZES)("recedes within budget ($width)", (stage) => {
+    expect(
+      peakTravelPxPerFrame(
+        stage,
+        stagePlacement(),
+        pushedBackPlacement(stage),
+        liftDurationS(stage),
+      ),
+    ).toBeLessThanOrEqual(travelBudgetPxPerFrame(stage) + 1e-9);
+  });
+});
+
+describe("the queue sliding as a row", () => {
   it.each(DESKTOP_SIZES)(
-    "recedes and brings newcomers in within budget ($width)",
+    "lines arrivals up beyond the right edge, a slot apart ($width)",
+    (stage) => {
+      const first = arrivalPlacement(stage, 0);
+      expect(first.x).toBeGreaterThan(stage.width);
+      expect(
+        arrivalPlacement(stage, 2).x - arrivalPlacement(stage, 1).x,
+      ).toBeCloseTo(slotPitch(stage));
+      expect(first.y).toBe(queueSlots(stage)[0]!.y);
+    },
+  );
+
+  // Choosing slot p: the titles after it close up to the head, and p + 1
+  // newcomers arrive. On a shared clock no miniature may overlap or pass
+  // another at any moment, whichever slot was chosen.
+  it.each(DESKTOP_SIZES)(
+    "never lets one miniature pass another, whichever slot was chosen ($width)",
     (stage) => {
       const slots = queueSlots(stage);
-      const budget = travelBudgetPxPerFrame(stage) + 1e-9;
-      expect(
-        peakTravelPxPerFrame(
+      for (const chosen of [0, 1, 2]) {
+        const staying = slots
+          .slice(chosen + 1)
+          .map((slot) => slotPlacement(stage, slot));
+        const arriving = Array.from({ length: chosen + 1 }, (_, order) =>
+          arrivalPlacement(stage, order),
+        );
+        const from = [...staying, ...arriving];
+        const to = slots.map((slot) => slotPlacement(stage, slot));
+        const duration = sharedDurationS(
           stage,
-          stagePlacement(),
-          pushedBackPlacement(stage),
-          HERO_MOTION.travelS,
-        ),
-      ).toBeLessThanOrEqual(budget);
-      const last = slotPlacement(stage, slots[slots.length - 1]!);
-      const entry = travelDurationS(
-        stage,
-        offstagePlacement(stage),
-        last,
-        HERO_MOTION.shiftS,
+          from.map((start, index) => ({ from: start, to: to[index]! })),
+          HERO_MOTION.slideS,
+          HERO_MOTION.slideEase,
+        );
+        expect(duration).toBeLessThan(0.9);
+        for (let step = 0; step <= 20; step += 1) {
+          const progress = step / 20;
+          const xs = from.map(
+            (start, index) => start.x + (to[index]!.x - start.x) * progress,
+          );
+          for (let index = 1; index < xs.length; index += 1) {
+            expect(xs[index]! - xs[index - 1]!).toBeGreaterThanOrEqual(
+              slots[0]!.width,
+            );
+          }
+        }
+      }
+    },
+  );
+});
+
+describe("layout", () => {
+  it.each(DESKTOP_SIZES)(
+    "puts the copy bottom-left, level with the queue, and the title right above it ($width)",
+    (stage) => {
+      const layout = heroLayout(stage);
+      const slots = queueSlots(stage);
+      const queueBottom = stage.height - (slots[0]!.y + slots[0]!.height);
+      expect(layout.copy.bottom).toBeCloseTo(queueBottom, 5);
+      expect(layout.copy.left + layout.copy.width).toBeLessThan(slots[0]!.x);
+      expect(layout.title.bottom).toBeGreaterThan(
+        layout.copy.bottom + layout.copy.height,
       );
-      expect(
-        peakTravelPxPerFrame(stage, offstagePlacement(stage), last, entry),
-      ).toBeLessThanOrEqual(budget);
+      const titleTop = stage.height - layout.title.bottom - layout.title.height;
+      expect(titleTop).toBeGreaterThan(stage.height * 0.2);
+      // With the overview open, the risen title still clears the top bar.
+      expect(titleTop - layout.overviewLift).toBeGreaterThan(96);
+      expect(layout.overviewLift).toBeGreaterThan(layout.overviewHeight);
     },
   );
 });
