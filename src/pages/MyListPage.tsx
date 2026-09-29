@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useReducedMotion } from "framer-motion";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { MediaCard } from "../components/MediaCard";
 import { LibrarySkeleton } from "../components/Skeletons";
+import { useFlipLayout } from "../hooks/useFlipLayout";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   FAVOURITE_CHANGED_EVENT,
@@ -16,6 +18,10 @@ export function MyListPage() {
   const { t } = useLanguage();
   const [items, setItems] = useState<MediaItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const shouldReduceMotion = useReducedMotion();
+
+  useFlipLayout(gridRef, items?.map((item) => item.Id).join("|") ?? "");
 
   const loadFavourites = useCallback(async () => {
     try {
@@ -50,19 +56,41 @@ export function MyListPage() {
         return;
       }
 
-      setItems((currentItems) => {
-        if (!currentItems) {
-          return currentItems;
-        }
+      if (!detail.isFavourite) {
+        const dropItem = () =>
+          setItems((currentItems) =>
+            currentItems
+              ? currentItems.filter((item) => item.Id !== detail.itemId)
+              : currentItems,
+          );
+        const card = Array.from(
+          gridRef.current?.querySelectorAll<HTMLElement>("[data-flip-key]") ??
+            [],
+        ).find(
+          (element) => element.getAttribute("data-flip-key") === detail.itemId,
+        );
 
-        if (!detail.isFavourite) {
-          return currentItems.filter((item) => item.Id !== detail.itemId);
+        // Two beats: the card lets go where it stands, then the grid closes
+        // the gap (useFlipLayout) — so the eye sees what left, and where
+        // everything else went.
+        if (card && !shouldReduceMotion && typeof card.animate === "function") {
+          card
+            .animate(
+              [
+                { opacity: 1, transform: "scale(1)" },
+                { opacity: 0, transform: "scale(0.9)" },
+              ],
+              {
+                duration: 220,
+                easing: "cubic-bezier(0.4, 0, 1, 1)",
+                fill: "forwards",
+              },
+            )
+            .finished.then(dropItem, dropItem);
+        } else {
+          dropItem();
         }
-
-        return currentItems.some((item) => item.Id === detail.itemId)
-          ? currentItems
-          : currentItems;
-      });
+      }
 
       if (detail.isFavourite) {
         void loadFavourites();
@@ -77,7 +105,7 @@ export function MyListPage() {
         handleFavouriteChanged,
       );
     };
-  }, [loadFavourites]);
+  }, [loadFavourites, shouldReduceMotion]);
 
   if (!items) {
     return <LibrarySkeleton />;
@@ -99,7 +127,10 @@ export function MyListPage() {
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
+        <div
+          ref={gridRef}
+          className="relative grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6"
+        >
           {items.map((item, index) => (
             <MediaCard
               key={item.Id}
@@ -107,6 +138,7 @@ export function MyListPage() {
               to={getRouteForItem(item)}
               layout="grid"
               index={index}
+              animateIn
             />
           ))}
         </div>

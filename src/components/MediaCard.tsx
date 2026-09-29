@@ -383,6 +383,7 @@ export function MediaCard({
 
     return (
       <motion.div
+        data-flip-key={item.Id}
         className={`h-full min-w-0 shrink-0 ${sizeClass}`}
         whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
         {...motionProps}
@@ -507,7 +508,7 @@ export function MediaCard({
             <div className="absolute inset-x-0 bottom-0 z-50 h-[0.1rem] w-[50%] bg-gray-600">
               <div
                 data-testid="media-card-progress-fill"
-                className="h-full bg-[var(--accent)]"
+                className="media-progress-fill h-full bg-[var(--accent)]"
                 style={{ width: `${progressPercent / 2}%` }}
               />
             </div>
@@ -602,6 +603,7 @@ export function MediaCard({
 
   return (
     <motion.div
+      data-flip-key={item.Id}
       className={`h-full min-w-0 shrink-0 ${sizeClass}`}
       whileTap={shouldReduceMotion ? undefined : { scale: 0.985 }}
       {...motionProps}
@@ -749,7 +751,7 @@ export function MediaCard({
           <div className="absolute inset-x-0 bottom-0 z-30 h-[0.1rem] sm:h-[0.1rem] bg-white/[0.18]">
             <div
               data-testid="media-card-progress-fill"
-              className="h-full bg-[var(--accent)]"
+              className="media-progress-fill h-full bg-[var(--accent)]"
               style={{ width: `${progressPercent}%` }}
             />
           </div>

@@ -1,8 +1,8 @@
 import type { CSSProperties, MouseEvent } from "react";
-import { Check, Loader2, Plus } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useFavouriteState } from "../hooks/useFavouriteState";
 import type { MediaItem } from "../lib/types";
+import { ListToggleIcon } from "./ui/ListToggleIcon";
 import { Tooltip } from "./ui/Tooltip";
 
 interface FavouriteButtonProps {
@@ -48,13 +48,14 @@ export function FavouriteButton({
         style={style}
         className={`${className} disabled:cursor-wait`}
       >
-        {isSaving ? (
-          <Loader2 size={iconSize} className="animate-spin" />
-        ) : isFavourite ? (
-          <Check size={iconSize} />
-        ) : (
-          <Plus size={iconSize} />
-        )}
+        {/* The toggle is optimistic, so the mark changes the moment it is
+            pressed; a save still in flight only dims it, and a failed one
+            morphs it back. */}
+        <ListToggleIcon
+          checked={isFavourite}
+          size={iconSize}
+          className={`transition-opacity duration-200 ${isSaving ? "opacity-60" : "opacity-100"}`}
+        />
         {showLabel ? <span>{label}</span> : null}
       </button>
     </Tooltip>

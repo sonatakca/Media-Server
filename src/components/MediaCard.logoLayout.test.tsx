@@ -6,6 +6,17 @@ import { MediaCard } from "./MediaCard";
 
 vi.mock("framer-motion", () => ({
   motion: {
+    // The My List toggle morphs its strokes as motion paths.
+    path: ({
+      initial: _initial,
+      animate,
+      transition: _transition,
+      ...props
+    }: React.SVGProps<SVGPathElement> & {
+      initial?: unknown;
+      animate?: { d?: string };
+      transition?: unknown;
+    }) => <path {...props} d={animate?.d} />,
     div: ({ children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
       <div {...props}>{children}</div>
     ),

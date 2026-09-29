@@ -198,6 +198,7 @@ export function MobileMediaCard({
 
   return (
     <motion.article
+      data-flip-key={item.Id}
       layout={animateRemoval ? "position" : undefined}
       exit={
         animateRemoval
@@ -266,7 +267,7 @@ export function MobileMediaCard({
             <div className="absolute inset-x-0 bottom-0 z-30 h-0.5 bg-[#343438]">
               <div
                 data-testid="media-card-progress-fill"
-                className="h-full bg-[var(--accent)]"
+                className="media-progress-fill h-full bg-[var(--accent)]"
                 style={{ width: `${progressPercent}%` }}
               />
             </div>

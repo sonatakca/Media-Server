@@ -1,5 +1,5 @@
 import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Book,
   Bookmark,
@@ -18,6 +18,7 @@ import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
+import { SlidingIndicator } from "../ui/SlidingIndicator";
 import { Tooltip } from "../ui/Tooltip";
 
 function ActiveTabBorder() {
@@ -63,6 +64,7 @@ export function MobileNavbar() {
   const { t } = useLanguage();
   const [hasScrolled, setHasScrolled] = useState(false);
   const [bottomNavBlurred, setBottomNavBlurred] = useState(false);
+  const tabBarRef = useRef<HTMLElement | null>(null);
   const libraryRoutes = {
     movies: "/movies",
     series: "/shows",
@@ -175,6 +177,7 @@ export function MobileNavbar() {
       </header>
 
       <nav
+        ref={tabBarRef}
         className={`fixed inset-x-0 bottom-0 z-50 flex h-[calc(5rem+env(safe-area-inset-bottom))] items-start px-2 pt-2 pb-[env(safe-area-inset-bottom)] transition-[background-color,backdrop-filter] duration-[1000ms] landscape:hidden ${
           bottomNavBlurred
             ? "bg-black/75 backdrop-blur-2xl"
@@ -185,71 +188,60 @@ export function MobileNavbar() {
           to="/home"
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              {isActive ? <ActiveTabDot /> : null}
-              <GoHomeFill size={30} className="relative z-10" />
-              <span className="relative z-10">{t("nav.home")}</span>
-            </>
-          )}
+          <>
+            <GoHomeFill size={30} className="relative z-10" />
+            <span className="relative z-10">{t("nav.home")}</span>
+          </>
         </NavLink>
         <NavLink
           to={libraryRoutes.movies}
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              {isActive ? <ActiveTabDot /> : null}
-              <RiMovie2Fill size={30} className="relative z-10" />
-              <span className="relative z-10">{t("nav.movies")}</span>
-            </>
-          )}
+          <>
+            <RiMovie2Fill size={30} className="relative z-10" />
+            <span className="relative z-10">{t("nav.movies")}</span>
+          </>
         </NavLink>
         <NavLink
           to={libraryRoutes.series}
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              {isActive ? <ActiveTabDot /> : null}
-              <TbDeviceTv size={30} className="relative z-10" />
-              <span className="relative z-10">{t("nav.series")}</span>
-            </>
-          )}
+          <>
+            <TbDeviceTv size={30} className="relative z-10" />
+            <span className="relative z-10">{t("nav.series")}</span>
+          </>
         </NavLink>
 
         <NavLink
           to={libraryRoutes.books}
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              {isActive ? <ActiveTabDot /> : null}
-              <Book size={30} className="relative z-10" />
-              <span className="relative z-10">{t("nav.books")}</span>
-            </>
-          )}
+          <>
+            <Book size={30} className="relative z-10" />
+            <span className="relative z-10">{t("nav.books")}</span>
+          </>
         </NavLink>
 
         <NavLink
           to="/my-list"
           className={({ isActive }) => getTabClassName(isActive)}
         >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              {isActive ? <ActiveTabDot /> : null}
-              <Bookmark size={30} className="relative z-10" />
-              <span className="relative z-10 truncate max-w-full px-0.5">
-                {t("myList.title")}
-              </span>
-            </>
-          )}
+          <>
+            <Bookmark size={30} className="relative z-10" />
+            <span className="relative z-10 truncate max-w-full px-0.5">
+              {t("myList.title")}
+            </span>
+          </>
         </NavLink>
+
+        <SlidingIndicator
+          containerRef={tabBarRef}
+          activeSelector='a[aria-current="page"]'
+          measureKey={location.pathname}
+        >
+          <ActiveTabBorder />
+          <ActiveTabDot />
+        </SlidingIndicator>
 
         {/* <NavLink
           to={libraryRoutes.collections}

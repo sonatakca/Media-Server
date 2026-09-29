@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import {
+  AnimatePresence,
+  motion,
+  useReducedMotion,
+  type HTMLMotionProps,
+} from "framer-motion";
 import { Loader2, Search, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -25,6 +31,7 @@ import {
   type SearchGroup,
 } from "../../lib/searchModel";
 import type { MediaItem } from "../../lib/types";
+import { SlidingIndicator } from "../ui/SlidingIndicator";
 
 interface SearchOverlayProps {
   isOpen: boolean;
@@ -165,6 +172,8 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
+  const resultsRef = useRef<HTMLDivElement | null>(null);
+  const shouldReduceMotion = useReducedMotion();
   // Guards against a slow request for an old query overwriting a newer one.
   const requestSequenceRef = useRef(0);
   const [query, setQuery] = useState("");
@@ -338,129 +347,208 @@ export function SearchOverlay({ isOpen, onClose }: SearchOverlayProps) {
     }
   }, [activeIndex]);
 
-  if (!isOpen || typeof document === "undefined") {
+  if (typeof document === "undefined") {
     return null;
   }
 
-  let flatIndex = -1;
+  // Position of each result in keyboard order, across groups.
+  const flatIndexById = new Map(
+    flatResults.map((item, index) => [item.Id, index]),
+  );
+  // The panel drops from where the search control lives, and leaves faster
+  // than it arrived; with reduced motion it only fades.
+  const panelMotion: HTMLMotionProps<"div"> = shouldReduceMotion
+    ? {
+        initial: { opacity: 0 },
+        animate: { opacity: 1 },
+        exit: { opacity: 0 },
+      }
+    : {
+        initial: { opacity: 0, y: -18, scale: 0.97 },
+        animate: {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          transition: { type: "spring", bounce: 0, duration: 0.38 },
+        },
+        exit: {
+          opacity: 0,
+          y: -10,
+          scale: 0.985,
+          transition: { duration: 0.14, ease: [0.4, 0, 1, 1] as const },
+        },
+      };
 
   return createPortal(
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={t("search.title")}
-      onKeyDown={handleKeyDown}
-      className="fixed inset-0 z-[200] flex justify-center bg-black/72 p-4 pt-[max(env(safe-area-inset-top),4rem)] backdrop-brightness-90"
-    >
-      {/*
+    <AnimatePresence>
+      {isOpen ? (
+        <motion.div
+          key="search-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { duration: 0.2 } }}
+          exit={{ opacity: 0, transition: { duration: 0.16, delay: 0.04 } }}
+          role="dialog"
+          aria-modal="true"
+          aria-label={t("search.title")}
+          onKeyDown={handleKeyDown}
+          className="fixed inset-0 z-[200] flex justify-center bg-black/72 p-4 pt-[max(env(safe-area-inset-top),4rem)] backdrop-brightness-90"
+        >
+          {/*
         A sibling backdrop button rather than a click handler on the dialog, so
         clicking away is reachable by pointer without swallowing keyboard focus
         or making the dialog itself a control.
       */}
-      <button
-        type="button"
-        aria-label={t("search.close")}
-        onClick={onClose}
-        className="absolute inset-0 z-0 cursor-default"
-      />
-
-      <div className="relative z-10 flex h-fit max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.97)] shadow-[0_32px_120px_rgba(0,0,0,0.75)]">
-        <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
-          <Search size={18} className="shrink-0 text-white/45" />
-
-          <input
-            ref={inputRef}
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("search.placeholder")}
-            aria-label={t("search.placeholder")}
-            autoComplete="off"
-            spellCheck={false}
-            className="min-w-0 flex-1 bg-transparent text-base font-semibold text-white outline-none placeholder:font-medium placeholder:text-white/35 [&::-webkit-search-cancel-button]:hidden"
-          />
-
-          {status === "loading" ? (
-            <Loader2
-              size={16}
-              className="shrink-0 animate-spin text-white/45"
-            />
-          ) : null}
-
           <button
             type="button"
-            onClick={onClose}
             aria-label={t("search.close")}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            onClick={onClose}
+            className="absolute inset-0 z-0 cursor-default"
+          />
+
+          <motion.div
+            {...panelMotion}
+            style={{ transformOrigin: "50% 0%" }}
+            className="relative z-10 flex h-fit max-h-full w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-white/10 bg-[rgba(18,18,20,0.97)] shadow-[0_32px_120px_rgba(0,0,0,0.75)]"
           >
-            <X size={17} />
-          </button>
-        </div>
+            <div className="flex items-center gap-3 border-b border-white/10 px-4 py-3">
+              <Search size={18} className="shrink-0 text-white/45" />
 
-        <div
-          ref={listRef}
-          className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
-        >
-          {!hasQuery && flatResults.length === 0 ? (
-            <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
-              {t("search.hint")}
-            </p>
-          ) : hasQuery && status === "failed" ? (
-            <p className="px-3 py-8 text-center text-sm font-semibold text-rose-300">
-              {t("search.failed")}
-            </p>
-          ) : hasQuery && flatResults.length === 0 && status === "ready" ? (
-            <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
-              {formatTemplate(t("search.noResults"), { query: query.trim() })}
-            </p>
-          ) : (
-            groups.map((group) => (
-              <div key={group.id} className="mb-2 last:mb-0">
-                <p className="px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.16em] text-[var(--accent)]">
-                  {t(group.labelKey)}
+              <input
+                ref={inputRef}
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder={t("search.placeholder")}
+                aria-label={t("search.placeholder")}
+                autoComplete="off"
+                spellCheck={false}
+                className="min-w-0 flex-1 bg-transparent text-base font-semibold text-white outline-none placeholder:font-medium placeholder:text-white/35 [&::-webkit-search-cancel-button]:hidden"
+              />
+
+              <AnimatePresence initial={false}>
+                {status === "loading" ? (
+                  <motion.span
+                    key="search-loading"
+                    initial={{ opacity: 0, scale: 0.6 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.6 }}
+                    transition={{ duration: 0.16 }}
+                    className="flex shrink-0"
+                  >
+                    <Loader2 size={16} className="animate-spin text-white/45" />
+                  </motion.span>
+                ) : null}
+              </AnimatePresence>
+
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label={t("search.close")}
+                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/55 transition hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              >
+                <X size={17} />
+              </button>
+            </div>
+
+            <div
+              ref={listRef}
+              className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
+            >
+              {!hasQuery && flatResults.length === 0 ? (
+                <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
+                  {t("search.hint")}
                 </p>
-
-                <ul className="space-y-1">
-                  {group.items.map((item) => {
-                    flatIndex += 1;
-                    const isActive = flatIndex === activeIndex;
-                    const subtitle = getResultSubtitle(item);
-
-                    return (
-                      <li key={item.Id}>
-                        <button
-                          type="button"
-                          data-search-active={isActive ? "true" : undefined}
-                          onClick={() => openResult(item)}
-                          className={`flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
-                            isActive
-                              ? "bg-white/[0.12]"
-                              : "hover:bg-white/[0.08]"
-                          }`}
-                        >
-                          <ResultArtwork item={item} language={language} />
-
-                          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-                            <span className="truncate text-sm font-black text-white sm:text-base">
-                              {getResultTitle(item, language)}
-                            </span>
-                            {subtitle ? (
-                              <span className="truncate text-[0.7rem] font-bold uppercase tracking-[0.1em] text-white/45">
-                                {subtitle}
-                              </span>
-                            ) : null}
-                          </span>
-                        </button>
-                      </li>
-                    );
+              ) : hasQuery && status === "failed" ? (
+                <p className="px-3 py-8 text-center text-sm font-semibold text-rose-300">
+                  {t("search.failed")}
+                </p>
+              ) : hasQuery && flatResults.length === 0 && status === "ready" ? (
+                <p className="px-3 py-8 text-center text-sm font-semibold text-white/45">
+                  {formatTemplate(t("search.noResults"), {
+                    query: query.trim(),
                   })}
-                </ul>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </div>,
+                </p>
+              ) : (
+                <div ref={resultsRef} className="relative">
+                  {/* One highlight that follows the arrow keys from row to row. */}
+                  <SlidingIndicator
+                    containerRef={resultsRef}
+                    activeSelector='[data-search-active="true"]'
+                    measureKey={`${activeIndex}:${flatResults.length}:${query}`}
+                    className="rounded-xl bg-white/[0.12]"
+                  />
+                  {groups.map((group) => (
+                    <div key={group.id} className="relative mb-2 last:mb-0">
+                      <p className="px-3 py-2 text-[0.68rem] font-black uppercase tracking-[0.16em] text-[var(--accent)]">
+                        {t(group.labelKey)}
+                      </p>
+
+                      <ul className="space-y-1">
+                        {group.items.map((item) => {
+                          const flatIndex = flatIndexById.get(item.Id) ?? 0;
+                          const isActive = flatIndex === activeIndex;
+                          const subtitle = getResultSubtitle(item);
+                          // A list arriving as a list: capped, so the twelfth row
+                          // is not still waiting after the first has been read.
+                          const delay = Math.min(flatIndex * 0.024, 0.2);
+
+                          return (
+                            <motion.li
+                              key={item.Id}
+                              initial={
+                                shouldReduceMotion
+                                  ? { opacity: 0 }
+                                  : { opacity: 0, y: 8 }
+                              }
+                              animate={{
+                                opacity: 1,
+                                y: 0,
+                                transition: {
+                                  duration: 0.26,
+                                  delay,
+                                  ease: [0.22, 1, 0.36, 1],
+                                },
+                              }}
+                            >
+                              <button
+                                type="button"
+                                data-search-active={
+                                  isActive ? "true" : undefined
+                                }
+                                onClick={() => openResult(item)}
+                                className={`relative flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left transition focus:outline-none focus:ring-2 focus:ring-[var(--accent)] ${
+                                  isActive ? "" : "hover:bg-white/[0.08]"
+                                }`}
+                              >
+                                <ResultArtwork
+                                  item={item}
+                                  language={language}
+                                />
+
+                                <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                                  <span className="truncate text-sm font-black text-white sm:text-base">
+                                    {getResultTitle(item, language)}
+                                  </span>
+                                  {subtitle ? (
+                                    <span className="truncate text-[0.7rem] font-bold uppercase tracking-[0.1em] text-white/45">
+                                      {subtitle}
+                                    </span>
+                                  ) : null}
+                                </span>
+                              </button>
+                            </motion.li>
+                          );
+                        })}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>,
     document.body,
   );
 }

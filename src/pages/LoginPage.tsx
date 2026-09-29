@@ -1,4 +1,11 @@
 import { useEffect, FormEvent, useState } from "react";
+import {
+  AnimatePresence,
+  motion,
+  useAnimationControls,
+  useReducedMotion,
+  type Variants,
+} from "framer-motion";
 import { Lock, User } from "lucide-react";
 import { Navigate, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
@@ -13,6 +20,32 @@ import { markLoginConfettiPending } from "../lib/homeConfetti";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 
+const ARRIVE: [number, number, number, number] = [0.16, 1, 0.3, 1];
+
+// The sign-in card assembles top to bottom: mark, name, heading, form. One
+// short sequence on the one page that is always seen first.
+const entrance: Variants = {
+  hidden: {},
+  shown: { transition: { staggerChildren: 0.08, delayChildren: 0.12 } },
+};
+const rise: Variants = {
+  hidden: { opacity: 0, y: 14 },
+  shown: { opacity: 1, y: 0, transition: { duration: 0.6, ease: ARRIVE } },
+};
+const markArrives: Variants = {
+  hidden: { opacity: 0, y: 10, scale: 0.86 },
+  shown: {
+    opacity: 1,
+    y: 0,
+    scale: 1,
+    transition: { duration: 0.7, ease: ARRIVE },
+  },
+};
+const fade: Variants = {
+  hidden: { opacity: 0 },
+  shown: { opacity: 1, transition: { duration: 0.4 } },
+};
+
 export function LoginPage() {
   const navigate = useNavigate();
   const { t } = useLanguage();
@@ -20,6 +53,8 @@ export function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const shouldReduceMotion = useReducedMotion();
+  const formControls = useAnimationControls();
 
   useEffect(() => {
     setPageTitle(`${t("auth.login")} · Seyirlik`, {
@@ -55,6 +90,13 @@ export function LoginPage() {
           ? loginError.message
           : t("auth.loginFailed");
       setError(`${t("auth.failedMessagePrefix")} ${message}`);
+      // A refusal is felt before it is read: the card shakes its head.
+      if (!shouldReduceMotion) {
+        void formControls.start({
+          x: [0, -10, 8, -5, 3, 0],
+          transition: { duration: 0.42, ease: "easeInOut" },
+        });
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -174,85 +216,129 @@ export function LoginPage() {
         side="right"
       />
 
-      <section className="w-full max-w-md">
+      <motion.section
+        className="w-full max-w-md"
+        variants={entrance}
+        initial="hidden"
+        animate="shown"
+      >
         <div className="mb-8 text-center">
-          <img
+          <motion.img
+            variants={shouldReduceMotion ? fade : markArrives}
             src={appIcon}
             alt=""
             className="mx-auto h-16 w-16 rounded-2xl object-cover shadow-2xl"
           />
-          <p className="mt-4 text-sm font-semibold text-[var(--accent)]">
+          <motion.p
+            variants={shouldReduceMotion ? fade : rise}
+            className="mt-4 text-sm font-semibold text-[var(--accent)]"
+          >
             Seyirlik
-          </p>
-          <h1 className="text-3xl font-black">{t("auth.signIn")}</h1>
+          </motion.p>
+          <motion.h1
+            variants={shouldReduceMotion ? fade : rise}
+            className="text-3xl font-black"
+          >
+            {t("auth.signIn")}
+          </motion.h1>
         </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6"
-        >
-          <label
-            htmlFor="username"
-            className="block text-sm font-semibold text-zinc-100"
+        <motion.div variants={shouldReduceMotion ? fade : rise}>
+          <motion.form
+            animate={formControls}
+            onSubmit={handleSubmit}
+            className="rounded-lg border border-white/10 bg-black/[0.55] p-5 shadow-2xl backdrop-blur sm:p-6"
           >
-            {t("auth.username")}
-          </label>
-          <div className="relative mt-2">
-            <User
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
-              size={18}
-            />
-            <input
-              id="username"
-              autoComplete="username"
-              required
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
-            />
-          </div>
-
-          <label
-            htmlFor="password"
-            className="mt-5 block text-sm font-semibold text-zinc-100"
-          >
-            {t("auth.password")}
-          </label>
-          <div className="relative mt-2">
-            <Lock
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
-              size={18}
-            />
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              placeholder={t("auth.noPasswordPlaceholder")}
-              className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
-            />
-          </div>
-
-          {error ? (
-            <div className="mt-5">
-              <ErrorMessage title={t("auth.failedTitle")} message={error} />
-            </div>
-          ) : null}
-
-          <Button type="submit" className="mt-6 w-full" disabled={isSubmitting}>
-            <AnimatedWidth
-              value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+            <label
+              htmlFor="username"
+              className="block text-sm font-semibold text-zinc-100"
             >
-              <span className="inline-flex py-1 leading-normal">
-                <AnimatedText
-                  value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
-                />
-              </span>
-            </AnimatedWidth>
-          </Button>
-        </form>
-      </section>
+              {t("auth.username")}
+            </label>
+            <div className="relative mt-2">
+              <User
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                size={18}
+              />
+              <input
+                id="username"
+                autoComplete="username"
+                required
+                value={username}
+                onChange={(event) => setUsername(event.target.value)}
+                className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              />
+            </div>
+
+            <label
+              htmlFor="password"
+              className="mt-5 block text-sm font-semibold text-zinc-100"
+            >
+              {t("auth.password")}
+            </label>
+            <div className="relative mt-2">
+              <Lock
+                className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500"
+                size={18}
+              />
+              <input
+                id="password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder={t("auth.noPasswordPlaceholder")}
+                className="min-h-12 w-full rounded-lg border border-white/10 bg-white/10 py-3 pl-10 pr-4 text-white outline-none transition placeholder:text-zinc-500 focus:border-[var(--accent)] focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0"
+              />
+            </div>
+
+            <AnimatePresence initial={false}>
+              {error ? (
+                <motion.div
+                  key="login-error"
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{
+                    opacity: 1,
+                    height: "auto",
+                    transition: { duration: 0.32, ease: ARRIVE },
+                  }}
+                  exit={{
+                    opacity: 0,
+                    height: 0,
+                    transition: { duration: 0.18 },
+                  }}
+                  className="overflow-hidden"
+                >
+                  <div className="pt-5">
+                    <ErrorMessage
+                      title={t("auth.failedTitle")}
+                      message={error}
+                    />
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+
+            <Button
+              type="submit"
+              className="mt-6 w-full"
+              disabled={isSubmitting}
+            >
+              <AnimatedWidth
+                value={isSubmitting ? t("auth.signingIn") : t("auth.signIn")}
+              >
+                <span className="inline-flex py-1 leading-normal">
+                  <AnimatedText
+                    value={
+                      isSubmitting ? t("auth.signingIn") : t("auth.signIn")
+                    }
+                  />
+                </span>
+              </AnimatedWidth>
+            </Button>
+          </motion.form>
+        </motion.div>
+      </motion.section>
     </main>
   );
 }

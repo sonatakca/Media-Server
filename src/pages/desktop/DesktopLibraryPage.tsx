@@ -20,6 +20,7 @@ import {
   glassControlBase,
   glassInputControl,
 } from "../../components/ui/glassControlStyles";
+import { useFlipLayout } from "../../hooks/useFlipLayout";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { TranslationKey } from "../../i18n/translations";
 import { getItemLogoUrlById } from "../../lib/itemMetadataPreferences";
@@ -405,6 +406,10 @@ export function DesktopLibraryPage({
       sortMediaItems(left, right, effectiveSortBy),
     );
   }, [data, searchTerm, effectiveSortBy, curatedList]);
+
+  // Sorting and filtering move cards rather than reshuffling them in place.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
 
   const handleWatchedStatusReset = (
     resetItems: MediaItem[],
@@ -1047,7 +1052,10 @@ export function DesktopLibraryPage({
       </MotionReveal>
 
       {filteredItems.length > 0 ? (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6">
+        <div
+          ref={gridRef}
+          className="relative grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 2xl:grid-cols-6"
+        >
           {filteredItems.map((item, index) => (
             <MediaCard
               key={item.Id}

@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { describe, expect, it } from "vitest";
@@ -40,20 +40,29 @@ describe("SeasonPicker", () => {
     await user.click(trigger);
 
     expect(screen.getByTestId("path")).toHaveTextContent("/library/season-1");
-    expect(screen.getByRole("menuitem", { name: "Season 2" })).toBeVisible();
+    // Items fade in after the menu unfolds.
+    await waitFor(() => {
+      expect(screen.getByRole("menuitem", { name: "Season 2" })).toBeVisible();
+    });
 
     await user.click(document.body);
 
-    expect(
-      screen.queryByRole("menuitem", { name: "Season 2" }),
-    ).not.toBeInTheDocument();
+    // The menu animates out, so it is gone once its exit has played.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("menuitem", { name: "Season 2" }),
+      ).not.toBeInTheDocument();
+    });
 
     await user.click(trigger);
     await user.click(screen.getByRole("menuitem", { name: "Season 2" }));
 
     expect(screen.getByTestId("path")).toHaveTextContent("/library/season-2");
-    expect(
-      screen.queryByRole("menuitem", { name: "Season 2" }),
-    ).not.toBeInTheDocument();
+    // The menu animates out, so it is gone once its exit has played.
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("menuitem", { name: "Season 2" }),
+      ).not.toBeInTheDocument();
+    });
   });
 });

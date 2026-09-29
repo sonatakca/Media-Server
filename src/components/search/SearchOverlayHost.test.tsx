@@ -3,12 +3,21 @@ import { describe, expect, it, vi } from "vitest";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { SearchOverlayHost } from "./SearchOverlayHost";
 
+// The host keeps the overlay mounted once loaded so its exit can play; the
+// overlay itself decides what an `isOpen` of false renders.
 vi.mock("./SearchOverlay", () => ({
-  SearchOverlay: ({ onClose }: { onClose: () => void }) => (
-    <button type="button" onClick={onClose}>
-      overlay-open
-    </button>
-  ),
+  SearchOverlay: ({
+    isOpen,
+    onClose,
+  }: {
+    isOpen: boolean;
+    onClose: () => void;
+  }) =>
+    isOpen ? (
+      <button type="button" onClick={onClose}>
+        overlay-open
+      </button>
+    ) : null,
 }));
 
 describe("SearchOverlayHost", () => {

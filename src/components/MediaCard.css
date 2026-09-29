@@ -13,3 +13,26 @@
   box-shadow: var(--shadow-cinematic-card-hover);
   transition-duration: 300ms, 450ms, 300ms;
 }
+
+/*
+ * Progress fills grow to their value as the card arrives, so "how far in" is
+ * read as a distance travelled rather than a bar that was always there. The
+ * width stays the truth; only a transform plays over it.
+ */
+@keyframes media-progress-fill-in {
+  from {
+    transform: scaleX(0);
+  }
+}
+
+.media-progress-fill {
+  transform-origin: left center;
+  animation: media-progress-fill-in 900ms cubic-bezier(0.22, 1, 0.36, 1) 280ms
+    both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-progress-fill {
+    animation: none;
+  }
+}

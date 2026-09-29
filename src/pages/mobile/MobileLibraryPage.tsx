@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
@@ -13,6 +13,7 @@ import {
   glassControlBase,
   glassInputControl,
 } from "../../components/ui/glassControlStyles";
+import { useFlipLayout } from "../../hooks/useFlipLayout";
 import { useLanguage } from "../../i18n/LanguageContext";
 
 import { getDisplayTitle } from "../../lib/format";
@@ -352,6 +353,10 @@ export function MobileLibraryPage({
       sortItems(left, right, effectiveSortBy),
     );
   }, [data, searchTerm, effectiveSortBy, curatedList]);
+
+  // Sorting and filtering move cards rather than reshuffling them in place.
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
 
   const libraryRotatingLogoUrls = useMemo(() => {
     if (!data || mode !== "library") {
@@ -859,10 +864,11 @@ export function MobileLibraryPage({
 
       {filteredItems.length > 0 ? (
         <div
+          ref={gridRef}
           className={
             usesLandscapeCards
-              ? "mx-auto grid max-w-sm grid-cols-1 gap-3"
-              : "grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]"
+              ? "relative mx-auto grid max-w-sm grid-cols-1 gap-3"
+              : "relative grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]"
           }
         >
           {filteredItems.map((item) => (

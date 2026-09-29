@@ -1,7 +1,7 @@
 import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
 import { useEffect, useRef, useState } from "react";
 import { LogOut, Palette, Search, ShieldCheck, UserRound } from "lucide-react";
-import { Link, NavLink, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
 import { AnimatedText } from "../AnimatedText";
@@ -10,6 +10,7 @@ import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
+import { SlidingIndicator } from "../ui/SlidingIndicator";
 import { Tooltip } from "../ui/Tooltip";
 
 // Only affects which modifier the shortcut hint spells out, so a userAgent
@@ -29,6 +30,16 @@ export function DesktopNavbar() {
     collections: "/collections",
     books: "/books",
   };
+  const location = useLocation();
+  const navLinksRef = useRef<HTMLDivElement | null>(null);
+  const navLinks = [
+    { to: "/home", label: t("nav.home") },
+    { to: libraryRoutes.movies, label: t("nav.movies") },
+    { to: libraryRoutes.series, label: t("nav.series") },
+    { to: libraryRoutes.books, label: t("nav.books") },
+    { to: "/my-list", label: t("myList.title") },
+    // { to: libraryRoutes.collections, label: t("nav.collections") },
+  ];
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);
 
@@ -97,84 +108,36 @@ export function DesktopNavbar() {
           </span>
         </Link>
 
-        <div className="hidden min-w-0 flex-1 items-center gap-7 md:flex">
-          <NavLink
-            to="/home"
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
-          >
-            <AnimatedWidth value={t("nav.home")}>
-              <AnimatedText value={t("nav.home")} />
-            </AnimatedWidth>
-          </NavLink>
+        <div
+          ref={navLinksRef}
+          className="relative hidden min-w-0 flex-1 items-center gap-7 md:flex"
+        >
+          {navLinks.map((link) => (
+            <NavLink
+              key={link.to}
+              to={link.to}
+              className={({ isActive }) =>
+                `text-sm font-semibold transition-colors duration-200 ${
+                  isActive ? "text-white" : "text-white/72 hover:text-white"
+                }`
+              }
+            >
+              <AnimatedWidth value={link.label}>
+                <AnimatedText value={link.label} />
+              </AnimatedWidth>
+            </NavLink>
+          ))}
 
-          <NavLink
-            to={libraryRoutes.movies}
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
+          {/* Travels between links so a route change reads as a move along
+              the bar, not a highlight that blinks out and back in. White, not
+              the accent: "you are here" is never a signal colour. */}
+          <SlidingIndicator
+            containerRef={navLinksRef}
+            activeSelector='a[aria-current="page"]'
+            measureKey={location.pathname}
           >
-            <AnimatedWidth value={t("nav.movies")}>
-              <AnimatedText value={t("nav.movies")} />
-            </AnimatedWidth>
-          </NavLink>
-
-          <NavLink
-            to={libraryRoutes.series}
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
-          >
-            <AnimatedWidth value={t("nav.series")}>
-              <AnimatedText value={t("nav.series")} />
-            </AnimatedWidth>
-          </NavLink>
-
-          <NavLink
-            to={libraryRoutes.books}
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
-          >
-            <AnimatedWidth value={t("nav.books")}>
-              <AnimatedText value={t("nav.books")} />
-            </AnimatedWidth>
-          </NavLink>
-
-          <NavLink
-            to="/my-list"
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
-          >
-            <AnimatedWidth value={t("myList.title")}>
-              <AnimatedText value={t("myList.title")} />
-            </AnimatedWidth>
-          </NavLink>
-
-          {/* <NavLink
-            to={libraryRoutes.collections}
-            className={({ isActive }) =>
-              `text-sm font-semibold transition-colors duration-200 ${
-                isActive ? "text-white" : "text-white/72 hover:text-white"
-              }`
-            }
-          >
-            <AnimatedWidth value={t("nav.collections")}>
-              <AnimatedText value={t("nav.collections")} />
-            </AnimatedWidth>
-          </NavLink> */}
+            <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
+          </SlidingIndicator>
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">

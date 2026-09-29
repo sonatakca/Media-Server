@@ -12,6 +12,10 @@ const SearchOverlay = lazy(async () => ({
 
 export function SearchOverlayHost() {
   const [isOpen, setIsOpen] = useState(false);
+  // Stays mounted once loaded, so closing can play the overlay's exit instead
+  // of cutting it off mid-frame.
+  const [hasOpened, setHasOpened] = useState(false);
+  if (isOpen && !hasOpened) setHasOpened(true);
 
   const close = useCallback(() => setIsOpen(false), []);
 
@@ -38,7 +42,7 @@ export function SearchOverlayHost() {
     };
   }, []);
 
-  if (!isOpen) {
+  if (!isOpen && !hasOpened) {
     return null;
   }
 
