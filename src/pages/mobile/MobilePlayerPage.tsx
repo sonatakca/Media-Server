@@ -12,6 +12,7 @@ import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { CustomVideoPlayer } from "../../components/player/CustomVideoPlayer";
 import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
+import { usePartyWatch } from "../../features/partyWatch/usePartyWatch";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/mediaApi";
 import {
@@ -44,6 +45,9 @@ export function MobilePlayerPage() {
   );
   const [itemError, setItemError] = useState<string | null>(null);
   const playback = usePlaybackSource(itemId);
+  // Held by the page, not the player: the player unmounts while the next
+  // title loads, and the party must not notice.
+  const party = usePartyWatch(itemId ?? "");
   const playbackQueue = usePlaybackQueue(item);
 
   useEffect(() => {
@@ -244,6 +248,7 @@ export function MobilePlayerPage() {
         onAutoPlayNextEpisode={handlePlayNextUp}
         onPlayQueueItem={handlePlayNextUp}
         backTo={mediaOwnerRoute}
+        party={party}
       />
     </>
   );

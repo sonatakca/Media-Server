@@ -1,14 +1,36 @@
 import { randomUUID } from "node:crypto";
 import type { DatabasePool } from "../database/databasePool";
-import type { SyncplayGroupState, SyncplayMemberState } from "./syncplayState";
 
-export interface SyncplayGroup {
+/**
+ * Durable half of Party Watch: a group's identity and its timeline.
+ *
+ * Only what must survive a server restart is stored. Participants, their
+ * readiness and their connections are properties of live connections and live
+ * in the runtime's memory; after a restart every client re-joins on its own,
+ * and the group resumes from the timeline stored here.
+ *
+ * `syncplay_members` (migration 003) is no longer read or written: membership
+ * is a live connection, not a row.
+ */
+
+export interface SyncplayGroupRecord {
   id: string;
   name: string;
   ownerUserId: string;
   itemId: string | null;
-  state: SyncplayGroupState;
-  createdAt: Date;
+  revision: number;
+  isPlaying: boolean;
+  positionMs: number;
+  /** Server clock at which `positionMs` was true. */
+  positionUpdatedAt: number;
+}
+
+export interface SyncplayTimelineWrite {
+  revision: number;
+  itemId: string | null;
+  isPlaying: boolean;
+  positionMs: number;
+  anchorMs: number;
 }
 
 export interface SyncplayRepository {
@@ -16,31 +38,16 @@ export interface SyncplayRepository {
     name: string;
     ownerUserId: string;
     itemId: string | null;
-    displayName: string;
-  }): Promise<SyncplayGroup>;
-  findById(groupId: string): Promise<SyncplayGroup | null>;
-  listOpen(): Promise<Array<SyncplayGroup & { memberCount: number }>>;
-  listMembers(groupId: string): Promise<SyncplayMemberState[]>;
-  join(groupId: string, userId: string, displayName: string): Promise<void>;
-  leave(groupId: string, userId: string): Promise<void>;
-  isMember(groupId: string, userId: string): Promise<boolean>;
+  }): Promise<SyncplayGroupRecord>;
+  findOpen(groupId: string): Promise<SyncplayGroupRecord | null>;
   /**
-   * Applies a state transition only when the sequence still advances, in one
-   * statement, so two simultaneous commands cannot both win.
+   * Stores a timeline only if it is newer than the stored one, so writes that
+   * complete out of order can never put an older state back.
    */
-  applyState(
-    groupId: string,
-    state: SyncplayGroupState,
-  ): Promise<SyncplayGroup | null>;
-  updateMember(
-    groupId: string,
-    userId: string,
-    update: { isReady?: boolean; isBuffering?: boolean; positionMs?: number },
-  ): Promise<void>;
+  saveTimeline(groupId: string, timeline: SyncplayTimelineWrite): Promise<void>;
   close(groupId: string): Promise<void>;
-  setItem(groupId: string, itemId: string): Promise<void>;
-  /** Removes groups whose members have all gone. */
-  closeEmptyGroups(): Promise<string[]>;
+  /** Closes every open group not in `keepIds`; returns the ids it closed. */
+  closeOpenExcept(keepIds: readonly string[]): Promise<string[]>;
 }
 
 interface RawGroupRow {
@@ -52,27 +59,23 @@ interface RawGroupRow {
   is_playing: boolean;
   position_ms: string;
   position_updated_at: Date;
-  created_at: Date;
 }
 
 const GROUP_COLUMNS = `
   id, name, owner_user_id, item_id, sequence, is_playing,
-  position_ms, position_updated_at, created_at
+  position_ms, position_updated_at
 `;
 
-function toGroup(row: RawGroupRow): SyncplayGroup {
+function toRecord(row: RawGroupRow): SyncplayGroupRecord {
   return {
     id: row.id,
     name: row.name,
     ownerUserId: row.owner_user_id,
     itemId: row.item_id,
-    state: {
-      sequence: Number(row.sequence),
-      isPlaying: row.is_playing,
-      positionMs: Number(row.position_ms),
-      positionUpdatedAt: row.position_updated_at.getTime(),
-    },
-    createdAt: row.created_at,
+    revision: Number(row.sequence),
+    isPlaying: row.is_playing,
+    positionMs: Number(row.position_ms),
+    positionUpdatedAt: row.position_updated_at.getTime(),
   };
 }
 
@@ -80,146 +83,46 @@ export function createSyncplayRepository(
   pool: DatabasePool,
 ): SyncplayRepository {
   return {
-    create: async ({ name, ownerUserId, itemId, displayName }) => {
-      const groupId = randomUUID();
+    create: async ({ name, ownerUserId, itemId }) => {
       const result = await pool.query<RawGroupRow>(
         `INSERT INTO syncplay_groups (id, name, owner_user_id, item_id)
          VALUES ($1, $2, $3, $4)
          RETURNING ${GROUP_COLUMNS}`,
-        [groupId, name, ownerUserId, itemId],
+        [randomUUID(), name, ownerUserId, itemId],
       );
-
-      await pool.query(
-        `INSERT INTO syncplay_members (group_id, user_id, display_name)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (group_id, user_id) DO NOTHING`,
-        [groupId, ownerUserId, displayName],
-      );
-
       const row = result.rows[0];
       if (!row) throw new Error("Group creation returned no row.");
-      return toGroup(row);
+      return toRecord(row);
     },
 
-    findById: async (groupId) => {
+    findOpen: async (groupId) => {
       const result = await pool.query<RawGroupRow>(
         `SELECT ${GROUP_COLUMNS} FROM syncplay_groups
          WHERE id = $1 AND closed_at IS NULL`,
         [groupId],
       );
       const row = result.rows[0];
-      return row ? toGroup(row) : null;
+      return row ? toRecord(row) : null;
     },
 
-    listOpen: async () => {
-      const result = await pool.query<RawGroupRow & { member_count: string }>(
-        `SELECT ${GROUP_COLUMNS},
-                (SELECT count(*) FROM syncplay_members m WHERE m.group_id = syncplay_groups.id) AS member_count
-         FROM syncplay_groups
-         WHERE closed_at IS NULL
-         ORDER BY created_at DESC`,
-      );
-      return result.rows.map((row) => ({
-        ...toGroup(row),
-        memberCount: Number(row.member_count),
-      }));
-    },
-
-    listMembers: async (groupId) => {
-      const result = await pool.query<{
-        user_id: string;
-        display_name: string;
-        is_ready: boolean;
-        is_buffering: boolean;
-        last_position_ms: string;
-        last_seen_at: Date;
-      }>(
-        `SELECT user_id, display_name, is_ready, is_buffering, last_position_ms, last_seen_at
-         FROM syncplay_members WHERE group_id = $1 ORDER BY joined_at`,
-        [groupId],
-      );
-
-      return result.rows.map<SyncplayMemberState>((row) => ({
-        userId: row.user_id,
-        displayName: row.display_name,
-        isReady: row.is_ready,
-        isBuffering: row.is_buffering,
-        lastPositionMs: Number(row.last_position_ms),
-        lastSeenAt: row.last_seen_at.getTime(),
-      }));
-    },
-
-    join: async (groupId, userId, displayName) => {
+    saveTimeline: async (groupId, timeline) => {
       await pool.query(
-        `INSERT INTO syncplay_members (group_id, user_id, display_name)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (group_id, user_id) DO UPDATE SET
-           display_name = EXCLUDED.display_name,
-           last_seen_at = now(),
-           -- Rejoining always starts unready: the client must confirm it has
-           -- the media buffered before the group waits on it.
-           is_ready = false,
-           is_buffering = false`,
-        [groupId, userId, displayName],
-      );
-    },
-
-    leave: async (groupId, userId) => {
-      await pool.query(
-        `DELETE FROM syncplay_members WHERE group_id = $1 AND user_id = $2`,
-        [groupId, userId],
-      );
-    },
-
-    isMember: async (groupId, userId) => {
-      const result = await pool.query(
-        `SELECT 1 FROM syncplay_members WHERE group_id = $1 AND user_id = $2`,
-        [groupId, userId],
-      );
-      return (result.rowCount ?? 0) > 0;
-    },
-
-    applyState: async (groupId, state) => {
-      const result = await pool.query<RawGroupRow>(
         `UPDATE syncplay_groups SET
            sequence = $2,
-           is_playing = $3,
-           position_ms = $4,
-           position_updated_at = to_timestamp($5::double precision / 1000)
+           item_id = $3,
+           is_playing = $4,
+           position_ms = $5,
+           position_updated_at = to_timestamp($6::double precision / 1000)
          WHERE id = $1
            AND closed_at IS NULL
-           -- The guard is what makes two simultaneous commands safe: the loser
-           -- updates nothing and is told its command was stale.
-           AND sequence < $2
-         RETURNING ${GROUP_COLUMNS}`,
+           AND sequence < $2`,
         [
           groupId,
-          state.sequence,
-          state.isPlaying,
-          Math.max(0, Math.round(state.positionMs)),
-          state.positionUpdatedAt,
-        ],
-      );
-      const row = result.rows[0];
-      return row ? toGroup(row) : null;
-    },
-
-    updateMember: async (groupId, userId, update) => {
-      await pool.query(
-        `UPDATE syncplay_members SET
-           is_ready = COALESCE($3, is_ready),
-           is_buffering = COALESCE($4, is_buffering),
-           last_position_ms = COALESCE($5, last_position_ms),
-           last_seen_at = now()
-         WHERE group_id = $1 AND user_id = $2`,
-        [
-          groupId,
-          userId,
-          update.isReady ?? null,
-          update.isBuffering ?? null,
-          update.positionMs === undefined
-            ? null
-            : Math.max(0, Math.round(update.positionMs)),
+          timeline.revision,
+          timeline.itemId,
+          timeline.isPlaying,
+          Math.max(0, Math.round(timeline.positionMs)),
+          timeline.anchorMs,
         ],
       );
     },
@@ -232,21 +135,12 @@ export function createSyncplayRepository(
       );
     },
 
-    setItem: async (groupId, itemId) => {
-      await pool.query(
-        `UPDATE syncplay_groups SET item_id = $2 WHERE id = $1`,
-        [groupId, itemId],
-      );
-    },
-
-    closeEmptyGroups: async () => {
+    closeOpenExcept: async (keepIds) => {
       const result = await pool.query<{ id: string }>(
         `UPDATE syncplay_groups SET closed_at = now()
-         WHERE closed_at IS NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM syncplay_members m WHERE m.group_id = syncplay_groups.id
-           )
+         WHERE closed_at IS NULL AND NOT (id = ANY($1::uuid[]))
          RETURNING id`,
+        [keepIds],
       );
       return result.rows.map((row) => row.id);
     },

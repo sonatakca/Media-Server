@@ -225,7 +225,7 @@ export function PlayerControls({
                 <button
                   type="button"
                   onClick={onTogglePlay}
-                  disabled={playWaiting}
+                  aria-busy={playWaiting}
                   className="seyirlik-player-main-toggle relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
                   aria-label={
                     playWaiting

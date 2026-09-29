@@ -1,3 +1,4 @@
+import type { PartyWatch } from "../../features/partyWatch/usePartyWatch";
 import type { PlaybackTechnicalDetails } from "../../hooks/usePlaybackSource";
 import type { PlaybackQueue } from "../../lib/playbackQueue";
 import type {
@@ -58,6 +59,8 @@ export interface CustomVideoPlayerProps {
   preparingBackdropUrl?: string | null;
   showPreparingArtwork?: boolean;
   backTo?: string;
+  /** The page's Party Watch; the player's controls go to the party while in one. */
+  party?: PartyWatch;
 }
 
 export interface PendingSourceRestore {

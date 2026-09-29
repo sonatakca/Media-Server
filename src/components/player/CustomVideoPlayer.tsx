@@ -64,9 +64,10 @@ import { PlayerOverlay } from "./PlayerOverlay";
 import { PlaybackInfoButton } from "./PlaybackInfoButton";
 import { PlaybackInfoPanel } from "./PlaybackInfoPanel";
 import { NextEpisodeCountdownOverlay } from "./NextEpisodeCountdownOverlay";
-import { PartyWatchControls } from "../../features/partyWatch/PartyWatchControls";
-import { PartyWatchOverlay } from "../../features/partyWatch/PartyWatchOverlay";
-import { usePartyWatchController } from "../../features/partyWatch/usePartyWatchController";
+import { PartyWatchPanel } from "../../features/partyWatch/PartyWatchPanel";
+import { PartyWatchStatus } from "../../features/partyWatch/PartyWatchStatus";
+import { usePartyNoticeMessage } from "../../features/partyWatch/partyNotices";
+import { usePartyPlayback } from "../../features/partyWatch/usePartyPlayback";
 import { SkipSegmentButton } from "./SkipSegmentButton";
 import { Tooltip } from "../ui/Tooltip";
 import {
@@ -398,6 +399,8 @@ function saveBlobToDevice(blob: Blob, fileName: string): void {
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
+const noopFollowItem = () => undefined;
+
 export function CustomVideoPlayer({
   item,
   source,
@@ -423,6 +426,7 @@ export function CustomVideoPlayer({
   preparingBackdropUrl,
   showPreparingArtwork = false,
   backTo,
+  party,
 }: CustomVideoPlayerProps) {
   const { language, t } = useLanguage();
   const viewport = useViewportCapabilities();
@@ -498,6 +502,8 @@ export function CustomVideoPlayer({
    * on screen.
    */
   const attachedSourceKeyRef = useRef<string | null>(null);
+  /** The title whose source is on the element, for Party Watch readiness. */
+  const attachedItemIdRef = useRef<string | null>(null);
   /**
    * Audio tracks a re-planned source has already been requested for, so a
    * source that cannot carry the chosen track is not asked for again and again.
@@ -708,23 +714,43 @@ export function CustomVideoPlayer({
     }, VIEW_MODE_CURSOR_HIDE_MS);
   }, [clearViewModeCursorHideTimer]);
 
-  const partyWatch = usePartyWatchController({
+  const partyWatch = usePartyPlayback({
+    session: party?.session ?? null,
+    state: party?.state ?? null,
     videoRef,
+    elementEpoch: deckEpoch,
     itemId: item.Id,
-    title,
-    currentTime: progress.currentTime,
-    isPlaying: progress.isPlaying,
+    attachedItemIdRef,
     refreshProgress,
-    showControls: revealPlayerChrome,
+    onFollowItem: party?.followItem ?? noopFollowItem,
   });
-  const partyWatchMemberCount = partyWatch.isInGroup
-    ? Math.max(
-        1,
-        partyWatch.participantCount ?? partyWatch.participantNames?.length ?? 0,
+  /** In a party, or joining one: set from the URL before any state arrives. */
+  const isInParty =
+    Boolean(party?.groupId) && party?.state?.connection !== "ended";
+  const partyNoticeMessage = usePartyNoticeMessage(party?.state ?? null, t);
+  const currentPartyPlayback = useCallback(() => {
+    const video = videoRef.current;
+    return {
+      positionMs: video ? video.currentTime * 1_000 : 0,
+      playing: video ? !video.paused && !video.ended : false,
+    };
+  }, [videoRef]);
+  /*
+   * Read by the source-attach effect through refs, never as dependencies. A
+   * dependency there re-attaches the source — a reload — and the party state
+   * changes on every play and pause. It once did exactly that: each group
+   * play or pause reloaded every participant's video.
+   */
+  const isInPartyRef = useRef(isInParty);
+  isInPartyRef.current = isInParty;
+  /** In a party the group decides where playback starts, not the resume point. */
+  const initialStartSecondsRef = useRef(initialStartSeconds);
+  initialStartSecondsRef.current = isInParty ? 0 : initialStartSeconds;
+  const visiblePartyWatchDotCount = isInParty
+    ? Math.min(
+        Math.max(1, party?.state?.snapshot?.participants.length ?? 1),
+        PARTY_WATCH_DOT_POSITIONS.length,
       )
-    : 0;
-  const visiblePartyWatchDotCount = partyWatch.isInGroup
-    ? Math.min(partyWatchMemberCount, PARTY_WATCH_DOT_POSITIONS.length)
     : 1;
   const checkpointButtonLabel =
     checkpointSeconds === null
@@ -877,8 +903,8 @@ export function CustomVideoPlayer({
   }, [activeSegment?.id, dismissedSkipSegmentId]);
 
   useEffect(() => {
-    if (partyWatch.partyEventMessage) {
-      setDisplayedPartyEventMessage(partyWatch.partyEventMessage);
+    if (partyNoticeMessage) {
+      setDisplayedPartyEventMessage(partyNoticeMessage);
       setIsPartyEventToastLeaving(false);
       return undefined;
     }
@@ -897,7 +923,7 @@ export function CustomVideoPlayer({
     return () => {
       window.clearTimeout(timer);
     };
-  }, [partyWatch.partyEventMessage, displayedPartyEventMessage]);
+  }, [partyNoticeMessage, displayedPartyEventMessage]);
 
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
@@ -1408,7 +1434,6 @@ export function CustomVideoPlayer({
       isPlaybackInfoOpen ||
       isPartyWatchOpen ||
       isSubtitleEditMode ||
-      (partyWatch.isInGroup && !partyWatch.canControl) ||
       !Number.isFinite(progress.currentTime)
     ) {
       return null;
@@ -1433,8 +1458,6 @@ export function CustomVideoPlayer({
     isSettingsOpen,
     isSubtitleEditMode,
     mediaSegments,
-    partyWatch.canControl,
-    partyWatch.isInGroup,
     progress.currentTime,
   ]);
 
@@ -1467,7 +1490,7 @@ export function CustomVideoPlayer({
     enableDefaultNextEpisodeCountdown &&
     nextEpisode &&
     onAutoPlayNextEpisode &&
-    !partyWatch.isInGroup &&
+    !isInParty &&
     !error &&
     Number.isFinite(progress.duration) &&
     progress.duration > 0,
@@ -1488,9 +1511,15 @@ export function CustomVideoPlayer({
       }
 
       setIsQueueOpen(false);
+      // In a party, picking a title moves the whole party; this page follows
+      // once the group has changed, like everyone else's.
+      if (partyWatch.isActive) {
+        partyWatch.changeItem(queueItem.Id);
+        return;
+      }
       onPlayQueueItem?.(queueItem);
     },
-    [onPlayQueueItem, playbackQueue?.items],
+    [onPlayQueueItem, partyWatch, playbackQueue?.items],
   );
 
   useEffect(() => {
@@ -1518,7 +1547,7 @@ export function CustomVideoPlayer({
         remainingSeconds: defaultNextEpisodeRemainingSeconds,
         countdownSeconds: defaultNextEpisodeCountdownSeconds,
         enableDefaultCountdown: enableDefaultNextEpisodeCountdown,
-        partyWatchInGroup: partyWatch.isInGroup,
+        partyWatchInGroup: isInParty,
         error,
         hasDataDrivenNextUp,
         shouldShowDefaultNextEpisodeCountdown,
@@ -1532,7 +1561,7 @@ export function CustomVideoPlayer({
     defaultNextEpisodeRemainingSeconds,
     defaultNextEpisodeCountdownSeconds,
     enableDefaultNextEpisodeCountdown,
-    partyWatch.isInGroup,
+    isInParty,
     error,
     hasDataDrivenNextUp,
     shouldShowDefaultNextEpisodeCountdown,
@@ -2503,7 +2532,7 @@ export function CustomVideoPlayer({
           !standby || typeof standby.canPlayType !== "function"
             ? true
             : standby.canPlayType(mimeType) !== "",
-        partyWatchSeekInFlight: partyWatch.isApplyingRemoteCommand,
+        partyWatchSeekInFlight: partyWatch.localState === "catching-up",
         sameQuality: selectedFile.id === currentQuality,
       });
     },
@@ -2515,7 +2544,7 @@ export function CustomVideoPlayer({
       activeSource.mode,
       deck.standbyDeckId,
       getDeckElement,
-      partyWatch.isApplyingRemoteCommand,
+      partyWatch.localState,
       selectedAudioStreamIndex,
     ],
   );
@@ -4049,8 +4078,9 @@ export function CustomVideoPlayer({
 
       hasAppliedInitialStartRef.current = true;
 
-      const safeStartSeconds = Number.isFinite(initialStartSeconds)
-        ? Math.max(0, initialStartSeconds)
+      const startSeconds = initialStartSecondsRef.current;
+      const safeStartSeconds = Number.isFinite(startSeconds)
+        ? Math.max(0, startSeconds)
         : 0;
 
       if (safeStartSeconds <= 0) {
@@ -4905,6 +4935,7 @@ export function CustomVideoPlayer({
       };
       activeAttachmentRef.current = attachment ?? null;
       attachedSourceKeyRef.current = sourceKey;
+      attachedItemIdRef.current = sourceToAttach.itemId;
 
       setActiveSource((currentSource) =>
         currentSource.id === sourceToAttach.id &&
@@ -4963,7 +4994,8 @@ export function CustomVideoPlayer({
       if (!seamlessAdoption) {
         video.load();
         startStartupWatchdog();
-        if (!pendingRestore && !partyWatch.shouldDeferAutoplay) {
+        // In a party the group says when to start, not the page.
+        if (!pendingRestore && !isInPartyRef.current) {
           requestPlayWhenAudioTranscodeReady("initial-autoplay", true);
         }
       }
@@ -5054,11 +5086,9 @@ export function CustomVideoPlayer({
     activeSource.url,
     clearAudioTranscodeReadinessTimer,
     deckEpoch,
-    initialStartSeconds,
     isRetainedDeckElement,
     onVideoFailure,
     onVideoRecovery,
-    partyWatch.shouldDeferAutoplay,
     refreshProgress,
     selectedAudioIndexForActiveSource,
   ]);
@@ -6244,9 +6274,7 @@ export function CustomVideoPlayer({
             backTo={backTo ?? getMediaOwnerRouteForItem(item)}
             visible={shouldRenderPlayerChrome || isTimelinePreparing}
             isPlaying={progress.isPlaying}
-            isPlayPausePending={
-              partyWatch.isInGroup && partyWatch.isPlayPausePending
-            }
+            isPlayPausePending={partyWatch.isStartPending}
             isPlayPauseLoading={isCenterPlayPauseLoading}
             notice={frameNotice ?? notice}
             onTogglePlay={partyWatch.togglePlay}
@@ -6293,16 +6321,13 @@ export function CustomVideoPlayer({
                       className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
                       aria-label={t("party.title")}
                     >
-                      <Users
-                        size={18}
-                        fill={partyWatch.isInGroup ? "#fff" : "none"}
-                      />
+                      <Users size={18} fill={isInParty ? "#fff" : "none"} />
 
                       <span
                         className="pointer-events-none absolute inset-0"
                         aria-hidden="true"
                       >
-                        {partyWatch.isInGroup ? (
+                        {isInParty ? (
                           Array.from({ length: visiblePartyWatchDotCount }).map(
                             (_, index) => {
                               const dotPosition =
@@ -6368,7 +6393,12 @@ export function CustomVideoPlayer({
                     className="seyirlik-party-panel-anchor absolute right-0 top-full mt-3"
                     data-party-watch-root
                   >
-                    <PartyWatchControls controller={partyWatch} visible />
+                    {party ? (
+                      <PartyWatchPanel
+                        party={party}
+                        currentPlayback={currentPartyPlayback}
+                      />
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -6401,14 +6431,14 @@ export function CustomVideoPlayer({
             ) : null}
           </AnimatePresence>
 
-          {isPartyWatchOpen ? (
-            <PartyWatchOverlay controller={partyWatch} />
+          {party ? (
+            <PartyWatchStatus party={party} playback={partyWatch} />
           ) : null}
 
           <PlayerControls
             visible={shouldRenderPlayerChrome}
             isPlaying={progress.isPlaying}
-            playWaiting={partyWatch.isInGroup && partyWatch.isPlayPausePending}
+            playWaiting={partyWatch.isStartPending}
             onControlsHoverStart={keepControlsVisible}
             onControlsHoverEnd={releaseControlsHover}
             seekPreviewLoading={fullscreenSeekPreview !== null}

@@ -1,130 +1,69 @@
-import type { TranslationKey } from "../../i18n/translations";
+/**
+ * Party Watch wire types: what the server's SyncPlay routes send and accept.
+ * Mirrors `src/server/ownApi/syncplay/syncplayRuntime.ts`.
+ */
 
-export type SyncPlayGroupState =
-  | "Idle"
-  | "Waiting"
-  | "Paused"
-  | "Playing"
-  | string;
+export type PartyIntent = "playing" | "paused";
+export type PartyHoldReason = "settling" | "buffering";
 
-export type SyncPlayCommandType =
-  | "Unpause"
-  | "Pause"
-  | "Stop"
-  | "Seek"
-  | string;
+/** What a client says about its own player. */
+export type PartyParticipantStatus = "loading" | "ready" | "stalled" | "away";
 
-export type SyncPlayGroupUpdateType =
-  | "UserJoined"
-  | "UserLeft"
-  | "GroupJoined"
-  | "GroupLeft"
-  | "StateUpdate"
-  | "PlayQueue"
-  | "NotInGroup"
-  | "GroupDoesNotExist"
-  | "LibraryAccessDenied"
-  | string;
-
-export type SyncPlaySocketStatus =
-  | "connecting"
+/** How the server sees a participant's connection. */
+export type PartyParticipantPresence =
   | "connected"
-  | "disconnected"
-  | "error";
+  | "reconnecting"
+  | "unresponsive";
 
-export type PartyWatchRole = "host" | "member";
-
-export interface SyncPlayParticipant {
-  UserId?: string;
-  UserName?: string;
-  Username?: string;
-  Name?: string;
-  DeviceName?: string;
+export interface PartyParticipant {
+  /** `userId:clientId` */
+  id: string;
+  userId: string;
+  displayName: string;
+  isOwner: boolean;
+  presence: PartyParticipantPresence;
+  status: PartyParticipantStatus;
 }
 
-export interface SyncPlayGroupInfo {
-  GroupId?: string;
-  GroupName?: string;
-  State?: SyncPlayGroupState;
-  Participants?: Array<SyncPlayParticipant | string>;
-  LastUpdatedAt?: string;
+export type PartyCauseKind =
+  | "play"
+  | "pause"
+  | "seek"
+  | "setItem"
+  | "joined"
+  | "left"
+  | "hold"
+  | "resumed";
+
+export interface PartyCause {
+  kind: PartyCauseKind;
+  participantId: string | null;
+  displayName: string | null;
+  releasedPast?: Array<{ id: string; displayName: string }>;
+  holdReason?: PartyHoldReason;
 }
 
-export interface SyncPlayQueueItem {
-  ItemId?: string;
-  PlaylistItemId?: string;
+export interface PartySnapshot {
+  id: string;
+  name: string;
+  ownerUserId: string;
+  itemId: string | null;
+  epoch: string;
+  version: number;
+  revision: number;
+  intent: PartyIntent;
+  positionMs: number;
+  anchorMs: number;
+  serverTimeMs: number;
+  hold: { reason: PartyHoldReason; waitingFor: string[] } | null;
+  participants: PartyParticipant[];
+  cause: PartyCause | null;
 }
 
-export interface SyncPlayPlayQueueUpdate {
-  Reason?: string;
-  LastUpdate?: string;
-  Playlist?: SyncPlayQueueItem[];
-  PlayingItemIndex?: number;
-  StartPositionTicks?: number;
-  IsPlaying?: boolean;
-}
+export type PartyCommand =
+  | { type: "play" }
+  | { type: "pause"; positionMs?: number }
+  | { type: "seek"; positionMs: number }
+  | { type: "setItem"; itemId: string; fromItemId: string | null };
 
-export interface SyncPlayGroupStateUpdate {
-  State?: SyncPlayGroupState;
-  Reason?: string;
-}
-
-export interface SyncPlayGroupUpdate {
-  Type?: SyncPlayGroupUpdateType;
-  GroupId?: string;
-  Data?: unknown;
-}
-
-export interface SyncPlaySendCommand {
-  GroupId?: string;
-  PlaylistItemId?: string;
-  When?: string;
-  PositionTicks?: number | null;
-  Command?: SyncPlayCommandType;
-  EmittedAt?: string;
-}
-
-export interface SyncPlaySocketMessage {
-  MessageId?: string;
-  MessageType?: string;
-  Data?: unknown;
-}
-
-export interface SyncPlayPlayerStatus {
-  when?: string;
-  positionTicks: number;
-  isPlaying: boolean;
-  playlistItemId?: string;
-}
-
-export interface PartyWatchController {
-  isAvailable: boolean;
-  isLoading: boolean;
-  isInGroup: boolean;
-  isApplyingRemoteCommand: boolean;
-  isResumePending: boolean;
-  isPlayPausePending: boolean;
-  shouldDeferAutoplay: boolean;
-  groupId: string | null;
-  groupName: string | null;
-  groupState: SyncPlayGroupState | null;
-  joinInput: string;
-  inviteUrl: string | null;
-  participantCount: number | null;
-  participantNames: string[];
-  partyEventMessage: string | null;
-  role: PartyWatchRole | null;
-  canControl: boolean;
-  socketStatus: SyncPlaySocketStatus;
-  statusKey: TranslationKey | null;
-  errorKey: TranslationKey | null;
-  copyStatusKey: TranslationKey | null;
-  setJoinInput: (value: string) => void;
-  createGroup: () => Promise<void>;
-  joinGroup: (groupId?: string) => Promise<void>;
-  leaveGroup: () => Promise<void>;
-  copyInvite: () => Promise<void>;
-  togglePlay: () => void;
-  seekTo: (seconds: number) => void;
-  seekBy: (seconds: number) => void;
-}
+export type PartyCloseReason = "ended" | "empty" | "expired";

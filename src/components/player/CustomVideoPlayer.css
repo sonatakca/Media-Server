@@ -107,15 +107,6 @@ body:has(.seyirlik-player-shell) {
     0 0 18px color-mix(in srgb, var(--accent) 34%, transparent);
 }
 
-.SyncPlay-idInput {
-  min-height: 40px;
-  min-width: 240px;
-}
-
-.browser-chrome .SyncPlay-joinButton {
-  margin-top: 18px;
-}
-
 .seyirlik-player-shell {
   width: 100vw;
   height: 100vh;
@@ -320,21 +311,7 @@ body:has(.seyirlik-player-shell) {
 }
 
 .seyirlik-player-shell--phone .seyirlik-party-panel {
-  width: min(18rem, calc(var(--seyirlik-player-stage-width) - 1.3rem));
-  padding: 0.6rem;
-}
-
-.seyirlik-player-shell--phone .seyirlik-party-panel .SyncPlay-idInput {
-  min-width: 0;
-}
-
-.seyirlik-player-shell--phone .seyirlik-party-join-row {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.seyirlik-player-shell--phone .seyirlik-party-panel .SyncPlay-joinButton {
-  width: 100%;
-  margin-top: 0;
+  width: min(19rem, calc(var(--seyirlik-player-stage-width) - 1.3rem));
 }
 
 .seyirlik-player-shell--phone .seyirlik-player-info-overlay {

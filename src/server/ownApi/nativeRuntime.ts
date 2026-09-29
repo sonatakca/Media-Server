@@ -98,7 +98,7 @@ import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
 import { createUserRoutes } from "./users/userRoutes";
 import { createSyncplayRepository } from "./syncplay/syncplayRepository";
 import { createSyncplayRoutes } from "./syncplay/syncplayRoutes";
-import { createSyncplayEventBus } from "./syncplay/eventBus";
+import { createSyncplayRuntime } from "./syncplay/syncplayRuntime";
 import {
   createNodeOrganizerFileSystem,
   createNodeScannerFileSystem,
@@ -382,8 +382,10 @@ export async function createNativeRuntime({
     userState,
   });
 
-  const syncplay = createSyncplayRepository(pool);
-  const syncplayEvents = createSyncplayEventBus();
+  const syncplay = createSyncplayRuntime({
+    repository: createSyncplayRepository(pool),
+    logger: console,
+  });
 
   /**
    * Pre-encoded renditions produced by the offline CLI.
@@ -1264,7 +1266,7 @@ export async function createNativeRuntime({
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
-    ...createSyncplayRoutes({ syncplay, catalogue, events: syncplayEvents }),
+    ...createSyncplayRoutes({ runtime: syncplay, catalogue }),
     ...(subtitles
       ? createSubtitleRoutes(
           subtitles.repository,
@@ -1525,17 +1527,7 @@ export async function createNativeRuntime({
   }, 60_000);
   playbackCleanupTimer.unref();
 
-  const syncplayCleanupTimer = setInterval(() => {
-    void syncplay
-      .closeEmptyGroups()
-      .then((closedIds) => {
-        for (const groupId of closedIds) {
-          syncplayEvents.publish({ type: "closed", groupId, data: {} });
-        }
-      })
-      .catch(() => undefined);
-  }, 60_000);
-  syncplayCleanupTimer.unref();
+  syncplay.start();
 
   /*
    * Asks SABnzbd what became of the jobs Seyirlik handed it.
@@ -1604,7 +1596,7 @@ export async function createNativeRuntime({
       closed = true;
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
-      clearInterval(syncplayCleanupTimer);
+      syncplay.stop();
       if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
       if (importReconcileTimer) clearInterval(importReconcileTimer);
       storageWatchdog.stop();

@@ -13,6 +13,7 @@ import { ErrorMessage } from "../../components/ErrorMessage";
 import { LoadingSpinner } from "../../components/LoadingSpinner";
 import { usePlaybackQueue } from "../../hooks/usePlaybackQueue";
 import { usePlaybackSource } from "../../hooks/usePlaybackSource";
+import { usePartyWatch } from "../../features/partyWatch/usePartyWatch";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/mediaApi";
 import type { MediaItem } from "../../lib/types";
@@ -49,6 +50,9 @@ export function DesktopPlayerPage() {
     useState(true);
 
   const playback = usePlaybackSource(itemId);
+  // Held by the page, not the player: the player unmounts while the next
+  // title loads, and the party must not notice.
+  const party = usePartyWatch(itemId ?? "");
   const playbackQueue = usePlaybackQueue(item);
 
   useEffect(() => {
@@ -242,6 +246,7 @@ export function DesktopPlayerPage() {
           showPreparingArtwork={isPreparingPlayback}
           preparingBackdropUrl={loadingBackdropUrl}
           backTo={mediaOwnerRoute}
+          party={party}
         />
       ) : null}
 

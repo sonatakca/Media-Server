@@ -374,19 +374,29 @@ A playback-plan response uses native enum values `DIRECT_PLAY`, `REMUX`, `DIRECT
 
 ### SyncPlay
 
-| Method      | Path                              | Purpose                                             |
-| ----------- | --------------------------------- | --------------------------------------------------- |
-| GET         | `/syncplay/groups`                | Joinable authorized groups                          |
-| POST        | `/syncplay/groups`                | Create group                                        |
-| GET         | `/syncplay/groups/:groupId`       | Authoritative state/member list                     |
-| POST        | `/syncplay/groups/:groupId/join`  | Join after media/library permission check           |
-| POST        | `/syncplay/groups/:groupId/leave` | Leave group                                         |
-| DELETE      | `/syncplay/groups/:groupId`       | Close group when authorized                         |
-| POST        | `/syncplay/groups/:groupId/ready` | Update readiness with sequence number               |
-| POST        | `/syncplay/groups/:groupId/play`  | Authoritative play command                          |
-| POST        | `/syncplay/groups/:groupId/pause` | Authoritative pause command                         |
-| POST        | `/syncplay/groups/:groupId/seek`  | Authoritative seek command                          |
-| GET upgrade | `/syncplay/ws`                    | Authenticated event stream; stale sequences ignored |
+A party is one group timeline owned by the server; each browser tab is one
+participant, identified by a client id it generates and keeps for the tab's
+lifetime (so a reload rejoins as the same participant). The timeline is stored
+in `syncplay_groups` and survives a restart; participants, readiness and
+presence are live state in the server process. The model and its timing rules
+are documented in `src/server/ownApi/syncplay/syncplayState.ts`.
+
+| Method | Path                                         | Purpose                                                                           |
+| ------ | -------------------------------------------- | --------------------------------------------------------------------------------- |
+| POST   | `/syncplay/groups`                           | Create a party from the creator's current position; the creator joins             |
+| POST   | `/syncplay/groups/:groupId/join`             | Join or rejoin (idempotent per client id) after an item-access check              |
+| GET    | `/syncplay/groups/:groupId/events?clientId=` | Server-sent events: `snapshot`, `ping`, `closed`, `superseded`                    |
+| POST   | `/syncplay/groups/:groupId/commands`         | `play`, `pause`, `seek`, `setItem`; per-client `sequence`; returns the snapshot   |
+| POST   | `/syncplay/groups/:groupId/status`           | Readiness (`loading`/`ready`/`stalled`/`away`) and keepalive; returns server time |
+| POST   | `/syncplay/groups/:groupId/leave`            | Leave; the last participant leaving closes the party                              |
+| DELETE | `/syncplay/groups/:groupId`                  | End the party for everyone (creator or administrator)                             |
+
+Every `snapshot` is the complete group state, ordered by `(epoch, version)`;
+`epoch` changes when the server process does. A command from a client whose
+`sequence` is not above its last accepted one is not applied
+(`accepted: false`, with `lastSequence` so a reloaded tab can resume counting).
+A participant must exist before it may stream, command or report
+(`404 PARTICIPANT_NOT_FOUND` tells a client to join again).
 
 ## Cache and media response rules
 
