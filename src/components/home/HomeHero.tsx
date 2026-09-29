@@ -1413,8 +1413,8 @@ function HeroCopy({
           </motion.p>
         </div>
       ) : null}
-      <motion.div
-        variants={line(1)}
+      {/* Not faded here: each action fades its own surface (see HeroActions). */}
+      <div
         className="absolute inset-x-0 bottom-0"
         style={{ height: COPY_ROWS.actionsPx }}
       >
@@ -1434,8 +1434,9 @@ function HeroCopy({
           hasOverview={Boolean(metadata.overview)}
           isOverviewOpen={isOverviewOpen}
           onToggleOverview={onToggleOverview}
+          fade={line(1)}
         />
-      </motion.div>
+      </div>
     </motion.div>
   );
 }

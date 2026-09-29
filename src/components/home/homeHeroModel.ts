@@ -41,17 +41,17 @@ export const HERO_MOTION = {
    * smooth curves it has the lowest peak speed (π/2 × the average), and on
    * the longest trip the peak is what sets how short the trip can be.
    */
-  travelS: 0.72,
+  travelS: 0.5,
   travelEase: [0.37, 0, 0.63, 1] as [number, number, number, number],
   /**
    * The queue sliding along: every miniature in it, the ones closing up and
    * the ones arriving from beyond the edge, on one shared clock.
    */
-  slideS: 0.62,
+  slideS: 0.45,
   slideDelayS: 0.06,
   slideEase: [0.35, 0, 0.25, 1] as [number, number, number, number],
   /** A title skipped over in the queue, sinking out of it. */
-  dropS: 0.34,
+  dropS: 0.26,
   settleEase: [0.61, 1, 0.88, 1] as [number, number, number, number],
   /** What the outgoing title does under the incoming one: it recedes. */
   pushBackScale: 0.95,
@@ -62,7 +62,7 @@ export const HERO_MOTION = {
   /** Copy under the title fading out and back in as the title changes. */
   copyExitS: 0.18,
   copyExitStaggerS: 0.025,
-  copyEnterS: 0.46,
+  copyEnterS: 0.34,
   copyEnterStaggerS: 0.05,
   /** Share of the lift after which the new title's copy starts rising. */
   copyLeadIn: 0.72,
@@ -76,10 +76,10 @@ export const HERO_TRAILER_DELAY_MS = 6_000;
 /**
  * The fastest any edge may move, in px per frame at 60 fps on a 1080-tall
  * canvas, scaled with the canvas. A lift from the far end of the queue to the
- * full frame is the longest trip; this keeps it under a second on any desktop
- * without its fastest frames reading as a jump.
+ * full frame is the longest trip; with the sine lift this keeps it near half
+ * a second on any desktop, the fastest frames still a sweep and not a jump.
  */
-export const MAX_TRAVEL_PX_PER_FRAME_AT_1080 = 52;
+export const MAX_TRAVEL_PX_PER_FRAME_AT_1080 = 84;
 
 export function travelBudgetPxPerFrame(stage: StageSize): number {
   return (MAX_TRAVEL_PX_PER_FRAME_AT_1080 * stage.height) / 1080;
