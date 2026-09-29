@@ -17,6 +17,7 @@ import {
   DEFAULT_LOGO_SHADOW,
   measureLogoShadow,
   type LogoShadow,
+  type SampleRegion,
 } from "../../lib/logoShadow";
 import { getHeroImageCandidates } from "../hero/heroModel";
 import {
@@ -76,7 +77,7 @@ const QUEUE_SHADOW_BLUR_PX = 5;
 const QUEUE_SHADOW_DROP_PX = 2;
 
 /** A small copy of the artwork, enough to measure the brightness behind a logo. */
-function sampleUrl(url: string): string {
+export function sampleUrl(url: string): string {
   try {
     const parsed = new URL(url, window.location.href);
     if (parsed.searchParams.has("maxWidth"))
@@ -87,25 +88,52 @@ function sampleUrl(url: string): string {
   }
 }
 
-/** The shadow a miniature's logo needs against the artwork behind it. */
-function useLogoShadow(logoUrl: string, artworkUrl: string | undefined) {
+const QUEUE_LOGO_REGION: SampleRegion = {
+  left: QUEUE_TITLE_BOX.left,
+  top: 1 - QUEUE_TITLE_BOX.bottom - QUEUE_TITLE_BOX.height,
+  width: QUEUE_TITLE_BOX.width,
+  height: QUEUE_TITLE_BOX.height,
+};
+
+/** The shadow a logo needs against the part of the artwork behind it. */
+function useLogoShadow(
+  logoUrl: string,
+  artworkUrl: string | undefined,
+  region: SampleRegion,
+) {
   const [shadow, setShadow] = useState<LogoShadow>(DEFAULT_LOGO_SHADOW);
+  const { left, top, width, height } = region;
   useEffect(() => {
     if (!logoUrl || !artworkUrl) return undefined;
     let cancelled = false;
     void measureLogoShadow(logoUrl, sampleUrl(artworkUrl), {
-      left: QUEUE_TITLE_BOX.left,
-      top: 1 - QUEUE_TITLE_BOX.bottom - QUEUE_TITLE_BOX.height,
-      width: QUEUE_TITLE_BOX.width,
-      height: QUEUE_TITLE_BOX.height,
+      left,
+      top,
+      width,
+      height,
     }).then((next) => {
       if (!cancelled) setShadow(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [artworkUrl, logoUrl]);
+  }, [artworkUrl, logoUrl, left, top, width, height]);
   return shadow;
+}
+
+/**
+ * The halo a logo on stage stands on: its own shape, blurred, dark behind a
+ * light logo and light behind a dark one, as strong as the artwork behind it
+ * needs. Over a dark picture it is little more than the resting drop shadow;
+ * over a white sky it is what keeps a white logo there at all. Blur is in
+ * the title box's own px, which the resting title shows at 0.6×.
+ */
+function stageLogoFilter(shadow: LogoShadow, presence: number): string {
+  const base = "drop-shadow(0 6px 30px rgba(0,0,0,0.55))";
+  const s = shadow.strength * presence;
+  if (s <= 0.01) return base;
+  const rgb = shadow.tone === "dark" ? "0,0,0" : "255,255,255";
+  return `drop-shadow(0 0 3px rgba(${rgb},${(0.55 * s).toFixed(3)})) drop-shadow(0 0 22px rgba(${rgb},${(0.6 * s).toFixed(3)})) ${base}`;
 }
 
 interface HeroCompositionProps {
@@ -208,8 +236,22 @@ export function HeroComposition({
   );
   // A silhouette of the logo under it, dark or light against the artwork,
   // for as long as the frame is a miniature.
-  const shadow = useLogoShadow(logoUrl, artwork?.url);
+  const shadow = useLogoShadow(logoUrl, artwork?.url, QUEUE_LOGO_REGION);
   const silhouetteOpacity = useTransform(toStage, (p) => 1 - p);
+  // On stage the logo is measured where it rests, at its resting size.
+  const stageLogoRegion = useMemo<SampleRegion>(() => {
+    const height = titleBox.height * TITLE_SCALE.rest;
+    return {
+      left: titleBox.left / stage.width,
+      top: 1 - (titleBox.bottom + height) / stage.height,
+      width: (titleBox.width * TITLE_SCALE.rest) / stage.width,
+      height: height / stage.height,
+    };
+  }, [stage, titleBox]);
+  const stageShadow = useLogoShadow(logoUrl, artwork?.url, stageLogoRegion);
+  const logoFilter = useTransform(toStage, (p) =>
+    stageLogoFilter(stageShadow, p),
+  );
   const onScreen = slotScale * queueMove.scale;
 
   useEffect(() => {
@@ -322,13 +364,13 @@ export function HeroComposition({
                 }}
               />
             </div>
-            <img
+            <motion.img
               src={logoUrl}
               alt={isStage ? title : ""}
               draggable={false}
               onLoad={() => setIsLogoLoaded(true)}
-              className="relative block h-auto w-full select-none object-contain object-left-bottom drop-shadow-[0_6px_30px_rgba(0,0,0,0.55)]"
-              style={{ maxHeight: logoMaxHeight }}
+              className="relative block h-auto w-full select-none object-contain object-left-bottom"
+              style={{ maxHeight: logoMaxHeight, filter: logoFilter }}
             />
           </div>
         ) : (

@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type MouseEvent,
 } from "react";
 import {
@@ -57,8 +58,14 @@ import {
 import {
   HeroComposition,
   createCompositionMotion,
+  sampleUrl,
   type CompositionMotion,
 } from "./HeroComposition";
+import {
+  logoShadowFor,
+  measureBackdropLuminance,
+  type SampleRegion,
+} from "../../lib/logoShadow";
 import {
   HERO_DWELL_MS,
   HERO_MOTION,
@@ -956,6 +963,14 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
                   key={copyItem.Id}
                   item={copyItem}
                   layout={layout}
+                  factsRegion={{
+                    left: layout.copy.left / stage!.width,
+                    top:
+                      1 -
+                      (layout.copy.bottom + layout.copy.height) / stage!.height,
+                    width: Math.min(layout.copy.width, 340) / stage!.width,
+                    height: COPY_ROWS.factsPx / stage!.height,
+                  }}
                   overview={overview}
                   isOverviewOpen={isOverviewOpen}
                   onToggleOverview={() => {
@@ -1179,10 +1194,64 @@ function HeroControlButton({
   );
 }
 
+/**
+ * Room around the overview's reveal for its text's shade: the sides and top
+ * get the shade's full reach, the foot only as much as the gap above the
+ * actions allows.
+ */
+const OVERVIEW_SHADE_ROOM_PX = 24;
+const OVERVIEW_SHADE_FOOT_PX = 12;
+
+/**
+ * How much shade the copy under the title needs, 0–1, from the brightness of
+ * the artwork behind its facts line: a trace over a dark picture, full over
+ * a white sky. It starts in the middle, so nothing flashes unreadable while
+ * the artwork is measured.
+ */
+function useCopyShade(item: MediaItem, region: SampleRegion): number {
+  const [shade, setShade] = useState(0.5);
+  const url = getHeroImageCandidates(item)[0]?.url;
+  const { left, top, width, height } = region;
+  useEffect(() => {
+    if (!url) return undefined;
+    let cancelled = false;
+    void measureBackdropLuminance(sampleUrl(url), {
+      left,
+      top,
+      width,
+      height,
+    }).then((luminance) => {
+      if (cancelled) return;
+      setShade(luminance === null ? 0.5 : logoShadowFor(1, luminance).strength);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [url, left, top, width, height]);
+  return shade;
+}
+
+/**
+ * White copy set straight on the artwork: brighter, and on a darker cloud of
+ * its own shape, the more the picture behind it needs. The cloud follows the
+ * letters, so it shades the words and nothing around them. It is a filter,
+ * not a text shadow, because a filter is drawn after the text is truncated
+ * and clamped: a text shadow is clipped with the text, and ends in a
+ * rectangle.
+ */
+function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
+  const a = (value: number) => value.toFixed(3);
+  return {
+    color: `rgba(255,255,255,${a(restingAlpha + (0.97 - restingAlpha) * shade)})`,
+    filter: `drop-shadow(0 1px 1px rgba(0,0,0,${a(0.3 + 0.45 * shade)})) drop-shadow(0 0 7px rgba(0,0,0,${a(0.55 * shade)})) drop-shadow(0 0 16px rgba(0,0,0,${a(0.4 * shade)}))`,
+  };
+}
+
 /** What to show under the title: facts, a few lines of story, and the ways in. */
 function HeroCopy({
   item,
   layout,
+  factsRegion,
   overview,
   isOverviewOpen,
   onToggleOverview,
@@ -1191,6 +1260,8 @@ function HeroCopy({
 }: {
   item: MediaItem;
   layout: HeroLayout;
+  /** Where the facts line lies over the artwork, as shares of it. */
+  factsRegion: SampleRegion;
   /** 0–1: the overview opening under the facts. */
   overview: MotionValue<number>;
   isOverviewOpen: boolean;
@@ -1200,6 +1271,7 @@ function HeroCopy({
 }) {
   const { language, t } = useLanguage();
   const navigate = useNavigate();
+  const shade = useCopyShade(item, factsRegion);
   const labels = {
     season: t("media.seasonNumber"),
     hourShort: t("format.hourShort"),
@@ -1253,7 +1325,11 @@ function HeroCopy({
     (value) => -value * layout.overviewLift,
   );
   // The overview comes up from under the facts as they rise off it.
-  const overviewY = useTransform(overview, [0, 1], ["100%", "0%"]);
+  const overviewY = useTransform(
+    overview,
+    [0, 1],
+    [layout.overviewHeight + OVERVIEW_SHADE_FOOT_PX, 0],
+  );
   const overviewOpacity = useTransform(overview, [0, 0.45, 1], [0, 0.7, 1]);
 
   const handlePlay = async (event: MouseEvent<HTMLAnchorElement>) => {
@@ -1293,12 +1369,13 @@ function HeroCopy({
       {/* Fixed rows: the title above sits at the same height for every
           title. The facts ride up with the title as the overview opens. */}
       <motion.div
-        className="absolute inset-x-0 top-0 overflow-hidden"
+        className="absolute inset-x-0 top-0"
         style={{ height: COPY_ROWS.factsPx, y: factsY }}
       >
         <motion.p
           variants={line(0)}
-          className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em] text-white/70 drop-shadow-[0_2px_10px_rgba(0,0,0,0.8)]"
+          className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em]"
+          style={copyTextStyle(shade, 0.72)}
         >
           {facts}
         </motion.p>
@@ -1306,15 +1383,26 @@ function HeroCopy({
       {metadata.overview ? (
         <div
           id={overviewId}
-          className="absolute inset-x-0 overflow-hidden"
+          className="absolute overflow-hidden"
           style={{
-            bottom: COPY_ROWS.actionsPx + COPY_ROWS.actionsGapPx,
-            height: layout.overviewHeight,
+            // The reveal's clip, widened by the room the text's shade needs.
+            left: -OVERVIEW_SHADE_ROOM_PX,
+            right: -OVERVIEW_SHADE_ROOM_PX,
+            bottom:
+              COPY_ROWS.actionsPx +
+              COPY_ROWS.actionsGapPx -
+              OVERVIEW_SHADE_FOOT_PX,
+            height:
+              layout.overviewHeight +
+              OVERVIEW_SHADE_ROOM_PX +
+              OVERVIEW_SHADE_FOOT_PX,
+            padding: `${OVERVIEW_SHADE_ROOM_PX}px ${OVERVIEW_SHADE_ROOM_PX}px ${OVERVIEW_SHADE_FOOT_PX}px`,
           }}
         >
           <motion.p
-            className="line-clamp-3 max-w-[46ch] font-semibold text-white/80 drop-shadow-[0_2px_12px_rgba(0,0,0,0.85)]"
+            className="line-clamp-3 max-w-[46ch] font-semibold"
             style={{
+              ...copyTextStyle(shade, 0.8),
               fontSize: layout.overviewFontPx,
               lineHeight: COPY_ROWS.overviewLineHeight,
               y: overviewY,

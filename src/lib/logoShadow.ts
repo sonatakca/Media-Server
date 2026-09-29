@@ -79,6 +79,24 @@ export function measureLogoShadow(
   return measured;
 }
 
+const backdropCache = new Map<string, Promise<number | null>>();
+
+/**
+ * Mean luminance of one region of an artwork, or null when it cannot be
+ * read. What copy set straight on the picture measures itself against.
+ */
+export function measureBackdropLuminance(
+  backdropUrl: string,
+  region: SampleRegion,
+): Promise<number | null> {
+  const key = `${backdropUrl}|${region.left},${region.top},${region.width},${region.height}`;
+  const cached = backdropCache.get(key);
+  if (cached) return cached;
+  const measured = averageLuminance(backdropUrl, region, 1).catch(() => null);
+  backdropCache.set(key, measured);
+  return measured;
+}
+
 /**
  * Mean luminance of an image, over pixels at least `minAlpha` opaque and,
  * when given, inside `region`. Read through `fetch` so a cross-origin image
