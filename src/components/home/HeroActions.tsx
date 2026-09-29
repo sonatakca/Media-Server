@@ -83,6 +83,11 @@ export interface HeroActionsProps {
   hasOverview: boolean;
   isOverviewOpen: boolean;
   onToggleOverview: () => void;
+  /**
+   * On the title's own page its details are further down, so "Details"
+   * scrolls there instead of opening the page it is already on.
+   */
+  onShowDetails?: () => void;
   /** The copy's fade, driven by the copy it sits under. */
   fade: Variants;
 }
@@ -99,6 +104,7 @@ export function HeroActions({
   hasOverview,
   isOverviewOpen,
   onToggleOverview,
+  onShowDetails,
   fade,
 }: HeroActionsProps) {
   const { t } = useLanguage();
@@ -150,10 +156,21 @@ export function HeroActions({
         </Surfaced>
       ) : null}
       <Surfaced fade={fade} surface={SMOKE}>
-        <Link to={detailsTo} className={`${PILL} text-white ${FOCUS}`}>
-          <Info size={19} strokeWidth={2.2} />
-          {t("common.details")}
-        </Link>
+        {onShowDetails ? (
+          <button
+            type="button"
+            onClick={onShowDetails}
+            className={`${PILL} text-white ${FOCUS}`}
+          >
+            <Info size={19} strokeWidth={2.2} />
+            {t("common.details")}
+          </button>
+        ) : (
+          <Link to={detailsTo} className={`${PILL} text-white ${FOCUS}`}>
+            <Info size={19} strokeWidth={2.2} />
+            {t("common.details")}
+          </Link>
+        )}
       </Surfaced>
       <Surfaced fade={fade} surface={SMOKE}>
         <FavouriteButton

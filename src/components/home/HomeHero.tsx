@@ -6,20 +6,14 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
-  type MouseEvent,
 } from "react";
 import {
-  AnimatePresence,
   animate,
   motion,
   useMotionValue,
   useReducedMotion,
-  useTransform,
   type AnimationPlaybackControls,
-  type MotionValue,
 } from "framer-motion";
-import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
   ChevronRight,
@@ -31,26 +25,20 @@ import {
   VolumeX,
 } from "lucide-react";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { formatRuntime } from "../../lib/format";
 import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import {
   claimBottomChrome,
   releaseBottomChrome,
 } from "../../lib/layout/bottomChrome";
 import { getHeroPreviewUrl } from "../../lib/mediaApi";
-import { getPlayTargetForItem } from "../../lib/playTarget";
-import { getRouteForItem } from "../../lib/routes";
-import { getSmartContinueWatchingItems } from "../../lib/smartContinueWatching";
 import type { MediaItem } from "../../lib/types";
-import { WATCH_STATUS_CHANGED_EVENT } from "../../lib/watchedStatusActions";
-import { canStartOverFromHero } from "../HeroSection";
-import { HeroActions } from "./HeroActions";
+import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
+import { useSmartContinueItems } from "./useSmartContinueItems";
 import {
   getHeroImageCandidates,
   readHeroTrailersEnabledPreference,
   saveHeroTrailersEnabledPreference,
 } from "../hero/heroModel";
-import { Tooltip } from "../ui/Tooltip";
 import {
   HomeHeroSkeletonBackdrop,
   HomeHeroSkeletonPieces,
@@ -58,16 +46,12 @@ import {
 import {
   HeroComposition,
   createCompositionMotion,
-  sampleUrl,
   type CompositionMotion,
 } from "./HeroComposition";
 import {
-  logoShadowFor,
-  measureBackdropLuminance,
-  type SampleRegion,
-} from "../../lib/logoShadow";
-import {
+  HANDOVER_GRADIENT,
   HERO_DWELL_MS,
+  LOGO_MENU_CLEARANCE_PX,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
   QUEUE_LENGTH,
@@ -83,8 +67,6 @@ import {
   sharedDurationS,
   slotPlacement,
   stagePlacement,
-  COPY_ROWS,
-  type HeroLayout,
   type Placement,
   type StageSize,
 } from "./homeHeroModel";
@@ -117,24 +99,8 @@ const Z: Record<Role, number> = {
   leaving: 4,
 };
 
-/** Quartic ease-in (alpha = t⁴) from clear to the page's background. */
-const HANDOVER_GRADIENT =
-  "linear-gradient(180deg, rgba(5,6,7,0) 0%, rgba(5,6,7,0.008) 30%, rgba(5,6,7,0.041) 45%, rgba(5,6,7,0.13) 60%, rgba(5,6,7,0.24) 70%, rgba(5,6,7,0.41) 80%, rgba(5,6,7,0.573) 87%, rgba(5,6,7,0.748) 93%, #050607 100%)";
-
 /** The queue's resting shade: none, the miniatures show their artwork clean. */
 const QUEUE_DIM = 0;
-
-/**
- * How long the pointer rests on the title before its overview opens, so
- * passing over it on the way somewhere else opens nothing.
- */
-const OVERVIEW_HOVER_INTENT_MS = 260;
-
-/**
- * How far below the stage's top a fully open logo may reach: the menu's
- * height and a margin under it.
- */
-const LOGO_MENU_CLEARANCE_PX = 112;
 
 /** Space kept above the controls for the notification pile. */
 const CHROME_CLEARANCE_PX = 14;
@@ -166,26 +132,6 @@ function run(controls: AnimationPlaybackControls): Promise<void> {
     () => undefined,
     () => undefined,
   );
-}
-
-function useSmartContinueItems(): MediaItem[] {
-  const [items, setItems] = useState<MediaItem[]>([]);
-  useEffect(() => {
-    let cancelled = false;
-    const load = () =>
-      void getSmartContinueWatchingItems()
-        .then((next) => {
-          if (!cancelled) setItems(next);
-        })
-        .catch(() => undefined);
-    load();
-    window.addEventListener(WATCH_STATUS_CHANGED_EVENT, load);
-    return () => {
-      cancelled = true;
-      window.removeEventListener(WATCH_STATUS_CHANGED_EVENT, load);
-    };
-  }, []);
-  return items;
 }
 
 export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
@@ -248,11 +194,9 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   const [isOverviewFocused, setIsOverviewFocused] = useState(false);
   const isOverviewOpen =
     isOverviewHovered || isOverviewPinned || isOverviewFocused;
-  const overviewIntentRef = useRef(0);
   const overview = useMotionValue(0);
   const overviewLiftRef = useRef(0);
   const closeOverview = useCallback(() => {
-    window.clearTimeout(overviewIntentRef.current);
     setIsOverviewHovered(false);
     setIsOverviewPinned(false);
     setIsOverviewFocused(false);
@@ -679,7 +623,6 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     });
     return () => controls.stop();
   }, [isOverviewOpen, overview, reduceMotion]);
-  useEffect(() => () => window.clearTimeout(overviewIntentRef.current), []);
 
   // Artwork for the titles about to arrive, fetched before they slide in, so
   // no newcomer crosses the frame as an empty card.
@@ -905,85 +848,25 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
           })
         : null}
 
-      {/* The title and its copy, bottom-left. The block reaches up over the
-          resting title, so resting the pointer on it opens the overview; once
-          open it also covers the risen, grown title. */}
-      {layout ? (
-        <div
-          className="absolute z-[6]"
-          style={{
-            left: layout.copy.left - 16,
-            bottom: layout.copy.bottom,
-            width: Math.max(layout.copy.width, layout.title.width) + 32,
-            // The resting title and its copy; while open, the risen, full-size
-            // title too, so the pointer can move onto it without closing it.
-            height:
-              layout.title.bottom -
-              layout.copy.bottom +
-              12 +
-              (isOverviewOpen
-                ? layout.title.height + layout.overviewLift
-                : layout.title.height * TITLE_SCALE.rest),
-            pointerEvents: copyItem ? "auto" : "none",
+      {/* The title and its copy, bottom-left. */}
+      {layout && stage ? (
+        <HeroCopyBlock
+          stage={stage}
+          layout={layout}
+          item={copyItem}
+          overview={overview}
+          isOverviewOpen={isOverviewOpen}
+          onHoverIntent={(open) => {
+            if (!open || !busyRef.current) setIsOverviewHovered(open);
           }}
-          onMouseEnter={() => {
-            window.clearTimeout(overviewIntentRef.current);
-            overviewIntentRef.current = window.setTimeout(() => {
-              if (!busyRef.current) setIsOverviewHovered(true);
-            }, OVERVIEW_HOVER_INTENT_MS);
+          onFocusWithin={setIsOverviewFocused}
+          onToggleOverview={() => {
+            if (isOverviewOpen) closeOverview();
+            else setIsOverviewPinned(true);
           }}
-          onMouseLeave={() => {
-            window.clearTimeout(overviewIntentRef.current);
-            setIsOverviewHovered(false);
-          }}
-          onFocus={(event) => {
-            if (event.target.matches(":focus-visible"))
-              setIsOverviewFocused(true);
-          }}
-          onBlur={(event) => {
-            if (
-              !(event.relatedTarget instanceof Node) ||
-              !event.currentTarget.contains(event.relatedTarget)
-            )
-              setIsOverviewFocused(false);
-          }}
-        >
-          <div
-            className="absolute"
-            style={{
-              left: 16,
-              bottom: 0,
-              width: layout.copy.width,
-              height: layout.copy.height,
-            }}
-          >
-            <AnimatePresence mode="wait">
-              {copyItem ? (
-                <HeroCopy
-                  key={copyItem.Id}
-                  item={copyItem}
-                  layout={layout}
-                  factsRegion={{
-                    left: layout.copy.left / stage!.width,
-                    top:
-                      1 -
-                      (layout.copy.bottom + layout.copy.height) / stage!.height,
-                    width: Math.min(layout.copy.width, 340) / stage!.width,
-                    height: COPY_ROWS.factsPx / stage!.height,
-                  }}
-                  overview={overview}
-                  isOverviewOpen={isOverviewOpen}
-                  onToggleOverview={() => {
-                    if (isOverviewOpen) closeOverview();
-                    else setIsOverviewPinned(true);
-                  }}
-                  reduceMotion={reduceMotion}
-                  smartContinueItems={smartContinueItems}
-                />
-              ) : null}
-            </AnimatePresence>
-          </div>
-        </div>
+          reduceMotion={reduceMotion}
+          smartContinueItems={smartContinueItems}
+        />
       ) : null}
 
       {/* The queue: hit targets over the miniatures, and the head's clock. */}
@@ -1165,278 +1048,5 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         style={{ background: HANDOVER_GRADIENT }}
       />
     </section>
-  );
-}
-
-function HeroControlButton({
-  label,
-  onClick,
-  disabled,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip content={label} placement="top">
-      <button
-        type="button"
-        aria-label={label}
-        onClick={onClick}
-        disabled={disabled}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
-}
-
-/**
- * Room around the overview's reveal for its text's shade: the sides and top
- * get the shade's full reach, the foot only as much as the gap above the
- * actions allows.
- */
-const OVERVIEW_SHADE_ROOM_PX = 24;
-const OVERVIEW_SHADE_FOOT_PX = 12;
-
-/**
- * How much shade the copy under the title needs, 0–1, from the brightness of
- * the artwork behind its facts line: a trace over a dark picture, full over
- * a white sky. It starts in the middle, so nothing flashes unreadable while
- * the artwork is measured.
- */
-function useCopyShade(item: MediaItem, region: SampleRegion): number {
-  const [shade, setShade] = useState(0.5);
-  const url = getHeroImageCandidates(item)[0]?.url;
-  const { left, top, width, height } = region;
-  useEffect(() => {
-    if (!url) return undefined;
-    let cancelled = false;
-    void measureBackdropLuminance(sampleUrl(url), {
-      left,
-      top,
-      width,
-      height,
-    }).then((luminance) => {
-      if (cancelled) return;
-      setShade(luminance === null ? 0.5 : logoShadowFor(1, luminance).strength);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [url, left, top, width, height]);
-  return shade;
-}
-
-/**
- * White copy set straight on the artwork: brighter, and on a darker cloud of
- * its own shape, the more the picture behind it needs. The cloud follows the
- * letters, so it shades the words and nothing around them. It is a filter,
- * not a text shadow, because a filter is drawn after the text is truncated
- * and clamped: a text shadow is clipped with the text, and ends in a
- * rectangle.
- */
-function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
-  const a = (value: number) => value.toFixed(3);
-  return {
-    color: `rgba(255,255,255,${a(restingAlpha + (0.97 - restingAlpha) * shade)})`,
-    filter: `drop-shadow(0 1px 1px rgba(0,0,0,${a(0.3 + 0.45 * shade)})) drop-shadow(0 0 7px rgba(0,0,0,${a(0.55 * shade)})) drop-shadow(0 0 16px rgba(0,0,0,${a(0.4 * shade)}))`,
-  };
-}
-
-/** What to show under the title: facts, a few lines of story, and the ways in. */
-function HeroCopy({
-  item,
-  layout,
-  factsRegion,
-  overview,
-  isOverviewOpen,
-  onToggleOverview,
-  reduceMotion,
-  smartContinueItems,
-}: {
-  item: MediaItem;
-  layout: HeroLayout;
-  /** Where the facts line lies over the artwork, as shares of it. */
-  factsRegion: SampleRegion;
-  /** 0–1: the overview opening under the facts. */
-  overview: MotionValue<number>;
-  isOverviewOpen: boolean;
-  onToggleOverview: () => void;
-  reduceMotion: boolean;
-  smartContinueItems: MediaItem[];
-}) {
-  const { language, t } = useLanguage();
-  const navigate = useNavigate();
-  const shade = useCopyShade(item, factsRegion);
-  const labels = {
-    season: t("media.seasonNumber"),
-    hourShort: t("format.hourShort"),
-    minuteShort: t("format.minuteShort"),
-  };
-  const metadata = getItemDisplayMetadata(item, language);
-  const runtime = formatRuntime(item.RunTimeTicks, labels);
-  const facts = [
-    item.ProductionYear,
-    runtime,
-    item.Genres?.filter(Boolean).slice(0, 2).join(", "),
-  ]
-    .filter(Boolean)
-    .join("  ·  ");
-
-  const continueTarget = smartContinueItems.find((candidate) =>
-    item.Type === "Series"
-      ? candidate.Type === "Episode" && candidate.SeriesId === item.Id
-      : candidate.Id === item.Id,
-  );
-  const playItem = continueTarget ?? item;
-  const hasProgress =
-    (continueTarget?.UserData?.PlaybackPositionTicks ?? 0) > 0;
-  const episodeLabel =
-    continueTarget?.Type === "Episode" &&
-    typeof continueTarget.ParentIndexNumber === "number" &&
-    typeof continueTarget.IndexNumber === "number"
-      ? t("media.seasonEpisodeNumber")
-          .replace("{seasonNumber}", String(continueTarget.ParentIndexNumber))
-          .replace("{episodeNumber}", String(continueTarget.IndexNumber))
-      : null;
-  const playLabel = `${hasProgress ? t("details.continueWatching") : t("common.play")}${
-    episodeLabel ? `: ${episodeLabel}` : ""
-  }`;
-  const playTo =
-    playItem.Type === "Series"
-      ? getRouteForItem(playItem)
-      : `/watch/${playItem.Id}`;
-  const canStartOver = canStartOverFromHero(playItem);
-  const position = continueTarget?.UserData?.PlaybackPositionTicks ?? 0;
-  const length = continueTarget?.RunTimeTicks ?? 0;
-  const left =
-    hasProgress && length > position
-      ? formatRuntime(length - position, labels)
-      : null;
-  const progress = left ? { share: position / length, left } : null;
-
-  const overviewId = useId();
-  const factsY = useTransform(
-    overview,
-    (value) => -value * layout.overviewLift,
-  );
-  // The overview comes up from under the facts as they rise off it.
-  const overviewY = useTransform(
-    overview,
-    [0, 1],
-    [layout.overviewHeight + OVERVIEW_SHADE_FOOT_PX, 0],
-  );
-  const overviewOpacity = useTransform(overview, [0, 0.45, 1], [0, 0.7, 1]);
-
-  const handlePlay = async (event: MouseEvent<HTMLAnchorElement>) => {
-    event.preventDefault();
-    navigate(await getPlayTargetForItem(playItem));
-  };
-
-  // The copy changes with the title by fading in place: only the title and
-  // the artwork travel.
-  const line = (index: number) => ({
-    initial: { opacity: 0 },
-    animate: {
-      opacity: 1,
-      transition: {
-        duration: reduceMotion ? 0.2 : HERO_MOTION.copyEnterS,
-        delay: reduceMotion ? 0 : index * HERO_MOTION.copyEnterStaggerS,
-        ease: "easeOut" as const,
-      },
-    },
-    exit: {
-      opacity: 0,
-      transition: {
-        duration: reduceMotion ? 0.15 : HERO_MOTION.copyExitS,
-        delay: reduceMotion ? 0 : index * HERO_MOTION.copyExitStaggerS,
-        ease: "easeIn" as const,
-      },
-    },
-  });
-
-  return (
-    <motion.div
-      className="relative h-full"
-      initial="initial"
-      animate="animate"
-      exit="exit"
-    >
-      {/* Fixed rows: the title above sits at the same height for every
-          title. The facts ride up with the title as the overview opens. */}
-      <motion.div
-        className="absolute inset-x-0 top-0"
-        style={{ height: COPY_ROWS.factsPx, y: factsY }}
-      >
-        <motion.p
-          variants={line(0)}
-          className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em]"
-          style={copyTextStyle(shade, 0.72)}
-        >
-          {facts}
-        </motion.p>
-      </motion.div>
-      {metadata.overview ? (
-        <div
-          id={overviewId}
-          className="absolute overflow-hidden"
-          style={{
-            // The reveal's clip, widened by the room the text's shade needs.
-            left: -OVERVIEW_SHADE_ROOM_PX,
-            right: -OVERVIEW_SHADE_ROOM_PX,
-            bottom:
-              COPY_ROWS.actionsPx +
-              COPY_ROWS.actionsGapPx -
-              OVERVIEW_SHADE_FOOT_PX,
-            height:
-              layout.overviewHeight +
-              OVERVIEW_SHADE_ROOM_PX +
-              OVERVIEW_SHADE_FOOT_PX,
-            padding: `${OVERVIEW_SHADE_ROOM_PX}px ${OVERVIEW_SHADE_ROOM_PX}px ${OVERVIEW_SHADE_FOOT_PX}px`,
-          }}
-        >
-          <motion.p
-            className="line-clamp-3 max-w-[46ch] font-semibold"
-            style={{
-              ...copyTextStyle(shade, 0.8),
-              fontSize: layout.overviewFontPx,
-              lineHeight: COPY_ROWS.overviewLineHeight,
-              y: overviewY,
-              opacity: overviewOpacity,
-            }}
-          >
-            {metadata.overview}
-          </motion.p>
-        </div>
-      ) : null}
-      {/* Not faded here: each action fades its own surface (see HeroActions). */}
-      <div
-        className="absolute inset-x-0 bottom-0"
-        style={{ height: COPY_ROWS.actionsPx }}
-      >
-        <HeroActions
-          item={item}
-          playTo={playTo}
-          playLabel={playLabel}
-          onPlay={handlePlay}
-          startOverTo={
-            canStartOver
-              ? `${playTo}${playTo.includes("?") ? "&" : "?"}start=0`
-              : null
-          }
-          detailsTo={getRouteForItem(item)}
-          progress={progress}
-          overviewId={overviewId}
-          hasOverview={Boolean(metadata.overview)}
-          isOverviewOpen={isOverviewOpen}
-          onToggleOverview={onToggleOverview}
-          fade={line(1)}
-        />
-      </div>
-    </motion.div>
   );
 }

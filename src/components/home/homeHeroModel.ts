@@ -367,3 +367,13 @@ export function stageness(scale: number, slotScale: number): number {
   if (end <= slotScale) return 1;
   return Math.min(1, Math.max(0, (scale - slotScale) / (end - slotScale)));
 }
+
+/** Quartic ease-in (alpha = t⁴) from clear to the page's background. */
+export const HANDOVER_GRADIENT =
+  "linear-gradient(180deg, rgba(5,6,7,0) 0%, rgba(5,6,7,0.008) 30%, rgba(5,6,7,0.041) 45%, rgba(5,6,7,0.13) 60%, rgba(5,6,7,0.24) 70%, rgba(5,6,7,0.41) 80%, rgba(5,6,7,0.573) 87%, rgba(5,6,7,0.748) 93%, #050607 100%)";
+
+/**
+ * How far below the stage's top a fully open logo may reach: the menu's
+ * height and a margin under it.
+ */
+export const LOGO_MENU_CLEARANCE_PX = 112;

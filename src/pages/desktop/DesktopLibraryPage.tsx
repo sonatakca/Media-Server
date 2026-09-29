@@ -4,7 +4,7 @@ import { motion, type Variants } from "framer-motion";
 import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { HeroSection } from "../../components/HeroSection";
+import { TitleHero } from "../../components/home/TitleHero";
 import { MediaCard } from "../../components/MediaCard";
 import { MotionReveal } from "../../components/MotionReveal";
 import { SeasonPicker } from "../../components/SeasonPicker";
@@ -650,7 +650,16 @@ export function DesktopLibraryPage({
             <BackButton className="fixed left-5 top-24 z-[80] lg:left-8" />
 
             <div className="full-bleed relative min-h-[100svh]">
-              <HeroSection item={data.library} variant="fixed" />
+              <TitleHero
+                key={data.library.Id}
+                item={data.library}
+                onShowDetails={() =>
+                  seriesDetailsRef.current?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  })
+                }
+              />
 
               <motion.button
                 type="button"
