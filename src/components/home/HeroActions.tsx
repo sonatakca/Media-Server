@@ -36,6 +36,13 @@ const LIT = "bg-white transition-colors duration-200 group-hover:bg-zinc-100";
 const PLAY =
   "bg-white text-zinc-950 shadow-[0_0_0_1px_rgba(0,0,0,0.07),inset_0_-1px_0_rgba(0,0,0,0.08),0_14px_32px_-10px_rgba(0,0,0,0.65),0_2px_8px_rgba(0,0,0,0.25)] transition-colors duration-200 hover:bg-zinc-100";
 
+/**
+ * "Details" from the home hero opens the title's page already on its way
+ * down to the details: that page opens on this same hero, and showing it
+ * twice in a row would read as nothing having happened.
+ */
+const SCROLL_TO_DETAILS_STATE = { scrollToDetails: true } as const;
+
 const ROUND =
   "inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full";
 const PILL =
@@ -166,7 +173,11 @@ export function HeroActions({
             {t("common.details")}
           </button>
         ) : (
-          <Link to={detailsTo} className={`${PILL} text-white ${FOCUS}`}>
+          <Link
+            to={detailsTo}
+            state={SCROLL_TO_DETAILS_STATE}
+            className={`${PILL} text-white ${FOCUS}`}
+          >
             <Info size={19} strokeWidth={2.2} />
             {t("common.details")}
           </Link>

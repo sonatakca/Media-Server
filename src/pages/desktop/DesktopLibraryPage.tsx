@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
 import { motion, type Variants } from "framer-motion";
 import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../../components/BackButton";
@@ -229,6 +229,9 @@ const centeredBounceVariants: Variants = {
   },
 };
 
+/** How long the page shows its hero before gliding down to the details. */
+const DETAILS_ARRIVAL_BEAT_MS = 200;
+
 export function DesktopLibraryPage({
   mode = "library",
   libraryId: libraryIdOverride,
@@ -270,6 +273,39 @@ export function DesktopLibraryPage({
     useState(false);
   const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
   const seriesDetailsRef = useRef<HTMLDivElement | null>(null);
+  const location = useLocation();
+
+  /*
+   * Arriving from the home hero's "Details": the page opens on the same hero
+   * the viewer just left, so once its details are in it glides down to them,
+   * as its own "Details" would. The request is spent on use, so a refresh or
+   * a return to the page opens it at the top. It is cleared in the history
+   * entry directly: a router navigation would count as a new arrival and
+   * send the page back to the top mid-glide.
+   */
+  const wantsDetails = Boolean(
+    (location.state as { scrollToDetails?: boolean } | null)?.scrollToDetails,
+  );
+  const spentArrivalRef = useRef<string | null>(null);
+  const areDetailsReady = Boolean(activeId) && readyDetailsId === activeId;
+  useEffect(() => {
+    if (
+      !wantsDetails ||
+      !areDetailsReady ||
+      spentArrivalRef.current === location.key
+    )
+      return undefined;
+    const timer = window.setTimeout(() => {
+      spentArrivalRef.current = location.key;
+      const entry = window.history.state as { usr?: unknown } | null;
+      window.history.replaceState({ ...entry, usr: null }, "");
+      seriesDetailsRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }, DETAILS_ARRIVAL_BEAT_MS);
+    return () => window.clearTimeout(timer);
+  }, [areDetailsReady, location.key, wantsDetails]);
 
   /*
    * Only a library shelf carries an ordering. The same routes serve a single
