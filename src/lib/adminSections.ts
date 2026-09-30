@@ -262,6 +262,17 @@ export const ADMIN_SECTIONS: readonly AdminSection[] = [
     icon: "plug",
   },
   {
+    id: "alerts",
+    group: "system",
+    // Outside the admin area on purpose: it has to open while the server is
+    // down, which the admin area cannot.
+    path: "/alerts",
+    titleKey: "admin.alerts.title",
+    descriptionKey: "admin.alerts.description",
+    tagKey: "admin.alerts.tag",
+    icon: "shieldAlert",
+  },
+  {
     id: "users",
     group: "system",
     path: "/dev/users",

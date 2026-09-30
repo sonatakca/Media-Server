@@ -242,6 +242,36 @@ export const en = {
   "player.notDownloadedDetails":
     "Download it while you have a connection to watch it here offline.",
   "player.playingDownloadedCopy": "Playing the copy downloaded to this device.",
+  "admin.alerts.title": "Alerts",
+  "admin.alerts.description":
+    "Push notifications when the server goes quiet, storage is held or a backup fails, readable even while the server is down.",
+  "admin.alerts.tag": "Monitoring",
+  "alerts.storageState.healthy": "Healthy",
+  "alerts.storageState.unavailable": "Unavailable",
+  "alerts.storageState.suspect": "Suspect",
+  "alerts.storageState.quarantined": "On hold",
+  "alerts.storageState.recoveryPending": "Needs a check",
+  "alerts.title": "Alerts",
+  "alerts.description":
+    "What the alert service has noticed about Seyirlik: the server going quiet, storage on hold, backups that could not be verified. It works even while the server is down.",
+  "alerts.server": "Server",
+  "alerts.up": "Up",
+  "alerts.down": "Down",
+  "alerts.lastHeartbeat": "Last heard {time}",
+  "alerts.storage": "Storage",
+  "alerts.lastBackup": "Last verified backup",
+  "alerts.pushOn": "Notify this device",
+  "alerts.pushOff": "Stop notifying this device",
+  "alerts.test": "Send a test alert",
+  "alerts.notConnected":
+    "This device is not connected to alerts yet. Open this page once while the server is reachable.",
+  "alerts.unreachable": "The alert service could not be reached.",
+  "alerts.pushFailed":
+    "Notifications could not be turned on. On iPhone and iPad, add Seyirlik to the home screen and open it from there first.",
+  "alerts.empty": "Nothing has happened yet.",
+  "alerts.ongoing": "Ongoing",
+  "alerts.adminsOnly": "Alerts are for administrators.",
+  "alerts.open": "Alerts",
   "downloads.title": "Downloads",
   "downloads.description":
     "Titles kept on this device, to watch without a connection. They stay in this browser only.",

@@ -95,6 +95,12 @@ import {
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createSegmentService } from "./segments/segmentService";
+import {
+  createAlertClient,
+  parseAlertConfig,
+  storageTransitionEvent,
+} from "./alerts/alertClient";
+import { createAlertRoutes } from "./alerts/alertRoutes";
 import { createDownloadRoutes } from "./downloads/downloadRoutes";
 import { createCollectionRepository } from "./collections/collectionRepository";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
@@ -219,6 +225,12 @@ export interface CreateNativeRuntimeOptions {
   /** Set false in tests and in a dedicated worker process. */
   runWorker?: boolean;
   /**
+   * Tell the alert service, every minute, that this server is alive. Only the
+   * process that serves people should: the alert service calls the server
+   * down when these stop.
+   */
+  heartbeat?: boolean;
+  /**
    * Where the `database` and `processing` startup phases are reported.
    *
    * Reported from in here rather than from the caller because only this
@@ -278,6 +290,7 @@ export async function createNativeRuntime({
   softwareTranscodeThreads,
   generatedStoragePath,
   runWorker = true,
+  heartbeat = false,
   restartController,
   startup,
   subtitleProviders,
@@ -286,6 +299,10 @@ export async function createNativeRuntime({
 }: CreateNativeRuntimeOptions): Promise<NativeRuntime> {
   const databaseConfig = parseDatabaseConfig(environment);
   const authConfig = parseNativeAuthConfig(environment);
+  // Parsed first for the same reason as the rest: half a configuration is a
+  // mistake to report now, not an alert that silently never arrives.
+  const alertConfig = parseAlertConfig(environment);
+  const alerts = alertConfig ? createAlertClient(alertConfig) : null;
   // Parsed before the pool opens so an invalid export policy stops the process
   // at the point the mistake was made, not on the first title it writes.
   const nfoConfig = parseNfoConfig(environment);
@@ -523,8 +540,11 @@ export async function createNativeRuntime({
      */
     ...(volumeIdentityProbe ? { identityProbe: volumeIdentityProbe } : {}),
     logger: {
-      transition: (event, detail) =>
-        console.warn(`[Seyirlik] ${event}: ${detail}`),
+      transition: (event, detail) => {
+        console.warn(`[Seyirlik] ${event}: ${detail}`);
+        const alert = storageTransitionEvent(event, detail);
+        if (alert) alerts?.emit(alert);
+      },
     },
   });
 
@@ -1277,6 +1297,7 @@ export async function createNativeRuntime({
       renditions,
     }),
     ...createDownloadRoutes({ catalogue, users, renditions, mediaRoot }),
+    ...createAlertRoutes(alerts),
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
@@ -1522,6 +1543,38 @@ export async function createNativeRuntime({
     ...(trustedOrigins ? { trustedOrigins } : {}),
   });
 
+  /*
+   * The alert service's only evidence that this server is alive. It carries
+   * the two facts the service watches for on its own: whether the media
+   * storage is held, and how old the last verified backup is.
+   */
+  const backupsForHeartbeat = createBackupRepository(pool);
+  const sendHeartbeat = async () => {
+    if (!alerts) return;
+    const lastVerified = await backupsForHeartbeat
+      .latestVerified()
+      .catch(() => undefined);
+    await alerts.heartbeat({
+      storage: storageGuard.health.state,
+      ...(lastVerified === undefined
+        ? {}
+        : {
+            lastVerifiedBackupAt: lastVerified
+              ? (lastVerified.finishedAtMs ?? lastVerified.startedAtMs)
+              : null,
+          }),
+      ...(environment.SEYIRLIK_RELEASE
+        ? { version: environment.SEYIRLIK_RELEASE }
+        : {}),
+    });
+  };
+  const heartbeatTimer =
+    heartbeat && alerts
+      ? setInterval(() => void sendHeartbeat(), 60_000)
+      : null;
+  heartbeatTimer?.unref?.();
+  if (heartbeatTimer) void sendHeartbeat();
+
   const sessionCleanupTimer = setInterval(() => {
     void auth.cleanupExpiredSessions().catch(() => undefined);
   }, EXPIRED_SESSION_CLEANUP_INTERVAL_MS);
@@ -1608,6 +1661,7 @@ export async function createNativeRuntime({
     close: async () => {
       if (closed) return;
       closed = true;
+      if (heartbeatTimer) clearInterval(heartbeatTimer);
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
       syncplay.stop();

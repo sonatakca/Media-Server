@@ -39,3 +39,7 @@ service-account*.json
 # publishable as it stands. Any public migration documentation must be written
 # separately, after sanitisation, in its own directory.
 docs/windows-migration/
+
+# Local secrets and state of the alert service (alerts/).
+.dev.vars
+.wrangler/

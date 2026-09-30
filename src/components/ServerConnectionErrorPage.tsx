@@ -13,7 +13,8 @@ import {
   XCircle,
 } from "lucide-react";
 import { Link } from "react-router-dom";
-import { ArrowDownToLine } from "lucide-react";
+import { ArrowDownToLine, Bell } from "lucide-react";
+import { isAdministrator } from "../lib/authStorage";
 import { LoadingSpinner } from "./LoadingSpinner";
 import { listOfflineTitles } from "../lib/offline/offlineLibrary";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -494,6 +495,16 @@ export function ServerConnectionErrorPage({
                 {isRetrying ? copy.retrying : copy.retry}
               </button>
             </div>
+
+            {isAdministrator() ? (
+              <Link
+                to="/alerts"
+                className="inline-flex min-h-11 w-full max-w-sm items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-5 text-sm font-black text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              >
+                <Bell className="h-4 w-4" aria-hidden="true" />
+                {t("alerts.open")}
+              </Link>
+            ) : null}
 
             {/* Being without the server is exactly when a download is for. */}
             {hasDownloads ? (

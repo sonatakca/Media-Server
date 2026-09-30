@@ -1,0 +1,23 @@
+# The Seyirlik alert service. Setup is in docs/alerts.md.
+name = "seyirlik-alerts"
+main = "src/index.ts"
+compatibility_date = "2026-09-01"
+routes = [{ pattern = "alerts.seyirlik.org", custom_domain = true }]
+
+[triggers]
+# Every minute: notice a server that has gone quiet.
+crons = ["* * * * *"]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "seyirlik-alerts"
+# Filled in by `wrangler d1 create seyirlik-alerts` at setup.
+database_id = "00000000-0000-0000-0000-000000000000"
+
+[vars]
+HEALTH_URL = "https://playback.seyirlik.org/ownAPI/v1/health"
+ALLOWED_ORIGINS = "https://www.seyirlik.org,https://seyirlik.org,https://origin.seyirlik.org,https://playback.seyirlik.org"
+VAPID_SUBJECT = "https://www.seyirlik.org"
+# The public half of the key pair from scripts/vapid.mjs; the private half is
+# the VAPID_PRIVATE_JWK secret. ALERTS_SECRET is a secret too.
+VAPID_PUBLIC_KEY = ""

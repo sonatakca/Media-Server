@@ -16,6 +16,10 @@
  */
 import { readFile } from "node:fs/promises";
 import { createDatabasePool } from "../src/server/ownApi/database/databasePool";
+import {
+  createAlertClient,
+  parseAlertConfig,
+} from "../src/server/ownApi/alerts/alertClient";
 import { parseDatabaseConfig } from "../src/server/ownApi/database/databaseConfig";
 import {
   createBackupRepository,
@@ -114,6 +118,41 @@ async function main(): Promise<void> {
     console.info(
       `Recorded backup run ${run.id}: ${run.state}, ${run.verification}.`,
     );
+
+    /*
+     * A backup that was not restored and checked is the one failure nobody
+     * notices until the day it is needed, so it is worth a phone buzzing. A
+     * verified run closes the alert a failed one opened.
+     */
+    const alertConfig = parseAlertConfig({ ...process.env });
+    if (alertConfig) {
+      const alerts = createAlertClient(alertConfig);
+      const healthy =
+        run.state === "succeeded" && run.verification === "verified";
+      const delivered = await alerts.deliver(
+        healthy
+          ? {
+              kind: "backup",
+              severity: "info",
+              title: "Backups are verified again",
+              key: "backup-failed",
+              resolve: true,
+            }
+          : {
+              kind: "backup",
+              severity: "critical",
+              title:
+                run.state === "failed"
+                  ? "The backup failed"
+                  : "The backup could not be verified",
+              body: manifest.failureClass
+                ? `Failure: ${manifest.failureClass}.`
+                : "The dump was taken but restoring it into a scratch database did not prove it.",
+              key: "backup-failed",
+            },
+      );
+      if (!delivered) console.warn("The backup alert was not delivered.");
+    }
   } finally {
     await pool.end();
   }

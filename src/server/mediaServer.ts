@@ -913,6 +913,8 @@ export async function startMediaServer(
         ? {}
         : { runWorker: options.runWorker }),
       ...(restartController ? { restartController } : {}),
+      // This is the process people reach; its silence is what "down" means.
+      heartbeat: true,
       startup,
     };
 

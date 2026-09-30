@@ -241,6 +241,36 @@ export const tr = {
   "player.notDownloadedDetails":
     "Burada çevrimdışı izlemek için bağlantınız varken indirin.",
   "player.playingDownloadedCopy": "Bu cihaza indirilen kopya oynatılıyor.",
+  "admin.alerts.title": "Uyarılar",
+  "admin.alerts.description":
+    "Sunucu sessizleştiğinde, depolama beklemeye alındığında ya da bir yedek başarısız olduğunda anlık bildirim; sunucu kapalıyken de okunur.",
+  "admin.alerts.tag": "İzleme",
+  "alerts.storageState.healthy": "Sorunsuz",
+  "alerts.storageState.unavailable": "Erişilemiyor",
+  "alerts.storageState.suspect": "Şüpheli",
+  "alerts.storageState.quarantined": "Beklemede",
+  "alerts.storageState.recoveryPending": "Kontrol gerekiyor",
+  "alerts.title": "Uyarılar",
+  "alerts.description":
+    "Uyarı servisinin Seyirlik hakkında fark ettikleri: sunucunun sessizleşmesi, beklemeye alınan depolama, doğrulanamayan yedekler. Sunucu kapalıyken de çalışır.",
+  "alerts.server": "Sunucu",
+  "alerts.up": "Çalışıyor",
+  "alerts.down": "Kapalı",
+  "alerts.lastHeartbeat": "Son haber {time}",
+  "alerts.storage": "Depolama",
+  "alerts.lastBackup": "Son doğrulanan yedek",
+  "alerts.pushOn": "Bu cihaza bildir",
+  "alerts.pushOff": "Bu cihaza bildirmeyi durdur",
+  "alerts.test": "Deneme uyarısı gönder",
+  "alerts.notConnected":
+    "Bu cihaz henüz uyarılara bağlı değil. Sunucuya ulaşılabilirken bu sayfayı bir kez açın.",
+  "alerts.unreachable": "Uyarı servisine ulaşılamadı.",
+  "alerts.pushFailed":
+    "Bildirimler açılamadı. iPhone ve iPad’de önce Seyirlik’i ana ekrana ekleyip oradan açın.",
+  "alerts.empty": "Henüz bir şey olmadı.",
+  "alerts.ongoing": "Sürüyor",
+  "alerts.adminsOnly": "Uyarılar yöneticiler içindir.",
+  "alerts.open": "Uyarılar",
   "downloads.title": "İndirilenler",
   "downloads.description":
     "Bağlantı olmadan izlemek için bu cihazda tutulan yapımlar. Yalnızca bu tarayıcıda kalırlar.",

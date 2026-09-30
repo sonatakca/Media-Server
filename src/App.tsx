@@ -97,6 +97,9 @@ const LibraryMaintenancePage = lazy(async () => ({
     .LibraryMaintenancePage,
 }));
 const TmdbArtworkPage = lazy(() => import("./pages/TmdbArtworkPage"));
+const AlertsPage = lazy(async () => ({
+  default: (await import("./pages/AlertsPage")).AlertsPage,
+}));
 const DownloadsPage = lazy(async () => ({
   default: (await import("./pages/DownloadsPage")).DownloadsPage,
 }));
@@ -381,6 +384,14 @@ export default function App() {
             }
           />
           <Route path="/downloads/watch/:itemId" element={<PlayerPage />} />
+          <Route
+            path="/alerts"
+            element={
+              <Suspense fallback={<LoadingSpinner label="" />}>
+                <AlertsPage />
+              </Suspense>
+            }
+          />
         </Route>
 
         <Route

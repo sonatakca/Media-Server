@@ -125,7 +125,7 @@ export default defineConfig(({ mode }) => {
           ],
           runtimeCaching: [],
           // Offline playback of downloaded titles; see public/offline-sw.js.
-          importScripts: ["offline-sw.js"],
+          importScripts: ["offline-sw.js", "alerts-sw.js"],
         },
       }),
     ],
