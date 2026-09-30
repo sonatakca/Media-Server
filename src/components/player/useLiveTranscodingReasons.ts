@@ -16,13 +16,14 @@ export function useLiveTranscodingReasons(
     string[]
   >([]);
 
+  const isCustomSource = isCustomPlaybackCandidate(source);
+
   useEffect(() => {
     let isCancelled = false;
     let intervalId: number | null = null;
 
     const shouldFetchLiveReasons =
-      !isCustomPlaybackCandidate(source) &&
-      (source.mode === "Transcoding" || source.isHls);
+      !isCustomSource && (source.mode === "Transcoding" || source.isHls);
 
     if (!shouldFetchLiveReasons) {
       setLiveTranscodingReasons([]);
@@ -92,6 +93,7 @@ export function useLiveTranscodingReasons(
     source.playSessionId,
     source.mode,
     source.isHls,
+    isCustomSource,
   ]);
 
   return [liveTranscodingReasons, setLiveTranscodingReasons];

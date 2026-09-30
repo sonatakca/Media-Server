@@ -8,7 +8,9 @@ import type { SwitchDiagnostics } from "./deckModel";
  * is no URL, signed token, cookie or filesystem path to redact before it is
  * printed. Silent in production builds.
  */
-export function logQualitySwitchDiagnostics(diagnostics: SwitchDiagnostics): void {
+export function logQualitySwitchDiagnostics(
+  diagnostics: SwitchDiagnostics,
+): void {
   if (!import.meta.env.DEV) return;
 
   console.info("[Seyirlik Playback] Rendition handoff", diagnostics);

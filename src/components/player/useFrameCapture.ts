@@ -1,4 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
 import { fetchOriginalFrame } from "../../lib/mediaApi";
 import type { TranslationKey } from "../../i18n/translations";
 

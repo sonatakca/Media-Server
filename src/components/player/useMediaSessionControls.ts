@@ -9,12 +9,7 @@ export interface MediaSessionMetadataInput {
   title: string;
   item: Pick<
     MediaItem,
-    | "Id"
-    | "Type"
-    | "SeriesId"
-    | "SeriesName"
-    | "ProductionYear"
-    | "ImageTags"
+    "Id" | "Type" | "SeriesId" | "SeriesName" | "ProductionYear" | "ImageTags"
   >;
 }
 
@@ -85,9 +80,11 @@ export function useMediaSessionControls({
   onNextTrack,
 }: MediaSessionControlsOptions): void {
   const actionsRef = useRef({ onTogglePlay, onSeekTo, onSeekBy, onNextTrack });
-  actionsRef.current = { onTogglePlay, onSeekTo, onSeekBy, onNextTrack };
   const isPlayingRef = useRef(isPlaying);
-  isPlayingRef.current = isPlaying;
+  useEffect(() => {
+    actionsRef.current = { onTogglePlay, onSeekTo, onSeekBy, onNextTrack };
+    isPlayingRef.current = isPlaying;
+  });
   const hasNextTrack = Boolean(onNextTrack);
 
   const { Id, Type, SeriesId, SeriesName, ProductionYear } = item;
@@ -151,8 +148,14 @@ export function useMediaSessionControls({
     if (!enabled || !mediaSession) return undefined;
 
     const handlers: Array<[MediaSessionAction, MediaSessionActionHandler]> = [
-      ["play", () => !isPlayingRef.current && actionsRef.current.onTogglePlay()],
-      ["pause", () => isPlayingRef.current && actionsRef.current.onTogglePlay()],
+      [
+        "play",
+        () => !isPlayingRef.current && actionsRef.current.onTogglePlay(),
+      ],
+      [
+        "pause",
+        () => isPlayingRef.current && actionsRef.current.onTogglePlay(),
+      ],
       [
         "seekto",
         (details) => {

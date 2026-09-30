@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type MouseEvent,
   type PointerEvent,
 } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
@@ -70,10 +69,7 @@ import { Tooltip } from "../ui/Tooltip";
 import {
   AUTO_QUALITY_ID,
   DEFAULT_NEXT_EPISODE_COUNTDOWN_SECONDS,
-  DEFAULT_SUBTITLE_SCALE,
   DEFAULT_VIDEO_ASPECT_RATIO,
-  MAX_SUBTITLE_SCALE,
-  MIN_SUBTITLE_SCALE,
   PARTY_WATCH_DOT_POSITIONS,
   PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
   TOUCH_DOUBLE_TAP_THRESHOLD_MS,
@@ -144,10 +140,6 @@ import type {
   PendingAudioTranscodePlay,
   PendingSourceRestore,
   SubtitleCue,
-  SubtitleDragState,
-  SubtitlePosition,
-  SubtitleResizeState,
-  SubtitleSize,
   TouchSeekSessionState,
   TouchSeekSide,
 } from "./types";
@@ -158,10 +150,7 @@ import {
   useSeamlessQualitySwitch,
   type PlaybackIntent,
 } from "./useSeamlessQualitySwitch";
-import {
-  evaluateSeamlessEligibility,
-  type DeckId,
-} from "./deckModel";
+import { evaluateSeamlessEligibility, type DeckId } from "./deckModel";
 import { warmQualityAtPosition } from "./warmQuality";
 import { useFrameCapture } from "./useFrameCapture";
 import { useDismissOnOutsidePointer } from "./useDismissOnOutsidePointer";
@@ -169,6 +158,11 @@ import { useLiveTranscodingReasons } from "./useLiveTranscodingReasons";
 import { useNativeTextTracksSuppressed } from "./useNativeTextTracksSuppressed";
 import { usePartyEventToast } from "./usePartyEventToast";
 import { useMediaSessionControls } from "./useMediaSessionControls";
+import { useSubtitleEditor } from "./useSubtitleEditor";
+import {
+  buildAdvancedQualityOptions,
+  buildQualityFileSourceFor,
+} from "./qualityOptions";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
   adaptiveQualityRequestForMode,
@@ -198,7 +192,6 @@ import {
   logQualitySwitchDiagnostics,
   measuredPlayerHeight,
   navigatorDownlinkMbps,
-  sortQualityOptionsLowestFirst,
 } from "./playerHelpers";
 
 /** How often Auto re-examines conditions while playback continues. */
@@ -364,9 +357,6 @@ export function CustomVideoPlayer({
     null,
   );
   const audioTranscodeReadinessTimerRef = useRef<number | null>(null);
-  const subtitleOverlayRef = useRef<HTMLDivElement | null>(null);
-  const subtitleDragStateRef = useRef<SubtitleDragState | null>(null);
-  const subtitleResizeStateRef = useRef<SubtitleResizeState | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
   const suppressMouseMoveUntilRef = useRef(0);
   const singleTapTimerRef = useRef<number | null>(null);
@@ -723,7 +713,6 @@ export function CustomVideoPlayer({
     }
   }, [activeSegment?.id, dismissedSkipSegmentId]);
 
-
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
   const [liveTranscodingReasons, setLiveTranscodingReasons] =
@@ -863,13 +852,35 @@ export function CustomVideoPlayer({
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [subtitleDelaySeconds, setSubtitleDelaySeconds] = useState(0);
-  const [subtitlePosition, setSubtitlePosition] =
-    useState<SubtitlePosition | null>(null);
-  const [subtitleSize, setSubtitleSize] = useState<SubtitleSize>({
-    scale: DEFAULT_SUBTITLE_SCALE,
+  /** Set once edit mode can be entered; a double click on the text asks for it. */
+  const requestSubtitleEditRef = useRef<() => void>(() => {});
+  const {
+    subtitleOverlayRef,
+    subtitlePosition,
+    subtitleSize,
+    isDraggingSubtitle,
+    isResizingSubtitle,
+    initializeSubtitleEditPosition,
+    clearSubtitleInteraction,
+    resetSubtitleLayout,
+    handleSubtitleDoubleClick,
+    handleSubtitleResizePointerDown,
+    handleSubtitleResizePointerMove,
+    finishSubtitleResize,
+    handleSubtitleResizePointerCancel,
+    handleSubtitlePointerDown,
+    handleSubtitlePointerMove,
+    finishSubtitleDrag,
+    handleSubtitlePointerCancel,
+  } = useSubtitleEditor({
+    containerRef,
+    isSubtitleEditMode,
+    setIsSubtitleEditMode,
+    suppressPlayerTapUntilRef,
+    resetTouchSeekSession,
+    revealPlayerChrome,
+    onRequestEdit: () => requestSubtitleEditRef.current(),
   });
-  const [isDraggingSubtitle, setIsDraggingSubtitle] = useState(false);
-  const [isResizingSubtitle, setIsResizingSubtitle] = useState(false);
   const availablePlaybackCandidates =
     playbackCandidates.length > 0 ? playbackCandidates : [source];
   const qualityManifest =
@@ -940,67 +951,24 @@ export function CustomVideoPlayer({
     () => getManualQualityOptions(activeSource.mediaSource),
     [activeSource.mediaSource],
   );
-  const advancedQualityOptions = useMemo<PlaybackQualityOption[]>(() => {
-    if (hasAdaptiveQualities && adaptiveQualityManifest) {
-      const adaptiveOptions = adaptiveQualityManifest.qualities.map(
-        (quality) => ({
-          id: quality.id,
-          label: quality.label,
-          subtitle: "",
-          maxHeight: quality.height,
-          maxWidth: quality.width,
-          maxStreamingBitrate: quality.bitrate,
-        }),
-      );
-      const original = availableQualityFiles.find(
-        (quality) => quality.kind === "original",
-      );
-      return sortQualityOptionsLowestFirst(
-        original
-          ? [
-              ...adaptiveOptions,
-              {
-                id: original.id,
-                label: formatTemplate(t("player.qualityOriginalWithHeight"), {
-                  height: original.height,
-                }),
-                subtitle: "",
-                maxHeight: original.height,
-                maxWidth: original.width,
-                maxStreamingBitrate:
-                  original.bitrate ?? Number.MAX_SAFE_INTEGER,
-              },
-            ]
-          : adaptiveOptions,
-      );
-    }
-    return sortQualityOptionsLowestFirst(
-      availableQualityFiles.map((quality) => ({
-        id: quality.id,
-        label: `${
-          quality.kind === "original"
-            ? formatTemplate(t("player.qualityOriginalWithHeight"), {
-                height: quality.height,
-              })
-            : `${quality.height}p`
-        }${quality.hdr ? " HDR" : ""}`,
-        // Only carry a subtitle when it says something the label does not; the
-        // check mark already marks the active entry.
-        subtitle: isQualityAudioCompatible(quality, selectedAudioStreamIndex)
-          ? ""
-          : t("player.qualityAudioMismatch"),
-        maxHeight: quality.height,
-        maxWidth: quality.width,
-        maxStreamingBitrate: quality.bitrate ?? Number.MAX_SAFE_INTEGER,
-      })),
-    );
-  }, [
-    adaptiveQualityManifest,
-    availableQualityFiles,
-    hasAdaptiveQualities,
-    selectedAudioStreamIndex,
-    t,
-  ]);
+  const advancedQualityOptions = useMemo(
+    () =>
+      buildAdvancedQualityOptions({
+        adaptiveManifest: hasAdaptiveQualities
+          ? adaptiveQualityManifest
+          : undefined,
+        availableQualityFiles,
+        selectedAudioStreamIndex,
+        t,
+      }),
+    [
+      adaptiveQualityManifest,
+      availableQualityFiles,
+      hasAdaptiveQualities,
+      selectedAudioStreamIndex,
+      t,
+    ],
+  );
   /**
    * The original is served by whichever plan the backend already produced, so it
    * is returned untouched: rewriting it into a synthetic direct-play candidate
@@ -1010,47 +978,7 @@ export function CustomVideoPlayer({
    */
   const buildQualityFileSource = useCallback(
     (quality: AvailableQualityFile): PlaybackSourceCandidate =>
-      quality.kind === "original"
-        ? source.hlsKind === "adaptive-rendition"
-          ? {
-              ...source,
-              id: "quality-file-original",
-              url: quality.playbackUrl,
-              mode: "DirectPlay",
-              isHls: false,
-              hlsKind: "direct",
-              usingHlsJs: false,
-              mimeType: quality.container === "mp4" ? "video/mp4" : undefined,
-              label: quality.label,
-              reason: "Original file outside the adaptive switching set.",
-              transcodeReasons: [],
-            }
-          : source
-        : {
-            ...source,
-            id: `quality-file-${quality.id}`,
-            // Generated renditions still use the original media file's
-            // subtitle inventory. Keep its authorized playback session so
-            // sidecar and embedded subtitle tracks remain downloadable while
-            // the generated video file is on screen.
-            playSessionId: source.playSessionId,
-            mode: "DirectPlay",
-            url: quality.playbackUrl,
-            mimeType: quality.container === "mp4" ? "video/mp4" : undefined,
-            isHls: false,
-            hlsKind: undefined,
-            label: quality.label,
-            qualityManifest,
-            reason: "Validated pre-generated complete rendition file.",
-            transcodeReasons: [],
-            mediaSource: {
-              ...source.mediaSource,
-              Container: quality.container ?? source.mediaSource.Container,
-              SupportsDirectPlay: true,
-              SupportsDirectStream: false,
-              SupportsTranscoding: false,
-            },
-          },
+      buildQualityFileSourceFor(source, qualityManifest, quality),
     [qualityManifest, source],
   );
   /**
@@ -1136,65 +1064,35 @@ export function CustomVideoPlayer({
   const selectedAudioIndexForActiveSource =
     selectedAudioStreamIndex ?? activeSourceDefaultAudioStreamIndex;
 
-  const initializeSubtitleEditPosition = useCallback(() => {
-    const bounds = containerRef.current?.getBoundingClientRect();
-    const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
-
-    if (!bounds || !overlayBounds) {
-      return;
-    }
-
-    const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
-    const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
-
-    setSubtitlePosition(
-      (currentPosition) =>
-        currentPosition ?? {
-          x: clamp(
-            ((overlayCenterX - bounds.left) / bounds.width) * 100,
-            8,
-            92,
-          ),
-          y: clamp(
-            ((overlayCenterY - bounds.top) / bounds.height) * 100,
-            10,
-            90,
-          ),
-        },
-    );
-  }, []);
-
   const startSubtitleEditMode = useCallback(() => {
     initializeSubtitleEditPosition();
     setIsSettingsOpen(false);
     setIsQueueOpen(false);
     setIsPlaybackInfoOpen(false);
     setIsPartyWatchOpen(false);
-    setIsDraggingSubtitle(false);
-    setIsResizingSubtitle(false);
+    clearSubtitleInteraction();
     setIsSubtitleEditMode(true);
     setAreControlsManuallyHidden(true);
-    subtitleDragStateRef.current = null;
-    subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = Date.now() + 350;
     resetTouchSeekSession();
     releaseControlsHover();
   }, [
+    clearSubtitleInteraction,
     initializeSubtitleEditPosition,
     releaseControlsHover,
     resetTouchSeekSession,
   ]);
+  useEffect(() => {
+    requestSubtitleEditRef.current = startSubtitleEditMode;
+  });
 
   const finishSubtitleEditMode = useCallback(() => {
     setIsSubtitleEditMode(false);
-    setIsDraggingSubtitle(false);
-    setIsResizingSubtitle(false);
-    subtitleDragStateRef.current = null;
-    subtitleResizeStateRef.current = null;
+    clearSubtitleInteraction();
     suppressPlayerTapUntilRef.current = Date.now() + 350;
     resetTouchSeekSession();
     revealPlayerChrome();
-  }, [resetTouchSeekSession, revealPlayerChrome]);
+  }, [clearSubtitleInteraction, resetTouchSeekSession, revealPlayerChrome]);
 
   const sourceWithLiveTranscodingReasons =
     useMemo<PlaybackSourceCandidate>(() => {
@@ -1597,21 +1495,22 @@ export function CustomVideoPlayer({
     hasAutoPlayedNextRef.current = false;
     hasAppliedInitialStartRef.current = false;
     setActiveSubtitleText("");
-    setSubtitlePosition(null);
-    setSubtitleSize({ scale: DEFAULT_SUBTITLE_SCALE });
-    setIsDraggingSubtitle(false);
-    setIsResizingSubtitle(false);
+    resetSubtitleLayout();
+    clearSubtitleInteraction();
     setIsSubtitleEditMode(false);
     setAreControlsManuallyHidden(false);
     setCheckpointSeconds(null);
     setDismissedDefaultNextEpisodeItemId(null);
     setIsViewModeCursorVisible(true);
     setIsViewModeEnabled(false);
-    subtitleDragStateRef.current = null;
-    subtitleResizeStateRef.current = null;
     suppressPlayerTapUntilRef.current = 0;
     resetTouchSeekSession();
-  }, [item.Id, resetTouchSeekSession]);
+  }, [
+    clearSubtitleInteraction,
+    item.Id,
+    resetSubtitleLayout,
+    resetTouchSeekSession,
+  ]);
 
   useEffect(() => {
     hasAutoPlayedNextRef.current = false;
@@ -5161,233 +5060,6 @@ export function CustomVideoPlayer({
     },
     [releaseControlsHover],
   );
-
-  const getSubtitlePositionFromPoint = useCallback(
-    (clientX: number, clientY: number): SubtitlePosition | null => {
-      const bounds = containerRef.current?.getBoundingClientRect();
-      const dragState = subtitleDragStateRef.current;
-
-      if (!bounds || !dragState) {
-        return null;
-      }
-
-      return {
-        x: clamp(
-          ((clientX - bounds.left - dragState.offsetX) / bounds.width) * 100,
-          8,
-          92,
-        ),
-        y: clamp(
-          ((clientY - bounds.top - dragState.offsetY) / bounds.height) * 100,
-          10,
-          90,
-        ),
-      };
-    },
-    [],
-  );
-
-  const handleSubtitleDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.stopPropagation();
-    startSubtitleEditMode();
-  };
-
-  const handleSubtitleResizePointerDown = (
-    event: PointerEvent<HTMLButtonElement>,
-    directionX: -1 | 1,
-    directionY: -1 | 1,
-  ) => {
-    event.preventDefault();
-    event.stopPropagation();
-
-    event.currentTarget.setPointerCapture(event.pointerId);
-
-    subtitleResizeStateRef.current = {
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      startClientY: event.clientY,
-      startScale: subtitleSize.scale,
-      directionX,
-      directionY,
-    };
-
-    setIsSubtitleEditMode(true);
-    setIsResizingSubtitle(true);
-    setIsDraggingSubtitle(false);
-    subtitleDragStateRef.current = null;
-    resetTouchSeekSession();
-    revealPlayerChrome();
-  };
-
-  const handleSubtitleResizePointerMove = (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    const resizeState = subtitleResizeStateRef.current;
-
-    if (!resizeState || resizeState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const deltaX =
-      (event.clientX - resizeState.startClientX) * resizeState.directionX;
-    const deltaY =
-      (event.clientY - resizeState.startClientY) * resizeState.directionY;
-    const strongestDelta =
-      Math.abs(deltaX) > Math.abs(deltaY) ? deltaX : deltaY;
-    const nextScale = clamp(
-      resizeState.startScale + strongestDelta / 220,
-      MIN_SUBTITLE_SCALE,
-      MAX_SUBTITLE_SCALE,
-    );
-
-    setSubtitleSize({ scale: nextScale });
-  };
-
-  const finishSubtitleResize = (event: PointerEvent<HTMLButtonElement>) => {
-    const resizeState = subtitleResizeStateRef.current;
-
-    if (!resizeState || resizeState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    subtitleResizeStateRef.current = null;
-    setIsResizingSubtitle(false);
-    suppressPlayerTapUntilRef.current = Date.now() + 450;
-    resetTouchSeekSession();
-  };
-
-  const handleSubtitleResizePointerCancel = (
-    event: PointerEvent<HTMLButtonElement>,
-  ) => {
-    if (subtitleResizeStateRef.current?.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.stopPropagation();
-    subtitleResizeStateRef.current = null;
-    setIsResizingSubtitle(false);
-    suppressPlayerTapUntilRef.current = Date.now() + 450;
-    resetTouchSeekSession();
-  };
-
-  const handleSubtitlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    if (!isSubtitleEditMode) {
-      return;
-    }
-
-    const bounds = containerRef.current?.getBoundingClientRect();
-    const overlayBounds = subtitleOverlayRef.current?.getBoundingClientRect();
-
-    if (!bounds || !overlayBounds) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-
-    const overlayCenterX = overlayBounds.left + overlayBounds.width / 2;
-    const overlayCenterY = overlayBounds.top + overlayBounds.height / 2;
-
-    subtitleDragStateRef.current = {
-      pointerId: event.pointerId,
-      offsetX: event.clientX - overlayCenterX,
-      offsetY: event.clientY - overlayCenterY,
-    };
-
-    setSubtitlePosition(
-      (currentPosition) =>
-        currentPosition ?? {
-          x: clamp(
-            ((overlayCenterX - bounds.left) / bounds.width) * 100,
-            8,
-            92,
-          ),
-          y: clamp(
-            ((overlayCenterY - bounds.top) / bounds.height) * 100,
-            10,
-            90,
-          ),
-        },
-    );
-    setIsDraggingSubtitle(true);
-    setIsResizingSubtitle(false);
-    subtitleResizeStateRef.current = null;
-    resetTouchSeekSession();
-    revealPlayerChrome();
-  };
-
-  const handleSubtitlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
-    const dragState = subtitleDragStateRef.current;
-
-    if (!dragState || dragState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextPosition = getSubtitlePositionFromPoint(
-      event.clientX,
-      event.clientY,
-    );
-
-    if (nextPosition) {
-      setSubtitlePosition(nextPosition);
-    }
-  };
-
-  const finishSubtitleDrag = (event: PointerEvent<HTMLDivElement>) => {
-    const dragState = subtitleDragStateRef.current;
-
-    if (!dragState || dragState.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-
-    const nextPosition = getSubtitlePositionFromPoint(
-      event.clientX,
-      event.clientY,
-    );
-
-    if (nextPosition) {
-      setSubtitlePosition(nextPosition);
-    }
-
-    subtitleDragStateRef.current = null;
-    suppressPlayerTapUntilRef.current = Date.now() + 450;
-    setIsDraggingSubtitle(false);
-    resetTouchSeekSession();
-  };
-
-  const handleSubtitlePointerCancel = (event: PointerEvent<HTMLDivElement>) => {
-    if (subtitleDragStateRef.current?.pointerId !== event.pointerId) {
-      return;
-    }
-
-    event.stopPropagation();
-    subtitleDragStateRef.current = null;
-    suppressPlayerTapUntilRef.current = Date.now() + 450;
-    setIsDraggingSubtitle(false);
-    setIsResizingSubtitle(false);
-    resetTouchSeekSession();
-  };
 
   const subtitle = getItemSubtitle(item, mediaFormatLabels);
   const isEpisodeItem = item.Type === "Episode";
