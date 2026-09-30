@@ -38,7 +38,13 @@ export function DesktopNavbar() {
     { to: libraryRoutes.series, label: t("nav.series") },
     { to: libraryRoutes.books, label: t("nav.books") },
     { to: "/my-list", label: t("myList.title") },
-    { to: libraryRoutes.collections, label: t("nav.collections") },
+    // Only where the bar has room: at the narrowest desktop widths a sixth
+    // link runs into the icons. The mobile menu always carries it.
+    {
+      to: libraryRoutes.collections,
+      label: t("nav.collections"),
+      className: "hidden min-[1120px]:inline",
+    },
   ];
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);
@@ -119,7 +125,7 @@ export function DesktopNavbar() {
               className={({ isActive }) =>
                 `text-sm font-semibold transition-colors duration-200 ${
                   isActive ? "text-white" : "text-white/72 hover:text-white"
-                }`
+                } ${"className" in link ? link.className : ""}`
               }
             >
               <AnimatedWidth value={link.label}>
