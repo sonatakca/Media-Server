@@ -3,7 +3,7 @@
  * real epoch's. Diagnostic only; the duration is short because the init segment
  * is decided by encoder configuration rather than by length.
  */
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import path from "node:path";

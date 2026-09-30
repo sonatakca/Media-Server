@@ -28,6 +28,13 @@ export default tseslint.config(
   js.configs.recommended,
   ...tseslint.configs.recommended,
 
+  // Standalone Node scripts (tooling, key generation): Node's globals, not a
+  // browser's.
+  {
+    files: ["**/*.mjs"],
+    languageOptions: { globals: globals.node },
+  },
+
   {
     files: ["**/*.{ts,tsx}"],
     languageOptions: {

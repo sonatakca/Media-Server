@@ -45,10 +45,16 @@ it("connects sibling actions to the canonical reader and reveals ultra-fast work
     if (url.pathname === "/admin/maintenance/tasks") {
       // Even the newest history is already displaced by other work; only the
       // exact accepted-ID read can recover this canonical concluded row.
+      const recovered = accepted && url.searchParams.get("include") === id;
       return {
-        tasks:
-          accepted && url.searchParams.get("include") === id ? [finished] : [],
+        tasks: recovered ? [finished] : [],
         queue: [],
+        // The tabs label themselves with the server's totals, so the mock
+        // reports them as the API does.
+        pages: {
+          active: { total: 0, offset: 0, limit: 200 },
+          concluded: { total: recovered ? 1 : 0, offset: 0, limit: 50 },
+        },
       };
     }
     throw new Error(`unexpected read: ${path}`);

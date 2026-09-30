@@ -1,6 +1,5 @@
 // Run from repository root: node public/artwork/seyirlik/NEW/1/build-variants.mjs
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import crypto from 'node:crypto';
 import assert from 'node:assert/strict';
 import sharp from 'sharp';
