@@ -12,7 +12,7 @@ crons = ["* * * * *"]
 binding = "DB"
 database_name = "seyirlik-alerts"
 # Filled in by `wrangler d1 create seyirlik-alerts` at setup.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "db0153e2-76d9-4c8c-848c-48cf63c53b88"
 
 [vars]
 HEALTH_URL = "https://playback.seyirlik.org/ownAPI/v1/health"
@@ -20,4 +20,4 @@ ALLOWED_ORIGINS = "https://www.seyirlik.org,https://seyirlik.org,https://origin.
 VAPID_SUBJECT = "https://www.seyirlik.org"
 # The public half of the key pair from scripts/vapid.mjs; the private half is
 # the VAPID_PRIVATE_JWK secret. ALERTS_SECRET is a secret too.
-VAPID_PUBLIC_KEY = ""
+VAPID_PUBLIC_KEY = "BOr5GYg2r1MEiBPUTcYXaHKlAMYydb87QnMfH-JKPp_fm9zQVUSJOsIcA62dnWgL815Jk4opHQmC0v3Rh9Tn--8"

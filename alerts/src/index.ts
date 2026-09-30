@@ -254,11 +254,17 @@ async function handle(request: Request, env: Env): Promise<Response> {
     }
 
     if (url.pathname === "/v1/heartbeat") {
+      // Read before overwriting: the last heartbeat before a silence is when
+      // the outage began, and the down alert was only raised minutes later.
+      const previous = await readState<{ receivedAt: number }>(
+        env,
+        "heartbeat",
+      );
       await writeState(env, "heartbeat", {
         heartbeat: parsed as Heartbeat,
         receivedAt: now,
       });
-      await checkHost(env, now, true);
+      await checkHost(env, now, true, previous?.receivedAt);
       return json(env, request, 202, { ok: true });
     }
 
@@ -367,7 +373,12 @@ async function healthAnswers(env: Env): Promise<boolean> {
  * `fromHeartbeat` is true when a heartbeat has just arrived, which can only
  * ever close the down alert — so the health endpoint is not asked for it.
  */
-async function checkHost(env: Env, now: number, fromHeartbeat = false) {
+async function checkHost(
+  env: Env,
+  now: number,
+  fromHeartbeat = false,
+  silentSince?: number,
+) {
   const state = await readState<{ heartbeat: Heartbeat; receivedAt: number }>(
     env,
     "heartbeat",
@@ -404,7 +415,9 @@ async function checkHost(env: Env, now: number, fromHeartbeat = false) {
         kind: "host",
         severity: "info",
         title: "Seyirlik is back",
-        body: `It was unreachable for ${describeDuration(now - open.created_at)}.`,
+        body: `It was unreachable for ${describeDuration(
+          now - Math.min(silentSince ?? open.created_at, open.created_at),
+        )}.`,
         key: HOST_DOWN_KEY,
         resolve: true,
       },
