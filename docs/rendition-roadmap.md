@@ -7,7 +7,13 @@ system works as designed. Numbers are measured on the live library
 
 ---
 
-## 1. Native-resolution top rung (the "no 4K option" gap)
+## 1. Native-resolution top rung (the "no 4K option" gap) — done in the worker
+
+**Now.** The worker's ladder (`buildRenditionRequirements` in `src/renditions/policy.ts`)
+starts at the source's own class and encodes it at the source's real dimensions — a
+3840x1604 rung for a 4K scope feature — with AAC audio, so every browser has a 4K
+option once a title's package is built. What remains is running the packages, not
+writing code. The rest of this section is the original analysis, kept for its numbers.
 
 **Problem.** The ladder stops at 1080p because the original was assumed to serve as
 the top rung. That holds only while the original can direct-play. When it cannot,
@@ -51,7 +57,12 @@ Option 2 is the most principled; option 1 is the cheapest.
 
 ---
 
-## 2. Self-calibrating storage estimates
+## 2. Self-calibrating storage estimates — offline CLI only
+
+This applies to `scripts/media-renditions.ts`, whose planner defers titles that do
+not fit. Production processing runs in the worker, which sizes one job at a time
+(`decideProcessing`) and only uses the estimate as a free-space gate for that job,
+so an overestimate there costs nothing unless the volume is nearly full.
 
 `expectedVideoBitrate` in `src/renditions/encoding.ts` is a reasoned default.
 Measured against the real Dune encode it **overestimates by ~2.5x**: the projection
@@ -107,7 +118,11 @@ presentation timeline is the principled answer — see item 7.
 
 ---
 
-## 4. Concurrent workers
+## 4. Concurrent workers — offline CLI only
+
+Superseded for production: the worker runs processing in its own lane, one encode at
+a time by design, because the source volume, not the encoder, is what saturates.
+What follows concerns the CLI.
 
 `--workers 2`/`3` would overlap the CPU-bound 10-bit decode with the GPU encode and
 should cut wall time materially — HDR titles run at ~1.3x versus ~2x for SDR because
