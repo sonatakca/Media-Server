@@ -462,8 +462,8 @@ export function createPlaybackRoutes({
   }
 
   /**
-   * For reads that must outlive the idle reaper: subtitle tracks and saved
-   * frames. Adaptive renditions are served by media-file token and never touch
+   * For reads that must outlive the idle reaper: subtitle tracks, saved
+   * frames and the direct-play original. Adaptive renditions are served by media-file token and never touch
    * the session, so a few minutes into HLS playback — or into a pause — the
    * session is `ended` while the film is still on screen, and every later
    * track pick came back 404. Here the session only names the file; access is
@@ -765,7 +765,9 @@ export function createPlaybackRoutes({
       skipCsrf: true,
       handle: async (context) => {
         const principal = context.requirePrincipal();
-        const session = await requireOwnedSession(
+        // Direct play holds no process, so an ended session only names the
+        // file: resuming an original after a long pause must not 404.
+        const session = await requireViewableSession(
           principal.userId,
           requireUuid(context.params.sessionId, "sessionId"),
         );

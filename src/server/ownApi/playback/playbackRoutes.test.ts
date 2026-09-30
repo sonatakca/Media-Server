@@ -615,6 +615,32 @@ describe("session reads after the session goes idle", () => {
     ).toBe("FRAME_UNAVAILABLE");
   });
 
+  it("keeps serving a direct-play original after a pause outlasted the session", async () => {
+    // Resuming an original after more than five idle minutes used to 404:
+    // the reaper had ended the session the <video> element still pointed at.
+    const outcome = await requestTrack(
+      buildSubtitleRouter({ userId: VIEWER, status: "ended" }),
+      `/ownAPI/v1/playback/sessions/${SESSION}/file`,
+    );
+    expect(outcome).not.toBe("SESSION_NOT_FOUND");
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({ userId: VIEWER, status: "failed" }),
+        `/ownAPI/v1/playback/sessions/${SESSION}/file`,
+      ),
+    ).toBe("SESSION_NOT_FOUND");
+    expect(
+      await requestTrack(
+        buildSubtitleRouter({
+          userId: VIEWER,
+          status: "ended",
+          itemId: "item-hidden",
+        }),
+        `/ownAPI/v1/playback/sessions/${SESSION}/file`,
+      ),
+    ).toBe("SESSION_NOT_FOUND");
+  });
+
   it("refuses a frame time that is missing, negative or not a number", async () => {
     const router = buildSubtitleRouter({ userId: VIEWER, status: "active" });
 
