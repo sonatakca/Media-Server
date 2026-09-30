@@ -146,10 +146,15 @@ concurrency.
   Likely a variable-frame-rate source or wrong duration metadata in the container.
   Worth probing `nb_frames` vs `duration` and comparing against a decoded frame
   count before deciding whether to widen the tolerance or fix the source.
-- **46 sources are 8-bit but tagged `smpte2084`/`bt2020`.** HDR10 requires 10 bits;
-  8-bit PQ bands visibly. These are mis-tagged transcodes. The pipeline preserves the
-  tags faithfully, so the output is only as good as the source. Re-tagging them as
-  BT.709 at source would be more honest.
+- **37 sources are 8-bit but tagged `smpte2084`** (re-measured 2026-09-30; Andor and
+  House of the Dragon 12 episodes each, Chernobyl 5, eight films). They are **real
+  PQ pictures at 8 bits, not mis-tagged SDR** — do not re-tag them BT.709. Measured
+  untone-mapped across eight points of each file, the brightest scene's 95th-percentile
+  luma is 36–45% of the code range and the peak 51–68%, which is where PQ puts diffuse
+  white; SDR reaches ~92% in any bright scene (Return of the Jedi's desert would). A
+  genuine 10-bit PQ reference measured 64% and 72%, and Chernobyl even carries HDR10
+  mastering metadata. The pipeline is right to keep them HDR; their only fault is 8-bit
+  banding, and only a better source fixes that.
 
 ---
 
