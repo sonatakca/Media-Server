@@ -97,6 +97,9 @@ const LibraryMaintenancePage = lazy(async () => ({
     .LibraryMaintenancePage,
 }));
 const TmdbArtworkPage = lazy(() => import("./pages/TmdbArtworkPage"));
+const DownloadsPage = lazy(async () => ({
+  default: (await import("./pages/DownloadsPage")).DownloadsPage,
+}));
 const MyListPage = lazy(async () => ({
   default: (await import("./pages/MyListPage")).MyListPage,
 }));
@@ -363,6 +366,21 @@ export default function App() {
       <Routes>
         <Route element={<RouteTransitionOutlet />}>
           <Route path="/login" element={<LoginPage />} />
+        </Route>
+
+        {/* Outside the server check on purpose: these are for when the server
+            cannot be reached. The signed-in session remembered on this device
+            is enough, since nothing here asks the server anything. */}
+        <Route element={<RequireAuth />}>
+          <Route
+            path="/downloads"
+            element={
+              <Suspense fallback={<LoadingSpinner label="" />}>
+                <DownloadsPage />
+              </Suspense>
+            }
+          />
+          <Route path="/downloads/watch/:itemId" element={<PlayerPage />} />
         </Route>
 
         <Route

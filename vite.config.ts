@@ -124,6 +124,8 @@ export default defineConfig(({ mode }) => {
             /\.(?:m3u8|ts|mp4|mkv|webm|vtt|srt|ass)$/i,
           ],
           runtimeCaching: [],
+          // Offline playback of downloaded titles; see public/offline-sw.js.
+          importScripts: ["offline-sw.js"],
         },
       }),
     ],

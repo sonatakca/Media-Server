@@ -27,6 +27,8 @@ import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
 import { WatchedIndicator } from "../WatchedIndicator";
+import { DownloadButton } from "../offline/DownloadButton";
+import { isOfflineSupported } from "../../lib/offline/offlineLibrary";
 
 interface MobileMediaCardProps {
   item: MediaItem;
@@ -34,6 +36,8 @@ interface MobileMediaCardProps {
   variant?: "poster" | "landscape";
   layout?: "row" | "grid";
   showRestartWatching?: boolean;
+  /** Offer to keep this episode on the device, as the series page does. */
+  showDownload?: boolean;
   collectionItems?: MediaItem[];
   animateRemoval?: boolean;
   onClearContinueWatching?: (item: MediaItem) => void;
@@ -91,6 +95,7 @@ export function MobileMediaCard({
   layout = "row",
   collectionItems,
   animateRemoval = false,
+  showDownload = false,
 }: MobileMediaCardProps) {
   const { language, t } = useLanguage();
   const labels = {
@@ -259,6 +264,16 @@ export function MobileMediaCard({
                 loading="lazy"
                 decoding="async"
                 className="max-h-20 max-w-[82%] object-contain object-left drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] min-[390px]:max-h-[3.75rem]"
+              />
+            </div>
+          ) : null}
+
+          {showDownload && isEpisode && isOfflineSupported() ? (
+            <div className="absolute right-2 top-2 z-30">
+              <DownloadButton
+                item={item}
+                iconSize={16}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white backdrop-blur-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
               />
             </div>
           ) : null}

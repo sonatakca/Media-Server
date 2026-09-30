@@ -15,6 +15,7 @@ import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { usePartyWatch } from "../../features/partyWatch/usePartyWatch";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/mediaApi";
+import { loadPlayerItem } from "../../lib/offline/offlineLibrary";
 import {
   setDefaultPageTitle,
   setLoadingPageTitle,
@@ -44,11 +45,13 @@ export function MobilePlayerPage() {
     itemId ? readPreloadedPlaybackItem(itemId) : null,
   );
   const [itemError, setItemError] = useState<string | null>(null);
-  const playback = usePlaybackSource(itemId);
+  /** A downloaded copy, played with no server involved. */
+  const offlineOnly = location.pathname.startsWith("/downloads/watch/");
+  const playback = usePlaybackSource(itemId, { offlineOnly });
   // Held by the page, not the player: the player unmounts while the next
   // title loads, and the party must not notice.
-  const party = usePartyWatch(itemId ?? "");
-  const playbackQueue = usePlaybackQueue(item);
+  const party = usePartyWatch(offlineOnly ? "" : (itemId ?? ""));
+  const playbackQueue = usePlaybackQueue(offlineOnly ? null : item);
 
   useEffect(() => {
     let isMounted = true;
@@ -64,7 +67,7 @@ export function MobilePlayerPage() {
       setItem(preloadedItem);
 
       try {
-        const loadedItem = await getItem(itemId);
+        const loadedItem = await loadPlayerItem(itemId, offlineOnly, getItem);
 
         if (isMounted) {
           setItem(loadedItem);
@@ -85,7 +88,7 @@ export function MobilePlayerPage() {
     return () => {
       isMounted = false;
     };
-  }, [itemId, t]);
+  }, [itemId, offlineOnly, t]);
 
   useEffect(() => {
     const isPageLoading = !item || playback.isLoading;
@@ -138,9 +141,11 @@ export function MobilePlayerPage() {
   const requestedMediaOwnerRoute = getMediaOwnerRouteFromNavigationState(
     location.state,
   );
-  const mediaOwnerRoute = item
-    ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
-    : "/home";
+  const mediaOwnerRoute = offlineOnly
+    ? "/downloads"
+    : item
+      ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
+      : "/home";
 
   if (itemError) {
     return (

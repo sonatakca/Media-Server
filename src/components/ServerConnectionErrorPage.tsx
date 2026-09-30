@@ -12,7 +12,10 @@ import {
   ServerCrash,
   XCircle,
 } from "lucide-react";
+import { Link } from "react-router-dom";
+import { ArrowDownToLine } from "lucide-react";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { listOfflineTitles } from "../lib/offline/offlineLibrary";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { ServerUnavailableEventDetail } from "../lib/mediaApi";
 import {
@@ -288,7 +291,21 @@ export function ServerConnectionErrorPage({
   diagnoseConnection = diagnoseServerConnection,
   testConnection,
 }: ServerConnectionErrorPageProps) {
-  const { language } = useLanguage();
+  const [hasDownloads, setHasDownloads] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void listOfflineTitles()
+      .then((titles) => {
+        if (current) {
+          setHasDownloads(titles.some((title) => title.state === "complete"));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+  const { language, t } = useLanguage();
   const copy = COPY[language];
   const [state, setState] = useState<DiagnosticState>({ status: "checking" });
   const [isRetrying, setIsRetrying] = useState(false);
@@ -477,6 +494,17 @@ export function ServerConnectionErrorPage({
                 {isRetrying ? copy.retrying : copy.retry}
               </button>
             </div>
+
+            {/* Being without the server is exactly when a download is for. */}
+            {hasDownloads ? (
+              <Link
+                to="/downloads"
+                className="inline-flex min-h-11 w-full max-w-sm items-center justify-center gap-2 rounded-lg border border-white/15 bg-white/[0.06] px-5 text-sm font-black text-white transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              >
+                <ArrowDownToLine className="h-4 w-4" aria-hidden="true" />
+                {t("downloads.watchDownloads")}
+              </Link>
+            ) : null}
 
             {/*
               The request id is the only thing that ties this failure to a line

@@ -22,8 +22,11 @@ export function useLiveTranscodingReasons(
     let isCancelled = false;
     let intervalId: number | null = null;
 
+    // A stored copy has no server session to ask about.
     const shouldFetchLiveReasons =
-      !isCustomSource && (source.mode === "Transcoding" || source.isHls);
+      !isCustomSource &&
+      source.offline !== true &&
+      (source.mode === "Transcoding" || source.isHls);
 
     if (!shouldFetchLiveReasons) {
       setLiveTranscodingReasons([]);
@@ -93,6 +96,7 @@ export function useLiveTranscodingReasons(
     source.playSessionId,
     source.mode,
     source.isHls,
+    source.offline,
     isCustomSource,
   ]);
 

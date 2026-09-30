@@ -56,6 +56,12 @@ export interface AttachSourceOptions {
    * affected by the native-HLS refusal, so only this shape is diverted.
    */
   hdrOnlyPackage?: boolean;
+  /**
+   * Play through hls.js whatever the engine could do natively. A downloaded
+   * title needs this: its bytes come from the service worker's cache, and
+   * Apple's native HLS fetches media outside the service worker entirely.
+   */
+  forceMediaSource?: boolean;
 }
 
 /**
@@ -380,7 +386,15 @@ export function attachSourceToVideo(
     hdrOnlyPackage: options.hdrOnlyPackage === true,
   });
 
-  if (isHls && !managedHdrFallback && shouldUseNativeHls(videoElement)) {
+  const forceMediaSource =
+    options.forceMediaSource === true && Hls.isSupported();
+
+  if (
+    isHls &&
+    !managedHdrFallback &&
+    !forceMediaSource &&
+    shouldUseNativeHls(videoElement)
+  ) {
     videoElement.src = playbackUrl;
     return {
       usingHlsJs: false,

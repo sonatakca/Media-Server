@@ -95,6 +95,7 @@ import {
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createSegmentService } from "./segments/segmentService";
+import { createDownloadRoutes } from "./downloads/downloadRoutes";
 import { createCollectionRepository } from "./collections/collectionRepository";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
 import { createUserRoutes } from "./users/userRoutes";
@@ -1275,6 +1276,7 @@ export async function createNativeRuntime({
       ...(ffmpegPath ? { ffmpegPath } : {}),
       renditions,
     }),
+    ...createDownloadRoutes({ catalogue, users, renditions, mediaRoot }),
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createBookRoutes({ catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),

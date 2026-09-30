@@ -348,4 +348,6 @@ export interface PlaybackSourceCandidate {
   priority: number;
   /** Explicit handoff position for a multi-step source replacement. */
   requestedStartTimeMs?: number;
+  /** Played from a copy stored on this device, with no server involved. */
+  offline?: boolean;
 }

@@ -715,12 +715,14 @@ export function SeriesLibraryDetails({
                     variant="landscape"
                     index={index}
                     animateIn
+                    showDownload
                   />
                 ) : (
                   <MobileMediaCard
                     item={episode}
                     to={getRouteForItem(episode)}
                     variant="landscape"
+                    showDownload
                   />
                 )}
               </div>

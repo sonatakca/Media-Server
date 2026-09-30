@@ -7,6 +7,18 @@ import {
 import { redactPlaybackUrl } from "../lib/mediaApi";
 import type { PlaybackSourceCandidate } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
+import {
+  getOfflineTitle,
+  offlinePlaybackSource,
+} from "../lib/offline/offlineLibrary";
+
+/** A complete stored copy of the title, as a playable source, if there is one. */
+async function storedCopy(
+  itemId: string,
+): Promise<PlaybackSourceCandidate | null> {
+  const stored = await getOfflineTitle(itemId).catch(() => null);
+  return stored?.state === "complete" ? offlinePlaybackSource(stored) : null;
+}
 
 export interface PlaybackTechnicalDetails {
   message: string;
@@ -93,7 +105,14 @@ export function getVideoErrorDetails(
   return JSON.stringify(payload, null, 2);
 }
 
-export function usePlaybackSource(itemId?: string) {
+export function usePlaybackSource(
+  itemId?: string,
+  options: {
+    /** Play only what is stored on this device; never ask the server. */
+    offlineOnly?: boolean;
+  } = {},
+) {
+  const { offlineOnly = false } = options;
   const { t } = useLanguage();
   const [state, setState] = useState<PlaybackSourceState>(initialState);
   const [sourceIndex, setSourceIndex] = useState(0);
@@ -115,6 +134,23 @@ export function usePlaybackSource(itemId?: string) {
 
       setState(initialState);
       setSourceIndex(0);
+
+      if (offlineOnly) {
+        const stored = await storedCopy(itemId);
+        setState({
+          ...initialState,
+          isLoading: false,
+          ...(stored
+            ? { activeSource: stored, candidates: [stored] }
+            : {
+                error: {
+                  message: t("player.notDownloaded"),
+                  details: t("player.notDownloadedDetails"),
+                },
+              }),
+        });
+        return;
+      }
 
       try {
         const preloadedPlayback = options?.force
@@ -145,6 +181,23 @@ export function usePlaybackSource(itemId?: string) {
           return;
         }
 
+        /*
+         * No server, or no answer from it: a copy kept on this device still
+         * plays. Taken only when the server could not be asked at all — a
+         * title the server refused to play is not rescued by an old copy.
+         */
+        const stored = await storedCopy(itemId);
+        if (stored) {
+          setState({
+            isLoading: false,
+            activeSource: stored,
+            candidates: [stored],
+            notice: t("player.playingDownloadedCopy"),
+            error: null,
+          });
+          return;
+        }
+
         setState({
           isLoading: false,
           activeSource: null,
@@ -157,7 +210,7 @@ export function usePlaybackSource(itemId?: string) {
         });
       }
     },
-    [itemId, t],
+    [itemId, offlineOnly, t],
   );
 
   useEffect(() => {

@@ -5,6 +5,8 @@ import { Link } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import type { MediaItem } from "../../lib/types";
 import { FavouriteButton } from "../FavouriteButton";
+import { DownloadButton } from "../offline/DownloadButton";
+import { isOfflineSupported } from "../../lib/offline/offlineLibrary";
 import { Tooltip } from "../ui/Tooltip";
 
 /**
@@ -190,6 +192,16 @@ export function HeroActions({
           className={`${ROUND} text-white ${FOCUS}`}
         />
       </Surfaced>
+      {/* On a film's own page only: the home hero is for choosing, and a
+          series is downloaded an episode at a time. */}
+      {onShowDetails && item.Type === "Movie" && isOfflineSupported() ? (
+        <Surfaced fade={fade} surface={SMOKE}>
+          <DownloadButton
+            item={item}
+            className={`${ROUND} text-white ${FOCUS}`}
+          />
+        </Surfaced>
+      ) : null}
       {hasOverview ? (
         <Surfaced fade={fade} surface={isOverviewOpen ? LIT : SMOKE}>
           <Tooltip content={overviewLabel} placement="top">

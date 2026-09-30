@@ -16,6 +16,7 @@ import { usePlaybackSource } from "../../hooks/usePlaybackSource";
 import { usePartyWatch } from "../../features/partyWatch/usePartyWatch";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getItem } from "../../lib/mediaApi";
+import { loadPlayerItem } from "../../lib/offline/offlineLibrary";
 import type { MediaItem } from "../../lib/types";
 import {
   getMediaOwnerRouteFromNavigationState,
@@ -49,11 +50,13 @@ export function DesktopPlayerPage() {
   const [isVideoTimelinePreparing, setIsVideoTimelinePreparing] =
     useState(true);
 
-  const playback = usePlaybackSource(itemId);
+  /** A downloaded copy, played with no server involved. */
+  const offlineOnly = location.pathname.startsWith("/downloads/watch/");
+  const playback = usePlaybackSource(itemId, { offlineOnly });
   // Held by the page, not the player: the player unmounts while the next
   // title loads, and the party must not notice.
-  const party = usePartyWatch(itemId ?? "");
-  const playbackQueue = usePlaybackQueue(item);
+  const party = usePartyWatch(offlineOnly ? "" : (itemId ?? ""));
+  const playbackQueue = usePlaybackQueue(offlineOnly ? null : item);
 
   useEffect(() => {
     let isMounted = true;
@@ -69,7 +72,7 @@ export function DesktopPlayerPage() {
       setItem(preloadedItem);
 
       try {
-        const itemDetails = await getItem(itemId);
+        const itemDetails = await loadPlayerItem(itemId, offlineOnly, getItem);
 
         console.info("[Seyirlik Item] Full item details", itemDetails);
         console.info("[Seyirlik Item] Chapters", itemDetails.Chapters);
@@ -94,7 +97,7 @@ export function DesktopPlayerPage() {
     return () => {
       isMounted = false;
     };
-  }, [itemId, t]);
+  }, [itemId, offlineOnly, t]);
 
   useEffect(() => {
     setIsVideoTimelinePreparing(true);
@@ -151,9 +154,11 @@ export function DesktopPlayerPage() {
   const requestedMediaOwnerRoute = getMediaOwnerRouteFromNavigationState(
     location.state,
   );
-  const mediaOwnerRoute = item
-    ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
-    : "/home";
+  const mediaOwnerRoute = offlineOnly
+    ? "/downloads"
+    : item
+      ? (requestedMediaOwnerRoute ?? getMediaOwnerRouteForItem(item))
+      : "/home";
 
   const isPreparingPlayback =
     !item ||

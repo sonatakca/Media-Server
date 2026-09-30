@@ -43,7 +43,9 @@ describe("AnimatedWidth", () => {
 
   it("sizes the frame to the measured text", () => {
     const { container } = render(
-      <AnimatedWidth value="Continue Watching">Continue Watching</AnimatedWidth>,
+      <AnimatedWidth value="Continue Watching">
+        Continue Watching
+      </AnimatedWidth>,
     );
     expect(frame(container).style.width).toBe("104px");
   });
@@ -51,7 +53,9 @@ describe("AnimatedWidth", () => {
   it("re-measures when the text changes size without its value changing", () => {
     // The web font swaps in over the fallback: same words, wider glyphs.
     const { container } = render(
-      <AnimatedWidth value="İzlemeye Devam Et">İzlemeye Devam Et</AnimatedWidth>,
+      <AnimatedWidth value="İzlemeye Devam Et">
+        İzlemeye Devam Et
+      </AnimatedWidth>,
     );
     expect(frame(container).style.width).toBe("104px");
 
@@ -63,7 +67,9 @@ describe("AnimatedWidth", () => {
   });
 
   it("stops observing once unmounted", () => {
-    const { unmount } = render(<AnimatedWidth value="Films">Films</AnimatedWidth>);
+    const { unmount } = render(
+      <AnimatedWidth value="Films">Films</AnimatedWidth>,
+    );
     expect(observers).toHaveLength(1);
     unmount();
     expect(observers).toHaveLength(0);
