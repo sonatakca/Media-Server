@@ -168,6 +168,7 @@ import { useDismissOnOutsidePointer } from "./useDismissOnOutsidePointer";
 import { useLiveTranscodingReasons } from "./useLiveTranscodingReasons";
 import { useNativeTextTracksSuppressed } from "./useNativeTextTracksSuppressed";
 import { usePartyEventToast } from "./usePartyEventToast";
+import { useMediaSessionControls } from "./useMediaSessionControls";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
   adaptiveQualityRequestForMode,
@@ -1691,6 +1692,22 @@ export function CustomVideoPlayer({
     setDismissedDefaultNextEpisodeItemId(item.Id);
     revealPlayerChrome();
   }, [item.Id, revealPlayerChrome]);
+
+  useMediaSessionControls({
+    enabled: !partyWatch.isActive,
+    title,
+    item,
+    isPlaying: progress.isPlaying,
+    currentTime: progress.currentTime,
+    duration: progress.duration,
+    onTogglePlay: partyWatch.togglePlay,
+    onSeekTo: partyWatch.seekTo,
+    onSeekBy: handleSeekBy,
+    onNextTrack:
+      nextEpisode && onAutoPlayNextEpisode && !isInParty
+        ? () => onAutoPlayNextEpisode(nextEpisode)
+        : undefined,
+  });
 
   useKeyboardShortcuts({
     enabled: true,
