@@ -43,16 +43,24 @@ import { useSmartContinueItems } from "./useSmartContinueItems";
 export function TitleHero({
   item,
   onShowDetails,
+  isRevealed = true,
 }: {
   item: MediaItem;
   /** Scrolls to the title's details further down its page. */
   onShowDetails: () => void;
+  /**
+   * False while the page keeps the hero hidden behind its skeleton. Nothing
+   * fades in until then, or the fades would play unseen and the artwork
+   * would arrive at full strength the moment the skeleton goes.
+   */
+  isRevealed?: boolean;
 }) {
   const { t } = useLanguage();
   const reduceMotion = Boolean(useReducedMotion());
   const sectionRef = useRef<HTMLElement | null>(null);
   const [stage, setStage] = useState<StageSize | null>(null);
-  const [isArtworkReady, setIsArtworkReady] = useState(false);
+  const [isArtworkLoaded, setIsArtworkLoaded] = useState(false);
+  const isArtworkReady = isArtworkLoaded && isRevealed;
   const smartContinueItems = useSmartContinueItems();
   // One composition for as long as the page shows this title; the page
   // mounts a new hero for a new title.
@@ -224,7 +232,8 @@ export function TitleHero({
           isTrailerPlaying={isTrailerPlaying && isInView && isDocumentVisible}
           isTrailerMuted={isTrailerMuted}
           onTrailerEnded={endTrailer}
-          onArtworkReady={() => setIsArtworkReady(true)}
+          onArtworkReady={() => setIsArtworkLoaded(true)}
+          isRevealed={isRevealed}
         />
       ) : null}
 

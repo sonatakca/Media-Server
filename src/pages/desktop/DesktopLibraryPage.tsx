@@ -689,6 +689,7 @@ export function DesktopLibraryPage({
               <TitleHero
                 key={data.library.Id}
                 item={data.library}
+                isRevealed={isInitialDetailsReady}
                 onShowDetails={() =>
                   seriesDetailsRef.current?.scrollIntoView({
                     behavior: "smooth",

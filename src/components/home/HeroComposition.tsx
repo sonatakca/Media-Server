@@ -159,6 +159,11 @@ interface HeroCompositionProps {
   isTrailerMuted?: boolean;
   onTrailerEnded?: () => void;
   onArtworkReady?: () => void;
+  /**
+   * False while the page holds the hero hidden behind its skeleton: the
+   * artwork and logo load but wait to fade in until they can be seen.
+   */
+  isRevealed?: boolean;
 }
 
 export function HeroComposition({
@@ -175,6 +180,7 @@ export function HeroComposition({
   isTrailerMuted = true,
   onTrailerEnded,
   onArtworkReady,
+  isRevealed = true,
 }: HeroCompositionProps) {
   const { language } = useLanguage();
   const [failed, setFailed] = useState<string[]>([]);
@@ -291,7 +297,7 @@ export function HeroComposition({
           decoding="async"
           fetchPriority={isStage ? "high" : "auto"}
           className={`absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-500 ${
-            isArtworkLoaded ? "opacity-100" : "opacity-0"
+            isArtworkLoaded && isRevealed ? "opacity-100" : "opacity-0"
           } ${artwork.type === "primary" ? "blur-2xl" : ""}`}
           onLoad={() => {
             setIsArtworkLoaded(true);
@@ -344,7 +350,7 @@ export function HeroComposition({
         {logoUrl ? (
           <div
             className={`relative w-full transition-opacity duration-500 ${
-              isLogoLoaded ? "opacity-100" : "opacity-0"
+              isLogoLoaded && isRevealed ? "opacity-100" : "opacity-0"
             }`}
           >
             <div
