@@ -35,6 +35,10 @@ export interface MediaUserPolicy extends Record<string, unknown> {
   EnableMediaPlayback?: boolean;
   EnableContentDownloading?: boolean;
   EnableAllFolders?: boolean;
+  /** Oldest rating age the viewer may see; null is no limit. */
+  MaxContentAge?: number | null;
+  /** Whether a viewer with a limit may see titles no board has rated. */
+  AllowUnratedContent?: boolean;
   AuthenticationProviderId?: string;
   PasswordResetProviderId?: string;
 }

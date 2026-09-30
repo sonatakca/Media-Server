@@ -44,7 +44,7 @@ const NAMED_OPERATIONS = [
   "trickplay.scan",
   "segments.scan",
   "segments.detect",
-  "collections.sync",
+  "catalogue.enrich",
 ] as const;
 type NamedOperation = (typeof NAMED_OPERATIONS)[number];
 

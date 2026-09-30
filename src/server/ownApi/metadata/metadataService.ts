@@ -389,19 +389,38 @@ export function createMetadataService({
     },
 
     /**
-     * Records the box set of a film that is already matched, without
-     * re-applying anything else about it — the back-fill for a library matched
-     * before collections existed.
+     * Records the facts a matched title was matched without: its age rating,
+     * and a film's box set. Nothing else about it is re-applied — this is the
+     * back-fill for a library matched before either was read, and it must not
+     * redo artwork a person has chosen.
      */
-    syncCollection: async (
+    enrich: async (
       itemId: string,
-    ): Promise<"member" | "none" | "skipped"> => {
+    ): Promise<{ rated: boolean; inCollection: boolean } | null> => {
       const target = await metadata.getTarget(itemId);
       const providerId = target?.providerIds.tmdb;
-      if (!target || target.kind !== "movie" || !providerId) return "skipped";
-      const details = await tmdb.getMovie(providerId);
+      if (
+        !target ||
+        !providerId ||
+        (target.kind !== "movie" && target.kind !== "series")
+      ) {
+        return null;
+      }
+      const details =
+        target.kind === "series"
+          ? await tmdb.getSeries(providerId)
+          : await tmdb.getMovie(providerId);
+      if (details.officialRating) {
+        // Locked ratings are kept by the repository, as for every field.
+        await metadata.applyTitleMetadata(target.id, {
+          officialRating: details.officialRating,
+        });
+      }
       await syncFilmCollection(target, details);
-      return details.collection ? "member" : "none";
+      return {
+        rated: Boolean(details.officialRating),
+        inCollection: target.kind === "movie" && Boolean(details.collection),
+      };
     },
 
     /** Processes a batch of never-identified items. */

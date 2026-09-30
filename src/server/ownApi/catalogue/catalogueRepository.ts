@@ -1,4 +1,5 @@
 import { mediaAvailableSql } from "./mediaAvailability";
+import { contentRatingAllowedSql } from "./contentRating";
 import type { DatabasePool } from "../database/databasePool";
 import type { SearchCandidate } from "./searchRanking";
 
@@ -224,6 +225,7 @@ export const LIBRARY_VISIBILITY_PREDICATE = `
     JOIN native_users viewer ON viewer.id = $1
     WHERE visible_library.id = item.library_id
       AND viewer.is_disabled = false
+      AND ${contentRatingAllowedSql()}
       AND (
         viewer.allow_all_libraries
         OR EXISTS (
@@ -317,6 +319,10 @@ export interface CatalogueRepository {
     libraryId?: string,
   ): Promise<Array<{ name: string; itemCount: number }>>;
   canUserAccessItem(userId: string, itemId: string): Promise<boolean>;
+  /** Films and series the provider has matched, for a pass that asks it more. */
+  listEnrichableTitles(): Promise<
+    Array<{ itemId: string; kind: "movie" | "series"; title: string }>
+  >;
 }
 
 /**
@@ -583,6 +589,26 @@ export function createCatalogueRepository(
         [userId, itemId],
       );
       return rows.length > 0;
+    },
+
+    listEnrichableTitles: async () => {
+      const rows = await query<{
+        id: string;
+        kind: "movie" | "series";
+        title: string;
+      }>(
+        `SELECT id, kind, title FROM items
+         WHERE kind IN ('movie', 'series')
+           AND missing_since IS NULL
+           AND provider_ids ? 'tmdb'
+         ORDER BY kind, sort_title`,
+        [],
+      );
+      return rows.map((row) => ({
+        itemId: row.id,
+        kind: row.kind,
+        title: row.title,
+      }));
     },
 
     listItems: async ({

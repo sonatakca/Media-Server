@@ -85,6 +85,7 @@ function fakeCatalogue(): CatalogueRepository {
     listLibraries: async () => [],
     getLibrary: async () => null,
     listProcessableTitles: async () => [],
+    listEnrichableTitles: async () => [],
     listStreamsForFiles: async () => new Map(),
     getItemKind: async () => null,
     getItem: async (_userId, itemId) =>

@@ -49,6 +49,11 @@ function toUserDto(
     isDisabled: user.isDisabled,
     createdAt: user.createdAt.toISOString(),
     lastLoginAt: user.lastSuccessfulLoginAt?.toISOString() ?? null,
+    maxContentAge: user.maxContentAge,
+    allowUnratedContent: user.allowUnratedContent,
+    allowPlayback: user.allowPlayback,
+    allowDownloads: user.allowDownloads,
+    allowAllLibraries: user.allowAllLibraries,
     ...(libraryIds === undefined ? {} : { libraryIds }),
   };
 }
@@ -192,7 +197,33 @@ export function createUserRoutes({
           "allowDownloads",
           "allowAllLibraries",
           "libraryIds",
+          "maxContentAge",
+          "allowUnratedContent",
         ]);
+
+        /*
+         * Three states, so absent and null are different things: absent leaves
+         * the limit as it is, null removes it.
+         */
+        let maxContentAge: number | null | undefined;
+        if ("maxContentAge" in body) {
+          const value = body.maxContentAge;
+          if (value === null) maxContentAge = null;
+          else if (
+            typeof value === "number" &&
+            Number.isInteger(value) &&
+            value >= 0 &&
+            value <= 21
+          ) {
+            maxContentAge = value;
+          } else {
+            throw validationError("maxContentAge is invalid.");
+          }
+        }
+        const allowUnratedContent = optionalBodyBoolean(
+          body,
+          "allowUnratedContent",
+        );
 
         const isAdministrator = optionalBodyBoolean(body, "isAdministrator");
         const isDisabled = optionalBodyBoolean(body, "isDisabled");
@@ -235,6 +266,8 @@ export function createUserRoutes({
                   "allowDownloads",
                 ) as boolean,
               }),
+          ...(maxContentAge === undefined ? {} : { maxContentAge }),
+          ...(allowUnratedContent === undefined ? {} : { allowUnratedContent }),
           ...(optionalBodyBoolean(body, "allowAllLibraries") === undefined
             ? {}
             : {

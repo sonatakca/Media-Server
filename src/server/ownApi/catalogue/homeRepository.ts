@@ -1,3 +1,4 @@
+import { contentRatingAllowedSql } from "./contentRating";
 import { mediaAvailableSql } from "./mediaAvailability";
 import type { DatabasePool } from "../database/databasePool";
 
@@ -31,6 +32,7 @@ const VISIBLE_TO_VIEWER = `
     SELECT 1 FROM native_users viewer
     WHERE viewer.id = $1
       AND viewer.is_disabled = false
+      AND ${contentRatingAllowedSql()}
       AND (
         viewer.allow_all_libraries
         OR EXISTS (

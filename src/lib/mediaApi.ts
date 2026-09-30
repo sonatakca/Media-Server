@@ -922,6 +922,11 @@ export async function getUsers(): Promise<MediaUser[]> {
       isAdministrator: boolean;
       isDisabled: boolean;
       lastLoginAt: string | null;
+      maxContentAge?: number | null;
+      allowUnratedContent?: boolean;
+      allowPlayback?: boolean;
+      allowDownloads?: boolean;
+      allowAllLibraries?: boolean;
     }>
   >("/admin/users");
 
@@ -933,6 +938,20 @@ export async function getUsers(): Promise<MediaUser[]> {
     Policy: {
       IsAdministrator: user.isAdministrator,
       IsDisabled: user.isDisabled,
+      // Read back so an edit starts from what is stored. Without these the
+      // form fell back to "on" for all three and saving any user granted
+      // downloads nobody had chosen.
+      ...(user.allowPlayback === undefined
+        ? {}
+        : { EnableMediaPlayback: user.allowPlayback }),
+      ...(user.allowDownloads === undefined
+        ? {}
+        : { EnableContentDownloading: user.allowDownloads }),
+      ...(user.allowAllLibraries === undefined
+        ? {}
+        : { EnableAllFolders: user.allowAllLibraries }),
+      MaxContentAge: user.maxContentAge ?? null,
+      AllowUnratedContent: user.allowUnratedContent ?? false,
     },
   }));
 }
@@ -990,6 +1009,12 @@ export async function updateUserPolicy(
         ...(policy.EnableAllFolders === undefined
           ? {}
           : { allowAllLibraries: policy.EnableAllFolders }),
+        ...(policy.MaxContentAge === undefined
+          ? {}
+          : { maxContentAge: policy.MaxContentAge }),
+        ...(policy.AllowUnratedContent === undefined
+          ? {}
+          : { allowUnratedContent: policy.AllowUnratedContent }),
       },
     },
   );
@@ -1026,7 +1051,7 @@ export type MaintenanceAction =
   | "scan-books"
   | "trickplay"
   | "segments"
-  | "collections"
+  | "enrich"
   | "rename"
   | "organize";
 

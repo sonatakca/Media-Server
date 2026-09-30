@@ -10,6 +10,8 @@ import type { MatchCandidate } from "./matcher";
  */
 
 export const TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p";
+/** Whose age rating is recorded, in order of preference. */
+const CERTIFICATION_COUNTRIES = ["TR", "US", "GB", "DE"];
 const TMDB_API_BASE_URL = "https://api.themoviedb.org/3";
 const REQUEST_TIMEOUT_MS = 10_000;
 
@@ -503,7 +505,67 @@ export function createTmdbClient({
         ? { seasons: readSeasons(details.seasons) }
         : {}),
       ...(kind === "movie" ? readCollectionRef(details) : {}),
+      ...(readCertification(kind, details)
+        ? { officialRating: readCertification(kind, details) as string }
+        : {}),
     };
+  }
+
+  /**
+   * The age rating to record, from the country list below.
+   *
+   * Turkish first because this is a Turkish household's library and its
+   * boards rate differently; then the two English-language boards whose
+   * ratings are everywhere; then whatever else TMDB has.
+   */
+  function readCertification(
+    kind: "movie" | "tv",
+    details: Record<string, unknown>,
+  ): string | undefined {
+    const byCountry = new Map<string, string>();
+    if (kind === "movie") {
+      const results = (
+        details.release_dates as { results?: unknown } | undefined
+      )?.results;
+      if (Array.isArray(results)) {
+        for (const entry of results as Array<Record<string, unknown>>) {
+          const country = entry.iso_3166_1;
+          const dates = entry.release_dates;
+          if (typeof country !== "string" || !Array.isArray(dates)) continue;
+          // Theatrical first, then any release that carries a rating at all.
+          const ordered = [...(dates as Array<Record<string, unknown>>)].sort(
+            (a, b) => (a.type === 3 ? -1 : 0) - (b.type === 3 ? -1 : 0),
+          );
+          const rated = ordered.find(
+            (date) =>
+              typeof date.certification === "string" &&
+              date.certification.trim(),
+          );
+          if (rated) byCountry.set(country, String(rated.certification).trim());
+        }
+      }
+    } else {
+      const results = (
+        details.content_ratings as { results?: unknown } | undefined
+      )?.results;
+      if (Array.isArray(results)) {
+        for (const entry of results as Array<Record<string, unknown>>) {
+          if (
+            typeof entry.iso_3166_1 === "string" &&
+            typeof entry.rating === "string" &&
+            entry.rating.trim()
+          ) {
+            byCountry.set(entry.iso_3166_1, entry.rating.trim());
+          }
+        }
+      }
+    }
+    for (const country of CERTIFICATION_COUNTRIES) {
+      const rating = byCountry.get(country);
+      if (rating) return rating.slice(0, 32);
+    }
+    const [first] = byCountry.values();
+    return first?.slice(0, 32);
   }
 
   function readCollectionRef(details: Record<string, unknown>): {

@@ -47,7 +47,13 @@ interface UserDraft {
   enableAllFolders: boolean;
   enableMediaPlayback: boolean;
   enableContentDownloading: boolean;
+  /** Oldest rating age this person may see; null is no limit. */
+  maxContentAge: number | null;
+  allowUnratedContent: boolean;
 }
+
+/** The limits offered, as the ages the rating boards themselves use. */
+const CONTENT_AGE_LIMITS = [7, 10, 13, 16, 18] as const;
 
 const inputClassName =
   "mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.06] px-4 py-3 text-sm font-semibold text-white outline-none transition placeholder:text-white/26 focus:border-[var(--accent)]/50 focus:bg-white/[0.085]";
@@ -73,7 +79,10 @@ function createEmptyDraft(): UserDraft {
     enableRemoteAccess: true,
     enableAllFolders: true,
     enableMediaPlayback: true,
-    enableContentDownloading: true,
+    // Matches the server's own default; downloads are something to grant.
+    enableContentDownloading: false,
+    maxContentAge: null,
+    allowUnratedContent: false,
   };
 }
 
@@ -90,7 +99,10 @@ function createDraftFromUser(user: MediaUser): UserDraft {
     enableRemoteAccess: policy.EnableRemoteAccess !== false,
     enableAllFolders: policy.EnableAllFolders !== false,
     enableMediaPlayback: policy.EnableMediaPlayback !== false,
-    enableContentDownloading: policy.EnableContentDownloading !== false,
+    enableContentDownloading: policy.EnableContentDownloading === true,
+    maxContentAge:
+      typeof policy.MaxContentAge === "number" ? policy.MaxContentAge : null,
+    allowUnratedContent: policy.AllowUnratedContent === true,
   };
 }
 
@@ -107,6 +119,8 @@ function applyDraftToPolicy(
     EnableAllFolders: draft.enableAllFolders,
     EnableMediaPlayback: draft.enableMediaPlayback,
     EnableContentDownloading: draft.enableContentDownloading,
+    MaxContentAge: draft.maxContentAge,
+    AllowUnratedContent: draft.allowUnratedContent,
   };
 }
 
@@ -691,6 +705,58 @@ export function UserManagementPage() {
                     setDraftValue("enableContentDownloading", checked)
                   }
                 />
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.16em] text-white/42">
+                {t("userManagement.parentalControls")}
+              </p>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <label className="block rounded-2xl border border-white/10 bg-white/[0.045] p-4">
+                  <span className="block text-sm font-black text-white">
+                    {t("userManagement.ageLimit")}
+                  </span>
+                  <span className="mt-1 block text-xs font-medium leading-5 text-white/45">
+                    {t("userManagement.ageLimitDescription")}
+                  </span>
+                  <select
+                    value={
+                      draft.maxContentAge === null
+                        ? ""
+                        : String(draft.maxContentAge)
+                    }
+                    disabled={isEditingCurrentUser}
+                    onChange={(event) =>
+                      setDraftValue(
+                        "maxContentAge",
+                        event.target.value === ""
+                          ? null
+                          : Number(event.target.value),
+                      )
+                    }
+                    className={`${inputClassName} disabled:cursor-not-allowed disabled:opacity-45`}
+                  >
+                    <option value="">{t("userManagement.ageLimitNone")}</option>
+                    {CONTENT_AGE_LIMITS.map((age) => (
+                      <option key={age} value={age}>
+                        {formatTemplate(t("userManagement.ageLimitValue"), {
+                          age,
+                        })}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {draft.maxContentAge !== null ? (
+                  <ToggleField
+                    checked={draft.allowUnratedContent}
+                    label={t("userManagement.allowUnrated")}
+                    description={t("userManagement.allowUnratedDescription")}
+                    onChange={(checked) =>
+                      setDraftValue("allowUnratedContent", checked)
+                    }
+                  />
+                ) : null}
               </div>
             </div>
 

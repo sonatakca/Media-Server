@@ -1297,6 +1297,15 @@ export const tr = {
   "userManagement.mediaPlaybackDescription":
     "Medya kütüphanelerinden oynatmaya izin ver.",
   "userManagement.downloads": "Medya indirme",
+  "userManagement.parentalControls": "Ebeveyn denetimi",
+  "userManagement.ageLimit": "Yaş sınırı",
+  "userManagement.ageLimitDescription":
+    "Bu yaşın üzerindeki her film ve diziyi her yerde gizler: kütüphane, ana sayfa, arama ve oynatma.",
+  "userManagement.ageLimitNone": "Sınır yok",
+  "userManagement.ageLimitValue": "{age}+ yaşa kadar",
+  "userManagement.allowUnrated": "Yaş sınırı olmayanları göster",
+  "userManagement.allowUnratedDescription":
+    "Hiçbir kurulun derecelendirmediği yapımlar bu açık olmadıkça gizlenir. Önce Kütüphane Bakımı’ndan yaş sınırlarını getirin.",
   "userManagement.downloadsDescription":
     "Bu kullanıcının orijinal medya dosyalarını indirmesine izin ver.",
   "userManagement.saveChanges": "Değişiklikleri kaydet",
@@ -1587,10 +1596,13 @@ export const tr = {
   "tasks.metadataScan": "Veri araması",
   "tasks.metadataRefresh": "Veri yenileme",
   "tasks.trickplayGenerate": "Trickplay",
-  "tasks.collectionsSync": "Koleksiyonlar",
+  "tasks.catalogueEnrich": "Yaş sınırları ve koleksiyonlar",
+  "tasks.titlesChecked": "Kontrol edilen yapımlar",
+  "tasks.rated": "Yaş sınırı bulunanlar",
   "tasks.inCollections": "Koleksiyondaki filmler",
-  "maintenance.operation.collections.sync": "Koleksiyonları bul",
-  "maintenance.findCollections": "Koleksiyonları bul",
+  "maintenance.operation.catalogue.enrich":
+    "Yaş sınırlarını ve koleksiyonları getir",
+  "maintenance.enrichCatalogue": "Yaş sınırlarını ve koleksiyonları getir",
   "tasks.segmentsScan": "Jenerik taraması",
   "tasks.segmentsDetect": "Açılış ve kapanış jenerikleri",
   "tasks.segmentsQueued": "Sıraya alınan sezonlar",

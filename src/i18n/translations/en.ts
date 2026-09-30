@@ -1300,6 +1300,15 @@ export const en = {
   "userManagement.mediaPlaybackDescription":
     "Allow playback from media libraries.",
   "userManagement.downloads": "Media downloads",
+  "userManagement.parentalControls": "Parental controls",
+  "userManagement.ageLimit": "Age limit",
+  "userManagement.ageLimitDescription":
+    "Hides every film and series rated above this age, everywhere: library, home, search and playback.",
+  "userManagement.ageLimitNone": "No limit",
+  "userManagement.ageLimitValue": "Up to {age}+",
+  "userManagement.allowUnrated": "Show unrated titles",
+  "userManagement.allowUnratedDescription":
+    "Titles no rating board has rated are hidden unless this is on. Fetch ratings from Library Maintenance first.",
   "userManagement.downloadsDescription":
     "Allow this user to download original media files.",
   "userManagement.saveChanges": "Save changes",
@@ -1592,10 +1601,12 @@ export const en = {
   "tasks.metadataScan": "Metadata lookup",
   "tasks.metadataRefresh": "Metadata refresh",
   "tasks.trickplayGenerate": "Trickplay",
-  "tasks.collectionsSync": "Collections",
+  "tasks.catalogueEnrich": "Ratings and collections",
+  "tasks.titlesChecked": "Titles checked",
+  "tasks.rated": "Titles rated",
   "tasks.inCollections": "Films in a collection",
-  "maintenance.operation.collections.sync": "Find collections",
-  "maintenance.findCollections": "Find collections",
+  "maintenance.operation.catalogue.enrich": "Fetch ratings and collections",
+  "maintenance.enrichCatalogue": "Fetch ratings and collections",
   "tasks.segmentsScan": "Intro and credits sweep",
   "tasks.segmentsDetect": "Intros and credits",
   "tasks.segmentsQueued": "Seasons queued",

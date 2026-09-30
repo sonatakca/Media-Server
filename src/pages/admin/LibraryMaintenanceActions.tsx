@@ -58,8 +58,8 @@ const MAINTENANCE_BUTTONS: ReadonlyArray<{
     Icon: SkipForward,
   },
   {
-    action: "collections",
-    labelKey: "maintenance.findCollections",
+    action: "enrich",
+    labelKey: "maintenance.enrichCatalogue",
     Icon: Library,
   },
   {

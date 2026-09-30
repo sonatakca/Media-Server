@@ -493,7 +493,10 @@ describe("film collections", () => {
       collections: collections.repository,
     });
 
-    expect(await service.syncCollection("item-1")).toBe("none");
+    expect(await service.enrich("item-1")).toEqual({
+      rated: false,
+      inCollection: false,
+    });
     expect(collections.calls).toEqual(["detach item-1"]);
   });
 

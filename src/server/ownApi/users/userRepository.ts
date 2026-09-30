@@ -11,6 +11,11 @@ interface UserRow {
   created_at: Date;
   updated_at: Date;
   last_successful_login_at: Date | null;
+  max_content_age: number | null;
+  allow_unrated_content: boolean;
+  allow_playback: boolean;
+  allow_downloads: boolean;
+  allow_all_libraries: boolean;
 }
 
 export interface NativeUserRecord {
@@ -24,6 +29,13 @@ export interface NativeUserRecord {
   createdAt: Date;
   updatedAt: Date;
   lastSuccessfulLoginAt: Date | null;
+  /** Oldest rating age this viewer may see; null is no limit. */
+  maxContentAge: number | null;
+  /** Whether a viewer with a limit may see titles no board has rated. */
+  allowUnratedContent: boolean;
+  allowPlayback: boolean;
+  allowDownloads: boolean;
+  allowAllLibraries: boolean;
 }
 
 export interface CreateNativeUserInput {
@@ -46,6 +58,11 @@ function mapUser(row: UserRow): NativeUserRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     lastSuccessfulLoginAt: row.last_successful_login_at,
+    maxContentAge: row.max_content_age ?? null,
+    allowUnratedContent: row.allow_unrated_content ?? false,
+    allowPlayback: row.allow_playback ?? true,
+    allowDownloads: row.allow_downloads ?? false,
+    allowAllLibraries: row.allow_all_libraries ?? true,
   };
 }
 
@@ -56,6 +73,9 @@ export interface UpdateNativeUserInput {
   allowPlayback?: boolean;
   allowDownloads?: boolean;
   allowAllLibraries?: boolean;
+  /** A number sets the limit, null removes it, absent leaves it alone. */
+  maxContentAge?: number | null;
+  allowUnratedContent?: boolean;
 }
 
 export interface UserRepository {
@@ -151,6 +171,9 @@ export function createUserRepository(
            allow_playback = COALESCE($5, allow_playback),
            allow_downloads = COALESCE($6, allow_downloads),
            allow_all_libraries = COALESCE($7, allow_all_libraries),
+           max_content_age = CASE WHEN $8::boolean THEN $9::integer
+                                  ELSE max_content_age END,
+           allow_unrated_content = COALESCE($10, allow_unrated_content),
            updated_at = now()
          WHERE id = $1
          RETURNING *`,
@@ -162,6 +185,9 @@ export function createUserRepository(
           input.allowPlayback ?? null,
           input.allowDownloads ?? null,
           input.allowAllLibraries ?? null,
+          input.maxContentAge !== undefined,
+          input.maxContentAge ?? null,
+          input.allowUnratedContent ?? null,
         ],
       );
       return result.rows[0] ? mapUser(result.rows[0]) : null;

@@ -278,6 +278,79 @@ describe("IMDb identity", () => {
     });
   });
 
+  it("records a film's Turkish age rating before its American one", async () => {
+    const { fetchImpl } = captureFetch({
+      id: 550,
+      title: "Fight Club",
+      release_dates: {
+        results: [
+          {
+            iso_3166_1: "US",
+            release_dates: [{ certification: "R", type: 3 }],
+          },
+          {
+            iso_3166_1: "TR",
+            release_dates: [
+              { certification: "", type: 1 },
+              { certification: "18+", type: 3 },
+            ],
+          },
+        ],
+      },
+    });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getMovie("550");
+    expect(details.officialRating).toBe("18+");
+  });
+
+  it("falls back to the American rating, and reads a series' content rating", async () => {
+    const film = captureFetch({
+      id: 603,
+      title: "The Matrix",
+      release_dates: {
+        results: [
+          {
+            iso_3166_1: "US",
+            release_dates: [{ certification: "R", type: 3 }],
+          },
+        ],
+      },
+    });
+    expect(
+      (
+        await createTmdbClient({
+          apiKey: V3_KEY,
+          fetchImpl: film.fetchImpl,
+        }).getMovie("603")
+      ).officialRating,
+    ).toBe("R");
+
+    const series = captureFetch({
+      id: 1398,
+      name: "The Sopranos",
+      content_ratings: { results: [{ iso_3166_1: "US", rating: "TV-MA" }] },
+    });
+    expect(
+      (
+        await createTmdbClient({
+          apiKey: V3_KEY,
+          fetchImpl: series.fetchImpl,
+        }).getSeries("1398")
+      ).officialRating,
+    ).toBe("TV-MA");
+  });
+
+  it("records no rating when the provider has none", async () => {
+    const { fetchImpl } = captureFetch({ id: 1, title: "Unrated" });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getMovie("1");
+    expect(details.officialRating).toBeUndefined();
+  });
+
   it("describes a collection from its own record", async () => {
     const { calls, fetchImpl } = captureFetch({
       id: 2344,

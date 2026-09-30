@@ -54,7 +54,7 @@ export const JOB_TYPES = {
   mediaProcess: "media.process",
   segmentsScan: "segments.scan",
   segmentsDetect: "segments.detect",
-  collectionsSync: "collections.sync",
+  catalogueEnrich: "catalogue.enrich",
 } as const;
 
 /**
@@ -140,7 +140,10 @@ export interface JobHandlerOptions {
    * playable, probed and named. Absent only in tests that exercise no
    * maintenance job.
    */
-  catalogue?: Pick<CatalogueRepository, "listProcessableTitles">;
+  catalogue?: Pick<
+    CatalogueRepository,
+    "listProcessableTitles" | "listEnrichableTitles"
+  >;
   /** Writes NFO metadata as the final, observable stage of a library scan. */
   nfoService?: NfoService;
   /**
@@ -895,41 +898,42 @@ export function createJobHandlers({
   };
 
   /**
-   * Records every matched film's box set: the back-fill for a library that
-   * was matched before collections existed. One provider request per film,
-   * which is why it is a button and not part of every scan.
+   * Records every matched title's age rating and every matched film's box
+   * set: the back-fill for a library matched before either was read. One
+   * provider request per title, which is why it is a button and not part of
+   * every scan.
    */
-  const collectionsSync: JobHandler = async ({
+  const catalogueEnrich: JobHandler = async ({
     reportProgress,
     isCancelled,
   }) => {
     if (!metadataService || !catalogue) {
-      throw new PermanentJobError("Collections are not available.");
+      throw new PermanentJobError("Metadata is not available.");
     }
-    const films = (
-      await catalogue.listProcessableTitles({ kinds: ["movie"] })
-    ).filter((film) => film.itemMissingSince === null);
+    const titles = await catalogue.listEnrichableTitles();
+    let rated = 0;
     let inCollections = 0;
-    for (const [index, film] of films.entries()) {
+    for (const [index, title] of titles.entries()) {
       if (await isCancelled()) return { cancelled: true };
-      const outcome = await metadataService.syncCollection(film.itemId);
-      if (outcome === "member") inCollections += 1;
+      const outcome = await metadataService.enrich(title.itemId);
+      if (outcome?.rated) rated += 1;
+      if (outcome?.inCollection) inCollections += 1;
       await reportProgress(
-        (index + 1) / Math.max(1, films.length),
-        "Finding collections",
+        (index + 1) / Math.max(1, titles.length),
+        "Fetching ratings and collections",
         {
           phase: "identifying",
           measure: {
             kind: "exact",
             completed: index + 1,
-            total: films.length,
+            total: titles.length,
             unit: "titles",
           },
-          current: subjectFromTitle(film.title),
+          current: subjectFromTitle(title.title),
         },
       );
     }
-    return { filmsChecked: films.length, inCollections };
+    return { titlesChecked: titles.length, rated, inCollections };
   };
 
   /** Listens to one season and records its intros and credits. */
@@ -1724,7 +1728,7 @@ export function createJobHandlers({
     [JOB_TYPES.trickplayScan]: trickplayScan,
     [JOB_TYPES.segmentsScan]: segmentsScan,
     [JOB_TYPES.segmentsDetect]: segmentsDetect,
-    [JOB_TYPES.collectionsSync]: collectionsSync,
+    [JOB_TYPES.catalogueEnrich]: catalogueEnrich,
     [JOB_TYPES.mediaProbe]: mediaProbe,
     [JOB_TYPES.metadataScan]: metadataScan,
     [JOB_TYPES.metadataRefresh]: metadataRefresh,
