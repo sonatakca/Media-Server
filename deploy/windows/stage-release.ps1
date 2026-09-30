@@ -176,6 +176,31 @@ $manifest = [ordered]@{
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'RELEASE.json') -Encoding UTF8
 
+<#
+A release that exists only in the write cache is not staged. 2026.09.29-10 was
+activated a minute after this script finished and the host crashed before
+Windows wrote it out: nine files came back zero-filled and the services went
+down with them. So the volume is flushed before staging reports success, and
+activation can follow as soon as it likes.
+
+Last, so RELEASE.json is in the flush too.
+#>
+$drive = [IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $target).ProviderPath)
+if ($drive -notmatch '^([A-Za-z]):\\$') { throw "cannot flush $target; it is not on a lettered volume" }
+Storage\Write-VolumeCache -DriveLetter $Matches[1]
+Write-Output ("FLUSHED=" + $Matches[1])
+
+# Reads come from the cache just flushed, so this cannot see a write that never
+# reached the disk — activation's own check is the one that catches a later
+# crash. What it does catch is damage carried in from the source checkout,
+# which after a crash is as likely to have been hit as the release.
+. (Join-Path $PSScriptRoot 'release-integrity.ps1')
+$integrity = Find-ZeroFilledFiles $target
+if ($integrity.Damaged.Count -gt 0) {
+  throw ("staged release has $($integrity.Damaged.Count) zero-filled file(s); do not activate it:`n" + ($integrity.Damaged -join "`n"))
+}
+Write-Output ("VERIFIED_FILES=" + $integrity.Checked)
+
 Write-Output "STAGED=$Version"
 Write-Output "PATH=$target"
 Write-Output "COMMIT=$commit"

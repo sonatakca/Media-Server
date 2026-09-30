@@ -52,6 +52,18 @@ if (-not (Test-Path -LiteralPath (Join-Path $target 'RELEASE.json'))) {
   throw "no staged release at $target (stage it first)"
 }
 
+# Staging checked this release, but a crash since then can zero-fill files it
+# had not yet written out, and staging and activation are not always one
+# session. Checked again here, before anything else: step 4 runs this release's
+# own migrator, and a damaged migration file must not get as far as the
+# database, let alone the junction.
+. (Join-Path $PSScriptRoot 'release-integrity.ps1')
+$integrity = Find-ZeroFilledFiles $target
+if ($integrity.Damaged.Count -gt 0) {
+  throw ("release $Version has $($integrity.Damaged.Count) zero-filled file(s); refusing to activate it, nothing has been switched:`n" + ($integrity.Damaged -join "`n"))
+}
+Write-Output ("VERIFIED_FILES=" + $integrity.Checked)
+
 function Get-SvcState([string] $n) {
   $s = Get-CimInstance Win32_Service -Filter "Name='$n'" -ErrorAction SilentlyContinue
   if ($s) { $s.State } else { $null }
