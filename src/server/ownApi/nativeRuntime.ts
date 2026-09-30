@@ -95,6 +95,7 @@ import {
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
 import { createSegmentService } from "./segments/segmentService";
+import { createCollectionRepository } from "./collections/collectionRepository";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
 import { createUserRoutes } from "./users/userRoutes";
 import { createSyncplayRepository } from "./syncplay/syncplayRepository";
@@ -373,6 +374,7 @@ export async function createNativeRuntime({
         images,
         imageStorage,
         tmdb,
+        collections: createCollectionRepository(pool),
       })
     : undefined;
 

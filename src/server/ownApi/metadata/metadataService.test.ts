@@ -419,3 +419,101 @@ describe("metadata identification", () => {
     expect(metadata.updates[0]?.update.metadataState).toBe("matched");
   });
 });
+
+describe("film collections", () => {
+  function fakeCollections() {
+    const calls: string[] = [];
+    return {
+      calls,
+      repository: {
+        attach: async (itemId: string, collection: { providerId: string }) => {
+          calls.push(`attach ${itemId} ${collection.providerId}`);
+          return "collection-item";
+        },
+        detach: async (itemId: string) => {
+          calls.push(`detach ${itemId}`);
+        },
+        refreshCounts: async () => undefined,
+      },
+    };
+  }
+
+  it("puts a matched film in its box set and describes the set once", async () => {
+    const metadata = fakeMetadata(target({ providerIds: { tmdb: "603" } }));
+    const collections = fakeCollections();
+    const images = fakeImages();
+    const getCollection = vi.fn(async () => ({
+      providerId: "2344",
+      name: "The Matrix Collection",
+      overview: "The trilogy.",
+      posterPath: "/poster.jpg",
+    }));
+    const service = createMetadataService({
+      metadata: metadata.repository,
+      images,
+      imageStorage: fakeStorage(),
+      tmdb: fakeTmdb({
+        getMovie: async () =>
+          details({
+            collection: { providerId: "2344", name: "The Matrix Collection" },
+          }),
+        getCollection,
+      }),
+      collections: collections.repository,
+    });
+
+    await service.refreshItem("item-1");
+    await service.refreshItem("item-1");
+
+    expect(collections.calls).toEqual([
+      "attach item-1 2344",
+      "attach item-1 2344",
+    ]);
+    expect(getCollection).toHaveBeenCalledTimes(1);
+    expect(metadata.updates).toContainEqual({
+      itemId: "collection-item",
+      update: { overview: "The trilogy." },
+    });
+    expect(images.upserts).toContainEqual(
+      expect.objectContaining({
+        itemId: "collection-item",
+        imageType: "cover",
+      }),
+    );
+  });
+
+  it("takes a film out of a box set the provider no longer puts it in", async () => {
+    const metadata = fakeMetadata(target({ providerIds: { tmdb: "603" } }));
+    const collections = fakeCollections();
+    const service = createMetadataService({
+      metadata: metadata.repository,
+      images: fakeImages(),
+      imageStorage: fakeStorage(),
+      tmdb: fakeTmdb(),
+      collections: collections.repository,
+    });
+
+    expect(await service.syncCollection("item-1")).toBe("none");
+    expect(collections.calls).toEqual(["detach item-1"]);
+  });
+
+  it("never gives a series a collection", async () => {
+    const metadata = fakeMetadata(
+      target({ kind: "series", providerIds: { tmdb: "1" } }),
+    );
+    const collections = fakeCollections();
+    const service = createMetadataService({
+      metadata: metadata.repository,
+      images: fakeImages(),
+      imageStorage: fakeStorage(),
+      tmdb: fakeTmdb({
+        getSeries: async () =>
+          details({ collection: { providerId: "9", name: "Not a thing" } }),
+      }),
+      collections: collections.repository,
+    });
+
+    await service.refreshItem("item-1");
+    expect(collections.calls).toEqual([]);
+  });
+});

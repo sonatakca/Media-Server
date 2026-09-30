@@ -1,3 +1,4 @@
+import { PROVIDER_COLLECTION_KEY_PREFIX } from "../collections/collectionRepository";
 import { randomUUID } from "node:crypto";
 import type { DatabasePool } from "../database/databasePool";
 import { BOOK_EXTENSIONS } from "../scanner/nameParser";
@@ -81,8 +82,13 @@ export function createCatalogueScanStore(
         missing_since: Date | null;
         desired: boolean;
       }>(
+        // A provider collection has no folder to be found in, so it is not
+        // the scan's to reconcile: listing it here would retire every box set
+        // on the first pass.
         `SELECT id, source_key, kind, locked_fields, missing_since, desired
-         FROM items WHERE library_id = $1`,
+         FROM items
+         WHERE library_id = $1
+           AND source_key NOT LIKE '${PROVIDER_COLLECTION_KEY_PREFIX}%'`,
         [libraryId],
       );
       return result.rows.map<ExistingItemRow>((row) => ({
@@ -397,6 +403,27 @@ export function createCatalogueScanStore(
     },
 
     refreshItemCounts: async (libraryId) => {
+      // A collection counts the members still on disk, as a season does.
+      await pool.query(
+        `UPDATE items collection SET
+           child_count = counts.total,
+           recursive_item_count = counts.total,
+           updated_at = now()
+         FROM (
+           SELECT parent.id, count(member.item_id)
+             FILTER (WHERE film.missing_since IS NULL)::int AS total
+           FROM items parent
+           LEFT JOIN collection_members member ON member.collection_id = parent.id
+           LEFT JOIN items film ON film.id = member.item_id
+           WHERE parent.kind = 'collection' AND parent.library_id = $1
+           GROUP BY parent.id
+         ) counts
+         WHERE collection.id = counts.id
+           AND (collection.child_count, collection.recursive_item_count)
+               IS DISTINCT FROM (counts.total, counts.total)`,
+        [libraryId],
+      );
+
       // A LATERAL subquery in UPDATE ... FROM cannot reference the update
       // target, so the counts are computed over the whole library first and
       // joined back by id. The LEFT JOIN is what makes an emptied season reset

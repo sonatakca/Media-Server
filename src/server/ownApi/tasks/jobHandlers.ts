@@ -54,6 +54,7 @@ export const JOB_TYPES = {
   mediaProcess: "media.process",
   segmentsScan: "segments.scan",
   segmentsDetect: "segments.detect",
+  collectionsSync: "collections.sync",
 } as const;
 
 /**
@@ -893,6 +894,44 @@ export function createJobHandlers({
     return { segmentsQueued: seasonsQueued, filmsChecked };
   };
 
+  /**
+   * Records every matched film's box set: the back-fill for a library that
+   * was matched before collections existed. One provider request per film,
+   * which is why it is a button and not part of every scan.
+   */
+  const collectionsSync: JobHandler = async ({
+    reportProgress,
+    isCancelled,
+  }) => {
+    if (!metadataService || !catalogue) {
+      throw new PermanentJobError("Collections are not available.");
+    }
+    const films = (
+      await catalogue.listProcessableTitles({ kinds: ["movie"] })
+    ).filter((film) => film.itemMissingSince === null);
+    let inCollections = 0;
+    for (const [index, film] of films.entries()) {
+      if (await isCancelled()) return { cancelled: true };
+      const outcome = await metadataService.syncCollection(film.itemId);
+      if (outcome === "member") inCollections += 1;
+      await reportProgress(
+        (index + 1) / Math.max(1, films.length),
+        "Finding collections",
+        {
+          phase: "identifying",
+          measure: {
+            kind: "exact",
+            completed: index + 1,
+            total: films.length,
+            unit: "titles",
+          },
+          current: subjectFromTitle(film.title),
+        },
+      );
+    }
+    return { filmsChecked: films.length, inCollections };
+  };
+
   /** Listens to one season and records its intros and credits. */
   const segmentsDetect: JobHandler = async ({
     job,
@@ -1685,6 +1724,7 @@ export function createJobHandlers({
     [JOB_TYPES.trickplayScan]: trickplayScan,
     [JOB_TYPES.segmentsScan]: segmentsScan,
     [JOB_TYPES.segmentsDetect]: segmentsDetect,
+    [JOB_TYPES.collectionsSync]: collectionsSync,
     [JOB_TYPES.mediaProbe]: mediaProbe,
     [JOB_TYPES.metadataScan]: metadataScan,
     [JOB_TYPES.metadataRefresh]: metadataRefresh,

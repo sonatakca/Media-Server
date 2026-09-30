@@ -5,7 +5,8 @@
  */
 export function mediaAvailableSql(alias = "item"): string {
   return `EXISTS (SELECT 1 FROM items available_item
-    WHERE (available_item.id = ${alias}.id OR available_item.series_id = ${alias}.id OR available_item.parent_id = ${alias}.id)
+    WHERE (available_item.id = ${alias}.id OR available_item.series_id = ${alias}.id OR available_item.parent_id = ${alias}.id
+      OR available_item.id IN (SELECT member.item_id FROM collection_members member WHERE member.collection_id = ${alias}.id))
       AND (
         EXISTS (SELECT 1 FROM media_files available_file WHERE available_file.item_id = available_item.id
           AND available_file.missing_since IS NULL AND available_file.size_bytes > 0

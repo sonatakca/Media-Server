@@ -612,7 +612,12 @@ export function createCatalogueRepository(
       }
       if (parentId) {
         values.push(parentId);
-        conditions.push(`item.parent_id = $${values.length}`);
+        // A collection's films are its members, not rows parented to it.
+        conditions.push(
+          `(item.parent_id = $${values.length} OR item.id IN (
+             SELECT member.item_id FROM collection_members member
+             WHERE member.collection_id = $${values.length}))`,
+        );
       }
       if (seriesId) {
         values.push(seriesId);

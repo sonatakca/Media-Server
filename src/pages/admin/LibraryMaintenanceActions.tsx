@@ -3,6 +3,7 @@ import {
   Film,
   FolderTree,
   Images,
+  Library,
   Loader2,
   SkipForward,
   TextCursorInput,
@@ -55,6 +56,11 @@ const MAINTENANCE_BUTTONS: ReadonlyArray<{
     action: "segments",
     labelKey: "maintenance.detectIntros",
     Icon: SkipForward,
+  },
+  {
+    action: "collections",
+    labelKey: "maintenance.findCollections",
+    Icon: Library,
   },
   {
     action: "rename",

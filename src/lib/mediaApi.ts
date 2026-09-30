@@ -1026,6 +1026,7 @@ export type MaintenanceAction =
   | "scan-books"
   | "trickplay"
   | "segments"
+  | "collections"
   | "rename"
   | "organize";
 

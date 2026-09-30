@@ -55,6 +55,7 @@ export const MAINTENANCE_ACTIONS = [
   "scan-books",
   "trickplay",
   "segments",
+  "collections",
   "rename",
   "organize",
 ] as const;
@@ -115,6 +116,16 @@ export async function enqueueMaintenance(
       taskIds: [taskId],
       libraries: (await libraries.listAll()).length,
     };
+  }
+
+  if (action === "collections") {
+    const taskId = await queue.enqueue({
+      jobType: JOB_TYPES.collectionsSync,
+      payload: {},
+      dedupeKey: `${JOB_TYPES.collectionsSync}:all`,
+      priority: 300,
+    });
+    return { action, taskIds: [taskId], libraries: 0 };
   }
 
   if (action === "segments") {

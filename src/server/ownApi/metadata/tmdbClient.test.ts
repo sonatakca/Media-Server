@@ -261,4 +261,42 @@ describe("IMDb identity", () => {
     }).getMovie("550");
     expect(details.imdbId).toBe("tt0137523");
   });
+
+  it("reads the box set a film belongs to", async () => {
+    const { fetchImpl } = captureFetch({
+      id: 603,
+      title: "The Matrix",
+      belongs_to_collection: { id: 2344, name: "The Matrix Collection" },
+    });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getMovie("603");
+    expect(details.collection).toEqual({
+      providerId: "2344",
+      name: "The Matrix Collection",
+    });
+  });
+
+  it("describes a collection from its own record", async () => {
+    const { calls, fetchImpl } = captureFetch({
+      id: 2344,
+      name: "The Matrix Collection",
+      overview: "The trilogy.",
+      poster_path: "/p.jpg",
+      backdrop_path: "/b.jpg",
+    });
+    const collection = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getCollection!("2344");
+    expect(calls[0]?.url.pathname).toBe("/3/collection/2344");
+    expect(collection).toEqual({
+      providerId: "2344",
+      name: "The Matrix Collection",
+      overview: "The trilogy.",
+      posterPath: "/p.jpg",
+      backdropPath: "/b.jpg",
+    });
+  });
 });

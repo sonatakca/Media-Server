@@ -38,7 +38,7 @@ export function DesktopNavbar() {
     { to: libraryRoutes.series, label: t("nav.series") },
     { to: libraryRoutes.books, label: t("nav.books") },
     { to: "/my-list", label: t("myList.title") },
-    // { to: libraryRoutes.collections, label: t("nav.collections") },
+    { to: libraryRoutes.collections, label: t("nav.collections") },
   ];
   const devClickCountRef = useRef(0);
   const devClickTimerRef = useRef<number | null>(null);

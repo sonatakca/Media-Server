@@ -1,3 +1,4 @@
+import type { CollectionRepository } from "../collections/collectionRepository";
 import type { ImageRepository } from "../images/imageRepository";
 import type { ImageStorage } from "../images/imageStorage";
 import { selectBestMatch, type MatchCandidate } from "./matcher";
@@ -20,6 +21,11 @@ export interface MetadataServiceOptions {
    * usually deliberate.
    */
   minimumConfidence?: "high" | "medium";
+  /**
+   * Where a film's box set is recorded. Absent, films are matched exactly as
+   * before and no collection is ever made.
+   */
+  collections?: CollectionRepository;
 }
 
 export interface IdentifyResult {
@@ -47,7 +53,14 @@ export function createMetadataService({
   imageStorage,
   tmdb,
   minimumConfidence = "medium",
+  collections,
 }: MetadataServiceOptions) {
+  /**
+   * Collections described recently, so a batch of six Harry Potter films asks
+   * TMDB about the collection once rather than six times.
+   */
+  const describedCollections = new Map<string, number>();
+  const COLLECTION_DESCRIBE_INTERVAL_MS = 12 * 60 * 60 * 1_000;
   async function storeArtwork(
     target: MetadataTarget,
     imageType: "cover" | "backdrop" | "logo" | "thumb",
@@ -139,6 +152,68 @@ export function createMetadataService({
     }
     for (const backdropPath of details.backdropPaths.slice(0, 1)) {
       await storeArtwork(target, "backdrop", backdropPath, BACKDROP_SIZE, 0);
+    }
+  }
+
+  /**
+   * Puts a film in the box set the provider says it belongs to, or takes it
+   * out of one it no longer belongs to.
+   *
+   * Best-effort in the same way artwork is: a film whose collection could not
+   * be recorded is still a matched film.
+   */
+  async function syncFilmCollection(
+    target: MetadataTarget,
+    details: TmdbTitleDetails,
+  ): Promise<void> {
+    if (!collections || target.kind !== "movie") return;
+    try {
+      if (!details.collection) {
+        await collections.detach(target.id);
+        return;
+      }
+      const collectionId = await collections.attach(
+        target.id,
+        details.collection,
+      );
+
+      const describedAt = describedCollections.get(
+        details.collection.providerId,
+      );
+      if (
+        !tmdb.getCollection ||
+        (describedAt !== undefined &&
+          Date.now() - describedAt < COLLECTION_DESCRIBE_INTERVAL_MS)
+      ) {
+        return;
+      }
+      const described = await tmdb.getCollection(details.collection.providerId);
+      describedCollections.set(details.collection.providerId, Date.now());
+      if (described.overview) {
+        await metadata.applyTitleMetadata(collectionId, {
+          overview: described.overview,
+        });
+      }
+      // A collection owns no folder, so its artwork lives in generated storage.
+      const collectionTarget = { id: collectionId } as MetadataTarget;
+      if (described.posterPath) {
+        await storeArtwork(
+          collectionTarget,
+          "cover",
+          described.posterPath,
+          POSTER_SIZE,
+        );
+      }
+      if (described.backdropPath) {
+        await storeArtwork(
+          collectionTarget,
+          "backdrop",
+          described.backdropPath,
+          BACKDROP_SIZE,
+        );
+      }
+    } catch {
+      // Recorded next time the film is refreshed.
     }
   }
 
@@ -275,6 +350,8 @@ export function createMetadataService({
       await applyTitle(target, details);
       if (isSeries) {
         await applySeriesChildren(target, providerId);
+      } else {
+        await syncFilmCollection(target, details);
       }
 
       return {
@@ -309,6 +386,22 @@ export function createMetadataService({
         return { itemId, status: "not-found" };
       }
       return identify(target);
+    },
+
+    /**
+     * Records the box set of a film that is already matched, without
+     * re-applying anything else about it — the back-fill for a library matched
+     * before collections existed.
+     */
+    syncCollection: async (
+      itemId: string,
+    ): Promise<"member" | "none" | "skipped"> => {
+      const target = await metadata.getTarget(itemId);
+      const providerId = target?.providerIds.tmdb;
+      if (!target || target.kind !== "movie" || !providerId) return "skipped";
+      const details = await tmdb.getMovie(providerId);
+      await syncFilmCollection(target, details);
+      return details.collection ? "member" : "none";
     },
 
     /** Processes a batch of never-identified items. */

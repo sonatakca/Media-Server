@@ -40,6 +40,7 @@ const LIBRARY_WIDE_OPERATIONS: ReadonlySet<string> = new Set([
   JOB_TYPES.libraryMaintenance,
   JOB_TYPES.trickplayScan,
   JOB_TYPES.segmentsScan,
+  JOB_TYPES.collectionsSync,
   JOB_TYPES.mediaProbe,
 ]);
 

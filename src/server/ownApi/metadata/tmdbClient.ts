@@ -52,6 +52,20 @@ export interface TmdbTitleDetails {
   imdbId?: string;
   /** A series' seasons as TMDB numbers them. Absent for a film. */
   seasons?: TmdbSeasonSummary[];
+  /** The box set a film belongs to, when it belongs to one. */
+  collection?: TmdbCollectionRef;
+}
+
+export interface TmdbCollectionRef {
+  providerId: string;
+  name: string;
+}
+
+/** A box set's own description and artwork. */
+export interface TmdbCollectionDetails extends TmdbCollectionRef {
+  overview?: string;
+  posterPath?: string;
+  backdropPath?: string;
 }
 
 export interface TmdbSeasonSummary {
@@ -123,6 +137,7 @@ export interface TmdbClient {
     providerId: string,
     seasonNumber: number,
   ): Promise<TmdbEpisodeDetails[]>;
+  getCollection?(providerId: string): Promise<TmdbCollectionDetails>;
   /** Absolute artwork URL for a stored provider path. */
   buildImageUrl(imagePath: string, size: string): string;
 }
@@ -487,7 +502,26 @@ export function createTmdbClient({
       ...(kind === "tv" && Array.isArray(details.seasons)
         ? { seasons: readSeasons(details.seasons) }
         : {}),
+      ...(kind === "movie" ? readCollectionRef(details) : {}),
     };
+  }
+
+  function readCollectionRef(details: Record<string, unknown>): {
+    collection?: TmdbCollectionRef;
+  } {
+    const value = details.belongs_to_collection;
+    if (!value || typeof value !== "object") return {};
+    const collection = value as Record<string, unknown>;
+    return typeof collection.id === "number" &&
+      typeof collection.name === "string" &&
+      collection.name.trim()
+      ? {
+          collection: {
+            providerId: String(collection.id),
+            name: collection.name.trim(),
+          },
+        }
+      : {};
   }
 
   return {
@@ -552,6 +586,29 @@ export function createTmdbClient({
         ...toArtworkCandidates(images.backdrops, "backdrop"),
         ...toArtworkCandidates(images.logos, "logo"),
       ];
+    },
+
+    getCollection: async (providerId) => {
+      const details = await request<Record<string, unknown>>(
+        `/collection/${encodeURIComponent(providerId)}`,
+      );
+      const name =
+        typeof details.name === "string" && details.name.trim()
+          ? details.name.trim()
+          : providerId;
+      return {
+        providerId,
+        name,
+        ...(typeof details.overview === "string" && details.overview
+          ? { overview: details.overview }
+          : {}),
+        ...(typeof details.poster_path === "string"
+          ? { posterPath: details.poster_path }
+          : {}),
+        ...(typeof details.backdrop_path === "string"
+          ? { backdropPath: details.backdrop_path }
+          : {}),
+      };
     },
 
     getSeasonEpisodes: async (providerId, seasonNumber) => {
