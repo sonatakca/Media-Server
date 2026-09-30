@@ -86,3 +86,23 @@ startup and refuse a schema they do not understand, so a restore of an older
 dump needs `npm run db:migrate` from the matching code first. The ordering rule
 in [deployment-model.md](deployment-model.md) applies to a restore exactly as
 it applies to a deployment.
+
+## The nightly run
+
+`deploy/windows/backup-database.ps1` is the run described above, and
+`deploy/windows/install-backup-task.ps1` schedules it as **Seyirlik Nightly
+Backup**: 04:30 every night, as SYSTEM, from the active release, at below-normal
+priority, catching up after a night the host was off. Each run lands in
+`C:\ProgramData\Seyirlik\backups\nightly-<stamp>` (dump, configuration,
+secrets, manifest); the newest fourteen are kept. It logs to
+`C:\ProgramData\Seyirlik\logs\backup.log` without credentials, and the task
+fails if the run was not verified or not recorded.
+
+It does not interrupt anyone watching. On 2026-09-30 a run took about five
+seconds for a 4.4 MB dump: `pg_dump` reads a snapshot while playback, progress
+and every other write carry on (only a schema change would wait), the database
+is on `C:` while films stream from `D:`, and no service is stopped.
+
+A verified run moves the heartbeat's last-verified-backup time, which closes the
+alert service's "no verified backup in 36 hours"; a failed one raises "the
+backup failed" (see [alerts.md](alerts.md)).
