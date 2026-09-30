@@ -26,6 +26,7 @@ import {
   type TrickplayService,
 } from "../trickplay/trickplayService";
 import type { StorageGuard } from "../processing/storageGuard";
+import type { SegmentService } from "../segments/segmentService";
 import type { NfoService } from "../nfo/nfoService";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import type {
@@ -51,6 +52,8 @@ export const JOB_TYPES = {
   trickplayGenerate: "trickplay.generate",
   trickplayScan: "trickplay.scan",
   mediaProcess: "media.process",
+  segmentsScan: "segments.scan",
+  segmentsDetect: "segments.detect",
 } as const;
 
 /**
@@ -78,7 +81,15 @@ export const MEDIA_LANE_JOB_TYPES: string[] = [JOB_TYPES.mediaProcess];
  * lane's because trickplay must not queue behind hours of encoding, which is
  * the same reason lanes exist at all.
  */
-export const TRICKPLAY_LANE_JOB_TYPES: string[] = [JOB_TYPES.trickplayGenerate];
+export const TRICKPLAY_LANE_JOB_TYPES: string[] = [
+  JOB_TYPES.trickplayGenerate,
+  /*
+   * Listening for intros decodes the opening and closing minutes of every
+   * episode in a season from the same volume, so it queues behind sheets, one
+   * at a time, for the reason above.
+   */
+  JOB_TYPES.segmentsDetect,
+];
 
 /** How many titles one bulk trickplay pass enqueues before yielding. */
 const TRICKPLAY_ENQUEUE_LIMIT = 500;
@@ -113,6 +124,8 @@ export interface JobHandlerOptions {
   /** Absent when no TMDB key is configured; metadata jobs then no-op. */
   metadataService?: MetadataService;
   trickplayService?: TrickplayService;
+  /** Finds intros and credits; absent, the segment jobs fail cleanly. */
+  segmentService?: SegmentService;
   /**
    * The one thing that knows whether the media volume may be worked on.
    *
@@ -342,6 +355,7 @@ export function createJobHandlers({
   queue,
   metadataService,
   trickplayService,
+  segmentService,
   storageGuard,
   processingRunner,
   nfoService,
@@ -819,6 +833,109 @@ export function createJobHandlers({
       trickplayQueued: queued,
       trickplayPending: pending,
       ...(pending > 0 && pass >= MAX_STAGE_PASSES ? { incomplete: true } : {}),
+    };
+  };
+
+  /**
+   * One sweep for intros and credits: every season and film not yet looked at
+   * by this version of the detector.
+   *
+   * Films are settled here and now — a film has no episode to compare its
+   * audio with, so its only source is its own chapter names, which is a
+   * database read. Seasons each get a durable `segments.detect`, which is
+   * where audio is actually decoded.
+   */
+  const segmentsScan: JobHandler = async ({ reportProgress, isCancelled }) => {
+    if (!segmentService) {
+      throw new PermanentJobError("Intro detection is not available.");
+    }
+    const phases = phasePlan(["selecting", "enqueueing"]);
+    await reportProgress(0, "Looking for intros and credits", {
+      phase: "selecting",
+      ...phases.at("selecting"),
+      measure: { kind: "indeterminate" },
+    });
+    const subjects = await segmentService.listPendingSubjects();
+
+    let seasonsQueued = 0;
+    let filmsChecked = 0;
+    for (const [index, subject] of subjects.entries()) {
+      if (await isCancelled()) return { cancelled: true };
+      if (subject.kind === "movie") {
+        await segmentService.detectMovie(subject.subjectId);
+        filmsChecked += 1;
+      } else {
+        await queue.enqueue({
+          jobType: JOB_TYPES.segmentsDetect,
+          payload: { seasonId: subject.subjectId },
+          dedupeKey: `${JOB_TYPES.segmentsDetect}:${subject.subjectId}`,
+          priority: 460,
+        });
+        seasonsQueued += 1;
+      }
+      await reportProgress(
+        (index + 1) / Math.max(1, subjects.length),
+        "Looking for intros and credits",
+        {
+          phase: "enqueueing",
+          ...phases.at("enqueueing"),
+          measure: {
+            kind: "exact",
+            completed: index + 1,
+            total: subjects.length,
+            unit: "titles",
+          },
+          counters: { segmentsQueued: seasonsQueued },
+          current: subjectFromTitle(subject.title),
+        },
+      );
+    }
+    return { segmentsQueued: seasonsQueued, filmsChecked };
+  };
+
+  /** Listens to one season and records its intros and credits. */
+  const segmentsDetect: JobHandler = async ({
+    job,
+    reportProgress,
+    isCancelled,
+  }) => {
+    if (!segmentService) {
+      throw new PermanentJobError("Intro detection is not available.");
+    }
+    // Asked before any audio is read, for the reason given in trickplayGenerate.
+    if (storageGuard && !storageGuard.mayStartWork()) {
+      throw new DeferredJobError(storageGuard.describe(), STORAGE_RECHECK_MS);
+    }
+    const seasonId = job.payload.seasonId;
+    if (typeof seasonId !== "string") {
+      throw new PermanentJobError("The task payload is missing a season.");
+    }
+    await reportProgress(0, "Detecting intros and credits", {
+      phase: "analysing",
+      measure: { kind: "indeterminate" },
+    });
+    let lastReport: Promise<void> = Promise.resolve();
+    const result = await segmentService.detectSeason(seasonId, {
+      isCancelled,
+      onEpisode: (completed, total, title) => {
+        lastReport = reportProgress(
+          completed / Math.max(1, total),
+          "Detecting intros and credits",
+          {
+            phase: "analysing",
+            measure: { kind: "exact", completed, total, unit: "titles" },
+            ...(title ? { current: subjectFromTitle(title) } : {}),
+          },
+        ).catch(() => undefined);
+      },
+    });
+    await lastReport;
+    return {
+      episodes: result.episodes,
+      introsFound: result.intros,
+      creditsFound: result.credits,
+      chapterSegments: result.fromChapters,
+      unreadable: result.unreadable,
     };
   };
 
@@ -1566,6 +1683,8 @@ export function createJobHandlers({
     [JOB_TYPES.libraryMaintenance]: libraryMaintenance,
     [JOB_TYPES.trickplayGenerate]: trickplayGenerate,
     [JOB_TYPES.trickplayScan]: trickplayScan,
+    [JOB_TYPES.segmentsScan]: segmentsScan,
+    [JOB_TYPES.segmentsDetect]: segmentsDetect,
     [JOB_TYPES.mediaProbe]: mediaProbe,
     [JOB_TYPES.metadataScan]: metadataScan,
     [JOB_TYPES.metadataRefresh]: metadataRefresh,

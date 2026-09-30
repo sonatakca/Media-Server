@@ -4,6 +4,7 @@ import {
   FolderTree,
   Images,
   Loader2,
+  SkipForward,
   TextCursorInput,
   Tv,
   WandSparkles,
@@ -49,6 +50,11 @@ const MAINTENANCE_BUTTONS: ReadonlyArray<{
     action: "trickplay",
     labelKey: "maintenance.generateTrickplays",
     Icon: Images,
+  },
+  {
+    action: "segments",
+    labelKey: "maintenance.detectIntros",
+    Icon: SkipForward,
   },
   {
     action: "rename",

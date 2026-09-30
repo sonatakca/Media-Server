@@ -49,6 +49,8 @@ export const TASK_FAMILIES: Record<TaskType, TaskFamily> = {
   "metadata.refresh": "description",
   "trickplay.generate": "description",
   "trickplay.scan": "description",
+  "segments.scan": "description",
+  "segments.detect": "description",
   // Turning it into something this browser can actually play.
   "media.process": "encoding",
   // Writing the catalogue back out to the disk it came from.

@@ -178,6 +178,19 @@ export interface RenditionService {
   findPackagedVideo(
     media: PlaybackResolvedMedia,
   ): Promise<PackagedVideo | null>;
+  /**
+   * The default audio rendition of a ready package, for a reader that must
+   * listen to a title — intro detection — once its source is gone.
+   */
+  findPackagedAudio(
+    media: PlaybackResolvedMedia,
+  ): Promise<PackagedAudio | null>;
+}
+
+/** The default audio rendition of a ready package, as a decoder input. */
+export interface PackagedAudio {
+  path: string;
+  durationSeconds: number;
 }
 
 /** The highest video rendition of a ready package, as a decoder input. */
@@ -429,6 +442,21 @@ export function createRenditionService({
             ? "arib-std-b67"
             : null),
       colorPrimaries: best.colorPrimaries ?? null,
+    };
+  };
+
+  const findPackagedAudio: RenditionService["findPackagedAudio"] = async (
+    media,
+  ) => {
+    const ready = await readyPackageFor(media);
+    if (!ready) return null;
+    const renditions = ready.metadata.audioRenditions;
+    const chosen =
+      renditions.find((rendition) => rendition.isDefault) ?? renditions[0];
+    if (!chosen) return null;
+    return {
+      path: path.join(ready.versionRoot, ...chosen.mediaPath.split("/")),
+      durationSeconds: chosen.durationSeconds,
     };
   };
 
@@ -768,5 +796,6 @@ export function createRenditionService({
     resolveAdaptiveAsset,
     describePackagedSource,
     findPackagedVideo,
+    findPackagedAudio,
   };
 }

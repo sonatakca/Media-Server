@@ -39,6 +39,7 @@ export const MAINTENANCE_EXCLUDED_JOB_TYPES: string[] = MEDIA_LANE_JOB_TYPES;
 const LIBRARY_WIDE_OPERATIONS: ReadonlySet<string> = new Set([
   JOB_TYPES.libraryMaintenance,
   JOB_TYPES.trickplayScan,
+  JOB_TYPES.segmentsScan,
   JOB_TYPES.mediaProbe,
 ]);
 

@@ -37,6 +37,8 @@ export const TASK_METRICS = {
   "metadata.scan": ["matched", "ambiguous", "notFound"],
   "metadata.refresh": [],
   "trickplay.generate": ["spriteCount"],
+  "segments.scan": ["segmentsQueued", "filmsChecked"],
+  "segments.detect": ["introsFound", "creditsFound", "chapterSegments"],
   "media.process": [],
   "nfo.export.item": [
     "created",
@@ -265,6 +267,8 @@ export function presentTask(
     "Starting media processing": "starting",
     "Generating trickplay": "trickplay",
     "Scanning for missing trickplay": "selecting",
+    "Looking for intros and credits": "selecting",
+    "Detecting intros and credits": "analysing",
   };
   const detail: TaskPresentation = {
     determinate: false,

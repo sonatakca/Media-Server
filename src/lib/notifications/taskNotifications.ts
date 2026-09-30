@@ -49,6 +49,8 @@ const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
   "metadata.scan": "tasks.metadataScan",
   "metadata.refresh": "tasks.metadataRefresh",
   "trickplay.generate": "tasks.trickplayGenerate",
+  "segments.scan": "tasks.segmentsScan",
+  "segments.detect": "tasks.segmentsDetect",
   "media.process": "tasks.mediaProcess",
   "nfo.export.item": "tasks.nfoItem",
   "nfo.export.library": "tasks.nfoLibrary",

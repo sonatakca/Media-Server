@@ -94,6 +94,7 @@ import {
 } from "../../renditions/storageRoles";
 import { createProbeService } from "./probe/probeService";
 import { createTrickplayService } from "./trickplay/trickplayService";
+import { createSegmentService } from "./segments/segmentService";
 import { createTrickplayRoutes } from "./trickplay/trickplayRoutes";
 import { createUserRoutes } from "./users/userRoutes";
 import { createSyncplayRepository } from "./syncplay/syncplayRepository";
@@ -977,6 +978,14 @@ export async function createNativeRuntime({
     ...(ffmpegPath ? { ffmpegPath } : {}),
   });
 
+  const segments = createSegmentService({
+    pool,
+    catalogue,
+    mediaRoot,
+    findPackagedAudio: renditions.findPackagedAudio,
+    ...(ffmpegPath ? { ffmpegPath } : {}),
+  });
+
   const probeService = createProbeService({
     pool,
     mediaRoot,
@@ -1203,6 +1212,7 @@ export async function createNativeRuntime({
         queue,
         ...(metadataService ? { metadataService } : {}),
         trickplayService: trickplay,
+        segmentService: segments,
         ...(writesFiles(nfoConfig.mode) ? { nfoService } : {}),
       }),
       ...createNfoJobHandlers(nfoService),

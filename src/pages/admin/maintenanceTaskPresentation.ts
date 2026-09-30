@@ -42,6 +42,8 @@ const NAMED_OPERATIONS = [
   "metadata.refresh",
   "trickplay.generate",
   "trickplay.scan",
+  "segments.scan",
+  "segments.detect",
 ] as const;
 type NamedOperation = (typeof NAMED_OPERATIONS)[number];
 

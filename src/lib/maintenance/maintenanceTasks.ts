@@ -159,6 +159,8 @@ export const MAINTENANCE_COUNTERS = [
   "trickplayQueued",
   "trickplayPending",
   "spriteCount",
+  // Intros and credits
+  "segmentsQueued",
 ] as const;
 export type MaintenanceCounter = (typeof MAINTENANCE_COUNTERS)[number];
 
