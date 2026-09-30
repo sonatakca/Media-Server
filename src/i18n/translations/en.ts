@@ -239,10 +239,12 @@ export const en = {
   "nav.movies": "Movies",
   "nav.series": "Shows",
   "player.notDownloaded": "This title is not downloaded",
-  "player.notDownloadedDetails": "Download it while you have a connection to watch it here offline.",
+  "player.notDownloadedDetails":
+    "Download it while you have a connection to watch it here offline.",
   "player.playingDownloadedCopy": "Playing the copy downloaded to this device.",
   "downloads.title": "Downloads",
-  "downloads.description": "Titles kept on this device, to watch without a connection. They stay in this browser only.",
+  "downloads.description":
+    "Titles kept on this device, to watch without a connection. They stay in this browser only.",
   "downloads.download": "Download",
   "downloads.downloadingPercent": "Downloading {percent}%",
   "downloads.downloadedSize": "Downloaded · {size}",
@@ -252,10 +254,13 @@ export const en = {
   "downloads.play": "Play",
   "downloads.storage": "{used} of {quota} used",
   "downloads.offlineNotice": "You are offline. Downloaded titles still play.",
-  "downloads.unsupported": "This browser cannot keep titles for offline viewing.",
-  "downloads.empty": "Nothing downloaded yet. Use the download button on a film or an episode to keep it here.",
+  "downloads.unsupported":
+    "This browser cannot keep titles for offline viewing.",
+  "downloads.empty":
+    "Nothing downloaded yet. Use the download button on a film or an episode to keep it here.",
   "downloads.notAllowed": "Downloads are not enabled for your account.",
-  "downloads.unavailable": "This title has not been processed for download yet.",
+  "downloads.unavailable":
+    "This title has not been processed for download yet.",
   "downloads.failed": "The download stopped. Resume it from Downloads.",
   "downloads.watchDownloads": "Watch downloads",
   "nav.collections": "Collections",
