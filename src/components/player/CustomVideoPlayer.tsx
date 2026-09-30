@@ -12,14 +12,11 @@ import { Bookmark, Camera, Eye, EyeOff, Users } from "lucide-react";
 import {
   buildConfiguredHlsPlaybackSource,
   buildSubtitleStreamUrl,
-  fetchOriginalFrame,
   getLogoImageUrl,
   getManualQualityOptions,
   getItemTrickplayImageUrl,
-  getActiveTranscodingReasons,
   redactPlaybackUrl,
 } from "../../lib/mediaApi";
-import { isCustomPlaybackCandidate } from "../../lib/playback-planner/customPlaybackApi";
 import {
   stopCustomPlaybackSessionImmediately,
   useCustomPlaybackSessionLease,
@@ -138,7 +135,6 @@ import {
   shouldForceDefaultAudioInPlaybackUrl,
 } from "./streamUtils";
 import {
-  disableNativeVideoTextTracks,
   getActiveSubtitleTextForTime,
   parseSubtitleCues,
 } from "./subtitleUtils";
@@ -165,9 +161,13 @@ import {
 import {
   evaluateSeamlessEligibility,
   type DeckId,
-  type SwitchDiagnostics,
 } from "./deckModel";
 import { warmQualityAtPosition } from "./warmQuality";
+import { useFrameCapture } from "./useFrameCapture";
+import { useDismissOnOutsidePointer } from "./useDismissOnOutsidePointer";
+import { useLiveTranscodingReasons } from "./useLiveTranscodingReasons";
+import { useNativeTextTracksSuppressed } from "./useNativeTextTracksSuppressed";
+import { usePartyEventToast } from "./usePartyEventToast";
 import { LoadingSpinner } from "../LoadingSpinner";
 import {
   adaptiveQualityRequestForMode,
@@ -188,6 +188,17 @@ import {
   decideNativeReplan,
   nativeQualityRequestKey,
 } from "./nativeQualityRequest";
+import {
+  bufferedSecondsAhead,
+  findEffectiveAdaptiveRung,
+  getFileQualitySelectionContext,
+  getSerializableHlsError,
+  isHlsStartupSuccessEvent,
+  logQualitySwitchDiagnostics,
+  measuredPlayerHeight,
+  navigatorDownlinkMbps,
+  sortQualityOptionsLowestFirst,
+} from "./playerHelpers";
 
 /** How often Auto re-examines conditions while playback continues. */
 const QUALITY_REVIEW_INTERVAL_MS = 15_000;
@@ -201,205 +212,17 @@ const FRAME_HOLD_CEILING_MS = 8_000;
 /** Buffered seconds ahead of the playhead that count as comfortable headroom. */
 const HEALTHY_BUFFER_SECONDS = 12;
 
-/**
- * Development record of a rendition handoff.
- *
- * The diagnostics shape carries quality ids, heights and timings only, so there
- * is no URL, signed token, cookie or filesystem path to redact before it is
- * printed. Silent in production builds.
- */
-function logQualitySwitchDiagnostics(diagnostics: SwitchDiagnostics): void {
-  if (!import.meta.env.DEV) return;
-
-  console.info("[Seyirlik Playback] Rendition handoff", diagnostics);
-}
-
-/** Seconds of media buffered ahead of the playhead, 0 when nothing is ready. */
-function bufferedSecondsAhead(video: HTMLVideoElement | null): number {
-  if (!video) return 0;
-  const { buffered, currentTime } = video;
-  for (let index = buffered.length - 1; index >= 0; index -= 1) {
-    if (
-      buffered.start(index) <= currentTime &&
-      buffered.end(index) > currentTime
-    ) {
-      return buffered.end(index) - currentTime;
-    }
-  }
-  return 0;
-}
-
-function measuredPlayerHeight(
-  container: HTMLElement | null,
-  video: HTMLVideoElement | null,
-): number {
-  const measured = container?.clientHeight || video?.clientHeight || 0;
-  if (measured > 0) return measured;
-  // Before first layout both are 0, and `?? ` does not catch that. Falling
-  // through to 1px made Auto target the smallest rendition on every cold start.
-  return typeof window === "undefined"
-    ? 720
-    : Math.round(window.innerHeight * 0.8);
-}
-
-function getFileQualitySelectionContext(
-  playerHeight: number,
-  recentStallCount = 0,
-) {
-  const connection =
-    typeof navigator === "undefined"
-      ? undefined
-      : (
-          navigator as Navigator & {
-            connection?: {
-              saveData?: boolean;
-              effectiveType?: string;
-              downlink?: number;
-            };
-          }
-        ).connection;
-  return {
-    playerHeight: Math.max(1, playerHeight),
-    devicePixelRatio:
-      typeof window === "undefined" ? 1 : window.devicePixelRatio,
-    saveData: connection?.saveData,
-    effectiveType: connection?.effectiveType,
-    downlinkMbps: connection?.downlink,
-    recentStallCount,
-  };
-}
-
-function sortQualityOptionsLowestFirst(
-  options: readonly PlaybackQualityOption[],
-): PlaybackQualityOption[] {
-  return [...options].sort(
-    (left, right) =>
-      (left.maxHeight ?? Number.MAX_SAFE_INTEGER) -
-        (right.maxHeight ?? Number.MAX_SAFE_INTEGER) ||
-      (left.maxWidth ?? Number.MAX_SAFE_INTEGER) -
-        (right.maxWidth ?? Number.MAX_SAFE_INTEGER),
-  );
-}
-
-/** Match a manifest rung to the dimensions the decoder is actually emitting. */
-function findEffectiveAdaptiveRung<
-  T extends { height: number; width?: number },
->(
-  ordered: readonly T[],
-  decodedWidth: number | null,
-  reportedHeight: number | null,
-): T | undefined {
-  return (
-    ordered.find(
-      (quality) => decodedWidth !== null && quality.width === decodedWidth,
-    ) ??
-    ordered.find((quality) => quality.height === reportedHeight) ??
-    (reportedHeight === null
-      ? undefined
-      : [...ordered].sort(
-          (left, right) =>
-            Math.abs(left.height - reportedHeight) -
-            Math.abs(right.height - reportedHeight),
-        )[0])
-  );
-}
-
-/**
- * The link speed the browser will admit to, in Mbps.
- *
- * Safari and Firefox do not implement `navigator.connection` at all, so this
- * is absent more often than not and every caller has to treat "unknown" as an
- * ordinary case rather than an error.
- */
-function navigatorDownlinkMbps(): number | undefined {
-  if (typeof navigator === "undefined") return undefined;
-  const downlink = (
-    navigator as Navigator & { connection?: { downlink?: number } }
-  ).connection?.downlink;
-  return typeof downlink === "number" && downlink > 0 ? downlink : undefined;
-}
-
-function isHlsStartupSuccessEvent(eventName: string): boolean {
-  const normalizedEventName = eventName.toLowerCase();
-
-  return (
-    normalizedEventName.includes("fragbuffered") ||
-    normalizedEventName.includes("frag_buffered") ||
-    normalizedEventName.includes("bufferappended") ||
-    normalizedEventName.includes("buffer_appended")
-  );
-}
-
-function getSerializableHlsError(data: unknown) {
-  if (!data || typeof data !== "object") {
-    return data;
-  }
-
-  const errorData = data as {
-    type?: unknown;
-    details?: unknown;
-    fatal?: unknown;
-    reason?: unknown;
-    response?: unknown;
-    error?: unknown;
-  };
-
-  return {
-    type: errorData.type,
-    details: errorData.details,
-    fatal: errorData.fatal,
-    reason: errorData.reason,
-    response: errorData.response,
-    error:
-      errorData.error instanceof Error
-        ? {
-            name: errorData.error.name,
-            message: errorData.error.message,
-          }
-        : errorData.error
-          ? String(errorData.error)
-          : undefined,
-  };
-}
-
-const FRAME_NOTICE_MS = 3200;
-
-/** Finder and Explorer both refuse these characters in a file name. */
-function toFileSafeName(name: string | null | undefined): string {
-  const safeName = (name ?? "")
-    .replace(/[\\/:*?"<>|]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, 80);
-  return safeName || "Seyirlik";
-}
-
-/** `1-04-44` rather than `1:04:44`, which Finder shows with slashes. */
-function formatFrameTimestamp(seconds: number): string {
-  const wholeSeconds = Math.floor(seconds);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${Math.floor(wholeSeconds / 3600)}-${pad(
-    Math.floor((wholeSeconds % 3600) / 60),
-  )}-${pad(wholeSeconds % 60)}`;
-}
-
-/**
- * Hands a blob to the browser's download flow. The object URL is revoked
- * later rather than at once, because Safari may read it after the click
- * handler has returned.
- */
-function saveBlobToDevice(blob: Blob, fileName: string): void {
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
-}
-
 const noopFollowItem = () => undefined;
+
+const SETTINGS_ROOTS = ["[data-player-settings-root]"];
+const QUEUE_ROOTS = ["[data-player-queue-root]"];
+const PARTY_WATCH_ROOTS = ["[data-party-watch-root]"];
+/** Settings and the queue stay usable while a subtitle is being placed. */
+const SUBTITLE_EDITOR_ROOTS = [
+  "[data-subtitle-editor-root]",
+  "[data-player-settings-root]",
+  "[data-player-queue-root]",
+];
 
 export function CustomVideoPlayer({
   item,
@@ -817,11 +640,8 @@ export function CustomVideoPlayer({
     revealPlayerChrome,
   ]);
 
-  const [displayedPartyEventMessage, setDisplayedPartyEventMessage] = useState<
-    string | null
-  >(null);
-  const [isPartyEventToastLeaving, setIsPartyEventToastLeaving] =
-    useState(false);
+  const { displayedPartyEventMessage, isPartyEventToastLeaving } =
+    usePartyEventToast(partyNoticeMessage);
   const [fullscreenSeekPreviewSeconds, setFullscreenSeekPreviewSeconds] =
     useState<number | null>(null);
   const [dismissedSkipSegmentId, setDismissedSkipSegmentId] = useState<
@@ -902,31 +722,11 @@ export function CustomVideoPlayer({
     }
   }, [activeSegment?.id, dismissedSkipSegmentId]);
 
-  useEffect(() => {
-    if (partyNoticeMessage) {
-      setDisplayedPartyEventMessage(partyNoticeMessage);
-      setIsPartyEventToastLeaving(false);
-      return undefined;
-    }
-
-    if (!displayedPartyEventMessage) {
-      return undefined;
-    }
-
-    setIsPartyEventToastLeaving(true);
-
-    const timer = window.setTimeout(() => {
-      setDisplayedPartyEventMessage(null);
-      setIsPartyEventToastLeaving(false);
-    }, 260);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [partyNoticeMessage, displayedPartyEventMessage]);
 
   const [activeSource, setActiveSource] =
     useState<PlaybackSourceCandidate>(source);
+  const [liveTranscodingReasons, setLiveTranscodingReasons] =
+    useLiveTranscodingReasons(activeSource);
   const qualityUserId = getCachedSession()?.userId ?? "anonymous";
   const qualityPreferenceRef = useRef<QualityPreference>(
     loadQualityPreference(qualityUserId),
@@ -1059,9 +859,6 @@ export function CustomVideoPlayer({
   const settingsNoticeText = audioSelectionNotice ?? qualitySelectionNotice;
   const [isWaitingForAudioTranscodeReady, setIsWaitingForAudioTranscodeReady] =
     useState(false);
-  const [liveTranscodingReasons, setLiveTranscodingReasons] = useState<
-    string[]
-  >([]);
   const [activeSubtitleText, setActiveSubtitleText] = useState("");
   const [subtitleCues, setSubtitleCues] = useState<SubtitleCue[]>([]);
   const [subtitleDelaySeconds, setSubtitleDelaySeconds] = useState(0);
@@ -1672,41 +1469,12 @@ export function CustomVideoPlayer({
     };
   }, [activeSource.id, activeSource.url, deckEpoch, videoRef]);
 
-  useEffect(() => {
-    const video = videoRef.current;
-
-    if (!video) {
-      return undefined;
-    }
-
-    const disableTracks = () => {
-      disableNativeVideoTextTracks(video);
-    };
-
-    disableTracks();
-
-    video.addEventListener("loadedmetadata", disableTracks);
-    video.addEventListener("loadeddata", disableTracks);
-    video.addEventListener("canplay", disableTracks);
-    video.addEventListener("play", disableTracks);
-
-    video.textTracks.addEventListener?.("addtrack", disableTracks);
-    video.textTracks.addEventListener?.("change", disableTracks);
-
-    const interval = window.setInterval(disableTracks, 500);
-
-    return () => {
-      video.removeEventListener("loadedmetadata", disableTracks);
-      video.removeEventListener("loadeddata", disableTracks);
-      video.removeEventListener("canplay", disableTracks);
-      video.removeEventListener("play", disableTracks);
-
-      video.textTracks.removeEventListener?.("addtrack", disableTracks);
-      video.textTracks.removeEventListener?.("change", disableTracks);
-
-      window.clearInterval(interval);
-    };
-  }, [activeSource.id, activeSource.url, deckEpoch, videoRef]);
+  useNativeTextTracksSuppressed(
+    videoRef,
+    activeSource.id,
+    activeSource.url,
+    deckEpoch,
+  );
 
   useEffect(() => {
     // Selecting the initial quality now creates a server session, so the
@@ -1807,83 +1575,6 @@ export function CustomVideoPlayer({
     sourceDefaultAudioStreamIndex,
     sourceDefaultSubtitleStreamIndex,
     t,
-  ]);
-  useEffect(() => {
-    let isCancelled = false;
-    let intervalId: number | null = null;
-
-    const shouldFetchLiveReasons =
-      !isCustomPlaybackCandidate(activeSource) &&
-      (activeSource.mode === "Transcoding" || activeSource.isHls);
-
-    if (!shouldFetchLiveReasons) {
-      setLiveTranscodingReasons([]);
-      return undefined;
-    }
-
-    const fetchLiveReasons = async () => {
-      try {
-        const reasons = await getActiveTranscodingReasons(
-          activeSource.itemId,
-          activeSource.playSessionId,
-        );
-
-        if (isCancelled) {
-          return;
-        }
-
-        if (reasons === null) {
-          // The session this poll was keyed to has been retired, which happens
-          // on every audio, quality or page change. Asking again would just
-          // produce a 404 every few seconds for a session that is meant to be
-          // gone.
-          if (intervalId !== null) {
-            window.clearInterval(intervalId);
-            intervalId = null;
-          }
-          setLiveTranscodingReasons([]);
-          return;
-        }
-
-        setLiveTranscodingReasons((currentReasons) => {
-          const nextReasons = Array.from(new Set(reasons.filter(Boolean)));
-
-          if (
-            currentReasons.length === nextReasons.length &&
-            currentReasons.every(
-              (reason, index) => reason === nextReasons[index],
-            )
-          ) {
-            return currentReasons;
-          }
-
-          return nextReasons;
-        });
-      } catch (reasonError) {
-        if (!isCancelled) {
-          console.warn(
-            "[Seyirlik Playback] Could not fetch live transcoding reasons",
-            reasonError,
-          );
-        }
-      }
-    };
-
-    void fetchLiveReasons();
-    intervalId = window.setInterval(fetchLiveReasons, 3500);
-
-    return () => {
-      isCancelled = true;
-
-      if (intervalId !== null) {
-        window.clearInterval(intervalId);
-      }
-    };
-  }, [
-    activeSource.itemId,
-    activeSource.playSessionId,
-    activeSource.mode,
-    activeSource.isHls,
   ]);
 
   useEffect(() => {
@@ -2009,113 +1700,20 @@ export function CustomVideoPlayer({
     onToggleFullscreen: toggleFullscreen,
   });
 
-  useEffect(() => {
-    if (!isSettingsOpen) {
-      return undefined;
-    }
-
-    const handlePointerDownOutside = (event: globalThis.PointerEvent) => {
-      const target = event.target as HTMLElement | null;
-
-      if (target?.closest("[data-player-settings-root]")) {
-        return;
-      }
-
-      setIsSettingsOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDownOutside);
-
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDownOutside);
-    };
-  }, [isSettingsOpen]);
-
-  useEffect(() => {
-    if (!isQueueOpen) {
-      return undefined;
-    }
-
-    const handlePointerDownOutsideQueue = (event: globalThis.PointerEvent) => {
-      const target = event.target as HTMLElement | null;
-
-      if (target?.closest("[data-player-queue-root]")) {
-        return;
-      }
-
-      setIsQueueOpen(false);
-    };
-
-    document.addEventListener("pointerdown", handlePointerDownOutsideQueue);
-
-    return () => {
-      document.removeEventListener(
-        "pointerdown",
-        handlePointerDownOutsideQueue,
-      );
-    };
-  }, [isQueueOpen]);
-
-  useEffect(() => {
-    if (!isPartyWatchOpen) {
-      return undefined;
-    }
-
-    const handlePointerDownOutsidePartyWatch = (
-      event: globalThis.PointerEvent,
-    ) => {
-      const target = event.target as HTMLElement | null;
-
-      if (target?.closest("[data-party-watch-root]")) {
-        return;
-      }
-
-      setIsPartyWatchOpen(false);
-    };
-
-    document.addEventListener(
-      "pointerdown",
-      handlePointerDownOutsidePartyWatch,
-    );
-
-    return () => {
-      document.removeEventListener(
-        "pointerdown",
-        handlePointerDownOutsidePartyWatch,
-      );
-    };
-  }, [isPartyWatchOpen]);
-
-  useEffect(() => {
-    if (!isSubtitleEditMode) {
-      return undefined;
-    }
-
-    const handlePointerDownOutsideSubtitle = (
-      event: globalThis.PointerEvent,
-    ) => {
-      const target = event.target as HTMLElement | null;
-
-      if (
-        target?.closest("[data-subtitle-editor-root]") ||
-        target?.closest("[data-player-settings-root]") ||
-        target?.closest("[data-player-queue-root]")
-      ) {
-        return;
-      }
-
-      finishSubtitleEditMode();
-    };
-
-    document.addEventListener("pointerdown", handlePointerDownOutsideSubtitle);
-
-    return () => {
-      document.removeEventListener(
-        "pointerdown",
-        handlePointerDownOutsideSubtitle,
-      );
-    };
-  }, [finishSubtitleEditMode, isSubtitleEditMode]);
+  useDismissOnOutsidePointer(isSettingsOpen, SETTINGS_ROOTS, () =>
+    setIsSettingsOpen(false),
+  );
+  useDismissOnOutsidePointer(isQueueOpen, QUEUE_ROOTS, () =>
+    setIsQueueOpen(false),
+  );
+  useDismissOnOutsidePointer(isPartyWatchOpen, PARTY_WATCH_ROOTS, () =>
+    setIsPartyWatchOpen(false),
+  );
+  useDismissOnOutsidePointer(
+    isSubtitleEditMode,
+    SUBTITLE_EDITOR_ROOTS,
+    finishSubtitleEditMode,
+  );
 
   const stopCurrentPlaybackForSourceSwitch = useCallback(async () => {
     const video = videoRef.current;
@@ -3896,83 +3494,13 @@ export function CustomVideoPlayer({
     [revealPlayerChrome],
   );
 
-  const [frameNotice, setFrameNotice] = useState<string | null>(null);
-  const [isSavingFrame, setIsSavingFrame] = useState(false);
-  const frameNoticeTimerRef = useRef<number | null>(null);
-
-  const showFrameNotice = useCallback(
-    (message: string, durationMs = FRAME_NOTICE_MS) => {
-      if (frameNoticeTimerRef.current !== null) {
-        window.clearTimeout(frameNoticeTimerRef.current);
-      }
-      setFrameNotice(message);
-      frameNoticeTimerRef.current = window.setTimeout(() => {
-        frameNoticeTimerRef.current = null;
-        setFrameNotice(null);
-      }, durationMs);
-    },
-    [],
-  );
-
-  useEffect(
-    () => () => {
-      if (frameNoticeTimerRef.current !== null) {
-        window.clearTimeout(frameNoticeTimerRef.current);
-      }
-    },
-    [],
-  );
-
-  /**
-   * Saves the paused frame from the original file rather than from the
-   * element: the element holds whichever quality rung Auto chose, and in
-   * Safari it streams from another origin, so its pixels cannot be exported.
-   * Refused while playing, because the picture moves on before the capture
-   * returns and the viewer would get a frame they never chose.
-   */
-  const handleSaveFrame = useCallback(async () => {
-    revealPlayerChrome();
-    if (isSavingFrame) return;
-
-    const video = videoRef.current;
-    if (!video || !video.paused) {
-      showFrameNotice(t("player.saveFramePauseFirst"));
-      return;
-    }
-
-    const sessionId = activeSource.playSessionId;
-    if (!sessionId) {
-      showFrameNotice(t("player.saveFrameFailed"));
-      return;
-    }
-
-    const atSeconds = Math.max(0, video.currentTime);
-    setIsSavingFrame(true);
-    // Held until the capture answers: a 4K HEVC frame can take a few seconds.
-    showFrameNotice(t("player.saveFrameSaving"), 60_000);
-
-    try {
-      const frame = await fetchOriginalFrame(sessionId, atSeconds);
-      saveBlobToDevice(
-        frame,
-        `${toFileSafeName(item.Name)} ${formatFrameTimestamp(atSeconds)}.png`,
-      );
-      showFrameNotice(t("player.saveFrameSaved"));
-    } catch (frameError) {
-      console.warn("[Seyirlik Player] Could not save the frame", frameError);
-      showFrameNotice(t("player.saveFrameFailed"));
-    } finally {
-      setIsSavingFrame(false);
-    }
-  }, [
-    activeSource.playSessionId,
-    isSavingFrame,
-    item.Name,
-    revealPlayerChrome,
-    showFrameNotice,
-    t,
+  const { frameNotice, isSavingFrame, handleSaveFrame } = useFrameCapture({
     videoRef,
-  ]);
+    playSessionId: activeSource.playSessionId,
+    itemName: item.Name,
+    revealPlayerChrome,
+    t,
+  });
 
   useEffect(() => {
     const video = videoRef.current;
