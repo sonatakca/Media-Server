@@ -72,8 +72,6 @@ import {
   DEFAULT_VIDEO_ASPECT_RATIO,
   PARTY_WATCH_DOT_POSITIONS,
   PLAYBACK_PROGRESS_REPORT_INTERVAL_MS,
-  TOUCH_DOUBLE_TAP_THRESHOLD_MS,
-  TOUCH_SEEK_SESSION_TIMEOUT_MS,
   TRICKPLAY_COLUMNS,
   TRICKPLAY_IMAGES_PER_SHEET,
   TRICKPLAY_INTERVAL_SECONDS,
@@ -140,8 +138,6 @@ import type {
   PendingAudioTranscodePlay,
   PendingSourceRestore,
   SubtitleCue,
-  TouchSeekSessionState,
-  TouchSeekSide,
 } from "./types";
 import { ActiveSourceBadge } from "./ActiveSourceBadge";
 import { useSeekFeedback } from "./useSeekFeedback";
@@ -159,6 +155,7 @@ import { useNativeTextTracksSuppressed } from "./useNativeTextTracksSuppressed";
 import { usePartyEventToast } from "./usePartyEventToast";
 import { useMediaSessionControls } from "./useMediaSessionControls";
 import { useSubtitleEditor } from "./useSubtitleEditor";
+import { useTouchSeek } from "./useTouchSeek";
 import {
   buildAdvancedQualityOptions,
   buildQualityFileSourceFor,
@@ -338,13 +335,6 @@ export function CustomVideoPlayer({
   } | null>(null);
   const playbackAttemptIdRef = useRef(0);
   const playbackAttemptRef = useRef<PlaybackAttemptState | null>(null);
-  const touchSeekSessionRef = useRef<TouchSeekSessionState>({
-    lastTapTime: 0,
-    lastTapSide: null,
-    isActive: false,
-    accumulatedSeconds: 0,
-    timeoutId: null,
-  });
   const lastProgressReportRef = useRef(0);
   const latestPlaybackPositionRef = useRef(0);
   const hasStartedRef = useRef(false);
@@ -359,7 +349,6 @@ export function CustomVideoPlayer({
   const audioTranscodeReadinessTimerRef = useRef<number | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
   const suppressMouseMoveUntilRef = useRef(0);
-  const singleTapTimerRef = useRef<number | null>(null);
   const fullscreenSeekPreviewTokenRef = useRef(0);
   const pendingFullscreenSeekPreviewRef = useRef<{
     token: number;
@@ -367,33 +356,7 @@ export function CustomVideoPlayer({
   } | null>(null);
   const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
   const viewModeCursorHideTimerRef = useRef<number | null>(null);
-  const clearSingleTapTimer = useCallback(() => {
-    if (singleTapTimerRef.current !== null) {
-      window.clearTimeout(singleTapTimerRef.current);
-      singleTapTimerRef.current = null;
-    }
-  }, []);
-  const clearTouchSeekSessionTimeout = useCallback(() => {
-    if (touchSeekSessionRef.current.timeoutId !== null) {
-      window.clearTimeout(touchSeekSessionRef.current.timeoutId);
-      touchSeekSessionRef.current.timeoutId = null;
-    }
-  }, []);
-  const resetTouchSeekSession = useCallback(
-    (clearPendingSingleTap = true) => {
-      if (clearPendingSingleTap) {
-        clearSingleTapTimer();
-      }
-
-      clearTouchSeekSessionTimeout();
-
-      touchSeekSessionRef.current.lastTapTime = 0;
-      touchSeekSessionRef.current.lastTapSide = null;
-      touchSeekSessionRef.current.isActive = false;
-      touchSeekSessionRef.current.accumulatedSeconds = 0;
-    },
-    [clearSingleTapTimer, clearTouchSeekSessionTimeout],
-  );
+  const { resetTouchSeekSession, handleTouchTap } = useTouchSeek(containerRef);
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -4859,44 +4822,6 @@ export function CustomVideoPlayer({
     );
   };
 
-  const getTouchSeekSide = (clientX: number): TouchSeekSide | null => {
-    const bounds = containerRef.current?.getBoundingClientRect();
-
-    if (!bounds) {
-      return null;
-    }
-
-    return clientX - bounds.left < bounds.width / 2 ? "left" : "right";
-  };
-
-  const scheduleTouchSeekSessionExpiry = () => {
-    clearTouchSeekSessionTimeout();
-
-    touchSeekSessionRef.current.timeoutId = window.setTimeout(() => {
-      touchSeekSessionRef.current.lastTapTime = 0;
-      touchSeekSessionRef.current.lastTapSide = null;
-      touchSeekSessionRef.current.isActive = false;
-      touchSeekSessionRef.current.accumulatedSeconds = 0;
-      touchSeekSessionRef.current.timeoutId = null;
-    }, TOUCH_SEEK_SESSION_TIMEOUT_MS);
-  };
-
-  const seekByTouchSide = (side: TouchSeekSide, now: number) => {
-    const seconds = side === "left" ? -5 : 5;
-    const session = touchSeekSessionRef.current;
-    const isContinuingSameSide = session.lastTapSide === side;
-
-    session.lastTapTime = now;
-    session.lastTapSide = side;
-    session.isActive = true;
-    session.accumulatedSeconds = isContinuingSameSide
-      ? session.accumulatedSeconds + seconds
-      : seconds;
-
-    handleSeekBy(seconds);
-    scheduleTouchSeekSessionExpiry();
-  };
-
   const handlePointerUp = (event: PointerEvent<HTMLDivElement>): boolean => {
     if (
       isDraggingSubtitle ||
@@ -4921,42 +4846,17 @@ export function CustomVideoPlayer({
     }
 
     const now = Date.now();
-    const tappedSide = getTouchSeekSide(event.clientX);
+    const tap = handleTouchTap(event.clientX, now, handleSeekBy);
 
-    if (!tappedSide) {
+    if (tap === null) {
       return false;
     }
 
-    const session = touchSeekSessionRef.current;
-
-    if (session.isActive) {
-      if (session.lastTapSide === tappedSide) {
-        clearSingleTapTimer();
-        event.preventDefault();
-        seekByTouchSide(tappedSide, now);
-        revealPlayerChrome();
-        return true;
-      }
-
-      resetTouchSeekSession(false);
-    }
-
-    if (
-      touchSeekSessionRef.current.lastTapSide === tappedSide &&
-      now - touchSeekSessionRef.current.lastTapTime <
-        TOUCH_DOUBLE_TAP_THRESHOLD_MS
-    ) {
-      clearSingleTapTimer();
+    if (tap === "seeked") {
       event.preventDefault();
-      touchSeekSessionRef.current.accumulatedSeconds = 0;
-      seekByTouchSide(tappedSide, now);
       revealPlayerChrome();
       return true;
     }
-
-    resetTouchSeekSession(false);
-    touchSeekSessionRef.current.lastTapTime = now;
-    touchSeekSessionRef.current.lastTapSide = tappedSide;
 
     suppressMouseMoveUntilRef.current = now + 500;
 
