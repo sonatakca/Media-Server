@@ -56,6 +56,7 @@ import { createJobQueue } from "./tasks/jobQueue";
 import { createWorker } from "./tasks/worker";
 import {
   createJobHandlers,
+  JOB_TYPES,
   MEDIA_LANE_JOB_TYPES,
   TRICKPLAY_LANE_JOB_TYPES,
 } from "./tasks/jobHandlers";
@@ -171,6 +172,10 @@ import {
   IMPORT_JOB_TYPES,
 } from "./imports/importJobs";
 import { createImportRoutes } from "./imports/importRoutes";
+import {
+  createImportHandoff,
+  createImportStarter,
+} from "./imports/importStarter";
 import {
   createConfigurationRoutes,
   describeHost,
@@ -1151,6 +1156,95 @@ export async function createNativeRuntime({
     sync: { catalogue, ffmpegPath: ffmpegPath ?? "ffmpeg" },
   });
 
+  /*
+   * Planning an import from a finished download: one starter, shared by the
+   * admin route and the automatic handoff, so both are checked the same way.
+   */
+  const importStarter =
+    importing && importConfig
+      ? createImportStarter({
+          repository: importing.repository,
+          queue,
+          downloadRoot: importConfig.downloadRoot,
+          /*
+           * The library a kind of media belongs in, from the configured
+           * definitions. A caller cannot influence it; asking for a kind
+           * nothing is configured for is refused rather than guessed at.
+           */
+          libraryRootFor: (kind) => {
+            const wanted = kind === "movie" ? "movies" : "series";
+            const definition = definitions.find(
+              (entry) => entry.kind === wanted && entry.roots.length > 0,
+            );
+            return definition
+              ? path.join(mediaRoot, definition.roots[0]!)
+              : undefined;
+          },
+          /*
+           * What the acquisition actually downloaded, and for what. Read from
+           * Seyirlik's own record rather than from the request, which is the
+           * whole reason a client can name an acquisition and not a path. The
+           * year and numbers come too: without them the destination is built
+           * from the title alone, unlike every other folder in the library.
+           */
+          resolveAcquisition: async (acquisitionId) => {
+            if (!acquisition) return null;
+            const record = await acquisition.repository.get(acquisitionId);
+            if (!record?.downloadPath || record.state !== "downloaded") {
+              return null;
+            }
+            const context =
+              await acquisition.repository.searchContext(acquisitionId);
+            const target = context?.target;
+            return {
+              downloadPath: record.downloadPath,
+              target: {
+                kind: record.targetKind as "movie" | "season" | "episode",
+                title: record.targetTitle,
+                ...(target?.year === undefined ? {} : { year: target.year }),
+                ...(target?.season === undefined
+                  ? {}
+                  : { season: target.season }),
+                ...(target?.episode === undefined
+                  ? {}
+                  : { episode: target.episode }),
+                ...(target?.itemId ? { itemId: target.itemId } : {}),
+              },
+            };
+          },
+        })
+      : undefined;
+
+  const handOffFinishedDownloads =
+    acquisition && importing && importStarter
+      ? createImportHandoff({
+          listFinished: () => acquisition.repository.listReadyForImport(),
+          withImports: (ids) =>
+            importing.repository.acquisitionsWithImports(ids),
+          start: importStarter,
+        })
+      : undefined;
+
+  /*
+   * Once an import has put its files in the library, read that library again
+   * so the title appears. The same scan the Library page starts, collapsed
+   * onto one already queued or running for that library.
+   */
+  const scanAfterImport = async (record: { libraryRoot: string }) => {
+    const wanted = path.resolve(record.libraryRoot).toLowerCase();
+    const library = (await libraries.listAll()).find((entry) =>
+      entry.roots.some(
+        (root) => path.resolve(mediaRoot, root).toLowerCase() === wanted,
+      ),
+    );
+    if (!library) return;
+    await queue.enqueue({
+      jobType: JOB_TYPES.libraryScan,
+      payload: { libraryId: library.id },
+      dedupeKey: `${JOB_TYPES.libraryScan}:${library.id}`,
+    });
+  };
+
   const worker = createWorker({
     queue,
     /*
@@ -1250,7 +1344,12 @@ export async function createNativeRuntime({
           )
         : {}),
       ...(importing
-        ? createImportJobHandlers(importing.service, importing.repository)
+        ? createImportJobHandlers(importing.service, importing.repository, {
+            ...(handOffFinishedDownloads
+              ? { handOff: handOffFinishedDownloads }
+              : {}),
+            onImported: scanAfterImport,
+          })
         : {}),
     },
     logger: console,
@@ -1404,45 +1503,12 @@ export async function createNativeRuntime({
           blocklist: releaseBlocklist,
         })
       : []),
-    ...(importing && importConfig
+    ...(importing && importStarter
       ? createImportRoutes({
           repository: importing.repository,
           service: importing.service,
           queue,
-          downloadRoot: importConfig.downloadRoot,
-          /*
-           * The library a kind of media belongs in, from the configured
-           * definitions. A caller cannot influence it; asking for a kind
-           * nothing is configured for is refused rather than guessed at.
-           */
-          libraryRootFor: (kind) => {
-            const wanted = kind === "movie" ? "movies" : "series";
-            const definition = definitions.find(
-              (entry) => entry.kind === wanted && entry.roots.length > 0,
-            );
-            return definition
-              ? path.join(mediaRoot, definition.roots[0]!)
-              : undefined;
-          },
-          /*
-           * What the acquisition actually downloaded. Read from Seyirlik's own
-           * record rather than from the request, which is the whole reason a
-           * client can name an acquisition and not a path.
-           */
-          resolveAcquisition: async (acquisitionId) => {
-            if (!acquisition) return null;
-            const record = await acquisition.repository.get(acquisitionId);
-            if (!record?.downloadPath || record.state !== "downloaded") {
-              return null;
-            }
-            return {
-              downloadPath: record.downloadPath,
-              target: {
-                kind: record.targetKind as "movie" | "season" | "episode",
-                title: record.targetTitle,
-              },
-            };
-          },
+          startImport: importStarter,
         })
       : []),
     ...createConfigurationRoutes({
@@ -1641,6 +1707,16 @@ export async function createNativeRuntime({
               dedupeKey: ACQUISITION_JOB_TYPES.reconcile,
             })
             .catch(() => undefined);
+          // A download the reconciler has just seen finish is imported on a
+          // later tick, never more than one interval after.
+          if (handOffFinishedDownloads) {
+            void queue
+              .enqueue({
+                jobType: IMPORT_JOB_TYPES.handoff,
+                dedupeKey: IMPORT_JOB_TYPES.handoff,
+              })
+              .catch(() => undefined);
+          }
         }, ACQUISITION_RECONCILE_INTERVAL_MS)
       : undefined;
   acquisitionReconcileTimer?.unref();

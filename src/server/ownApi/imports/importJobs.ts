@@ -12,7 +12,7 @@
  */
 import type { JobHandler } from "../tasks/worker";
 import { PermanentJobError } from "../tasks/worker";
-import type { ImportRepository } from "./importRepository";
+import type { ImportRecord, ImportRepository } from "./importRepository";
 import type { ImportService } from "./importService";
 import {
   dispositionFor,
@@ -23,12 +23,36 @@ import {
 export const IMPORT_JOB_TYPES = {
   run: "import.run",
   reconcile: "import.reconcile",
+  handoff: "import.handoff",
 } as const;
+
+export interface ImportJobExtras {
+  /**
+   * Plans an import for every finished download that has none yet.
+   *
+   * Absent when there is no download client: then nothing finishes
+   * downloading, and there is nothing to hand off.
+   */
+  readonly handOff?: () => Promise<{ started: number; refused: number }>;
+  /**
+   * Told once an import has put its files in the library, so the library can
+   * be read again. Failing here does not fail the import: the files are
+   * already where they belong.
+   */
+  readonly onImported?: (record: ImportRecord) => Promise<void>;
+}
 
 export function createImportJobHandlers(
   service: ImportService,
   repository: ImportRepository,
+  { handOff, onImported }: ImportJobExtras = {},
 ): Record<string, JobHandler> {
+  const announce = async (record: ImportRecord | null) => {
+    if (!record || !onImported) return;
+    if (record.state !== "committed" && record.state !== "complete") return;
+    await onImported(record).catch(() => undefined);
+  };
+
   const run: JobHandler = async ({ job, reportProgress }) => {
     const importId = job.payload.importId;
     if (typeof importId !== "string") {
@@ -66,6 +90,7 @@ export function createImportJobHandlers(
     }
 
     const finished = await repository.get(importId);
+    await announce(finished);
     return {
       state: finished?.state ?? executed.state,
       committed: executed.committed,
@@ -85,6 +110,7 @@ export function createImportJobHandlers(
       const outcome = await service.reconcile(record.id);
       if (outcome.state === "committed" || outcome.state === "complete") {
         resolved += 1;
+        await announce(await repository.get(record.id));
       } else if (
         outcome.state === "uncertain" ||
         outcome.state === "committing"
@@ -143,8 +169,15 @@ export function createImportJobHandlers(
     };
   };
 
+  const handoff: JobHandler = async ({ reportProgress }) => {
+    if (!handOff) return { started: 0, refused: 0 };
+    await reportProgress(0, "Handing finished downloads to the importer");
+    return handOff();
+  };
+
   return {
     [IMPORT_JOB_TYPES.run]: run,
     [IMPORT_JOB_TYPES.reconcile]: reconcile,
+    [IMPORT_JOB_TYPES.handoff]: handoff,
   };
 }

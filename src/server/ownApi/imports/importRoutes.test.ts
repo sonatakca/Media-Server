@@ -5,6 +5,7 @@ import {
   createImportRoutes,
   type ImportSourceResolution,
 } from "./importRoutes";
+import { createImportStarter } from "./importStarter";
 import { IMPORT_JOB_TYPES } from "./importJobs";
 import { createMemoryRepository } from "./importTestHarness";
 import type { ImportService } from "./importService";
@@ -63,9 +64,13 @@ function harness(
       repository,
       service,
       queue,
-      downloadRoot: DOWNLOAD_ROOT,
-      libraryRootFor: () => libraryRoot ?? undefined,
-      resolveAcquisition: async () => resolution,
+      startImport: createImportStarter({
+        repository,
+        queue,
+        downloadRoot: DOWNLOAD_ROOT,
+        libraryRootFor: () => libraryRoot ?? undefined,
+        resolveAcquisition: async () => resolution,
+      }),
     }),
     repository,
     enqueued,

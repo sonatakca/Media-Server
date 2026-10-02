@@ -256,6 +256,14 @@ export function createMemoryRepository(): MemoryRepository {
       );
     },
 
+    async acquisitionsWithImports(acquisitionIds) {
+      return new Set(
+        [...imports.values()]
+          .map((row) => row.acquisitionId)
+          .filter((id): id is string => !!id && acquisitionIds.includes(id)),
+      );
+    },
+
     async listUncertain() {
       return [...imports.values()].filter((row) =>
         ["committing", "uncertain"].includes(row.state),

@@ -12,7 +12,6 @@
  * if it falls outside; the destination root comes from configuration. Neither
  * is anything a client can influence.
  */
-import path from "node:path";
 import { OwnApiError } from "../ownApiHandler";
 import { sendAccepted, sendData, sendNoContent } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
@@ -23,10 +22,8 @@ import {
   parseLimit,
   requireBodyString,
   requireUuid,
-  validationError,
 } from "../api/validation";
 import type { JobQueue } from "../tasks/jobQueue";
-import { isPathInsideRoot } from "../../pathSecurity";
 import { IMPORT_JOB_TYPES } from "./importJobs";
 import type {
   ImportFileRecord,
@@ -34,6 +31,8 @@ import type {
   ImportRepository,
 } from "./importRepository";
 import type { ImportService } from "./importService";
+import { importRunDedupeKey, type ImportStarter } from "./importStarter";
+export type { ImportSourceResolution } from "./importStarter";
 
 const CREATE_KEYS = [
   "acquisitionId",
@@ -45,20 +44,6 @@ const CREATE_KEYS = [
   "itemId",
   "isUpgrade",
 ] as const;
-
-/** What the completed download and the library root are, for one target. */
-export interface ImportSourceResolution {
-  /** Absolute path SABnzbd reported for the finished download. */
-  readonly downloadPath: string;
-  readonly target: {
-    readonly kind: "movie" | "season" | "episode";
-    readonly title: string;
-    readonly year?: number;
-    readonly season?: number;
-    readonly episode?: number;
-    readonly itemId?: string;
-  };
-}
 
 interface ImportDto {
   readonly id: string;
@@ -117,25 +102,28 @@ export interface CreateImportRoutesOptions {
   readonly repository: ImportRepository;
   readonly service: ImportService;
   readonly queue: JobQueue;
-  /** The one directory an import may read a download out of. */
-  readonly downloadRoot: string;
-  /** Where the library for a target kind lives. */
-  readonly libraryRootFor: (kind: string) => string | undefined;
-  /** What the acquisition says it downloaded, and for what. */
-  readonly resolveAcquisition: (
-    acquisitionId: string,
-  ) => Promise<ImportSourceResolution | null>;
+  /** Plans an import of an acquisition's finished download. */
+  readonly startImport: ImportStarter;
+}
+
+/** An optional whole number from the body, as an override or nothing. */
+function optionalNumber(
+  body: Record<string, unknown>,
+  field: "year" | "season" | "episode",
+  min: number,
+  max: number,
+): Partial<Record<typeof field, number>> {
+  const value = optionalBodyInteger(body, field, { min, max });
+  return value === undefined ? {} : { [field]: value };
 }
 
 export function createImportRoutes({
   repository,
   service,
   queue,
-  downloadRoot,
-  libraryRootFor,
-  resolveAcquisition,
+  startImport,
 }: CreateImportRoutesOptions): RouteDefinition[] {
-  const dedupeKey = (importId: string): string => `import.run:${importId}`;
+  const dedupeKey = importRunDedupeKey;
 
   async function detailOf(id: string): Promise<ImportDto> {
     const detail = await repository.detail(id);
@@ -212,99 +200,15 @@ export function createImportRoutes({
           "acquisitionId",
         );
 
-        const resolved = await resolveAcquisition(acquisitionId);
-        if (!resolved) {
-          throw validationError(
-            "That acquisition has no finished download to import.",
-          );
-        }
-
-        /*
-         * The download path came from SABnzbd, not from the caller, and it is
-         * still checked: a download client writing outside the root Seyirlik
-         * authorised is a misconfiguration, and following it would put the
-         * importer somewhere nobody agreed to.
-         */
-        const absolute = path.resolve(resolved.downloadPath);
-        if (!isPathInsideRoot(path.resolve(downloadRoot), absolute)) {
-          throw validationError(
-            "The finished download is outside the configured download root.",
-          );
-        }
-        const sourceRelative = path
-          .relative(path.resolve(downloadRoot), absolute)
-          .split(path.sep)
-          .join("/");
-
-        const kind =
-          optionalBodyString(body, "kind") ?? resolved.target.kind ?? "movie";
-        if (kind !== "movie" && kind !== "season" && kind !== "episode") {
-          throw validationError("The kind must be movie, season or episode.");
-        }
-        const libraryRoot = libraryRootFor(kind);
-        if (!libraryRoot) {
-          throw validationError(
-            "No library is configured for that kind of media.",
-          );
-        }
-
-        const title = (
-          optionalBodyString(body, "title", { maxLength: 500 }) ??
-          resolved.target.title
-        ).trim();
-        if (!title) throw validationError("A title is required.");
-
-        const created = await repository.create({
-          acquisitionId,
-          target: {
-            kind,
-            title,
-            ...(resolved.target.itemId
-              ? { itemId: resolved.target.itemId }
-              : {}),
-            ...((optionalBodyInteger(body, "year", { min: 1870, max: 2200 }) ??
-            resolved.target.year)
-              ? {
-                  year:
-                    optionalBodyInteger(body, "year", {
-                      min: 1870,
-                      max: 2200,
-                    }) ?? resolved.target.year,
-                }
-              : {}),
-            ...((optionalBodyInteger(body, "season", { min: 0, max: 10_000 }) ??
-            resolved.target.season)
-              ? {
-                  season:
-                    optionalBodyInteger(body, "season", {
-                      min: 0,
-                      max: 10_000,
-                    }) ?? resolved.target.season,
-                }
-              : {}),
-            ...((optionalBodyInteger(body, "episode", {
-              min: 0,
-              max: 10_000,
-            }) ?? resolved.target.episode)
-              ? {
-                  episode:
-                    optionalBodyInteger(body, "episode", {
-                      min: 0,
-                      max: 10_000,
-                    }) ?? resolved.target.episode,
-                }
-              : {}),
-          },
-          sourceRoot: path.resolve(downloadRoot),
-          libraryRoot: path.resolve(libraryRoot),
-          sourceRelative,
+        const kind = optionalBodyString(body, "kind");
+        const title = optionalBodyString(body, "title", { maxLength: 500 });
+        const { record: created, taskId } = await startImport(acquisitionId, {
+          ...(kind === undefined ? {} : { kind }),
+          ...(title === undefined ? {} : { title }),
+          ...optionalNumber(body, "year", 1870, 2200),
+          ...optionalNumber(body, "season", 0, 10_000),
+          ...optionalNumber(body, "episode", 0, 10_000),
           isUpgrade: body.isUpgrade === true,
-        });
-
-        const taskId = await queue.enqueue({
-          jobType: IMPORT_JOB_TYPES.run,
-          payload: { importId: created.id },
-          dedupeKey: dedupeKey(created.id),
         });
         sendData(
           context.response,

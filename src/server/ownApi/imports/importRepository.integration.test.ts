@@ -387,6 +387,17 @@ integration("one live import per handoff", () => {
     expect(replacement.acquisitionId).toBe(acquisitionId);
   });
 
+  it("says which acquisitions already have an import, in any state", async () => {
+    // Counts the failed one too: re-importing a failure is a person's call.
+    const untouched = randomUUID();
+    const found = await repository.acquisitionsWithImports([
+      acquisitionId,
+      untouched,
+    ]);
+    expect([...found]).toEqual([acquisitionId]);
+    expect(await repository.acquisitionsWithImports([])).toEqual(new Set());
+  });
+
   it("lists the rows whose filesystem outcome is unknown", async () => {
     const record = await repository.create({
       ...forAcquisition(),

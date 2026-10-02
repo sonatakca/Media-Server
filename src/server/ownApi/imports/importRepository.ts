@@ -201,6 +201,10 @@ export interface ImportRepository extends ImportStore {
   listActive(): Promise<ImportRecord[]>;
   /** Rows whose filesystem outcome is unknown and must be read. */
   listUncertain(): Promise<ImportRecord[]>;
+  /** Which of these acquisitions already have an import, in any state. */
+  acquisitionsWithImports(
+    acquisitionIds: readonly string[],
+  ): Promise<Set<string>>;
   detail(id: string): Promise<{
     record: ImportRecord;
     files: ImportFileRecord[];
@@ -591,6 +595,16 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
           ORDER BY created_at`,
       );
       return result.rows.map(toRecord);
+    },
+
+    async acquisitionsWithImports(acquisitionIds) {
+      if (acquisitionIds.length === 0) return new Set();
+      const result = await pool.query<{ acquisition_id: string }>(
+        `SELECT DISTINCT acquisition_id FROM imports
+          WHERE acquisition_id = ANY($1::uuid[])`,
+        [acquisitionIds],
+      );
+      return new Set(result.rows.map((row) => row.acquisition_id));
     },
 
     async listUncertain() {
