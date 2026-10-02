@@ -2089,6 +2089,25 @@ export const tr = {
   "admin.acquisitions.failure.removed-externally": "İşi başka bir şey kaldırdı",
   "admin.acquisitions.failure.cancelled": "İptal edildi",
   "admin.acquisitions.failure.unknown": "Tanınmayan bir sorun oldu",
+  "admin.acquisitions.failure.blocklisted": "Bu sürüm engel listesinde",
+  "admin.acquisitions.originValue.fallback": "yeni bir arama",
+  "admin.acquisitions.blocklistAndSearch": "Engelle ve yeniden ara",
+  "admin.acquisitions.blocklist": "Engelle",
+  "admin.acquisitions.searching": "Aranıyor…",
+  "admin.acquisitions.notice.blocklisted":
+    "Engellendi. Seyirlik bu sürümü bir daha seçmeyecek.",
+  "admin.acquisitions.notice.replaced":
+    "Engellendi; bir sonraki en iyi sürüm indiriliyor:",
+  "admin.acquisitions.notice.nothingElse":
+    "Engellendi, ancak arama bu profilin izin verdiği başka bir sürüm bulamadı.",
+  "admin.acquisitions.notice.noProfile":
+    "Engellendi. Kalite profili kaydedilmemiş; Sürümler sayfasından arayın.",
+  "admin.acquisitions.notice.failed":
+    "Bu işlem olmadı. Yenileyip tekrar deneyin; engellenenler engelli kalır.",
+  "admin.acquisitions.blocklistHeading": "Engel listesi",
+  "admin.acquisitions.blocklistDescription":
+    "Seyirlik'in burada ya da Sürümler sayfasında asla seçmeyeceği sürümler.",
+  "admin.acquisitions.unblock": "Kaldır",
   "admin.decisions.title": "Sürüm kararları",
   "admin.decisions.description":
     "Seyirlik bir başlık için neyi indirirdi ve diğerlerini neden indirmezdi.",
@@ -2110,6 +2129,16 @@ export const tr = {
   "admin.decisions.score": "puan",
   "admin.decisions.acquire": "Bunu indir",
   "admin.decisions.asked": "İstendi",
+  "admin.decisions.sizeLimit": "En büyük sürüm",
+  "admin.decisions.sizeLimitNone": "Sınır yok",
+  "admin.decisions.sizeLimitSave": "Sınırı kaydet",
+  "admin.decisions.sizeLimitHint":
+    "Daha büyük olanlar elenir. Sınır istemiyorsanız boş bırakın.",
+  "admin.decisions.sizeLimitSaved":
+    "Kaydedildi. Uygulamak için yeniden arayın.",
+  "admin.decisions.sizeLimitInvalid":
+    "Sıfırdan büyük bir GB değeri girin ya da boş bırakın.",
+  "admin.decisions.sizeLimitFailed": "Sınır kaydedilemedi.",
   "admin.subtitles.title": "Altyazılar",
   "admin.subtitles.description":
     "Altyazı sisteminin ne yaptığı ve neyi beklediği.",

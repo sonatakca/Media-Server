@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw } from "lucide-react";
+import { Ban, RefreshCw, SearchCheck } from "lucide-react";
 import { setPageTitle } from "../../lib/pageTitle";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { WorkflowSteps } from "../../components/admin/WorkflowSteps";
@@ -11,12 +11,16 @@ import {
   type AcquisitionBucket,
 } from "../../lib/acquisitionPresentation";
 import {
+  blocklistAcquisition,
   cancelAcquisition,
   getAcquisition,
   listAcquisitions,
+  listBlocklist,
+  removeBlocklistEntry,
   retryAcquisition,
   type Acquisition,
   type AcquisitionDetail,
+  type BlocklistEntry,
 } from "../../lib/acquisitionsApi";
 
 /**
@@ -28,6 +32,17 @@ import {
  * as the progress, and a failure is shown with what it asks of the reader
  * rather than as a code.
  */
+
+const ACTION_BUTTON =
+  "inline-flex items-center gap-1.5 rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white/80 transition hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]";
+
+/** What the last blocklisting did, said once, above the list. */
+type Notice =
+  | { kind: "blocklisted" }
+  | { kind: "replaced"; releaseTitle: string }
+  | { kind: "nothingElse" }
+  | { kind: "noProfile" }
+  | { kind: "failed" };
 
 const BUCKET_ORDER: AcquisitionBucket[] = [
   "needsAttention",
@@ -41,10 +56,22 @@ export function AcquisitionsPage() {
   const [selected, setSelected] = useState<AcquisitionDetail | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [failure, setFailure] = useState<string | null>(null);
+  const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [notice, setNotice] = useState<Notice | null>(null);
+
+  const loadBlocklist = useCallback(async () => {
+    try {
+      setBlocklist(await listBlocklist());
+    } catch {
+      // The blocklist is secondary here; the acquisitions still load.
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setIsLoading(true);
     setFailure(null);
+    void loadBlocklist();
     try {
       setAcquisitions(await listAcquisitions());
     } catch {
@@ -54,7 +81,7 @@ export function AcquisitionsPage() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [loadBlocklist]);
 
   useEffect(() => {
     setPageTitle(`${t("admin.acquisitions.title")} · Seyirlik`, {
@@ -68,6 +95,11 @@ export function AcquisitionsPage() {
 
     void (async () => {
       try {
+        void listBlocklist()
+          .then((entries) => {
+            if (!isCancelled) setBlocklist(entries);
+          })
+          .catch(() => undefined);
         const rows = await listAcquisitions();
         if (!isCancelled) setAcquisitions(rows);
       } catch {
@@ -93,6 +125,50 @@ export function AcquisitionsPage() {
       setSelected(await getAcquisition(id));
     },
     [load],
+  );
+
+  /*
+   * Searching again runs the indexer search inside the request, so it takes
+   * seconds. The row's buttons stay disabled for that long, which is also
+   * what keeps a second press from asking twice.
+   */
+  const blocklistRow = useCallback(
+    async (id: string, searchAgain: boolean) => {
+      setBusyId(id);
+      setNotice(null);
+      try {
+        const outcome = await blocklistAcquisition(id, searchAgain);
+        setNotice(
+          outcome.replacement
+            ? {
+                kind: "replaced",
+                releaseTitle: outcome.replacement.releaseTitle,
+              }
+            : !searchAgain
+              ? { kind: "blocklisted" }
+              : outcome.reason === "no-profile"
+                ? { kind: "noProfile" }
+                : { kind: "nothingElse" },
+        );
+      } catch {
+        setNotice({ kind: "failed" });
+      } finally {
+        setBusyId(null);
+        await load();
+      }
+    },
+    [load],
+  );
+
+  const unblock = useCallback(
+    async (entryId: string) => {
+      try {
+        await removeBlocklistEntry(entryId);
+      } finally {
+        await loadBlocklist();
+      }
+    },
+    [loadBlocklist],
   );
 
   const rows = acquisitions ?? [];
@@ -131,6 +207,27 @@ export function AcquisitionsPage() {
         </p>
       ) : null}
 
+      {notice ? (
+        <p
+          role="status"
+          className={`rounded-2xl border px-4 py-3 text-sm font-bold ${
+            notice.kind === "replaced" || notice.kind === "blocklisted"
+              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-100"
+              : "border-amber-400/30 bg-amber-400/10 text-amber-100"
+          }`}
+        >
+          {t(
+            `admin.acquisitions.notice.${notice.kind}` as "admin.acquisitions.notice.blocklisted",
+          )}
+          {/* Provider text, rendered as text. */}
+          {notice.kind === "replaced" ? (
+            <span className="mt-1 block break-all text-xs font-medium opacity-80">
+              {notice.releaseTitle}
+            </span>
+          ) : null}
+        </p>
+      ) : null}
+
       {!isLoading && rows.length === 0 && !failure ? (
         <p className="rounded-3xl border border-white/10 bg-white/[0.04] px-5 py-8 text-center text-sm font-semibold text-white/45">
           {t("admin.acquisitions.empty")}
@@ -155,7 +252,8 @@ export function AcquisitionsPage() {
             <ul className="mt-3 space-y-2">
               {inBucket.map((row) => {
                 const step = progressStep(row.state);
-                const actions = actionsFor(row.state);
+                const actions = actionsFor(row.state, row.failureClass);
+                const isBusy = busyId === row.id;
 
                 return (
                   <li
@@ -198,20 +296,50 @@ export function AcquisitionsPage() {
                       <p className="mt-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200">
                         {t(
                           `admin.acquisitions.failure.${row.failureClass}` as "admin.acquisitions.failure.unknown",
-                        )}{" "}
-                        —{" "}
-                        {t(
-                          `admin.acquisitions.remedy.${remedyFor(row.failureClass)}` as "admin.acquisitions.remedy.waits",
                         )}
+                        {/* A superseded row was already acted on: what to do
+                            about it no longer applies. */}
+                        {row.state === "superseded"
+                          ? null
+                          : ` — ${t(
+                              `admin.acquisitions.remedy.${remedyFor(row.failureClass)}` as "admin.acquisitions.remedy.waits",
+                            )}`}
                       </p>
                     ) : null}
 
                     <div className="mt-3 flex flex-wrap gap-2">
+                      {actions.canBlocklist ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void blocklistRow(row.id, true)}
+                          className={ACTION_BUTTON}
+                        >
+                          <SearchCheck size={13} aria-hidden="true" />
+                          {isBusy
+                            ? t("admin.acquisitions.searching")
+                            : t("admin.acquisitions.blocklistAndSearch")}
+                        </button>
+                      ) : null}
+
+                      {actions.canBlocklist ? (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => void blocklistRow(row.id, false)}
+                          className={ACTION_BUTTON}
+                        >
+                          <Ban size={13} aria-hidden="true" />
+                          {t("admin.acquisitions.blocklist")}
+                        </button>
+                      ) : null}
+
                       {actions.canRetry ? (
                         <button
                           type="button"
+                          disabled={isBusy}
                           onClick={() => void act(row.id, "retry")}
-                          className="rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white/80 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          className={ACTION_BUTTON}
                         >
                           {t("admin.acquisitions.retry")}
                         </button>
@@ -220,8 +348,9 @@ export function AcquisitionsPage() {
                       {actions.canCancel ? (
                         <button
                           type="button"
+                          disabled={isBusy}
                           onClick={() => void act(row.id, "cancel")}
-                          className="rounded-full border border-white/15 bg-white/[0.08] px-3 py-1.5 text-xs font-black text-white/80 transition hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                          className={ACTION_BUTTON}
                         >
                           {t("admin.acquisitions.cancel")}
                         </button>
@@ -234,6 +363,48 @@ export function AcquisitionsPage() {
           </section>
         );
       })}
+
+      {blocklist.length > 0 ? (
+        <section aria-labelledby="blocklist-heading">
+          <h2
+            id="blocklist-heading"
+            className="px-1 text-lg font-black text-white"
+          >
+            {t("admin.acquisitions.blocklistHeading")}
+          </h2>
+          <p className="mt-1 px-1 text-sm font-semibold text-white/50">
+            {t("admin.acquisitions.blocklistDescription")}
+          </p>
+
+          <ul className="mt-3 space-y-2">
+            {blocklist.map((entry) => (
+              <li
+                key={entry.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-black/25 px-4 py-3"
+              >
+                <div className="min-w-0 flex-1">
+                  {entry.targetTitle ? (
+                    <p className="text-sm font-black text-white">
+                      {entry.targetTitle}
+                    </p>
+                  ) : null}
+                  {/* Provider text, rendered as text. */}
+                  <p className="break-all text-xs font-medium text-white/45">
+                    {entry.releaseTitle}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void unblock(entry.id)}
+                  className={ACTION_BUTTON}
+                >
+                  {t("admin.acquisitions.unblock")}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
 
       {selected ? (
         <section className="rounded-3xl border border-white/10 bg-white/[0.05] p-5">

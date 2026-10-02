@@ -43,6 +43,8 @@ export interface QualityProfile {
   readonly minFormatScore: number;
   /** Below this, the cutoff is not considered met even at cutoff quality. */
   readonly cutoffFormatScore: number;
+  /** The largest release this profile accepts, in bytes. Absent means no limit. */
+  readonly maxSizeBytes?: number;
 }
 
 export type QualityReasonCode =

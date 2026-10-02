@@ -7,7 +7,7 @@
  * without doing anything about it.
  */
 import { OwnApiError } from "../ownApiHandler";
-import { sendData } from "../api/envelope";
+import { sendData, sendNoContent } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import {
   asObjectBody,
@@ -15,6 +15,7 @@ import {
   optionalBodyString,
   optionalBodyStringArray,
   requireBodyString,
+  requireUuid,
   validationError,
 } from "../api/validation";
 import {
@@ -30,6 +31,10 @@ import {
 import { parseQualityId } from "./quality";
 import { qualityLabel } from "./quality";
 import type { PolicyRepository } from "./policyRepository";
+import type { BlocklistRepository } from "./blocklistRepository";
+
+/** Above this a limit is a typo, not a policy: no release is a terabyte. */
+const MAX_SIZE_LIMIT_BYTES = 1_000_000_000_000;
 
 const BODY_KEYS = [
   "kind",
@@ -120,7 +125,7 @@ function parseTarget(body: Record<string, unknown>): MediaTarget {
 }
 
 /** The search that would find candidates for this target. */
-function searchFor(
+export function searchFor(
   target: MediaTarget,
   limit: number | undefined,
 ): IndexerSearchQuery {
@@ -143,11 +148,13 @@ function searchFor(
 export interface CreateReleaseRoutesOptions {
   readonly search: IndexerSearchService;
   readonly policies: PolicyRepository;
+  readonly blocklist: BlocklistRepository;
 }
 
 export function createReleaseRoutes({
   search,
   policies,
+  blocklist,
 }: CreateReleaseRoutesOptions): RouteDefinition[] {
   return [
     {
@@ -159,6 +166,75 @@ export function createReleaseRoutes({
         sendData(context.response, context.requestId, {
           profiles: await policies.listProfiles(),
         });
+      },
+    },
+    {
+      /**
+       * The largest release a profile accepts.
+       *
+       * The one part of a profile editable here, because it is the one part
+       * that is a plain number: the qualities and preferences were migrated
+       * and are edited where they came from.
+       */
+      method: "PATCH",
+      path: "/releases/profiles/:profileId",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const profileId = requireUuid(context.params.profileId, "profileId");
+        const body = asObjectBody(await context.readJson(), ["maxSizeBytes"]);
+        const raw = body.maxSizeBytes;
+        if (
+          raw !== null &&
+          (!Number.isInteger(raw) ||
+            (raw as number) < 1 ||
+            (raw as number) > MAX_SIZE_LIMIT_BYTES)
+        ) {
+          throw validationError("maxSizeBytes is invalid.");
+        }
+        const maxSizeBytes = raw as number | null;
+        if (!(await policies.setMaxSize(profileId, maxSizeBytes))) {
+          throw new OwnApiError(
+            "PROFILE_NOT_FOUND",
+            "No such quality profile.",
+            404,
+          );
+        }
+        sendData(context.response, context.requestId, {
+          profile: { id: profileId, maxSizeBytes },
+        });
+      },
+    },
+    {
+      method: "GET",
+      path: "/releases/blocklist",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        // The guid is left out: some indexers put a download URL in it.
+        sendData(context.response, context.requestId, {
+          entries: (await blocklist.list()).map((entry) => ({
+            id: entry.id,
+            indexerId: entry.indexerId,
+            releaseTitle: entry.releaseTitle,
+            ...(entry.targetTitle ? { targetTitle: entry.targetTitle } : {}),
+            ...(entry.reason ? { reason: entry.reason } : {}),
+            createdAt: new Date(entry.createdAtMs).toISOString(),
+          })),
+        });
+      },
+    },
+    {
+      method: "DELETE",
+      path: "/releases/blocklist/:entryId",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const id = requireUuid(context.params.entryId, "entryId");
+        if (!(await blocklist.remove(id))) {
+          throw new OwnApiError("NOT_FOUND", "No such blocklist entry.", 404);
+        }
+        sendNoContent(context.response);
       },
     },
     {
@@ -210,9 +286,11 @@ export function createReleaseRoutes({
             ...(indexerIds?.length ? { indexerIds } : {}),
             signal: controller.signal,
           });
+          const isBlocklisted = await blocklist.matcherFor(found.releases);
           const result = selectRelease(target, found.releases, {
             profile: policy.profile,
             preferences: policy.preferences,
+            isBlocklisted,
             current: currentQuality
               ? {
                   quality: currentQuality,

@@ -55,6 +55,7 @@ function fakes(
     submit: vi.fn(async () => undefined),
     reconcile: vi.fn(async () => ({ examined: records.length, changed: 0 })),
     cancel: vi.fn(async () => undefined),
+    blocklist: vi.fn(async () => true),
     ...over,
   };
   const repository = {

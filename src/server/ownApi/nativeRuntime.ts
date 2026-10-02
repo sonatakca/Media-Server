@@ -127,6 +127,7 @@ import { createIndexerSearchService } from "./indexers/searchService";
 import { createIndexerRoutes } from "./indexers/indexerRoutes";
 import { createPolicyRepository } from "./releases/policyRepository";
 import { createReleaseRoutes } from "./releases/releaseRoutes";
+import { createBlocklistRepository } from "./releases/blocklistRepository";
 import { createMonitoringRepository } from "./releases/monitoringRepository";
 import { createWantedRoutes } from "./catalogue/wantedRoutes";
 import { createLibraryAdminRepository } from "./catalogue/libraryAdmin";
@@ -1026,6 +1027,8 @@ export async function createNativeRuntime({
     environment,
   });
   const indexerSearch = createIndexerSearchService(indexerRegistry);
+  const releasePolicies = createPolicyRepository(pool);
+  const releaseBlocklist = createBlocklistRepository(pool);
 
   /*
    * The download client, when one is configured.
@@ -1360,7 +1363,8 @@ export async function createNativeRuntime({
     }),
     ...createReleaseRoutes({
       search: indexerSearch,
-      policies: createPolicyRepository(pool),
+      policies: releasePolicies,
+      blocklist: releaseBlocklist,
     }),
     ...createMonitoringRoutes(createMonitoringRepository(pool)),
     ...createWantedRoutes(pool, tmdb),
@@ -1395,6 +1399,9 @@ export async function createNativeRuntime({
           indexers: indexerRegistry,
           queue,
           sab: acquisition.sab,
+          search: indexerSearch,
+          policies: releasePolicies,
+          blocklist: releaseBlocklist,
         })
       : []),
     ...(importing && importConfig

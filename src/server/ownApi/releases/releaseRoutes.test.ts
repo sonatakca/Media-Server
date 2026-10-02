@@ -4,6 +4,7 @@ import { createReleaseRoutes } from "./releaseRoutes";
 import { profileFromIds } from "./qualityProfile";
 import { HEVC_PREFERENCE } from "./preferences";
 import type { PolicyRepository } from "./policyRepository";
+import type { BlocklistRepository } from "./blocklistRepository";
 import type { RouteContext, RouteDefinition } from "../api/router";
 import type { IndexerRelease } from "../indexers/indexerTypes";
 import type { IndexerSearchService } from "../indexers/searchService";
@@ -30,7 +31,9 @@ function release(
 }
 
 const policies: PolicyRepository = {
-  listProfiles: async () => [{ id: "p1", name: "HD-1080p" }],
+  listProfiles: async () => [
+    { id: "p1", name: "HD-1080p", maxSizeBytes: 30_000_000_000 },
+  ],
   load: async (id) =>
     id === "p1"
       ? {
@@ -43,9 +46,13 @@ const policies: PolicyRepository = {
           preferences: [{ ...HEVC_PREFERENCE, id: "r1" }],
         }
       : null,
+  setMaxSize: async (id) => id === "11111111-1111-4111-8111-111111111111",
 };
 
-function routes(releases: readonly IndexerRelease[]): RouteDefinition[] {
+function routes(
+  releases: readonly IndexerRelease[],
+  blockedTitles: readonly string[] = [],
+): RouteDefinition[] {
   const search: IndexerSearchService = {
     search: vi.fn(async () => ({
       releases,
@@ -60,7 +67,14 @@ function routes(releases: readonly IndexerRelease[]): RouteDefinition[] {
       partial: false,
     })),
   };
-  return createReleaseRoutes({ search, policies });
+  const blocklist = {
+    matcherFor: async () => (candidate: { title: string }) =>
+      blockedTitles.includes(candidate.title),
+    list: async () => [],
+    remove: async () => false,
+    add: async () => undefined,
+  } as BlocklistRepository;
+  return createReleaseRoutes({ search, policies, blocklist });
 }
 
 function invoke(
@@ -93,7 +107,13 @@ function invoke(
   return route.handle(context).then(() => captured);
 }
 
-const evaluate = (releases: readonly IndexerRelease[]) => routes(releases)[1]!;
+const evaluate = (
+  releases: readonly IndexerRelease[],
+  blockedTitles: readonly string[] = [],
+) =>
+  routes(releases, blockedTitles).find(
+    (route) => route.path === "/releases/evaluate",
+  )!;
 
 interface EvaluateBody {
   data: {
@@ -197,6 +217,9 @@ describe("what the route will not do", () => {
     const paths = routes([]).map((route) => `${route.method} ${route.path}`);
     expect(paths).toEqual([
       "GET /releases/profiles",
+      "PATCH /releases/profiles/:profileId",
+      "GET /releases/blocklist",
+      "DELETE /releases/blocklist/:entryId",
       "POST /releases/evaluate",
     ]);
     expect(paths.join(" ")).not.toMatch(/grab|download|nzb|queue/i);
@@ -251,5 +274,90 @@ describe("what the route will not do", () => {
     await expect(
       invoke(evaluate([]), { kind: "movie", title: "X", profileId: "missing" }),
     ).rejects.toMatchObject({ code: "PROFILE_NOT_FOUND", statusCode: 404 });
+  });
+});
+
+describe("the blocklist and the size limit", () => {
+  it("rejects a blocklisted release and recommends the next", async () => {
+    const { payload } = await invoke(
+      evaluate(
+        [
+          release("Blade.Runner.2049.2017.1080p.BluRay.x265-A"),
+          release("Blade.Runner.2049.2017.1080p.WEB-DL.x265-B"),
+        ],
+        ["Blade.Runner.2049.2017.1080p.BluRay.x265-A"],
+      ),
+      { kind: "movie", title: "Blade Runner 2049", profileId: "p1" },
+    );
+    const data = (payload as EvaluateBody).data;
+    expect(data.winner?.title).toBe(
+      "Blade.Runner.2049.2017.1080p.WEB-DL.x265-B",
+    );
+    expect(data.candidates.find((c) => c.title.endsWith("-A"))).toMatchObject({
+      accepted: false,
+      rejection: "blocklisted",
+    });
+  });
+
+  const patch = () =>
+    routes([]).find(
+      (route) =>
+        route.method === "PATCH" &&
+        route.path === "/releases/profiles/:profileId",
+    )!;
+
+  function invokePatch(profileId: string, body: unknown) {
+    const captured = { status: 0, payload: undefined as unknown };
+    const context = {
+      request: { once: () => undefined, off: () => undefined },
+      response: {
+        setHeader: () => undefined,
+        end: (chunk?: string) => {
+          captured.payload = chunk ? JSON.parse(chunk) : undefined;
+        },
+        get headersSent() {
+          return false;
+        },
+      },
+      requestId: "req",
+      url: new URL("http://localhost/ownAPI/v1/releases/profiles/x"),
+      params: { profileId },
+      method: "PATCH",
+      requirePrincipal: () => ({ userId: "u", isAdministrator: true }),
+      readJson: async () => body,
+    } as unknown as RouteContext;
+    return patch()
+      .handle(context)
+      .then(() => captured);
+  }
+
+  const ID = "11111111-1111-4111-8111-111111111111";
+
+  it("sets a profile's limit, and clears it with null", async () => {
+    const set = await invokePatch(ID, { maxSizeBytes: 50_000_000_000 });
+    expect((set.payload as { data: unknown }).data).toEqual({
+      profile: { id: ID, maxSizeBytes: 50_000_000_000 },
+    });
+    const cleared = await invokePatch(ID, { maxSizeBytes: null });
+    expect((cleared.payload as { data: unknown }).data).toEqual({
+      profile: { id: ID, maxSizeBytes: null },
+    });
+  });
+
+  it.each([0, -1, 1.5, "30", 2_000_000_000_000])(
+    "refuses a limit of %s",
+    async (value) => {
+      await expect(
+        invokePatch(ID, { maxSizeBytes: value }),
+      ).rejects.toMatchObject({ statusCode: 422 });
+    },
+  );
+
+  it("answers 404 for a profile that does not exist", async () => {
+    await expect(
+      invokePatch("22222222-2222-4222-8222-222222222222", {
+        maxSizeBytes: 1,
+      }),
+    ).rejects.toMatchObject({ statusCode: 404 });
   });
 });

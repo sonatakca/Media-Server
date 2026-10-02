@@ -99,6 +99,11 @@ export interface AcquisitionRepository extends AcquisitionStore {
   } | null>;
   /** Acquisitions finished downloading and not yet handed on. */
   listReadyForImport(limit?: number): Promise<AcquisitionSummary[]>;
+  /** What was asked for, and against which profile — enough to ask again. */
+  searchContext(id: string): Promise<{
+    target: AcquisitionTarget;
+    profileId?: string;
+  } | null>;
 }
 
 interface Row {
@@ -330,6 +335,40 @@ export function createAcquisitionRepository(
           ...(row.detail ? { detail: row.detail } : {}),
           atMs: row.at.getTime(),
         })),
+      };
+    },
+
+    async searchContext(id) {
+      const result = await pool.query<{
+        target_kind: string;
+        target_item_id: string | null;
+        target_title: string;
+        target_year: number | null;
+        target_season: number | null;
+        target_episode: number | null;
+        profile_id: string | null;
+      }>(
+        `SELECT a.target_kind, a.target_item_id, a.target_title, a.target_year,
+                a.target_season, a.target_episode, d.profile_id
+           FROM acquisitions a
+           LEFT JOIN acquisition_decisions d ON d.acquisition_id = a.id
+          WHERE a.id = $1`,
+        [id],
+      );
+      const row = result.rows[0];
+      if (!row) return null;
+      return {
+        target: {
+          kind: row.target_kind as AcquisitionTarget["kind"],
+          title: row.target_title,
+          ...(row.target_item_id ? { itemId: row.target_item_id } : {}),
+          ...(row.target_year === null ? {} : { year: row.target_year }),
+          ...(row.target_season === null ? {} : { season: row.target_season }),
+          ...(row.target_episode === null
+            ? {}
+            : { episode: row.target_episode }),
+        },
+        ...(row.profile_id ? { profileId: row.profile_id } : {}),
       };
     },
 

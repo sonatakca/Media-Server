@@ -55,9 +55,24 @@ export function bucketOf(state: AcquisitionState): AcquisitionBucket {
   return "needsAttention";
 }
 
+/**
+ * Where the server will blocklist from: not mid-submission, and not once the
+ * record is over.
+ */
+const BLOCKLISTABLE: readonly AcquisitionState[] = [
+  "planned",
+  "queued",
+  "downloading",
+  "processing",
+  "awaiting_retry",
+  "failed",
+];
+
 export interface AcquisitionActions {
   readonly canRetry: boolean;
   readonly canCancel: boolean;
+  /** Blocklist the release, optionally searching for another at once. */
+  readonly canBlocklist: boolean;
   /** Why an action is unavailable, when saying so is more use than hiding it. */
   readonly cancelBlockedReason?: "already-finished";
 }
@@ -69,11 +84,17 @@ export interface AcquisitionActions {
  * that has already finished downloading. A cancelled or superseded row is
  * likewise past cancelling.
  */
-export function actionsFor(state: AcquisitionState): AcquisitionActions {
+export function actionsFor(
+  state: AcquisitionState,
+  failureClass?: AcquisitionFailureClass,
+): AcquisitionActions {
   const finished = FINISHED.includes(state);
   return {
-    canRetry: state === "failed",
+    // A blocklisted release is refused a retry: that is what blocklisting it
+    // means.
+    canRetry: state === "failed" && failureClass !== "blocklisted",
     canCancel: !finished,
+    canBlocklist: BLOCKLISTABLE.includes(state),
     ...(finished ? { cancelBlockedReason: "already-finished" as const } : {}),
   };
 }
@@ -115,7 +136,7 @@ export function progressStep(
   return { step: index + 1, of: ACQUISITION_PROGRESSION.length };
 }
 
-/** The fourteen failure classes the acquisition service records. */
+/** The failure classes the acquisition service records. */
 export type AcquisitionFailureClass =
   | "indexer-unavailable"
   | "indexer-auth"
@@ -130,6 +151,7 @@ export type AcquisitionFailureClass =
   | "password-required"
   | "removed-externally"
   | "cancelled"
+  | "blocklisted"
   | "unknown";
 
 export type FailureRemedy =
@@ -159,6 +181,7 @@ export function remedyFor(failure: AcquisitionFailureClass): FailureRemedy {
     case "repair-failed":
     case "unpack-failed":
     case "password-required":
+    case "blocklisted":
       return "another-release";
     default:
       // Authentication, an external removal, a cancellation, or something

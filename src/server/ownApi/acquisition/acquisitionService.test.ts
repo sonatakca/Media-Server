@@ -512,3 +512,46 @@ describe("cancelling", () => {
     expect(current().state).toBe("cancelled");
   });
 });
+
+describe("blocklisting", () => {
+  it("stops the download, removes its job, and leaves it failed", async () => {
+    const { store, current } = makeStore({
+      state: "downloading",
+      externalId: "nzo-mine",
+    });
+    const sab = makeSab({
+      jobs: [
+        { nzoId: "nzo-mine", name: KEY, state: "downloading", source: "queue" },
+      ],
+    });
+    const remove = vi.spyOn(sab, "remove");
+    await expect(service(store, sab).blocklist("acq-1")).resolves.toBe(true);
+    expect(remove).toHaveBeenCalledWith(
+      "nzo-mine",
+      expect.objectContaining({ deleteFiles: true }),
+    );
+    // Failed, not cancelled: the title is still wanted.
+    expect(current().state).toBe("failed");
+  });
+
+  it("blocklists a failure that is already failed", async () => {
+    const { store, current } = makeStore({ state: "failed" });
+    await expect(service(store, makeSab()).blocklist("acq-1")).resolves.toBe(
+      true,
+    );
+    expect(current().state).toBe("failed");
+  });
+
+  it.each(["resolving", "submitting", "downloaded", "cancelled"] as const)(
+    "refuses while the acquisition is %s",
+    async (state) => {
+      const { store } = makeStore({ state, externalId: "nzo-1" });
+      const sab = makeSab();
+      const remove = vi.spyOn(sab, "remove");
+      await expect(service(store, sab).blocklist("acq-1")).rejects.toThrow(
+        /cannot be blocklisted/,
+      );
+      expect(remove).not.toHaveBeenCalled();
+    },
+  );
+});

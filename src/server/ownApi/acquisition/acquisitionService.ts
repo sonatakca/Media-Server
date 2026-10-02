@@ -19,6 +19,22 @@ import {
   type AcquisitionState,
   type FailureClass,
 } from "./acquisitionState";
+
+/**
+ * Where an acquisition may be blocklisted from.
+ *
+ * Not `resolving` or `submitting`: a worker holding the row may be handing the
+ * NZB to SABnzbd at that moment, and a job it creates after this stops would
+ * belong to nobody. Those last seconds; the operator can ask again.
+ */
+export const BLOCKLISTABLE_STATES: readonly AcquisitionState[] = [
+  "planned",
+  "queued",
+  "downloading",
+  "processing",
+  "awaiting_retry",
+  "failed",
+];
 import {
   classifySabFailure,
   SabError,
@@ -121,6 +137,14 @@ export interface AcquisitionService {
   ): Promise<{ examined: number; changed: number }>;
   /** Removes the SABnzbd job this acquisition owns, if any, and cancels it. */
   cancel(acquisitionId: string, signal?: AbortSignal): Promise<void>;
+  /**
+   * Stops this acquisition because its release is blocklisted.
+   *
+   * Ends in `failed`, not `cancelled`: the thing it was for is still wanted,
+   * and a failure is what keeps it in front of the operator. False when the
+   * row moved under it; throws when it is in a state that cannot be stopped.
+   */
+  blocklist(acquisitionId: string, signal?: AbortSignal): Promise<boolean>;
 }
 
 export function createAcquisitionService({
@@ -431,6 +455,45 @@ export function createAcquisitionService({
         }
       }
       return { examined: active.length, changed };
+    },
+
+    async blocklist(acquisitionId, signal) {
+      const record = await store.get(acquisitionId);
+      if (!record) return false;
+      if (!BLOCKLISTABLE_STATES.includes(record.state)) {
+        throw new Error(
+          `An acquisition in ${record.state} cannot be blocklisted.`,
+        );
+      }
+      /*
+       * Claim the row before touching SABnzbd. Once it reads `failed` the
+       * reconciler stops looking at it, so a job that vanishes in the next
+       * line is not mistaken for one somebody else removed.
+       */
+      if (
+        !(await store.update(
+          record.id,
+          record.state,
+          {
+            state: "failed",
+            failureClass: "blocklisted",
+            failureDetail: "The release is on the blocklist.",
+          },
+          "Blocklisted.",
+        ))
+      ) {
+        return false;
+      }
+      if (record.externalId) {
+        // Only ever the job this acquisition owns, and its partial files.
+        await sab
+          .remove(record.externalId, {
+            deleteFiles: true,
+            ...(signal ? { signal } : {}),
+          })
+          .catch(() => undefined);
+      }
+      return true;
     },
 
     async cancel(acquisitionId, signal) {

@@ -12,6 +12,8 @@ import type { JudgedRelease } from "./releaseDecisionPresentation";
 export interface QualityProfile {
   readonly id: string;
   readonly name: string;
+  /** The largest release it accepts, in bytes. Null means no limit. */
+  readonly maxSizeBytes: number | null;
 }
 
 export interface EvaluateQuery {
@@ -33,6 +35,16 @@ export async function listProfiles(): Promise<QualityProfile[]> {
     profiles: QualityProfile[];
   }>("/releases/profiles");
   return profiles;
+}
+
+export function setProfileMaxSize(
+  profileId: string,
+  maxSizeBytes: number | null,
+): Promise<unknown> {
+  return ownApiClient.request(
+    `/releases/profiles/${encodeURIComponent(profileId)}`,
+    { method: "PATCH", body: { maxSizeBytes } },
+  );
 }
 
 export function evaluateReleases(

@@ -8,6 +8,7 @@ const api = vi.hoisted(() => ({
   listProfiles: vi.fn(),
   evaluateReleases: vi.fn(),
   acquireRelease: vi.fn(),
+  setProfileMaxSize: vi.fn(),
 }));
 
 vi.mock("../../lib/releaseDecisionsApi", () => api);
@@ -46,7 +47,10 @@ async function searchFor(title = "Dune") {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  api.listProfiles.mockResolvedValue([{ id: "p1", name: "HD-2160p" }]);
+  api.listProfiles.mockResolvedValue([
+    { id: "p1", name: "HD-2160p", maxSizeBytes: 30_000_000_000 },
+  ]);
+  api.setProfileMaxSize.mockResolvedValue({});
   api.evaluateReleases.mockResolvedValue({
     candidates: [release()],
     winner: release(),
@@ -221,14 +225,59 @@ it("searches and acquires Arcane as a season, with the same season number", asyn
 });
 it("shows release sizes and withdraws old results when the title changes", async () => {
   api.evaluateReleases.mockResolvedValue({
-    candidates: [release({ sizeBytes: 10 * 1024 ** 3 })],
+    candidates: [release({ sizeBytes: 10 * 1_000_000_000 })],
     winner: release(),
   });
   renderPage();
   await searchFor("Fight Club");
-  expect(await screen.findByText(/10.00 GiB/)).toBeTruthy();
+  expect(await screen.findByText(/10.00 GB/)).toBeTruthy();
   fireEvent.change(screen.getByLabelText("admin.decisions.titleField"), {
     target: { value: "Arcane" },
   });
   expect(screen.queryByText("admin.decisions.acquire")).toBeNull();
+});
+
+describe("the size limit", () => {
+  it("shows the profile's size limit in GB and saves a new one", async () => {
+    renderPage();
+    const field = (await screen.findByPlaceholderText(
+      "admin.decisions.sizeLimitNone",
+    )) as HTMLInputElement;
+    await waitFor(() => expect(field.value).toBe("30"));
+
+    fireEvent.change(field, { target: { value: "45.5" } });
+    fireEvent.click(screen.getByText("admin.decisions.sizeLimitSave"));
+    await waitFor(() =>
+      expect(api.setProfileMaxSize).toHaveBeenCalledWith("p1", 45_500_000_000),
+    );
+    expect(
+      await screen.findByText("admin.decisions.sizeLimitSaved"),
+    ).toBeTruthy();
+    expect(field.value).toBe("45.5");
+  });
+
+  it("clears the limit when the field is emptied", async () => {
+    renderPage();
+    const field = await screen.findByPlaceholderText(
+      "admin.decisions.sizeLimitNone",
+    );
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.click(screen.getByText("admin.decisions.sizeLimitSave"));
+    await waitFor(() =>
+      expect(api.setProfileMaxSize).toHaveBeenCalledWith("p1", null),
+    );
+  });
+
+  it("refuses a limit that is not a positive size", async () => {
+    renderPage();
+    const field = await screen.findByPlaceholderText(
+      "admin.decisions.sizeLimitNone",
+    );
+    fireEvent.change(field, { target: { value: "-3" } });
+    fireEvent.click(screen.getByText("admin.decisions.sizeLimitSave"));
+    expect(
+      await screen.findByText("admin.decisions.sizeLimitInvalid"),
+    ).toBeTruthy();
+    expect(api.setProfileMaxSize).not.toHaveBeenCalled();
+  });
 });

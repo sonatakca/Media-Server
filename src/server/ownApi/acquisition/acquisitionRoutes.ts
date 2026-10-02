@@ -11,6 +11,7 @@ import { sendAccepted, sendData, sendNoContent } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import {
   asObjectBody,
+  optionalBodyBoolean,
   optionalBodyInteger,
   optionalBodyString,
   parseLimit,
@@ -24,10 +25,20 @@ import type {
   AcquisitionRepository,
   AcquisitionSummary,
 } from "./acquisitionRepository";
-import type { AcquisitionService } from "./acquisitionService";
+import {
+  BLOCKLISTABLE_STATES,
+  type AcquisitionService,
+} from "./acquisitionService";
+import type { AcquisitionTarget } from "./acquisitionRepository";
 import type { IndexerRegistry } from "../indexers/indexerRegistry";
 import type { SabnzbdClient } from "./sabnzbd";
 import { SabError } from "./sabnzbd";
+import { IndexerError } from "../indexers/indexerTypes";
+import type { IndexerSearchService } from "../indexers/searchService";
+import { selectRelease, type MediaTarget } from "../releases/decide";
+import { searchFor } from "../releases/releaseRoutes";
+import type { PolicyRepository } from "../releases/policyRepository";
+import type { BlocklistRepository } from "../releases/blocklistRepository";
 
 const CREATE_KEYS = [
   "kind",
@@ -102,12 +113,37 @@ function toDto(summary: AcquisitionSummary): AcquisitionDto {
   };
 }
 
+/** The decision engine's view of what an acquisition was for. */
+function mediaTargetOf(target: AcquisitionTarget): MediaTarget | null {
+  if (target.kind === "movie") {
+    return {
+      kind: "movie",
+      title: target.title,
+      ...(target.year === undefined ? {} : { year: target.year }),
+    };
+  }
+  if (target.season === undefined) return null;
+  if (target.kind === "season") {
+    return { kind: "season", title: target.title, season: target.season };
+  }
+  if (target.episode === undefined) return null;
+  return {
+    kind: "episode",
+    title: target.title,
+    season: target.season,
+    episode: target.episode,
+  };
+}
+
 export interface CreateAcquisitionRoutesOptions {
   readonly repository: AcquisitionRepository;
   readonly service: AcquisitionService;
   readonly indexers: IndexerRegistry;
   readonly queue: JobQueue;
   readonly sab: SabnzbdClient;
+  readonly search: IndexerSearchService;
+  readonly policies: PolicyRepository;
+  readonly blocklist: BlocklistRepository;
 }
 
 export function createAcquisitionRoutes({
@@ -116,6 +152,9 @@ export function createAcquisitionRoutes({
   indexers,
   queue,
   sab,
+  search,
+  policies,
+  blocklist,
 }: CreateAcquisitionRoutesOptions): RouteDefinition[] {
   return [
     {
@@ -332,6 +371,14 @@ export function createAcquisitionRoutes({
             409,
           );
         }
+        if (existing.failureClass === "blocklisted") {
+          // Trying it again is exactly what the blocklist is there to stop.
+          throw new OwnApiError(
+            "ACQUISITION_NOT_RETRYABLE",
+            "This release is blocklisted; search again for another.",
+            409,
+          );
+        }
         await repository.update(
           id,
           "failed",
@@ -344,6 +391,195 @@ export function createAcquisitionRoutes({
           dedupeKey: submitDedupeKey(id),
         });
         sendAccepted(context.response, context.requestId, taskId);
+      },
+    },
+    {
+      /**
+       * Never this release again — and, if asked, the next best one instead.
+       *
+       * The release goes on the blocklist first, so whatever happens after,
+       * no search recommends it again. Then the download stops, and only then
+       * is the search repeated: with the profile the original was chosen
+       * against, for the target it was for, so the replacement is the answer
+       * the first decision would have given without this release in it.
+       *
+       * A search that fails leaves the acquisition failed and blocklisted,
+       * which is the honest state, and asking again repeats only the search.
+       */
+      method: "POST",
+      path: "/acquisitions/:acquisitionId/blocklist",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const id = requireUuid(context.params.acquisitionId, "acquisitionId");
+        const body = asObjectBody(await context.readJson(), ["searchAgain"]);
+        const searchAgain = optionalBodyBoolean(body, "searchAgain") ?? false;
+
+        const existing = await repository.get(id);
+        const searchContext = await repository.searchContext(id);
+        if (!existing || !searchContext) {
+          throw new OwnApiError("NOT_FOUND", "No such acquisition.", 404);
+        }
+        if (!BLOCKLISTABLE_STATES.includes(existing.state)) {
+          throw new OwnApiError(
+            "ACQUISITION_NOT_BLOCKLISTABLE",
+            `An acquisition in ${existing.state} cannot be blocklisted.`,
+            409,
+          );
+        }
+
+        await blocklist.add({
+          indexerId: existing.indexerId,
+          releaseGuid: existing.releaseGuid,
+          releaseTitle: existing.releaseTitle,
+          targetKind: existing.targetKind,
+          targetTitle: existing.targetTitle,
+          ...(existing.failureClass ? { reason: existing.failureClass } : {}),
+          acquisitionId: id,
+        });
+
+        let stopped: boolean;
+        try {
+          stopped = await service.blocklist(id);
+        } catch (error) {
+          throw new OwnApiError(
+            "ACQUISITION_NOT_BLOCKLISTABLE",
+            error instanceof Error ? error.message : "It cannot be stopped.",
+            409,
+          );
+        }
+        if (!stopped) {
+          throw new OwnApiError(
+            "ACQUISITION_CHANGED",
+            "The acquisition changed while it was being blocklisted.",
+            409,
+          );
+        }
+
+        if (!searchAgain) {
+          sendData(context.response, context.requestId, {
+            searched: false,
+            replacement: null,
+          });
+          return;
+        }
+
+        const target = mediaTargetOf(searchContext.target);
+        const policy = searchContext.profileId
+          ? await policies.load(searchContext.profileId)
+          : null;
+        if (!target || !policy) {
+          // Nothing recorded to repeat the decision with. The Releases page
+          // can still be used by hand.
+          sendData(context.response, context.requestId, {
+            searched: false,
+            replacement: null,
+            reason: "no-profile",
+          });
+          return;
+        }
+
+        const controller = new AbortController();
+        const abort = () => controller.abort();
+        context.request.once("aborted", abort);
+        context.request.once("close", abort);
+        let found;
+        try {
+          found = await search.search(searchFor(target, undefined), {
+            signal: controller.signal,
+          });
+        } catch (error) {
+          if (error instanceof IndexerError) {
+            throw new OwnApiError(
+              "INDEXER_UNAVAILABLE",
+              "The release is blocklisted, but the search failed.",
+              error.kind === "auth" ? 502 : 503,
+            );
+          }
+          throw error;
+        } finally {
+          context.request.off("aborted", abort);
+          context.request.off("close", abort);
+        }
+
+        const result = selectRelease(target, found.releases, {
+          profile: policy.profile,
+          preferences: policy.preferences,
+          isBlocklisted: await blocklist.matcherFor(found.releases),
+          current: null,
+        });
+        const winner = result.winner;
+        if (!winner) {
+          await repository.update(
+            id,
+            "failed",
+            {
+              failureClass: "blocklisted",
+              failureDetail:
+                "Blocklisted; the search found nothing else acceptable.",
+            },
+            "Searched again; nothing else acceptable.",
+          );
+          sendData(context.response, context.requestId, {
+            searched: true,
+            replacement: null,
+          });
+          return;
+        }
+
+        /*
+         * Superseding is the claim. Two operators pressing this at once both
+         * search, but only one of them moves the row out of `failed`, and
+         * only that one creates the replacement.
+         */
+        if (
+          !(await repository.update(
+            id,
+            "failed",
+            { state: "superseded" },
+            `Replaced by ${winner.release.title}.`,
+          ))
+        ) {
+          throw new OwnApiError(
+            "ACQUISITION_CHANGED",
+            "The acquisition changed while it was being searched again.",
+            409,
+          );
+        }
+
+        const replacement = await repository.create({
+          target: searchContext.target,
+          indexerId: winner.release.indexerId,
+          releaseGuid: winner.release.guid,
+          releaseTitle: winner.release.title,
+          origin: "fallback",
+          evidence: {
+            profileId: policy.profile.id,
+            profileName: policy.profile.name,
+            policySnapshot: {},
+            releaseFacts: winner.facts,
+            score: winner.score,
+            reasons: winner.reasons,
+            rejected: result.candidates
+              .filter((candidate) => !candidate.accepted)
+              .slice(0, 50)
+              .map((candidate) => ({
+                title: candidate.release.title,
+                reason: candidate.rejection,
+              })),
+          },
+        });
+        const taskId = await queue.enqueue({
+          jobType: ACQUISITION_JOB_TYPES.submit,
+          payload: { acquisitionId: replacement.id },
+          dedupeKey: submitDedupeKey(replacement.id),
+        });
+        sendData(
+          context.response,
+          context.requestId,
+          { searched: true, replacement: toDto(replacement), taskId },
+          202,
+        );
       },
     },
     {

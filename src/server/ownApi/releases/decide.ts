@@ -47,6 +47,8 @@ export type RejectionCode =
   | "quality-not-allowed"
   | "quality-unknown"
   | "below-format-score"
+  | "too-large"
+  | "blocklisted"
   | "upgrade-not-wanted";
 
 export interface CandidateDecision {
@@ -75,6 +77,12 @@ export interface DecisionPolicy {
     readonly quality: Quality;
     readonly formatScore: number;
   } | null;
+  /** Releases already known to be broken. They are never chosen again. */
+  readonly isBlocklisted?: (release: IndexerRelease) => boolean;
+}
+
+function formatGigabytes(bytes: number): string {
+  return `${(bytes / 1e9).toFixed(1)} GB`;
 }
 
 /** Punctuation and articles removed, so "The Expanse" matches "Expanse". */
@@ -202,6 +210,23 @@ function judge(
   const quality = qualityOf(facts);
   const score = scoreRelease(facts, policy.preferences);
 
+  // Before anything else: a release that already failed for a reason of its
+  // own is not a candidate however well it matches.
+  if (policy.isBlocklisted?.(release)) {
+    return {
+      release,
+      facts,
+      quality,
+      accepted: false,
+      rank: null,
+      score: score.total,
+      rejection: "blocklisted",
+      reasons: [
+        { code: "blocklisted", detail: "This release is on the blocklist." },
+      ],
+    };
+  }
+
   const match = matchTarget(facts, target);
   if (!match.ok) {
     return {
@@ -213,6 +238,34 @@ function judge(
       score: score.total,
       rejection: match.code,
       reasons: [{ code: match.code, detail: match.detail }],
+    };
+  }
+
+  /*
+   * A release that does not say how large it is passes: refusing it would
+   * refuse every indexer that omits the size, and the size is checked against
+   * what the indexer claimed, not what would land on disk.
+   */
+  const maxSizeBytes = policy.profile.maxSizeBytes;
+  if (
+    maxSizeBytes !== undefined &&
+    release.sizeBytes !== undefined &&
+    release.sizeBytes > maxSizeBytes
+  ) {
+    return {
+      release,
+      facts,
+      quality,
+      accepted: false,
+      rank: null,
+      score: score.total,
+      rejection: "too-large",
+      reasons: [
+        {
+          code: "too-large",
+          detail: `${formatGigabytes(release.sizeBytes)} is larger than the ${formatGigabytes(maxSizeBytes)} ${policy.profile.name} allows.`,
+        },
+      ],
     };
   }
 

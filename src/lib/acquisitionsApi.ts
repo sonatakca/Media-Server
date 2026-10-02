@@ -113,3 +113,45 @@ export function cancelAcquisition(id: string): Promise<unknown> {
     { method: "POST", body: {} },
   );
 }
+
+export interface BlocklistOutcome {
+  /** Whether a search was actually run. */
+  readonly searched: boolean;
+  /** The acquisition that replaced this one, when the search found one. */
+  readonly replacement: Acquisition | null;
+  /** Why no search ran, when one was asked for and none did. */
+  readonly reason?: "no-profile";
+}
+
+/** Never this release again, and — if asked — the next best one instead. */
+export function blocklistAcquisition(
+  id: string,
+  searchAgain: boolean,
+): Promise<BlocklistOutcome> {
+  return ownApiClient.request<BlocklistOutcome>(
+    `/acquisitions/${encodeURIComponent(id)}/blocklist`,
+    { method: "POST", body: { searchAgain } },
+  );
+}
+
+export interface BlocklistEntry {
+  readonly id: string;
+  readonly indexerId: string;
+  readonly releaseTitle: string;
+  readonly targetTitle?: string;
+  readonly reason?: string;
+  readonly createdAt: string;
+}
+
+export async function listBlocklist(): Promise<BlocklistEntry[]> {
+  const { entries } = await ownApiClient.request<{
+    entries: BlocklistEntry[];
+  }>("/releases/blocklist");
+  return entries;
+}
+
+export function removeBlocklistEntry(id: string): Promise<unknown> {
+  return ownApiClient.request(`/releases/blocklist/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}

@@ -9,6 +9,9 @@ const api = vi.hoisted(() => ({
   getAcquisition: vi.fn(),
   retryAcquisition: vi.fn(),
   cancelAcquisition: vi.fn(),
+  blocklistAcquisition: vi.fn(),
+  listBlocklist: vi.fn(),
+  removeBlocklistEntry: vi.fn(),
 }));
 
 vi.mock("../../lib/acquisitionsApi", () => api);
@@ -60,6 +63,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.listAcquisitions.mockResolvedValue([acquisition()]);
   api.getAcquisition.mockResolvedValue(detail());
+  api.listBlocklist.mockResolvedValue([]);
 });
 
 describe("the acquisitions page", () => {
@@ -185,5 +189,96 @@ describe("the acquisitions page", () => {
     const html = document.body.innerHTML;
     expect(html).not.toMatch(/apikey/i);
     expect(html).not.toMatch(/nzo_/i);
+  });
+
+  it("blocklists a failed release and searches for the next one", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "failed", failureClass: "missing-articles" }),
+    ]);
+    api.blocklistAcquisition.mockResolvedValue({
+      searched: true,
+      replacement: acquisition({
+        id: "a2",
+        state: "planned",
+        releaseTitle: "Dune.2021.1080p.WEB-DL-NEXT",
+      }),
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByText("admin.acquisitions.blocklistAndSearch"),
+    );
+    const status = await screen.findByRole("status");
+    expect(api.blocklistAcquisition).toHaveBeenCalledWith("a1", true);
+    expect(status.textContent).toContain("admin.acquisitions.notice.replaced");
+    expect(status.textContent).toContain("Dune.2021.1080p.WEB-DL-NEXT");
+    // Re-read from the server rather than patched in place.
+    expect(api.listAcquisitions).toHaveBeenCalledTimes(2);
+  });
+
+  it("blocklists without searching, and says when nothing else exists", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "failed", failureClass: "missing-articles" }),
+    ]);
+    api.blocklistAcquisition.mockResolvedValue({
+      searched: false,
+      replacement: null,
+    });
+    renderPage();
+
+    fireEvent.click(await screen.findByText("admin.acquisitions.blocklist"));
+    expect((await screen.findByRole("status")).textContent).toBe(
+      "admin.acquisitions.notice.blocklisted",
+    );
+    expect(api.blocklistAcquisition).toHaveBeenCalledWith("a1", false);
+  });
+
+  it("offers no retry for a blocklisted release, only another search", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "failed", failureClass: "blocklisted" }),
+    ]);
+    renderPage();
+
+    await screen.findByText("Dune");
+    expect(screen.queryByText("admin.acquisitions.retry")).toBeNull();
+    expect(
+      screen.getByText("admin.acquisitions.blocklistAndSearch"),
+    ).toBeTruthy();
+  });
+
+  it("reports a failed blocklisting without the thrown message", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "failed", failureClass: "missing-articles" }),
+    ]);
+    api.blocklistAcquisition.mockRejectedValue(
+      new Error("http://127.0.0.1:43111/ownAPI/v1/acquisitions"),
+    );
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByText("admin.acquisitions.blocklistAndSearch"),
+    );
+    const status = await screen.findByRole("status");
+    expect(status.textContent).toBe("admin.acquisitions.notice.failed");
+  });
+
+  it("lists the blocklist and removes an entry", async () => {
+    api.listBlocklist.mockResolvedValue([
+      {
+        id: "b1",
+        indexerId: "nzbgeek",
+        releaseTitle: "Dune.2021.2160p.BROKEN",
+        targetTitle: "Dune",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ]);
+    renderPage();
+
+    expect(await screen.findByText("Dune.2021.2160p.BROKEN")).toBeTruthy();
+    fireEvent.click(screen.getByText("admin.acquisitions.unblock"));
+    await waitFor(() => {
+      expect(api.removeBlocklistEntry).toHaveBeenCalledWith("b1");
+      expect(api.listBlocklist).toHaveBeenCalledTimes(2);
+    });
   });
 });

@@ -143,6 +143,7 @@ describe("what a failure asks of the reader", () => {
     ["repair-failed", "another-release"],
     ["unpack-failed", "another-release"],
     ["password-required", "another-release"],
+    ["blocklisted", "another-release"],
     ["indexer-auth", "operator"],
     ["sab-auth", "operator"],
     ["removed-externally", "operator"],
@@ -164,5 +165,35 @@ describe("what a failure asks of the reader", () => {
     ] as AcquisitionFailureClass[]) {
       expect(remedyFor(failure)).not.toBe("waits");
     }
+  });
+});
+
+describe("blocklisting", () => {
+  it("is offered wherever the server will stop the acquisition", () => {
+    for (const state of [
+      "planned",
+      "queued",
+      "downloading",
+      "processing",
+      "awaiting_retry",
+      "failed",
+    ] as const) {
+      expect(actionsFor(state).canBlocklist).toBe(true);
+    }
+    // Mid-submission, or already over.
+    for (const state of [
+      "resolving",
+      "submitting",
+      "downloaded",
+      "cancelled",
+      "superseded",
+    ] as const) {
+      expect(actionsFor(state).canBlocklist).toBe(false);
+    }
+  });
+
+  it("takes away the retry, which would ask for the same release", () => {
+    expect(actionsFor("failed", "blocklisted").canRetry).toBe(false);
+    expect(actionsFor("failed", "missing-articles").canRetry).toBe(true);
   });
 });

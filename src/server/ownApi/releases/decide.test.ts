@@ -141,6 +141,73 @@ describe("choosing a release for a movie", () => {
   });
 });
 
+describe("releases that are never chosen", () => {
+  const GB = 1_000_000_000;
+  const capped = { ...profile, maxSizeBytes: 30 * GB };
+
+  it("refuses a release larger than the profile's limit", () => {
+    const result = selectRelease(
+      movie,
+      [
+        release("Blade.Runner.2049.2017.1080p.Remux-A", {
+          sizeBytes: 45 * GB,
+        }),
+        release("Blade.Runner.2049.2017.1080p.BluRay.x265-B", {
+          sizeBytes: 12 * GB,
+        }),
+      ],
+      { ...policy, profile: capped },
+    );
+    expect(result.winner?.release.title).toBe(
+      "Blade.Runner.2049.2017.1080p.BluRay.x265-B",
+    );
+    const remux = result.candidates.find((c) => c.release.title.endsWith("-A"));
+    expect(remux).toMatchObject({ accepted: false, rejection: "too-large" });
+    expect(remux!.reasons[0]!.detail).toContain("45.0 GB");
+    expect(remux!.reasons[0]!.detail).toContain("30.0 GB");
+  });
+
+  it("accepts exactly the limit, and a release that states no size", () => {
+    const result = selectRelease(
+      movie,
+      [
+        release("Blade.Runner.2049.2017.1080p.BluRay-A", {
+          sizeBytes: 30 * GB,
+        }),
+        release("Blade.Runner.2049.2017.1080p.WEB-DL-B"),
+      ],
+      { ...policy, profile: capped },
+    );
+    expect(result.candidates.every((c) => c.accepted)).toBe(true);
+  });
+
+  it("has no limit when the profile sets none", () => {
+    const result = selectRelease(
+      movie,
+      [
+        release("Blade.Runner.2049.2017.1080p.BluRay-A", {
+          sizeBytes: 90 * GB,
+        }),
+      ],
+      policy,
+    );
+    expect(result.winner).toBeDefined();
+  });
+
+  it("never chooses a blocklisted release, and falls to the next best", () => {
+    const broken = release("Blade.Runner.2049.2017.1080p.BluRay.x265-A");
+    const next = release("Blade.Runner.2049.2017.1080p.WEB-DL.x265-B");
+    const result = selectRelease(movie, [broken, next], {
+      ...policy,
+      isBlocklisted: (candidate) => candidate.guid === broken.guid,
+    });
+    expect(result.winner?.release.guid).toBe(next.guid);
+    expect(
+      result.candidates.find((c) => c.release.guid === broken.guid),
+    ).toMatchObject({ accepted: false, rejection: "blocklisted" });
+  });
+});
+
 describe("choosing a release for television", () => {
   const episode: MediaTarget = {
     kind: "episode",

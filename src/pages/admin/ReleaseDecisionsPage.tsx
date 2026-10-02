@@ -14,8 +14,17 @@ import {
   acquireRelease,
   evaluateReleases,
   listProfiles,
+  setProfileMaxSize,
   type QualityProfile,
 } from "../../lib/releaseDecisionsApi";
+
+/** Sizes are said in decimal gigabytes, the unit the limit is set in. */
+const GB = 1_000_000_000;
+
+function limitText(profile: QualityProfile | undefined): string {
+  if (!profile || typeof profile.maxSizeBytes !== "number") return "";
+  return String(Math.round((profile.maxSizeBytes / GB) * 10) / 10);
+}
 
 /**
  * What Seyirlik would download for a title, and why it would not download the
@@ -42,13 +51,25 @@ export function ReleaseDecisionsPage() {
   const [failure, setFailure] = useState<string | null>(null);
   const [asked, setAsked] = useState<string[]>([]);
   const [resultQuery, setResultQuery] = useState("");
+  // An edit in progress, and the profile it belongs to. Absent, the field
+  // shows whatever the selected profile's limit is.
+  const [limitDraft, setLimitDraft] = useState<{
+    profileId: string;
+    text: string;
+  } | null>(null);
+  const [limitState, setLimitState] = useState<
+    "idle" | "saving" | "saved" | "invalid" | "failed"
+  >("idle");
   const searchVersion = useRef(0);
+  // The limit is part of the query: results judged under an old limit are
+  // hidden once it changes, as they are when any other input does.
   const queryKey = JSON.stringify([
     kind,
     title.trim(),
     year.trim(),
     profileId,
     season,
+    profiles.find((entry) => entry.id === profileId)?.maxSizeBytes ?? null,
   ]);
 
   useEffect(() => {
@@ -76,6 +97,35 @@ export function ReleaseDecisionsPage() {
       isCancelled = true;
     };
   }, []);
+
+  const profile = profiles.find((entry) => entry.id === profileId);
+
+  const sizeLimit =
+    limitDraft?.profileId === profileId ? limitDraft.text : limitText(profile);
+
+  const saveLimit = useCallback(async () => {
+    if (!profileId) return;
+    const text = sizeLimit.trim();
+    const gigabytes = Number(text);
+    if (text !== "" && (!Number.isFinite(gigabytes) || gigabytes <= 0)) {
+      setLimitState("invalid");
+      return;
+    }
+    const maxSizeBytes = text === "" ? null : Math.round(gigabytes * GB);
+    setLimitState("saving");
+    try {
+      await setProfileMaxSize(profileId, maxSizeBytes);
+      setProfiles((previous) =>
+        previous.map((entry) =>
+          entry.id === profileId ? { ...entry, maxSizeBytes } : entry,
+        ),
+      );
+      setLimitDraft(null);
+      setLimitState("saved");
+    } catch {
+      setLimitState("failed");
+    }
+  }, [profileId, sizeLimit]);
 
   const search = useCallback(async () => {
     const version = ++searchVersion.current;
@@ -195,7 +245,10 @@ export function ReleaseDecisionsPage() {
           </span>
           <select
             value={profileId}
-            onChange={(event) => setProfileId(event.target.value)}
+            onChange={(event) => {
+              setProfileId(event.target.value);
+              setLimitState("idle");
+            }}
             className="rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
           >
             {profiles.map((profile) => (
@@ -243,6 +296,62 @@ export function ReleaseDecisionsPage() {
           </button>
         </div>
       </form>
+
+      {profile ? (
+        <form
+          className="flex flex-wrap items-end gap-3 rounded-3xl border border-white/10 bg-white/[0.05] p-5"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveLimit();
+          }}
+        >
+          <label className="flex flex-col gap-1">
+            <span className="text-xs font-black uppercase tracking-wide text-white/45">
+              {t("admin.decisions.sizeLimit")} · {profile.name}
+            </span>
+            <span className="flex items-center gap-2">
+              <input
+                value={sizeLimit}
+                onChange={(event) => {
+                  setLimitDraft({ profileId, text: event.target.value });
+                  setLimitState("idle");
+                }}
+                inputMode="decimal"
+                placeholder={t("admin.decisions.sizeLimitNone")}
+                aria-describedby="size-limit-hint"
+                className="w-28 rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm font-semibold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+              />
+              <span className="text-sm font-bold text-white/60">GB</span>
+            </span>
+          </label>
+
+          <button
+            type="submit"
+            disabled={limitState === "saving"}
+            className="rounded-xl border border-white/15 bg-white/[0.08] px-4 py-2 text-sm font-black text-white/85 transition hover:text-white disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+          >
+            {t("admin.decisions.sizeLimitSave")}
+          </button>
+
+          <p
+            id="size-limit-hint"
+            role={limitState === "idle" ? undefined : "status"}
+            className={`basis-full text-xs font-semibold ${
+              limitState === "invalid" || limitState === "failed"
+                ? "text-amber-200"
+                : "text-white/45"
+            }`}
+          >
+            {limitState === "saved"
+              ? t("admin.decisions.sizeLimitSaved")
+              : limitState === "invalid"
+                ? t("admin.decisions.sizeLimitInvalid")
+                : limitState === "failed"
+                  ? t("admin.decisions.sizeLimitFailed")
+                  : t("admin.decisions.sizeLimitHint")}
+          </p>
+        </form>
+      ) : null}
 
       {failure ? (
         <p
@@ -300,7 +409,7 @@ export function ReleaseDecisionsPage() {
               {candidate.sizeBytes !== undefined &&
               Number.isFinite(candidate.sizeBytes) &&
               candidate.sizeBytes > 0
-                ? `${(candidate.sizeBytes / 1024 ** 3).toFixed(2)} GiB`
+                ? `${(candidate.sizeBytes / GB).toFixed(2)} GB`
                 : t("admin.decisions.sizeUnknown")}{" "}
               · {candidate.quality}
               {candidate.score !== 0

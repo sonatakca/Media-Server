@@ -2096,6 +2096,25 @@ export const en = {
     "Something else removed the job",
   "admin.acquisitions.failure.cancelled": "It was cancelled",
   "admin.acquisitions.failure.unknown": "Something unrecognised went wrong",
+  "admin.acquisitions.failure.blocklisted": "This release is blocklisted",
+  "admin.acquisitions.originValue.fallback": "a new search",
+  "admin.acquisitions.blocklistAndSearch": "Blocklist & search again",
+  "admin.acquisitions.blocklist": "Blocklist",
+  "admin.acquisitions.searching": "Searching…",
+  "admin.acquisitions.notice.blocklisted":
+    "Blocklisted. Seyirlik will not choose this release again.",
+  "admin.acquisitions.notice.replaced":
+    "Blocklisted, and the next best release is on its way:",
+  "admin.acquisitions.notice.nothingElse":
+    "Blocklisted, but the search found nothing else this profile allows.",
+  "admin.acquisitions.notice.noProfile":
+    "Blocklisted. No quality profile was recorded, so search on the Releases page.",
+  "admin.acquisitions.notice.failed":
+    "That did not work. Refresh and try again; anything already blocklisted stays blocklisted.",
+  "admin.acquisitions.blocklistHeading": "Blocklist",
+  "admin.acquisitions.blocklistDescription":
+    "Releases Seyirlik will never choose, here or on the Releases page.",
+  "admin.acquisitions.unblock": "Remove",
   "admin.decisions.title": "Release decisions",
   "admin.decisions.description":
     "What Seyirlik would download for a title, and why it would not download the rest.",
@@ -2117,6 +2136,15 @@ export const en = {
   "admin.decisions.score": "score",
   "admin.decisions.acquire": "Download this",
   "admin.decisions.asked": "Asked for",
+  "admin.decisions.sizeLimit": "Largest release",
+  "admin.decisions.sizeLimitNone": "No limit",
+  "admin.decisions.sizeLimitSave": "Save limit",
+  "admin.decisions.sizeLimitHint":
+    "Anything larger is rejected. Leave it empty for no limit.",
+  "admin.decisions.sizeLimitSaved": "Saved. Search again to judge with it.",
+  "admin.decisions.sizeLimitInvalid":
+    "Enter a size in GB above zero, or leave it empty.",
+  "admin.decisions.sizeLimitFailed": "The limit could not be saved.",
   "admin.subtitles.title": "Subtitles",
   "admin.subtitles.description":
     "What the subtitle system is doing, and what it is waiting for.",

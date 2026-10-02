@@ -16,10 +16,19 @@ export interface AcquisitionPolicy {
   readonly preferences: readonly PreferenceRule[];
 }
 
+export interface ProfileSummary {
+  readonly id: string;
+  readonly name: string;
+  /** Null means no limit. */
+  readonly maxSizeBytes: number | null;
+}
+
 export interface PolicyRepository {
-  listProfiles(): Promise<Array<{ id: string; name: string }>>;
+  listProfiles(): Promise<ProfileSummary[]>;
   /** Null when no such profile exists. */
   load(profileId: string): Promise<AcquisitionPolicy | null>;
+  /** False when no such profile exists. Null removes the limit. */
+  setMaxSize(profileId: string, maxSizeBytes: number | null): Promise<boolean>;
 }
 
 interface ProfileRow {
@@ -30,6 +39,14 @@ interface ProfileRow {
   upgrade_allowed: boolean;
   min_format_score: number;
   cutoff_format_score: number;
+  // bigint arrives as a string.
+  max_size_bytes: string | number | null;
+}
+
+function sizeOf(raw: string | number | null): number | null {
+  if (raw === null) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
 }
 
 interface RuleRow {
@@ -85,16 +102,32 @@ function toConditions(raw: unknown): PreferenceCondition[] {
 export function createPolicyRepository(pool: DatabasePool): PolicyRepository {
   return {
     async listProfiles() {
-      const result = await pool.query<{ id: string; name: string }>(
-        "SELECT id, name FROM quality_profiles ORDER BY name",
+      const result = await pool.query<{
+        id: string;
+        name: string;
+        max_size_bytes: string | number | null;
+      }>("SELECT id, name, max_size_bytes FROM quality_profiles ORDER BY name");
+      return result.rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        maxSizeBytes: sizeOf(row.max_size_bytes),
+      }));
+    },
+
+    async setMaxSize(profileId, maxSizeBytes) {
+      const result = await pool.query(
+        `UPDATE quality_profiles
+            SET max_size_bytes = $2, updated_at = now()
+          WHERE id = $1`,
+        [profileId, maxSizeBytes],
       );
-      return result.rows;
+      return (result.rowCount ?? 0) > 0;
     },
 
     async load(profileId: string): Promise<AcquisitionPolicy | null> {
       const profiles = await pool.query<ProfileRow>(
         `SELECT id, name, items, cutoff_quality_id, upgrade_allowed,
-                min_format_score, cutoff_format_score
+                min_format_score, cutoff_format_score, max_size_bytes
            FROM quality_profiles
           WHERE id = $1`,
         [profileId],
@@ -122,6 +155,9 @@ export function createPolicyRepository(pool: DatabasePool): PolicyRepository {
           upgradeAllowed: row.upgrade_allowed,
           minFormatScore: row.min_format_score,
           cutoffFormatScore: row.cutoff_format_score,
+          ...(sizeOf(row.max_size_bytes) === null
+            ? {}
+            : { maxSizeBytes: sizeOf(row.max_size_bytes)! }),
         },
         preferences: rules.rows.map((rule) => ({
           id: rule.id,

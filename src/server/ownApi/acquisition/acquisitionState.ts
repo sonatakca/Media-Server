@@ -183,6 +183,8 @@ export type FailureClass =
   | "sab-auth"
   | "removed-externally"
   | "cancelled"
+  /** An operator put the release on the blocklist; it is never tried again. */
+  | "blocklisted"
   | "unknown";
 
 export type FailureDisposition =
@@ -208,6 +210,7 @@ const DISPOSITIONS: Readonly<Record<FailureClass, FailureDisposition>> = {
   "sab-auth": "terminal",
   "removed-externally": "terminal",
   cancelled: "terminal",
+  blocklisted: "terminal",
   unknown: "terminal",
 };
 

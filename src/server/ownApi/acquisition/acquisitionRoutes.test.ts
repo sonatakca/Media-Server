@@ -11,6 +11,15 @@ import type {
 } from "./acquisitionRepository";
 import type { AcquisitionService } from "./acquisitionService";
 import type { IndexerRegistry } from "../indexers/indexerRegistry";
+import type { IndexerSearchService } from "../indexers/searchService";
+import type { IndexerRelease } from "../indexers/indexerTypes";
+import { IndexerError } from "../indexers/indexerTypes";
+import type { PolicyRepository } from "../releases/policyRepository";
+import type {
+  AddBlocklistEntry,
+  BlocklistRepository,
+} from "../releases/blocklistRepository";
+import { profileFromIds } from "../releases/qualityProfile";
 import type { JobQueue } from "../tasks/jobQueue";
 import type { RouteContext, RouteDefinition } from "../api/router";
 import { OwnApiError } from "../ownApiHandler";
@@ -37,12 +46,27 @@ function summary(over: Partial<AcquisitionSummary> = {}): AcquisitionSummary {
   };
 }
 
+function found(title: string, guid: string): IndexerRelease {
+  return {
+    indexerId: "nzbgeek",
+    indexerName: "NZBgeek",
+    protocol: "usenet",
+    guid,
+    title,
+    downloadUrl: DOWNLOAD_URL,
+    categoryIds: [2000],
+    attributes: {},
+  };
+}
+
 interface Harness {
   routes: RouteDefinition[];
   created: CreateAcquisitionInput[];
   enqueued: Array<Record<string, unknown>>;
   service: AcquisitionService;
   updates: Array<{ id: string; from: string; patch: Record<string, unknown> }>;
+  blocklisted: AddBlocklistEntry[];
+  search: IndexerSearchService;
 }
 
 function harness(
@@ -51,9 +75,14 @@ function harness(
     service?: Partial<AcquisitionService>;
     sab?: Partial<SabnzbdClient>;
     indexerIds?: string[];
+    releases?: IndexerRelease[];
+    searchFails?: boolean;
+    profileId?: string | null;
+    updateSucceeds?: (patch: Record<string, unknown>) => boolean;
   } = {},
 ): Harness {
   const created: CreateAcquisitionInput[] = [];
+  const blocklisted: AddBlocklistEntry[] = [];
   const enqueued: Array<Record<string, unknown>> = [];
   const updates: Harness["updates"] = [];
 
@@ -102,7 +131,16 @@ function harness(
       patch: Record<string, unknown>,
     ) => {
       updates.push({ id, from, patch });
-      return true;
+      return over.updateSucceeds ? over.updateSucceeds(patch) : true;
+    },
+    searchContext: async (id: string) => {
+      const found = records.find((r) => r.id === id);
+      if (!found) return null;
+      const profileId = over.profileId === undefined ? "p1" : over.profileId;
+      return {
+        target: { kind: "movie", title: "Big Buck Bunny", year: 2008 },
+        ...(profileId ? { profileId } : {}),
+      };
     },
   } as unknown as AcquisitionRepository;
 
@@ -110,8 +148,47 @@ function harness(
     submit: vi.fn(async () => undefined),
     reconcile: vi.fn(async () => ({ examined: 0, changed: 0 })),
     cancel: vi.fn(async () => undefined),
+    blocklist: vi.fn(async () => true),
     ...over.service,
   };
+
+  const search: IndexerSearchService = {
+    search: vi.fn(async () => {
+      if (over.searchFails) {
+        throw new IndexerError("unavailable", "The indexer timed out.");
+      }
+      return { releases: over.releases ?? [], outcomes: [], partial: false };
+    }),
+  };
+
+  const policies = {
+    listProfiles: async () => [],
+    setMaxSize: async () => true,
+    load: async (id: string) =>
+      id === "p1"
+        ? {
+            profile: profileFromIds("p1", "HD-1080p", [
+              "webdl-1080p",
+              "bluray-1080p",
+            ]),
+            preferences: [],
+          }
+        : null,
+  } as PolicyRepository;
+
+  const blocklist = {
+    add: async (entry: AddBlocklistEntry) => {
+      blocklisted.push(entry);
+    },
+    list: async () => [],
+    remove: async () => false,
+    matcherFor: async () => (release: { guid: string; title: string }) =>
+      blocklisted.some(
+        (entry) =>
+          entry.releaseGuid === release.guid ||
+          entry.releaseTitle === release.title,
+      ),
+  } as BlocklistRepository;
 
   const ids = over.indexerIds ?? ["nzbgeek"];
   const indexers = {
@@ -137,11 +214,16 @@ function harness(
       indexers,
       queue,
       sab,
+      search,
+      policies,
+      blocklist,
     }),
     created,
     enqueued,
     service,
     updates,
+    blocklisted,
+    search,
   };
 }
 
@@ -479,6 +561,159 @@ describe("retrying by hand", () => {
       expect(h.enqueued).toHaveLength(0);
     },
   );
+});
+
+describe("blocklisting, and searching again", () => {
+  const path = "/acquisitions/:acquisitionId/blocklist";
+  const failed = () =>
+    summary({
+      state: "failed",
+      failureClass: "missing-articles",
+      releaseGuid: "broken-guid",
+      releaseTitle: "Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD",
+    });
+
+  it("blocklists the release and stops the download", async () => {
+    const h = harness([failed()]);
+    const { status, payload } = await invoke(route(h, "POST", path), {
+      params: { acquisitionId: summary().id },
+      body: {},
+    });
+    expect(status).toBe(200);
+    expect(payload?.data).toEqual({ searched: false, replacement: null });
+    expect(h.blocklisted[0]).toMatchObject({
+      indexerId: "nzbgeek",
+      releaseGuid: "broken-guid",
+      reason: "missing-articles",
+    });
+    expect(h.service.blocklist).toHaveBeenCalledWith(summary().id);
+    expect(h.search.search).not.toHaveBeenCalled();
+  });
+
+  it("searches again and hands the next best release over", async () => {
+    const h = harness([failed()], {
+      releases: [
+        found("Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD", "broken-guid"),
+        found("Big.Buck.Bunny.2008.1080p.WEB-DL.x265-GOOD", "good-guid"),
+      ],
+    });
+    const { status, payload } = await invoke(route(h, "POST", path), {
+      params: { acquisitionId: summary().id },
+      body: { searchAgain: true },
+    });
+    expect(status).toBe(202);
+    expect(payload?.data).toMatchObject({ searched: true, taskId: "job-1" });
+    expect(h.updates).toContainEqual(
+      expect.objectContaining({
+        from: "failed",
+        patch: { state: "superseded" },
+      }),
+    );
+    expect(h.created[0]).toMatchObject({
+      releaseGuid: "good-guid",
+      origin: "fallback",
+      target: { kind: "movie", title: "Big Buck Bunny", year: 2008 },
+      evidence: { profileId: "p1" },
+    });
+    expect(h.created[0]!.evidence.rejected).toContainEqual({
+      title: "Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD",
+      reason: "blocklisted",
+    });
+    expect(h.enqueued[0]).toMatchObject({
+      jobType: ACQUISITION_JOB_TYPES.submit,
+    });
+    // The credential-bearing URL never reaches the reply.
+    expect(JSON.stringify(payload)).not.toContain(SECRET);
+  });
+
+  it("leaves it failed when nothing else is acceptable", async () => {
+    const h = harness([failed()], {
+      releases: [
+        found("Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD", "broken-guid"),
+      ],
+    });
+    const { payload } = await invoke(route(h, "POST", path), {
+      params: { acquisitionId: summary().id },
+      body: { searchAgain: true },
+    });
+    expect(payload?.data).toEqual({ searched: true, replacement: null });
+    expect(h.created).toHaveLength(0);
+    expect(h.updates.at(-1)).toMatchObject({
+      from: "failed",
+      patch: { failureClass: "blocklisted" },
+    });
+    expect(h.updates.at(-1)!.patch.state).toBeUndefined();
+  });
+
+  it("keeps the blocklisting when the search itself fails", async () => {
+    const h = harness([failed()], { searchFails: true });
+    await expect(
+      invoke(route(h, "POST", path), {
+        params: { acquisitionId: summary().id },
+        body: { searchAgain: true },
+      }),
+    ).rejects.toMatchObject({ statusCode: 503 });
+    expect(h.blocklisted).toHaveLength(1);
+    expect(h.created).toHaveLength(0);
+  });
+
+  it("does not search without a recorded profile", async () => {
+    const h = harness([failed()], { profileId: null });
+    const { payload } = await invoke(route(h, "POST", path), {
+      params: { acquisitionId: summary().id },
+      body: { searchAgain: true },
+    });
+    expect(payload?.data).toMatchObject({ reason: "no-profile" });
+    expect(h.search.search).not.toHaveBeenCalled();
+  });
+
+  it("creates nothing when another request already replaced it", async () => {
+    // Losing the supersede means somebody else's search already won.
+    const h = harness([failed()], {
+      releases: [found("Big.Buck.Bunny.2008.1080p.WEB-DL-GOOD", "good")],
+      updateSucceeds: (patch) => patch.state !== "superseded",
+    });
+    await expect(
+      invoke(route(h, "POST", path), {
+        params: { acquisitionId: summary().id },
+        body: { searchAgain: true },
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(h.created).toHaveLength(0);
+    expect(h.enqueued).toHaveLength(0);
+  });
+
+  it.each([
+    "downloaded",
+    "cancelled",
+    "superseded",
+    "resolving",
+    "submitting",
+  ] as const)(
+    "refuses to blocklist an acquisition that is %s",
+    async (state) => {
+      const h = harness([summary({ state })]);
+      await expect(
+        invoke(route(h, "POST", path), {
+          params: { acquisitionId: summary().id },
+          body: {},
+        }),
+      ).rejects.toMatchObject({ statusCode: 409 });
+      expect(h.service.blocklist).not.toHaveBeenCalled();
+    },
+  );
+
+  it("refuses to retry a blocklisted release", async () => {
+    const h = harness([
+      summary({ state: "failed", failureClass: "blocklisted" }),
+    ]);
+    await expect(
+      invoke(route(h, "POST", "/acquisitions/:acquisitionId/retry"), {
+        params: { acquisitionId: summary().id },
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+    expect(h.enqueued).toHaveLength(0);
+  });
 });
 
 describe("the handoff to import", () => {
