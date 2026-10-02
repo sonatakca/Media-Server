@@ -189,8 +189,8 @@ function fakeUserState(): UserStateRepository & {
   };
 }
 
-function buildRouter() {
-  const catalogue = fakeCatalogue();
+function buildRouter(over: Partial<CatalogueRepository> = {}) {
+  const catalogue = { ...fakeCatalogue(), ...over };
   const userState = fakeUserState();
   const service = createCatalogueService({
     catalogue,
@@ -427,6 +427,52 @@ describe("catalogue routes", () => {
 
     expect(result.sent.statusCode).toBe(200);
     expect(result.json?.data).toEqual([]);
+  });
+});
+
+describe("what a library's shelf holds", () => {
+  const LIBRARY = "cccccccc-1111-4111-8111-111111111111";
+
+  function withLibrary(kind: string) {
+    const asked: Array<{ kinds?: string[]; libraryId?: string }> = [];
+    const base = fakeCatalogue();
+    const { router } = buildRouter({
+      getLibrary: async () => ({
+        id: LIBRARY,
+        slug: kind,
+        name: kind,
+        kind,
+        sortOrder: 0,
+        itemCount: 0,
+      }),
+      listItems: async (options) => {
+        asked.push({
+          ...(options.kinds ? { kinds: [...options.kinds] } : {}),
+          ...(options.libraryId ? { libraryId: options.libraryId } : {}),
+        });
+        return base.listItems(options);
+      },
+    });
+    return { router, asked };
+  }
+
+  it.each(["movies", "series", "mixed"])(
+    "lists no box sets on a %s shelf",
+    async (kind) => {
+      // A box set is made in its films' library; it is not one of the films.
+      const { router, asked } = withLibrary(kind);
+      await call(router, "GET", `/ownAPI/v1/libraries/${LIBRARY}/items`);
+      expect(asked).toEqual([
+        { kinds: ["movie", "series", "book"], libraryId: LIBRARY },
+      ]);
+    },
+  );
+
+  it("lists every box set the viewer may see on the collections shelf", async () => {
+    const { router, asked } = withLibrary("collections");
+    await call(router, "GET", `/ownAPI/v1/libraries/${LIBRARY}/items`);
+    // No library filter: box sets live in their films' libraries.
+    expect(asked).toEqual([{ kinds: ["collection"] }]);
   });
 });
 

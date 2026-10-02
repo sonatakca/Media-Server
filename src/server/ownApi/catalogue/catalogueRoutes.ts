@@ -163,7 +163,20 @@ export function createCatalogueRoutes({
         const library = await catalogue.getLibrary(principal.userId, libraryId);
         if (!library) throw notFound();
 
-        await listByKinds(context, ["movie", "series", "book", "collection"], {
+        /*
+         * Box sets are made in the library of the films they hold, so the
+         * films' own library would list them beside the films — a "Mad Max
+         * Collection" poster in the middle of Movies. They belong on one
+         * shelf: a collections library lists every box set the viewer may
+         * see, wherever it was made, and every other library lists none.
+         * Visibility is still checked per item, so a box set in a library the
+         * viewer cannot open stays hidden here too.
+         */
+        if (library.kind === "collections") {
+          await listByKinds(context, ["collection"]);
+          return;
+        }
+        await listByKinds(context, ["movie", "series", "book"], {
           libraryId,
         });
       },
