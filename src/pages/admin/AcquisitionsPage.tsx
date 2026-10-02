@@ -6,6 +6,9 @@ import { WorkflowSteps } from "../../components/admin/WorkflowSteps";
 import {
   actionsFor,
   bucketOf,
+  etaParts,
+  formatBytes,
+  formatSpeed,
   progressStep,
   remedyFor,
   type AcquisitionBucket,
@@ -14,14 +17,18 @@ import {
   blocklistAcquisition,
   cancelAcquisition,
   getAcquisition,
+  getDownloadProgress,
   listAcquisitions,
   listBlocklist,
   removeBlocklistEntry,
   retryAcquisition,
   type Acquisition,
   type AcquisitionDetail,
+  type AcquisitionProgress,
   type BlocklistEntry,
+  type DownloadProgress,
 } from "../../lib/acquisitionsApi";
+import type { TranslationKey } from "../../i18n/translations";
 
 /**
  * Every download Seyirlik has asked for, and why.
@@ -44,6 +51,112 @@ type Notice =
   | { kind: "noProfile" }
   | { kind: "failed" };
 
+/** How often a running download is re-read from the download client. */
+const PROGRESS_POLL_MS = 3_000;
+/** Every this many progress reads, the list itself is re-read too. */
+const LIST_EVERY_POLLS = 5;
+
+type Translate = (key: TranslationKey) => string;
+
+function etaText(seconds: number, t: Translate): string {
+  const parts = etaParts(seconds);
+  if (parts === "underAMinute")
+    return t("admin.acquisitions.progress.underAMinute");
+  const hours = parts.hours
+    ? `${parts.hours} ${t("admin.acquisitions.progress.hours")} `
+    : "";
+  return `${hours}${parts.minutes} ${t("admin.acquisitions.progress.minutes")} ${t("admin.acquisitions.progress.left")}`;
+}
+
+/**
+ * Where a running download is, in the download client's own numbers.
+ *
+ * Says only what was measured: a size it was not told is left out rather
+ * than shown as zero, and a speed is shown only on the one job that is
+ * actually moving.
+ */
+function DownloadProgressLine({
+  entry,
+  live,
+  t,
+}: {
+  entry: AcquisitionProgress | undefined;
+  live: DownloadProgress | null;
+  t: Translate;
+}) {
+  if (!live) return null;
+  if (!live.reachable) {
+    return (
+      <p className="mt-3 text-xs font-semibold text-amber-200/80">
+        {t("admin.acquisitions.progress.unreachable")}
+      </p>
+    );
+  }
+  if (!entry) return null;
+
+  const total = entry.totalBytes;
+  const downloaded =
+    entry.stage === "processing" || entry.stage === "done"
+      ? total
+      : entry.downloadedBytes;
+  const percent =
+    entry.stage === "processing" || entry.stage === "done"
+      ? 100
+      : (entry.percent ?? 0);
+
+  const status =
+    entry.stage === "queued"
+      ? `${t("admin.acquisitions.progress.queued")}${
+          entry.queuePosition
+            ? ` · ${t("admin.acquisitions.progress.position")} ${entry.queuePosition}`
+            : ""
+        }`
+      : entry.stage === "paused" || live.paused
+        ? t("admin.acquisitions.progress.paused")
+        : entry.stage === "processing"
+          ? [entry.statusText, entry.detail].filter(Boolean).join(" — ")
+          : [
+              entry.speedBytesPerSecond
+                ? formatSpeed(entry.speedBytesPerSecond)
+                : null,
+              entry.etaSeconds ? etaText(entry.etaSeconds, t) : null,
+            ]
+              .filter(Boolean)
+              .join(" · ");
+
+  return (
+    <div className="mt-3">
+      <div
+        role="progressbar"
+        aria-label={t("admin.acquisitions.progress.label")}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.floor(percent)}
+        className="h-2 overflow-hidden rounded-full bg-white/10"
+      >
+        <div
+          className={`h-full rounded-full transition-[width] duration-700 ease-out motion-reduce:transition-none ${
+            entry.stage === "paused" || live.paused
+              ? "bg-white/35"
+              : "bg-[var(--accent)]"
+          }`}
+          style={{ width: `${Math.min(100, Math.max(0, percent))}%` }}
+        />
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 text-xs font-bold tabular-nums">
+        <span className="text-white/75">
+          {total !== undefined
+            ? `${downloaded !== undefined ? formatBytes(downloaded) : "—"} / ${formatBytes(total)}`
+            : t("admin.acquisitions.progress.sizeUnknown")}
+          {` · ${Math.floor(percent)}%`}
+        </span>
+        {status ? <span className="text-white/55">{status}</span> : null}
+      </div>
+    </div>
+  );
+}
+
 const BUCKET_ORDER: AcquisitionBucket[] = [
   "needsAttention",
   "active",
@@ -59,6 +172,7 @@ export function AcquisitionsPage() {
   const [blocklist, setBlocklist] = useState<BlocklistEntry[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [live, setLive] = useState<DownloadProgress | null>(null);
 
   const loadBlocklist = useCallback(async () => {
     try {
@@ -172,6 +286,46 @@ export function AcquisitionsPage() {
   );
 
   const rows = acquisitions ?? [];
+  const hasActive = rows.some((row) => bucketOf(row.state) === "active");
+
+  /*
+   * While anything is running, read its progress every few seconds, and the
+   * list itself less often so a finished download moves on by itself. A
+   * hidden tab reads nothing.
+   */
+  useEffect(() => {
+    if (!hasActive) return;
+    let isCancelled = false;
+    let polls = 0;
+
+    const tick = async () => {
+      if (document.hidden) return;
+      polls += 1;
+      try {
+        const next = await getDownloadProgress();
+        if (isCancelled) return;
+        setLive(next);
+        const finished = next.progress.some((entry) => entry.stage === "done");
+        if (finished || polls % LIST_EVERY_POLLS === 0) {
+          const rows = await listAcquisitions();
+          if (!isCancelled) setAcquisitions(rows);
+        }
+      } catch {
+        // A failed read leaves the last one standing; the next tick retries.
+      }
+    };
+
+    void tick();
+    const timer = window.setInterval(() => void tick(), PROGRESS_POLL_MS);
+    return () => {
+      isCancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [hasActive]);
+
+  const liveById = new Map(
+    (live?.progress ?? []).map((entry) => [entry.acquisitionId, entry]),
+  );
 
   return (
     <div className="w-full space-y-6">
@@ -252,7 +406,11 @@ export function AcquisitionsPage() {
             <ul className="mt-3 space-y-2">
               {inBucket.map((row) => {
                 const step = progressStep(row.state);
-                const actions = actionsFor(row.state, row.failureClass);
+                const actions = actionsFor(
+                  row.state,
+                  row.failureClass,
+                  row.releaseBlocklisted,
+                );
                 const isBusy = busyId === row.id;
 
                 return (
@@ -291,6 +449,14 @@ export function AcquisitionsPage() {
                         ? ` · ${t("admin.acquisitions.attempt")} ${row.attempt}`
                         : ""}
                     </p>
+
+                    {bucket === "active" ? (
+                      <DownloadProgressLine
+                        entry={liveById.get(row.id)}
+                        live={live}
+                        t={t}
+                      />
+                    ) : null}
 
                     {row.failureClass ? (
                       <p className="mt-2 rounded-xl border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs font-bold text-amber-200">

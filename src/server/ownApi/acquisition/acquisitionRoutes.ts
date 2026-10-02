@@ -31,7 +31,7 @@ import {
 } from "./acquisitionService";
 import type { AcquisitionTarget } from "./acquisitionRepository";
 import type { IndexerRegistry } from "../indexers/indexerRegistry";
-import type { SabnzbdClient } from "./sabnzbd";
+import type { SabJob, SabnzbdClient } from "./sabnzbd";
 import { SabError } from "./sabnzbd";
 import { IndexerError } from "../indexers/indexerTypes";
 import type { IndexerSearchService } from "../indexers/searchService";
@@ -78,6 +78,8 @@ interface AcquisitionDto {
   readonly failureClass?: string;
   readonly failureDetail?: string;
   readonly sizeBytes?: number;
+  /** Whether this release is on the blocklist, whichever row put it there. */
+  readonly releaseBlocklisted?: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -94,7 +96,10 @@ interface AcquisitionDto {
  * it — so carrying it there disclosed a filesystem layout to nobody's benefit.
  * The one endpoint whose whole purpose is that handoff says so itself.
  */
-function toDto(summary: AcquisitionSummary): AcquisitionDto {
+function toDto(
+  summary: AcquisitionSummary,
+  releaseBlocklisted = false,
+): AcquisitionDto {
   return {
     id: summary.id,
     state: summary.state,
@@ -108,8 +113,85 @@ function toDto(summary: AcquisitionSummary): AcquisitionDto {
     ...(summary.sizeBytes === undefined
       ? {}
       : { sizeBytes: summary.sizeBytes }),
+    ...(releaseBlocklisted ? { releaseBlocklisted: true } : {}),
     createdAt: new Date(summary.createdAtMs).toISOString(),
     updatedAt: new Date(summary.updatedAtMs).toISOString(),
+  };
+}
+
+/** How the blocklist names a release, from an acquisition row. */
+function releaseOf(summary: AcquisitionSummary) {
+  return {
+    indexerId: summary.indexerId,
+    guid: summary.releaseGuid,
+    title: summary.releaseTitle,
+  };
+}
+
+/** One running acquisition, as SABnzbd currently sees it. */
+interface ProgressDto {
+  readonly acquisitionId: string;
+  readonly stage: "queued" | "paused" | "downloading" | "processing" | "done";
+  /** SABnzbd's own word: "Downloading", "Repairing", "Extracting"… */
+  readonly statusText?: string;
+  readonly percent?: number;
+  readonly totalBytes?: number;
+  readonly downloadedBytes?: number;
+  readonly speedBytesPerSecond?: number;
+  readonly etaSeconds?: number;
+  /** 1 is next. Only while waiting. */
+  readonly queuePosition?: number;
+  /** The post-processing step, as SABnzbd words it. */
+  readonly detail?: string;
+}
+
+function progressOf(
+  acquisitionId: string,
+  job: SabJob,
+  speedBytesPerSecond: number | undefined,
+): ProgressDto {
+  const stage: ProgressDto["stage"] =
+    job.state === "completed" || job.state === "failed"
+      ? "done"
+      : job.state === "paused"
+        ? "paused"
+        : job.state === "queued"
+          ? "queued"
+          : job.state === "processing"
+            ? "processing"
+            : "downloading";
+  const total = job.sizeBytes;
+  const downloaded =
+    total === undefined
+      ? undefined
+      : job.remainingBytes !== undefined
+        ? Math.max(0, total - job.remainingBytes)
+        : job.percentage !== undefined
+          ? Math.round((total * job.percentage) / 100)
+          : undefined;
+  const percent =
+    total && downloaded !== undefined
+      ? Math.min(100, (downloaded / total) * 100)
+      : job.percentage;
+  return {
+    acquisitionId,
+    stage,
+    ...(job.statusText ? { statusText: job.statusText } : {}),
+    ...(percent === undefined
+      ? {}
+      : { percent: Math.round(percent * 10) / 10 }),
+    ...(total === undefined ? {} : { totalBytes: total }),
+    ...(downloaded === undefined ? {} : { downloadedBytes: downloaded }),
+    ...(stage === "downloading" && speedBytesPerSecond
+      ? { speedBytesPerSecond }
+      : {}),
+    ...(stage === "downloading" && job.timeLeftSeconds !== undefined
+      ? { etaSeconds: job.timeLeftSeconds }
+      : {}),
+    ...(stage === "queued" && job.queuePosition !== undefined
+      ? { queuePosition: job.queuePosition + 1 }
+      : {}),
+    ...(job.actionLine ? { detail: job.actionLine } : {}),
   };
 }
 
@@ -164,8 +246,99 @@ export function createAcquisitionRoutes({
       handle: async (context) => {
         context.requirePrincipal();
         const limit = parseLimit(context.url.searchParams.get("limit"));
+        const rows = await repository.list(limit);
+        const isBlocklisted = await blocklist.matcherFor(rows.map(releaseOf));
         sendData(context.response, context.requestId, {
-          acquisitions: (await repository.list(limit)).map(toDto),
+          acquisitions: rows.map((row) =>
+            toDto(row, isBlocklisted(releaseOf(row))),
+          ),
+        });
+      },
+    },
+    {
+      /**
+       * How far each running download has got, read from SABnzbd now.
+       *
+       * Live rather than stored: the reconciler writes state every thirty
+       * seconds, which is right for "what is it doing" and far too coarse for
+       * a progress bar. One queue read and one history read answer it for
+       * every acquisition at once.
+       *
+       * An unreachable SABnzbd is reported as such, not as an error: the
+       * acquisitions themselves are still listed from the database.
+       */
+      method: "GET",
+      path: "/acquisitions/progress",
+      access: "admin",
+      handle: async (context) => {
+        context.requirePrincipal();
+        const active = await repository.listActive();
+        if (active.length === 0) {
+          sendData(context.response, context.requestId, {
+            reachable: true,
+            paused: false,
+            progress: [],
+          });
+          return;
+        }
+        let queue;
+        let history: SabJob[];
+        try {
+          [queue, history] = await Promise.all([
+            sab.queueSnapshot(),
+            sab.listHistory(50),
+          ]);
+        } catch {
+          sendData(context.response, context.requestId, {
+            reachable: false,
+            paused: false,
+            progress: [],
+          });
+          return;
+        }
+
+        // Queue first: a job present in both is still running.
+        const byId = new Map<string, SabJob>();
+        const byName = new Map<string, SabJob>();
+        for (const job of [...history, ...queue.jobs]) {
+          byId.set(job.nzoId, job);
+          if (job.name) byName.set(job.name, job);
+        }
+        /*
+         * SABnzbd gives one speed for the whole queue. It belongs to the job
+         * actually moving, which is the first one downloading, and to no
+         * other — attributing it to every row would invent several speeds.
+         */
+        const moving = queue.paused
+          ? undefined
+          : queue.jobs
+              .filter((job) => job.state === "downloading")
+              .sort(
+                (a, b) =>
+                  (a.queuePosition ?? Infinity) - (b.queuePosition ?? Infinity),
+              )[0];
+
+        const progress: ProgressDto[] = [];
+        for (const record of active) {
+          const job =
+            (record.externalId ? byId.get(record.externalId) : undefined) ??
+            byName.get(record.idempotencyKey);
+          if (!job) continue;
+          progress.push(
+            progressOf(
+              record.id,
+              job,
+              job === moving ? queue.speedBytesPerSecond : undefined,
+            ),
+          );
+        }
+        sendData(context.response, context.requestId, {
+          reachable: true,
+          paused: queue.paused,
+          ...(queue.paused || queue.speedBytesPerSecond === undefined
+            ? {}
+            : { speedBytesPerSecond: queue.speedBytesPerSecond }),
+          progress,
         });
       },
     },
@@ -309,6 +482,8 @@ export function createAcquisitionRoutes({
           },
         });
 
+        await repository.supersedeFailedFor(acquisition.id);
+
         /*
          * The work happens on the durable queue, so it survives a restart of
          * whichever process happens to be serving this request. The key is the
@@ -371,7 +546,11 @@ export function createAcquisitionRoutes({
             409,
           );
         }
-        if (existing.failureClass === "blocklisted") {
+        const isBlocklisted = await blocklist.matcherFor([releaseOf(existing)]);
+        if (
+          existing.failureClass === "blocklisted" ||
+          isBlocklisted(releaseOf(existing))
+        ) {
           // Trying it again is exactly what the blocklist is there to stop.
           throw new OwnApiError(
             "ACQUISITION_NOT_RETRYABLE",
@@ -569,6 +748,7 @@ export function createAcquisitionRoutes({
               })),
           },
         });
+        await repository.supersedeFailedFor(replacement.id);
         const taskId = await queue.enqueue({
           jobType: ACQUISITION_JOB_TYPES.submit,
           payload: { acquisitionId: replacement.id },

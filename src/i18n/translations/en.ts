@@ -2115,6 +2115,17 @@ export const en = {
   "admin.acquisitions.blocklistDescription":
     "Releases Seyirlik will never choose, here or on the Releases page.",
   "admin.acquisitions.unblock": "Remove",
+  "admin.acquisitions.progress.label": "Download progress",
+  "admin.acquisitions.progress.queued": "Waiting in the download client",
+  "admin.acquisitions.progress.position": "place in line",
+  "admin.acquisitions.progress.paused": "Paused in the download client",
+  "admin.acquisitions.progress.unreachable":
+    "The download client is not answering, so live progress is unavailable.",
+  "admin.acquisitions.progress.sizeUnknown": "Size not reported yet",
+  "admin.acquisitions.progress.underAMinute": "under a minute left",
+  "admin.acquisitions.progress.hours": "h",
+  "admin.acquisitions.progress.minutes": "min",
+  "admin.acquisitions.progress.left": "left",
   "admin.decisions.title": "Release decisions",
   "admin.decisions.description":
     "What Seyirlik would download for a title, and why it would not download the rest.",

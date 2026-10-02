@@ -87,12 +87,16 @@ export interface AcquisitionActions {
 export function actionsFor(
   state: AcquisitionState,
   failureClass?: AcquisitionFailureClass,
+  releaseBlocklisted = false,
 ): AcquisitionActions {
   const finished = FINISHED.includes(state);
   return {
-    // A blocklisted release is refused a retry: that is what blocklisting it
-    // means.
-    canRetry: state === "failed" && failureClass !== "blocklisted",
+    // A blocklisted release is refused a retry — from any row that holds it,
+    // not only the one it was blocklisted from.
+    canRetry:
+      state === "failed" &&
+      failureClass !== "blocklisted" &&
+      !releaseBlocklisted,
     canCancel: !finished,
     canBlocklist: BLOCKLISTABLE.includes(state),
     ...(finished ? { cancelBlockedReason: "already-finished" as const } : {}),
@@ -188,4 +192,26 @@ export function remedyFor(failure: AcquisitionFailureClass): FailureRemedy {
       // unrecognised: none of them get better by waiting.
       return "operator";
   }
+}
+
+/**
+ * Sizes in decimal gigabytes, the unit the size limit is set in, and in
+ * megabytes below one.
+ */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1e6)} MB`;
+}
+
+export function formatSpeed(bytesPerSecond: number): string {
+  return `${(bytesPerSecond / 1e6).toFixed(1)} MB/s`;
+}
+
+/** The parts of a remaining time, for the page to word in its language. */
+export function etaParts(
+  seconds: number,
+): { hours: number; minutes: number } | "underAMinute" {
+  if (seconds < 60) return "underAMinute";
+  const minutes = Math.round(seconds / 60);
+  return { hours: Math.floor(minutes / 60), minutes: minutes % 60 };
 }

@@ -23,6 +23,8 @@ export interface Acquisition {
   readonly failureClass?: AcquisitionFailureClass;
   readonly failureDetail?: string;
   readonly sizeBytes?: number;
+  /** The release is on the blocklist, whichever row put it there. */
+  readonly releaseBlocklisted?: boolean;
   readonly createdAt: string;
   readonly updatedAt: string;
 }
@@ -154,4 +156,33 @@ export function removeBlocklistEntry(id: string): Promise<unknown> {
   return ownApiClient.request(`/releases/blocklist/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+/** One running download, as the download client sees it right now. */
+export interface AcquisitionProgress {
+  readonly acquisitionId: string;
+  readonly stage: "queued" | "paused" | "downloading" | "processing" | "done";
+  /** The download client's own word: "Downloading", "Repairing"… */
+  readonly statusText?: string;
+  readonly percent?: number;
+  readonly totalBytes?: number;
+  readonly downloadedBytes?: number;
+  readonly speedBytesPerSecond?: number;
+  readonly etaSeconds?: number;
+  /** 1 is next. */
+  readonly queuePosition?: number;
+  /** The post-processing step, in the download client's words. */
+  readonly detail?: string;
+}
+
+export interface DownloadProgress {
+  /** False when the download client did not answer. */
+  readonly reachable: boolean;
+  readonly paused: boolean;
+  readonly speedBytesPerSecond?: number;
+  readonly progress: AcquisitionProgress[];
+}
+
+export function getDownloadProgress(): Promise<DownloadProgress> {
+  return ownApiClient.request<DownloadProgress>("/acquisitions/progress");
 }

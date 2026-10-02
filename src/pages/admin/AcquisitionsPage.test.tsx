@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   blocklistAcquisition: vi.fn(),
   listBlocklist: vi.fn(),
   removeBlocklistEntry: vi.fn(),
+  getDownloadProgress: vi.fn(),
 }));
 
 vi.mock("../../lib/acquisitionsApi", () => api);
@@ -64,6 +65,11 @@ beforeEach(() => {
   api.listAcquisitions.mockResolvedValue([acquisition()]);
   api.getAcquisition.mockResolvedValue(detail());
   api.listBlocklist.mockResolvedValue([]);
+  api.getDownloadProgress.mockResolvedValue({
+    reachable: true,
+    paused: false,
+    progress: [],
+  });
 });
 
 describe("the acquisitions page", () => {
@@ -280,5 +286,113 @@ describe("the acquisitions page", () => {
       expect(api.removeBlocklistEntry).toHaveBeenCalledWith("b1");
       expect(api.listBlocklist).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("shows how far a download has got, how fast, and how long is left", async () => {
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: true,
+      paused: false,
+      speedBytesPerSecond: 31_000_000,
+      progress: [
+        {
+          acquisitionId: "a1",
+          stage: "downloading",
+          statusText: "Downloading",
+          percent: 48,
+          totalBytes: 25_000_000_000,
+          downloadedBytes: 12_000_000_000,
+          speedBytesPerSecond: 31_000_000,
+          etaSeconds: 425,
+        },
+      ],
+    });
+    renderPage();
+
+    const bar = await screen.findByRole("progressbar");
+    expect(bar.getAttribute("aria-valuenow")).toBe("48");
+    expect(screen.getByText(/12\.0 GB \/ 25\.0 GB · 48%/)).toBeTruthy();
+    expect(screen.getByText(/31\.0 MB\/s/).textContent).toBe(
+      "31.0 MB/s · 7 admin.acquisitions.progress.minutes admin.acquisitions.progress.left",
+    );
+  });
+
+  it("says where a waiting download is in line", async () => {
+    api.listAcquisitions.mockResolvedValue([acquisition({ state: "queued" })]);
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: true,
+      paused: false,
+      progress: [
+        {
+          acquisitionId: "a1",
+          stage: "queued",
+          percent: 0,
+          totalBytes: 8_000_000_000,
+          downloadedBytes: 0,
+          queuePosition: 2,
+        },
+      ],
+    });
+    renderPage();
+    expect(
+      await screen.findByText(
+        "admin.acquisitions.progress.queued · admin.acquisitions.progress.position 2",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("names the post-processing step once the bytes are down", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "processing" }),
+    ]);
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: true,
+      paused: false,
+      progress: [
+        {
+          acquisitionId: "a1",
+          stage: "processing",
+          statusText: "Extracting",
+          detail: "Unpacking: 3/7",
+          totalBytes: 20_000_000_000,
+        },
+      ],
+    });
+    renderPage();
+    expect(await screen.findByText("Extracting — Unpacking: 3/7")).toBeTruthy();
+    expect(screen.getByText(/20\.0 GB \/ 20\.0 GB · 100%/)).toBeTruthy();
+  });
+
+  it("says plainly when the download client is not answering", async () => {
+    api.getDownloadProgress.mockResolvedValue({
+      reachable: false,
+      paused: false,
+      progress: [],
+    });
+    renderPage();
+    expect(
+      await screen.findByText("admin.acquisitions.progress.unreachable"),
+    ).toBeTruthy();
+  });
+
+  it("asks for no progress when nothing is running", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({ state: "downloaded" }),
+    ]);
+    renderPage();
+    await screen.findByText("Dune");
+    expect(api.getDownloadProgress).not.toHaveBeenCalled();
+  });
+
+  it("offers no retry on a release blocklisted from another row", async () => {
+    api.listAcquisitions.mockResolvedValue([
+      acquisition({
+        state: "failed",
+        failureClass: "missing-articles",
+        releaseBlocklisted: true,
+      }),
+    ]);
+    renderPage();
+    await screen.findByText("Dune");
+    expect(screen.queryByText("admin.acquisitions.retry")).toBeNull();
   });
 });

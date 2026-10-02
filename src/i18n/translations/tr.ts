@@ -2108,6 +2108,17 @@ export const tr = {
   "admin.acquisitions.blocklistDescription":
     "Seyirlik'in burada ya da Sürümler sayfasında asla seçmeyeceği sürümler.",
   "admin.acquisitions.unblock": "Kaldır",
+  "admin.acquisitions.progress.label": "İndirme ilerlemesi",
+  "admin.acquisitions.progress.queued": "İndirme istemcisinde bekliyor",
+  "admin.acquisitions.progress.position": "sıra",
+  "admin.acquisitions.progress.paused": "İndirme istemcisinde duraklatıldı",
+  "admin.acquisitions.progress.unreachable":
+    "İndirme istemcisi yanıt vermiyor; canlı ilerleme gösterilemiyor.",
+  "admin.acquisitions.progress.sizeUnknown": "Boyut henüz bildirilmedi",
+  "admin.acquisitions.progress.underAMinute": "bir dakikadan az kaldı",
+  "admin.acquisitions.progress.hours": "sa",
+  "admin.acquisitions.progress.minutes": "dk",
+  "admin.acquisitions.progress.left": "kaldı",
   "admin.decisions.title": "Sürüm kararları",
   "admin.decisions.description":
     "Seyirlik bir başlık için neyi indirirdi ve diğerlerini neden indirmezdi.",

@@ -67,6 +67,7 @@ interface Harness {
   updates: Array<{ id: string; from: string; patch: Record<string, unknown> }>;
   blocklisted: AddBlocklistEntry[];
   search: IndexerSearchService;
+  repository: AcquisitionRepository;
 }
 
 function harness(
@@ -79,10 +80,11 @@ function harness(
     searchFails?: boolean;
     profileId?: string | null;
     updateSucceeds?: (patch: Record<string, unknown>) => boolean;
+    preBlocklisted?: AddBlocklistEntry[];
   } = {},
 ): Harness {
   const created: CreateAcquisitionInput[] = [];
-  const blocklisted: AddBlocklistEntry[] = [];
+  const blocklisted: AddBlocklistEntry[] = [...(over.preBlocklisted ?? [])];
   const enqueued: Array<Record<string, unknown>> = [];
   const updates: Harness["updates"] = [];
 
@@ -133,6 +135,19 @@ function harness(
       updates.push({ id, from, patch });
       return over.updateSucceeds ? over.updateSucceeds(patch) : true;
     },
+    listActive: async () =>
+      records.filter((r) =>
+        [
+          "planned",
+          "resolving",
+          "submitting",
+          "queued",
+          "downloading",
+          "processing",
+          "awaiting_retry",
+        ].includes(r.state),
+      ),
+    supersedeFailedFor: vi.fn(async () => 0),
     searchContext: async (id: string) => {
       const found = records.find((r) => r.id === id);
       if (!found) return null;
@@ -224,6 +239,7 @@ function harness(
     updates,
     blocklisted,
     search,
+    repository,
   };
 }
 
@@ -782,5 +798,181 @@ describe("whether the download client is reachable", () => {
       route(h, "GET", "/acquisitions/client/status"),
     );
     expect(payload?.data).toMatchObject({ reachable: false, reason: "auth" });
+  });
+});
+
+describe("live progress", () => {
+  const path = "/acquisitions/progress";
+  const downloading = summary({
+    state: "downloading",
+    externalId: "nzo-1",
+  });
+  const waiting = summary({
+    id: "22222222-2222-4222-8222-222222222222",
+    state: "queued",
+    externalId: undefined,
+    idempotencyKey: "seyirlik-22222222-2222-4222-8222-222222222222",
+  });
+  const unpacking = summary({
+    id: "33333333-3333-4333-8333-333333333333",
+    state: "processing",
+    externalId: "nzo-3",
+  });
+  const GB = 1_000_000_000;
+
+  function live(paused = false) {
+    return {
+      queueSnapshot: vi.fn(async () => ({
+        paused,
+        speedBytesPerSecond: 31_000_000,
+        jobs: [
+          {
+            nzoId: "nzo-1",
+            name: downloading.idempotencyKey,
+            state: "downloading" as const,
+            statusText: "Downloading",
+            sizeBytes: 25 * GB,
+            remainingBytes: 13 * GB,
+            timeLeftSeconds: 425,
+            queuePosition: 0,
+            source: "queue" as const,
+          },
+          {
+            nzoId: "nzo-2",
+            name: waiting.idempotencyKey,
+            state: "queued" as const,
+            statusText: "Queued",
+            sizeBytes: 8 * GB,
+            remainingBytes: 8 * GB,
+            queuePosition: 1,
+            source: "queue" as const,
+          },
+        ],
+      })),
+      listHistory: vi.fn(async () => [
+        {
+          nzoId: "nzo-3",
+          name: unpacking.idempotencyKey,
+          state: "processing" as const,
+          statusText: "Extracting",
+          actionLine: "Unpacking: 3/7",
+          sizeBytes: 20 * GB,
+          source: "history" as const,
+        },
+      ]),
+    };
+  }
+
+  it("says how far each download has got, and how fast", async () => {
+    const h = harness([downloading, waiting, unpacking], { sab: live() });
+    const { payload } = await invoke(route(h, "GET", path));
+    expect(payload?.data).toMatchObject({
+      reachable: true,
+      paused: false,
+      speedBytesPerSecond: 31_000_000,
+    });
+    const progress = payload?.data?.progress as Array<Record<string, unknown>>;
+    expect(progress).toEqual([
+      {
+        acquisitionId: downloading.id,
+        stage: "downloading",
+        statusText: "Downloading",
+        percent: 48,
+        totalBytes: 25 * GB,
+        downloadedBytes: 12 * GB,
+        speedBytesPerSecond: 31_000_000,
+        etaSeconds: 425,
+      },
+      {
+        // Found by name, before its identifier was known.
+        acquisitionId: waiting.id,
+        stage: "queued",
+        statusText: "Queued",
+        percent: 0,
+        totalBytes: 8 * GB,
+        downloadedBytes: 0,
+        queuePosition: 2,
+      },
+      {
+        acquisitionId: unpacking.id,
+        stage: "processing",
+        statusText: "Extracting",
+        totalBytes: 20 * GB,
+        detail: "Unpacking: 3/7",
+      },
+    ]);
+  });
+
+  it("gives no speed or estimate while the queue is paused", async () => {
+    const h = harness([downloading], { sab: live(true) });
+    const { payload } = await invoke(route(h, "GET", path));
+    expect(payload?.data).toMatchObject({ paused: true });
+    expect(payload?.data?.speedBytesPerSecond).toBeUndefined();
+    const [entry] = payload?.data?.progress as Array<Record<string, unknown>>;
+    expect(entry!.speedBytesPerSecond).toBeUndefined();
+  });
+
+  it("reports an unreachable SABnzbd as a fact, not an error", async () => {
+    const h = harness([downloading], {
+      sab: {
+        queueSnapshot: vi.fn(async () => {
+          throw new SabError("unavailable", "down");
+        }),
+        listHistory: vi.fn(async () => []),
+      },
+    });
+    const { status, payload } = await invoke(route(h, "GET", path));
+    expect(status).toBe(200);
+    expect(payload?.data).toEqual({
+      reachable: false,
+      paused: false,
+      progress: [],
+    });
+  });
+
+  it("does not ask SABnzbd when nothing is running", async () => {
+    const sab = live();
+    const h = harness([summary({ state: "failed" })], { sab });
+    await invoke(route(h, "GET", path));
+    expect(sab.queueSnapshot).not.toHaveBeenCalled();
+  });
+});
+
+describe("one blocklisting covers every row with that release", () => {
+  const entry: AddBlocklistEntry = {
+    indexerId: "nzbgeek",
+    releaseGuid: "broken-guid",
+    releaseTitle: "Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD",
+  };
+  const another = () =>
+    summary({
+      state: "failed",
+      failureClass: "missing-articles",
+      releaseGuid: "broken-guid",
+      releaseTitle: "Big.Buck.Bunny.2008.1080p.BluRay.x265-BAD",
+    });
+
+  it("marks the release as blocklisted in the list", async () => {
+    const h = harness([another()], { preBlocklisted: [entry] });
+    const { payload } = await invoke(route(h, "GET", "/acquisitions"));
+    const [row] = payload?.data?.acquisitions as Array<Record<string, unknown>>;
+    expect(row!.releaseBlocklisted).toBe(true);
+  });
+
+  it("refuses to retry it from a row that did not blocklist it", async () => {
+    const h = harness([another()], { preBlocklisted: [entry] });
+    await expect(
+      invoke(route(h, "POST", "/acquisitions/:acquisitionId/retry"), {
+        params: { acquisitionId: summary().id },
+      }),
+    ).rejects.toMatchObject({ statusCode: 409 });
+  });
+});
+
+describe("a newer download retires older failures", () => {
+  it("supersedes failures for the same title when one is asked for", async () => {
+    const h = harness();
+    await invoke(route(h, "POST", "/acquisitions"), { body: VALID_BODY });
+    expect(h.repository.supersedeFailedFor).toHaveBeenCalledTimes(1);
   });
 });

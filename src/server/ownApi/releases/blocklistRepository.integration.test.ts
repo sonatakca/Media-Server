@@ -113,4 +113,75 @@ integration("the release blocklist and size limit in PostgreSQL", () => {
     });
     expect(await acquisitions.searchContext(randomUUID())).toBeNull();
   });
+
+  it("retires earlier failures for the same title, and only those", async () => {
+    const evidence = {
+      profileName: "HD",
+      policySnapshot: {},
+      releaseFacts: {},
+      score: 0,
+      reasons: [],
+      rejected: [],
+    };
+    const make = async (
+      title: string,
+      year: number | undefined,
+      state: "failed" | "downloading" | "planned",
+    ) => {
+      const row = await acquisitions.create({
+        target: {
+          kind: "movie",
+          title,
+          ...(year === undefined ? {} : { year }),
+        },
+        indexerId: "nzbgeek",
+        releaseGuid: randomUUID(),
+        releaseTitle: `${title}.release`,
+        origin: "manual",
+        evidence,
+      });
+      if (state !== "planned") {
+        await pool.query("UPDATE acquisitions SET state = $2 WHERE id = $1", [
+          row.id,
+          state,
+        ]);
+      }
+      return row.id;
+    };
+
+    const failedSameYear = await make("Mad Max: Fury Road", 2015, "failed");
+    const failedNoYear = await make("mad max: fury road", undefined, "failed");
+    const failedOtherYear = await make("Mad Max: Fury Road", 1979, "failed");
+    const stillRunning = await make("Mad Max: Fury Road", 2015, "downloading");
+    const otherFilm = await make("Mad Max", 1979, "failed");
+    const newer = await make("Mad Max: Fury Road", 2015, "planned");
+
+    expect(await acquisitions.supersedeFailedFor(newer)).toBe(2);
+    const states = await pool.query<{ id: string; state: string }>(
+      "SELECT id, state FROM acquisitions WHERE id = ANY($1::uuid[])",
+      [
+        [
+          failedSameYear,
+          failedNoYear,
+          failedOtherYear,
+          stillRunning,
+          otherFilm,
+          newer,
+        ],
+      ],
+    );
+    const stateOf = new Map(states.rows.map((row) => [row.id, row.state]));
+    expect(stateOf.get(failedSameYear)).toBe("superseded");
+    expect(stateOf.get(failedNoYear)).toBe("superseded");
+    expect(stateOf.get(failedOtherYear)).toBe("failed");
+    expect(stateOf.get(stillRunning)).toBe("downloading");
+    expect(stateOf.get(otherFilm)).toBe("failed");
+    expect(stateOf.get(newer)).toBe("planned");
+
+    const detail = await acquisitions.detail(failedSameYear);
+    expect(detail!.events.at(-1)).toMatchObject({
+      fromState: "failed",
+      toState: "superseded",
+    });
+  });
 });

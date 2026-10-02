@@ -358,3 +358,93 @@ describe("reading SABnzbd's failure message", () => {
     expect(classifySabFailure("")).toBe("unknown");
   });
 });
+
+describe("how far a download has got", () => {
+  const LIVE = {
+    queue: {
+      paused: false,
+      kbpersec: "30720.5",
+      slots: [
+        {
+          index: 0,
+          nzo_id: "SABnzbd_nzo_aaa",
+          filename: "seyirlik-1",
+          status: "Downloading",
+          percentage: "49",
+          mb: "25000",
+          mbleft: "12750.5",
+          timeleft: "0:07:05",
+        },
+        {
+          index: 1,
+          nzo_id: "SABnzbd_nzo_bbb",
+          filename: "seyirlik-2",
+          status: "Queued",
+          percentage: "0",
+          mb: "8000",
+          mbleft: "8000",
+          timeleft: "0:00:00",
+        },
+        {
+          index: 2,
+          nzo_id: "SABnzbd_nzo_ccc",
+          filename: "seyirlik-3",
+          status: "Queued",
+          mb: "100",
+          timeleft: "1:02:03:04",
+        },
+      ],
+    },
+  };
+
+  it("reads remaining size, time left, place and status from the queue", async () => {
+    const { sab } = client(() => json(LIVE));
+    const snapshot = await sab.queueSnapshot();
+    expect(snapshot.paused).toBe(false);
+    expect(snapshot.speedBytesPerSecond).toBe(Math.round(30720.5 * 1024));
+    expect(snapshot.jobs[0]).toMatchObject({
+      state: "downloading",
+      statusText: "Downloading",
+      sizeBytes: 25000 * 1024 * 1024,
+      remainingBytes: Math.round(12750.5 * 1024 * 1024),
+      timeLeftSeconds: 7 * 60 + 5,
+      queuePosition: 0,
+    });
+  });
+
+  it("treats a zero estimate as unknown, and reads days", async () => {
+    const { sab } = client(() => json(LIVE));
+    const [, waiting, later] = (await sab.queueSnapshot()).jobs;
+    expect(waiting!.timeLeftSeconds).toBeUndefined();
+    expect(later!.timeLeftSeconds).toBe(86_400 + 2 * 3600 + 3 * 60 + 4);
+  });
+
+  it("reads a paused queue", async () => {
+    const { sab } = client(() =>
+      json({ queue: { paused: true, kbpersec: "0", slots: [] } }),
+    );
+    expect(await sab.queueSnapshot()).toMatchObject({ paused: true, jobs: [] });
+  });
+
+  it("carries the post-processing step from the history", async () => {
+    const { sab } = client(() =>
+      json({
+        history: {
+          slots: [
+            {
+              nzo_id: "x",
+              name: "seyirlik-9",
+              status: "Repairing",
+              action_line: "Repairing: 45%",
+            },
+          ],
+        },
+      }),
+    );
+    expect((await sab.listHistory())[0]).toMatchObject({
+      state: "processing",
+      statusText: "Repairing",
+      actionLine: "Repairing: 45%",
+    });
+  });
+});

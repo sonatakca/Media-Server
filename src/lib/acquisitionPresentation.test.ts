@@ -4,6 +4,9 @@ import {
   ACQUISITION_PROGRESSION,
   actionsFor,
   bucketOf,
+  etaParts,
+  formatBytes,
+  formatSpeed,
   isWaitingOnSeyirlik,
   progressStep,
   remedyFor,
@@ -195,5 +198,24 @@ describe("blocklisting", () => {
   it("takes away the retry, which would ask for the same release", () => {
     expect(actionsFor("failed", "blocklisted").canRetry).toBe(false);
     expect(actionsFor("failed", "missing-articles").canRetry).toBe(true);
+  });
+});
+
+describe("saying sizes, speeds and time left", () => {
+  it("uses decimal GB, the unit of the size limit", () => {
+    expect(formatBytes(30_000_000_000)).toBe("30.0 GB");
+    expect(formatBytes(1_000_000_000)).toBe("1.0 GB");
+    expect(formatBytes(512_000_000)).toBe("512 MB");
+    expect(formatSpeed(31_000_000)).toBe("31.0 MB/s");
+  });
+
+  it("rounds time left to minutes, and says so under one", () => {
+    expect(etaParts(30)).toBe("underAMinute");
+    expect(etaParts(425)).toEqual({ hours: 0, minutes: 7 });
+    expect(etaParts(4_350)).toEqual({ hours: 1, minutes: 13 });
+  });
+
+  it("refuses a retry wherever the release is blocklisted", () => {
+    expect(actionsFor("failed", "missing-articles", true).canRetry).toBe(false);
   });
 });

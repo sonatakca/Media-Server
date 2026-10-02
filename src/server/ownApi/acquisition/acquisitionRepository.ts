@@ -99,6 +99,14 @@ export interface AcquisitionRepository extends AcquisitionStore {
   } | null>;
   /** Acquisitions finished downloading and not yet handed on. */
   listReadyForImport(limit?: number): Promise<AcquisitionSummary[]>;
+  /**
+   * Retires every failed acquisition for the same target as this one.
+   *
+   * A failure is in "Needs you" because nothing is getting the title. Once a
+   * newer download is, the failure is history, and leaving it there makes
+   * the page say a title needs attention while it is downloading.
+   */
+  supersedeFailedFor(acquisitionId: string): Promise<number>;
   /** What was asked for, and against which profile — enough to ask again. */
   searchContext(id: string): Promise<{
     target: AcquisitionTarget;
@@ -336,6 +344,44 @@ export function createAcquisitionRepository(
           atMs: row.at.getTime(),
         })),
       };
+    },
+
+    async supersedeFailedFor(acquisitionId) {
+      /*
+       * The same target: the catalogue item when both name one, otherwise
+       * the kind, title, season and episode. A year counts only when both
+       * rows recorded one, because a search by hand may leave it out.
+       */
+      const result = await pool.query<{ acquisition_id: string }>(
+        `WITH newer AS (SELECT * FROM acquisitions WHERE id = $1),
+         retired AS (
+           UPDATE acquisitions a
+              SET state = 'superseded', updated_at = now()
+             FROM newer n
+            WHERE a.id <> n.id
+              AND a.state = 'failed'
+              AND a.target_kind = n.target_kind
+              AND (
+                (a.target_item_id IS NOT NULL AND a.target_item_id = n.target_item_id)
+                OR (
+                  lower(a.target_title) = lower(n.target_title)
+                  AND (a.target_year IS NULL OR n.target_year IS NULL
+                       OR a.target_year = n.target_year)
+                  AND a.target_season IS NOT DISTINCT FROM n.target_season
+                  AND a.target_episode IS NOT DISTINCT FROM n.target_episode
+                )
+              )
+            RETURNING a.id
+         )
+         INSERT INTO acquisition_events
+           (acquisition_id, from_state, to_state, detail)
+         SELECT id, 'failed', 'superseded',
+                'A newer download for the same title replaced it.'
+           FROM retired
+         RETURNING acquisition_id`,
+        [acquisitionId],
+      );
+      return result.rows.length;
     },
 
     async searchContext(id) {

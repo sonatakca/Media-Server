@@ -50,11 +50,29 @@ export interface SabJob {
   /** 0–100 where SABnzbd reports it. */
   readonly percentage?: number;
   readonly sizeBytes?: number;
+  /** What is still to come down. Queue entries only. */
+  readonly remainingBytes?: number;
+  /** SABnzbd's own estimate. Queue entries only, and only while it can tell. */
+  readonly timeLeftSeconds?: number;
+  /** Place in SABnzbd's queue, from 0. */
+  readonly queuePosition?: number;
+  /** SABnzbd's own word for what it is doing: "Downloading", "Repairing"… */
+  readonly statusText?: string;
+  /** The post-processing step in progress, as SABnzbd words it. */
+  readonly actionLine?: string;
   /** Where the finished bytes are. Only history entries have one. */
   readonly storagePath?: string;
   /** SABnzbd's own words about a failure. Never a credential. */
   readonly failMessage?: string;
   readonly source: "queue" | "history";
+}
+
+/** The queue as a whole: its jobs, and how fast it is moving. */
+export interface SabQueueSnapshot {
+  readonly jobs: SabJob[];
+  /** Across the whole queue; SABnzbd does not split it per job. */
+  readonly speedBytesPerSecond?: number;
+  readonly paused: boolean;
 }
 
 export interface SabSubmission {
@@ -69,6 +87,8 @@ export interface SabnzbdClient {
   /** Version string, and proof the key works. */
   version(signal?: AbortSignal): Promise<string>;
   listQueue(signal?: AbortSignal): Promise<SabJob[]>;
+  /** The queue with its speed and paused state, in the same single call. */
+  queueSnapshot(signal?: AbortSignal): Promise<SabQueueSnapshot>;
   listHistory(limit?: number, signal?: AbortSignal): Promise<SabJob[]>;
   /** Returns the job's identifier when SABnzbd reports one. */
   submit(
@@ -132,6 +152,24 @@ function toNumber(value: unknown): number | undefined {
     if (Number.isFinite(parsed)) return parsed;
   }
   return undefined;
+}
+
+/**
+ * SABnzbd's "H:MM:SS" or "D:HH:MM:SS", in seconds.
+ *
+ * Undefined for anything else, including the "0:00:00" it shows while it
+ * cannot estimate — a zero there means "unknown", not "done".
+ */
+function durationSeconds(value: unknown): number | undefined {
+  if (typeof value !== "string" || !/^\d+(?::\d+){2,3}$/.test(value)) {
+    return undefined;
+  }
+  const units = [1, 60, 3600, 86_400];
+  const seconds = value
+    .split(":")
+    .reverse()
+    .reduce((sum, part, index) => sum + Number(part) * units[index]!, 0);
+  return seconds > 0 ? seconds : undefined;
 }
 
 /** Megabytes as SABnzbd reports them, in bytes. */
@@ -237,20 +275,41 @@ export function createSabnzbdClient({
       const nzoId = typeof slot.nzo_id === "string" ? slot.nzo_id : "";
       if (!nzoId) return [];
       const total = megabytesToBytes(slot.mb);
+      const remaining = megabytesToBytes(slot.mbleft);
+      const timeLeft = durationSeconds(slot.timeleft);
+      const position = toNumber(slot.index);
+      const status = typeof slot.status === "string" ? slot.status : "";
       return [
         {
           nzoId,
           name: typeof slot.filename === "string" ? slot.filename : "",
           ...(typeof slot.cat === "string" ? { category: slot.cat } : {}),
-          state: queueState(typeof slot.status === "string" ? slot.status : ""),
+          state: queueState(status),
           ...(toNumber(slot.percentage) === undefined
             ? {}
             : { percentage: toNumber(slot.percentage)! }),
           ...(total === undefined ? {} : { sizeBytes: total }),
+          ...(remaining === undefined ? {} : { remainingBytes: remaining }),
+          ...(timeLeft === undefined ? {} : { timeLeftSeconds: timeLeft }),
+          ...(position === undefined ? {} : { queuePosition: position }),
+          ...(status ? { statusText: status } : {}),
           source: "queue",
         },
       ];
     });
+  }
+
+  function parseQueueSnapshot(payload: unknown): SabQueueSnapshot {
+    const queue = (payload as { queue?: Record<string, unknown> })?.queue;
+    // KB/s, in SABnzbd's binary kilobytes.
+    const kilobytes = toNumber(queue?.kbpersec);
+    return {
+      jobs: parseQueue(payload),
+      ...(kilobytes === undefined
+        ? {}
+        : { speedBytesPerSecond: Math.round(kilobytes * 1024) }),
+      paused: queue?.paused === true || queue?.paused === "true",
+    };
   }
 
   function parseHistory(payload: unknown): SabJob[] {
@@ -282,6 +341,12 @@ export function createSabnzbdClient({
             ? { storagePath: slot.storage }
             : {}),
           ...(failMessage === undefined ? {} : { failMessage }),
+          ...(typeof slot.status === "string" && slot.status
+            ? { statusText: slot.status }
+            : {}),
+          ...(typeof slot.action_line === "string" && slot.action_line.trim()
+            ? { actionLine: slot.action_line.trim() }
+            : {}),
           source: "history",
         },
       ];
@@ -300,6 +365,12 @@ export function createSabnzbdClient({
 
     async listQueue(signal) {
       return parseQueue(await call({ mode: "queue", limit: "500" }, signal));
+    },
+
+    async queueSnapshot(signal) {
+      return parseQueueSnapshot(
+        await call({ mode: "queue", limit: "500" }, signal),
+      );
     },
 
     async listHistory(limit = 200, signal) {
