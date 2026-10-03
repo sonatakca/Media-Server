@@ -135,7 +135,11 @@ describe("standalone rendition encoding commands", () => {
 
     expect(args).toContain("h264_qsv");
     expect(args).not.toContain("libx264");
-    expect(args).toContain("-global_quality");
+    // A target bitrate, not a quality: with only a quality and a cap, QSV
+    // falls back to constant QP and ignores the cap.
+    expect(args).not.toContain("-global_quality");
+    expect(args).toContain("-b:v");
+    expect(args).toContain("-maxrate");
     expect(args).not.toContain("-crf");
     expect(args.join(" ")).toContain("format=nv12");
   });

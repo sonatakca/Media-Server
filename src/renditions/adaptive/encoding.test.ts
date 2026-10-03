@@ -13,6 +13,7 @@ import {
   type AdaptiveAudioOutput,
   type AdaptiveVideoOutput,
 } from "./encoding";
+import { getEncodingPolicy } from "../encoding";
 
 const LADDER: AdaptiveVideoOutput[] = [
   { qualityHeight: 480, width: 854, height: 480 },
@@ -81,6 +82,37 @@ describe("per-rung frame rate", () => {
 
     expect(filter).not.toContain("fps=");
   });
+});
+
+describe("QSV rate control", () => {
+  /*
+   * FFmpeg's QSV encoder reads a quality value with a cap and no target as
+   * constant QP and ignores the cap. Mad Max's ladder came out at 3-6 times
+   * its planned bitrate on every rung, an estimated 123 GB, and filled C:.
+   */
+  it.each([
+    ["hevc_qsv", "hevc"],
+    ["h264_qsv", "h264"],
+  ] as const)(
+    "gives every %s rung its planned bitrate as a target under its cap",
+    (encoder, family) => {
+      const args = build({ encoder });
+      expect(args.some((arg) => arg.startsWith("-global_quality"))).toBe(false);
+      for (const [index, rung] of LADDER.entries()) {
+        const policy = getEncodingPolicy(rung.qualityHeight, family);
+        expect(valueAfter(args, `-b:v:${index}`)).toBe(
+          String(policy.expectedVideoBitrate),
+        );
+        expect(valueAfter(args, `-maxrate:v:${index}`)).toBe(
+          String(policy.maxVideoBitrate),
+        );
+        // A cap above the target: equal values would select CBR instead.
+        expect(policy.maxVideoBitrate).toBeGreaterThan(
+          policy.expectedVideoBitrate,
+        );
+      }
+    },
+  );
 });
 
 describe("buildAdaptiveFilterComplex", () => {

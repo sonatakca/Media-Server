@@ -369,8 +369,11 @@ function videoEncoderArgs(
       presetForEncoder(encoder, preset),
       "-profile:v",
       hdr ? "main10" : "main",
-      "-global_quality",
-      String(policy.globalQuality),
+      // A target, not `-global_quality`: with only a quality and a cap, QSV
+      // falls back to constant QP and ignores the cap. See `qsvTargetBitrate`
+      // in adaptive/encoding.ts.
+      "-b:v",
+      String(policy.expectedVideoBitrate),
       ...rateCap,
       ...colour,
       // Safari refuses `hev1`-tagged MP4s; `hvc1` is required for playback.
@@ -424,8 +427,8 @@ function videoEncoderArgs(
       "h264_qsv",
       "-preset",
       presetForEncoder(encoder, preset),
-      "-global_quality",
-      String(policy.globalQuality),
+      "-b:v",
+      String(policy.expectedVideoBitrate),
       ...shared,
     ];
   }

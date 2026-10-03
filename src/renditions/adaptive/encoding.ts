@@ -391,6 +391,25 @@ function gopEncoderFamily(encoder: RenditionVideoEncoder): GopEncoderFamily {
   return encoder;
 }
 
+/**
+ * QSV's rate control, as a target bitrate.
+ *
+ * Not `-global_quality`. FFmpeg's QSV encoder treats a quality value together
+ * with `-maxrate` and no `-b` as nothing it recognises and falls back to
+ * constant QP — overwriting the quality with its own default QP of 26 — so
+ * the cap was silently ignored. On a grainy 2160p source that came to about
+ * 54 Mbps against a 25 Mbps ceiling, 3-6 times the planned size on every
+ * rung, and Mad Max's ladder grew to an estimated 123 GB and filled C:.
+ * QVBR, which would keep a quality target under the cap, is refused by this
+ * host's driver (MFX error -40). A target with a higher cap selects VBR,
+ * which on the same host and source measured 11.7 Mbps for a 12 Mbps target
+ * at 2160p and 1.4 for 1.4 at 480p: the size the planner estimates is the
+ * size that is written.
+ */
+function qsvTargetBitrate(specifier: string, bitrate: number): string[] {
+  return [`-b:${specifier}`, String(bitrate)];
+}
+
 function videoEncoderArgsFor(
   encoder: RenditionVideoEncoder,
   ordinal: number,
@@ -422,8 +441,7 @@ function videoEncoderArgsFor(
     args.push(
       `-profile:${specifier}`,
       hdr ? "main10" : "main",
-      `-global_quality:${specifier}`,
-      String(policy.globalQuality),
+      ...qsvTargetBitrate(specifier, policy.expectedVideoBitrate),
     );
   } else if (encoder === "libx265") {
     args.push(`-crf:${specifier}`, String(policy.crf));
@@ -436,8 +454,7 @@ function videoEncoderArgsFor(
     );
   } else if (encoder === "h264_qsv") {
     args.push(
-      `-global_quality:${specifier}`,
-      String(policy.globalQuality),
+      ...qsvTargetBitrate(specifier, policy.expectedVideoBitrate),
       `-profile:${specifier}`,
       "high",
       `-level:${specifier}`,
