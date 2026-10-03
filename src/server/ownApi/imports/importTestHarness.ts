@@ -256,6 +256,13 @@ export function createMemoryRepository(): MemoryRepository {
       );
     },
 
+    async latestForAcquisition(acquisitionId) {
+      const rows = [...imports.values()].filter(
+        (row) => row.acquisitionId === acquisitionId,
+      );
+      return rows.sort((a, b) => b.createdAtMs - a.createdAtMs)[0] ?? null;
+    },
+
     async acquisitionsWithImports(acquisitionIds) {
       return new Set(
         [...imports.values()]

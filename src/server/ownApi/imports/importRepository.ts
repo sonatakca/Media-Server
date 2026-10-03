@@ -201,6 +201,8 @@ export interface ImportRepository extends ImportStore {
   listActive(): Promise<ImportRecord[]>;
   /** Rows whose filesystem outcome is unknown and must be read. */
   listUncertain(): Promise<ImportRecord[]>;
+  /** The newest import of this acquisition's download, if there is one. */
+  latestForAcquisition(acquisitionId: string): Promise<ImportRecord | null>;
   /** Which of these acquisitions already have an import, in any state. */
   acquisitionsWithImports(
     acquisitionIds: readonly string[],
@@ -595,6 +597,17 @@ export function createImportRepository(pool: DatabasePool): ImportRepository {
           ORDER BY created_at`,
       );
       return result.rows.map(toRecord);
+    },
+
+    async latestForAcquisition(acquisitionId) {
+      const result = await pool.query<Row>(
+        `SELECT ${COLUMNS} FROM imports
+          WHERE acquisition_id = $1
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [acquisitionId],
+      );
+      return result.rows[0] ? toRecord(result.rows[0]) : null;
     },
 
     async acquisitionsWithImports(acquisitionIds) {

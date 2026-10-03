@@ -14,6 +14,8 @@ export const TASK_METRICS = {
   ],
   "import.run": [],
   "import.reconcile": ["examined", "committed", "retried", "needsAttention"],
+  "import.handoff": ["started", "refused"],
+  "storage.collect": ["itemsRemoved", "megabytesFreed"],
   "subtitle.run": [],
   "subtitle.reconcile": ["examined"],
   "subtitle.auth-resume": [],

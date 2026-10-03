@@ -226,3 +226,14 @@ if ($failure) {
 Write-Output "ACTIVE=$Version"
 Write-Output ("CURRENT=" + (Get-CurrentTarget))
 Write-Output 'ACTIVATED'
+
+# --- 10. prune what earlier deploys left behind ----------------------------
+# After the activation has succeeded, never before: until then the previous
+# release is the rollback. A failure here is reported and nothing more — the
+# new release is already serving, and leftover space is not an outage.
+try {
+  & (Join-Path $PSScriptRoot 'prune-releases.ps1') -AppRoot $AppRoot
+}
+catch {
+  Write-Output ("PRUNE_FAILED=" + $_.Exception.Message)
+}

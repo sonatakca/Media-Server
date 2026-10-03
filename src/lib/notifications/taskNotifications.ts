@@ -36,6 +36,8 @@ const TASK_TITLE_KEYS: Record<string, TranslationKey> = {
   "acquisition.reconcile": "tasks.acquisitionReconcile",
   "import.run": "tasks.importRun",
   "import.reconcile": "tasks.importReconcile",
+  "import.handoff": "tasks.importHandoff",
+  "storage.collect": "tasks.storageCollect",
   "subtitle.run": "tasks.subtitleRun",
   "subtitle.reconcile": "tasks.subtitleReconcile",
   "subtitle.auth-resume": "tasks.subtitleResume",

@@ -1,4 +1,5 @@
 import { stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import type { IncomingMessage } from "node:http";
 import type { OwnApiRouteHandler } from "./ownApiHandler";
@@ -173,6 +174,10 @@ import {
 } from "./imports/importJobs";
 import { createImportRoutes } from "./imports/importRoutes";
 import {
+  createGarbageJobHandler,
+  GARBAGE_JOB_TYPES,
+} from "./maintenance/garbageCollector";
+import {
   createImportHandoff,
   createImportStarter,
 } from "./imports/importStarter";
@@ -275,6 +280,10 @@ const ACQUISITION_RECONCILE_INTERVAL_MS = 30_000;
  * changes on its own between one look and the next.
  */
 const IMPORT_RECONCILE_INTERVAL_MS = 120_000;
+/** Leftovers accumulate over days; a pass every six hours keeps up with them. */
+const GARBAGE_INTERVAL_MS = 6 * 60 * 60 * 1000;
+/** Long enough after a start that the startup sweep and recovery are done. */
+const GARBAGE_FIRST_PASS_DELAY_MS = 10 * 60 * 1000;
 const PLAYBACK_SESSION_IDLE_MS = 5 * 60_000;
 
 /**
@@ -1245,6 +1254,60 @@ export async function createNativeRuntime({
     });
   };
 
+  /*
+   * Seyirlik's own leftovers, removed by what owns them rather than by age:
+   * encode workspaces no live job answers to, downloads nothing will import,
+   * and temporary folders it made and did not get to remove. Each candidate is
+   * asked about again immediately before it goes, so a job retried or a
+   * download resumed a moment earlier keeps what it needs.
+   */
+  const LIVE_PROCESSING_STATES = new Set([
+    "pending",
+    "queued",
+    "running",
+    "paused",
+  ]);
+  const collectGarbageJob = createGarbageJobHandler({
+    jobsRoot: storageRoles.jobsRoot,
+    isWorkspaceClaimed: async (workspaceId) => {
+      const job = await processingJobs.get(workspaceId);
+      return job !== null && LIVE_PROCESSING_STATES.has(job.state);
+    },
+    ...(acquisition && importing && importConfig
+      ? {
+          downloadRoot: importConfig.downloadRoot,
+          isDownloadGarbage: async (acquisitionId: string) => {
+            const record = await acquisition.repository.get(acquisitionId);
+            // Unknown, or changed within the hour: not this pass's to judge.
+            if (!record || Date.now() - record.updatedAtMs < 60 * 60 * 1000) {
+              return false;
+            }
+            if (record.state === "cancelled" || record.state === "superseded") {
+              return true;
+            }
+            if (
+              record.state === "failed" &&
+              record.failureClass === "blocklisted"
+            ) {
+              return true;
+            }
+            /*
+             * Imported, and the source was meant to go: the import completed
+             * but could not remove it. A configuration that keeps sources
+             * keeps them here too.
+             */
+            if (record.state === "downloaded" && !importConfig.retainSource) {
+              const latest =
+                await importing.repository.latestForAcquisition(acquisitionId);
+              return latest?.state === "complete";
+            }
+            return false;
+          },
+        }
+      : {}),
+    tempRoot: tmpdir(),
+  });
+
   const worker = createWorker({
     queue,
     /*
@@ -1343,6 +1406,7 @@ export async function createNativeRuntime({
             acquisition.repository,
           )
         : {}),
+      [GARBAGE_JOB_TYPES.collect]: collectGarbageJob,
       ...(importing
         ? createImportJobHandlers(importing.service, importing.repository, {
             ...(handOffFinishedDownloads
@@ -1698,6 +1762,27 @@ export async function createNativeRuntime({
       : undefined;
   importReconcileTimer?.unref();
 
+  /*
+   * Collect Seyirlik's leftovers a few minutes after the worker starts and
+   * every six hours after that. Rare on purpose: what it removes accumulates
+   * over days, and every pass walks the scratch volume.
+   */
+  const enqueueGarbageCollection = () =>
+    void queue
+      .enqueue({
+        jobType: GARBAGE_JOB_TYPES.collect,
+        dedupeKey: GARBAGE_JOB_TYPES.collect,
+      })
+      .catch(() => undefined);
+  const garbageFirstPass = runWorker
+    ? setTimeout(enqueueGarbageCollection, GARBAGE_FIRST_PASS_DELAY_MS)
+    : undefined;
+  garbageFirstPass?.unref();
+  const garbageTimer = runWorker
+    ? setInterval(enqueueGarbageCollection, GARBAGE_INTERVAL_MS)
+    : undefined;
+  garbageTimer?.unref();
+
   const acquisitionReconcileTimer =
     acquisition && runWorker
       ? setInterval(() => {
@@ -1750,6 +1835,8 @@ export async function createNativeRuntime({
       syncplay.stop();
       if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
       if (importReconcileTimer) clearInterval(importReconcileTimer);
+      if (garbageFirstPass) clearTimeout(garbageFirstPass);
+      if (garbageTimer) clearInterval(garbageTimer);
       storageWatchdog.stop();
       if (releaseTimer) clearInterval(releaseTimer);
       await worker.stop();
