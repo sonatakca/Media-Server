@@ -46,7 +46,7 @@ import {
 } from "../../lib/notifications/notificationStack";
 import {
   BOTTOM_CHROME_MOTION,
-  getBottomChrome,
+  getBottomChromeBand,
   subscribeToBottomChrome,
 } from "../../lib/layout/bottomChrome";
 import { useLanguage } from "../../i18n/LanguageContext";
@@ -572,6 +572,16 @@ const PILE_DETAIL_VIEWPORT = "75dvh";
 
 /** Below this, the lift did not really change — a rounding, or a resync. */
 const LANE_EPSILON_PX = 1;
+/** The list's share of the viewport, matching `PILE_VIEWPORT`. */
+const PILE_LIST_SHARE = 0.5;
+/** No frame of the pile's own journey moves further than this. */
+const MAX_TRAVEL_PX_PER_FRAME = 32;
+/** Short journeys still read as movement rather than a jump. */
+const MIN_TRAVEL_S = 0.28;
+/** A sine ease: its peak speed is π/2 its average, which the budget allows for. */
+const SINE_IN_OUT: [number, number, number, number] = [0.37, 0, 0.63, 1];
+/** Sine out: starts at its peak speed, π/2 the average, and comes to rest. */
+const SINE_OUT: [number, number, number, number] = [0.61, 1, 0.88, 1];
 
 /**
  * Lifts the pile clear of chrome that has claimed the bottom-right corner, and
@@ -615,48 +625,179 @@ function useLaneTravel(
      * or a safe-area change needs no bookkeeping, and it is read as a used
      * value, which no transform on the element can disturb.
      */
-    const targetLift = () =>
-      -Math.max(
-        0,
-        getBottomChrome() -
-          (Number.parseFloat(window.getComputedStyle(host).bottom) || 0),
+    const floorOf = () =>
+      Number.parseFloat(window.getComputedStyle(host).bottom) || 0;
+
+    /*
+     * How tall the pile is when nothing squeezes it: its cards' own height,
+     * capped at the half page the list may take, plus whatever stands around
+     * the list. Read from the content rather than the box, because the box is
+     * bounded by where the pile stands — measuring it would make the choice
+     * of where to stand depend on itself.
+     */
+    const naturalHeight = () => {
+      const list = host.querySelector<HTMLElement>("[data-notification-list]");
+      if (!list) return host.getBoundingClientRect().height;
+      const around =
+        host.getBoundingClientRect().height -
+        list.getBoundingClientRect().height;
+      return (
+        Math.min(list.scrollHeight, window.innerHeight * PILE_LIST_SHARE) +
+        Math.max(0, around)
       );
+    };
+
+    /*
+     * Where the pile stands, as a transform: negative because it travels up
+     * the screen, and never positive. Above the occupant while the occupant
+     * fills the corner; back on its own floor as soon as it fits underneath,
+     * because following a control up the screen ends with the pile pressed
+     * against the masthead and its height squeezed out of it.
+     */
+    const placement = (): { lift: number; side: "floor" | "above" } => {
+      const band = getBottomChromeBand();
+      if (!band) return { lift: 0, side: "floor" };
+      const floor = floorOf();
+      if (band.bottom >= floor + naturalHeight()) {
+        return { lift: 0, side: "floor" };
+      }
+      return { lift: -Math.max(0, band.top - floor), side: "above" };
+    };
 
     let travel: { stop: () => void } | undefined;
+    let side: "floor" | "above" = "floor";
 
-    const settle = (animated: boolean) => {
-      const target = targetLift();
-      if (Math.abs(target - lift.get()) < LANE_EPSILON_PX) return;
+    /*
+     * The room the pile has is the room where it stands, so the lane its
+     * height is bounded by is written here, on the pile, from the same number
+     * the transform travels to — rather than read from the claim, which says
+     * where the occupant is, not where the pile went.
+     */
+    const publishLane = (target: number) => {
+      host.style.setProperty(
+        "--notification-lane-bottom",
+        `calc(var(--notification-lane-floor) + ${Math.round(-target)}px)`,
+      );
+    };
 
-      travel?.stop();
-      if (!animated || reduceMotion) {
-        lift.set(target);
+    /*
+     * A journey long enough that no frame moves more than the budget: a sine
+     * ease peaks at π/2 times its average speed, so the duration is the
+     * distance over the per-frame budget, times that peak, at 60 frames a
+     * second.
+     */
+    const journeyS = (distance: number) =>
+      Math.max(
+        MIN_TRAVEL_S,
+        ((Math.PI / 2) * Math.abs(distance)) / MAX_TRAVEL_PX_PER_FRAME / 60,
+      );
+
+    /*
+     * instant  — mounting or the viewport changing shape: nothing to travel.
+     * follow   — the occupant moved because the page scrolled.
+     * handover — the corner changing hands; keeps time with the occupant.
+     * reflow   — the pile itself changed height.
+     */
+    const settle = (mode: "instant" | "follow" | "handover" | "reflow") => {
+      const next = placement();
+      const sideChanged = next.side !== side;
+      side = next.side;
+      publishLane(next.lift);
+      const distance = next.lift - lift.get();
+      if (Math.abs(distance) < LANE_EPSILON_PX && !travel) return;
+
+      if (mode === "instant" || reduceMotion) {
+        travel?.stop();
+        travel = undefined;
+        lift.set(next.lift);
         return;
       }
-      travel = animate(lift, target, {
-        duration: BOTTOM_CHROME_MOTION.durationS,
-        delay: BOTTOM_CHROME_MOTION.delayS,
-        ease: BOTTOM_CHROME_MOTION.ease,
+
+      /*
+       * Following the page: the occupant moved because the page scrolled, so
+       * the pile moves with it on this frame. If it was already travelling —
+       * the corner changing hands, or a side changing — it carries on to the
+       * moved target from wherever it is, without a delay, so a scroll can
+       * redirect a journey but never stall it.
+       */
+      if (mode === "follow" && !sideChanged) {
+        if (!travel) {
+          lift.set(next.lift);
+          return;
+        }
+        travel.stop();
+        /*
+         * Out only. A journey restarted on every frame of a scroll with an
+         * ease that starts at rest never gets going, which is the stall this
+         * replaced; an ease-out moves on its first frame.
+         */
+        travel = animate(lift, next.lift, {
+          duration: journeyS(distance),
+          ease: SINE_OUT,
+          onComplete: () => {
+            travel = undefined;
+          },
+        });
+        return;
+      }
+
+      travel?.stop();
+      /*
+       * The corner changing hands keeps time with the occupant arriving or
+       * leaving — whichever side the pile ends up on, since the occupant is
+       * still on its way in or out through the space the pile crosses. A
+       * change of side the page's own movement caused, or the pile's height,
+       * is the pile's journey alone.
+       */
+      const handover = mode === "handover";
+      travel = animate(lift, next.lift, {
+        duration: handover
+          ? Math.max(BOTTOM_CHROME_MOTION.durationS, journeyS(distance))
+          : journeyS(distance),
+        delay: handover ? BOTTOM_CHROME_MOTION.delayS : 0,
+        ease: handover ? BOTTOM_CHROME_MOTION.ease : SINE_IN_OUT,
+        onComplete: () => {
+          travel = undefined;
+        },
       });
     };
 
-    // A pile that mounts into an occupied corner belongs above it already;
-    // there was nothing on screen for it to travel.
-    settle(false);
+    /*
+     * A pile that mounts into an occupied corner belongs above it already;
+     * there was nothing on screen for it to travel. One frame late, because a
+     * motion value written in this effect lands before the element has
+     * subscribed to it: the write is lost, nothing changes again until the
+     * page scrolls, and the pile sits on its floor through the control.
+     */
+    const firstPlacement = requestAnimationFrame(() => settle("instant"));
 
-    const onLaneChange = () => settle(true);
+    const unsubscribe = subscribeToBottomChrome(({ tracking }) =>
+      settle(tracking ? "follow" : "handover"),
+    );
     /*
      * A resize moves the floor under the pile — it steps at the `sm`
      * breakpoint — but that is the viewport changing shape, not the corner
      * changing hands, and it has no movement of its own to keep time with.
      */
-    const onResize = () => settle(false);
-
-    const unsubscribe = subscribeToBottomChrome(onLaneChange);
+    const onResize = () => settle("instant");
     window.addEventListener("resize", onResize);
+    /*
+     * A card arriving or leaving changes whether the pile still fits under
+     * the occupant, which is a journey of its own. Watched on the host, which
+     * is always there: the list is not, until the first card is, and a pile
+     * that decided where to stand while it was empty — when it fits anywhere —
+     * would otherwise keep that answer once it had cards in it.
+     */
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(() => settle("reflow"));
+    observer?.observe(host);
     return () => {
+      cancelAnimationFrame(firstPlacement);
       unsubscribe();
       window.removeEventListener("resize", onResize);
+      observer?.disconnect();
       travel?.stop();
     };
     // Resubscribing when the motion preference changes costs one measurement,

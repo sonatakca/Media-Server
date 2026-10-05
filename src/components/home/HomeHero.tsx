@@ -743,18 +743,32 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   // ------------------------------------------ sharing the bottom-right corner
   const claimId = useId();
   const controlsTopRef = useRef(0);
+  const controlsBottomRef = useRef(0);
   useEffect(() => {
+    /*
+     * The control and the thumbnails under it scroll with the section, so the
+     * band they occupy moves with every scroll. It is published as a band —
+     * where it starts as well as where it ends — so the pile can stand below
+     * it once it has risen far enough, instead of climbing after it towards
+     * the masthead and being squeezed to a sliver there.
+     */
     const update = () => {
       const section = sectionRef.current;
       if (!section || !hasOpened) {
         releaseBottomChrome(claimId);
         return;
       }
-      const top = section.getBoundingClientRect().top + controlsTopRef.current;
+      const sectionTop = section.getBoundingClientRect().top;
+      const top = sectionTop + controlsTopRef.current;
       const occupied = window.innerHeight - top;
+      const below =
+        window.innerHeight - (sectionTop + controlsBottomRef.current);
       if (occupied <= 0 || top < 0) releaseBottomChrome(claimId);
       else
-        claimBottomChrome(claimId, Math.round(occupied + CHROME_CLEARANCE_PX));
+        claimBottomChrome(claimId, Math.round(occupied + CHROME_CLEARANCE_PX), {
+          bottomPx: Math.round(below - CHROME_CLEARANCE_PX),
+          tracking: true,
+        });
     };
     update();
     window.addEventListener("scroll", update, { passive: true });
@@ -777,6 +791,8 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   const headSlot = slots[0];
   const controlsTop = headSlot ? headSlot.y - 54 : 0;
   controlsTopRef.current = controlsTop;
+  // The progress bar under the thumbnails is the lowest thing in the band.
+  controlsBottomRef.current = headSlot ? headSlot.y + headSlot.height + 12 : 0;
   const copyItem = copyItemId ? (itemsById.get(copyItemId) ?? null) : null;
 
   const hover = (id: string, active: boolean) => {

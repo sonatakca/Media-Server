@@ -33,34 +33,69 @@ export const BOTTOM_CHROME_MOTION = {
   ease: [0.25, 1, 0.5, 1] as [number, number, number, number],
 };
 
+/**
+ * The part of the right-hand edge an occupant takes, in pixels measured up from
+ * the bottom of the viewport: `top` to where it ends, `bottom` to where it
+ * starts. An occupant that reaches the bottom edge has a `bottom` of 0, and
+ * nothing can stand underneath it.
+ */
+export interface BottomChromeBand {
+  top: number;
+  bottom: number;
+}
+
 /*
  * Keyed claims, tallest wins. One hero at a time is the realistic case, but a
  * page that mounts a second one while the first animates away would otherwise
  * have the loser's teardown clear the winner's reservation.
  */
-const claims = new Map<string, number>();
+const claims = new Map<string, BottomChromeBand>();
+
+/**
+ * What kind of change the pile is being told about.
+ *
+ * `tracking` is an occupant that moved because the page moved under it — a
+ * control scrolling with its section. The pile follows that on the same frame:
+ * easing towards a target that changes every frame is how it used to stand
+ * still for the whole of a scroll and then catch up once it ended. Anything
+ * else is the corner changing hands, which the pile travels in step with.
+ */
+export interface BottomChromeChange {
+  tracking: boolean;
+}
 
 /*
  * The property alone tells the pile where to stand, but not that it has moved,
  * and the pile has to travel the distance rather than teleport it. Nothing
  * observes a custom property changing, so the reservation announces itself.
  */
-const listeners = new Set<() => void>();
+const listeners = new Set<(change: BottomChromeChange) => void>();
+
+/** The tallest standing claim's band, or `null` when the corner is free. */
+export function getBottomChromeBand(): BottomChromeBand | null {
+  let tallest: BottomChromeBand | null = null;
+  for (const band of claims.values()) {
+    if (!tallest || band.top > tallest.top) tallest = band;
+  }
+  return tallest;
+}
 
 /** The tallest standing claim, in pixels; `0` when the corner is free. */
 export function getBottomChrome(): number {
-  return claims.size === 0 ? 0 : Math.max(...claims.values());
+  return getBottomChromeBand()?.top ?? 0;
 }
 
 /** Called after every change to the reservation. Returns an unsubscribe. */
-export function subscribeToBottomChrome(listener: () => void): () => void {
+export function subscribeToBottomChrome(
+  listener: (change: BottomChromeChange) => void,
+): () => void {
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
   };
 }
 
-function flush() {
+function flush(change: BottomChromeChange) {
   const root = document.documentElement;
 
   if (claims.size === 0) {
@@ -69,17 +104,30 @@ function flush() {
     root.style.setProperty(PROPERTY, `${getBottomChrome()}px`);
   }
 
-  for (const listener of listeners) listener();
+  for (const listener of listeners) listener(change);
 }
 
-/** Reserve `heightPx` of the bottom edge under `claimId`. */
-export function claimBottomChrome(claimId: string, heightPx: number) {
-  if (typeof document === "undefined" || claims.get(claimId) === heightPx) {
+/**
+ * Reserve `heightPx` of the bottom edge under `claimId`.
+ *
+ * `bottomPx` is where the occupant starts, for one that does not reach the
+ * bottom edge; `tracking` says the claim moved because the page scrolled.
+ */
+export function claimBottomChrome(
+  claimId: string,
+  heightPx: number,
+  options: { bottomPx?: number; tracking?: boolean } = {},
+) {
+  if (typeof document === "undefined") return;
+  const band = { top: heightPx, bottom: Math.max(0, options.bottomPx ?? 0) };
+  const current = claims.get(claimId);
+  if (current && current.top === band.top && current.bottom === band.bottom) {
     return;
   }
 
-  claims.set(claimId, heightPx);
-  flush();
+  claims.set(claimId, band);
+  // A claim that is new is the corner changing hands, however it was made.
+  flush({ tracking: Boolean(current) && options.tracking === true });
 }
 
 export function releaseBottomChrome(claimId: string) {
@@ -87,5 +135,5 @@ export function releaseBottomChrome(claimId: string) {
     return;
   }
 
-  flush();
+  flush({ tracking: false });
 }
