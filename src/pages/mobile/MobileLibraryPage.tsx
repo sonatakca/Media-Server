@@ -717,33 +717,36 @@ export function MobileLibraryPage({
 
       <div className="relative z-30 -mt-11 mb-5 flex min-h-[5.5rem] items-center justify-center px-4">
         {activeLibraryLogoUrl ? (
-          <motion.img
-            key={activeLibraryLogoUrl}
-            src={activeLibraryLogoUrl}
-            alt={title}
-            draggable={false}
-            className="cinematic-logo-shadow h-auto max-h-16 max-w-[min(16rem,74vw)] transform-gpu object-contain will-change-transform"
-            initial={
-              hasFinishedLogoIntroSweep
-                ? {
-                    opacity: 0,
-                    y: 6,
-                    scale: 1.2,
-                    filter: "blur(0px)",
-                  }
-                : false
-            }
-            animate={{
-              opacity: 1,
-              y: 0,
-              scale: 1,
-              filter: "blur(0px)",
-            }}
-            transition={{
-              duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          />
+          // The logo stands in for the title, so it carries the heading.
+          <h1 className="flex min-w-0 justify-center">
+            <motion.img
+              key={activeLibraryLogoUrl}
+              src={activeLibraryLogoUrl}
+              alt={title}
+              draggable={false}
+              className="cinematic-logo-shadow h-auto max-h-16 max-w-[min(16rem,74vw)] transform-gpu object-contain will-change-transform"
+              initial={
+                hasFinishedLogoIntroSweep
+                  ? {
+                      opacity: 0,
+                      y: 6,
+                      scale: 1.2,
+                      filter: "blur(0px)",
+                    }
+                  : false
+              }
+              animate={{
+                opacity: 1,
+                y: 0,
+                scale: 1,
+                filter: "blur(0px)",
+              }}
+              transition={{
+                duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
+          </h1>
         ) : (
           <motion.h1
             className="mx-auto max-w-[84vw] text-center text-3xl font-black tracking-tight text-white drop-shadow-[0_16px_38px_rgba(0,0,0,0.9)]"

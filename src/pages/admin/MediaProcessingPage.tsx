@@ -285,7 +285,10 @@ function LadderRungs({
                   : "border-amber-400/30 bg-amber-400/15 text-amber-100"
               }`}
             >
-              <span aria-hidden="true" className="text-[10px] leading-none">
+              <span
+                aria-hidden="true"
+                className="text-[0.6875rem] leading-none"
+              >
                 {kept ? "\u2713" : "+"}
               </span>
               {height}p
@@ -2286,7 +2289,7 @@ export function MediaProcessingPage() {
                 {t(`processing.tabs.${tab}`)}
                 {tab === "processes" && jobs.length > 0 ? (
                   <span
-                    className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
+                    className={`rounded-full px-1.5 py-auto text-[0.6875rem] tabular-nums ${
                       selected
                         ? "bg-[var(--accent)] text-black"
                         : "bg-white/10 text-white/55"
@@ -2596,7 +2599,7 @@ export function MediaProcessingPage() {
                       {t(`processing.kind.${kind}`)}
                       {kind === "series" && allSeries.length > 0 ? (
                         <span
-                          className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
+                          className={`rounded-full px-1.5 py-auto text-[0.6875rem] tabular-nums ${
                             selected
                               ? "bg-[var(--accent)] text-black"
                               : "bg-white/[0.08] text-white/60"
@@ -2794,7 +2797,7 @@ export function MediaProcessingPage() {
                           </div>
                         )}
                         {item.ProductionYear ? (
-                          <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[10px] font-bold text-white/75 backdrop-blur">
+                          <span className="absolute bottom-2 left-2 rounded-md bg-black/70 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white/75 backdrop-blur">
                             {item.ProductionYear}
                           </span>
                         ) : null}
@@ -3126,7 +3129,7 @@ export function MediaProcessingPage() {
                       {t(`processing.outcome.${outcome}`)}
                       {count > 0 ? (
                         <span
-                          className={`rounded-full px-1.5 py-auto text-[10px] tabular-nums ${
+                          className={`rounded-full px-1.5 py-auto text-[0.6875rem] tabular-nums ${
                             selected
                               ? "bg-[var(--accent)] text-black"
                               : "bg-white/[0.08] text-white/60"
@@ -3187,7 +3190,7 @@ export function MediaProcessingPage() {
                       <Play size={13} aria-hidden="true" />
                     )}
                     {t("processing.bulk.resumeAll")}
-                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums text-white/60">
+                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[0.6875rem] tabular-nums text-white/60">
                       {resumableJobs.length}
                     </span>
                   </button>
@@ -3212,7 +3215,7 @@ export function MediaProcessingPage() {
                       <Pause size={13} aria-hidden="true" />
                     )}
                     {t("processing.bulk.pauseAll")}
-                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[10px] tabular-nums text-white/60">
+                    <span className="rounded-full bg-white/[0.08] px-1.5 text-[0.6875rem] tabular-nums text-white/60">
                       {holdableJobs.length}
                     </span>
                   </button>
@@ -3509,7 +3512,7 @@ export function MediaProcessingPage() {
                             ) : null}
                           </span>
                           {movable ? (
-                            <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/45">
+                            <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold tabular-nums text-white/45">
                               {formatTemplate(
                                 t("processing.queueOrder.position"),
                                 { position: String(queuePosition) },
@@ -3537,7 +3540,7 @@ export function MediaProcessingPage() {
                                     { title: label.primary },
                                   )}
                                   onClick={() => sendQueueToFront([job.id])}
-                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                                 >
                                   <ChevronsUp size={11} aria-hidden="true" />
                                   {t("processing.queueOrder.sendNext")}
@@ -3552,7 +3555,7 @@ export function MediaProcessingPage() {
                                     { title: label.primary },
                                   )}
                                   onClick={() => sendQueueToBack([job.id])}
-                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
+                                  className="inline-flex items-center gap-0.5 rounded-md border border-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white/45 transition hover:bg-white/[0.08] hover:text-white/80 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)]"
                                 >
                                   <ChevronsDown size={11} aria-hidden="true" />
                                   {t("processing.queueOrder.sendLast")}

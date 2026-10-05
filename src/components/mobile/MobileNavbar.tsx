@@ -1,22 +1,14 @@
 import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
 import { useEffect, useRef, useState } from "react";
-import {
-  Book,
-  Bookmark,
-  LogOut,
-  Palette,
-  Search,
-  ShieldCheck,
-} from "lucide-react";
+import { Book, Bookmark, Search } from "lucide-react";
 import { GoHomeFill } from "react-icons/go";
 import { RiMovie2Fill } from "react-icons/ri";
 import { TbDeviceTv } from "react-icons/tb";
-import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
+import { AccountMenu } from "../AccountMenu";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
-import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { SlidingIndicator } from "../ui/SlidingIndicator";
 import { Tooltip } from "../ui/Tooltip";
@@ -58,9 +50,7 @@ function getTabClassName(isActive: boolean): string {
 }
 
 export function MobileNavbar() {
-  const navigate = useNavigate();
   const location = useLocation();
-  const session = getCachedSession();
   const { t } = useLanguage();
   const [hasScrolled, setHasScrolled] = useState(false);
   const [bottomNavBlurred, setBottomNavBlurred] = useState(false);
@@ -95,14 +85,6 @@ export function MobileNavbar() {
     };
   }, []);
 
-  const handleLogout = () => {
-    clearAuthSession();
-    navigate("/login", { replace: true });
-  };
-
-  const handleThemeChange = () => {
-    window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
-  };
   const headerOverArtwork =
     location.pathname === "/home" ||
     /^\/(?:movies|shows)\/[^/]+(?:\/season\/[^/]+)?$/.test(location.pathname);
@@ -137,42 +119,7 @@ export function MobileNavbar() {
           </Tooltip>
           <LanguageSwitch />
           <NotificationHistoryButton />
-          <Tooltip content={t("nav.changeTheme")}>
-            <button
-              type="button"
-              onClick={handleThemeChange}
-              aria-label={t("nav.changeTheme")}
-              className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
-            >
-              <Palette size={18} />
-            </button>
-          </Tooltip>
-          {session?.isAdministrator ? (
-            /* Mobile had no route into administration at all: the desktop
-               easter egg needs a pointer device and five taps on a name that
-               is not rendered here. */
-            <Tooltip content={t("admin.entry")}>
-              <Link
-                to="/admin"
-                aria-label={t("admin.entry")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
-              >
-                <ShieldCheck size={18} />
-              </Link>
-            </Tooltip>
-          ) : null}
-          {session ? (
-            <Tooltip content={t("nav.logout")}>
-              <button
-                type="button"
-                onClick={handleLogout}
-                aria-label={t("nav.logout")}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
-              >
-                <LogOut size={18} />
-              </button>
-            </Tooltip>
-          ) : null}
+          <AccountMenu variant="mobile" />
         </div>
       </header>
 

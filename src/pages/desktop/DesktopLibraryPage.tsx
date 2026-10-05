@@ -954,23 +954,26 @@ export function DesktopLibraryPage({
               </motion.div>
             </div>
           ) : activeLibraryLogoUrl ? (
-            <motion.img
-              key={activeLibraryLogoUrl}
-              src={activeLibraryLogoUrl}
-              alt={displayLibraryTitle}
-              draggable={false}
-              className="cinematic-logo-shadow h-auto max-h-12 max-w-[min(14rem,64vw)] object-contain sm:max-h-20 sm:max-w-[min(26rem,58vw)]"
-              initial={
-                hasFinishedLogoIntroSweep
-                  ? { opacity: 0, y: 6, scale: 1.2, filter: "blur(0px)" }
-                  : false
-              }
-              animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-              transition={{
-                duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
-                ease: [0.16, 1, 0.3, 1],
-              }}
-            />
+            // The logo stands in for the title, so it carries the heading.
+            <h1 className="flex min-w-0 justify-center">
+              <motion.img
+                key={activeLibraryLogoUrl}
+                src={activeLibraryLogoUrl}
+                alt={displayLibraryTitle}
+                draggable={false}
+                className="cinematic-logo-shadow h-auto max-h-12 max-w-[min(14rem,64vw)] object-contain sm:max-h-20 sm:max-w-[min(26rem,58vw)]"
+                initial={
+                  hasFinishedLogoIntroSweep
+                    ? { opacity: 0, y: 6, scale: 1.2, filter: "blur(0px)" }
+                    : false
+                }
+                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
+                transition={{
+                  duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
+                  ease: [0.16, 1, 0.3, 1],
+                }}
+              />
+            </h1>
           ) : (
             <h1 className="text-center text-3xl font-black leading-none text-white sm:text-5xl">
               <AnimatedWidth value={displayLibraryTitle}>

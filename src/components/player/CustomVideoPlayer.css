@@ -847,7 +847,7 @@ body:has(.seyirlik-player-shell) {
    fussy about. */
 .seyirlik-player-center-toggle {
   transition:
-    transform 420ms cubic-bezier(0.34, 1.42, 0.64, 1),
+    transform 420ms cubic-bezier(0.16, 1, 0.3, 1),
     opacity 200ms cubic-bezier(0.33, 1, 0.68, 1),
     filter 240ms cubic-bezier(0.33, 1, 0.68, 1);
 }

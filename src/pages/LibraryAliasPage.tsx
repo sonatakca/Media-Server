@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LibrarySkeleton } from "../components/Skeletons";
+import { useLanguage } from "../i18n/LanguageContext";
 import {
   readSavedLibraryRoutes,
   refreshLibraryRoutes,
@@ -10,10 +11,12 @@ import {
 import { LibraryPage } from "./LibraryPage";
 
 export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
+  const { t } = useLanguage();
   const [library, setLibrary] = useState<SavedLibraryRoute | null>(
     () => readSavedLibraryRoutes()[slug] ?? null,
   );
   const [isLoading, setIsLoading] = useState(!library);
+  // A reason from the server; an unassigned slug is not an error, just no library.
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,7 +31,7 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
       .then((registry) => {
         if (!active) return;
         setLibrary(registry[slug] ?? null);
-        setError(registry[slug] ? null : `No library is assigned to /${slug}.`);
+        setError(null);
       })
       .catch((reason) => {
         if (active && !savedLibrary) {
@@ -48,8 +51,8 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
   if (error || !library) {
     return (
       <ErrorMessage
-        title="Library unavailable"
-        message={error ?? `No library is assigned to /${slug}.`}
+        title={t("library.unavailable")}
+        message={error ?? t("library.notAssigned")}
       />
     );
   }

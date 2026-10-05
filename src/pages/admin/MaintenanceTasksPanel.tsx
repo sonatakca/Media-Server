@@ -604,7 +604,7 @@ export function MaintenanceTasksPanel({
                     </span>
 
                     {draggable ? (
-                      <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold tabular-nums text-white/45">
+                      <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold tabular-nums text-white/45">
                         {formatTemplate(t("maintenance.queueOrder.position"), {
                           position,
                         })}
@@ -612,7 +612,7 @@ export function MaintenanceTasksPanel({
                     ) : null}
 
                     <span
-                      className={`shrink-0 rounded-lg border px-2 py-1 text-[10px] font-black uppercase tracking-[0.1em] ${TONE_BADGE[tone]}`}
+                      className={`shrink-0 rounded-lg border px-2 py-1 text-[0.6875rem] font-black uppercase tracking-[0.1em] ${TONE_BADGE[tone]}`}
                     >
                       {lifecycleLabel(lifecycle, t)}
                     </span>
@@ -695,7 +695,7 @@ export function MaintenanceTasksPanel({
                       </span>
                     ) : null}
                     {outcome ? (
-                      <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[10px] font-bold text-white/50">
+                      <span className="shrink-0 rounded-md border border-white/10 px-1.5 py-0.5 text-[0.6875rem] font-bold text-white/50">
                         {outcome}
                       </span>
                     ) : null}

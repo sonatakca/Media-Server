@@ -123,7 +123,7 @@ export function HeroActions({
 
   return (
     <div className="flex flex-nowrap items-center gap-2.5">
-      <motion.span variants={fade} className={`inline-flex ${PRESS}`}>
+      <motion.span variants={fade} className={`inline-flex shrink-0 ${PRESS}`}>
         <Link
           to={playTo}
           onClick={onPlay}

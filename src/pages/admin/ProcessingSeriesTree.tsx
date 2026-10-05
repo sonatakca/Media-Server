@@ -135,7 +135,7 @@ function SourceDeleteAction({
       >
         <Trash2 size={14} aria-hidden="true" />
         <span>{label}</span>
-        <span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-black tabular-nums opacity-80">
+        <span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[0.6875rem] font-black tabular-nums opacity-80">
           {sizeLabel}
         </span>
       </button>
@@ -161,7 +161,7 @@ function SourceDeleteAction({
         )}
 
         <span>{confirmLabel}</span>
-        <span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[10px] font-black tabular-nums opacity-80">
+        <span className="rounded-md bg-black/20 px-1.5 py-0.5 text-[0.6875rem] font-black tabular-nums opacity-80">
           {sizeLabel}
         </span>
       </button>
@@ -240,7 +240,7 @@ function EpisodeRow({
          */}
         <div
           aria-hidden="true"
-          className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] px-2 text-center text-[10px] font-bold text-white/45"
+          className="absolute inset-0 flex items-center justify-center bg-[linear-gradient(145deg,#27272a,#09090b)] px-2 text-center text-[0.6875rem] font-bold text-white/45"
         >
           {episode.code}
         </div>

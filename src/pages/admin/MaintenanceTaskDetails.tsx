@@ -29,7 +29,7 @@ import {
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+      <p className="text-[0.6875rem] font-black uppercase tracking-[0.18em] text-white/35">
         {title}
       </p>
       <dl className="mt-2 flex flex-col gap-1.5">{children}</dl>
@@ -223,7 +223,7 @@ export function MaintenanceTaskDetails({
 
       {error || failures.length > 0 ? (
         <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-          <p className="text-[10px] font-black uppercase tracking-[0.18em] text-white/35">
+          <p className="text-[0.6875rem] font-black uppercase tracking-[0.18em] text-white/35">
             {t("maintenance.detail.problems")}
           </p>
           {error ? (

@@ -1,14 +1,13 @@
 import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Palette, Search, ShieldCheck, UserRound } from "lucide-react";
+import { Search } from "lucide-react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
-import { clearAuthSession, getCachedSession } from "../../lib/authStorage";
+import { AccountMenu } from "../AccountMenu";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
-import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "../RouteColorTransition";
 import { openSearchOverlay } from "../../lib/searchModel";
 import { SlidingIndicator } from "../ui/SlidingIndicator";
 import { Tooltip } from "../ui/Tooltip";
@@ -21,7 +20,6 @@ const isMacPlatform =
 
 export function DesktopNavbar() {
   const navigate = useNavigate();
-  const session = getCachedSession();
   const { t } = useLanguage();
   const [hasScrolled, setHasScrolled] = useState(false);
   const libraryRoutes = {
@@ -61,15 +59,6 @@ export function DesktopNavbar() {
       window.removeEventListener("scroll", updateScrolledState);
     };
   }, []);
-
-  const handleLogout = () => {
-    clearAuthSession();
-    navigate("/login", { replace: true });
-  };
-
-  const handleThemeChange = () => {
-    window.dispatchEvent(new Event(ROUTE_COLOR_TRANSITION_FORCE_EVENT));
-  };
 
   const handleBrandEasterEggClick = () => {
     devClickCountRef.current += 1;
@@ -169,56 +158,9 @@ export function DesktopNavbar() {
           <LanguageSwitch />
 
           <NotificationHistoryButton />
-          <Tooltip content={t("nav.changeTheme")}>
-            <button
-              type="button"
-              onClick={handleThemeChange}
-              aria-label={t("nav.changeTheme")}
-              className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
-            >
-              <Palette size={18} className="shrink-0" />
-            </button>
-          </Tooltip>
 
-          {session?.isAdministrator ? (
-            /*
-             * The way in. Administration was reachable only by clicking the
-             * user name five times, which is a fine easter egg and was the
-             * only door — so every tool behind it may as well not have
-             * existed. The easter egg stays; this is the door.
-             */
-            <Tooltip content={t("admin.entry")}>
-              <Link
-                to="/admin"
-                aria-label={t("admin.entry")}
-                className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
-              >
-                <ShieldCheck size={17} className="shrink-0" />
-              </Link>
-            </Tooltip>
-          ) : null}
-
-          {session ? (
-            <>
-              <div
-                onClick={handleBrandEasterEggClick}
-                className="hidden w-fit max-w-40 cursor-default select-none items-center gap-2 rounded-full px-3 py-2 text-sm font-semibold text-white/72 transition-colors hover:text-white lg:flex [-webkit-tap-highlight-color:transparent]"
-              >
-                <UserRound size={16} className="shrink-0" />
-                <span className="min-w-0 truncate">{session.username}</span>
-              </div>
-              <Tooltip content={t("nav.logout")}>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  aria-label={t("nav.logout")}
-                  className="inline-flex min-h-9 w-9 items-center justify-center rounded-full text-white/72 transition-[background-color,color,box-shadow,transform] duration-200 hover:bg-white/10 hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black sm:min-h-10 sm:w-10"
-                >
-                  <LogOut size={17} className="shrink-0" />
-                </button>
-              </Tooltip>
-            </>
-          ) : null}
+          {/* The name doubles as the way into /dev: five quick presses. */}
+          <AccountMenu onTriggerClick={handleBrandEasterEggClick} />
         </div>
       </nav>
     </header>

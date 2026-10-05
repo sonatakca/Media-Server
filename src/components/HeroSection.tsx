@@ -1848,10 +1848,11 @@ export function HeroSection({
                       iconSize={26}
                       className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/[0.14] bg-black/[0.34] text-white/[0.82] backdrop-blur transition duration-200 hover:bg-white hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-white/70 sm:min-h-16 sm:w-16"
                     />
-                    {heroFacts ? (
+                    {heroFacts && !keepDetailsVisible ? (
                       // The metadata pills above fade out as the intro settles,
                       // so the year was only ever visible for a moment. This
-                      // sits with the actions, which stay.
+                      // sits with the actions, which stay. Where the pills
+                      // stay too, it would only repeat them.
                       <span className="inline-flex min-h-10 items-center rounded-full border border-white/[0.14] bg-black/[0.34] px-4 text-sm font-semibold text-white/[0.82] backdrop-blur sm:min-h-16 sm:px-6 sm:text-base">
                         {heroFacts}
                       </span>
