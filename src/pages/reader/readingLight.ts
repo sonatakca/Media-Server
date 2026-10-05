@@ -1,4 +1,5 @@
 import type { Book, NavItem } from "epubjs";
+import { DROP_CAP_LINES } from "./epubTypography";
 import {
   DEFAULT_READER_SETTINGS,
   READING_LINE,
@@ -25,8 +26,12 @@ interface LitBlock {
   /** One slot until the block comes near the light and its lines are measured. */
   slots: LitSlot[];
   measured: boolean;
-  /** The drop cap's box, lit with the brightest of the lines it stands in. */
-  dropCap: { left: number; top: number; width: number; height: number } | null;
+  /**
+   * The drop cap's box, lit exactly as the paragraph's first line: it is that
+   * line's first letter, so it never splits into the bands of the lines it
+   * stands beside. `firstLine` is the middle of that line, in px from the top.
+   */
+  dropCap: { left: number; top: number; width: number; height: number; firstLine: number } | null;
   /** The opacity and mask last written, so unchanged ink is not written again. */
   written: string;
   /** Its geometry changed, so its mask is rewritten even if no ink moved. */
@@ -138,7 +143,9 @@ function measureLines(
  * pseudo-element, and a range over its character returns a small placeholder
  * box rather than the glyph, so the box is read from the lines the cap
  * indents: from the block's left edge to where those lines' text begins, and
- * from the block's top to the bottom of the last line it spans.
+ * from the block's top to the bottom of the last line it spans. The number of
+ * lines is the reader's own (`DROP_CAP_LINES`), not the computed style, which
+ * Safari does not report for the pseudo-element.
  */
 function measureDropCap(
   element: HTMLElement,
@@ -151,12 +158,12 @@ function measureDropCap(
 
   const document = element.ownerDocument;
   const view = document.defaultView;
-  const letter = view?.getComputedStyle(element, "::first-letter") as
-    | (CSSStyleDeclaration & { initialLetter?: string; webkitInitialLetter?: string })
-    | undefined;
-  const spans = parseInt(letter?.initialLetter || letter?.webkitInitialLetter || "", 10);
+  const supported =
+    view?.CSS?.supports?.("initial-letter", String(DROP_CAP_LINES)) ||
+    view?.CSS?.supports?.("-webkit-initial-letter", String(DROP_CAP_LINES));
 
-  if (!Number.isFinite(spans) || spans < 2) {
+  // Without initial-letter the first letter is ordinary text on the first line.
+  if (!supported) {
     return null;
   }
 
@@ -175,7 +182,8 @@ function measureDropCap(
       left: box.left - blockLeft,
     }))
     .filter((box) => box.top > -1 && box.bottom - box.top <= lineHeight * 1.6)
-    .filter((box) => box.top < lineHeight * spans);
+    .filter((box) => box.top < lineHeight * DROP_CAP_LINES)
+    .sort((a, b) => a.top - b.top);
 
   if (lines.length === 0) {
     return null;
@@ -183,8 +191,11 @@ function measureDropCap(
 
   const width = Math.min(...lines.map((box) => box.left));
   const height = Math.max(...lines.map((box) => box.bottom));
+  const firstLine = (lines[0].top + lines[0].bottom) / 2;
 
-  return width > 0 && height > 0 ? { left: 0, top: 0, width, height } : null;
+  return width > 0 && height > 0
+    ? { left: 0, top: 0, width, height, firstLine }
+    : null;
 }
 
 const ink = (value: number) => `rgba(0,0,0,${value.toFixed(3)})`;
@@ -216,32 +227,37 @@ function blockMask(block: LitBlock): BlockMask {
     return flat(`linear-gradient(${ink(slots[0].value)}, ${ink(slots[0].value)})`);
   }
 
-  const stops = slots
-    .map(
-      (line) =>
-        `${ink(line.value)} ${line.top.toFixed(1)}px, ${ink(line.value)} ${line.bottom.toFixed(1)}px`,
-    )
-    .join(", ");
-  const lines = `linear-gradient(180deg, ${stops})`;
+  /** The lines as one vertical gradient, for a layer that starts `offset` px down. */
+  const lines = (offset: number) =>
+    `linear-gradient(180deg, ${slots
+      .map(
+        (line) =>
+          `${ink(line.value)} ${(line.top - offset).toFixed(1)}px, ${ink(line.value)} ${(line.bottom - offset).toFixed(1)}px`,
+      )
+      .join(", ")})`;
 
   if (!block.dropCap) {
-    return flat(lines);
+    return flat(lines(0));
   }
 
+  /*
+   * Three layers that never overlap, so nothing adds up: the cap's box in the
+   * first line's ink, the text beside it, and the column beneath it. A single
+   * line layer under the cap would show a lit line through it.
+   */
   const cap = block.dropCap;
-  const value = Math.max(
-    ...slots
-      .filter(
-        (line) => line.bottom > cap.top && line.top < cap.top + cap.height,
-      )
-      .map((line) => line.value),
-  );
+  const value = (
+    slots.find((line) => cap.firstLine >= line.top && cap.firstLine < line.bottom) ??
+    slots[0]
+  ).value;
+  const w = cap.width.toFixed(1);
+  const h = cap.height.toFixed(1);
 
   return {
-    image: `${lines}, linear-gradient(${ink(value)}, ${ink(value)})`,
-    position: `0px 0px, ${cap.left.toFixed(1)}px ${cap.top.toFixed(1)}px`,
-    size: `100% 100%, ${cap.width.toFixed(1)}px ${cap.height.toFixed(1)}px`,
-    repeat: "no-repeat, no-repeat",
+    image: `linear-gradient(${ink(value)}, ${ink(value)}), ${lines(0)}, ${lines(cap.height)}`,
+    position: `0px 0px, ${w}px 0px, 0px ${h}px`,
+    size: `${w}px ${h}px, calc(100% - ${w}px) 100%, ${w}px calc(100% - ${h}px)`,
+    repeat: "no-repeat, no-repeat, no-repeat",
   };
 }
 

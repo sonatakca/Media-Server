@@ -35,6 +35,9 @@ function face(
   return `@font-face{font-family:"${family}";src:url("${absolute(url)}") format("woff2-variations");unicode-range:${range};font-display:swap;${extra}}`;
 }
 
+/** How many lines a chapter's drop cap spans (its `initial-letter`). */
+export const DROP_CAP_LINES = 3;
+
 export function getBookFontCss(): string {
   const literata = "font-weight:200 900;";
   const archivo = "font-weight:100 900;font-stretch:62% 125%;";
@@ -209,10 +212,10 @@ export const EPUB_STATIC_CSS = `
 .seyirlik-reader-block {
   animation: seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
-@supports (initial-letter: 3) or (-webkit-initial-letter: 3) {
+@supports (initial-letter: ${DROP_CAP_LINES}) or (-webkit-initial-letter: ${DROP_CAP_LINES}) {
   .seyirlik-dropcap::first-letter {
-    -webkit-initial-letter: 3;
-    initial-letter: 3;
+    -webkit-initial-letter: ${DROP_CAP_LINES};
+    initial-letter: ${DROP_CAP_LINES};
     font-family: ${BOOK_SANS};
     font-weight: 900;
     font-stretch: 78%;
