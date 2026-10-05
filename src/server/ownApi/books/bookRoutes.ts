@@ -3,21 +3,92 @@ import { OwnApiError } from "../ownApiHandler";
 import type { RouteDefinition } from "../api/router";
 import { requireUuid } from "../api/validation";
 import { serveFile } from "../api/fileDelivery";
+import { readBinaryBody } from "../api/http";
+import { sendData } from "../api/envelope";
 import { isPathInsideRoot } from "../../pathSecurity";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
+import {
+  BookRejectedError,
+  MAX_BOOK_UPLOAD_BYTES,
+  type BookUploader,
+} from "./bookUpload";
 
 export interface BookRoutesOptions {
   catalogue: CatalogueRepository;
   mediaRoot: string;
+  /** Absent when no Books library is configured. */
+  uploads?: {
+    uploader: BookUploader;
+    /** Reads the Books library again so a new file becomes a title. */
+    scan(): Promise<void>;
+  };
 }
 
 export function createBookRoutes({
   catalogue,
   mediaRoot,
+  uploads,
 }: BookRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
 
+  const uploadRoutes: RouteDefinition[] = uploads
+    ? [
+        {
+          /**
+           * An EPUB from the caller's own computer, filed in the Books library.
+           *
+           * The bytes are the body; the file's original name comes in the query
+           * and is only a fallback title for a book that does not name itself.
+           * It is never a path.
+           */
+          method: "POST",
+          path: "/library/books/upload",
+          access: "admin",
+          handle: async (context) => {
+            context.requirePrincipal();
+            const fileName = (context.url.searchParams.get("name") ?? "")
+              .split(/[\\/]/)
+              .pop()!
+              .slice(0, 255);
+            let bytes: Buffer;
+            try {
+              bytes = await readBinaryBody(
+                context.request,
+                MAX_BOOK_UPLOAD_BYTES,
+              );
+            } catch (error) {
+              // The shared reader words its refusals for images.
+              if (error instanceof OwnApiError && error.statusCode === 413)
+                throw new OwnApiError(
+                  "BOOK_TOO_LARGE",
+                  "The book is larger than the 95 MB an upload can carry.",
+                  413,
+                );
+              if (error instanceof OwnApiError)
+                throw new OwnApiError(
+                  "BOOK_UPLOAD_INTERRUPTED",
+                  "The book did not arrive whole. Try it again.",
+                  error.statusCode,
+                );
+              throw error;
+            }
+            let result;
+            try {
+              result = await uploads.uploader.upload(bytes, fileName);
+            } catch (error) {
+              if (error instanceof BookRejectedError)
+                throw new OwnApiError("BOOK_REJECTED", error.message, 422);
+              throw error;
+            }
+            await uploads.scan();
+            sendData(context.response, context.requestId, result);
+          },
+        },
+      ]
+    : [];
+
   return [
+    ...uploadRoutes,
     {
       /**
        * The file behind a book.

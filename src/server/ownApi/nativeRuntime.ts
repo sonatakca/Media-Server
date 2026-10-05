@@ -36,6 +36,7 @@ import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
 import { migrateTitleArtwork } from "./images/titleArtworkMigration";
 import { createBookRoutes } from "./books/bookRoutes";
+import { createBookUploader } from "./books/bookUpload";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
 import { createMetadataRoutes } from "./metadata/metadataRoutes";
@@ -1235,6 +1236,34 @@ export async function createNativeRuntime({
       : undefined;
 
   /*
+   * Books handed over from another computer land in the first configured Books
+   * library, and that library is scanned so they appear. Without a Books
+   * library there is nowhere to put one, so the route does not exist.
+   */
+  const booksDefinition = definitions.find(
+    (entry) => entry.kind === "books" && entry.roots.length > 0,
+  );
+  const bookUploads = booksDefinition
+    ? {
+        uploader: createBookUploader({
+          mediaRoot,
+          booksRoot: booksDefinition.roots[0]!,
+        }),
+        scan: async () => {
+          const library = (await libraries.listAll()).find(
+            (entry) => entry.slug === booksDefinition.slug,
+          );
+          if (!library) return;
+          await queue.enqueue({
+            jobType: JOB_TYPES.libraryScan,
+            payload: { libraryId: library.id },
+            dedupeKey: `${JOB_TYPES.libraryScan}:${library.id}`,
+          });
+        },
+      }
+    : undefined;
+
+  /*
    * Once an import has put its files in the library, read that library again
    * so the title appears. The same scan the Library page starts, collapsed
    * onto one already queued or running for that library.
@@ -1465,7 +1494,7 @@ export async function createNativeRuntime({
     ...createDownloadRoutes({ catalogue, users, renditions, mediaRoot }),
     ...createAlertRoutes(alerts),
     ...createImageRoutes({ images, imageStorage, catalogue }),
-    ...createBookRoutes({ catalogue, mediaRoot }),
+    ...createBookRoutes({ catalogue, mediaRoot, uploads: bookUploads }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ runtime: syncplay, catalogue }),
     ...(subtitles

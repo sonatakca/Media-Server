@@ -119,6 +119,37 @@ export function requestTitleSubtitles(
 }
 
 /** Four megabytes, matching the ceiling the server writes subtitles under. */
+/** What the server accepts; Cloudflare refuses a larger body before it arrives. */
+export const MAX_BOOK_UPLOAD_BYTES = 95 * 1024 * 1024;
+
+export interface BookUploadReport {
+  outcome: "added" | "duplicate";
+  relativePath: string;
+  title: string | null;
+  author: string | null;
+}
+
+/**
+ * Hands an EPUB from this computer to the server's Books library.
+ *
+ * The name is sent only as a fallback title; where the book lands is decided
+ * on the server from the book's own metadata. It becomes a title once the scan
+ * the upload queues has read the library.
+ */
+export function uploadBook(file: File): Promise<BookUploadReport> {
+  if (!/\.epub$/i.test(file.name)) {
+    throw new Error("Only EPUB files can be added as books.");
+  }
+  if (file.size === 0 || file.size > MAX_BOOK_UPLOAD_BYTES) {
+    throw new Error("Upload an EPUB no larger than 95 MB.");
+  }
+  const query = new URLSearchParams({ name: file.name });
+  return ownApiClient.request<BookUploadReport>(
+    `/library/books/upload?${query}`,
+    { method: "POST", binaryBody: file },
+  );
+}
+
 export const MAX_SUBTITLE_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 export interface SubtitleUploadReport {

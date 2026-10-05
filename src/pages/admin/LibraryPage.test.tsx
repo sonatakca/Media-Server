@@ -10,6 +10,10 @@ vi.mock("../../i18n/LanguageContext", () => ({
 vi.mock("../../components/admin/LibraryBoard", () => ({
   LibraryBoard: () => <p>the library list</p>,
 }));
+const { uploadBook } = vi.hoisted(() => ({
+  uploadBook: vi.fn<(file: File) => Promise<unknown>>(),
+}));
+vi.mock("../../lib/libraryAdminApi", () => ({ uploadBook }));
 vi.mock("../../components/admin/WantedCatalogue", () => ({
   WantedCatalogue: ({ kind }: { kind: string }) => <p>searching {kind}</p>,
 }));
@@ -42,4 +46,39 @@ it("opens the search for the kind asked for above the library, and closes it", (
 
   fireEvent.click(screen.getByRole("button", { name: "library.closeSearch" }));
   expect(screen.queryByText(/^searching/)).toBeNull();
+});
+
+it("uploads each chosen EPUB and says what became of it", async () => {
+  uploadBook
+    .mockResolvedValueOnce({
+      outcome: "added",
+      relativePath: "Books/Ray Bradbury/Fahrenheit 451 (1953).epub",
+      title: "Fahrenheit 451",
+      author: "Ray Bradbury",
+    })
+    .mockRejectedValueOnce(new Error("This EPUB is copy-protected (DRM)."));
+  renderPage();
+
+  const input = screen.getByTestId("book-upload-input");
+  fireEvent.change(input, {
+    target: {
+      files: [
+        new File(["a"], "f451.epub", { type: "application/epub+zip" }),
+        new File(["b"], "locked.epub", { type: "application/epub+zip" }),
+      ],
+    },
+  });
+
+  expect(await screen.findByText("Fahrenheit 451 · Ray Bradbury")).toBeTruthy();
+  expect(
+    await screen.findByText("This EPUB is copy-protected (DRM)."),
+  ).toBeTruthy();
+  expect(screen.getByText("library.bookAdded")).toBeTruthy();
+  expect(screen.getByText("library.bookFailed")).toBeTruthy();
+  expect(screen.getByText("library.bookScanNote")).toBeTruthy();
+  // One at a time, in the order chosen.
+  expect(uploadBook.mock.calls.map(([file]) => file.name)).toEqual([
+    "f451.epub",
+    "locked.epub",
+  ]);
 });

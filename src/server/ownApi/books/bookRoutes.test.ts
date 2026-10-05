@@ -4,9 +4,15 @@ import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Writable } from "node:stream";
 import { describe, expect, it } from "vitest";
-import { createOwnApiRouter, type RoutePrincipal } from "../api/router";
+import {
+  createOwnApiRouter,
+  type RouteContext,
+  type RouteDefinition,
+  type RoutePrincipal,
+} from "../api/router";
 import { OwnApiError } from "../ownApiHandler";
 import { createBookRoutes } from "./bookRoutes";
+import { BookRejectedError, type BookUploader } from "./bookUpload";
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
@@ -172,5 +178,105 @@ describe("reading a book", () => {
     const { error } = await call(root, catalogue, "/ownAPI/v1/items/nope/file");
 
     expect((error as OwnApiError).statusCode).toBe(422);
+  });
+});
+
+describe("uploading a book", () => {
+  function uploadRoute(upload: BookUploader["upload"]) {
+    const scans: number[] = [];
+    const routes = createBookRoutes({
+      catalogue: {} as CatalogueRepository,
+      mediaRoot: "/media",
+      uploads: { uploader: { upload }, scan: async () => void scans.push(1) },
+    });
+    const definition = routes.find(
+      (entry) => entry.path === "/library/books/upload",
+    )!;
+    return { definition, scans };
+  }
+
+  function invoke(definition: RouteDefinition, bytes: Buffer, name: string) {
+    const captured: { status: number; body: unknown } = {
+      status: 0,
+      body: null,
+    };
+    const context = {
+      request: {
+        headers: { "content-length": String(bytes.length) },
+        async *[Symbol.asyncIterator]() {
+          yield bytes;
+        },
+      },
+      response: {
+        setHeader: () => undefined,
+        end: (chunk?: string) => {
+          captured.body = chunk ? JSON.parse(chunk) : null;
+        },
+        set statusCode(status: number) {
+          captured.status = status;
+        },
+        get statusCode() {
+          return captured.status;
+        },
+      },
+      requestId: "req",
+      url: new URL(
+        `http://localhost/ownAPI/v1/library/books/upload?name=${encodeURIComponent(name)}`,
+      ),
+      params: {},
+      method: "POST",
+      requirePrincipal: () => ({ userId: VIEWER, isAdministrator: true }),
+    } as unknown as RouteContext;
+    return definition.handle(context).then(() => captured);
+  }
+
+  it("is administrator-only and does not exist without a Books library", () => {
+    expect(uploadRoute(async () => ({}) as never).definition.access).toBe(
+      "admin",
+    );
+    expect(
+      createBookRoutes({
+        catalogue: {} as CatalogueRepository,
+        mediaRoot: "/m",
+      }).some((entry) => entry.path === "/library/books/upload"),
+    ).toBe(false);
+  });
+
+  it("files the book, then reads the Books library again", async () => {
+    const received: Array<[string, string]> = [];
+    const { definition, scans } = uploadRoute(async (bytes, name) => {
+      received.push([bytes.toString(), name]);
+      return {
+        outcome: "added",
+        relativePath: "Books/A/B.epub",
+        title: "B",
+        author: "A",
+      };
+    });
+
+    const captured = await invoke(
+      definition,
+      Buffer.from("epub bytes"),
+      "C:\\Users\\me\\Downloads\\b.epub",
+    );
+
+    // Only the base name reaches the uploader; a path in it is discarded.
+    expect(received).toEqual([["epub bytes", "b.epub"]]);
+    expect(scans).toHaveLength(1);
+    expect(captured.body).toMatchObject({
+      data: { outcome: "added", relativePath: "Books/A/B.epub" },
+    });
+  });
+
+  it("answers a refused book with its reason and scans nothing", async () => {
+    const { definition, scans } = uploadRoute(async () => {
+      throw new BookRejectedError("This is not an EPUB file.");
+    });
+    const error = await invoke(definition, Buffer.from("x"), "x.epub").catch(
+      (caught: unknown) => caught,
+    );
+    expect((error as OwnApiError).statusCode).toBe(422);
+    expect((error as OwnApiError).message).toBe("This is not an EPUB file.");
+    expect(scans).toHaveLength(0);
   });
 });

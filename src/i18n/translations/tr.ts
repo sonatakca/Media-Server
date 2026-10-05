@@ -121,6 +121,16 @@ export const tr = {
   "library.exportJson": "Kütüphaneyi JSON olarak dışa aktar",
   "library.artworkImporting":
     "Afişi olmayan başlıklar için TMDB görselleri getiriliyor:",
+  "library.addBooks": "Kitap ekle",
+  "library.addBooksHint":
+    "Bu bilgisayardaki EPUB dosyalarını Kitaplar kütüphanesine yükle",
+  "library.bookUploading": "Yükleniyor",
+  "library.bookAdded": "Eklendi",
+  "library.bookDuplicate": "Zaten kütüphanede",
+  "library.bookFailed": "Eklenemedi",
+  "library.bookScanNote":
+    "Yeni kitaplar, kütüphane taraması bitince Kitaplar altında görünür.",
+  "library.closeBookUploads": "Yükleme listesini kapat",
   "library.closeSearch": "TMDB aramasını kapat",
   "library.generateTrickplaySeason": "Bu sezon için trickplay oluştur",
   "library.findTurkishSeason": "Bu sezon için Türkçe altyazı bul",

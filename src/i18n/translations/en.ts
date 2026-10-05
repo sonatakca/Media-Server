@@ -120,6 +120,16 @@ export const en = {
   "library.exportJson": "Export the library as JSON",
   "library.artworkImporting":
     "Fetching TMDB artwork for titles without a poster:",
+  "library.addBooks": "Add books",
+  "library.addBooksHint":
+    "Upload EPUB files from this computer to the Books library",
+  "library.bookUploading": "Uploading",
+  "library.bookAdded": "Added",
+  "library.bookDuplicate": "Already in the library",
+  "library.bookFailed": "Not added",
+  "library.bookScanNote":
+    "New books appear under Books once the library scan finishes.",
+  "library.closeBookUploads": "Close the upload list",
   "library.closeSearch": "Close the TMDB search",
   "library.generateTrickplaySeason": "Generate trickplay for this season",
   "library.findTurkishSeason": "Find Turkish subtitles for this season",
