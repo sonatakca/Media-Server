@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "generatedAt": "2026-09-05T00:00:00.000Z",
+  "generatedAt": "2026-10-05T00:00:00.000Z",
   "title": "Design System: Seyirlik",
   "extensions": {
     "colorMeta": {
@@ -93,6 +93,81 @@
           "#fecaca",
           "#fee2e2"
         ]
+      },
+      "reader-dim-ground": {
+        "role": "neutral",
+        "displayName": "Loş Ground (reader only)",
+        "canonical": "#1b1c1e",
+        "tonalRamp": [
+          "#1b1c1e",
+          "rgba(217,214,207,0.15)",
+          "rgba(217,214,207,0.57)",
+          "rgba(217,214,207,0.7)",
+          "#d9d6cf",
+          "#86bba6",
+          "rgba(33,34,37,0.74)",
+          "rgba(36,37,40,0.94)"
+        ]
+      },
+      "reader-sepia-ground": {
+        "role": "neutral",
+        "displayName": "Sepya Ground (reader only)",
+        "canonical": "#efe4cf",
+        "tonalRamp": [
+          "#2b2218",
+          "rgba(43,34,24,0.8)",
+          "rgba(43,34,24,0.67)",
+          "rgba(43,34,24,0.13)",
+          "#2f6a57",
+          "rgba(246,238,222,0.76)",
+          "rgba(247,240,226,0.96)",
+          "#efe4cf"
+        ]
+      },
+      "reader-paper-ground": {
+        "role": "neutral",
+        "displayName": "Kağıt Ground (reader only)",
+        "canonical": "#f7f6f2",
+        "tonalRamp": [
+          "#1c1c1b",
+          "rgba(28,28,27,0.75)",
+          "rgba(28,28,27,0.62)",
+          "rgba(28,28,27,0.11)",
+          "#2f6a57",
+          "rgba(250,250,247,0.76)",
+          "rgba(251,251,249,0.96)",
+          "#f7f6f2"
+        ]
+      },
+      "reader-night-ink": {
+        "role": "neutral",
+        "displayName": "Gece Ink (on Screening Void)",
+        "canonical": "#e8e5de",
+        "tonalRamp": [
+          "#050607",
+          "rgba(232,229,222,0.14)",
+          "rgba(232,229,222,0.52)",
+          "rgba(232,229,222,0.66)",
+          "#e8e5de",
+          "#7fb8a2",
+          "rgba(16,17,19,0.72)",
+          "rgba(20,21,23,0.92)"
+        ]
+      },
+      "reader-mark-light": {
+        "role": "primary",
+        "displayName": "Reader Mark (light lights)",
+        "canonical": "#2f6a57",
+        "tonalRamp": [
+          "#0f231d",
+          "#1a3c32",
+          "#2f6a57",
+          "#3f826c",
+          "#5a9c86",
+          "#7fb8a2",
+          "#a9d3c3",
+          "#d6ece3"
+        ]
       }
     },
     "typographyMeta": {
@@ -115,6 +190,18 @@
       "label": {
         "displayName": "Label",
         "purpose": "Uppercase tracked eyebrows, category badges, count chips — the system's most-repeated typographic gesture."
+      },
+      "book": {
+        "displayName": "Book",
+        "purpose": "The book's running text in the reader, Literata (or Archivo 450 when the reader picks sans), scaled 80-145% by the reader, leading 1.45/1.65/1.9, measure 56/66/78ch."
+      },
+      "book-numeral": {
+        "displayName": "Chapter Numeral",
+        "purpose": "Chapter opener numeral, over the chapter title in Literata italic 400 at 1.45em in ink2, closed by a 36x2px accent rule."
+      },
+      "reader-title": {
+        "displayName": "Reader Bar Title",
+        "purpose": "The book title centred in the reader bar, a sixteenth below the Title step so the chrome stays quieter than the book."
       }
     },
     "shadows": [
@@ -162,6 +249,26 @@
         "name": "admin-card (Control Booth)",
         "value": "none — depth via 1px hairline border (rgba(255,255,255,0.12)) and bg-white/[0.03] fill only",
         "purpose": "Deliberately flat: no shadow, no blur, on operational surfaces."
+      },
+      {
+        "name": "reader-surface",
+        "value": "0 0 0 1px var(--rd-glass-edge), inset 0 1px 0 var(--rd-glass-highlight), var(--rd-lift); background var(--rd-glass-solid); backdrop-filter blur(28px) saturate(1.5)",
+        "purpose": "Reader settings popover/sheet, more menu and contents drawer."
+      },
+      {
+        "name": "reader-lift-night",
+        "value": "0 18px 60px rgba(0,0,0,0.55), 0 2px 10px rgba(0,0,0,0.4)",
+        "purpose": "Reader lift on Gece (Loş: 0.5 / 0.35)."
+      },
+      {
+        "name": "reader-lift-sepia",
+        "value": "0 18px 50px rgba(64,44,20,0.18), 0 2px 8px rgba(64,44,20,0.1)",
+        "purpose": "Reader lift on Sepya: brown, never black."
+      },
+      {
+        "name": "reader-lift-paper",
+        "value": "0 18px 50px rgba(20,20,20,0.12), 0 2px 8px rgba(20,20,20,0.07)",
+        "purpose": "Reader lift on Kağıt."
       }
     ],
     "motion": [
@@ -184,12 +291,49 @@
         "name": "reduced-motion-floor",
         "value": "@media (prefers-reduced-motion: reduce) collapses all animation/transition durations to 0.01ms",
         "purpose": "Global accessibility floor; respected everywhere, including the shimmer."
+      },
+      {
+        "name": "reader-sine",
+        "value": "cubic-bezier(0.37, 0, 0.63, 1)",
+        "purpose": "Reader fades and colour changes (theme crossfade 0.32s, chrome retreat 0.24s, reading light 0.35s per block)."
+      },
+      {
+        "name": "reader-out",
+        "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+        "purpose": "Reader travel: popover 0.26s, drawer 0.3s, phone sheet 0.32s, block fade-up 520ms."
+      },
+      {
+        "name": "reader-ruler-marker",
+        "value": "top 0.12s linear",
+        "purpose": "Ruler marker follows the reading line."
+      },
+      {
+        "name": "reader-pending",
+        "value": "opacity 1 to 0.45, 1.6s sine, infinite alternate",
+        "purpose": "Drawer figures and length bars while the book is being measured."
       }
     ],
     "breakpoints": [
-      { "name": "sm", "value": "640px" },
-      { "name": "md", "value": "768px" },
-      { "name": "lg", "value": "1024px" }
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      },
+      {
+        "name": "reader-phone",
+        "value": "760px"
+      },
+      {
+        "name": "reader-narrow",
+        "value": "379px"
+      }
     ]
   },
   "components": [
@@ -240,37 +384,112 @@
       "description": "Signature stacked glass notification with a balanced-ink spinner and mask-faded stack edges.",
       "html": "<div class=\"ds-notification\"><span class=\"ds-notification-spinner\" aria-hidden=\"true\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><path d=\"M12 2a10 10 0 0 1 10 10\"/></svg></span><span class=\"ds-notification-text\">Scanning library…</span></div>",
       "css": ".ds-notification { display: flex; align-items: center; gap: 0.625rem; border-radius: 16px; background: rgba(0,0,0,0.7); backdrop-filter: blur(24px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); padding: 0.75rem 1rem; color: #f8fafc; font-size: 0.875rem; font-weight: 600; } .ds-notification-spinner { color: #467a6c; animation: ds-spin 1s linear infinite; } @keyframes ds-spin { to { transform: rotate(360deg); } }"
+    },
+    {
+      "name": "Reader Segmented Control",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Three-step choice in reader settings (line spacing, width, reading light); a fully round ink4 well with the chosen step lifted on the light's solid glass.",
+      "html": "<div class=\"ds-rd-seg\" role=\"group\"><button aria-pressed=\"false\">Sıkı</button><button aria-pressed=\"true\">Normal</button><button aria-pressed=\"false\">Geniş</button></div>",
+      "css": ".ds-rd-seg { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0,1fr); padding: 3px; border-radius: 9999px; background: rgba(232,229,222,0.14); width: 16rem; font-family: 'Archivo Variable', sans-serif; } .ds-rd-seg button { height: 2.125rem; border: 0; border-radius: 9999px; background: transparent; font-size: 0.75rem; font-weight: 750; color: rgba(232,229,222,0.66); transition: background-color 0.2s cubic-bezier(0.37,0,0.63,1), color 0.2s cubic-bezier(0.37,0,0.63,1); } .ds-rd-seg button:hover { color: #e8e5de; } .ds-rd-seg button[aria-pressed=\"true\"] { background: rgba(20,21,23,0.92); color: #e8e5de; box-shadow: 0 1px 3px rgba(0,0,0,0.18), 0 0 0 1px rgba(255,255,255,0.1); } .ds-rd-seg button:focus-visible { outline: 2px solid var(--accent, #467a6c); outline-offset: 2px; }"
+    },
+    {
+      "name": "Chapter Ruler",
+      "kind": "custom",
+      "refersTo": null,
+      "description": "Reader margin furniture: a ticked 1px line captioned with the current and next chapter, and an accent marker that rides with the reading line.",
+      "html": "<div class=\"ds-rd-ruler\"><span class=\"ds-rd-cap ds-rd-cap-top\">1 · Ocak ve Semender</span><span class=\"ds-rd-tick\" style=\"top:25%\"></span><span class=\"ds-rd-tick ds-rd-major\" style=\"top:50%\"></span><span class=\"ds-rd-tick\" style=\"top:75%\"></span><span class=\"ds-rd-marker\" style=\"top:38%\"><span>%38</span></span><span class=\"ds-rd-cap ds-rd-cap-bottom\">Elek ve Kum</span></div>",
+      "css": ".ds-rd-ruler { position: relative; width: 8.5rem; height: 14rem; margin: 2rem 0; background: linear-gradient(rgba(232,229,222,0.14),rgba(232,229,222,0.14)) right / 1px 100% no-repeat; font-family: 'Archivo Variable', sans-serif; } .ds-rd-tick { position: absolute; right: 0; width: 5px; height: 1px; background: rgba(232,229,222,0.52); } .ds-rd-major { width: 11px; background: rgba(232,229,222,0.66); } .ds-rd-cap { position: absolute; right: 0; white-space: nowrap; font-size: 0.6875rem; font-weight: 900; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(232,229,222,0.52); } .ds-rd-cap-top { top: -1.75rem; color: rgba(232,229,222,0.66); } .ds-rd-cap-bottom { bottom: -1.75rem; } .ds-rd-marker { position: absolute; right: -5px; width: 22px; height: 2px; margin-top: -1px; border-radius: 9999px; background: var(--accent, #467a6c); transition: top 0.12s linear; } .ds-rd-marker span { position: absolute; right: 32px; top: -0.42rem; font-size: 0.6875rem; font-weight: 800; font-variant-numeric: tabular-nums; color: rgba(232,229,222,0.66); }"
+    },
+    {
+      "name": "Chapter Opener",
+      "kind": "custom",
+      "refersTo": "book-numeral",
+      "description": "Condensed Archivo numeral over an italic Literata title, closed by a short accent rule; the lead line follows in small caps.",
+      "html": "<div class=\"ds-rd-opener\"><div class=\"ds-rd-num\">1</div><div class=\"ds-rd-sub\">Ocak ve Semender</div><p class=\"ds-rd-lead\">Yakmak bir zevkti.</p></div>",
+      "css": ".ds-rd-opener { background: #050607; color: #e8e5de; padding: 2rem; text-align: center; font-size: 19px; } .ds-rd-num { font-family: 'Archivo Variable', sans-serif; font-size: 5em; font-weight: 900; font-stretch: 72%; line-height: 0.86; letter-spacing: -0.02em; } .ds-rd-sub { font-family: Literata, Georgia, serif; font-style: italic; font-size: 1.45em; color: rgba(232,229,222,0.66); margin-top: 0.35em; } .ds-rd-sub::after { content: ''; display: block; width: 36px; height: 2px; border-radius: 2px; background: var(--accent, #467a6c); margin: 1.3em auto 0.6em; } .ds-rd-lead { font-family: Literata, Georgia, serif; text-align: left; text-transform: uppercase; font-size: 0.8em; letter-spacing: 0.08em; font-weight: 520; }"
     }
   ],
   "narrative": {
     "northStar": "The Private Screening Room",
-    "overview": "Seyirlik is one facility with two rooms. The audience-facing side — home, library, hero, the player — is the screening room itself: a dark, immersive space designed to disappear behind the poster art and video it's showing, lit by one restrained signal color. The admin side — scanning, processing, artwork, users — is the projection booth behind the screen: quieter, flatter, information-dense, precise, and built for repeated operational use rather than atmosphere. Both rooms belong to the same building, built from the same materials (near-black ground, Seyirlik Teal, the same heavy-weight Archivo type, the same two-radius shape language), but the booth never borrows the screening room's decoration to prove they match.\n\nDeep black, cinematic hierarchy, restrained teal accenting, confident heavy typography, strong media imagery, and a real sense of depth are the durable identity. The exact intensity of glass blur, glow, shadow softness, and gradients are implementation choices within that identity, refinable whenever a change improves clarity, performance, hierarchy, or restraint — they are not, themselves, what makes Seyirlik look like Seyirlik.",
+    "overview": "Seyirlik is one facility with two rooms. The audience-facing side — home, library, hero, the player — is the screening room itself: a dark, immersive space designed to disappear behind the poster art and video it's showing, lit by one restrained signal color. The admin side — scanning, processing, artwork, users — is the projection booth behind the screen: quieter, flatter, information-dense, precise, and built for repeated operational use rather than atmosphere. Both rooms belong to the same building, built from the same materials (near-black ground, Seyirlik Teal, the same heavy-weight Archivo type, the same two-radius shape language), but the booth never borrows the screening room's decoration to prove they match.\n\nDeep black, cinematic hierarchy, restrained teal accenting, confident heavy typography, strong media imagery, and a real sense of depth are the durable identity. The exact intensity of glass blur, glow, shadow softness, and gradients are implementation choices within that identity, refinable whenever a change improves clarity, performance, hierarchy, or restraint — they are not, themselves, what makes Seyirlik look like Seyirlik.\n\nThe book reader (`/read/:id`) is a reading seat inside the screening room, not a third room: the same void, the same Archivo chrome, the same glass and the same accent, with the house lights brought down onto a single column of Literata. Its idea is that the reading line is lit: the paragraph at 40% of the viewport carries full ink and the text above and below falls off like screen glow, and position is shown as a ruler in the margin rather than as a page counter. The chrome retreats while reading and comes back when asked for.",
     "keyCharacteristics": [
       "Near-black ground throughout, lit by artwork and screen glow rather than by a light UI chrome.",
       "One accent color (Seyirlik Teal), used sparingly as a signal, never as a fill.",
       "Weight and width are the display system — no separate display face, just Archivo pushed to 900 and, for titles, condensed.",
       "Two-radius shape grammar: rounded-full for every control, a small radius step for buttons and cards.",
-      "Screening room surfaces carry cinematic depth (layered shadow, glass blur, accent-tinted glow); control-booth surfaces are flat and dense by design, not by neglect."
+      "Screening room surfaces carry cinematic depth (layered shadow, glass blur, accent-tinted glow); control-booth surfaces are flat and dense by design, not by neglect.",
+      "The book reader is the one place a second face appears (Literata, for the book's own text) and the one place a ground may go light (the reader's Loş, Sepya and Kağıt lights, scoped to the reader shell)."
     ],
     "rules": [
-      { "name": "The One Signal Light Rule", "body": "Seyirlik Teal appears as a glow, a fill, a ring, or a dot — never as a background, never as a large shape. If teal is the first thing you notice on a screen, it's being overused.", "section": "colors" },
-      { "name": "The Ramp-Is-The-Pipeline Rule", "body": "Where a surface must tell several kinds of background work apart, it reads the accent ramp as one scale: the warm end is trouble (Warm Red = failed, Amber = needs a person), and the cool run is healthy work ordered by pipeline position — Gold (discovery) to Olive (description) to Green (encoding) to Teal (export). Status always outranks the job. These are fixed points of the ramp, not the viewer's chosen accent, and the scale steps down in lightness so the order survives without hue.", "section": "colors" },
-      { "name": "The Weight-Not-Face Rule", "body": "Never reach for a second font family to add hierarchy or occasion. Reach for 900 and letter-spacing instead.", "section": "typography" },
-      { "name": "The Booth-Doesn't-Glow Rule", "body": "Admin/operational surfaces never inherit glass blur, glow, or gradient decoration purely to match the browsing side. Shared identity there is carried by color, type, and shape — not by shadow.", "section": "elevation" }
+      {
+        "name": "The One Signal Light Rule",
+        "body": "Seyirlik Teal appears as a glow, a fill, a ring, or a dot — never as a background, never as a large shape. If teal is the first thing you notice on a screen, it's being overused.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ramp-Is-The-Pipeline Rule",
+        "body": "Where a surface must tell several kinds of background work apart, it reads the accent ramp as one scale: the warm end is trouble (Warm Red = failed, Amber = needs a person), and the cool run is healthy work ordered by pipeline position — Gold (discovery) to Olive (description) to Green (encoding) to Teal (export). Status always outranks the job. These are fixed points of the ramp, not the viewer's chosen accent, and the scale steps down in lightness so the order survives without hue.",
+        "section": "colors"
+      },
+      {
+        "name": "The Weight-Not-Face Rule",
+        "body": "Never reach for a second font family to add hierarchy or occasion (a title card, a stat, a badge). Reach for 900, width, and letter-spacing instead. The book reader's Literata is not an exception to this: it sets the book, which is content, not hierarchy (see the Book-Face Boundary Rule).",
+        "section": "typography"
+      },
+      {
+        "name": "The Booth-Doesn't-Glow Rule",
+        "body": "Admin/operational surfaces never inherit glass blur, glow, or gradient decoration purely to match the browsing side. Shared identity there is carried by color, type, and shape — not by shadow.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Reader-Scoped Light Rule",
+        "body": "A light ground (Sepya, Kağıt) or the raised Loş ground exists only inside the reader shell, chosen by the person reading. Nothing else in Seyirlik goes light to match it, and the reader never invents a fifth light without a full palette (ground, four inks, hair, mark, glass, lift, selection).",
+        "section": "colors"
+      },
+      {
+        "name": "The Fourth-Step Ink Rule",
+        "body": "In every reader light, ink3 is the faintest step allowed to carry text, and it clears 4.5:1 on its own ground; ink2 sits a step above it. ink4 is never text. A new light is measured before it ships.",
+        "section": "colors"
+      },
+      {
+        "name": "The Book-Face Boundary Rule",
+        "body": "Literata sets the book's text and the things that quote or preview it (bookmark excerpts, plain-text documents, the specimen glyphs in the reader's settings) and nothing else. Chrome, labels, numerals, drop caps and opener numerals stay in Archivo, so the book is the only thing on screen in a book face.",
+        "section": "typography"
+      },
+      {
+        "name": "The Turkish Casing Rule",
+        "body": "Small-cap glyphs ignore Turkish casing (an i becomes a dotless I), so under `lang=\"tr\"` the lead line is uppercased with `text-transform` instead, which gives İ. Turkish publishers often declare `en` or nothing, so a section with at least 400 letters in which ı, İ, ğ and Ğ exceed 0.8% of the letters is treated as Turkish whatever its package says. Browsers ship no Turkish hyphenation, so Turkish text gets soft hyphens from TeX patterns (words of 6+ letters, never in headings, `pre` or `code`); every other language uses the browser's `hyphens: auto`.",
+        "section": "typography"
+      },
+      {
+        "name": "The Lift-Follows-The-Light Rule",
+        "body": "In the reader, every shadow, glass fill and edge comes from the current light's palette. A surface on Sepya or Kağıt never borrows the dark lights' black lift or a fixed white glass.",
+        "section": "elevation"
+      }
     ],
     "dos": [
       "Do keep Seyirlik Teal rare: a glow, a fill, a ring, a dot — never a screen's dominant color (The One Signal Light Rule).",
       "Do build hierarchy from Archivo's weight, width, and letter-spacing (900 condensed for titles, 900 + tracked uppercase for labels) instead of introducing a second typeface (The Weight-Not-Face Rule).",
       "Do let Screening Room surfaces (browse, hero, player) carry real cinematic depth — layered shadow, glass blur, accent-tinted glow — proportional to how close the surface sits to the media itself.",
       "Do keep Control Booth surfaces flat, dense, and fast to scan: hairline borders, tabular numbers, minimal motion, no glow or blur (The Booth-Doesn't-Glow Rule).",
-      "Do use rounded-full for every control the user taps or clicks, and the 8/12/16px step scale for every container."
+      "Do use `rounded-full` for every control the user taps or clicks, and the `8/12/16px` step scale for every container.",
+      "Do take every reader colour, glass and shadow from the current light's palette, and measure a new light's ink3 at 4.5:1 or better on its own ground before it ships (The Fourth-Step Ink Rule).",
+      "Do show reading position as a margin ruler, a percentage and an honest time left; when there is no margin, dock the time left at the foot rather than overlapping the column.",
+      "Do set the book in Literata (or the reader's chosen sans) and everything around it in Archivo (The Book-Face Boundary Rule).",
+      "Do handle Turkish by its text, not its declared language: uppercase with `text-transform` under `lang=\"tr\"`, and soft hyphens from patterns (The Turkish Casing Rule)."
     ],
     "donts": [
       "Don't let admin/operational UI inherit decorative cinema effects (glow, blur, gradients) merely to look \"consistent\" with the browsing side — Control Booth clarity outranks Screening Room polish there.",
       "Don't drift toward a generic self-hosted-dashboard or admin-template look: no Bootstrap-style boxed cards, arbitrary borders, blue-primary SaaS chrome, or dashboard chrome that exists for its own sake.",
       "Don't imitate another streaming product's exact layout, navigation, artwork treatment, typography, or interaction pattern (Netflix, Jellyfin, Plex) — Seyirlik is authored, not a clone of a category.",
       "Don't add a visual effect that doesn't earn its place through hierarchy, comprehension, feedback, or atmosphere — gratuitous gradients, glow, or glass; oversized empty spacing; decorative analytics for their own sake.",
-      "Don't let dense technical/admin UI leak into the viewing experience, or let cinematic decoration leak into admin."
+      "Don't let dense technical/admin UI leak into the viewing experience, or let cinematic decoration leak into admin.",
+      "Don't add page numbers, a page-count pill or a page-flip to the reader; the book is one continuous column and position is a ruler.",
+      "Don't let the reading light move, scale or reflow text; it changes opacity only.",
+      "Don't add further accent uses to the reader beyond those recorded under Reader Lights; the recorded set is already one past the direction's four.",
+      "Don't use a light or raised reader ground anywhere outside the reader shell (The Reader-Scoped Light Rule).",
+      "Don't estimate time left before the book has been measured; show the pending shape instead."
     ]
   }
 }

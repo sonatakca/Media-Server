@@ -222,6 +222,10 @@ export function Tooltip({
 
     if (!hasContent || disabled) {
       hideForGroup();
+      // No listeners run while disabled, so a pointer that leaves meanwhile is
+      // never seen; forget it, or the next scroll brings the tooltip back.
+      isPointerOverRef.current = false;
+      lastPointerPositionRef.current = null;
       return;
     }
 
@@ -465,7 +469,9 @@ export function Tooltip({
     portalRoot,
   ]);
 
-  if (!isValidElement(children) || !hasContent || disabled) {
+  // Disabling keeps the same element tree: returning the bare child here would
+  // remount the trigger, dropping focus from the button that was just pressed.
+  if (!isValidElement(children) || !hasContent) {
     return children;
   }
 
@@ -488,7 +494,7 @@ export function Tooltip({
   return (
     <>
       {trigger}
-      {shouldRender && portalRoot
+      {shouldRender && portalRoot && !disabled
         ? createPortal(
             <div
               ref={tooltipRef}

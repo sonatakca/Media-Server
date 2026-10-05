@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
 import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
@@ -25,6 +25,8 @@ interface WatchedStatusButtonProps {
   className: string;
   style?: CSSProperties;
   iconSize?: number;
+  /** Replaces the eye, which reads as "watched", where that word is wrong. */
+  icon?: ReactNode;
   label?: string;
   showLabel?: boolean;
   confirm?: boolean;
@@ -40,6 +42,7 @@ export function WatchedStatusButton({
   className,
   style,
   iconSize = 18,
+  icon,
   label,
   showLabel = false,
   confirm = false,
@@ -158,6 +161,8 @@ export function WatchedStatusButton({
       >
         {isResetting ? (
           <Loader2 size={iconSize} className="animate-spin" />
+        ) : icon ? (
+          icon
         ) : action === "mark" ? (
           <Eye size={iconSize} />
         ) : (

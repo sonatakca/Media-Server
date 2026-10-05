@@ -29,16 +29,35 @@ describe("readerModel", () => {
       READER_SETTINGS_KEY,
       JSON.stringify({
         theme: "invalid",
+        face: "comic",
         fontScale: 999,
         lineHeight: 0,
         width: 1,
+        spotlight: "blinding",
       }),
     );
     expect(readStoredReaderSettings()).toEqual({
       theme: "night",
+      face: "serif",
       fontScale: 145,
       lineHeight: 1.25,
       width: 48,
+      spotlight: "soft",
+    });
+
+    // Settings saved before the reading light and the two new themes existed
+    // keep their values and gain the defaults.
+    localStorage.setItem(
+      READER_SETTINGS_KEY,
+      JSON.stringify({ theme: "sepia", fontScale: 110, lineHeight: 1.7, width: 74 }),
+    );
+    expect(readStoredReaderSettings()).toEqual({
+      theme: "sepia",
+      face: "serif",
+      fontScale: 110,
+      lineHeight: 1.7,
+      width: 74,
+      spotlight: "soft",
     });
   });
 

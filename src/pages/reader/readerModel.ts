@@ -1,6 +1,4 @@
-import type { CSSProperties } from "react";
 import type { NavItem } from "epubjs";
-import { glassPillButton } from "../../components/ui/glassControlStyles";
 import type { MediaItem } from "../../lib/types";
 
 export type ReaderFormat =
@@ -10,13 +8,17 @@ export type ReaderFormat =
   | "html"
   | "image"
   | "fallback";
-export type ReaderTheme = "night" | "sepia";
+export type ReaderTheme = "night" | "dim" | "sepia" | "paper";
+export type ReaderFace = "serif" | "sans";
+export type ReaderSpotlight = "off" | "soft" | "strong";
 
 export interface ReaderSettings {
   theme: ReaderTheme;
+  face: ReaderFace;
   fontScale: number;
   lineHeight: number;
   width: number;
+  spotlight: ReaderSpotlight;
 }
 
 export interface StoredReaderProgress {
@@ -27,33 +29,64 @@ export interface StoredReaderProgress {
 
 export type ReaderProgressMap = Record<string, StoredReaderProgress>;
 
+export interface ReaderBookmark {
+  id: string;
+  cfi: string;
+  label: string;
+  excerpt: string;
+  progress: number | null;
+  createdAt: number;
+}
+
+export type ReaderBookmarkMap = Record<string, ReaderBookmark[]>;
+
 export interface EpubContentView {
   document: Document;
+  sectionIndex?: number;
   addClass(className: string): void;
   addStylesheetCss(css: string, key: string): unknown;
 }
 
 export const READER_SETTINGS_KEY = "seyirlik.reader.settings";
 export const READER_PROGRESS_KEY = "seyirlik.reader.progress";
+export const READER_BOOKMARKS_KEY = "seyirlik.reader.bookmarks";
+
+export const READER_THEMES: ReaderTheme[] = ["night", "dim", "sepia", "paper"];
+export const READER_FACES: ReaderFace[] = ["serif", "sans"];
+export const READER_SPOTLIGHTS: ReaderSpotlight[] = ["off", "soft", "strong"];
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   theme: "night",
+  face: "serif",
   fontScale: 100,
-  lineHeight: 1.7,
-  width: 74,
+  lineHeight: 1.65,
+  width: 66,
+  spotlight: "soft",
 };
 
 export const FONT_SCALE_STEPS = Array.from(
   { length: 14 },
   (_, index) => 80 + index * 5,
 );
-export const LINE_HEIGHT_STEPS = Array.from({ length: 14 }, (_, index) =>
-  Number((1.25 + ((2.2 - 1.25) * index) / 13).toFixed(2)),
-);
-export const WIDTH_STEPS = Array.from(
-  { length: 13 },
-  (_, index) => 48 + index * 4,
-);
+/** Line spacing and measure are offered as three presets; older stored values
+ * outside them still apply and the nearest preset shows as selected. */
+export const LINE_HEIGHT_PRESETS = [1.45, 1.65, 1.9];
+export const WIDTH_PRESETS = [56, 66, 78];
+
+/** Where the lit paragraph sits, as a fraction of the reading viewport. */
+export const READING_LINE = 0.4;
+/** How far from the reading line the light has fully fallen off. */
+export const SPOTLIGHT_FALLOFF = 0.3;
+export const SPOTLIGHT_FLOOR: Record<ReaderSpotlight, number> = {
+  off: 1,
+  soft: 0.4,
+  strong: 0.16,
+};
+
+/** epub.js locations are generated at this many characters each. */
+export const CHARS_PER_LOCATION = 1200;
+/** A typical adult silent reading speed in characters, for estimates only. */
+export const READING_CHARS_PER_MINUTE = 1100;
 
 export const EPUB_PREPARATION_TIMEOUT_MS = 15000;
 
@@ -67,79 +100,11 @@ export const EPUB_PREPARATION_TIMEOUT_MS = 15000;
  */
 export const EPUB_REQUEST_CREDENTIALS = true as unknown as object;
 
-export const EPUB_REVEAL_STYLES = `
-@keyframes seyirlikReaderBlockFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(0.65rem);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.seyirlik-reader-block {
-  opacity: 0;
-  animation: seyirlikReaderBlockFadeIn 520ms ease forwards;
-  will-change: opacity, transform;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .seyirlik-reader-block {
-    opacity: 1;
-    transform: none;
-    animation: none;
-  }
-}
-`;
-
-export const EPUB_CONTENT_DIVIDER_STYLES = `
-hr {
-  border: 0 !important;
-  height: 1px !important;
-  width: 70% !important;
-  margin: 3em auto 2.2em auto !important;
-  background: linear-gradient(
-    to right,
-    transparent,
-    currentColor,
-    transparent
-  ) !important;
-  opacity: 0.22 !important;
-}
-
-h1::before,
-h2::before {
-  content: "";
-  display: block !important;
-  width: 70% !important;
-  height: 1px !important;
-  margin: 0 auto 2.4em auto !important;
-  background: linear-gradient(
-    to right,
-    transparent,
-    currentColor,
-    transparent
-  ) !important;
-  opacity: 0.22 !important;
-}
-
-.firstHeading::before {
-  display: none !important;
-}
-
-h1 + h1::before,
-h1 + h2::before,
-h2 + h1::before,
-h2 + h2::before {
-  display: none !important;
-}
-`;
-
 export const READER_THEME_LABEL_KEYS = {
   night: "reader.theme.night",
+  dim: "reader.theme.dim",
   sepia: "reader.theme.sepia",
+  paper: "reader.theme.paper",
 } as const;
 
 export const FORMAT_EXTENSIONS: Record<
@@ -153,102 +118,108 @@ export const FORMAT_EXTENSIONS: Record<
   image: ["jpg", "jpeg", "png", "webp", "gif", "avif"],
 };
 
-export const themePalettes: Record<
-  ReaderTheme,
-  {
-    shell: string;
-    panel: string;
-    page: string;
-    pageBorder: string;
-    text: string;
-    muted: string;
-    control: string;
-    activeControl: string;
-    controlBackground: string;
-    controlActiveBackground: string;
-    controlText: string;
-    controlMutedText: string;
-    controlShadow: string;
-    controlFlatShadow: string;
-    accent: string;
-  }
-> = {
+/**
+ * One palette per reading light. The values are concrete colours rather than
+ * Tailwind classes because the same palette also styles the book's own
+ * documents inside epub.js' iframes, where the app's stylesheet never reaches.
+ */
+export interface ReaderPalette {
+  ground: string;
+  ink: string;
+  ink2: string;
+  ink3: string;
+  ink4: string;
+  hair: string;
+  /** Accent for text on this ground (links); fills use the live `--accent`. */
+  mark: string;
+  glass: string;
+  glassSolid: string;
+  glassEdge: string;
+  glassHighlight: string;
+  lift: string;
+  selection: string;
+  scheme: "dark" | "light";
+}
+
+export const themePalettes: Record<ReaderTheme, ReaderPalette> = {
   night: {
-    shell: "bg-[#111114] text-[#f4f4f5]",
-    panel: "border-white/10 bg-[#111114] text-[#f4f4f5] shadow-floating-panel",
-    page: "#111114",
-    pageBorder: "border-white/10",
-    text: "#f4f4f5",
-    muted: "text-white/58",
-    control: glassPillButton,
-    activeControl: `${glassPillButton} bg-white/[0.11] text-white`,
-    controlBackground: "rgba(23, 23, 25, 0.76)",
-    controlActiveBackground: "rgba(255, 255, 255, 0.14)",
-    controlText: "#f4f4f5",
-    controlMutedText: "rgba(244, 244, 245, 0.58)",
-    controlShadow:
-      "0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3), 0 10px 35px rgba(0,0,0,0.28)",
-    controlFlatShadow:
-      "0 0 0 1px rgba(255,255,255,0.07), inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.3)",
-    accent: "#8bd8be",
+    ground: "#050607",
+    ink: "#e8e5de",
+    ink2: "rgba(232, 229, 222, 0.66)",
+    ink3: "rgba(232, 229, 222, 0.52)",
+    ink4: "rgba(232, 229, 222, 0.14)",
+    hair: "rgba(255, 255, 255, 0.09)",
+    mark: "#7fb8a2",
+    glass: "rgba(16, 17, 19, 0.72)",
+    glassSolid: "rgba(20, 21, 23, 0.92)",
+    glassEdge: "rgba(255, 255, 255, 0.1)",
+    glassHighlight: "rgba(255, 255, 255, 0.1)",
+    lift: "0 18px 60px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.4)",
+    selection: "rgba(127, 184, 162, 0.3)",
+    scheme: "dark",
+  },
+  dim: {
+    ground: "#1b1c1e",
+    ink: "#d9d6cf",
+    ink2: "rgba(217, 214, 207, 0.7)",
+    ink3: "rgba(217, 214, 207, 0.57)",
+    ink4: "rgba(217, 214, 207, 0.15)",
+    hair: "rgba(255, 255, 255, 0.1)",
+    mark: "#86bba6",
+    glass: "rgba(33, 34, 37, 0.74)",
+    glassSolid: "rgba(36, 37, 40, 0.94)",
+    glassEdge: "rgba(255, 255, 255, 0.11)",
+    glassHighlight: "rgba(255, 255, 255, 0.1)",
+    lift: "0 18px 60px rgba(0, 0, 0, 0.5), 0 2px 10px rgba(0, 0, 0, 0.35)",
+    selection: "rgba(134, 187, 166, 0.3)",
+    scheme: "dark",
   },
   sepia: {
-    shell: "bg-[#f4ead7] text-[#241b12]",
-    panel:
-      "border-[#2d2216]/12 bg-[#f4ead7] text-[#241b12] shadow-[0_24px_80px_rgba(45,34,22,0.13)]",
-    page: "#f4ead7",
-    pageBorder: "border-[#2d2216]/12",
-    text: "#241b12",
-    muted: "text-[#6f5f4c]",
-    control: glassPillButton,
-    activeControl: `${glassPillButton} bg-white/[0.11] text-white`,
-    controlBackground: "rgba(244, 234, 215, 0.84)",
-    controlActiveBackground: "rgba(45, 34, 22, 0.11)",
-    controlText: "#241b12",
-    controlMutedText: "rgba(36, 27, 18, 0.62)",
-    controlShadow:
-      "0 0 0 1px rgba(45,34,22,0.13), inset 0 1px 0 rgba(255,255,255,0.48), inset 0 -1px 0 rgba(45,34,22,0.06), 0 14px 38px rgba(45,34,22,0.12)",
-    controlFlatShadow:
-      "0 0 0 1px rgba(45,34,22,0.13), inset 0 1px 0 rgba(255,255,255,0.48), inset 0 -1px 0 rgba(45,34,22,0.06)",
-    accent: "#2d6a50",
+    ground: "#efe4cf",
+    ink: "#2b2218",
+    ink2: "rgba(43, 34, 24, 0.8)",
+    ink3: "rgba(43, 34, 24, 0.67)",
+    ink4: "rgba(43, 34, 24, 0.13)",
+    hair: "rgba(43, 34, 24, 0.12)",
+    mark: "#2f6a57",
+    glass: "rgba(246, 238, 222, 0.76)",
+    glassSolid: "rgba(247, 240, 226, 0.96)",
+    glassEdge: "rgba(43, 34, 24, 0.12)",
+    glassHighlight: "rgba(255, 255, 255, 0.6)",
+    lift: "0 18px 50px rgba(64, 44, 20, 0.18), 0 2px 8px rgba(64, 44, 20, 0.1)",
+    selection: "rgba(47, 106, 87, 0.22)",
+    scheme: "light",
+  },
+  paper: {
+    ground: "#f7f6f2",
+    ink: "#1c1c1b",
+    ink2: "rgba(28, 28, 27, 0.75)",
+    ink3: "rgba(28, 28, 27, 0.62)",
+    ink4: "rgba(28, 28, 27, 0.11)",
+    hair: "rgba(28, 28, 27, 0.1)",
+    mark: "#2f6a57",
+    glass: "rgba(250, 250, 247, 0.76)",
+    glassSolid: "rgba(251, 251, 249, 0.96)",
+    glassEdge: "rgba(28, 28, 27, 0.1)",
+    glassHighlight: "rgba(255, 255, 255, 0.8)",
+    lift: "0 18px 50px rgba(20, 20, 20, 0.12), 0 2px 8px rgba(20, 20, 20, 0.07)",
+    selection: "rgba(47, 106, 87, 0.2)",
+    scheme: "light",
   },
 };
-
-export type ReaderPalette = (typeof themePalettes)[ReaderTheme];
-
-export function getReaderControlStyle(
-  palette: ReaderPalette,
-  active = false,
-  flat = false,
-): CSSProperties {
-  return {
-    backgroundColor: active
-      ? palette.controlActiveBackground
-      : palette.controlBackground,
-    color: palette.controlText,
-    boxShadow: flat ? palette.controlFlatShadow : palette.controlShadow,
-  };
-}
-
-export function getThemePreviewControlStyle(
-  palette: ReaderPalette,
-  active: boolean,
-  flat = false,
-): CSSProperties {
-  const shadow = flat ? palette.controlFlatShadow : palette.controlShadow;
-
-  return {
-    ...getReaderControlStyle(palette, false, flat),
-    boxShadow: active ? `0 0 0 1.5px ${palette.accent}, ${shadow}` : shadow,
-  };
-}
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
+export function nearest(values: number[], value: number): number {
+  return values.reduce((best, next) =>
+    Math.abs(next - value) < Math.abs(best - value) ? next : best,
+  );
+}
+
 export function isReaderTheme(value: unknown): value is ReaderTheme {
-  return value === "night" || value === "sepia";
+  return READER_THEMES.includes(value as ReaderTheme);
 }
 
 export function readJsonStorage<T>(key: string, fallback: T): T {
@@ -261,7 +232,11 @@ export function readJsonStorage<T>(key: string, fallback: T): T {
 }
 
 export function writeJsonStorage(key: string, value: unknown): void {
-  localStorage.setItem(key, JSON.stringify(value));
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be full or blocked; the reader keeps working without it.
+  }
 }
 
 export function readStoredReaderSettings(): ReaderSettings {
@@ -274,6 +249,9 @@ export function readStoredReaderSettings(): ReaderSettings {
     theme: isReaderTheme(stored.theme)
       ? stored.theme
       : DEFAULT_READER_SETTINGS.theme,
+    face: READER_FACES.includes(stored.face as ReaderFace)
+      ? (stored.face as ReaderFace)
+      : DEFAULT_READER_SETTINGS.face,
     fontScale:
       typeof stored.fontScale === "number"
         ? clamp(stored.fontScale, 80, 145)
@@ -286,6 +264,9 @@ export function readStoredReaderSettings(): ReaderSettings {
       typeof stored.width === "number"
         ? clamp(stored.width, 48, 96)
         : DEFAULT_READER_SETTINGS.width,
+    spotlight: READER_SPOTLIGHTS.includes(stored.spotlight as ReaderSpotlight)
+      ? (stored.spotlight as ReaderSpotlight)
+      : DEFAULT_READER_SETTINGS.spotlight,
   };
 }
 
@@ -307,6 +288,47 @@ export function writeReaderProgress(
     updatedAt: Date.now(),
   };
   writeJsonStorage(READER_PROGRESS_KEY, progress);
+}
+
+export function readBookmarks(itemId: string): ReaderBookmark[] {
+  const bookmarks = readJsonStorage<ReaderBookmarkMap>(
+    READER_BOOKMARKS_KEY,
+    {},
+  );
+  const list = bookmarks[itemId];
+
+  return Array.isArray(list)
+    ? list.filter(
+        (bookmark) =>
+          typeof bookmark?.cfi === "string" && typeof bookmark.id === "string",
+      )
+    : [];
+}
+
+export function writeBookmarks(
+  itemId: string,
+  list: ReaderBookmark[],
+): void {
+  const bookmarks = readJsonStorage<ReaderBookmarkMap>(
+    READER_BOOKMARKS_KEY,
+    {},
+  );
+
+  if (list.length > 0) {
+    bookmarks[itemId] = list;
+  } else {
+    delete bookmarks[itemId];
+  }
+
+  writeJsonStorage(READER_BOOKMARKS_KEY, bookmarks);
+}
+
+/** Minutes to read a span of generated epub.js locations. */
+export function minutesForLocations(locations: number): number {
+  return Math.max(
+    0,
+    Math.round((locations * CHARS_PER_LOCATION) / READING_CHARS_PER_MINUTE),
+  );
 }
 
 export function getNormalizedExtension(value?: string): string | null {

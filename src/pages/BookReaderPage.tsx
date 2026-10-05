@@ -1,31 +1,39 @@
+import "@fontsource-variable/literata/opsz.css";
+import "@fontsource-variable/literata/opsz-italic.css";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type CSSProperties,
-  type ReactNode,
 } from "react";
 import ePub, {
   type Book,
+  type Contents,
   type Location as EpubLocation,
   type NavItem,
   type Rendition,
 } from "epubjs";
 import {
+  BookCheck,
+  Bookmark,
+  BookmarkCheck,
   Download,
   ExternalLink,
   ListTree,
-  PanelRightClose,
-  Settings2,
+  MoreHorizontal,
 } from "lucide-react";
 import { Link, useParams } from "react-router-dom";
 import { BackButton } from "../components/BackButton";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
-import { Tooltip } from "../components/ui/Tooltip";
 import { WatchedStatusButton } from "../components/WatchedStatusButton";
+import {
+  SegmentedIconToolbar,
+  type SegmentedIconToolbarAction,
+} from "../components/ui/SegmentedIconToolbar";
 import { useLanguage } from "../i18n/LanguageContext";
 import {
   getBookFileUrl,
@@ -38,113 +46,119 @@ import {
   shouldOpenReaderForItem,
 } from "../lib/routes";
 import type { MediaItem } from "../lib/types";
+import { describeErrorForUser } from "../lib/userFacingError";
 import { isItemCompleted } from "../lib/watchStatus";
 import {
-  SegmentedIconToolbar,
-  type SegmentedIconToolbarAction,
-} from "../components/ui/SegmentedIconToolbar";
+  EPUB_STATIC_CSS,
+  enhanceSection,
+  getBookFontCss,
+  getEpubBlocks,
+  getEpubThemeCss,
+  hyphenateDocument,
+  readLiveAccent,
+} from "./reader/epubTypography";
 import {
-  glassIconButton,
-  glassPillButton,
-} from "../components/ui/glassControlStyles";
+  ChapterRuler,
+  ReaderContentsDrawer,
+  ReaderMoreMenu,
+  ReaderSettingsPanel,
+} from "./reader/ReaderPanels";
+import { formatDuration, formatPercent, splitNumber } from "./reader/readerText";
 import {
-  EPUB_CONTENT_DIVIDER_STYLES,
+  CHARS_PER_LOCATION,
   EPUB_PREPARATION_TIMEOUT_MS,
   EPUB_REQUEST_CREDENTIALS,
-  EPUB_REVEAL_STYLES,
-  FONT_SCALE_STEPS,
-  LINE_HEIGHT_STEPS,
   READER_SETTINGS_KEY,
-  READER_THEME_LABEL_KEYS,
-  WIDTH_STEPS,
+  SPOTLIGHT_FLOOR,
   clamp,
   flattenToc,
   getFormatLabel,
-  getReaderControlStyle,
   getReaderFormat,
-  getThemePreviewControlStyle,
+  minutesForLocations,
+  readBookmarks,
   readReaderProgress,
   readStoredReaderSettings,
   themePalettes,
+  writeBookmarks,
   writeJsonStorage,
   writeReaderProgress,
   type EpubContentView,
+  type ReaderBookmark,
+  type ReaderPalette,
   type ReaderSettings,
-  type ReaderTheme,
 } from "./reader/readerModel";
-import { describeErrorForUser } from "../lib/userFacingError";
+import {
+  ReadingLight,
+  buildBookMap,
+  chapterAt,
+  locateInBook,
+  type BookMap,
+} from "./reader/readingLight";
 
-function getEpubThemeRules(
-  settings: ReaderSettings,
-  palette: (typeof themePalettes)[ReaderTheme],
-) {
+type Panel = "settings" | "contents" | "more" | null;
+type TocEntry = NavItem & { depth: number };
+
+interface ReadingState {
+  chapterIndex: number;
+  location: number;
+  minutesLeftInChapter: number;
+  bookFraction: number;
+}
+
+interface ColumnBox {
+  left: number;
+  right: number;
+  viewport: number;
+}
+
+/** Ruler width plus its gap to the text. */
+const RULER_OFFSET = 176;
+const TIME_LEFT_OFFSET = 44;
+const TIME_LEFT_ROOM = 230;
+
+function paletteVariables(palette: ReaderPalette): CSSProperties {
   return {
-    body: {
-      color: `${palette.text} !important`,
-      background: `${palette.page} !important`,
-      "font-family": 'Georgia, "Times New Roman", ui-serif, serif !important',
-      "font-size": `${settings.fontScale}% !important`,
-      "line-height": `${settings.lineHeight} !important`,
-      margin: "0 auto !important",
-      padding:
-        "clamp(1.5rem, 4vh, 2.5rem) clamp(1.25rem, 6vw, 5rem) clamp(5.5rem, 11vh, 8rem) !important",
-      "max-width": `${settings.width}ch !important`,
-    },
-    "p, li, blockquote": {
-      "line-height": `${settings.lineHeight} !important`,
-    },
-    "h1, h2, h3, h4, h5, h6, .seyirlik-reader-heading-block": {
-      color: `${palette.accent} !important`,
-      "text-align": "center !important",
-      "font-weight": "800 !important",
-      "letter-spacing": "0 !important",
-      "line-height": "1.18 !important",
-    },
-    a: {
-      color: `${palette.accent} !important`,
-    },
-    hr: {
-      border: "0 !important",
-      height: "1px !important",
-      width: "70% !important",
-      margin: "3em auto 2.2em auto !important",
-      background:
-        "linear-gradient(to right, transparent, currentColor, transparent) !important",
-      opacity: "0.22 !important",
-    },
-    "h1::before, h2::before": {
-      content: '""',
-      display: "block !important",
-      width: "70% !important",
-      height: "1px !important",
-      margin: "0 auto 2.4em auto !important",
-      background:
-        "linear-gradient(to right, transparent, currentColor, transparent) !important",
-      opacity: "0.22 !important",
-    },
-    ".firstHeading::before": {
-      display: "none !important",
-    },
-    "h1 + h1::before, h1 + h2::before, h2 + h1::before, h2 + h2::before": {
-      display: "none !important",
-    },
-    img: {
-      "max-width": "100% !important",
-      height: "auto !important",
-    },
-    "html, body": {
-      "min-height": "100% !important",
-    },
-    "::selection": {
-      background: "rgba(45, 106, 80, 0.34)",
-    },
+    "--rd-ground": palette.ground,
+    "--rd-ink": palette.ink,
+    "--rd-ink2": palette.ink2,
+    "--rd-ink3": palette.ink3,
+    "--rd-ink4": palette.ink4,
+    "--rd-hair": palette.hair,
+    "--rd-mark": palette.mark,
+    "--rd-glass": palette.glass,
+    "--rd-glass-solid": palette.glassSolid,
+    "--rd-glass-edge": palette.glassEdge,
+    "--rd-glass-highlight": palette.glassHighlight,
+    "--rd-lift": palette.lift,
+    "--rd-selection": palette.selection,
+    "--rd-scheme": palette.scheme,
+  } as CSSProperties;
+}
+
+function glassStyle(palette: ReaderPalette): CSSProperties {
+  return {
+    backgroundColor: palette.glass,
+    color: palette.ink,
+    boxShadow: `0 0 0 1px ${palette.glassEdge}, inset 0 1px 0 ${palette.glassHighlight}, 0 8px 28px rgba(0, 0, 0, 0.18)`,
   };
+}
+
+function formatFileSize(bytes: number | undefined): string | null {
+  if (!bytes || bytes <= 0) {
+    return null;
+  }
+
+  if (bytes < 1e6) {
+    return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
+  }
+
+  return `${(bytes / 1e6).toFixed(1)} MB`;
 }
 
 function buildHtmlDocument(
   html: string,
   settings: ReaderSettings,
-  palette: (typeof themePalettes)[ReaderTheme],
+  palette: ReaderPalette,
 ): string {
   return `<!doctype html>
 <html>
@@ -153,68 +167,10 @@ function buildHtmlDocument(
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <base target="_blank" />
     <style>
-      html {
-        background: ${palette.page};
-        color: ${palette.text};
-      }
-      body {
-        margin: 0;
-        min-height: 100vh;
-        box-sizing: border-box;
-        padding: clamp(1.5rem, 4vh, 2.5rem) clamp(1.25rem, 6vw, 5rem) clamp(5.5rem, 11vh, 8rem);
-        color: ${palette.text};
-        background: ${palette.page};
-        font-family: Georgia, "Times New Roman", ui-serif, serif;
-        font-size: ${settings.fontScale}%;
-        line-height: ${settings.lineHeight};
-      }
-      body > * {
-        max-width: ${settings.width}ch;
-        margin-left: auto;
-        margin-right: auto;
-      }
-      img, video {
-        max-width: 100%;
-        height: auto;
-      }
-      a {
-        color: ${palette.accent};
-      }
-      h1, h2, h3, h4, h5, h6 {
-        color: ${palette.accent};
-        text-align: center;
-        font-weight: 800;
-        letter-spacing: 0;
-        line-height: 1.18;
-        margin: clamp(2rem, 6vh, 4.5rem) auto clamp(1.2rem, 3vh, 2rem);
-      }
-      @keyframes seyirlikReaderBlockFadeIn {
-        from {
-          opacity: 0;
-          transform: translateY(0.65rem);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0);
-        }
-      }
-      body > * {
-        opacity: 0;
-        animation: seyirlikReaderBlockFadeIn 520ms ease forwards;
-      }
-      body > *:nth-child(1) { animation-delay: 40ms; }
-      body > *:nth-child(2) { animation-delay: 85ms; }
-      body > *:nth-child(3) { animation-delay: 130ms; }
-      body > *:nth-child(4) { animation-delay: 175ms; }
-      body > *:nth-child(5) { animation-delay: 220ms; }
-      body > *:nth-child(n + 6) { animation-delay: 265ms; }
-      @media (prefers-reduced-motion: reduce) {
-        body > * {
-          opacity: 1;
-          transform: none;
-          animation: none;
-        }
-      }
+      ${getBookFontCss()}
+      ${EPUB_STATIC_CSS}
+      ${getEpubThemeCss(settings, palette, readLiveAccent())}
+      body > * { max-width: ${settings.width}ch; margin-left: auto; margin-right: auto; }
     </style>
   </head>
   <body>${html}</body>
@@ -230,131 +186,6 @@ function getTextBlocks(content: string): string[] {
   return blocks.length > 0 ? blocks : [content];
 }
 
-function getEpubRevealBlocks(document: Document): HTMLElement[] {
-  const primaryBlockSelector = [
-    "figure",
-    "picture",
-    "img",
-    "table",
-    "blockquote",
-    "pre",
-    "h1",
-    "h2",
-    "h3",
-    "h4",
-    "h5",
-    "h6",
-    "p",
-    "li",
-  ].join(",");
-  const primaryBlocks = Array.from(
-    document.querySelectorAll<HTMLElement>(primaryBlockSelector),
-  );
-  const fallbackBlocks = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "body div, body section, body article",
-    ),
-  ).filter((element) => {
-    const directText = Array.from(element.childNodes)
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent?.trim() ?? "")
-      .join("");
-
-    return Boolean(directText) && !element.querySelector(primaryBlockSelector);
-  });
-  const candidateBlocks = [...primaryBlocks, ...fallbackBlocks];
-  const candidateSet = new Set(candidateBlocks);
-
-  return candidateBlocks.filter((element) => {
-    const hasSelectedAncestor = Boolean(
-      element.parentElement?.closest(".seyirlik-reader-block"),
-    );
-
-    if (hasSelectedAncestor) {
-      return false;
-    }
-
-    let parent = element.parentElement;
-
-    while (parent && parent !== document.body) {
-      if (candidateSet.has(parent)) {
-        return false;
-      }
-
-      parent = parent.parentElement;
-    }
-
-    return Boolean(
-      element.textContent?.trim() || element.matches("img,picture,figure"),
-    );
-  });
-}
-
-function getNormalizedBlockText(element: HTMLElement): string {
-  return (element.textContent ?? "").replace(/\s+/g, " ").trim();
-}
-
-function getNumericFontWeight(element: HTMLElement): number {
-  const computedStyle =
-    element.ownerDocument.defaultView?.getComputedStyle(element);
-  const fontWeight = computedStyle?.fontWeight ?? "";
-
-  if (fontWeight === "bold") {
-    return 700;
-  }
-
-  if (fontWeight === "normal") {
-    return 400;
-  }
-
-  return Number(fontWeight) || 400;
-}
-
-function isEpubHeadingLikeBlock(element: HTMLElement, index: number): boolean {
-  const tagName = element.tagName.toLowerCase();
-
-  if (/^h[1-6]$/.test(tagName)) {
-    return true;
-  }
-
-  if (
-    element.closest("li, nav, aside") ||
-    element.matches("img,picture,figure,table,blockquote,pre")
-  ) {
-    return false;
-  }
-
-  const text = getNormalizedBlockText(element);
-
-  if (!text || text.length > 90) {
-    return false;
-  }
-
-  if (
-    /\b(chapter|part|book|prologue|epilogue|preface|introduction|contents|acknowledgements?|note on the text|bölüm|bolum|önsöz|onsoz|giriş|giris|içindekiler|icindekiler|sonsöz|sonsoz)\b/i.test(
-      text,
-    )
-  ) {
-    return true;
-  }
-
-  const identity = `${element.id} ${element.className}`.toLowerCase();
-
-  if (
-    /(title|heading|chapter|subhead|headline|baslik|başlık|bolum|bölüm|onsoz|önsöz)/i.test(
-      identity,
-    )
-  ) {
-    return true;
-  }
-
-  const wordCount = text.split(/\s+/).length;
-  const looksLikeShortHeading =
-    index < 12 && wordCount <= 8 && text.length <= 72 && !/[.!?;,]$/.test(text);
-
-  return looksLikeShortHeading && getNumericFontWeight(element) >= 700;
-}
-
 function getRenditionContents(rendition: Rendition): EpubContentView[] {
   const contents = rendition.getContents() as unknown;
 
@@ -365,36 +196,9 @@ function getRenditionContents(rendition: Rendition): EpubContentView[] {
   return contents ? [contents as EpubContentView] : [];
 }
 
-function injectEpubRevealStyles(rendition: Rendition): void {
-  getRenditionContents(rendition).forEach((content) => {
-    content.addStylesheetCss(EPUB_REVEAL_STYLES, "seyirlik-reader-reveal");
-    content.addStylesheetCss(
-      EPUB_CONTENT_DIVIDER_STYLES,
-      "seyirlik-reader-content-dividers",
-    );
-    content.addClass("seyirlik-reader-reveal");
-    getEpubRevealBlocks(content.document).forEach((element, index) => {
-      element.classList.add("seyirlik-reader-block");
-      if (isEpubHeadingLikeBlock(element, index)) {
-        element.classList.add("seyirlik-reader-heading-block");
-      }
-      element.style.animationDelay = `${Math.min(40 + index * 45, 420)}ms`;
-    });
-  });
-}
-
 function getScrollProgress(scrollElement: HTMLElement): number {
   const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
   return maxScroll > 0 ? clamp(scrollElement.scrollTop / maxScroll, 0, 1) : 0;
-}
-
-function getScrollPageNumber(scrollElement: HTMLElement): number {
-  return Math.max(
-    1,
-    Math.floor(
-      scrollElement.scrollTop / Math.max(1, scrollElement.clientHeight),
-    ) + 1,
-  );
 }
 
 function getEpubSpineLength(book: Book): number {
@@ -408,20 +212,12 @@ function getEpubSpineLength(book: Book): number {
 
 function getEpubProgressFromLocation(
   book: Book,
-  location?: EpubLocation | null,
-  cfi?: string,
-  useGeneratedLocations = book.locations.length() > 0,
+  location: EpubLocation | null | undefined,
+  cfi: string | undefined,
+  useGeneratedLocations: boolean,
 ): number | null {
   if (useGeneratedLocations && cfi) {
     const percentage = book.locations.percentageFromCfi(cfi) as number | null;
-
-    if (typeof percentage === "number" && Number.isFinite(percentage)) {
-      return clamp(percentage, 0, 1);
-    }
-  }
-
-  if (useGeneratedLocations) {
-    const percentage = location?.start?.percentage;
 
     if (typeof percentage === "number" && Number.isFinite(percentage)) {
       return clamp(percentage, 0, 1);
@@ -442,291 +238,115 @@ function getEpubProgressFromLocation(
   return clamp((start.index + sectionProgress) / spineLength, 0, 1);
 }
 
-function getEpubLocationPageNumber(
-  book: Book,
-  location: EpubLocation | null | undefined,
-  cfi: string | undefined,
-  progress: number,
-  useGeneratedLocations = book.locations.length() > 0,
-): number {
-  const generatedLocationCount = useGeneratedLocations
-    ? book.locations.length()
-    : 0;
+/**
+ * Resolves once the book's scroll height has held still briefly, or after
+ * `limitMs`. Sections loaded around a target reflow after epub.js has already
+ * scrolled to it: their content hook awaits hyphenation, then fonts land.
+ * Timers, not frames, so a background tab still settles.
+ */
+function waitForLayoutToSettle(host: HTMLElement, limitMs = 2500): Promise<void> {
+  return new Promise((resolve) => {
+    const started = performance.now();
+    let lastHeight = -1;
+    let stableSince = started;
 
-  if (generatedLocationCount > 0) {
-    const locationIndex =
-      cfi !== undefined
-        ? book.locations.locationFromCfi(cfi)
-        : location?.start?.location;
+    const tick = () => {
+      const height =
+        host.querySelector<HTMLElement>(".epub-container")?.scrollHeight ?? 0;
+      const now = performance.now();
 
-    if (
-      typeof locationIndex === "number" &&
-      Number.isFinite(locationIndex) &&
-      locationIndex >= 0
-    ) {
-      return locationIndex + 1;
-    }
+      if (height !== lastHeight) {
+        lastHeight = height;
+        stableSince = now;
+      }
 
-    return Math.round(clamp(progress, 0, 1) * (generatedLocationCount - 1)) + 1;
-  }
+      if (now - stableSince >= 300 || now - started >= limitMs) {
+        resolve();
+        return;
+      }
 
-  const displayedPage = location?.start?.displayed?.page;
-  const startIndex = location?.start?.index;
+      window.setTimeout(tick, 50);
+    };
 
-  if (typeof displayedPage === "number" && typeof startIndex === "number") {
-    return Math.max(1, startIndex + displayedPage);
-  }
-
-  return Math.max(1, Math.round(clamp(progress, 0, 1) * 100));
+    tick();
+  });
 }
 
-function getNearestStepIndex(values: number[], value: number): number {
-  return values.reduce((nearestIndex, nextValue, nextIndex) => {
-    const nearestDistance = Math.abs(values[nearestIndex] - value);
-    const nextDistance = Math.abs(nextValue - value);
-
-    return nextDistance < nearestDistance ? nextIndex : nearestIndex;
-  }, 0);
-}
-
-function LineHeightTightIcon() {
+function isEditableTarget(target: EventTarget | null): boolean {
   return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M7 7h10" />
-      <path d="M7 12h10" />
-      <path d="M7 17h10" />
-      <path d="M4.1 9.1 3 8 1.9 9.1" />
-      <path d="M3 8.25v7.5" />
-      <path d="m1.9 14.9 1.1 1.1 1.1-1.1" />
-    </svg>
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
   );
 }
 
-function LineHeightLooseIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M7 5h10" />
-      <path d="M7 12h10" />
-      <path d="M7 19h10" />
-      <path d="M3 5.25v13.5" />
-      <path d="m1.9 6.7 1.1-1.45 1.1 1.45" />
-      <path d="m1.9 17.3 1.1 1.45 1.1-1.45" />
-    </svg>
-  );
-}
-
-function TextWidthNarrowIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M8 6h8" />
-      <path d="M8 12h8" />
-      <path d="M8 18h8" />
-      <path d="M4 12h4" />
-      <path d="m6 10 2 2-2 2" />
-      <path d="M20 12h-4" />
-      <path d="m18 10-2 2 2 2" />
-    </svg>
-  );
-}
-
-function TextWidthWideIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 6h16" />
-      <path d="M4 12h16" />
-      <path d="M4 18h16" />
-      <path d="M9 12H2.5" />
-      <path d="m5 9.75-2.5 2.25L5 14.25" />
-      <path d="M15 12h6.5" />
-      <path d="m19 9.75 2.5 2.25L19 14.25" />
-    </svg>
-  );
-}
-
-function SizeStepControl({
-  label,
-  value,
-  values,
-  surfaceStyle,
-  dotStyle,
-  decreaseIcon,
-  increaseIcon,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  values: number[];
-  surfaceStyle: CSSProperties;
-  dotStyle: CSSProperties;
-  decreaseIcon?: ReactNode;
-  increaseIcon?: ReactNode;
-  onChange: (value: number) => void;
-}) {
-  const activeIndex = getNearestStepIndex(values, value);
-  const canDecrease = activeIndex > 0;
-  const canIncrease = activeIndex < values.length - 1;
-  const updateIndex = (nextIndex: number) => {
-    onChange(values[clamp(nextIndex, 0, values.length - 1)]);
-  };
-
-  return (
-    <div className="w-full max-w-[13rem]">
-      <div
-        className="relative grid h-10 grid-cols-2 overflow-hidden rounded-full bg-[#171719]/75 text-white/88 shadow-[0_0_0_1px_rgba(255,255,255,0.06),inset_0_1px_0_rgba(255,255,255,0.12),inset_0_-1px_0_rgba(0,0,0,0.3),0_10px_35px_rgba(0,0,0,0.28)] backdrop-blur-2xl"
-        style={surfaceStyle}
-      >
-        <span
-          aria-hidden="true"
-          className="pointer-events-none absolute bottom-2 top-2 left-1/2 z-10 w-px -translate-x-1/2 rounded-full bg-current opacity-25"
-          style={dotStyle}
-        />
-        <button
-          type="button"
-          aria-label={`${label}: decrease`}
-          disabled={!canDecrease}
-          onClick={() => updateIndex(activeIndex - 1)}
-          style={dotStyle}
-          className="flex h-full items-center justify-center font-black transition-[background-color,color,opacity,transform] duration-150 ease hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:pointer-events-none disabled:opacity-35 active:scale-[0.98]"
-        >
-          {decreaseIcon ?? <span className="text-lg leading-none">A</span>}
-        </button>
-        <button
-          type="button"
-          aria-label={`${label}: increase`}
-          disabled={!canIncrease}
-          onClick={() => updateIndex(activeIndex + 1)}
-          style={dotStyle}
-          className="flex h-full items-center justify-center font-black transition-[background-color,color,opacity,transform] duration-150 ease hover:bg-white/[0.08] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/30 disabled:pointer-events-none disabled:opacity-35 active:scale-[0.98]"
-        >
-          {increaseIcon ?? <span className="text-2xl leading-none">A</span>}
-        </button>
-      </div>
-      <div
-        className="mt-2 flex h-2 items-center justify-center gap-1.5"
-        style={dotStyle}
-        aria-hidden="true"
-      >
-        {values.map((stepValue, index) => (
-          <span
-            key={`${stepValue}-${index}`}
-            className={`rounded-full transition-[background-color,opacity,transform] duration-150 ${
-              index === activeIndex
-                ? "h-1.5 w-1.5 bg-current opacity-100"
-                : index < activeIndex
-                  ? "h-1.5 w-1.5 bg-slate-600 opacity-100"
-                  : "h-1.5 w-1.5 bg-slate-600 opacity-100"
-            }`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ReaderIconButton({
-  label,
-  className,
-  style,
-  disabled,
-  children,
-  onClick,
-}: {
-  label: string;
-  className: string;
-  style?: CSSProperties;
-  disabled?: boolean;
-  children: ReactNode;
-  onClick?: () => void;
-}) {
-  return (
-    <Tooltip content={label}>
-      <button
-        type="button"
-        aria-label={label}
-        disabled={disabled}
-        onClick={onClick}
-        style={style}
-        className={`${className} disabled:pointer-events-none disabled:opacity-40`}
-      >
-        {children}
-      </button>
-    </Tooltip>
-  );
+function prefersReducedMotion(): boolean {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
 }
 
 export function BookReaderPage() {
   const { itemId } = useParams<{ itemId?: string }>();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [item, setItem] = useState<MediaItem | null>(null);
   const [itemError, setItemError] = useState<string | null>(null);
   const [settings, setSettings] = useState<ReaderSettings>(
     readStoredReaderSettings,
   );
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [tocOpen, setTocOpen] = useState(false);
-  const [tocItems, setTocItems] = useState<Array<NavItem & { depth: number }>>(
-    [],
+  const [panel, setPanel] = useState<Panel>(null);
+  const [contentsTab, setContentsTab] = useState<"contents" | "bookmarks">(
+    "contents",
   );
+  const [chromeHidden, setChromeHidden] = useState(false);
+  const [toc, setToc] = useState<TocEntry[]>([]);
+  const [bookMap, setBookMap] = useState<BookMap | null>(null);
+  const [bookMeta, setBookMeta] = useState({ author: "", language: "" });
+  const [reading, setReading] = useState<ReadingState | null>(null);
+  const [columnBox, setColumnBox] = useState<ColumnBox | null>(null);
+  const [bookmarks, setBookmarks] = useState<ReaderBookmark[]>([]);
+  const [currentCfi, setCurrentCfi] = useState<string | null>(null);
+  const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [epubReady, setEpubReady] = useState(false);
   const [epubProgress, setEpubProgress] = useState(0);
   const [readerError, setReaderError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
-  const [readerPageNumber, setReaderPageNumber] = useState(1);
 
   const epubHostRef = useRef<HTMLDivElement | null>(null);
   const scrollHostRef = useRef<HTMLDivElement | null>(null);
-  const bookRef = useRef<Book | null>(null);
   const renditionRef = useRef<Rendition | null>(null);
+  const bookRef = useRef<Book | null>(null);
+  const lightRef = useRef<ReadingLight | null>(null);
+  const scheduleFrameRef = useRef<() => void>(() => undefined);
+  const measureColumnRef = useRef<() => void>(() => undefined);
+  const markerRef = useRef<HTMLDivElement | null>(null);
+  const settingsRef = useRef(settings);
+  const panelRef = useRef<Panel>(null);
+  const languageRef = useRef(language);
+  const settingsPanelRef = useRef<HTMLElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const readerKeyRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
+
+  useLayoutEffect(() => {
+    settingsRef.current = settings;
+    panelRef.current = panel;
+    languageRef.current = language;
+  });
 
   const palette = themePalettes[settings.theme];
 
   const updateSettings = useCallback((patch: Partial<ReaderSettings>) => {
-    setSettings((currentSettings) => {
-      const nextSettings = {
-        ...currentSettings,
-        ...patch,
-      };
-
-      writeJsonStorage(READER_SETTINGS_KEY, nextSettings);
-      return nextSettings;
+    setSettings((current) => {
+      const next = { ...current, ...patch };
+      writeJsonStorage(READER_SETTINGS_KEY, next);
+      return next;
     });
+  }, []);
+
+  const showChrome = useCallback(() => setChromeHidden(false), []);
+  const closePanel = useCallback(() => setPanel(null), []);
+  const togglePanel = useCallback((next: Exclude<Panel, null>) => {
+    setPanel((current) => (current === next ? null : next));
+    setChromeHidden(false);
   }, []);
 
   useEffect(() => {
@@ -768,12 +388,7 @@ export function BookReaderPage() {
     () => (item ? getReaderFormat(item) : "fallback"),
     [item],
   );
-
   const fileUrl = useMemo(() => (item ? getBookFileUrl(item.Id) : ""), [item]);
-  const downloadUrl = useMemo(
-    () => (item ? getBookFileUrl(item.Id) : ""),
-    [item],
-  );
   const ownerRoute = useMemo(() => {
     if (!item) {
       return "/home";
@@ -788,15 +403,8 @@ export function BookReaderPage() {
     : "";
   const isReaderItem = item ? shouldOpenReaderForItem(item) : true;
   const title = item?.Name ?? t("reader.title");
-  const progress = format === "epub" ? epubProgress : scrollProgress;
-  const isReaderContentReady =
-    !readerError &&
-    (format === "epub"
-      ? epubReady
-      : format === "text" || format === "html"
-        ? textContent !== null
-        : Boolean(item));
   const isCompleted = item ? isItemCompleted(item) : false;
+  const activeItemId = item?.Id;
 
   useEffect(() => {
     setPageTitle(item ? `${item.Name} · Seyirlik` : "Reader · Seyirlik", {
@@ -810,18 +418,24 @@ export function BookReaderPage() {
   }, [item, itemId]);
 
   useEffect(() => {
-    setTocItems([]);
-    setTocOpen(false);
+    setToc([]);
+    setBookMap(null);
+    setBookMeta({ author: "", language: "" });
+    setReading(null);
+    setColumnBox(null);
+    setPanel(null);
+    setChromeHidden(false);
+    setCurrentCfi(null);
+    setCurrentHref(null);
     setEpubReady(false);
     setEpubProgress(0);
     setReaderError(null);
     setTextContent(null);
     setScrollProgress(0);
-    setReaderPageNumber(1);
-  }, [item?.Id]);
+    setBookmarks(activeItemId ? readBookmarks(activeItemId) : []);
+  }, [activeItemId]);
 
-  const activeItemId = item?.Id;
-
+  /* ---------------- EPUB ---------------- */
   useEffect(() => {
     if (
       format !== "epub" ||
@@ -833,8 +447,8 @@ export function BookReaderPage() {
     }
 
     let isMounted = true;
-    const hostElement = epubHostRef.current;
-    hostElement.innerHTML = "";
+    const host = epubHostRef.current;
+    host.innerHTML = "";
     setEpubReady(false);
     setReaderError(null);
 
@@ -842,7 +456,7 @@ export function BookReaderPage() {
       openAs: "epub",
       requestCredentials: EPUB_REQUEST_CREDENTIALS,
     });
-    const rendition = book.renderTo(hostElement, {
+    const rendition = book.renderTo(host, {
       manager: "continuous",
       width: "100%",
       height: "100%",
@@ -850,29 +464,161 @@ export function BookReaderPage() {
       spread: "none",
       resizeOnOrientationChange: true,
     });
-    const currentPalette = themePalettes[settings.theme];
+    const light = new ReadingLight(host);
     const savedProgress = readReaderProgress(activeItemId);
-    let currentCfi = savedProgress?.cfi;
-    let epubScrollElement: HTMLElement | null = null;
-    let pendingProgressFrame = 0;
-    let hasGeneratedEpubLocations = false;
+    let currentCfiValue = savedProgress?.cfi;
+    let scrollElement: HTMLElement | null = null;
+    let lastScrollTop = 0;
+    let frameId = 0;
+    let measureTimer = 0;
+    let progressFrame = 0;
+    let hasLocations = false;
+    let navigationToc: TocEntry[] | null = null;
+    let map: BookMap | null = null;
+    let resolveFirstContent: () => void = () => undefined;
+    const firstContent = new Promise<void>((resolve) => {
+      resolveFirstContent = resolve;
+    });
 
     bookRef.current = book;
     renditionRef.current = rendition;
+    lightRef.current = light;
+    light.setFloor(SPOTLIGHT_FLOOR[settingsRef.current.spotlight]);
 
-    rendition.themes.register(
-      "seyirlik",
-      getEpubThemeRules(settings, currentPalette),
-    );
-    rendition.themes.select("seyirlik");
+    const runFrame = () => {
+      const position = light.frame();
 
-    const handleRendered = () => {
-      injectEpubRevealStyles(rendition);
+      if (!position || !map) {
+        return;
+      }
+
+      const location = locateInBook(map, position);
+      const chapterIndex = chapterAt(map, position.sectionIndex);
+      const chapter = map.chapters[chapterIndex];
+      const chapterFraction = chapter
+        ? clamp(
+            (location - chapter.start) / Math.max(1, chapter.end - chapter.start),
+            0,
+            1,
+          )
+        : 0;
+      const marker = markerRef.current;
+
+      if (marker) {
+        marker.style.top = `${chapterFraction * 100}%`;
+        const label = marker.firstElementChild;
+
+        if (label) {
+          label.textContent = formatPercent(chapterFraction, languageRef.current);
+        }
+      }
+
+      const next: ReadingState = {
+        chapterIndex,
+        location: Math.round(location),
+        minutesLeftInChapter: chapter
+          ? minutesForLocations(chapter.end - location)
+          : 0,
+        bookFraction: clamp(location / map.total, 0, 1),
+      };
+
+      setReading((previous) =>
+        previous &&
+        previous.chapterIndex === next.chapterIndex &&
+        previous.location === next.location &&
+        previous.minutesLeftInChapter === next.minutesLeftInChapter
+          ? previous
+          : next,
+      );
     };
 
-    rendition.on("rendered", handleRendered);
+    const scheduleFrame = () => {
+      if (frameId) {
+        return;
+      }
 
-    const updateEpubLocationProgress = (location?: EpubLocation | null) => {
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        runFrame();
+      });
+    };
+
+    /** Where the text column sits on screen, for the margin ruler and time left. */
+    const measureColumn = () => {
+      window.clearTimeout(measureTimer);
+      measureTimer = window.setTimeout(() => {
+        if (!isMounted) {
+          return;
+        }
+
+        const content = getRenditionContents(rendition)[0];
+        const body = content?.document.body;
+        const frame = content?.document.defaultView?.frameElement;
+
+        if (!body || !frame) {
+          return;
+        }
+
+        const frameRect = frame.getBoundingClientRect();
+        const bodyRect = body.getBoundingClientRect();
+        const style = content.document.defaultView!.getComputedStyle(body);
+        const next: ColumnBox = {
+          left: Math.round(frameRect.left + bodyRect.left + parseFloat(style.paddingLeft)),
+          right: Math.round(frameRect.left + bodyRect.right - parseFloat(style.paddingRight)),
+          viewport: window.innerWidth,
+        };
+
+        setColumnBox((previous) =>
+          previous &&
+          previous.left === next.left &&
+          previous.right === next.right &&
+          previous.viewport === next.viewport
+            ? previous
+            : next,
+        );
+        scheduleFrame();
+      }, 60);
+    };
+
+    scheduleFrameRef.current = scheduleFrame;
+    measureColumnRef.current = measureColumn;
+
+    const buildMapIfReady = () => {
+      if (!isMounted || !hasLocations || !navigationToc) {
+        return;
+      }
+
+      map = buildBookMap(book, navigationToc);
+      setBookMap(map);
+      scheduleFrame();
+    };
+
+    rendition.hooks.content.register(async (contents: Contents) => {
+      const view = contents as unknown as EpubContentView;
+      view.addStylesheetCss(getBookFontCss(), "seyirlik-fonts");
+      view.addStylesheetCss(EPUB_STATIC_CSS, "seyirlik-static");
+      view.addStylesheetCss(
+        getEpubThemeCss(settingsRef.current, themePalettes[settingsRef.current.theme], readLiveAccent()),
+        "seyirlik-theme",
+      );
+
+      const bookLanguage =
+        (book.packaging?.metadata?.language as string | undefined) ?? "";
+      await hyphenateDocument(view.document, bookLanguage);
+
+      if (!isMounted) {
+        return;
+      }
+
+      const blocks = getEpubBlocks(view.document);
+      enhanceSection(blocks);
+      light.add(view.document, view.sectionIndex ?? 0, blocks);
+      resolveFirstContent();
+      measureColumn();
+      scheduleFrame();
+    });
+
+    const saveLocation = (location?: EpubLocation | null) => {
       if (!isMounted) {
         return;
       }
@@ -880,107 +626,153 @@ export function BookReaderPage() {
       const currentLocation =
         location ??
         (rendition.currentLocation() as unknown as EpubLocation | undefined);
-      const nextCfi = currentLocation?.start?.cfi ?? currentCfi;
+      const nextCfi = currentLocation?.start?.cfi ?? currentCfiValue;
       const nextProgress = getEpubProgressFromLocation(
         book,
         currentLocation,
         nextCfi,
-        hasGeneratedEpubLocations,
+        hasLocations,
       );
+
+      if (currentLocation?.start?.href) {
+        setCurrentHref(currentLocation.start.href);
+      }
 
       if (nextProgress === null) {
         return;
       }
 
-      currentCfi = nextCfi;
+      currentCfiValue = nextCfi;
+      setCurrentCfi(nextCfi ?? null);
       setEpubProgress(nextProgress);
-      setReaderPageNumber(
-        getEpubLocationPageNumber(
-          book,
-          currentLocation,
-          nextCfi,
-          nextProgress,
-          hasGeneratedEpubLocations,
-        ),
-      );
       writeReaderProgress(
         activeItemId,
         nextCfi
-          ? {
-              cfi: nextCfi,
-              scrollRatio: nextProgress,
-            }
-          : {
-              scrollRatio: nextProgress,
-            },
+          ? { cfi: nextCfi, scrollRatio: nextProgress }
+          : { scrollRatio: nextProgress },
       );
     };
 
-    const handleEpubScroll = () => {
-      if (pendingProgressFrame) {
-        return;
+    const handleScroll = () => {
+      scheduleFrame();
+
+      if (scrollElement) {
+        const top = scrollElement.scrollTop;
+        const delta = top - lastScrollTop;
+        lastScrollTop = top;
+
+        if (Math.abs(delta) > 4 && panelRef.current === null) {
+          setChromeHidden(delta > 0 && top > 80);
+        }
       }
 
-      pendingProgressFrame = window.requestAnimationFrame(() => {
-        pendingProgressFrame = 0;
-        updateEpubLocationProgress();
-      });
+      if (!progressFrame) {
+        progressFrame = window.setTimeout(() => {
+          progressFrame = 0;
+          saveLocation();
+        }, 180);
+      }
     };
 
-    const attachEpubScrollTracking = () => {
+    const attachScroll = () => {
       if (!isMounted) {
         return;
       }
 
-      epubScrollElement =
-        hostElement.querySelector<HTMLElement>(".epub-container");
-
-      if (!epubScrollElement) {
-        return;
-      }
-
-      epubScrollElement.addEventListener("scroll", handleEpubScroll, {
-        passive: true,
-      });
-      updateEpubLocationProgress();
+      scrollElement = host.querySelector<HTMLElement>(".epub-container");
+      scrollElement?.addEventListener("scroll", handleScroll, { passive: true });
+      lastScrollTop = scrollElement?.scrollTop ?? 0;
+      saveLocation();
+      measureColumn();
     };
 
     const handleRelocated = (location: EpubLocation) => {
-      if (!isMounted) {
-        return;
-      }
-
-      currentCfi = location.start.cfi;
-      updateEpubLocationProgress(location);
+      currentCfiValue = location.start.cfi;
+      saveLocation(location);
     };
 
-    rendition.on("relocated", handleRelocated);
+    const handleClick = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      const selection = target?.ownerDocument?.getSelection();
 
-    const preparationTimeoutId = window.setTimeout(() => {
-      if (!isMounted) {
+      if ((selection && !selection.isCollapsed) || target?.closest?.("a")) {
         return;
       }
 
-      setReaderError(t("reader.epubTimedOut"));
+      if (panelRef.current !== null) {
+        setPanel(null);
+        return;
+      }
+
+      setChromeHidden((hidden) => !hidden);
+    };
+
+    const handleKey = (event: KeyboardEvent) => readerKeyRef.current(event);
+
+    rendition.on("relocated", handleRelocated);
+    rendition.on("click", handleClick);
+    rendition.on("keydown", handleKey);
+
+    const resizeObserver = new ResizeObserver(() => {
+      measureColumn();
+      scheduleFrame();
+    });
+    resizeObserver.observe(host);
+
+    const preparationTimeoutId = window.setTimeout(() => {
+      if (isMounted) {
+        setReaderError(t("reader.epubTimedOut"));
+      }
     }, EPUB_PREPARATION_TIMEOUT_MS);
 
     void book.loaded.navigation
       .then((navigation) => {
+        if (!isMounted) {
+          return;
+        }
+
+        navigationToc = flattenToc(navigation.toc).slice(0, 240);
+        setToc(navigationToc);
+        buildMapIfReady();
+      })
+      .catch(() => undefined);
+
+    void book.loaded.metadata
+      .then((metadata) => {
         if (isMounted) {
-          setTocItems(flattenToc(navigation.toc).slice(0, 80));
+          setBookMeta({
+            author: metadata.creator ?? "",
+            language: metadata.language ?? "",
+          });
         }
       })
       .catch(() => undefined);
 
     void rendition
       .display(savedProgress?.cfi)
-      .then(() => {
+      .then(async () => {
+        // The book's typography (fonts, hyphenation, our measure) lands in the
+        // content hook, after epub.js has already scrolled to the saved place.
+        // Going back to the same CFI once it has settled keeps the reader where
+        // they left off rather than a few lines away.
+        await Promise.race([
+          firstContent,
+          new Promise((resolve) => window.setTimeout(resolve, 2500)),
+        ]);
+
+        if (savedProgress?.cfi && isMounted) {
+          await waitForLayoutToSettle(host);
+        }
+
+        if (savedProgress?.cfi && isMounted) {
+          await rendition.display(savedProgress.cfi).catch(() => undefined);
+        }
+
         window.clearTimeout(preparationTimeoutId);
 
         if (isMounted) {
           setEpubReady(true);
-          injectEpubRevealStyles(rendition);
-          window.requestAnimationFrame(attachEpubScrollTracking);
+          window.requestAnimationFrame(attachScroll);
         }
       })
       .catch((error: unknown) => {
@@ -992,47 +784,76 @@ export function BookReaderPage() {
       });
 
     void book.ready
-      .then(() => book.locations.generate(1200))
+      .then(() => book.locations.generate(CHARS_PER_LOCATION))
       .then(() => {
-        hasGeneratedEpubLocations = true;
-        updateEpubLocationProgress(
-          rendition.location as unknown as EpubLocation | undefined,
-        );
+        if (!isMounted) {
+          return;
+        }
+
+        hasLocations = true;
+        saveLocation();
+        buildMapIfReady();
       })
       .catch(() => undefined);
 
     return () => {
       isMounted = false;
       window.clearTimeout(preparationTimeoutId);
-      if (pendingProgressFrame) {
-        window.cancelAnimationFrame(pendingProgressFrame);
-      }
-      epubScrollElement?.removeEventListener("scroll", handleEpubScroll);
-      rendition.off("rendered", handleRendered);
+      window.clearTimeout(measureTimer);
+      window.clearTimeout(progressFrame);
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      scrollElement?.removeEventListener("scroll", handleScroll);
       rendition.off("relocated", handleRelocated);
+      rendition.off("click", handleClick);
+      rendition.off("keydown", handleKey);
+      light.clear();
       rendition.destroy();
       book.destroy();
+      scheduleFrameRef.current = () => undefined;
+      measureColumnRef.current = () => undefined;
+
+      if (renditionRef.current === rendition) {
+        renditionRef.current = null;
+      }
+
       if (bookRef.current === book) {
         bookRef.current = null;
       }
-      if (renditionRef.current === rendition) {
-        renditionRef.current = null;
+
+      if (lightRef.current === light) {
+        lightRef.current = null;
       }
     };
   }, [activeItemId, fileUrl, format, t]);
 
+  // Settings apply live to every rendered section of the book.
   useEffect(() => {
     const rendition = renditionRef.current;
 
+    lightRef.current?.setFloor(SPOTLIGHT_FLOOR[settings.spotlight]);
+
     if (!rendition || format !== "epub") {
-      return;
+      return undefined;
     }
 
-    rendition.themes.register("seyirlik", getEpubThemeRules(settings, palette));
-    rendition.themes.select("seyirlik");
-    rendition.themes.fontSize(`${settings.fontScale}%`);
+    const css = getEpubThemeCss(settings, palette, readLiveAccent());
+    getRenditionContents(rendition).forEach((content) =>
+      content.addStylesheetCss(css, "seyirlik-theme"),
+    );
+
+    // Sections reflow and the iframes resize a moment after the new rules land.
+    const timers = [60, 260, 700].map((delay) =>
+      window.setTimeout(() => {
+        measureColumnRef.current();
+        scheduleFrameRef.current();
+      }, delay),
+    );
+
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, [format, palette, settings]);
 
+  /* ---------------- Plain text, HTML, images ---------------- */
   const shouldFetchText = format === "text" || format === "html";
 
   useEffect(() => {
@@ -1060,9 +881,7 @@ export function BookReaderPage() {
 
         return response.text();
       })
-      .then((content) => {
-        setTextContent(content);
-      })
+      .then((content) => setTextContent(content))
       .catch((error: unknown) => {
         if (controller.signal.aborted) {
           return;
@@ -1071,9 +890,7 @@ export function BookReaderPage() {
         setReaderError(describeErrorForUser(error, t, "reader.textLoadFailed"));
       });
 
-    return () => {
-      controller.abort();
-    };
+    return () => controller.abort();
   }, [fileUrl, format, shouldFetchText, t]);
 
   const tracksScrollHost =
@@ -1086,264 +903,361 @@ export function BookReaderPage() {
       return undefined;
     }
 
+    let lastTop = scrollElement.scrollTop;
     const handleScroll = () => {
       const nextProgress = getScrollProgress(scrollElement);
+      const delta = scrollElement.scrollTop - lastTop;
+      lastTop = scrollElement.scrollTop;
+
+      if (Math.abs(delta) > 4 && panelRef.current === null) {
+        setChromeHidden(delta > 0 && scrollElement.scrollTop > 80);
+      }
 
       setScrollProgress(nextProgress);
-      setReaderPageNumber(getScrollPageNumber(scrollElement));
-      writeReaderProgress(item.Id, {
-        scrollRatio: nextProgress,
-      });
+      writeReaderProgress(item.Id, { scrollRatio: nextProgress });
     };
 
     scrollElement.addEventListener("scroll", handleScroll, { passive: true });
-    handleScroll();
+
+    const saved = readReaderProgress(item.Id)?.scrollRatio;
+    const restoreTimer = saved
+      ? window.setTimeout(() => {
+          const maxScroll =
+            scrollElement.scrollHeight - scrollElement.clientHeight;
+          scrollElement.scrollTo({ top: Math.max(0, maxScroll * saved) });
+        }, 80)
+      : 0;
 
     return () => {
+      window.clearTimeout(restoreTimer);
       scrollElement.removeEventListener("scroll", handleScroll);
     };
   }, [item, textContent, tracksScrollHost]);
 
-  useEffect(() => {
-    const scrollElement = scrollHostRef.current;
+  /* ---------------- Keyboard ---------------- */
+  useLayoutEffect(() => {
+    readerKeyRef.current = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || isEditableTarget(event.target)) {
+        return;
+      }
 
-    if (!item || !tracksScrollHost || !scrollElement) {
-      return;
-    }
+      if (event.key === "Escape") {
+        if (panelRef.current !== null) {
+          setPanel(null);
+        }
+        return;
+      }
 
-    const savedProgress = readReaderProgress(item.Id);
+      if (panelRef.current !== null || event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
 
-    if (!savedProgress?.scrollRatio) {
-      return;
-    }
+      const scroller =
+        format === "epub"
+          ? epubHostRef.current?.querySelector<HTMLElement>(".epub-container")
+          : scrollHostRef.current;
 
-    const savedScrollRatio = savedProgress.scrollRatio;
+      if (!scroller) {
+        return;
+      }
 
-    const timeoutId = window.setTimeout(() => {
-      const maxScroll = scrollElement.scrollHeight - scrollElement.clientHeight;
-      scrollElement.scrollTo({
-        top: Math.max(0, maxScroll * savedScrollRatio),
-        behavior: "auto",
+      const page = scroller.clientHeight * 0.85;
+      const step =
+        event.key === " " || event.key === "PageDown"
+          ? event.shiftKey && event.key === " "
+            ? -page
+            : page
+          : event.key === "PageUp"
+            ? -page
+            : event.key === "ArrowDown"
+              ? 72
+              : event.key === "ArrowUp"
+                ? -72
+                : 0;
+
+      if (step === 0) {
+        return;
+      }
+
+      event.preventDefault();
+      scroller.scrollBy({
+        top: step,
+        behavior: prefersReducedMotion() ? "auto" : "smooth",
       });
-    }, 80);
-
-    return () => {
-      window.clearTimeout(timeoutId);
     };
-  }, [item, textContent, tracksScrollHost]);
+  });
 
-  const displayTocItem = useCallback((href: string) => {
-    void renditionRef.current?.display(href);
-    setTocOpen(false);
+  useEffect(() => {
+    const handleKey = (event: KeyboardEvent) => readerKeyRef.current(event);
+    window.addEventListener("keydown", handleKey);
+    return () => window.removeEventListener("keydown", handleKey);
   }, []);
 
-  const controlClass = palette.control;
-  const activeControlClass = palette.activeControl;
-  const controlSurfaceStyle = getReaderControlStyle(palette);
-  const settingsControlSurfaceStyle = getReaderControlStyle(
-    palette,
-    false,
-    true,
+  // A pointer press outside an open popover closes it.
+  useEffect(() => {
+    if (panel !== "settings" && panel !== "more") {
+      return undefined;
+    }
+
+    const handlePointer = (event: PointerEvent) => {
+      const target = event.target as Node;
+
+      if (
+        settingsPanelRef.current?.contains(target) ||
+        menuRef.current?.contains(target) ||
+        (target instanceof Element && target.closest(".rd-bar-end"))
+      ) {
+        return;
+      }
+
+      setPanel(null);
+    };
+
+    window.addEventListener("pointerdown", handlePointer);
+    return () => window.removeEventListener("pointerdown", handlePointer);
+  }, [panel]);
+
+  /* ---------------- Navigation and bookmarks ---------------- */
+  // Same settle-then-return as opening the book: the first display lands
+  // before the sections around the target have taken our typography.
+  const navigateTo = useCallback((target: string) => {
+    const rendition = renditionRef.current;
+    const host = epubHostRef.current;
+    setPanel(null);
+
+    if (!rendition || !host) {
+      return;
+    }
+
+    void rendition
+      .display(target)
+      .then(() => waitForLayoutToSettle(host))
+      .then(() =>
+        renditionRef.current === rendition ? rendition.display(target) : undefined,
+      )
+      .then(() => scheduleFrameRef.current())
+      .catch(() => undefined);
+  }, []);
+
+  const spineIndexOf = useCallback((href: string) => {
+    const section = bookRef.current?.spine.get(href.split("#")[0]) as unknown as
+      | { index?: number }
+      | null
+      | undefined;
+    return typeof section?.index === "number" ? section.index : null;
+  }, []);
+
+  // A book whose contents list has one entry (often "Start") has no chapters
+  // to speak of: the ruler and "chapter ends in" would describe the whole book.
+  const hasChapters = bookMap ? bookMap.chapters.length >= 2 : toc.length >= 2;
+  const currentChapter =
+    hasChapters && bookMap && reading && reading.chapterIndex >= 0
+      ? bookMap.chapters[reading.chapterIndex]
+      : null;
+  const fallbackChapterLabel = useMemo(() => {
+    const base = currentHref?.split("#")[0];
+    if (!base || !hasChapters) {
+      return "";
+    }
+    let label = "";
+    toc.forEach((entry) => {
+      if (entry.href.split("#")[0] === base) {
+        label ||= entry.label;
+      }
+    });
+    return label.trim();
+  }, [currentHref, hasChapters, toc]);
+  const chapterLabel = currentChapter?.label ?? fallbackChapterLabel;
+  const bookFraction =
+    format === "epub"
+      ? (reading?.bookFraction ?? epubProgress)
+      : scrollProgress;
+
+  const isBookmarked = useMemo(
+    () =>
+      bookmarks.some(
+        (bookmark) =>
+          (currentCfi !== null && bookmark.cfi === currentCfi) ||
+          (bookmark.progress !== null &&
+            Math.abs(bookmark.progress - bookFraction) < 0.0025),
+      ),
+    [bookFraction, bookmarks, currentCfi],
   );
-  const activeControlSurfaceStyle = getReaderControlStyle(palette, true);
-  const controlTextStyle: CSSProperties = { color: palette.controlText };
-  const controlMutedTextStyle: CSSProperties = {
-    color: palette.controlMutedText,
-  };
-  const activeToolbarItemStyle: CSSProperties = {
-    backgroundColor: palette.controlActiveBackground,
-    color: palette.controlText,
-  };
-  const controlDotStyle: CSSProperties = { color: palette.controlText };
-  const isTopBarPinnedOpen = settingsOpen || tocOpen;
-  const topControlVisibility = isTopBarPinnedOpen
-    ? "pointer-events-auto opacity-100 transition-opacity duration-150 ease will-change-[opacity]"
-    : "pointer-events-auto opacity-100 transition-opacity duration-150 ease will-change-[opacity] sm:pointer-events-none sm:opacity-0 sm:group-hover/reader-nav:pointer-events-auto sm:group-hover/reader-nav:opacity-100";
-  const topControlClass = controlClass;
-  const readerTopOffsetClass = settingsOpen
-    ? "top-[calc(30rem+var(--safe-area-inset-top))] min-[380px]:top-[calc(16.5rem+var(--safe-area-inset-top))] md:top-[calc(10.5rem+var(--safe-area-inset-top))]"
-    : "top-[calc(3.1rem+var(--safe-area-inset-top))]";
 
-  const readerNavHeightClass = settingsOpen
-    ? "h-[calc(30rem+var(--safe-area-inset-top))] min-[380px]:h-[calc(16.5rem+var(--safe-area-inset-top))] md:h-[calc(10.5rem+var(--safe-area-inset-top))]"
-    : "h-[calc(4rem+var(--safe-area-inset-top))]";
+  const toggleBookmark = useCallback(async () => {
+    if (!activeItemId || !currentCfi) {
+      return;
+    }
 
-  const readerContentRightOffsetClass = tocOpen
-    ? "right-0 md:right-96"
-    : "right-0";
+    if (isBookmarked) {
+      const next = bookmarks.filter(
+        (bookmark) =>
+          bookmark.cfi !== currentCfi &&
+          !(
+            bookmark.progress !== null &&
+            Math.abs(bookmark.progress - bookFraction) < 0.0025
+          ),
+      );
+      setBookmarks(next);
+      writeBookmarks(activeItemId, next);
+      return;
+    }
 
-  const tocPanelTopOffsetClass = readerTopOffsetClass;
+    let excerpt = "";
 
-  const renderSettingsPanel = () => {
-    return (
-      <div
-        aria-hidden={!settingsOpen}
-        className={`mt-1 px-3 pb-6 pt-3 sm:px-6 ${palette.pageBorder} transition-[opacity,transform] duration-[250ms] ease ${
-          settingsOpen
-            ? "pointer-events-auto translate-y-0 opacity-100"
-            : "pointer-events-none -translate-y-16 opacity-0"
-        }`}
-      >
-        <div className="mx-auto grid max-w-6xl gap-4 min-[380px]:grid-cols-2 md:grid-cols-[1.2fr_1fr_1fr_1fr]">
-          <div className="flex flex-col items-center">
-            <p
-              className={`mb-2 w-full text-center text-xs font-black uppercase ${palette.muted}`}
-              style={controlMutedTextStyle}
-            >
-              {t("reader.theme")}
-            </p>
-            <div className="flex flex-wrap justify-center gap-2">
-              {(["night", "sepia"] as ReaderTheme[]).map((theme) => {
-                const previewPalette = themePalettes[theme];
-                const isActiveTheme = settings.theme === theme;
+    try {
+      const range = await bookRef.current?.getRange(currentCfi);
+      const node = range?.startContainer;
+      const text = (node?.textContent ?? "").replace(/­/g, "");
+      excerpt = text
+        .slice(node?.nodeType === Node.TEXT_NODE ? (range?.startOffset ?? 0) : 0)
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 160);
+    } catch {
+      excerpt = "";
+    }
 
-                return (
-                  <button
-                    key={theme}
-                    type="button"
-                    onClick={() => updateSettings({ theme })}
-                    className={`${glassPillButton} gap-2 ${
-                      isActiveTheme ? "scale-[1.02]" : ""
-                    }`}
-                    style={getThemePreviewControlStyle(
-                      previewPalette,
-                      isActiveTheme,
-                      true,
-                    )}
-                  >
-                    {t(READER_THEME_LABEL_KEYS[theme])}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span
-              className={`mb-2 block w-full text-center text-xs font-black uppercase ${palette.muted}`}
-              style={controlMutedTextStyle}
-            >
-              {t("reader.fontSize")}
-            </span>
-            <SizeStepControl
-              label={t("reader.fontSize")}
-              value={settings.fontScale}
-              values={FONT_SCALE_STEPS}
-              surfaceStyle={settingsControlSurfaceStyle}
-              dotStyle={controlDotStyle}
-              onChange={(fontScale) =>
-                updateSettings({
-                  fontScale,
-                })
-              }
-            />
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span
-              className={`mb-2 block w-full text-center text-xs font-black uppercase ${palette.muted}`}
-              style={controlMutedTextStyle}
-            >
-              {t("reader.lineHeight")}
-            </span>
-            <SizeStepControl
-              label={t("reader.lineHeight")}
-              value={settings.lineHeight}
-              values={LINE_HEIGHT_STEPS}
-              surfaceStyle={controlSurfaceStyle}
-              dotStyle={controlDotStyle}
-              decreaseIcon={<LineHeightTightIcon />}
-              increaseIcon={<LineHeightLooseIcon />}
-              onChange={(lineHeight) =>
-                updateSettings({
-                  lineHeight,
-                })
-              }
-            />
-          </div>
-
-          <div className="flex flex-col items-center">
-            <span
-              className={`mb-2 block w-full text-center text-xs font-black uppercase ${palette.muted}`}
-              style={controlMutedTextStyle}
-            >
-              {t("reader.pageWidth")}
-            </span>
-            <SizeStepControl
-              label={t("reader.pageWidth")}
-              value={settings.width}
-              values={WIDTH_STEPS}
-              surfaceStyle={controlSurfaceStyle}
-              dotStyle={controlDotStyle}
-              decreaseIcon={<TextWidthNarrowIcon />}
-              increaseIcon={<TextWidthWideIcon />}
-              onChange={(width) =>
-                updateSettings({
-                  width,
-                })
-              }
-            />
-          </div>
-        </div>
-      </div>
+    const bookmark: ReaderBookmark = {
+      id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      cfi: currentCfi,
+      label: splitNumber(chapterLabel).title || title,
+      excerpt,
+      progress: bookFraction,
+      createdAt: Date.now(),
+    };
+    const next = [...bookmarks, bookmark].sort(
+      (a, b) => (a.progress ?? 0) - (b.progress ?? 0),
     );
-  };
+    setBookmarks(next);
+    writeBookmarks(activeItemId, next);
+  }, [activeItemId, bookFraction, bookmarks, chapterLabel, currentCfi, isBookmarked, title]);
 
-  const renderTocPanel = () => {
+  const removeBookmark = useCallback(
+    (id: string) => {
+      if (!activeItemId) {
+        return;
+      }
+      const next = bookmarks.filter((bookmark) => bookmark.id !== id);
+      setBookmarks(next);
+      writeBookmarks(activeItemId, next);
+    },
+    [activeItemId, bookmarks],
+  );
+
+  /* ---------------- Rendering ---------------- */
+  if (itemError) {
     return (
-      <aside
-        aria-hidden={!tocOpen}
-        className={`pointer-events-auto fixed bottom-0 right-0 z-50 flex w-full max-w-sm flex-col p-4 transition-[top,transform] duration-[250ms] ease will-change-[top,transform] ${tocPanelTopOffsetClass} ${
-          tocOpen ? "translate-x-0" : "translate-x-full"
-        }`}
-        style={{
-          backgroundColor: palette.page,
-          color: palette.text,
-        }}
-      >
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-black uppercase">
-            {t("reader.chapters")}
-          </h2>
-
-          <ReaderIconButton
-            label={t("reader.closeChapters")}
-            className={glassIconButton}
-            style={controlSurfaceStyle}
-            onClick={() => setTocOpen(false)}
-          >
-            <PanelRightClose size={18} />
-          </ReaderIconButton>
+      <main className="min-h-screen bg-black p-4 text-white">
+        <div className="mx-auto w-full max-w-3xl py-10">
+          <BackButton fallbackTo="/home" className="mb-4" />
+          <ErrorMessage title={t("reader.readerUnavailable")} message={itemError} />
         </div>
-
-        <div className="mt-4 min-h-0 flex-1 overflow-y-auto pr-1">
-          {tocItems.length > 0 ? (
-            <div className="space-y-1">
-              {tocItems.map((tocItem, index) => (
-                <button
-                  key={`${tocItem.href}-${index}`}
-                  type="button"
-                  onClick={() => displayTocItem(tocItem.href)}
-                  className={`block w-full rounded-lg px-3 py-2 text-left text-sm font-semibold transition-opacity hover:opacity-70 ${
-                    tocItem.depth > 0 ? "text-xs opacity-78" : ""
-                  }`}
-                  style={{
-                    paddingLeft: `${0.75 + tocItem.depth * 0.85}rem`,
-                  }}
-                >
-                  {tocItem.label}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className={`text-sm ${palette.muted}`}>
-              {t("reader.noChapters")}
-            </p>
-          )}
-        </div>
-      </aside>
+      </main>
     );
+  }
+
+  if (!item) {
+    return (
+      <main
+        className="seyirlik-reader-shell flex items-center justify-center"
+        style={paletteVariables(palette)}
+      >
+        <LoadingSpinner label="" className="text-current opacity-70" />
+      </main>
+    );
+  }
+
+  if (!isReaderItem) {
+    return (
+      <main className="min-h-screen bg-black p-4 text-white">
+        <div className="mx-auto w-full max-w-3xl py-10">
+          <BackButton fallbackTo={ownerRoute} className="mb-4" />
+          <ErrorMessage title={t("reader.readerUnavailable")} message={t("reader.notBook")} />
+        </div>
+      </main>
+    );
+  }
+
+  const glass = glassStyle(palette);
+  const inkStyle: CSSProperties = { color: palette.ink };
+  const activeItemStyle: CSSProperties = {
+    backgroundColor: palette.ink,
+    color: palette.ground,
   };
+  const chapterNumber = currentChapter ? splitNumber(currentChapter.label).number : "";
+  const nextChapter =
+    bookMap && reading ? (bookMap.chapters[reading.chapterIndex + 1] ?? null) : null;
+  const rulerLeft = columnBox ? columnBox.left - RULER_OFFSET : -1;
+  const showRuler =
+    format === "epub" && epubReady && currentChapter !== null && rulerLeft >= 16;
+  const timeLeftFitsMargin =
+    format === "epub" &&
+    epubReady &&
+    currentChapter !== null &&
+    reading !== null &&
+    columnBox !== null &&
+    columnBox.viewport - columnBox.right >= TIME_LEFT_ROOM;
+  // Without a margin for it (phones, narrow windows) it docks at the foot of
+  // the screen and comes and goes with the bar. The settings panel and the
+  // menu open over the right margin, and the sheet over the foot.
+  const timeLeftDocked =
+    format === "epub" && epubReady && currentChapter !== null && reading !== null && !timeLeftFitsMargin;
+  const showTimeLeft =
+    (timeLeftFitsMargin || timeLeftDocked) && panel !== "settings" && panel !== "more";
+  const sizeLabel = formatFileSize(item.MediaSources?.[0]?.Size);
+
+  const toolbarActions: SegmentedIconToolbarAction[] = [
+    ...(format === "epub"
+      ? [
+          {
+            id: "contents",
+            type: "button" as const,
+            label: t("reader.contents"),
+            icon: <ListTree />,
+            active: panel === "contents",
+            tooltip: panel !== "contents",
+            onClick: () => togglePanel("contents"),
+          },
+          {
+            id: "bookmark",
+            type: "button" as const,
+            label: isBookmarked ? t("reader.removeBookmark") : t("reader.addBookmark"),
+            icon: isBookmarked ? (
+              <BookmarkCheck style={{ color: "var(--accent, #467a6c)" }} />
+            ) : (
+              <Bookmark />
+            ),
+            disabled: !currentCfi,
+            className: "rd-bookmark-action",
+            onClick: () => void toggleBookmark(),
+          },
+        ]
+      : []),
+    {
+      id: "appearance",
+      type: "button",
+      label: t("reader.appearance"),
+      icon: (
+        <span className="rd-aa" aria-hidden="true">
+          <span>A</span>
+          <span>a</span>
+        </span>
+      ),
+      active: panel === "settings",
+      tooltip: panel !== "settings",
+      onClick: () => togglePanel("settings"),
+    },
+    {
+      id: "more",
+      type: "button",
+      label: t("reader.more"),
+      icon: <MoreHorizontal />,
+      active: panel === "more",
+      tooltip: panel !== "more",
+      onClick: () => togglePanel("more"),
+    },
+  ];
 
   const renderReaderContent = () => {
     if (readerError) {
@@ -1360,159 +1274,137 @@ export function BookReaderPage() {
 
     if (format === "epub") {
       return (
-        <div className="absolute inset-0">
+        <div className="seyirlik-epub-viewport absolute inset-0 overflow-hidden">
           <div
-            className="seyirlik-epub-viewport h-full w-full overflow-hidden"
-            style={{ background: palette.page }}
+            className="rd-preparing"
+            style={{ opacity: epubReady ? 0 : 1, pointerEvents: "none" }}
+            aria-hidden={epubReady}
           >
-            {!epubReady ? (
-              <div className="absolute inset-0 z-20 flex items-center justify-center">
-                <LoadingSpinner label="" className="text-current opacity-70" />
-              </div>
-            ) : null}
-            <div
-              ref={epubHostRef}
-              className={`h-full w-full ${epubReady ? "seyirlik-reader-fade-in" : "opacity-0"}`}
-            />
+            {coverUrl ? <img src={coverUrl} alt="" /> : null}
+            {!coverUrl ? <LoadingSpinner label="" className="text-current opacity-70" /> : null}
+            <p role="status">{t("reader.preparingBook")}</p>
           </div>
+          <div
+            ref={epubHostRef}
+            className={`h-full w-full ${epubReady ? "seyirlik-reader-fade-in" : "opacity-0"}`}
+          />
         </div>
       );
     }
 
     if (format === "pdf") {
       return (
-        <div className="absolute inset-0" style={{ background: palette.page }}>
-          <iframe
-            title={title}
-            src={fileUrl}
-            className="seyirlik-reader-fade-in h-full w-full border-0 bg-white"
-          />
-        </div>
+        <iframe
+          title={title}
+          src={fileUrl}
+          className="seyirlik-reader-fade-in absolute inset-0 h-full w-full border-0 bg-white pt-16"
+        />
       );
     }
 
     if (format === "image") {
       return (
-        <div className="absolute inset-0" style={{ background: palette.page }}>
-          <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
-            <div className="flex min-h-full items-center justify-center px-5 pb-[calc(6.5rem+var(--safe-area-inset-bottom))] pt-6 sm:px-8">
-              <img
-                src={fileUrl}
-                alt={title}
-                className="seyirlik-reader-fade-in max-h-[calc(100dvh-13rem)] max-w-full rounded-lg object-contain shadow-artwork-glow"
-              />
-            </div>
+        <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
+          <div className="flex min-h-full items-center justify-center px-5 pb-10 pt-20 sm:px-8">
+            <img
+              src={fileUrl}
+              alt={title}
+              className="seyirlik-reader-fade-in max-h-[calc(100dvh-8rem)] max-w-full rounded-lg object-contain shadow-artwork-glow"
+            />
           </div>
         </div>
       );
     }
 
     if (format === "html") {
-      return (
-        <div className="absolute inset-0" style={{ background: palette.page }}>
-          {!textContent ? (
-            <div className="flex h-full items-center justify-center">
-              <LoadingSpinner label="" className="text-current opacity-70" />
-            </div>
-          ) : (
-            <iframe
-              title={title}
-              sandbox=""
-              srcDoc={buildHtmlDocument(textContent, settings, palette)}
-              className="seyirlik-reader-fade-in h-full w-full border-0"
-              style={{ background: palette.page }}
-            />
-          )}
+      return textContent === null ? (
+        <div className="flex h-full items-center justify-center">
+          <LoadingSpinner label="" className="text-current opacity-70" />
         </div>
+      ) : (
+        <iframe
+          title={title}
+          sandbox=""
+          srcDoc={buildHtmlDocument(textContent, settings, palette)}
+          className="seyirlik-reader-fade-in absolute inset-0 h-full w-full border-0"
+          style={{ background: palette.ground }}
+        />
       );
     }
 
     if (format === "text") {
       return (
-        <div className="absolute inset-0" style={{ background: palette.page }}>
-          <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
-            {!textContent ? (
-              <div className="flex h-full items-center justify-center">
-                <LoadingSpinner label="" className="text-current opacity-70" />
-              </div>
-            ) : (
-              <article
-                className="seyirlik-reader-block-reveal mx-auto min-h-full px-5 pb-[calc(6.5rem+var(--safe-area-inset-bottom))] pt-6 sm:px-10"
-                style={{
-                  maxWidth: `${settings.width}ch`,
-                  background: palette.page,
-                  color: palette.text,
-                  fontSize: `${settings.fontScale}%`,
-                  lineHeight: settings.lineHeight,
-                }}
-              >
-                {getTextBlocks(textContent).map((block, index) => (
-                  <pre
-                    key={`${index}-${block.slice(0, 24)}`}
-                    className="m-0 whitespace-pre-wrap break-words font-serif"
-                  >
-                    {block}
-                  </pre>
-                ))}
-              </article>
-            )}
-          </div>
+        <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
+          {textContent === null ? (
+            <div className="flex h-full items-center justify-center">
+              <LoadingSpinner label="" className="text-current opacity-70" />
+            </div>
+          ) : (
+            <article
+              className="rd-plain-text seyirlik-reader-fade-in mx-auto min-h-full px-5 pb-24 pt-20 sm:px-10"
+              style={{
+                maxWidth: `${settings.width}ch`,
+                fontSize: `${settings.fontScale}%`,
+                lineHeight: settings.lineHeight,
+              }}
+            >
+              {getTextBlocks(textContent).map((block, index) => (
+                <pre
+                  key={`${index}-${block.slice(0, 24)}`}
+                  className="m-0 mb-[1em] whitespace-pre-wrap break-words font-[inherit]"
+                >
+                  {block}
+                </pre>
+              ))}
+            </article>
+          )}
         </div>
       );
     }
 
     return (
-      <div className="absolute inset-0" style={{ background: palette.page }}>
-        <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
-          <div className="seyirlik-reader-block-reveal mx-auto grid min-h-full w-full max-w-5xl items-center gap-8 px-5 pb-[calc(6.5rem+var(--safe-area-inset-bottom))] pt-6 md:grid-cols-[18rem_1fr]">
-            <div
-              className={`aspect-[2/3] overflow-hidden rounded-lg border ${palette.pageBorder}`}
-              style={{ background: palette.page }}
-            >
-              {coverUrl ? (
-                <img
-                  src={coverUrl}
-                  alt={title}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <div className="flex h-full w-full items-center justify-center p-6 text-center text-xl font-black">
-                  {title}
-                </div>
-              )}
-            </div>
-            <div>
-              <p className={`text-sm font-black uppercase ${palette.muted}`}>
-                {getFormatLabel(format)}
-              </p>
-              <h1 className="mt-3 text-3xl font-black sm:text-5xl">
-                {t("reader.unsupportedTitle")}
-              </h1>
-              <p
-                className={`mt-4 max-w-2xl text-base leading-7 ${palette.muted}`}
-              >
-                {t("reader.unsupportedMessage")}
-              </p>
-              <div className="mt-7 flex flex-wrap gap-3">
-                <a
-                  href={fileUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className={`${activeControlClass} min-h-11 gap-2`}
-                  style={activeControlSurfaceStyle}
-                >
-                  <ExternalLink size={17} />
-                  {t("reader.openOriginal")}
-                </a>
-                <a
-                  href={downloadUrl}
-                  className={`${controlClass} min-h-11 gap-2`}
-                  style={controlSurfaceStyle}
-                >
-                  <Download size={17} />
-                  {t("reader.downloadBook")}
-                </a>
+      <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
+        <div className="seyirlik-reader-fade-in mx-auto grid min-h-full w-full max-w-5xl items-center gap-8 px-5 pb-16 pt-24 md:grid-cols-[18rem_1fr]">
+          <div
+            className="aspect-[2/3] overflow-hidden rounded-xl"
+            style={{ boxShadow: `0 0 0 1px ${palette.hair}`, background: palette.ink4 }}
+          >
+            {coverUrl ? (
+              <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center p-6 text-center text-xl font-black">
+                {title}
               </div>
+            )}
+          </div>
+          <div>
+            <p className="text-[0.6875rem] font-black uppercase tracking-[0.14em]" style={{ color: palette.ink3 }}>
+              {getFormatLabel(format)}
+            </p>
+            <h1 className="mt-3 text-3xl font-black sm:text-5xl">{t("reader.unsupportedTitle")}</h1>
+            <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: palette.ink2 }}>
+              {t("reader.unsupportedMessage")}
+            </p>
+            <div className="mt-7 flex flex-wrap gap-3">
+              <a
+                href={fileUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-black"
+                style={activeItemStyle}
+              >
+                <ExternalLink size={17} />
+                {t("reader.openOriginal")}
+              </a>
+              <a
+                href={fileUrl}
+                download
+                className="inline-flex min-h-11 items-center gap-2 rounded-full px-5 text-sm font-black"
+                style={glass}
+              >
+                <Download size={17} />
+                {t("reader.downloadBook")}
+              </a>
             </div>
           </div>
         </div>
@@ -1520,237 +1412,139 @@ export function BookReaderPage() {
     );
   };
 
-  if (itemError) {
-    return (
-      <main className="min-h-screen bg-black p-4 text-white">
-        <div className="mx-auto w-full max-w-3xl py-10">
-          <BackButton fallbackTo="/home" className="mb-4" />
-          <ErrorMessage
-            title={t("reader.readerUnavailable")}
-            message={itemError}
-          />
-        </div>
-      </main>
-    );
-  }
-
-  if (!item) {
-    return (
-      <main
-        className={`flex min-h-screen items-center justify-center ${palette.shell}`}
-        style={{ backgroundColor: palette.page, color: palette.text }}
-      >
-        <LoadingSpinner label="" className="text-current opacity-70" />
-      </main>
-    );
-  }
-
-  if (!isReaderItem) {
-    return (
-      <main className="min-h-screen bg-black p-4 text-white">
-        <div className="mx-auto w-full max-w-3xl py-10">
-          <BackButton fallbackTo={ownerRoute} className="mb-4" />
-          <ErrorMessage
-            title={t("reader.readerUnavailable")}
-            message={t("reader.notBook")}
-          />
-        </div>
-      </main>
-    );
-  }
-
-  const readerToolbarActions: SegmentedIconToolbarAction[] = [
-    ...(tocItems.length > 0
-      ? [
-          {
-            id: "chapters",
-            type: "button" as const,
-            label: t("reader.chapters"),
-            icon: <ListTree />,
-            active: tocOpen,
-            className: "hidden sm:inline-flex",
-            onClick: () => {
-              setTocOpen((isOpen) => !isOpen);
-            },
-          },
-        ]
-      : []),
-    {
-      id: "watched-status",
-      type: "custom",
-      label: isCompleted
-        ? t("details.removeWatchedStatus")
-        : t("reader.markFinished"),
-      active: isCompleted,
-      className: "hidden sm:inline-flex",
-      render: (className, style) => (
-        <WatchedStatusButton
-          scope="item"
-          action={isCompleted ? "remove" : "mark"}
-          item={item}
-          label={
-            isCompleted
-              ? t("details.removeWatchedStatus")
-              : t("reader.markFinished")
-          }
-          onReset={(items) => {
-            const updatedItem = items.find(
-              (changedItem) => changedItem.Id === item.Id,
-            );
-
-            if (updatedItem) {
-              setItem(updatedItem);
-            }
-          }}
-          className={className}
-          style={style}
-        />
-      ),
-    },
-    {
-      id: "open-original",
-      type: "anchor",
-      label: t("reader.openOriginal"),
-      href: fileUrl,
-      target: "_blank",
-      icon: <ExternalLink />,
-      className: "hidden sm:inline-flex",
-    },
-    {
-      id: "download",
-      type: "anchor",
-      label: t("reader.downloadBook"),
-      href: downloadUrl,
-      icon: <Download />,
-    },
-    {
-      id: "settings",
-      type: "button",
-      label: t("reader.settings"),
-      icon: <Settings2 />,
-      active: settingsOpen,
-      onClick: () => {
-        setSettingsOpen((isOpen) => !isOpen);
-      },
-    },
-  ];
-
   return (
     <main
-      className={`seyirlik-reader-shell relative h-dvh overflow-hidden ${palette.shell}`}
-      style={
-        {
-          "--accent": palette.accent,
-          backgroundColor: palette.page,
-          color: palette.text,
-        } as CSSProperties
-      }
+      className="seyirlik-reader-shell"
+      data-chrome={chromeHidden && panel === null ? "hidden" : "shown"}
+      style={paletteVariables(palette)}
+      lang={bookMeta.language || undefined}
     >
-      <style>{`
-    .seyirlik-reader-shell .seyirlik-epub-viewport .epub-container {
-      scrollbar-width: none;
-      -ms-overflow-style: none;
-    }
+      <div className="rd-stage">{renderReaderContent()}</div>
 
-    .seyirlik-reader-shell .seyirlik-epub-viewport .epub-container::-webkit-scrollbar {
-      width: 0;
-      height: 0;
-      display: none;
-    }
-  `}</style>
-
-      <div
-        className={`absolute left-0 bottom-0 z-10 transition-[top,right] duration-300 ease ${readerTopOffsetClass} ${readerContentRightOffsetClass}`}
-      >
-        {renderReaderContent()}
+      <div className="rd-progress" aria-hidden="true">
+        <span style={{ transform: `scaleX(${clamp(bookFraction, 0, 1)})` }} />
       </div>
 
-      <div
-        className="fixed inset-x-0 top-0 z-[70] h-[0.1rem]"
-        style={{ backgroundColor: palette.page }}
-      >
-        <div
-          className="h-full bg-[var(--accent)]"
-          style={{ width: `${clamp(progress, 0, 1) * 100}%` }}
-        />
-      </div>
+      <div className="rd-hover-strip" onPointerEnter={showChrome} aria-hidden="true" />
 
-      <div className="pointer-events-none relative z-30">
-        <div
-          className={`group/reader-nav pointer-events-auto fixed inset-x-0 top-0 z-[60] overflow-visible pt-[calc(0.35rem+var(--safe-area-inset-top))] transition-[height] duration-200 ease ${readerNavHeightClass} ${palette.pageBorder}`}
-          style={{ backgroundColor: palette.page, color: palette.text }}
-        >
-          <header className="relative grid h-10 w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 px-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)_minmax(0,1fr)] sm:px-3">
-            <div
-              className={`flex min-w-0 items-center gap-2 ${topControlVisibility}`}
-            >
-              <BackButton
-                fallbackTo={ownerRoute}
-                className="shrink-0 p-[0.05rem]"
-                style={controlSurfaceStyle}
-                buttonStyle={controlTextStyle}
-                label=""
-                noYShift
-              />
-              {tocItems.length > 0 ? (
-                <ReaderIconButton
-                  label={t("reader.chapters")}
-                  className={`${glassIconButton} sm:hidden`}
-                  style={
-                    tocOpen ? activeControlSurfaceStyle : controlSurfaceStyle
-                  }
-                  onClick={() => setTocOpen((isOpen) => !isOpen)}
-                >
-                  <ListTree size={18} />
-                </ReaderIconButton>
-              ) : null}
-              <Link
-                to={ownerRoute}
-                className={`${topControlClass} hidden shrink-0 sm:inline-flex`}
-                style={controlSurfaceStyle}
-              >
-                {t("common.books")}
-              </Link>
-            </div>
-
-            <h1
-              className={`pointer-events-none absolute left-1/2 w-full max-w-24 -translate-x-1/2 truncate px-1 text-center text-sm font-black transition-[opacity,transform] duration-250 ease sm:static sm:max-w-none sm:translate-x-0 sm:px-3 sm:text-base ${
-                isReaderContentReady
-                  ? "translate-y-0 opacity-70 sm:group-hover/reader-nav:opacity-100"
-                  : "translate-y-1 opacity-0"
-              }`}
-              style={{ color: palette.text }}
-            >
-              {title}
-            </h1>
-
-            <div
-              className={`ml-auto flex min-w-0 items-center justify-end ${topControlVisibility}`}
-            >
-              <SegmentedIconToolbar
-                actions={readerToolbarActions}
-                ariaLabel={t("reader.settings")}
-                size="md"
-                style={controlSurfaceStyle}
-                itemStyle={controlTextStyle}
-                activeItemStyle={activeToolbarItemStyle}
-                inactiveItemStyle={controlTextStyle}
-              />
-            </div>
-          </header>
-          {renderSettingsPanel()}
+      <header className="rd-bar" onFocusCapture={showChrome}>
+        <div className="rd-bar-start">
+          <BackButton
+            fallbackTo={ownerRoute}
+            className="shrink-0 p-[0.05rem]"
+            style={glass}
+            buttonStyle={inkStyle}
+            label=""
+            noYShift
+          />
+          <Link to={ownerRoute} className="rd-crumb">
+            {t("common.books")}
+          </Link>
         </div>
 
-        {renderTocPanel()}
-      </div>
+        <div className="rd-titles">
+          <h1 className="rd-title">{title}</h1>
+          {bookMeta.author || chapterLabel ? (
+            <div className="rd-subtitle">
+              {bookMeta.author ? (
+                <span className="rd-subtitle-author">{bookMeta.author}</span>
+              ) : null}
+              {bookMeta.author && chapterLabel ? <i aria-hidden="true" /> : null}
+              {chapterLabel ? <span>{splitNumber(chapterLabel).title}</span> : null}
+            </div>
+          ) : null}
+        </div>
 
-      <div
-        className={`${glassPillButton} pointer-events-none fixed bottom-[calc(0.85rem+var(--safe-area-inset-bottom))] left-1/2 z-30 min-w-10 -translate-x-1/2 px-3 tabular-nums backdrop-blur-sm backdrop-saturate-150 ${
-          settings.theme === "night" ? "bg-black/20" : "bg-white/20"
-        }`}
-      >
-        {readerPageNumber}
-      </div>
+        <div className="rd-bar-end">
+          <SegmentedIconToolbar
+            actions={toolbarActions}
+            ariaLabel={t("reader.settings")}
+            size="md"
+            style={glass}
+            itemStyle={inkStyle}
+            activeItemStyle={activeItemStyle}
+            inactiveItemStyle={inkStyle}
+            activeItemClassName="shadow-sm"
+            inactiveItemClassName="hover:bg-[var(--rd-ink4)]"
+          />
+        </div>
+      </header>
+
+      {showRuler && currentChapter ? (
+        <ChapterRuler
+          ref={markerRef}
+          left={rulerLeft}
+          chapter={currentChapter}
+          next={nextChapter}
+          chapterNumber={chapterNumber}
+        />
+      ) : null}
+
+      {showTimeLeft && reading ? (
+        <div
+          className="rd-timeleft"
+          data-docked={timeLeftDocked || undefined}
+          style={timeLeftDocked ? undefined : { left: (columnBox?.right ?? 0) + TIME_LEFT_OFFSET }}
+        >
+          {t("reader.toChapterEnd")}{" "}
+          <b>≈ {formatDuration(reading.minutesLeftInChapter, t)}</b>
+        </div>
+      ) : null}
+
+      <ReaderSettingsPanel
+        ref={settingsPanelRef}
+        open={panel === "settings"}
+        settings={settings}
+        showReadingLight={format === "epub"}
+        onChange={updateSettings}
+      />
+
+      <ReaderMoreMenu
+        ref={menuRef}
+        open={panel === "more"}
+        fileUrl={fileUrl}
+        downloadUrl={fileUrl}
+        sizeLabel={sizeLabel ? `${getFormatLabel(format)} · ${sizeLabel}` : null}
+        onClose={closePanel}
+        finishedControl={
+          <WatchedStatusButton
+            scope="item"
+            action={isCompleted ? "remove" : "mark"}
+            item={item}
+            showLabel
+            iconSize={18}
+            icon={<BookCheck size={18} />}
+            label={isCompleted ? t("reader.markUnfinished") : t("reader.markFinished")}
+            className="rd-menu-item"
+            onReset={(items) => {
+              const updated = items.find((changed) => changed.Id === item.Id);
+              if (updated) {
+                setItem(updated);
+              }
+            }}
+          />
+        }
+      />
+
+      {format === "epub" ? (
+        <ReaderContentsDrawer
+          open={panel === "contents"}
+          tab={contentsTab}
+          onTab={setContentsTab}
+          title={title}
+          author={bookMeta.author}
+          coverUrl={coverUrl}
+          toc={toc}
+          map={bookMap}
+          location={reading?.location ?? null}
+          currentHref={currentHref}
+          bookmarks={bookmarks}
+          spineIndexOf={spineIndexOf}
+          onNavigate={navigateTo}
+          onRemoveBookmark={removeBookmark}
+          onClose={closePanel}
+        />
+      ) : null}
     </main>
   );
 }

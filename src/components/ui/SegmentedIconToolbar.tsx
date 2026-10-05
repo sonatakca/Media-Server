@@ -14,6 +14,8 @@ type SharedActionProps = {
   active?: boolean;
   disabled?: boolean;
   className?: string;
+  /** False withholds the tooltip, e.g. while the action's own panel is open. */
+  tooltip?: boolean;
 };
 
 type ButtonAction = SharedActionProps & {
@@ -133,7 +135,7 @@ export function SegmentedIconToolbar({
 
         if (action.type === "button") {
           return (
-            <Tooltip key={action.id} content={action.label}>
+            <Tooltip key={action.id} content={action.label} disabled={action.tooltip === false}>
               <button
                 type="button"
                 aria-label={action.label}
@@ -151,7 +153,7 @@ export function SegmentedIconToolbar({
 
         if (action.type === "link") {
           return (
-            <Tooltip key={action.id} content={action.label}>
+            <Tooltip key={action.id} content={action.label} disabled={action.tooltip === false}>
               <Link
                 to={action.to}
                 aria-label={action.label}
@@ -166,7 +168,7 @@ export function SegmentedIconToolbar({
 
         if (action.type === "anchor") {
           return (
-            <Tooltip key={action.id} content={action.label}>
+            <Tooltip key={action.id} content={action.label} disabled={action.tooltip === false}>
               <a
                 href={action.href}
                 target={action.target}
@@ -183,7 +185,7 @@ export function SegmentedIconToolbar({
         }
 
         return (
-          <Tooltip key={action.id} content={action.label}>
+          <Tooltip key={action.id} content={action.label} disabled={action.tooltip === false}>
             {action.render(actionClassName, actionStyle)}
           </Tooltip>
         );
