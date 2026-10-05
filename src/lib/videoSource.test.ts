@@ -214,6 +214,38 @@ describe("videoSource", () => {
     expect(shouldUseNativeHls(video)).toBe(true);
   });
 
+  it("locks a letterboxed ladder by rung class, not frame height", () => {
+    // A 2.39:1 film's "1440p" rung is 2560x1066. Compared by frame height it
+    // fits under a 1080p lock, so the lock played the 1440p rung.
+    setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
+    const attachment = attachSourceToVideo(
+      createVideo(""),
+      "http://example.test/play/master.m3u8",
+      "application/vnd.apple.mpegurl",
+    );
+    const hls = hlsMock.instances[0];
+    if (!hls) throw new Error("hls.js was not attached");
+    hls.levels = [
+      { width: 1280, height: 534, bitrate: 4_500_000 },
+      { width: 1920, height: 800, bitrate: 8_400_000 },
+      { width: 2560, height: 1066, bitrate: 12_000_000 },
+      { width: 3840, height: 1600, bitrate: 15_800_000 },
+    ];
+    hls.trigger("manifestParsed", {});
+
+    attachment.adaptiveController?.setQualityHeight(1080, 1080);
+    expect(hls.loadLevel).toBe(1);
+    expect(hls.autoLevelCapping).toBe(1);
+
+    // A mode ceiling is a class too.
+    attachment.adaptiveController?.setQualityHeight(
+      null,
+      1440,
+      "higher-resolution",
+    );
+    expect(hls.autoLevelCapping).toBe(2);
+  });
+
   it("applies a manual rung ahead of the play head and returns to automatic without flushing", () => {
     setUserAgent("Mozilla/5.0 Chrome/149.0.0.0 Safari/537.36");
     const onAdaptiveLevelChanged = vi.fn();

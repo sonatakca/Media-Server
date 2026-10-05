@@ -600,6 +600,28 @@ export function attachSourceToVideo(
     };
 
     /**
+     * The best rung of a named class or below — what a lock or a mode ceiling
+     * means. Compared by class, not frame height: a letterboxed "1440p" rung
+     * is 2560x1066, so a frame-height comparison let a 1080p lock play the
+     * 1440p rung. Frame height stays right for the display ceiling above,
+     * which is a size in pixels.
+     */
+    const levelAtOrBelowClass = (rungClass: number): number => {
+      const allowed = hls.levels
+        .map((level, index) => ({
+          index,
+          rungClass: canonicalRungClass(level.width ?? 0, level.height ?? 0),
+          bitrate: level.averageBitrate || level.bitrate || 0,
+        }))
+        .filter((level) => level.rungClass <= rungClass)
+        .sort(
+          (left, right) =>
+            right.rungClass - left.rungClass || right.bitrate - left.bitrate,
+        );
+      return allowed[0]?.index ?? levelAtOrBelow(rungClass);
+    };
+
+    /**
      * The tallest rung this player is physically able to show, or null when
      * that cannot be known yet.
      *
@@ -835,8 +857,10 @@ export function attachSourceToVideo(
       // target owns the cap; applying the display limit a second time would
       // erase Higher Quality's deliberate one-rung upward bias.
       const display = displayCapHeight();
-      const ceiling = maximumHeight ?? display;
-      hls.autoLevelCapping = levelAtOrBelow(ceiling);
+      hls.autoLevelCapping =
+        maximumHeight !== null
+          ? levelAtOrBelowClass(maximumHeight)
+          : levelAtOrBelow(display);
 
       if (lockedHeight === null) {
         /*
@@ -863,7 +887,7 @@ export function attachSourceToVideo(
       // replaces the buffer ahead of the play head while leaving the fragment
       // currently on screen alone, so the change lands quickly without the
       // black frame that flushing everything (`currentLevel`) would cause.
-      const level = levelAtOrBelow(lockedHeight);
+      const level = levelAtOrBelowClass(lockedHeight);
       driveLevel(level, "locked");
     };
 
