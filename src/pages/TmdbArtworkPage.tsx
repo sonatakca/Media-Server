@@ -50,6 +50,8 @@ import {
 import { LogoLayoutEditor } from "./admin/LogoLayoutEditor";
 import { notify } from "../lib/notifications/notificationStore";
 import { useLanguage } from "../i18n/LanguageContext";
+import type { TranslationKey } from "../i18n/translations";
+import { describeErrorDetail } from "../lib/userFacingError";
 import { TitlePoster } from "../components/admin/TitlePoster";
 import {
   ARTWORK_KINDS,
@@ -84,8 +86,12 @@ function errorCodeOf(error: unknown): unknown {
     : undefined;
 }
 
-function messageOf(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+function messageOf(
+  error: unknown,
+  t: (key: TranslationKey) => string,
+  fallback: string,
+): string {
+  return describeErrorDetail(error, t) || fallback;
 }
 
 const sectionCard = "rounded-3xl border border-white/10 bg-white/[0.03] p-5";
@@ -192,6 +198,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
           tone: "error",
           message: messageOf(
             error,
+            translate.current,
             translate.current("tmdbArtwork.couldNotLoadItems"),
           ),
         });
@@ -326,7 +333,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
     } catch (error) {
       setMatchStatus({
         tone: "error",
-        message: messageOf(error, t("tmdbArtwork.couldNotSearch")),
+        message: messageOf(error, t, t("tmdbArtwork.couldNotSearch")),
       });
     }
   }
@@ -347,7 +354,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
     } catch (error) {
       setMatchStatus({
         tone: "error",
-        message: messageOf(error, t("tmdbArtwork.couldNotIdentify")),
+        message: messageOf(error, t, t("tmdbArtwork.couldNotIdentify")),
       });
     }
   }
@@ -370,7 +377,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
       await refreshTitle(id);
       setArtworkStatus({ tone: "success", message: doneMessage });
     } catch (error) {
-      const message = messageOf(error, failMessage);
+      const message = messageOf(error, t, failMessage);
       setArtworkStatus({ tone: "error", message });
       notify({
         tone: "error",
@@ -432,7 +439,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
         message:
           errorCodeOf(error) === "PROVIDER_ID_MISSING"
             ? t("tmdbArtwork.itemMetadataRequiresMatch")
-            : messageOf(error, t("tmdbArtwork.couldNotLoadItemMetadata")),
+            : messageOf(error, t, t("tmdbArtwork.couldNotLoadItemMetadata")),
       });
     }
   }
@@ -460,7 +467,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
     } catch (error) {
       setLayoutStatus({
         tone: "error",
-        message: messageOf(error, t("logoLayout.couldNotSave")),
+        message: messageOf(error, t, t("logoLayout.couldNotSave")),
       });
     }
   }
@@ -495,7 +502,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
     } catch (error) {
       setDisplayStatus({
         tone: "error",
-        message: messageOf(error, t("tmdbArtwork.couldNotLoadItemMetadata")),
+        message: messageOf(error, t, t("tmdbArtwork.couldNotLoadItemMetadata")),
       });
     }
   }

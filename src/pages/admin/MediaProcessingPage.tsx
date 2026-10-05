@@ -115,6 +115,7 @@ import {
   moveToFront,
 } from "./queueArrangement";
 import { useQueueSortable } from "./useQueueSortable";
+import { describeErrorForUser } from "../../lib/userFacingError";
 import { formatTemplate } from "./libraryMaintenanceModel";
 import { ProcessingSeriesTree } from "./ProcessingSeriesTree";
 import {
@@ -181,7 +182,11 @@ const LIVE_TICK_MS = 250;
 type PreviewLoadState =
   | { status: "waiting" | "loading" }
   | { status: "ready"; value: ProcessingPreview }
-  | { status: "error"; message: string };
+  /*
+   * The failure itself, not its text: the text is chosen at render, so it is
+   * in whichever language the page is in by then.
+   */
+  | { status: "error"; error: unknown };
 
 // React's development Strict Mode starts effects twice. Sharing only in-flight
 // probes keeps that safety check from analysing the same media file twice,
@@ -1382,7 +1387,7 @@ export function MediaProcessingPage() {
             ...current,
             [item.Id]: {
               status: "error",
-              message: error instanceof Error ? error.message : "",
+              error,
             },
           }));
         }
@@ -1511,33 +1516,27 @@ export function MediaProcessingPage() {
     return () => window.clearInterval(timer);
   }, [live]);
 
-  const runPreview = useCallback(
-    async (itemId: string) => {
+  const runPreview = useCallback(async (itemId: string) => {
+    setPreviews((current) => ({
+      ...current,
+      [itemId]: { status: "loading" },
+    }));
+    try {
+      const value = await loadProcessingPreview(itemId);
       setPreviews((current) => ({
         ...current,
-        [itemId]: { status: "loading" },
+        [itemId]: { status: "ready", value },
       }));
-      try {
-        const value = await loadProcessingPreview(itemId);
-        setPreviews((current) => ({
-          ...current,
-          [itemId]: { status: "ready", value },
-        }));
-      } catch (error) {
-        setPreviews((current) => ({
-          ...current,
-          [itemId]: {
-            status: "error",
-            message:
-              error instanceof Error
-                ? error.message
-                : t("processing.previewUnavailable"),
-          },
-        }));
-      }
-    },
-    [t],
-  );
+    } catch (error) {
+      setPreviews((current) => ({
+        ...current,
+        [itemId]: {
+          status: "error",
+          error,
+        },
+      }));
+    }
+  }, []);
 
   const startJob = useCallback(
     async (itemId: string) => {
@@ -1550,10 +1549,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
       } finally {
         setStartingItemId(null);
@@ -1583,10 +1579,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
       } finally {
         setStartingItemId(null);
@@ -1630,10 +1623,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
       } finally {
         setBusy(null);
@@ -1712,10 +1702,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
         // The preview is re-read on failure too: a refusal is nearly always the
         // server disagreeing with what this page was still showing.
@@ -1816,10 +1803,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
 
         await refreshOverview();
@@ -1840,10 +1824,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
       } finally {
         setRemovingJobIds((current) => {
@@ -1992,10 +1973,7 @@ export function MediaProcessingPage() {
         setQueueOverride(null);
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("processing.queueOrder.failed"),
+          title: describeErrorForUser(error, t, "processing.queueOrder.failed"),
         });
       } finally {
         setReorderBusy(false);
@@ -2225,10 +2203,7 @@ export function MediaProcessingPage() {
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("common.somethingWentWrong"),
+          title: describeErrorForUser(error, t),
         });
       } finally {
         await refreshOverview();
@@ -2475,9 +2450,11 @@ export function MediaProcessingPage() {
                       await refreshOverview();
                     } catch (error) {
                       setStorageNotice(
-                        error instanceof Error
-                          ? error.message
-                          : t("processing.storage.verifyFailed"),
+                        describeErrorForUser(
+                          error,
+                          t,
+                          "processing.storage.verifyFailed",
+                        ),
                       );
                     } finally {
                       setStorageBusy(false);
@@ -2513,9 +2490,11 @@ export function MediaProcessingPage() {
                         await refreshOverview();
                       } catch (error) {
                         setStorageNotice(
-                          error instanceof Error
-                            ? error.message
-                            : t("processing.storage.adoptFailed"),
+                          describeErrorForUser(
+                            error,
+                            t,
+                            "processing.storage.adoptFailed",
+                          ),
                         );
                       } finally {
                         setStorageBusy(false);
@@ -2538,9 +2517,11 @@ export function MediaProcessingPage() {
                         await refreshOverview();
                       } catch (error) {
                         setStorageNotice(
-                          error instanceof Error
-                            ? error.message
-                            : t("processing.storage.resumeFailed"),
+                          describeErrorForUser(
+                            error,
+                            t,
+                            "processing.storage.resumeFailed",
+                          ),
                         );
                       } finally {
                         setStorageBusy(false);
@@ -2923,8 +2904,11 @@ export function MediaProcessingPage() {
                         ) : state.status === "error" ? (
                           <div className="flex min-h-24 flex-col items-start justify-center gap-2 rounded-xl border border-rose-400/20 bg-rose-400/[0.06] p-3">
                             <p className="line-clamp-2 text-xs text-rose-200/80">
-                              {state.message ||
-                                t("processing.previewUnavailable")}
+                              {describeErrorForUser(
+                                state.error,
+                                t,
+                                "processing.previewUnavailable",
+                              )}
                             </p>
                             <button
                               type="button"

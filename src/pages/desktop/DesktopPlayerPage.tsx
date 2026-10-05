@@ -35,6 +35,7 @@ import {
   getInitialPlaybackSeconds,
   getPlayerLoadingBackdropUrl,
 } from "../player/playerPageModel";
+import { describeErrorForUser } from "../../lib/userFacingError";
 
 export function DesktopPlayerPage() {
   const { itemId } = useParams<{ itemId: string }>();
@@ -84,9 +85,7 @@ export function DesktopPlayerPage() {
       } catch (error) {
         if (isMounted) {
           setItemError(
-            error instanceof Error
-              ? error.message
-              : t("player.couldNotLoadItem"),
+            describeErrorForUser(error, t, "player.couldNotLoadItem"),
           );
         }
       }

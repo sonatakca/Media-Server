@@ -2257,4 +2257,37 @@ export const en = {
   "admin.monitoring.choice.inherit": "Follow the level above",
   "admin.monitoring.choice.monitored": "Monitored",
   "admin.monitoring.choice.unmonitored": "Not monitored",
+  "apiError.withDetail": "{message}: {detail}",
+  "apiError.invalidResponse":
+    "Seyirlik returned a response this page could not read.",
+  "apiError.requestNotSent":
+    "The request could not be prepared, so it was not sent.",
+  "apiError.requestNotVerified":
+    "This request could not be verified. Refresh the page and try again.",
+  "apiError.requestCancelled": "The request was cancelled.",
+  "apiError.network": "Seyirlik could not reach the server.",
+  "apiError.requestFailed": "The request to Seyirlik failed.",
+  "apiError.authRequired": "Your session has ended. Sign in again.",
+  "apiError.forbidden": "You do not have permission to do this.",
+  "apiError.rateLimited": "Too many attempts. Wait a moment and try again.",
+  "apiError.bodyTooLarge": "The request is too large to send.",
+  "apiError.internal": "Seyirlik ran into an internal error.",
+  "apiError.notFound": "The requested item could not be found.",
+  "apiError.sourceUnavailable":
+    "The source file for this title is no longer on disk.",
+  "apiError.processingJobNotFound": "The processing job could not be found.",
+  "apiError.processingJobExists":
+    "This file already has a processing job that has not finished.",
+  "apiError.processingJobActive": "This job has not finished yet.",
+  "apiError.processingJobNotResumable":
+    "This job has finished. Use retry to run it again.",
+  "apiError.processingJobCancelling":
+    "This job is being cancelled and cannot be resumed.",
+  "apiError.processingAlreadyCurrent":
+    "A current package for this exact source already exists.",
+  "apiError.processingStorageGuarded":
+    "Processing is held until the storage is checked. Verify and resume the storage first.",
+  "apiError.processingStorageNotVerified":
+    "Verify the storage before resuming it.",
+  "apiError.processingStorageUnavailable": "The media volume is not available.",
 };

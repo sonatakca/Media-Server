@@ -27,6 +27,10 @@ import {
 import { setPageTitle } from "../lib/pageTitle";
 import type { MediaUser, MediaUserPolicy } from "../lib/types";
 import { useLanguage } from "../i18n/LanguageContext";
+import {
+  describeErrorDetail,
+  describeErrorForUser,
+} from "../lib/userFacingError";
 import type { TranslationKey } from "../i18n/translations";
 
 type ActionStatus = "idle" | "loading" | "success" | "error";
@@ -266,7 +270,8 @@ export function UserManagementPage() {
     } catch (error) {
       setLoadState({
         status: "error",
-        message: error instanceof Error ? error.message : String(error),
+        message:
+          describeErrorDetail(error, t) || t("common.somethingWentWrong"),
       });
     }
   };
@@ -389,7 +394,7 @@ export function UserManagementPage() {
     } catch (error) {
       setSaveState({
         status: "error",
-        message: error instanceof Error ? error.message : String(error),
+        message: describeErrorForUser(error, t),
       });
     }
   };

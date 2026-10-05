@@ -6,6 +6,7 @@ import {
   uploadTitleSubtitle,
 } from "../../lib/libraryAdminApi";
 import { setWanted } from "../../lib/wantedApi";
+import { describeErrorDetail } from "../../lib/userFacingError";
 
 export type Notice = { tone: "ok" | "error"; text: string } | null;
 
@@ -41,11 +42,9 @@ export function useTitleActions(onChanged: () => void | Promise<void>) {
                  * turned out to be — so it is shown rather than flattened into
                  * "the action failed".
                  */
-                key.startsWith("subtitle-upload:") &&
-                  error instanceof Error &&
-                  error.message
-                ? error.message
-                : t("library.actionFailed"),
+                (key.startsWith("subtitle-upload:") &&
+                  describeErrorDetail(error, t)) ||
+                t("library.actionFailed"),
       });
     } finally {
       setBusy(null);

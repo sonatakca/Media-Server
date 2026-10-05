@@ -43,6 +43,7 @@ import {
   type TaskTone,
 } from "./maintenanceTaskPresentation";
 import { useQueueSortable } from "./useQueueSortable";
+import { describeErrorForUser } from "../../lib/userFacingError";
 
 /**
  * What the server is actually doing, and what it has done.
@@ -199,10 +200,11 @@ export function MaintenanceTasksPanel({
         setQueueOverride(null);
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("maintenance.queueOrder.failed"),
+          title: describeErrorForUser(
+            error,
+            t,
+            "maintenance.queueOrder.failed",
+          ),
         });
       } finally {
         setReorderBusy(false);
@@ -303,10 +305,11 @@ export function MaintenanceTasksPanel({
       } catch (error) {
         notify({
           tone: "error",
-          title:
-            error instanceof Error
-              ? error.message
-              : t("maintenance.tasks.cancelFailed"),
+          title: describeErrorForUser(
+            error,
+            t,
+            "maintenance.tasks.cancelFailed",
+          ),
         });
       } finally {
         setCancellingId(null);

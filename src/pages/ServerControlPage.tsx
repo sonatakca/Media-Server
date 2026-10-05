@@ -11,6 +11,7 @@ import {
   type ServerRestartPhase,
   type ServerRestartStatus,
 } from "../lib/serverControl";
+import { describeErrorDetail } from "../lib/userFacingError";
 
 /**
  * Restarting the server, and getting the page back afterwards.
@@ -37,7 +38,9 @@ export function ServerControlPage() {
    * itself for ever, aborting its own request each time and never settling on
    * an answer.
    */
-  const [loadFailure, setLoadFailure] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<{ reason: unknown } | null>(
+    null,
+  );
   const [stage, setStage] = useState<Stage>("idle");
   const [phase, setPhase] = useState<ServerRestartPhase | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -60,9 +63,10 @@ export function ServerControlPage() {
       })
       .catch((error: unknown) => {
         if (!active || controller.signal.aborted) return;
-        // Empty string means "it failed but said nothing useful"; null means
-        // it has not failed. The two have to stay distinguishable.
-        setLoadFailure(error instanceof Error ? error.message : "");
+        // Kept as the failure itself rather than its text, so the text is
+        // chosen at render in the page's language. null means it has not
+        // failed; a reason with nothing useful to say still counts as failed.
+        setLoadFailure({ reason: error });
       });
 
     return () => {
@@ -78,7 +82,10 @@ export function ServerControlPage() {
   }, []);
 
   const loadError =
-    loadFailure === null ? null : loadFailure || t("serverControl.loadFailed");
+    loadFailure === null
+      ? null
+      : describeErrorDetail(loadFailure.reason, t) ||
+        t("serverControl.loadFailed");
 
   const restart = useCallback(async () => {
     if (restarting.current) return;
@@ -94,9 +101,7 @@ export function ServerControlPage() {
       restarting.current = false;
       setStage("failed");
       setActionError(
-        error instanceof Error
-          ? error.message
-          : t("serverControl.requestFailed"),
+        describeErrorDetail(error, t) || t("serverControl.requestFailed"),
       );
       return;
     }

@@ -123,6 +123,7 @@ export function DesktopHomePage() {
           labelKey: "home.continueWatching",
           message: getHomeLoadErrorMessage(
             continueResult,
+            t,
             t("home.someDataFailed"),
           ),
         });
@@ -133,6 +134,7 @@ export function DesktopHomePage() {
           labelKey: "home.latestMedia",
           message: getHomeLoadErrorMessage(
             latestResult,
+            t,
             t("home.someDataFailed"),
           ),
         });

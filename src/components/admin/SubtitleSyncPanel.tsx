@@ -12,6 +12,7 @@ import {
   type SubtitleSyncTracks,
 } from "../../lib/libraryAdminApi";
 import { signalTasksChanged } from "../../lib/tasksChanged";
+import { describeErrorDetail } from "../../lib/userFacingError";
 import { NoticeLine } from "./libraryPresentation";
 import { actionButton } from "./libraryStyle";
 import type { Notice } from "./useTitleActions";
@@ -150,11 +151,12 @@ export function SubtitleSyncPanel({
         setReference(preferredReference(value, initialKind, chosen));
       })
       .catch(
-        (error: Error) =>
+        (error: unknown) =>
           !cancelled &&
           setNotice({
             tone: "error",
-            text: error.message || t("library.syncTracksFailed"),
+            text:
+              describeErrorDetail(error, t) || t("library.syncTracksFailed"),
           }),
       );
     return () => {
@@ -234,10 +236,7 @@ export function SubtitleSyncPanel({
     } catch (error) {
       setNotice({
         tone: "error",
-        text:
-          error instanceof Error && error.message
-            ? error.message
-            : t("library.actionFailed"),
+        text: describeErrorDetail(error, t) || t("library.actionFailed"),
       });
     } finally {
       setSubmitting(false);

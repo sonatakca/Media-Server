@@ -1,4 +1,6 @@
+import type { TranslationKey } from "../../i18n/translations";
 import type { MediaItem } from "../../lib/types";
+import { describeErrorDetail } from "../../lib/userFacingError";
 
 interface HomeDataWithContinueWatching {
   continueWatching: MediaItem[];
@@ -6,9 +8,10 @@ interface HomeDataWithContinueWatching {
 
 export function getHomeLoadErrorMessage(
   result: PromiseRejectedResult,
+  t: (key: TranslationKey) => string,
   fallback: string,
 ): string {
-  return result.reason instanceof Error ? result.reason.message : fallback;
+  return describeErrorDetail(result.reason, t) || fallback;
 }
 
 export function replaceContinueWatchingItems<

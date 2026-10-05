@@ -328,6 +328,7 @@ export function MobileHomePage() {
           labelKey: "home.continueWatching",
           message: getHomeLoadErrorMessage(
             continueResult,
+            t,
             t("home.someDataFailed"),
           ),
         });
@@ -338,6 +339,7 @@ export function MobileHomePage() {
           labelKey: "home.latestMedia",
           message: getHomeLoadErrorMessage(
             latestResult,
+            t,
             t("home.someDataFailed"),
           ),
         });

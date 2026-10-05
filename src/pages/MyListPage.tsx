@@ -5,6 +5,7 @@ import { MediaCard } from "../components/MediaCard";
 import { LibrarySkeleton } from "../components/Skeletons";
 import { useFlipLayout } from "../hooks/useFlipLayout";
 import { useLanguage } from "../i18n/LanguageContext";
+import { describeErrorDetail } from "../lib/userFacingError";
 import {
   FAVOURITE_CHANGED_EVENT,
   type FavouriteChangedEvent,
@@ -17,7 +18,8 @@ import type { MediaItem } from "../lib/types";
 export function MyListPage() {
   const { t } = useLanguage();
   const [items, setItems] = useState<MediaItem[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // The failure itself, so its text follows the page's language.
+  const [error, setError] = useState<{ reason: unknown } | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
   const shouldReduceMotion = useReducedMotion();
 
@@ -29,7 +31,7 @@ export function MyListPage() {
       setItems(await getFavouriteItems());
     } catch (reason) {
       console.warn("[Seyirlik My List] Could not load favourites", reason);
-      setError(reason instanceof Error ? reason.message : String(reason));
+      setError({ reason });
       setItems([]);
     }
   }, []);
@@ -118,7 +120,13 @@ export function MyListPage() {
       </h1>
 
       {error ? (
-        <ErrorMessage title={t("myList.couldNotLoad")} message={error} />
+        <ErrorMessage
+          title={t("myList.couldNotLoad")}
+          message={
+            describeErrorDetail(error.reason, t) ||
+            t("common.somethingWentWrong")
+          }
+        />
       ) : items.length === 0 ? (
         <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-6 py-16 text-center">
           <p className="text-base font-black text-white">{t("myList.empty")}</p>

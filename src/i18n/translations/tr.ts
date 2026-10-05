@@ -2248,4 +2248,35 @@ export const tr = {
   "admin.monitoring.choice.inherit": "Üst düzeyi izle",
   "admin.monitoring.choice.monitored": "İzle",
   "admin.monitoring.choice.unmonitored": "İzleme",
+  "apiError.withDetail": "{message}: {detail}",
+  "apiError.invalidResponse":
+    "Seyirlik bu sayfanın okuyamadığı bir yanıt döndürdü.",
+  "apiError.requestNotSent": "İstek hazırlanamadığı için gönderilmedi.",
+  "apiError.requestNotVerified":
+    "Bu istek doğrulanamadı. Sayfayı yenileyip tekrar deneyin.",
+  "apiError.requestCancelled": "İstek iptal edildi.",
+  "apiError.network": "Seyirlik sunucuya ulaşamadı.",
+  "apiError.requestFailed": "Seyirlik'e gönderilen istek başarısız oldu.",
+  "apiError.authRequired": "Oturumunuz sona erdi. Yeniden giriş yapın.",
+  "apiError.forbidden": "Bunu yapmak için yetkiniz yok.",
+  "apiError.rateLimited":
+    "Çok fazla deneme yapıldı. Biraz bekleyip tekrar deneyin.",
+  "apiError.bodyTooLarge": "İstek gönderilemeyecek kadar büyük.",
+  "apiError.internal": "Seyirlik'te dahili bir hata oluştu.",
+  "apiError.notFound": "İstenen öğe bulunamadı.",
+  "apiError.sourceUnavailable": "Bu yapımın kaynak dosyası artık diskte yok.",
+  "apiError.processingJobNotFound": "İşleme işi bulunamadı.",
+  "apiError.processingJobExists":
+    "Bu dosyanın henüz bitmemiş bir işleme işi zaten var.",
+  "apiError.processingJobActive": "Bu iş henüz bitmedi.",
+  "apiError.processingJobNotResumable":
+    "Bu iş tamamlandı. Yeniden çalıştırmak için yeniden deneyi kullanın.",
+  "apiError.processingJobCancelling": "Bu iş iptal ediliyor ve sürdürülemez.",
+  "apiError.processingAlreadyCurrent":
+    "Bu kaynağın kendisi için güncel bir paket zaten var.",
+  "apiError.processingStorageGuarded":
+    "Depolama kontrol edilene kadar işleme bekletiliyor. Önce depolamayı doğrulayıp sürdürün.",
+  "apiError.processingStorageNotVerified":
+    "Sürdürmeden önce depolamayı doğrulayın.",
+  "apiError.processingStorageUnavailable": "Medya birimi kullanılamıyor.",
 };

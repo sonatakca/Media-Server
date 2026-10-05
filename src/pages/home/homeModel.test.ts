@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
+import { OwnApiClientError } from "../../api/ownApi/client";
+import { translations, type TranslationKey } from "../../i18n/translations";
 import type { MediaItem } from "../../lib/types";
 import {
   getHomeLoadErrorMessage,
   removeContinueWatchingItem,
   replaceContinueWatchingItems,
 } from "./homeModel";
+
+const t = (key: TranslationKey) => translations.tr[key];
 
 describe("homeModel", () => {
   const first = { Id: "first", Name: "First" } as MediaItem;
@@ -35,14 +39,30 @@ describe("homeModel", () => {
     expect(
       getHomeLoadErrorMessage(
         { status: "rejected", reason: new Error("backend failed") },
+        t,
         "fallback",
       ),
     ).toBe("backend failed");
     expect(
       getHomeLoadErrorMessage(
         { status: "rejected", reason: "backend failed" },
+        t,
         "fallback",
       ),
     ).toBe("fallback");
+    expect(
+      getHomeLoadErrorMessage(
+        {
+          status: "rejected",
+          reason: new OwnApiClientError({
+            status: 0,
+            code: "NETWORK_ERROR",
+            message: "Seyirlik could not reach the server.",
+          }),
+        },
+        t,
+        "fallback",
+      ),
+    ).toBe("Seyirlik sunucuya ulaşamadı.");
   });
 });

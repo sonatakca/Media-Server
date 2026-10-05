@@ -8,6 +8,7 @@ import {
   type LibrarySlug,
   type SavedLibraryRoute,
 } from "../lib/libraryRoutes";
+import { describeErrorDetail } from "../lib/userFacingError";
 import { LibraryPage } from "./LibraryPage";
 
 export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
@@ -16,8 +17,12 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
     () => readSavedLibraryRoutes()[slug] ?? null,
   );
   const [isLoading, setIsLoading] = useState(!library);
-  // A reason from the server; an unassigned slug is not an error, just no library.
-  const [error, setError] = useState<string | null>(null);
+  /*
+   * The failure itself, not its text, so the text follows the page's
+   * language. A registry that loads without this slug is not a failure: it
+   * leaves `library` null and the page says so.
+   */
+  const [error, setError] = useState<{ reason: unknown } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -35,7 +40,7 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
       })
       .catch((reason) => {
         if (active && !savedLibrary) {
-          setError(reason instanceof Error ? reason.message : String(reason));
+          setError({ reason });
         }
       })
       .finally(() => {
@@ -52,7 +57,12 @@ export function LibraryAliasPage({ slug }: { slug: LibrarySlug }) {
     return (
       <ErrorMessage
         title={t("library.unavailable")}
-        message={error ?? t("library.notAssigned")}
+        message={
+          error
+            ? describeErrorDetail(error.reason, t) ||
+              t("common.somethingWentWrong")
+            : t("library.notAssigned")
+        }
       />
     );
   }

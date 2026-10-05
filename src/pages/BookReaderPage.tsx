@@ -72,6 +72,7 @@ import {
   type ReaderSettings,
   type ReaderTheme,
 } from "./reader/readerModel";
+import { describeErrorForUser } from "../lib/userFacingError";
 
 function getEpubThemeRules(
   settings: ReaderSettings,
@@ -750,9 +751,7 @@ export function BookReaderPage() {
       } catch (error) {
         if (isMounted) {
           setItemError(
-            error instanceof Error
-              ? error.message
-              : t("reader.couldNotLoadItem"),
+            describeErrorForUser(error, t, "reader.couldNotLoadItem"),
           );
         }
       }
@@ -988,9 +987,7 @@ export function BookReaderPage() {
         window.clearTimeout(preparationTimeoutId);
 
         if (isMounted) {
-          setReaderError(
-            error instanceof Error ? error.message : t("reader.couldNotOpen"),
-          );
+          setReaderError(describeErrorForUser(error, t, "reader.couldNotOpen"));
         }
       });
 
@@ -1071,9 +1068,7 @@ export function BookReaderPage() {
           return;
         }
 
-        setReaderError(
-          error instanceof Error ? error.message : t("reader.textLoadFailed"),
-        );
+        setReaderError(describeErrorForUser(error, t, "reader.textLoadFailed"));
       });
 
     return () => {

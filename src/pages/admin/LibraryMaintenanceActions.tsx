@@ -22,6 +22,7 @@ import {
   type MaintenanceAction,
 } from "../../lib/mediaApi";
 import { formatTemplate, type ActionResult } from "./libraryMaintenanceModel";
+import { describeErrorDetail } from "../../lib/userFacingError";
 
 /**
  * The maintenance action group, in the order the work actually happens.
@@ -130,16 +131,18 @@ export function LibraryMaintenanceActions({
         [action]: { state: "success", message },
       }));
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : t("maintenance.actionFailed");
+      const detail = describeErrorDetail(error, t);
       setResults((current) => ({
         ...current,
-        [action]: { state: "error", message },
+        [action]: {
+          state: "error",
+          message: detail || t("maintenance.actionFailed"),
+        },
       }));
       notify({
         tone: "error",
         title: t("maintenance.actionFailed"),
-        ...(error instanceof Error ? { description: error.message } : {}),
+        ...(detail ? { description: detail } : {}),
       });
     }
   };
