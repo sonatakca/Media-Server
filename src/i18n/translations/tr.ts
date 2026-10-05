@@ -543,6 +543,9 @@ export const tr = {
   "reader.width.medium": "Orta",
   "reader.width.wide": "Geniş",
   "reader.readingLight": "Okuma ışığı",
+  "reader.margin": "Kenar",
+  "reader.margin.ruler": "Bölüm cetveli",
+  "reader.margin.timeLeft": "Kalan süre",
   "reader.light.off": "Kapalı",
   "reader.light.soft": "Yumuşak",
   "reader.light.strong": "Belirgin",
@@ -553,7 +556,6 @@ export const tr = {
   "reader.removeBookmark": "Yer imini kaldır",
   "reader.noBookmarks":
     "Henüz yer imi yok. Yerini saklamak için üst çubuktaki yer imi düğmesini kullan.",
-  "reader.youAreHere": "Buradasın",
   "reader.percentRead": "{percent} okundu",
   "reader.timeLeftInBook": "≈ {time} kaldı",
   "reader.toChapterEnd": "Bölüm sonuna",

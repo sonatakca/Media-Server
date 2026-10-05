@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
 } from "react";
 import ePub, {
   type Book,
@@ -25,7 +26,7 @@ import {
   ListTree,
   MoreHorizontal,
 } from "lucide-react";
-import { Link, useParams } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { BackButton } from "../components/BackButton";
 import { ErrorMessage } from "../components/ErrorMessage";
 import { LoadingSpinner } from "../components/LoadingSpinner";
@@ -58,8 +59,9 @@ import {
   readLiveAccent,
 } from "./reader/epubTypography";
 import {
-  ChapterRuler,
+  RULER_FADE_MS,
   ReaderBookCover,
+  ReaderMargin,
   ReaderContentsDrawer,
   ReaderMoreMenu,
   ReaderSettingsPanel,
@@ -93,6 +95,7 @@ import {
   buildBookMap,
   chapterAt,
   locateInBook,
+  spotlightMask,
   type BookMap,
 } from "./reader/readingLight";
 
@@ -112,10 +115,12 @@ interface ColumnBox {
   viewport: number;
 }
 
-/** Ruler width plus its gap to the text. */
-const RULER_OFFSET = 176;
-const TIME_LEFT_OFFSET = 44;
-const TIME_LEFT_ROOM = 230;
+/**
+ * Room the right margin needs beside the column: the ruler and its names
+ * against the window's edge, with a clear gap to the text. Narrower windows
+ * dock the time left at the foot instead.
+ */
+const MARGIN_ROOM = 264;
 
 function paletteVariables(palette: ReaderPalette): CSSProperties {
   return {
@@ -349,6 +354,40 @@ export function BookReaderPage() {
   }, []);
 
   const showChrome = useCallback(() => setChromeHidden(false), []);
+
+  /*
+   * The bar comes when it is asked for — the pointer at the top edge, a tap or
+   * click on the text that selects nothing, keyboard focus — and goes when
+   * reading resumes. Scrolling only ever hides it: bringing it back on every
+   * scroll up put chrome over the text exactly when the reader looked back.
+   */
+  const barRef = useRef<HTMLElement | null>(null);
+  const barHoverRef = useRef(false);
+  const barHideTimerRef = useRef(0);
+  const holdBar = useCallback(() => {
+    window.clearTimeout(barHideTimerRef.current);
+    barHoverRef.current = true;
+    setChromeHidden(false);
+  }, []);
+  const releaseBar = useCallback((event: ReactPointerEvent) => {
+    barHoverRef.current = false;
+    if (event.pointerType === "touch") {
+      return;
+    }
+    window.clearTimeout(barHideTimerRef.current);
+    barHideTimerRef.current = window.setTimeout(() => {
+      if (
+        !barHoverRef.current &&
+        panelRef.current === null &&
+        // Keyboard focus holds the bar; a button merely left focused by a
+        // click does not.
+        !barRef.current?.querySelector(":focus-visible")
+      ) {
+        setChromeHidden(true);
+      }
+    }, 900);
+  }, []);
+  useEffect(() => () => window.clearTimeout(barHideTimerRef.current), []);
   const closePanel = useCallback(() => setPanel(null), []);
   const togglePanel = useCallback((next: Exclude<Panel, null>) => {
     setPanel((current) => (current === next ? null : next));
@@ -489,7 +528,40 @@ export function BookReaderPage() {
     bookRef.current = book;
     renditionRef.current = rendition;
     lightRef.current = light;
-    light.setFloor(SPOTLIGHT_FLOOR[settingsRef.current.spotlight]);
+    /** The line height the band of light is measured in, read off the book. */
+    let lineHeightPx = 0;
+    /**
+     * The ruler's marker follows the reading line, but a leap — a new chapter,
+     * or a jump across most of this one — fades it out, moves it, and fades it
+     * back in, rather than sweeping it the length of the ruler.
+     */
+    let markerState: {
+      element: HTMLElement | null;
+      chapterIndex: number;
+      fraction: number;
+      switching: boolean;
+      pending: { top: string; text: string } | null;
+    } = { element: null, chapterIndex: -1, fraction: 0, switching: false, pending: null };
+    let markerTimer = 0;
+
+    const placeMarker = (marker: HTMLElement, top: string, text: string) => {
+      marker.style.top = top;
+      const label = marker.firstElementChild;
+      if (label) {
+        label.textContent = text;
+      }
+    };
+
+    const applyLight = () => {
+      const container = host.querySelector<HTMLElement>(".epub-container");
+      if (!container) {
+        return;
+      }
+      const mask =
+        spotlightMask(SPOTLIGHT_FLOOR[settingsRef.current.spotlight], lineHeightPx || 28) ?? "";
+      container.style.maskImage = mask;
+      container.style.setProperty("-webkit-mask-image", mask);
+    };
 
     const runFrame = () => {
       const position = light.frame();
@@ -511,12 +583,41 @@ export function BookReaderPage() {
       const marker = markerRef.current;
 
       if (marker) {
-        marker.style.top = `${chapterFraction * 100}%`;
-        const label = marker.firstElementChild;
+        const top = `${chapterFraction * 100}%`;
+        const text = formatPercent(chapterFraction, languageRef.current);
 
-        if (label) {
-          label.textContent = formatPercent(chapterFraction, languageRef.current);
+        if (marker !== markerState.element) {
+          markerState = { element: marker, chapterIndex, fraction: chapterFraction, switching: false, pending: null };
+          placeMarker(marker, top, text);
+        } else if (
+          markerState.switching ||
+          chapterIndex !== markerState.chapterIndex ||
+          Math.abs(chapterFraction - markerState.fraction) > 0.25
+        ) {
+          markerState.pending = { top, text };
+
+          if (!markerState.switching) {
+            markerState.switching = true;
+            marker.dataset.switching = "true";
+            markerTimer = window.setTimeout(() => {
+              const pending = markerState.pending;
+              marker.style.transition = "none";
+              if (pending) {
+                placeMarker(marker, pending.top, pending.text);
+              }
+              void marker.offsetHeight;
+              marker.style.transition = "";
+              delete marker.dataset.switching;
+              markerState.switching = false;
+              markerState.pending = null;
+            }, RULER_FADE_MS);
+          }
+        } else {
+          placeMarker(marker, top, text);
         }
+
+        markerState.chapterIndex = chapterIndex;
+        markerState.fraction = chapterFraction;
       }
 
       const next: ReadingState = {
@@ -568,6 +669,10 @@ export function BookReaderPage() {
         const frameRect = frame.getBoundingClientRect();
         const bodyRect = body.getBoundingClientRect();
         const style = content.document.defaultView!.getComputedStyle(body);
+        lineHeightPx =
+          parseFloat(style.lineHeight) ||
+          parseFloat(style.fontSize) * settingsRef.current.lineHeight;
+        applyLight();
         const next: ColumnBox = {
           left: Math.round(frameRect.left + bodyRect.left + parseFloat(style.paddingLeft)),
           right: Math.round(frameRect.left + bodyRect.right - parseFloat(style.paddingRight)),
@@ -610,7 +715,13 @@ export function BookReaderPage() {
 
       const bookLanguage =
         (book.packaging?.metadata?.language as string | undefined) ?? "";
-      await hyphenateDocument(view.document, bookLanguage);
+      const textLanguage = await hyphenateDocument(view.document, bookLanguage);
+
+      // A Turkish book labelled English: the interface's chapter names follow
+      // the text, so their capitals are Turkish too.
+      if (isMounted && /^tr\b/i.test(textLanguage) && !/^tr\b/i.test(bookLanguage)) {
+        setBookMeta((meta) => (/^tr\b/i.test(meta.language) ? meta : { ...meta, language: "tr" }));
+      }
 
       if (!isMounted) {
         return;
@@ -618,7 +729,7 @@ export function BookReaderPage() {
 
       const blocks = getEpubBlocks(view.document);
       enhanceSection(blocks);
-      light.add(view.document, view.sectionIndex ?? 0, blocks);
+      light.add(view.document, view.sectionIndex ?? 0);
       resolveFirstContent();
       measureColumn();
       scheduleFrame();
@@ -667,8 +778,8 @@ export function BookReaderPage() {
         const delta = top - lastScrollTop;
         lastScrollTop = top;
 
-        if (Math.abs(delta) > 4 && panelRef.current === null) {
-          setChromeHidden(delta > 0 && top > 80);
+        if (Math.abs(delta) > 4 && panelRef.current === null && !barHoverRef.current) {
+          setChromeHidden(true);
         }
       }
 
@@ -806,6 +917,7 @@ export function BookReaderPage() {
       isMounted = false;
       window.clearTimeout(preparationTimeoutId);
       window.clearTimeout(measureTimer);
+      window.clearTimeout(markerTimer);
       window.clearTimeout(progressFrame);
       window.cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
@@ -836,8 +948,6 @@ export function BookReaderPage() {
   // Settings apply live to every rendered section of the book.
   useEffect(() => {
     const rendition = renditionRef.current;
-
-    lightRef.current?.setFloor(SPOTLIGHT_FLOOR[settings.spotlight]);
 
     if (!rendition || format !== "epub") {
       return undefined;
@@ -915,8 +1025,8 @@ export function BookReaderPage() {
       const delta = scrollElement.scrollTop - lastTop;
       lastTop = scrollElement.scrollTop;
 
-      if (Math.abs(delta) > 4 && panelRef.current === null) {
-        setChromeHidden(delta > 0 && scrollElement.scrollTop > 80);
+      if (Math.abs(delta) > 4 && panelRef.current === null && !barHoverRef.current) {
+        setChromeHidden(true);
       }
 
       setScrollProgress(nextProgress);
@@ -1194,23 +1304,17 @@ export function BookReaderPage() {
   const chapterNumber = currentChapter ? splitNumber(currentChapter.label).number : "";
   const nextChapter =
     bookMap && reading ? (bookMap.chapters[reading.chapterIndex + 1] ?? null) : null;
-  const rulerLeft = columnBox ? columnBox.left - RULER_OFFSET : -1;
-  const showRuler =
-    format === "epub" && epubReady && currentChapter !== null && rulerLeft >= 16;
-  const timeLeftFitsMargin =
-    format === "epub" &&
-    epubReady &&
-    currentChapter !== null &&
-    reading !== null &&
-    columnBox !== null &&
-    columnBox.viewport - columnBox.right >= TIME_LEFT_ROOM;
-  // Without a margin for it (phones, narrow windows) it docks at the foot of
-  // the screen and comes and goes with the bar. The settings panel and the
-  // menu open over the right margin, and the sheet over the foot.
-  const timeLeftDocked =
-    format === "epub" && epubReady && currentChapter !== null && reading !== null && !timeLeftFitsMargin;
-  const showTimeLeft =
-    (timeLeftFitsMargin || timeLeftDocked) && panel !== "settings" && panel !== "more";
+  const charted =
+    format === "epub" && epubReady && currentChapter !== null && reading !== null;
+  const marginFits =
+    charted && columnBox !== null && columnBox.viewport - columnBox.right >= MARGIN_ROOM;
+  // The settings panel and the menu open over the right margin, and on a
+  // phone the sheet opens over the foot.
+  const marginCovered = panel === "settings" || panel === "more";
+  const timeLeftText = reading ? formatDuration(reading.minutesLeftInChapter, t) : "";
+  // Without a margin (phones, narrow windows) the time left docks at the foot
+  // of the screen and comes and goes with the bar; the ruler stays away.
+  const timeLeftDocked = charted && !marginFits && settings.showTimeLeft && !marginCovered;
   const sizeLabel = formatFileSize(item.MediaSources?.[0]?.Size);
 
   const toolbarActions: SegmentedIconToolbarAction[] = [
@@ -1428,7 +1532,7 @@ export function BookReaderPage() {
       className="seyirlik-reader-shell"
       data-chrome={chromeHidden && panel === null ? "hidden" : "shown"}
       style={paletteVariables(palette)}
-      lang={bookMeta.language || undefined}
+      lang={language}
     >
       <div className="rd-stage">{renderReaderContent()}</div>
 
@@ -1436,9 +1540,20 @@ export function BookReaderPage() {
         <span style={{ transform: `scaleX(${clamp(bookFraction, 0, 1)})` }} />
       </div>
 
-      <div className="rd-hover-strip" onPointerEnter={showChrome} aria-hidden="true" />
+      <div
+        className="rd-hover-strip"
+        onPointerEnter={showChrome}
+        onPointerLeave={releaseBar}
+        aria-hidden="true"
+      />
 
-      <header className="rd-bar" onFocusCapture={showChrome}>
+      <header
+        ref={barRef}
+        className="rd-bar"
+        onFocusCapture={showChrome}
+        onPointerEnter={holdBar}
+        onPointerLeave={releaseBar}
+      >
         <div className="rd-bar-start">
           <BackButton
             fallbackTo={ownerRoute}
@@ -1448,12 +1563,9 @@ export function BookReaderPage() {
             label=""
             noYShift
           />
-          <Link to={ownerRoute} className="rd-crumb">
-            {t("common.books")}
-          </Link>
         </div>
 
-        <div className="rd-titles">
+        <div className="rd-titles" lang={bookMeta.language || undefined}>
           <h1 className="rd-title">{title}</h1>
           {bookMeta.author || chapterLabel ? (
             <div className="rd-subtitle">
@@ -1481,24 +1593,22 @@ export function BookReaderPage() {
         </div>
       </header>
 
-      {showRuler && currentChapter ? (
-        <ChapterRuler
+      {marginFits && currentChapter && (settings.showRuler || settings.showTimeLeft) ? (
+        <ReaderMargin
           ref={markerRef}
-          left={rulerLeft}
           chapter={currentChapter}
           next={nextChapter}
           chapterNumber={chapterNumber}
+          covered={marginCovered}
+          showRuler={settings.showRuler}
+          timeLeft={settings.showTimeLeft ? timeLeftText : null}
+          bookLanguage={bookMeta.language}
         />
       ) : null}
 
-      {showTimeLeft && reading ? (
-        <div
-          className="rd-timeleft"
-          data-docked={timeLeftDocked || undefined}
-          style={timeLeftDocked ? undefined : { left: (columnBox?.right ?? 0) + TIME_LEFT_OFFSET }}
-        >
-          {t("reader.toChapterEnd")}{" "}
-          <b>≈ {formatDuration(reading.minutesLeftInChapter, t)}</b>
+      {timeLeftDocked ? (
+        <div className="rd-timeleft" data-docked>
+          {t("reader.toChapterEnd")} <b>≈ {timeLeftText}</b>
         </div>
       ) : null}
 

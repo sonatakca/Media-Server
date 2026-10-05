@@ -19,6 +19,10 @@ export interface ReaderSettings {
   lineHeight: number;
   width: number;
   spotlight: ReaderSpotlight;
+  /** The chapter ruler in the right margin. */
+  showRuler: boolean;
+  /** "Chapter ends in ≈ N min", above the ruler or at the foot on a phone. */
+  showTimeLeft: boolean;
 }
 
 export interface StoredReaderProgress {
@@ -62,6 +66,8 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   lineHeight: 1.65,
   width: 66,
   spotlight: "soft",
+  showRuler: true,
+  showTimeLeft: true,
 };
 
 export const FONT_SCALE_STEPS = Array.from(
@@ -75,8 +81,15 @@ export const WIDTH_PRESETS = [56, 66, 78];
 
 /** Where the lit paragraph sits, as a fraction of the reading viewport. */
 export const READING_LINE = 0.4;
-/** How far from the reading line the light has fully fallen off. */
-export const SPOTLIGHT_FALLOFF = 0.3;
+/** How far from the lit band the light has fully fallen off. */
+export const SPOTLIGHT_FALLOFF = 0.14;
+/**
+ * How many lines the light holds at full ink, centred on the reading line.
+ * A fixed band of lines rather than "the paragraph at the line": paragraphs
+ * run from one line to thirty, and lighting whole ones made the light jump
+ * between a sliver and a slab.
+ */
+export const SPOTLIGHT_LINES = 2;
 export const SPOTLIGHT_FLOOR: Record<ReaderSpotlight, number> = {
   off: 1,
   soft: 0.4,
@@ -267,6 +280,14 @@ export function readStoredReaderSettings(): ReaderSettings {
     spotlight: READER_SPOTLIGHTS.includes(stored.spotlight as ReaderSpotlight)
       ? (stored.spotlight as ReaderSpotlight)
       : DEFAULT_READER_SETTINGS.spotlight,
+    showRuler:
+      typeof stored.showRuler === "boolean"
+        ? stored.showRuler
+        : DEFAULT_READER_SETTINGS.showRuler,
+    showTimeLeft:
+      typeof stored.showTimeLeft === "boolean"
+        ? stored.showTimeLeft
+        : DEFAULT_READER_SETTINGS.showTimeLeft,
   };
 }
 

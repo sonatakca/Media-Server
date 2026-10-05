@@ -1,29 +1,49 @@
 import type { Book, NavItem } from "epubjs";
-import { READING_LINE, SPOTLIGHT_FALLOFF, clamp } from "./readerModel";
+import {
+  READING_LINE,
+  SPOTLIGHT_FALLOFF,
+  SPOTLIGHT_LINES,
+  clamp,
+} from "./readerModel";
 
 /**
- * The reading light: the block at the reading line carries full ink and the
- * text above and below falls off towards a floor, like the glow of a screen.
+ * The reading light: a band of lines at the reading line carries full ink and
+ * the text above and below falls off towards a floor, like the glow of a
+ * screen.
  *
- * Documents are epub.js iframes sized to their content, so a block's place in
- * the window is its iframe's rect plus an offset inside the document. Offsets
- * are cached per document and re-measured only when the document's height
- * changes (a font or spacing change, an image loading), so each scroll frame
- * reads one rect per document and writes only the opacities that changed.
+ * The band is a fixed number of lines, drawn as a mask over the book's
+ * scroller, so it is the same height whatever the paragraph: lighting whole
+ * paragraphs made it jump between a sliver and a slab. Being a mask, it costs
+ * nothing per scroll frame; the text moves through a light that stays put.
  */
+export function spotlightMask(floor: number, lineHeightPx: number): string | null {
+  if (floor >= 1) {
+    return null;
+  }
 
-interface LitBlock {
-  element: HTMLElement;
-  top: number;
-  bottom: number;
-  opacity: number;
+  const half = Math.max(12, (lineHeightPx * SPOTLIGHT_LINES) / 2);
+  const line = READING_LINE * 100;
+  const fall = SPOTLIGHT_FALLOFF * 100;
+  const ink = (t: number) => {
+    // Smoothstep from full ink (t = 0) to the floor (t = 1).
+    const eased = t * t * (3 - 2 * t);
+    return (1 - (1 - floor) * eased).toFixed(3);
+  };
+  const steps = [1, 0.75, 0.5, 0.25, 0];
+  const above = steps.map(
+    (t) => `rgba(0,0,0,${ink(t)}) calc(${line}% - ${half}px - ${(fall * t).toFixed(2)}%)`,
+  );
+  const below = [...steps]
+    .reverse()
+    .map(
+      (t) => `rgba(0,0,0,${ink(t)}) calc(${line}% + ${half}px + ${(fall * t).toFixed(2)}%)`,
+    );
+
+  return `linear-gradient(180deg, rgba(0,0,0,${ink(1)}) 0%, ${above.join(", ")}, ${below.join(", ")}, rgba(0,0,0,${ink(1)}) 100%)`;
 }
 
-interface LitDocument {
+interface LocatedDocument {
   sectionIndex: number;
-  height: number;
-  blocks: LitBlock[];
-  resting: boolean;
 }
 
 export interface ReadingLinePosition {
@@ -32,47 +52,23 @@ export interface ReadingLinePosition {
   fraction: number;
 }
 
+/** Where the reading line falls in the book: which section, and how far in. */
 export class ReadingLight {
-  private readonly documents = new Map<Document, LitDocument>();
-  private floor = 1;
+  private readonly documents = new Map<Document, LocatedDocument>();
 
   constructor(private readonly viewport: HTMLElement) {}
 
-  add(document: Document, sectionIndex: number, elements: HTMLElement[]) {
-    this.documents.set(document, {
-      sectionIndex,
-      height: -1,
-      resting: false,
-      blocks: elements.map((element) => ({
-        element,
-        top: 0,
-        bottom: 0,
-        opacity: -1,
-      })),
-    });
-  }
-
-  setFloor(floor: number) {
-    if (floor === this.floor) {
-      return;
-    }
-
-    this.floor = floor;
-    this.documents.forEach((entry) => {
-      entry.resting = false;
-    });
+  add(document: Document, sectionIndex: number) {
+    this.documents.set(document, { sectionIndex });
   }
 
   clear() {
     this.documents.clear();
   }
 
-  /** Lights the text for the current scroll position and reports where the reading line is. */
   frame(): ReadingLinePosition | null {
     const view = this.viewport.getBoundingClientRect();
     const line = view.top + view.height * READING_LINE;
-    const span = Math.max(1, view.height * SPOTLIGHT_FALLOFF);
-    const unlit = this.floor >= 1;
     let position: ReadingLinePosition | null = null;
 
     this.documents.forEach((entry, document) => {
@@ -91,46 +87,6 @@ export class ReadingLight {
           fraction: clamp((line - rect.top) / rect.height, 0, 1),
         };
       }
-
-      const height = document.body?.scrollHeight ?? 0;
-
-      if (height !== entry.height) {
-        entry.height = height;
-        entry.resting = false;
-        const scrollY = document.defaultView?.scrollY ?? 0;
-
-        for (const block of entry.blocks) {
-          const box = block.element.getBoundingClientRect();
-          block.top = box.top + scrollY;
-          block.bottom = box.bottom + scrollY;
-        }
-      }
-
-      const far =
-        rect.bottom < view.top - span || rect.top > view.bottom + span;
-
-      if ((far || unlit) && entry.resting) {
-        return;
-      }
-
-      for (const block of entry.blocks) {
-        let opacity = 1;
-
-        if (!unlit) {
-          const top = rect.top + block.top;
-          const bottom = rect.top + block.bottom;
-          const distance = Math.max(0, top - line, line - bottom);
-          const t = Math.min(1, distance / span);
-          opacity = 1 - (1 - this.floor) * t * t * (3 - 2 * t);
-        }
-
-        if (Math.abs(opacity - block.opacity) > 0.01) {
-          block.opacity = opacity;
-          block.element.style.opacity = unlit ? "" : opacity.toFixed(3);
-        }
-      }
-
-      entry.resting = far || unlit;
     });
 
     return position;

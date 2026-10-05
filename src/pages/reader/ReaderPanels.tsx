@@ -3,6 +3,7 @@ import {
   useEffect,
   useMemo,
   useRef,
+  useState,
   type CSSProperties,
   type ReactNode,
 } from "react";
@@ -230,6 +231,29 @@ export const ReaderSettingsPanel = forwardRef<
               label: t(`reader.light.${spotlight}`),
             }))}
           />
+        </div>
+      ) : null}
+
+      {showReadingLight ? (
+        <div className="rd-row">
+          <p className="rd-label">{t("reader.margin")}</p>
+          <div role="group" aria-label={t("reader.margin")} className="rd-seg rd-toggles">
+            <button
+              type="button"
+              className="rd-toggle-ruler"
+              aria-pressed={settings.showRuler}
+              onClick={() => onChange({ showRuler: !settings.showRuler })}
+            >
+              {t("reader.margin.ruler")}
+            </button>
+            <button
+              type="button"
+              aria-pressed={settings.showTimeLeft}
+              onClick={() => onChange({ showTimeLeft: !settings.showTimeLeft })}
+            >
+              {t("reader.margin.timeLeft")}
+            </button>
+          </div>
         </div>
       ) : null}
     </section>
@@ -525,14 +549,11 @@ export function ReaderContentsDrawer({
                       onClick={() => onNavigate(row.entry.href)}
                     >
                       <span className="rd-chapter-n" aria-hidden="true">
-                        {number || "·"}
+                        {number || <span className="rd-chapter-dot" />}
                       </span>
                       <span className="rd-chapter-t">
                         {number ? <span className="sr-only">{number} </span> : null}
                         {rowTitle}
-                        {isCurrent ? (
-                          <span className="rd-chapter-here">{t("reader.youAreHere")}</span>
-                        ) : null}
                       </span>
                       <span className="rd-chapter-time">
                         {length !== null && length > 0 ? (
@@ -635,18 +656,54 @@ export function ReaderBookCover({
   );
 }
 
-/** The chapter as a ruler in the left margin; the marker is moved by the page directly. */
-export const ChapterRuler = forwardRef<
+/** How long the margin takes to fade across a chapter change or a leap. */
+export const RULER_FADE_MS = 180;
+
+interface MarginChapter {
+  chapter: BookChapter;
+  next: BookChapter | null;
+  chapterNumber: string;
+}
+
+/**
+ * The right margin: how long is left in the chapter, and the chapter as a
+ * ruler beneath it. Either can be turned off. The marker is moved by the page
+ * directly; when the chapter changes, the names and the scale fade out and
+ * back in with the new chapter rather than snapping, in step with the marker.
+ */
+export const ReaderMargin = forwardRef<
   HTMLDivElement,
-  {
-    left: number;
-    chapter: BookChapter;
-    next: BookChapter | null;
-    chapterNumber: string;
+  MarginChapter & {
+    covered: boolean;
+    showRuler: boolean;
+    timeLeft: string | null;
+    bookLanguage: string;
   }
->(function ChapterRuler({ left, chapter, next, chapterNumber }, markerRef) {
+>(function ReaderMargin(
+  { chapter, next, chapterNumber, covered, showRuler, timeLeft, bookLanguage },
+  markerRef,
+) {
+  const { t } = useLanguage();
+  // The chapter on display lags a change by one fade: while the keys differ
+  // the old chapter fades out, then the new one takes its place and fades in.
+  const [shown, setShown] = useState<MarginChapter>({ chapter, next, chapterNumber });
+  const incomingKey = `${chapter.start}:${chapter.label}`;
+  const fading = incomingKey !== `${shown.chapter.start}:${shown.chapter.label}`;
+  const display = fading ? shown : { chapter, next, chapterNumber };
+
+  useEffect(() => {
+    if (!fading) {
+      return undefined;
+    }
+    const timer = window.setTimeout(
+      () => setShown({ chapter, next, chapterNumber }),
+      RULER_FADE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [chapter, chapterNumber, fading, incomingKey, next]);
+
   const ticks = useMemo(() => {
-    const length = Math.max(1, chapter.end - chapter.start);
+    const length = Math.max(1, display.chapter.end - display.chapter.start);
     // About one tick per two locations (roughly a printed page), but always a
     // graduated scale: a short chapter still reads as a ruler, not a few notches.
     const count = Math.min(80, Math.max(40, Math.round(length / 2)));
@@ -655,31 +712,47 @@ export const ChapterRuler = forwardRef<
       at: index / count,
       major: index % 10 === 0,
     }));
-  }, [chapter.end, chapter.start]);
+  }, [display.chapter.end, display.chapter.start]);
 
   return (
-    <div className="rd-ruler" style={{ left }} aria-hidden="true">
-      <div className="rd-ruler-line" />
-      {ticks.map((tick) => (
-        <span
-          key={tick.at}
-          className="rd-ruler-tick"
-          data-major={tick.major || undefined}
-          style={{ top: `${tick.at * 100}%` }}
-        />
-      ))}
-      <span className="rd-ruler-cap" data-edge="top">
-        {chapterNumber ? `${chapterNumber} · ` : ""}
-        {splitNumber(chapter.label).title}
-      </span>
-      {next ? (
-        <span className="rd-ruler-cap" data-edge="bottom">
-          {splitNumber(next.label).title}
-        </span>
+    <div
+      className="rd-margin"
+      data-covered={covered || undefined}
+      data-ruler={showRuler || undefined}
+      aria-hidden="true"
+    >
+      {timeLeft ? (
+        <div className="rd-margin-time" data-fading={fading || undefined}>
+          {t("reader.toChapterEnd")} <b>≈ {timeLeft}</b>
+        </div>
       ) : null}
-      <div ref={markerRef} className="rd-ruler-marker">
-        <span />
-      </div>
+      {showRuler ? (
+        <>
+          <div className="rd-ruler-line" />
+          <div className="rd-ruler-scale" data-fading={fading || undefined}>
+            {ticks.map((tick) => (
+              <span
+                key={tick.at}
+                className="rd-ruler-tick"
+                data-major={tick.major || undefined}
+                style={{ top: `${tick.at * 100}%` }}
+              />
+            ))}
+            <span className="rd-ruler-cap" data-edge="top" lang={bookLanguage || undefined}>
+              {display.chapterNumber ? `${display.chapterNumber} · ` : ""}
+              {splitNumber(display.chapter.label).title}
+            </span>
+            {display.next ? (
+              <span className="rd-ruler-cap" data-edge="bottom" lang={bookLanguage || undefined}>
+                {splitNumber(display.next.label).title}
+              </span>
+            ) : null}
+          </div>
+          <div ref={markerRef} className="rd-ruler-marker">
+            <span />
+          </div>
+        </>
+      ) : null}
     </div>
   );
 });

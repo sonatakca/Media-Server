@@ -452,10 +452,11 @@ export function looksTurkish(text: string): boolean {
  * ragged gaps. For Turkish, soft hyphens are inserted from TeX patterns; any
  * other language is left to the browser's own dictionary.
  */
+/** Hyphenates the section and returns the language its text was set in. */
 export async function hyphenateDocument(
   document: Document,
   language: string,
-): Promise<void> {
+): Promise<string> {
   const root = document.documentElement;
 
   if (!/^tr\b/i.test(language) && looksTurkish(document.body?.textContent ?? "")) {
@@ -467,7 +468,7 @@ export async function hyphenateDocument(
       root.lang ||= language;
     }
     root.dataset.seyirlikHyphens = "auto";
-    return;
+    return language;
   }
 
   root.lang = "tr";
@@ -477,7 +478,7 @@ export async function hyphenateDocument(
     if (!hyphenate) {
       root.dataset.seyirlikHyphens = "auto";
     }
-    return;
+    return "tr";
   }
 
   const walker = document.createTreeWalker(
@@ -503,6 +504,8 @@ export async function hyphenateDocument(
   }
 
   root.dataset.seyirlikHyphens = "manual";
+
+  return "tr";
 }
 
 /** The settings-dependent rules as one stylesheet, replaced in place on every change. */

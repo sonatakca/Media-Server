@@ -543,6 +543,9 @@ export const en = {
   "reader.width.medium": "Medium",
   "reader.width.wide": "Wide",
   "reader.readingLight": "Reading light",
+  "reader.margin": "Margin",
+  "reader.margin.ruler": "Chapter ruler",
+  "reader.margin.timeLeft": "Time left",
   "reader.light.off": "Off",
   "reader.light.soft": "Soft",
   "reader.light.strong": "Strong",
@@ -553,7 +556,6 @@ export const en = {
   "reader.removeBookmark": "Remove bookmark",
   "reader.noBookmarks":
     "No bookmarks yet. Use the bookmark button in the top bar to keep your place.",
-  "reader.youAreHere": "You are here",
   "reader.percentRead": "{percent} read",
   "reader.timeLeftInBook": "about {time} left",
   "reader.toChapterEnd": "Chapter ends in",

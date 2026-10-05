@@ -34,6 +34,8 @@ describe("readerModel", () => {
         lineHeight: 0,
         width: 1,
         spotlight: "blinding",
+        showRuler: "no",
+        showTimeLeft: 0,
       }),
     );
     expect(readStoredReaderSettings()).toEqual({
@@ -43,6 +45,18 @@ describe("readerModel", () => {
       lineHeight: 1.25,
       width: 48,
       spotlight: "soft",
+      showRuler: true,
+      showTimeLeft: true,
+    });
+
+    // Either margin item can be turned off on its own.
+    localStorage.setItem(
+      READER_SETTINGS_KEY,
+      JSON.stringify({ showRuler: false, showTimeLeft: true }),
+    );
+    expect(readStoredReaderSettings()).toMatchObject({
+      showRuler: false,
+      showTimeLeft: true,
     });
 
     // Settings saved before the reading light and the two new themes existed
@@ -58,6 +72,8 @@ describe("readerModel", () => {
       lineHeight: 1.7,
       width: 74,
       spotlight: "soft",
+      showRuler: true,
+      showTimeLeft: true,
     });
   });
 

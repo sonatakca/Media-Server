@@ -107,18 +107,6 @@ body:has(.seyirlik-reader-shell) {
   min-width: 0;
 }
 
-.rd-crumb {
-  padding: 0.4rem 0.25rem;
-  font-size: 0.8125rem;
-  font-weight: 700;
-  color: var(--rd-ink2);
-  white-space: nowrap;
-  transition: color 0.18s var(--rd-sine);
-}
-
-.rd-crumb:hover {
-  color: var(--rd-ink);
-}
 
 .rd-titles {
   min-width: 0;
@@ -164,12 +152,14 @@ body:has(.seyirlik-reader-shell) {
   background: currentColor;
 }
 
+/* Two sizes on one baseline: the pair's ink sits low in its line box, so it
+   is lifted to share the other icons' optical centre. */
 .rd-aa {
   display: inline-flex;
   align-items: baseline;
-  padding-top: 2px;
   font-family: var(--rd-serif);
   line-height: 1;
+  transform: translateY(-3.5px);
 }
 
 .rd-aa > span:first-child {
@@ -214,15 +204,64 @@ body:has(.seyirlik-reader-shell) {
 }
 
 /* ---------- Margin furniture: chapter ruler and time left ---------- */
-.rd-ruler {
+/* The right margin: time left in the chapter, and the chapter as a ruler
+   beneath it, against the window's edge. The ruler keeps its reading order —
+   names and ticks to the left of its line — rather than being mirrored. */
+.rd-margin {
   position: fixed;
   top: 50%;
+  right: 2.75rem;
   z-index: 10;
   width: 8.5rem;
   height: 56vh;
   transform: translateY(-50%);
   pointer-events: none;
   animation: rd-fade-in 0.6s var(--rd-sine) both;
+  transition: opacity 0.24s var(--rd-sine);
+}
+
+/* The settings panel and the menu open over this side. */
+.rd-margin[data-covered] {
+  opacity: 0;
+}
+
+.rd-margin-time {
+  position: absolute;
+  right: 0;
+  top: 0;
+  font-size: 0.6875rem;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-align: right;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--rd-ink3);
+  font-variant-numeric: tabular-nums;
+}
+
+.rd-margin[data-ruler] .rd-margin-time {
+  top: -3.5rem;
+}
+
+.rd-margin-time b {
+  font-weight: 900;
+  color: var(--rd-ink2);
+}
+
+/* A chapter change: the names and the scale fade out, change, fade back in. */
+.rd-ruler-scale,
+.rd-margin-time {
+  transition: opacity 0.18s var(--rd-sine);
+}
+
+.rd-ruler-scale[data-fading],
+.rd-margin-time[data-fading] {
+  opacity: 0;
+}
+
+.rd-ruler-scale {
+  position: absolute;
+  inset: 0;
 }
 
 .rd-ruler-line {
@@ -277,7 +316,14 @@ body:has(.seyirlik-reader-shell) {
   margin-top: -1px;
   border-radius: 9999px;
   background: var(--accent, #467a6c);
-  transition: top 0.12s linear;
+  transition:
+    top 0.12s linear,
+    opacity 0.18s var(--rd-sine);
+}
+
+/* A leap (a new chapter, or most of this one) fades out, moves, fades in. */
+.rd-ruler-marker[data-switching] {
+  opacity: 0;
 }
 
 .rd-ruler-marker > span {
@@ -290,11 +336,8 @@ body:has(.seyirlik-reader-shell) {
   color: var(--rd-ink2);
 }
 
+/* The docked readout (phones, narrow windows), when the margin has no room. */
 .rd-timeleft {
-  position: fixed;
-  z-index: 10;
-  top: 40%;
-  transform: translateY(-50%);
   pointer-events: none;
   font-size: 0.6875rem;
   font-weight: 900;
@@ -303,7 +346,6 @@ body:has(.seyirlik-reader-shell) {
   white-space: nowrap;
   color: var(--rd-ink3);
   font-variant-numeric: tabular-nums;
-  animation: rd-fade-in 0.6s var(--rd-sine) both;
 }
 
 .rd-timeleft b {
@@ -313,12 +355,11 @@ body:has(.seyirlik-reader-shell) {
 
 /* No margin for it: at the foot, over a fade of the ground, with the bar. */
 .rd-timeleft[data-docked] {
+  position: fixed;
   inset: auto 0 0;
-  top: auto;
   z-index: 40;
   padding: 2.25rem 1rem calc(1rem + var(--safe-area-inset-bottom, 0px));
   text-align: center;
-  transform: none;
   background: linear-gradient(0deg, var(--rd-ground) 45%, transparent);
   transition:
     opacity 0.24s var(--rd-sine),
@@ -637,6 +678,41 @@ body:has(.seyirlik-reader-shell) {
     0 0 0 1px var(--rd-glass-edge);
 }
 
+/* Independent switches, not one choice: separate pills, each with its own
+   indicator, so two "on" never reads as an unresolved selection. */
+.rd-seg.rd-toggles {
+  gap: 0.5rem;
+  padding: 0;
+  background: none;
+}
+
+.rd-toggles > button {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  background: var(--rd-ink4);
+}
+
+.rd-toggles > button::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 9999px;
+  box-shadow: inset 0 0 0 1.5px currentColor;
+  opacity: 0.7;
+  transition:
+    background-color 0.2s var(--rd-sine),
+    box-shadow 0.2s var(--rd-sine);
+}
+
+.rd-toggles > button[aria-pressed="true"]::before {
+  background: var(--accent, #467a6c);
+  box-shadow: none;
+  opacity: 1;
+}
+
 .rd-seg svg {
   width: 20px;
   height: 20px;
@@ -865,8 +941,25 @@ body:has(.seyirlik-reader-shell) {
   font-variant-numeric: tabular-nums;
 }
 
+.rd-chapter-dot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  border-radius: 9999px;
+  background: currentColor;
+  vertical-align: middle;
+}
+
+/* The current chapter needs no label: its row is lit, and its mark takes the
+   accent and grows. */
 .rd-chapter[aria-current="true"] .rd-chapter-n {
-  color: var(--rd-ink);
+  color: var(--accent, #467a6c);
+}
+
+.rd-chapter[aria-current="true"] .rd-chapter-dot {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #467a6c) 22%, transparent);
 }
 
 .rd-chapter-t {
@@ -880,16 +973,6 @@ body:has(.seyirlik-reader-shell) {
   font-size: 0.8125rem;
   font-weight: 600;
   color: var(--rd-ink2);
-}
-
-.rd-chapter-here {
-  margin-left: 0.6rem;
-  font-size: 0.6875rem;
-  font-weight: 900;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  vertical-align: 1px;
-  color: var(--rd-mark);
 }
 
 .rd-chapter-time {
@@ -1119,7 +1202,6 @@ body:has(.seyirlik-reader-shell) {
     padding: var(--safe-area-inset-top, 0px) 0.625rem 0;
   }
 
-  .rd-crumb,
   .rd-subtitle-author,
   .rd-subtitle > i {
     display: none;
@@ -1159,6 +1241,11 @@ body:has(.seyirlik-reader-shell) {
   }
 
   .rd-pair > div:last-child {
+    display: none;
+  }
+
+  /* No room for the ruler on a phone, so no switch for it either. */
+  .rd-toggles > .rd-toggle-ruler {
     display: none;
   }
 
