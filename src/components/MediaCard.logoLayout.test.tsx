@@ -115,13 +115,15 @@ describe("media card logo layout", () => {
 
   it("deepens the shadow as the strength rises", () => {
     renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 2 }));
-    expect(logo().style.filter).toContain("68px");
+    expect(logo().style.filter).toContain(
+      "drop-shadow(0 0 2px rgba(0, 0, 0, 0.90))",
+    );
     const backdrop = logoLayout().querySelector<HTMLElement>(
       "[data-logo-shadow-backdrop]",
     );
     expect(backdrop).toHaveStyle({
       backgroundColor: "rgba(0, 0, 0, 0.76)",
-      filter: "blur(36px)",
+      filter: "blur(18px)",
     });
   });
 

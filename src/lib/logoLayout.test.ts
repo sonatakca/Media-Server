@@ -86,20 +86,26 @@ describe("shadow", () => {
     expect(getLogoShadowBackdropStyle(0)).toBeUndefined();
   });
 
-  it("scales both shadows together", () => {
+  it("grows in reach up to the default, then only in density", () => {
+    const light = getLogoShadowFilter(0.5) ?? "";
     const normal = getLogoShadowFilter(1) ?? "";
     const strong = getLogoShadowFilter(2) ?? "";
 
-    expect(normal).toContain("drop-shadow");
-    // The long lift and the tight edge both grow, so a logo on bright artwork
-    // gains separation without the edges going soft.
-    expect(strong).toContain("68px");
-    expect(strong).toContain("36px");
+    expect(light).toContain("17px");
+    expect(normal).toContain("drop-shadow(0 14px 34px rgba(0, 0, 0, 0.90))");
+    expect(normal).not.toContain(" 2px");
+    // Past the default a longer blur would only thin the same darkness out,
+    // which made the strongest setting the faintest around thin lettering.
+    expect(strong).not.toContain("68px");
+    expect(strong).toContain("34px");
+    expect(strong.startsWith("drop-shadow(0 0 2px rgba(0, 0, 0, 0.90))")).toBe(
+      true,
+    );
 
     const normalBackdrop = getLogoShadowBackdropStyle(1);
     const strongBackdrop = getLogoShadowBackdropStyle(2);
     expect(normalBackdrop?.filter).toBe("blur(18px)");
-    expect(strongBackdrop?.filter).toBe("blur(36px)");
+    expect(strongBackdrop?.filter).toBe("blur(18px)");
     expect(strongBackdrop?.backgroundColor).toBe("rgba(0, 0, 0, 0.76)");
   });
 

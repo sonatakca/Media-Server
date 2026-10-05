@@ -164,7 +164,7 @@ export function LogoLayoutEditor({
   return (
     <div
       ref={cardRef}
-      className="relative aspect-[2/3] w-full max-w-[18rem] select-none overflow-hidden rounded-2xl border border-white/10 bg-black"
+      className="relative aspect-[2/3] w-full max-w-[18rem] select-none overflow-hidden rounded-xl border border-white/10 bg-zinc-900"
     >
       <img
         src={posterUrl}
@@ -173,9 +173,8 @@ export function LogoLayoutEditor({
         className="absolute inset-0 h-full w-full object-cover"
       />
 
-      {/* Matches the card's own scrim so the preview is not more legible than
-          the real thing. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/75 via-black/40 to-transparent" />
+      {/* Nothing over the artwork: the card has no scrim, so a preview with one
+          would show the logo more legible than it will ever be. */}
 
       <div
         role="application"

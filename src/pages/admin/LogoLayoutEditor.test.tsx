@@ -86,12 +86,14 @@ describe("logo layout editor", () => {
       />,
     );
 
-    expect(preview.style.filter).toContain("68px");
+    expect(preview.style.filter).toContain(
+      "drop-shadow(0 0 2px rgba(0, 0, 0, 0.90))",
+    );
     expect(
       view.container.querySelector<HTMLElement>("[data-logo-shadow-backdrop]"),
     ).toHaveStyle({
       backgroundColor: "rgba(0, 0, 0, 0.76)",
-      filter: "blur(36px)",
+      filter: "blur(18px)",
     });
   });
 

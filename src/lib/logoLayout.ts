@@ -186,13 +186,30 @@ export function getLogoShadowFilter(
   if (strength <= 0) return undefined;
   const size = Number.isFinite(sizeScale) && sizeScale > 0 ? sizeScale : 1;
 
-  const spread = Math.max(1, Math.round(34 * strength * size));
-  const glow = Math.max(1, Math.round(18 * strength * size));
-  const drop = Math.max(1, Math.round(14 * strength * size));
+  /*
+   * Up to the default the shadow grows in reach and density together. Past it
+   * the reach stays put and only the density rises: the opacities are already
+   * at their ceiling there, so a longer blur would spread the same darkness
+   * thinner, and around thin lettering the strongest setting drew the faintest
+   * shadow of all.
+   */
+  const reach = Math.min(strength, 1);
+  const spread = Math.max(1, Math.round(34 * reach * size));
+  const glow = Math.max(1, Math.round(18 * reach * size));
+  const drop = Math.max(1, Math.round(14 * reach * size));
+  const extra = Math.max(0, strength - 1);
   const far = Math.min(0.9, 0.9 * strength).toFixed(2);
-  const near = Math.min(0.65, 0.65 * strength).toFixed(2);
+  const near = (0.65 * reach + 0.3 * extra).toFixed(2);
+  const soft = `drop-shadow(0 ${drop}px ${spread}px rgba(0, 0, 0, ${far})) drop-shadow(0 0 ${glow}px rgba(0, 0, 0, ${near}))`;
 
-  return `drop-shadow(0 ${drop}px ${spread}px rgba(0, 0, 0, ${far})) drop-shadow(0 0 ${glow}px rgba(0, 0, 0, ${near}))`;
+  if (extra === 0) return soft;
+
+  // Tight edges hugging the letters, first in the chain, so the soft shadows
+  // after them are cast from a fuller shape and deepen with it.
+  const edge = (0.9 * extra).toFixed(2);
+  const tight = Math.max(1, Math.round(2 * size));
+  const wide = Math.max(1, Math.round(6 * size));
+  return `drop-shadow(0 0 ${tight}px rgba(0, 0, 0, ${edge})) drop-shadow(0 0 ${wide}px rgba(0, 0, 0, ${edge})) ${soft}`;
 }
 
 /**
@@ -220,7 +237,8 @@ export function getLogoShadowBackdropStyle(
   const size = Number.isFinite(sizeScale) && sizeScale > 0 ? sizeScale : 1;
 
   const opacity = Math.min(0.76, 0.38 * strength).toFixed(2);
-  const blur = Math.max(1, Math.round(18 * strength * size));
+  // Held at the default's reach for the same reason as the drop-shadows.
+  const blur = Math.max(1, Math.round(18 * Math.min(strength, 1) * size));
   const scale = (1 + 0.12 * strength).toFixed(2);
 
   return {
