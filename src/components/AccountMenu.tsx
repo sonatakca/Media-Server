@@ -33,6 +33,11 @@ export function AccountMenu({
   const menuRef = useRef<HTMLDivElement | null>(null);
   // The page the menu was opened on; navigating anywhere else closes it.
   const [openOn, setOpenOn] = useState<string | null>(null);
+  // Forget it as soon as the page changes. Merely not matching hid the menu
+  // without closing it, so coming back to that page reopened it unasked.
+  if (openOn !== null && openOn !== location.pathname) {
+    setOpenOn(null);
+  }
   const isOpen = openOn === location.pathname;
   const setIsOpen = (open: boolean) =>
     setOpenOn(open ? location.pathname : null);
