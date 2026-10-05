@@ -19,12 +19,14 @@ import {
   type LogoShadow,
   type SampleRegion,
 } from "../../lib/logoShadow";
-import { getHeroImageCandidates } from "../hero/heroModel";
+import { getStageImageCandidates } from "../hero/heroModel";
 import {
   QUEUE_TITLE_BOX,
   TITLE_SCALE,
+  heroForm,
   queueTitleTransform,
   stageness,
+  tallFootGradient,
   type HeroLayout,
   type Placement,
   type StageSize,
@@ -57,13 +59,14 @@ export interface CompositionMotion {
 export function createCompositionMotion(
   placement: Placement,
   dim = 0,
+  titleRest: number = TITLE_SCALE.rest,
 ): CompositionMotion {
   return {
     x: motionValue(placement.x),
     y: motionValue(placement.y),
     scale: motionValue(placement.scale),
     dim: motionValue(dim),
-    titleScale: motionValue<number>(TITLE_SCALE.rest),
+    titleScale: motionValue<number>(titleRest),
     titleY: motionValue(0),
     trailer: motionValue(0),
   };
@@ -151,6 +154,13 @@ interface HeroCompositionProps {
   motion: CompositionMotion;
   /** The scale a slot holds a composition at; corners round in step with it. */
   slotScale: number;
+  /** The title's own scale at rest, which its box is measured at. */
+  titleRestScale?: number;
+  /**
+   * The whole frame's opacity, for a miniature stepping aside: on a tall
+   * stage the queue makes way for the overview, which opens across it.
+   */
+  opacity?: MotionValue<number>;
   zIndex: number;
   /** The one on stage speaks to assistive technology; miniatures do not. */
   isStage: boolean;
@@ -173,6 +183,8 @@ export function HeroComposition({
   logoMaxHeight,
   motion: m,
   slotScale,
+  titleRestScale = TITLE_SCALE.rest,
+  opacity,
   zIndex,
   isStage,
   trailerUrl,
@@ -188,9 +200,16 @@ export function HeroComposition({
   const [isLogoLoaded, setIsLogoLoaded] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
-  const artwork = getHeroImageCandidates(item).find(
+  const form = heroForm(stage);
+  const artwork = getStageImageCandidates(item, form, stage.width).find(
     (candidate) => !failed.includes(candidate.url),
   );
+  /**
+   * A poster carries its own lettering, so a miniature shows it as printed
+   * and draws no logo; as the frame grows onto the stage the foot fades the
+   * printed title away and the logo comes up in its place.
+   */
+  const isPoster = artwork?.type === "poster";
   const fallbackLogoUrl = item.ImageTags?.Logo
     ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 1100)
     : "";
@@ -219,6 +238,10 @@ export function HeroComposition({
     [0, 1],
   );
   const titleOpacity = useTransform(m.trailer, [0, 1], [1, 0.92]);
+  const footGradient = useMemo(
+    () => tallFootGradient(stage, titleBox, titleRestScale),
+    [stage, titleBox, titleRestScale],
+  );
 
   // In a slot the logo is drawn large at the miniature's bottom-left so it
   // reads at that size; on stage it is at its own place and size. Between
@@ -243,17 +266,24 @@ export function HeroComposition({
   // A silhouette of the logo under it, dark or light against the artwork,
   // for as long as the frame is a miniature.
   const shadow = useLogoShadow(logoUrl, artwork?.url, QUEUE_LOGO_REGION);
-  const silhouetteOpacity = useTransform(toStage, (p) => 1 - p);
+  const silhouetteOpacity = useTransform(toStage, (p) =>
+    isPoster ? 0 : 1 - p,
+  );
+  // Over a poster the logo arrives late in the lift, once the printed title
+  // under it has gone, so the two are never read at once.
+  const logoPresence = useTransform(toStage, (p) =>
+    isPoster ? Math.min(1, Math.max(0, (p - 0.35) / 0.5)) : 1,
+  );
   // On stage the logo is measured where it rests, at its resting size.
   const stageLogoRegion = useMemo<SampleRegion>(() => {
-    const height = titleBox.height * TITLE_SCALE.rest;
+    const height = titleBox.height * titleRestScale;
     return {
       left: titleBox.left / stage.width,
       top: 1 - (titleBox.bottom + height) / stage.height,
-      width: (titleBox.width * TITLE_SCALE.rest) / stage.width,
+      width: (titleBox.width * titleRestScale) / stage.width,
       height: height / stage.height,
     };
-  }, [stage, titleBox]);
+  }, [stage, titleBox, titleRestScale]);
   const stageShadow = useLogoShadow(logoUrl, artwork?.url, stageLogoRegion);
   const logoFilter = useTransform(toStage, (p) =>
     stageLogoFilter(stageShadow, p),
@@ -283,6 +313,7 @@ export function HeroComposition({
         transformOrigin: "0 0",
         borderRadius: radius,
         boxShadow: frameShadow,
+        opacity,
         zIndex,
         willChange: "transform",
       }}
@@ -299,6 +330,9 @@ export function HeroComposition({
           className={`absolute inset-0 h-full w-full select-none object-cover transition-opacity duration-500 ${
             isArtworkLoaded && isRevealed ? "opacity-100" : "opacity-0"
           } ${artwork.type === "primary" ? "blur-2xl" : ""}`}
+          // A poster cut to a stage shorter than itself keeps its top, where
+          // the faces are, and loses its foot, where the lettering is.
+          style={isPoster ? { objectPosition: "50% 0%" } : undefined}
           onLoad={() => {
             setIsArtworkLoaded(true);
             onArtworkReady?.();
@@ -332,6 +366,17 @@ export function HeroComposition({
             "linear-gradient(180deg, rgba(5,6,7,0.6) 0%, rgba(5,6,7,0.24) 5.5%, rgba(5,6,7,0) 12%)",
         }}
       />
+      {/* On a tall stage the copy fills the lower third, over a poster's own
+          lettering: the picture sinks into the room behind it there, eased
+          so no line marks where the fall begins. A miniature shows its
+          poster whole and gains the fall as it grows. */}
+      {form === "tall" ? (
+        <motion.div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{ opacity: scrimOpacity, background: footGradient }}
+        />
+      ) : null}
 
       <motion.div
         className="absolute flex items-end"
@@ -376,16 +421,26 @@ export function HeroComposition({
               draggable={false}
               onLoad={() => setIsLogoLoaded(true)}
               className="relative block h-auto w-full select-none object-contain object-left-bottom"
-              style={{ maxHeight: logoMaxHeight, filter: logoFilter }}
+              style={{
+                maxHeight: logoMaxHeight,
+                filter: logoFilter,
+                opacity: logoPresence,
+              }}
             />
           </div>
         ) : (
-          <h2
+          <motion.h2
             className="text-cinematic-title font-black uppercase leading-[0.9] text-white"
-            style={{ fontSize: stage.height * 0.085 }}
+            style={{
+              fontSize:
+                form === "tall"
+                  ? Math.min(stage.width * 0.1, 64)
+                  : stage.height * 0.085,
+              opacity: logoPresence,
+            }}
           >
             {title}
-          </h2>
+          </motion.h2>
         )}
       </motion.div>
 

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  COPY_ROWS,
   HERO_MOTION,
+  heroForm,
   TITLE_SCALE,
   queueTitleTransform,
   stageness,
@@ -17,6 +19,7 @@ import {
   queueSlots,
   slotPlacement,
   stagePlacement,
+  tallFootGradient,
 } from "./homeHeroModel";
 
 const DESKTOP_SIZES = [
@@ -208,4 +211,122 @@ describe("the logo in a miniature", () => {
     expect(stageness(0.95, 0.12)).toBe(1);
     expect(stageness(1, 0.12)).toBe(1);
   });
+});
+
+/** Phones and tablets upright, as their heroes measure above the tab bar. */
+const TALL_SIZES = [
+  { width: 375, height: 587 },
+  { width: 390, height: 764 },
+  { width: 430, height: 852 },
+  { width: 768, height: 944 },
+  { width: 820, height: 1100 },
+  { width: 1024, height: 1366 },
+];
+
+describe("a tall stage", () => {
+  it.each(TALL_SIZES)(
+    "is laid out tall at $width×$height, and a desktop stays wide",
+    (stage) => {
+      expect(heroForm(stage)).toBe("tall");
+      expect(heroLayout(stage).form).toBe("tall");
+      for (const desktop of DESKTOP_SIZES)
+        expect(heroForm(desktop)).toBe("wide");
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "keeps the queue at the stage's shape, inside the frame, apart ($width)",
+    (stage) => {
+      const slots = queueSlots(stage);
+      for (const [index, slot] of slots.entries()) {
+        expect(slot.width / slot.height).toBeCloseTo(
+          stage.width / stage.height,
+          5,
+        );
+        expect(slot.x).toBeGreaterThan(0);
+        expect(slot.x + slot.width).toBeLessThan(stage.width);
+        expect(slot.y).toBeGreaterThan(stage.height / 2);
+        const next = slots[index + 1];
+        if (next) expect(next.x).toBeGreaterThan(slot.x + slot.width);
+      }
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "stacks the actions under the queue and keeps the title clear of it ($width)",
+    (stage) => {
+      const layout = heroLayout(stage);
+      const [head] = queueSlots(stage);
+      const actionsTop =
+        stage.height - layout.copy.bottom - COPY_ROWS.actionsPx;
+      // The head's progress line and some air sit between them.
+      expect(actionsTop).toBeGreaterThanOrEqual(head!.y + head!.height + 20);
+      // The facts share the queue's foot; the title rises from above them.
+      const factsBottom =
+        stage.height -
+        layout.copy.bottom -
+        COPY_ROWS.actionsPx -
+        layout.actionsGap;
+      expect(factsBottom).toBeCloseTo(head!.y + head!.height, 5);
+      expect(layout.copy.left + layout.factsWidth).toBeLessThan(head!.x);
+      expect(layout.title.left + layout.title.width).toBeLessThan(head!.x);
+      expect(layout.title.bottom).toBeGreaterThan(
+        layout.copy.bottom + layout.copy.height,
+      );
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "gives a title's own page the whole width ($width)",
+    (stage) => {
+      const layout = heroLayout(stage, { withQueue: false });
+      expect(layout.factsWidth).toBe(layout.copy.width);
+      expect(layout.title.width).toBeGreaterThanOrEqual(
+        heroLayout(stage).title.width,
+      );
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "rests its title at full size, and sets a phone's actions compact ($width)",
+    (stage) => {
+      const layout = heroLayout(stage);
+      expect(layout.titleScale.rest).toBe(1);
+      expect(layout.actions).toBe(stage.width < 600 ? "compact" : "full");
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "lifts a miniature to the stage within the frame budget ($width)",
+    (stage) => {
+      const duration = liftDurationS(stage);
+      for (const slot of queueSlots(stage)) {
+        expect(
+          peakTravelPxPerFrame(
+            stage,
+            slotPlacement(stage, slot),
+            stagePlacement(),
+            duration,
+          ),
+        ).toBeLessThanOrEqual(travelBudgetPxPerFrame(stage) + 1e-6);
+      }
+    },
+  );
+
+  it.each(TALL_SIZES)(
+    "sinks the poster to solid by the top of the logo's box ($width)",
+    (stage) => {
+      const { title } = heroLayout(stage);
+      const stops = [
+        ...tallFootGradient(stage, title).matchAll(/([\d.]+)%/g),
+      ].map((match) => Number(match[1]) / 100);
+      const solidAt = stops[stops.length - 1]!;
+      expect(solidAt).toBeLessThanOrEqual(
+        1 - (title.bottom + title.height) / stage.height + 1e-3,
+      );
+      // The top of the poster, where the faces are, stays clear.
+      expect(stops[1]).toBeGreaterThanOrEqual(0.25);
+      expect([...stops].sort((a, b) => a - b)).toEqual(stops);
+    },
+  );
 });

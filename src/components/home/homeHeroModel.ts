@@ -108,11 +108,88 @@ export function previousIndex(stageIndex: number, total: number): number {
 }
 
 /**
+ * The stage's shape decides its layout, not the device: a landscape stage
+ * (any desktop, a phone on its side) keeps the queue beside the copy; a
+ * portrait one (a phone, a tablet upright, a tall desktop window) stacks the
+ * actions under both, because a row of actions and a row of miniatures no
+ * longer fit side by side.
+ */
+export type HeroForm = "wide" | "tall";
+
+/**
+ * How tall a hero stands. "screen" is the desktop's full screen. "mobile"
+ * is the screen above the phone and tablet tab bar (5rem and the home
+ * indicator's inset), so the actions never sit under it; on its side, where
+ * the tab bar is hidden, the hero takes the whole screen again.
+ */
+export type HeroFit = "screen" | "mobile";
+
+export const HERO_HEIGHT_CLASS: Record<HeroFit, string> = {
+  screen: "h-[100svh] min-h-[38rem]",
+  mobile:
+    "h-[calc(100svh-5rem-env(safe-area-inset-bottom))] min-h-[32rem] landscape:h-[100svh] landscape:min-h-[20rem]",
+};
+
+export function heroForm(stage: StageSize): HeroForm {
+  return stage.height > stage.width * 1.05 ? "tall" : "wide";
+}
+
+/**
+ * A tall stage's frame: its margins, the actions row along its foot, and the
+ * queue above that row on the right.
+ */
+interface TallFrame {
+  inset: number;
+  bottom: number;
+  actionsTop: number;
+  slotWidth: number;
+  slotHeight: number;
+  slotGap: number;
+  slotY: number;
+}
+
+/** Below the queue: its progress line, then room above the actions. */
+const TALL_QUEUE_FOOT_PX = 26;
+
+function tallFrame(stage: StageSize): TallFrame {
+  const inset = clamp(stage.width * 0.042, 16, 44);
+  const bottom = clamp(stage.height * 0.026, 18, 36);
+  const actionsTop = stage.height - bottom - COPY_ROWS.actionsPx;
+  const slotWidth = clamp(stage.width * 0.11, 42, 112);
+  const slotHeight = (slotWidth * stage.height) / stage.width;
+  return {
+    inset,
+    bottom,
+    actionsTop,
+    slotWidth,
+    slotHeight,
+    slotGap: clamp(stage.width * 0.016, 6, 12),
+    slotY: actionsTop - TALL_QUEUE_FOOT_PX - slotHeight,
+  };
+}
+
+/**
  * Where the queue's slots sit, left to right, in stage coordinates. Their
  * aspect ratio is the stage's, so a slot holds a whole composition.
  */
 export function queueSlots(stage: StageSize, count = QUEUE_LENGTH): SlotRect[] {
-  const width = clamp(stage.width * 0.115, 148, 236);
+  if (heroForm(stage) === "tall") {
+    const frame = tallFrame(stage);
+    const { slotWidth: width, slotGap: gap } = frame;
+    return Array.from({ length: count }, (_, index) => ({
+      x:
+        stage.width -
+        frame.inset -
+        (count - index) * width -
+        (count - 1 - index) * gap,
+      y: frame.slotY,
+      width,
+      height: frame.slotHeight,
+    }));
+  }
+  // Below desktop widths (a phone or small tablet on its side) the slots
+  // may shrink further, or they would crowd the copy off the stage.
+  const width = clamp(stage.width * 0.115, stage.width < 1024 ? 96 : 148, 236);
   const height = (width * stage.height) / stage.width;
   const gap = clamp(stage.width * 0.009, 10, 18);
   const right = clamp(stage.width * 0.035, 24, 72);
@@ -261,13 +338,33 @@ export function liftDurationS(stage: StageSize): number {
  * asked for, and the facts and the title rise by `overviewLift` to make room.
  */
 export interface HeroLayout {
+  form: HeroForm;
   copy: { left: number; bottom: number; width: number; height: number };
   title: { left: number; bottom: number; width: number; height: number };
+  /** The facts line's width: on a tall stage it shares its row with the queue. */
+  factsWidth: number;
+  /** Between the facts and the actions. */
+  actionsGap: number;
+  /**
+   * How the actions are set: "full" as on a desktop, "compact" where the row
+   * is a phone's width, play taking what the round buttons leave.
+   */
+  actions: "full" | "compact";
+  /** The title's own scale at rest, open, and under a trailer. */
+  titleScale: TitleScale;
+  /** How far below the stage's top a fully open logo may reach. */
+  menuClearance: number;
   overviewFontPx: number;
   /** Height of the overview's three lines. */
   overviewHeight: number;
   /** How far the facts and the title rise while the overview is open. */
   overviewLift: number;
+}
+
+export interface TitleScale {
+  rest: number;
+  open: number;
+  trailer: number;
 }
 
 /**
@@ -281,6 +378,17 @@ export const TITLE_SCALE = {
   trailer: 0.46,
 } as const;
 
+/**
+ * On a tall stage the title's box is already the narrow column beside the
+ * queue, so it rests at full size and the overview only lifts it: there is no
+ * pointer to rest on it, and nothing to grow into.
+ */
+export const TALL_TITLE_SCALE: TitleScale = {
+  rest: 1,
+  open: 1,
+  trailer: 0.82,
+};
+
 /** Fixed rows, so the title's place never depends on a title's own copy. */
 export const COPY_ROWS = {
   factsPx: 20,
@@ -293,7 +401,53 @@ export const COPY_ROWS = {
   actionsPx: 48,
 } as const;
 
-export function heroLayout(stage: StageSize): HeroLayout {
+/**
+ * The tall layout, from the foot up: the actions across the full width; above
+ * them the facts on the left, level with the foot of the queue on the right;
+ * the title above the facts, in the column the queue leaves. With nothing
+ * queued (a title's own page) the column is the stage's, less a margin, so a
+ * logo is not drawn edge to edge.
+ */
+function tallLayout(stage: StageSize, withQueue: boolean): HeroLayout {
+  const frame = tallFrame(stage);
+  const width = stage.width - frame.inset * 2;
+  const queueWidth = frame.slotWidth * QUEUE_LENGTH + frame.slotGap * 2;
+  const columnGap = clamp(stage.width * 0.03, 14, 28);
+  const column = withQueue ? width - queueWidth - columnGap : width;
+  const actionsGap = TALL_QUEUE_FOOT_PX;
+  const height = COPY_ROWS.factsPx + actionsGap + COPY_ROWS.actionsPx;
+  const overviewFontPx = stage.width >= 700 ? 15 : 14;
+  const overviewHeight = Math.ceil(
+    overviewFontPx * COPY_ROWS.overviewLineHeight * COPY_ROWS.overviewLines,
+  );
+  const titleHeight = clamp(stage.height * 0.15, 84, 190);
+  return {
+    form: "tall",
+    copy: { left: frame.inset, bottom: frame.bottom, width, height },
+    title: {
+      left: frame.inset,
+      bottom: frame.bottom + height + clamp(stage.height * 0.014, 10, 18),
+      // Led by the stage's height, so a wide logo on an upright tablet
+      // carries the weight the stage gives it, not a phone's.
+      width: Math.min(column, stage.width * 0.6, titleHeight * 2.6),
+      height: titleHeight,
+    },
+    factsWidth: column,
+    actionsGap,
+    actions: stage.width < 600 ? "compact" : "full",
+    titleScale: TALL_TITLE_SCALE,
+    menuClearance: stage.width < 1024 ? 92 : LOGO_MENU_CLEARANCE_PX,
+    overviewFontPx,
+    overviewHeight,
+    overviewLift: overviewHeight + COPY_ROWS.factsGapPx,
+  };
+}
+
+export function heroLayout(
+  stage: StageSize,
+  { withQueue = true }: { withQueue?: boolean } = {},
+): HeroLayout {
+  if (heroForm(stage) === "tall") return tallLayout(stage, withQueue);
   const slots = queueSlots(stage);
   const bottom = stage.height - (slots[0]!.y + slots[0]!.height);
   const left = clamp(stage.width * 0.045, 40, 88);
@@ -306,6 +460,7 @@ export function heroLayout(stage: StageSize): HeroLayout {
   const width = Math.min(stage.width * 0.4, 600, slots[0]!.x - left - 32);
   const titleGap = clamp(stage.height * 0.028, 18, 32);
   return {
+    form: "wide",
     copy: { left, bottom, width, height },
     title: {
       left,
@@ -313,6 +468,12 @@ export function heroLayout(stage: StageSize): HeroLayout {
       width: Math.min(stage.width * 0.34, 620),
       height: clamp(stage.height * 0.19, 110, 220),
     },
+    factsWidth: width,
+    actionsGap: COPY_ROWS.actionsGapPx,
+    actions: "full",
+    titleScale: TITLE_SCALE,
+    // The phone's header is shorter than the desktop's.
+    menuClearance: stage.width < 1024 ? 92 : LOGO_MENU_CLEARANCE_PX,
     overviewFontPx,
     overviewHeight,
     overviewLift: overviewHeight + COPY_ROWS.factsGapPx,
@@ -371,6 +532,41 @@ export function stageness(scale: number, slotScale: number): number {
 /** Quartic ease-in (alpha = t⁴) from clear to the page's background. */
 export const HANDOVER_GRADIENT =
   "linear-gradient(180deg, rgba(5,6,7,0) 0%, rgba(5,6,7,0.008) 30%, rgba(5,6,7,0.041) 45%, rgba(5,6,7,0.13) 60%, rgba(5,6,7,0.24) 70%, rgba(5,6,7,0.41) 80%, rgba(5,6,7,0.573) 87%, rgba(5,6,7,0.748) 93%, #050607 100%)";
+
+/** The fall's shape: [share of the way from clear to solid, alpha]. */
+const TALL_FOOT_STOPS: ReadonlyArray<readonly [number, number]> = [
+  [0, 0],
+  [0.17, 0.08],
+  [0.31, 0.25],
+  [0.44, 0.48],
+  [0.54, 0.68],
+  [0.65, 0.83],
+  [0.75, 0.93],
+  [0.88, 0.98],
+  [1, 1],
+];
+
+/**
+ * A tall stage's foot: clear above, then the picture sinks into the room and
+ * is solid by the top of the logo's box, so the logo, facts and actions never
+ * sit over a poster's printed lettering. The fall spans 40% of the stage,
+ * eased so it has no visible start.
+ */
+export function tallFootGradient(
+  stage: StageSize,
+  title: HeroLayout["title"],
+  titleRest = 1,
+): string {
+  const logoTop = title.bottom + title.height * titleRest;
+  const solid = clamp(1 - logoTop / stage.height, 0.5, 0.95);
+  const clear = Math.max(0.25, solid - 0.4);
+  const at = (share: number) =>
+    `${((clear + (solid - clear) * share) * 100).toFixed(1)}%`;
+  const stops = TALL_FOOT_STOPS.map(([share, alpha]) =>
+    alpha >= 1 ? `#050607 ${at(share)}` : `rgba(5,6,7,${alpha}) ${at(share)}`,
+  );
+  return `linear-gradient(180deg, rgba(5,6,7,0) 0%, ${stops.join(", ")})`;
+}
 
 /**
  * How far below the stage's top a fully open logo may reach: the menu's

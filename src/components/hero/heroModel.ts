@@ -5,7 +5,7 @@ import type { MediaItem } from "../../lib/types";
 export const HERO_TRAILERS_ENABLED_STORAGE_KEY =
   "seyirlik-hero-trailers-enabled";
 
-export type HeroImageType = "backdrop" | "primary";
+export type HeroImageType = "backdrop" | "primary" | "poster";
 
 export interface HeroImageCandidate {
   type: HeroImageType;
@@ -81,4 +81,46 @@ export function getHeroImageCandidates(item?: MediaItem): HeroImageCandidate[] {
   }
 
   return candidates;
+}
+
+/**
+ * The artwork for a stage of a given shape. A landscape stage takes the
+ * backdrop, as it always has. A portrait one takes the poster first: it is
+ * drawn for that shape, a backdrop cut to it keeps a third of its width and
+ * often loses its subject, and a poster's own lettering sits low, where the
+ * hero's foot fades it under the title. An episode stands on its series'
+ * poster. Without a poster a portrait stage falls back to the backdrop.
+ */
+export function getStageImageCandidates(
+  item: MediaItem | undefined,
+  form: "wide" | "tall",
+  stageWidth = 0,
+): HeroImageCandidate[] {
+  if (!item) return [];
+  if (form === "wide") return getHeroImageCandidates(item);
+  // Enough for the stage at the screen's density, never above the ceiling.
+  const density =
+    typeof window === "undefined" ? 2 : Math.min(3, window.devicePixelRatio);
+  const width = Math.min(
+    MAX_ARTWORK_WIDTH,
+    Math.max(680, Math.ceil(stageWidth * density)),
+  );
+  const posters: HeroImageCandidate[] = [];
+  if (item.Type === "Episode" && item.SeriesId && item.SeriesPrimaryImageTag) {
+    posters.push({
+      type: "poster",
+      url: getPrimaryImageUrl(item.SeriesId, item.SeriesPrimaryImageTag, width),
+    });
+  } else if (item.ImageTags?.Primary) {
+    posters.push({
+      type: "poster",
+      url: getPrimaryImageUrl(item.Id, item.ImageTags.Primary, width),
+    });
+  }
+  return [
+    ...posters,
+    ...getHeroImageCandidates(item).filter(
+      (candidate) => candidate.type === "backdrop",
+    ),
+  ];
 }

@@ -12,6 +12,7 @@ import {
   motion,
   useMotionValue,
   useReducedMotion,
+  useTransform,
   type AnimationPlaybackControls,
 } from "framer-motion";
 import {
@@ -51,7 +52,7 @@ import {
 import {
   HANDOVER_GRADIENT,
   HERO_DWELL_MS,
-  LOGO_MENU_CLEARANCE_PX,
+  HERO_HEIGHT_CLASS,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
   QUEUE_LENGTH,
@@ -67,8 +68,10 @@ import {
   sharedDurationS,
   slotPlacement,
   stagePlacement,
+  type HeroFit,
   type Placement,
   type StageSize,
+  type TitleScale,
 } from "./homeHeroModel";
 
 /**
@@ -105,9 +108,28 @@ const QUEUE_DIM = 0;
 /** Space kept above the controls for the notification pile. */
 const CHROME_CLEARANCE_PX = 14;
 
+/**
+ * A swipe across the stage: how far a finger must travel, and how much more
+ * sideways than up or down, before it changes the title. While it moves the
+ * title on stage gives a little way under it, at a fraction of the finger's
+ * travel and never past `SWIPE_GIVE_MAX_PX`, so the stage is felt to be the
+ * thing being pushed.
+ */
+const SWIPE_DISTANCE_PX = 56;
+const SWIPE_VELOCITY_PX_PER_MS = 0.45;
+const SWIPE_GIVE = 0.22;
+const SWIPE_GIVE_MAX_PX = 44;
+
 interface HomeHeroProps {
   items: MediaItem[];
   onReady?: () => void;
+  /**
+   * How tall the hero stands: the whole screen, or (the phone and tablet
+   * pages) the screen above the tab bar, so the actions are never under it.
+   */
+  fit?: HeroFit;
+  /** Whether a title's trailer may start after its artwork has had a moment. */
+  trailers?: boolean;
 }
 
 function uniqueById(items: MediaItem[]): MediaItem[] {
@@ -134,7 +156,12 @@ function run(controls: AnimationPlaybackControls): Promise<void> {
   );
 }
 
-export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
+export function HomeHero({
+  items: rawItems,
+  onReady,
+  fit = "screen",
+  trailers = true,
+}: HomeHeroProps) {
   const { language, t } = useLanguage();
   const reduceMotion = Boolean(useReducedMotion());
   // The page recomputes its pool as the catalogue arrives, often to the same
@@ -196,11 +223,21 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     isOverviewHovered || isOverviewPinned || isOverviewFocused;
   const overview = useMotionValue(0);
   const overviewLiftRef = useRef(0);
+  // On a tall stage the overview opens across the queue's row, so the queue
+  // steps aside for it on the same value.
+  const isTallRef = useRef(false);
+  const queueFade = useTransform(overview, (value) =>
+    isTallRef.current ? 1 - value : 1,
+  );
   const closeOverview = useCallback(() => {
     setIsOverviewHovered(false);
     setIsOverviewPinned(false);
     setIsOverviewFocused(false);
   }, []);
+
+  // The title's scales depend on the stage's shape; the choreography reads
+  // them from here, where the last render left them.
+  const titleScaleRef = useRef<TitleScale>(TITLE_SCALE);
 
   const stageItem = items[stageIndex];
   // Once for the hero, not once per title: each title's copy asking again put
@@ -231,7 +268,11 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   const motionFor = useCallback((id: string, placement: Placement, dim = 0) => {
     let entry = motions.current.get(id);
     if (!entry) {
-      entry = createCompositionMotion(placement, dim);
+      entry = createCompositionMotion(
+        placement,
+        dim,
+        titleScaleRef.current.rest,
+      );
       motions.current.set(id, entry);
     }
     return entry;
@@ -456,7 +497,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         const entry = motionFor(id, start, QUEUE_DIM);
         place(entry, start);
         entry.dim.set(QUEUE_DIM);
-        entry.titleScale.set(TITLE_SCALE.rest);
+        entry.titleScale.set(titleScaleRef.current.rest);
         entry.titleY.set(0);
         entry.trailer.set(0);
         return entry;
@@ -545,7 +586,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         );
         place(previous, pushedBackPlacement(size));
         previous.dim.set(HERO_MOTION.pushBackDim);
-        previous.titleScale.set(TITLE_SCALE.rest);
+        previous.titleScale.set(titleScaleRef.current.rest);
         const leavingId = oldQueueIds.find((id) => !newQueueIds.includes(id));
         setLayers([
           { id: incoming.Id, role: "stage" },
@@ -558,7 +599,11 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         const shrinking = motions.current.get(outgoing.Id)!;
         moveTo(shrinking, slotPlacement(size, slots[0]!), liftOptions);
         void animate(shrinking.dim, QUEUE_DIM, liftOptions);
-        void animate(shrinking.titleScale, TITLE_SCALE.rest, liftOptions);
+        void animate(
+          shrinking.titleScale,
+          titleScaleRef.current.rest,
+          liftOptions,
+        );
         void animate(shrinking.trailer, 0, liftOptions);
         moveTo(previous, stagePlacement(), liftOptions);
         void animate(previous.dim, 0, liftOptions);
@@ -609,10 +654,9 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         const id = items[stageIndexRef.current]?.Id;
         const entry = id ? motions.current.get(id) : undefined;
         if (!entry) return;
+        const scales = titleScaleRef.current;
         entry.titleY.set(-value * overviewLiftRef.current);
-        entry.titleScale.set(
-          TITLE_SCALE.rest + (TITLE_SCALE.open - TITLE_SCALE.rest) * value,
-        );
+        entry.titleScale.set(scales.rest + (scales.open - scales.rest) * value);
       }),
     [items, overview],
   );
@@ -691,7 +735,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     trailerDoneRef.current = stageItem
       ? trailersSeen.current.has(stageItem.Id)
       : false;
-    if (!stageItem) return undefined;
+    if (!stageItem || !trailers) return undefined;
     void getHeroPreviewUrl(stageItem)
       .then((url) => {
         if (!cancelled) setTrailerUrl(url);
@@ -700,7 +744,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     return () => {
       cancelled = true;
     };
-  }, [stageItem]);
+  }, [stageItem, trailers]);
 
   // Artwork and copy first; then, if there is a trailer, the title steps back
   // and the picture starts moving.
@@ -731,7 +775,9 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     void animate(entry.trailer, isTrailerPlaying ? 1 : 0, options);
     void animate(
       entry.titleScale,
-      isTrailerPlaying ? TITLE_SCALE.trailer : TITLE_SCALE.rest,
+      isTrailerPlaying
+        ? titleScaleRef.current.trailer
+        : titleScaleRef.current.rest,
       options,
     );
     if (isTrailerPlaying) setCopyItemId(null);
@@ -780,16 +826,60 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     };
   }, [claimId, hasOpened, stage]);
 
+  // ----------------------------------------------------------- the swipe
+  const swipeRef = useRef<{
+    id: number;
+    x: number;
+    y: number;
+    at: number;
+    axis: "x" | "y" | null;
+  } | null>(null);
+  const swipedAtRef = useRef(0);
+  const stageEntry = () => {
+    const id = items[stageIndexRef.current]?.Id;
+    return id ? motions.current.get(id) : undefined;
+  };
+  const endSwipe = (clientX: number, completed: boolean) => {
+    const swipe = swipeRef.current;
+    swipeRef.current = null;
+    if (!swipe || swipe.axis !== "x") return;
+    swipedAtRef.current = performance.now();
+    const dx = clientX - swipe.x;
+    const speed = Math.abs(dx) / Math.max(1, performance.now() - swipe.at);
+    const isSwipe =
+      completed &&
+      total > 1 &&
+      (Math.abs(dx) >= SWIPE_DISTANCE_PX ||
+        (Math.abs(dx) >= 24 && speed >= SWIPE_VELOCITY_PX_PER_MS));
+    if (isSwipe && !busyRef.current) {
+      void travel(dx < 0 ? "forward" : "backward");
+      return;
+    }
+    const entry = stageEntry();
+    if (entry)
+      void animate(entry.x, 0, {
+        duration: reduceMotion ? 0 : 0.32,
+        ease: HERO_MOTION.settleEase,
+      });
+  };
+
   // --------------------------------------------------------------- render
   const slots = stage ? queueSlots(stage) : [];
   const slotScale = stage && slots[0] ? slots[0].width / stage.width : 0.12;
   const layout = stage ? heroLayout(stage) : null;
   overviewLiftRef.current = layout?.overviewLift ?? 0;
+  titleScaleRef.current = layout?.titleScale ?? TITLE_SCALE;
+  const isTall = layout?.form === "tall";
+  isTallRef.current = isTall;
+  const isCompact = layout?.actions === "compact";
+  // While the overview spans the queue's row, the queue takes no taps.
+  const isQueueAside = isTall && isOverviewOpen;
   const queueIds = queueIndices(stageIndex, total).map(
     (index) => items[index]!.Id,
   );
   const headSlot = slots[0];
-  const controlsTop = headSlot ? headSlot.y - 54 : 0;
+  // A phone's pill holds touch-sized buttons, so it stands taller.
+  const controlsTop = headSlot ? headSlot.y - (isCompact ? 62 : 54) : 0;
   controlsTopRef.current = controlsTop;
   // The progress bar under the thumbnails is the lowest thing in the band.
   controlsBottomRef.current = headSlot ? headSlot.y + headSlot.height + 12 : 0;
@@ -814,7 +904,7 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
     return (
       <section
         ref={sectionRef}
-        className="relative min-h-[100svh] w-full bg-[#050607]"
+        className={`relative w-full bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       />
     );
   }
@@ -822,12 +912,46 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
   return (
     <section
       ref={sectionRef}
-      className="seyirlik-home-hero relative h-[100svh] min-h-[38rem] w-full overflow-hidden bg-[#050607]"
+      className={`seyirlik-home-hero relative w-full touch-pan-y overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
       aria-roledescription="carousel"
       aria-label={t("hero.featured")}
       onKeyDown={(event) => {
         if (event.key === "ArrowRight") void travel("forward");
         if (event.key === "ArrowLeft") void travel("backward");
+      }}
+      onPointerDown={(event) => {
+        if (event.pointerType === "mouse" || !hasOpened || busyRef.current)
+          return;
+        swipeRef.current = {
+          id: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+          at: performance.now(),
+          axis: null,
+        };
+      }}
+      onPointerMove={(event) => {
+        const swipe = swipeRef.current;
+        if (!swipe || swipe.id !== event.pointerId) return;
+        const dx = event.clientX - swipe.x;
+        const dy = event.clientY - swipe.y;
+        if (!swipe.axis && Math.hypot(dx, dy) > 10)
+          swipe.axis = Math.abs(dx) > Math.abs(dy) * 1.2 ? "x" : "y";
+        if (swipe.axis !== "x" || busyRef.current) return;
+        const give = Math.max(
+          -SWIPE_GIVE_MAX_PX,
+          Math.min(SWIPE_GIVE_MAX_PX, dx * SWIPE_GIVE),
+        );
+        stageEntry()?.x.set(give);
+      }}
+      onPointerUp={(event) => endSwipe(event.clientX, true)}
+      onPointerCancel={(event) => endSwipe(event.clientX, false)}
+      // A swipe that ends on a button or link is not a tap on it.
+      onClickCapture={(event) => {
+        if (performance.now() - swipedAtRef.current < 350) {
+          event.preventDefault();
+          event.stopPropagation();
+        }
       }}
     >
       {stage
@@ -844,12 +968,18 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
                 titleBox={layout!.title}
                 logoMaxHeight={
                   stage.height -
-                  LOGO_MENU_CLEARANCE_PX -
+                  layout!.menuClearance -
                   layout!.title.bottom -
                   layout!.overviewLift
                 }
                 motion={entry}
                 slotScale={slotScale}
+                titleRestScale={layout!.titleScale.rest}
+                opacity={
+                  isTall && (layer.role === "queue" || layer.role === "leaving")
+                    ? queueFade
+                    : undefined
+                }
                 zIndex={Z[layer.role]}
                 isStage={isStage}
                 trailerUrl={isStage ? trailerUrl : null}
@@ -885,157 +1015,183 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
         />
       ) : null}
 
-      {/* The queue: hit targets over the miniatures, and the head's clock. */}
-      {stage && hasOpened
-        ? queueIds.map((id, position) => {
-            const slot = slots[position];
-            const item = itemsById.get(id);
-            if (!slot || !item) return null;
-            const title =
-              getItemDisplayMetadata(item, language).title ?? item.Name;
-            return (
-              <button
-                key={id}
-                type="button"
-                className="absolute z-[5] rounded-[12px] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-default"
-                style={{
-                  left: slot.x,
-                  top: slot.y,
-                  width: slot.width,
-                  height: slot.height,
-                }}
-                aria-label={title}
-                disabled={isTravelling}
-                onMouseEnter={() => hover(id, true)}
-                onMouseLeave={() => hover(id, false)}
-                onFocus={() => hover(id, true)}
-                onBlur={() => hover(id, false)}
-                onClick={(event) => {
-                  hover(id, false);
-                  // The card it was focused on is about to leave the queue.
-                  event.currentTarget.blur();
-                  void travel("forward", position);
-                }}
-              />
-            );
-          })
-        : null}
+      {/* The queue's furniture: its hit targets, the head's clock and the
+          controls. One layer, so on a tall stage all of it steps aside
+          together while the overview is open across its row. */}
+      {/* Stepped aside for the overview, the queue is out of reach
+          altogether: no focus, nothing for assistive technology. */}
+      <motion.div
+        className="pointer-events-none absolute inset-0 z-[6]"
+        style={{ opacity: queueFade }}
+        {...(isQueueAside ? { inert: "" } : {})}
+      >
+        {stage && hasOpened
+          ? queueIds.map((id, position) => {
+              const slot = slots[position];
+              const item = itemsById.get(id);
+              if (!slot || !item) return null;
+              const title =
+                getItemDisplayMetadata(item, language).title ?? item.Name;
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className="absolute z-[5] rounded-[12px] outline-none transition-shadow focus-visible:ring-2 focus-visible:ring-[var(--accent)] focus-visible:ring-offset-2 focus-visible:ring-offset-black disabled:cursor-default"
+                  style={{
+                    left: slot.x,
+                    top: slot.y,
+                    width: slot.width,
+                    height: slot.height,
+                    pointerEvents: isQueueAside ? "none" : "auto",
+                  }}
+                  aria-label={title}
+                  tabIndex={isQueueAside ? -1 : undefined}
+                  disabled={isTravelling}
+                  onMouseEnter={() => hover(id, true)}
+                  onMouseLeave={() => hover(id, false)}
+                  onFocus={() => hover(id, true)}
+                  onBlur={() => hover(id, false)}
+                  onClick={(event) => {
+                    hover(id, false);
+                    // The card it was focused on is about to leave the queue.
+                    event.currentTarget.blur();
+                    void travel("forward", position);
+                  }}
+                />
+              );
+            })
+          : null}
 
-      {stage && headSlot ? (
-        <motion.div
-          aria-hidden="true"
-          className="pointer-events-none absolute z-[5] h-[2px] overflow-hidden rounded-full bg-white/15"
-          style={{
-            left: headSlot.x,
-            top: headSlot.y + headSlot.height + 10,
-            width: headSlot.width,
-          }}
-          initial={{ opacity: 0 }}
-          animate={{
-            opacity:
-              isArtworkReady && !isTravelling && !isTrailerPlaying ? 1 : 0,
-          }}
-          transition={{ duration: reduceMotion ? 0 : 0.35 }}
-        >
+        {stage && headSlot ? (
           <motion.div
-            className="h-full origin-left bg-[var(--accent)]"
-            style={{ scaleX: progress }}
-          />
-        </motion.div>
-      ) : null}
+            aria-hidden="true"
+            className="pointer-events-none absolute z-[5] h-[2px] overflow-hidden rounded-full bg-white/15"
+            style={{
+              left: headSlot.x,
+              top: headSlot.y + headSlot.height + 10,
+              width: headSlot.width,
+            }}
+            initial={{ opacity: 0 }}
+            animate={{
+              opacity:
+                isArtworkReady && !isTravelling && !isTrailerPlaying ? 1 : 0,
+            }}
+            transition={{ duration: reduceMotion ? 0 : 0.35 }}
+          >
+            <motion.div
+              className="h-full origin-left bg-[var(--accent)]"
+              style={{ scaleX: progress }}
+            />
+          </motion.div>
+        ) : null}
 
-      {stage && headSlot && total > 1 ? (
-        <motion.div
-          className="absolute z-[6] flex items-center gap-1 rounded-full border border-white/[0.14] bg-black/60 p-1 text-white shadow-[0_18px_60px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
-          style={{
-            right:
-              stage.width -
-              (slots[slots.length - 1]!.x + slots[slots.length - 1]!.width),
-            top: controlsTop,
-          }}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: isArtworkReady ? 1 : 0 }}
-          transition={{
-            duration: reduceMotion ? 0 : 0.5,
-            delay: reduceMotion ? 0 : HERO_MOTION.openQueueDelayS,
-            ease: "easeOut",
-          }}
-        >
-          <HeroControlButton
-            label={t("hero.previous")}
-            onClick={() => void travel("backward")}
-            disabled={isTravelling}
+        {stage && headSlot && total > 1 ? (
+          <motion.div
+            className="absolute z-[6] flex items-center gap-1 rounded-full border border-white/[0.14] bg-black/60 p-1 text-white shadow-[0_18px_60px_rgba(0,0,0,0.55),inset_0_1px_0_rgba(255,255,255,0.08)] backdrop-blur-2xl"
+            style={{
+              right:
+                stage.width -
+                (slots[slots.length - 1]!.x + slots[slots.length - 1]!.width),
+              top: controlsTop,
+              pointerEvents: isQueueAside ? "none" : "auto",
+            }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: isArtworkReady ? 1 : 0 }}
+            transition={{
+              duration: reduceMotion ? 0 : 0.5,
+              delay: reduceMotion ? 0 : HERO_MOTION.openQueueDelayS,
+              ease: "easeOut",
+            }}
           >
-            <ChevronLeft size={18} strokeWidth={2.4} />
-          </HeroControlButton>
-          <HeroControlButton
-            label={isPaused ? t("hero.resume") : t("hero.pause")}
-            onClick={() => setIsPaused((current) => !current)}
-          >
-            {isPaused ? (
-              <Play size={15} fill="currentColor" />
-            ) : (
-              <Pause size={15} fill="currentColor" />
-            )}
-          </HeroControlButton>
-          <HeroControlButton
-            label={t("hero.next")}
-            onClick={() => void travel("forward")}
-            disabled={isTravelling}
-          >
-            <ChevronRight size={18} strokeWidth={2.4} />
-          </HeroControlButton>
-          <span
-            className="px-2.5 text-xs font-black tabular-nums tracking-[0.08em] text-white/70"
-            aria-live="polite"
-          >
-            {String(stageIndex + 1).padStart(2, "0")}
-            <span className="text-white/35">
-              {" "}
-              / {String(total).padStart(2, "0")}
+            {/* A phone's pill has room for the clock alone: a swipe or a tap on
+              a miniature moves the queue there. Previous and next stay for
+              a keyboard and assistive technology, which have neither, and
+              show themselves while they hold the focus. */}
+            <HeroControlButton
+              label={t("hero.previous")}
+              onClick={() => void travel("backward")}
+              disabled={isTravelling}
+              touch={isCompact}
+              className={isCompact ? "sr-only focus-visible:not-sr-only" : ""}
+            >
+              <ChevronLeft size={18} strokeWidth={2.4} />
+            </HeroControlButton>
+            <HeroControlButton
+              label={isPaused ? t("hero.resume") : t("hero.pause")}
+              onClick={() => setIsPaused((current) => !current)}
+              touch={isCompact}
+            >
+              {isPaused ? (
+                <Play size={15} fill="currentColor" />
+              ) : (
+                <Pause size={15} fill="currentColor" />
+              )}
+            </HeroControlButton>
+            <HeroControlButton
+              label={t("hero.next")}
+              onClick={() => void travel("forward")}
+              disabled={isTravelling}
+              touch={isCompact}
+              className={isCompact ? "sr-only focus-visible:not-sr-only" : ""}
+            >
+              <ChevronRight size={18} strokeWidth={2.4} />
+            </HeroControlButton>
+            <span
+              className={`text-xs font-black tabular-nums tracking-[0.08em] text-white/70 ${
+                isCompact ? "pl-1 pr-3" : "px-2.5"
+              }`}
+              aria-live="polite"
+            >
+              {String(stageIndex + 1).padStart(2, "0")}
+              <span className="text-white/35">
+                {" "}
+                / {String(total).padStart(2, "0")}
+              </span>
             </span>
-          </span>
-          {trailerUrl ? (
-            <>
-              <span
-                className="mx-0.5 h-5 w-px bg-white/15"
-                aria-hidden="true"
-              />
-              <HeroControlButton
-                label={
-                  areTrailersEnabled
-                    ? t("hero.disableTrailers")
-                    : t("hero.enableTrailers")
-                }
-                onClick={() => {
-                  const next = !areTrailersEnabled;
-                  saveHeroTrailersEnabledPreference(next);
-                  setAreTrailersEnabled(next);
-                  if (!next) setIsTrailerPlaying(false);
-                }}
-              >
-                {areTrailersEnabled ? (
-                  <Video size={16} />
-                ) : (
-                  <VideoOff size={16} />
-                )}
-              </HeroControlButton>
-              {isTrailerPlaying ? (
+            {trailerUrl ? (
+              <>
+                <span
+                  className="mx-0.5 h-5 w-px bg-white/15"
+                  aria-hidden="true"
+                />
                 <HeroControlButton
-                  label={isTrailerMuted ? t("player.unmute") : t("player.mute")}
-                  onClick={() => setIsTrailerMuted((current) => !current)}
+                  label={
+                    areTrailersEnabled
+                      ? t("hero.disableTrailers")
+                      : t("hero.enableTrailers")
+                  }
+                  onClick={() => {
+                    const next = !areTrailersEnabled;
+                    saveHeroTrailersEnabledPreference(next);
+                    setAreTrailersEnabled(next);
+                    if (!next) setIsTrailerPlaying(false);
+                  }}
                 >
-                  {isTrailerMuted ? (
-                    <VolumeX size={16} />
+                  {areTrailersEnabled ? (
+                    <Video size={16} />
                   ) : (
-                    <Volume2 size={16} />
+                    <VideoOff size={16} />
                   )}
                 </HeroControlButton>
-              ) : null}
-            </>
-          ) : null}
-        </motion.div>
-      ) : null}
+                {isTrailerPlaying ? (
+                  <HeroControlButton
+                    label={
+                      isTrailerMuted ? t("player.unmute") : t("player.mute")
+                    }
+                    onClick={() => setIsTrailerMuted((current) => !current)}
+                  >
+                    {isTrailerMuted ? (
+                      <VolumeX size={16} />
+                    ) : (
+                      <Volume2 size={16} />
+                    )}
+                  </HeroControlButton>
+                ) : null}
+              </>
+            ) : null}
+          </motion.div>
+        ) : null}
+      </motion.div>
 
       {/* Loading: the skeleton, piece for piece where the hero's own pieces
           will be, fading off as the first artwork fades in. */}
@@ -1051,7 +1207,12 @@ export function HomeHero({ items: rawItems, onReady }: HomeHeroProps) {
           }}
         >
           <HomeHeroSkeletonBackdrop />
-          <HomeHeroSkeletonPieces stage={stage} />
+          <HomeHeroSkeletonPieces
+            stage={stage}
+            withControls={total > 1}
+            item={stageItem}
+            smartContinueItems={smartContinueItems}
+          />
         </motion.div>
       ) : null}
 

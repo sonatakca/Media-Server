@@ -4,7 +4,7 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { HeroSection } from "../../components/HeroSection";
+import { TitleHero } from "../../components/home/TitleHero";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
@@ -356,6 +356,7 @@ export function MobileLibraryPage({
 
   // Sorting and filtering move cards rather than reshuffling them in place.
   const gridRef = useRef<HTMLDivElement | null>(null);
+  const titleDetailsRef = useRef<HTMLDivElement | null>(null);
   useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
 
   const libraryRotatingLogoUrls = useMemo(() => {
@@ -565,9 +566,9 @@ export function MobileLibraryPage({
     const isInitialDetailsReady = readyDetailsId === activeId;
     const initialDetailsSkeleton =
       data.library.Type === "Movie" || libraryRouteKind === "movie" ? (
-        <MovieLibrarySkeleton mobile />
+        <MovieLibrarySkeleton mobile item={data.library} />
       ) : (
-        <ShowLibrarySkeleton mobile />
+        <ShowLibrarySkeleton mobile item={data.library} />
       );
 
     return (
@@ -588,21 +589,40 @@ export function MobileLibraryPage({
               className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
             />
 
+            {/* The desktop's title hero, on a stage the phone's or tablet's
+                shape: the same poster-or-backdrop composition, copy and
+                actions as the home hero, with nothing queued. */}
             <div className="full-bleed relative">
-              <HeroSection
+              <TitleHero
+                key={data.library.Id}
                 item={data.library}
-                variant="fixed"
-                enablePreview={false}
-                keepDetailsVisible
+                fit="mobile"
+                trailers={false}
+                isRevealed={isInitialDetailsReady}
+                onShowDetails={() =>
+                  titleDetailsRef.current?.scrollIntoView({
+                    behavior: window.matchMedia(
+                      "(prefers-reduced-motion: reduce)",
+                    ).matches
+                      ? "auto"
+                      : "smooth",
+                    block: "start",
+                  })
+                }
               />
             </div>
 
-            <SeriesLibraryDetails
-              initialItem={data.library}
-              variant="mobile"
-              canonicalPath={canonicalPath}
-              onInitialReady={() => setReadyDetailsId(activeId ?? null)}
-            />
+            <div
+              ref={titleDetailsRef}
+              className="scroll-mt-[calc(4rem+env(safe-area-inset-top))]"
+            >
+              <SeriesLibraryDetails
+                initialItem={data.library}
+                variant="mobile"
+                canonicalPath={canonicalPath}
+                onInitialReady={() => setReadyDetailsId(activeId ?? null)}
+              />
+            </div>
           </div>
         </div>
       </>

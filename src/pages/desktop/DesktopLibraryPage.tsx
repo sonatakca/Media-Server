@@ -666,9 +666,9 @@ export function DesktopLibraryPage({
     const isInitialDetailsReady = readyDetailsId === activeId;
     const initialDetailsSkeleton =
       data.library.Type === "Movie" || libraryRouteKind === "movie" ? (
-        <MovieLibrarySkeleton />
+        <MovieLibrarySkeleton item={data.library} />
       ) : (
-        <ShowLibrarySkeleton />
+        <ShowLibrarySkeleton item={data.library} />
       );
 
     return (

@@ -1,5 +1,7 @@
 import { useLanguage } from "../i18n/LanguageContext";
 import { HomeHeroSkeleton, TitleHeroSkeleton } from "./home/HomeHeroSkeleton";
+import type { MediaItem } from "../lib/types";
+import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
 
@@ -589,9 +591,31 @@ function MobileAboutInformationSkeleton({ kind }: { kind: "movie" | "show" }) {
   );
 }
 
-function MobileDetailsSkeleton({ kind }: { kind: "movie" | "show" }) {
+function MobileDetailsSkeleton({
+  kind,
+  item,
+}: {
+  kind: "movie" | "show";
+  item?: MediaItem;
+}) {
   return (
-    <div className="pb-7">
+    <div className="layout-no-offset min-w-0 pb-7">
+      {/* The page's own furniture, where the page puts it, over the title
+          hero's skeleton at the hero's own height. */}
+      <div className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]">
+        <div className="shimmer h-12 w-12 rounded-full" />
+      </div>
+      <div
+        className="shimmer fixed right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80] h-10 rounded-full"
+        style={{ width: kind === "show" ? 252 : 187 }}
+      />
+      <div className="full-bleed relative">
+        <TitleHeroSkeleton
+          fit="mobile"
+          item={item}
+          canDownload={kind === "movie" && isOfflineSupported()}
+        />
+      </div>
       {kind === "show" ? (
         <MobileEpisodeShelfSkeleton />
       ) : (
@@ -607,12 +631,15 @@ function MobileDetailsSkeleton({ kind }: { kind: "movie" | "show" }) {
 function HeroLibrarySkeleton({
   kind,
   mobile = false,
+  item,
 }: {
   kind: "movie" | "show";
   mobile?: boolean;
+  /** The title, when the page has it and waits only on its details. */
+  item?: MediaItem;
 }) {
   if (mobile) {
-    return <MobileDetailsSkeleton kind={kind} />;
+    return <MobileDetailsSkeleton kind={kind} item={item} />;
   }
 
   return (
@@ -626,7 +653,10 @@ function HeroLibrarySkeleton({
         style={{ width: kind === "show" ? 294 : 218 }}
       />
       <div className="full-bleed relative min-h-[100svh]">
-        <TitleHeroSkeleton />
+        <TitleHeroSkeleton
+          item={item}
+          canDownload={kind === "movie" && isOfflineSupported()}
+        />
         <div className="shimmer absolute bottom-10 left-1/2 z-[70] h-12 w-12 -translate-x-1/2 rounded-full" />
       </div>
       <div
@@ -644,10 +674,22 @@ function HeroLibrarySkeleton({
   );
 }
 
-export function MovieLibrarySkeleton({ mobile = false }: { mobile?: boolean }) {
-  return <HeroLibrarySkeleton kind="movie" mobile={mobile} />;
+export function MovieLibrarySkeleton({
+  mobile = false,
+  item,
+}: {
+  mobile?: boolean;
+  item?: MediaItem;
+}) {
+  return <HeroLibrarySkeleton kind="movie" mobile={mobile} item={item} />;
 }
 
-export function ShowLibrarySkeleton({ mobile = false }: { mobile?: boolean }) {
-  return <HeroLibrarySkeleton kind="show" mobile={mobile} />;
+export function ShowLibrarySkeleton({
+  mobile = false,
+  item,
+}: {
+  mobile?: boolean;
+  item?: MediaItem;
+}) {
+  return <HeroLibrarySkeleton kind="show" mobile={mobile} item={item} />;
 }

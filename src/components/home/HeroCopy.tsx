@@ -25,15 +25,13 @@ import {
 import { getPlayTargetForItem } from "../../lib/playTarget";
 import { getRouteForItem } from "../../lib/routes";
 import type { MediaItem } from "../../lib/types";
-import { canStartOverFromHero } from "../HeroSection";
-import { getHeroImageCandidates } from "../hero/heroModel";
+import { getStageImageCandidates } from "../hero/heroModel";
 import { Tooltip } from "../ui/Tooltip";
-import { HeroActions } from "./HeroActions";
+import { HeroActions, heroPlayState } from "./HeroActions";
 import { sampleUrl } from "./HeroComposition";
 import {
   COPY_ROWS,
   HERO_MOTION,
-  TITLE_SCALE,
   type HeroLayout,
   type StageSize,
 } from "./homeHeroModel";
@@ -102,7 +100,7 @@ export function HeroCopyBlock({
           12 +
           (isOverviewOpen
             ? layout.title.height + layout.overviewLift
-            : layout.title.height * TITLE_SCALE.rest),
+            : layout.title.height * layout.titleScale.rest),
         pointerEvents: item ? "auto" : "none",
       }}
       onMouseEnter={() => {
@@ -141,12 +139,13 @@ export function HeroCopyBlock({
             <HeroCopy
               key={item.Id}
               item={item}
+              stage={stage}
               layout={layout}
               factsRegion={{
                 left: layout.copy.left / stage.width,
                 top:
                   1 - (layout.copy.bottom + layout.copy.height) / stage.height,
-                width: Math.min(layout.copy.width, 340) / stage.width,
+                width: Math.min(layout.factsWidth, 340) / stage.width,
                 height: COPY_ROWS.factsPx / stage.height,
               }}
               overview={overview}
@@ -167,11 +166,16 @@ export function HeroControlButton({
   label,
   onClick,
   disabled,
+  touch = false,
+  className = "",
   children,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
+  /** A phone's control: a full 44px touch target. */
+  touch?: boolean;
+  className?: string;
   children: ReactNode;
 }) {
   return (
@@ -181,7 +185,7 @@ export function HeroControlButton({
         aria-label={label}
         onClick={onClick}
         disabled={disabled}
-        className="flex h-9 w-9 items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40"
+        className={`${touch ? "h-11 w-11" : "h-9 w-9"} ${className} flex items-center justify-center rounded-full text-white/85 transition hover:bg-white/[0.12] hover:text-white active:scale-95 focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent)] disabled:opacity-40`}
       >
         {children}
       </button>
@@ -203,9 +207,14 @@ const OVERVIEW_SHADE_FOOT_PX = 12;
  * a white sky. It starts in the middle, so nothing flashes unreadable while
  * the artwork is measured.
  */
-function useCopyShade(item: MediaItem, region: SampleRegion): number {
+function useCopyShade(
+  item: MediaItem,
+  stage: StageSize,
+  layout: HeroLayout,
+  region: SampleRegion,
+): number {
   const [shade, setShade] = useState(0.5);
-  const url = getHeroImageCandidates(item)[0]?.url;
+  const url = getStageImageCandidates(item, layout.form, stage.width)[0]?.url;
   const { left, top, width, height } = region;
   useEffect(() => {
     if (!url) return undefined;
@@ -223,7 +232,9 @@ function useCopyShade(item: MediaItem, region: SampleRegion): number {
       cancelled = true;
     };
   }, [url, left, top, width, height]);
-  return shade;
+  // On a tall stage the copy stands where the picture has sunk into the
+  // room, so it needs little more than its resting shadow.
+  return layout.form === "tall" ? Math.min(shade, 0.35) : shade;
 }
 
 /**
@@ -245,6 +256,7 @@ function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
 /** What to show under the title: facts, a few lines of story, and the ways in. */
 function HeroCopy({
   item,
+  stage,
   layout,
   factsRegion,
   overview,
@@ -255,6 +267,7 @@ function HeroCopy({
   smartContinueItems,
 }: {
   item: MediaItem;
+  stage: StageSize;
   layout: HeroLayout;
   /** Where the facts line lies over the artwork, as shares of it. */
   factsRegion: SampleRegion;
@@ -269,7 +282,7 @@ function HeroCopy({
 }) {
   const { language, t } = useLanguage();
   const navigate = useNavigate();
-  const shade = useCopyShade(item, factsRegion);
+  const shade = useCopyShade(item, stage, layout, factsRegion);
   const labels = {
     season: t("media.seasonNumber"),
     hourShort: t("format.hourShort"),
@@ -285,37 +298,12 @@ function HeroCopy({
     .filter(Boolean)
     .join("  ·  ");
 
-  const continueTarget = smartContinueItems.find((candidate) =>
-    item.Type === "Series"
-      ? candidate.Type === "Episode" && candidate.SeriesId === item.Id
-      : candidate.Id === item.Id,
-  );
-  const playItem = continueTarget ?? item;
-  const hasProgress =
-    (continueTarget?.UserData?.PlaybackPositionTicks ?? 0) > 0;
-  const episodeLabel =
-    continueTarget?.Type === "Episode" &&
-    typeof continueTarget.ParentIndexNumber === "number" &&
-    typeof continueTarget.IndexNumber === "number"
-      ? t("media.seasonEpisodeNumber")
-          .replace("{seasonNumber}", String(continueTarget.ParentIndexNumber))
-          .replace("{episodeNumber}", String(continueTarget.IndexNumber))
-      : null;
-  const playLabel = `${hasProgress ? t("details.continueWatching") : t("common.play")}${
-    episodeLabel ? `: ${episodeLabel}` : ""
-  }`;
+  const { playItem, playLabel, shortPlayLabel, canStartOver, progress } =
+    heroPlayState(item, smartContinueItems, t);
   const playTo =
     playItem.Type === "Series"
       ? getRouteForItem(playItem)
       : `/watch/${playItem.Id}`;
-  const canStartOver = canStartOverFromHero(playItem);
-  const position = continueTarget?.UserData?.PlaybackPositionTicks ?? 0;
-  const length = continueTarget?.RunTimeTicks ?? 0;
-  const left =
-    hasProgress && length > position
-      ? formatRuntime(length - position, labels)
-      : null;
-  const progress = left ? { share: position / length, left } : null;
 
   const overviewId = useId();
   const factsY = useTransform(
@@ -373,7 +361,7 @@ function HeroCopy({
         <motion.p
           variants={line(0)}
           className="truncate text-[0.8125rem] font-bold leading-5 tracking-[0.04em]"
-          style={copyTextStyle(shade, 0.72)}
+          style={{ ...copyTextStyle(shade, 0.72), maxWidth: layout.factsWidth }}
         >
           {facts}
         </motion.p>
@@ -387,9 +375,7 @@ function HeroCopy({
             left: -OVERVIEW_SHADE_ROOM_PX,
             right: -OVERVIEW_SHADE_ROOM_PX,
             bottom:
-              COPY_ROWS.actionsPx +
-              COPY_ROWS.actionsGapPx -
-              OVERVIEW_SHADE_FOOT_PX,
+              COPY_ROWS.actionsPx + layout.actionsGap - OVERVIEW_SHADE_FOOT_PX,
             height:
               layout.overviewHeight +
               OVERVIEW_SHADE_ROOM_PX +
@@ -420,6 +406,7 @@ function HeroCopy({
           item={item}
           playTo={playTo}
           playLabel={playLabel}
+          shortPlayLabel={shortPlayLabel}
           onPlay={handlePlay}
           startOverTo={
             canStartOver
@@ -433,6 +420,7 @@ function HeroCopy({
           isOverviewOpen={isOverviewOpen}
           onToggleOverview={onToggleOverview}
           onShowDetails={onShowDetails}
+          compact={layout.actions === "compact"}
           fade={line(1)}
         />
       </div>

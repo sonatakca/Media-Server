@@ -23,13 +23,14 @@ import { HeroComposition, createCompositionMotion } from "./HeroComposition";
 import { HeroControlButton, HeroCopyBlock } from "./HeroCopy";
 import {
   HANDOVER_GRADIENT,
+  HERO_HEIGHT_CLASS,
   HERO_MOTION,
   HERO_TRAILER_DELAY_MS,
-  LOGO_MENU_CLEARANCE_PX,
   TITLE_SCALE,
   heroLayout,
   queueSlots,
   stagePlacement,
+  type HeroFit,
   type StageSize,
 } from "./homeHeroModel";
 import { useSmartContinueItems } from "./useSmartContinueItems";
@@ -44,8 +45,14 @@ export function TitleHero({
   item,
   onShowDetails,
   isRevealed = true,
+  fit = "screen",
+  trailers = true,
 }: {
   item: MediaItem;
+  /** The screen, or (phone and tablet) the screen above the tab bar. */
+  fit?: HeroFit;
+  /** Whether the title's trailer may start once its artwork has had a moment. */
+  trailers?: boolean;
   /** Scrolls to the title's details further down its page. */
   onShowDetails: () => void;
   /**
@@ -87,7 +94,8 @@ export function TitleHero({
     observer.observe(section);
     return () => observer.disconnect();
   }, []);
-  const layout = stage ? heroLayout(stage) : null;
+  const layout = stage ? heroLayout(stage, { withQueue: false }) : null;
+  const titleScale = layout?.titleScale ?? TITLE_SCALE;
   const slotScale =
     stage && layout ? queueSlots(stage)[0]!.width / stage.width : 0.12;
 
@@ -110,11 +118,18 @@ export function TitleHero({
       overview.on("change", (value) => {
         composition.titleY.set(-value * overviewLift);
         composition.titleScale.set(
-          TITLE_SCALE.rest + (TITLE_SCALE.open - TITLE_SCALE.rest) * value,
+          titleScale.rest + (titleScale.open - titleScale.rest) * value,
         );
       }),
-    [composition, overview, overviewLift],
+    [composition, overview, overviewLift, titleScale],
   );
+  // The composition is made before the stage is measured; once its shape is
+  // known the title takes that shape's resting size.
+  useEffect(() => {
+    composition.titleScale.set(
+      titleScale.rest + (titleScale.open - titleScale.rest) * overview.get(),
+    );
+  }, [composition, overview, titleScale]);
   useEffect(() => {
     const controls = animate(overview, isOverviewOpen ? 1 : 0, {
       duration: reduceMotion ? 0 : 0.32,
@@ -138,6 +153,7 @@ export function TitleHero({
 
   useEffect(() => {
     let cancelled = false;
+    if (!trailers) return undefined;
     void getHeroPreviewUrl(item)
       .then((url) => {
         if (!cancelled) setTrailerUrl(url);
@@ -146,7 +162,7 @@ export function TitleHero({
     return () => {
       cancelled = true;
     };
-  }, [item]);
+  }, [item, trailers]);
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -199,10 +215,10 @@ export function TitleHero({
     void animate(composition.trailer, isTrailerPlaying ? 1 : 0, options);
     void animate(
       composition.titleScale,
-      isTrailerPlaying ? TITLE_SCALE.trailer : TITLE_SCALE.rest,
+      isTrailerPlaying ? titleScale.trailer : titleScale.rest,
       options,
     );
-  }, [composition, isTrailerPlaying, reduceMotion]);
+  }, [composition, isTrailerPlaying, reduceMotion, titleScale]);
 
   const endTrailer = useCallback(() => setIsTrailerPlaying(false), []);
   const copyItem = isArtworkReady && !isTrailerPlaying ? item : null;
@@ -211,7 +227,7 @@ export function TitleHero({
   return (
     <section
       ref={sectionRef}
-      className="relative h-[100svh] min-h-[38rem] w-full overflow-hidden bg-[#050607]"
+      className={`relative w-full overflow-hidden bg-[#050607] ${HERO_HEIGHT_CLASS[fit]}`}
     >
       {stage && layout ? (
         <HeroComposition
@@ -220,12 +236,13 @@ export function TitleHero({
           titleBox={layout.title}
           logoMaxHeight={
             stage.height -
-            LOGO_MENU_CLEARANCE_PX -
+            layout.menuClearance -
             layout.title.bottom -
             layout.overviewLift
           }
           motion={composition}
           slotScale={slotScale}
+          titleRestScale={titleScale.rest}
           zIndex={1}
           isStage
           trailerUrl={trailerUrl}
