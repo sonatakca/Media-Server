@@ -721,11 +721,7 @@ body:has(.seyirlik-reader-shell) {
   padding-bottom: 1.375rem;
 }
 
-.rd-drawer-cover {
-  width: 4.5rem;
-  height: 6.75rem;
-  border-radius: 6px;
-  object-fit: cover;
+.rd-book.rd-drawer-cover {
   box-shadow:
     0 0 0 1px var(--rd-hair),
     0 10px 26px rgba(0, 0, 0, 0.35);
@@ -1063,13 +1059,37 @@ body:has(.seyirlik-reader-shell) {
   transition: opacity 0.4s var(--rd-sine);
 }
 
-.rd-preparing img {
-  width: 7.5rem;
-  border-radius: 6px;
+.rd-preparing .rd-book {
+  animation: rd-fade-in 0.5s var(--rd-sine) both;
+}
+
+/* The cover bound as a book: the spine side squarer than the fore-edge, a
+   fold catching the light down the spine, and a lift under it. The logo is
+   the poster's own (see TitlePoster); the fold sits over everything. */
+.rd-book {
+  border-radius: 3px 7px 7px 3px;
   box-shadow:
     0 0 0 1px var(--rd-hair),
-    0 24px 60px rgba(0, 0, 0, 0.45);
-  animation: rd-fade-in 0.5s var(--rd-sine) both;
+    0 4px 12px rgba(0, 0, 0, 0.22),
+    0 26px 60px rgba(0, 0, 0, 0.42);
+}
+
+.rd-book::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  border-radius: inherit;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(0, 0, 0, 0.34) 0%,
+      rgba(255, 255, 255, 0.16) 2.4%,
+      rgba(0, 0, 0, 0.12) 4.6%,
+      transparent 8.5%
+    ),
+    linear-gradient(90deg, transparent 96%, rgba(0, 0, 0, 0.14));
 }
 
 .rd-preparing p {
@@ -1165,7 +1185,7 @@ body:has(.seyirlik-reader-shell) {
 
   .rd-ruler,
   .rd-timeleft,
-  .rd-preparing img,
+  .rd-preparing .rd-book,
   .rd-drawer-progress[data-pending],
   .rd-pending-bit,
   .rd-chapter-len[data-pending],

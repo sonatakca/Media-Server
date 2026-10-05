@@ -59,6 +59,7 @@ import {
 } from "./reader/epubTypography";
 import {
   ChapterRuler,
+  ReaderBookCover,
   ReaderContentsDrawer,
   ReaderMoreMenu,
   ReaderSettingsPanel,
@@ -310,6 +311,11 @@ export function BookReaderPage() {
   const [readerError, setReaderError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
+  // The book on the opening screen: about a quarter of the screen's height,
+  // large enough to read as a book in the hand, never a poster.
+  const [openingCoverWidth] = useState(() =>
+    Math.round(Math.min(232, Math.max(176, window.innerHeight * 0.26))),
+  );
 
   const epubHostRef = useRef<HTMLDivElement | null>(null);
   const scrollHostRef = useRef<HTMLDivElement | null>(null);
@@ -1280,8 +1286,11 @@ export function BookReaderPage() {
             style={{ opacity: epubReady ? 0 : 1, pointerEvents: "none" }}
             aria-hidden={epubReady}
           >
-            {coverUrl ? <img src={coverUrl} alt="" /> : null}
-            {!coverUrl ? <LoadingSpinner label="" className="text-current opacity-70" /> : null}
+            {coverUrl ? (
+              <ReaderBookCover item={item} width={openingCoverWidth} />
+            ) : (
+              <LoadingSpinner label="" className="text-current opacity-70" />
+            )}
             <p role="status">{t("reader.preparingBook")}</p>
           </div>
           <div
@@ -1365,18 +1374,20 @@ export function BookReaderPage() {
     return (
       <div ref={scrollHostRef} className="absolute inset-0 overflow-y-auto">
         <div className="seyirlik-reader-fade-in mx-auto grid min-h-full w-full max-w-5xl items-center gap-8 px-5 pb-16 pt-24 md:grid-cols-[18rem_1fr]">
-          <div
-            className="aspect-[2/3] overflow-hidden rounded-xl"
-            style={{ boxShadow: `0 0 0 1px ${palette.hair}`, background: palette.ink4 }}
-          >
-            {coverUrl ? (
-              <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
-            ) : (
-              <div className="flex h-full w-full items-center justify-center p-6 text-center text-xl font-black">
-                {title}
-              </div>
-            )}
-          </div>
+          {coverUrl ? (
+            <ReaderBookCover
+              item={item}
+              width={288}
+              className="justify-self-center md:justify-self-start"
+            />
+          ) : (
+            <div
+              className="flex aspect-[2/3] items-center justify-center overflow-hidden rounded-xl p-6 text-center text-xl font-black"
+              style={{ boxShadow: `0 0 0 1px ${palette.hair}`, background: palette.ink4 }}
+            >
+              {title}
+            </div>
+          )}
           <div>
             <p className="text-[0.6875rem] font-black uppercase tracking-[0.14em]" style={{ color: palette.ink3 }}>
               {getFormatLabel(format)}
@@ -1533,7 +1544,7 @@ export function BookReaderPage() {
           onTab={setContentsTab}
           title={title}
           author={bookMeta.author}
-          coverUrl={coverUrl}
+          item={item}
           toc={toc}
           map={bookMap}
           location={reading?.location ?? null}

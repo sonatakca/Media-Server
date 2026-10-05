@@ -8,7 +8,10 @@ import {
 } from "react";
 import { Download, ExternalLink, Trash2, X } from "lucide-react";
 import type { NavItem } from "epubjs";
+import { TitlePoster } from "../../components/admin/TitlePoster";
 import { useLanguage } from "../../i18n/LanguageContext";
+import { getLogoLayout } from "../../lib/logoLayout";
+import type { MediaItem } from "../../lib/types";
 import { BOOK_SANS, BOOK_SERIF } from "./epubTypography";
 import { formatDuration, formatPercent, splitNumber } from "./readerText";
 import {
@@ -335,7 +338,7 @@ export function ReaderContentsDrawer({
   onTab,
   title,
   author,
-  coverUrl,
+  item,
   toc,
   map,
   location,
@@ -351,7 +354,7 @@ export function ReaderContentsDrawer({
   onTab: (tab: "contents" | "bookmarks") => void;
   title: string;
   author: string;
-  coverUrl: string;
+  item: MediaItem;
   toc: TocEntry[];
   map: BookMap | null;
   location: number | null;
@@ -434,8 +437,8 @@ export function ReaderContentsDrawer({
         className="rd-surface rd-drawer"
       >
         <div className="rd-drawer-head">
-          {coverUrl ? (
-            <img className="rd-drawer-cover" src={coverUrl} alt="" />
+          {item.ImageTags?.Primary ? (
+            <ReaderBookCover item={item} width={72} className="rd-drawer-cover" />
           ) : (
             <span />
           )}
@@ -593,6 +596,42 @@ export function ReaderContentsDrawer({
         )}
       </aside>
     </>
+  );
+}
+
+/**
+ * The book as the library draws it — cover, and the logo in the place, at the
+ * width and with the shadow it was adjusted to — bound like a book: a spine
+ * fold down the left edge and a lift under it. `width` is in pixels; the
+ * logo's shadow is scaled to it, as on every other poster.
+ */
+export function ReaderBookCover({
+  item,
+  width,
+  className = "",
+}: {
+  item: MediaItem;
+  width: number;
+  className?: string;
+}) {
+  const coverTag = item.ImageTags?.Primary ?? null;
+
+  if (!coverTag) {
+    return null;
+  }
+
+  return (
+    <TitlePoster
+      itemId={item.Id}
+      title={item.Name ?? ""}
+      artwork={{
+        coverTag,
+        logoTag: item.ImageTags?.Logo ?? null,
+        logoLayout: getLogoLayout(item),
+      }}
+      width={width}
+      className={`rd-book ${className}`}
+    />
   );
 }
 
