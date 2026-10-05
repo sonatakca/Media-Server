@@ -506,11 +506,24 @@ export function createPlaybackRoutes({
         404,
       );
     }
-    return renditions.resolveAdaptiveAsset(
+    const version = context.params.version ?? "";
+    const resolved = await renditions.resolveAdaptiveAsset(
       mediaFileId,
-      context.params.version ?? "",
+      version,
       assetPath,
     );
+    if (resolved || !renditions.restoreAdaptiveAccess) return resolved;
+    // See `restoreAdaptiveAccess`: a restart must not end the films in progress.
+    await renditions.restoreAdaptiveAccess({
+      mediaId: file.id,
+      filePath: path.resolve(
+        resolvedMediaRoot,
+        ...file.relativePath.split("/"),
+      ),
+      size: Number(file.sizeBytes),
+      mtimeMs: Number(file.mtimeMs),
+    });
+    return renditions.resolveAdaptiveAsset(mediaFileId, version, assetPath);
   }
 
   async function serveAdaptiveMaster(

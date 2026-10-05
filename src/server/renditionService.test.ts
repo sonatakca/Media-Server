@@ -281,13 +281,16 @@ async function fixture({
       return requestedId;
     },
   };
-  const service = createRenditionService({
+  const options = {
     mediaRoot,
     renditionRoot,
     stateRoot,
     mediaResolver: resolver,
-  });
-  return { service, sourcePath, root };
+  };
+  const service = createRenditionService(options);
+  /** A fresh process over the same disk: every in-memory grant is gone. */
+  const restart = () => createRenditionService(options);
+  return { service, sourcePath, root, restart };
 }
 
 /** Splits a manifest playback URL back into the pair the resolver takes. */
@@ -679,6 +682,62 @@ describe("complete-file rendition routes", () => {
     expect(await readFile(subtitleFile?.absolutePath ?? "", "utf8")).toBe(
       "WEBVTT\n",
     );
+  });
+});
+
+describe("adaptive grants across a restart", () => {
+  it("keeps serving a package a previous process handed out", async () => {
+    // Grants live in memory. Before they could be restored, every deploy
+    // answered 404 to the next segment of every film in progress.
+    const { service, sourcePath, restart } = await fixture({
+      includeAdaptive: true,
+    });
+    const sourceStats = await stat(sourcePath);
+    const media = {
+      mediaId,
+      filePath: sourcePath,
+      size: sourceStats.size,
+      mtimeMs: sourceStats.mtimeMs,
+    };
+    const manifest = await service.createManifest(media, undefined, {
+      h264: true,
+      hevc: false,
+    });
+    const versionId = manifest
+      .adaptive!.playbackUrl.split("/adaptive/")[1]!
+      .split("/")[0]!;
+
+    const restarted = restart();
+    await expect(
+      restarted.resolveAdaptiveAsset(
+        "opaque-capability",
+        versionId,
+        "video/720p.mp4",
+      ),
+    ).resolves.toBeNull();
+
+    // Two segment requests racing in after the restart share one restore.
+    await Promise.all([
+      restarted.restoreAdaptiveAccess!(media),
+      restarted.restoreAdaptiveAccess!(media),
+    ]);
+    const segment = await restarted.resolveAdaptiveAsset(
+      "opaque-capability",
+      versionId,
+      "video/720p.mp4",
+    );
+    expect(await readFile(segment?.absolutePath ?? "", "utf8")).toBe(
+      "video-cmaf-bytes",
+    );
+
+    // A URL naming some other build of the package is still refused.
+    await expect(
+      restarted.resolveAdaptiveAsset(
+        "opaque-capability",
+        "000000000000",
+        "video/720p.mp4",
+      ),
+    ).resolves.toBeNull();
   });
 });
 

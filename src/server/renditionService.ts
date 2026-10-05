@@ -143,6 +143,12 @@ export interface RenditionService {
     client?: RenditionClientSupport,
   ): Promise<MediaQualityManifest>;
   /**
+   * Re-grants delivery of a file's adaptive package when this process holds no
+   * grant for it — after a restart, above all. Never replaces a live grant.
+   * The caller has already authorized the user for the file.
+   */
+  restoreAdaptiveAccess?(media: PlaybackResolvedMedia): Promise<void>;
+  /**
    * The validated file behind a rendition URL, or null if there is none.
    *
    * Only resolves; the caller streams it. Serving bytes is delicate — aborted
@@ -735,6 +741,39 @@ export function createRenditionService({
     }
   };
 
+  /*
+   * Grants live in this process's memory, so a restart forgot every one of
+   * them and every open player got 404 for its next segment — each deploy
+   * stalled every film in progress until its viewer reloaded. A grant is only
+   * a cache of what `createManifest` derives from the registry and the
+   * package on disk, so a request that finds none has it derived again.
+   *
+   * Decode support decides what a client is *offered*; it has no bearing on
+   * whether a package it was already given may be read, so the restore admits
+   * every codec. Authorization stays with the route, which has checked the
+   * user against the file. The URL's version must still match the package on
+   * disk, so a player holding a replaced package is refused as before.
+   *
+   * After a restart every player's next requests arrive together; they share
+   * one derivation per file instead of each repeating the registry read.
+   */
+  const restoringAccess = new Map<string, Promise<void>>();
+  const restoreAdaptiveAccess: NonNullable<
+    RenditionService["restoreAdaptiveAccess"]
+  > = async (media) => {
+    const token = mediaResolver.encodeMediaToken(media.mediaId);
+    pruneAccess();
+    if (accessByToken.has(token)) return;
+    let pending = restoringAccess.get(token);
+    if (!pending) {
+      pending = createManifest(media, undefined, { hevc: true, h264: true })
+        .then(() => undefined)
+        .finally(() => restoringAccess.delete(token));
+      restoringAccess.set(token, pending);
+    }
+    await pending;
+  };
+
   const resolveAdaptiveAsset: RenditionService["resolveAdaptiveAsset"] = async (
     token,
     versionId,
@@ -792,6 +831,7 @@ export function createRenditionService({
 
   return {
     createManifest,
+    restoreAdaptiveAccess,
     resolveFile,
     resolveAdaptiveAsset,
     describePackagedSource,
