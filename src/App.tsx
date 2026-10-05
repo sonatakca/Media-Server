@@ -513,9 +513,10 @@ export default function App() {
                 path="/books"
                 element={<LibraryAliasPage slug="books" />}
               />
+              {/* Collections is off until further notice. */}
               <Route
                 path="/collections"
-                element={<LibraryAliasPage slug="collections" />}
+                element={<Navigate to="/home" replace />}
               />
               <Route
                 path="/movies/:libraryId"
