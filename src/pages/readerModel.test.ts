@@ -34,6 +34,9 @@ describe("readerModel", () => {
         lineHeight: 0,
         width: 1,
         spotlight: "blinding",
+        lightShape: "band",
+        paragraphReach: -1,
+        lineReach: "wide",
         showRuler: "no",
         showTimeLeft: 0,
       }),
@@ -45,8 +48,26 @@ describe("readerModel", () => {
       lineHeight: 1.25,
       width: 48,
       spotlight: "soft",
+      lightShape: "paragraph",
+      paragraphReach: 0.3,
+      lineReach: 0.18,
       showRuler: true,
       showTimeLeft: true,
+    });
+
+    // The light can fall on the line, and each shape keeps its own reach.
+    localStorage.setItem(
+      READER_SETTINGS_KEY,
+      JSON.stringify({
+        lightShape: "line",
+        lineReach: 0.05,
+        paragraphReach: 9,
+      }),
+    );
+    expect(readStoredReaderSettings()).toMatchObject({
+      lightShape: "line",
+      lineReach: 0.05,
+      paragraphReach: 1.5,
     });
 
     // Either margin item can be turned off on its own.
@@ -63,7 +84,12 @@ describe("readerModel", () => {
     // keep their values and gain the defaults.
     localStorage.setItem(
       READER_SETTINGS_KEY,
-      JSON.stringify({ theme: "sepia", fontScale: 110, lineHeight: 1.7, width: 74 }),
+      JSON.stringify({
+        theme: "sepia",
+        fontScale: 110,
+        lineHeight: 1.7,
+        width: 74,
+      }),
     );
     expect(readStoredReaderSettings()).toEqual({
       theme: "sepia",
@@ -72,6 +98,9 @@ describe("readerModel", () => {
       lineHeight: 1.7,
       width: 74,
       spotlight: "soft",
+      lightShape: "paragraph",
+      paragraphReach: 0.3,
+      lineReach: 0.18,
       showRuler: true,
       showTimeLeft: true,
     });

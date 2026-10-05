@@ -40,10 +40,30 @@ export function getBookFontCss(): string {
   const archivo = "font-weight:100 900;font-stretch:62% 125%;";
 
   return [
-    face("Seyirlik Literata", literataLatinUrl, LATIN_RANGE, `${literata}font-style:normal;`),
-    face("Seyirlik Literata", literataLatinExtUrl, LATIN_EXT_RANGE, `${literata}font-style:normal;`),
-    face("Seyirlik Literata", literataLatinItalicUrl, LATIN_RANGE, `${literata}font-style:italic;`),
-    face("Seyirlik Literata", literataLatinExtItalicUrl, LATIN_EXT_RANGE, `${literata}font-style:italic;`),
+    face(
+      "Seyirlik Literata",
+      literataLatinUrl,
+      LATIN_RANGE,
+      `${literata}font-style:normal;`,
+    ),
+    face(
+      "Seyirlik Literata",
+      literataLatinExtUrl,
+      LATIN_EXT_RANGE,
+      `${literata}font-style:normal;`,
+    ),
+    face(
+      "Seyirlik Literata",
+      literataLatinItalicUrl,
+      LATIN_RANGE,
+      `${literata}font-style:italic;`,
+    ),
+    face(
+      "Seyirlik Literata",
+      literataLatinExtItalicUrl,
+      LATIN_EXT_RANGE,
+      `${literata}font-style:italic;`,
+    ),
     face("Seyirlik Archivo", archivoLatinUrl, LATIN_RANGE, archivo),
     face("Seyirlik Archivo", archivoLatinExtUrl, LATIN_EXT_RANGE, archivo),
   ].join("\n");
@@ -77,7 +97,8 @@ export function getEpubThemeRules(
       // 16px on phones, growing to 19px on a desktop column; `ch` measures
       // follow, so the column widens with it and keeps its measure.
       "font-size": `calc(${settings.fontScale / 100} * clamp(1rem, 0.5rem + 0.9vw, 1.1875rem)) !important`,
-      "font-weight": settings.face === "sans" ? "450 !important" : "400 !important",
+      "font-weight":
+        settings.face === "sans" ? "450 !important" : "400 !important",
       "line-height": `${settings.lineHeight} !important`,
       "font-optical-sizing": "auto",
       "font-kerning": "normal",
@@ -312,7 +333,10 @@ export function isHeadingLike(element: HTMLElement, index: number): boolean {
 
   // "bolum_basi" is the chapter's first sentence, not its title: a paragraph
   // marked as an opening is text, whatever chapter word its class also carries.
-  if (element.tagName.toLowerCase() === "p" && OPENING_IDENTITY.test(identity)) {
+  if (
+    element.tagName.toLowerCase() === "p" &&
+    OPENING_IDENTITY.test(identity)
+  ) {
     return false;
   }
 
@@ -406,7 +430,10 @@ export function enhanceSection(blocks: HTMLElement[]): void {
     firstText.classList.add("seyirlik-lead");
     const next = blocks[cursor + 1];
 
-    if (next?.tagName.toLowerCase() === "p" && !next.classList.contains("seyirlik-no-indent")) {
+    if (
+      next?.tagName.toLowerCase() === "p" &&
+      !next.classList.contains("seyirlik-no-indent")
+    ) {
       // The text proper starts here: never indented, and a drop cap when the
       // paragraph is long enough to wrap around one.
       next.classList.add("seyirlik-after-heading");
@@ -459,7 +486,10 @@ export async function hyphenateDocument(
 ): Promise<string> {
   const root = document.documentElement;
 
-  if (!/^tr\b/i.test(language) && looksTurkish(document.body?.textContent ?? "")) {
+  if (
+    !/^tr\b/i.test(language) &&
+    looksTurkish(document.body?.textContent ?? "")
+  ) {
     language = "tr";
   }
 

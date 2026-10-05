@@ -1,49 +1,42 @@
 import type { Book, NavItem } from "epubjs";
 import {
+  DEFAULT_READER_SETTINGS,
   READING_LINE,
-  SPOTLIGHT_FALLOFF,
-  SPOTLIGHT_LINES,
   clamp,
+  type ReaderLightShape,
 } from "./readerModel";
 
-/**
- * The reading light: a band of lines at the reading line carries full ink and
- * the text above and below falls off towards a floor, like the glow of a
- * screen.
- *
- * The band is a fixed number of lines, drawn as a mask over the book's
- * scroller, so it is the same height whatever the paragraph: lighting whole
- * paragraphs made it jump between a sliver and a slab. Being a mask, it costs
- * nothing per scroll frame; the text moves through a light that stays put.
- */
-export function spotlightMask(floor: number, lineHeightPx: number): string | null {
-  if (floor >= 1) {
-    return null;
-  }
-
-  const half = Math.max(12, (lineHeightPx * SPOTLIGHT_LINES) / 2);
-  const line = READING_LINE * 100;
-  const fall = SPOTLIGHT_FALLOFF * 100;
-  const ink = (t: number) => {
-    // Smoothstep from full ink (t = 0) to the floor (t = 1).
-    const eased = t * t * (3 - 2 * t);
-    return (1 - (1 - floor) * eased).toFixed(3);
-  };
-  const steps = [1, 0.75, 0.5, 0.25, 0];
-  const above = steps.map(
-    (t) => `rgba(0,0,0,${ink(t)}) calc(${line}% - ${half}px - ${(fall * t).toFixed(2)}%)`,
-  );
-  const below = [...steps]
-    .reverse()
-    .map(
-      (t) => `rgba(0,0,0,${ink(t)}) calc(${line}% + ${half}px + ${(fall * t).toFixed(2)}%)`,
-    );
-
-  return `linear-gradient(180deg, rgba(0,0,0,${ink(1)}) 0%, ${above.join(", ")}, ${below.join(", ")}, rgba(0,0,0,${ink(1)}) 100%)`;
+/** One line of a block, in px from the block's top, and the ink it carries. */
+interface LitSlot {
+  top: number;
+  bottom: number;
+  value: number;
+  /** Where the current fade started, where it is going, and when it began (0: settled). */
+  from: number;
+  goal: number;
+  target: number;
+  start: number;
 }
 
-interface LocatedDocument {
+interface LitBlock {
+  element: HTMLElement;
+  top: number;
+  bottom: number;
+  /** One slot until the block comes near the light and its lines are measured. */
+  slots: LitSlot[];
+  measured: boolean;
+  /** The drop cap's box, lit with the brightest of the lines it stands in. */
+  dropCap: { left: number; top: number; width: number; height: number } | null;
+  written: string;
+  /** Its geometry changed, so its mask is rewritten even if no ink moved. */
+  dirty: boolean;
+}
+
+interface LitDocument {
   sectionIndex: number;
+  height: number;
+  blocks: LitBlock[];
+  resting: boolean;
 }
 
 export interface ReadingLinePosition {
@@ -52,24 +45,250 @@ export interface ReadingLinePosition {
   fraction: number;
 }
 
-/** Where the reading line falls in the book: which section, and how far in. */
+/** The ink fades between values the way the block opacity used to: 0.35s, sine in-out. */
+const FADE_MS = 350;
+const easeSine = (t: number) => 0.5 - 0.5 * Math.cos(Math.PI * t);
+
+const slot = (top: number, bottom: number, value: number): LitSlot => ({
+  top,
+  bottom,
+  value,
+  from: value,
+  goal: value,
+  target: value,
+  start: 0,
+});
+
+/**
+ * The lines a block is set in, from the boxes of its text. Boxes taller than a
+ * line and a half (a drop cap, an inline image) are left out so they do not
+ * merge three lines into one; each line's slot reaches halfway into the
+ * leading on either side, so the slots tile the block without gaps.
+ */
+function measureLines(
+  element: HTMLElement,
+  blockTop: number,
+  height: number,
+): LitSlot[] {
+  const document = element.ownerDocument;
+  const view = document.defaultView;
+  const style = view?.getComputedStyle(element);
+  const lineHeight =
+    parseFloat(style?.lineHeight ?? "") ||
+    parseFloat(style?.fontSize ?? "16") * 1.5;
+  const scrollY = view?.scrollY ?? 0;
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  const boxes = Array.from(range.getClientRects())
+    .filter(
+      (box) =>
+        box.width > 0 && box.height > 0 && box.height <= lineHeight * 1.6,
+    )
+    .map((box) => ({
+      top: box.top + scrollY - blockTop,
+      bottom: box.bottom + scrollY - blockTop,
+    }))
+    .sort((a, b) => a.top - b.top);
+  const rows: Array<{ top: number; bottom: number }> = [];
+
+  for (const box of boxes) {
+    const last = rows[rows.length - 1];
+    const overlap = last
+      ? Math.min(last.bottom, box.bottom) - Math.max(last.top, box.top)
+      : 0;
+
+    if (
+      last &&
+      overlap > Math.min(last.bottom - last.top, box.bottom - box.top) * 0.5
+    ) {
+      last.top = Math.min(last.top, box.top);
+      last.bottom = Math.max(last.bottom, box.bottom);
+    } else {
+      rows.push({ ...box });
+    }
+  }
+
+  if (rows.length === 0) {
+    return [slot(0, height, 1)];
+  }
+
+  return rows.map((row, index) =>
+    slot(
+      index === 0 ? 0 : (rows[index - 1].bottom + row.top) / 2,
+      index === rows.length - 1
+        ? height
+        : (row.bottom + rows[index + 1].top) / 2,
+      1,
+    ),
+  );
+}
+
+function measureDropCap(
+  element: HTMLElement,
+  blockTop: number,
+  blockLeft: number,
+) {
+  if (!element.classList.contains("seyirlik-dropcap")) {
+    return null;
+  }
+
+  const document = element.ownerDocument;
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let text = walker.nextNode();
+
+  while (text && !text.textContent?.trim()) {
+    text = walker.nextNode();
+  }
+
+  if (!text?.textContent) {
+    return null;
+  }
+
+  const offset = text.textContent.search(/\S/);
+  const range = document.createRange();
+  range.setStart(text, offset);
+  range.setEnd(text, offset + 1);
+  const box = range.getBoundingClientRect();
+  const scrollY = document.defaultView?.scrollY ?? 0;
+
+  return box.height > 0
+    ? {
+        left: box.left - blockLeft,
+        top: box.top + scrollY - blockTop,
+        width: box.width,
+        height: box.height,
+      }
+    : null;
+}
+
+const ink = (value: number) => `rgba(0,0,0,${value.toFixed(3)})`;
+
+/**
+ * The light on a block as a mask: a hard step at each line's slot edge, which
+ * falls in the leading, so every line carries one even ink. Paragraph mode and
+ * unmeasured blocks have one slot, a flat mask.
+ */
+function blockMask(block: LitBlock): string {
+  const { slots } = block;
+
+  if (slots.length === 1) {
+    return `linear-gradient(${ink(slots[0].value)}, ${ink(slots[0].value)})`;
+  }
+
+  const stops = slots
+    .map(
+      (line) =>
+        `${ink(line.value)} ${line.top.toFixed(1)}px, ${ink(line.value)} ${line.bottom.toFixed(1)}px`,
+    )
+    .join(", ");
+  const lines = `linear-gradient(180deg, ${stops})`;
+
+  if (!block.dropCap) {
+    return lines;
+  }
+
+  const cap = block.dropCap;
+  const value = Math.max(
+    ...slots
+      .filter(
+        (line) => line.bottom > cap.top && line.top < cap.top + cap.height,
+      )
+      .map((line) => line.value),
+  );
+
+  return `${lines}, linear-gradient(${ink(value)}, ${ink(value)}) ${cap.left.toFixed(1)}px ${cap.top.toFixed(1)}px / ${cap.width.toFixed(1)}px ${cap.height.toFixed(1)}px no-repeat`;
+}
+
+/**
+ * The reading light, and where the reading line falls in the book.
+ *
+ * The light falls on the paragraph at the reading line (the default) or on the
+ * line there: that unit carries full ink and the text around it falls off
+ * towards a floor, like the glow of a screen. Each line or paragraph keeps one
+ * even ink and fades as a whole when the light moves on, so nothing is ever
+ * half-lit and the text never moves.
+ *
+ * Documents are epub.js iframes sized to their content, so a block's place in
+ * the window is its iframe's rect plus an offset inside the document. Offsets
+ * are cached per document and re-measured only when the document's height
+ * changes; a block's lines are measured only once it comes near the light.
+ * Each scroll frame sets the ink each line should carry, eases it there over
+ * 0.35s, and writes only the blocks whose ink moved.
+ */
 export class ReadingLight {
-  private readonly documents = new Map<Document, LocatedDocument>();
+  private readonly documents = new Map<Document, LitDocument>();
+  private floor = 1;
+  private shape: ReaderLightShape = DEFAULT_READER_SETTINGS.lightShape;
+  private reach = DEFAULT_READER_SETTINGS.paragraphReach;
+  private fading = false;
 
   constructor(private readonly viewport: HTMLElement) {}
 
-  add(document: Document, sectionIndex: number) {
-    this.documents.set(document, { sectionIndex });
+  add(document: Document, sectionIndex: number, elements: HTMLElement[]) {
+    this.documents.set(document, {
+      sectionIndex,
+      height: -1,
+      resting: false,
+      blocks: elements.map((element) => ({
+        element,
+        top: 0,
+        bottom: 0,
+        slots: [slot(0, 0, 1)],
+        measured: false,
+        dropCap: null,
+        written: "",
+        dirty: false,
+      })),
+    });
+  }
+
+  /**
+   * The floor the light falls to (1: no light), what it lights, and how far
+   * from the lit line or paragraph it has fallen off, as a share of the
+   * viewport.
+   */
+  setLight(floor: number, shape: ReaderLightShape, reach: number) {
+    if (floor === this.floor && shape === this.shape && reach === this.reach) {
+      return;
+    }
+
+    const reshaped = shape !== this.shape;
+    this.floor = floor;
+    this.shape = shape;
+    this.reach = reach;
+    this.documents.forEach((entry) => {
+      entry.resting = false;
+
+      if (reshaped) {
+        entry.height = -1;
+      }
+    });
+  }
+
+  /** True while some line is still fading towards its ink; the caller runs another frame. */
+  get isFading() {
+    return this.fading;
   }
 
   clear() {
     this.documents.clear();
   }
 
+  /** Lights the text for the current scroll position and reports where the reading line is. */
   frame(): ReadingLinePosition | null {
     const view = this.viewport.getBoundingClientRect();
     const line = view.top + view.height * READING_LINE;
+    const unlit = this.floor >= 1;
+    const byLine = this.shape === "line";
+    const span = Math.max(1, view.height * this.reach);
+    const now = performance.now();
     let position: ReadingLinePosition | null = null;
+    const near: Array<{ block: LitBlock; top: number; entry: LitDocument }> =
+      [];
+    const visited: Array<{ entry: LitDocument; far: boolean }> = [];
+    const stillFading = new Set<LitDocument>();
+
+    this.fading = false;
 
     this.documents.forEach((entry, document) => {
       const frame = document.defaultView?.frameElement as HTMLElement | null;
@@ -87,7 +306,178 @@ export class ReadingLight {
           fraction: clamp((line - rect.top) / rect.height, 0, 1),
         };
       }
+
+      const height = document.body?.scrollHeight ?? 0;
+
+      if (height !== entry.height) {
+        entry.height = height;
+        entry.resting = false;
+        const scrollY = document.defaultView?.scrollY ?? 0;
+
+        for (const block of entry.blocks) {
+          const box = block.element.getBoundingClientRect();
+          block.top = box.top + scrollY;
+          block.bottom = box.bottom + scrollY;
+          block.measured = false;
+          block.dirty = true;
+
+          if (!byLine || block.slots.length === 1) {
+            const value = block.slots[0]?.value ?? 1;
+            block.slots = [slot(0, block.bottom - block.top, value)];
+            block.dropCap = null;
+          }
+        }
+      }
+
+      const far =
+        rect.bottom < view.top - span || rect.top > view.bottom + span;
+
+      if ((far || unlit) && entry.resting) {
+        return;
+      }
+
+      for (const block of entry.blocks) {
+        const top = rect.top + block.top;
+        const bottom = rect.top + block.bottom;
+
+        if (unlit) {
+          block.slots.forEach((line) => {
+            line.target = 1;
+          });
+          near.push({ block, top, entry });
+          continue;
+        }
+
+        if (
+          byLine &&
+          !block.measured &&
+          bottom > view.top - span &&
+          top < view.bottom + span
+        ) {
+          // Lines keep the ink they had where they were, so a reflow does not flash.
+          const before = block.slots;
+          block.slots = measureLines(
+            block.element,
+            block.top,
+            block.bottom - block.top,
+          );
+          block.slots.forEach((slot) => {
+            const middle = (slot.top + slot.bottom) / 2;
+            const was =
+              before.find((old) => middle >= old.top && middle < old.bottom) ??
+              before[before.length - 1];
+            slot.value = slot.from = slot.goal = slot.target = was.value;
+          });
+          block.dirty = true;
+          block.dropCap = measureDropCap(
+            block.element,
+            block.top,
+            block.element.getBoundingClientRect().left,
+          );
+          block.measured = true;
+        }
+
+        near.push({ block, top, entry });
+      }
+
+      visited.push({ entry, far });
     });
+
+    if (!unlit) {
+      // The lit line: the one the reading line falls in, or the nearest one
+      // when it falls between blocks.
+      let lit = line;
+      let nearest = Infinity;
+
+      if (byLine) {
+        for (const { block, top } of near) {
+          for (const slot of block.slots) {
+            const distance = Math.max(
+              0,
+              top + slot.top - line,
+              line - (top + slot.bottom),
+            );
+
+            if (distance < nearest) {
+              nearest = distance;
+              lit = top + (slot.top + slot.bottom) / 2;
+            }
+          }
+        }
+      }
+
+      for (const { block, top } of near) {
+        for (const slot of block.slots) {
+          let t: number;
+
+          if (byLine) {
+            const distance = Math.abs(top + (slot.top + slot.bottom) / 2 - lit);
+            // Ease-out: the lines beside the lit one already step down, so it
+            // reads as one line lit rather than a soft wash.
+            const x = Math.min(1, distance / span);
+            t = 1 - (1 - x) * (1 - x);
+          } else {
+            const distance = Math.max(
+              0,
+              top + slot.top - line,
+              line - (top + slot.bottom),
+            );
+            const x = Math.min(1, distance / span);
+            t = x * x * (3 - 2 * x);
+          }
+
+          slot.target = 1 - (1 - this.floor) * t;
+        }
+      }
+    }
+
+    for (const { block, entry } of near) {
+      let changed = false;
+
+      for (const slot of block.slots) {
+        // A new target restarts the fade from wherever the ink is now.
+        if (Math.abs(slot.target - slot.goal) > 0.005) {
+          slot.from = slot.value;
+          slot.goal = slot.target;
+          slot.start = now;
+        }
+
+        if (slot.start === 0) {
+          continue;
+        }
+
+        const progress = Math.min(1, (now - slot.start) / FADE_MS);
+        slot.value = slot.from + (slot.goal - slot.from) * easeSine(progress);
+        changed = true;
+
+        if (progress >= 1) {
+          slot.value = slot.goal;
+          slot.start = 0;
+        } else {
+          this.fading = true;
+          stillFading.add(entry);
+        }
+      }
+
+      if (changed || block.dirty) {
+        block.dirty = false;
+        const mask = block.slots.every((slot) => slot.value >= 0.999)
+          ? ""
+          : blockMask(block);
+
+        if (mask !== block.written) {
+          block.written = mask;
+          block.element.style.maskImage = mask;
+          block.element.style.setProperty("-webkit-mask-image", mask);
+        }
+      }
+    }
+
+    // A document rests once it is out of the light and none of its lines is
+    // still fading there.
+    for (const { entry, far } of visited) {
+      entry.resting = (far || unlit) && !stillFading.has(entry);
+    }
 
     return position;
   }
@@ -110,7 +500,9 @@ export interface BookMap {
   chapters: BookChapter[];
 }
 
-function getSpineItems(book: Book): Array<{ index: number; cfiBase: string; href: string }> {
+function getSpineItems(
+  book: Book,
+): Array<{ index: number; cfiBase: string; href: string }> {
   const spine = book.spine as unknown as {
     spineItems?: Array<{ index: number; cfiBase: string; href: string }>;
   };
@@ -119,9 +511,9 @@ function getSpineItems(book: Book): Array<{ index: number; cfiBase: string; href
 }
 
 function getSpineIndex(book: Book, href: string): number | null {
-  const section = book.spine.get(href.split("#")[0]) as unknown as
-    | { index?: number }
-    | null;
+  const section = book.spine.get(href.split("#")[0]) as unknown as {
+    index?: number;
+  } | null;
 
   return typeof section?.index === "number" ? section.index : null;
 }
@@ -165,7 +557,8 @@ export function buildBookMap(
   for (let index = spineItems.length - 1; index >= 0; index -= 1) {
     const start = firstByBase.get(spineItems[index].cfiBase);
     sectionStarts[index] =
-      start ?? (index + 1 < spineItems.length ? sectionStarts[index + 1] : total);
+      start ??
+      (index + 1 < spineItems.length ? sectionStarts[index + 1] : total);
   }
 
   const topLevel = toc.filter((entry) => entry.depth === 0);
@@ -173,30 +566,39 @@ export function buildBookMap(
   const located = entries
     .map((entry) => ({ entry, spineIndex: getSpineIndex(book, entry.href) }))
     .filter(
-      (candidate): candidate is { entry: NavItem & { depth: number }; spineIndex: number } =>
-        candidate.spineIndex !== null,
+      (
+        candidate,
+      ): candidate is {
+        entry: NavItem & { depth: number };
+        spineIndex: number;
+      } => candidate.spineIndex !== null,
     )
     .sort((a, b) => a.spineIndex - b.spineIndex);
 
-  const chapters: BookChapter[] = located.map(({ entry, spineIndex }, index) => {
-    const nextSpine = located[index + 1]?.spineIndex;
+  const chapters: BookChapter[] = located.map(
+    ({ entry, spineIndex }, index) => {
+      const nextSpine = located[index + 1]?.spineIndex;
 
-    return {
-      label: entry.label.trim(),
-      href: entry.href,
-      depth: entry.depth,
-      spineIndex,
-      start: sectionStarts[spineIndex] ?? total,
-      end:
-        nextSpine !== undefined ? (sectionStarts[nextSpine] ?? total) : total,
-    };
-  });
+      return {
+        label: entry.label.trim(),
+        href: entry.href,
+        depth: entry.depth,
+        spineIndex,
+        start: sectionStarts[spineIndex] ?? total,
+        end:
+          nextSpine !== undefined ? (sectionStarts[nextSpine] ?? total) : total,
+      };
+    },
+  );
 
   return { total, sectionStarts, chapters };
 }
 
 /** The reading line's place in the book, in locations. */
-export function locateInBook(map: BookMap, position: ReadingLinePosition): number {
+export function locateInBook(
+  map: BookMap,
+  position: ReadingLinePosition,
+): number {
   const start = map.sectionStarts[position.sectionIndex] ?? 0;
   const end = map.sectionStarts[position.sectionIndex + 1] ?? map.total;
 

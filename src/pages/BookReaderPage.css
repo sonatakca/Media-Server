@@ -107,7 +107,6 @@ body:has(.seyirlik-reader-shell) {
   min-width: 0;
 }
 
-
 .rd-titles {
   min-width: 0;
   text-align: center;
@@ -718,6 +717,25 @@ body:has(.seyirlik-reader-shell) {
   height: 20px;
 }
 
+/* Under the strength, a line each: what the light falls on, and how far it
+   reaches (seven steps, so the full width). Both rest, dimmed, while the light
+   is off. */
+.rd-light-pair {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+  transition: opacity 0.2s var(--rd-sine);
+}
+
+.rd-light-pair[data-off] {
+  opacity: 0.45;
+}
+
+.rd-seg > button:disabled {
+  cursor: default;
+  color: var(--rd-ink2);
+}
+
 .rd-menu-item {
   display: flex;
   width: 100%;
@@ -959,7 +977,8 @@ body:has(.seyirlik-reader-shell) {
 .rd-chapter[aria-current="true"] .rd-chapter-dot {
   width: 9px;
   height: 9px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #467a6c) 22%, transparent);
+  box-shadow: 0 0 0 3px
+    color-mix(in srgb, var(--accent, #467a6c) 22%, transparent);
 }
 
 .rd-chapter-t {
@@ -1210,7 +1229,8 @@ body:has(.seyirlik-reader-shell) {
   .rd-settings {
     inset: auto 0 0;
     width: auto;
-    padding: 0.625rem 1.125rem calc(0.625rem + var(--safe-area-inset-bottom, 0px));
+    padding: 0.625rem 1.125rem
+      calc(0.625rem + var(--safe-area-inset-bottom, 0px));
     border-radius: 22px 22px 0 0;
     transform: translateY(100%);
     transform-origin: 50% 100%;

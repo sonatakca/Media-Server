@@ -11,6 +11,8 @@ export type ReaderFormat =
 export type ReaderTheme = "night" | "dim" | "sepia" | "paper";
 export type ReaderFace = "serif" | "sans";
 export type ReaderSpotlight = "off" | "soft" | "strong";
+/** What the reading light falls on: the paragraph at the reading line, or the line. */
+export type ReaderLightShape = "paragraph" | "line";
 
 export interface ReaderSettings {
   theme: ReaderTheme;
@@ -19,6 +21,11 @@ export interface ReaderSettings {
   lineHeight: number;
   width: number;
   spotlight: ReaderSpotlight;
+  lightShape: ReaderLightShape;
+  /** How far the light reaches from the lit paragraph, as a share of the screen. */
+  paragraphReach: number;
+  /** How far the light reaches from the lit line, centre to centre, as a share of the screen. */
+  lineReach: number;
   /** The chapter ruler in the right margin. */
   showRuler: boolean;
   /** "Chapter ends in ≈ N min", above the ruler or at the foot on a phone. */
@@ -58,6 +65,7 @@ export const READER_BOOKMARKS_KEY = "seyirlik.reader.bookmarks";
 export const READER_THEMES: ReaderTheme[] = ["night", "dim", "sepia", "paper"];
 export const READER_FACES: ReaderFace[] = ["serif", "sans"];
 export const READER_SPOTLIGHTS: ReaderSpotlight[] = ["off", "soft", "strong"];
+export const READER_LIGHT_SHAPES: ReaderLightShape[] = ["paragraph", "line"];
 
 export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   theme: "night",
@@ -66,6 +74,9 @@ export const DEFAULT_READER_SETTINGS: ReaderSettings = {
   lineHeight: 1.65,
   width: 66,
   spotlight: "soft",
+  lightShape: "paragraph",
+  paragraphReach: 0.3,
+  lineReach: 0.18,
   showRuler: true,
   showTimeLeft: true,
 };
@@ -79,17 +90,16 @@ export const FONT_SCALE_STEPS = Array.from(
 export const LINE_HEIGHT_PRESETS = [1.45, 1.65, 1.9];
 export const WIDTH_PRESETS = [56, 66, 78];
 
-/** Where the lit paragraph sits, as a fraction of the reading viewport. */
+/** Where the reading line sits, as a fraction of the reading viewport. */
 export const READING_LINE = 0.4;
-/** How far from the lit band the light has fully fallen off. */
-export const SPOTLIGHT_FALLOFF = 0.14;
 /**
- * How many lines the light holds at full ink, centred on the reading line.
- * A fixed band of lines rather than "the paragraph at the line": paragraphs
- * run from one line to thirty, and lighting whole ones made the light jump
- * between a sliver and a slab.
+ * Seven reaches for each light, narrowest first, each about half as wide
+ * again as the one before; the third is the default. The last two run past
+ * the screen: at the widest the light is still falling off a screen and a
+ * half away, so the page is nearly evenly lit.
  */
-export const SPOTLIGHT_LINES = 2;
+export const PARAGRAPH_REACH_PRESETS = [0.1, 0.2, 0.3, 0.45, 0.7, 1, 1.5];
+export const LINE_REACH_PRESETS = [0.05, 0.1, 0.18, 0.3, 0.5, 0.85, 1.5];
 export const SPOTLIGHT_FLOOR: Record<ReaderSpotlight, number> = {
   off: 1,
   soft: 0.4,
@@ -280,6 +290,19 @@ export function readStoredReaderSettings(): ReaderSettings {
     spotlight: READER_SPOTLIGHTS.includes(stored.spotlight as ReaderSpotlight)
       ? (stored.spotlight as ReaderSpotlight)
       : DEFAULT_READER_SETTINGS.spotlight,
+    lightShape: READER_LIGHT_SHAPES.includes(
+      stored.lightShape as ReaderLightShape,
+    )
+      ? (stored.lightShape as ReaderLightShape)
+      : DEFAULT_READER_SETTINGS.lightShape,
+    paragraphReach:
+      typeof stored.paragraphReach === "number" && stored.paragraphReach > 0
+        ? clamp(stored.paragraphReach, 0.02, 1.5)
+        : DEFAULT_READER_SETTINGS.paragraphReach,
+    lineReach:
+      typeof stored.lineReach === "number" && stored.lineReach > 0
+        ? clamp(stored.lineReach, 0.02, 1.5)
+        : DEFAULT_READER_SETTINGS.lineReach,
     showRuler:
       typeof stored.showRuler === "boolean"
         ? stored.showRuler
@@ -326,10 +349,7 @@ export function readBookmarks(itemId: string): ReaderBookmark[] {
     : [];
 }
 
-export function writeBookmarks(
-  itemId: string,
-  list: ReaderBookmark[],
-): void {
+export function writeBookmarks(itemId: string, list: ReaderBookmark[]): void {
   const bookmarks = readJsonStorage<ReaderBookmarkMap>(
     READER_BOOKMARKS_KEY,
     {},

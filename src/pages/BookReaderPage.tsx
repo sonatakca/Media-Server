@@ -66,7 +66,11 @@ import {
   ReaderMoreMenu,
   ReaderSettingsPanel,
 } from "./reader/ReaderPanels";
-import { formatDuration, formatPercent, splitNumber } from "./reader/readerText";
+import {
+  formatDuration,
+  formatPercent,
+  splitNumber,
+} from "./reader/readerText";
 import {
   CHARS_PER_LOCATION,
   EPUB_PREPARATION_TIMEOUT_MS,
@@ -95,9 +99,19 @@ import {
   buildBookMap,
   chapterAt,
   locateInBook,
-  spotlightMask,
   type BookMap,
 } from "./reader/readingLight";
+
+/** The reading light the settings ask for: its floor, its shape and its reach. */
+function lightFromSettings(light: ReadingLight, settings: ReaderSettings) {
+  light.setLight(
+    SPOTLIGHT_FLOOR[settings.spotlight],
+    settings.lightShape,
+    settings.lightShape === "line"
+      ? settings.lineReach
+      : settings.paragraphReach,
+  );
+}
 
 type Panel = "settings" | "contents" | "more" | null;
 type TocEntry = NavItem & { depth: number };
@@ -250,7 +264,10 @@ function getEpubProgressFromLocation(
  * scrolled to it: their content hook awaits hyphenation, then fonts land.
  * Timers, not frames, so a background tab still settles.
  */
-function waitForLayoutToSettle(host: HTMLElement, limitMs = 2500): Promise<void> {
+function waitForLayoutToSettle(
+  host: HTMLElement,
+  limitMs = 2500,
+): Promise<void> {
   return new Promise((resolve) => {
     const started = performance.now();
     let lastHeight = -1;
@@ -287,7 +304,9 @@ function isEditableTarget(target: EventTarget | null): boolean {
 }
 
 function prefersReducedMotion(): boolean {
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+  return (
+    window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false
+  );
 }
 
 export function BookReaderPage() {
@@ -528,8 +547,7 @@ export function BookReaderPage() {
     bookRef.current = book;
     renditionRef.current = rendition;
     lightRef.current = light;
-    /** The line height the band of light is measured in, read off the book. */
-    let lineHeightPx = 0;
+    lightFromSettings(light, settingsRef.current);
     /**
      * The ruler's marker follows the reading line, but a leap — a new chapter,
      * or a jump across most of this one — fades it out, moves it, and fades it
@@ -541,7 +559,13 @@ export function BookReaderPage() {
       fraction: number;
       switching: boolean;
       pending: { top: string; text: string } | null;
-    } = { element: null, chapterIndex: -1, fraction: 0, switching: false, pending: null };
+    } = {
+      element: null,
+      chapterIndex: -1,
+      fraction: 0,
+      switching: false,
+      pending: null,
+    };
     let markerTimer = 0;
 
     const placeMarker = (marker: HTMLElement, top: string, text: string) => {
@@ -552,19 +576,12 @@ export function BookReaderPage() {
       }
     };
 
-    const applyLight = () => {
-      const container = host.querySelector<HTMLElement>(".epub-container");
-      if (!container) {
-        return;
-      }
-      const mask =
-        spotlightMask(SPOTLIGHT_FLOOR[settingsRef.current.spotlight], lineHeightPx || 28) ?? "";
-      container.style.maskImage = mask;
-      container.style.setProperty("-webkit-mask-image", mask);
-    };
-
     const runFrame = () => {
       const position = light.frame();
+
+      if (light.isFading) {
+        scheduleFrame();
+      }
 
       if (!position || !map) {
         return;
@@ -575,7 +592,8 @@ export function BookReaderPage() {
       const chapter = map.chapters[chapterIndex];
       const chapterFraction = chapter
         ? clamp(
-            (location - chapter.start) / Math.max(1, chapter.end - chapter.start),
+            (location - chapter.start) /
+              Math.max(1, chapter.end - chapter.start),
             0,
             1,
           )
@@ -587,7 +605,13 @@ export function BookReaderPage() {
         const text = formatPercent(chapterFraction, languageRef.current);
 
         if (marker !== markerState.element) {
-          markerState = { element: marker, chapterIndex, fraction: chapterFraction, switching: false, pending: null };
+          markerState = {
+            element: marker,
+            chapterIndex,
+            fraction: chapterFraction,
+            switching: false,
+            pending: null,
+          };
           placeMarker(marker, top, text);
         } else if (
           markerState.switching ||
@@ -669,13 +693,13 @@ export function BookReaderPage() {
         const frameRect = frame.getBoundingClientRect();
         const bodyRect = body.getBoundingClientRect();
         const style = content.document.defaultView!.getComputedStyle(body);
-        lineHeightPx =
-          parseFloat(style.lineHeight) ||
-          parseFloat(style.fontSize) * settingsRef.current.lineHeight;
-        applyLight();
         const next: ColumnBox = {
-          left: Math.round(frameRect.left + bodyRect.left + parseFloat(style.paddingLeft)),
-          right: Math.round(frameRect.left + bodyRect.right - parseFloat(style.paddingRight)),
+          left: Math.round(
+            frameRect.left + bodyRect.left + parseFloat(style.paddingLeft),
+          ),
+          right: Math.round(
+            frameRect.left + bodyRect.right - parseFloat(style.paddingRight),
+          ),
           viewport: window.innerWidth,
         };
 
@@ -709,7 +733,11 @@ export function BookReaderPage() {
       view.addStylesheetCss(getBookFontCss(), "seyirlik-fonts");
       view.addStylesheetCss(EPUB_STATIC_CSS, "seyirlik-static");
       view.addStylesheetCss(
-        getEpubThemeCss(settingsRef.current, themePalettes[settingsRef.current.theme], readLiveAccent()),
+        getEpubThemeCss(
+          settingsRef.current,
+          themePalettes[settingsRef.current.theme],
+          readLiveAccent(),
+        ),
         "seyirlik-theme",
       );
 
@@ -719,8 +747,14 @@ export function BookReaderPage() {
 
       // A Turkish book labelled English: the interface's chapter names follow
       // the text, so their capitals are Turkish too.
-      if (isMounted && /^tr\b/i.test(textLanguage) && !/^tr\b/i.test(bookLanguage)) {
-        setBookMeta((meta) => (/^tr\b/i.test(meta.language) ? meta : { ...meta, language: "tr" }));
+      if (
+        isMounted &&
+        /^tr\b/i.test(textLanguage) &&
+        !/^tr\b/i.test(bookLanguage)
+      ) {
+        setBookMeta((meta) =>
+          /^tr\b/i.test(meta.language) ? meta : { ...meta, language: "tr" },
+        );
       }
 
       if (!isMounted) {
@@ -729,7 +763,7 @@ export function BookReaderPage() {
 
       const blocks = getEpubBlocks(view.document);
       enhanceSection(blocks);
-      light.add(view.document, view.sectionIndex ?? 0);
+      light.add(view.document, view.sectionIndex ?? 0, blocks);
       resolveFirstContent();
       measureColumn();
       scheduleFrame();
@@ -778,7 +812,11 @@ export function BookReaderPage() {
         const delta = top - lastScrollTop;
         lastScrollTop = top;
 
-        if (Math.abs(delta) > 4 && panelRef.current === null && !barHoverRef.current) {
+        if (
+          Math.abs(delta) > 4 &&
+          panelRef.current === null &&
+          !barHoverRef.current
+        ) {
           setChromeHidden(true);
         }
       }
@@ -797,7 +835,9 @@ export function BookReaderPage() {
       }
 
       scrollElement = host.querySelector<HTMLElement>(".epub-container");
-      scrollElement?.addEventListener("scroll", handleScroll, { passive: true });
+      scrollElement?.addEventListener("scroll", handleScroll, {
+        passive: true,
+      });
       lastScrollTop = scrollElement?.scrollTop ?? 0;
       saveLocation();
       measureColumn();
@@ -953,6 +993,10 @@ export function BookReaderPage() {
       return undefined;
     }
 
+    if (lightRef.current) {
+      lightFromSettings(lightRef.current, settings);
+    }
+
     const css = getEpubThemeCss(settings, palette, readLiveAccent());
     getRenditionContents(rendition).forEach((content) =>
       content.addStylesheetCss(css, "seyirlik-theme"),
@@ -1025,7 +1069,11 @@ export function BookReaderPage() {
       const delta = scrollElement.scrollTop - lastTop;
       lastTop = scrollElement.scrollTop;
 
-      if (Math.abs(delta) > 4 && panelRef.current === null && !barHoverRef.current) {
+      if (
+        Math.abs(delta) > 4 &&
+        panelRef.current === null &&
+        !barHoverRef.current
+      ) {
         setChromeHidden(true);
       }
 
@@ -1064,7 +1112,12 @@ export function BookReaderPage() {
         return;
       }
 
-      if (panelRef.current !== null || event.metaKey || event.ctrlKey || event.altKey) {
+      if (
+        panelRef.current !== null ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey
+      ) {
         return;
       }
 
@@ -1149,17 +1202,18 @@ export function BookReaderPage() {
       .display(target)
       .then(() => waitForLayoutToSettle(host))
       .then(() =>
-        renditionRef.current === rendition ? rendition.display(target) : undefined,
+        renditionRef.current === rendition
+          ? rendition.display(target)
+          : undefined,
       )
       .then(() => scheduleFrameRef.current())
       .catch(() => undefined);
   }, []);
 
   const spineIndexOf = useCallback((href: string) => {
-    const section = bookRef.current?.spine.get(href.split("#")[0]) as unknown as
-      | { index?: number }
-      | null
-      | undefined;
+    const section = bookRef.current?.spine.get(
+      href.split("#")[0],
+    ) as unknown as { index?: number } | null | undefined;
     return typeof section?.index === "number" ? section.index : null;
   }, []);
 
@@ -1226,7 +1280,9 @@ export function BookReaderPage() {
       const node = range?.startContainer;
       const text = (node?.textContent ?? "").replace(/­/g, "");
       excerpt = text
-        .slice(node?.nodeType === Node.TEXT_NODE ? (range?.startOffset ?? 0) : 0)
+        .slice(
+          node?.nodeType === Node.TEXT_NODE ? (range?.startOffset ?? 0) : 0,
+        )
         .replace(/\s+/g, " ")
         .trim()
         .slice(0, 160);
@@ -1247,7 +1303,15 @@ export function BookReaderPage() {
     );
     setBookmarks(next);
     writeBookmarks(activeItemId, next);
-  }, [activeItemId, bookFraction, bookmarks, chapterLabel, currentCfi, isBookmarked, title]);
+  }, [
+    activeItemId,
+    bookFraction,
+    bookmarks,
+    chapterLabel,
+    currentCfi,
+    isBookmarked,
+    title,
+  ]);
 
   const removeBookmark = useCallback(
     (id: string) => {
@@ -1267,7 +1331,10 @@ export function BookReaderPage() {
       <main className="min-h-screen bg-black p-4 text-white">
         <div className="mx-auto w-full max-w-3xl py-10">
           <BackButton fallbackTo="/home" className="mb-4" />
-          <ErrorMessage title={t("reader.readerUnavailable")} message={itemError} />
+          <ErrorMessage
+            title={t("reader.readerUnavailable")}
+            message={itemError}
+          />
         </div>
       </main>
     );
@@ -1289,7 +1356,10 @@ export function BookReaderPage() {
       <main className="min-h-screen bg-black p-4 text-white">
         <div className="mx-auto w-full max-w-3xl py-10">
           <BackButton fallbackTo={ownerRoute} className="mb-4" />
-          <ErrorMessage title={t("reader.readerUnavailable")} message={t("reader.notBook")} />
+          <ErrorMessage
+            title={t("reader.readerUnavailable")}
+            message={t("reader.notBook")}
+          />
         </div>
       </main>
     );
@@ -1301,20 +1371,32 @@ export function BookReaderPage() {
     backgroundColor: palette.ink,
     color: palette.ground,
   };
-  const chapterNumber = currentChapter ? splitNumber(currentChapter.label).number : "";
+  const chapterNumber = currentChapter
+    ? splitNumber(currentChapter.label).number
+    : "";
   const nextChapter =
-    bookMap && reading ? (bookMap.chapters[reading.chapterIndex + 1] ?? null) : null;
+    bookMap && reading
+      ? (bookMap.chapters[reading.chapterIndex + 1] ?? null)
+      : null;
   const charted =
-    format === "epub" && epubReady && currentChapter !== null && reading !== null;
+    format === "epub" &&
+    epubReady &&
+    currentChapter !== null &&
+    reading !== null;
   const marginFits =
-    charted && columnBox !== null && columnBox.viewport - columnBox.right >= MARGIN_ROOM;
+    charted &&
+    columnBox !== null &&
+    columnBox.viewport - columnBox.right >= MARGIN_ROOM;
   // The settings panel and the menu open over the right margin, and on a
   // phone the sheet opens over the foot.
   const marginCovered = panel === "settings" || panel === "more";
-  const timeLeftText = reading ? formatDuration(reading.minutesLeftInChapter, t) : "";
+  const timeLeftText = reading
+    ? formatDuration(reading.minutesLeftInChapter, t)
+    : "";
   // Without a margin (phones, narrow windows) the time left docks at the foot
   // of the screen and comes and goes with the bar; the ruler stays away.
-  const timeLeftDocked = charted && !marginFits && settings.showTimeLeft && !marginCovered;
+  const timeLeftDocked =
+    charted && !marginFits && settings.showTimeLeft && !marginCovered;
   const sizeLabel = formatFileSize(item.MediaSources?.[0]?.Size);
 
   const toolbarActions: SegmentedIconToolbarAction[] = [
@@ -1332,7 +1414,9 @@ export function BookReaderPage() {
           {
             id: "bookmark",
             type: "button" as const,
-            label: isBookmarked ? t("reader.removeBookmark") : t("reader.addBookmark"),
+            label: isBookmarked
+              ? t("reader.removeBookmark")
+              : t("reader.addBookmark"),
             icon: isBookmarked ? (
               <BookmarkCheck style={{ color: "var(--accent, #467a6c)" }} />
             ) : (
@@ -1487,17 +1571,28 @@ export function BookReaderPage() {
           ) : (
             <div
               className="flex aspect-[2/3] items-center justify-center overflow-hidden rounded-xl p-6 text-center text-xl font-black"
-              style={{ boxShadow: `0 0 0 1px ${palette.hair}`, background: palette.ink4 }}
+              style={{
+                boxShadow: `0 0 0 1px ${palette.hair}`,
+                background: palette.ink4,
+              }}
             >
               {title}
             </div>
           )}
           <div>
-            <p className="text-[0.6875rem] font-black uppercase tracking-[0.14em]" style={{ color: palette.ink3 }}>
+            <p
+              className="text-[0.6875rem] font-black uppercase tracking-[0.14em]"
+              style={{ color: palette.ink3 }}
+            >
               {getFormatLabel(format)}
             </p>
-            <h1 className="mt-3 text-3xl font-black sm:text-5xl">{t("reader.unsupportedTitle")}</h1>
-            <p className="mt-4 max-w-2xl text-base leading-7" style={{ color: palette.ink2 }}>
+            <h1 className="mt-3 text-3xl font-black sm:text-5xl">
+              {t("reader.unsupportedTitle")}
+            </h1>
+            <p
+              className="mt-4 max-w-2xl text-base leading-7"
+              style={{ color: palette.ink2 }}
+            >
               {t("reader.unsupportedMessage")}
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
@@ -1572,8 +1667,12 @@ export function BookReaderPage() {
               {bookMeta.author ? (
                 <span className="rd-subtitle-author">{bookMeta.author}</span>
               ) : null}
-              {bookMeta.author && chapterLabel ? <i aria-hidden="true" /> : null}
-              {chapterLabel ? <span>{splitNumber(chapterLabel).title}</span> : null}
+              {bookMeta.author && chapterLabel ? (
+                <i aria-hidden="true" />
+              ) : null}
+              {chapterLabel ? (
+                <span>{splitNumber(chapterLabel).title}</span>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -1593,7 +1692,9 @@ export function BookReaderPage() {
         </div>
       </header>
 
-      {marginFits && currentChapter && (settings.showRuler || settings.showTimeLeft) ? (
+      {marginFits &&
+      currentChapter &&
+      (settings.showRuler || settings.showTimeLeft) ? (
         <ReaderMargin
           ref={markerRef}
           chapter={currentChapter}
@@ -1625,7 +1726,9 @@ export function BookReaderPage() {
         open={panel === "more"}
         fileUrl={fileUrl}
         downloadUrl={fileUrl}
-        sizeLabel={sizeLabel ? `${getFormatLabel(format)} · ${sizeLabel}` : null}
+        sizeLabel={
+          sizeLabel ? `${getFormatLabel(format)} · ${sizeLabel}` : null
+        }
         onClose={closePanel}
         finishedControl={
           <WatchedStatusButton
@@ -1635,7 +1738,11 @@ export function BookReaderPage() {
             showLabel
             iconSize={18}
             icon={<BookCheck size={18} />}
-            label={isCompleted ? t("reader.markUnfinished") : t("reader.markFinished")}
+            label={
+              isCompleted
+                ? t("reader.markUnfinished")
+                : t("reader.markFinished")
+            }
             className="rd-menu-item"
             onReset={(items) => {
               const updated = items.find((changed) => changed.Id === item.Id);

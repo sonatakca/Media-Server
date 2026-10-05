@@ -18,6 +18,9 @@ import { formatDuration, formatPercent, splitNumber } from "./readerText";
 import {
   FONT_SCALE_STEPS,
   LINE_HEIGHT_PRESETS,
+  LINE_REACH_PRESETS,
+  PARAGRAPH_REACH_PRESETS,
+  READER_LIGHT_SHAPES,
   READER_SPOTLIGHTS,
   READER_THEMES,
   READER_THEME_LABEL_KEYS,
@@ -35,11 +38,13 @@ function SegmentButtons<T extends string | number>({
   value,
   options,
   onChange,
+  disabled = false,
 }: {
   label: string;
   value: T;
   options: Array<{ value: T; label: string; icon?: ReactNode }>;
   onChange: (value: T) => void;
+  disabled?: boolean;
 }) {
   return (
     <div role="group" aria-label={label} className="rd-seg">
@@ -47,6 +52,7 @@ function SegmentButtons<T extends string | number>({
         <button
           key={String(option.value)}
           type="button"
+          disabled={disabled}
           aria-pressed={option.value === value}
           aria-label={option.icon ? option.label : undefined}
           title={option.icon ? option.label : undefined}
@@ -61,7 +67,14 @@ function SegmentButtons<T extends string | number>({
 
 function LinesIcon({ gaps }: { gaps: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
       <path d={`M5 ${12 - gaps}h14M5 12h14M5 ${12 + gaps}h14`} />
     </svg>
   );
@@ -69,8 +82,41 @@ function LinesIcon({ gaps }: { gaps: number }) {
 
 function MeasureIcon({ half }: { half: number }) {
   return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
-      <path d={`M${12 - half} 7h${half * 2}M${12 - half} 12h${half * 2}M${12 - half} 17h${half * 2}`} />
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      <path
+        d={`M${12 - half} 7h${half * 2}M${12 - half} 12h${half * 2}M${12 - half} 17h${half * 2}`}
+      />
+    </svg>
+  );
+}
+
+/** Five rules, the middle one lit, the others dimmed as far as the reach would leave them. */
+function ReachIcon({ step }: { step: number }) {
+  const spread = [0.6, 0.9, 1.3, 1.8, 2.6, 4, 8][step];
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.7"
+      strokeLinecap="round"
+      aria-hidden="true"
+    >
+      {[-2, -1, 0, 1, 2].map((offset) => (
+        <path
+          key={offset}
+          d={`M5 ${12 + offset * 4}h14`}
+          strokeOpacity={1 - 0.8 * Math.min(1, Math.abs(offset) / spread)}
+        />
+      ))}
     </svg>
   );
 }
@@ -87,7 +133,16 @@ export const ReaderSettingsPanel = forwardRef<
   { open, settings, showReadingLight, onChange },
   ref,
 ) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
+  const lightOff = settings.spotlight === "off";
+  const reachPresets =
+    settings.lightShape === "line"
+      ? LINE_REACH_PRESETS
+      : PARAGRAPH_REACH_PRESETS;
+  const reach =
+    settings.lightShape === "line"
+      ? settings.lineReach
+      : settings.paragraphReach;
   const sizeIndex = FONT_SCALE_STEPS.indexOf(
     nearest(FONT_SCALE_STEPS, settings.fontScale),
   );
@@ -135,10 +190,20 @@ export const ReaderSettingsPanel = forwardRef<
 
       <div className="rd-row">
         <p className="rd-label">{t("reader.typeface")}</p>
-        <div className="rd-faces" role="group" aria-label={t("reader.typeface")}>
+        <div
+          className="rd-faces"
+          role="group"
+          aria-label={t("reader.typeface")}
+        >
           {(
             [
-              ["serif", "Literata", t("reader.face.serifNote"), BOOK_SERIF, 450],
+              [
+                "serif",
+                "Literata",
+                t("reader.face.serifNote"),
+                BOOK_SERIF,
+                450,
+              ],
               ["sans", "Archivo", t("reader.face.sansNote"), BOOK_SANS, 650],
             ] as const
           ).map(([face, name, note, family, weight]) => (
@@ -198,9 +263,21 @@ export const ReaderSettingsPanel = forwardRef<
             value={nearest(LINE_HEIGHT_PRESETS, settings.lineHeight)}
             onChange={(lineHeight) => onChange({ lineHeight })}
             options={[
-              { value: LINE_HEIGHT_PRESETS[0], label: t("reader.spacing.tight"), icon: <LinesIcon gaps={4} /> },
-              { value: LINE_HEIGHT_PRESETS[1], label: t("reader.spacing.normal"), icon: <LinesIcon gaps={5.5} /> },
-              { value: LINE_HEIGHT_PRESETS[2], label: t("reader.spacing.loose"), icon: <LinesIcon gaps={7.5} /> },
+              {
+                value: LINE_HEIGHT_PRESETS[0],
+                label: t("reader.spacing.tight"),
+                icon: <LinesIcon gaps={4} />,
+              },
+              {
+                value: LINE_HEIGHT_PRESETS[1],
+                label: t("reader.spacing.normal"),
+                icon: <LinesIcon gaps={5.5} />,
+              },
+              {
+                value: LINE_HEIGHT_PRESETS[2],
+                label: t("reader.spacing.loose"),
+                icon: <LinesIcon gaps={7.5} />,
+              },
             ]}
           />
         </div>
@@ -211,9 +288,21 @@ export const ReaderSettingsPanel = forwardRef<
             value={nearest(WIDTH_PRESETS, settings.width)}
             onChange={(width) => onChange({ width })}
             options={[
-              { value: WIDTH_PRESETS[0], label: t("reader.width.narrow"), icon: <MeasureIcon half={3} /> },
-              { value: WIDTH_PRESETS[1], label: t("reader.width.medium"), icon: <MeasureIcon half={5} /> },
-              { value: WIDTH_PRESETS[2], label: t("reader.width.wide"), icon: <MeasureIcon half={8} /> },
+              {
+                value: WIDTH_PRESETS[0],
+                label: t("reader.width.narrow"),
+                icon: <MeasureIcon half={3} />,
+              },
+              {
+                value: WIDTH_PRESETS[1],
+                label: t("reader.width.medium"),
+                icon: <MeasureIcon half={5} />,
+              },
+              {
+                value: WIDTH_PRESETS[2],
+                label: t("reader.width.wide"),
+                icon: <MeasureIcon half={8} />,
+              },
             ]}
           />
         </div>
@@ -231,13 +320,46 @@ export const ReaderSettingsPanel = forwardRef<
               label: t(`reader.light.${spotlight}`),
             }))}
           />
+          <div className="rd-light-pair" data-off={lightOff || undefined}>
+            <SegmentButtons
+              label={t("reader.light.shape")}
+              value={settings.lightShape}
+              onChange={(lightShape) => onChange({ lightShape })}
+              disabled={lightOff}
+              options={READER_LIGHT_SHAPES.map((shape) => ({
+                value: shape,
+                label: t(`reader.light.shape.${shape}`),
+              }))}
+            />
+            <SegmentButtons
+              label={t("reader.light.reach")}
+              value={nearest(reachPresets, reach)}
+              onChange={(value) =>
+                onChange(
+                  settings.lightShape === "line"
+                    ? { lineReach: value }
+                    : { paragraphReach: value },
+                )
+              }
+              disabled={lightOff}
+              options={reachPresets.map((value, step) => ({
+                value,
+                label: `${t("reader.light.reach")} ${formatPercent(value, language)}`,
+                icon: <ReachIcon step={step} />,
+              }))}
+            />
+          </div>
         </div>
       ) : null}
 
       {showReadingLight ? (
         <div className="rd-row">
           <p className="rd-label">{t("reader.margin")}</p>
-          <div role="group" aria-label={t("reader.margin")} className="rd-seg rd-toggles">
+          <div
+            role="group"
+            aria-label={t("reader.margin")}
+            className="rd-seg rd-toggles"
+          >
             <button
               type="button"
               className="rd-toggle-ruler"
@@ -462,7 +584,11 @@ export function ReaderContentsDrawer({
       >
         <div className="rd-drawer-head">
           {item.ImageTags?.Primary ? (
-            <ReaderBookCover item={item} width={72} className="rd-drawer-cover" />
+            <ReaderBookCover
+              item={item}
+              width={72}
+              className="rd-drawer-cover"
+            />
           ) : (
             <span />
           )}
@@ -529,12 +655,22 @@ export function ReaderContentsDrawer({
           rows.length > 0 ? (
             <ol className="rd-list" role="tabpanel">
               {rows.map((row, index) => {
-                const { number, title: rowTitle } = splitNumber(row.entry.label);
+                const { number, title: rowTitle } = splitNumber(
+                  row.entry.label,
+                );
                 const length =
-                  row.start !== null && row.end !== null ? row.end - row.start : null;
+                  row.start !== null && row.end !== null
+                    ? row.end - row.start
+                    : null;
                 const read =
                   length !== null && location !== null && row.start !== null
-                    ? Math.min(1, Math.max(0, (location - row.start) / Math.max(1, length)))
+                    ? Math.min(
+                        1,
+                        Math.max(
+                          0,
+                          (location - row.start) / Math.max(1, length),
+                        ),
+                      )
                     : 0;
                 const isCurrent = index === currentIndex;
 
@@ -545,14 +681,18 @@ export function ReaderContentsDrawer({
                       className="rd-chapter"
                       data-depth={Math.min(row.entry.depth, 2)}
                       aria-current={isCurrent || undefined}
-                      style={{ paddingLeft: `${0.75 + Math.min(row.entry.depth, 2) * 0.75}rem` }}
+                      style={{
+                        paddingLeft: `${0.75 + Math.min(row.entry.depth, 2) * 0.75}rem`,
+                      }}
                       onClick={() => onNavigate(row.entry.href)}
                     >
                       <span className="rd-chapter-n" aria-hidden="true">
                         {number || <span className="rd-chapter-dot" />}
                       </span>
                       <span className="rd-chapter-t">
-                        {number ? <span className="sr-only">{number} </span> : null}
+                        {number ? (
+                          <span className="sr-only">{number} </span>
+                        ) : null}
                         {rowTitle}
                       </span>
                       <span className="rd-chapter-time">
@@ -566,11 +706,23 @@ export function ReaderContentsDrawer({
                       </span>
                       {length !== null && length > 0 ? (
                         <span className="rd-chapter-len" aria-hidden="true">
-                          <span style={{ width: `${Math.max(3, (length / longest) * 100)}%` }} />
-                          <span style={{ width: `${Math.max(3, (length / longest) * 100) * read}%` }} />
+                          <span
+                            style={{
+                              width: `${Math.max(3, (length / longest) * 100)}%`,
+                            }}
+                          />
+                          <span
+                            style={{
+                              width: `${Math.max(3, (length / longest) * 100) * read}%`,
+                            }}
+                          />
                         </span>
                       ) : map ? null : (
-                        <span className="rd-chapter-len" data-pending aria-hidden="true" />
+                        <span
+                          className="rd-chapter-len"
+                          data-pending
+                          aria-hidden="true"
+                        />
                       )}
                     </button>
                   </li>
@@ -590,7 +742,9 @@ export function ReaderContentsDrawer({
                   onClick={() => onNavigate(bookmark.cfi)}
                 >
                   {bookmark.excerpt ? (
-                    <span className="rd-bookmark-excerpt">{bookmark.excerpt}</span>
+                    <span className="rd-bookmark-excerpt">
+                      {bookmark.excerpt}
+                    </span>
                   ) : null}
                   <span className="rd-bookmark-label">
                     <span>{bookmark.label}</span>
@@ -686,9 +840,14 @@ export const ReaderMargin = forwardRef<
   const { t } = useLanguage();
   // The chapter on display lags a change by one fade: while the keys differ
   // the old chapter fades out, then the new one takes its place and fades in.
-  const [shown, setShown] = useState<MarginChapter>({ chapter, next, chapterNumber });
+  const [shown, setShown] = useState<MarginChapter>({
+    chapter,
+    next,
+    chapterNumber,
+  });
   const incomingKey = `${chapter.start}:${chapter.label}`;
-  const fading = incomingKey !== `${shown.chapter.start}:${shown.chapter.label}`;
+  const fading =
+    incomingKey !== `${shown.chapter.start}:${shown.chapter.label}`;
   const display = fading ? shown : { chapter, next, chapterNumber };
 
   useEffect(() => {
@@ -738,12 +897,20 @@ export const ReaderMargin = forwardRef<
                 style={{ top: `${tick.at * 100}%` }}
               />
             ))}
-            <span className="rd-ruler-cap" data-edge="top" lang={bookLanguage || undefined}>
+            <span
+              className="rd-ruler-cap"
+              data-edge="top"
+              lang={bookLanguage || undefined}
+            >
               {display.chapterNumber ? `${display.chapterNumber} · ` : ""}
               {splitNumber(display.chapter.label).title}
             </span>
             {display.next ? (
-              <span className="rd-ruler-cap" data-edge="bottom" lang={bookLanguage || undefined}>
+              <span
+                className="rd-ruler-cap"
+                data-edge="bottom"
+                lang={bookLanguage || undefined}
+              >
                 {splitNumber(display.next.label).title}
               </span>
             ) : null}
@@ -756,4 +923,3 @@ export const ReaderMargin = forwardRef<
     </div>
   );
 });
-

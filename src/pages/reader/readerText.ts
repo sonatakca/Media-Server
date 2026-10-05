@@ -28,4 +28,3 @@ export function splitNumber(label: string): { number: string; title: string } {
     ? { number: match[1], title: match[2] }
     : { number: "", title: label.trim() };
 }
-
