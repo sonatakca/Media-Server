@@ -5,6 +5,11 @@ export type AccentTheme = {
   accentSoft: string;
   accentStrong: string;
   accentStrongest: string;
+  /**
+   * Text set on a solid accent fill. White wherever it reads at all; dark on
+   * Gold and Olive, where white falls below 2:1.
+   */
+  accentLabel: string;
 };
 
 export const ACCENT_THEME_STORAGE_KEY =
@@ -18,6 +23,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(189, 63, 40, 0.18)",
     accentStrong: "rgba(189, 63, 40, 0.36)",
     accentStrongest: "rgba(189, 63, 40, 0.8)",
+    accentLabel: "#ffffff",
   },
   {
     name: "Amber",
@@ -26,6 +32,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(250, 155, 29, 0.18)",
     accentStrong: "rgba(250, 155, 29, 0.36)",
     accentStrongest: "rgba(250, 155, 29, 0.8)",
+    accentLabel: "#ffffff",
   },
   {
     name: "Gold",
@@ -34,6 +41,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(211, 202, 34, 0.18)",
     accentStrong: "rgba(211, 202, 34, 0.34)",
     accentStrongest: "rgba(211, 202, 34, 0.8)",
+    accentLabel: "#09090b",
   },
   {
     name: "Olive",
@@ -42,6 +50,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(186, 203, 125, 0.18)",
     accentStrong: "rgba(186, 203, 125, 0.34)",
     accentStrongest: "rgba(186, 203, 125, 0.8)",
+    accentLabel: "#09090b",
   },
   {
     name: "Green",
@@ -50,6 +59,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(103, 164, 120, 0.18)",
     accentStrong: "rgba(103, 164, 120, 0.36)",
     accentStrongest: "rgba(103, 164, 120, 0.8)",
+    accentLabel: "#ffffff",
   },
   {
     name: "Teal",
@@ -58,6 +68,7 @@ export const ACCENT_THEMES: AccentTheme[] = [
     accentSoft: "rgba(51, 123, 108, 0.18)",
     accentStrong: "rgba(51, 123, 108, 0.36)",
     accentStrongest: "rgba(51, 123, 108, 0.8)",
+    accentLabel: "#ffffff",
   },
 ];
 
@@ -73,6 +84,7 @@ export function applyAccentTheme(theme: AccentTheme): void {
   root.style.setProperty("--accent-soft", theme.accentSoft);
   root.style.setProperty("--accent-strong", theme.accentStrong);
   root.style.setProperty("--accent-strongest", theme.accentStrongest);
+  root.style.setProperty("--accent-label", theme.accentLabel);
   root.dataset.accentTheme = theme.name;
 }
 
