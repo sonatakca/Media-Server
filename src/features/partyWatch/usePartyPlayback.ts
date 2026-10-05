@@ -108,6 +108,13 @@ interface EngineMemory {
   /** Target this tab is waiting at while a moving group catches up to it. */
   catchUpAtMs: number | null;
   correcting: boolean;
+  /** How far off this player was when the running correction began. */
+  correctionFromMs: number;
+  /**
+   * A rate correction made the drift worse: this element stalls rather than
+   * running fast or slow (seen with HLS in Safari), so it stays at 1×.
+   */
+  rateUnusable: boolean;
   lastSeekAt: number;
   seekStartedAt: number | null;
   seekCostMs: number;
@@ -134,6 +141,8 @@ function freshMemory(): EngineMemory {
     blocked: false,
     catchUpAtMs: null,
     correcting: false,
+    correctionFromMs: 0,
+    rateUnusable: false,
     lastSeekAt: 0,
     seekStartedAt: null,
     seekCostMs: tuning.initialSeekCostMs,
@@ -505,11 +514,30 @@ export function usePartyPlayback({
         setRate(video, 1);
         break;
       case "rate":
+        if (m.rateUnusable) {
+          // Left alone: within the seek threshold, being a little apart is
+          // better than a player that freezes whenever it changes speed.
+          setRate(video, 1);
+          break;
+        }
         if (!m.correcting) {
           partyLog("engine.drift-correcting", {
             driftMs: Math.round(driftMs),
             rate: correction.rate,
           });
+          m.correctionFromMs = Math.abs(driftMs);
+        } else if (
+          Math.abs(driftMs) >
+          m.correctionFromMs + tuning.rateFailureMarginMs
+        ) {
+          partyLog("engine.rate-unusable", {
+            fromMs: Math.round(m.correctionFromMs),
+            driftMs: Math.round(driftMs),
+          });
+          m.rateUnusable = true;
+          m.correcting = false;
+          setRate(video, 1);
+          break;
         }
         m.correcting = true;
         setRate(video, correction.rate);

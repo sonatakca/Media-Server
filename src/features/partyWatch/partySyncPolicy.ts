@@ -33,6 +33,14 @@ export const PARTY_SYNC_TUNING = {
   /** Drift at which the rate change reaches its largest. */
   fullRateDriftMs: 2_500,
   /**
+   * A rate correction that lets drift grow by more than this has not slowed
+   * or sped the player up — it has stalled it. Some players (HLS in Safari)
+   * freeze at any rate but 1×, so a 2% nudge became a second lost per second
+   * and a catch-up seek every two. Such a player stops using rate for the
+   * rest of the party and only seeks past `seekThresholdMs`.
+   */
+  rateFailureMarginMs: 250,
+  /**
    * Beyond this a rate change would take too long; the player seeks. A seek
    * while the group plays means pausing, landing ahead and waiting — a visible
    * freeze — and right after a group seek the first measurements can read a
