@@ -207,7 +207,6 @@ export const EPUB_STATIC_CSS = `
   from { opacity: 0; transform: translateY(0.6rem); }
 }
 .seyirlik-reader-block {
-  transition: opacity 0.35s cubic-bezier(0.37, 0, 0.63, 1);
   animation: seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
 }
 @supports (initial-letter: 3) or (-webkit-initial-letter: 3) {

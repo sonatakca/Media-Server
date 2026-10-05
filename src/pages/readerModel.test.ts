@@ -7,6 +7,7 @@ import {
   READER_PROGRESS_KEY,
   READER_SETTINGS_KEY,
   getReaderFormat,
+  isReaderPlace,
   readReaderProgress,
   readStoredReaderSettings,
   writeReaderProgress,
@@ -134,5 +135,27 @@ describe("readerModel", () => {
       scrollRatio: 0.5,
       updatedAt: 1784797200000,
     });
+  });
+
+  it("keeps the exact place, and drops it when a save has none", () => {
+    const place = { section: 3, block: 0, offset: -184 };
+    writeReaderProgress("book", { cfi: "epubcfi(/6/8)", place });
+    expect(readReaderProgress("book")?.place).toEqual(place);
+    expect(isReaderPlace(place)).toBe(true);
+
+    // A save with nowhere to anchor must not leave the old place behind.
+    writeReaderProgress("book", { cfi: "epubcfi(/6/10)", place: undefined });
+    expect(readReaderProgress("book")?.place).toBeUndefined();
+
+    for (const broken of [
+      null,
+      {},
+      { section: -1, block: 0, offset: 0 },
+      { section: 1, block: 0.5, offset: 0 },
+      { section: 1, block: 2, offset: Number.NaN },
+      { section: "1", block: 2, offset: 0 },
+    ]) {
+      expect(isReaderPlace(broken)).toBe(false);
+    }
   });
 });

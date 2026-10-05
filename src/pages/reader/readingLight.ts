@@ -27,6 +27,7 @@ interface LitBlock {
   measured: boolean;
   /** The drop cap's box, lit with the brightest of the lines it stands in. */
   dropCap: { left: number; top: number; width: number; height: number } | null;
+  /** The opacity and mask last written, so unchanged ink is not written again. */
   written: string;
   /** Its geometry changed, so its mask is rewritten even if no ink moved. */
   dirty: boolean;
@@ -76,6 +77,15 @@ function measureLines(
   const lineHeight =
     parseFloat(style?.lineHeight ?? "") ||
     parseFloat(style?.fontSize ?? "16") * 1.5;
+  const fontSize = parseFloat(style?.fontSize ?? "16");
+
+  // Set tighter than its own type (a chapter numeral, a display heading), a
+  // block's ink overruns its lines, so it is lit as one: stepping it would
+  // need a mask, and a mask would crop that ink.
+  if (lineHeight < fontSize * 1.15) {
+    return [slot(0, height, 1)];
+  }
+
   const scrollY = view?.scrollY ?? 0;
   const range = document.createRange();
   range.selectNodeContents(element);
@@ -236,7 +246,7 @@ export class ReadingLight {
         slots: [slot(0, 0, 1)],
         measured: false,
         dropCap: null,
-        written: "",
+        written: "|",
         dirty: false,
       })),
     });
@@ -461,12 +471,20 @@ export class ReadingLight {
 
       if (changed || block.dirty) {
         block.dirty = false;
-        const mask = block.slots.every((slot) => slot.value >= 0.999)
-          ? ""
-          : blockMask(block);
+        // One even ink is opacity, as the paragraph light always was. A mask
+        // clips everything to the block's box, and a tightly set heading's
+        // ink (the dot of an İ) stands above it; only lines that step need one.
+        const first = block.slots[0].value;
+        const even = block.slots.every(
+          (slot) => Math.abs(slot.value - first) < 0.001,
+        );
+        const mask = even ? "" : blockMask(block);
+        const opacity = even && first < 0.999 ? first.toFixed(3) : "";
+        const written = `${opacity}|${mask}`;
 
-        if (mask !== block.written) {
-          block.written = mask;
+        if (written !== block.written) {
+          block.written = written;
+          block.element.style.opacity = opacity;
           block.element.style.maskImage = mask;
           block.element.style.setProperty("-webkit-mask-image", mask);
         }

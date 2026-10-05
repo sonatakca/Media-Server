@@ -32,10 +32,37 @@ export interface ReaderSettings {
   showTimeLeft: boolean;
 }
 
+/**
+ * Exactly where the screen stood: the first block of the book whose bottom is
+ * below the top of the screen, and how far the top of the screen was below
+ * that block's top, in px (negative when the space above it, a chapter
+ * opener's margin, was in view).
+ */
+export interface ReaderPlace {
+  section: number;
+  block: number;
+  offset: number;
+}
+
 export interface StoredReaderProgress {
   cfi?: string;
   scrollRatio?: number;
+  place?: ReaderPlace;
   updatedAt: number;
+}
+
+export function isReaderPlace(value: unknown): value is ReaderPlace {
+  const place = value as ReaderPlace | null;
+
+  return (
+    typeof place === "object" &&
+    place !== null &&
+    Number.isInteger(place.section) &&
+    place.section >= 0 &&
+    Number.isInteger(place.block) &&
+    place.block >= 0 &&
+    Number.isFinite(place.offset)
+  );
 }
 
 export type ReaderProgressMap = Record<string, StoredReaderProgress>;

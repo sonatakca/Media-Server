@@ -83,6 +83,7 @@ import {
   getReaderFormat,
   minutesForLocations,
   readBookmarks,
+  isReaderPlace,
   readReaderProgress,
   readStoredReaderSettings,
   themePalettes,
@@ -92,6 +93,7 @@ import {
   type EpubContentView,
   type ReaderBookmark,
   type ReaderPalette,
+  type ReaderPlace,
   type ReaderSettings,
 } from "./reader/readerModel";
 import {
@@ -293,6 +295,91 @@ function waitForLayoutToSettle(
 
     tick();
   });
+}
+
+/**
+ * Where the screen stands in the book, as the first block whose bottom is
+ * below the top of the scroller and the distance from that block's top to the
+ * scroller's top. A CFI names a character, and epub.js displays one at the very
+ * top of the screen, so reopening at the CFI alone dropped the space above a
+ * chapter opener and landed a few lines away from where the reader had been.
+ */
+function readPlace(
+  scroller: HTMLElement,
+  contents: EpubContentView[],
+  blocksOf: WeakMap<Document, HTMLElement[]>,
+): ReaderPlace | null {
+  const top = scroller.getBoundingClientRect().top;
+  const ordered = [...contents].sort(
+    (a, b) => (a.sectionIndex ?? 0) - (b.sectionIndex ?? 0),
+  );
+
+  for (const content of ordered) {
+    const frame = content.document.defaultView?.frameElement;
+    const blocks = blocksOf.get(content.document);
+
+    if (!frame || !blocks?.length || content.sectionIndex === undefined) {
+      continue;
+    }
+
+    const frameTop = frame.getBoundingClientRect().top;
+    const bottomOf = (index: number) =>
+      frameTop + blocks[index].getBoundingClientRect().bottom;
+
+    if (bottomOf(blocks.length - 1) <= top) {
+      continue;
+    }
+
+    // Blocks run down the page in order, so the first one still showing is
+    // found by halving.
+    let low = 0;
+    let high = blocks.length - 1;
+
+    while (low < high) {
+      const middle = (low + high) >> 1;
+
+      if (bottomOf(middle) > top) {
+        high = middle;
+      } else {
+        low = middle + 1;
+      }
+    }
+
+    return {
+      section: content.sectionIndex,
+      block: low,
+      offset: Math.round(
+        top - (frameTop + blocks[low].getBoundingClientRect().top),
+      ),
+    };
+  }
+
+  return null;
+}
+
+/** Scrolls so the screen stands where `readPlace` found it; false if that block is not rendered. */
+function returnToPlace(
+  scroller: HTMLElement,
+  contents: EpubContentView[],
+  blocksOf: WeakMap<Document, HTMLElement[]>,
+  place: ReaderPlace,
+): boolean {
+  const content = contents.find(
+    (candidate) => candidate.sectionIndex === place.section,
+  );
+  const frame = content?.document.defaultView?.frameElement;
+  const block = content ? blocksOf.get(content.document)?.[place.block] : null;
+
+  if (!frame || !block) {
+    return false;
+  }
+
+  const blockTop =
+    frame.getBoundingClientRect().top + block.getBoundingClientRect().top;
+  scroller.scrollTop +=
+    blockTop - (scroller.getBoundingClientRect().top - place.offset);
+
+  return true;
 }
 
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -530,7 +617,15 @@ export function BookReaderPage() {
     });
     const light = new ReadingLight(host);
     const savedProgress = readReaderProgress(activeItemId);
+    const savedPlace = isReaderPlace(savedProgress?.place)
+      ? savedProgress.place
+      : null;
     let currentCfiValue = savedProgress?.cfi;
+    /** Each section's blocks, in order, once its typography is in. */
+    const blocksOf = new WeakMap<Document, HTMLElement[]>();
+    // Until the reader is back where they left off, the places epub.js passes
+    // through on the way are not written over the saved one.
+    let restoring = true;
     let scrollElement: HTMLElement | null = null;
     let lastScrollTop = 0;
     let frameId = 0;
@@ -763,6 +858,7 @@ export function BookReaderPage() {
 
       const blocks = getEpubBlocks(view.document);
       enhanceSection(blocks);
+      blocksOf.set(view.document, blocks);
       light.add(view.document, view.sectionIndex ?? 0, blocks);
       resolveFirstContent();
       measureColumn();
@@ -796,12 +892,20 @@ export function BookReaderPage() {
       currentCfiValue = nextCfi;
       setCurrentCfi(nextCfi ?? null);
       setEpubProgress(nextProgress);
-      writeReaderProgress(
-        activeItemId,
-        nextCfi
-          ? { cfi: nextCfi, scrollRatio: nextProgress }
-          : { scrollRatio: nextProgress },
-      );
+
+      if (restoring) {
+        return;
+      }
+
+      const scroller = host.querySelector<HTMLElement>(".epub-container");
+      const place = scroller
+        ? readPlace(scroller, getRenditionContents(rendition), blocksOf)
+        : null;
+      writeReaderProgress(activeItemId, {
+        ...(nextCfi ? { cfi: nextCfi } : {}),
+        scrollRatio: nextProgress,
+        place: place ?? undefined,
+      });
     };
 
     const handleScroll = () => {
@@ -905,26 +1009,50 @@ export function BookReaderPage() {
       })
       .catch(() => undefined);
 
+    const placeSection = savedPlace
+      ? (book.spine.get(savedPlace.section) as unknown as {
+          href?: string;
+        } | null)
+      : null;
+    const start = placeSection?.href ?? savedProgress?.cfi;
+    const backToPlace = (place: ReaderPlace) => {
+      const scroller = host.querySelector<HTMLElement>(".epub-container");
+      return scroller
+        ? returnToPlace(
+            scroller,
+            getRenditionContents(rendition),
+            blocksOf,
+            place,
+          )
+        : false;
+    };
+
     void rendition
-      .display(savedProgress?.cfi)
+      .display(start)
       .then(async () => {
         // The book's typography (fonts, hyphenation, our measure) lands in the
-        // content hook, after epub.js has already scrolled to the saved place.
-        // Going back to the same CFI once it has settled keeps the reader where
-        // they left off rather than a few lines away.
+        // content hook, after epub.js has already scrolled. Once it has
+        // settled, the screen goes back to exactly where it stood: the same
+        // block at the same distance from the top, which a CFI alone cannot
+        // say. Sections loading around it can still shift it, so it is set
+        // once more after they settle. Older saves have only a CFI.
         await Promise.race([
           firstContent,
           new Promise((resolve) => window.setTimeout(resolve, 2500)),
         ]);
 
-        if (savedProgress?.cfi && isMounted) {
+        if (start && isMounted) {
           await waitForLayoutToSettle(host);
         }
 
-        if (savedProgress?.cfi && isMounted) {
+        if (savedPlace && isMounted && backToPlace(savedPlace)) {
+          await waitForLayoutToSettle(host);
+          backToPlace(savedPlace);
+        } else if (savedProgress?.cfi && isMounted) {
           await rendition.display(savedProgress.cfi).catch(() => undefined);
         }
 
+        restoring = false;
         window.clearTimeout(preparationTimeoutId);
 
         if (isMounted) {
