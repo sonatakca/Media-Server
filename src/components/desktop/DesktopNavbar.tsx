@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { AccountMenu } from "../AccountMenu";
+import { AppUpdateButton } from "../AppUpdateButton";
 import { AnimatedText } from "../AnimatedText";
 import { AnimatedWidth } from "../AnimatedWidth";
 import { LanguageSwitch } from "../LanguageSwitch";
@@ -134,6 +135,8 @@ export function DesktopNavbar() {
         </div>
 
         <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-3">
+          <AppUpdateButton />
+
           <Tooltip
             content={t("search.open")}
             shortcut={isMacPlatform ? "⌘K" : "Ctrl K"}

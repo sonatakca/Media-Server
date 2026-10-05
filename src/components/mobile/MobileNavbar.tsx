@@ -7,6 +7,7 @@ import { TbDeviceTv } from "react-icons/tb";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { AccountMenu } from "../AccountMenu";
+import { AppUpdateButton } from "../AppUpdateButton";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { openSearchOverlay } from "../../lib/searchModel";
@@ -107,6 +108,7 @@ export function MobileNavbar() {
         </Link>
 
         <div className="flex shrink-0 items-center gap-1">
+          <AppUpdateButton variant="mobile" />
           <Tooltip content={t("search.open")}>
             <button
               type="button"

@@ -3,7 +3,13 @@ import { defineConfig } from "vitest/config";
 import { loadEnv, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { VitePWA } from "vite-plugin-pwa";
+import { execFileSync } from "node:child_process";
 import { FLAG_COUNTRY_CODES } from "./src/lib/flagCountryCodes";
+import {
+  BUILD_META_NAME,
+  describeBuild,
+  type BuildInfo,
+} from "./src/lib/appVersion/buildInfo";
 
 // flag-icons ships every flag in the world: ~270 CSS rules pulling ~3.5 MB of
 // SVGs, all of which Vite emitted as assets and the PWA precached, for the ~40
@@ -54,16 +60,75 @@ function trimFlagIcons(): Plugin {
   };
 }
 
+function gitOutput(args: string[]): string | null {
+  try {
+    return execFileSync("git", args, {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+  } catch {
+    // A `git archive` copy or an uploaded deploy has no repository.
+    return null;
+  }
+}
+
+function readBuildInfo(): BuildInfo {
+  // Named outright when the build runs from a `git archive` copy, which is how
+  // www and origin are built; such a copy is the commit, so it is never dirty.
+  const namedCommit =
+    process.env.SEYIRLIK_BUILD_COMMIT?.trim() ||
+    process.env.VERCEL_GIT_COMMIT_SHA?.trim();
+  const commit = namedCommit || gitOutput(["rev-parse", "HEAD"]);
+  const changes = namedCommit
+    ? ""
+    : gitOutput(["status", "--porcelain", "--untracked-files=no"]);
+  return describeBuild({
+    commit: commit || null,
+    dirty: Boolean(changes),
+    builtAt: new Date(),
+  });
+}
+
+// Writes this build's identity beside it as /version.json, and into
+// index.html, so a running tab can tell a newer build is live (see
+// src/lib/appVersion/appUpdate.ts).
+function stampBuild(build: BuildInfo): Plugin {
+  return {
+    name: "seyirlik-stamp-build",
+    transformIndexHtml() {
+      return [
+        {
+          tag: "meta",
+          attrs: { name: BUILD_META_NAME, content: build.buildId },
+          injectTo: "head",
+        },
+      ];
+    },
+    generateBundle() {
+      this.emitFile({
+        type: "asset",
+        fileName: "version.json",
+        source: `${JSON.stringify(build, null, 2)}\n`,
+      });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => {
   // `process.env` is not populated from .env on its own, so an upstream set
   // there was silently ignored and the proxy fell back to a loopback port with
   // nothing behind it — which reaches the browser as an unexplained "invalid
   // response" at the login form.
   const environment = { ...process.env, ...loadEnv(mode, process.cwd(), "") };
+  const build = readBuildInfo();
 
   return {
+    define: {
+      __SEYIRLIK_BUILD__: JSON.stringify(build),
+    },
     plugins: [
       trimFlagIcons(),
+      stampBuild(build),
       react(),
       VitePWA({
         registerType: "autoUpdate",

@@ -19,6 +19,11 @@ export const en = {
     "Recent activity in this session. Repeated updates appear once.",
   "notifications.firstShown": "First shown",
   "notifications.updated": "Updated",
+  "appUpdate.available": "Update",
+  "appUpdate.applying": "Updating…",
+  "appUpdate.tooltip":
+    "A new version of Seyirlik is available. Reload to use it.",
+  "appUpdate.version": "Version",
   "tasks.acquisitionSubmit": "Starting a download",
   "tasks.acquisitionReconcile": "Checking downloads",
   "tasks.importRun": "Importing media",

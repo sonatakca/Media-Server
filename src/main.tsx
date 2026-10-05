@@ -9,6 +9,7 @@ import "@fontsource-variable/archivo/wdth.css";
 import App from "./App";
 import { LanguageProvider } from "./i18n/LanguageContext";
 import { applyStoredAccentTheme } from "./lib/accentTheme";
+import { startAppUpdateWatch } from "./lib/appVersion/appUpdate";
 import "./index.css";
 // These styles remain eager, and ordered after Tailwind/global rules, to match
 // the original single-stylesheet first paint and cascade.
@@ -31,6 +32,7 @@ if (
 }
 
 applyStoredAccentTheme();
+startAppUpdateWatch();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

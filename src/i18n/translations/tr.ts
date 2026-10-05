@@ -19,6 +19,11 @@ export const tr = {
     "Bu oturumdaki son etkinlikler. Tekrarlanan güncellemeler bir kez gösterilir.",
   "notifications.firstShown": "İlk gösterim",
   "notifications.updated": "Güncelleme",
+  "appUpdate.available": "Güncelle",
+  "appUpdate.applying": "Güncelleniyor…",
+  "appUpdate.tooltip":
+    "Seyirlik'in yeni sürümü hazır. Kullanmak için yeniden yükleyin.",
+  "appUpdate.version": "Sürüm",
   "tasks.acquisitionSubmit": "İndirme başlatılıyor",
   "tasks.acquisitionReconcile": "İndirmeler kontrol ediliyor",
   "tasks.importRun": "Medya içe aktarılıyor",

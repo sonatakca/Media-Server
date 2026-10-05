@@ -3,6 +3,7 @@ import { LogOut, Palette, ShieldCheck, UserRound } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
+import { RUNNING_BUILD } from "../lib/appVersion/appUpdate";
 import { clearAuthSession, getCachedSession } from "../lib/authStorage";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "./RouteColorTransition";
 
@@ -186,6 +187,12 @@ export function AccountMenu({
               <LogOut size={16} className="shrink-0" />
               {t("nav.logout")}
             </button>
+            <p
+              className="px-3 pb-1 pt-2 text-[0.6875rem] font-medium tabular-nums text-white/40"
+              title={RUNNING_BUILD.commit ?? undefined}
+            >
+              {t("appUpdate.version")} {RUNNING_BUILD.version}
+            </p>
           </motion.div>
         ) : null}
       </AnimatePresence>

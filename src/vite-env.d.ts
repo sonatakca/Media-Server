@@ -20,6 +20,9 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_ADMIN_EMAIL?: string;
 }
 
+/** This build's identity, stamped in by vite.config.ts. */
+declare const __SEYIRLIK_BUILD__: import("./lib/appVersion/buildInfo").BuildInfo;
+
 interface ImportMeta {
   readonly env: ImportMetaEnv;
 }
