@@ -7,7 +7,11 @@ import {
   purgeStaleCaches,
   resetAppUpdateForTests,
 } from "./appUpdate";
-import { describeBuild, readBuildIdFromHtml } from "./buildInfo";
+import {
+  describeBuild,
+  formatBuildLabel,
+  readBuildIdFromHtml,
+} from "./buildInfo";
 
 const NEWER = {
   version: "2026.10.06 · abcdef1",
@@ -74,6 +78,22 @@ describe("build identity", () => {
     });
     expect(build.version).toBe("2026.10.05");
     expect(build.buildId).toMatch(/^nogit-/);
+  });
+
+  it("names a build by day, month and time, in the reader's language", () => {
+    const build = {
+      builtAt: "2026-10-05T18:54:09.434Z",
+      commit: "259b52373bd3034fcf2f5f9e574f13b57e8ba0da",
+    };
+    expect(formatBuildLabel(build, "tr", "Europe/Istanbul")).toBe(
+      "5 Ekim 21:54 · 259b523",
+    );
+    expect(formatBuildLabel(build, "en", "Europe/London")).toBe(
+      "5 Oct 19:54 · 259b523",
+    );
+    expect(
+      formatBuildLabel({ ...build, commit: null }, "en", "Europe/London"),
+    ).toBe("5 Oct 19:54");
   });
 
   it("reads the build back out of index.html", () => {

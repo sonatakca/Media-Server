@@ -51,3 +51,29 @@ export function readBuildIdFromHtml(html: string): string | null {
   ).exec(html);
   return match ? match[1] : null;
 }
+
+/**
+ * How a build is named to a person: the day, month and time it was built, in
+ * their own time zone, then the commit — "5 Ekim 19:54 · 259b523". Several
+ * builds can go out in one day, so the time is what tells them apart.
+ */
+export function formatBuildLabel(
+  build: Pick<BuildInfo, "builtAt" | "commit">,
+  language: "en" | "tr",
+  timeZone?: string,
+): string {
+  const builtAt = new Date(build.builtAt);
+  const parts = new Intl.DateTimeFormat(language === "tr" ? "tr-TR" : "en-GB", {
+    day: "numeric",
+    // "Ekim" in Turkish is already short; English abbreviates to "Oct".
+    month: language === "tr" ? "long" : "short",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+    timeZone,
+  }).formatToParts(builtAt);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  const when = `${part("day")} ${part("month")} ${part("hour")}:${part("minute")}`;
+  return build.commit ? `${when} · ${build.commit.slice(0, 7)}` : when;
+}

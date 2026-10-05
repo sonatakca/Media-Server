@@ -4,6 +4,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import { RUNNING_BUILD } from "../lib/appVersion/appUpdate";
+import { formatBuildLabel } from "../lib/appVersion/buildInfo";
 import { clearAuthSession, getCachedSession } from "../lib/authStorage";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "./RouteColorTransition";
 
@@ -27,7 +28,7 @@ export function AccountMenu({
   const navigate = useNavigate();
   const location = useLocation();
   const session = getCachedSession();
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -191,7 +192,8 @@ export function AccountMenu({
               className="px-3 pb-1 pt-2 text-[0.6875rem] font-medium tabular-nums text-white/40"
               title={RUNNING_BUILD.commit ?? undefined}
             >
-              {t("appUpdate.version")} {RUNNING_BUILD.version}
+              {t("appUpdate.version")}{" "}
+              {formatBuildLabel(RUNNING_BUILD, language)}
             </p>
           </motion.div>
         ) : null}

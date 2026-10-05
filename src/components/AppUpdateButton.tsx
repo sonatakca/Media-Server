@@ -7,6 +7,7 @@ import {
   getAppUpdateState,
   subscribeToAppUpdate,
 } from "../lib/appVersion/appUpdate";
+import { formatBuildLabel } from "../lib/appVersion/buildInfo";
 import { Tooltip } from "./ui/Tooltip";
 
 interface AppUpdateButtonProps {
@@ -15,7 +16,7 @@ interface AppUpdateButtonProps {
 
 /** Shown only while a newer build of the site is live than the one running. */
 export function AppUpdateButton({ variant = "desktop" }: AppUpdateButtonProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const shouldReduceMotion = useReducedMotion();
   const update = useSyncExternalStore(
     subscribeToAppUpdate,
@@ -39,7 +40,7 @@ export function AppUpdateButton({ variant = "desktop" }: AppUpdateButtonProps) {
           transition={{ type: "spring", bounce: 0, duration: 0.3 }}
         >
           <Tooltip
-            content={`${t("appUpdate.tooltip")} (${update.latest.version})`}
+            content={`${t("appUpdate.tooltip")} (${formatBuildLabel(update.latest, language)})`}
           >
             <button
               type="button"
