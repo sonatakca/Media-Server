@@ -257,6 +257,63 @@ export function requireOwnApiAccess(
   return context.principal;
 }
 
+/**
+ * What a media delivery actually did, for the completion log.
+ *
+ * The route template alone says "some rendition file was served" — not which
+ * one, what was asked for, or how much went out. That is the question every
+ * playback report turns on: which rung a native-HLS player was really fetching,
+ * and which client sent the occasional request with no Range header that
+ * streamed a multi-gigabyte file down the tunnel and starved every other
+ * request. Only the path inside the package is recorded; the access token
+ * that precedes it never is.
+ */
+function mediaDeliveryDetail(
+  request: IncomingMessage,
+  response: ServerResponse,
+  url: URL,
+  socket: IncomingMessage["socket"] | undefined,
+  socketBytesAtStart: number,
+): Record<string, unknown> | undefined {
+  if (!url.pathname.includes("/playback/")) return undefined;
+  const packaged = /\/adaptive\/[^/]+\/(.+)$/.exec(url.pathname)?.[1];
+  let asset: string | undefined;
+  try {
+    asset = packaged ? decodeURIComponent(packaged) : undefined;
+  } catch {
+    asset = packaged;
+  }
+  const declared = response.getHeader("Content-Length");
+  return {
+    ...(asset ? { asset } : {}),
+    range: request.headers.range ?? null,
+    declaredBytes: declared === undefined ? null : Number(declared),
+    // Read from the socket captured at the start: a client that hung up has
+    // already been detached from the response by now.
+    sentBytes: Math.max(
+      0,
+      (socket?.bytesWritten ?? socketBytesAtStart) - socketBytesAtStart,
+    ),
+    completed: response.writableFinished,
+    client: mediaClientClass(request.headers["user-agent"]),
+    cookie: Boolean(request.headers.cookie),
+  };
+}
+
+/**
+ * The kind of client, not its full identity. Apple's media framework fetches
+ * some HLS resources itself, outside the browser's loader and without its
+ * cookies; telling those requests apart from the page's own is the point.
+ */
+function mediaClientClass(header: string | undefined): string {
+  if (!header) return "none";
+  if (/AppleCoreMedia/i.test(header)) return "coremedia";
+  if (/Edg|Chrome|Chromium|CriOS/i.test(header)) return "chromium";
+  if (/Firefox|FxiOS/i.test(header)) return "firefox";
+  if (/Safari/i.test(header)) return "safari";
+  return "other";
+}
+
 export function createOwnApiRequestHandler({
   healthService,
   requestIdFactory = randomUUID,
@@ -276,6 +333,8 @@ export function createOwnApiRequestHandler({
     }
 
     const startedAt = performance.now();
+    const socket = request.socket;
+    const socketBytesAtStart = socket?.bytesWritten ?? 0;
     const routeTemplate =
       routeTemplateResolver?.(url.pathname) ??
       ownApiRouteTemplate(url.pathname);
@@ -344,6 +403,13 @@ export function createOwnApiRequestHandler({
         path: routeTemplate,
         statusCode: response.statusCode,
         durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
+        ...mediaDeliveryDetail(
+          request,
+          response,
+          url,
+          socket,
+          socketBytesAtStart,
+        ),
       });
     }
   };
