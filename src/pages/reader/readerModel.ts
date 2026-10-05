@@ -48,6 +48,12 @@ export interface StoredReaderProgress {
   cfi?: string;
   scrollRatio?: number;
   place?: ReaderPlace;
+  /**
+   * When the reader moved to this place, in ms. Unlike updatedAt it does not
+   * change when the same place is saved again, so it can be weighed against
+   * the place another device saved.
+   */
+  readAt?: number;
   updatedAt: number;
 }
 

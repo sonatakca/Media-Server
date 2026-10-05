@@ -36,6 +36,8 @@ import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
 import { migrateTitleArtwork } from "./images/titleArtworkMigration";
 import { createBookRoutes } from "./books/bookRoutes";
+import { createBookPositionRepository } from "./books/bookPositionRepository";
+import { createBookPositionRoutes } from "./books/bookPositionRoutes";
 import { createBookUploader } from "./books/bookUpload";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
@@ -381,6 +383,7 @@ export async function createNativeRuntime({
   const home = createHomeRepository(pool);
   const images = createImageRepository(pool);
   const userState = createUserStateRepository(pool);
+  const bookPositions = createBookPositionRepository(pool);
   const playbackSessions = createPlaybackSessionStore(pool);
   const queue = createJobQueue(pool);
 
@@ -1483,6 +1486,7 @@ export async function createNativeRuntime({
     ...createCatalogueRoutes({ service: catalogueService, catalogue }),
     ...createCurationRoutes({ curation, catalogue }),
     ...createProgressRoutes({ userState, catalogue }),
+    ...createBookPositionRoutes({ positions: bookPositions, catalogue }),
     ...createPlaybackRoutes({
       catalogue,
       sessions: playbackSessions,

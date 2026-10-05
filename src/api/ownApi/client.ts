@@ -45,6 +45,8 @@ export interface OwnApiRequestOptions {
   csrf?: boolean;
   /** A poll or other unprompted read, which should not count as the page loading. */
   background?: boolean;
+  /** Lets the request outlive the page, for a save sent as the page is left. */
+  keepalive?: boolean;
 }
 
 export interface OwnApiNativeUser {
@@ -409,6 +411,7 @@ export function createOwnApiClient({
       signal,
       headers: additionalHeaders = {},
       background = false,
+      keepalive = false,
       // Every unsafe method needs CSRF evidence. Making this opt-in meant each
       // new mutation had to remember, and every one of them forgot.
       csrf = method !== "GET",
@@ -500,6 +503,7 @@ export function createOwnApiClient({
         headers,
         body: serializedBody,
         signal,
+        ...(keepalive ? { keepalive: true } : {}),
       });
       response = await (background
         ? pendingResponse

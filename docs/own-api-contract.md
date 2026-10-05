@@ -342,6 +342,8 @@ A conflict `reason` is `foreign-file`, `symlink`, `not-a-regular-file`,
 | GET/HEAD | `/playback/sessions/:sessionId/:segment`                | Authorized HLS init/segment                                    |
 | GET      | `/playback/sessions/:sessionId/subtitles/:streamId.vtt` | Authorized extracted/converted subtitle                        |
 | PUT      | `/progress/:itemId`                                     | Sequence/timestamp-protected progress update                   |
+| GET      | `/books/:itemId/position`                               | The reader's place in a book, shared by all their devices      |
+| PUT      | `/books/:itemId/position`                               | Save a book place; a later `readAt` already stored wins        |
 | POST     | `/items/:itemId/played`                                 | Mark played                                                    |
 | DELETE   | `/items/:itemId/played`                                 | Mark unplayed                                                  |
 | POST     | `/favourites/:itemId`                                   | Add favourite                                                  |
@@ -349,6 +351,8 @@ A conflict `reason` is `foreign-file`, `symlink`, `not-a-regular-file`,
 | GET      | `/items/:itemId/trickplay`                              | Trickplay set and frame mapping                                |
 | GET      | `/trickplay/:setId/sprites/:spriteIndex`                | Authorized sprite image                                        |
 | POST     | `/admin/items/:itemId/trickplay/regenerate`             | Queue regeneration                                             |
+
+A book position is `{ cfi, place, fraction, readAt }`: `place` is `{ section, block, offset }` (the first block still on screen and the px from its top to the top of the screen), `fraction` is how far through the book (0 to 1), and `readAt` is when the reader was there (ms since the epoch on PUT, ISO 8601 in replies), capped at the server's clock. A PUT always answers `{ accepted, position }` with the place now on record, so a device whose save lost learns the later place instead of getting an error. Any item that is not a book the caller can see answers 404.
 
 A playback-plan response uses native enum values `DIRECT_PLAY`, `REMUX`, `DIRECT_STREAM`, or `TRANSCODE`, and includes both `reasonCodes` and `reasons`. It never returns a raw source path.
 

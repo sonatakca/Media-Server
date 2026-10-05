@@ -97,6 +97,11 @@ import {
   type ReaderSettings,
 } from "./reader/readerModel";
 import {
+  getBookPosition,
+  saveBookPosition,
+  type BookPosition,
+} from "../lib/bookPositionApi";
+import {
   ReadingLight,
   buildBookMap,
   chapterAt,
@@ -295,6 +300,31 @@ function waitForLayoutToSettle(
 
     tick();
   });
+}
+
+/** A place to open the book at, and when the reader was there (ms). */
+interface Target {
+  cfi: string | null;
+  place: ReaderPlace | null;
+  readAt: number;
+}
+
+/** A place saved this many ms after the reader stops moving goes to the server. */
+const POSITION_SEND_DELAY_MS = 1500;
+/** How long opening a book waits for the place saved on other devices. */
+const POSITION_FETCH_LIMIT_MS = 2000;
+
+/** Two saves of the same place have the same key, so a re-save is not a move. */
+function positionKey({
+  cfi,
+  place,
+}: {
+  cfi: string | null;
+  place: ReaderPlace | null;
+}): string {
+  return place
+    ? `${place.section}:${place.block}:${place.offset}`
+    : (cfi ?? "");
 }
 
 /**
@@ -620,12 +650,26 @@ export function BookReaderPage() {
     const savedPlace = isReaderPlace(savedProgress?.place)
       ? savedProgress.place
       : null;
+    // The place this device saved, and the one every device shares, fetched
+    // while the book loads; whichever the reader reached last wins.
+    const localPosition: Target = {
+      cfi: savedProgress?.cfi ?? null,
+      place: savedPlace,
+      readAt: savedProgress?.readAt ?? savedProgress?.updatedAt ?? 0,
+    };
+    const remotePosition = getBookPosition(activeItemId).catch(() => null);
     let currentCfiValue = savedProgress?.cfi;
     /** Each section's blocks, in order, once its typography is in. */
     const blocksOf = new WeakMap<Document, HTMLElement[]>();
     // Until the reader is back where they left off, the places epub.js passes
-    // through on the way are not written over the saved one.
+    // through on the way are not written over the saved one. The same holds
+    // while catching up with a place read on another device.
     let restoring = true;
+    /** The place last saved or taken from another device, and when it was read. */
+    let known = { key: "", readAt: 0 };
+    /** A place not yet on the server, sent a moment after the reader stops. */
+    let unsent: BookPosition | null = null;
+    let sendTimer = 0;
     let scrollElement: HTMLElement | null = null;
     let lastScrollTop = 0;
     let frameId = 0;
@@ -893,7 +937,10 @@ export function BookReaderPage() {
       setCurrentCfi(nextCfi ?? null);
       setEpubProgress(nextProgress);
 
-      if (restoring) {
+      // Nobody reads a hidden page: whatever moves it then (a font landing, the
+      // book being measured) is not the reader, and must not outrank a place
+      // they have since reached on another device.
+      if (restoring || document.visibilityState === "hidden") {
         return;
       }
 
@@ -901,10 +948,41 @@ export function BookReaderPage() {
       const place = scroller
         ? readPlace(scroller, getRenditionContents(rendition), blocksOf)
         : null;
+      const key = positionKey({ cfi: nextCfi ?? null, place });
+      const readAt = key === known.key ? known.readAt : Date.now();
       writeReaderProgress(activeItemId, {
         ...(nextCfi ? { cfi: nextCfi } : {}),
         scrollRatio: nextProgress,
         place: place ?? undefined,
+        readAt,
+      });
+
+      if (key !== known.key) {
+        known = { key, readAt };
+        unsent = {
+          cfi: nextCfi ?? null,
+          place,
+          fraction: nextProgress,
+          readAt,
+        };
+        window.clearTimeout(sendTimer);
+        sendTimer = window.setTimeout(sendPosition, POSITION_SEND_DELAY_MS);
+      }
+    };
+
+    const sendPosition = (options: { keepalive?: boolean } = {}) => {
+      window.clearTimeout(sendTimer);
+      const position = unsent;
+
+      if (!position) {
+        return;
+      }
+
+      unsent = null;
+      void saveBookPosition(activeItemId, position, options).catch(() => {
+        // Offline or refused: keep it for the next send, unless the reader has
+        // moved on since, which is newer anyway.
+        unsent ??= position;
       });
     };
 
@@ -1009,12 +1087,6 @@ export function BookReaderPage() {
       })
       .catch(() => undefined);
 
-    const placeSection = savedPlace
-      ? (book.spine.get(savedPlace.section) as unknown as {
-          href?: string;
-        } | null)
-      : null;
-    const start = placeSection?.href ?? savedProgress?.cfi;
     const backToPlace = (place: ReaderPlace) => {
       const scroller = host.querySelector<HTMLElement>(".epub-container");
       return scroller
@@ -1027,30 +1099,118 @@ export function BookReaderPage() {
         : false;
     };
 
-    void rendition
-      .display(start)
-      .then(async () => {
-        // The book's typography (fonts, hyphenation, our measure) lands in the
-        // content hook, after epub.js has already scrolled. Once it has
-        // settled, the screen goes back to exactly where it stood: the same
-        // block at the same distance from the top, which a CFI alone cannot
-        // say. Sections loading around it can still shift it, so it is set
-        // once more after they settle. Older saves have only a CFI.
+    /**
+     * Takes the screen to a saved place: its section first, then, once the
+     * book's typography has settled (it lands in the content hook, after
+     * epub.js has scrolled), the same block at the same distance from the
+     * top, which a CFI alone cannot say. Sections loading around it can still
+     * shift it, so it is set once more after they settle. Older saves have
+     * only a CFI.
+     */
+    const goTo = async (target: Target, opening: boolean) => {
+      const section = target.place
+        ? (book.spine.get(target.place.section) as unknown as {
+            href?: string;
+          } | null)
+        : null;
+      const start = section?.href ?? target.cfi ?? undefined;
+      await rendition.display(start);
+
+      if (opening) {
         await Promise.race([
           firstContent,
           new Promise((resolve) => window.setTimeout(resolve, 2500)),
         ]);
+      }
 
-        if (start && isMounted) {
-          await waitForLayoutToSettle(host);
-        }
+      if (start && isMounted) {
+        await waitForLayoutToSettle(host);
+      }
 
-        if (savedPlace && isMounted && backToPlace(savedPlace)) {
-          await waitForLayoutToSettle(host);
-          backToPlace(savedPlace);
-        } else if (savedProgress?.cfi && isMounted) {
-          await rendition.display(savedProgress.cfi).catch(() => undefined);
+      if (target.place && isMounted && backToPlace(target.place)) {
+        await waitForLayoutToSettle(host);
+        backToPlace(target.place);
+      } else if (target.cfi && isMounted) {
+        await rendition.display(target.cfi).catch(() => undefined);
+      }
+
+      // Known as this screen measures it once there: a place saved on a
+      // narrower screen lands a block or a few px apart here, and that must
+      // not count as the reader moving, or catching up would save it again
+      // as a new reading.
+      const scroller = host.querySelector<HTMLElement>(".epub-container");
+      const landed = scroller
+        ? readPlace(scroller, getRenditionContents(rendition), blocksOf)
+        : null;
+      known = {
+        key: positionKey(landed ? { cfi: null, place: landed } : target),
+        readAt: target.readAt,
+      };
+    };
+
+    /**
+     * Back on this page after reading elsewhere: if another device has since
+     * saved a later place, the book moves there before anything here is saved.
+     */
+    let catchingUp = false;
+    const catchUp = async () => {
+      if (restoring || catchingUp || !isMounted) {
+        return;
+      }
+
+      catchingUp = true;
+      restoring = true;
+
+      try {
+        const remote = await getBookPosition(activeItemId).catch(() => null);
+
+        if (
+          remote &&
+          isMounted &&
+          remote.readAt > known.readAt &&
+          positionKey(remote) !== known.key
+        ) {
+          unsent = null;
+          window.clearTimeout(sendTimer);
+          await goTo(remote, false);
+          writeReaderProgress(activeItemId, {
+            ...(remote.cfi ? { cfi: remote.cfi } : {}),
+            scrollRatio: remote.fraction,
+            place: remote.place ?? undefined,
+            readAt: remote.readAt,
+          });
+          scheduleFrame();
         }
+      } finally {
+        restoring = false;
+        catchingUp = false;
+      }
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "hidden") {
+        sendPosition({ keepalive: true });
+      } else {
+        void catchUp();
+      }
+    };
+    const handlePageHide = () => sendPosition({ keepalive: true });
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("pagehide", handlePageHide);
+
+    void (async () => {
+      try {
+        const remote = await Promise.race([
+          remotePosition,
+          new Promise<null>((resolve) =>
+            window.setTimeout(() => resolve(null), POSITION_FETCH_LIMIT_MS),
+          ),
+        ]);
+        const target =
+          remote && remote.readAt > localPosition.readAt
+            ? remote
+            : localPosition;
+        await goTo(target, true);
 
         restoring = false;
         window.clearTimeout(preparationTimeoutId);
@@ -1059,14 +1219,14 @@ export function BookReaderPage() {
           setEpubReady(true);
           window.requestAnimationFrame(attachScroll);
         }
-      })
-      .catch((error: unknown) => {
+      } catch (error: unknown) {
         window.clearTimeout(preparationTimeoutId);
 
         if (isMounted) {
           setReaderError(describeErrorForUser(error, t, "reader.couldNotOpen"));
         }
-      });
+      }
+    })();
 
     void book.ready
       .then(() => book.locations.generate(CHARS_PER_LOCATION))
@@ -1088,6 +1248,10 @@ export function BookReaderPage() {
       window.clearTimeout(markerTimer);
       window.clearTimeout(progressFrame);
       window.cancelAnimationFrame(frameId);
+      // Leaving the book inside the app is leaving it too.
+      sendPosition({ keepalive: true });
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("pagehide", handlePageHide);
       resizeObserver.disconnect();
       scrollElement?.removeEventListener("scroll", handleScroll);
       rendition.off("relocated", handleRelocated);
