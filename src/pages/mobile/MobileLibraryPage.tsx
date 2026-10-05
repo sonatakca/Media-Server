@@ -4,6 +4,8 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
+import { HeroSection } from "../../components/HeroSection";
+import { useIsPhoneView } from "../../hooks/useIsPhoneView";
 import { TitleHero } from "../../components/home/TitleHero";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
@@ -223,6 +225,7 @@ export function MobileLibraryPage({
     [t],
   );
   const [data, setData] = useState<LibraryData | null>(null);
+  const isPhone = useIsPhoneView();
   const [loadingItemType, setLoadingItemType] = useState<string>();
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
@@ -589,27 +592,37 @@ export function MobileLibraryPage({
               className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
             />
 
-            {/* The desktop's title hero, on a stage the phone's or tablet's
-                shape: the same poster-or-backdrop composition, copy and
-                actions as the home hero, with nothing queued. */}
+            {/* A phone keeps its own title hero. A tablet gets the desktop's,
+                on a stage its own shape: the same poster-or-backdrop
+                composition, copy and actions as the home hero, with nothing
+                queued. */}
             <div className="full-bleed relative">
-              <TitleHero
-                key={data.library.Id}
-                item={data.library}
-                fit="mobile"
-                trailers={false}
-                isRevealed={isInitialDetailsReady}
-                onShowDetails={() =>
-                  titleDetailsRef.current?.scrollIntoView({
-                    behavior: window.matchMedia(
-                      "(prefers-reduced-motion: reduce)",
-                    ).matches
-                      ? "auto"
-                      : "smooth",
-                    block: "start",
-                  })
-                }
-              />
+              {isPhone ? (
+                <HeroSection
+                  item={data.library}
+                  variant="fixed"
+                  enablePreview={false}
+                  keepDetailsVisible
+                />
+              ) : (
+                <TitleHero
+                  key={data.library.Id}
+                  item={data.library}
+                  fit="mobile"
+                  trailers={false}
+                  isRevealed={isInitialDetailsReady}
+                  onShowDetails={() =>
+                    titleDetailsRef.current?.scrollIntoView({
+                      behavior: window.matchMedia(
+                        "(prefers-reduced-motion: reduce)",
+                      ).matches
+                        ? "auto"
+                        : "smooth",
+                      block: "start",
+                    })
+                  }
+                />
+              )}
             </div>
 
             <div

@@ -5,6 +5,11 @@ import { ErrorMessage } from "../../components/ErrorMessage";
 import { HomeHero } from "../../components/home/HomeHero";
 import { HomeHeroSkeleton } from "../../components/home/HomeHeroSkeleton";
 import { MobileMediaRow } from "../../components/mobile/MobileMediaRow";
+import {
+  PhoneHomeHero,
+  PhoneHomeHeroSkeleton,
+} from "../../components/mobile/PhoneHomeHero";
+import { useIsPhoneView } from "../../hooks/useIsPhoneView";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { getFavouriteItems, getLatestMediaItems } from "../../lib/mediaApi";
 import { FAVOURITE_CHANGED_EVENT } from "../../lib/favouriteActions";
@@ -39,16 +44,20 @@ interface RowWarning {
 }
 
 /**
- * The page while it has no data: the hero's own skeleton, placed from the
- * hero's geometry at the hero's height, so nothing moves when the hero
- * mounts over it, and the rows' placeholders under it.
+ * The page while it has no data: the hero's own skeleton, built from the
+ * hero's own frame, so nothing moves when the hero mounts over it, and the
+ * rows' placeholders under it.
  */
-function MobileHomeLoading() {
+function MobileHomeLoading({ isPhone }: { isPhone: boolean }) {
   return (
     <div className="layout-no-offset min-h-screen pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
-      <div className="full-bleed">
-        <HomeHeroSkeleton fit="mobile" />
-      </div>
+      {isPhone ? (
+        <PhoneHomeHeroSkeleton />
+      ) : (
+        <div className="full-bleed">
+          <HomeHeroSkeleton fit="mobile" />
+        </div>
+      )}
 
       <div className="mx-auto w-full px-4 pt-5">
         <div className="mb-8">
@@ -84,6 +93,8 @@ function MobileHomeLoading() {
 export function MobileHomePage() {
   const { t } = useLanguage();
   const forceSkeletons = useDevSkeletonMode();
+  // A phone keeps its poster card; a tablet gets the desktop's hero.
+  const isPhone = useIsPhoneView();
   const [data, setData] = useState<MobileHomeData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [rowWarnings, setRowWarnings] = useState<RowWarning[]>([]);
@@ -219,7 +230,7 @@ export function MobileHomePage() {
   }, []);
 
   if (forceSkeletons) {
-    return <MobileHomeLoading />;
+    return <MobileHomeLoading isPhone={isPhone} />;
   }
 
   if (error) {
@@ -227,7 +238,7 @@ export function MobileHomePage() {
   }
 
   if (!data) {
-    return <MobileHomeLoading />;
+    return <MobileHomeLoading isPhone={isPhone} />;
   }
 
   const handleClearContinueWatching = (clearedItem: MediaItem) => {
@@ -259,9 +270,16 @@ export function MobileHomePage() {
   };
   return (
     <div className="layout-no-offset min-h-screen pb-[calc(5.75rem+env(safe-area-inset-bottom))]">
-      <div className="full-bleed">
-        <HomeHero items={heroItems} fit="mobile" trailers={false} />
-      </div>
+      {isPhone ? (
+        <PhoneHomeHero
+          items={heroItems}
+          smartContinueItems={data.continueWatching}
+        />
+      ) : (
+        <div className="full-bleed">
+          <HomeHero items={heroItems} fit="mobile" trailers={false} />
+        </div>
+      )}
 
       <div className="mx-auto w-full px-4 pt-2">
         {rowWarnings.length > 0 ? (

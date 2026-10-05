@@ -8,13 +8,33 @@
   object-position: center;
 }
 
+/*
+ * An upright phone shows the backdrop as a band across the top, a little
+ * taller than its own 16:9 (a 4:3 cut, so only the far edges go), whose foot
+ * dissolves into the room: the title's logo sits over the picture's fade
+ * rather than under a hard edge. The fade is eased and clear before the
+ * band ends; a linear one leaves the image's own edge showing at its end.
+ */
 @media (max-width: 640px) and (orientation: portrait) {
   .seyirlik-hero-artwork {
+    --phone-band-fade: linear-gradient(
+      180deg,
+      #000 0%,
+      #000 40%,
+      rgba(0, 0, 0, 0.82) 52%,
+      rgba(0, 0, 0, 0.56) 64%,
+      rgba(0, 0, 0, 0.3) 75%,
+      rgba(0, 0, 0, 0.12) 84%,
+      rgba(0, 0, 0, 0.03) 91%,
+      transparent 96%
+    );
     bottom: auto;
-    height: auto;
+    height: min(75vw, 62svh);
     min-height: 0;
-    object-fit: contain;
+    object-fit: cover;
     object-position: top center;
+    -webkit-mask-image: var(--phone-band-fade);
+    mask-image: var(--phone-band-fade);
   }
 }
 

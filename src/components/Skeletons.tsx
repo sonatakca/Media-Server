@@ -1,6 +1,8 @@
 import { useLanguage } from "../i18n/LanguageContext";
 import { HomeHeroSkeleton, TitleHeroSkeleton } from "./home/HomeHeroSkeleton";
 import type { MediaItem } from "../lib/types";
+import { useIsPhoneView } from "../hooks/useIsPhoneView";
+import { PhoneTitleHeroSkeleton } from "./mobile/PhoneTitleHeroSkeleton";
 import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
@@ -598,6 +600,8 @@ function MobileDetailsSkeleton({
   kind: "movie" | "show";
   item?: MediaItem;
 }) {
+  // A phone keeps its own title hero; a tablet gets the desktop's.
+  const isPhone = useIsPhoneView();
   return (
     <div className="layout-no-offset min-w-0 pb-7">
       {/* The page's own furniture, where the page puts it, over the title
@@ -610,11 +614,15 @@ function MobileDetailsSkeleton({
         style={{ width: kind === "show" ? 252 : 187 }}
       />
       <div className="full-bleed relative">
-        <TitleHeroSkeleton
-          fit="mobile"
-          item={item}
-          canDownload={kind === "movie" && isOfflineSupported()}
-        />
+        {isPhone ? (
+          <PhoneTitleHeroSkeleton kind={kind} item={item} />
+        ) : (
+          <TitleHeroSkeleton
+            fit="mobile"
+            item={item}
+            canDownload={kind === "movie" && isOfflineSupported()}
+          />
+        )}
       </div>
       {kind === "show" ? (
         <MobileEpisodeShelfSkeleton />

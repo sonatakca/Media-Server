@@ -1787,7 +1787,7 @@ export function HeroSection({
                 </motion.div>
               ) : null}
               <motion.div
-                className="mt-5 flex flex-wrap gap-2.5 sm:mt-7 sm:gap-3"
+                className="mt-5 flex flex-wrap gap-2.5 max-sm:flex-nowrap max-sm:gap-2 sm:mt-7 sm:gap-3"
                 initial={false}
                 animate={{
                   opacity: heroContentVisible ? 1 : 0,
@@ -1808,10 +1808,14 @@ export function HeroSection({
                     {canPlay ? (
                       <ButtonLink
                         to={playTo}
-                        className="bg-white min-h-10 rounded-full px-4 text-sm shadow-button-glow hover:translate-y-0 hover:bg-white/80 sm:min-h-16 sm:px-12 sm:text-lg"
+                        className="bg-white min-h-10 rounded-full px-4 text-sm shadow-button-glow hover:translate-y-0 hover:bg-white/80 max-sm:h-12 max-sm:min-w-0 max-sm:!rounded-full max-sm:pl-5 max-sm:pr-6 max-sm:text-[0.9375rem] sm:min-h-16 sm:px-12 sm:text-lg"
                         onClick={handlePlayClick}
                       >
-                        <Play size={30} fill="currentColor" />
+                        <Play
+                          size={30}
+                          fill="currentColor"
+                          className="shrink-0 max-sm:h-[19px] max-sm:w-[19px]"
+                        />
                         <AnimatedWidth value={playButtonLabel}>
                           <AnimatedText value={playButtonLabel} />
                         </AnimatedWidth>
@@ -1821,14 +1825,21 @@ export function HeroSection({
                       <ButtonLink
                         to={`${playTo}${playTo.includes("?") ? "&" : "?"}start=0`}
                         variant="secondary"
-                        className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 sm:min-h-16 sm:px-8 sm:text-base"
+                        aria-label={t("details.playFromBeginning")}
+                        className="min-h-10 rounded-full px-4 text-sm hover:translate-y-0 max-sm:h-12 max-sm:w-12 max-sm:shrink-0 max-sm:!rounded-full max-sm:px-0 sm:min-h-16 sm:px-8 sm:text-base"
                       >
-                        <RotateCcw size={26} />
-                        <AnimatedWidth value={t("details.playFromBeginning")}>
-                          <AnimatedText
-                            value={t("details.playFromBeginning")}
-                          />
-                        </AnimatedWidth>
+                        <RotateCcw
+                          size={26}
+                          className="shrink-0 max-sm:h-[18px] max-sm:w-[18px]"
+                        />
+                        {/* A phone's row has room for the glyph alone. */}
+                        <span className="max-sm:hidden">
+                          <AnimatedWidth value={t("details.playFromBeginning")}>
+                            <AnimatedText
+                              value={t("details.playFromBeginning")}
+                            />
+                          </AnimatedWidth>
+                        </span>
                       </ButtonLink>
                     ) : null}
                     {!isFixedHero ? (
@@ -1846,7 +1857,7 @@ export function HeroSection({
                     <FavouriteButton
                       item={item}
                       iconSize={26}
-                      className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/[0.14] bg-black/[0.34] text-white/[0.82] backdrop-blur transition duration-200 hover:bg-white hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-white/70 sm:min-h-16 sm:w-16"
+                      className="inline-flex min-h-10 w-10 items-center justify-center rounded-full border border-white/[0.14] bg-black/[0.34] text-white/[0.82] backdrop-blur transition duration-200 hover:bg-white hover:text-zinc-950 focus:outline-none focus:ring-2 focus:ring-white/70 max-sm:h-12 max-sm:w-12 max-sm:shrink-0 max-sm:border-white/15 max-sm:bg-white/10 max-sm:text-white max-sm:[&_svg]:h-5 max-sm:[&_svg]:w-5 sm:min-h-16 sm:w-16"
                     />
                     {heroFacts && !keepDetailsVisible ? (
                       // The metadata pills above fade out as the intro settles,

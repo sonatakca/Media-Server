@@ -7,7 +7,7 @@ related_targets: ["src/pages/desktop/DesktopHomePage.tsx", "src/pages/mobile/Mob
 
 # Home hero (every device)
 
-Scope: the home hero and its carousel, and the title hero it lends to film and series pages, on desktop, tablet and phone, with their loading skeletons. Mode: Experience inside the Screening Room (Operate affordances intact: play, details, save, rotation control). The phone and tablet pages render the same components as the desktop; the stage's shape, not the device, picks the layout.
+Scope: the home hero and its carousel, and the title hero it lends to film and series pages, on desktop, tablet and phone, with their loading skeletons. Mode: Experience inside the Screening Room (Operate affordances intact: play, details, save, rotation control). The tablet pages render the same components as the desktop, the stage's shape picking the layout; an upright phone keeps its own poster-card home hero and HeroSection title pages (DESIGN.md, "Phone heroes").
 
 ## Direction contract
 
@@ -19,7 +19,7 @@ STORY: What is on, what is next, and when it changes. Play, details, save, jump 
 
 FIRST VIEWPORT: Full-bleed backdrop; logo lower-left near 34vw; facts, three-line overview, actions beneath; three miniatures bottom-right, the first carrying its progress; controls beside them.
 
-TALL STAGE (phone, tablet upright, any portrait window): the stage ends at the tab bar; the poster fills it, top-anchored, sinking into the void, solid by the top of the logo's box, so its printed lettering never shows behind the copy; the actions span the foot; above them the facts (left) share a row with the queue (right), the pill above the queue; the logo rests full-size in the column the queue leaves. Swipe moves the stage (it gives under the finger first); the overview opens across the queue's row and the queue steps aside for it. A phone's row is compact and never holds more than three rounds: play stretches, Details turns round, start over waits for the title page at home, and on a title page Details and the overview stay home (the page below has both).
+TALL STAGE (tablet upright, any portrait window wider than a phone): the stage ends at the tab bar; the poster fills it, top-anchored, sinking into the void, solid by the top of the logo's box, so its printed lettering never shows behind the copy; the actions span the foot; above them the facts (left) share a row with the queue (right), the pill above the queue; the logo rests full-size in the column the queue leaves. Swipe moves the stage (it gives under the finger first); the overview opens across the queue's row and the queue steps aside for it. A phone's row is compact and never holds more than three rounds: play stretches, Details turns round, start over waits for the title page at home, and on a title page Details and the overview stay home (the page below has both).
 
 FORM: code-led section in an established world; no seed roll (section scope).
 
