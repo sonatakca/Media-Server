@@ -551,7 +551,8 @@ export const en = {
   "reader.bookmarks": "Bookmarks",
   "reader.addBookmark": "Bookmark this place",
   "reader.removeBookmark": "Remove bookmark",
-  "reader.noBookmarks": "No bookmarks yet. Use the bookmark button in the top bar to keep your place.",
+  "reader.noBookmarks":
+    "No bookmarks yet. Use the bookmark button in the top bar to keep your place.",
   "reader.youAreHere": "You are here",
   "reader.percentRead": "{percent} read",
   "reader.timeLeftInBook": "about {time} left",
@@ -1572,6 +1573,9 @@ export const en = {
   "logoLayout.shadowStrength": "Shadow strength",
   "logoLayout.shadowHint":
     "Nothing sits behind the logo, so this is what separates it from the artwork. 0% turns it off.",
+  "logoLayout.guides": "Always show guides",
+  "logoLayout.guidesHint":
+    "Off: the outline and corner handles appear only while you drag or resize.",
   "logoLayout.save": "Save placement",
   "logoLayout.reset": "Back to default",
   "logoLayout.saving": "Saving placement...",

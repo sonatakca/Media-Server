@@ -247,4 +247,40 @@ describe("logo layout editor", () => {
     // The corner handles are gone too, so there is nothing to grab.
     expect(handle.querySelectorAll('[role="presentation"]')).toHaveLength(0);
   });
+
+  it("keeps guides out of the picture until a gesture starts, when switched off", () => {
+    render(
+      <LogoLayoutEditor
+        posterUrl="https://media.test/poster.jpg"
+        logoUrl="https://media.test/logo.png"
+        title="Dune"
+        layout={{ x: 0.5, y: 0.5, width: 0.5, shadow: 1 }}
+        onChange={vi.fn()}
+        showGuides={false}
+      />,
+    );
+
+    const handle = screen.getByRole("application");
+    const corners = handle.querySelectorAll<HTMLElement>(
+      '[data-logo-guide="corner"]',
+    );
+    // Still there to grab, just not drawn.
+    expect(corners).toHaveLength(4);
+    corners.forEach((corner) => expect(corner).toHaveClass("opacity-0"));
+    expect(handle).not.toHaveClass("ring-1");
+
+    stubPointerCapture(handle);
+    corners.forEach(stubPointerCapture);
+    fireEvent.pointerDown(corners[3], {
+      clientX: 100,
+      clientY: 100,
+      pointerId: 1,
+    });
+
+    corners.forEach((corner) => expect(corner).not.toHaveClass("opacity-0"));
+    expect(handle).toHaveClass("ring-2");
+
+    fireEvent.pointerUp(corners[3], { pointerId: 1 });
+    corners.forEach((corner) => expect(corner).toHaveClass("opacity-0"));
+  });
 });

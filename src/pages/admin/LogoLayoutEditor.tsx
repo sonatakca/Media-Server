@@ -19,6 +19,12 @@ interface LogoLayoutEditorProps {
   layout: LogoLayout;
   onChange: (layout: LogoLayout) => void;
   disabled?: boolean;
+  /**
+   * When false, the outline and corner handles stay out of the picture until a
+   * drag or resize is under way, so the card can be judged as it will be shown.
+   * The corners keep their hit areas and resize cursors while hidden.
+   */
+  showGuides?: boolean;
 }
 
 const CORNERS: ResizeCorner[] = [
@@ -50,12 +56,14 @@ export function LogoLayoutEditor({
   layout,
   onChange,
   disabled = false,
+  showGuides = true,
 }: LogoLayoutEditorProps) {
   const { t } = useLanguage();
   const cardRef = useRef<HTMLDivElement | null>(null);
   const [activeGesture, setActiveGesture] = useState<
     "move" | ResizeCorner | null
   >(null);
+  const guidesVisible = showGuides || activeGesture !== null;
   const shadowFilter = getLogoShadowFilter(layout.shadow);
   const shadowBackdropStyle = getLogoShadowBackdropStyle(layout.shadow);
 
@@ -188,7 +196,13 @@ export function LogoLayoutEditor({
         onKeyDown={handleKeyDown}
         className={`absolute touch-none outline-none ring-offset-2 ring-offset-black focus-visible:ring-2 focus-visible:ring-sky-300 ${
           disabled ? "cursor-default" : "cursor-move"
-        } ${activeGesture ? "ring-2 ring-sky-300" : "ring-1 ring-white/30"}`}
+        } ${
+          activeGesture
+            ? "ring-2 ring-sky-300"
+            : guidesVisible
+              ? "ring-1 ring-white/30"
+              : ""
+        }`}
       >
         {shadowBackdropStyle ? (
           <span
@@ -212,11 +226,14 @@ export function LogoLayoutEditor({
               <span
                 key={corner}
                 role="presentation"
+                data-logo-guide="corner"
                 onPointerDown={(event) => beginGesture(event, corner)}
                 onPointerMove={continueGesture}
                 onPointerUp={endGesture}
                 onPointerCancel={endGesture}
-                className={`absolute z-20 h-3 w-3 touch-none rounded-full border border-black/60 bg-sky-300 ${CORNER_CLASSES[corner]}`}
+                className={`absolute z-20 h-3 w-3 touch-none rounded-full border border-black/60 bg-sky-300 ${
+                  guidesVisible ? "" : "opacity-0"
+                } ${CORNER_CLASSES[corner]}`}
               />
             ))
           : null}

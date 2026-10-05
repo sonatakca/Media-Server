@@ -80,6 +80,25 @@ const ALL_LANGUAGES: Record<ArtworkKind, ImageLanguageFilter> = {
   logo: "all",
 };
 
+/** A per-viewer preference, so storage that throws or is empty means "on". */
+const LAYOUT_GUIDES_STORAGE_KEY = "seyirlik-logo-layout-guides";
+
+function readLayoutGuides(): boolean {
+  try {
+    return localStorage.getItem(LAYOUT_GUIDES_STORAGE_KEY) !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function writeLayoutGuides(show: boolean) {
+  try {
+    localStorage.setItem(LAYOUT_GUIDES_STORAGE_KEY, show ? "on" : "off");
+  } catch {
+    // Unavailable storage only costs remembering the choice.
+  }
+}
+
 function errorCodeOf(error: unknown): unknown {
   return error && typeof error === "object" && "code" in error
     ? (error as { code: unknown }).code
@@ -137,6 +156,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
   >({});
   /** Null until the title is adjusted, matching how the card reads it. */
   const [layout, setLayout] = useState<LogoLayout | null>(null);
+  const [showLayoutGuides, setShowLayoutGuides] = useState(readLayoutGuides);
   const [layoutStatus, setLayoutStatus] = useState<ActionStatus>({
     tone: "idle",
     message: "",
@@ -726,6 +746,7 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
               layout={current}
               onChange={setLayout}
               disabled={layoutStatus.tone === "busy"}
+              showGuides={showLayoutGuides}
             />
             <div className="min-w-[16rem] flex-1">
               <p className="text-xs font-semibold leading-6 text-white/45">
@@ -778,6 +799,40 @@ export default function TmdbArtworkPage({ itemId }: { itemId?: string } = {}) {
                   {t("logoLayout.shadowHint")}
                 </span>
               </label>
+              <div className="mt-4 flex items-start justify-between gap-4">
+                <div className="min-w-0">
+                  <span className="text-[0.62rem] font-black uppercase tracking-[0.1em] text-white/35">
+                    {t("logoLayout.guides")}
+                  </span>
+                  <p className="text-[0.68rem] font-semibold text-white/40">
+                    {t("logoLayout.guidesHint")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={showLayoutGuides}
+                  aria-label={t("logoLayout.guides")}
+                  onClick={() => {
+                    const next = !showLayoutGuides;
+                    setShowLayoutGuides(next);
+                    writeLayoutGuides(next);
+                  }}
+                  className={`relative h-6 w-11 shrink-0 rounded-full border transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 ${
+                    showLayoutGuides
+                      ? "border-sky-300/60 bg-sky-300"
+                      : "border-white/15 bg-white/10"
+                  }`}
+                >
+                  <span
+                    className={`absolute left-0 top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                      showLayoutGuides
+                        ? "translate-x-[22px]"
+                        : "translate-x-[3px]"
+                    }`}
+                  />
+                </button>
+              </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
                   type="button"

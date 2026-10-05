@@ -551,7 +551,8 @@ export const tr = {
   "reader.bookmarks": "Yer imleri",
   "reader.addBookmark": "Buraya yer imi koy",
   "reader.removeBookmark": "Yer imini kaldır",
-  "reader.noBookmarks": "Henüz yer imi yok. Yerini saklamak için üst çubuktaki yer imi düğmesini kullan.",
+  "reader.noBookmarks":
+    "Henüz yer imi yok. Yerini saklamak için üst çubuktaki yer imi düğmesini kullan.",
   "reader.youAreHere": "Buradasın",
   "reader.percentRead": "{percent} okundu",
   "reader.timeLeftInBook": "≈ {time} kaldı",
@@ -1570,6 +1571,9 @@ export const tr = {
   "logoLayout.shadowStrength": "Gölge gücü",
   "logoLayout.shadowHint":
     "Logonun arkasında başka bir şey yok; onu görselden ayıran tek şey bu. %0 tamamen kapatır.",
+  "logoLayout.guides": "Kılavuzları hep göster",
+  "logoLayout.guidesHint":
+    "Kapalıyken çerçeve ve köşe tutamaçları yalnızca sürüklerken veya boyutlandırırken görünür.",
   "logoLayout.save": "Konumu kaydet",
   "logoLayout.reset": "Varsayılana dön",
   "logoLayout.saving": "Konum kaydediliyor...",
