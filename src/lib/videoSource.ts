@@ -62,6 +62,48 @@ export interface AttachSourceOptions {
    * Apple's native HLS fetches media outside the service worker entirely.
    */
   forceMediaSource?: boolean;
+  /**
+   * The source is one of Seyirlik's adaptive packages. Its rung is then chosen
+   * by Seyirlik's own policy wherever hls.js can run, Safari included: native
+   * HLS decides by itself, out of reach of anything here, and on a link with
+   * real latency it sank to the bottom rung after a dip and took minutes to
+   * climb back. Other HLS (a live transcode) keeps the native engine.
+   */
+  adaptiveRendition?: boolean;
+}
+
+/**
+ * Keeps AirPlay available on a ManagedMediaSource element.
+ *
+ * hls.js turns remote playback off when it attaches through MMS, because MMS
+ * will not open with remote playback on unless the element also offers a
+ * source AirPlay can hand to a receiver. Offering that source instead keeps
+ * the AirPlay button: the page plays from MMS, and a receiver is given the
+ * ordinary HLS playlist and plays it itself. Verified in Safari 26: with the
+ * alternative present MMS opens with `disableRemotePlayback` false; without it
+ * it never opens.
+ *
+ * Runs after hls.js's own attach handler, which has just replaced the
+ * element's sources with its blob URL and called `load()`; source selection is
+ * asynchronous, so the alternative is in place before it runs.
+ */
+function offerAirPlayAlternative(
+  videoElement: HTMLVideoElement,
+  playbackUrl: string,
+): void {
+  const managedMediaSource = (
+    window as unknown as { ManagedMediaSource?: unknown }
+  ).ManagedMediaSource;
+  if (typeof managedMediaSource === "undefined") return;
+  const blobSource = videoElement.querySelector("source");
+  if (!blobSource || !blobSource.src.startsWith("blob:")) return;
+  if (videoElement.querySelector("source[data-seyirlik-airplay]")) return;
+  const alternative = document.createElement("source");
+  alternative.type = "application/x-mpegURL";
+  alternative.src = playbackUrl;
+  alternative.setAttribute("data-seyirlik-airplay", "");
+  videoElement.appendChild(alternative);
+  videoElement.disableRemotePlayback = false;
 }
 
 /**
@@ -139,6 +181,56 @@ const STARVED_BUFFER_SECONDS = 5;
  * a one-off hiccup costs a few seconds of quality and nothing more.
  */
 const STALL_UPSWITCH_BLOCK_MS = 6000;
+
+/**
+ * How long after a seek a stall is the seek's, not the link's.
+ *
+ * A seek empties the buffer by definition, so the stall that follows says
+ * nothing about bandwidth — yet each one was charged like a real stall: 40% of
+ * the budget, a rung down, and no climbing for six seconds. A party seeks every
+ * time someone scrubs and every time a player catches up, which held the stall
+ * count at its cap and the picture at the bottom of the ladder for as long as
+ * the party lasted. A link that genuinely cannot carry the rung still stalls
+ * after this, and is charged then.
+ */
+const SEEK_STALL_GRACE_MS = 5000;
+
+/** Decisions kept for `window.__seyirlikAbr()`. */
+const ABR_LOG_SIZE = 200;
+
+interface AbrLogEntry {
+  at: string;
+  event: string;
+  detail: Record<string, unknown>;
+}
+
+const abrLog: AbrLogEntry[] = [];
+let abrSnapshot: (() => Record<string, unknown>) | null = null;
+
+/**
+ * Every rung decision and its reason, readable from the tab that made it:
+ * `window.__seyirlikAbr()` returns the current state and the recent decisions.
+ * "It went blurry" is then answered from evidence — which rung, why, with what
+ * estimate and buffer — instead of from guesses about the policy.
+ */
+function abrRecord(event: string, detail: Record<string, unknown>): void {
+  abrLog.push({ at: new Date().toISOString(), event, detail });
+  if (abrLog.length > ABR_LOG_SIZE) abrLog.shift();
+}
+
+if (typeof window !== "undefined") {
+  (
+    window as unknown as {
+      __seyirlikAbr?: () => {
+        state: Record<string, unknown> | null;
+        log: AbrLogEntry[];
+      };
+    }
+  ).__seyirlikAbr = () => ({
+    state: abrSnapshot?.() ?? null,
+    log: [...abrLog],
+  });
+}
 
 /**
  * How much better than measured the probe is allowed to assume the link is.
@@ -388,11 +480,14 @@ export function attachSourceToVideo(
 
   const forceMediaSource =
     options.forceMediaSource === true && Hls.isSupported();
+  const seyirlikChoosesRung =
+    options.adaptiveRendition === true && Hls.isSupported();
 
   if (
     isHls &&
     !managedHdrFallback &&
     !forceMediaSource &&
+    !seyirlikChoosesRung &&
     shouldUseNativeHls(videoElement)
   ) {
     videoElement.src = playbackUrl;
@@ -489,6 +584,11 @@ export function attachSourceToVideo(
     let recentStallCount = 0;
     let lastStallAt = 0;
     let bandwidthSamples: BandwidthSample[] = [];
+    let lastSeekAt = Number.NEGATIVE_INFINITY;
+    const onSeeking = () => {
+      lastSeekAt = Date.now();
+    };
+    videoElement.addEventListener("seeking", onSeeking);
 
     const levelAtOrBelow = (height: number | null): number => {
       if (height === null) return -1;
@@ -527,7 +627,15 @@ export function attachSourceToVideo(
       hls.levels.map((level, index) => ({
         index,
         height: canonicalRungClass(level.width ?? 0, level.height ?? 0),
-        bitrate: level.bitrate || undefined,
+        /*
+         * What the rung costs to sustain, not its peak. The policy already
+         * holds a third of the estimate in reserve, and the buffer is what
+         * absorbs a peak; pricing every rung at its `BANDWIDTH` on top of that
+         * asked for 12.7 Mbps before offering 1080p and 24 Mbps for 2160p,
+         * which kept Auto one or two rungs under what the link carried.
+         * Complete files are already judged on their average bitrate.
+         */
+        bitrate: level.averageBitrate || level.bitrate || undefined,
       }));
 
     /**
@@ -570,7 +678,19 @@ export function attachSourceToVideo(
       return target?.index ?? pool[0]!.index;
     };
 
-    const driveLevel = (level: number) => {
+    const driveLevel = (level: number, reason: string) => {
+      if (level !== appliedLevel) {
+        const rung = hls.levels[level];
+        abrRecord("level", {
+          reason,
+          from: appliedLevel,
+          to: level,
+          height: rung?.height,
+          estimateBps: Math.round(hls.bandwidthEstimate || 0),
+          bufferedAheadS: Number(bufferedAhead().toFixed(1)),
+          recentStallCount,
+        });
+      }
       hls.loadLevel = level;
       if (hls.nextLevel !== level) hls.nextLevel = level;
       appliedLevel = level;
@@ -674,7 +794,7 @@ export function attachSourceToVideo(
         ) {
           return;
         }
-        driveLevel(target);
+        driveLevel(target, current < 0 ? "start" : "down");
         return;
       }
 
@@ -704,7 +824,7 @@ export function attachSourceToVideo(
         const climbWasProbed = upgradeCandidate.probe;
         upgradeCandidate = null;
         if (climbWasProbed) probeHoldUntil = now + PROBE_GRACE_MS;
-        driveLevel(climbTo);
+        driveLevel(climbTo, climbWasProbed ? "probe-up" : "up");
       }
     };
 
@@ -744,7 +864,7 @@ export function attachSourceToVideo(
       // currently on screen alone, so the change lands quickly without the
       // black frame that flushing everything (`currentLevel`) would cause.
       const level = levelAtOrBelow(lockedHeight);
-      driveLevel(level);
+      driveLevel(level, "locked");
     };
 
     hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
@@ -798,8 +918,21 @@ export function attachSourceToVideo(
           videoElement.dispatchEvent(new Event("error"));
         }
       } else {
+        const seekInduced =
+          videoElement.seeking || Date.now() - lastSeekAt < SEEK_STALL_GRACE_MS;
+        if (data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR) {
+          abrRecord("stall", {
+            charged: !seekInduced && bufferedAhead() < STARVED_BUFFER_SECONDS,
+            seekInduced,
+            level: appliedLevel,
+            bufferedAheadS: Number(bufferedAhead().toFixed(1)),
+            estimateBps: Math.round(hls.bandwidthEstimate || 0),
+          });
+        }
         if (
           data.details === Hls.ErrorDetails.BUFFER_STALLED_ERROR &&
+          // See SEEK_STALL_GRACE_MS: the seek emptied the buffer, not the link.
+          !seekInduced &&
           // A stall with a full buffer is not a bandwidth signal. Charging for
           // those let the ordinary flurry while a session fills its buffer
           // bankrupt the budget before playback had settled.
@@ -837,7 +970,7 @@ export function attachSourceToVideo(
           ) {
             upgradeCandidate = null;
             probeHoldUntil = 0;
-            driveLevel(appliedLevel - 1);
+            driveLevel(appliedLevel - 1, "stall");
           }
           // A stall is evidence the current rung is too expensive, and the
           // policy charges for it — so re-decide without waiting for the tick.
@@ -847,8 +980,48 @@ export function attachSourceToVideo(
       }
     });
 
+    // A downloaded title plays from the service worker's cache; a receiver
+    // could not reach those bytes, so it is not offered one.
+    if (options.forceMediaSource !== true) {
+      hls.on(Hls.Events.MEDIA_ATTACHING, () =>
+        offerAirPlayAlternative(videoElement, playbackUrl),
+      );
+    }
+
     hls.loadSource(playbackUrl);
     hls.attachMedia(videoElement);
+
+    const snapshot = () => {
+      const level =
+        appliedLevel === null ? undefined : hls.levels[appliedLevel];
+      return {
+        engine: "hls.js",
+        managedMediaSource:
+          typeof (window as unknown as { ManagedMediaSource?: unknown })
+            .ManagedMediaSource !== "undefined",
+        airplayOffered: videoElement.disableRemotePlayback === false,
+        mode: lockedHeight === null ? adaptiveMode : "locked",
+        lockedHeight,
+        maximumHeight,
+        appliedLevel,
+        appliedHeight: level?.height,
+        playingLevel: hls.currentLevel,
+        decodedWidth: videoElement.videoWidth,
+        decodedHeight: videoElement.videoHeight,
+        estimateBps: Math.round(hls.bandwidthEstimate || 0),
+        bufferedAheadS: Number(bufferedAhead().toFixed(1)),
+        recentStallCount,
+        upswitchBlockedForMs: Math.max(0, upswitchBlockedUntil - Date.now()),
+        pendingClimb: upgradeCandidate,
+        ladder: hls.levels.map((rung, index) => ({
+          index,
+          height: rung.height,
+          averageBps: rung.averageBitrate,
+          peakBps: rung.bitrate,
+        })),
+      };
+    };
+    abrSnapshot = snapshot;
 
     /*
      * The display ceiling changes with the window, with fullscreen, and simply
@@ -902,6 +1075,8 @@ export function attachSourceToVideo(
       destroy: () => {
         clearInterval(rungTicker);
         observer?.disconnect();
+        videoElement.removeEventListener("seeking", onSeeking);
+        if (abrSnapshot === snapshot) abrSnapshot = null;
         hls.destroy();
         videoElement.removeAttribute("src");
         videoElement.load();

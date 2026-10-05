@@ -4299,6 +4299,8 @@ export function CustomVideoPlayer({
                * keeps native playback, and with it AirPlay.
                */
               forceMediaSource: sourceToAttach.offline === true,
+              adaptiveRendition:
+                sourceToAttach.hlsKind === "adaptive-rendition",
               hdrOnlyPackage:
                 (adaptiveQualityManifest?.qualities.length ?? 0) > 0 &&
                 adaptiveQualityManifest!.qualities.every(

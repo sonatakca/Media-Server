@@ -72,26 +72,31 @@ describe("drift correction", () => {
   });
 
   it("keeps correcting until well inside the start threshold", () => {
-    // 80 ms would not start a correction, but does not end one either.
-    expect(driftCorrection(80, false).kind).toBe("none");
-    expect(driftCorrection(80, true).kind).toBe("rate");
-    expect(driftCorrection(30, true).kind).toBe("none");
+    // Between the two thresholds a correction is neither started nor ended.
+    const between = (tuning.nudgeStartMs + tuning.nudgeStopMs) / 2;
+    expect(driftCorrection(between, false).kind).toBe("none");
+    expect(driftCorrection(between, true).kind).toBe("rate");
+    expect(driftCorrection(tuning.nudgeStopMs - 10, true).kind).toBe("none");
   });
 
   it("never changes speed by more than a few percent", () => {
-    const correction = driftCorrection(-990, false);
+    const correction = driftCorrection(-(tuning.seekThresholdMs - 10), false);
     expect(correction.kind).toBe("rate");
     if (correction.kind === "rate") {
-      expect(correction.rate).toBeGreaterThan(1.04);
+      expect(correction.rate).toBeGreaterThan(1 + tuning.minRateDelta);
       expect(correction.rate).toBeLessThanOrEqual(1 + tuning.maxRateDelta);
     }
-    const small = driftCorrection(-130, false);
+    const small = driftCorrection(-(tuning.nudgeStartMs + 10), false);
     expect(small).toEqual({ kind: "rate", rate: 1 + tuning.minRateDelta });
   });
 
   it("seeks when the drift is too large to close by speed", () => {
-    expect(driftCorrection(-1_000, true)).toEqual({ kind: "seek" });
-    expect(driftCorrection(4_000, false)).toEqual({ kind: "seek" });
+    expect(driftCorrection(-tuning.seekThresholdMs, true)).toEqual({
+      kind: "seek",
+    });
+    expect(driftCorrection(tuning.seekThresholdMs + 1_000, false)).toEqual({
+      kind: "seek",
+    });
   });
 });
 

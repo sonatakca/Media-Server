@@ -618,6 +618,10 @@ describe("the adaptive buffer probe", () => {
       starveBuffer() {
         bufferedAhead = 2;
       },
+      /** The viewer (or a party catching up) moves the play head. */
+      seek() {
+        video.dispatchEvent(new Event("seeking"));
+      },
       /** hls.js reports that the play head has nothing left to play. */
       stall() {
         hls.trigger("error", {
@@ -718,6 +722,26 @@ describe("the adaptive buffer probe", () => {
     // And the still-optimistic estimate must not climb straight back into it.
     session.tick(20_000_000);
     session.tick(20_000_000);
+    expect(session.hls.loadLevel).toBe(started - 1);
+    session.dateNow.mockRestore();
+  });
+
+  it("does not charge the link for the stall a seek causes", () => {
+    // A seek empties the buffer by definition. Charging the stall that follows
+    // cost a rung and the climb every time a party caught up, which held a
+    // session at the bottom of the ladder for as long as the party lasted.
+    const session = playingInAuto(20_000_000);
+    const started = session.hls.loadLevel;
+    expect(started).toBeGreaterThan(0);
+
+    session.seek();
+    session.starveBuffer();
+    session.stall();
+    expect(session.hls.loadLevel).toBe(started);
+
+    // Once the seek is well behind it, a starved stall is the link's again.
+    for (let index = 0; index < 3; index += 1) session.tick(20_000_000);
+    session.stall();
     expect(session.hls.loadLevel).toBe(started - 1);
     session.dateNow.mockRestore();
   });
