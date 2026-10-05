@@ -49,8 +49,8 @@ export function AppUpdateButton({ variant = "desktop" }: AppUpdateButtonProps) {
               aria-label={isDesktop ? undefined : label}
               className={
                 isDesktop
-                  ? "inline-flex min-h-9 items-center gap-2 rounded-full bg-[var(--accent)] px-3.5 text-sm font-bold text-zinc-950 transition-[background-color,opacity] duration-200 hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black disabled:opacity-70 sm:min-h-10"
-                  : "inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-zinc-950 disabled:opacity-70"
+                  ? "inline-flex min-h-9 items-center gap-2 rounded-full bg-[var(--accent)] px-3.5 text-sm font-bold text-white transition-[background-color,opacity] duration-200 hover:bg-[var(--accent-hover)] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] focus:ring-offset-2 focus:ring-offset-black disabled:opacity-70 sm:min-h-10"
+                  : "inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--accent)] text-white disabled:opacity-70"
               }
             >
               <RefreshCw
