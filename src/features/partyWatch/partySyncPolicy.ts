@@ -4,33 +4,43 @@ import type { PartySnapshot } from "./partyWatchTypes";
  * How a player follows the group: pure decisions, tuned in one place.
  *
  * The values are chosen for people watching the same film in different rooms,
- * usually talking over a call that itself lags 150–300 ms. Being within a
- * couple of hundred milliseconds of each other is indistinguishable; visible
- * corrections are not. So small drift is left alone, moderate drift is closed
- * by running a few percent fast or slow (pitch is preserved, and nobody hears
- * dialogue at 1.05×), and only drift too large to close that way is seeked.
+ * usually talking over a call that itself lags 150–300 ms. What matters is
+ * being on the same scene at the same time; a fraction of a second apart is
+ * indistinguishable, while a visible correction — the picture pausing to seek
+ * and wait — is not. So small drift is left alone, moderate drift (up to a
+ * few seconds) is closed by running a few percent fast or slow (pitch is
+ * preserved, and nobody hears dialogue at 1.05×), and only drift too large to
+ * close that way is seeked.
  */
 export const PARTY_SYNC_TUNING = {
   /**
    * Drift at which a player starts correcting. Below it, nothing happens. Set
-   * above the error of the clock estimate (tens of milliseconds on a normal
-   * connection), so a correction always answers a real difference.
+   * well above the error of the clock estimate (tens of milliseconds on a
+   * normal connection) and the jitter of `currentTime` while HLS buffers, so
+   * a correction always answers a real difference.
    */
-  nudgeStartMs: 120,
+  nudgeStartMs: 350,
   /**
    * A correction stops once the player is back within this. The gap to
    * `nudgeStartMs` is deliberate: without it, a player hovering at the
    * threshold would switch rate on every tick.
    */
-  nudgeStopMs: 40,
-  /** The largest rate change: 1 s of drift closes in 20 s. */
+  nudgeStopMs: 120,
+  /** The largest rate change: 1 s of drift closes in 20 s, 3 s in a minute. */
   maxRateDelta: 0.05,
   /** The smallest, so 250 ms does not take a minute to close. */
   minRateDelta: 0.02,
   /** Drift at which the rate change reaches its largest. */
-  fullRateDriftMs: 1_000,
-  /** Beyond this a rate change would take too long; the player seeks. */
-  seekThresholdMs: 1_000,
+  fullRateDriftMs: 2_500,
+  /**
+   * Beyond this a rate change would take too long; the player seeks. A seek
+   * while the group plays means pausing, landing ahead and waiting — a visible
+   * freeze — and right after a group seek the first measurements can read a
+   * second or more off while the stream refills, so a low threshold here
+   * turned every seek into a run of freeze-and-continue catch-ups. Three
+   * seconds apart is still the same scene.
+   */
+  seekThresholdMs: 3_000,
   /**
    * When the group is paused or holding, a player further than this from the
    * group's position moves to it, so everyone is looking at the same frame.
@@ -53,8 +63,12 @@ export const PARTY_SYNC_TUNING = {
    * and the rate correction recovers.
    */
   stallGraceMs: 1_200,
-  /** Right after a seek, `currentTime` is not yet trustworthy for drift. */
-  postSeekSettleMs: 700,
+  /**
+   * Right after a seek, `currentTime` is not yet trustworthy for drift: the
+   * stream is refilling and playback start lags. Drift is not acted on until
+   * this long after one.
+   */
+  postSeekSettleMs: 2_000,
   /**
    * Catching up to a group that is moving: land this much ahead of it, wait for
    * it to arrive, then play. Aiming at where the group *is* would arrive late by
