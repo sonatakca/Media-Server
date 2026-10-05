@@ -228,6 +228,9 @@ export interface PackagedVideo {
  * broken one it replaced and every client that had cached the old copy went on
  * using it for the year the `immutable` directive promises.
  */
+/** See `adaptiveVersionIdFor`. */
+const ADAPTIVE_DELIVERY_REVISION = 2;
+
 export function adaptiveVersionIdFor(metadata: {
   profileVersion: string;
   sourceFingerprint: string;
@@ -241,6 +244,11 @@ export function adaptiveVersionIdFor(metadata: {
         metadata.sourceFingerprint,
         metadata.createdAt,
         `master-layout-${recordedMasterLayoutVersion(metadata)}`,
+        // Revision of how the package is delivered, not of the bytes. Bumped
+        // once because browsers hold year-long `immutable` copies cached
+        // without `Vary: Origin`, which a CORS request (hls.js) cannot use;
+        // new URLs are the only way past them. See `applyCors`.
+        `delivery-${ADAPTIVE_DELIVERY_REVISION}`,
       ].join("\n"),
     )
     .digest("hex")

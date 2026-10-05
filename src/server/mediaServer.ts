@@ -229,12 +229,21 @@ function requestOrigin(request: IncomingMessage): string | undefined {
   }
 }
 
-function applyCors(
+export function applyCors(
   request: IncomingMessage,
   response: ServerResponse,
   allowedOrigins: Set<string>,
   publicOrigin: string | undefined,
 ): boolean {
+  /*
+   * Every response here depends on Origin, including one to a request that
+   * sent none: that one carries no CORS headers. Saying so only on CORS
+   * responses let a browser cache a playlist fetched by its native player (no
+   * Origin) and hand that copy — immutable for a year, and with no
+   * Access-Control-Allow-Origin — to a later hls.js request for the same URL,
+   * which then failed in the browser without ever reaching this server.
+   */
+  response.setHeader("Vary", "Origin");
   const origin = request.headers.origin;
   if (!origin) return true;
 
@@ -260,7 +269,6 @@ function applyCors(
 
   response.setHeader("Access-Control-Allow-Origin", origin);
   response.setHeader("Access-Control-Allow-Credentials", "true");
-  response.setHeader("Vary", "Origin");
   response.setHeader(
     "Access-Control-Allow-Methods",
     "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
