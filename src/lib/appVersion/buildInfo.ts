@@ -53,8 +53,8 @@ export function readBuildIdFromHtml(html: string): string | null {
 }
 
 /**
- * How a build is named to a person: the day, month and time it was built, in
- * their own time zone, then the commit — "5 Ekim 19:54 · 259b523". Several
+ * How a build is named to a person: the commit, then the day, month and time
+ * it was built, in their own time zone — "259b523 · 5 Ekim 19:54". Several
  * builds can go out in one day, so the time is what tells them apart.
  */
 export function formatBuildLabel(
@@ -75,5 +75,5 @@ export function formatBuildLabel(
   const part = (type: Intl.DateTimeFormatPartTypes) =>
     parts.find((entry) => entry.type === type)?.value ?? "";
   const when = `${part("day")} ${part("month")} ${part("hour")}:${part("minute")}`;
-  return build.commit ? `${when} · ${build.commit.slice(0, 7)}` : when;
+  return build.commit ? `${build.commit.slice(0, 7)} · ${when}` : when;
 }

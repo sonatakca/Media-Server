@@ -86,10 +86,10 @@ describe("build identity", () => {
       commit: "259b52373bd3034fcf2f5f9e574f13b57e8ba0da",
     };
     expect(formatBuildLabel(build, "tr", "Europe/Istanbul")).toBe(
-      "5 Ekim 21:54 · 259b523",
+      "259b523 · 5 Ekim 21:54",
     );
     expect(formatBuildLabel(build, "en", "Europe/London")).toBe(
-      "5 Oct 19:54 · 259b523",
+      "259b523 · 5 Oct 19:54",
     );
     expect(
       formatBuildLabel({ ...build, commit: null }, "en", "Europe/London"),
