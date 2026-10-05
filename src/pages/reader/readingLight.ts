@@ -133,6 +133,13 @@ function measureLines(
   );
 }
 
+/**
+ * The drop cap's box, for its own layer of light. An `initial-letter` cap is a
+ * pseudo-element, and a range over its character returns a small placeholder
+ * box rather than the glyph, so the box is read from the lines the cap
+ * indents: from the block's left edge to where those lines' text begins, and
+ * from the block's top to the bottom of the last line it spans.
+ */
 function measureDropCap(
   element: HTMLElement,
   blockTop: number,
@@ -143,46 +150,70 @@ function measureDropCap(
   }
 
   const document = element.ownerDocument;
-  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
-  let text = walker.nextNode();
+  const view = document.defaultView;
+  const letter = view?.getComputedStyle(element, "::first-letter") as
+    | (CSSStyleDeclaration & { initialLetter?: string; webkitInitialLetter?: string })
+    | undefined;
+  const spans = parseInt(letter?.initialLetter || letter?.webkitInitialLetter || "", 10);
 
-  while (text && !text.textContent?.trim()) {
-    text = walker.nextNode();
-  }
-
-  if (!text?.textContent) {
+  if (!Number.isFinite(spans) || spans < 2) {
     return null;
   }
 
-  const offset = text.textContent.search(/\S/);
+  const style = view?.getComputedStyle(element);
+  const lineHeight =
+    parseFloat(style?.lineHeight ?? "") ||
+    parseFloat(style?.fontSize ?? "16") * 1.5;
+  const scrollY = view?.scrollY ?? 0;
   const range = document.createRange();
-  range.setStart(text, offset);
-  range.setEnd(text, offset + 1);
-  const box = range.getBoundingClientRect();
-  const scrollY = document.defaultView?.scrollY ?? 0;
+  range.selectNodeContents(element);
+  // The text lines the cap stands beside: boxes inside the block, one line high.
+  const lines = Array.from(range.getClientRects())
+    .map((box) => ({
+      top: box.top + scrollY - blockTop,
+      bottom: box.bottom + scrollY - blockTop,
+      left: box.left - blockLeft,
+    }))
+    .filter((box) => box.top > -1 && box.bottom - box.top <= lineHeight * 1.6)
+    .filter((box) => box.top < lineHeight * spans);
 
-  return box.height > 0
-    ? {
-        left: box.left - blockLeft,
-        top: box.top + scrollY - blockTop,
-        width: box.width,
-        height: box.height,
-      }
-    : null;
+  if (lines.length === 0) {
+    return null;
+  }
+
+  const width = Math.min(...lines.map((box) => box.left));
+  const height = Math.max(...lines.map((box) => box.bottom));
+
+  return width > 0 && height > 0 ? { left: 0, top: 0, width, height } : null;
 }
 
 const ink = (value: number) => `rgba(0,0,0,${value.toFixed(3)})`;
+
+interface BlockMask {
+  image: string;
+  /** Per-layer placement, or "" for one layer over the whole block. */
+  position: string;
+  size: string;
+  repeat: string;
+}
+
+const flat = (image: string): BlockMask => ({ image, position: "", size: "", repeat: "" });
 
 /**
  * The light on a block as a mask: a hard step at each line's slot edge, which
  * falls in the leading, so every line carries one even ink. Paragraph mode and
  * unmeasured blocks have one slot, a flat mask.
+ *
+ * A drop cap adds a second layer over the cap's own box. Its placement goes in
+ * mask-position / -size / -repeat: written inside mask-image (shorthand syntax)
+ * the browser rejects the whole value, and a chapter's first paragraph lost its
+ * mask and lit as one block whenever the light touched any of its lines.
  */
-function blockMask(block: LitBlock): string {
+function blockMask(block: LitBlock): BlockMask {
   const { slots } = block;
 
   if (slots.length === 1) {
-    return `linear-gradient(${ink(slots[0].value)}, ${ink(slots[0].value)})`;
+    return flat(`linear-gradient(${ink(slots[0].value)}, ${ink(slots[0].value)})`);
   }
 
   const stops = slots
@@ -194,7 +225,7 @@ function blockMask(block: LitBlock): string {
   const lines = `linear-gradient(180deg, ${stops})`;
 
   if (!block.dropCap) {
-    return lines;
+    return flat(lines);
   }
 
   const cap = block.dropCap;
@@ -206,7 +237,24 @@ function blockMask(block: LitBlock): string {
       .map((line) => line.value),
   );
 
-  return `${lines}, linear-gradient(${ink(value)}, ${ink(value)}) ${cap.left.toFixed(1)}px ${cap.top.toFixed(1)}px / ${cap.width.toFixed(1)}px ${cap.height.toFixed(1)}px no-repeat`;
+  return {
+    image: `${lines}, linear-gradient(${ink(value)}, ${ink(value)})`,
+    position: `0px 0px, ${cap.left.toFixed(1)}px ${cap.top.toFixed(1)}px`,
+    size: `100% 100%, ${cap.width.toFixed(1)}px ${cap.height.toFixed(1)}px`,
+    repeat: "no-repeat, no-repeat",
+  };
+}
+
+/** Writes a mask, standard and -webkit- (Safari), or clears it with an empty image. */
+function writeMask(element: HTMLElement, mask: BlockMask) {
+  const { style } = element;
+
+  for (const prefix of ["", "-webkit-"]) {
+    style.setProperty(`${prefix}mask-image`, mask.image);
+    style.setProperty(`${prefix}mask-position`, mask.position);
+    style.setProperty(`${prefix}mask-size`, mask.size);
+    style.setProperty(`${prefix}mask-repeat`, mask.repeat);
+  }
 }
 
 /**
@@ -478,15 +526,14 @@ export class ReadingLight {
         const even = block.slots.every(
           (slot) => Math.abs(slot.value - first) < 0.001,
         );
-        const mask = even ? "" : blockMask(block);
+        const mask = even ? flat("") : blockMask(block);
         const opacity = even && first < 0.999 ? first.toFixed(3) : "";
-        const written = `${opacity}|${mask}`;
+        const written = `${opacity}|${mask.image}|${mask.position}|${mask.size}`;
 
         if (written !== block.written) {
           block.written = written;
           block.element.style.opacity = opacity;
-          block.element.style.maskImage = mask;
-          block.element.style.setProperty("-webkit-mask-image", mask);
+          writeMask(block.element, mask);
         }
       }
     }
