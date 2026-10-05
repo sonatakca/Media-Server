@@ -2,7 +2,10 @@ import path from "node:path";
 import { readdir, rm } from "node:fs/promises";
 import { createPauseController } from "../../../renditions/processing/pauseController";
 import { planRetainedSidecarSubtitles } from "../../../renditions/adaptive/processor";
-import { packageAdaptiveRendition } from "../../../renditions/adaptive/packager";
+import {
+  hasVerifiedScratchPackage,
+  packageAdaptiveRendition,
+} from "../../../renditions/adaptive/packager";
 import { cleanupPublicationIncoming } from "../../../renditions/adaptive/publishTitle";
 import { besideTitleRoot } from "../../../renditions/adaptive/titleRoot";
 import {
@@ -182,6 +185,8 @@ export interface ProcessingJobRunnerDeps {
   probeFn?: typeof probeMediaFile;
   /** Free bytes on the output volume. Injected so tests can force a shortfall. */
   freeBytesFn?: typeof freeBytesOn;
+  /** Whether a verified package is already on scratch. Injected in tests. */
+  verifiedPackageFn?: typeof hasVerifiedScratchPackage;
   /**
    * Whether the storage this work needs is currently available.
    *
@@ -414,6 +419,7 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
     packageFn = packageAdaptiveRendition,
     probeFn = probeMediaFile,
     freeBytesFn = freeBytesOn,
+    verifiedPackageFn = hasVerifiedScratchPackage,
     storageAvailableFn,
     missingRootsFn,
     storageGuard = createPermissiveStorageGuard(),
@@ -956,10 +962,31 @@ export function createProcessingJobRunner(deps: ProcessingJobRunnerDeps) {
       return fail(PROCESSING_ERROR_CODES.tooSmall, decision.summary);
     }
     if (!decision.estimate.sufficient) {
-      return fail(
-        PROCESSING_ERROR_CODES.insufficientSpace,
-        "There is not enough free space for this package and its staging copy.",
-      );
+      /*
+       * The estimate is for building the package from nothing. A job whose
+       * earlier attempt finished and verified it, and was stopped while
+       * publishing, needs no new scratch: the packager resumes straight into
+       * publishing, and the publisher checks the media volume's space itself.
+       * Without this, a restart during publishing turned a finished encode
+       * into a failure, and the next restart's scratch sweep deleted it.
+       */
+      const alreadyBuilt = await verifiedPackageFn({
+        workRoot,
+        workspaceId: job.id,
+        sourceFingerprint: job.sourceFingerprint,
+      }).catch(() => false);
+      if (!alreadyBuilt) {
+        return fail(
+          PROCESSING_ERROR_CODES.insufficientSpace,
+          "There is not enough free space for this package and its staging copy.",
+        );
+      }
+      await store.appendEvent({
+        processingJobId: job.id,
+        stage: "planning",
+        message:
+          "The package was already built and verified by an earlier attempt; only publishing remains, so no new scratch space is needed.",
+      });
     }
 
     // ------------------------------------------------- video/audio/subs

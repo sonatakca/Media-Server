@@ -660,6 +660,52 @@ export function estimateAdaptivePackageBytes({
  * copy itself compares each destination file against this one before it
  * accepts it.
  */
+/**
+ * Where a job's finished, verified scratch package and its marker live.
+ * Shared by the packager's own resume and by planning, which must not demand
+ * scratch space for a package that is already built.
+ */
+function verifiedPackagePaths(
+  workspaceDirectory: string,
+  sourceFingerprint: string,
+): { marker: string; workVersionRoot: string } {
+  const versionDirectory = `${ADAPTIVE_PROFILE_VERSION}-${sourceFingerprint.slice(0, 16)}`;
+  return {
+    marker: path.join(workspaceDirectory, ".verified-package.json"),
+    workVersionRoot: path.join(
+      workspaceDirectory,
+      `${versionDirectory}.verified-package`,
+    ),
+  };
+}
+
+/**
+ * Whether this job's workspace already holds a verified package for this
+ * source: the state a restart finds when only publishing remained. Publishing
+ * copies to the media volume, whose space the publisher checks itself, so such
+ * a job needs no new scratch at all.
+ */
+export async function hasVerifiedScratchPackage({
+  workRoot,
+  workspaceId,
+  sourceFingerprint,
+}: {
+  workRoot: string;
+  workspaceId: string;
+  sourceFingerprint: string;
+}): Promise<boolean> {
+  const workspaceDirectory = assertOwnedJobWorkspace(
+    workRoot,
+    path.join(workRoot, assertWorkspaceId(workspaceId)),
+  );
+  return (
+    (await readVerifiedScratchPackage({
+      ...verifiedPackagePaths(workspaceDirectory, sourceFingerprint),
+      sourceFingerprint,
+    })) !== null
+  );
+}
+
 async function readVerifiedScratchPackage({
   marker,
   workVersionRoot,
@@ -967,14 +1013,8 @@ export async function packageAdaptiveRendition(
      * exactly one thing: every byte of the package exists on scratch and has
      * proven itself, and all that remains is to copy it to the media volume.
      */
-    const workVersionRoot = path.join(
-      workspaceDirectory,
-      `${versionDirectory}.verified-package`,
-    );
-    const verificationMarker = path.join(
-      workspaceDirectory,
-      ".verified-package.json",
-    );
+    const { workVersionRoot, marker: verificationMarker } =
+      verifiedPackagePaths(workspaceDirectory, request.sourceFingerprint);
     const verifiedScratchPackage = await readVerifiedScratchPackage({
       marker: verificationMarker,
       workVersionRoot,

@@ -36,7 +36,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { RenditionPaths } from "../analysis";
 import { computeSourceFingerprint } from "../registry";
 import { prepareProcessingStorageRoles } from "../storageRoles";
-import { packageAdaptiveRendition } from "./packager";
+import { hasVerifiedScratchPackage, packageAdaptiveRendition } from "./packager";
 import { runFfmpeg } from "../processor";
 import {
   readTitlePackageManifest,
@@ -274,6 +274,21 @@ describe("the scratch storage lifecycle", () => {
     await expect(
       stat(path.join(harness.workspaceDirectory, ".verified-package.json")),
     ).resolves.toMatchObject({});
+    // Planning asks the same question before it demands scratch for a build.
+    await expect(
+      hasVerifiedScratchPackage({
+        workRoot: harness.jobsRoot,
+        workspaceId: MEDIA_ID,
+        sourceFingerprint: harness.fingerprint,
+      }),
+    ).resolves.toBe(true);
+    await expect(
+      hasVerifiedScratchPackage({
+        workRoot: harness.jobsRoot,
+        workspaceId: MEDIA_ID,
+        sourceFingerprint: "0".repeat(64),
+      }),
+    ).resolves.toBe(false);
 
     /*
      * The second attempt must not invoke the encoder even once. Anything less

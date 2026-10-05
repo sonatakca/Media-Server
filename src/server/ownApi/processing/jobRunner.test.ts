@@ -393,6 +393,64 @@ describe("processing job runner", () => {
     expect(packageFn).not.toHaveBeenCalled();
   });
 
+  /**
+   * A restart during publishing used to fail a finished encode here: the
+   * estimate is for building from nothing, and the next restart's scratch
+   * sweep then deleted the verified package nobody could resume.
+   */
+  it("publishes an already-verified package even when scratch is too full to build one", async () => {
+    const packageFn = vi.fn(async () => ({
+      mediaId: "file-1",
+      relativePath: "Movies/Dune.mp4",
+      status: "ready" as const,
+      versionDirectory: "cmaf-hls-aligned-v2-abcdef0123456789",
+      storageBytes: 149_000_000,
+    }));
+    const verifiedPackageFn = vi.fn(async () => true);
+    const localRunner = createProcessingJobRunner({
+      store: fake.store,
+      paths,
+      mediaRoot: "/media",
+      detectHardwareFn: vi.fn(async () => hardware) as never,
+      probeFn: vi.fn(async () => probe()) as never,
+      packageFn: packageFn as never,
+      freeBytesFn: vi.fn(async () => 1_000_000) as never,
+      verifiedPackageFn,
+    });
+
+    const outcome = await localRunner.run(input);
+
+    expect(outcome.status).toBe("succeeded");
+    expect(packageFn).toHaveBeenCalledTimes(1);
+    expect(verifiedPackageFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: fake.latest().id,
+        sourceFingerprint: fake.latest().sourceFingerprint,
+      }),
+    );
+  });
+
+  it("still stops on a full volume when the package check itself fails", async () => {
+    const packageFn = vi.fn();
+    const localRunner = createProcessingJobRunner({
+      store: fake.store,
+      paths,
+      mediaRoot: "/media",
+      detectHardwareFn: vi.fn(async () => hardware) as never,
+      probeFn: vi.fn(async () => probe()) as never,
+      packageFn: packageFn as never,
+      freeBytesFn: vi.fn(async () => 1_000_000) as never,
+      verifiedPackageFn: vi.fn(async () => {
+        throw new Error("scratch unreadable");
+      }),
+    });
+
+    const outcome = await localRunner.run(input);
+
+    expect(outcome.errorCode).toBe("INSUFFICIENT_DISK_SPACE");
+    expect(packageFn).not.toHaveBeenCalled();
+  });
+
   it("reports cancellation without failing the job", async () => {
     const packageFn = vi.fn(async () => {
       fake.setCancelled();
