@@ -15,15 +15,6 @@ export const PHONE_TITLE_HERO_SECTION = "relative w-full bg-[#050607] pb-6";
  */
 export const PHONE_TITLE_HERO_FRAME =
   "relative w-full pt-[calc(3.5rem+env(safe-area-inset-top))]";
-/**
- * The picture's own top and bottom dissolve into the room over a short
- * smoothstep (7% of its height), just enough that neither edge shows as a
- * line. It
- * is a mask on the artwork, not a shade over it: the middle stays as it
- * is, and the logo and back, drawn above it, stay whole.
- */
-export const PHONE_TITLE_PICTURE_FADE =
-  "linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.1) 1.4%, rgba(0,0,0,0.35) 2.8%, rgba(0,0,0,0.65) 4.2%, rgba(0,0,0,0.9) 5.6%, #000 7%, #000 93%, rgba(0,0,0,0.9) 94.4%, rgba(0,0,0,0.65) 95.8%, rgba(0,0,0,0.35) 97.2%, rgba(0,0,0,0.1) 98.6%, transparent 100%)";
 export const PHONE_TITLE_HERO_PICTURE =
   "relative aspect-video w-full overflow-hidden";
 /**

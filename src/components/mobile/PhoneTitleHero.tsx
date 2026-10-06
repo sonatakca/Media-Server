@@ -41,7 +41,6 @@ import {
   PHONE_TITLE_HERO_SECTION,
   PHONE_TITLE_ACTION_ICON,
   PHONE_TITLE_LOGO_REGION,
-  PHONE_TITLE_PICTURE_FADE,
   phoneTitleFacts,
 } from "./phoneTitleHeroRows";
 
@@ -139,13 +138,7 @@ export function PhoneTitleHero({
     <section className={PHONE_TITLE_HERO_SECTION}>
       <div className={PHONE_TITLE_HERO_FRAME}>
         <div className={PHONE_TITLE_HERO_PICTURE}>
-          <div
-            className="absolute inset-0 bg-white/[0.04]"
-            style={{
-              WebkitMaskImage: PHONE_TITLE_PICTURE_FADE,
-              maskImage: PHONE_TITLE_PICTURE_FADE,
-            }}
-          >
+          <div className="absolute inset-0 bg-white/[0.04]">
             {artwork?.type === "backdrop" ? (
               <motion.img
                 key={artwork.url}

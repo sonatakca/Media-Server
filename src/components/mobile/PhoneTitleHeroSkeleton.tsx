@@ -15,7 +15,6 @@ import {
   PHONE_TITLE_HERO_PLAY,
   PHONE_TITLE_HERO_ROW,
   PHONE_TITLE_HERO_SECTION,
-  PHONE_TITLE_PICTURE_FADE,
   phoneTitleFacts,
 } from "./phoneTitleHeroRows";
 
@@ -55,13 +54,7 @@ export function PhoneTitleHeroSkeleton({
     <section className={PHONE_TITLE_HERO_SECTION}>
       <div className={PHONE_TITLE_HERO_FRAME}>
         <div className={PHONE_TITLE_HERO_PICTURE}>
-          <div
-            className="shimmer absolute inset-0"
-            style={{
-              WebkitMaskImage: PHONE_TITLE_PICTURE_FADE,
-              maskImage: PHONE_TITLE_PICTURE_FADE,
-            }}
-          />
+          <div className="shimmer absolute inset-0" />
           <div className={PHONE_TITLE_HERO_LOGO_BOX}>
             <div className="h-[70%] w-full rounded-lg bg-white/[0.06]" />
           </div>
