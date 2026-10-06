@@ -13,6 +13,7 @@ import {
   isAuthenticated,
   setAuthSession,
 } from "./lib/authStorage";
+import { loginPathFor } from "./lib/loginRedirect";
 import {
   isDeviceOffline,
   isOfflineSupported,
@@ -374,8 +375,10 @@ function RootRedirect() {
 }
 
 function RequireAuth() {
+  const location = useLocation();
+
   if (!isAuthenticated()) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginPathFor(location)} replace />;
   }
 
   return <Outlet />;

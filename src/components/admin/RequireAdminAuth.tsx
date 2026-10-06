@@ -4,6 +4,7 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { ownApiClient } from "../../api/ownApi/client";
 import { setAuthSession } from "../../lib/authStorage";
+import { loginPathFor } from "../../lib/loginRedirect";
 
 /**
  * Gate for the developer and administration routes.
@@ -60,7 +61,7 @@ export function RequireAdminAuth() {
   }
 
   if (authState.status === "signed-out") {
-    return <Navigate to="/login" replace />;
+    return <Navigate to={loginPathFor(location)} replace />;
   }
 
   const isChecking = authState.status === "checking";

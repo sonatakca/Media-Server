@@ -7,7 +7,7 @@ import {
   type Variants,
 } from "framer-motion";
 import { Lock, User } from "lucide-react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import appIcon from "../assets/AppIcon2.png";
 import { Button } from "../components/Button";
 import { ErrorMessage } from "../components/ErrorMessage";
@@ -17,6 +17,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { ownApiClient } from "../api/ownApi/client";
 import { isAuthenticated, setAuthSession } from "../lib/authStorage";
 import { markLoginConfettiPending } from "../lib/homeConfetti";
+import { afterLoginPath, DEFAULT_AFTER_LOGIN_PATH } from "../lib/loginRedirect";
 import { setPageTitle } from "../lib/pageTitle";
 import { RainbowAnimation } from "../components/animations/RainbowAnimation";
 
@@ -48,6 +49,7 @@ const fade: Variants = {
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useLanguage();
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -63,8 +65,11 @@ export function LoginPage() {
     });
   }, [t]);
 
+  // A shared link opened while signed out comes back here as `?next=`.
+  const destination = afterLoginPath(location.search);
+
   if (isAuthenticated()) {
-    return <Navigate to="/home" replace />;
+    return <Navigate to={destination} replace />;
   }
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -82,8 +87,10 @@ export function LoginPage() {
         displayName: user.displayName,
         isAdministrator: user.isAdministrator,
       });
-      markLoginConfettiPending();
-      navigate("/home", { replace: true });
+      // The welcome confetti belongs to the home page; a shared link is
+      // opened as it is.
+      if (destination === DEFAULT_AFTER_LOGIN_PATH) markLoginConfettiPending();
+      navigate(destination, { replace: true });
     } catch (loginError) {
       const message =
         loginError instanceof Error
