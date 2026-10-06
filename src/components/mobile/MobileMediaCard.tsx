@@ -23,12 +23,25 @@ import {
   shouldOpenPlaybackForItem,
   shouldOpenReaderForItem,
 } from "../../lib/routes";
+import {
+  LOGO_SHADOW_REFERENCE_WIDTH,
+  getLogoLayout,
+  getLogoLayoutStyle,
+  getLogoShadowBackdropStyle,
+  getLogoShadowFilter,
+} from "../../lib/logoLayout";
 import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
 import { CollectionPosterMosaic } from "../CollectionPosterMosaic";
 import { WatchedIndicator } from "../WatchedIndicator";
 import { DownloadButton } from "../offline/DownloadButton";
 import { isOfflineSupported } from "../../lib/offline/offlineLibrary";
+
+/**
+ * A phone's poster card is about 150px wide; its logo shadow is scaled to
+ * that, so it keeps the proportion the artwork tool set it at.
+ */
+const PHONE_CARD_SHADOW_SCALE = 150 / LOGO_SHADOW_REFERENCE_WIDTH;
 
 interface MobileMediaCardProps {
   item: MediaItem;
@@ -201,6 +214,14 @@ export function MobileMediaCard({
     fallbackLogoUrl,
   );
 
+  const logoLayout = getLogoLayout(item);
+  const logoShadow = logoLayout
+    ? getLogoShadowFilter(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
+    : undefined;
+  const logoShadowBackdrop = logoLayout
+    ? getLogoShadowBackdropStyle(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
+    : undefined;
+
   return (
     <motion.article
       data-flip-key={item.Id}
@@ -256,7 +277,31 @@ export function MobileMediaCard({
             )}
           </Link>
 
-          {logoUrl ? (
+          {/* A poster whose logo was placed in the artwork tool shows it there,
+              at that size and shadow, exactly as the desktop card does. */}
+          {logoUrl && logoLayout && !isLandscape ? (
+            <div
+              data-logo-layout="true"
+              style={getLogoLayoutStyle(logoLayout)}
+              className="pointer-events-none absolute z-20"
+            >
+              {logoShadowBackdrop ? (
+                <span
+                  aria-hidden="true"
+                  style={logoShadowBackdrop}
+                  className="absolute inset-[6%] rounded-[45%]"
+                />
+              ) : null}
+              <img
+                src={logoUrl}
+                alt={mainTitle}
+                loading="lazy"
+                decoding="async"
+                style={logoShadow ? { filter: logoShadow } : undefined}
+                className="relative z-10 block h-auto w-full object-contain"
+              />
+            </div>
+          ) : logoUrl ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center bg-gradient-to-t from-black/75 via-black/20 to-transparent px-3 pb-3 pt-12 min-[390px]:px-4 min-[390px]:pb-4">
               <img
                 src={logoUrl}

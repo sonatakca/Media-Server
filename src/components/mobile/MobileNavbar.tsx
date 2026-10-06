@@ -104,7 +104,10 @@ export function MobileNavbar() {
           aria-label={t("nav.brandHome")}
           className="flex h-10 min-w-0 flex-1 items-center pr-2"
         >
-          <NavbarWordmark className="h-9" />
+          {/* Over the hero the wordmark stands on the front poster's own
+              colours, blurred, which can be its own: a soft dark shadow keeps
+              its edge on any of them. */}
+          <NavbarWordmark className="h-9 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))]" />
         </Link>
 
         <div className="flex shrink-0 items-center gap-1">
