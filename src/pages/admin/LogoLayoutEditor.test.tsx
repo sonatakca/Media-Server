@@ -89,12 +89,11 @@ describe("logo layout editor", () => {
     expect(preview.style.filter).toContain(
       "drop-shadow(0 0 2px rgba(0, 0, 0, 0.90))",
     );
-    expect(
-      view.container.querySelector<HTMLElement>("[data-logo-shadow-backdrop]"),
-    ).toHaveStyle({
-      backgroundColor: "rgba(0, 0, 0, 0.76)",
-      filter: "blur(18px)",
-    });
+    const backdrop = view.container.querySelector<HTMLElement>(
+      "[data-logo-shadow-backdrop]",
+    );
+    expect(backdrop?.style.filter).toBe("");
+    expect(backdrop?.style.background).toContain("rgba(0, 0, 0, 0.76) 0%");
   });
 
   it("moves the logo with the pointer", () => {

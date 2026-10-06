@@ -28,7 +28,7 @@ it("keeps the logo's shadow in proportion to a small poster", () => {
   expect(getLogoShadowFilter(1)).toContain("34px");
   expect(logo.style.filter).toContain("8px");
   expect(logo.style.filter).not.toContain("34px");
-  expect(backdrop.style.filter).toBe("blur(4px)");
+  expect(backdrop.style.inset).toBe("calc(6% - 8px) calc(6% - 4px)");
 });
 
 it("draws a card-sized poster with the card's own shadow", () => {

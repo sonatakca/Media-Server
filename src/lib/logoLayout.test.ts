@@ -104,9 +104,11 @@ describe("shadow", () => {
 
     const normalBackdrop = getLogoShadowBackdropStyle(1);
     const strongBackdrop = getLogoShadowBackdropStyle(2);
-    expect(normalBackdrop?.filter).toBe("blur(18px)");
-    expect(strongBackdrop?.filter).toBe("blur(18px)");
-    expect(strongBackdrop?.backgroundColor).toBe("rgba(0, 0, 0, 0.76)");
+    expect(normalBackdrop?.inset).toBe("calc(6% - 36px) calc(6% - 18px)");
+    expect(strongBackdrop?.inset).toBe("calc(6% - 36px) calc(6% - 18px)");
+    expect(strongBackdrop?.background).toContain("rgba(0, 0, 0, 0.76) 0%");
+    // iOS Safari clips a blurred element to its box and drew a hard rectangle.
+    expect(strongBackdrop).not.toHaveProperty("filter");
   });
 
   it("falls back to the default when the strength is not a number", () => {

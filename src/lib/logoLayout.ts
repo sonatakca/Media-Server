@@ -219,14 +219,20 @@ export function getLogoShadowFilter(
  * logos but almost invisible when an uploaded logo has an opaque rectangular
  * background. This field gives those custom images the same adjustable
  * separation from the artwork without changing the image itself.
+ *
+ * The softness is painted as a radial gradient, never as `filter: blur()`:
+ * iOS Safari clips a blurred element to its own box, so on an iPhone the
+ * field drew as a hard dark rectangle around the logo. A gradient fades to
+ * nothing inside its box on every engine. `inset` overrides the callers'
+ * `inset-[6%]`, widening the box by the reach the blur used to spill past it.
  */
 export function getLogoShadowBackdropStyle(
   shadow: number,
   sizeScale = 1,
 ):
   | {
-      backgroundColor: string;
-      filter: string;
+      background: string;
+      inset: string;
       transform: string;
     }
   | undefined {
@@ -236,14 +242,18 @@ export function getLogoShadowBackdropStyle(
   if (strength <= 0) return undefined;
   const size = Number.isFinite(sizeScale) && sizeScale > 0 ? sizeScale : 1;
 
-  const opacity = Math.min(0.76, 0.38 * strength).toFixed(2);
+  const alpha = Math.min(0.76, 0.38 * strength);
+  const ink = (share: number) => `rgba(0, 0, 0, ${(alpha * share).toFixed(2)})`;
   // Held at the default's reach for the same reason as the drop-shadows.
-  const blur = Math.max(1, Math.round(18 * Math.min(strength, 1) * size));
+  const reach = Math.max(1, Math.round(18 * Math.min(strength, 1) * size));
   const scale = (1 + 0.12 * strength).toFixed(2);
 
   return {
-    backgroundColor: `rgba(0, 0, 0, ${opacity})`,
-    filter: `blur(${blur}px)`,
+    // Eased like a Gaussian so no ring marks where the field ends.
+    background: `radial-gradient(closest-side, ${ink(1)} 0%, ${ink(0.92)} 25%, ${ink(0.7)} 48%, ${ink(0.42)} 68%, ${ink(0.18)} 84%, ${ink(0.05)} 94%, rgba(0, 0, 0, 0) 100%)`,
+    // Twice the reach above and below: an ellipse's fade scales with its
+    // radius, so on a wide, short logo it would otherwise end abruptly.
+    inset: `calc(6% - ${2 * reach}px) calc(6% - ${reach}px)`,
     transform: `scale(${scale})`,
   };
 }

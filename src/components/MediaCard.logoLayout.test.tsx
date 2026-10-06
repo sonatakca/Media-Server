@@ -121,10 +121,8 @@ describe("media card logo layout", () => {
     const backdrop = logoLayout().querySelector<HTMLElement>(
       "[data-logo-shadow-backdrop]",
     );
-    expect(backdrop).toHaveStyle({
-      backgroundColor: "rgba(0, 0, 0, 0.76)",
-      filter: "blur(18px)",
-    });
+    expect(backdrop?.style.filter).toBe("");
+    expect(backdrop?.style.background).toContain("rgba(0, 0, 0, 0.76) 0%");
   });
 
   it("falls back to the title when a card has no logo", () => {
