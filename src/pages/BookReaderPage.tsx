@@ -17,6 +17,7 @@ import ePub, {
   type NavItem,
   type Rendition,
 } from "epubjs";
+import type Section from "epubjs/types/section";
 import {
   BookCheck,
   Bookmark,
@@ -70,12 +71,17 @@ import {
   ReaderSettingsPanel,
 } from "./reader/ReaderPanels";
 import {
+  guardCfiLocation,
+  settleFailedDisplays,
+} from "./reader/epubDisplayGuard";
+import {
   formatDuration,
   formatPercent,
   splitNumber,
 } from "./reader/readerText";
 import {
   CHARS_PER_LOCATION,
+  EPUB_DISPLAY_LIMIT_MS,
   EPUB_PREPARATION_TIMEOUT_MS,
   EPUB_REQUEST_CREDENTIALS,
   READER_SETTINGS_KEY,
@@ -439,7 +445,12 @@ function listenForTaps(
     const press = event as PointerEvent;
     start =
       press.isPrimary && press.button === 0
-        ? { x: press.clientX, y: press.clientY, at: performance.now(), id: press.pointerId }
+        ? {
+            x: press.clientX,
+            y: press.clientY,
+            at: performance.now(),
+            id: press.pointerId,
+          }
         : null;
   };
   const cancel = () => {
@@ -453,7 +464,8 @@ function listenForTaps(
     if (
       !press ||
       release.pointerId !== press.id ||
-      Math.hypot(release.clientX - press.x, release.clientY - press.y) > TAP_SLOP_PX ||
+      Math.hypot(release.clientX - press.x, release.clientY - press.y) >
+        TAP_SLOP_PX ||
       performance.now() - press.at > TAP_MS ||
       scrolledRecently()
     ) {
@@ -715,6 +727,7 @@ export function BookReaderPage() {
         },
       );
     });
+    guardCfiLocation();
     const rendition = book.renderTo(host, {
       manager: "continuous",
       width: "100%",
@@ -727,6 +740,7 @@ export function BookReaderPage() {
       // tap on the book could never show the bar on an iPhone or iPad.
       allowScriptedContent: true,
     });
+    const stopSettlingDisplays = settleFailedDisplays(rendition);
     const light = new ReadingLight(host);
     const savedProgress = readReaderProgress(activeItemId);
     const savedPlace = isReaderPlace(savedProgress?.place)
@@ -956,7 +970,11 @@ export function BookReaderPage() {
     rendition.hooks.content.register(async (contents: Contents) => {
       const view = contents as unknown as EpubContentView;
       tapListeners.push(
-        listenForTaps(view.document, (target) => handleTap(target), scrolledRecently),
+        listenForTaps(
+          view.document,
+          (target) => handleTap(target),
+          scrolledRecently,
+        ),
       );
       view.addStylesheetCss(getBookFontCss(), "seyirlik-fonts");
       view.addStylesheetCss(EPUB_STATIC_CSS, "seyirlik-static");
@@ -1197,21 +1215,61 @@ export function BookReaderPage() {
     };
 
     /**
+     * Shows `to`, or reports that it could not: a display that fails or never
+     * finishes is let go (a new display releases epub.js's queue from it).
+     */
+    const displayWithin = (to: string | undefined) =>
+      Promise.race([
+        rendition.display(to).then(
+          () => true,
+          () => false,
+        ),
+        new Promise<boolean>((resolve) =>
+          window.setTimeout(() => resolve(false), EPUB_DISPLAY_LIMIT_MS),
+        ),
+      ]);
+
+    /**
      * Takes the screen to a saved place: its section first, then, once the
      * book's typography has settled (it lands in the content hook, after
      * epub.js has scrolled), the same block at the same distance from the
      * top, which a CFI alone cannot say. Sections loading around it can still
      * shift it, so it is set once more after they settle. Older saves have
      * only a CFI.
+     *
+     * A way in that will not display gives way to the start of its section,
+     * then of the book: the reader opens somewhere rather than nowhere.
      */
     const goTo = async (target: Target, opening: boolean) => {
-      const section = target.place
-        ? (book.spine.get(target.place.section) as unknown as {
-            href?: string;
-          } | null)
-        : null;
-      const start = section?.href ?? target.cfi ?? undefined;
-      await rendition.display(start);
+      // The spine is read only once the book has opened: asked before, it has
+      // no sections, and the place fell back to its CFI, which epub.js then
+      // resolved against a section not yet hyphenated.
+      await book.opened;
+      const sectionOf = (key: number | string | null | undefined) =>
+        key === null || key === undefined
+          ? undefined
+          : (book.spine.get(key) as Section | null)?.href;
+      const start =
+        (target.place ? sectionOf(target.place.section) : undefined) ??
+        target.cfi ??
+        undefined;
+      const ways = [...new Set([start, sectionOf(target.cfi), undefined])];
+      let shown: string | undefined | null = null;
+
+      for (const way of ways) {
+        if (!isMounted) {
+          return;
+        }
+
+        if (await displayWithin(way)) {
+          shown = way;
+          break;
+        }
+      }
+
+      if (shown === null) {
+        throw new Error("The book could not be displayed");
+      }
 
       if (opening) {
         await Promise.race([
@@ -1220,7 +1278,7 @@ export function BookReaderPage() {
         ]);
       }
 
-      if (start && isMounted) {
+      if (shown && isMounted) {
         await waitForLayoutToSettle(host);
       }
 
@@ -1228,7 +1286,7 @@ export function BookReaderPage() {
         await waitForLayoutToSettle(host);
         backToPlace(target.place);
       } else if (target.cfi && isMounted) {
-        await rendition.display(target.cfi).catch(() => undefined);
+        await displayWithin(target.cfi);
       }
 
       // Known as this screen measures it once there: a place saved on a
@@ -1354,6 +1412,7 @@ export function BookReaderPage() {
       rendition.off("relocated", handleRelocated);
       tapListeners.forEach((stop) => stop());
       rendition.off("keydown", handleKey);
+      stopSettlingDisplays();
       light.clear();
       rendition.destroy();
       book.destroy();

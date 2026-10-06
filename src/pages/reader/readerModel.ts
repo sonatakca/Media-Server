@@ -145,6 +145,8 @@ export const CHARS_PER_LOCATION = 1200;
 export const READING_CHARS_PER_MINUTE = 1100;
 
 export const EPUB_PREPARATION_TIMEOUT_MS = 15000;
+/** How long one epub.js display may take before opening tries the next way in. */
+export const EPUB_DISPLAY_LIMIT_MS = 6000;
 
 /**
  * epub.js uses XMLHttpRequest rather than the application's API client. The
