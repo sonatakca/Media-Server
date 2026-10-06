@@ -1,7 +1,10 @@
 import { ownApiClient, ownApiUrl } from "../../api/ownApi/client";
+import type { Language } from "../../i18n/translations";
+import { getItemLogoUrlById } from "../itemMetadataPreferences";
 import {
   getBackdropImageUrl,
   getItemTrickplayImageUrl,
+  getLogoImageUrl,
   getPrimaryImageUrl,
 } from "../mediaApi";
 import type { MediaItem, MediaStream, PlaybackSourceCandidate } from "../types";
@@ -44,7 +47,11 @@ export interface DownloadPlan {
     isDefault: boolean;
   }>;
   /** Text subtitle tracks; absent from a server older than this field. */
-  subtitles?: Array<{ streamIndex: number }>;
+  subtitles?: Array<{
+    streamIndex: number;
+    /** The package's own converted copy, preferred over extraction. */
+    url?: string;
+  }>;
 }
 
 export type DownloadState = "downloading" | "complete" | "failed";
@@ -87,6 +94,7 @@ function absoluteUrl(url: string): string {
 export function offlineArtworkUrls(item: MediaItem): {
   poster: string;
   backdrop: string;
+  logos: string[];
 } {
   return {
     poster: absoluteUrl(
@@ -95,7 +103,34 @@ export function offlineArtworkUrls(item: MediaItem): {
     backdrop: absoluteUrl(
       getBackdropImageUrl(item.Id, item.BackdropImageTags?.[0], 1280),
     ),
+    logos: titleLogoUrls(item).map(absoluteUrl),
   };
+}
+
+/**
+ * The title logo the player lays over the picture, chosen the way the player
+ * chooses it: the series' logo for an episode, a logo picked for a language
+ * when there is one, the item's own otherwise.
+ */
+function titleLogoUrls(item: MediaItem): string[] {
+  const seriesLogoItemId =
+    item.Type === "Episode"
+      ? (item.ParentLogoItemId ?? item.SeriesId ?? null)
+      : null;
+  const fallback =
+    seriesLogoItemId && item.ParentLogoImageTag
+      ? getLogoImageUrl(seriesLogoItemId, item.ParentLogoImageTag, 900)
+      : item.ImageTags?.Logo
+        ? getLogoImageUrl(item.Id, item.ImageTags.Logo, 900)
+        : "";
+  const languages: Language[] = ["tr", "en"];
+  return [
+    ...new Set(
+      languages.map((language) =>
+        getItemLogoUrlById(seriesLogoItemId ?? item.Id, language, fallback),
+      ),
+    ),
+  ].filter(Boolean);
 }
 
 /**
@@ -340,7 +375,7 @@ async function storeInParts(
 
 /**
  * Stores a small extra a title may not have: a subtitle track, a sheet of
- * seek thumbnails. False when the server has none to give; a failure to reach
+ * seek thumbnails, a title logo. False when the server has none to give; a failure to reach
  * it is still an error, so a dropped connection is not mistaken for absence.
  */
 async function storeOptional(
@@ -348,9 +383,11 @@ async function storeOptional(
   url: string,
   signal: AbortSignal | undefined,
   onBytes: (bytes: number) => void,
+  /** Where to fetch it from, when that is not where it is asked for. */
+  sourceUrl = url,
 ): Promise<boolean> {
   if (await cache.match(url)) return true;
-  const response = await fetch(url, { credentials: "include", signal });
+  const response = await fetch(sourceUrl, { credentials: "include", signal });
   if (response.status >= 400 && response.status < 500) return false;
   if (!response.ok || !response.body) {
     throw new Error(`Download failed (${response.status}).`);
@@ -498,10 +535,13 @@ export async function downloadTitle(
     );
     title.files.push(masterUrl);
 
-    // Artwork, so the Downloads page is not a list of grey boxes offline.
+    // Artwork, so the Downloads page is not a list of grey boxes offline,
+    // and the logo the player shows over the picture.
+    const artworkUrls = offlineArtworkUrls(item);
     for (const artwork of [
-      offlineArtworkUrls(item).poster,
-      offlineArtworkUrls(item).backdrop,
+      artworkUrls.poster,
+      artworkUrls.backdrop,
+      ...artworkUrls.logos,
     ]) {
       if (await cache.match(artwork)) {
         title.files.push(artwork);
@@ -520,9 +560,21 @@ export async function downloadTitle(
     // Subtitles and seek thumbnails: small, and asked for during playback by
     // URLs that otherwise need the server. A track the server cannot convert
     // is left out rather than failing the whole title.
-    for (const { streamIndex } of plan.subtitles ?? []) {
+    // Each is kept where the offline player asks for it, taken from the
+    // package's converted copy when there is one and extracted otherwise.
+    for (const { streamIndex, url: packaged } of plan.subtitles ?? []) {
       const url = offlineSubtitleUrl(item.Id, streamIndex);
-      if (await storeOptional(cache, url, options.signal, countBytes)) {
+      const stored =
+        (packaged !== undefined &&
+          (await storeOptional(
+            cache,
+            url,
+            options.signal,
+            countBytes,
+            absoluteUrl(ownApiUrl(packaged)),
+          ))) ||
+        (await storeOptional(cache, url, options.signal, countBytes));
+      if (stored) {
         title.files.push(url);
         title.subtitleStreamIndexes!.push(streamIndex);
       }

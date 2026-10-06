@@ -41,6 +41,12 @@ export interface AdaptiveAudioTrack {
   isDefault: boolean;
 }
 
+/** A text subtitle the package already carries as one WebVTT file. */
+export interface AdaptiveSubtitleTrack {
+  sourceStreamIndex: number;
+  url: string;
+}
+
 export interface AdaptiveQualityManifest {
   profileVersion: string;
   playbackUrl: string;
@@ -48,6 +54,7 @@ export interface AdaptiveQualityManifest {
   segmentTargetSeconds: number;
   qualities: AdaptiveQualityLevel[];
   audioTracks: AdaptiveAudioTrack[];
+  subtitleTracks?: AdaptiveSubtitleTrack[];
   switching: "aligned-cmaf-hls";
 }
 

@@ -179,9 +179,14 @@ export default defineConfig(({ mode }) => {
             "index.html",
             "registerSW.js",
             "assets/**/*.{js,css,svg,png,webp,woff2}",
+            // The brand loading mark, shown while anything loads — offline
+            // too, where a downloaded title is opened with no server at all.
+            "artwork/seyirlik/animations/*.webp",
           ],
           globIgnores: ["**/*.{mp4,mkv,m3u8,ts,vtt,srt,ass}"],
-          maximumFileSizeToCacheInBytes: 1024 * 1024,
+          // The animated mark is just under 2 MB; a larger file than this is
+          // left out of the precache silently, so the limit sits above it.
+          maximumFileSizeToCacheInBytes: 2.5 * 1024 * 1024,
           navigateFallbackDenylist: [
             // Everything the server owns lives under the versioned namespace, so
             // one rule replaces the per-endpoint list this used to carry.

@@ -1084,11 +1084,16 @@ export function attachSourceToVideo(
             : undefined;
         },
         setAudioStream: (sourceStreamIndex) => {
+          // The master names each rendition's source stream; a package laid
+          // out by language has no `track-N` in its paths to go by.
           const marker = `track-${sourceStreamIndex}`;
           const index = hls.audioTracks.findIndex((track) => {
             const candidate = track as typeof track & { url?: string };
             return (
-              candidate.url?.includes(marker) || candidate.name.includes(marker)
+              candidate.attrs?.["X-SEYIRLIK-STREAM-INDEX"] ===
+                String(sourceStreamIndex) ||
+              candidate.url?.includes(marker) ||
+              candidate.name.includes(marker)
             );
           });
           if (index < 0) return false;

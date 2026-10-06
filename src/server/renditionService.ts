@@ -657,15 +657,18 @@ export function createRenditionService({
           expectedSize: rendition.fileSizeBytes,
         });
       }
+      const adaptiveBaseUrl = `${basePath}/${encodeURIComponent(token)}/adaptive/${adaptiveVersionId}`;
+      const adaptiveAssetUrl = (assetPath: string) =>
+        `${adaptiveBaseUrl}/${assetPath
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/")}`;
       manifest.adaptive = {
         profileVersion: adaptiveMetadata.profileVersion,
         // The master's own recorded location, not a fixed name: a player
         // resolves every rendition URI against this URL, so it has to sit where
         // the package actually put it.
-        playbackUrl: `${basePath}/${encodeURIComponent(token)}/adaptive/${adaptiveVersionId}/${adaptiveMetadata.masterPlaylistPath
-          .split("/")
-          .map((segment) => encodeURIComponent(segment))
-          .join("/")}`,
+        playbackUrl: adaptiveAssetUrl(adaptiveMetadata.masterPlaylistPath),
         mimeType: "application/vnd.apple.mpegurl",
         segmentTargetSeconds: adaptiveMetadata.segmentTargetSeconds,
         qualities: adaptiveMetadata.videoRenditions
@@ -691,6 +694,12 @@ export function createRenditionService({
           channels: rendition.channels,
           isDefault: rendition.isDefault,
         })),
+        subtitleTracks: (adaptiveMetadata.subtitleRenditions ?? []).map(
+          (rendition) => ({
+            sourceStreamIndex: rendition.sourceStreamIndex,
+            url: adaptiveAssetUrl(rendition.subtitlePath),
+          }),
+        ),
         switching: "aligned-cmaf-hls",
       };
     }

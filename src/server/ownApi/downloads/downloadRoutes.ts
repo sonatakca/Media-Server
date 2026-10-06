@@ -3,9 +3,13 @@ import { OwnApiError } from "../ownApiHandler";
 import { sendData } from "../api/envelope";
 import type { RouteDefinition } from "../api/router";
 import { requireUuid, validationError } from "../api/validation";
-import type { CatalogueRepository } from "../catalogue/catalogueRepository";
+import type {
+  CatalogueRepository,
+  MediaStreamRow,
+} from "../catalogue/catalogueRepository";
 import type { UserRepository } from "../users/userRepository";
 import type { RenditionService } from "../../renditionService";
+import type { AdaptiveSubtitleTrack } from "../../../renditions/contracts";
 import {
   extractSubtitleAsWebVtt,
   resolveTextSubtitleInput,
@@ -20,6 +24,33 @@ export interface DownloadRoutesOptions {
   renditions?: Pick<RenditionService, "createManifest">;
   mediaRoot: string;
   ffmpegPath?: string;
+}
+
+/**
+ * Every text subtitle a download keeps, with the package's own WebVTT file
+ * where the package carries one. That copy is preferred: it is already
+ * converted, whereas extracting from the source reads the whole file, which
+ * for a large film outlasts both the extraction limit and the proxy's.
+ */
+function downloadableSubtitles(
+  streams: readonly MediaStreamRow[],
+  packaged: readonly AdaptiveSubtitleTrack[],
+): Array<{ streamIndex: number; url?: string }> {
+  const urls = new Map(
+    packaged.map((track) => [track.sourceStreamIndex, track.url]),
+  );
+  const indexes = new Set([
+    ...streams
+      .filter((stream) => stream.kind === "subtitle" && stream.isTextSubtitle)
+      .map((stream) => stream.streamIndex),
+    ...urls.keys(),
+  ]);
+  return [...indexes]
+    .sort((left, right) => left - right)
+    .map((streamIndex) => {
+      const url = urls.get(streamIndex);
+      return url ? { streamIndex, url } : { streamIndex };
+    });
 }
 
 /**
@@ -125,10 +156,10 @@ export function createDownloadRoutes({
             ...(track.language ? { language: track.language } : {}),
             isDefault: track.isDefault,
           })),
-          subtitles: (file ? await catalogue.listStreams(file.id) : [])
-            .filter((stream) => stream.kind === "subtitle")
-            .filter((stream) => stream.isTextSubtitle)
-            .map((stream) => ({ streamIndex: stream.streamIndex })),
+          subtitles: downloadableSubtitles(
+            file ? await catalogue.listStreams(file.id) : [],
+            adaptive.subtitleTracks ?? [],
+          ),
         });
       },
     },

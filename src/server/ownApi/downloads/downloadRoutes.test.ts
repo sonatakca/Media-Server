@@ -88,6 +88,18 @@ function build(options: {
                         hdr: false,
                       },
                     ],
+                    // Stream 3 is in the package; 5 is a sidecar only the
+                    // package converted, so it has no catalogue row here.
+                    subtitleTracks: [
+                      {
+                        sourceStreamIndex: 3,
+                        url: "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/subtitle/s3/subtitles.vtt",
+                      },
+                      {
+                        sourceStreamIndex: 5,
+                        url: "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/subtitle/s5/subtitles.vtt",
+                      },
+                    ],
                     audioTracks: [
                       {
                         id: "a1",
@@ -177,7 +189,17 @@ describe("download plan", () => {
         masterUrl:
           "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/master.m3u8",
         // Only text tracks: an image subtitle cannot be served as WebVTT.
-        subtitles: [{ streamIndex: 3 }],
+        // The package's own converted copy is named wherever it has one.
+        subtitles: [
+          {
+            streamIndex: 3,
+            url: "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/subtitle/s3/subtitles.vtt",
+          },
+          {
+            streamIndex: 5,
+            url: "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/subtitle/s5/subtitles.vtt",
+          },
+        ],
       },
     });
   });

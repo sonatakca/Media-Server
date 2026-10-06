@@ -682,6 +682,18 @@ describe("complete-file rendition routes", () => {
     expect(await readFile(subtitleFile?.absolutePath ?? "", "utf8")).toBe(
       "WEBVTT\n",
     );
+
+    // A download keeps each subtitle from the package's own file, named by
+    // the source stream it came from, at a URL that resolves to it.
+    expect(manifest.adaptive!.subtitleTracks).toEqual([
+      {
+        sourceStreamIndex: 4,
+        url: expect.stringMatching(/\/subtitle\/english\.vtt$/),
+      },
+    ]);
+    expect(manifest.adaptive!.subtitleTracks![0]!.url).toContain(
+      `/adaptive/${versionId}/subtitle/english.vtt`,
+    );
   });
 });
 
