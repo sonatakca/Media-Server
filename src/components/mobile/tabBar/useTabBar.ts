@@ -64,8 +64,13 @@ export function slotEdges(
 }
 
 // A sine ease-out: it leaves at a little over one and a half times its mean
-// speed, not four, so even a four-tab trip stays a few pixels a frame.
+// speed, so it sets off briskly without snapping away.
 const glide = [0.61, 1, 0.88, 1] as const;
+
+// Every trip takes the same time, one tab or four: a longer one simply
+// travels faster. The leading edge arrives first, the trailing edge after.
+const LEAD = 0.36;
+const LAG = 0.48;
 
 export interface TabBarMotion {
   barRef: RefObject<HTMLElement>;
@@ -133,18 +138,14 @@ export function useTabBarMotion({ tabs, inset }: Options): TabBarMotion {
     (index: number, instant: boolean) => {
       const [toLeft, toRight] = target(index);
       const fromLeft = left.get();
-      const distance = Math.abs(toLeft - fromLeft);
       if (instant || reduced) {
         left.set(toLeft);
         right.set(toRight);
         return;
       }
-      const tabsCrossed = distance / Math.max(1, toRight - toLeft);
-      const lead = 0.3 + 0.07 * Math.min(4, tabsCrossed);
-      const lag = lead * 1.32;
       const rightward = toLeft > fromLeft;
-      animate(left, toLeft, { duration: rightward ? lag : lead, ease: glide });
-      animate(right, toRight, { duration: rightward ? lead : lag, ease: glide });
+      animate(left, toLeft, { duration: rightward ? LAG : LEAD, ease: glide });
+      animate(right, toRight, { duration: rightward ? LEAD : LAG, ease: glide });
     },
     [left, reduced, right, target],
   );

@@ -3,6 +3,9 @@ import { motion } from "framer-motion";
 import { NavLink } from "react-router-dom";
 import type { TabDef } from "./useTabBar";
 
+// How bright a glyph stands when its tab is not the lit one.
+const DIM = 0.5;
+
 interface TabButtonProps {
   tab: TabDef;
   index: number;
@@ -38,8 +41,13 @@ export function TabButton({
       data-lit={lit ? "" : undefined}
       className={className}
     >
+      {/* The glyph is drawn in solid white and dimmed as one layer: a
+          translucent colour would let each stroke show through where it
+          crosses another (the clapper's stripes, the set's ears). */}
       <motion.span
-        className="relative block"
+        className="relative block text-white"
+        initial={false}
+        animate={{ opacity: lit ? 1 : DIM }}
         whileTap={reduced ? undefined : { scale: 0.84 }}
         transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
       >
