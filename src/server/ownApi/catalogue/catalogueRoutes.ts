@@ -84,6 +84,7 @@ function readListQuery(context: RouteContext) {
       url.searchParams.get("libraryId"),
       "libraryId",
     ),
+    includeMissing: url.searchParams.get("includeMissing") === "true",
   };
 }
 
@@ -130,6 +131,12 @@ export function createCatalogueRoutes({
         : {}),
       ...(overrides.seriesId ? { seriesId: overrides.seriesId } : {}),
       ...(overrides.parentId ? { parentId: overrides.parentId } : {}),
+      // Titles with nothing to play — wanted, or whose files have gone — are
+      // an administrator's to manage (their artwork, say), never a viewer's
+      // to browse, so anyone else asking simply gets the playable list.
+      ...(query.includeMissing && principal.isAdministrator
+        ? { includeMissing: true }
+        : {}),
     });
 
     sendCollection(

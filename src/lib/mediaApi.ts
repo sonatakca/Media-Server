@@ -264,11 +264,16 @@ export async function getAllMovieAndSeriesItems(): Promise<MediaItem[]> {
   return [...movies, ...series];
 }
 
+/**
+ * Every title an administrator can dress, including the ones not on disk yet:
+ * a wanted film's artwork is worth choosing before it arrives.
+ */
 export async function getAllArtworkItems(): Promise<MediaItem[]> {
+  const withMissing = { includeMissing: "true" };
   const [movies, series, books] = await Promise.all([
-    getAllMovieItems(),
-    getAllSeriesItems(),
-    getAllBookItems(),
+    collectAll("/movies", withMissing),
+    collectAll("/series", withMissing),
+    collectAll("/books", withMissing),
   ]);
   return [...movies, ...series, ...books];
 }

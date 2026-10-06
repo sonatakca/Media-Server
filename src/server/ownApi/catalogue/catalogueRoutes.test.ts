@@ -209,7 +209,10 @@ function fakeUserState(): UserStateRepository & {
   };
 }
 
-function buildRouter(over: Partial<CatalogueRepository> = {}) {
+function buildRouter(
+  over: Partial<CatalogueRepository> = {},
+  { administrator = false }: { administrator?: boolean } = {},
+) {
   const catalogue = { ...fakeCatalogue(), ...over };
   const userState = fakeUserState();
   const service = createCatalogueService({
@@ -227,7 +230,7 @@ function buildRouter(over: Partial<CatalogueRepository> = {}) {
       userId: VIEWER,
       username: "viewer",
       displayName: "Viewer",
-      isAdministrator: false,
+      isAdministrator: administrator,
       sessionId: "dddddddd-4444-4444-8444-444444444444",
       sessionTokenHash: SESSION_HASH,
     }),
@@ -528,6 +531,37 @@ describe("what a library's shelf holds", () => {
     await call(router, "GET", `/ownAPI/v1/libraries/${LIBRARY}/items`);
     // No library filter: box sets live in their films' libraries.
     expect(asked).toEqual([{ kinds: ["collection"] }]);
+  });
+});
+
+describe("titles with nothing to play", () => {
+  function asking(administrator: boolean) {
+    const asked: boolean[] = [];
+    const base = fakeCatalogue();
+    const { router } = buildRouter(
+      {
+        listItems: async (options) => {
+          asked.push(options.includeMissing ?? false);
+          return base.listItems(options);
+        },
+      },
+      { administrator },
+    );
+    return { router, asked };
+  }
+
+  it("lists wanted titles for an administrator who asks", async () => {
+    // The artwork manager dresses a film before it arrives.
+    const { router, asked } = asking(true);
+    await call(router, "GET", "/ownAPI/v1/movies?includeMissing=true");
+    await call(router, "GET", "/ownAPI/v1/movies");
+    expect(asked).toEqual([true, false]);
+  });
+
+  it("keeps a viewer's list to what can be played, whatever they ask", async () => {
+    const { router, asked } = asking(false);
+    await call(router, "GET", "/ownAPI/v1/movies?includeMissing=true");
+    expect(asked).toEqual([false]);
   });
 });
 
