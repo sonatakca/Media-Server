@@ -142,6 +142,8 @@ export interface TmdbClient {
     seasonNumber: number,
   ): Promise<TmdbEpisodeDetails[]>;
   getCollection?(providerId: string): Promise<TmdbCollectionDetails>;
+  /** A person's headshot path, or null when TMDB has none. */
+  getPersonProfilePath?(providerId: string): Promise<string | null>;
   /** Absolute artwork URL for a stored provider path. */
   buildImageUrl(imagePath: string, size: string): string;
 }
@@ -681,6 +683,15 @@ export function createTmdbClient({
           ? { backdropPath: details.backdrop_path }
           : {}),
       };
+    },
+
+    getPersonProfilePath: async (providerId) => {
+      const person = await request<{ profile_path?: string | null }>(
+        `/person/${encodeURIComponent(providerId)}`,
+      );
+      return typeof person.profile_path === "string" && person.profile_path
+        ? person.profile_path
+        : null;
     },
 
     getSeasonEpisodes: async (providerId, seasonNumber) => {

@@ -351,6 +351,83 @@ describe("IMDb identity", () => {
     expect(details.officialRating).toBeUndefined();
   });
 
+  it("keeps each credited person's headshot, and none for those without", async () => {
+    const { fetchImpl } = captureFetch({
+      id: 359724,
+      title: "Ford v Ferrari",
+      credits: {
+        cast: [
+          {
+            id: 1892,
+            name: "Matt Damon",
+            character: "Carroll Shelby",
+            order: 0,
+            profile_path: "/damon.jpg",
+          },
+          {
+            id: 9,
+            name: "No Picture",
+            character: "Extra",
+            order: 1,
+            profile_path: null,
+          },
+        ],
+        crew: [
+          {
+            id: 366,
+            name: "James Mangold",
+            job: "Director",
+            profile_path: "/mangold.jpg",
+          },
+        ],
+      },
+    });
+    const details = await createTmdbClient({
+      apiKey: V3_KEY,
+      fetchImpl,
+    }).getMovie("359724");
+    expect(details.people).toEqual([
+      {
+        providerId: "1892",
+        name: "Matt Damon",
+        role: "actor",
+        character: "Carroll Shelby",
+        order: 0,
+        profilePath: "/damon.jpg",
+      },
+      {
+        providerId: "9",
+        name: "No Picture",
+        role: "actor",
+        character: "Extra",
+        order: 1,
+      },
+      {
+        providerId: "366",
+        name: "James Mangold",
+        role: "director",
+        order: 100,
+        profilePath: "/mangold.jpg",
+      },
+    ]);
+  });
+
+  it("reads a person's headshot from their own record", async () => {
+    const { calls, fetchImpl } = captureFetch({
+      id: 1892,
+      profile_path: "/damon.jpg",
+    });
+    const client = createTmdbClient({ apiKey: V3_KEY, fetchImpl });
+    expect(await client.getPersonProfilePath!("1892")).toBe("/damon.jpg");
+    expect(calls[0]?.url.pathname).toBe("/3/person/1892");
+
+    const { fetchImpl: bare } = captureFetch({ id: 9, profile_path: null });
+    expect(
+      await createTmdbClient({ apiKey: V3_KEY, fetchImpl: bare })
+        .getPersonProfilePath!("9"),
+    ).toBeNull();
+  });
+
   it("describes a collection from its own record", async () => {
     const { calls, fetchImpl } = captureFetch({
       id: 2344,
