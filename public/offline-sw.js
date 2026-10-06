@@ -12,9 +12,18 @@
  * file in byte ranges, and hls.js asks for them one at a time.
  */
 
-/* global self, caches, Response, fetch */
+/* global self, caches, Response, fetch, Blob, URL */
 
 const OFFLINE_CACHE = "seyirlik-offline-v1";
+// A large file is stored as parts plus an index under its own URL; see
+// `storeInParts` in src/lib/offline/offlineLibrary.ts, which must agree.
+const PARTS_CONTENT_TYPE = "application/vnd.seyirlik.parts+json";
+
+function partUrl(url, index) {
+  const part = new URL(url);
+  part.searchParams.set("seyirlik-part", String(index));
+  return part.toString();
+}
 const STORED_PATHS = /\/ownAPI\/v1\/(?:playback\/renditions\/|items\/[^/]+\/images\/)/;
 
 function parseRange(header, size) {
@@ -39,6 +48,9 @@ async function answerFromStore(request) {
   if (!stored) return null;
 
   const rangeHeader = request.headers.get("Range");
+  if (stored.headers.get("Content-Type") === PARTS_CONTENT_TYPE) {
+    return answerFromParts(cache, request.url, stored, rangeHeader);
+  }
   if (!rangeHeader) return stored;
 
   const body = await stored.blob();
@@ -59,6 +71,45 @@ async function answerFromStore(request) {
       "Content-Range": `bytes ${range.start}-${range.end}/${body.size}`,
       "Accept-Ranges": "bytes",
     },
+  });
+}
+
+/** Answers a stored-in-parts file, reading only the parts the range spans. */
+async function answerFromParts(cache, url, index, rangeHeader) {
+  const { size, partBytes, contentType } = await index.json();
+  const range = parseRange(rangeHeader, size);
+  if (range === "unsatisfiable") {
+    return new Response(null, {
+      status: 416,
+      headers: { "Content-Range": `bytes */${size}` },
+    });
+  }
+  const start = range ? range.start : 0;
+  const end = range ? range.end : size - 1;
+  const pieces = [];
+  for (
+    let part = Math.floor(start / partBytes);
+    part <= Math.floor(end / partBytes);
+    part += 1
+  ) {
+    const stored = await cache.match(partUrl(url, part));
+    if (!stored) return null;
+    const body = await stored.blob();
+    const partStart = part * partBytes;
+    pieces.push(
+      body.slice(Math.max(0, start - partStart), end - partStart + 1),
+    );
+  }
+  const body = new Blob(pieces, { type: contentType });
+  const headers = {
+    "Content-Type": contentType,
+    "Content-Length": String(body.size),
+    "Accept-Ranges": "bytes",
+  };
+  if (!range) return new Response(body, { status: 200, headers });
+  return new Response(body, {
+    status: 206,
+    headers: { ...headers, "Content-Range": `bytes ${start}-${end}/${size}` },
   });
 }
 

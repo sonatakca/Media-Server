@@ -170,6 +170,122 @@ async function fetchText(url: string, signal?: AbortSignal): Promise<string> {
   return response.text();
 }
 
+/**
+ * How much of a package file one stored entry holds.
+ *
+ * A package keeps each quality in one file, which for a feature film at
+ * 1080p is several gigabytes. WebKit refuses a single Cache Storage entry
+ * somewhere past a gigabyte (`QuotaExceededError`) while happily storing many
+ * smaller ones, so a file is fetched in ranges and kept as parts, with a small
+ * index under the file's own URL. It also makes a resumed download continue
+ * from its last part rather than from the start of the file.
+ */
+const PART_BYTES = 32 * 1024 * 1024;
+/** Must match `PARTS_CONTENT_TYPE` in `public/offline-sw.js`. */
+const PARTS_CONTENT_TYPE = "application/vnd.seyirlik.parts+json";
+const PART_SIZE_HEADER = "X-Seyirlik-Size";
+const PART_LENGTH_HEADER = "X-Seyirlik-Part-Length";
+
+/** Must build the same key as `partUrl` in `public/offline-sw.js`. */
+function partUrl(url: string, index: number): string {
+  const part = new URL(url);
+  part.searchParams.set("seyirlik-part", String(index));
+  return part.toString();
+}
+
+function countingStream(onBytes: (bytes: number) => void) {
+  return new TransformStream<Uint8Array, Uint8Array>({
+    transform(chunk, controller) {
+      onBytes(chunk.byteLength);
+      controller.enqueue(chunk);
+    },
+  });
+}
+
+/**
+ * Stores one package file as parts plus an index, returning every key stored.
+ *
+ * The index is written last, so its presence means every part is there. A
+ * server that ignores the range gets its whole response stored as before.
+ */
+async function storeInParts(
+  cache: Cache,
+  url: string,
+  signal: AbortSignal | undefined,
+  onBytes: (bytes: number) => void,
+): Promise<string[]> {
+  const files: string[] = [];
+  let size: number | undefined;
+  let contentType = "application/octet-stream";
+  let offset = 0;
+  for (let index = 0; size === undefined || offset < size; index += 1) {
+    const key = partUrl(url, index);
+    const stored = await cache.match(key);
+    const storedSize = Number(stored?.headers.get(PART_SIZE_HEADER));
+    const storedLength = Number(stored?.headers.get(PART_LENGTH_HEADER));
+    if (stored && storedSize > 0 && storedLength > 0) {
+      size = storedSize;
+      contentType = stored.headers.get("Content-Type") ?? contentType;
+      onBytes(storedLength);
+      offset += storedLength;
+      files.push(key);
+      continue;
+    }
+
+    const response = await fetch(url, {
+      credentials: "include",
+      signal,
+      headers: { Range: `bytes=${offset}-${offset + PART_BYTES - 1}` },
+    });
+    if (response.status === 200 && offset === 0 && response.body) {
+      await cache.put(
+        url,
+        new Response(response.body.pipeThrough(countingStream(onBytes)), {
+          status: 200,
+          headers: {
+            "Content-Type":
+              response.headers.get("Content-Type") ??
+              "application/octet-stream",
+          },
+        }),
+      );
+      return [url];
+    }
+    const total = /\/(\d+)\s*$/.exec(
+      response.headers.get("Content-Range") ?? "",
+    )?.[1];
+    if (response.status !== 206 || !response.body || !total) {
+      throw new Error(`Download failed (${response.status}).`);
+    }
+    size = Number(total);
+    contentType = response.headers.get("Content-Type") ?? contentType;
+    const length = Math.min(PART_BYTES, size - offset);
+    await cache.put(
+      key,
+      new Response(response.body.pipeThrough(countingStream(onBytes)), {
+        status: 200,
+        headers: {
+          "Content-Type": contentType,
+          [PART_SIZE_HEADER]: String(size),
+          [PART_LENGTH_HEADER]: String(length),
+        },
+      }),
+    );
+    offset += length;
+    files.push(key);
+  }
+
+  await cache.put(
+    url,
+    new Response(
+      JSON.stringify({ size, partBytes: PART_BYTES, contentType }),
+      { headers: { "Content-Type": PARTS_CONTENT_TYPE } },
+    ),
+  );
+  files.push(url);
+  return files;
+}
+
 /** Stores one response, counting its bytes as they arrive. */
 async function storeCounted(
   cache: Cache,
@@ -306,16 +422,27 @@ export async function downloadTitle(
       for (const resource of playlistReferences(playlist, playlistUrl)) {
         if (title.files.includes(resource)) continue;
         const stored = await cache.match(resource);
-        if (stored) {
+        if (
+          stored &&
+          stored.headers.get("Content-Type") !== PARTS_CONTENT_TYPE
+        ) {
+          // Stored whole by an earlier version, or small enough to be.
           const length = Number(stored.headers.get("Content-Length") ?? 0);
           title.downloadedBytes += length || (await stored.blob()).size;
+          title.files.push(resource);
         } else {
-          await storeCounted(cache, resource, options.signal, (bytes) => {
-            title.downloadedBytes += bytes;
-            report();
-          });
+          title.files.push(
+            ...(await storeInParts(
+              cache,
+              resource,
+              options.signal,
+              (bytes) => {
+                title.downloadedBytes += bytes;
+                report();
+              },
+            )),
+          );
         }
-        title.files.push(resource);
         await saveOfflineTitle(title);
         report(true);
       }

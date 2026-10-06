@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from "react";
-import { LogOut, Palette, ShieldCheck, UserRound } from "lucide-react";
+import {
+  ArrowDownToLine,
+  LogOut,
+  Palette,
+  ShieldCheck,
+  UserRound,
+} from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useLanguage } from "../i18n/LanguageContext";
 import { RUNNING_BUILD } from "../lib/appVersion/appUpdate";
 import { formatBuildLabel } from "../lib/appVersion/buildInfo";
 import { clearAuthSession, getCachedSession } from "../lib/authStorage";
+import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { ROUTE_COLOR_TRANSITION_FORCE_EVENT } from "./RouteColorTransition";
 
 const ITEM =
@@ -172,6 +179,12 @@ export function AccountMenu({
               <Palette size={16} className="shrink-0" />
               {t("nav.changeTheme")}
             </button>
+            {isOfflineSupported() ? (
+              <Link to="/downloads" role="menuitem" className={ITEM}>
+                <ArrowDownToLine size={16} className="shrink-0" />
+                {t("downloads.title")}
+              </Link>
+            ) : null}
             {session.isAdministrator ? (
               <Link to="/admin" role="menuitem" className={ITEM}>
                 <ShieldCheck size={16} className="shrink-0" />
