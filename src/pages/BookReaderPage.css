@@ -430,10 +430,20 @@ body:has(.seyirlik-reader-shell) {
   transform-origin: calc(100% - 4.1rem) -0.5rem;
 }
 
+/* A scroller clips sideways too, so it reaches 0.5rem past the sheet's padding
+   and pads back: the selected theme's ring (4px out) and focus rings stay
+   whole. It scrolls by touch or wheel with no bar drawn over the controls. */
 .rd-settings-body {
   min-height: 0;
+  margin: 0 -0.5rem;
+  padding: 0 0.5rem;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rd-settings-body::-webkit-scrollbar {
+  display: none;
 }
 
 .rd-menu {
