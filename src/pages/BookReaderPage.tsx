@@ -42,6 +42,7 @@ import {
   getReaderItem,
 } from "../lib/mediaApi";
 import { setPageTitle } from "../lib/pageTitle";
+import { neutraliseBookScripts } from "./reader/epubSafety";
 import {
   getMediaOwnerRouteForItem,
   shouldOpenReaderForItem,
@@ -412,6 +413,65 @@ function returnToPlace(
   return true;
 }
 
+/** A press that moved less than this and lasted less than TAP_MS is a tap. */
+const TAP_SLOP_PX = 10;
+const TAP_MS = 600;
+/** A tap this soon after a scroll only stopped the scroll; it asks for nothing. */
+const TAP_AFTER_SCROLL_MS = 250;
+
+/**
+ * Calls `onTap` for a press and release that stayed put: a click, or a tap on
+ * a touchscreen. Pointer events rather than `click`, because iOS and iPadOS
+ * Safari send no click for a tap on plain text (an element with no handler or
+ * pointer cursor of its own), so a reader on an iPhone or iPad could never
+ * bring the bar back. A press the browser turns into a scroll is cancelled,
+ * and a long press (selecting a word) is not a tap.
+ */
+function listenForTaps(
+  target: Document | HTMLElement,
+  onTap: (target: EventTarget | null) => void,
+  scrolledRecently: () => boolean,
+): () => void {
+  let start: { x: number; y: number; at: number; id: number } | null = null;
+  const down = (event: Event) => {
+    const press = event as PointerEvent;
+    start =
+      press.isPrimary && press.button === 0
+        ? { x: press.clientX, y: press.clientY, at: performance.now(), id: press.pointerId }
+        : null;
+  };
+  const cancel = () => {
+    start = null;
+  };
+  const up = (event: Event) => {
+    const release = event as PointerEvent;
+    const press = start;
+    start = null;
+
+    if (
+      !press ||
+      release.pointerId !== press.id ||
+      Math.hypot(release.clientX - press.x, release.clientY - press.y) > TAP_SLOP_PX ||
+      performance.now() - press.at > TAP_MS ||
+      scrolledRecently()
+    ) {
+      return;
+    }
+
+    onTap(release.target);
+  };
+
+  target.addEventListener("pointerdown", down, { passive: true });
+  target.addEventListener("pointercancel", cancel, { passive: true });
+  target.addEventListener("pointerup", up, { passive: true });
+
+  return () => {
+    target.removeEventListener("pointerdown", down);
+    target.removeEventListener("pointercancel", cancel);
+    target.removeEventListener("pointerup", up);
+  };
+}
+
 function isEditableTarget(target: EventTarget | null): boolean {
   return (
     target instanceof HTMLElement &&
@@ -637,6 +697,21 @@ export function BookReaderPage() {
       openAs: "epub",
       requestCredentials: EPUB_REQUEST_CREDENTIALS,
     });
+    // Every section is cleaned of the book's own scripts and carries a policy
+    // that forbids them, before it reaches a frame (see epubSafety.ts)...
+    //
+    // Registered once the book has opened, so it runs after epub.js's own
+    // resource substitution (registered while opening): that hook rewrites
+    // section.output from the markup it was handed, and run after this one it
+    // threw the cleaned markup away. This one cleans section.output as it is
+    // by then, the markup that will actually be shown.
+    void book.opened.then(() => {
+      book.spine.hooks.serialize.register(
+        (_output: string, section: { output: string }) => {
+          section.output = neutraliseBookScripts(section.output);
+        },
+      );
+    });
     const rendition = book.renderTo(host, {
       manager: "continuous",
       width: "100%",
@@ -644,6 +719,10 @@ export function BookReaderPage() {
       flow: "scrolled-continuous",
       spread: "none",
       resizeOnOrientationChange: true,
+      // ...so the frame may allow scripts: WebKit delivers no events, even to
+      // the reader's own listeners, inside a frame sandboxed without it, and a
+      // tap on the book could never show the bar on an iPhone or iPad.
+      allowScriptedContent: true,
     });
     const light = new ReadingLight(host);
     const savedProgress = readReaderProgress(activeItemId);
@@ -672,6 +751,10 @@ export function BookReaderPage() {
     let sendTimer = 0;
     let scrollElement: HTMLElement | null = null;
     let lastScrollTop = 0;
+    let lastScrollAt = 0;
+    const scrolledRecently = () =>
+      performance.now() - lastScrollAt < TAP_AFTER_SCROLL_MS;
+    const tapListeners: Array<() => void> = [];
     let frameId = 0;
     let measureTimer = 0;
     let progressFrame = 0;
@@ -869,6 +952,9 @@ export function BookReaderPage() {
 
     rendition.hooks.content.register(async (contents: Contents) => {
       const view = contents as unknown as EpubContentView;
+      tapListeners.push(
+        listenForTaps(view.document, (target) => handleTap(target), scrolledRecently),
+      );
       view.addStylesheetCss(getBookFontCss(), "seyirlik-fonts");
       view.addStylesheetCss(EPUB_STATIC_CSS, "seyirlik-static");
       view.addStylesheetCss(
@@ -988,6 +1074,7 @@ export function BookReaderPage() {
 
     const handleScroll = () => {
       scheduleFrame();
+      lastScrollAt = performance.now();
 
       if (scrollElement) {
         const top = scrollElement.scrollTop;
@@ -1030,8 +1117,9 @@ export function BookReaderPage() {
       saveLocation(location);
     };
 
-    const handleClick = (event: MouseEvent) => {
-      const target = event.target as Element | null;
+    // A tap or click on the page that selects nothing shows or hides the bar.
+    const handleTap = (tapped: EventTarget | null) => {
+      const target = tapped as Element | null;
       const selection = target?.ownerDocument?.getSelection();
 
       if ((selection && !selection.isCollapsed) || target?.closest?.("a")) {
@@ -1049,7 +1137,6 @@ export function BookReaderPage() {
     const handleKey = (event: KeyboardEvent) => readerKeyRef.current(event);
 
     rendition.on("relocated", handleRelocated);
-    rendition.on("click", handleClick);
     rendition.on("keydown", handleKey);
 
     const resizeObserver = new ResizeObserver(() => {
@@ -1255,7 +1342,7 @@ export function BookReaderPage() {
       resizeObserver.disconnect();
       scrollElement?.removeEventListener("scroll", handleScroll);
       rendition.off("relocated", handleRelocated);
-      rendition.off("click", handleClick);
+      tapListeners.forEach((stop) => stop());
       rendition.off("keydown", handleKey);
       light.clear();
       rendition.destroy();
@@ -1356,7 +1443,27 @@ export function BookReaderPage() {
     }
 
     let lastTop = scrollElement.scrollTop;
+    let lastScrollAt = 0;
+    const stopTaps = listenForTaps(
+      scrollElement,
+      (tapped) => {
+        const target = tapped as Element | null;
+        if (
+          target?.closest?.("a, button") ||
+          !(window.getSelection()?.isCollapsed ?? true)
+        ) {
+          return;
+        }
+        if (panelRef.current !== null) {
+          setPanel(null);
+          return;
+        }
+        setChromeHidden((hidden) => !hidden);
+      },
+      () => performance.now() - lastScrollAt < TAP_AFTER_SCROLL_MS,
+    );
     const handleScroll = () => {
+      lastScrollAt = performance.now();
       const nextProgress = getScrollProgress(scrollElement);
       const delta = scrollElement.scrollTop - lastTop;
       lastTop = scrollElement.scrollTop;
@@ -1386,6 +1493,7 @@ export function BookReaderPage() {
 
     return () => {
       window.clearTimeout(restoreTimer);
+      stopTaps();
       scrollElement.removeEventListener("scroll", handleScroll);
     };
   }, [item, textContent, tracksScrollHost]);
