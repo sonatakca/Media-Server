@@ -711,6 +711,14 @@ body:has(.seyirlik-player-shell) {
   }
 }
 
+/* The narrowest phones fit the back button and every top control on one line
+   only with the buttons touching; their 44px targets still keep them apart. */
+@media (max-width: 359px) {
+  .seyirlik-player-top-actions-row {
+    gap: 0;
+  }
+}
+
 .seyirlik-play-pause-wave {
   pointer-events: none;
   position: absolute;

@@ -170,17 +170,6 @@ export function PlayerOverlay({
 
   return (
     <>
-      <Tooltip content={t("player.backToDetails")} offset="1rem">
-        <Link
-          to={backTo}
-          replace
-          className="seyirlik-player-back-button pointer-events-auto absolute left-[max(0.65rem,env(safe-area-inset-left))] top-[max(0.55rem,env(safe-area-inset-top))] z-40 flex h-10 w-10 items-center justify-center rounded-full bg-black/35 text-white shadow-player-controls backdrop-blur-md transition hover:bg-white/[0.12] focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:hidden"
-          aria-label={t("player.backToDetails")}
-        >
-          <ChevronLeft size={22} strokeWidth={2.2} />
-        </Link>
-      </Tooltip>
-
       <div
         className={`seyirlik-player-chrome seyirlik-player-top-chrome pointer-events-none absolute inset-x-0 top-0 z-30 px-[max(0.65rem,env(safe-area-inset-left))] pb-8 pt-[max(0.55rem,env(safe-area-inset-top))] sm:px-[max(1rem,env(safe-area-inset-left))] sm:pb-16 sm:pt-[max(1rem,env(safe-area-inset-top))] ${
           visible
@@ -189,7 +178,9 @@ export function PlayerOverlay({
         }`}
       >
         <div
-          className="seyirlik-player-top-bar pointer-events-auto mx-auto flex w-[99%] items-center justify-between gap-4"
+          // A portrait phone has no room for the title beside the controls,
+          // so the title takes a line of its own under them.
+          className="seyirlik-player-top-bar pointer-events-auto mx-auto flex w-[99%] flex-wrap items-center justify-between gap-x-4 gap-y-1 sm:flex-nowrap"
           onMouseEnter={onControlsHoverStart}
           onMouseLeave={onControlsHoverEnd}
           onPointerEnter={onControlsHoverStart}
@@ -199,7 +190,7 @@ export function PlayerOverlay({
             <Link
               to={backTo}
               replace
-              className="seyirlik-player-back-button group hidden h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-[background-color,backdrop-filter] duration-500 hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 focus:outline-none focus:ring-2 focus:ring-[var(--accent)] sm:flex"
+              className="seyirlik-player-back-button group flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-white transition-[background-color,backdrop-filter] duration-500 hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
               aria-label={t("player.backToDetails")}
             >
               <ChevronLeft
@@ -210,16 +201,16 @@ export function PlayerOverlay({
             </Link>
           </Tooltip>
 
-          <div className="flex min-w-0 flex-1 items-center gap-4 sm:gap-6">
+          <div className="order-last flex min-w-0 basis-full items-center gap-4 pl-2.5 sm:order-none sm:flex-1 sm:basis-auto sm:gap-6 sm:pl-0">
             <div className="min-w-0 shrink-0">
               {titleLogoUrl ? (
                 <img
                   src={titleLogoUrl}
                   alt={title}
-                  className="max-h-10 max-w-[min(14rem,36vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12 sm:max-w-[min(18rem,40vw)]"
+                  className="max-h-10 max-w-[min(16rem,60vw)] object-contain object-left drop-shadow-[0_10px_28px_rgba(0,0,0,0.85)] sm:max-h-12 sm:max-w-[min(18rem,40vw)]"
                 />
               ) : (
-                <p className="max-w-[min(14rem,36vw)] truncate text-base font-bold text-white sm:max-w-[min(18rem,40vw)] sm:text-lg">
+                <p className="max-w-[min(16rem,60vw)] truncate text-base font-bold text-white sm:max-w-[min(18rem,40vw)] sm:text-lg">
                   {title}
                 </p>
               )}
@@ -251,7 +242,7 @@ export function PlayerOverlay({
       </div>
 
       {notice ? (
-        <div className="seyirlik-player-notice pointer-events-none absolute left-1/2 top-24 z-40 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[var(--accent)]/30 bg-black/[0.78] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_18px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+        <div className="seyirlik-player-notice pointer-events-none absolute left-1/2 top-28 z-40 sm:top-24 w-[min(34rem,calc(100vw-2rem))] -translate-x-1/2 rounded-lg border border-[var(--accent)]/30 bg-black/[0.78] px-4 py-3 text-center text-sm font-semibold text-white shadow-[0_18px_80px_rgba(0,0,0,0.55)] backdrop-blur-xl">
           {notice}
         </div>
       ) : null}
