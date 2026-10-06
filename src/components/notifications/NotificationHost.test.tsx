@@ -1,8 +1,9 @@
 import React from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NotificationHost } from "./NotificationHost";
 import {
+  NOTIFICATION_LIFETIMES_MS,
   getNotifications,
   notify,
   resetNotificationsForTests,
@@ -488,4 +489,45 @@ it("moves keyboard focus onto the card behind when a focused one disappears", ()
   expect(document.activeElement).toBe(
     screen.getByRole("button", { name: "Second" }),
   );
+});
+
+it("lets cards expire after a tap, as they do after a mouse leaves", () => {
+  // A tap sends an emulated mouseenter with no mouseleave, and "Dismiss all"
+  // leaves focus on the host with nothing to move it on. Either one used to
+  // hold every card's clock for good, so a phone collected every card raised
+  // after the first touch.
+  render(<NotificationHost />);
+  act(() => {
+    notify({ title: "First", tone: "success" });
+  });
+  const host = document.querySelector<HTMLElement>("[data-notification-host]")!;
+  act(() => {
+    fireEvent.pointerEnter(host, { pointerType: "touch" });
+    fireEvent.mouseEnter(host);
+    screen.getByRole("button", { name: "notifications.dismissAll" }).click();
+  });
+  expect(document.activeElement).toBe(host);
+
+  act(() => {
+    notify({ title: "Later", tone: "success" });
+  });
+  act(() => {
+    vi.advanceTimersByTime(NOTIFICATION_LIFETIMES_MS.short + 500);
+  });
+  expect(screen.queryByText("Later")).toBeNull();
+});
+
+it("still holds the cards while a mouse rests on them", () => {
+  render(<NotificationHost />);
+  act(() => {
+    notify({ title: "Saved", tone: "success" });
+  });
+  const host = document.querySelector<HTMLElement>("[data-notification-host]")!;
+  act(() => {
+    fireEvent.pointerEnter(host, { pointerType: "mouse" });
+  });
+  act(() => {
+    vi.advanceTimersByTime(NOTIFICATION_LIFETIMES_MS.short + 500);
+  });
+  expect(screen.getByText("Saved")).toBeInTheDocument();
 });

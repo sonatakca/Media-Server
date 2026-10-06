@@ -296,3 +296,44 @@ it("invalidates immediately and follows an in-flight baseline with a fresh read"
   signalTasksChanged();
   expect(getTasks).toHaveBeenCalledTimes(3);
 });
+
+it("keeps the half-minute download handoff to one card, and only when it did something", async () => {
+  // The server hands finished downloads to the importer every thirty seconds.
+  // A card per run was a fresh "done" every thirty seconds, stacking up for a
+  // job that had found nothing to hand over.
+  vi.useFakeTimers();
+  let run = 0;
+  let started = 0;
+  const handoff = (): TaskDto => ({
+    ...task,
+    id: `handoff-${run}`,
+    type: "import.handoff",
+    status: "succeeded",
+    progress: 1,
+    progressMessage: null,
+    result: { started, refused: 0 },
+    queuedAt: new Date().toISOString(),
+    startedAt: new Date().toISOString(),
+    finishedAt: new Date().toISOString(),
+  });
+  getTasks.mockImplementation(async () => (run > 0 ? [handoff()] : []));
+  renderHook(() => useTaskNotifications(true));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(0);
+  });
+
+  for (run = 1; run <= 3; run += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+  }
+  expect(getNotifications()).toHaveLength(0);
+
+  started = 1;
+  for (; run <= 5; run += 1) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+  }
+  expect(getNotifications()).toHaveLength(1);
+});

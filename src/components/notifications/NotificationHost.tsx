@@ -1184,15 +1184,33 @@ export function NotificationHost() {
       ref={hostRef}
       data-notification-host
       tabIndex={-1}
-      onFocusCapture={() => setIsInteracting(true)}
+      /*
+       * Only a pointer that hovers, and only focus a keyboard put there, hold
+       * the cards' clocks. A tap on a phone sends an emulated mouseenter with
+       * no mouseleave until something else is tapped, and leaves the tapped
+       * control — or, after "Dismiss all", the host itself — focused with
+       * nothing to move that focus on. Either one froze every card's lifetime
+       * at the first touch, so each card raised after it stayed for good.
+       */
+      onFocusCapture={(event) => {
+        if (event.target.matches(":focus-visible")) setIsInteracting(true);
+      }}
       onBlurCapture={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget))
           setIsInteracting(false);
       }}
-      onMouseEnter={() => setIsInteracting(true)}
-      onMouseLeave={(event) =>
-        setIsInteracting(event.currentTarget.contains(document.activeElement))
-      }
+      onPointerEnter={(event) => {
+        if (event.pointerType !== "touch") setIsInteracting(true);
+      }}
+      onPointerLeave={(event) => {
+        if (event.pointerType === "touch") return;
+        const focused = document.activeElement;
+        setIsInteracting(
+          !!focused &&
+            event.currentTarget.contains(focused) &&
+            focused.matches(":focus-visible"),
+        );
+      }}
       /*
        * Laid out on the floor of the page and lifted off it by `useLaneTravel`
        * for as long as chrome holds the bottom-right corner — today the hero's

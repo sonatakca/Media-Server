@@ -8,6 +8,7 @@ import {
 } from "../lib/notifications/notificationStore";
 import {
   describeTask,
+  isRoutineTask,
   isSpokenForByLead,
   selectChangedTasks,
   selectQueueLeads,
@@ -147,15 +148,20 @@ export function useTaskNotifications(enabled: boolean): void {
           const dismissed =
             !!previousCard &&
             !getNotifications().some((card) => card.id === previousCard);
+          const routine = isRoutineTask(task.type);
           const cardId = notify({
-            key: task.type.endsWith(".reconcile")
-              ? `routine:${task.type}`
-              : described.key,
+            key: routine ? `routine:${task.type}` : described.key,
+            // A routine run speaks up for trouble or for having done
+            // something; starting, running and finding nothing are not news.
             historyOnly:
               dismissed ||
-              (task.type.endsWith(".reconcile") &&
-                described.tone === "success" &&
-                !described.task.metrics?.some((metric) => metric.value > 0)),
+              (routine &&
+                described.tone !== "error" &&
+                described.tone !== "warning" &&
+                !(
+                  described.tone === "success" &&
+                  described.task.metrics?.some((metric) => metric.value > 0)
+                )),
             tone: described.tone,
             title: t(described.titleKey),
             description:

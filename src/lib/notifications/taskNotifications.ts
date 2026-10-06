@@ -221,6 +221,17 @@ export function isSpokenForByLead(
   return all.some((lead) => lead.spokenFor.includes(task.id));
 }
 
+/**
+ * Work the server raises on a timer rather than because someone asked.
+ *
+ * The reconcilers and the download handoff each run every half-minute or two,
+ * so a card per run is a card every half-minute that says nothing happened.
+ * They share one card, and only raise it when a run found something.
+ */
+export function isRoutineTask(type: string): boolean {
+  return type.endsWith(".reconcile") || type === "import.handoff";
+}
+
 export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
   const presentation =
     task.presentation ??
@@ -359,7 +370,7 @@ export function describeTask(task: TaskDto, queuedCount = 0): TaskNotification {
     life:
       active || status === "failed" || status === "waiting-for-storage"
         ? "persistent"
-        : task.type.endsWith(".reconcile")
+        : isRoutineTask(task.type)
           ? "short"
           : "long",
   };
