@@ -75,17 +75,11 @@ body:has(.seyirlik-reader-shell) {
 .rd-bar::before {
   content: "";
   position: absolute;
-  inset: 0 0 auto;
+  inset: 0;
   z-index: -1;
-  height: calc(6rem + var(--safe-area-inset-top, 0px));
   pointer-events: none;
   /* Solid behind the titles, so a line of text never sits under them. */
-  background: linear-gradient(
-    180deg,
-    var(--rd-ground) 0%,
-    var(--rd-ground) calc(100% - 2rem),
-    transparent 100%
-  );
+  background: var(--rd-ground);
 }
 
 .seyirlik-reader-shell[data-chrome="hidden"] .rd-bar {
