@@ -9,6 +9,7 @@ import {
   parseSeasonFolder,
   parseSubtitleSuffix,
   splitExtension,
+  matchSubtitleSidecar,
 } from "./nameParser";
 
 describe("parseMovieName", () => {
@@ -225,5 +226,36 @@ describe("buildSortTitle", () => {
     expect(buildSortTitle("The Matrix")).toBe("matrix");
     expect(buildSortTitle("Amélie")).toBe("amelie");
     expect(buildSortTitle("A Quiet Place")).toBe("quiet place");
+  });
+});
+
+describe("matchSubtitleSidecar", () => {
+  const video = "Obsession.2025.2026.2160p.UHD.BluRay.DV.HDR-Ben.The.Men";
+
+  it("reads only what follows the video's own name", () => {
+    expect(matchSubtitleSidecar(`${video}.tur`, video)).toEqual({
+      suffix: ".tur",
+      language: "tur",
+      isForced: false,
+      isDefault: false,
+    });
+    expect(matchSubtitleSidecar(`${video}.TR.hi.forced`, video)).toEqual({
+      suffix: ".TR.hi.forced",
+      language: "tr",
+      isForced: true,
+      isDefault: false,
+    });
+    expect(matchSubtitleSidecar(video, video)).toEqual({
+      suffix: "",
+      isForced: false,
+      isDefault: false,
+    });
+  });
+
+  it("refuses a file that names another video", () => {
+    expect(matchSubtitleSidecar("Movie.Two.en", "Movie")).toBeNull();
+    expect(matchSubtitleSidecar("Movie.Part.Two.en", "Movie")).toBeNull();
+    expect(matchSubtitleSidecar("Movies.en", "Movie")).toBeNull();
+    expect(matchSubtitleSidecar("Other.en", "Movie")).toBeNull();
   });
 });

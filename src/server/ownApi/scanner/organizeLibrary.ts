@@ -9,7 +9,7 @@ import {
   isVideoFile,
   parseMovieName,
   parseSeasonFolder,
-  parseSubtitleSuffix,
+  matchSubtitleSidecar,
   splitExtension,
 } from "./nameParser";
 
@@ -378,8 +378,12 @@ async function planGroups(
 
   for (const subtitle of contents.subtitles) {
     if (subtitle.inSourceDirectory) continue;
-    const base = parseSubtitleSuffix(splitExtension(subtitle.name).stem);
-    const group = stemsByLowercase.get(base.baseStem.toLowerCase());
+    // The longest source name it is a sidecar of: `Movie.Part.2.en.srt`
+    // belongs to `Movie.Part.2`, not to a `Movie` beside it.
+    const subtitleStem = splitExtension(subtitle.name).stem;
+    const group = [...stemsByLowercase.entries()]
+      .filter(([stem]) => matchSubtitleSidecar(subtitleStem, stem))
+      .sort(([left], [right]) => right.length - left.length)[0]?.[1];
     // A subtitle matching no source is somebody else's file, not a sidecar.
     if (!group) continue;
     await plan.move(

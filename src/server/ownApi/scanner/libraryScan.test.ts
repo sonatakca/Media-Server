@@ -222,6 +222,32 @@ describe("scanLibraryTree — movies", () => {
     ]);
   });
 
+  it("matches a sidecar whose release name ends in words that look like languages", async () => {
+    // `…HDR-Ben.The.Men.tur.vtt`: peeling suffixes off the end took `The`
+    // and `Men` for language codes too, so the installed Turkish subtitle
+    // seemed to belong to no video and never reached a picker.
+    const video = "Obsession.2025.2026.2160p.UHD.BluRay.DV.HDR-Ben.The.Men";
+    const result = await scanLibraryTree({
+      fileSystem: createFileSystem({
+        Movies: ["Obsession (2025)/"],
+        "Movies/Obsession (2025)": [`${video}.mp4`, `${video}.tur.vtt`],
+      }),
+      rootPath: "Movies",
+      kind: "movies",
+    });
+
+    expect(byKind(result.items, "movie")[0]?.subtitles).toEqual([
+      {
+        relativePath: `Movies/Obsession (2025)/${video}.tur.vtt`,
+        codec: "webvtt",
+        isText: true,
+        language: "tur",
+        isForced: false,
+        isDefault: false,
+      },
+    ]);
+  });
+
   it("does not merge different titles that share a folder", async () => {
     const fileSystem = createFileSystem({
       Movies: ["Boxset/"],

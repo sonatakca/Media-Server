@@ -26,7 +26,7 @@ import {
   parseEpisodeName,
   parseMovieName,
   parseSeasonFolder,
-  parseSubtitleSuffix,
+  matchSubtitleSidecar,
   splitExtension,
 } from "./nameParser";
 
@@ -542,8 +542,8 @@ function matchSubtitles(
 
   for (const subtitleFile of subtitleFiles) {
     const { stem, extension } = splitExtension(subtitleFile.name);
-    const parsed = parseSubtitleSuffix(stem);
-    if (parsed.baseStem.toLowerCase() !== videoStem.toLowerCase()) continue;
+    const parsed = matchSubtitleSidecar(stem, videoStem);
+    if (!parsed) continue;
 
     const format =
       extension === "srt"

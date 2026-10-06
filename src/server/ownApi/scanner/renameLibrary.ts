@@ -5,7 +5,7 @@ import {
   isIgnoredEntry,
   isSubtitleFile,
   parseEpisodeName,
-  parseSubtitleSuffix,
+  matchSubtitleSidecar,
   splitExtension,
 } from "./nameParser";
 
@@ -343,9 +343,9 @@ export async function planLibraryRename({
       if (entry.isDirectory || isIgnoredEntry(entry.name)) continue;
       if (!isSubtitleFile(entry.name)) continue;
       const sidecar = splitExtension(entry.name);
-      const parsed = parseSubtitleSuffix(sidecar.stem);
-      if (parsed.baseStem.toLowerCase() !== stem.toLowerCase()) continue;
-      const suffix = sidecar.stem.slice(parsed.baseStem.length);
+      const parsed = matchSubtitleSidecar(sidecar.stem, stem);
+      if (!parsed) continue;
+      const suffix = parsed.suffix;
       await plan.rename(
         directory,
         entry.name,

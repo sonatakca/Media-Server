@@ -519,3 +519,52 @@ export function parseSubtitleSuffix(stem: string): {
     isDefault,
   };
 }
+
+/**
+ * Whether a subtitle file is a sidecar of the video named `videoStem`, and what
+ * its suffix says: `<videoStem>[.<language>][.forced][.default][.sdh]`.
+ *
+ * Matched against the video's own name, not found by peeling suffixes off the
+ * end. A release name ending in short words — `…HDR-Ben.The.Men` — reads
+ * exactly like a run of language codes, and peeling ate `The` and `Men` too,
+ * so the sidecar seemed to name a different video and was never offered. What
+ * follows the video's name may hold one language and the flags, nothing else,
+ * which also keeps `Movie.Two.en.srt` from attaching to a video named `Movie`.
+ */
+export function matchSubtitleSidecar(
+  subtitleStem: string,
+  videoStem: string,
+): {
+  suffix: string;
+  language?: string;
+  isForced: boolean;
+  isDefault: boolean;
+} | null {
+  if (
+    subtitleStem.slice(0, videoStem.length).toLowerCase() !==
+    videoStem.toLowerCase()
+  ) {
+    return null;
+  }
+  const suffix = subtitleStem.slice(videoStem.length);
+  if (suffix !== "" && !suffix.startsWith(".")) return null;
+
+  let language: string | undefined;
+  let isForced = false;
+  let isDefault = false;
+  for (const token of suffix.split(".").slice(1)) {
+    const lower = token.toLowerCase();
+    if (lower === "forced") isForced = true;
+    else if (lower === "default") isDefault = true;
+    // Bazarr writes `.hi` for hearing-impaired, as `Movie.tr.hi.srt`.
+    else if (lower === "sdh" || lower === "cc" || lower === "hi") continue;
+    else if (!language && /^[a-z]{2,3}$/.test(lower)) language = lower;
+    else return null;
+  }
+  return {
+    suffix,
+    ...(language === undefined ? {} : { language }),
+    isForced,
+    isDefault,
+  };
+}
