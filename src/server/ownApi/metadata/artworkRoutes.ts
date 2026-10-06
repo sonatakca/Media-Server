@@ -24,6 +24,11 @@ export interface ArtworkRoutesOptions {
   imageStorage: ImageStorage;
   tmdb: TmdbClient;
   queue: JobQueue;
+  /**
+   * Told after a layout is saved, so the title's share card is drawn now —
+   * while someone is looking at it — rather than by the first crawler to ask.
+   */
+  onLogoLayoutChanged?: (itemId: string) => void;
 }
 
 /**
@@ -301,6 +306,7 @@ export function createArtworkRoutes({
   imageStorage,
   tmdb,
   queue,
+  onLogoLayoutChanged,
 }: ArtworkRoutesOptions): RouteDefinition[] {
   async function requireTarget(itemId: string): Promise<MetadataTarget> {
     const target = await metadata.getTarget(itemId);
@@ -569,6 +575,7 @@ export function createArtworkRoutes({
         if (!(await metadata.setLogoLayout(itemId, layout))) {
           throw itemNotFound();
         }
+        onLogoLayoutChanged?.(itemId);
 
         sendData(context.response, context.requestId, { layout });
       },

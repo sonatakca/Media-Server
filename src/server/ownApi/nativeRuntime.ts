@@ -32,6 +32,9 @@ import { createCatalogueRoutes } from "./catalogue/catalogueRoutes";
 import { createCurationRepository } from "./curation/curationRepository";
 import { createCurationRoutes } from "./curation/curationRoutes";
 import { createImageRepository } from "./images/imageRepository";
+import { createShareCards } from "./share/shareCards";
+import { createShareRepository } from "./share/shareRepository";
+import { createShareRoutes } from "./share/shareRoutes";
 import { createImageStorage } from "./images/imageStorage";
 import { createImageRoutes } from "./images/imageRoutes";
 import { migrateTitleArtwork } from "./images/titleArtworkMigration";
@@ -397,6 +400,13 @@ export async function createNativeRuntime({
       `Could not migrate ${artworkMigration.failed} title artwork file(s); legacy storage remains active for them.`,
     );
   }
+  const shareCards = createShareCards({
+    repository: createShareRepository(pool),
+    imageStorage,
+    catalogue,
+    mediaRoot,
+    logger: console,
+  });
   const metadataRepository = createMetadataRepository(pool);
 
   // Metadata is optional: without a provider key the catalogue still scans,
@@ -1514,6 +1524,7 @@ export async function createNativeRuntime({
     }),
     ...createAlertRoutes(alerts),
     ...createImageRoutes({ images, imageStorage, catalogue }),
+    ...createShareRoutes(shareCards),
     ...createBookRoutes({ catalogue, mediaRoot, uploads: bookUploads }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ runtime: syncplay, catalogue }),
@@ -1702,6 +1713,9 @@ export async function createNativeRuntime({
             imageStorage,
             tmdb,
             queue,
+            onLogoLayoutChanged: (itemId) => {
+              void shareCards.warm(itemId);
+            },
           }),
         ]
       : []),

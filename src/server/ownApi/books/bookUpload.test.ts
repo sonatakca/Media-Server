@@ -57,7 +57,15 @@ describe("reading an EPUB", () => {
       author: "Oscar Wilde",
       // Before 1900 the scanner would read "(1890)" as part of the title.
       year: null,
+      description: null,
     });
+  });
+
+  it("reads the blurb as plain text, even when it was written as HTML", () => {
+    const book = epub(
+      `<dc:title>Kürk Mantolu Madonna</dc:title><dc:description>&lt;p&gt;Raif Efendi&amp;apos;nin &lt;b&gt;defteri&lt;/b&gt;.&lt;/p&gt;&lt;p&gt;Berlin, 1928.&lt;/p&gt;</dc:description>`,
+    );
+    expect(readEpub(book).description).toBe("Raif Efendi'nin defteri. Berlin, 1928.");
   });
 
   it("decodes entities and ignores Calibre's unknown-date placeholder", () => {
@@ -68,6 +76,7 @@ describe("reading an EPUB", () => {
       title: "Pride & Prejudice",
       author: "Jane Austen",
       year: null,
+      description: null,
     });
   });
 

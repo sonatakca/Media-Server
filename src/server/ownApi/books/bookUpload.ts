@@ -56,6 +56,8 @@ export interface EpubMetadata {
   title: string | null;
   author: string | null;
   year: number | null;
+  /** The publisher's blurb, as plain text; what a shared link shows. */
+  description: string | null;
 }
 
 interface ZipEntry {
@@ -250,7 +252,18 @@ export function readEpub(bytes: Buffer): EpubMetadata {
     author: firstElement(metadata, "creator"),
     // The scanner reads a year back only in this range; Calibre writes 0101 for "unknown".
     year: year >= 1900 && year <= 2199 ? year : null,
+    description: plainDescription(firstElement(metadata, "description")),
   };
+}
+
+/**
+ * Calibre and most publishers write the blurb as escaped HTML, so once the XML
+ * is decoded it is markup again; it is stripped a second time to leave text.
+ */
+function plainDescription(value: string | null): string | null {
+  if (!value) return null;
+  const text = decodeXmlText(value.replace(/<\/(p|div|br)\s*>|<br\s*\/?>/gi, " "));
+  return text || null;
 }
 
 function clip(value: string, length: number): string {
@@ -259,7 +272,7 @@ function clip(value: string, length: number): string {
 
 /** `<Author>/<Title> (<Year>).epub`, relative to the Books root. */
 export function bookDestination(
-  metadata: EpubMetadata,
+  metadata: Pick<EpubMetadata, "title" | "author" | "year">,
   fallbackName: string,
 ): string {
   const fallback = fallbackName.replace(/\.epub$/i, "");
