@@ -50,7 +50,16 @@ export function MobileNavbar() {
           <NavbarWordmark className="h-9" />
         </Link>
 
-        <div className="flex shrink-0 items-center gap-1">
+        {/* Over artwork the icons carry the wordmark's soft shadow, so a
+            bright picture never swallows them. Each glyph takes it, not the
+            group: a filter there would anchor the menus' fixed panels. */}
+        <div
+          className={`flex shrink-0 items-center gap-1 ${
+            showHeaderSurface
+              ? ""
+              : "[&_svg]:[filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))]"
+          }`}
+        >
           <AppUpdateButton variant="mobile" />
           <Tooltip content={t("search.open")}>
             <button

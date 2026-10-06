@@ -41,6 +41,9 @@ const LIT = "bg-white transition-colors duration-200 group-hover:bg-zinc-100";
 const PLAY =
   "bg-white text-zinc-950 shadow-[0_0_0_1px_rgba(0,0,0,0.07),inset_0_-1px_0_rgba(0,0,0,0.08),0_14px_32px_-10px_rgba(0,0,0,0.65),0_2px_8px_rgba(0,0,0,0.25)] transition-colors duration-200 hover:bg-zinc-100";
 
+/** The play surface, focus ring and press, for a phone's title page too. */
+export { FOCUS as HERO_FOCUS, PRESS as HERO_PRESS, PLAY as HERO_PLAY };
+
 /**
  * "Details" from the home hero opens the title's page already on its way
  * down to the details: that page opens on this same hero, and showing it

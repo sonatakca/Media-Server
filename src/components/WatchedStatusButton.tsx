@@ -29,6 +29,8 @@ interface WatchedStatusButtonProps {
   icon?: ReactNode;
   label?: string;
   showLabel?: boolean;
+  /** What a shown label says, where the full action name will not fit. */
+  shortLabel?: string;
   confirm?: boolean;
   onReset?: (items: MediaItem[]) => void;
 }
@@ -45,6 +47,7 @@ export function WatchedStatusButton({
   icon,
   label,
   showLabel = false,
+  shortLabel,
   confirm = false,
   onReset,
 }: WatchedStatusButtonProps) {
@@ -168,7 +171,7 @@ export function WatchedStatusButton({
         ) : (
           <EyeOff size={iconSize} />
         )}
-        {showLabel ? <span>{buttonLabel}</span> : null}
+        {showLabel ? <span>{shortLabel ?? buttonLabel}</span> : null}
       </button>
     </Tooltip>
   );

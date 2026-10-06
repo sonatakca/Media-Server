@@ -11,6 +11,8 @@ interface FavouriteButtonProps {
   style?: CSSProperties;
   iconSize?: number;
   showLabel?: boolean;
+  /** What a shown label says, where the full action name will not fit. */
+  shortLabel?: string;
   tooltipGroup?: string;
 }
 
@@ -20,6 +22,7 @@ export function FavouriteButton({
   style,
   iconSize = 18,
   showLabel = false,
+  shortLabel,
   tooltipGroup,
 }: FavouriteButtonProps) {
   const { t } = useLanguage();
@@ -56,7 +59,7 @@ export function FavouriteButton({
           size={iconSize}
           className={`transition-opacity duration-200 ${isSaving ? "opacity-60" : "opacity-100"}`}
         />
-        {showLabel ? <span>{label}</span> : null}
+        {showLabel ? <span>{shortLabel ?? label}</span> : null}
       </button>
     </Tooltip>
   );

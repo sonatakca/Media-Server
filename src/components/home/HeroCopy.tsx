@@ -28,7 +28,7 @@ import type { MediaItem } from "../../lib/types";
 import { getStageImageCandidates } from "../hero/heroModel";
 import { Tooltip } from "../ui/Tooltip";
 import { HeroActions, heroPlayState } from "./HeroActions";
-import { sampleUrl } from "./HeroComposition";
+import { sampleUrl } from "./logoShadowStyle";
 import {
   COPY_ROWS,
   HERO_MOTION,

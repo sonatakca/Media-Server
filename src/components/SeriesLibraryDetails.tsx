@@ -1,10 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { ErrorMessage } from "./ErrorMessage";
 import { MediaCard } from "./MediaCard";
 import { EpisodeCardSkeleton } from "./Skeletons";
 import { MobileMediaCard } from "./mobile/MobileMediaCard";
+import {
+  PHONE_TITLE_ACTION_ICON,
+  PHONE_TITLE_HERO_ACTION,
+} from "./mobile/phoneTitleHeroRows";
 import { MotionReveal } from "./MotionReveal";
 import { WatchedStatusButton } from "./WatchedStatusButton";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -88,6 +93,12 @@ interface SeriesLibraryDetailsProps {
   variant: "desktop" | "mobile";
   canonicalPath: string;
   onInitialReady?: () => void;
+  /**
+   * A phone's title hero has a place for the watched button in its action
+   * row; given (even while still null), the button goes there instead of
+   * floating over the picture.
+   */
+  watchedSlot?: HTMLElement | null;
 }
 
 interface MediaShelfProps {
@@ -268,6 +279,7 @@ export function SeriesLibraryDetails({
   variant,
   canonicalPath,
   onInitialReady,
+  watchedSlot,
 }: SeriesLibraryDetailsProps) {
   const { language, t } = useLanguage();
   const [series, setSeries] = useState<SeriesDetailsItem | null>(null);
@@ -650,7 +662,39 @@ export function SeriesLibraryDetails({
 
   return (
     <div className={isDesktop ? "pb-14" : "pb-7"}>
-      {canChangeWatchedStatus ? (
+      {watchedSlot !== undefined ? (
+        canChangeWatchedStatus && watchedSlot ? (
+          createPortal(
+            <WatchedStatusButton
+              scope={isMovie ? "item" : "show"}
+              action={isDetailsItemWatched ? "remove" : "mark"}
+              item={isMovie ? series : undefined}
+              seriesId={isMovie ? undefined : series.Id}
+              label={
+                isDetailsItemWatched
+                  ? isMovie
+                    ? t("details.removeWatchedStatus")
+                    : t("details.removeWatchedStatusForShow")
+                  : isMovie
+                    ? t("details.markWatchedStatus")
+                    : t("details.markWatchedStatusForShow")
+              }
+              showLabel
+              confirm={!isMovie}
+              onReset={handleWatchedStatusChange}
+              shortLabel={t("details.watchedShort")}
+              iconSize={PHONE_TITLE_ACTION_ICON}
+              icon={
+                isDetailsItemWatched ? (
+                  <Check size={PHONE_TITLE_ACTION_ICON} strokeWidth={2.2} />
+                ) : undefined
+              }
+              className={PHONE_TITLE_HERO_ACTION}
+            />,
+            watchedSlot,
+          )
+        ) : null
+      ) : canChangeWatchedStatus ? (
         <div
           className={
             isDesktop

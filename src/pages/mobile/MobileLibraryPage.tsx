@@ -360,6 +360,8 @@ export function MobileLibraryPage({
   // Sorting and filtering move cards rather than reshuffling them in place.
   const gridRef = useRef<HTMLDivElement | null>(null);
   const titleDetailsRef = useRef<HTMLDivElement | null>(null);
+  // Where a phone's title hero takes the details' watched button.
+  const [watchedSlot, setWatchedSlot] = useState<HTMLSpanElement | null>(null);
   useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
 
   const libraryRotatingLogoUrls = useMemo(() => {
@@ -610,7 +612,7 @@ export function MobileLibraryPage({
                   key={data.library.Id}
                   item={data.library}
                   isRevealed={isInitialDetailsReady}
-                  onShowDetails={showTitleDetails}
+                  onWatchedSlot={setWatchedSlot}
                 />
               ) : (
                 <TitleHero
@@ -631,6 +633,7 @@ export function MobileLibraryPage({
               <SeriesLibraryDetails
                 initialItem={data.library}
                 variant="mobile"
+                watchedSlot={isPhone ? watchedSlot : undefined}
                 canonicalPath={canonicalPath}
                 onInitialReady={() => setReadyDetailsId(activeId ?? null)}
               />

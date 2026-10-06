@@ -609,10 +609,13 @@ function MobileDetailsSkeleton({
       <div className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]">
         <div className="shimmer h-12 w-12 rounded-full" />
       </div>
-      <div
-        className="shimmer fixed right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80] h-10 rounded-full"
-        style={{ width: kind === "show" ? 252 : 187 }}
-      />
+      {/* A phone's watched button is in the hero's action row. */}
+      {isPhone ? null : (
+        <div
+          className="shimmer fixed right-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80] h-10 rounded-full"
+          style={{ width: kind === "show" ? 252 : 187 }}
+        />
+      )}
       <div className="full-bleed relative">
         {isPhone ? (
           <PhoneTitleHeroSkeleton kind={kind} item={item} />

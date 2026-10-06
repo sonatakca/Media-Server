@@ -18,6 +18,8 @@ interface DownloadButtonProps {
   item: MediaItem;
   className: string;
   iconSize?: number;
+  /** Shows a short label beside the mark: what it would do, or how far it is. */
+  showLabel?: boolean;
 }
 
 /** A ring that fills as the title arrives. */
@@ -67,6 +69,7 @@ export function DownloadButton({
   item,
   className,
   iconSize = 19,
+  showLabel = false,
 }: DownloadButtonProps) {
   const { t } = useLanguage();
   const navigate = useNavigate();
@@ -113,6 +116,15 @@ export function DownloadButton({
         ? t("downloads.resume")
         : t("downloads.download");
 
+  const percent = String(Math.min(99, Math.round(share * 100)));
+  const shortLabel = isDownloading
+    ? t("downloads.percentShort").replace("{percent}", percent)
+    : isComplete
+      ? t("downloads.downloadedShort")
+      : isResumable
+        ? t("downloads.resume")
+        : t("downloads.download");
+
   return (
     <Tooltip content={label} placement="top">
       <button
@@ -139,6 +151,7 @@ export function DownloadButton({
         ) : (
           <ArrowDownToLine size={iconSize} strokeWidth={2.2} />
         )}
+        {showLabel ? <span className="tabular-nums">{shortLabel}</span> : null}
       </button>
     </Tooltip>
   );

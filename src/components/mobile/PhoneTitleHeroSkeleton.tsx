@@ -2,22 +2,27 @@ import { useLanguage } from "../../i18n/LanguageContext";
 import { getItemDisplayMetadata } from "../../lib/itemMetadataPreferences";
 import type { MediaItem } from "../../lib/types";
 import { canStartOverFromHero } from "../HeroSection";
-import { heroRoundCount, heroRowParts } from "../home/HeroActions";
+import { isOfflineSupported } from "../../lib/offline/offlineLibrary";
 import {
+  PHONE_TITLE_HERO_ACTION_SLOT,
   PHONE_TITLE_HERO_ACTIONS,
   PHONE_TITLE_HERO_COPY,
   PHONE_TITLE_HERO_FACTS,
   PHONE_TITLE_HERO_FRAME,
   PHONE_TITLE_HERO_LOGO_BOX,
   PHONE_TITLE_HERO_OVERVIEW,
+  PHONE_TITLE_HERO_PICTURE,
+  PHONE_TITLE_HERO_PLAY,
+  PHONE_TITLE_HERO_ROW,
   PHONE_TITLE_HERO_SECTION,
+  PHONE_TITLE_PICTURE_FADE,
   phoneTitleFacts,
 } from "./phoneTitleHeroRows";
 
 /**
  * A phone's title page hero while it loads, from the hero's own rows
- * (`PhoneTitleHero`): the backdrop's frame, the logo's box, the facts, the
- * overview and the actions, each in the same classes, so each placeholder
+ * (`PhoneTitleHero`): the backdrop's frame with the logo's box at its foot,
+ * the facts, the overview and the actions, each in the same classes, so each placeholder
  * lands where its piece will. Once the page has the title, the rows it lacks
  * are left out and the facts take their own, unseen, width.
  */
@@ -39,23 +44,30 @@ export function PhoneTitleHeroSkeleton({
   const overview = item
     ? (getItemDisplayMetadata(item, language).overview ?? item.Overview ?? null)
     : "";
-  // A film knows its own place; a series' next episode is not known yet.
-  const parts = heroRowParts({
-    compact: true,
-    onTitlePage: true,
-    isFilm: kind === "movie",
-    canStartOver: item?.Type === "Movie" && canStartOverFromHero(item),
-    hasOverview: false,
-  });
-  const rounds = heroRoundCount(parts);
+  // Start over (a film knows its own place; a series' next episode is not
+  // known yet), My List, watched, and download on a film where it can be.
+  const actions =
+    Number(item?.Type === "Movie" && canStartOverFromHero(item)) +
+    2 +
+    Number(kind === "movie" && isOfflineSupported());
 
   return (
     <section className={PHONE_TITLE_HERO_SECTION}>
-      <div className={`${PHONE_TITLE_HERO_FRAME} shimmer`} />
-      <div className={PHONE_TITLE_HERO_COPY}>
-        <div className={PHONE_TITLE_HERO_LOGO_BOX}>
-          <div className="shimmer h-[70%] w-full rounded-lg" />
+      <div className={PHONE_TITLE_HERO_FRAME}>
+        <div className={PHONE_TITLE_HERO_PICTURE}>
+          <div
+            className="shimmer absolute inset-0"
+            style={{
+              WebkitMaskImage: PHONE_TITLE_PICTURE_FADE,
+              maskImage: PHONE_TITLE_PICTURE_FADE,
+            }}
+          />
+          <div className={PHONE_TITLE_HERO_LOGO_BOX}>
+            <div className="h-[70%] w-full rounded-lg bg-white/[0.06]" />
+          </div>
         </div>
+      </div>
+      <div className={PHONE_TITLE_HERO_COPY}>
         {facts !== "" ? (
           <div className={PHONE_TITLE_HERO_FACTS}>
             <span className="shimmer max-w-full truncate rounded-md text-[0.8125rem] font-bold leading-4 tracking-[0.04em]">
@@ -74,11 +86,18 @@ export function PhoneTitleHeroSkeleton({
             <div className="shimmer h-3.5 w-3/5 rounded-md" />
           </div>
         ) : null}
-        <div className={`${PHONE_TITLE_HERO_ACTIONS} flex gap-1.5`}>
-          <div className="shimmer h-12 min-w-0 flex-1 rounded-full" />
-          {Array.from({ length: rounds }, (_, index) => (
-            <div key={index} className="shimmer h-12 w-12 rounded-full" />
-          ))}
+        <div className={PHONE_TITLE_HERO_ACTIONS}>
+          <div className={`shimmer rounded-full ${PHONE_TITLE_HERO_PLAY}`} />
+          <div className={PHONE_TITLE_HERO_ROW}>
+            {Array.from({ length: actions }, (_, index) => (
+              <span key={index} className={PHONE_TITLE_HERO_ACTION_SLOT}>
+                <span className="flex flex-col items-center gap-[9px] pt-0.5">
+                  <span className="shimmer h-[23px] w-[23px] rounded-full" />
+                  <span className="shimmer h-2.5 w-11 rounded-md" />
+                </span>
+              </span>
+            ))}
+          </div>
         </div>
       </div>
     </section>

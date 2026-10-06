@@ -13,13 +13,9 @@ import {
 } from "../../lib/itemMetadataPreferences";
 import { useCroppedTransparentImage } from "../../hooks/useCroppedTransparentImage";
 import type { MediaItem } from "../../lib/types";
-import {
-  DEFAULT_LOGO_SHADOW,
-  measureLogoShadow,
-  type LogoShadow,
-  type SampleRegion,
-} from "../../lib/logoShadow";
+import type { SampleRegion } from "../../lib/logoShadow";
 import { getStageImageCandidates } from "../hero/heroModel";
+import { stageLogoFilter, useLogoShadow } from "./logoShadowStyle";
 import {
   QUEUE_TITLE_BOX,
   TITLE_SCALE,
@@ -79,65 +75,12 @@ const QUEUE_RADIUS_PX = 12;
 const QUEUE_SHADOW_BLUR_PX = 5;
 const QUEUE_SHADOW_DROP_PX = 2;
 
-/** A small copy of the artwork, enough to measure the brightness behind a logo. */
-export function sampleUrl(url: string): string {
-  try {
-    const parsed = new URL(url, window.location.href);
-    if (parsed.searchParams.has("maxWidth"))
-      parsed.searchParams.set("maxWidth", "160");
-    return parsed.toString();
-  } catch {
-    return url;
-  }
-}
-
 const QUEUE_LOGO_REGION: SampleRegion = {
   left: QUEUE_TITLE_BOX.left,
   top: 1 - QUEUE_TITLE_BOX.bottom - QUEUE_TITLE_BOX.height,
   width: QUEUE_TITLE_BOX.width,
   height: QUEUE_TITLE_BOX.height,
 };
-
-/** The shadow a logo needs against the part of the artwork behind it. */
-function useLogoShadow(
-  logoUrl: string,
-  artworkUrl: string | undefined,
-  region: SampleRegion,
-) {
-  const [shadow, setShadow] = useState<LogoShadow>(DEFAULT_LOGO_SHADOW);
-  const { left, top, width, height } = region;
-  useEffect(() => {
-    if (!logoUrl || !artworkUrl) return undefined;
-    let cancelled = false;
-    void measureLogoShadow(logoUrl, sampleUrl(artworkUrl), {
-      left,
-      top,
-      width,
-      height,
-    }).then((next) => {
-      if (!cancelled) setShadow(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [artworkUrl, logoUrl, left, top, width, height]);
-  return shadow;
-}
-
-/**
- * The halo a logo on stage stands on: its own shape, blurred, dark behind a
- * light logo and light behind a dark one, as strong as the artwork behind it
- * needs. Over a dark picture it is little more than the resting drop shadow;
- * over a white sky it is what keeps a white logo there at all. Blur is in
- * the title box's own px, which the resting title shows at 0.6×.
- */
-function stageLogoFilter(shadow: LogoShadow, presence: number): string {
-  const base = "drop-shadow(0 6px 30px rgba(0,0,0,0.55))";
-  const s = shadow.strength * presence;
-  if (s <= 0.01) return base;
-  const rgb = shadow.tone === "dark" ? "0,0,0" : "255,255,255";
-  return `drop-shadow(0 0 3px rgba(${rgb},${(0.55 * s).toFixed(3)})) drop-shadow(0 0 22px rgba(${rgb},${(0.6 * s).toFixed(3)})) ${base}`;
-}
 
 interface HeroCompositionProps {
   item: MediaItem;
