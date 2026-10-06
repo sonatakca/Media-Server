@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
-import { motion, type Variants } from "framer-motion";
-import { ChevronDown, Search, SlidersHorizontal } from "lucide-react";
+import { motion } from "framer-motion";
+import { Search, SlidersHorizontal } from "lucide-react";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { TitleHero } from "../../components/home/TitleHero";
@@ -207,27 +207,6 @@ async function loadLibraryItems(
 
   return getItemsForLibrary(id);
 }
-
-const centeredBounceVariants: Variants = {
-  bouncing: {
-    y: ["0%", "12.5%", "0%", "-12.5%", "0%"],
-    transition: {
-      duration: 1.15,
-      repeat: Infinity,
-      repeatDelay: 0,
-      times: [0, 0.25, 0.5, 0.75, 1],
-      ease: ["easeOut", "easeIn", "easeOut", "easeIn"],
-    },
-  },
-
-  centered: {
-    y: "0%",
-    transition: {
-      duration: 0.25,
-      ease: [0.22, 1, 0.36, 1],
-    },
-  },
-};
 
 /** How long the page shows its hero before gliding down to the details. */
 const DETAILS_ARRIVAL_BEAT_MS = 200;
@@ -657,10 +636,6 @@ export function DesktopLibraryPage({
     data.library?.Type === "Movie" ||
     mode === "series" ||
     mode === "season";
-  const detailsScrollLabel =
-    data.library?.Type === "Movie"
-      ? t("common.details")
-      : t("library.selectSeason");
 
   if (shouldShowSeriesDetails && data.library) {
     const isInitialDetailsReady = readyDetailsId === activeId;
@@ -697,29 +672,6 @@ export function DesktopLibraryPage({
                   })
                 }
               />
-
-              <motion.button
-                type="button"
-                aria-label={detailsScrollLabel}
-                initial="bouncing"
-                animate="bouncing"
-                whileHover="centered"
-                whileFocus="centered"
-                onClick={() =>
-                  seriesDetailsRef.current?.scrollIntoView({
-                    behavior: "smooth",
-                    block: "start",
-                  })
-                }
-                className={`${glassControlBase} group absolute bottom-10 left-1/2 z-[70] h-12 w-12 -translate-x-1/2`}
-              >
-                <motion.span
-                  variants={centeredBounceVariants}
-                  className="flex items-center justify-center"
-                >
-                  <ChevronDown size={30} strokeWidth={2.4} />
-                </motion.span>
-              </motion.button>
             </div>
 
             <div

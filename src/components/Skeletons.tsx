@@ -668,7 +668,6 @@ function HeroLibrarySkeleton({
           item={item}
           canDownload={kind === "movie" && isOfflineSupported()}
         />
-        <div className="shimmer absolute bottom-10 left-1/2 z-[70] h-12 w-12 -translate-x-1/2 rounded-full" />
       </div>
       <div
         className={`mx-auto w-full max-w-[1600px] ${
