@@ -149,7 +149,7 @@ describe("app update", () => {
     });
     vi.stubGlobal("caches", storage);
 
-    expect(await purgeStaleCaches(NEWER.buildId)).toEqual([
+    expect(await purgeStaleCaches()).toEqual([
       "workbox-runtime-old",
     ]);
     expect(storage.names()).toEqual([
@@ -158,10 +158,11 @@ describe("app update", () => {
     ]);
   });
 
-  it("drops a precache that could still serve the old shell", async () => {
+  it("never drops the precache, even while it still holds the old shell", async () => {
     const storage = fakeCacheStorage({
       "seyirlik-offline-v1": {},
-      // A new worker waiting: both revisions side by side.
+      // A new worker still installing: both revisions side by side. The
+      // active worker needs the old one to load any page offline.
       "workbox-precache-v2-https://x/": {
         "https://x/index.html?__WB_REVISION__=1": shell("old"),
         "https://x/index.html?__WB_REVISION__=2": shell(NEWER.buildId),
@@ -169,15 +170,21 @@ describe("app update", () => {
     });
     vi.stubGlobal("caches", storage);
 
-    await purgeStaleCaches(NEWER.buildId);
-    expect(storage.names()).toEqual(["seyirlik-offline-v1"]);
+    expect(await purgeStaleCaches()).toEqual([]);
+    expect(storage.names()).toEqual([
+      "seyirlik-offline-v1",
+      "workbox-precache-v2-https://x/",
+    ]);
   });
 
   it("brings the new worker in before clearing caches, then reloads", async () => {
     serveLiveBuild(NEWER);
     await checkForAppUpdate();
     const order: string[] = [];
-    const storage = fakeCacheStorage({ "workbox-precache-v2-x": {} });
+    const storage = fakeCacheStorage({
+      "workbox-precache-v2-x": {},
+      "workbox-runtime-old": {},
+    });
     vi.stubGlobal("caches", {
       ...storage,
       keys: async () => {
@@ -201,7 +208,7 @@ describe("app update", () => {
     await applyAppUpdate();
 
     expect(order).toEqual(["update", "caches", "reload"]);
-    expect(storage.names()).toEqual([]);
+    expect(storage.names()).toEqual(["workbox-precache-v2-x"]);
     expect(getAppUpdateState()).toEqual({ status: "applying", latest: NEWER });
   });
 

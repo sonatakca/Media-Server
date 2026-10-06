@@ -1,10 +1,14 @@
 import { ownApiClient, ownApiUrl } from "../../api/ownApi/client";
-import { getBackdropImageUrl, getPrimaryImageUrl } from "../mediaApi";
-import type { MediaItem, PlaybackSourceCandidate } from "../types";
+import {
+  getBackdropImageUrl,
+  getItemTrickplayImageUrl,
+  getPrimaryImageUrl,
+} from "../mediaApi";
+import type { MediaItem, MediaStream, PlaybackSourceCandidate } from "../types";
 import {
   isMultivariantPlaylist,
-  keepDefaultAudioOnly,
   playlistReferences,
+  withoutIFramePlaylists,
 } from "./playlist";
 
 /**
@@ -39,6 +43,8 @@ export interface DownloadPlan {
     language?: string;
     isDefault: boolean;
   }>;
+  /** Text subtitle tracks; absent from a server older than this field. */
+  subtitles?: Array<{ streamIndex: number }>;
 }
 
 export type DownloadState = "downloading" | "complete" | "failed";
@@ -60,6 +66,18 @@ export interface OfflineTitle {
   state: DownloadState;
   createdAt: string;
   updatedAt: string;
+  /**
+   * The audio and subtitle tracks this copy carries, by source stream index.
+   * Absent on a title stored before every track was kept.
+   */
+  audioStreamIndexes?: number[];
+  subtitleStreamIndexes?: number[];
+}
+
+function absoluteUrl(url: string): string {
+  return typeof window === "undefined"
+    ? url
+    : new URL(url, window.location.href).toString();
 }
 
 /**
@@ -70,16 +88,26 @@ export function offlineArtworkUrls(item: MediaItem): {
   poster: string;
   backdrop: string;
 } {
-  const absolute = (url: string) =>
-    typeof window === "undefined"
-      ? url
-      : new URL(url, window.location.href).toString();
   return {
-    poster: absolute(getPrimaryImageUrl(item.Id, item.ImageTags?.Primary, 400)),
-    backdrop: absolute(
+    poster: absoluteUrl(
+      getPrimaryImageUrl(item.Id, item.ImageTags?.Primary, 400),
+    ),
+    backdrop: absoluteUrl(
       getBackdropImageUrl(item.Id, item.BackdropImageTags?.[0], 1280),
     ),
   };
+}
+
+/**
+ * Where a stored copy keeps one subtitle track. Fetched from the download
+ * route, which needs no playback session, and asked for there again offline.
+ */
+export function offlineSubtitleUrl(itemId: string, streamIndex: number) {
+  return absoluteUrl(
+    ownApiUrl(
+      `/ownAPI/v1/downloads/items/${encodeURIComponent(itemId)}/subtitles/${streamIndex}.vtt`,
+    ),
+  );
 }
 
 export function isOfflineSupported(): boolean {
@@ -89,6 +117,31 @@ export function isOfflineSupported(): boolean {
     "indexedDB" in window &&
     "serviceWorker" in navigator
   );
+}
+
+/**
+ * Whether this device has no connection at all, rather than only the server
+ * being out of reach. The front end is served from somewhere other than the
+ * API, so when even its `/version.json` cannot be fetched, nothing can.
+ */
+export async function isDeviceOffline(): Promise<boolean> {
+  if (typeof navigator !== "undefined" && navigator.onLine === false) {
+    return true;
+  }
+  const abort = new AbortController();
+  const timer = window.setTimeout(() => abort.abort(), 5000);
+  try {
+    await fetch(`/version.json?t=${Date.now()}`, {
+      cache: "no-store",
+      credentials: "omit",
+      signal: abort.signal,
+    });
+    return false;
+  } catch {
+    return true;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -277,13 +330,57 @@ async function storeInParts(
 
   await cache.put(
     url,
-    new Response(
-      JSON.stringify({ size, partBytes: PART_BYTES, contentType }),
-      { headers: { "Content-Type": PARTS_CONTENT_TYPE } },
-    ),
+    new Response(JSON.stringify({ size, partBytes: PART_BYTES, contentType }), {
+      headers: { "Content-Type": PARTS_CONTENT_TYPE },
+    }),
   );
   files.push(url);
   return files;
+}
+
+/**
+ * Stores a small extra a title may not have: a subtitle track, a sheet of
+ * seek thumbnails. False when the server has none to give; a failure to reach
+ * it is still an error, so a dropped connection is not mistaken for absence.
+ */
+async function storeOptional(
+  cache: Cache,
+  url: string,
+  signal: AbortSignal | undefined,
+  onBytes: (bytes: number) => void,
+): Promise<boolean> {
+  if (await cache.match(url)) return true;
+  const response = await fetch(url, { credentials: "include", signal });
+  if (response.status >= 400 && response.status < 500) return false;
+  if (!response.ok || !response.body) {
+    throw new Error(`Download failed (${response.status}).`);
+  }
+  await cache.put(
+    url,
+    new Response(response.body.pipeThrough(countingStream(onBytes)), {
+      status: 200,
+      headers: {
+        "Content-Type":
+          response.headers.get("Content-Type") ?? "application/octet-stream",
+      },
+    }),
+  );
+  return true;
+}
+
+/** How many sheets of seek thumbnails the title has; 0 when none. */
+async function trickplaySpriteCount(
+  itemId: string,
+  signal: AbortSignal | undefined,
+): Promise<number> {
+  const response = await fetch(
+    ownApiUrl(`/ownAPI/v1/items/${encodeURIComponent(itemId)}/trickplay`),
+    { credentials: "include", signal },
+  );
+  if (response.status === 404) return 0;
+  if (!response.ok) throw new Error(`Download failed (${response.status}).`);
+  const body = (await response.json()) as { data?: { spriteCount?: number } };
+  return body.data?.spriteCount ?? 0;
 }
 
 /** Stores one response, counting its bytes as they arrive. */
@@ -360,13 +457,19 @@ export async function downloadTitle(
     hdr: quality.hdr,
     files: [],
     downloadedBytes: 0,
-    // Video plus a stereo AAC track, which is the part a bitrate leaves out.
+    // Video plus a stereo AAC track per dub: the part a bitrate leaves out.
     estimatedBytes: Math.round(
-      (durationSeconds * (quality.bitrate + 192_000)) / 8,
+      (durationSeconds *
+        (quality.bitrate + 192_000 * Math.max(1, plan.audioTracks.length))) /
+        8,
     ),
     state: "downloading",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
+    audioStreamIndexes: plan.audioTracks.map(
+      (track) => track.sourceStreamIndex,
+    ),
+    subtitleStreamIndexes: [],
   };
   await saveOfflineTitle(title);
 
@@ -381,7 +484,7 @@ export async function downloadTitle(
   };
 
   try {
-    const master = keepDefaultAudioOnly(
+    const master = withoutIFramePlaylists(
       await fetchText(masterUrl, options.signal),
     );
     if (!isMultivariantPlaylist(master)) {
@@ -408,6 +511,29 @@ export async function downloadTitle(
         .then(() => title.files.push(artwork))
         .catch(() => undefined);
     }
+
+    const countBytes = (bytes: number) => {
+      title.downloadedBytes += bytes;
+      report();
+    };
+
+    // Subtitles and seek thumbnails: small, and asked for during playback by
+    // URLs that otherwise need the server. A track the server cannot convert
+    // is left out rather than failing the whole title.
+    for (const { streamIndex } of plan.subtitles ?? []) {
+      const url = offlineSubtitleUrl(item.Id, streamIndex);
+      if (await storeOptional(cache, url, options.signal, countBytes)) {
+        title.files.push(url);
+        title.subtitleStreamIndexes!.push(streamIndex);
+      }
+    }
+    const spriteCount = await trickplaySpriteCount(item.Id, options.signal);
+    for (let sprite = 0; sprite < spriteCount; sprite += 1) {
+      const url = absoluteUrl(getItemTrickplayImageUrl(item.Id, sprite));
+      if (!(await storeOptional(cache, url, options.signal, countBytes))) break;
+      title.files.push(url);
+    }
+    await saveOfflineTitle(title);
 
     for (const playlistUrl of playlistReferences(master, masterUrl)) {
       const playlist = await fetchText(playlistUrl, options.signal);
@@ -436,10 +562,7 @@ export async function downloadTitle(
               cache,
               resource,
               options.signal,
-              (bytes) => {
-                title.downloadedBytes += bytes;
-                report();
-              },
+              countBytes,
             )),
           );
         }
@@ -483,18 +606,46 @@ export async function removeOfflineTitle(itemId: string): Promise<void> {
 }
 
 /**
+ * The stored item with only the tracks this copy carries, so the player never
+ * offers an audio or subtitle track it cannot play offline.
+ */
+export function offlineItem(title: OfflineTitle): MediaItem {
+  const keeps = (stream: MediaStream) => {
+    if (stream.Type === "Audio") {
+      return (
+        !title.audioStreamIndexes ||
+        title.audioStreamIndexes.includes(stream.Index ?? -1)
+      );
+    }
+    if (stream.Type === "Subtitle") {
+      return (title.subtitleStreamIndexes ?? []).includes(stream.Index ?? -1);
+    }
+    return true;
+  };
+  return {
+    ...title.item,
+    MediaSources: title.item.MediaSources?.map((source) => ({
+      ...source,
+      MediaStreams: source.MediaStreams?.filter(keeps),
+    })),
+  };
+}
+
+/**
  * A source that plays the stored copy through hls.js, with no session.
  *
- * Offline there is no server to open a session with, report progress to or
- * ask for subtitles, so the source carries only what the player needs to
- * attach the stored master and label it.
+ * Offline there is no server to open a session with or report progress to,
+ * so the source carries only what the player needs to attach the stored
+ * master, label it, and find the tracks and thumbnails stored beside it.
  */
 export function offlinePlaybackSource(
   title: OfflineTitle,
 ): PlaybackSourceCandidate {
+  const librarySource = offlineItem(title).MediaSources?.[0];
   return {
     id: `offline-${title.itemId}`,
     itemId: title.itemId,
+    mediaSourceId: librarySource?.Id ?? title.itemId,
     mode: "DirectStream",
     url: title.masterUrl,
     mimeType: "application/vnd.apple.mpegurl",
@@ -506,12 +657,12 @@ export function offlinePlaybackSource(
     reason: "Stored on this device.",
     priority: 0,
     mediaSource: {
-      Id: title.itemId,
+      Id: librarySource?.Id ?? title.itemId,
       Container: "hls",
       SupportsDirectPlay: true,
       SupportsDirectStream: true,
       SupportsTranscoding: false,
-      MediaStreams: title.item.MediaSources?.[0]?.MediaStreams ?? [],
+      MediaStreams: librarySource?.MediaStreams ?? [],
     },
   } as PlaybackSourceCandidate;
 }
@@ -529,13 +680,13 @@ export async function loadPlayerItem(
   if (offlineOnly) {
     const stored = await getOfflineTitle(itemId);
     if (!stored) throw new Error("This title is not downloaded.");
-    return stored.item;
+    return offlineItem(stored);
   }
   try {
     return await fetchItem(itemId);
   } catch (error) {
     const stored = await getOfflineTitle(itemId).catch(() => null);
-    if (stored?.state === "complete") return stored.item;
+    if (stored?.state === "complete") return offlineItem(stored);
     throw error;
   }
 }

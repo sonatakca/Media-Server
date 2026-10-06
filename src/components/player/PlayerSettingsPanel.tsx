@@ -214,8 +214,8 @@ function StreamFlag({ stream }: { stream: MediaStream }) {
   );
 }
 
-function getDefaultSettingsSection(): SettingsSection {
-  if (!HIDE_QUALITY_SETTINGS) {
+function getDefaultSettingsSection(showQuality: boolean): SettingsSection {
+  if (showQuality) {
     return "quality";
   }
 
@@ -574,8 +574,11 @@ export function PlayerSettingsPanel({
   const subtitleStreams = getUniqueStreams(
     getStreamsOfType(source, "Subtitle"),
   );
-  const [activeSection, setActiveSection] = useState<SettingsSection>(
-    getDefaultSettingsSection,
+  // A stored copy is one rung, kept as it was downloaded: there is no
+  // quality to choose, so the tab is not offered at all.
+  const showQuality = !HIDE_QUALITY_SETTINGS && source.offline !== true;
+  const [activeSection, setActiveSection] = useState<SettingsSection>(() =>
+    getDefaultSettingsSection(showQuality),
   );
   const [isAdvancedQualityOpen, setIsAdvancedQualityOpen] = useState(false);
   const canSelectAudio = canSwitchAudio && !DISABLE_AUDIO_SELECTION;
@@ -605,23 +608,23 @@ export function PlayerSettingsPanel({
           {t("settings.playbackOptions")}
         </h2>
 
-        <div className="seyirlik-player-settings-tabs mt-3 grid grid-cols-3 gap-2">
-          <button
-            type="button"
-            disabled={HIDE_QUALITY_SETTINGS}
-            onClick={
-              HIDE_QUALITY_SETTINGS
-                ? undefined
-                : () => setActiveSection("quality")
-            }
-            className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${getSettingsTabButtonClass(
-              activeSection === "quality",
-              HIDE_QUALITY_SETTINGS,
-            )}`}
-          >
-            <SlidersHorizontal size={15} strokeWidth={2.2} />
-            <span>{t("settings.quality")}</span>
-          </button>
+        <div
+          className={`seyirlik-player-settings-tabs mt-3 grid gap-2 ${
+            showQuality ? "grid-cols-3" : "grid-cols-2"
+          }`}
+        >
+          {showQuality ? (
+            <button
+              type="button"
+              onClick={() => setActiveSection("quality")}
+              className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-bold transition ${getSettingsTabButtonClass(
+                activeSection === "quality",
+              )}`}
+            >
+              <SlidersHorizontal size={15} strokeWidth={2.2} />
+              <span>{t("settings.quality")}</span>
+            </button>
+          ) : null}
 
           <button
             type="button"
@@ -653,7 +656,7 @@ export function PlayerSettingsPanel({
 
       <div className="seyirlik-player-settings-content max-h-[calc(100dvh-8.75rem)] overflow-y-auto p-2 sm:max-h-[min(28rem,calc(100svh-15rem))]">
         <AnimatePresence mode="wait" initial={false}>
-          {!HIDE_QUALITY_SETTINGS && activeSection === "quality" ? (
+          {showQuality && activeSection === "quality" ? (
             <motion.div
               key="quality"
               initial={{ opacity: 0 }}

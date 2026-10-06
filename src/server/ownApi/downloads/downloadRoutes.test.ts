@@ -1,4 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createOwnApiRouter } from "../api/router";
 import type { OwnApiError } from "../ownApiHandler";
@@ -6,6 +9,24 @@ import { createDownloadRoutes } from "./downloadRoutes";
 
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const ITEM = "22222222-2222-4222-8222-222222222222";
+const MEDIA_ROOT = mkdtempSync(path.join(tmpdir(), "seyirlik-downloads-"));
+writeFileSync(
+  path.join(MEDIA_ROOT, "Film.tr.srt"),
+  "1\n00:00:01,000 --> 00:00:02,500\nMerhaba\n",
+);
+afterAll(() => rmSync(MEDIA_ROOT, { recursive: true, force: true }));
+
+const STREAMS = [
+  { streamIndex: 1, kind: "audio", isTextSubtitle: false },
+  { streamIndex: 2, kind: "subtitle", isTextSubtitle: false },
+  {
+    streamIndex: 3,
+    kind: "subtitle",
+    isTextSubtitle: true,
+    isExternal: true,
+    externalRelativePath: "Film.tr.srt",
+  },
+];
 
 function build(options: {
   allowDownloads: boolean;
@@ -25,7 +46,7 @@ function build(options: {
       sessionTokenHash: Buffer.alloc(32),
     }),
     routes: createDownloadRoutes({
-      mediaRoot: "/media",
+      mediaRoot: MEDIA_ROOT,
       users: {
         findById: async () =>
           ({
@@ -41,7 +62,9 @@ function build(options: {
             relativePath: "Film/Film.mkv",
             sizeBytes: "1",
             mtimeMs: "1",
+            missingSince: null,
           }) as never,
+        listStreams: async () => STREAMS as never,
       },
       renditions: {
         createManifest: async () =>
@@ -84,9 +107,12 @@ function build(options: {
   });
 }
 
-async function call(router: ReturnType<typeof build>) {
-  const pathname = `/ownAPI/v1/downloads/items/${ITEM}/plan`;
+async function call(
+  router: ReturnType<typeof build>,
+  pathname = `/ownAPI/v1/downloads/items/${ITEM}/plan`,
+) {
   let body = "";
+  const headers: Record<string, string> = {};
   try {
     await router.handler(
       {
@@ -97,12 +123,14 @@ async function call(router: ReturnType<typeof build>) {
       } as unknown as IncomingMessage,
       {
         statusCode: 200,
-        setHeader() {},
+        setHeader(name: string, value: string) {
+          headers[name.toLowerCase()] = value;
+        },
         getHeader() {
           return undefined;
         },
-        end(value?: string) {
-          body = value ?? "";
+        end(value?: string | Buffer) {
+          body = value?.toString() ?? "";
         },
       } as unknown as ServerResponse,
       { requestId: "req", url: new URL(pathname, "https://seyirlik.test") },
@@ -110,7 +138,11 @@ async function call(router: ReturnType<typeof build>) {
   } catch (caught) {
     return { error: (caught as OwnApiError).code };
   }
-  return JSON.parse(body) as { data: { masterUrl: string } };
+  return headers["content-type"]?.startsWith("text/vtt")
+    ? { vtt: body }
+    : (JSON.parse(body) as {
+        data: { masterUrl: string; subtitles: unknown };
+      });
 }
 
 describe("download plan", () => {
@@ -144,7 +176,50 @@ describe("download plan", () => {
       data: {
         masterUrl:
           "/ownAPI/v1/playback/renditions/file-1/adaptive/abc/master.m3u8",
+        // Only text tracks: an image subtitle cannot be served as WebVTT.
+        subtitles: [{ streamIndex: 3 }],
       },
     });
+  });
+});
+
+describe("download subtitles", () => {
+  const subtitle = (index: string) =>
+    `/ownAPI/v1/downloads/items/${ITEM}/subtitles/${index}`;
+
+  it("serves a text track as WebVTT, by item and with no session", async () => {
+    const result = await call(
+      build({ allowDownloads: true, packaged: true }),
+      subtitle("3.vtt"),
+    );
+    expect(result).toMatchObject({ vtt: expect.stringContaining("Merhaba") });
+    expect((result as { vtt: string }).vtt).toMatch(/^WEBVTT/);
+  });
+
+  it("refuses an account without the download permission", async () => {
+    expect(
+      await call(
+        build({ allowDownloads: false, packaged: true }),
+        subtitle("3.vtt"),
+      ),
+    ).toEqual({ error: "DOWNLOADS_NOT_ALLOWED" });
+  });
+
+  it("refuses a stream that is not a text subtitle", async () => {
+    expect(
+      await call(
+        build({ allowDownloads: true, packaged: true }),
+        subtitle("2.vtt"),
+      ),
+    ).toEqual({ error: "SUBTITLE_NOT_FOUND" });
+  });
+
+  it("refuses a malformed track name", async () => {
+    expect(
+      await call(
+        build({ allowDownloads: true, packaged: true }),
+        subtitle("x.vtt"),
+      ),
+    ).toEqual({ error: "VALIDATION_FAILED" });
   });
 });

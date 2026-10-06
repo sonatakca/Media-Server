@@ -28,7 +28,10 @@ import { buildAnalysisFromInventory } from "../probe/analysisFromInventory";
 import type { PlaybackSessionStore } from "./playbackSessionStore";
 import type { RenditionService } from "../../renditionService";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
-import { extractSubtitleAsWebVtt } from "./subtitleDelivery";
+import {
+  extractSubtitleAsWebVtt,
+  resolveTextSubtitleInput,
+} from "./subtitleDelivery";
 import { captureFrameAsPng, isHdrTransfer } from "./frameCapture";
 import {
   applyAdaptiveMasterSelection,
@@ -837,37 +840,16 @@ export function createPlaybackRoutes({
 
         const streamIndex = Number(assetMatch[1]);
         const file = await catalogue.getFileById(session.mediaFileId);
-        const streams = file ? await catalogue.listStreams(file.id) : [];
-        const stream = streams.find(
-          (candidate) =>
-            candidate.kind === "subtitle" &&
-            candidate.streamIndex === streamIndex &&
-            candidate.isTextSubtitle,
-        );
-        if (!file || file.missingSince !== null || !stream) {
-          throw new OwnApiError(
-            "SUBTITLE_NOT_FOUND",
-            "The requested subtitle could not be found.",
-            404,
-          );
-        }
-
-        const relativeInputPath = stream.isExternal
-          ? stream.externalRelativePath
-          : file.relativePath;
-        if (!relativeInputPath) {
-          throw new OwnApiError(
-            "SUBTITLE_NOT_FOUND",
-            "The requested subtitle could not be found.",
-            404,
-          );
-        }
-
-        const absoluteInputPath = path.resolve(
-          resolvedMediaRoot,
-          ...relativeInputPath.split("/"),
-        );
-        if (!isPathInsideRoot(resolvedMediaRoot, absoluteInputPath)) {
+        const input =
+          file && file.missingSince === null
+            ? resolveTextSubtitleInput(
+                file,
+                await catalogue.listStreams(file.id),
+                streamIndex,
+                resolvedMediaRoot,
+              )
+            : null;
+        if (!input) {
           throw new OwnApiError(
             "SUBTITLE_NOT_FOUND",
             "The requested subtitle could not be found.",
@@ -878,8 +860,8 @@ export function createPlaybackRoutes({
         let webVtt: Buffer;
         try {
           webVtt = await extractSubtitleAsWebVtt(
-            absoluteInputPath,
-            stream.isExternal ? 0 : stream.streamIndex,
+            input.inputPath,
+            input.inputStreamIndex,
             ffmpegPath,
           );
         } catch {

@@ -14,6 +14,10 @@ import {
   setAuthSession,
 } from "./lib/authStorage";
 import {
+  isDeviceOffline,
+  isOfflineSupported,
+} from "./lib/offline/offlineLibrary";
+import {
   SERVER_UNAVAILABLE_EVENT,
   type ServerUnavailableEvent,
   type ServerUnavailableEventDetail,
@@ -274,6 +278,22 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // With no connection at all, the downloads are all there is to watch, so a
+  // signed-in viewer is taken there instead of to the server diagnostics.
+  const hasConnectionFailure = state === "failed" || connectionFailure !== null;
+  const canWatchOffline = isAuthenticated() && isOfflineSupported();
+  const [isDeviceOfflineNow, setIsDeviceOfflineNow] = useState(false);
+  useEffect(() => {
+    if (!hasConnectionFailure || !canWatchOffline) return;
+    let isCurrent = true;
+    void isDeviceOffline().then((offline) => {
+      if (isCurrent) setIsDeviceOfflineNow(offline);
+    });
+    return () => {
+      isCurrent = false;
+    };
+  }, [hasConnectionFailure, canWatchOffline]);
+
   const retryConnection = async () => {
     await checkServerAvailability();
     await bootstrapIdentity();
@@ -291,6 +311,14 @@ export function DefaultServerGate({ children }: { children: React.ReactNode }) {
         </div>
       </main>
     );
+  }
+
+  if (
+    hasConnectionFailure &&
+    canWatchOffline &&
+    (isDeviceOfflineNow || navigator.onLine === false)
+  ) {
+    return <Navigate to="/downloads" replace />;
   }
 
   if (connectionFailure) {

@@ -16,6 +16,7 @@ import {
   getItemTrickplayImageUrl,
   redactPlaybackUrl,
 } from "../../lib/mediaApi";
+import { offlineSubtitleUrl } from "../../lib/offline/offlineLibrary";
 import {
   stopCustomPlaybackSessionImmediately,
   useCustomPlaybackSessionLease,
@@ -780,7 +781,7 @@ export function CustomVideoPlayer({
   const [activeAudioStreamIndex, setActiveAudioStreamIndex] = useState<
     number | undefined
   >(() =>
-    shouldForceDefaultAudioInPlaybackUrl(source)
+    shouldForceDefaultAudioInPlaybackUrl(source) || source.offline
       ? getDefaultAudioStreamIndex(item, source)
       : getStreamsOfType(source, "Audio").length <= 1
         ? getDefaultAudioStreamIndex(item, source)
@@ -852,6 +853,7 @@ export function CustomVideoPlayer({
   const isAdaptiveRenditionPlayback = Boolean(
     adaptiveQualityManifest && activeSource.hlsKind === "adaptive-rendition",
   );
+  const isOfflineSource = activeSource.offline === true;
   const availableQualityFiles = useMemo(
     () =>
       [...(qualityManifest?.qualities ?? [])].sort(
@@ -999,6 +1001,7 @@ export function CustomVideoPlayer({
     [activeSourceWithLibraryStreams],
   );
   const canSwitchAudio =
+    (activeSource.offline === true && audioStreams.length > 1) ||
     Boolean(
       isAdaptiveRenditionPlayback &&
       adaptiveQualityManifest &&
@@ -1026,6 +1029,19 @@ export function CustomVideoPlayer({
   );
   const selectedAudioIndexForActiveSource =
     selectedAudioStreamIndex ?? activeSourceDefaultAudioStreamIndex;
+  /*
+   * A stored copy switches dubs inside hls.js, so attaching it must not depend
+   * on the chosen track: a change would re-attach the source, which reloads
+   * the package on its default dub and undoes the switch. The attachment reads
+   * the choice through a ref instead.
+   */
+  const selectedAudioIndexRef = useRef(selectedAudioIndexForActiveSource);
+  useEffect(() => {
+    selectedAudioIndexRef.current = selectedAudioIndexForActiveSource;
+  }, [selectedAudioIndexForActiveSource]);
+  const selectedAudioIndexForAttach = isOfflineSource
+    ? undefined
+    : selectedAudioIndexForActiveSource;
 
   const startSubtitleEditMode = useCallback(() => {
     initializeSubtitleEditPosition();
@@ -3075,6 +3091,24 @@ export function CustomVideoPlayer({
       // same track must not suppress this one.
       attemptedAudioFallbackKeysRef.current.delete(`${item.Id}:${streamIndex}`);
 
+      // A stored copy carries every dub it was downloaded with, and there is
+      // no server to re-plan with, so the switch happens inside the package.
+      if (activeSource.offline) {
+        if (
+          activeAttachmentRef.current?.adaptiveController?.setAudioStream(
+            streamIndex,
+          )
+        ) {
+          setSelectedAudioStreamIndex(streamIndex);
+          setActiveAudioStreamIndex(streamIndex);
+          setAudioSelectionNotice(null);
+        } else {
+          setAudioSelectionNotice(t("player.audioSwitchUnavailable"));
+        }
+        revealPlayerChrome();
+        return;
+      }
+
       if (isAdaptiveRenditionPlayback) {
         const controller = activeAttachmentRef.current?.adaptiveController;
 
@@ -3384,7 +3418,9 @@ export function CustomVideoPlayer({
   useEffect(() => {
     const video = videoRef.current;
     const sourceToAttach = activeSource;
-    const selectedAudioIndexForSource = selectedAudioIndexForActiveSource;
+    const selectedAudioIndexForSource = sourceToAttach.offline
+      ? selectedAudioIndexRef.current
+      : selectedAudioIndexForAttach;
 
     if (!video) {
       return undefined;
@@ -3887,6 +3923,11 @@ export function CustomVideoPlayer({
 
     const syncNativeAudioTrack = (eventName: string) => {
       if (isDisposed || didRequestAudioFallback || !isCurrentAttempt()) {
+        return;
+      }
+      // A stored copy's track is chosen in hls.js by the audio picker, and
+      // there is no server to fall back to for one it lacks.
+      if (sourceToAttach.offline) {
         return;
       }
 
@@ -4500,7 +4541,7 @@ export function CustomVideoPlayer({
     onVideoFailure,
     onVideoRecovery,
     refreshProgress,
-    selectedAudioIndexForActiveSource,
+    selectedAudioIndexForAttach,
   ]);
 
   useEffect(() => {
@@ -4591,10 +4632,11 @@ export function CustomVideoPlayer({
     setActiveSubtitleText("");
     setSubtitleCues([]);
 
+    // A stored copy has no session; its tracks were kept beside it.
     if (
       selectedSubtitleStreamIndex < 0 ||
       !activeSource.mediaSourceId ||
-      !activeSource.playSessionId
+      (!activeSource.playSessionId && !activeSource.offline)
     ) {
       return undefined;
     }
@@ -4610,10 +4652,12 @@ export function CustomVideoPlayer({
     }
 
     const abortController = new AbortController();
-    const subtitleUrl = buildSubtitleStreamUrl(
-      activeSource.playSessionId,
-      selectedSubtitleStreamIndex,
-    );
+    const subtitleUrl = activeSource.offline
+      ? offlineSubtitleUrl(activeSource.itemId, selectedSubtitleStreamIndex)
+      : buildSubtitleStreamUrl(
+          activeSource.playSessionId!,
+          selectedSubtitleStreamIndex,
+        );
 
     const loadSubtitleCues = async () => {
       try {
@@ -5429,27 +5473,31 @@ export function CustomVideoPlayer({
                     </button>
                   </Tooltip>
 
-                  <Tooltip content={t("party.title")} group="top-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsPartyWatchOpen((current) => !current);
-                        setIsSettingsOpen(false);
-                        setIsQueueOpen(false);
-                        revealPlayerChrome();
-                      }}
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                      aria-label={t("party.title")}
-                    >
-                      <Users size={18} fill={isInParty ? "#fff" : "none"} />
-
-                      <span
-                        className="pointer-events-none absolute inset-0"
-                        aria-hidden="true"
+                  {/* Watching together and saving a frame both need the
+                      server, which a stored copy plays without. */}
+                  {isOfflineSource ? null : (
+                    <Tooltip content={t("party.title")} group="top-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsPartyWatchOpen((current) => !current);
+                          setIsSettingsOpen(false);
+                          setIsQueueOpen(false);
+                          revealPlayerChrome();
+                        }}
+                        className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                        aria-label={t("party.title")}
                       >
-                        {isInParty ? (
-                          Array.from({ length: visiblePartyWatchDotCount }).map(
-                            (_, index) => {
+                        <Users size={18} fill={isInParty ? "#fff" : "none"} />
+
+                        <span
+                          className="pointer-events-none absolute inset-0"
+                          aria-hidden="true"
+                        >
+                          {isInParty ? (
+                            Array.from({
+                              length: visiblePartyWatchDotCount,
+                            }).map((_, index) => {
                               const dotPosition =
                                 PARTY_WATCH_DOT_POSITIONS[index] ??
                                 PARTY_WATCH_DOT_POSITIONS[0];
@@ -5460,14 +5508,14 @@ export function CustomVideoPlayer({
                                   className={`absolute ${dotPosition} h-1.5 w-1.5 rounded-full border border-white/85 bg-white/85 shadow-accent-dot`}
                                 />
                               );
-                            },
-                          )
-                        ) : (
-                          <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
-                        )}
-                      </span>
-                    </button>
-                  </Tooltip>
+                            })
+                          ) : (
+                            <span className="absolute right-[0.35rem] top-[0.50rem] h-1.5 w-1.5 rounded-full border border-white/85 bg-transparent" />
+                          )}
+                        </span>
+                      </button>
+                    </Tooltip>
+                  )}
 
                   <Tooltip content={checkpointButtonLabel} group="top-right">
                     <button
@@ -5490,22 +5538,26 @@ export function CustomVideoPlayer({
                     </button>
                   </Tooltip>
 
-                  <Tooltip content={t("player.saveFrame")} group="top-right">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleSaveFrame();
-                      }}
-                      className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
-                      aria-label={t("player.saveFrame")}
-                      aria-busy={isSavingFrame}
-                    >
-                      <Camera
-                        size={18}
-                        className={isSavingFrame ? "animate-pulse" : undefined}
-                      />
-                    </button>
-                  </Tooltip>
+                  {isOfflineSource ? null : (
+                    <Tooltip content={t("player.saveFrame")} group="top-right">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleSaveFrame();
+                        }}
+                        className="relative flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                        aria-label={t("player.saveFrame")}
+                        aria-busy={isSavingFrame}
+                      >
+                        <Camera
+                          size={18}
+                          className={
+                            isSavingFrame ? "animate-pulse" : undefined
+                          }
+                        />
+                      </button>
+                    </Tooltip>
+                  )}
                 </div>
 
                 {isPartyWatchOpen ? (

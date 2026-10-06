@@ -223,3 +223,31 @@ describe("PlayerSettingsPanel complete-file qualities", () => {
     ).not.toContain("HD");
   });
 });
+
+describe("PlayerSettingsPanel for a stored copy", () => {
+  it("offers no quality, and opens on audio instead", () => {
+    render(
+      <PlayerSettingsPanel
+        source={{ ...source, offline: true }}
+        qualityOptions={[]}
+        selectedQualityId="auto"
+        selectedSubtitleStreamIndex={-1}
+        subtitleDelaySeconds={0}
+        canSwitchAudio
+        canSwitchSubtitles
+        onSelectAutoQuality={vi.fn()}
+        onSelectQuality={vi.fn()}
+        onSelectAudioStream={vi.fn()}
+        onSelectSubtitleStream={vi.fn()}
+        onSubtitleDelayChange={vi.fn()}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: "Quality" })).toBeNull();
+    expect(screen.queryByText("Auto")).toBeNull();
+    expect(screen.getByRole("button", { name: "Audio" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Subtitles" }),
+    ).toBeInTheDocument();
+  });
+});

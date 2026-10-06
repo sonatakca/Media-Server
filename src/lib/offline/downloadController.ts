@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { getItemWithSources } from "../mediaApi";
 import type { MediaItem } from "../types";
 import {
   defaultDownloadHeight,
@@ -71,9 +72,13 @@ export function startDownload(item: MediaItem): void {
   void (async () => {
     try {
       const plan = await getDownloadPlan(item.Id, supportsHevc());
+      // A page's item carries no track list, and a stored copy is played with
+      // no session to learn one from: without it the player would offer no
+      // audio or subtitle choice offline.
+      const itemWithTracks = await getItemWithSources(item.Id);
       const stored = await getOfflineTitle(item.Id);
       await downloadTitle(
-        item,
+        itemWithTracks,
         plan,
         stored?.height ?? defaultDownloadHeight(plan),
         {

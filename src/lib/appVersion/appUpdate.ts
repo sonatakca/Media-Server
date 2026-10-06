@@ -1,4 +1,4 @@
-import { readBuildIdFromHtml, type BuildInfo } from "./buildInfo";
+import type { BuildInfo } from "./buildInfo";
 
 /*
  * Notices when a newer build of the site is live, and moves this tab onto it.
@@ -96,42 +96,24 @@ function waitForActivation(registration: ServiceWorkerRegistration) {
 }
 
 /**
- * Whether every app shell in this precache is `buildId`. While a new worker
- * waits, old and new shells sit side by side under different revisions, and
- * the old worker still answers with its own — so one match is not enough.
- */
-async function precacheServesOnly(cacheName: string, buildId: string) {
-  const cache = await caches.open(cacheName);
-  const shells = (await cache.keys()).filter(
-    (request) => new URL(request.url).pathname === "/index.html",
-  );
-  if (shells.length === 0) return false;
-  for (const shell of shells) {
-    const response = await cache.match(shell);
-    if (!response || readBuildIdFromHtml(await response.text()) !== buildId) {
-      return false;
-    }
-  }
-  return true;
-}
-
-/**
- * Deletes every cache that could serve something other than `buildId`.
+ * Deletes caches that belong to no live worker: anything but the precache and
+ * the downloaded titles.
  *
- * The precache is kept only when its shell is already that build: then it is
- * the new worker's own, and deleting it would just cost the offline app until
- * the next deploy. Downloaded titles are always kept.
+ * The precache is never touched. It used to be dropped whenever it still held
+ * the old shell, but that is exactly its state while a new worker installs —
+ * and on a phone that takes longer than the wait for activation. Deleting it
+ * then left the active worker with no shell at all, and a worker still
+ * installing into it activated with a partial copy. Nothing showed online,
+ * where every miss falls through to the network; offline, every page load
+ * failed inside the worker. The worker keeps the precache in step itself:
+ * activation removes the old revisions.
  */
-export async function purgeStaleCaches(buildId: string): Promise<string[]> {
+export async function purgeStaleCaches(): Promise<string[]> {
   if (typeof caches === "undefined") return [];
   const deleted: string[] = [];
 
   for (const name of await caches.keys()) {
-    if (name.startsWith(KEPT_CACHE_PREFIX)) continue;
-    if (
-      name.includes("precache") &&
-      (await precacheServesOnly(name, buildId).catch(() => false))
-    ) {
+    if (name.startsWith(KEPT_CACHE_PREFIX) || name.includes("precache")) {
       continue;
     }
     if (await caches.delete(name)) deleted.push(name);
@@ -141,8 +123,7 @@ export async function purgeStaleCaches(buildId: string): Promise<string[]> {
 
 /**
  * Moves this tab onto the newest build: the new service worker first, so it
- * is the one precaching, then any cache still holding the old build, then a
- * reload. Never unregisters the worker — that would drop push alerts.
+ * is the one answering, then any stray cache, then a reload. Never unregisters the worker — that would drop push alerts.
  */
 export async function applyAppUpdate(): Promise<void> {
   if (state.status === "applying") return;
@@ -163,7 +144,7 @@ export async function applyAppUpdate(): Promise<void> {
       await registration.update().catch(() => undefined);
       await waitForActivation(registration);
     }
-    await purgeStaleCaches(latest.buildId);
+    await purgeStaleCaches();
   } catch {
     // Whatever was not cleared, the reload still asks the network.
   } finally {

@@ -40,29 +40,14 @@ export function isMultivariantPlaylist(text: string): boolean {
 }
 
 /**
- * The master playlist a download keeps: one audio rendition, the default.
- *
- * A package carries every audio track the source had, and storing a second or
- * third dub of a two-hour film is a gigabyte nobody asked for. Subtitle tracks
- * are text and cheap, so they stay. I-frame playlists are dropped: they only
- * serve trick play, which a stored copy does not offer.
+ * The master playlist a download keeps: every audio and subtitle rendition,
+ * so a stored copy offers the same tracks as streaming. I-frame playlists are
+ * dropped: they only serve trick play, which a stored copy answers from its
+ * stored seek thumbnails instead.
  */
-export function keepDefaultAudioOnly(master: string): string {
-  const lines = master.split(/\r?\n/);
-  const audio = lines.filter(
-    (line) => line.startsWith("#EXT-X-MEDIA:") && /TYPE=AUDIO/.test(line),
-  );
-  const keep =
-    audio.find((line) => /DEFAULT=YES/.test(line)) ?? audio[0] ?? null;
-  return lines
-    .filter(
-      (line) =>
-        !line.startsWith("#EXT-X-I-FRAME-STREAM-INF:") &&
-        !(
-          line.startsWith("#EXT-X-MEDIA:") &&
-          /TYPE=AUDIO/.test(line) &&
-          line !== keep
-        ),
-    )
+export function withoutIFramePlaylists(master: string): string {
+  return master
+    .split(/\r?\n/)
+    .filter((line) => !line.startsWith("#EXT-X-I-FRAME-STREAM-INF:"))
     .join("\n");
 }

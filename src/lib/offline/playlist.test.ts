@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   isMultivariantPlaylist,
-  keepDefaultAudioOnly,
   playlistReferences,
+  withoutIFramePlaylists,
 } from "./playlist";
 
 const BASE =
@@ -50,11 +50,11 @@ describe("playlistReferences", () => {
   });
 });
 
-describe("keepDefaultAudioOnly", () => {
-  it("keeps the default dub and the subtitles, and drops trick play", () => {
-    const kept = keepDefaultAudioOnly(MASTER);
+describe("withoutIFramePlaylists", () => {
+  it("keeps every dub and subtitle, and drops trick play", () => {
+    const kept = withoutIFramePlaylists(MASTER);
     expect(kept).toContain('NAME="Türkçe",LANGUAGE="tur",DEFAULT=YES');
-    expect(kept).not.toContain('NAME="English"');
+    expect(kept).toContain('NAME="English"');
     expect(kept).toContain("TYPE=SUBTITLES");
     expect(kept).not.toContain("I-FRAME");
     expect(isMultivariantPlaylist(kept)).toBe(true);

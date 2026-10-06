@@ -3,10 +3,10 @@
  *
  * Answers requests for titles kept on this device (see
  * src/lib/offline/offlineLibrary.ts) from Cache Storage, and leaves every
- * other request to the network exactly as before. Only playback packages and
- * title artwork are ever looked up, so ordinary API traffic never pays for a
- * cache lookup, and nothing that was not deliberately downloaded is served
- * from here.
+ * other request to the network exactly as before. Only playback packages,
+ * title artwork, seek thumbnails and stored subtitles are ever looked up, so
+ * ordinary API traffic never pays for a cache lookup, and nothing that was
+ * not deliberately downloaded is served from here.
  *
  * Ranges are answered by slicing the stored file: a package addresses one
  * file in byte ranges, and hls.js asks for them one at a time.
@@ -24,7 +24,8 @@ function partUrl(url, index) {
   part.searchParams.set("seyirlik-part", String(index));
   return part.toString();
 }
-const STORED_PATHS = /\/ownAPI\/v1\/(?:playback\/renditions\/|items\/[^/]+\/images\/)/;
+const STORED_PATHS =
+  /\/ownAPI\/v1\/(?:playback\/renditions\/|items\/[^/]+\/(?:images|trickplay\/sprites)\/|downloads\/items\/[^/]+\/subtitles\/)/;
 
 function parseRange(header, size) {
   const match = /^bytes=(\d*)-(\d*)$/.exec(header || "");
