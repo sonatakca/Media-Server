@@ -64,7 +64,9 @@ function tmdbProfileImageUrl(profilePath: string | null): string | null {
   ) {
     return null;
   }
-  return `${TMDB_IMAGE_BASE_URL}/w185${profilePath}`;
+  // h632 is TMDB's one profile size between a thumbnail and the original,
+  // and the smallest that stays sharp in a 2:3 card on a 2x screen.
+  return `${TMDB_IMAGE_BASE_URL}/h632${profilePath}`;
 }
 
 function readListQuery(context: RouteContext) {

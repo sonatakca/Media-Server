@@ -146,6 +146,8 @@ describe("SeriesLibraryDetails", () => {
       "https://image.tmdb.org/t/p/w185/actor.jpg",
     );
     expect(screen.getByText("Director")).toBeInTheDocument();
+    // No headshot: the frame holds an icon rather than a broken image.
+    expect(screen.queryByAltText("Example Director")).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Mark as watched" }),
     ).toBeInTheDocument();

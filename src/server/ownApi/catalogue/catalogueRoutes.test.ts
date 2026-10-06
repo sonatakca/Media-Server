@@ -435,7 +435,7 @@ describe("catalogue routes", () => {
         name: "Ada Actor",
         role: "actor",
         character: "The Lead",
-        imageUrl: "https://image.tmdb.org/t/p/w185/ada.jpg",
+        imageUrl: "https://image.tmdb.org/t/p/h632/ada.jpg",
       },
       {
         id: "dddddddd-2222-4222-8222-222222222222",

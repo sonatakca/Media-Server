@@ -1,5 +1,11 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Check, ChevronLeft, ChevronRight, Play } from "lucide-react";
+import {
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Play,
+  UserRound,
+} from "lucide-react";
 import { createPortal } from "react-dom";
 import { Link } from "react-router-dom";
 import { ErrorMessage } from "./ErrorMessage";
@@ -32,7 +38,6 @@ import type { MediaItem } from "../lib/types";
 import type { ItemPersonDto } from "../api/ownApi/dto";
 import type { Language } from "../i18n/translations";
 import { isItemCompleted } from "../lib/watchStatus";
-import defaultProfileImage from "../assets/Default_pfp.jpg";
 
 interface MediaPerson {
   Id: string;
@@ -217,6 +222,39 @@ function MediaShelf({
         {children}
       </div>
     </MotionReveal>
+  );
+}
+
+/**
+ * A headshot at its own 2:3 shape. TMDB's are portraits; a circle keeps only
+ * the middle of one and loses the hair and shoulders that make a face read.
+ * Without a picture, or when it fails to load, the frame holds an icon.
+ */
+function PersonPortrait({
+  name,
+  imageUrl,
+}: {
+  name: string;
+  imageUrl?: string;
+}) {
+  const [failed, setFailed] = useState(false);
+
+  return (
+    <div className="aspect-[2/3] w-full overflow-hidden rounded-xl border border-white/10 bg-white/[0.06]">
+      {imageUrl && !failed ? (
+        <img
+          src={imageUrl}
+          alt={name}
+          loading="lazy"
+          className="h-full w-full object-cover object-top"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="grid h-full w-full place-items-center text-white/25">
+          <UserRound aria-hidden size={36} strokeWidth={1.5} />
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -820,50 +858,26 @@ export function SeriesLibraryDetails({
 
       {cast.length > 0 ? (
         <MediaShelf title={labels.cast} variant={variant}>
-          {cast.map((person) => {
-            const personImageUrl = person.ImageUrl ?? defaultProfileImage;
-
-            return (
-              <div
-                key={person.Id}
-                className={
-                  isDesktop
-                    ? "w-28 shrink-0 snap-start text-center"
-                    : "w-[5.5rem] shrink-0 snap-start text-center"
-                }
-              >
-                <div
-                  className={
-                    isDesktop
-                      ? "mx-auto h-24 w-24 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
-                      : "mx-auto h-20 w-20 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
-                  }
-                >
-                  <img
-                    src={personImageUrl}
-                    alt={person.Name ?? ""}
-                    loading="lazy"
-                    className="h-full w-full object-cover"
-                    onError={(event) => {
-                      const image = event.currentTarget;
-
-                      if (image.src !== defaultProfileImage) {
-                        image.src = defaultProfileImage;
-                      }
-                    }}
-                  />
-                </div>
-                <p className="mt-2 line-clamp-2 text-xs font-bold text-white">
-                  {person.Name}
+          {cast.map((person) => (
+            <div
+              key={person.Id}
+              className={
+                isDesktop
+                  ? "w-32 shrink-0 snap-start"
+                  : "w-[5.5rem] shrink-0 snap-start"
+              }
+            >
+              <PersonPortrait name={person.Name} imageUrl={person.ImageUrl} />
+              <p className="mt-2 line-clamp-2 text-xs font-bold text-white">
+                {person.Name}
+              </p>
+              {person.Role ? (
+                <p className="mt-0.5 line-clamp-2 text-[11px] text-white/45">
+                  {person.Role}
                 </p>
-                {person.Role ? (
-                  <p className="mt-0.5 line-clamp-2 text-[11px] text-white/45">
-                    {person.Role}
-                  </p>
-                ) : null}
-              </div>
-            );
-          })}
+              ) : null}
+            </div>
+          ))}
         </MediaShelf>
       ) : null}
 
