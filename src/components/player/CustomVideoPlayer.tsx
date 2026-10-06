@@ -158,6 +158,11 @@ import {
   usePresentationSubtitleTrack,
 } from "./usePresentationSubtitleTrack";
 import {
+  isInPictureInPicture,
+  supportsPictureInPicture,
+  togglePictureInPicture,
+} from "./pictureInPicture";
+import {
   readStoredVideoFit,
   storeVideoFit,
   usePinchVideoFit,
@@ -1662,6 +1667,46 @@ export function CustomVideoPlayer({
         ? () => onAutoPlayNextEpisode(nextEpisode)
         : undefined,
   });
+
+  const [canPictureInPicture, setCanPictureInPicture] = useState(false);
+  const [isPictureInPicture, setIsPictureInPicture] = useState(false);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return undefined;
+
+    const sync = () => {
+      setCanPictureInPicture(supportsPictureInPicture(video));
+      setIsPictureInPicture(isInPictureInPicture(video));
+    };
+
+    sync();
+    const events = [
+      "loadedmetadata",
+      "webkitpresentationmodechanged",
+      "enterpictureinpicture",
+      "leavepictureinpicture",
+    ];
+    for (const eventName of events) video.addEventListener(eventName, sync);
+    return () => {
+      for (const eventName of events) {
+        video.removeEventListener(eventName, sync);
+      }
+    };
+  }, [deckEpoch, videoRef]);
+
+  const handleTogglePictureInPicture = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    try {
+      togglePictureInPicture(video);
+    } catch (pictureInPictureError) {
+      console.warn(
+        "[Seyirlik Playback] Picture in Picture was refused",
+        pictureInPictureError,
+      );
+    }
+  }, [videoRef]);
 
   useKeyboardShortcuts({
     enabled: true,
@@ -5749,6 +5794,9 @@ export function CustomVideoPlayer({
             onToggleMute={progress.toggleMute}
             onVolumeChange={progress.setVolume}
             onToggleFullscreen={toggleFullscreen}
+            canPictureInPicture={canPictureInPicture}
+            isPictureInPicture={isPictureInPicture}
+            onTogglePictureInPicture={handleTogglePictureInPicture}
             playbackQueue={playbackQueue}
             queueOpen={isQueueOpen}
             onOpenQueue={() => {

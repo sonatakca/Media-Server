@@ -471,6 +471,7 @@ export const tr = {
   "player.seasonEpisodeLabel": "{season}. Sezon {episode}. Bölüm",
   "player.settingsTitle": "Ayarlar",
   "player.settingsLabel": "Oynatma ayarları",
+  "player.pictureInPicture": "Resim içinde resim",
   "player.fullscreen": "Tam ekran",
   "player.mute": "Sesi kapat",
   "player.unmute": "Sesi aç",

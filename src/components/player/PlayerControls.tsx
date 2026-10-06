@@ -3,6 +3,7 @@ import {
   Loader2,
   Maximize,
   Pause,
+  PictureInPicture2,
   Play,
   RotateCcw,
   RotateCw,
@@ -68,6 +69,10 @@ interface PlayerControlsProps {
   onToggleMute: () => void;
   onVolumeChange: (volume: number) => void;
   onToggleFullscreen: () => void;
+  /** Shown only where the element can go into Picture in Picture. */
+  canPictureInPicture?: boolean;
+  isPictureInPicture?: boolean;
+  onTogglePictureInPicture?: () => void;
   onOpenQueue?: () => void;
   onPlayQueueItem?: (itemId: string) => void;
   onOpenSettings: () => void;
@@ -136,6 +141,9 @@ export function PlayerControls({
   onToggleMute,
   onVolumeChange,
   onToggleFullscreen,
+  canPictureInPicture = false,
+  isPictureInPicture = false,
+  onTogglePictureInPicture,
   onOpenQueue,
   onPlayQueueItem,
   onOpenSettings,
@@ -410,6 +418,23 @@ export function PlayerControls({
                   </button>
                 </Tooltip>
               </div>
+              {canPictureInPicture && onTogglePictureInPicture ? (
+                <Tooltip
+                  content={t("player.pictureInPicture")}
+                  offset="2.5rem"
+                  group="player-controls"
+                >
+                  <button
+                    type="button"
+                    onClick={onTogglePictureInPicture}
+                    className="flex h-11 w-11 items-center justify-center rounded-full text-white/85 transition-[backdrop-filter] hover:bg-white/[0.12] hover:backdrop-blur-lg hover:duration-1000 duration-[500ms] hover:text-white focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+                    aria-label={t("player.pictureInPicture")}
+                    aria-pressed={isPictureInPicture}
+                  >
+                    <PictureInPicture2 size={22} strokeWidth={2.2} />
+                  </button>
+                </Tooltip>
+              ) : null}
               <Tooltip
                 content={t("player.fullscreen")}
                 offset="2.5rem"

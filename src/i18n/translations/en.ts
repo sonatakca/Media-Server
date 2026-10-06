@@ -473,6 +473,7 @@ export const en = {
   "player.seasonEpisodeLabel": "Season {season} Episode {episode}",
   "player.settingsTitle": "Settings",
   "player.settingsLabel": "Playback settings",
+  "player.pictureInPicture": "Picture in picture",
   "player.fullscreen": "Fullscreen",
   "player.mute": "Mute",
   "player.unmute": "Unmute",
