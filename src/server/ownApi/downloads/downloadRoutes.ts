@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { OwnApiError } from "../ownApiHandler";
 import { sendData } from "../api/envelope";
@@ -12,6 +13,7 @@ import type { RenditionService } from "../../renditionService";
 import type { AdaptiveSubtitleTrack } from "../../../renditions/contracts";
 import {
   extractSubtitleAsWebVtt,
+  packagedSubtitleFor,
   resolveTextSubtitleInput,
 } from "../playback/subtitleDelivery";
 
@@ -21,7 +23,10 @@ export interface DownloadRoutesOptions {
     "canUserAccessItem" | "getPrimaryFile" | "listStreams"
   >;
   users: Pick<UserRepository, "findById">;
-  renditions?: Pick<RenditionService, "createManifest">;
+  renditions?: Pick<
+    RenditionService,
+    "createManifest" | "findPackagedSubtitles"
+  >;
   mediaRoot: string;
   ffmpegPath?: string;
 }
@@ -181,16 +186,41 @@ export function createDownloadRoutes({
         }
 
         const file = await catalogue.getPrimaryFile(itemId);
-        const input =
-          file && file.missingSince === null
-            ? resolveTextSubtitleInput(
-                file,
-                await catalogue.listStreams(file.id),
-                Number(assetMatch[1]),
-                resolvedMediaRoot,
-              )
-            : null;
-        if (!input) {
+        if (!file || file.missingSince !== null) {
+          throw new OwnApiError(
+            "SUBTITLE_NOT_FOUND",
+            "The requested subtitle could not be found.",
+            404,
+          );
+        }
+        const streamIndex = Number(assetMatch[1]);
+        const streams = await catalogue.listStreams(file.id);
+        const packaged = packagedSubtitleFor(
+          streams,
+          renditions?.findPackagedSubtitles
+            ? await renditions
+                .findPackagedSubtitles({
+                  mediaId: file.id,
+                  filePath: path.resolve(
+                    resolvedMediaRoot,
+                    ...file.relativePath.split("/"),
+                  ),
+                  size: Number(file.sizeBytes),
+                  mtimeMs: Number(file.mtimeMs),
+                })
+                .catch(() => [])
+            : [],
+          streamIndex,
+        );
+        const input = packaged
+          ? null
+          : resolveTextSubtitleInput(
+              file,
+              streams,
+              streamIndex,
+              resolvedMediaRoot,
+            );
+        if (!packaged && !input) {
           throw new OwnApiError(
             "SUBTITLE_NOT_FOUND",
             "The requested subtitle could not be found.",
@@ -200,11 +230,13 @@ export function createDownloadRoutes({
 
         let webVtt: Buffer;
         try {
-          webVtt = await extractSubtitleAsWebVtt(
-            input.inputPath,
-            input.inputStreamIndex,
-            ffmpegPath,
-          );
+          webVtt = packaged
+            ? await readFile(packaged.path)
+            : await extractSubtitleAsWebVtt(
+                input!.inputPath,
+                input!.inputStreamIndex,
+                ffmpegPath,
+              );
         } catch {
           throw new OwnApiError(
             "SUBTITLE_UNAVAILABLE",

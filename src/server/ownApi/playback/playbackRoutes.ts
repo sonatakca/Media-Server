@@ -26,11 +26,16 @@ import type {
 import type { CatalogueRepository } from "../catalogue/catalogueRepository";
 import { buildAnalysisFromInventory } from "../probe/analysisFromInventory";
 import type { PlaybackSessionStore } from "./playbackSessionStore";
-import type { RenditionService } from "../../renditionService";
+import type {
+  PackagedSubtitle,
+  RenditionService,
+} from "../../renditionService";
 import type { MediaQualityManifest } from "../../../renditions/contracts";
 import {
   extractSubtitleAsWebVtt,
+  packagedSubtitleFor,
   resolveTextSubtitleInput,
+  withPackagedSubtitles,
 } from "./subtitleDelivery";
 import { captureFrameAsPng, isHdrTransfer } from "./frameCapture";
 import {
@@ -199,6 +204,27 @@ export function createPlaybackRoutes({
    * of an item or file id can never be traded for bytes from a library the
    * caller cannot see.
    */
+  /** The subtitles a file's package carries; none without a ready package. */
+  async function packagedSubtitlesOf(file: {
+    id: string;
+    relativePath: string;
+    sizeBytes: string | number;
+    mtimeMs: string | number;
+  }): Promise<PackagedSubtitle[]> {
+    if (!renditions?.findPackagedSubtitles) return [];
+    return renditions
+      .findPackagedSubtitles({
+        mediaId: file.id,
+        filePath: path.resolve(
+          resolvedMediaRoot,
+          ...file.relativePath.split("/"),
+        ),
+        size: Number(file.sizeBytes),
+        mtimeMs: Number(file.mtimeMs),
+      })
+      .catch(() => []);
+  }
+
   async function resolvePlayable(
     userId: string,
     itemId: string,
@@ -276,10 +302,12 @@ export function createPlaybackRoutes({
           );
     }
 
-    const [streams, chapters] = await Promise.all([
+    const [catalogued, chapters, packagedSubtitles] = await Promise.all([
       catalogue.listStreams(file.id),
       catalogue.listChapters(itemId),
+      packagedSubtitlesOf(file),
     ]);
+    const streams = withPackagedSubtitles(catalogued, packagedSubtitles);
 
     const analysis = buildAnalysisFromInventory({
       file,
@@ -840,16 +868,28 @@ export function createPlaybackRoutes({
 
         const streamIndex = Number(assetMatch[1]);
         const file = await catalogue.getFileById(session.mediaFileId);
-        const input =
-          file && file.missingSince === null
-            ? resolveTextSubtitleInput(
-                file,
-                await catalogue.listStreams(file.id),
-                streamIndex,
-                resolvedMediaRoot,
-              )
-            : null;
-        if (!input) {
+        if (!file || file.missingSince !== null) {
+          throw new OwnApiError(
+            "SUBTITLE_NOT_FOUND",
+            "The requested subtitle could not be found.",
+            404,
+          );
+        }
+        const streams = await catalogue.listStreams(file.id);
+        const packaged = packagedSubtitleFor(
+          streams,
+          await packagedSubtitlesOf(file),
+          streamIndex,
+        );
+        const input = packaged
+          ? null
+          : resolveTextSubtitleInput(
+              file,
+              streams,
+              streamIndex,
+              resolvedMediaRoot,
+            );
+        if (!packaged && !input) {
           throw new OwnApiError(
             "SUBTITLE_NOT_FOUND",
             "The requested subtitle could not be found.",
@@ -859,11 +899,13 @@ export function createPlaybackRoutes({
 
         let webVtt: Buffer;
         try {
-          webVtt = await extractSubtitleAsWebVtt(
-            input.inputPath,
-            input.inputStreamIndex,
-            ffmpegPath,
-          );
+          webVtt = packaged
+            ? await readFile(packaged.path)
+            : await extractSubtitleAsWebVtt(
+                input!.inputPath,
+                input!.inputStreamIndex,
+                ffmpegPath,
+              );
         } catch {
           throw new OwnApiError(
             "SUBTITLE_UNAVAILABLE",

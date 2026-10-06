@@ -14,6 +14,10 @@ writeFileSync(
   path.join(MEDIA_ROOT, "Film.tr.srt"),
   "1\n00:00:01,000 --> 00:00:02,500\nMerhaba\n",
 );
+writeFileSync(
+  path.join(MEDIA_ROOT, "packaged-turkish.vtt"),
+  "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nPaketten\n",
+);
 afterAll(() => rmSync(MEDIA_ROOT, { recursive: true, force: true }));
 
 const STREAMS = [
@@ -67,6 +71,17 @@ function build(options: {
         listStreams: async () => STREAMS as never,
       },
       renditions: {
+        // Stream 7 exists only in the package: packaged from a sidecar the
+        // catalogue never recorded.
+        findPackagedSubtitles: async () => [
+          {
+            streamIndex: 7,
+            language: "tur",
+            isDefault: false,
+            isForced: false,
+            path: path.join(MEDIA_ROOT, "packaged-turkish.vtt"),
+          },
+        ],
         createManifest: async () =>
           ({
             mediaId: "file-1",
@@ -216,6 +231,15 @@ describe("download subtitles", () => {
     );
     expect(result).toMatchObject({ vtt: expect.stringContaining("Merhaba") });
     expect((result as { vtt: string }).vtt).toMatch(/^WEBVTT/);
+  });
+
+  it("serves a track only the package carries from its converted file", async () => {
+    expect(
+      await call(
+        build({ allowDownloads: true, packaged: true }),
+        subtitle("7.vtt"),
+      ),
+    ).toEqual({ vtt: expect.stringContaining("Paketten") });
   });
 
   it("refuses an account without the download permission", async () => {

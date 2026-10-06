@@ -14,7 +14,13 @@ import {
   parseSearchQuery,
   requireUuid,
 } from "../api/validation";
-import type { CatalogueRepository, ItemKind } from "./catalogueRepository";
+import type {
+  CatalogueRepository,
+  ItemKind,
+  MediaFileRow,
+} from "./catalogueRepository";
+import type { PackagedSubtitle } from "../../renditionService";
+import { withPackagedSubtitles } from "../playback/subtitleDelivery";
 import type { CatalogueService } from "./catalogueService";
 import type { ItemDto } from "./itemDto";
 import { isVisibleSubtitleLanguage } from "../../../lib/subtitleLanguages";
@@ -22,6 +28,8 @@ import { isVisibleSubtitleLanguage } from "../../../lib/subtitleLanguages";
 export interface CatalogueRoutesOptions {
   service: CatalogueService;
   catalogue: CatalogueRepository;
+  /** The subtitles a file's package carries; see `withPackagedSubtitles`. */
+  packagedSubtitles?: (file: MediaFileRow) => Promise<PackagedSubtitle[]>;
 }
 
 const SORT_VALUES = [
@@ -79,6 +87,7 @@ function paginationFor(
 export function createCatalogueRoutes({
   service,
   catalogue,
+  packagedSubtitles,
 }: CatalogueRoutesOptions): RouteDefinition[] {
   async function listByKinds(
     context: RouteContext,
@@ -269,7 +278,12 @@ export function createCatalogueRoutes({
               probeState: file.probeState,
               // The relative path is deliberately absent: a client never needs
               // it, and exposing it would leak the library layout.
-              streams: (await catalogue.listStreams(file.id))
+              streams: withPackagedSubtitles(
+                await catalogue.listStreams(file.id),
+                packagedSubtitles
+                  ? await packagedSubtitles(file).catch(() => [])
+                  : [],
+              )
                 .filter(
                   (stream) =>
                     stream.kind !== "subtitle" ||

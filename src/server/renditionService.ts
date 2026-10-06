@@ -129,6 +129,18 @@ export interface ResolvedRenditionFile {
  * all of it at build time, so this is the source's own description, not a
  * reconstruction of it.
  */
+/** A text subtitle a title's adaptive package carries, already WebVTT. */
+export interface PackagedSubtitle {
+  /** The source stream it was converted from, as the catalogue numbers it. */
+  streamIndex: number;
+  language?: string;
+  title?: string;
+  isDefault: boolean;
+  isForced: boolean;
+  /** The converted file, absolute. */
+  path: string;
+}
+
 export interface PackagedSourceDescription {
   durationSeconds: number;
   video: VideoStreamAnalysis;
@@ -137,6 +149,13 @@ export interface PackagedSourceDescription {
 }
 
 export interface RenditionService {
+  /**
+   * The text subtitles a ready package carries, each one already WebVTT.
+   * Empty when the title has no ready package.
+   */
+  findPackagedSubtitles?(
+    media: PlaybackResolvedMedia,
+  ): Promise<PackagedSubtitle[]>;
   createManifest(
     media: PlaybackResolvedMedia,
     original?: RenditionOriginalDescriptor,
@@ -457,6 +476,21 @@ export function createRenditionService({
             : null),
       colorPrimaries: best.colorPrimaries ?? null,
     };
+  };
+
+  const findPackagedSubtitles: NonNullable<
+    RenditionService["findPackagedSubtitles"]
+  > = async (media) => {
+    const ready = await readyPackageFor(media);
+    if (!ready) return [];
+    return (ready.metadata.subtitleRenditions ?? []).map((rendition) => ({
+      streamIndex: rendition.sourceStreamIndex,
+      ...(rendition.language ? { language: rendition.language } : {}),
+      ...(rendition.title ? { title: rendition.title } : {}),
+      isDefault: rendition.isDefault,
+      isForced: rendition.isForced,
+      path: path.join(ready.versionRoot, ...rendition.subtitlePath.split("/")),
+    }));
   };
 
   const findPackagedAudio: RenditionService["findPackagedAudio"] = async (
@@ -854,5 +888,6 @@ export function createRenditionService({
     describePackagedSource,
     findPackagedVideo,
     findPackagedAudio,
+    findPackagedSubtitles,
   };
 }

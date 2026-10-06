@@ -1483,7 +1483,17 @@ export async function createNativeRuntime({
   };
 
   const routes: RouteDefinition[] = [
-    ...createCatalogueRoutes({ service: catalogueService, catalogue }),
+    ...createCatalogueRoutes({
+      service: catalogueService,
+      catalogue,
+      packagedSubtitles: async (file) =>
+        (await renditions?.findPackagedSubtitles?.({
+          mediaId: file.id,
+          filePath: path.resolve(mediaRoot, ...file.relativePath.split("/")),
+          size: Number(file.sizeBytes),
+          mtimeMs: Number(file.mtimeMs),
+        })) ?? [],
+    }),
     ...createCurationRoutes({ curation, catalogue }),
     ...createProgressRoutes({ userState, catalogue }),
     ...createBookPositionRoutes({ positions: bookPositions, catalogue }),

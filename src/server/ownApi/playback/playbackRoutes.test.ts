@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
@@ -478,11 +481,20 @@ describe("session reads after the session goes idle", () => {
   const FILE = "22222222-2222-4222-8222-222222222222";
   const SESSION = "66666666-6666-4666-8666-666666666666";
 
-  function buildSubtitleRouter(session: {
-    userId: string;
-    status: "active" | "ended" | "failed";
-    itemId?: string;
-  }) {
+  function buildSubtitleRouter(
+    session: {
+      userId: string;
+      status: "active" | "ended" | "failed";
+      itemId?: string;
+    },
+    packagedSubtitles: Array<{
+      streamIndex: number;
+      language?: string;
+      isDefault: boolean;
+      isForced: boolean;
+      path: string;
+    }> = [],
+  ) {
     const catalogue = {
       getFileById: async () => ({
         id: FILE,
@@ -533,6 +545,9 @@ describe("session reads after the session goes idle", () => {
         sessions,
         sessionManager: {} as never,
         mediaRoot: "/media",
+        renditions: {
+          findPackagedSubtitles: async () => packagedSubtitles,
+        } as never,
         // Extraction itself is covered where it lives. A binary that cannot
         // start turns a request that got past the session into a 422, which is
         // what separates "reached the track" from "refused at the door".
@@ -580,6 +595,40 @@ describe("session reads after the session goes idle", () => {
         buildSubtitleRouter({ userId: VIEWER, status: "ended" }),
       ),
     ).toBe("SUBTITLE_UNAVAILABLE");
+  });
+
+  it("serves a track only the package carries from the package, with no extraction", async () => {
+    // A subtitle packaged from a sidecar the catalogue never recorded, or one
+    // of a title whose source is gone. ffmpeg cannot start here, so "served"
+    // can only mean the converted file was read.
+    const directory = mkdtempSync(path.join(tmpdir(), "seyirlik-packaged-"));
+    const vtt = path.join(directory, "turkish.vtt");
+    writeFileSync(vtt, "WEBVTT\n\n00:00:01.000 --> 00:00:02.000\nMerhaba\n");
+    try {
+      expect(
+        await requestTrack(
+          buildSubtitleRouter({ userId: VIEWER, status: "ended" }, [
+            {
+              streamIndex: 7,
+              language: "tur",
+              isDefault: false,
+              isForced: false,
+              path: vtt,
+            },
+          ]),
+          `/ownAPI/v1/playback/sessions/${SESSION}/subtitles/7.vtt`,
+        ),
+      ).toBe("served");
+      // An index the package does not carry and the catalogue does not know.
+      expect(
+        await requestTrack(
+          buildSubtitleRouter({ userId: VIEWER, status: "ended" }),
+          `/ownAPI/v1/playback/sessions/${SESSION}/subtitles/7.vtt`,
+        ),
+      ).toBe("SUBTITLE_NOT_FOUND");
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("refuses another viewer's session, a failed one, and a revoked title", async () => {
