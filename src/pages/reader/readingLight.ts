@@ -41,6 +41,8 @@ interface LitBlock {
 interface LitDocument {
   sectionIndex: number;
   height: number;
+  /** Its faces were still loading when it was last measured. */
+  fontsLoading: boolean;
   blocks: LitBlock[];
   resting: boolean;
 }
@@ -65,46 +67,116 @@ const slot = (top: number, bottom: number, value: number): LitSlot => ({
   start: 0,
 });
 
+/** A text line of a block, in px from the block's top and left edges. */
+interface Row {
+  top: number;
+  bottom: number;
+  left: number;
+}
+
 /**
- * The lines a block is set in, from the boxes of its text. Boxes taller than a
- * line and a half (a drop cap, an inline image) are left out so they do not
- * merge three lines into one; each line's slot reaches halfway into the
- * leading on either side, so the slots tile the block without gaps.
+ * A block's top in its document as laid out, before any transform. Blocks
+ * fade in with a lift of 0.6rem, and a rect read then puts a block up to half a
+ * line from where it comes to rest; lines measured against that put every step
+ * of the light through the middle of a line.
  */
-function measureLines(
-  element: HTMLElement,
-  blockTop: number,
-  height: number,
-): LitSlot[] {
+function layoutTop(element: HTMLElement) {
+  let top = 0;
+
+  for (
+    let node: HTMLElement | null = element;
+    node;
+    node = node.offsetParent as HTMLElement | null
+  ) {
+    top += node.offsetTop;
+  }
+
+  return top;
+}
+
+/**
+ * The boxes a range gives for a drop cap's letter (and any punctuation set with
+ * it), which are not a line of text: WebKit gives the glyph's box, three lines
+ * tall, and Chromium a one-line box sitting above the first line.
+ */
+function dropCapBoxes(element: HTMLElement): DOMRect[] {
+  if (!element.classList.contains("seyirlik-dropcap")) {
+    return [];
+  }
+
   const document = element.ownerDocument;
-  const view = document.defaultView;
-  const style = view?.getComputedStyle(element);
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node.textContent ?? "";
+    const letter = /^(\s*)[\p{P}\s]*[\p{L}\p{N}]/u.exec(text);
+
+    if (!letter) {
+      if (text.trim()) {
+        return [];
+      }
+
+      continue;
+    }
+
+    const range = document.createRange();
+    range.setStart(node, letter[1].length);
+    range.setEnd(node, letter[0].length);
+    return Array.from(range.getClientRects());
+  }
+
+  return [];
+}
+
+/**
+ * The lines a block is set in, from the boxes of its text, or null when the
+ * block is set tighter than its own type (a chapter numeral, a display
+ * heading): its ink overruns its lines, so it is lit as one, since stepping it
+ * would need a mask and a mask would crop that ink. Boxes taller than a line
+ * and a half (an inline image) are left out so they do not merge three lines
+ * into one, and so is a drop cap's letter, which has its own layer.
+ *
+ * Boxes are read against the block's own box as it stands now, so a transform
+ * on the block moves both alike and cancels out.
+ */
+function measureRows(element: HTMLElement): Row[] | null {
+  const document = element.ownerDocument;
+  const style = document.defaultView?.getComputedStyle(element);
   const lineHeight =
     parseFloat(style?.lineHeight ?? "") ||
     parseFloat(style?.fontSize ?? "16") * 1.5;
   const fontSize = parseFloat(style?.fontSize ?? "16");
 
-  // Set tighter than its own type (a chapter numeral, a display heading), a
-  // block's ink overruns its lines, so it is lit as one: stepping it would
-  // need a mask, and a mask would crop that ink.
   if (lineHeight < fontSize * 1.15) {
-    return [slot(0, height, 1)];
+    return null;
   }
 
-  const scrollY = view?.scrollY ?? 0;
+  const origin = element.getBoundingClientRect();
+  const cap = dropCapBoxes(element);
+  const isCap = (box: DOMRect) =>
+    cap.some(
+      (other) =>
+        Math.abs(other.top - box.top) < 0.5 &&
+        Math.abs(other.left - box.left) < 0.5 &&
+        Math.abs(other.height - box.height) < 0.5,
+    );
   const range = document.createRange();
   range.selectNodeContents(element);
   const boxes = Array.from(range.getClientRects())
     .filter(
       (box) =>
-        box.width > 0 && box.height > 0 && box.height <= lineHeight * 1.6,
+        box.width > 0 &&
+        box.height > 0 &&
+        box.height <= lineHeight * 1.6 &&
+        !isCap(box),
     )
     .map((box) => ({
-      top: box.top + scrollY - blockTop,
-      bottom: box.bottom + scrollY - blockTop,
+      top: box.top - origin.top,
+      bottom: box.bottom - origin.top,
+      left: box.left - origin.left,
     }))
     .sort((a, b) => a.top - b.top);
-  const rows: Array<{ top: number; bottom: number }> = [];
+  const rows: Row[] = [];
 
   for (const box of boxes) {
     const last = rows[rows.length - 1];
@@ -118,12 +190,21 @@ function measureLines(
     ) {
       last.top = Math.min(last.top, box.top);
       last.bottom = Math.max(last.bottom, box.bottom);
+      last.left = Math.min(last.left, box.left);
     } else {
       rows.push({ ...box });
     }
   }
 
-  if (rows.length === 0) {
+  return rows;
+}
+
+/**
+ * Each line's slot reaches halfway into the leading on either side, so the
+ * slots tile the block without gaps.
+ */
+function slotsFor(rows: Row[] | null, height: number): LitSlot[] {
+  if (!rows || rows.length === 0) {
     return [slot(0, height, 1)];
   }
 
@@ -139,25 +220,25 @@ function measureLines(
 }
 
 /**
- * The drop cap's box, for its own layer of light. An `initial-letter` cap is a
- * pseudo-element, and a range over its character returns a small placeholder
- * box rather than the glyph, so the box is read from the lines the cap
- * indents: from the block's left edge to where those lines' text begins, and
- * from the block's top to the bottom of the last line it spans. The number of
- * lines is the reader's own (`DROP_CAP_LINES`), not the computed style, which
- * Safari does not report for the pseudo-element.
+ * The drop cap's box, for its own layer of light: the whole of the lines it
+ * stands beside, from the block's left edge to where their text begins. The
+ * cap is a pseudo-element, and a range over its character returns either the
+ * glyph's box or a small placeholder at the left edge of the first line, so
+ * the width is the furthest any of those lines is indented, which a
+ * placeholder cannot pull in. The number of lines is the reader's own
+ * (`DROP_CAP_LINES`), not the computed style, which Safari does not report for
+ * the pseudo-element.
  */
 function measureDropCap(
   element: HTMLElement,
-  blockTop: number,
-  blockLeft: number,
+  rows: Row[] | null,
+  slots: LitSlot[],
 ) {
-  if (!element.classList.contains("seyirlik-dropcap")) {
+  if (!element.classList.contains("seyirlik-dropcap") || !rows?.length) {
     return null;
   }
 
-  const document = element.ownerDocument;
-  const view = document.defaultView;
+  const view = element.ownerDocument.defaultView;
   const supported =
     view?.CSS?.supports?.("initial-letter", String(DROP_CAP_LINES)) ||
     view?.CSS?.supports?.("-webkit-initial-letter", String(DROP_CAP_LINES));
@@ -167,31 +248,10 @@ function measureDropCap(
     return null;
   }
 
-  const style = view?.getComputedStyle(element);
-  const lineHeight =
-    parseFloat(style?.lineHeight ?? "") ||
-    parseFloat(style?.fontSize ?? "16") * 1.5;
-  const scrollY = view?.scrollY ?? 0;
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  // The text lines the cap stands beside: boxes inside the block, one line high.
-  const lines = Array.from(range.getClientRects())
-    .map((box) => ({
-      top: box.top + scrollY - blockTop,
-      bottom: box.bottom + scrollY - blockTop,
-      left: box.left - blockLeft,
-    }))
-    .filter((box) => box.top > -1 && box.bottom - box.top <= lineHeight * 1.6)
-    .filter((box) => box.top < lineHeight * DROP_CAP_LINES)
-    .sort((a, b) => a.top - b.top);
-
-  if (lines.length === 0) {
-    return null;
-  }
-
-  const width = Math.min(...lines.map((box) => box.left));
-  const height = Math.max(...lines.map((box) => box.bottom));
-  const firstLine = (lines[0].top + lines[0].bottom) / 2;
+  const beside = rows.slice(0, DROP_CAP_LINES);
+  const width = Math.max(...beside.map((row) => row.left));
+  const height = slots[beside.length - 1].bottom;
+  const firstLine = (slots[0].top + slots[0].bottom) / 2;
 
   return width > 0 && height > 0
     ? { left: 0, top: 0, width, height, firstLine }
@@ -302,6 +362,7 @@ export class ReadingLight {
     this.documents.set(document, {
       sectionIndex,
       height: -1,
+      fontsLoading: false,
       resting: false,
       blocks: elements.map((element) => ({
         element,
@@ -382,16 +443,21 @@ export class ReadingLight {
       }
 
       const height = document.body?.scrollHeight ?? 0;
+      // A face that arrives (or fails, and falls back) after the lines were
+      // measured can move them without changing the document's height: the
+      // drop cap's face sets how far the lines beside it are indented. Font
+      // events do not reach a listener reliably in WebKit, so the set's status
+      // is read instead.
+      const fontsLoading = document.fonts?.status === "loading";
+      const fontsArrived = entry.fontsLoading && !fontsLoading;
+      entry.fontsLoading = fontsLoading;
 
-      if (height !== entry.height) {
+      if (height !== entry.height || fontsArrived) {
         entry.height = height;
         entry.resting = false;
-        const scrollY = document.defaultView?.scrollY ?? 0;
-
         for (const block of entry.blocks) {
-          const box = block.element.getBoundingClientRect();
-          block.top = box.top + scrollY;
-          block.bottom = box.bottom + scrollY;
+          block.top = layoutTop(block.element);
+          block.bottom = block.top + block.element.offsetHeight;
           block.measured = false;
           block.dirty = true;
 
@@ -430,11 +496,8 @@ export class ReadingLight {
         ) {
           // Lines keep the ink they had where they were, so a reflow does not flash.
           const before = block.slots;
-          block.slots = measureLines(
-            block.element,
-            block.top,
-            block.bottom - block.top,
-          );
+          const rows = measureRows(block.element);
+          block.slots = slotsFor(rows, block.bottom - block.top);
           block.slots.forEach((slot) => {
             const middle = (slot.top + slot.bottom) / 2;
             const was =
@@ -443,11 +506,7 @@ export class ReadingLight {
             slot.value = slot.from = slot.goal = slot.target = was.value;
           });
           block.dirty = true;
-          block.dropCap = measureDropCap(
-            block.element,
-            block.top,
-            block.element.getBoundingClientRect().left,
-          );
+          block.dropCap = measureDropCap(block.element, rows, block.slots);
           block.measured = true;
         }
 
