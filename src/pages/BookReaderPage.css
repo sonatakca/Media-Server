@@ -420,6 +420,13 @@ body:has(.seyirlik-reader-shell) {
   /* Never taller than the window under the bar: what does not fit scrolls. */
   max-height: calc(100dvh - 5.4rem - var(--safe-area-inset-top, 0px));
   padding: 1.125rem 1.125rem 0.5rem;
+  /* Opaque: the glass laid on the theme's own ground, so the sheet keeps its
+     tint but no line of the book reads through the controls. */
+  background:
+    linear-gradient(var(--rd-glass-solid), var(--rd-glass-solid)),
+    var(--rd-ground);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
   transform-origin: calc(100% - 4.1rem) -0.5rem;
 }
 
