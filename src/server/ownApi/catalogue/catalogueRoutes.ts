@@ -23,6 +23,7 @@ import type { PackagedSubtitle } from "../../renditionService";
 import { withPackagedSubtitles } from "../playback/subtitleDelivery";
 import type { CatalogueService } from "./catalogueService";
 import type { ItemDto } from "./itemDto";
+import { TMDB_IMAGE_BASE_URL } from "../metadata/tmdbClient";
 import { isVisibleSubtitleLanguage } from "../../../lib/subtitleLanguages";
 
 export interface CatalogueRoutesOptions {
@@ -49,6 +50,21 @@ function notFound(): OwnApiError {
     "The requested item could not be found.",
     404,
   );
+}
+
+/**
+ * A headshot on TMDB's image CDN, which the browser already loads for search
+ * results. Only a bare file path is accepted, so a stored value can never
+ * steer the URL somewhere else.
+ */
+function tmdbProfileImageUrl(profilePath: string | null): string | null {
+  if (
+    !profilePath ||
+    !/^\/[A-Za-z0-9_-]+\.(?:jpg|jpeg|png|webp)$/.test(profilePath)
+  ) {
+    return null;
+  }
+  return `${TMDB_IMAGE_BASE_URL}/w185${profilePath}`;
 }
 
 function readListQuery(context: RouteContext) {
@@ -363,6 +379,36 @@ export function createCatalogueRoutes({
             startMs: Number(segment.startMs),
             endMs: Number(segment.endMs),
           })),
+        );
+      },
+    },
+    {
+      method: "GET",
+      path: "/items/:itemId/people",
+      access: "authenticated",
+      handle: async (context) => {
+        const principal = context.requirePrincipal();
+        const itemId = requireUuid(context.params.itemId, "itemId");
+        if (!(await catalogue.canUserAccessItem(principal.userId, itemId))) {
+          throw notFound();
+        }
+
+        const people = await catalogue.listPeople(itemId);
+        sendData(
+          context.response,
+          context.requestId,
+          people.map((person) => {
+            const imageUrl = tmdbProfileImageUrl(person.tmdbProfilePath);
+            return {
+              id: person.personId,
+              name: person.name,
+              role: person.role,
+              ...(person.characterName
+                ? { character: person.characterName }
+                : {}),
+              ...(imageUrl ? { imageUrl } : {}),
+            };
+          }),
         );
       },
     },

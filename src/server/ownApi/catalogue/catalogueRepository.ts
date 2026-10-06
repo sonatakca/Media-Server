@@ -237,6 +237,14 @@ export const LIBRARY_VISIBILITY_PREDICATE = `
   )
 `;
 
+export interface ItemPersonRow {
+  personId: string;
+  name: string;
+  role: "actor" | "director" | "writer" | "producer" | "composer" | "guest";
+  characterName: string | null;
+  tmdbProfilePath: string | null;
+}
+
 /**
  * Read side of the catalogue. Scan-time writes live in `catalogueScanStore.ts`:
  * the two have colliding operation names (`listItems` over a user's visible
@@ -303,6 +311,8 @@ export interface CatalogueRepository {
   ): Promise<
     Array<{ id: string; type: string; startMs: string; endMs: string }>
   >;
+  /** An item's credited people, cast in billing order and then crew. */
+  listPeople(itemId: string): Promise<ItemPersonRow[]>;
   listPendingProbeFiles(limit: number): Promise<MediaFileRow[]>;
   /**
    * Every movie and episode the processing page can act on, with its canonical
@@ -850,6 +860,30 @@ export function createCatalogueRepository(
         type: row.segment_type,
         startMs: row.start_ms,
         endMs: row.end_ms,
+      }));
+    },
+
+    listPeople: async (itemId) => {
+      const rows = await query<{
+        person_id: string;
+        name: string;
+        role: ItemPersonRow["role"];
+        character_name: string | null;
+        provider_ids: Record<string, string> | null;
+      }>(
+        `SELECT ip.person_id, p.name, ip.role, ip.character_name, p.provider_ids
+         FROM item_people ip
+         JOIN people p ON p.id = ip.person_id
+         WHERE ip.item_id = $1
+         ORDER BY ip.sort_order, p.name`,
+        [itemId],
+      );
+      return rows.map((row) => ({
+        personId: row.person_id,
+        name: row.name,
+        role: row.role,
+        characterName: row.character_name,
+        tmdbProfilePath: row.provider_ids?.tmdbProfilePath ?? null,
       }));
     },
 

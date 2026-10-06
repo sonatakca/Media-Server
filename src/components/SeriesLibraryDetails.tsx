@@ -16,6 +16,7 @@ import { useLanguage } from "../i18n/LanguageContext";
 import {
   getAllSeriesEpisodes,
   getItem,
+  getItemPeople,
   getLocalTrailers,
   getPrimaryImageUrl,
   getSeasonEpisodes,
@@ -28,15 +29,17 @@ import { getRouteForItem, getWatchRouteForItem } from "../lib/routes";
 import type { PlayerNavigationState } from "../lib/routes";
 import { setPageTitle } from "../lib/pageTitle";
 import type { MediaItem } from "../lib/types";
+import type { ItemPersonDto } from "../api/ownApi/dto";
+import type { Language } from "../i18n/translations";
 import { isItemCompleted } from "../lib/watchStatus";
 import defaultProfileImage from "../assets/Default_pfp.jpg";
 
 interface MediaPerson {
-  Id?: string;
-  Name?: string;
+  Id: string;
+  Name: string;
+  /** The character played, then any crew jobs, e.g. "Rick · Director". */
   Role?: string;
-  Type?: string;
-  PrimaryImageTag?: string;
+  ImageUrl?: string;
 }
 
 interface MediaStudio {
@@ -45,47 +48,58 @@ interface MediaStudio {
 }
 
 type SeriesDetailsItem = MediaItem & {
-  People?: MediaPerson[];
   Studios?: MediaStudio[];
 };
 
-function mergeSeriesPeople(
-  seriesPeople: MediaPerson[] | undefined,
-  episodeItems: MediaItem[],
-): MediaPerson[] {
-  const mergedPeople: MediaPerson[] = [];
-  const seenPeople = new Set<string>();
+const CREW_JOB_LABELS: Record<
+  "tr" | "en",
+  Record<"director" | "writer" | "producer" | "composer", string>
+> = {
+  tr: {
+    director: "Yönetmen",
+    writer: "Senarist",
+    producer: "Yapımcı",
+    composer: "Besteci",
+  },
+  en: {
+    director: "Director",
+    writer: "Writer",
+    producer: "Producer",
+    composer: "Composer",
+  },
+};
 
-  const addPerson = (person: MediaPerson) => {
-    if (!person.Name) {
-      return;
+/**
+ * One card per person: the server lists a credit per role, so someone who
+ * both directs and acts arrives twice and is folded together here, keeping
+ * the place of their first credit.
+ */
+function toCredits(people: ItemPersonDto[], language: Language): MediaPerson[] {
+  const credits = new Map<
+    string,
+    { person: ItemPersonDto; character?: string; jobs: string[] }
+  >();
+
+  for (const person of people) {
+    const credit = credits.get(person.id) ?? { person, jobs: [] };
+    credits.set(person.id, credit);
+
+    if (person.role === "actor" || person.role === "guest") {
+      credit.character ??= person.character;
+    } else {
+      credit.jobs.push(CREW_JOB_LABELS[language][person.role]);
     }
-
-    const identity = person.Id
-      ? `id:${person.Id}`
-      : `name:${person.Name.trim().toLocaleLowerCase()}:${person.Role ?? ""}`;
-
-    if (seenPeople.has(identity)) {
-      return;
-    }
-
-    seenPeople.add(identity);
-    mergedPeople.push(person);
-  };
-
-  for (const person of seriesPeople ?? []) {
-    addPerson(person);
   }
 
-  for (const episode of episodeItems) {
-    const episodePeople = (episode as SeriesDetailsItem).People ?? [];
-
-    for (const person of episodePeople) {
-      addPerson(person);
-    }
-  }
-
-  return mergedPeople;
+  return [...credits.values()].map(({ person, character, jobs }) => {
+    const role = [character, ...jobs].filter(Boolean).join(" · ");
+    return {
+      Id: person.id,
+      Name: person.name,
+      ...(role ? { Role: role } : {}),
+      ...(person.imageUrl ? { ImageUrl: person.imageUrl } : {}),
+    };
+  });
 }
 
 interface SeriesLibraryDetailsProps {
@@ -289,6 +303,7 @@ export function SeriesLibraryDetails({
   const [seriesEpisodes, setSeriesEpisodes] = useState<MediaItem[]>([]);
   const [trailers, setTrailers] = useState<MediaItem[]>([]);
   const [similarItems, setSimilarItems] = useState<MediaItem[]>([]);
+  const [people, setPeople] = useState<ItemPersonDto[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingEpisodes, setIsLoadingEpisodes] = useState(false);
   const [resolvedEpisodeSelectionKey, setResolvedEpisodeSelectionKey] =
@@ -333,6 +348,7 @@ export function SeriesLibraryDetails({
           trailerResults,
           similarResults,
           seriesEpisodeResults,
+          peopleResults,
         ] = await Promise.all([
           initialItem.Type === "Series" || isMovie
             ? Promise.resolve(initialItem as SeriesDetailsItem)
@@ -349,6 +365,8 @@ export function SeriesLibraryDetails({
           isMovie
             ? Promise.resolve([] as MediaItem[])
             : getAllSeriesEpisodes(detailsItemId).catch(() => []),
+
+          getItemPeople(detailsItemId).catch(() => []),
         ]);
 
         if (cancelled) {
@@ -362,10 +380,8 @@ export function SeriesLibraryDetails({
           orderedSeasons[0] ??
           null;
 
-        setSeries({
-          ...seriesResult,
-          People: mergeSeriesPeople(seriesResult.People, seriesEpisodeResults),
-        });
+        setSeries(seriesResult);
+        setPeople(peopleResults);
         setSeriesEpisodes(seriesEpisodeResults);
         setSeasons(orderedSeasons);
         setTrailers(trailerResults);
@@ -517,9 +533,7 @@ export function SeriesLibraryDetails({
   }
 
   const itemDisplayMetadata = getItemDisplayMetadata(series, language);
-  const cast = (series.People ?? []).filter(
-    (person) => person.Name && (person.Type === "Actor" || person.Role),
-  );
+  const cast = toCredits(people, language);
   const studios = (series.Studios ?? [])
     .map((studio) => studio.Name)
     .filter((name): name is string => Boolean(name));
@@ -548,7 +562,6 @@ export function SeriesLibraryDetails({
             ? {
                 ...currentSeries,
                 ...changedMovie,
-                People: currentSeries.People,
                 Studios: currentSeries.Studios,
               }
             : currentSeries,
@@ -806,70 +819,52 @@ export function SeriesLibraryDetails({
       ) : null}
 
       {cast.length > 0 ? (
-        <MotionReveal className={isDesktop ? "py-6" : "py-4"}>
-          <h2
-            className={
-              isDesktop
-                ? "mb-5 text-2xl font-black text-white"
-                : "mb-4 text-lg font-black text-white"
-            }
-          >
-            {labels.cast}
-          </h2>
-          <div className="media-scroll flex gap-4 overflow-x-auto pb-3 sm:gap-5">
-            {cast.map((person, index) => {
-              const personImageUrl =
-                person.Id && person.PrimaryImageTag
-                  ? getPrimaryImageUrl(
-                      person.Id,
-                      person.PrimaryImageTag,
-                      isDesktop ? 320 : 240,
-                    )
-                  : defaultProfileImage;
+        <MediaShelf title={labels.cast} variant={variant}>
+          {cast.map((person) => {
+            const personImageUrl = person.ImageUrl ?? defaultProfileImage;
 
-              return (
+            return (
+              <div
+                key={person.Id}
+                className={
+                  isDesktop
+                    ? "w-28 shrink-0 snap-start text-center"
+                    : "w-[5.5rem] shrink-0 snap-start text-center"
+                }
+              >
                 <div
-                  key={`${person.Id ?? person.Name}-${index}`}
                   className={
                     isDesktop
-                      ? "w-28 shrink-0 text-center"
-                      : "w-24 shrink-0 text-center"
+                      ? "mx-auto h-24 w-24 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
+                      : "mx-auto h-20 w-20 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
                   }
                 >
-                  <div
-                    className={
-                      isDesktop
-                        ? "mx-auto h-24 w-24 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
-                        : "mx-auto h-20 w-20 overflow-hidden rounded-full border border-white/10 bg-white/[0.06]"
-                    }
-                  >
-                    <img
-                      src={personImageUrl}
-                      alt={person.Name ?? ""}
-                      loading="lazy"
-                      className="h-full w-full object-cover"
-                      onError={(event) => {
-                        const image = event.currentTarget;
+                  <img
+                    src={personImageUrl}
+                    alt={person.Name ?? ""}
+                    loading="lazy"
+                    className="h-full w-full object-cover"
+                    onError={(event) => {
+                      const image = event.currentTarget;
 
-                        if (image.src !== defaultProfileImage) {
-                          image.src = defaultProfileImage;
-                        }
-                      }}
-                    />
-                  </div>
-                  <p className="mt-2 line-clamp-2 text-xs font-bold text-white">
-                    {person.Name}
-                  </p>
-                  {person.Role ? (
-                    <p className="mt-0.5 line-clamp-2 text-[11px] text-white/45">
-                      {person.Role}
-                    </p>
-                  ) : null}
+                      if (image.src !== defaultProfileImage) {
+                        image.src = defaultProfileImage;
+                      }
+                    }}
+                  />
                 </div>
-              );
-            })}
-          </div>
-        </MotionReveal>
+                <p className="mt-2 line-clamp-2 text-xs font-bold text-white">
+                  {person.Name}
+                </p>
+                {person.Role ? (
+                  <p className="mt-0.5 line-clamp-2 text-[11px] text-white/45">
+                    {person.Role}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </MediaShelf>
       ) : null}
 
       <MotionReveal className={isDesktop ? "pt-6" : "pt-4"}>

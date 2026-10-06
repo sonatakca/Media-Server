@@ -16,6 +16,7 @@ import type {
   ChapterDto,
   HomeDto,
   ItemDto,
+  ItemPersonDto,
   ItemStreamsDto,
   LibraryDto,
   PlaybackSessionDto,
@@ -324,6 +325,13 @@ export async function getLocalTrailers(itemId: string): Promise<MediaItem[]> {
     `/items/${encodeURIComponent(itemId)}/trailers`,
   );
   return toMediaItems(trailers);
+}
+
+/** Cast in billing order, then crew; one entry per credited role. */
+export async function getItemPeople(itemId: string): Promise<ItemPersonDto[]> {
+  return ownApiClient.request<ItemPersonDto[]>(
+    `/items/${encodeURIComponent(itemId)}/people`,
+  );
 }
 
 export async function getSimilarItems(

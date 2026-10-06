@@ -9,6 +9,19 @@ import type { MediaItem } from "../lib/types";
 vi.mock("../lib/mediaApi", () => ({
   getAllSeriesEpisodes: vi.fn(() => Promise.resolve([])),
   getItem: vi.fn(),
+  getItemPeople: vi.fn(() =>
+    Promise.resolve([
+      {
+        id: "person-1",
+        name: "Example Actor",
+        role: "actor",
+        character: "Lead",
+        imageUrl: "https://image.tmdb.org/t/p/w185/actor.jpg",
+      },
+      { id: "person-2", name: "Example Director", role: "director" },
+      { id: "person-1", name: "Example Actor", role: "writer" },
+    ]),
+  ),
   getLocalTrailers: vi.fn(() =>
     Promise.resolve([
       {
@@ -103,14 +116,6 @@ describe("SeriesLibraryDetails", () => {
       Overview: "Movie overview",
       Genres: ["Drama"],
       Studios: [{ Name: "Example Studio" }],
-      People: [
-        {
-          Id: "person-1",
-          Name: "Example Actor",
-          Role: "Lead",
-          Type: "Actor",
-        },
-      ],
     } as MediaItem;
 
     render(
@@ -133,7 +138,14 @@ describe("SeriesLibraryDetails", () => {
     expect(screen.getByText("Cast and crew")).toBeInTheDocument();
     expect(screen.getByText("About")).toBeInTheDocument();
     expect(screen.getByText("Movie overview")).toBeInTheDocument();
-    expect(screen.getByText("Example Actor")).toBeInTheDocument();
+    // A person credited twice is one card with both credits.
+    expect(screen.getAllByText("Example Actor")).toHaveLength(1);
+    expect(screen.getByText("Lead · Writer")).toBeInTheDocument();
+    expect(screen.getByAltText("Example Actor")).toHaveAttribute(
+      "src",
+      "https://image.tmdb.org/t/p/w185/actor.jpg",
+    );
+    expect(screen.getByText("Director")).toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: "Mark as watched" }),
     ).toBeInTheDocument();

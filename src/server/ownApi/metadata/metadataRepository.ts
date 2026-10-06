@@ -285,7 +285,14 @@ export function createMetadataRepository(
               randomUUID(),
               person.name.trim(),
               normalized,
-              JSON.stringify({ tmdb: person.providerId }),
+              // The headshot path rides with the TMDB id: it is TMDB's, and the
+              // merge below keeps the last one TMDB gave.
+              JSON.stringify({
+                tmdb: person.providerId,
+                ...(person.profilePath
+                  ? { tmdbProfilePath: person.profilePath }
+                  : {}),
+              }),
             ],
           );
           const personId = inserted.rows[0]?.id;

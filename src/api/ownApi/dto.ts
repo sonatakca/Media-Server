@@ -127,6 +127,15 @@ export interface ItemStreamsDto {
   sources: MediaSourceDto[];
 }
 
+export interface ItemPersonDto {
+  id: string;
+  name: string;
+  role: "actor" | "director" | "writer" | "producer" | "composer" | "guest";
+  character?: string;
+  /** A TMDB headshot, when TMDB has one. */
+  imageUrl?: string;
+}
+
 export interface ChapterDto {
   index: number;
   startMs: number;

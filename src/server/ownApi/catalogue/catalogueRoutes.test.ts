@@ -123,6 +123,26 @@ function fakeCatalogue(): CatalogueRepository {
     listStreams: async () => [],
     listChapters: async () => [],
     listSegments: async () => [],
+    listPeople: async (itemId) =>
+      itemId === VISIBLE_ITEM
+        ? [
+            {
+              personId: "dddddddd-1111-4111-8111-111111111111",
+              name: "Ada Actor",
+              role: "actor",
+              characterName: "The Lead",
+              tmdbProfilePath: "/ada.jpg",
+            },
+            {
+              personId: "dddddddd-2222-4222-8222-222222222222",
+              name: "Dee Director",
+              role: "director",
+              characterName: null,
+              // Never a URL of its own, whatever ended up stored.
+              tmdbProfilePath: "https://elsewhere.test/x.jpg",
+            },
+          ]
+        : [],
     listGenres: async () => [],
     listPendingProbeFiles: async () => [],
     canUserAccessItem: async (_userId, itemId) => visible(itemId),
@@ -393,6 +413,41 @@ describe("catalogue routes", () => {
       router,
       "GET",
       `/ownAPI/v1/items/${HIDDEN_ITEM}/children`,
+    );
+    expect((result.error as OwnApiError).statusCode).toBe(404);
+  });
+
+  it("credits an item's people with TMDB headshots, and only TMDB's", async () => {
+    const { router } = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${VISIBLE_ITEM}/people`,
+    );
+
+    expect(result.sent.statusCode).toBe(200);
+    expect((result.json as { data: unknown[] }).data).toEqual([
+      {
+        id: "dddddddd-1111-4111-8111-111111111111",
+        name: "Ada Actor",
+        role: "actor",
+        character: "The Lead",
+        imageUrl: "https://image.tmdb.org/t/p/w185/ada.jpg",
+      },
+      {
+        id: "dddddddd-2222-4222-8222-222222222222",
+        name: "Dee Director",
+        role: "director",
+      },
+    ]);
+  });
+
+  it("refuses to credit the people of an item the viewer cannot see", async () => {
+    const { router } = buildRouter();
+    const result = await call(
+      router,
+      "GET",
+      `/ownAPI/v1/items/${HIDDEN_ITEM}/people`,
     );
     expect((result.error as OwnApiError).statusCode).toBe(404);
   });

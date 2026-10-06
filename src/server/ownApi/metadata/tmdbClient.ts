@@ -33,6 +33,8 @@ export interface TmdbPerson {
   character?: string;
   order: number;
   providerId: string;
+  /** TMDB's headshot path (`/abc.jpg`), when TMDB has one. */
+  profilePath?: string;
 }
 
 export interface TmdbTitleDetails {
@@ -305,8 +307,14 @@ export function createTmdbClient({
         name: string;
         character?: string;
         order?: number;
+        profile_path?: string | null;
       }>;
-      crew?: Array<{ id: number; name: string; job?: string }>;
+      crew?: Array<{
+        id: number;
+        name: string;
+        job?: string;
+        profile_path?: string | null;
+      }>;
     };
 
     // Cast is capped: a full crew list of hundreds of names is noise on a detail
@@ -318,6 +326,7 @@ export function createTmdbClient({
         role: "actor",
         ...(member.character ? { character: member.character } : {}),
         order: member.order ?? index,
+        ...(member.profile_path ? { profilePath: member.profile_path } : {}),
       });
     }
 
@@ -336,6 +345,7 @@ export function createTmdbClient({
         name: member.name,
         role,
         order: 100,
+        ...(member.profile_path ? { profilePath: member.profile_path } : {}),
       });
     }
 
