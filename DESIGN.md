@@ -318,7 +318,7 @@ A film's or series' own page opens on the home hero's stage with nothing queued 
 
 ### Phone heroes
 
-Phone poster cards (`MobileMediaCard`) draw a title's logo where the artwork tool placed it, as the desktop's `MediaCard` does, with its shadow scaled to the phone card's 150px; landscape tiles and titles never placed keep the logo at the card's foot. Over the hero the phone's navbar wordmark carries a soft dark shadow, because the room behind it takes the front poster's colours, which can be the accent's own.
+Phone poster cards (`MobileMediaCard`) draw a title's logo where the artwork tool placed it, as the desktop's `MediaCard` does, with its shadow scaled to the phone card's 150px; landscape tiles and titles never placed keep the logo at the card's foot. The navbar wordmark carries a soft dark shadow on every screen (`NavbarWordmark`), because over a hero the room behind it takes the artwork's colours, which can be the accent's own.
 
 An upright phone keeps heroes of its own; the desktop's stage, cut to a phone, was tried in `29a0f53` and taken back. They speak the desktop hero's language (the title's logo, the facts line, a white play pill that resumes, glass round buttons) in the phone's own composition.
 

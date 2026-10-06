@@ -41,6 +41,13 @@ function getAccentThemeName(): string | undefined {
 }
 
 /**
+ * A soft dark shadow, wherever the wordmark stands: over a hero the room
+ * behind it is lit by the artwork's colours, which can be the accent's own.
+ */
+const WORDMARK_SHADOW =
+  "drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6)) drop-shadow(0 3px 14px rgba(0, 0, 0, 0.5))";
+
+/**
  * The wordmark in the current accent colour. While anything is loading it
  * cycles through the palette, and keeps cycling for a further 2.5 seconds
  * once loading ends. Then it carries on until it comes round to the accent
@@ -115,6 +122,7 @@ export function NavbarWordmark({ className = "" }: { className?: string }) {
     <span
       data-wordmark-accent={FRAMES[shownIndex].accent}
       className={`relative block aspect-[430/176] ${className}`}
+      style={{ filter: WORDMARK_SHADOW }}
     >
       {FRAMES.map((frame, index) => (
         // Every frame stays mounted so a colour change never waits on a decode.
