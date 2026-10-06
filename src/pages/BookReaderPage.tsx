@@ -2119,6 +2119,7 @@ export function BookReaderPage() {
         settings={settings}
         showReadingLight={format === "epub"}
         onChange={updateSettings}
+        onClose={closePanel}
       />
 
       <ReaderMoreMenu

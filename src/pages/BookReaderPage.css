@@ -414,9 +414,19 @@ body:has(.seyirlik-reader-shell) {
 }
 
 .rd-settings {
+  display: flex;
+  flex-direction: column;
   width: 23.25rem;
+  /* Never taller than the window under the bar: what does not fit scrolls. */
+  max-height: calc(100dvh - 5.4rem - var(--safe-area-inset-top, 0px));
   padding: 1.125rem 1.125rem 0.5rem;
   transform-origin: calc(100% - 4.1rem) -0.5rem;
+}
+
+.rd-settings-body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .rd-menu {
@@ -426,7 +436,8 @@ body:has(.seyirlik-reader-shell) {
   transform-origin: calc(100% - 1.5rem) -0.5rem;
 }
 
-.rd-grab {
+.rd-grab-zone,
+.rd-sheet-scrim {
   display: none;
 }
 
@@ -1247,11 +1258,34 @@ body:has(.seyirlik-reader-shell) {
       opacity 0.2s var(--rd-sine);
   }
 
-  .rd-grab {
+  /* The sheet stops short of the bar, so the page and the Aa button stay in
+     view; the rows scroll under the handle. */
+  .rd-settings {
+    max-height: calc(100dvh - 4.5rem - var(--safe-area-inset-top, 0px));
+    padding-top: 0;
+  }
+
+  /* Under the bar, so the bar stays lit and Aa still closes what it opened. */
+  .rd-sheet-scrim {
     display: block;
+    z-index: 39;
+    background: rgba(0, 0, 0, 0.18);
+  }
+
+  /* A full-width strip, taller than the handle it carries, to drag down. */
+  .rd-grab-zone {
+    display: block;
+    flex: none;
+    margin: 0 -1.125rem;
+    padding: 0.625rem 0 0.875rem;
+    touch-action: none;
+    cursor: grab;
+  }
+
+  .rd-grab {
     width: 36px;
     height: 4px;
-    margin: 0 auto 0.875rem;
+    margin: 0 auto;
     border-radius: 9999px;
     background: var(--rd-ink4);
   }

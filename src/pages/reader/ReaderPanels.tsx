@@ -5,7 +5,9 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { Download, ExternalLink, Trash2, X } from "lucide-react";
 import type { NavItem } from "epubjs";
@@ -128,12 +130,15 @@ export const ReaderSettingsPanel = forwardRef<
     settings: ReaderSettings;
     showReadingLight: boolean;
     onChange: (patch: Partial<ReaderSettings>) => void;
+    onClose: () => void;
   }
 >(function ReaderSettingsPanel(
-  { open, settings, showReadingLight, onChange },
+  { open, settings, showReadingLight, onChange, onClose },
   ref,
 ) {
   const { t, language } = useLanguage();
+  const sheetRef = useRef<HTMLElement | null>(null);
+  const grabDrag = useSheetDrag(sheetRef, onClose);
   const lightOff = settings.spotlight === "off";
   const reachPresets =
     settings.lightShape === "line"
@@ -149,238 +154,346 @@ export const ReaderSettingsPanel = forwardRef<
   const sizePercent = (sizeIndex / (FONT_SCALE_STEPS.length - 1)) * 100;
 
   return (
-    <section
-      ref={ref}
-      role="dialog"
-      aria-label={t("reader.appearance")}
-      aria-hidden={!open}
-      data-open={open || undefined}
-      className="rd-surface rd-popover rd-settings"
-    >
-      <div className="rd-grab" aria-hidden="true" />
-      <div className="rd-row">
-        <p className="rd-label">{t("reader.theme")}</p>
-        <div className="rd-themes" role="group" aria-label={t("reader.theme")}>
-          {READER_THEMES.map((theme) => {
-            const palette = themePalettes[theme];
+    <>
+      {/* Phones only: the sheet covers most of the page, so a tap on what
+          is left of it closes the sheet, as the contents drawer's does. */}
+      <div
+        className="rd-scrim rd-sheet-scrim"
+        data-open={open || undefined}
+        onClick={onClose}
+        aria-hidden="true"
+      />
+      <section
+        ref={(node) => {
+          sheetRef.current = node;
+          if (typeof ref === "function") {
+            ref(node);
+          } else if (ref) {
+            ref.current = node;
+          }
+        }}
+        role="dialog"
+        aria-label={t("reader.appearance")}
+        aria-hidden={!open}
+        data-open={open || undefined}
+        className="rd-surface rd-popover rd-settings"
+      >
+        <div className="rd-grab-zone" aria-hidden="true" {...grabDrag}>
+          <div className="rd-grab" />
+        </div>
+        <div className="rd-settings-body">
+          <div className="rd-row">
+            <p className="rd-label">{t("reader.theme")}</p>
+            <div
+              className="rd-themes"
+              role="group"
+              aria-label={t("reader.theme")}
+            >
+              {READER_THEMES.map((theme) => {
+                const palette = themePalettes[theme];
 
-            return (
-              <button
-                key={theme}
-                type="button"
-                className="rd-theme"
-                aria-pressed={settings.theme === theme}
-                onClick={() => onChange({ theme })}
-              >
-                <span
-                  className="rd-theme-swatch"
-                  style={{ background: palette.ground, color: palette.ink }}
-                  aria-hidden="true"
+                return (
+                  <button
+                    key={theme}
+                    type="button"
+                    className="rd-theme"
+                    aria-pressed={settings.theme === theme}
+                    onClick={() => onChange({ theme })}
+                  >
+                    <span
+                      className="rd-theme-swatch"
+                      style={{ background: palette.ground, color: palette.ink }}
+                      aria-hidden="true"
+                    >
+                      Aa
+                    </span>
+                    <span className="rd-theme-name">
+                      {t(READER_THEME_LABEL_KEYS[theme])}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rd-row">
+            <p className="rd-label">{t("reader.typeface")}</p>
+            <div
+              className="rd-faces"
+              role="group"
+              aria-label={t("reader.typeface")}
+            >
+              {(
+                [
+                  [
+                    "serif",
+                    "Literata",
+                    t("reader.face.serifNote"),
+                    BOOK_SERIF,
+                    450,
+                  ],
+                  [
+                    "sans",
+                    "Archivo",
+                    t("reader.face.sansNote"),
+                    BOOK_SANS,
+                    650,
+                  ],
+                ] as const
+              ).map(([face, name, note, family, weight]) => (
+                <button
+                  key={face}
+                  type="button"
+                  className="rd-face"
+                  aria-pressed={settings.face === face}
+                  onClick={() => onChange({ face })}
                 >
-                  Aa
-                </span>
-                <span className="rd-theme-name">
-                  {t(READER_THEME_LABEL_KEYS[theme])}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+                  <span
+                    className="rd-face-sample"
+                    style={{ fontFamily: family, fontWeight: weight }}
+                    aria-hidden="true"
+                  >
+                    Ağ
+                  </span>
+                  <span className="rd-face-name">{name}</span>
+                  <span className="rd-face-note">{note}</span>
+                </button>
+              ))}
+            </div>
+          </div>
 
-      <div className="rd-row">
-        <p className="rd-label">{t("reader.typeface")}</p>
-        <div
-          className="rd-faces"
-          role="group"
-          aria-label={t("reader.typeface")}
-        >
-          {(
-            [
-              [
-                "serif",
-                "Literata",
-                t("reader.face.serifNote"),
-                BOOK_SERIF,
-                450,
-              ],
-              ["sans", "Archivo", t("reader.face.sansNote"), BOOK_SANS, 650],
-            ] as const
-          ).map(([face, name, note, family, weight]) => (
-            <button
-              key={face}
-              type="button"
-              className="rd-face"
-              aria-pressed={settings.face === face}
-              onClick={() => onChange({ face })}
-            >
-              <span
-                className="rd-face-sample"
-                style={{ fontFamily: family, fontWeight: weight }}
-                aria-hidden="true"
+          <div className="rd-row">
+            <label className="rd-label" htmlFor="rd-font-size">
+              {t("reader.fontSize")}
+              <output htmlFor="rd-font-size">{`${settings.fontScale}%`}</output>
+            </label>
+            <div className="rd-size">
+              <span aria-hidden="true">A</span>
+              <input
+                id="rd-font-size"
+                className="rd-range"
+                type="range"
+                min={0}
+                max={FONT_SCALE_STEPS.length - 1}
+                step={1}
+                value={sizeIndex}
+                aria-valuetext={`${settings.fontScale}%`}
+                style={{ "--pct": `${sizePercent}%` } as CSSProperties}
+                onChange={(event) =>
+                  onChange({
+                    fontScale:
+                      FONT_SCALE_STEPS[Number(event.currentTarget.value)],
+                  })
+                }
+              />
+              <span aria-hidden="true">A</span>
+            </div>
+          </div>
+
+          <div className="rd-row rd-pair">
+            <div>
+              <p className="rd-label">{t("reader.lineHeight")}</p>
+              <SegmentButtons
+                label={t("reader.lineHeight")}
+                value={nearest(LINE_HEIGHT_PRESETS, settings.lineHeight)}
+                onChange={(lineHeight) => onChange({ lineHeight })}
+                options={[
+                  {
+                    value: LINE_HEIGHT_PRESETS[0],
+                    label: t("reader.spacing.tight"),
+                    icon: <LinesIcon gaps={4} />,
+                  },
+                  {
+                    value: LINE_HEIGHT_PRESETS[1],
+                    label: t("reader.spacing.normal"),
+                    icon: <LinesIcon gaps={5.5} />,
+                  },
+                  {
+                    value: LINE_HEIGHT_PRESETS[2],
+                    label: t("reader.spacing.loose"),
+                    icon: <LinesIcon gaps={7.5} />,
+                  },
+                ]}
+              />
+            </div>
+            <div>
+              <p className="rd-label">{t("reader.column")}</p>
+              <SegmentButtons
+                label={t("reader.column")}
+                value={nearest(WIDTH_PRESETS, settings.width)}
+                onChange={(width) => onChange({ width })}
+                options={[
+                  {
+                    value: WIDTH_PRESETS[0],
+                    label: t("reader.width.narrow"),
+                    icon: <MeasureIcon half={3} />,
+                  },
+                  {
+                    value: WIDTH_PRESETS[1],
+                    label: t("reader.width.medium"),
+                    icon: <MeasureIcon half={5} />,
+                  },
+                  {
+                    value: WIDTH_PRESETS[2],
+                    label: t("reader.width.wide"),
+                    icon: <MeasureIcon half={8} />,
+                  },
+                ]}
+              />
+            </div>
+          </div>
+
+          {showReadingLight ? (
+            <div className="rd-row">
+              <p className="rd-label">{t("reader.readingLight")}</p>
+              <SegmentButtons
+                label={t("reader.readingLight")}
+                value={settings.spotlight}
+                onChange={(spotlight) => onChange({ spotlight })}
+                options={READER_SPOTLIGHTS.map((spotlight) => ({
+                  value: spotlight,
+                  label: t(`reader.light.${spotlight}`),
+                }))}
+              />
+              <div className="rd-light-pair" data-off={lightOff || undefined}>
+                <SegmentButtons
+                  label={t("reader.light.shape")}
+                  value={settings.lightShape}
+                  onChange={(lightShape) => onChange({ lightShape })}
+                  disabled={lightOff}
+                  options={READER_LIGHT_SHAPES.map((shape) => ({
+                    value: shape,
+                    label: t(`reader.light.shape.${shape}`),
+                  }))}
+                />
+                <SegmentButtons
+                  label={t("reader.light.reach")}
+                  value={nearest(reachPresets, reach)}
+                  onChange={(value) =>
+                    onChange(
+                      settings.lightShape === "line"
+                        ? { lineReach: value }
+                        : { paragraphReach: value },
+                    )
+                  }
+                  disabled={lightOff}
+                  options={reachPresets.map((value, step) => ({
+                    value,
+                    label: `${t("reader.light.reach")} ${formatPercent(value, language)}`,
+                    icon: <ReachIcon step={step} />,
+                  }))}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {showReadingLight ? (
+            <div className="rd-row">
+              <p className="rd-label">{t("reader.margin")}</p>
+              <div
+                role="group"
+                aria-label={t("reader.margin")}
+                className="rd-seg rd-toggles"
               >
-                Ağ
-              </span>
-              <span className="rd-face-name">{name}</span>
-              <span className="rd-face-note">{note}</span>
-            </button>
-          ))}
+                <button
+                  type="button"
+                  className="rd-toggle-ruler"
+                  aria-pressed={settings.showRuler}
+                  onClick={() => onChange({ showRuler: !settings.showRuler })}
+                >
+                  {t("reader.margin.ruler")}
+                </button>
+                <button
+                  type="button"
+                  aria-pressed={settings.showTimeLeft}
+                  onClick={() =>
+                    onChange({ showTimeLeft: !settings.showTimeLeft })
+                  }
+                >
+                  {t("reader.margin.timeLeft")}
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
-      </div>
-
-      <div className="rd-row">
-        <label className="rd-label" htmlFor="rd-font-size">
-          {t("reader.fontSize")}
-          <output htmlFor="rd-font-size">{`${settings.fontScale}%`}</output>
-        </label>
-        <div className="rd-size">
-          <span aria-hidden="true">A</span>
-          <input
-            id="rd-font-size"
-            className="rd-range"
-            type="range"
-            min={0}
-            max={FONT_SCALE_STEPS.length - 1}
-            step={1}
-            value={sizeIndex}
-            aria-valuetext={`${settings.fontScale}%`}
-            style={{ "--pct": `${sizePercent}%` } as CSSProperties}
-            onChange={(event) =>
-              onChange({
-                fontScale: FONT_SCALE_STEPS[Number(event.currentTarget.value)],
-              })
-            }
-          />
-          <span aria-hidden="true">A</span>
-        </div>
-      </div>
-
-      <div className="rd-row rd-pair">
-        <div>
-          <p className="rd-label">{t("reader.lineHeight")}</p>
-          <SegmentButtons
-            label={t("reader.lineHeight")}
-            value={nearest(LINE_HEIGHT_PRESETS, settings.lineHeight)}
-            onChange={(lineHeight) => onChange({ lineHeight })}
-            options={[
-              {
-                value: LINE_HEIGHT_PRESETS[0],
-                label: t("reader.spacing.tight"),
-                icon: <LinesIcon gaps={4} />,
-              },
-              {
-                value: LINE_HEIGHT_PRESETS[1],
-                label: t("reader.spacing.normal"),
-                icon: <LinesIcon gaps={5.5} />,
-              },
-              {
-                value: LINE_HEIGHT_PRESETS[2],
-                label: t("reader.spacing.loose"),
-                icon: <LinesIcon gaps={7.5} />,
-              },
-            ]}
-          />
-        </div>
-        <div>
-          <p className="rd-label">{t("reader.column")}</p>
-          <SegmentButtons
-            label={t("reader.column")}
-            value={nearest(WIDTH_PRESETS, settings.width)}
-            onChange={(width) => onChange({ width })}
-            options={[
-              {
-                value: WIDTH_PRESETS[0],
-                label: t("reader.width.narrow"),
-                icon: <MeasureIcon half={3} />,
-              },
-              {
-                value: WIDTH_PRESETS[1],
-                label: t("reader.width.medium"),
-                icon: <MeasureIcon half={5} />,
-              },
-              {
-                value: WIDTH_PRESETS[2],
-                label: t("reader.width.wide"),
-                icon: <MeasureIcon half={8} />,
-              },
-            ]}
-          />
-        </div>
-      </div>
-
-      {showReadingLight ? (
-        <div className="rd-row">
-          <p className="rd-label">{t("reader.readingLight")}</p>
-          <SegmentButtons
-            label={t("reader.readingLight")}
-            value={settings.spotlight}
-            onChange={(spotlight) => onChange({ spotlight })}
-            options={READER_SPOTLIGHTS.map((spotlight) => ({
-              value: spotlight,
-              label: t(`reader.light.${spotlight}`),
-            }))}
-          />
-          <div className="rd-light-pair" data-off={lightOff || undefined}>
-            <SegmentButtons
-              label={t("reader.light.shape")}
-              value={settings.lightShape}
-              onChange={(lightShape) => onChange({ lightShape })}
-              disabled={lightOff}
-              options={READER_LIGHT_SHAPES.map((shape) => ({
-                value: shape,
-                label: t(`reader.light.shape.${shape}`),
-              }))}
-            />
-            <SegmentButtons
-              label={t("reader.light.reach")}
-              value={nearest(reachPresets, reach)}
-              onChange={(value) =>
-                onChange(
-                  settings.lightShape === "line"
-                    ? { lineReach: value }
-                    : { paragraphReach: value },
-                )
-              }
-              disabled={lightOff}
-              options={reachPresets.map((value, step) => ({
-                value,
-                label: `${t("reader.light.reach")} ${formatPercent(value, language)}`,
-                icon: <ReachIcon step={step} />,
-              }))}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {showReadingLight ? (
-        <div className="rd-row">
-          <p className="rd-label">{t("reader.margin")}</p>
-          <div
-            role="group"
-            aria-label={t("reader.margin")}
-            className="rd-seg rd-toggles"
-          >
-            <button
-              type="button"
-              className="rd-toggle-ruler"
-              aria-pressed={settings.showRuler}
-              onClick={() => onChange({ showRuler: !settings.showRuler })}
-            >
-              {t("reader.margin.ruler")}
-            </button>
-            <button
-              type="button"
-              aria-pressed={settings.showTimeLeft}
-              onClick={() => onChange({ showTimeLeft: !settings.showTimeLeft })}
-            >
-              {t("reader.margin.timeLeft")}
-            </button>
-          </div>
-        </div>
-      ) : null}
-    </section>
+      </section>
+    </>
   );
 });
+
+/** Past this, or flicked faster than SHEET_FLICK px/ms, a drag closes the sheet. */
+const SHEET_DISMISS_PX = 96;
+const SHEET_FLICK = 0.5;
+
+/**
+ * The phone sheet's grab handle: the sheet follows a downward drag one to one,
+ * then closes or settles back from wherever the finger let go (the stylesheet's
+ * own transitions carry it from there).
+ */
+function useSheetDrag(
+  sheetRef: RefObject<HTMLElement | null>,
+  onClose: () => void,
+) {
+  const drag = useRef<{
+    id: number;
+    startY: number;
+    lastY: number;
+    lastAt: number;
+    velocity: number;
+  } | null>(null);
+
+  const release = (closing: boolean) => {
+    const sheet = sheetRef.current;
+    drag.current = null;
+    if (closing) {
+      onClose();
+    }
+    if (sheet) {
+      sheet.style.transform = "";
+      sheet.style.transition = "";
+    }
+  };
+
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.button !== 0) {
+        return;
+      }
+      event.currentTarget.setPointerCapture(event.pointerId);
+      drag.current = {
+        id: event.pointerId,
+        startY: event.clientY,
+        lastY: event.clientY,
+        lastAt: event.timeStamp,
+        velocity: 0,
+      };
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const current = drag.current;
+      const sheet = sheetRef.current;
+      if (!current || current.id !== event.pointerId || !sheet) {
+        return;
+      }
+      const elapsed = event.timeStamp - current.lastAt;
+      if (elapsed > 0) {
+        current.velocity = (event.clientY - current.lastY) / elapsed;
+      }
+      current.lastY = event.clientY;
+      current.lastAt = event.timeStamp;
+      sheet.style.transition = "none";
+      sheet.style.transform = `translateY(${Math.max(0, event.clientY - current.startY)}px)`;
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => {
+      const current = drag.current;
+      if (!current || current.id !== event.pointerId) {
+        return;
+      }
+      const distance = event.clientY - current.startY;
+      release(distance > SHEET_DISMISS_PX || current.velocity > SHEET_FLICK);
+    },
+    onPointerCancel: () => release(false),
+  };
+}
 
 export const ReaderMoreMenu = forwardRef<
   HTMLDivElement,
