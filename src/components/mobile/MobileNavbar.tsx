@@ -1,67 +1,20 @@
 import { NotificationHistoryButton } from "../notifications/NotificationHistoryButton";
-import { useEffect, useRef, useState } from "react";
-import { Book, Bookmark, Search } from "lucide-react";
-import { GoHomeFill } from "react-icons/go";
-import { RiMovie2Fill } from "react-icons/ri";
-import { TbDeviceTv } from "react-icons/tb";
-import { Link, NavLink, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Search } from "lucide-react";
+import { Link, useLocation } from "react-router-dom";
 import { useLanguage } from "../../i18n/LanguageContext";
 import { AccountMenu } from "../AccountMenu";
 import { AppUpdateButton } from "../AppUpdateButton";
 import { LanguageSwitch } from "../LanguageSwitch";
 import { NavbarWordmark } from "../NavbarWordmark";
 import { openSearchOverlay } from "../../lib/searchModel";
-import { SlidingIndicator } from "../ui/SlidingIndicator";
 import { Tooltip } from "../ui/Tooltip";
-
-function ActiveTabBorder() {
-  const mask =
-    "linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0)";
-
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none absolute inset-0 rounded-2xl p-px"
-      style={{
-        background:
-          "conic-gradient(from 305deg, rgb(255 255 255 / 30%) 0deg, transparent 90deg, rgb(255 255 255 / 30%) 180deg, transparent 270deg, rgb(255 255 255 / 30%) 360deg)",
-        mask,
-        maskComposite: "exclude",
-        WebkitMask: mask,
-        WebkitMaskComposite: "xor",
-      }}
-    />
-  );
-}
-
-function ActiveTabDot() {
-  return (
-    <span
-      aria-hidden="true"
-      className="pointer-events-none absolute -bottom-1.5 left-1/2 h-1 w-1 -translate-x-1/2 rounded-full bg-white/75"
-    />
-  );
-}
-
-function getTabClassName(isActive: boolean): string {
-  const colorClass = isActive ? "text-white" : "text-white/52";
-  const sizeClass = isActive ? "mt-0 min-h-[3.75rem]" : "mt-1 min-h-14";
-
-  return `relative mx-0.5 flex min-w-0 flex-1 overflow-visible flex-col items-center justify-center gap-1 rounded-2xl bg-transparent text-[0.68rem] font-bold transition-[color,height,margin] duration-200 ${colorClass} ${sizeClass}`;
-}
+import { MobileTabBar } from "./tabBar/MobileTabBar";
 
 export function MobileNavbar() {
   const location = useLocation();
   const { t } = useLanguage();
   const [hasScrolled, setHasScrolled] = useState(false);
-  const [bottomNavBlurred, setBottomNavBlurred] = useState(false);
-  const tabBarRef = useRef<HTMLElement | null>(null);
-  const libraryRoutes = {
-    movies: "/movies",
-    series: "/shows",
-    collections: "/collections",
-    books: "/books",
-  };
 
   useEffect(() => {
     const updateScrolledState = () => {
@@ -73,16 +26,6 @@ export function MobileNavbar() {
 
     return () => {
       window.removeEventListener("scroll", updateScrolledState);
-    };
-  }, []);
-
-  useEffect(() => {
-    const timeoutId = window.setTimeout(() => {
-      setBottomNavBlurred(true);
-    }, 3000);
-
-    return () => {
-      window.clearTimeout(timeoutId);
     };
   }, []);
 
@@ -125,86 +68,7 @@ export function MobileNavbar() {
         </div>
       </header>
 
-      <nav
-        ref={tabBarRef}
-        className={`fixed inset-x-0 bottom-0 z-50 flex h-[calc(5rem+env(safe-area-inset-bottom))] items-start px-2 pt-2 pb-[env(safe-area-inset-bottom)] transition-[background-color,backdrop-filter] duration-[1000ms] landscape:hidden ${
-          bottomNavBlurred
-            ? "bg-black/75 backdrop-blur-2xl"
-            : "bg-black backdrop-blur-none"
-        }`}
-      >
-        <NavLink
-          to="/home"
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          <>
-            <GoHomeFill size={30} className="relative z-10" />
-            <span className="relative z-10">{t("nav.home")}</span>
-          </>
-        </NavLink>
-        <NavLink
-          to={libraryRoutes.movies}
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          <>
-            <RiMovie2Fill size={30} className="relative z-10" />
-            <span className="relative z-10">{t("nav.movies")}</span>
-          </>
-        </NavLink>
-        <NavLink
-          to={libraryRoutes.series}
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          <>
-            <TbDeviceTv size={30} className="relative z-10" />
-            <span className="relative z-10">{t("nav.series")}</span>
-          </>
-        </NavLink>
-
-        <NavLink
-          to={libraryRoutes.books}
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          <>
-            <Book size={30} className="relative z-10" />
-            <span className="relative z-10">{t("nav.books")}</span>
-          </>
-        </NavLink>
-
-        <NavLink
-          to="/my-list"
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          <>
-            <Bookmark size={30} className="relative z-10" />
-            <span className="relative z-10 truncate max-w-full px-0.5">
-              {t("myList.title")}
-            </span>
-          </>
-        </NavLink>
-
-        <SlidingIndicator
-          containerRef={tabBarRef}
-          activeSelector='a[aria-current="page"]'
-          measureKey={location.pathname}
-        >
-          <ActiveTabBorder />
-          <ActiveTabDot />
-        </SlidingIndicator>
-
-        {/* <NavLink
-          to={libraryRoutes.collections}
-          className={({ isActive }) => getTabClassName(isActive)}
-        >
-          {({ isActive }) => (
-            <>
-              {isActive ? <ActiveTabBorder /> : null}
-              <Boxes size={28} className="relative z-10" />
-              <span className="relative z-10">{t("nav.collections")}</span>
-            </>
-          )}
-        </NavLink> */}
-      </nav>
+      <MobileTabBar />
     </>
   );
 }
