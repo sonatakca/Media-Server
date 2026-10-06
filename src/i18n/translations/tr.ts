@@ -513,6 +513,8 @@ export const tr = {
   "player.missingItemId": "İçerik ID'si eksik.",
   "player.couldNotLoadItem": "Oynatılacak içerik yüklenemedi.",
   "player.subtitleEditPlaceholder": "Altyazı düzenleme örneği.",
+  "player.videoFit.original": "Orijinal",
+  "player.videoFit.fill": "Ekranı doldur",
   "player.dragSubtitles": "Altyazıları sürükle",
   "player.resizeSubtitlesTopLeft": "Altyazıyı sol üstten yeniden boyutlandır",
   "player.resizeSubtitlesTopRight": "Altyazıyı sağ üstten yeniden boyutlandır",

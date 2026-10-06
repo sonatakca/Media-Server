@@ -114,7 +114,8 @@ body:has(.seyirlik-player-shell) {
   max-height: 100dvh;
   overflow: hidden;
   overscroll-behavior: none;
-  touch-action: manipulation;
+  /* Panning only: a pinch belongs to the picture, never to page zoom. */
+  touch-action: pan-x pan-y;
 }
 
 .seyirlik-player-shell video {

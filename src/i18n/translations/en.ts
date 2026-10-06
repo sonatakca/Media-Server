@@ -515,6 +515,8 @@ export const en = {
   "player.missingItemId": "Missing item id.",
   "player.couldNotLoadItem": "Could not load item for playback.",
   "player.subtitleEditPlaceholder": "Example subtitle to edit.",
+  "player.videoFit.original": "Original",
+  "player.videoFit.fill": "Zoomed to fill",
   "player.dragSubtitles": "Drag subtitles",
   "player.resizeSubtitlesTopLeft": "Resize subtitles from top left",
   "player.resizeSubtitlesTopRight": "Resize subtitles from top right",

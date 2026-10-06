@@ -1,6 +1,6 @@
 import type { SubtitleCue } from "./types";
 
-function decodeCueText(rawText: string): string {
+export function decodeCueText(rawText: string): string {
   const textWithLineBreaks = rawText
     .replace(/<br\s*\/?>/gi, "\n")
     .replace(/<\/?(b|i|u|c|lang|ruby|rt)[^>]*>/gi, "")
@@ -98,9 +98,13 @@ export function getActiveSubtitleTextForTime(
   return activeTexts.join("\n");
 }
 
-export function disableNativeVideoTextTracks(video: HTMLVideoElement): void {
+export function disableNativeVideoTextTracks(
+  video: HTMLVideoElement,
+  keep: (track: TextTrack) => boolean = () => false,
+): void {
   for (let index = 0; index < video.textTracks.length; index += 1) {
     const track = video.textTracks[index];
+    if (keep(track)) continue;
     track.mode = "disabled";
   }
 }

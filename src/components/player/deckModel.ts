@@ -285,6 +285,7 @@ export type SeamlessBlocker =
   | "audio-encode-change"
   | "codec-unsupported"
   | "party-watch-seek"
+  | "presented-outside-page"
   | "same-quality";
 
 export interface SeamlessEligibilityInput {
@@ -300,6 +301,11 @@ export interface SeamlessEligibilityInput {
   /** `canPlayType` on the standby said something other than "". */
   targetCodecPlayable: boolean;
   partyWatchSeekInFlight: boolean;
+  /**
+   * Picture in Picture or the native full-screen player holds the active
+   * element. A handoff would leave that window on the paused, hidden deck.
+   */
+  presentedOutsidePage: boolean;
   sameQuality: boolean;
 }
 
@@ -326,6 +332,7 @@ export function evaluateSeamlessEligibility(input: SeamlessEligibilityInput): {
   if (input.changesAudioEncode) blockedBy.push("audio-encode-change");
   if (!input.targetCodecPlayable) blockedBy.push("codec-unsupported");
   if (input.partyWatchSeekInFlight) blockedBy.push("party-watch-seek");
+  if (input.presentedOutsidePage) blockedBy.push("presented-outside-page");
 
   return { eligible: blockedBy.length === 0, blockedBy };
 }

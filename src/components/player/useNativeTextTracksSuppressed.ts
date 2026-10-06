@@ -1,12 +1,14 @@
 import { useEffect, type RefObject } from "react";
 import { disableNativeVideoTextTracks } from "./subtitleUtils";
+import { isPresentationSubtitleTrack } from "./usePresentationSubtitleTrack";
 
 /**
  * Keeps the browser's own subtitle rendering off.
  *
  * Subtitles are drawn by the player's overlay; a native track the engine turns
  * on by itself (Safari does, on attach and on every track change) would draw a
- * second copy underneath. The source and the deck epoch name what makes
+ * second copy underneath. The one track the player itself shows in Picture in
+ * Picture is left to its own hook. The source and the deck epoch name what makes
  * the element or its source new, so the listeners follow it.
  */
 export function useNativeTextTracksSuppressed(
@@ -23,7 +25,7 @@ export function useNativeTextTracksSuppressed(
     }
 
     const disableTracks = () => {
-      disableNativeVideoTextTracks(video);
+      disableNativeVideoTextTracks(video, isPresentationSubtitleTrack);
     };
 
     disableTracks();

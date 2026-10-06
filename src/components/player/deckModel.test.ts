@@ -223,6 +223,7 @@ describe("evaluateSeamlessEligibility", () => {
     changesAudioEncode: false,
     targetCodecPlayable: true,
     partyWatchSeekInFlight: false,
+    presentedOutsidePage: false,
     sameQuality: false,
   };
 
@@ -237,6 +238,7 @@ describe("evaluateSeamlessEligibility", () => {
     ["audio-encode-change", { changesAudioEncode: true }],
     ["codec-unsupported", { targetCodecPlayable: false }],
     ["party-watch-seek", { partyWatchSeekInFlight: true }],
+    ["presented-outside-page", { presentedOutsidePage: true }],
     ["not-complete-file", { targetIsCompleteFile: false }],
     ["not-complete-file", { currentIsCompleteFile: false }],
     ["same-quality", { sameQuality: true }],

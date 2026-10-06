@@ -153,6 +153,16 @@ import { useFrameCapture } from "./useFrameCapture";
 import { useDismissOnOutsidePointer } from "./useDismissOnOutsidePointer";
 import { useLiveTranscodingReasons } from "./useLiveTranscodingReasons";
 import { useNativeTextTracksSuppressed } from "./useNativeTextTracksSuppressed";
+import {
+  isPresentedOutsidePage,
+  usePresentationSubtitleTrack,
+} from "./usePresentationSubtitleTrack";
+import {
+  readStoredVideoFit,
+  storeVideoFit,
+  usePinchVideoFit,
+  type VideoFit,
+} from "./useVideoFit";
 import { usePartyEventToast } from "./usePartyEventToast";
 import { useMediaSessionControls } from "./useMediaSessionControls";
 import { useSubtitleEditor } from "./useSubtitleEditor";
@@ -349,6 +359,12 @@ export function CustomVideoPlayer({
   );
   const audioTranscodeReadinessTimerRef = useRef<number | null>(null);
   const suppressPlayerTapUntilRef = useRef(0);
+  const pictureBoxRef = useRef<HTMLDivElement | null>(null);
+  const [videoFit, setVideoFit] = useState<VideoFit>(readStoredVideoFit);
+  const [videoFitNotice, setVideoFitNotice] = useState<{
+    fit: VideoFit;
+    key: number;
+  } | null>(null);
   const suppressMouseMoveUntilRef = useRef(0);
   const fullscreenSeekPreviewTokenRef = useRef(0);
   const pendingFullscreenSeekPreviewRef = useRef<{
@@ -358,6 +374,40 @@ export function CustomVideoPlayer({
   const fullscreenSeekPreviewFallbackTimerRef = useRef<number | null>(null);
   const viewModeCursorHideTimerRef = useRef<number | null>(null);
   const { resetTouchSeekSession, handleTouchTap } = useTouchSeek(containerRef);
+
+  usePinchVideoFit(
+    containerRef,
+    (fit) => {
+      setVideoFit(fit);
+      storeVideoFit(fit);
+      // Named even when nothing changed, so a pinch never goes unanswered.
+      setVideoFitNotice((current) => ({
+        fit,
+        key: (current?.key ?? 0) + 1,
+      }));
+    },
+    () => {
+      suppressPlayerTapUntilRef.current = Date.now() + 400;
+    },
+  );
+
+  useEffect(() => {
+    if (!videoFitNotice) return undefined;
+    const timer = window.setTimeout(() => setVideoFitNotice(null), 1100);
+    return () => window.clearTimeout(timer);
+  }, [videoFitNotice]);
+
+  /**
+   * The box the picture is drawn in. In `original` it stops at the safe area,
+   * which on a phone held sideways keeps the Dynamic Island off the film; in
+   * `fill` it is the whole screen and the picture is cropped to cover it.
+   */
+  const pictureBoxClass =
+    videoFit === "fill"
+      ? "absolute inset-0"
+      : "absolute inset-y-0 left-[env(safe-area-inset-left)] right-[env(safe-area-inset-right)]";
+  const pictureFitClass =
+    videoFit === "fill" ? "object-cover" : "object-contain";
   const mediaFormatLabels = useMemo(
     () => ({
       season: t("media.seasonNumber"),
@@ -1274,7 +1324,7 @@ export function CustomVideoPlayer({
 
   const fullscreenSeekPreviewRect = useMemo(() => {
     const video = videoRef.current;
-    const container = containerRef.current;
+    const container = pictureBoxRef.current;
 
     if (!video || !container) {
       return null;
@@ -1293,7 +1343,9 @@ export function CustomVideoPlayer({
     let left = 0;
     let top = 0;
 
-    if (containerAspect > videoAspect) {
+    // Contain fits the frame inside the box; fill covers it, so the wider
+    // side overflows and the preview is cropped exactly as the picture is.
+    if (containerAspect > videoAspect === (videoFit === "original")) {
       height = containerBounds.height;
       width = height * videoAspect;
       left = (containerBounds.width - width) / 2;
@@ -1314,6 +1366,7 @@ export function CustomVideoPlayer({
     loadedVideoAspectRatio,
     progress.duration,
     sourceVideoAspectRatio,
+    videoFit,
     viewport.height,
     viewport.width,
   ]);
@@ -1504,10 +1557,33 @@ export function CustomVideoPlayer({
 
     if (document.fullscreenElement) {
       void document.exitFullscreen();
-    } else {
-      void container.requestFullscreen?.();
+      return;
     }
-  }, []);
+
+    if (document.fullscreenEnabled && container.requestFullscreen) {
+      // On iPad this is also what makes going home start Picture in Picture:
+      // WebKit holds the playing video inside a full-screen element ready for it.
+      void container.requestFullscreen();
+      return;
+    }
+
+    // iPhone Safari cannot put an element in full screen, only the video
+    // itself, in the system player. That player is also the only way an
+    // iPhone starts Picture in Picture by itself when the viewer goes home.
+    const video = videoRef.current as
+      | (HTMLVideoElement & { webkitEnterFullscreen?: () => void })
+      | null;
+
+    try {
+      video?.webkitEnterFullscreen?.();
+    } catch (fullscreenError) {
+      // Throws before the element has metadata; the button simply waits.
+      console.warn(
+        "[Seyirlik Playback] Could not enter native full screen",
+        fullscreenError,
+      );
+    }
+  }, [videoRef]);
 
   const handleSeekBy = useCallback(
     (seconds: number) => {
@@ -2026,6 +2102,9 @@ export function CustomVideoPlayer({
             ? true
             : standby.canPlayType(mimeType) !== "",
         partyWatchSeekInFlight: partyWatch.localState === "catching-up",
+        presentedOutsidePage: Boolean(
+          videoRef.current && isPresentedOutsidePage(videoRef.current),
+        ),
         sameQuality: selectedFile.id === currentQuality,
       });
     },
@@ -2039,6 +2118,7 @@ export function CustomVideoPlayer({
       getDeckElement,
       partyWatch.localState,
       selectedAudioStreamIndex,
+      videoRef,
     ],
   );
 
@@ -4740,6 +4820,14 @@ export function CustomVideoPlayer({
     };
   }, [deckEpoch, subtitleCues, subtitleDelaySeconds, videoRef]);
 
+  usePresentationSubtitleTrack(
+    videoRef,
+    deckEpoch,
+    subtitleCues,
+    subtitleDelaySeconds,
+    t("library.subtitles"),
+  );
+
   /**
    * Both decks carry the same handlers, so every one of them has to establish
    * that the event came from the deck the viewer is actually watching.
@@ -5123,51 +5211,53 @@ export function CustomVideoPlayer({
         dissolve, and because both layers hold a real picture it never fades
         through the black background behind them.
       */}
-      {(["a", "b"] as const).map((deckId) => {
-        const isActiveDeck = deckId === deck.activeDeckId;
+      <div ref={pictureBoxRef} className={pictureBoxClass}>
+        {(["a", "b"] as const).map((deckId) => {
+          const isActiveDeck = deckId === deck.activeDeckId;
 
-        return (
-          <video
-            key={deckId}
-            ref={deckRefs[deckId]}
-            data-deck={deckId}
-            data-deck-role={isActiveDeck ? "active" : "standby"}
-            controls={false}
-            playsInline
-            preload="auto"
-            aria-hidden={isActiveDeck ? undefined : true}
-            tabIndex={isActiveDeck ? undefined : -1}
-            className={`seyirlik-video absolute inset-0 h-full w-full object-contain ${
-              isActiveDeck
-                ? "z-[2] opacity-100"
-                : "pointer-events-none z-[1] opacity-0"
-            }`}
-            style={{
-              transition: shouldReduceMotion
-                ? undefined
-                : `opacity ${HANDOFF_CROSSFADE_MS}ms linear`,
-            }}
-            onPlay={handleVideoPlay}
-            onPause={handleVideoPause}
-            onTimeUpdate={handleTimeUpdate}
-            onSeeked={handleVideoSeeked}
-            onWaiting={(event) => {
-              // Standby buffering is not the viewer waiting, and must not
-              // reveal the chrome or count as an Auto-quality stall.
-              if (!isActiveDeckElement(event.currentTarget)) return;
-              revealPlayerChrome();
-            }}
-            onError={handleVideoError}
-            onEnded={(event) => {
-              if (!isActiveDeckElement(event.currentTarget)) return;
-              const positionSeconds = updateLatestPlaybackPosition();
-              onPlaybackProgress?.(positionSeconds, true);
-              reportStoppedOnce(false);
-              handleDefaultNextEpisodePlay();
-            }}
-          />
-        );
-      })}
+          return (
+            <video
+              key={deckId}
+              ref={deckRefs[deckId]}
+              data-deck={deckId}
+              data-deck-role={isActiveDeck ? "active" : "standby"}
+              controls={false}
+              playsInline
+              preload="auto"
+              aria-hidden={isActiveDeck ? undefined : true}
+              tabIndex={isActiveDeck ? undefined : -1}
+              className={`seyirlik-video absolute inset-0 h-full w-full ${pictureFitClass} ${
+                isActiveDeck
+                  ? "z-[2] opacity-100"
+                  : "pointer-events-none z-[1] opacity-0"
+              }`}
+              style={{
+                transition: shouldReduceMotion
+                  ? undefined
+                  : `opacity ${HANDOFF_CROSSFADE_MS}ms linear`,
+              }}
+              onPlay={handleVideoPlay}
+              onPause={handleVideoPause}
+              onTimeUpdate={handleTimeUpdate}
+              onSeeked={handleVideoSeeked}
+              onWaiting={(event) => {
+                // Standby buffering is not the viewer waiting, and must not
+                // reveal the chrome or count as an Auto-quality stall.
+                if (!isActiveDeckElement(event.currentTarget)) return;
+                revealPlayerChrome();
+              }}
+              onError={handleVideoError}
+              onEnded={(event) => {
+                if (!isActiveDeckElement(event.currentTarget)) return;
+                const positionSeconds = updateLatestPlaybackPosition();
+                onPlaybackProgress?.(positionSeconds, true);
+                reportStoppedOnce(false);
+                handleDefaultNextEpisodePlay();
+              }}
+            />
+          );
+        })}
+      </div>
 
       {/*
         Development-only readout of which media is genuinely on screen. A
@@ -5197,13 +5287,15 @@ export function CustomVideoPlayer({
         changes that still have to replace the source in place — an audio track
         needing a different encode, an HLS session, a title change.
       */}
-      <canvas
-        ref={frameHoldCanvasRef}
-        aria-hidden="true"
-        className={`pointer-events-none absolute inset-0 z-[11] h-full w-full bg-black object-contain transition-opacity duration-200 ${
-          isHoldingFrame ? "opacity-100" : "opacity-0"
-        }`}
-      />
+      <div className={`pointer-events-none ${pictureBoxClass}`}>
+        <canvas
+          ref={frameHoldCanvasRef}
+          aria-hidden="true"
+          className={`pointer-events-none absolute inset-0 z-[11] h-full w-full bg-black ${pictureFitClass} transition-opacity duration-200 ${
+            isHoldingFrame ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      </div>
 
       {/*
         Warms bytes for the source replacements that cannot hand over between
@@ -5297,7 +5389,9 @@ export function CustomVideoPlayer({
       ) : null}
 
       {fullscreenSeekPreview && fullscreenSeekPreviewRect ? (
-        <div className="pointer-events-none absolute inset-0 z-[9] overflow-hidden">
+        <div
+          className={`pointer-events-none z-[9] overflow-hidden ${pictureBoxClass}`}
+        >
           <div
             className="absolute overflow-hidden bg-black"
             style={{
@@ -5329,6 +5423,28 @@ export function CustomVideoPlayer({
           </div>
         </div>
       ) : null}
+
+      <AnimatePresence>
+        {videoFitNotice ? (
+          <motion.div
+            key={videoFitNotice.key}
+            role="status"
+            className="pointer-events-none absolute inset-0 z-[60] flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: shouldReduceMotion ? 0 : 0.18 }}
+          >
+            <span className="rounded-full bg-black/70 px-4 py-2 text-sm font-black text-white shadow-player-controls backdrop-blur-xl">
+              {t(
+                videoFitNotice.fit === "fill"
+                  ? "player.videoFit.fill"
+                  : "player.videoFit.original",
+              )}
+            </span>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {subtitleLines.length > 0 ? (
         <div
