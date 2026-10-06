@@ -586,6 +586,8 @@ export const en = {
   "reader.toChapterEnd": "Chapter ends in",
   "reader.minutes": "{m} min",
   "reader.hoursMinutes": "{h} h {m} min",
+  "reader.image": "Illustration",
+  "reader.closeImage": "Close illustration",
   "reader.more": "More",
   "reader.unsupportedTitle": "Open this file",
   "reader.unsupportedMessage":

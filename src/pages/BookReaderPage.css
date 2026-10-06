@@ -1170,6 +1170,71 @@ body:has(.seyirlik-reader-shell) {
   color: var(--rd-ink);
 }
 
+/* ---------- Illustration viewer ---------- */
+/* A book's picture enlarged over the page, on the reader's own light: the
+   text fades under the ground while the picture grows out of its place. */
+.rd-zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+}
+
+.rd-zoom-ground {
+  position: absolute;
+  inset: 0;
+  background: var(--rd-ground);
+  opacity: 0;
+}
+
+.rd-zoom-picture {
+  position: absolute;
+  max-width: none;
+  transform-origin: 0 0;
+  will-change: transform;
+  cursor: zoom-in;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+}
+
+.rd-zoom[data-zoomable="false"] .rd-zoom-picture {
+  cursor: zoom-out;
+}
+
+.rd-zoom[data-zoomed="true"] .rd-zoom-picture {
+  cursor: grab;
+}
+
+.rd-zoom[data-zoomed="true"] .rd-zoom-picture:active {
+  cursor: grabbing;
+}
+
+.rd-zoom-close {
+  position: absolute;
+  top: max(0.75rem, env(safe-area-inset-top));
+  right: max(0.75rem, env(safe-area-inset-right));
+  display: grid;
+  width: 2.75rem;
+  height: 2.75rem;
+  place-items: center;
+  border-radius: 9999px;
+  color: var(--rd-ink);
+  background: var(--rd-glass-solid);
+  box-shadow:
+    0 0 0 1px var(--rd-glass-edge),
+    inset 0 1px 0 var(--rd-glass-highlight),
+    var(--rd-lift);
+  transition: opacity 0.24s var(--rd-sine);
+}
+
+.rd-zoom[data-closing] .rd-zoom-close {
+  opacity: 0;
+}
+
 /* ---------- Loading ---------- */
 .rd-preparing {
   position: absolute;

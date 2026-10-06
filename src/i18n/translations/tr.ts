@@ -586,6 +586,8 @@ export const tr = {
   "reader.toChapterEnd": "Bölüm sonuna",
   "reader.minutes": "{m} dk",
   "reader.hoursMinutes": "{h} sa {m} dk",
+  "reader.image": "Resim",
+  "reader.closeImage": "Resmi kapat",
   "reader.more": "Diğer",
   "reader.unsupportedTitle": "Bu dosyayı aç",
   "reader.unsupportedMessage":

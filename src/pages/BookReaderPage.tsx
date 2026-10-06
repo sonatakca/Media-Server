@@ -59,6 +59,8 @@ import {
   hyphenateDocument,
   readLiveAccent,
 } from "./reader/epubTypography";
+import { ReaderImageViewer } from "./reader/ReaderImageViewer";
+import { zoomableImageAt, type ReaderImage } from "./reader/readerImage";
 import {
   RULER_FADE_MS,
   ReaderBookCover,
@@ -495,6 +497,7 @@ export function BookReaderPage() {
     readStoredReaderSettings,
   );
   const [panel, setPanel] = useState<Panel>(null);
+  const [zoomedImage, setZoomedImage] = useState<ReaderImage | null>(null);
   const [contentsTab, setContentsTab] = useState<"contents" | "bookmarks">(
     "contents",
   );
@@ -1117,7 +1120,8 @@ export function BookReaderPage() {
       saveLocation(location);
     };
 
-    // A tap or click on the page that selects nothing shows or hides the bar.
+    // A tap or click on the page that selects nothing shows or hides the bar;
+    // on an illustration it opens the picture full size instead.
     const handleTap = (tapped: EventTarget | null) => {
       const target = tapped as Element | null;
       const selection = target?.ownerDocument?.getSelection();
@@ -1128,6 +1132,12 @@ export function BookReaderPage() {
 
       if (panelRef.current !== null) {
         setPanel(null);
+        return;
+      }
+
+      const image = zoomableImageAt(target);
+      if (image) {
+        setZoomedImage(image);
         return;
       }
 
@@ -2172,6 +2182,15 @@ export function BookReaderPage() {
           onNavigate={navigateTo}
           onRemoveBookmark={removeBookmark}
           onClose={closePanel}
+        />
+      ) : null}
+
+      {zoomedImage ? (
+        <ReaderImageViewer
+          image={zoomedImage}
+          label={t("reader.image")}
+          closeLabel={t("reader.closeImage")}
+          onClosed={() => setZoomedImage(null)}
         />
       ) : null}
     </main>

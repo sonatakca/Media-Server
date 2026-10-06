@@ -222,6 +222,10 @@ export const EPUB_STATIC_CSS = `
     margin-right: 0.09em;
   }
 }
+/* Pictures open full size on a tap. The reading light gives every block its
+   own layer, so the paragraph beside a floated picture would otherwise sit
+   over it and take the tap and the cursor. */
+img { position: relative; z-index: 1; cursor: zoom-in; }
 html[data-seyirlik-hyphens="manual"] body { hyphens: manual; -webkit-hyphens: manual; }
 html[data-seyirlik-hyphens="auto"] body { hyphens: auto; -webkit-hyphens: auto; }
 @media (prefers-reduced-motion: reduce) {
