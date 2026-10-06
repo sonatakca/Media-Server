@@ -4,9 +4,9 @@ import { Search, SlidersHorizontal } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
-import { HeroSection } from "../../components/HeroSection";
 import { useIsPhoneView } from "../../hooks/useIsPhoneView";
 import { TitleHero } from "../../components/home/TitleHero";
+import { PhoneTitleHero } from "../../components/mobile/PhoneTitleHero";
 import { MobileMediaCard } from "../../components/mobile/MobileMediaCard";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
 import { WatchedIndicator } from "../../components/WatchedIndicator";
@@ -574,6 +574,14 @@ export function MobileLibraryPage({
         <ShowLibrarySkeleton mobile item={data.library} />
       );
 
+    const showTitleDetails = () =>
+      titleDetailsRef.current?.scrollIntoView({
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+          ? "auto"
+          : "smooth",
+        block: "start",
+      });
+
     return (
       <>
         {!isInitialDetailsReady && initialDetailsSkeleton}
@@ -598,11 +606,11 @@ export function MobileLibraryPage({
                 queued. */}
             <div className="full-bleed relative">
               {isPhone ? (
-                <HeroSection
+                <PhoneTitleHero
+                  key={data.library.Id}
                   item={data.library}
-                  variant="fixed"
-                  enablePreview={false}
-                  keepDetailsVisible
+                  isRevealed={isInitialDetailsReady}
+                  onShowDetails={showTitleDetails}
                 />
               ) : (
                 <TitleHero
@@ -611,16 +619,7 @@ export function MobileLibraryPage({
                   fit="mobile"
                   trailers={false}
                   isRevealed={isInitialDetailsReady}
-                  onShowDetails={() =>
-                    titleDetailsRef.current?.scrollIntoView({
-                      behavior: window.matchMedia(
-                        "(prefers-reduced-motion: reduce)",
-                      ).matches
-                        ? "auto"
-                        : "smooth",
-                      block: "start",
-                    })
-                  }
+                  onShowDetails={showTitleDetails}
                 />
               )}
             </div>

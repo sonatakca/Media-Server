@@ -7,7 +7,7 @@ related_targets: ["src/pages/desktop/DesktopHomePage.tsx", "src/pages/mobile/Mob
 
 # Home hero (every device)
 
-Scope: the home hero and its carousel, and the title hero it lends to film and series pages, on desktop, tablet and phone, with their loading skeletons. Mode: Experience inside the Screening Room (Operate affordances intact: play, details, save, rotation control). The tablet pages render the same components as the desktop, the stage's shape picking the layout; an upright phone keeps its own poster-card home hero and HeroSection title pages (DESIGN.md, "Phone heroes").
+Scope: the home hero and its carousel, and the title hero it lends to film and series pages, on desktop, tablet and phone, with their loading skeletons. Mode: Experience inside the Screening Room (Operate affordances intact: play, details, save, rotation control). The tablet pages render the same components as the desktop, the stage's shape picking the layout; an upright phone keeps its own poster-card home hero and `PhoneTitleHero` title pages (DESIGN.md, "Phone heroes").
 
 ## Direction contract
 
