@@ -101,12 +101,17 @@ export function DesktopNavbar() {
           ref={navLinksRef}
           className="relative hidden min-w-0 flex-1 items-center gap-7 md:flex"
         >
+          {/* The wordmark's shadow: over a hero the links stand on the
+              artwork's own colours, which can be as light as they are. A
+              filter on the link, not a text-shadow, because the label's
+              animation frames clip to their boxes and would cut the blur
+              into a dark rectangle; a filter draws after that clip. */}
           {navLinks.map((link) => (
             <NavLink
               key={link.to}
               to={link.to}
               className={({ isActive }) =>
-                `text-sm font-semibold transition-colors duration-200 ${
+                `text-sm font-semibold transition-colors duration-200 [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))] ${
                   isActive ? "text-white" : "text-white/72 hover:text-white"
                 } ${"className" in link ? link.className : ""}`
               }
@@ -130,7 +135,8 @@ export function DesktopNavbar() {
             activeSelector='a[aria-current="page"] [data-nav-label]'
             measureKey={location.pathname}
           >
-            <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.35)]" />
+            {/* The links' shadow too, so the line keeps its edge where they do. */}
+            <span className="absolute -bottom-2 left-1/2 h-[2px] w-[calc(100%+0.25rem)] -translate-x-1/2 rounded-full bg-white/90 shadow-[0_0_12px_rgba(255,255,255,0.35)] [filter:drop-shadow(0_1px_2px_rgba(0,0,0,0.6))_drop-shadow(0_3px_14px_rgba(0,0,0,0.5))]" />
           </SlidingIndicator>
         </div>
 
