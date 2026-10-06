@@ -41,8 +41,11 @@ export function createDownloadRoutes({
         const principal = context.requirePrincipal();
         const itemId = requireUuid(context.params.itemId, "itemId");
 
+        // An administrator can grant themselves the permission, so it is
+        // theirs already; read from the stored account, not the session, so a
+        // demotion takes it away at once.
         const user = await users.findById(principal.userId);
-        if (!user?.allowDownloads) {
+        if (!user || (!user.isAdministrator && !user.allowDownloads)) {
           throw new OwnApiError(
             "DOWNLOADS_NOT_ALLOWED",
             "Downloads are not enabled for this account.",

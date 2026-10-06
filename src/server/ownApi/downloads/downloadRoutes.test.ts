@@ -7,7 +7,11 @@ import { createDownloadRoutes } from "./downloadRoutes";
 const VIEWER = "11111111-1111-4111-8111-111111111111";
 const ITEM = "22222222-2222-4222-8222-222222222222";
 
-function build(options: { allowDownloads: boolean; packaged: boolean }) {
+function build(options: {
+  allowDownloads: boolean;
+  packaged: boolean;
+  isAdministrator?: boolean;
+}) {
   return createOwnApiRouter({
     csrfSecret: "s".repeat(32),
     csrfCookieName: "seyirlik_csrf",
@@ -24,7 +28,10 @@ function build(options: { allowDownloads: boolean; packaged: boolean }) {
       mediaRoot: "/media",
       users: {
         findById: async () =>
-          ({ allowDownloads: options.allowDownloads }) as never,
+          ({
+            allowDownloads: options.allowDownloads,
+            isAdministrator: options.isAdministrator ?? false,
+          }) as never,
       },
       catalogue: {
         canUserAccessItem: async () => true,
@@ -113,6 +120,14 @@ describe("download plan", () => {
     ).toEqual({
       error: "DOWNLOADS_NOT_ALLOWED",
     });
+  });
+
+  it("lets an administrator download without the separate permission", async () => {
+    expect(
+      await call(
+        build({ allowDownloads: false, packaged: true, isAdministrator: true }),
+      ),
+    ).toMatchObject({ data: { masterUrl: expect.any(String) } });
   });
 
   it("refuses a title with no package to store", async () => {

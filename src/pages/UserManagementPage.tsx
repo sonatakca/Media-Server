@@ -703,7 +703,10 @@ export function UserManagementPage() {
                   }
                 />
                 <ToggleField
-                  checked={draft.enableContentDownloading}
+                  checked={
+                    draft.isAdministrator || draft.enableContentDownloading
+                  }
+                  disabled={draft.isAdministrator}
                   label={t("userManagement.downloads")}
                   description={t("userManagement.downloadsDescription")}
                   onChange={(checked) =>
