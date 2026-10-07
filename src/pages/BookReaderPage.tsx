@@ -11,6 +11,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import ePub, {
+  EpubCFI,
   type Book,
   type Contents,
   type Location as EpubLocation,
@@ -67,6 +68,7 @@ import {
   ReaderBookCover,
   ReaderMargin,
   ReaderContentsDrawer,
+  ReaderHighlightMenu,
   ReaderMoreMenu,
   ReaderSettingsPanel,
 } from "./reader/ReaderPanels";
@@ -90,6 +92,9 @@ import {
   flattenToc,
   getFormatLabel,
   getReaderFormat,
+  HIGHLIGHT_COLORS,
+  highlightName,
+  isHighlight,
   minutesForLocations,
   readBookmarks,
   isReaderPlace,
@@ -100,6 +105,7 @@ import {
   writeJsonStorage,
   writeReaderProgress,
   type EpubContentView,
+  type HighlightColor,
   type ReaderBookmark,
   type ReaderPalette,
   type ReaderPlace,
@@ -130,6 +136,32 @@ function lightFromSettings(light: ReadingLight, settings: ReaderSettings) {
 }
 
 type Panel = "settings" | "contents" | "more" | null;
+
+/** The text the reader has selected, or the highlight they tapped. */
+type HighlightTarget =
+  | {
+      kind: "selection";
+      cfi: string;
+      text: string;
+      section: number;
+      progress: number | null;
+      range: Range;
+    }
+  | { kind: "highlight"; id: string; range: Range };
+
+/** A highlight's text as the list shows it: no soft hyphens, one line. */
+function highlightText(range: Range): string {
+  const text = range
+    .toString()
+    .replace(/\u00ad/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > 800 ? `${text.slice(0, 799).trimEnd()}…` : text;
+}
+
+function rangeDocument(range: Range): Document | null {
+  return range.startContainer.ownerDocument;
+}
 type TocEntry = NavItem & { depth: number };
 
 interface ReadingState {
@@ -437,7 +469,7 @@ const TAP_AFTER_SCROLL_MS = 250;
  */
 function listenForTaps(
   target: Document | HTMLElement,
-  onTap: (target: EventTarget | null) => void,
+  onTap: (target: EventTarget | null, release: PointerEvent) => void,
   scrolledRecently: () => boolean,
 ): () => void {
   let start: { x: number; y: number; at: number; id: number } | null = null;
@@ -472,7 +504,7 @@ function listenForTaps(
       return;
     }
 
-    onTap(release.target);
+    onTap(release.target, release);
   };
 
   target.addEventListener("pointerdown", down, { passive: true });
@@ -520,6 +552,8 @@ export function BookReaderPage() {
   const [reading, setReading] = useState<ReadingState | null>(null);
   const [columnBox, setColumnBox] = useState<ColumnBox | null>(null);
   const [bookmarks, setBookmarks] = useState<ReaderBookmark[]>([]);
+  const [highlightTarget, setHighlightTarget] =
+    useState<HighlightTarget | null>(null);
   const [currentCfi, setCurrentCfi] = useState<string | null>(null);
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [epubReady, setEpubReady] = useState(false);
@@ -547,12 +581,67 @@ export function BookReaderPage() {
   const settingsPanelRef = useRef<HTMLElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const readerKeyRef = useRef<(event: KeyboardEvent) => void>(() => undefined);
+  const highlightMenuRef = useRef<HTMLDivElement | null>(null);
+  const highlightTargetRef = useRef<HighlightTarget | null>(null);
+  const highlightsRef = useRef<ReaderBookmark[]>([]);
+  const paintHighlightsRef = useRef<() => void>(() => undefined);
 
   useLayoutEffect(() => {
     settingsRef.current = settings;
     panelRef.current = panel;
     languageRef.current = language;
+    highlightTargetRef.current = highlightTarget;
   });
+
+  /**
+   * Sets the colour menu beside its text: below it, clear of the callout the
+   * system puts above a selection, or above it when there is no room below.
+   * Called again as the book scrolls under it.
+   */
+  const placeHighlightMenu = useCallback(() => {
+    const menu = highlightMenuRef.current;
+    const target = highlightTargetRef.current;
+
+    if (!menu || !target) {
+      return;
+    }
+
+    const frame = rangeDocument(target.range)?.defaultView?.frameElement;
+    const rects = Array.from(target.range.getClientRects()).filter(
+      (rect) => rect.width > 0 && rect.height > 0,
+    );
+
+    if (!frame || rects.length === 0) {
+      menu.style.visibility = "hidden";
+      return;
+    }
+
+    const frameBox = frame.getBoundingClientRect();
+    const box = target.range.getBoundingClientRect();
+    const top = frameBox.top + rects[0].top;
+    const bottom = frameBox.top + rects[rects.length - 1].bottom;
+    const width = menu.offsetWidth;
+    const height = menu.offsetHeight;
+    const edge = 8;
+    const gap = 12;
+    const fitsBelow = bottom + gap + height <= window.innerHeight - edge;
+    const y = fitsBelow ? bottom + gap : top - gap - height;
+    const x = frameBox.left + (box.left + box.right) / 2 - width / 2;
+
+    menu.style.visibility =
+      bottom < 0 || top > window.innerHeight ? "hidden" : "";
+    menu.dataset.placement = fitsBelow ? "below" : "above";
+    menu.style.left = `${clamp(x, edge, window.innerWidth - width - edge)}px`;
+    menu.style.top = `${clamp(y, edge, window.innerHeight - height - edge)}px`;
+  }, []);
+
+  useLayoutEffect(placeHighlightMenu, [highlightTarget, placeHighlightMenu]);
+
+  // Highlights are painted into every section on screen whenever they change.
+  useLayoutEffect(() => {
+    highlightsRef.current = bookmarks.filter(isHighlight);
+    paintHighlightsRef.current();
+  }, [bookmarks]);
 
   const palette = themePalettes[settings.theme];
 
@@ -602,6 +691,7 @@ export function BookReaderPage() {
   const closePanel = useCallback(() => setPanel(null), []);
   const togglePanel = useCallback((next: Exclude<Panel, null>) => {
     setPanel((current) => (current === next ? null : next));
+    setHighlightTarget(null);
     setChromeHidden(false);
   }, []);
 
@@ -688,6 +778,7 @@ export function BookReaderPage() {
     setReaderError(null);
     setTextContent(null);
     setScrollProgress(0);
+    setHighlightTarget(null);
     setBookmarks(activeItemId ? readBookmarks(activeItemId) : []);
   }, [activeItemId]);
 
@@ -757,6 +848,11 @@ export function BookReaderPage() {
     let currentCfiValue = savedProgress?.cfi;
     /** Each section's blocks, in order, once its typography is in. */
     const blocksOf = new WeakMap<Document, HTMLElement[]>();
+    /** Each section's highlights as ranges, to find the one under a tap. */
+    const highlightsIn = new WeakMap<
+      Document,
+      Array<{ id: string; range: Range }>
+    >();
     // Until the reader is back where they left off, the places epub.js passes
     // through on the way are not written over the saved one. The same holds
     // while catching up with a place read on another device.
@@ -957,6 +1053,184 @@ export function BookReaderPage() {
     scheduleFrameRef.current = scheduleFrame;
     measureColumnRef.current = measureColumn;
 
+    /**
+     * Paints the section's highlights with the CSS Custom Highlight API, which
+     * marks ranges without touching the markup: a highlight wrapped in an
+     * element would shift every CFI saved after it. Only a section whose soft
+     * hyphens are in, as they were when its CFIs were made.
+     */
+    const paintHighlights = (view: EpubContentView) => {
+      const frameWindow = view.document.defaultView as
+        | (Window & typeof globalThis)
+        | null;
+      const registry = frameWindow?.CSS?.highlights;
+
+      if (
+        !frameWindow ||
+        !registry ||
+        typeof frameWindow.Highlight !== "function" ||
+        !blocksOf.has(view.document)
+      ) {
+        return;
+      }
+
+      const byColor = new Map<HighlightColor, Range[]>();
+      const found: Array<{ id: string; range: Range }> = [];
+
+      for (const highlight of highlightsRef.current) {
+        if (!highlight.color) {
+          continue;
+        }
+
+        try {
+          const cfi = new EpubCFI(highlight.cfi);
+
+          if (cfi.spinePos !== view.sectionIndex) {
+            continue;
+          }
+
+          const range = cfi.toRange(view.document);
+
+          if (range && !range.collapsed) {
+            byColor.set(highlight.color, [
+              ...(byColor.get(highlight.color) ?? []),
+              range,
+            ]);
+            found.push({ id: highlight.id, range });
+          }
+        } catch {
+          // A range this section cannot resolve stays in the list, unpainted.
+        }
+      }
+
+      HIGHLIGHT_COLORS.forEach((color) => {
+        const ranges = byColor.get(color);
+
+        if (ranges?.length) {
+          registry.set(
+            highlightName(color),
+            new frameWindow.Highlight(...ranges),
+          );
+        } else {
+          registry.delete(highlightName(color));
+        }
+      });
+      highlightsIn.set(view.document, found);
+    };
+
+    paintHighlightsRef.current = () =>
+      getRenditionContents(rendition).forEach(paintHighlights);
+
+    /** The highlight under a point in a section's frame, the latest on top. */
+    const highlightAt = (document: Document, x: number, y: number) =>
+      [...(highlightsIn.get(document) ?? [])]
+        .reverse()
+        .find(({ range }) =>
+          Array.from(range.getClientRects()).some(
+            (rect) =>
+              x >= rect.left &&
+              x <= rect.right &&
+              y >= rect.top &&
+              y <= rect.bottom,
+          ),
+        ) ?? null;
+
+    /**
+     * Offers the colours once a selection has settled: after the mouse button
+     * is up, or when a touch selection's handles stop moving.
+     */
+    const listenForSelection = (view: EpubContentView, contents: Contents) => {
+      const document = view.document;
+      let pressed = false;
+      let timer = 0;
+
+      const read = () => {
+        if (!isMounted) {
+          return;
+        }
+
+        const selection = document.getSelection();
+
+        if (!selection || selection.isCollapsed || selection.rangeCount === 0) {
+          setHighlightTarget((current) =>
+            current?.kind === "selection" &&
+            rangeDocument(current.range) === document
+              ? null
+              : current,
+          );
+          return;
+        }
+
+        if (
+          pressed ||
+          view.sectionIndex === undefined ||
+          !blocksOf.has(document)
+        ) {
+          return;
+        }
+
+        const range = selection.getRangeAt(0);
+        const text = highlightText(range);
+
+        if (!text) {
+          return;
+        }
+
+        let cfi: string;
+
+        try {
+          cfi = contents.cfiFromRange(range);
+        } catch {
+          return;
+        }
+
+        const percentage = hasLocations
+          ? (book.locations.percentageFromCfi(cfi) as number | null)
+          : null;
+        setHighlightTarget({
+          kind: "selection",
+          cfi,
+          text,
+          section: view.sectionIndex,
+          progress:
+            typeof percentage === "number" && Number.isFinite(percentage)
+              ? clamp(percentage, 0, 1)
+              : null,
+          range: range.cloneRange(),
+        });
+      };
+      const soon = (delay: number) => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(read, delay);
+      };
+      const changed = () => soon(220);
+      const press = (event: Event) => {
+        pressed = (event as PointerEvent).pointerType === "mouse";
+      };
+      const release = () => {
+        if (pressed) {
+          pressed = false;
+          soon(0);
+        }
+      };
+
+      document.addEventListener("selectionchange", changed);
+      document.addEventListener("pointerdown", press, { passive: true });
+      document.addEventListener("pointerup", release, { passive: true });
+      document.addEventListener("pointercancel", release, { passive: true });
+      // A drag that ends outside the frame lets go over the page.
+      window.addEventListener("pointerup", release, { passive: true });
+
+      return () => {
+        window.clearTimeout(timer);
+        document.removeEventListener("selectionchange", changed);
+        document.removeEventListener("pointerdown", press);
+        document.removeEventListener("pointerup", release);
+        document.removeEventListener("pointercancel", release);
+        window.removeEventListener("pointerup", release);
+      };
+    };
+
     const buildMapIfReady = () => {
       if (!isMounted || !hasLocations || !navigationToc) {
         return;
@@ -972,9 +1246,10 @@ export function BookReaderPage() {
       tapListeners.push(
         listenForTaps(
           view.document,
-          (target) => handleTap(target),
+          (target, release) => handleTap(target, release),
           scrolledRecently,
         ),
+        listenForSelection(view, contents),
       );
       view.addStylesheetCss(getBookFontCss(), "seyirlik-fonts");
       view.addStylesheetCss(EPUB_STATIC_CSS, "seyirlik-static");
@@ -1010,6 +1285,7 @@ export function BookReaderPage() {
       const blocks = getEpubBlocks(view.document);
       enhanceSection(blocks);
       blocksOf.set(view.document, blocks);
+      paintHighlights(view);
       light.add(view.document, view.sectionIndex ?? 0, blocks);
       resolveFirstContent();
       measureColumn();
@@ -1095,6 +1371,7 @@ export function BookReaderPage() {
 
     const handleScroll = () => {
       scheduleFrame();
+      placeHighlightMenu();
       lastScrollAt = performance.now();
 
       if (scrollElement) {
@@ -1139,8 +1416,9 @@ export function BookReaderPage() {
     };
 
     // A tap or click on the page that selects nothing shows or hides the bar;
-    // on an illustration it opens the picture full size instead.
-    const handleTap = (tapped: EventTarget | null) => {
+    // on an illustration it opens the picture full size instead, and on a
+    // highlight it offers its colours.
+    const handleTap = (tapped: EventTarget | null, release: PointerEvent) => {
       const target = tapped as Element | null;
       const selection = target?.ownerDocument?.getSelection();
 
@@ -1148,8 +1426,21 @@ export function BookReaderPage() {
         return;
       }
 
+      if (highlightTargetRef.current !== null) {
+        setHighlightTarget(null);
+        return;
+      }
+
       if (panelRef.current !== null) {
         setPanel(null);
+        return;
+      }
+
+      const highlight = target?.ownerDocument
+        ? highlightAt(target.ownerDocument, release.clientX, release.clientY)
+        : null;
+      if (highlight) {
+        setHighlightTarget({ kind: "highlight", ...highlight });
         return;
       }
 
@@ -1170,6 +1461,7 @@ export function BookReaderPage() {
     const resizeObserver = new ResizeObserver(() => {
       measureColumn();
       scheduleFrame();
+      placeHighlightMenu();
     });
     resizeObserver.observe(host);
 
@@ -1418,6 +1710,7 @@ export function BookReaderPage() {
       book.destroy();
       scheduleFrameRef.current = () => undefined;
       measureColumnRef.current = () => undefined;
+      paintHighlightsRef.current = () => undefined;
 
       if (renditionRef.current === rendition) {
         renditionRef.current = null;
@@ -1431,7 +1724,7 @@ export function BookReaderPage() {
         lightRef.current = null;
       }
     };
-  }, [activeItemId, fileUrl, format, t]);
+  }, [activeItemId, fileUrl, format, placeHighlightMenu, t]);
 
   // Settings apply live to every rendered section of the book.
   useEffect(() => {
@@ -1455,11 +1748,12 @@ export function BookReaderPage() {
       window.setTimeout(() => {
         measureColumnRef.current();
         scheduleFrameRef.current();
+        placeHighlightMenu();
       }, delay),
     );
 
     return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [format, palette, settings]);
+  }, [format, palette, placeHighlightMenu, settings]);
 
   /* ---------------- Plain text, HTML, images ---------------- */
   const shouldFetchText = format === "text" || format === "html";
@@ -1575,7 +1869,9 @@ export function BookReaderPage() {
       }
 
       if (event.key === "Escape") {
-        if (panelRef.current !== null) {
+        if (highlightTargetRef.current !== null) {
+          setHighlightTarget(null);
+        } else if (panelRef.current !== null) {
           setPanel(null);
         }
         return;
@@ -1716,9 +2012,10 @@ export function BookReaderPage() {
     () =>
       bookmarks.some(
         (bookmark) =>
-          (currentCfi !== null && bookmark.cfi === currentCfi) ||
-          (bookmark.progress !== null &&
-            Math.abs(bookmark.progress - bookFraction) < 0.0025),
+          !isHighlight(bookmark) &&
+          ((currentCfi !== null && bookmark.cfi === currentCfi) ||
+            (bookmark.progress !== null &&
+              Math.abs(bookmark.progress - bookFraction) < 0.0025)),
       ),
     [bookFraction, bookmarks, currentCfi],
   );
@@ -1731,11 +2028,12 @@ export function BookReaderPage() {
     if (isBookmarked) {
       const next = bookmarks.filter(
         (bookmark) =>
-          bookmark.cfi !== currentCfi &&
-          !(
-            bookmark.progress !== null &&
-            Math.abs(bookmark.progress - bookFraction) < 0.0025
-          ),
+          isHighlight(bookmark) ||
+          (bookmark.cfi !== currentCfi &&
+            !(
+              bookmark.progress !== null &&
+              Math.abs(bookmark.progress - bookFraction) < 0.0025
+            )),
       );
       setBookmarks(next);
       writeBookmarks(activeItemId, next);
@@ -1792,6 +2090,76 @@ export function BookReaderPage() {
       writeBookmarks(activeItemId, next);
     },
     [activeItemId, bookmarks],
+  );
+
+  const highlightColor =
+    highlightTarget === null
+      ? null
+      : (bookmarks.find((bookmark) =>
+          highlightTarget.kind === "highlight"
+            ? bookmark.id === highlightTarget.id
+            : isHighlight(bookmark) && bookmark.cfi === highlightTarget.cfi,
+        )?.color ?? null);
+
+  /** Marks the selection in a colour, or gives a tapped highlight a new one. */
+  const pickHighlightColor = useCallback(
+    (color: HighlightColor) => {
+      const target = highlightTarget;
+
+      if (!target || !activeItemId) {
+        return;
+      }
+
+      const existing = bookmarks.find((bookmark) =>
+        target.kind === "highlight"
+          ? bookmark.id === target.id
+          : isHighlight(bookmark) && bookmark.cfi === target.cfi,
+      );
+      let next: ReaderBookmark[];
+
+      if (existing) {
+        next = bookmarks.map((bookmark) =>
+          bookmark === existing ? { ...bookmark, color } : bookmark,
+        );
+      } else if (target.kind === "selection") {
+        const chapterIndex =
+          hasChapters && bookMap ? chapterAt(bookMap, target.section) : -1;
+        const highlight: ReaderBookmark = {
+          id: `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+          cfi: target.cfi,
+          label:
+            splitNumber(bookMap?.chapters[chapterIndex]?.label ?? chapterLabel)
+              .title || title,
+          excerpt: target.text,
+          progress: target.progress ?? bookFraction,
+          createdAt: Date.now(),
+          color,
+        };
+        next = [...bookmarks, highlight].sort(
+          (a, b) => (a.progress ?? 0) - (b.progress ?? 0),
+        );
+      } else {
+        return;
+      }
+
+      if (target.kind === "selection") {
+        rangeDocument(target.range)?.getSelection()?.removeAllRanges();
+      }
+
+      setBookmarks(next);
+      writeBookmarks(activeItemId, next);
+      setHighlightTarget(null);
+    },
+    [
+      activeItemId,
+      bookFraction,
+      bookMap,
+      bookmarks,
+      chapterLabel,
+      hasChapters,
+      highlightTarget,
+      title,
+    ],
   );
 
   /* ---------------- Rendering ---------------- */
@@ -2225,6 +2593,23 @@ export function BookReaderPage() {
       />
 
       {format === "epub" ? (
+        <ReaderHighlightMenu
+          ref={highlightMenuRef}
+          open={highlightTarget !== null && panel === null}
+          current={highlightColor}
+          onPick={pickHighlightColor}
+          onRemove={
+            highlightTarget?.kind === "highlight"
+              ? () => {
+                  removeBookmark(highlightTarget.id);
+                  setHighlightTarget(null);
+                }
+              : null
+          }
+        />
+      ) : null}
+
+      {format === "epub" ? (
         <ReaderContentsDrawer
           open={panel === "contents"}
           tab={contentsTab}
@@ -2237,6 +2622,7 @@ export function BookReaderPage() {
           location={reading?.location ?? null}
           currentHref={currentHref}
           bookmarks={bookmarks}
+          scheme={palette.scheme}
           spineIndexOf={spineIndexOf}
           onNavigate={navigateTo}
           onRemoveBookmark={removeBookmark}

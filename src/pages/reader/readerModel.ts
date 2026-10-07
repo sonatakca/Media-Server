@@ -73,6 +73,16 @@ export function isReaderPlace(value: unknown): value is ReaderPlace {
 
 export type ReaderProgressMap = Record<string, StoredReaderProgress>;
 
+export type HighlightColor = "yellow" | "green" | "blue" | "pink" | "purple";
+
+export const HIGHLIGHT_COLORS: HighlightColor[] = [
+  "yellow",
+  "green",
+  "blue",
+  "pink",
+  "purple",
+];
+
 export interface ReaderBookmark {
   id: string;
   cfi: string;
@@ -80,6 +90,66 @@ export interface ReaderBookmark {
   excerpt: string;
   progress: number | null;
   createdAt: number;
+  /**
+   * Set on a highlight: `cfi` is then the range it covers and `excerpt` the
+   * text it marks. Highlights live in the bookmark list, so the reader finds
+   * the sentences they marked beside the places they kept.
+   */
+  color?: HighlightColor;
+}
+
+export function isHighlight(
+  bookmark: ReaderBookmark,
+): bookmark is ReaderBookmark & { color: HighlightColor } {
+  return bookmark.color !== undefined;
+}
+
+/** A marker's swatch, and the wash it lays behind text on a light or dark ground. */
+const HIGHLIGHT_INKS: Record<
+  HighlightColor,
+  { swatch: string; light: string; dark: string }
+> = {
+  yellow: {
+    swatch: "#f2c230",
+    light: "rgba(250, 204, 21, 0.42)",
+    dark: "rgba(242, 194, 48, 0.36)",
+  },
+  green: {
+    swatch: "#6cc07a",
+    light: "rgba(108, 192, 122, 0.38)",
+    dark: "rgba(108, 192, 122, 0.38)",
+  },
+  blue: {
+    swatch: "#64a6f0",
+    light: "rgba(100, 166, 240, 0.36)",
+    dark: "rgba(100, 166, 240, 0.42)",
+  },
+  pink: {
+    swatch: "#ee7cb4",
+    light: "rgba(238, 124, 180, 0.34)",
+    dark: "rgba(238, 124, 180, 0.4)",
+  },
+  purple: {
+    swatch: "#a58cf2",
+    light: "rgba(165, 140, 242, 0.36)",
+    dark: "rgba(165, 140, 242, 0.42)",
+  },
+};
+
+export function highlightSwatch(color: HighlightColor): string {
+  return HIGHLIGHT_INKS[color].swatch;
+}
+
+export function highlightWash(
+  color: HighlightColor,
+  scheme: "dark" | "light",
+): string {
+  return HIGHLIGHT_INKS[color][scheme];
+}
+
+/** The CSS Custom Highlight name a colour is painted under in a book's frames. */
+export function highlightName(color: HighlightColor): string {
+  return `seyirlik-highlight-${color}`;
 }
 
 export type ReaderBookmarkMap = Record<string, ReaderBookmark[]>;
@@ -379,7 +449,10 @@ export function readBookmarks(itemId: string): ReaderBookmark[] {
   return Array.isArray(list)
     ? list.filter(
         (bookmark) =>
-          typeof bookmark?.cfi === "string" && typeof bookmark.id === "string",
+          typeof bookmark?.cfi === "string" &&
+          typeof bookmark.id === "string" &&
+          (bookmark.color === undefined ||
+            HIGHLIGHT_COLORS.includes(bookmark.color)),
       )
     : [];
 }

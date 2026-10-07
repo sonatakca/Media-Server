@@ -4,7 +4,13 @@ import literataLatinItalicUrl from "@fontsource-variable/literata/files/literata
 import literataLatinUrl from "@fontsource-variable/literata/files/literata-latin-opsz-normal.woff2?url";
 import literataLatinExtItalicUrl from "@fontsource-variable/literata/files/literata-latin-ext-opsz-italic.woff2?url";
 import literataLatinExtUrl from "@fontsource-variable/literata/files/literata-latin-ext-opsz-normal.woff2?url";
-import type { ReaderPalette, ReaderSettings } from "./readerModel";
+import {
+  HIGHLIGHT_COLORS,
+  highlightName,
+  highlightWash,
+  type ReaderPalette,
+  type ReaderSettings,
+} from "./readerModel";
 
 /**
  * The book's documents live in epub.js iframes, which the app's stylesheet and
@@ -201,6 +207,14 @@ export function getEpubThemeRules(
     "::selection": {
       background: palette.selection,
     },
+    // The reader's highlights: painted over ranges, never written into the
+    // text, so the CFIs saved against this markup still resolve.
+    ...Object.fromEntries(
+      HIGHLIGHT_COLORS.map((color) => [
+        `::highlight(${highlightName(color)})`,
+        { "background-color": highlightWash(color, palette.scheme) },
+      ]),
+    ),
   };
 }
 

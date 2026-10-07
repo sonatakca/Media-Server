@@ -19,6 +19,7 @@ import { BOOK_SANS, BOOK_SERIF } from "./epubTypography";
 import { formatDuration, formatPercent, splitNumber } from "./readerText";
 import {
   FONT_SCALE_STEPS,
+  HIGHLIGHT_COLORS,
   LINE_HEIGHT_PRESETS,
   LINE_REACH_PRESETS,
   PARAGRAPH_REACH_PRESETS,
@@ -27,9 +28,13 @@ import {
   READER_THEMES,
   READER_THEME_LABEL_KEYS,
   WIDTH_PRESETS,
+  highlightSwatch,
+  highlightWash,
+  isHighlight,
   minutesForLocations,
   nearest,
   themePalettes,
+  type HighlightColor,
   type ReaderBookmark,
   type ReaderSettings,
 } from "./readerModel";
@@ -547,6 +552,71 @@ export const ReaderMoreMenu = forwardRef<
   );
 });
 
+const HIGHLIGHT_LABEL_KEYS = {
+  yellow: "reader.highlightColor.yellow",
+  green: "reader.highlightColor.green",
+  blue: "reader.highlightColor.blue",
+  pink: "reader.highlightColor.pink",
+  purple: "reader.highlightColor.purple",
+} as const;
+
+/**
+ * The marker's colours, floating by the text the reader selected or the
+ * highlight they tapped. The page places it (see `placeHighlightMenu`).
+ */
+export const ReaderHighlightMenu = forwardRef<
+  HTMLDivElement,
+  {
+    open: boolean;
+    current: HighlightColor | null;
+    onPick: (color: HighlightColor) => void;
+    onRemove: (() => void) | null;
+  }
+>(function ReaderHighlightMenu({ open, current, onPick, onRemove }, ref) {
+  const { t } = useLanguage();
+
+  return (
+    <div
+      ref={ref}
+      role="toolbar"
+      aria-label={t("reader.highlight")}
+      aria-hidden={!open}
+      data-open={open || undefined}
+      className="rd-surface rd-highlight-menu"
+      // A press here must not take focus from the book, or the selection it
+      // is about to mark goes with it.
+      onPointerDown={(event) => event.preventDefault()}
+    >
+      {HIGHLIGHT_COLORS.map((color) => (
+        <button
+          key={color}
+          type="button"
+          className="rd-swatch"
+          aria-label={t(HIGHLIGHT_LABEL_KEYS[color])}
+          aria-pressed={current === color}
+          tabIndex={open ? 0 : -1}
+          style={{ "--rd-swatch": highlightSwatch(color) } as CSSProperties}
+          onClick={() => onPick(color)}
+        />
+      ))}
+      {onRemove ? (
+        <>
+          <i className="rd-highlight-rule" aria-hidden="true" />
+          <button
+            type="button"
+            className="rd-icon-button"
+            aria-label={t("reader.removeHighlight")}
+            tabIndex={open ? 0 : -1}
+            onClick={onRemove}
+          >
+            <Trash2 size={16} aria-hidden="true" />
+          </button>
+        </>
+      ) : null}
+    </div>
+  );
+});
+
 type TocEntry = NavItem & { depth: number };
 
 interface ContentsRow {
@@ -603,6 +673,7 @@ export function ReaderContentsDrawer({
   location,
   currentHref,
   bookmarks,
+  scheme,
   spineIndexOf,
   onNavigate,
   onRemoveBookmark,
@@ -619,6 +690,8 @@ export function ReaderContentsDrawer({
   location: number | null;
   currentHref: string | null;
   bookmarks: ReaderBookmark[];
+  /** The theme's ground, which sets how strongly a highlight's colour shows. */
+  scheme: "dark" | "light";
   spineIndexOf: (href: string) => number | null;
   onNavigate: (target: string) => void;
   onRemoveBookmark: (id: string) => void;
@@ -848,7 +921,19 @@ export function ReaderContentsDrawer({
         ) : bookmarks.length > 0 ? (
           <ul className="rd-list" role="tabpanel">
             {bookmarks.map((bookmark) => (
-              <li key={bookmark.id} className="rd-bookmark">
+              <li
+                key={bookmark.id}
+                className="rd-bookmark"
+                data-highlight={bookmark.color}
+                style={
+                  isHighlight(bookmark)
+                    ? ({
+                        "--rd-wash": highlightWash(bookmark.color, scheme),
+                        "--rd-swatch": highlightSwatch(bookmark.color),
+                      } as CSSProperties)
+                    : undefined
+                }
+              >
                 <button
                   type="button"
                   className="rd-bookmark-go"
@@ -856,7 +941,11 @@ export function ReaderContentsDrawer({
                 >
                   {bookmark.excerpt ? (
                     <span className="rd-bookmark-excerpt">
-                      {bookmark.excerpt}
+                      {isHighlight(bookmark) ? (
+                        <mark>{bookmark.excerpt}</mark>
+                      ) : (
+                        bookmark.excerpt
+                      )}
                     </span>
                   ) : null}
                   <span className="rd-bookmark-label">
@@ -869,7 +958,11 @@ export function ReaderContentsDrawer({
                 <button
                   type="button"
                   className="rd-icon-button"
-                  aria-label={t("reader.removeBookmark")}
+                  aria-label={
+                    isHighlight(bookmark)
+                      ? t("reader.removeHighlight")
+                      : t("reader.removeBookmark")
+                  }
                   onClick={() => onRemoveBookmark(bookmark.id)}
                 >
                   <Trash2 size={16} aria-hidden="true" />
