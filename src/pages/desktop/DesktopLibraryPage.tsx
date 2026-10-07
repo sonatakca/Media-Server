@@ -6,6 +6,7 @@ import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { TitleHero } from "../../components/home/TitleHero";
 import { MediaCard } from "../../components/MediaCard";
+import { LibraryHeaderArt } from "../../components/LibraryHeaderArt";
 import { MotionReveal } from "../../components/MotionReveal";
 import { SeasonPicker } from "../../components/SeasonPicker";
 import { SeriesLibraryDetails } from "../../components/SeriesLibraryDetails";
@@ -40,7 +41,7 @@ import {
 import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { formatTemplate, getDisplayTitle } from "../../lib/format";
 import { preloadMediaPlayback } from "../../lib/playbackPreload";
-import { getRouteForItem } from "../../lib/routes";
+import { getRouteForItem, getShelfNavKey } from "../../lib/routes";
 import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import { AnimatedText } from "../../components/AnimatedText";
@@ -247,9 +248,6 @@ export function DesktopLibraryPage({
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [chosenSortBy, setSortBy] = useState<LibrarySortMode | null>(null);
-  const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
-  const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
-    useState(false);
   const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
   const seriesDetailsRef = useRef<HTMLDivElement | null>(null);
   const location = useLocation();
@@ -457,82 +455,6 @@ export function DesktopLibraryPage({
     );
   };
 
-  const libraryRotatingLogoUrls = useMemo(() => {
-    if (!data || mode !== "library") {
-      return [];
-    }
-
-    const logoUrls = data.items
-      .map((libraryItem) => {
-        if (libraryItem.ImageTags?.Logo) {
-          return getItemLogoUrlById(
-            libraryItem.Id,
-            language,
-            getLogoImageUrl(libraryItem.Id, libraryItem.ImageTags.Logo, 1100),
-          );
-        }
-
-        if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
-          return getItemLogoUrlById(
-            libraryItem.ParentLogoItemId,
-            language,
-            getLogoImageUrl(
-              libraryItem.ParentLogoItemId,
-              libraryItem.ParentLogoImageTag,
-              1100,
-            ),
-          );
-        }
-
-        return null;
-      })
-      .filter((url): url is string => Boolean(url));
-
-    return Array.from(new Set(logoUrls));
-  }, [data, language, mode]);
-
-  useEffect(() => {
-    setRotatingLogoIndex(0);
-    setHasFinishedLogoIntroSweep(false);
-
-    if (mode !== "library" || libraryRotatingLogoUrls.length <= 1) {
-      return undefined;
-    }
-
-    let currentIndex = 0;
-    let hasCompletedInitialSweep = false;
-    let timeoutId: number | undefined;
-    let introCompleteFrameId: number | undefined;
-
-    const advanceLogo = () => {
-      currentIndex = (currentIndex + 1) % libraryRotatingLogoUrls.length;
-      setRotatingLogoIndex(currentIndex);
-
-      if (currentIndex === 0) {
-        hasCompletedInitialSweep = true;
-        introCompleteFrameId = window.requestAnimationFrame(() => {
-          setHasFinishedLogoIntroSweep(true);
-        });
-      }
-
-      timeoutId = window.setTimeout(
-        advanceLogo,
-        hasCompletedInitialSweep ? 5000 : 100,
-      );
-    };
-
-    timeoutId = window.setTimeout(advanceLogo, 100);
-
-    return () => {
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
-      if (introCompleteFrameId !== undefined) {
-        window.cancelAnimationFrame(introCompleteFrameId);
-      }
-    };
-  }, [libraryRotatingLogoUrls.length, mode]);
-
   useEffect(() => {
     if (data) {
       return;
@@ -731,15 +653,13 @@ export function DesktopLibraryPage({
     language,
     fallbackLibraryLogoUrl,
   );
-  const activeLibraryLogoUrl =
-    mode === "library" && libraryRotatingLogoUrls.length > 0
-      ? libraryRotatingLogoUrls[
-          rotatingLogoIndex % libraryRotatingLogoUrls.length
-        ]
-      : libraryLogoUrl;
+  const activeLibraryLogoUrl = libraryLogoUrl;
   const displayLibraryTitle = data.library?.Name
     ? getDisplayTitle(data.library, mediaFormatLabels)
     : libraryTitle;
+
+  const shelfNavKey = getShelfNavKey(location.pathname);
+  const libraryArtTitle = shelfNavKey ? t(shelfNavKey) : displayLibraryTitle;
 
   const visibleItemType = data.items.find(
     (libraryItem) => libraryItem.Type,
@@ -807,7 +727,8 @@ export function DesktopLibraryPage({
   return (
     <div>
       <div className="relative mb-4 flex flex-col gap-3 sm:grid sm:min-h-20 sm:grid-cols-[auto_1fr_auto] sm:items-end sm:gap-4">
-        <div className="order-2 flex items-center justify-between gap-3 sm:order-none sm:block sm:justify-self-start sm:pb-1">
+        {mode === "library" ? <LibraryHeaderArt items={data.items} /> : null}
+        <div className="relative z-10 order-2 flex items-center justify-between gap-3 sm:order-none sm:block sm:justify-self-start sm:pb-1">
           <BackButton buttonClassName="min-h-9 px-3 text-xs sm:min-h-10 sm:px-4 sm:text-sm" />
           <p className="min-w-0 truncate text-right text-xs font-bold text-white/[0.62] sm:hidden">
             <AnimatedWidth value={headerCountLabel}>
@@ -816,126 +737,121 @@ export function DesktopLibraryPage({
           </p>
         </div>
 
-        <MotionReveal
-          className="relative z-20 order-1 flex min-w-0 justify-center px-2 sm:order-none"
-          direction="up"
-          delay={0.02}
-        >
-          {activeLibraryLogoUrl && seasonHeaderLabel ? (
-            <div className="flex min-h-[3.4rem] w-full min-w-0 items-center justify-center gap-2.5 sm:min-h-[5.5rem] sm:gap-4">
-              <motion.img
-                src={activeLibraryLogoUrl}
-                alt={displayLibraryTitle}
-                draggable={false}
-                className="cinematic-logo-shadow z-30 h-auto max-h-10 max-w-[min(10rem,42vw)] transform-gpu object-contain will-change-transform sm:max-h-20 sm:max-w-[min(18rem,40vw)]"
-                initial={{
-                  opacity: 0,
-                  scale: 0.98,
-                }}
-                animate={{
-                  opacity: 1,
-                  scale: 1,
-                }}
-                transition={{
-                  opacity: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
-                  scale: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
-                }}
-              />
+        {mode === "library" ? (
+          <div className="order-1 min-h-24 sm:order-none sm:min-h-28">
+            <h1 className="sr-only">{libraryArtTitle}</h1>
+          </div>
+        ) : (
+          <MotionReveal
+            className="relative z-20 order-1 flex min-w-0 justify-center px-2 sm:order-none"
+            direction="up"
+            delay={0.02}
+          >
+            {activeLibraryLogoUrl && seasonHeaderLabel ? (
+              <div className="flex min-h-[3.4rem] w-full min-w-0 items-center justify-center gap-2.5 sm:min-h-[5.5rem] sm:gap-4">
+                <motion.img
+                  src={activeLibraryLogoUrl}
+                  alt={displayLibraryTitle}
+                  draggable={false}
+                  className="cinematic-logo-shadow z-30 h-auto max-h-10 max-w-[min(10rem,42vw)] transform-gpu object-contain will-change-transform sm:max-h-20 sm:max-w-[min(18rem,40vw)]"
+                  initial={{
+                    opacity: 0,
+                    scale: 0.98,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    scale: 1,
+                  }}
+                  transition={{
+                    opacity: { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
+                    scale: { duration: 0.6, ease: [0.16, 1, 0.3, 1] },
+                  }}
+                />
 
-              <motion.div
-                aria-hidden="true"
-                className="z-10 h-10 w-px shrink-0 origin-center bg-gradient-to-b from-transparent via-white/24 to-transparent will-change-transform sm:h-14"
-                initial={{
-                  opacity: 0,
-                  scaleY: 0.55,
-                }}
-                animate={{
-                  opacity: 1,
-                  scaleY: 1,
-                }}
-                transition={{
-                  duration: 0.78,
-                  delay: 1.55,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-              />
+                <motion.div
+                  aria-hidden="true"
+                  className="z-10 h-10 w-px shrink-0 origin-center bg-gradient-to-b from-transparent via-white/24 to-transparent will-change-transform sm:h-14"
+                  initial={{
+                    opacity: 0,
+                    scaleY: 0.55,
+                  }}
+                  animate={{
+                    opacity: 1,
+                    scaleY: 1,
+                  }}
+                  transition={{
+                    duration: 0.78,
+                    delay: 1.55,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                />
 
-              <motion.div
-                className="relative z-20 transform-gpu will-change-[transform,opacity,filter]"
-                initial={{
-                  opacity: 0,
-                  scale: 0.975,
-                  filter: "blur(6px)",
-                }}
-                animate={{
-                  opacity: 1,
-                  scale: 1,
-                  filter: "blur(0px)",
-                }}
-                transition={{
-                  duration: 0.95,
-                  delay: 1.25,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-              >
-                {seasonPickerOptions.length > 0 ? (
-                  <SeasonPicker
-                    activeSeasonId={currentSeasonId}
-                    currentLabel={seasonHeaderLabel}
-                    labelContent={
-                      <AnimatedWidth value={seasonHeaderLabel}>
-                        <AnimatedText value={seasonHeaderLabel} />
-                      </AnimatedWidth>
-                    }
-                    options={seasonPickerOptions}
-                    selectLabel={t("library.selectSeason")}
-                  />
-                ) : (
-                  <div
-                    className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2 sm:max-w-none sm:min-h-12 sm:px-5 sm:py-3`}
-                  >
-                    <div className="relative flex items-center">
-                      <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
+                <motion.div
+                  className="relative z-20 transform-gpu will-change-[transform,opacity,filter]"
+                  initial={{
+                    opacity: 0,
+                    scale: 0.975,
+                    filter: "blur(6px)",
+                  }}
+                  animate={{
+                    opacity: 1,
+                    scale: 1,
+                    filter: "blur(0px)",
+                  }}
+                  transition={{
+                    duration: 0.95,
+                    delay: 1.25,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                >
+                  {seasonPickerOptions.length > 0 ? (
+                    <SeasonPicker
+                      activeSeasonId={currentSeasonId}
+                      currentLabel={seasonHeaderLabel}
+                      labelContent={
                         <AnimatedWidth value={seasonHeaderLabel}>
                           <AnimatedText value={seasonHeaderLabel} />
                         </AnimatedWidth>
-                      </span>
+                      }
+                      options={seasonPickerOptions}
+                      selectLabel={t("library.selectSeason")}
+                    />
+                  ) : (
+                    <div
+                      className={`${glassControlBase} relative max-w-[44vw] overflow-hidden px-3 py-2 sm:max-w-none sm:min-h-12 sm:px-5 sm:py-3`}
+                    >
+                      <div className="relative flex items-center">
+                        <span className="truncate text-xl font-black leading-none text-white sm:text-4xl">
+                          <AnimatedWidth value={seasonHeaderLabel}>
+                            <AnimatedText value={seasonHeaderLabel} />
+                          </AnimatedWidth>
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </motion.div>
-            </div>
-          ) : activeLibraryLogoUrl ? (
-            // The logo stands in for the title, so it carries the heading.
-            <h1 className="flex min-w-0 justify-center">
-              <motion.img
-                key={activeLibraryLogoUrl}
-                src={activeLibraryLogoUrl}
-                alt={displayLibraryTitle}
-                draggable={false}
-                className="cinematic-logo-shadow h-auto max-h-12 max-w-[min(14rem,64vw)] object-contain sm:max-h-20 sm:max-w-[min(26rem,58vw)]"
-                initial={
-                  hasFinishedLogoIntroSweep
-                    ? { opacity: 0, y: 6, scale: 1.2, filter: "blur(0px)" }
-                    : false
-                }
-                animate={{ opacity: 1, y: 0, scale: 1, filter: "blur(0px)" }}
-                transition={{
-                  duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
-                  ease: [0.16, 1, 0.3, 1],
-                }}
-              />
-            </h1>
-          ) : (
-            <h1 className="text-center text-3xl font-black leading-none text-white sm:text-5xl">
-              <AnimatedWidth value={displayLibraryTitle}>
-                <AnimatedText value={displayLibraryTitle} />
-              </AnimatedWidth>
-            </h1>
-          )}
-        </MotionReveal>
+                  )}
+                </motion.div>
+              </div>
+            ) : activeLibraryLogoUrl ? (
+              // The logo stands in for the title, so it carries the heading.
+              <h1 className="flex min-w-0 justify-center">
+                <img
+                  src={activeLibraryLogoUrl}
+                  alt={displayLibraryTitle}
+                  draggable={false}
+                  className="cinematic-logo-shadow h-auto max-h-12 max-w-[min(14rem,64vw)] object-contain sm:max-h-20 sm:max-w-[min(26rem,58vw)]"
+                />
+              </h1>
+            ) : (
+              <h1 className="text-center text-3xl font-black leading-none text-white sm:text-5xl">
+                <AnimatedWidth value={displayLibraryTitle}>
+                  <AnimatedText value={displayLibraryTitle} />
+                </AnimatedWidth>
+              </h1>
+            )}
+          </MotionReveal>
+        )}
 
-        <p className="hidden justify-self-end pb-2 text-right text-sm font-bold text-white/[0.62] sm:block">
+        <p className="relative z-10 hidden justify-self-end pb-2 text-right text-sm font-bold text-white/[0.62] sm:block">
           <AnimatedWidth value={headerCountLabel}>
             <AnimatedText value={headerCountLabel} />
           </AnimatedWidth>

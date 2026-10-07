@@ -130,3 +130,16 @@ export function getMediaOwnerRouteForItem(item: MediaItem): string {
 
   return getRouteForItem(item);
 }
+
+/**
+ * The name the navigation gives a shelf. The library's own name can be
+ * missing ("Kütüphane"), and the wall should say what the tab says.
+ */
+export function getShelfNavKey(
+  pathname: string,
+): "nav.books" | "nav.series" | "nav.movies" | null {
+  if (pathname.startsWith("/books")) return "nav.books";
+  if (pathname.startsWith("/shows")) return "nav.series";
+  if (pathname.startsWith("/movies")) return "nav.movies";
+  return null;
+}

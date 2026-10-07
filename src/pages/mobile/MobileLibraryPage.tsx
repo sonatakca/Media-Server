@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, SlidersHorizontal } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useLocation, useParams } from "react-router-dom";
+import { LibraryHeaderArt } from "../../components/LibraryHeaderArt";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { useIsPhoneView } from "../../hooks/useIsPhoneView";
@@ -36,7 +37,7 @@ import {
 import { sortCollectionItemsForWatching } from "../../lib/collectionUtils";
 import { setPageTitle } from "../../lib/pageTitle";
 import { preloadMediaPlayback } from "../../lib/playbackPreload";
-import { getRouteForItem } from "../../lib/routes";
+import { getRouteForItem, getShelfNavKey } from "../../lib/routes";
 import type { MediaItem } from "../../lib/types";
 import { isItemCompleted } from "../../lib/watchStatus";
 import type { LibraryPageProps } from "../libraryPageTypes";
@@ -230,9 +231,7 @@ export function MobileLibraryPage({
   const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [chosenSortBy, setSortBy] = useState<LibrarySortMode | null>(null);
-  const [rotatingLogoIndex, setRotatingLogoIndex] = useState(0);
-  const [hasFinishedLogoIntroSweep, setHasFinishedLogoIntroSweep] =
-    useState(false);
+  const location = useLocation();
   const [readyDetailsId, setReadyDetailsId] = useState<string | null>(null);
 
   /*
@@ -363,85 +362,6 @@ export function MobileLibraryPage({
   // Where a phone's title hero takes the details' watched button.
   const [watchedSlot, setWatchedSlot] = useState<HTMLSpanElement | null>(null);
   useFlipLayout(gridRef, filteredItems.map((item) => item.Id).join("|"));
-
-  const libraryRotatingLogoUrls = useMemo(() => {
-    if (!data || mode !== "library") {
-      return [];
-    }
-
-    const logoUrls = data.items
-      .map((libraryItem) => {
-        if (libraryItem.ImageTags?.Logo) {
-          return getItemLogoUrlById(
-            libraryItem.Id,
-            language,
-            getLogoImageUrl(libraryItem.Id, libraryItem.ImageTags.Logo, 900),
-          );
-        }
-
-        if (libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag) {
-          return getItemLogoUrlById(
-            libraryItem.ParentLogoItemId,
-            language,
-            getLogoImageUrl(
-              libraryItem.ParentLogoItemId,
-              libraryItem.ParentLogoImageTag,
-              900,
-            ),
-          );
-        }
-
-        return null;
-      })
-      .filter((url): url is string => Boolean(url));
-
-    return Array.from(new Set(logoUrls));
-  }, [data, language, mode]);
-
-  useEffect(() => {
-    setRotatingLogoIndex(0);
-    setHasFinishedLogoIntroSweep(false);
-
-    if (mode !== "library" || libraryRotatingLogoUrls.length <= 1) {
-      return undefined;
-    }
-
-    let currentIndex = 0;
-    let hasCompletedInitialSweep = false;
-    let timeoutId: number | undefined;
-    let introCompleteFrameId: number | undefined;
-
-    const advanceLogo = () => {
-      currentIndex = (currentIndex + 1) % libraryRotatingLogoUrls.length;
-
-      setRotatingLogoIndex(currentIndex);
-
-      if (currentIndex === 0) {
-        hasCompletedInitialSweep = true;
-
-        introCompleteFrameId = window.requestAnimationFrame(() => {
-          setHasFinishedLogoIntroSweep(true);
-        });
-      }
-
-      timeoutId = window.setTimeout(
-        advanceLogo,
-        hasCompletedInitialSweep ? 5000 : 100,
-      );
-    };
-
-    timeoutId = window.setTimeout(advanceLogo, 100);
-
-    return () => {
-      if (timeoutId !== undefined) {
-        window.clearTimeout(timeoutId);
-      }
-
-      if (introCompleteFrameId !== undefined) {
-        window.cancelAnimationFrame(introCompleteFrameId);
-      }
-    };
-  }, [libraryRotatingLogoUrls, mode]);
 
   const handleWatchedStatusReset = (
     resetItems: MediaItem[],
@@ -655,6 +575,8 @@ export function MobileLibraryPage({
       Boolean(libraryItem.ImageTags?.Logo) ||
       Boolean(libraryItem.ParentLogoItemId && libraryItem.ParentLogoImageTag),
   );
+  const shelfNavKey = getShelfNavKey(location.pathname);
+  const libraryArtTitle = shelfNavKey ? t(shelfNavKey) : title;
 
   const fallbackLogoUrl = data.library?.ImageTags?.Logo
     ? getLogoImageUrl(data.library.Id, data.library.ImageTags.Logo, 900)
@@ -686,12 +608,7 @@ export function MobileLibraryPage({
     fallbackLogoUrl,
   );
 
-  const activeLibraryLogoUrl =
-    mode === "library" && libraryRotatingLogoUrls.length > 0
-      ? libraryRotatingLogoUrls[
-          rotatingLogoIndex % libraryRotatingLogoUrls.length
-        ]
-      : localizedFallbackLogoUrl;
+  const activeLibraryLogoUrl = localizedFallbackLogoUrl;
   const countText =
     itemType === "Season"
       ? countLabel(
@@ -751,35 +668,19 @@ export function MobileLibraryPage({
       </section>
 
       <div className="relative z-30 -mt-11 mb-5 flex min-h-[5.5rem] items-center justify-center px-4">
-        {activeLibraryLogoUrl ? (
+        {mode === "library" ? (
+          <>
+            <LibraryHeaderArt items={data.items} />
+            <h1 className="sr-only">{libraryArtTitle}</h1>
+          </>
+        ) : activeLibraryLogoUrl ? (
           // The logo stands in for the title, so it carries the heading.
           <h1 className="flex min-w-0 justify-center">
-            <motion.img
-              key={activeLibraryLogoUrl}
+            <img
               src={activeLibraryLogoUrl}
               alt={title}
               draggable={false}
               className="cinematic-logo-shadow h-auto max-h-16 max-w-[min(16rem,74vw)] transform-gpu object-contain will-change-transform"
-              initial={
-                hasFinishedLogoIntroSweep
-                  ? {
-                      opacity: 0,
-                      y: 6,
-                      scale: 1.2,
-                      filter: "blur(0px)",
-                    }
-                  : false
-              }
-              animate={{
-                opacity: 1,
-                y: 0,
-                scale: 1,
-                filter: "blur(0px)",
-              }}
-              transition={{
-                duration: hasFinishedLogoIntroSweep ? 0.52 : 0,
-                ease: [0.16, 1, 0.3, 1],
-              }}
             />
           </h1>
         ) : (
