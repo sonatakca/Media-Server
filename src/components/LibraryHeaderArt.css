@@ -13,7 +13,7 @@
 .library-art__barcode-fade {
   position: absolute;
   inset: 0;
-  opacity: 0.62;
+  opacity: 0.9;
   -webkit-mask-image: linear-gradient(
     to right,
     transparent 0%,
@@ -104,8 +104,8 @@
   height: 100%;
 }
 
-/* The placeholder: the same fades as the barcode, over stripes cut from the
-   shimmer. One tile is one title, as wide as a title's palette is drawn. */
+/* The placeholder: the same fades as the barcode, over hairline strands cut
+   from the shimmer. One tile is one title, as wide as a title is drawn. */
 .library-art__placeholder {
   -webkit-mask-image: linear-gradient(
     to right,
@@ -148,20 +148,41 @@
 }
 
 .library-art__placeholder-stripes {
-  --shimmer-base: rgb(255 255 255 / 7%);
+  --shimmer-base: rgb(255 255 255 / 10%);
   --stripes: linear-gradient(
     to right,
-    #000 0 9px,
-    transparent 9px 10px,
-    #000 10px 24px,
-    transparent 24px 25px,
-    #000 25px 31px,
-    transparent 31px 32px,
-    #000 32px 43px,
-    transparent 43px 44px,
-    #000 44px 52px,
-    transparent 52px 53px,
-    #000 53px 67px,
+    transparent 0px 2px,
+    #000 2px 3px,
+    transparent 3px 6px,
+    #000 6px 8px,
+    transparent 8px 10px,
+    #000 10px 11px,
+    transparent 11px 13px,
+    #000 13px 16px,
+    transparent 16px 19px,
+    #000 19px 20px,
+    transparent 20px 23px,
+    #000 23px 25px,
+    transparent 25px 27px,
+    #000 27px 28px,
+    transparent 28px 31px,
+    #000 31px 32px,
+    transparent 32px 35px,
+    #000 35px 37px,
+    transparent 37px 40px,
+    #000 40px 41px,
+    transparent 41px 44px,
+    #000 44px 47px,
+    transparent 47px 50px,
+    #000 50px 51px,
+    transparent 51px 54px,
+    #000 54px 56px,
+    transparent 56px 58px,
+    #000 58px 59px,
+    transparent 59px 62px,
+    #000 62px 64px,
+    transparent 64px 66px,
+    #000 66px 67px,
     transparent 67px 72px
   );
   position: absolute;
@@ -176,17 +197,20 @@
   mask-position: center;
 }
 
-/* A phone fits a title in about 18px: four colours and a gap. */
+/* A phone fits a title in about 18px: five strands and a gap. */
 .library-art__placeholder.is-compact .library-art__placeholder-stripes {
   --stripes: linear-gradient(
     to right,
-    #000 0 3px,
-    transparent 3px 4px,
-    #000 4px 8px,
-    transparent 8px 9px,
-    #000 9px 11px,
-    transparent 11px 12px,
-    #000 12px 15px,
+    transparent 0px 1px,
+    #000 1px 2px,
+    transparent 2px 4px,
+    #000 4px 6px,
+    transparent 6px 8px,
+    #000 8px 9px,
+    transparent 9px 11px,
+    #000 11px 12px,
+    transparent 12px 14px,
+    #000 14px 15px,
     transparent 15px 18px
   );
   -webkit-mask-size: 18px 100%;

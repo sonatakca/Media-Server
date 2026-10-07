@@ -30,16 +30,17 @@ const MAX_TITLES = 60;
 const SAMPLE_CONCURRENCY = 6;
 /** Colours read off each cover, before near-duplicates merge. */
 const COVER_COLOURS = 6;
-/** The logo's stripe, as a share of its title's width. */
+/** The logo's strand, as a share of its title's width. */
 const LOGO_SHARE = 0.12;
 /** Wider than this and a title's lines turn into paint chips; a small shelf
     makes a short barcode, centred, instead. */
 const MAX_TITLE_WIDTH = 72;
-/** The page is black; a colour darker than this would read as a hole. */
-const DARKEST_CHANNEL = 34;
-/** CSS pixels of wall between two colours of one title, and between titles. */
-const SWATCH_GAP = 1;
+/** The page is black; a colour darker than this would not glow at all. */
+const DARKEST_CHANNEL = 48;
+/** CSS pixels of wall between two titles. */
 const TITLE_GAP = 5;
+/** About one strand per this many CSS pixels of a title's width. */
+const STRAND_SPACING = 3.2;
 
 interface TitlePalette {
   cover: Swatch[];
@@ -175,7 +176,41 @@ async function readAllPalettes(
   return palettes.filter((palette): palette is TitlePalette => !!palette);
 }
 
-/** Paints at the canvas's own device size, so every stripe edge is crisp. */
+/** A stable stream of 0–1 numbers, so a shelf draws the same strands twice. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Splits `total` strands across shares, every colour keeping at least one. */
+function strandCounts(shares: number[], total: number): number[] {
+  const counts = shares.map((share) => Math.max(1, Math.floor(share * total)));
+  let left = total - counts.reduce((sum, count) => sum + count, 0);
+  const byRemainder = shares
+    .map((share, index) => ({ index, rest: share * total - counts[index]! }))
+    .sort((a, b) => b.rest - a.rest);
+  for (const { index } of byRemainder) {
+    if (left <= 0) break;
+    counts[index]! += 1;
+    left -= 1;
+  }
+  return counts;
+}
+
+/**
+ * Light, not paint: each colour is drawn as a few hairline strands, the way
+ * the light breaks into ribbons in a streaming service's opening ident. A
+ * strand has its own thickness, its own brightness and its own fade at each
+ * end, and a soft glow of its colour around it; strands are added together
+ * as light is, so where two cross they brighten. Paints at the canvas's own
+ * device size, so a hairline stays a hairline.
+ */
 function paintBarcode(canvas: HTMLCanvasElement, palettes: TitlePalette[]) {
   const { width: cssWidth, height: cssHeight } = canvas.getBoundingClientRect();
   if (cssWidth === 0 || cssHeight === 0) return;
@@ -185,31 +220,67 @@ function paintBarcode(canvas: HTMLCanvasElement, palettes: TitlePalette[]) {
   const context = canvas.getContext("2d");
   if (!context) return;
   context.clearRect(0, 0, canvas.width, canvas.height);
+  context.globalCompositeOperation = "lighter";
 
-  const swatchGap = Math.max(1, Math.round(SWATCH_GAP * scale));
-  const titleGap = Math.max(swatchGap, Math.round(TITLE_GAP * scale));
+  const height = canvas.height;
+  const titleGap = Math.round(TITLE_GAP * scale);
   const titleWidth = Math.min(
     (canvas.width + titleGap) / palettes.length,
     MAX_TITLE_WIDTH * scale,
   );
   const left = (canvas.width + titleGap - titleWidth * palettes.length) / 2;
-  // Only near-black colours are raised, keeping their hue, until their
-  // brightest channel reaches the floor; everything else is left exact.
-  const fill = (rgb: Rgb) => {
+  const strandsPerTitle = Math.max(
+    3,
+    Math.round(titleWidth / scale / STRAND_SPACING),
+  );
+
+  // Light on black: a colour too dark to glow is raised, keeping its hue.
+  const light = (rgb: Rgb) => {
     const brightest = Math.max(...rgb);
-    const [r, g, b] =
-      brightest >= DARKEST_CHANNEL
-        ? rgb
-        : brightest < 1
-          ? [DARKEST_CHANNEL, DARKEST_CHANNEL, DARKEST_CHANNEL]
-          : rgb.map((channel) => (channel * DARKEST_CHANNEL) / brightest);
-    return `rgb(${Math.round(r!)} ${Math.round(g!)} ${Math.round(b!)})`;
+    return brightest >= DARKEST_CHANNEL
+      ? rgb
+      : brightest < 1
+        ? ([DARKEST_CHANNEL, DARKEST_CHANNEL, DARKEST_CHANNEL] as Rgb)
+        : (rgb.map(
+            (channel) => (channel * DARKEST_CHANNEL) / brightest,
+          ) as Rgb);
+  };
+  const rgba = ([r, g, b]: Rgb, alpha: number) =>
+    `rgba(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)}, ${alpha})`;
+
+  const strand = (
+    x: number,
+    width: number,
+    rgb: Rgb,
+    alpha: number,
+    random: () => number,
+  ) => {
+    // Each end fades at its own height, so the strands never line up.
+    const top = height * (0.02 + random() * 0.3);
+    const bottom = height * (0.7 + random() * 0.3);
+    const fadeIn = 0.18 + random() * 0.22;
+    const fadeOut = 0.18 + random() * 0.22;
+    const layers: [number, number][] = [
+      [width * 7, alpha * 0.07],
+      [width * 3, alpha * 0.18],
+      [width, alpha],
+    ];
+    for (const [layerWidth, layerAlpha] of layers) {
+      const gradient = context.createLinearGradient(0, top, 0, bottom);
+      gradient.addColorStop(0, rgba(rgb, 0));
+      gradient.addColorStop(fadeIn, rgba(rgb, layerAlpha));
+      gradient.addColorStop(1 - fadeOut, rgba(rgb, layerAlpha));
+      gradient.addColorStop(1, rgba(rgb, 0));
+      context.fillStyle = gradient;
+      context.fillRect(x - layerWidth / 2, top, layerWidth, bottom - top);
+    }
   };
 
   palettes.forEach((palette, title) => {
+    const random = seededRandom(title * 7919 + 17);
     const start = left + title * titleWidth;
-    const end = left + (title + 1) * titleWidth - titleGap;
-    const stripes: Swatch[] = palette.logo
+    const span = titleWidth - titleGap;
+    const colours: Swatch[] = palette.logo
       ? [
           ...palette.cover.map((swatch) => ({
             ...swatch,
@@ -218,17 +289,25 @@ function paintBarcode(canvas: HTMLCanvasElement, palettes: TitlePalette[]) {
           { rgb: palette.logo, share: LOGO_SHARE },
         ]
       : palette.cover;
+    const counts = strandCounts(
+      colours.map((colour) => colour.share),
+      strandsPerTitle,
+    );
     let x = start;
-    stripes.forEach((stripe, index) => {
-      const isLast = index === stripes.length - 1;
-      const right = isLast ? end : x + (end - start) * stripe.share;
-      const x0 = Math.round(x);
-      const x1 = Math.round(right) - (isLast ? 0 : swatchGap);
-      if (x1 > x0) {
-        context.fillStyle = fill(stripe.rgb);
-        context.fillRect(x0, 0, x1 - x0, canvas.height);
+    colours.forEach((colour, index) => {
+      const width = span * colour.share;
+      const isLogo = palette.logo !== null && index === colours.length - 1;
+      const rgb = light(colour.rgb);
+      const count = counts[index]!;
+      for (let n = 0; n < count; n += 1) {
+        const step = width / count;
+        const at = x + step * (n + 0.5) + (random() - 0.5) * step * 0.7;
+        const thickness =
+          (isLogo ? 1.6 + random() * 1.2 : 0.5 + random() ** 2 * 2.2) * scale;
+        const alpha = isLogo ? 1 : 0.55 + random() * 0.45;
+        strand(at, thickness, rgb, alpha, random);
       }
-      x = right;
+      x += width;
     });
   });
 }
@@ -286,7 +365,7 @@ export function LibraryHeaderArt({
 }
 
 /**
- * The barcode before its colours: shimmering stripes where the bands will
+ * The barcode before its colours: shimmering strands where the light will
  * be. The page's skeleton shows it, and the page keeps it on until the
  * palettes are read, so skeleton, page and picture are one piece.
  */
