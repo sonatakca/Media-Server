@@ -55,8 +55,6 @@ import { describeErrorForUser } from "../lib/userFacingError";
 import { isItemCompleted } from "../lib/watchStatus";
 import {
   EPUB_STATIC_CSS,
-  SEARCH_FOUND_CLASS,
-  SEARCH_FOUND_MS,
   enhanceSection,
   getBookFontCss,
   getEpubBlocks,
@@ -122,6 +120,7 @@ import {
 } from "../lib/bookPositionApi";
 import type { BookSearchHit } from "../lib/bookSearchApi";
 import { epubBlockText } from "../lib/epubBlocks";
+import { shimmerPassage } from "./reader/searchShimmer";
 import {
   ReadingLight,
   buildBookMap,
@@ -1603,9 +1602,29 @@ export function BookReaderPage() {
       };
     };
 
+    let putOutShimmer = () => undefined as void;
+
+    /** The book fading out and back, so a jump never shows where it passed. */
+    let veil: Animation | null = null;
+    const veilTo = (opacity: number, duration: number) => {
+      const from = getComputedStyle(host).opacity;
+      veil?.cancel();
+      veil = host.animate([{ opacity: from }, { opacity }], {
+        duration,
+        easing: "cubic-bezier(0.37, 0, 0.63, 1)",
+        fill: "forwards",
+      });
+      return veil.finished.then(
+        () => undefined,
+        () => undefined,
+      );
+    };
+
     /**
      * Opens the book at a search hit: its section, then the block it starts
-     * in, a quarter of the screen down, lit for a moment so the eye finds it.
+     * in, at the top of the screen where a chapter's first line would stand,
+     * and the reader's colour runs through the passage once so the eye
+     * finds it (searchShimmer.ts).
      *
      * The server counted the blocks the way this page does, but the page is
      * the one that knows, so the block must hold the passage's opening words;
@@ -1614,16 +1633,37 @@ export function BookReaderPage() {
     showPassageRef.current = async (hit) => {
       await book.opened;
       const href = (book.spine.get(hit.section) as Section | null)?.href;
-      if (!href || !isMounted || !(await displayWithin(href))) {
+      if (!href || !isMounted) {
         return;
       }
-      await waitForLayoutToSettle(host);
+      // A chapter already on the page is scrolled to directly. One that is
+      // not can only be displayed from its start, so the book fades out
+      // first and comes back at the passage: the start is never seen.
+      const rendered = getRenditionContents(rendition).some(
+        (content) =>
+          content.sectionIndex === hit.section &&
+          blocksOf.has(content.document),
+      );
+      if (!rendered) {
+        await veilTo(0, 140);
+        if (!isMounted) {
+          return;
+        }
+        if (!(await displayWithin(href))) {
+          await veilTo(1, 220);
+          veil?.cancel();
+          return;
+        }
+        await waitForLayoutToSettle(host);
+      }
 
       const blocks = getRenditionContents(rendition)
         .filter((content) => content.sectionIndex === hit.section)
         .map((content) => blocksOf.get(content.document))[0];
       const scroller = host.querySelector<HTMLElement>(".epub-container");
       if (!blocks || !scroller || !isMounted) {
+        await veilTo(1, 220);
+        veil?.cancel();
         return;
       }
       const holds = (index: number) =>
@@ -1632,27 +1672,56 @@ export function BookReaderPage() {
         ? hit.block
         : blocks.findIndex((_, index) => holds(index));
       const block = found >= 0 ? found : Math.min(hit.block, blocks.length - 1);
+      // The section's own top margin: the passage begins where a chapter's
+      // text does, clear of the bar.
+      const body = blocks[block]?.ownerDocument.body;
+      const margin = body
+        ? Number.parseFloat(getComputedStyle(body).paddingTop)
+        : Number.NaN;
       const place = {
         section: hit.section,
         block,
-        offset: -Math.round(scroller.clientHeight * 0.25),
+        offset: -Math.round(
+          Number.isFinite(margin) ? margin : scroller.clientHeight * 0.25,
+        ),
       };
 
       backToPlace(place);
       await waitForLayoutToSettle(host);
       backToPlace(place);
       scheduleFrame();
-
-      const element = blocks[block];
-      if (element) {
-        element.classList.remove(SEARCH_FOUND_CLASS);
-        void element.offsetWidth;
-        element.classList.add(SEARCH_FOUND_CLASS);
-        window.setTimeout(
-          () => element.classList.remove(SEARCH_FOUND_CLASS),
-          SEARCH_FOUND_MS,
-        );
+      if (!rendered) {
+        await veilTo(1, 240);
+        veil?.cancel();
+        if (!isMounted) {
+          return;
+        }
       }
+
+      // The passage's blocks: its text is theirs, one per line, in order.
+      const passage = [blocks[block]!];
+      for (const part of hit.text.split("\n").slice(1)) {
+        const next = blocks[block + passage.length];
+        if (
+          !next ||
+          !epubBlockText(next.textContent ?? "").startsWith(part.slice(0, 40))
+        )
+          break;
+        passage.push(next);
+      }
+      const frame = passage[0]!.ownerDocument.defaultView?.frameElement;
+      if (!frame || !isMounted) {
+        return;
+      }
+      const frameTop = frame.getBoundingClientRect().top;
+      const view = scroller.getBoundingClientRect();
+      putOutShimmer();
+      putOutShimmer = shimmerPassage(passage, {
+        mark: themePalettes[settingsRef.current.theme].mark,
+        ink: themePalettes[settingsRef.current.theme].ink,
+        scheme: themePalettes[settingsRef.current.theme].scheme,
+        visible: { top: view.top - frameTop, bottom: view.bottom - frameTop },
+      });
     };
 
     /**
@@ -1770,6 +1839,7 @@ export function BookReaderPage() {
       book.destroy();
       scheduleFrameRef.current = () => undefined;
       showPassageRef.current = async () => undefined;
+      putOutShimmer();
       measureColumnRef.current = () => undefined;
       paintHighlightsRef.current = () => undefined;
 

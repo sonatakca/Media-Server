@@ -207,9 +207,6 @@ export function getEpubThemeRules(
     "::selection": {
       background: palette.selection,
     },
-    [`.${SEARCH_FOUND_CLASS}`]: {
-      "--seyirlik-found": palette.selection,
-    },
     // The reader's highlights: painted over ranges, never written into the
     // text, so the CFIs saved against this markup still resolve.
     ...Object.fromEntries(
@@ -221,10 +218,6 @@ export function getEpubThemeRules(
   };
 }
 
-/** Lights the block a search opened the book at, for as long as this, fading. */
-export const SEARCH_FOUND_CLASS = "seyirlik-search-found";
-export const SEARCH_FOUND_MS = 2600;
-
 /** Rules that do not depend on settings, added once per document. */
 export const EPUB_STATIC_CSS = `
 @keyframes seyirlikReaderBlockFadeIn {
@@ -232,21 +225,6 @@ export const EPUB_STATIC_CSS = `
 }
 .seyirlik-reader-block {
   animation: seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
-}
-/* The block's own fade-in stays first in the list, so adding and removing the
-   light never starts it again. */
-@keyframes seyirlikSearchFound {
-  0%, 30% { background-color: var(--seyirlik-found); }
-  to { background-color: transparent; }
-}
-.${SEARCH_FOUND_CLASS} {
-  border-radius: 0.25em;
-  animation: seyirlikSearchFound ${SEARCH_FOUND_MS}ms ease-out;
-}
-.seyirlik-reader-block.${SEARCH_FOUND_CLASS} {
-  animation:
-    seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards,
-    seyirlikSearchFound ${SEARCH_FOUND_MS}ms ease-out;
 }
 @supports (initial-letter: ${DROP_CAP_LINES}) or (-webkit-initial-letter: ${DROP_CAP_LINES}) {
   .seyirlik-dropcap::first-letter {
