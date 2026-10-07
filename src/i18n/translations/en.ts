@@ -584,7 +584,7 @@ export const en = {
     "Describe what happens in your own words — who is there, what they do or feel. Search finds the passage even when the book puts it differently.",
   "reader.search.preparing": "Getting this book ready to search",
   "reader.search.preparingDetail":
-    "This happens once for each book and takes a few minutes. Keep reading if you like; search will be ready when you come back.",
+    "The server prepares every book once, for everyone, and hasn't finished this one yet. It takes a few minutes; keep reading if you like, and search will be ready when you come back.",
   "reader.search.noResults": "Nothing in this book matches that.",
   "reader.search.unavailable": "This book can't be searched.",
   "reader.search.failed":

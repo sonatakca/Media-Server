@@ -145,6 +145,7 @@ function fakeCatalogue(): CatalogueRepository {
         : [],
     listGenres: async () => [],
     listPendingProbeFiles: async () => [],
+    listBookFiles: async () => [],
     canUserAccessItem: async (_userId, itemId) => visible(itemId),
   };
 }

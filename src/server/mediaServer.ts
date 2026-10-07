@@ -923,6 +923,8 @@ export async function startMediaServer(
       ...(restartController ? { restartController } : {}),
       // This is the process people reach; its silence is what "down" means.
       heartbeat: true,
+      // And the one that answers book searches, so the one that prepares them.
+      preindexBooks: true,
       startup,
     };
 

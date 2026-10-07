@@ -315,6 +315,12 @@ export interface CatalogueRepository {
   listPeople(itemId: string): Promise<ItemPersonRow[]>;
   listPendingProbeFiles(limit: number): Promise<MediaFileRow[]>;
   /**
+   * Every book's file on disk, chosen as `getPrimaryFile` chooses it.
+   * Unscoped by user: the book search prepares the library, not a reader's view
+   * of it.
+   */
+  listBookFiles(): Promise<MediaFileRow[]>;
+  /**
    * Every movie and episode the processing page can act on, with its canonical
    * source and that source's persisted probe, in one statement.
    *
@@ -1033,6 +1039,21 @@ export function createCatalogueRepository(
       );
 
       return rows.map(toProcessableTitleRow);
+    },
+
+    listBookFiles: async () => {
+      const rows = await query<Record<string, never>>(
+        `SELECT DISTINCT ON (file.item_id)
+                file.id, file.item_id, file.relative_path, file.container,
+                file.size_bytes, file.mtime_ms, file.fingerprint, file.duration_ms,
+                file.bitrate_bps, file.is_primary, file.probe_state, file.missing_since
+         FROM media_files file
+         JOIN items item ON item.id = file.item_id
+         WHERE item.kind = 'book' AND file.missing_since IS NULL
+         ORDER BY file.item_id, file.is_primary DESC, file.size_bytes DESC`,
+        [],
+      );
+      return rows.map(toMediaFileRow);
     },
 
     listPendingProbeFiles: async (limit) => {

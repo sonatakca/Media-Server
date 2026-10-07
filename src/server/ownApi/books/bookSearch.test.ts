@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtemp, readdir, readFile, writeFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -56,6 +56,11 @@ const BOOK: BookToSearch = {
   sourceKey: "file-1:abc",
 };
 
+const OTHER = {
+  itemId: "33333333-3333-4333-8333-333333333333",
+  filePath: "/media/Books/Prens.epub",
+};
+
 async function storage() {
   return mkdtemp(path.join(tmpdir(), "seyirlik-book-search-"));
 }
@@ -82,9 +87,8 @@ describe("searching a book by meaning", () => {
     const engine = fakeEngine();
     const search = createBookSearch({ storageDir: await storage(), engine });
 
-    expect(await search.search(BOOK, "Maria")).toEqual({
+    expect(await search.search(BOOK, "Maria")).toMatchObject({
       state: "preparing",
-      progress: null,
     });
     expect(await settle(search)).toEqual({ state: "ready", hits: [] });
 
@@ -214,6 +218,74 @@ describe("searching a book by meaning", () => {
     await Promise.all([settle(search), settle(search, other)]);
     expect(most).toBe(1);
     expect(engine.indexed).toEqual([BOOK.filePath, other.filePath]);
+  });
+
+  it("prepares the library ahead of time, once", async () => {
+    const storageDir = await storage();
+    const engine = fakeEngine();
+    const search = createBookSearch({ storageDir, engine });
+    const other = { ...BOOK, itemId: OTHER.itemId, filePath: OTHER.filePath };
+
+    await search.preindex([BOOK, other]);
+    await settle(search);
+    await settle(search, other);
+    expect(engine.indexed).toEqual([BOOK.filePath, OTHER.filePath]);
+
+    // A restarted server finds them prepared on disk.
+    const restarted = fakeEngine();
+    const again = createBookSearch({ storageDir, engine: restarted });
+    await again.preindex([BOOK, other]);
+    expect(restarted.indexed).toEqual([]);
+
+    // Known to be current, so a later sweep does not even look at the disk:
+    // with the files gone, a sweep that read them would prepare both again.
+    await rm(storageDir, { recursive: true });
+    await again.preindex([BOOK, other]);
+    expect(restarted.indexed).toEqual([]);
+  });
+
+  it("reads a book a reader is waiting for before the rest of the library", async () => {
+    const releases: Array<() => void> = [];
+    const engine = fakeEngine();
+    const index = engine.index;
+    engine.index = async (filePath, onProgress) => {
+      await new Promise<void>((resolve) => releases.push(resolve));
+      return index(filePath, onProgress);
+    };
+    const search = createBookSearch({ storageDir: await storage(), engine });
+    const books = ["a", "b", "c"].map((letter, at) => ({
+      itemId: `${String(at + 1).repeat(8)}-1111-4111-8111-111111111111`,
+      filePath: `/media/Books/${letter}.epub`,
+      sourceKey: letter,
+    }));
+
+    await search.preindex(books);
+    // "a" is being read; a reader opens search in "c".
+    expect((await search.search(books[2]!, "")).state).toBe("preparing");
+    for (let step = 0; step < 3; step++) {
+      await vi.waitFor(() => expect(releases.length).toBe(step + 1));
+      releases[step]!();
+    }
+    await vi.waitFor(() => expect(engine.indexed).toHaveLength(3));
+    expect(engine.indexed).toEqual([
+      "/media/Books/a.epub",
+      "/media/Books/c.epub",
+      "/media/Books/b.epub",
+    ]);
+  });
+
+  it("leaves out of a sweep a book that failed, until it may be tried again", async () => {
+    const engine = fakeEngine({
+      index: async () => {
+        engine.indexed.push("tried");
+        throw new BookUnreadableError("This EPUB is copy-protected (DRM).");
+      },
+    });
+    const search = createBookSearch({ storageDir: await storage(), engine });
+    await search.preindex([BOOK]);
+    await vi.waitFor(() => expect(engine.indexed).toEqual(["tried"]));
+    await search.preindex([BOOK]);
+    expect(engine.indexed).toEqual(["tried"]);
   });
 
   it("refuses an item id that is not one before building a path from it", async () => {

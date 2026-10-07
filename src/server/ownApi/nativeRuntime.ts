@@ -44,6 +44,7 @@ import { createBookPositionRoutes } from "./books/bookPositionRoutes";
 import { createBookSearch } from "./books/bookSearch";
 import { createBookSearchProcess } from "./books/bookSearchProcess";
 import { createBookSearchRoutes } from "./books/bookSearchRoutes";
+import { startBookPreindexing } from "./books/bookPreindexing";
 import { createBookUploader } from "./books/bookUpload";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
@@ -251,6 +252,12 @@ export interface CreateNativeRuntimeOptions {
    */
   heartbeat?: boolean;
   /**
+   * Prepare every book for search in the background. Only the process that
+   * answers searches should: each process that did would load its own copy of
+   * the embedding model.
+   */
+  preindexBooks?: boolean;
+  /**
    * Where the `database` and `processing` startup phases are reported.
    *
    * Reported from in here rather than from the caller because only this
@@ -315,6 +322,7 @@ export async function createNativeRuntime({
   generatedStoragePath,
   runWorker = true,
   heartbeat = false,
+  preindexBooks = false,
   restartController,
   startup,
   subtitleProviders,
@@ -398,6 +406,9 @@ export async function createNativeRuntime({
       modelDir: path.join(generatedStoragePath, "models"),
     }),
   });
+  const bookPreindexing = preindexBooks
+    ? startBookPreindexing({ catalogue, mediaRoot, search: bookSearch })
+    : null;
   const playbackSessions = createPlaybackSessionStore(pool);
   const queue = createJobQueue(pool);
 
@@ -1536,7 +1547,14 @@ export async function createNativeRuntime({
     ...createAlertRoutes(alerts),
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createShareRoutes(shareCards),
-    ...createBookRoutes({ catalogue, mediaRoot, uploads: bookUploads }),
+    ...createBookRoutes({
+      catalogue,
+      mediaRoot,
+      uploads: bookUploads,
+      ...(bookPreindexing
+        ? { onBooksChanged: () => void bookPreindexing.sweep() }
+        : {}),
+    }),
     ...createBookSearchRoutes({ search: bookSearch, catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ runtime: syncplay, catalogue }),
@@ -1908,6 +1926,7 @@ export async function createNativeRuntime({
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
       syncplay.stop();
+      bookPreindexing?.stop();
       bookSearch.close();
       if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
       if (importReconcileTimer) clearInterval(importReconcileTimer);

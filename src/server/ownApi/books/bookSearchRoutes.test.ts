@@ -37,6 +37,7 @@ function setup() {
       asked.push({ book, query });
       return { state: "preparing", progress: null };
     },
+    preindex: async () => undefined,
     close: () => undefined,
   };
 

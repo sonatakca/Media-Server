@@ -25,6 +25,8 @@ export interface BookRoutesOptions {
     /** Reads the Books library again so a new file becomes a title. */
     scan(): Promise<void>;
   };
+  /** A book was added; called once the library has read it. */
+  onBooksChanged?: () => void;
 }
 
 /**
@@ -65,20 +67,30 @@ export async function resolveBookFile(
   const file = await catalogue.getPrimaryFile(itemId);
   if (!file || file.missingSince !== null) throw notFound();
 
+  const absolutePath = bookFilePath(resolvedMediaRoot, file);
+  if (!absolutePath) throw notFound();
+  return { file, absolutePath };
+}
+
+/** Where a book's file is on disk, or null for a path that leaves the media root. */
+export function bookFilePath(
+  resolvedMediaRoot: string,
+  file: Pick<MediaFileRow, "relativePath">,
+): string | null {
   const absolutePath = path.resolve(
     resolvedMediaRoot,
     ...file.relativePath.split("/"),
   );
-  if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
-    throw notFound();
-  }
-  return { file, absolutePath };
+  return isPathInsideRoot(resolvedMediaRoot, absolutePath)
+    ? absolutePath
+    : null;
 }
 
 export function createBookRoutes({
   catalogue,
   mediaRoot,
   uploads,
+  onBooksChanged,
 }: BookRoutesOptions): RouteDefinition[] {
   const resolvedMediaRoot = path.resolve(mediaRoot);
 
@@ -132,6 +144,7 @@ export function createBookRoutes({
               throw error;
             }
             await uploads.scan();
+            onBooksChanged?.();
             sendData(context.response, context.requestId, result);
           },
         },

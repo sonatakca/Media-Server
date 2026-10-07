@@ -584,7 +584,7 @@ export const tr = {
     "Olanı kendi sözlerinizle anlatın: kimler var, ne yapıyor ya da ne hissediyorlar. Kitap başka sözcüklerle anlatsa da arama o bölümü bulur.",
   "reader.search.preparing": "Kitap aramaya hazırlanıyor",
   "reader.search.preparingDetail":
-    "Bu her kitap için bir kez yapılır ve birkaç dakika sürer. İsterseniz okumaya devam edin; döndüğünüzde arama hazır olacak.",
+    "Sunucu her kitabı herkes için bir kez hazırlar; bu kitap henüz bitmedi. Birkaç dakika sürer; isterseniz okumaya devam edin, döndüğünüzde arama hazır olacak.",
   "reader.search.noResults": "Bu kitapta buna uyan bir yer yok.",
   "reader.search.unavailable": "Bu kitapta arama yapılamıyor.",
   "reader.search.failed":

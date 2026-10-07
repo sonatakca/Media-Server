@@ -7,14 +7,29 @@ import {
   optionalBodyString,
   requireUuid,
 } from "../api/validation";
-import type { CatalogueRepository } from "../catalogue/catalogueRepository";
+import type {
+  CatalogueRepository,
+  MediaFileRow,
+} from "../catalogue/catalogueRepository";
 import { resolveBookFile } from "./bookRoutes";
-import type { BookSearch } from "./bookSearch";
+import type { BookSearch, BookToSearch } from "./bookSearch";
 
 export interface BookSearchRoutesOptions {
   search: BookSearch;
   catalogue: CatalogueRepository;
   mediaRoot: string;
+}
+
+/**
+ * A book as the search knows it. The key changes whenever the file does, so
+ * the route and the library sweep must build it the same way: here.
+ */
+export function bookToSearch(
+  itemId: string,
+  file: Pick<MediaFileRow, "id" | "fingerprint">,
+  filePath: string,
+): BookToSearch {
+  return { itemId, filePath, sourceKey: `${file.id}:${file.fingerprint}` };
 }
 
 /** Long enough to describe a scene; a question, not a chapter. */
@@ -56,14 +71,7 @@ export function createBookSearchRoutes({
         sendData(
           context.response,
           context.requestId,
-          await search.search(
-            {
-              itemId,
-              filePath: absolutePath,
-              sourceKey: `${file.id}:${file.fingerprint}`,
-            },
-            query,
-          ),
+          await search.search(bookToSearch(itemId, file, absolutePath), query),
         );
       },
     },

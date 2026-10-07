@@ -10,6 +10,10 @@
  *
  * An index names the file it was built from (`sourceKey`) and the model; when
  * either changes, the book is read again.
+ *
+ * Books are read one at a time. The server prepares the whole library ahead of
+ * time (`preindex`, see bookPreindexing.ts), so a search rarely finds its book
+ * unprepared; when one does, that book goes to the front of the line.
  */
 
 import { randomUUID } from "node:crypto";
@@ -48,6 +52,12 @@ export type BookSearchOutcome =
 export interface BookSearch {
   /** An empty query only prepares the book. */
   search(book: BookToSearch, query: string): Promise<BookSearchOutcome>;
+  /**
+   * Puts every book without a current index in line, behind any a reader is
+   * waiting for. Cheap to repeat: a book known to be current is skipped
+   * without touching the disk.
+   */
+  preindex(books: BookToSearch[]): Promise<void>;
   close(): void;
 }
 
@@ -136,16 +146,20 @@ export function createBookSearch({
   warn?: (message: string) => void;
 }): BookSearch {
   const loaded = new Map<string, BookIndex>();
+  /** Books whose stored index is current, by the source it was built from. */
+  const current = new Map<string, string>();
   const jobs = new Map<
     string,
-    { sourceKey: string; progress: number | null }
+    { book: BookToSearch; progress: number | null }
   >();
   const failures = new Map<
     string,
     { sourceKey: string; reason: string; until: number }
   >();
-  /** One book is read at a time; the rest wait their turn. */
-  let line: Promise<void> = Promise.resolve();
+  /** Books waiting to be read, front first. One is read at a time. */
+  const waiting: string[] = [];
+  let reading = false;
+  let closed = false;
 
   const fileOf = (itemId: string) => {
     // The route has already checked; a path is built from it, so again here.
@@ -159,22 +173,28 @@ export function createBookSearch({
     while (loaded.size > LOADED) loaded.delete(loaded.keys().next().value!);
   };
 
-  const load = async (book: BookToSearch): Promise<BookIndex | null> => {
-    const held = loaded.get(book.itemId);
-    if (held?.sourceKey === book.sourceKey) return held;
+  /** The stored index, if it is current for this book. */
+  const readStored = async (book: BookToSearch): Promise<BookIndex | null> => {
     let text: string;
     try {
       text = await fs.readFile(fileOf(book.itemId), "utf8");
     } catch {
       return null;
     }
-    let index: BookIndex | null;
     try {
-      index = fromStored(JSON.parse(text), book.sourceKey);
+      const index = fromStored(JSON.parse(text), book.sourceKey);
+      if (index) current.set(book.itemId, book.sourceKey);
+      return index;
     } catch {
       // Damaged (a crash can zero-fill a file); it is simply built again.
-      index = null;
+      return null;
     }
+  };
+
+  const load = async (book: BookToSearch): Promise<BookIndex | null> => {
+    const held = loaded.get(book.itemId);
+    if (held?.sourceKey === book.sourceKey) return held;
+    const index = await readStored(book);
     if (index) remember(book.itemId, index);
     return index;
   };
@@ -205,6 +225,7 @@ export function createBookSearch({
       remember(book.itemId, index);
       try {
         await save(book.itemId, index);
+        current.set(book.itemId, book.sourceKey);
       } catch (error) {
         // Searchable until a restart; the next one reads it again.
         warn(`[Seyirlik] book search index not saved: ${String(error)}`);
@@ -225,21 +246,52 @@ export function createBookSearch({
     }
   };
 
-  const prepare = (book: BookToSearch): BookSearchOutcome => {
+  const readNext = async () => {
+    if (reading || closed) return;
+    const itemId = waiting.shift();
+    if (!itemId) return;
+    reading = true;
+    try {
+      await build(jobs.get(itemId)!.book);
+    } finally {
+      reading = false;
+      void readNext();
+    }
+  };
+
+  /** In line, at the front when a reader is waiting for it. */
+  const enqueue = (book: BookToSearch, urgent: boolean) => {
+    const job = jobs.get(book.itemId);
+    if (job) {
+      const at = waiting.indexOf(book.itemId);
+      if (urgent && at > 0) {
+        waiting.splice(at, 1);
+        waiting.unshift(book.itemId);
+      }
+      return job;
+    }
+    const added = { book, progress: null };
+    jobs.set(book.itemId, added);
+    if (urgent) waiting.unshift(book.itemId);
+    else waiting.push(book.itemId);
+    void readNext();
+    return added;
+  };
+
+  const failedRecently = (book: BookToSearch) => {
     const failure = failures.get(book.itemId);
-    if (
-      failure &&
+    return failure &&
       failure.sourceKey === book.sourceKey &&
       Date.now() < failure.until
-    )
-      return { state: "unavailable", reason: failure.reason };
-    failures.delete(book.itemId);
+      ? failure
+      : null;
+  };
 
-    const job = jobs.get(book.itemId);
-    if (job) return { state: "preparing", progress: job.progress };
-    jobs.set(book.itemId, { sourceKey: book.sourceKey, progress: null });
-    line = line.then(() => build(book));
-    return { state: "preparing", progress: null };
+  const prepare = (book: BookToSearch): BookSearchOutcome => {
+    const failure = failedRecently(book);
+    if (failure) return { state: "unavailable", reason: failure.reason };
+    failures.delete(book.itemId);
+    return { state: "preparing", progress: enqueue(book, true).progress };
   };
 
   return {
@@ -254,6 +306,25 @@ export function createBookSearch({
         hits: rank(index, await engine.embedQuery(query)),
       };
     },
-    close: () => engine.close(),
+    preindex: async (books) => {
+      for (const book of books) {
+        if (closed) return;
+        if (
+          !ITEM_ID.test(book.itemId) ||
+          current.get(book.itemId) === book.sourceKey ||
+          jobs.has(book.itemId) ||
+          failedRecently(book)
+        )
+          continue;
+        // Read once per book per process; after that `current` knows.
+        if (await readStored(book)) continue;
+        enqueue(book, false);
+      }
+    },
+    close: () => {
+      closed = true;
+      waiting.length = 0;
+      engine.close();
+    },
   };
 }
