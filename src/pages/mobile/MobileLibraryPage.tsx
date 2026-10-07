@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, SlidersHorizontal } from "lucide-react";
 import { useLocation, useParams } from "react-router-dom";
-import { LibraryHeaderArt } from "../../components/LibraryHeaderArt";
+import {
+  LibraryBarcodePlaceholder,
+  LibraryHeaderArt,
+} from "../../components/LibraryHeaderArt";
 import { BackButton } from "../../components/BackButton";
 import { ErrorMessage } from "../../components/ErrorMessage";
 import { useIsPhoneView } from "../../hooks/useIsPhoneView";
@@ -178,17 +181,25 @@ async function loadLibraryItems(
 }
 
 function MobileLibraryLoading() {
+  // The page's header, piece for piece, so nothing moves when it arrives.
   return (
     <div className="pb-6">
-      <div className="flex items-center justify-between">
-        <div className="shimmer h-10 w-20 rounded-full" />
-        <div className="shimmer h-4 w-24 rounded-full" />
+      <section className="full-bleed relative -mt-1 min-h-[7rem] px-4 pb-12 pt-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="shimmer ml-1 mt-1 h-9 w-[5.375rem] rounded-full" />
+          <div className="shimmer h-4 w-24 rounded-full" />
+        </div>
+      </section>
+      <div className="relative -mt-11 mb-5 min-h-[5.5rem] px-4">
+        <LibraryBarcodePlaceholder compact />
       </div>
-      <div className="shimmer mx-auto mt-5 h-10 w-40 rounded-xl" />
-      <div className="shimmer mt-6 h-12 rounded-xl" />
-      <div className="mt-5 grid grid-cols-2 gap-3">
+      <div className="mb-5 flex gap-2">
+        <div className="shimmer h-12 min-w-0 flex-1 rounded-full" />
+        <div className="shimmer h-12 w-[7.4rem] shrink-0 rounded-full" />
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]">
         {Array.from({ length: 4 }, (_, index) => (
-          <div key={index} className="shimmer h-64 rounded-xl" />
+          <div key={index} className="shimmer aspect-[2/3] rounded-xl" />
         ))}
       </div>
     </div>
@@ -670,7 +681,7 @@ export function MobileLibraryPage({
       <div className="relative z-30 -mt-11 mb-5 flex min-h-[5.5rem] items-center justify-center px-4">
         {mode === "library" ? (
           <>
-            <LibraryHeaderArt items={data.items} />
+            <LibraryHeaderArt items={data.items} compact />
             <h1 className="sr-only">{libraryArtTitle}</h1>
           </>
         ) : activeLibraryLogoUrl ? (

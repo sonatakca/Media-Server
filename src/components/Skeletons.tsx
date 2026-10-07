@@ -6,6 +6,7 @@ import { PhoneTitleHeroSkeleton } from "./mobile/PhoneTitleHeroSkeleton";
 import { isOfflineSupported } from "../lib/offline/offlineLibrary";
 import { AnimatedText } from "./AnimatedText";
 import { AnimatedWidth } from "./AnimatedWidth";
+import { LibraryBarcodePlaceholder } from "./LibraryHeaderArt";
 
 export function BackButtonSkeleton({ className = "" }: { className?: string }) {
   const mask =
@@ -315,20 +316,20 @@ export function DetailsSkeleton() {
 export function LibrarySkeleton() {
   return (
     <div>
-      <section className="relative -mx-4 overflow-hidden rounded-b-3xl px-4 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8">
-        <div className="mx-auto grid max-w-[1600px] grid-cols-[1fr_auto_1fr] items-center gap-4">
-          <BackButtonSkeleton className="my-7 justify-self-start" />
-
-          <div className="shimmer h-20 w-72 -top-2 overflow-hidden rounded-lg" />
-
-          <div
-            aria-hidden="true"
-            className="shimmer !absolute right-7 bottom-7 rounded-full w-32 h-5"
-          />
+      {/* The library page's header, piece for piece: the barcode's
+          placeholder across it, the back button and the count at its foot. */}
+      <div className="relative mb-4 grid min-h-20 grid-cols-[auto_1fr_auto] items-end gap-4">
+        <LibraryBarcodePlaceholder />
+        <div className="relative z-10 justify-self-start pb-1">
+          <BackButtonSkeleton />
         </div>
-      </section>
+        <div className="min-h-28" />
+        <div className="relative z-10 justify-self-end pb-2">
+          <div className="shimmer h-5 w-32 rounded-full" />
+        </div>
+      </div>
 
-      <div className="mb-3 -translate-y-2 flex flex-col gap-3 rounded-full p-1 md:flex-row md:items-center md:justify-between">
+      <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div className="shimmer min-h-12 flex-1 rounded-full" />
         <div className="shimmer min-h-12 w-full rounded-full md:w-40" />
       </div>

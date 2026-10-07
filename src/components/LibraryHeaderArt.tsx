@@ -233,7 +233,14 @@ function paintBarcode(canvas: HTMLCanvasElement, palettes: TitlePalette[]) {
   });
 }
 
-export function LibraryHeaderArt({ items }: { items: MediaItem[] }) {
+export function LibraryHeaderArt({
+  items,
+  compact = false,
+}: {
+  items: MediaItem[];
+  /** The phone's header, whose titles are a quarter as wide. */
+  compact?: boolean;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isPainted, setIsPainted] = useState(false);
   const reduceMotion = useReducedMotion();
@@ -261,6 +268,10 @@ export function LibraryHeaderArt({ items }: { items: MediaItem[] }) {
 
   return (
     <div className="library-art library-art--barcode" aria-hidden="true">
+      <LibraryBarcodePlaceholder
+        compact={compact}
+        className={isPainted ? "is-leaving" : undefined}
+      />
       <div className="library-art__barcode-fade">
         <div
           className={`library-art__barcode-wipe${
@@ -269,6 +280,32 @@ export function LibraryHeaderArt({ items }: { items: MediaItem[] }) {
         >
           <canvas ref={canvasRef} className="library-art__barcode-canvas" />
         </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The barcode before its colours: shimmering stripes where the bands will
+ * be. The page's skeleton shows it, and the page keeps it on until the
+ * palettes are read, so skeleton, page and picture are one piece.
+ */
+export function LibraryBarcodePlaceholder({
+  compact = false,
+  className,
+}: {
+  compact?: boolean;
+  className?: string;
+}) {
+  return (
+    <div
+      aria-hidden="true"
+      className={`library-art library-art__placeholder${
+        compact ? " is-compact" : ""
+      }${className ? ` ${className}` : ""}`}
+    >
+      <div className="library-art__placeholder-fade">
+        <div className="shimmer library-art__placeholder-stripes" />
       </div>
     </div>
   );

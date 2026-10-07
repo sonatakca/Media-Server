@@ -103,3 +103,98 @@
   width: 100%;
   height: 100%;
 }
+
+/* The placeholder: the same fades as the barcode, over stripes cut from the
+   shimmer. One tile is one title, as wide as a title's palette is drawn. */
+.library-art__placeholder {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 22%,
+    #000 78%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    transparent 0%,
+    #000 22%,
+    #000 78%,
+    transparent 100%
+  );
+  transition: opacity 0.6s cubic-bezier(0.37, 0, 0.63, 1);
+}
+
+.library-art__placeholder.is-leaving {
+  opacity: 0;
+}
+
+.library-art__placeholder-fade {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 30%,
+    #000 62%,
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to bottom,
+    transparent 0%,
+    #000 30%,
+    #000 62%,
+    transparent 100%
+  );
+}
+
+.library-art__placeholder-stripes {
+  --shimmer-base: rgb(255 255 255 / 7%);
+  --stripes: linear-gradient(
+    to right,
+    #000 0 9px,
+    transparent 9px 10px,
+    #000 10px 24px,
+    transparent 24px 25px,
+    #000 25px 31px,
+    transparent 31px 32px,
+    #000 32px 43px,
+    transparent 43px 44px,
+    #000 44px 52px,
+    transparent 52px 53px,
+    #000 53px 67px,
+    transparent 67px 72px
+  );
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: var(--stripes);
+  mask-image: var(--stripes);
+  -webkit-mask-size: 72px 100%;
+  mask-size: 72px 100%;
+  -webkit-mask-repeat: repeat-x;
+  mask-repeat: repeat-x;
+  -webkit-mask-position: center;
+  mask-position: center;
+}
+
+/* A phone fits a title in about 18px: four colours and a gap. */
+.library-art__placeholder.is-compact .library-art__placeholder-stripes {
+  --stripes: linear-gradient(
+    to right,
+    #000 0 3px,
+    transparent 3px 4px,
+    #000 4px 8px,
+    transparent 8px 9px,
+    #000 9px 11px,
+    transparent 11px 12px,
+    #000 12px 15px,
+    transparent 15px 18px
+  );
+  -webkit-mask-size: 18px 100%;
+  mask-size: 18px 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .library-art__placeholder {
+    transition: none;
+  }
+}
