@@ -1,5 +1,6 @@
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -17,6 +18,8 @@ import { getLogoLayout } from "../../lib/logoLayout";
 import type { MediaItem } from "../../lib/types";
 import { BOOK_SANS, BOOK_SERIF } from "./epubTypography";
 import { formatDuration, formatPercent, splitNumber } from "./readerText";
+import { ReaderSearch } from "./ReaderSearch";
+import type { BookSearchHit } from "../../lib/bookSearchApi";
 import {
   FONT_SCALE_STEPS,
   HIGHLIGHT_COLORS,
@@ -661,6 +664,8 @@ function buildRows(
   });
 }
 
+export type ReaderContentsTab = "contents" | "bookmarks" | "search";
+
 export function ReaderContentsDrawer({
   open,
   tab,
@@ -676,12 +681,13 @@ export function ReaderContentsDrawer({
   scheme,
   spineIndexOf,
   onNavigate,
+  onShowPassage,
   onRemoveBookmark,
   onClose,
 }: {
   open: boolean;
-  tab: "contents" | "bookmarks";
-  onTab: (tab: "contents" | "bookmarks") => void;
+  tab: ReaderContentsTab;
+  onTab: (tab: ReaderContentsTab) => void;
   title: string;
   author: string;
   item: MediaItem;
@@ -694,6 +700,7 @@ export function ReaderContentsDrawer({
   scheme: "dark" | "light";
   spineIndexOf: (href: string) => number | null;
   onNavigate: (target: string) => void;
+  onShowPassage: (hit: BookSearchHit) => void;
   onRemoveBookmark: (id: string) => void;
   onClose: () => void;
 }) {
@@ -702,6 +709,19 @@ export function ReaderContentsDrawer({
   const rows = useMemo(
     () => buildRows(toc, map, spineIndexOf),
     [map, spineIndexOf, toc],
+  );
+  // The contents list is in reading order: a section belongs to the last
+  // entry that starts at or before it.
+  const chapterOf = useCallback(
+    (section: number) => {
+      let label: string | null = null;
+      for (const entry of toc) {
+        const at = spineIndexOf(entry.href);
+        if (at !== null && at <= section) label = entry.label.trim();
+      }
+      return label;
+    },
+    [spineIndexOf, toc],
   );
   const longest = Math.max(
     1,
@@ -743,6 +763,7 @@ export function ReaderContentsDrawer({
 
     const drawer = drawerRef.current;
     const focusTarget =
+      drawer?.querySelector<HTMLElement>("[data-autofocus]") ??
       drawer?.querySelector<HTMLElement>('[aria-current="true"]') ??
       drawer?.querySelector<HTMLElement>("button");
     focusTarget?.focus({ preventScroll: true });
@@ -835,9 +856,24 @@ export function ReaderContentsDrawer({
               <span className="rd-count">{bookmarks.length}</span>
             ) : null}
           </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={tab === "search"}
+            onClick={() => onTab("search")}
+          >
+            {t("reader.search")}
+          </button>
         </div>
 
-        {tab === "contents" ? (
+        {tab === "search" ? (
+          <ReaderSearch
+            itemId={item.Id}
+            active={open}
+            chapterOf={chapterOf}
+            onShow={onShowPassage}
+          />
+        ) : tab === "contents" ? (
           rows.length > 0 ? (
             <ol className="rd-list" role="tabpanel">
               {rows.map((row, index) => {

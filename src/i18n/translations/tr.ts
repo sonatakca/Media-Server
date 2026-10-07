@@ -577,6 +577,19 @@ export const tr = {
   "reader.contents": "İçindekiler",
   "reader.closeContents": "İçindekileri kapat",
   "reader.bookmarks": "Yer imleri",
+  "reader.search": "Ara",
+  "reader.search.label": "Bu kitapta ara",
+  "reader.search.placeholder": "Kitaptaki bir anı anlatın",
+  "reader.search.hint":
+    "Olanı kendi sözlerinizle anlatın: kimler var, ne yapıyor ya da ne hissediyorlar. Kitap başka sözcüklerle anlatsa da arama o bölümü bulur.",
+  "reader.search.preparing": "Kitap aramaya hazırlanıyor",
+  "reader.search.preparingDetail":
+    "Bu her kitap için bir kez yapılır ve birkaç dakika sürer. İsterseniz okumaya devam edin; döndüğünüzde arama hazır olacak.",
+  "reader.search.noResults": "Bu kitapta buna uyan bir yer yok.",
+  "reader.search.unavailable": "Bu kitapta arama yapılamıyor.",
+  "reader.search.failed":
+    "Arama şu an yanıt vermiyor. Biraz sonra yeniden deneyin.",
+  "reader.search.inBook": "Bu kitapta",
   "reader.addBookmark": "Buraya yer imi koy",
   "reader.removeBookmark": "Yer imini kaldır",
   "reader.noBookmarks":

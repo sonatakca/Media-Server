@@ -6,7 +6,10 @@ import { serveFile } from "../api/fileDelivery";
 import { readBinaryBody } from "../api/http";
 import { sendData } from "../api/envelope";
 import { isPathInsideRoot } from "../../pathSecurity";
-import type { CatalogueRepository } from "../catalogue/catalogueRepository";
+import type {
+  CatalogueRepository,
+  MediaFileRow,
+} from "../catalogue/catalogueRepository";
 import {
   BookRejectedError,
   MAX_BOOK_UPLOAD_BYTES,
@@ -22,6 +25,54 @@ export interface BookRoutesOptions {
     /** Reads the Books library again so a new file becomes a title. */
     scan(): Promise<void>;
   };
+}
+
+/**
+ * The file behind a book the caller can see, inside the media root.
+ *
+ * An item in a library they cannot see answers exactly like one that does not
+ * exist, so this cannot be used to probe for content.
+ */
+export async function resolveBookFile(
+  catalogue: CatalogueRepository,
+  resolvedMediaRoot: string,
+  userId: string,
+  itemId: string,
+): Promise<{ file: MediaFileRow; absolutePath: string }> {
+  const notFound = () =>
+    new OwnApiError(
+      "ITEM_NOT_FOUND",
+      "The requested item could not be found.",
+      404,
+    );
+
+  const item = await catalogue.getItem(userId, itemId);
+  if (!item) throw notFound();
+
+  // Only books. Everything else is delivered through a playback session,
+  // which is where the decisions about container and codec are made; a
+  // second way in would bypass all of them.
+  if (item.kind !== "book") {
+    throw new OwnApiError(
+      "NOT_A_BOOK",
+      "Only a book is read directly; everything else is played.",
+      422,
+    );
+  }
+
+  // Visibility was already established by getItem above, so the file
+  // lookup is by item alone.
+  const file = await catalogue.getPrimaryFile(itemId);
+  if (!file || file.missingSince !== null) throw notFound();
+
+  const absolutePath = path.resolve(
+    resolvedMediaRoot,
+    ...file.relativePath.split("/"),
+  );
+  if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
+    throw notFound();
+  }
+  return { file, absolutePath };
 }
 
 export function createBookRoutes({
@@ -109,40 +160,12 @@ export function createBookRoutes({
       handle: async (context) => {
         const principal = context.requirePrincipal();
         const itemId = requireUuid(context.params.itemId, "itemId");
-
-        const notFound = () =>
-          new OwnApiError(
-            "ITEM_NOT_FOUND",
-            "The requested item could not be found.",
-            404,
-          );
-
-        const item = await catalogue.getItem(principal.userId, itemId);
-        if (!item) throw notFound();
-
-        // Only books. Everything else is delivered through a playback session,
-        // which is where the decisions about container and codec are made; a
-        // second way in would bypass all of them.
-        if (item.kind !== "book") {
-          throw new OwnApiError(
-            "NOT_A_BOOK",
-            "Only a book is read directly; everything else is played.",
-            422,
-          );
-        }
-
-        // Visibility was already established by getItem above, so the file
-        // lookup is by item alone.
-        const file = await catalogue.getPrimaryFile(itemId);
-        if (!file || file.missingSince !== null) throw notFound();
-
-        const absolutePath = path.resolve(
+        const { absolutePath } = await resolveBookFile(
+          catalogue,
           resolvedMediaRoot,
-          ...file.relativePath.split("/"),
+          principal.userId,
+          itemId,
         );
-        if (!isPathInsideRoot(resolvedMediaRoot, absolutePath)) {
-          throw notFound();
-        }
 
         await serveFile(
           context.response,

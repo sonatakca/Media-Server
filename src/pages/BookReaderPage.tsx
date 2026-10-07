@@ -27,6 +27,7 @@ import {
   ExternalLink,
   ListTree,
   MoreHorizontal,
+  Search,
 } from "lucide-react";
 import { useParams } from "react-router-dom";
 import { BackButton } from "../components/BackButton";
@@ -54,6 +55,8 @@ import { describeErrorForUser } from "../lib/userFacingError";
 import { isItemCompleted } from "../lib/watchStatus";
 import {
   EPUB_STATIC_CSS,
+  SEARCH_FOUND_CLASS,
+  SEARCH_FOUND_MS,
   enhanceSection,
   getBookFontCss,
   getEpubBlocks,
@@ -68,6 +71,7 @@ import {
   ReaderBookCover,
   ReaderMargin,
   ReaderContentsDrawer,
+  type ReaderContentsTab,
   ReaderHighlightMenu,
   ReaderMoreMenu,
   ReaderSettingsPanel,
@@ -116,6 +120,8 @@ import {
   saveBookPosition,
   type BookPosition,
 } from "../lib/bookPositionApi";
+import type { BookSearchHit } from "../lib/bookSearchApi";
+import { epubBlockText } from "../lib/epubBlocks";
 import {
   ReadingLight,
   buildBookMap,
@@ -542,9 +548,7 @@ export function BookReaderPage() {
   );
   const [panel, setPanel] = useState<Panel>(null);
   const [zoomedImage, setZoomedImage] = useState<ReaderImage | null>(null);
-  const [contentsTab, setContentsTab] = useState<"contents" | "bookmarks">(
-    "contents",
-  );
+  const [contentsTab, setContentsTab] = useState<ReaderContentsTab>("contents");
   const [chromeHidden, setChromeHidden] = useState(false);
   const [toc, setToc] = useState<TocEntry[]>([]);
   const [bookMap, setBookMap] = useState<BookMap | null>(null);
@@ -573,6 +577,10 @@ export function BookReaderPage() {
   const bookRef = useRef<Book | null>(null);
   const lightRef = useRef<ReadingLight | null>(null);
   const scheduleFrameRef = useRef<() => void>(() => undefined);
+  /** Opens the book at a search hit; set while a book is open. */
+  const showPassageRef = useRef<(hit: BookSearchHit) => Promise<void>>(
+    async () => undefined,
+  );
   const measureColumnRef = useRef<() => void>(() => undefined);
   const markerRef = useRef<HTMLDivElement | null>(null);
   const settingsRef = useRef(settings);
@@ -1596,6 +1604,58 @@ export function BookReaderPage() {
     };
 
     /**
+     * Opens the book at a search hit: its section, then the block it starts
+     * in, a quarter of the screen down, lit for a moment so the eye finds it.
+     *
+     * The server counted the blocks the way this page does, but the page is
+     * the one that knows, so the block must hold the passage's opening words;
+     * if it does not, the section's first block that does is used instead.
+     */
+    showPassageRef.current = async (hit) => {
+      await book.opened;
+      const href = (book.spine.get(hit.section) as Section | null)?.href;
+      if (!href || !isMounted || !(await displayWithin(href))) {
+        return;
+      }
+      await waitForLayoutToSettle(host);
+
+      const blocks = getRenditionContents(rendition)
+        .filter((content) => content.sectionIndex === hit.section)
+        .map((content) => blocksOf.get(content.document))[0];
+      const scroller = host.querySelector<HTMLElement>(".epub-container");
+      if (!blocks || !scroller || !isMounted) {
+        return;
+      }
+      const holds = (index: number) =>
+        epubBlockText(blocks[index]?.textContent ?? "").includes(hit.anchor);
+      const found = holds(hit.block)
+        ? hit.block
+        : blocks.findIndex((_, index) => holds(index));
+      const block = found >= 0 ? found : Math.min(hit.block, blocks.length - 1);
+      const place = {
+        section: hit.section,
+        block,
+        offset: -Math.round(scroller.clientHeight * 0.25),
+      };
+
+      backToPlace(place);
+      await waitForLayoutToSettle(host);
+      backToPlace(place);
+      scheduleFrame();
+
+      const element = blocks[block];
+      if (element) {
+        element.classList.remove(SEARCH_FOUND_CLASS);
+        void element.offsetWidth;
+        element.classList.add(SEARCH_FOUND_CLASS);
+        window.setTimeout(
+          () => element.classList.remove(SEARCH_FOUND_CLASS),
+          SEARCH_FOUND_MS,
+        );
+      }
+    };
+
+    /**
      * Back on this page after reading elsewhere: if another device has since
      * saved a later place, the book moves there before anything here is saved.
      */
@@ -1709,6 +1769,7 @@ export function BookReaderPage() {
       rendition.destroy();
       book.destroy();
       scheduleFrameRef.current = () => undefined;
+      showPassageRef.current = async () => undefined;
       measureColumnRef.current = () => undefined;
       paintHighlightsRef.current = () => undefined;
 
@@ -1973,6 +2034,11 @@ export function BookReaderPage() {
       )
       .then(() => scheduleFrameRef.current())
       .catch(() => undefined);
+  }, []);
+
+  const showPassage = useCallback((hit: BookSearchHit) => {
+    setPanel(null);
+    void showPassageRef.current(hit).catch(() => undefined);
   }, []);
 
   const spineIndexOf = useCallback((href: string) => {
@@ -2244,9 +2310,30 @@ export function BookReaderPage() {
             type: "button" as const,
             label: t("reader.contents"),
             icon: <ListTree />,
-            active: panel === "contents",
+            active: panel === "contents" && contentsTab !== "search",
             tooltip: panel !== "contents",
-            onClick: () => togglePanel("contents"),
+            onClick: () => {
+              if (contentsTab === "search") {
+                setContentsTab("contents");
+                if (panel === "contents") return;
+              }
+              togglePanel("contents");
+            },
+          },
+          {
+            id: "search",
+            type: "button" as const,
+            label: t("reader.search.label"),
+            icon: <Search />,
+            active: panel === "contents" && contentsTab === "search",
+            tooltip: !(panel === "contents" && contentsTab === "search"),
+            onClick: () => {
+              if (contentsTab !== "search") {
+                setContentsTab("search");
+                if (panel === "contents") return;
+              }
+              togglePanel("contents");
+            },
           },
           {
             id: "bookmark",
@@ -2625,6 +2712,7 @@ export function BookReaderPage() {
           scheme={palette.scheme}
           spineIndexOf={spineIndexOf}
           onNavigate={navigateTo}
+          onShowPassage={showPassage}
           onRemoveBookmark={removeBookmark}
           onClose={closePanel}
         />

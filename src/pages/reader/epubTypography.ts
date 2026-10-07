@@ -207,6 +207,9 @@ export function getEpubThemeRules(
     "::selection": {
       background: palette.selection,
     },
+    [`.${SEARCH_FOUND_CLASS}`]: {
+      "--seyirlik-found": palette.selection,
+    },
     // The reader's highlights: painted over ranges, never written into the
     // text, so the CFIs saved against this markup still resolve.
     ...Object.fromEntries(
@@ -218,6 +221,10 @@ export function getEpubThemeRules(
   };
 }
 
+/** Lights the block a search opened the book at, for as long as this, fading. */
+export const SEARCH_FOUND_CLASS = "seyirlik-search-found";
+export const SEARCH_FOUND_MS = 2600;
+
 /** Rules that do not depend on settings, added once per document. */
 export const EPUB_STATIC_CSS = `
 @keyframes seyirlikReaderBlockFadeIn {
@@ -225,6 +232,21 @@ export const EPUB_STATIC_CSS = `
 }
 .seyirlik-reader-block {
   animation: seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+}
+/* The block's own fade-in stays first in the list, so adding and removing the
+   light never starts it again. */
+@keyframes seyirlikSearchFound {
+  0%, 30% { background-color: var(--seyirlik-found); }
+  to { background-color: transparent; }
+}
+.${SEARCH_FOUND_CLASS} {
+  border-radius: 0.25em;
+  animation: seyirlikSearchFound ${SEARCH_FOUND_MS}ms ease-out;
+}
+.seyirlik-reader-block.${SEARCH_FOUND_CLASS} {
+  animation:
+    seyirlikReaderBlockFadeIn 520ms cubic-bezier(0.22, 1, 0.36, 1) backwards,
+    seyirlikSearchFound ${SEARCH_FOUND_MS}ms ease-out;
 }
 @supports (initial-letter: ${DROP_CAP_LINES}) or (-webkit-initial-letter: ${DROP_CAP_LINES}) {
   .seyirlik-dropcap::first-letter {
@@ -247,63 +269,7 @@ html[data-seyirlik-hyphens="auto"] body { hyphens: auto; -webkit-hyphens: auto; 
 }
 `;
 
-const PRIMARY_BLOCKS = [
-  "figure",
-  "picture",
-  "img",
-  "table",
-  "blockquote",
-  "pre",
-  "h1",
-  "h2",
-  "h3",
-  "h4",
-  "h5",
-  "h6",
-  "p",
-  "li",
-].join(",");
-
-/** The block-level pieces of a document: what fades in, and what the light falls on. */
-export function getEpubBlocks(document: Document): HTMLElement[] {
-  const primary = Array.from(
-    document.querySelectorAll<HTMLElement>(PRIMARY_BLOCKS),
-  );
-  const fallback = Array.from(
-    document.querySelectorAll<HTMLElement>(
-      "body div, body section, body article",
-    ),
-  ).filter((element) => {
-    const directText = Array.from(element.childNodes)
-      .filter((node) => node.nodeType === Node.TEXT_NODE)
-      .map((node) => node.textContent?.trim() ?? "")
-      .join("");
-
-    return Boolean(directText) && !element.querySelector(PRIMARY_BLOCKS);
-  });
-  const candidates = [...primary, ...fallback];
-  const candidateSet = new Set(candidates);
-
-  return candidates
-    .filter((element) => {
-      let parent = element.parentElement;
-
-      while (parent && parent !== document.body) {
-        if (candidateSet.has(parent)) {
-          return false;
-        }
-
-        parent = parent.parentElement;
-      }
-
-      return Boolean(
-        element.textContent?.trim() || element.matches("img,picture,figure"),
-      );
-    })
-    .sort((a, b) =>
-      a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-    );
-}
+export { getEpubBlocks } from "../../lib/epubBlocks";
 
 function blockText(element: HTMLElement): string {
   return (element.textContent ?? "").replace(/\s+/g, " ").trim();

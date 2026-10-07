@@ -577,6 +577,19 @@ export const en = {
   "reader.contents": "Contents",
   "reader.closeContents": "Close contents",
   "reader.bookmarks": "Bookmarks",
+  "reader.search": "Search",
+  "reader.search.label": "Search this book",
+  "reader.search.placeholder": "Describe a moment in the book",
+  "reader.search.hint":
+    "Describe what happens in your own words — who is there, what they do or feel. Search finds the passage even when the book puts it differently.",
+  "reader.search.preparing": "Getting this book ready to search",
+  "reader.search.preparingDetail":
+    "This happens once for each book and takes a few minutes. Keep reading if you like; search will be ready when you come back.",
+  "reader.search.noResults": "Nothing in this book matches that.",
+  "reader.search.unavailable": "This book can't be searched.",
+  "reader.search.failed":
+    "Search isn't answering right now. Try again in a moment.",
+  "reader.search.inBook": "In this book",
   "reader.addBookmark": "Bookmark this place",
   "reader.removeBookmark": "Remove bookmark",
   "reader.noBookmarks":

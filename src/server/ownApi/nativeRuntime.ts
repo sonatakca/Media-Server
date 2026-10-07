@@ -41,6 +41,9 @@ import { migrateTitleArtwork } from "./images/titleArtworkMigration";
 import { createBookRoutes } from "./books/bookRoutes";
 import { createBookPositionRepository } from "./books/bookPositionRepository";
 import { createBookPositionRoutes } from "./books/bookPositionRoutes";
+import { createBookSearch } from "./books/bookSearch";
+import { createBookSearchProcess } from "./books/bookSearchProcess";
+import { createBookSearchRoutes } from "./books/bookSearchRoutes";
 import { createBookUploader } from "./books/bookUpload";
 import { createMetadataRepository } from "./metadata/metadataRepository";
 import { createMetadataService } from "./metadata/metadataService";
@@ -387,6 +390,14 @@ export async function createNativeRuntime({
   const images = createImageRepository(pool);
   const userState = createUserStateRepository(pool);
   const bookPositions = createBookPositionRepository(pool);
+  // Nothing starts until a book is first searched: the model downloads into
+  // generated storage then, and runs in its own low-priority process.
+  const bookSearch = createBookSearch({
+    storageDir: path.join(generatedStoragePath, "book-search"),
+    engine: createBookSearchProcess({
+      modelDir: path.join(generatedStoragePath, "models"),
+    }),
+  });
   const playbackSessions = createPlaybackSessionStore(pool);
   const queue = createJobQueue(pool);
 
@@ -1526,6 +1537,7 @@ export async function createNativeRuntime({
     ...createImageRoutes({ images, imageStorage, catalogue }),
     ...createShareRoutes(shareCards),
     ...createBookRoutes({ catalogue, mediaRoot, uploads: bookUploads }),
+    ...createBookSearchRoutes({ search: bookSearch, catalogue, mediaRoot }),
     ...createTrickplayRoutes({ trickplay, catalogue, queue }),
     ...createSyncplayRoutes({ runtime: syncplay, catalogue }),
     ...(subtitles
@@ -1896,6 +1908,7 @@ export async function createNativeRuntime({
       clearInterval(sessionCleanupTimer);
       clearInterval(playbackCleanupTimer);
       syncplay.stop();
+      bookSearch.close();
       if (acquisitionReconcileTimer) clearInterval(acquisitionReconcileTimer);
       if (importReconcileTimer) clearInterval(importReconcileTimer);
       if (garbageFirstPass) clearTimeout(garbageFirstPass);
