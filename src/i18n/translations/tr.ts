@@ -531,6 +531,12 @@ export const tr = {
   "reader.epubTimedOut":
     "EPUB hazırlanmayı bitirmedi. Orijinal dosyayı açmayı dene veya bu kitabın hâlâ kullanılabilir olduğunu kontrol et.",
   "reader.readerUnavailable": "Okuyucu kullanılamıyor",
+  "reader.taken.title": "Bu kitap başka bir cihazda açıldı",
+  "reader.taken.text":
+    "Okuduğun yer artık orada kaydediliyor. İki cihaz birbirinin üstüne yazmasın diye bu pencere kaydetmeyi bıraktı.",
+  "reader.taken.continue": "Burada devam et",
+  "reader.taken.anotherDevice": "Başka bir cihaz",
+  "reader.taken.failed": "Sunucuya ulaşılamadı. Biraz sonra yeniden dene.",
   "reader.textLoadFailed": "Bu metin yüklenemedi.",
   "reader.notBook": "Bu içerik kitap veya belge değil.",
   "reader.settings": "Okuyucu ayarları",

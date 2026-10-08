@@ -115,9 +115,13 @@ import {
   type ReaderSettings,
 } from "./reader/readerModel";
 import { READER_SYNC_MS, useReaderMarks } from "./reader/readerMarks";
+import { randomUuid } from "../lib/randomId";
 import {
+  claimBookSession,
   getBookPosition,
+  readerDevice,
   saveBookPosition,
+  type ReadingSession,
   type BookPosition,
 } from "../lib/bookPositionApi";
 import type { BookSearchHit } from "../lib/bookSearchApi";
@@ -357,6 +361,19 @@ interface Target {
   readAt: number;
 }
 
+/** Device names are the makers' own, in every language. */
+const READER_DEVICE_NAMES: Record<
+  NonNullable<ReadingSession["device"]>,
+  string
+> = {
+  iphone: "iPhone",
+  ipad: "iPad",
+  android: "Android",
+  mac: "Mac",
+  windows: "Windows",
+  linux: "Linux",
+};
+
 /** A place saved this many ms after the reader stops moving goes to the server. */
 const POSITION_SEND_DELAY_MS = 1500;
 /** How long opening a book waits for the place saved on other devices. */
@@ -574,6 +591,13 @@ export function BookReaderPage() {
   const [jumping, setJumping] = useState(false);
   const [epubProgress, setEpubProgress] = useState(0);
   const [readerError, setReaderError] = useState<string | null>(null);
+  /** The copy of the book, opened later on some device, that now keeps the place. */
+  const [takenBy, setTakenBy] = useState<ReadingSession | null>(null);
+  const [takingBack, setTakingBack] = useState<"idle" | "busy" | "failed">(
+    "idle",
+  );
+  /** Makes this copy keep the place again, at the latest place; true if it does. */
+  const continueHereRef = useRef<() => Promise<boolean>>(async () => false);
   const [textContent, setTextContent] = useState<string | null>(null);
   const [scrollProgress, setScrollProgress] = useState(0);
   // The book on the opening screen: about a quarter of the screen's height,
@@ -900,6 +924,17 @@ export function BookReaderPage() {
     let known = { key: "", readAt: 0 };
     /** A place not yet on the server, sent a moment after the reader stops. */
     let unsent: BookPosition | null = null;
+    /**
+     * This opening of the book. The copy opened last, on any device, keeps
+     * the place; once another has, this one saves nothing until the reader
+     * takes the book back here.
+     */
+    let session: ReadingSession = {
+      id: randomUuid(),
+      openedAt: Date.now(),
+      device: readerDevice(),
+    };
+    let superseded = false;
     let sendTimer = 0;
     let scrollElement: HTMLElement | null = null;
     let lastScrollTop = 0;
@@ -1368,7 +1403,7 @@ export function BookReaderPage() {
       // Nobody reads a hidden page: whatever moves it then (a font landing, the
       // book being measured) is not the reader, and must not outrank a place
       // they have since reached on another device.
-      if (restoring || document.visibilityState === "hidden") {
+      if (restoring || superseded || document.visibilityState === "hidden") {
         return;
       }
 
@@ -1398,20 +1433,64 @@ export function BookReaderPage() {
       }
     };
 
+    /**
+     * Another copy of the book, opened later, keeps the place now: this one
+     * stops saving and says so, and the reader decides where to go on.
+     */
+    const supersede = (by: ReadingSession | null) => {
+      if (!isMounted || superseded) {
+        return;
+      }
+      superseded = true;
+      unsent = null;
+      window.clearTimeout(sendTimer);
+      setTakingBack("idle");
+      setTakenBy(by ?? { id: "", openedAt: Date.now(), device: null });
+    };
+
+    /** Says this copy is open: true if it keeps the place, null if unknown. */
+    const claim = async (): Promise<boolean | null> => {
+      const asked = session;
+      try {
+        const result = await claimBookSession(activeItemId, asked);
+        // An answer for a copy this page has since replaced says nothing.
+        if (asked !== session) {
+          return null;
+        }
+        if (!result.owner) {
+          supersede(result.session);
+        }
+        return result.owner;
+      } catch {
+        return null;
+      }
+    };
+
     const sendPosition = (options: { keepalive?: boolean } = {}) => {
       window.clearTimeout(sendTimer);
       const position = unsent;
 
-      if (!position) {
+      if (!position || superseded) {
         return;
       }
 
       unsent = null;
-      void saveBookPosition(activeItemId, position, options).catch(() => {
-        // Offline or refused: keep it for the next send, unless the reader has
-        // moved on since, which is newer anyway.
-        unsent ??= position;
-      });
+      const sentAs = session;
+      void saveBookPosition(activeItemId, position, {
+        ...options,
+        session: sentAs,
+      }).then(
+        (result) => {
+          if (result.superseded && sentAs === session) {
+            supersede(result.superseded);
+          }
+        },
+        () => {
+          // Offline or refused: keep it for the next send, unless the reader
+          // has moved on since, which is newer anyway.
+          unsent ??= position;
+        },
+      );
     };
 
     const handleScroll = () => {
@@ -1877,7 +1956,7 @@ export function BookReaderPage() {
      * saved a later place, the book moves there before anything here is saved.
      */
     let catchingUp = false;
-    const catchUp = async () => {
+    const catchUp = async ({ force = false } = {}) => {
       if (restoring || catchingUp || !isMounted) {
         return;
       }
@@ -1888,10 +1967,12 @@ export function BookReaderPage() {
       try {
         const remote = await getBookPosition(activeItemId).catch(() => null);
 
+        // Forced when this copy takes the book back: the place the other
+        // copy reached is the latest whatever its device's clock said.
         if (
           remote &&
           isMounted &&
-          remote.readAt > known.readAt &&
+          (force || remote.readAt > known.readAt) &&
           positionKey(remote) !== known.key
         ) {
           unsent = null;
@@ -1914,8 +1995,13 @@ export function BookReaderPage() {
     const handleVisibility = () => {
       if (document.visibilityState === "hidden") {
         sendPosition({ keepalive: true });
-      } else {
-        void catchUp();
+      } else if (!superseded) {
+        // Opened elsewhere meanwhile: say so here rather than move on.
+        void claim().then((owner) => {
+          if (owner !== false) {
+            void catchUp();
+          }
+        });
       }
     };
     const handlePageHide = () => sendPosition({ keepalive: true });
@@ -1932,20 +2018,52 @@ export function BookReaderPage() {
      * hear of it until the reader scrolled it, too late.
      */
     const syncPosition = () => {
-      if (document.visibilityState === "hidden" || !isMounted) {
+      if (
+        document.visibilityState === "hidden" ||
+        !isMounted ||
+        restoring ||
+        superseded
+      ) {
         return;
       }
-      sendPosition();
-      const selecting = getRenditionContents(rendition).some(
-        (content) => !(content.document.getSelection()?.isCollapsed ?? true),
-      );
-      if (
-        !selecting &&
-        rulerDragRef.current < 0 &&
-        performance.now() - lastScrollAt >= CATCH_UP_IDLE_MS
-      ) {
-        void catchUp();
+      void claim().then((owner) => {
+        if (owner === false || !isMounted) {
+          return;
+        }
+        sendPosition();
+        const selecting = getRenditionContents(rendition).some(
+          (content) => !(content.document.getSelection()?.isCollapsed ?? true),
+        );
+        if (
+          !selecting &&
+          rulerDragRef.current < 0 &&
+          performance.now() - lastScrollAt >= CATCH_UP_IDLE_MS
+        ) {
+          void catchUp();
+        }
+      });
+    };
+
+    continueHereRef.current = async () => {
+      const next: ReadingSession = {
+        id: randomUuid(),
+        openedAt: Date.now(),
+        device: readerDevice(),
+      };
+      const result = await claimBookSession(activeItemId, next);
+      if (!isMounted) {
+        return false;
       }
+      if (!result.owner) {
+        // Opened somewhere else again in the meantime.
+        setTakenBy(result.session);
+        return false;
+      }
+      session = next;
+      await catchUp({ force: true });
+      superseded = false;
+      setTakenBy(null);
+      return true;
     };
     const syncTimer = window.setInterval(syncPosition, READER_SYNC_MS);
     // Back to this window, back from the browser's page cache, or back online.
@@ -1968,6 +2086,8 @@ export function BookReaderPage() {
         await goTo(target, true);
 
         restoring = false;
+        // Opening the book here makes this the copy that keeps the place.
+        void claim();
         window.clearTimeout(preparationTimeoutId);
 
         if (isMounted) {
@@ -2582,6 +2702,32 @@ export function BookReaderPage() {
     }
     seekChapterRef.current(rulerDragRef.current, fraction);
   };
+  const continueHere = async () => {
+    setTakingBack("busy");
+    try {
+      await continueHereRef.current();
+      setTakingBack("idle");
+    } catch {
+      // Not reachable: the notice stays, and asking again may work.
+      setTakingBack("failed");
+    }
+  };
+  const takenAtText = takenBy
+    ? new Intl.DateTimeFormat(
+        language,
+        new Date(takenBy.openedAt).toDateString() === new Date().toDateString()
+          ? { hour: "2-digit", minute: "2-digit" }
+          : {
+              day: "numeric",
+              month: "short",
+              hour: "2-digit",
+              minute: "2-digit",
+            },
+      ).format(takenBy.openedAt)
+    : "";
+  const takenDevice = takenBy?.device
+    ? READER_DEVICE_NAMES[takenBy.device]
+    : t("reader.taken.anotherDevice");
   const timeLeftText = reading
     ? formatDuration(reading.minutesLeftInChapter, t)
     : "";
@@ -3009,6 +3155,41 @@ export function BookReaderPage() {
           onRemoveBookmark={removeBookmark}
           onClose={closePanel}
         />
+      ) : null}
+
+      {takenBy ? (
+        <div
+          className="rd-taken"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="rd-taken-title"
+          aria-describedby="rd-taken-text"
+        >
+          <div className="rd-taken-card">
+            <h2 id="rd-taken-title">{t("reader.taken.title")}</h2>
+            <p className="rd-taken-where">
+              {takenDevice} · {takenAtText}
+            </p>
+            <p id="rd-taken-text">{t("reader.taken.text")}</p>
+            <div className="rd-taken-actions">
+              <button
+                type="button"
+                className="rd-taken-continue"
+                autoFocus
+                disabled={takingBack === "busy"}
+                onClick={() => void continueHere()}
+              >
+                {t("reader.taken.continue")}
+              </button>
+              <BackButton fallbackTo={ownerRoute} noYShift />
+            </div>
+            {takingBack === "failed" ? (
+              <p className="rd-taken-failed" role="status">
+                {t("reader.taken.failed")}
+              </p>
+            ) : null}
+          </div>
+        </div>
       ) : null}
 
       {zoomedImage ? (

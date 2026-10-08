@@ -531,6 +531,12 @@ export const en = {
   "reader.epubTimedOut":
     "The EPUB did not finish preparing. Try opening the original file, or check that this book is still available.",
   "reader.readerUnavailable": "Reader unavailable",
+  "reader.taken.title": "This book was opened on another device",
+  "reader.taken.text":
+    "Your place is saved there now. This window stopped saving it, so the two can't write over each other.",
+  "reader.taken.continue": "Continue here",
+  "reader.taken.anotherDevice": "Another device",
+  "reader.taken.failed": "Couldn't reach the server. Try again in a moment.",
   "reader.textLoadFailed": "Could not load this text.",
   "reader.notBook": "This item is not a book or document.",
   "reader.settings": "Reader settings",
