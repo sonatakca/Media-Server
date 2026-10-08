@@ -19,6 +19,11 @@ The release contents come from two different places on purpose:
   node_modules     copied from the source checkout rather than installed,
                    because an install would resolve versions at deployment
                    time and a release must be the thing that was tested.
+                   When an earlier release was staged from the same
+                   package-lock.json and Node, its node_modules is hard-linked
+                   instead: the same files, already on disk and checked, so
+                   the release costs seconds rather than a copy and a first
+                   read of 33,000 new files (about 8 minutes on this host).
 
   dist             the built frontend, likewise copied rather than rebuilt.
 
@@ -47,6 +52,13 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+# Each phase reports its own time, so a slow deployment says where it was slow.
+$phaseClock = [Diagnostics.Stopwatch]::StartNew()
+function Write-Phase([string] $Name) {
+  Write-Output ("PHASE={0}:{1:0.0}s" -f $Name, $phaseClock.Elapsed.TotalSeconds)
+  $phaseClock.Restart()
+}
 
 if (-not (Test-Path -LiteralPath $SourceCheckout)) { throw "source checkout not found: $SourceCheckout" }
 
@@ -117,6 +129,58 @@ if (-not $Version) {
 $target = Join-Path $releases $Version
 if (Test-Path -LiteralPath $target) { throw "release already exists, refusing to overwrite: $target" }
 
+<#
+Which package-lock.json the checkout's node_modules was installed from. The
+deploy wrapper (ship-release.ps1) writes this marker after every `npm ci`; a
+checkout without it, or with a stale one, is copied as it always was, and the
+release records no lock, so no later release links from it.
+#>
+$nodeVersion = (& node --version).Trim()
+$lockSha = (Get-FileHash -LiteralPath (Join-Path $SourceCheckout 'package-lock.json') -Algorithm SHA256).Hash.ToLowerInvariant()
+$installedMarker = Join-Path $SourceCheckout 'node_modules\.seyirlik-lock.sha256'
+$installedLock = if (Test-Path -LiteralPath $installedMarker) { (Get-Content -LiteralPath $installedMarker -Raw).Trim() } else { $null }
+$dependencyLock = if ($installedLock -eq $lockSha) { $lockSha } else { $null }
+
+# A release to link node_modules from: installed from this same lock with this
+# same Node, and checked at its own staging (INTEGRITY.json exists only then).
+$donor = $null
+if ($dependencyLock) {
+  $donor = Get-ChildItem -LiteralPath $releases -Directory | ForEach-Object {
+    $manifestPath = Join-Path $_.FullName 'RELEASE.json'
+    if (-not (Test-Path -LiteralPath $manifestPath)) { return }
+    if (-not (Test-Path -LiteralPath (Join-Path $_.FullName 'INTEGRITY.json'))) { return }
+    if (-not (Test-Path -LiteralPath (Join-Path $_.FullName 'node_modules'))) { return }
+    try { $m = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json } catch { return }
+    if ($m.dependencies -and $m.dependencies.lockSha256 -eq $dependencyLock -and $m.nodeVersion -eq $nodeVersion) {
+      [pscustomobject]@{ Path = $_.FullName; Name = $_.Name; StagedAt = [string]$m.stagedAt }
+    }
+  } | Sort-Object StagedAt -Descending | Select-Object -First 1
+}
+
+# Hard links through the Win32 call: New-Item -ItemType HardLink takes about
+# a second per hundred files, too slow for 33,000 of them.
+function Copy-TreeAsHardLinks([string] $From, [string] $To) {
+  if (-not ('Seyirlik.HardLink' -as [type])) {
+    Add-Type -Namespace Seyirlik -Name HardLink -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+public static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, System.IntPtr lpSecurityAttributes);
+'@
+  }
+  $fromLength = $From.Length
+  [void][IO.Directory]::CreateDirectory($To)
+  foreach ($dir in [IO.Directory]::EnumerateDirectories($From, '*', 'AllDirectories')) {
+    [void][IO.Directory]::CreateDirectory($To + $dir.Substring($fromLength))
+  }
+  $count = 0
+  foreach ($file in [IO.Directory]::EnumerateFiles($From, '*', 'AllDirectories')) {
+    if (-not [Seyirlik.HardLink]::CreateHardLink($To + $file.Substring($fromLength), $file, [IntPtr]::Zero)) {
+      throw ("hard link failed for {0} (Win32 error {1})" -f $file, [Runtime.InteropServices.Marshal]::GetLastWin32Error())
+    }
+    $count++
+  }
+  return $count
+}
+
 Push-Location $SourceCheckout
 try {
   $commit = (& git rev-parse HEAD).Trim()
@@ -140,15 +204,35 @@ try {
 }
 finally { Pop-Location }
 
+Write-Phase 'source'
+
 # /MIR would be wrong here: the destination is new, and mirroring invites a
 # delete against the wrong path if it ever is not.
+$linkedFrom = $null
+$linkedFiles = 0
 foreach ($dir in 'node_modules', 'dist') {
   $from = Join-Path $SourceCheckout $dir
   if (-not (Test-Path -LiteralPath $from)) { throw "source checkout has no $dir; build or install first" }
-  & robocopy $from (Join-Path $target $dir) /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
+  $to = Join-Path $target $dir
+  if ($dir -eq 'node_modules' -and $donor) {
+    try {
+      $linkedFiles = Copy-TreeAsHardLinks (Join-Path $donor.Path 'node_modules') $to
+      $linkedFrom = $donor.Name
+      Write-Output ("LINKED_DEPENDENCIES={0} files from {1}" -f $linkedFiles, $donor.Name)
+      continue
+    }
+    catch {
+      # Removing the half-made tree removes links, never the donor's files.
+      Write-Output ("LINK_FAILED=" + $_.Exception.Message + "; copying instead")
+      if (Test-Path -LiteralPath $to) { Remove-Item -LiteralPath $to -Recurse -Force }
+      $linkedFiles = 0
+    }
+  }
+  & robocopy $from $to /E /NFL /NDL /NJH /NJS /NP /R:1 /W:1 | Out-Null
   # robocopy exits 0-7 for success; 8 and above is a genuine failure.
   if ($LASTEXITCODE -ge 8) { throw "copying $dir failed (robocopy $LASTEXITCODE)" }
 }
+Write-Phase 'dependencies+dist'
 
 # A release the services cannot read is a failed deployment discovered at
 # restart, when the previous version has already been stopped. Discover it
@@ -172,7 +256,10 @@ $manifest = [ordered]@{
   sourceCheckout = $SourceCheckout
   stagedAt       = (Get-Date).ToUniversalTime().ToString('o')
   stagedBy       = "$env:USERDOMAIN\$env:USERNAME"
-  nodeVersion    = (& node --version).Trim()
+  nodeVersion    = $nodeVersion
+  # The lock node_modules was installed from (null when that is not known),
+  # and the release it was hard-linked from, if any.
+  dependencies   = [ordered]@{ lockSha256 = $dependencyLock; linkedFrom = $linkedFrom }
 }
 $manifest | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'RELEASE.json') -Encoding UTF8
 
@@ -189,17 +276,40 @@ $drive = [IO.Path]::GetPathRoot((Resolve-Path -LiteralPath $target).ProviderPath
 if ($drive -notmatch '^([A-Za-z]):\\$') { throw "cannot flush $target; it is not on a lettered volume" }
 Storage\Write-VolumeCache -DriveLetter $Matches[1]
 Write-Output ("FLUSHED=" + $Matches[1])
+Write-Phase 'flush'
 
 # Reads come from the cache just flushed, so this cannot see a write that never
 # reached the disk — activation's own check is the one that catches a later
 # crash. What it does catch is damage carried in from the source checkout,
 # which after a crash is as likely to have been hit as the release.
+#
+# A hard-linked node_modules is not read: those are the donor release's files,
+# checked when it was staged and never written since, and a first read of
+# 33,000 new paths costs this host about seven minutes.
 . (Join-Path $PSScriptRoot 'release-integrity.ps1')
-$integrity = Find-ZeroFilledFiles $target
+$skip = if ($linkedFrom) { @('node_modules') } else { @() }
+$integrity = Find-ZeroFilledFiles $target -SkipTopLevel $skip
 if ($integrity.Damaged.Count -gt 0) {
   throw ("staged release has $($integrity.Damaged.Count) zero-filled file(s); do not activate it:`n" + ($integrity.Damaged -join "`n"))
 }
 Write-Output ("VERIFIED_FILES=" + $integrity.Checked)
+Write-Phase 'verify'
+
+<#
+The record activation trusts instead of reading every file again: which boot
+this release was flushed and checked in. Zero-fill needs a crash, and a crash
+is a new boot, so while the boot is the same nothing here can have changed.
+It is written after the flush on purpose: if a crash takes it, the release
+simply has no record, and activation reads every file, as it always did.
+#>
+$bootTicks = (Get-CimInstance Win32_OperatingSystem).LastBootUpTime.ToUniversalTime().Ticks
+[ordered]@{
+  checkedFiles = $integrity.Checked
+  linkedFiles  = $linkedFiles
+  linkedFrom   = $linkedFrom
+  bootTicks    = $bootTicks
+  verifiedAt   = (Get-Date).ToUniversalTime().ToString('o')
+} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $target 'INTEGRITY.json') -Encoding UTF8
 
 Write-Output "STAGED=$Version"
 Write-Output "PATH=$target"
