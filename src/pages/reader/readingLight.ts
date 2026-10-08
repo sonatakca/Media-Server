@@ -619,22 +619,28 @@ export class ReadingLight {
     /*
      * Safari repaints a block's text whenever its mask or opacity changes, and
      * with a long paragraph near a far-reaching light that was most of every
-     * frame: the light stepped at a few frames a second after each scroll. A
-     * block that carries ink of its own near the light gets a layer, so a
-     * change repaints only its mask (opacity alone is pure compositing). It
-     * gives the layer up once out of reach, where its ink no longer moves, so
-     * a book read through does not hold a layer for every paragraph passed.
+     * frame: the light stepped at a few frames a second after each scroll.
+     * While the light is on, every block within its reach gets a layer, so a
+     * change repaints only its mask (opacity alone is pure compositing). The
+     * layer goes with reach, not with ink: a block that came to full ink and
+     * gave its layer up would be painted back into the page, a long frame
+     * every time. It is given up only well out of reach, where its ink no
+     * longer moves, so a book read through does not hold a layer for every
+     * paragraph passed, and a block at the edge does not flip between the two.
      */
-    const margin = span + view.height * 0.5;
     const layered = new Set<HTMLElement>();
-    for (const { block, top } of near) {
-      if (
-        // Ink of its own: an opacity or a mask (`written` joins them with |).
-        /[^|]/.test(block.written) &&
-        top + block.bottom - block.top > view.top - margin &&
-        top < view.bottom + margin
-      ) {
-        layered.add(block.element);
+    if (!unlit) {
+      const margin = span + view.height * 0.5;
+      for (const { block, top } of near) {
+        const reach = this.layered.has(block.element)
+          ? margin + view.height * 0.5
+          : margin;
+        if (
+          top + block.bottom - block.top > view.top - reach &&
+          top < view.bottom + reach
+        ) {
+          layered.add(block.element);
+        }
       }
     }
     for (const element of this.layered) {
