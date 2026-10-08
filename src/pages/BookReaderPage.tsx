@@ -100,12 +100,10 @@ import {
   highlightName,
   isHighlight,
   minutesForLocations,
-  readBookmarks,
   isReaderPlace,
   readReaderProgress,
   readStoredReaderSettings,
   themePalettes,
-  writeBookmarks,
   writeJsonStorage,
   writeReaderProgress,
   type EpubContentView,
@@ -115,6 +113,7 @@ import {
   type ReaderPlace,
   type ReaderSettings,
 } from "./reader/readerModel";
+import { useReaderMarks } from "./reader/readerMarks";
 import {
   getBookPosition,
   saveBookPosition,
@@ -556,7 +555,10 @@ export function BookReaderPage() {
   const [bookMeta, setBookMeta] = useState({ author: "", language: "" });
   const [reading, setReading] = useState<ReadingState | null>(null);
   const [columnBox, setColumnBox] = useState<ColumnBox | null>(null);
-  const [bookmarks, setBookmarks] = useState<ReaderBookmark[]>([]);
+  // The account's, on every device it reads on.
+  const { marks: bookmarks, commit: commitBookmarks } = useReaderMarks(
+    item?.Id,
+  );
   const [highlightTarget, setHighlightTarget] =
     useState<HighlightTarget | null>(null);
   const [currentCfi, setCurrentCfi] = useState<string | null>(null);
@@ -809,7 +811,6 @@ export function BookReaderPage() {
     setTextContent(null);
     setScrollProgress(0);
     setHighlightTarget(null);
-    setBookmarks(activeItemId ? readBookmarks(activeItemId) : []);
   }, [activeItemId]);
 
   /* ---------------- EPUB ---------------- */
@@ -2302,17 +2303,17 @@ export function BookReaderPage() {
     }
 
     if (isBookmarked) {
-      const next = bookmarks.filter(
-        (bookmark) =>
-          isHighlight(bookmark) ||
-          (bookmark.cfi !== currentCfi &&
-            !(
-              bookmark.progress !== null &&
-              Math.abs(bookmark.progress - bookFraction) < 0.0025
-            )),
+      commitBookmarks((current) =>
+        current.filter(
+          (bookmark) =>
+            isHighlight(bookmark) ||
+            (bookmark.cfi !== currentCfi &&
+              !(
+                bookmark.progress !== null &&
+                Math.abs(bookmark.progress - bookFraction) < 0.0025
+              )),
+        ),
       );
-      setBookmarks(next);
-      writeBookmarks(activeItemId, next);
       return;
     }
 
@@ -2341,16 +2342,12 @@ export function BookReaderPage() {
       progress: bookFraction,
       createdAt: Date.now(),
     };
-    const next = [...bookmarks, bookmark].sort(
-      (a, b) => (a.progress ?? 0) - (b.progress ?? 0),
-    );
-    setBookmarks(next);
-    writeBookmarks(activeItemId, next);
+    commitBookmarks((current) => [...current, bookmark]);
   }, [
     activeItemId,
     bookFraction,
-    bookmarks,
     chapterLabel,
+    commitBookmarks,
     currentCfi,
     isBookmarked,
     title,
@@ -2361,11 +2358,11 @@ export function BookReaderPage() {
       if (!activeItemId) {
         return;
       }
-      const next = bookmarks.filter((bookmark) => bookmark.id !== id);
-      setBookmarks(next);
-      writeBookmarks(activeItemId, next);
+      commitBookmarks((current) =>
+        current.filter((bookmark) => bookmark.id !== id),
+      );
     },
-    [activeItemId, bookmarks],
+    [activeItemId, commitBookmarks],
   );
 
   const highlightColor =
@@ -2386,16 +2383,16 @@ export function BookReaderPage() {
         return;
       }
 
-      const existing = bookmarks.find((bookmark) =>
+      const isTarget = (bookmark: ReaderBookmark) =>
         target.kind === "highlight"
           ? bookmark.id === target.id
-          : isHighlight(bookmark) && bookmark.cfi === target.cfi,
-      );
-      let next: ReaderBookmark[];
+          : isHighlight(bookmark) && bookmark.cfi === target.cfi;
 
-      if (existing) {
-        next = bookmarks.map((bookmark) =>
-          bookmark === existing ? { ...bookmark, color } : bookmark,
+      if (bookmarks.some(isTarget)) {
+        commitBookmarks((current) =>
+          current.map((bookmark) =>
+            isTarget(bookmark) ? { ...bookmark, color } : bookmark,
+          ),
         );
       } else if (target.kind === "selection") {
         const chapterIndex =
@@ -2411,9 +2408,7 @@ export function BookReaderPage() {
           createdAt: Date.now(),
           color,
         };
-        next = [...bookmarks, highlight].sort(
-          (a, b) => (a.progress ?? 0) - (b.progress ?? 0),
-        );
+        commitBookmarks((current) => [...current, highlight]);
       } else {
         return;
       }
@@ -2422,8 +2417,6 @@ export function BookReaderPage() {
         rangeDocument(target.range)?.getSelection()?.removeAllRanges();
       }
 
-      setBookmarks(next);
-      writeBookmarks(activeItemId, next);
       setHighlightTarget(null);
     },
     [
@@ -2432,6 +2425,7 @@ export function BookReaderPage() {
       bookMap,
       bookmarks,
       chapterLabel,
+      commitBookmarks,
       hasChapters,
       highlightTarget,
       title,

@@ -41,6 +41,8 @@ import { migrateTitleArtwork } from "./images/titleArtworkMigration";
 import { createBookRoutes } from "./books/bookRoutes";
 import { createBookPositionRepository } from "./books/bookPositionRepository";
 import { createBookPositionRoutes } from "./books/bookPositionRoutes";
+import { createBookMarkRepository } from "./books/bookMarkRepository";
+import { createBookMarkRoutes } from "./books/bookMarkRoutes";
 import { createBookSearch } from "./books/bookSearch";
 import { createBookSearchProcess } from "./books/bookSearchProcess";
 import { createBookSearchRoutes } from "./books/bookSearchRoutes";
@@ -398,6 +400,7 @@ export async function createNativeRuntime({
   const images = createImageRepository(pool);
   const userState = createUserStateRepository(pool);
   const bookPositions = createBookPositionRepository(pool);
+  const bookMarks = createBookMarkRepository(pool);
   // Nothing starts until a book is first searched: the model downloads into
   // generated storage then, and runs in its own low-priority process.
   const bookSearch = createBookSearch({
@@ -1529,6 +1532,7 @@ export async function createNativeRuntime({
     ...createCurationRoutes({ curation, catalogue }),
     ...createProgressRoutes({ userState, catalogue }),
     ...createBookPositionRoutes({ positions: bookPositions, catalogue }),
+    ...createBookMarkRoutes({ marks: bookMarks, catalogue }),
     ...createPlaybackRoutes({
       catalogue,
       sessions: playbackSessions,

@@ -90,6 +90,8 @@ export interface ReaderBookmark {
   excerpt: string;
   progress: number | null;
   createdAt: number;
+  /** When it last changed, as the server orders changes; see readerMarks. */
+  changedAt?: number;
   /**
    * Set on a highlight: `cfi` is then the range it covers and `excerpt` the
    * text it marks. Highlights live in the bookmark list, so the reader finds
@@ -163,6 +165,7 @@ export interface EpubContentView {
 
 export const READER_SETTINGS_KEY = "seyirlik.reader.settings";
 export const READER_PROGRESS_KEY = "seyirlik.reader.progress";
+/** Where bookmarks were kept before the account kept them; see readerMarks. */
 export const READER_BOOKMARKS_KEY = "seyirlik.reader.bookmarks";
 
 export const READER_THEMES: ReaderTheme[] = ["night", "dim", "sepia", "paper"];
@@ -437,39 +440,6 @@ export function writeReaderProgress(
     updatedAt: Date.now(),
   };
   writeJsonStorage(READER_PROGRESS_KEY, progress);
-}
-
-export function readBookmarks(itemId: string): ReaderBookmark[] {
-  const bookmarks = readJsonStorage<ReaderBookmarkMap>(
-    READER_BOOKMARKS_KEY,
-    {},
-  );
-  const list = bookmarks[itemId];
-
-  return Array.isArray(list)
-    ? list.filter(
-        (bookmark) =>
-          typeof bookmark?.cfi === "string" &&
-          typeof bookmark.id === "string" &&
-          (bookmark.color === undefined ||
-            HIGHLIGHT_COLORS.includes(bookmark.color)),
-      )
-    : [];
-}
-
-export function writeBookmarks(itemId: string, list: ReaderBookmark[]): void {
-  const bookmarks = readJsonStorage<ReaderBookmarkMap>(
-    READER_BOOKMARKS_KEY,
-    {},
-  );
-
-  if (list.length > 0) {
-    bookmarks[itemId] = list;
-  } else {
-    delete bookmarks[itemId];
-  }
-
-  writeJsonStorage(READER_BOOKMARKS_KEY, bookmarks);
 }
 
 /** Minutes to read a span of generated epub.js locations. */
