@@ -198,9 +198,17 @@ export function HeroControlButton({
  * Room around the overview's reveal for its text's shade: the sides and top
  * get the shade's full reach, the foot only as much as the gap above the
  * actions allows.
+ *
+ * The reveal still needs an edge there, because the overview rises from
+ * under the facts and must not show below them over the actions, but the
+ * edge is a fade, not a cut: the foot fades out over its whole height, so a
+ * line rising through it fades in, and the last line's shadow at rest thins
+ * out instead of stopping in a straight line. The text itself ends where the
+ * fade begins, so it is never dimmed at rest.
  */
-const OVERVIEW_SHADE_ROOM_PX = 24;
+const OVERVIEW_SHADE_ROOM_PX = 40;
 const OVERVIEW_SHADE_FOOT_PX = 12;
+const OVERVIEW_REVEAL_MASK = `linear-gradient(to bottom, #000 calc(100% - ${OVERVIEW_SHADE_FOOT_PX}px), transparent 100%)`;
 
 /**
  * How bright the copy under the title needs to be, 0–1, from the brightness
@@ -243,17 +251,16 @@ function useCopyShade(
  * behind it needs, always on a black cloud of its own shape. The cloud
  * follows the letters, so it shades the words and nothing around them.
  *
- * Over bright art it is a crisp black edge and a cloud; over dark art a
- * heavier, wider cloud. That is the user's own pick from both kinds of
- * picture: the heavier one turns into a smudge on a white sky, and the
- * lighter one leaves the words thin on a dark, busy one. Which one comes from
- * the brightness measured behind the facts line (`useCopyShade`), and until
- * that arrives the copy stands on the heavier one.
+ * Over bright art the cloud is denser; over dark art lighter and wider. A
+ * one-pixel black edge was tried and read as an outline, too heavy and too
+ * sharp on a real screen. Which one comes from the brightness measured
+ * behind the facts line (`useCopyShade`), and until that arrives the copy
+ * stands on the dark-art one.
  *
  * It is a filter, not a text shadow, because a filter is drawn after the
  * text is truncated and clamped: a text shadow is clipped with the text, and
- * ends in a rectangle. The widest blur is the 16px the overview's room
- * (OVERVIEW_SHADE_ROOM_PX) was sized for.
+ * ends in a rectangle. The widest blur, 20px, fits the overview's room
+ * (OVERVIEW_SHADE_ROOM_PX).
  */
 function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
   const a = (value: number) => value.toFixed(3);
@@ -379,9 +386,12 @@ function HeroCopy({
       {metadata.overview ? (
         <div
           id={overviewId}
-          className="absolute overflow-hidden"
+          className="pointer-events-none absolute overflow-hidden"
           style={{
-            // The reveal's clip, widened by the room the text's shade needs.
+            // The reveal's clip, widened by the room the text's shade needs,
+            // and soft along the foot (see OVERVIEW_SHADE_FOOT_PX).
+            WebkitMaskImage: OVERVIEW_REVEAL_MASK,
+            maskImage: OVERVIEW_REVEAL_MASK,
             left: -OVERVIEW_SHADE_ROOM_PX,
             right: -OVERVIEW_SHADE_ROOM_PX,
             bottom:

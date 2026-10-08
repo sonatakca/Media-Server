@@ -6,8 +6,8 @@ describe("the hero copy's shadow", () => {
     const bright = copyShadowFor(1);
     const dark = copyShadowFor(0.25);
     expect(bright).not.toBe(dark);
-    expect(bright.match(/drop-shadow/g)).toHaveLength(4);
-    expect(dark.match(/drop-shadow/g)).toHaveLength(5);
+    // Soft clouds, never a one-pixel outline.
+    for (const shadow of [bright, dark]) expect(shadow).not.toMatch(/0 0 1px/);
     // Before the artwork is measured the copy stands on the heavier one.
     expect(copyShadowFor(0.5)).toBe(dark);
   });
