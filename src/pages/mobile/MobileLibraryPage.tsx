@@ -197,7 +197,7 @@ function MobileLibraryLoading() {
         <div className="shimmer h-12 min-w-0 flex-1 rounded-full" />
         <div className="shimmer h-12 w-[7.4rem] shrink-0 rounded-full" />
       </div>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]">
+      <div className="grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)] min-[600px]:grid-cols-3">
         {Array.from({ length: 4 }, (_, index) => (
           <div key={index} className="shimmer aspect-[2/3] rounded-xl" />
         ))}
@@ -818,7 +818,7 @@ export function MobileLibraryPage({
           className={
             usesLandscapeCards
               ? "relative mx-auto grid max-w-sm grid-cols-1 gap-3"
-              : "relative grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)]"
+              : "relative grid grid-cols-2 gap-x-3 gap-y-4 px-[clamp(0.5rem,4vw,1.75rem)] min-[600px]:grid-cols-3"
           }
         >
           {filteredItems.map((item) => (
