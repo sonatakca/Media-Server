@@ -355,6 +355,8 @@ export class ReadingLight {
   private shape: ReaderLightShape = DEFAULT_READER_SETTINGS.lightShape;
   private reach = DEFAULT_READER_SETTINGS.paragraphReach;
   private fading = false;
+  /** The blocks given a layer of their own last frame (see `frame`). */
+  private layered = new Set<HTMLElement>();
 
   constructor(private readonly viewport: HTMLElement) {}
 
@@ -407,6 +409,7 @@ export class ReadingLight {
 
   clear() {
     this.documents.clear();
+    this.layered.clear();
   }
 
   /** Lights the text for the current scroll position and reports where the reading line is. */
@@ -612,6 +615,39 @@ export class ReadingLight {
         }
       }
     }
+
+    /*
+     * Safari repaints a block's text whenever its mask or opacity changes, and
+     * with a long paragraph near a far-reaching light that was most of every
+     * frame: the light stepped at a few frames a second after each scroll. A
+     * block that carries ink of its own near the light gets a layer, so a
+     * change repaints only its mask (opacity alone is pure compositing). It
+     * gives the layer up once out of reach, where its ink no longer moves, so
+     * a book read through does not hold a layer for every paragraph passed.
+     */
+    const margin = span + view.height * 0.5;
+    const layered = new Set<HTMLElement>();
+    for (const { block, top } of near) {
+      if (
+        // Ink of its own: an opacity or a mask (`written` joins them with |).
+        /[^|]/.test(block.written) &&
+        top + block.bottom - block.top > view.top - margin &&
+        top < view.bottom + margin
+      ) {
+        layered.add(block.element);
+      }
+    }
+    for (const element of this.layered) {
+      if (!layered.has(element)) {
+        element.style.removeProperty("will-change");
+      }
+    }
+    for (const element of layered) {
+      if (!this.layered.has(element)) {
+        element.style.setProperty("will-change", "transform");
+      }
+    }
+    this.layered = layered;
 
     // A document rests once it is out of the light and none of its lines is
     // still fading there.
