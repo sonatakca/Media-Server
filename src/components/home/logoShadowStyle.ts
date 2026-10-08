@@ -53,9 +53,9 @@ export function useLogoShadow(
 }
 
 /**
- * The halo a logo on stage stands on: its own shape, blurred, dark behind a
- * light logo and light behind a dark one, as strong as the artwork behind it
- * needs. Over a dark picture it is little more than the resting drop shadow;
+ * The halo a logo on stage stands on: its own shape, blurred, always black
+ * (never a light glow, whatever the logo's colour), as strong as the artwork
+ * behind it needs. Over a dark picture it is little more than the resting drop shadow;
  * over a white sky it is what keeps a white logo there at all. Blur is in
  * the title box's own px, which the resting title shows at 0.6×.
  */
@@ -63,8 +63,7 @@ export function stageLogoFilter(shadow: LogoShadow, presence: number): string {
   const base = "drop-shadow(0 6px 30px rgba(0,0,0,0.55))";
   const s = shadow.strength * presence;
   if (s <= 0.01) return base;
-  const rgb = shadow.tone === "dark" ? "0,0,0" : "255,255,255";
-  return `drop-shadow(0 0 3px rgba(${rgb},${(0.55 * s).toFixed(3)})) drop-shadow(0 0 22px rgba(${rgb},${(0.6 * s).toFixed(3)})) ${base}`;
+  return `drop-shadow(0 0 3px rgba(0,0,0,${(0.55 * s).toFixed(3)})) drop-shadow(0 0 22px rgba(0,0,0,${(0.6 * s).toFixed(3)})) ${base}`;
 }
 
 /**

@@ -413,13 +413,13 @@ export function PlayerOverlay({
                 >
                   {displayedIsPlaying ? (
                     <Pause
-                      className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:h-[42px] sm:w-[42px]"
+                      className="h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))] sm:h-[42px] sm:w-[42px]"
                       fill="currentColor"
                       strokeWidth={2.2}
                     />
                   ) : (
                     <Play
-                      className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))_drop-shadow(0_0_7px_rgba(255,255,255,0.16))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
+                      className="ml-0.5 h-7 w-7 [filter:drop-shadow(0_2px_4px_rgba(0,0,0,0.45))] sm:ml-1 sm:h-[44px] sm:w-[44px]"
                       fill="currentColor"
                       strokeWidth={2.2}
                     />

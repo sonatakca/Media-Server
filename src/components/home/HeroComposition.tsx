@@ -210,7 +210,7 @@ export function HeroComposition({
       return queueMove.scale + (scale - queueMove.scale) * p;
     },
   );
-  // A silhouette of the logo under it, dark or light against the artwork,
+  // A black silhouette of the logo under it, as strong as the artwork needs,
   // for as long as the frame is a miniature.
   const shadow = useLogoShadow(logoUrl, artwork?.url, QUEUE_LOGO_REGION);
   const silhouetteOpacity = useTransform(toStage, (p) =>
@@ -363,7 +363,7 @@ export function HeroComposition({
                   padding: silhouetteReach,
                   opacity: silhouetteOpacity,
                   y: QUEUE_SHADOW_DROP_PX / onScreen,
-                  filter: `brightness(0)${shadow.tone === "light" ? " invert(1)" : ""} blur(${silhouetteBlur}px)`,
+                  filter: `brightness(0) blur(${silhouetteBlur}px)`,
                 }}
               >
                 <img

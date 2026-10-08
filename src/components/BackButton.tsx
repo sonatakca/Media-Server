@@ -25,7 +25,7 @@ interface BackButtonProps {
 const HERO_SURFACE =
   "inline-flex items-center rounded-full border border-white/[0.14] bg-[#0b0c0e]/90 p-[3px] backdrop-blur-xl hover:border-white/[0.22] hover:bg-[#16171a]/90";
 const GLASS_HOVER =
-  "hover:border-white/16 hover:bg-white/[0.09] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(0,0,0,0.24),0_0_12px_rgba(255,255,255,0.035),0_10px_35px_rgba(0,0,0,0.28)]";
+  "hover:border-white/16 hover:bg-white/[0.09] hover:shadow-[inset_0_1px_0_rgba(255,255,255,0.075),inset_0_-1px_0_rgba(0,0,0,0.24),0_10px_35px_rgba(0,0,0,0.28)]";
 
 const APP_ROUTE_HISTORY_KEY = "seyirlik.appRouteHistory";
 
