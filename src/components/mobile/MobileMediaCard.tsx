@@ -28,7 +28,7 @@ import {
   getLogoLayout,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
 } from "../../lib/logoLayout";
 import type { MediaItem } from "../../lib/types";
 import { getItemProgressPercent, isItemCompleted } from "../../lib/watchStatus";
@@ -216,7 +216,7 @@ export function MobileMediaCard({
 
   const logoLayout = getLogoLayout(item);
   const logoShadow = logoLayout
-    ? getLogoShadowFilter(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
+    ? getLogoShadowFrameStyle(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
     : undefined;
   const logoShadowBackdrop = logoLayout
     ? getLogoShadowBackdropStyle(logoLayout.shadow, PHONE_CARD_SHADOW_SCALE)
@@ -292,14 +292,19 @@ export function MobileMediaCard({
                   className="absolute inset-[6%] rounded-[45%]"
                 />
               ) : null}
-              <img
-                src={logoUrl}
-                alt={mainTitle}
-                loading="lazy"
-                decoding="async"
-                style={logoShadow ? { filter: logoShadow } : undefined}
-                className="relative z-10 block h-auto w-full object-contain"
-              />
+              <div
+                data-logo-shadow="true"
+                style={logoShadow}
+                className="relative z-10"
+              >
+                <img
+                  src={logoUrl}
+                  alt={mainTitle}
+                  loading="lazy"
+                  decoding="async"
+                  className="block h-auto w-full object-contain"
+                />
+              </div>
             </div>
           ) : logoUrl ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center bg-gradient-to-t from-black/75 via-black/20 to-transparent px-3 pb-3 pt-12 min-[390px]:px-4 min-[390px]:pb-4">

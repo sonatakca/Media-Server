@@ -66,7 +66,10 @@ describe("a phone poster card's logo", () => {
     expect(placed.style.left).toBe("50%");
     expect(placed.style.top).toBe("13%");
     expect(placed.style.width).toBe("86%");
-    expect(logo().style.filter).toContain("drop-shadow");
+    const shadow = logo().closest('[data-logo-shadow="true"]') as HTMLElement;
+    expect(shadow.style.filter).toContain("drop-shadow");
+    expect(shadow.style.padding).not.toBe("");
+    expect(logo().style.filter).toBe("");
   });
 
   it("keeps its foot placement when it was never placed", () => {

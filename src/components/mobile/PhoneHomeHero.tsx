@@ -37,7 +37,7 @@ import {
   getLogoLayout,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
 } from "../../lib/logoLayout";
 import {
   getBackdropImageUrl,
@@ -250,7 +250,7 @@ function DeckCard({
   const layout = stored ?? INITIAL_LOGO_LAYOUT;
   // The tool's shadow is measured on a 200px card; this one is larger.
   const shadowScale = step > 0 ? step / LOGO_SHADOW_REFERENCE_WIDTH : 1;
-  const logoShadow = getLogoShadowFilter(layout.shadow, shadowScale);
+  const logoShadow = getLogoShadowFrameStyle(layout.shadow, shadowScale);
   const logoBackdrop = stored
     ? getLogoShadowBackdropStyle(stored.shadow, shadowScale)
     : undefined;
@@ -288,13 +288,18 @@ function DeckCard({
                 className="absolute inset-[6%] rounded-[45%]"
               />
             ) : null}
-            <img
-              src={logoUrl}
-              alt=""
-              draggable={false}
-              style={logoShadow ? { filter: logoShadow } : undefined}
-              className="relative z-10 block h-auto w-full select-none object-contain"
-            />
+            <div
+              data-logo-shadow="true"
+              style={logoShadow}
+              className="relative z-10"
+            >
+              <img
+                src={logoUrl}
+                alt=""
+                draggable={false}
+                className="block h-auto w-full select-none object-contain"
+              />
+            </div>
           </div>
         ) : (
           <p className="text-cinematic-title pointer-events-none absolute inset-x-0 bottom-[8%] z-20 line-clamp-2 px-5 text-center text-[2rem] font-black uppercase leading-[0.9] text-white drop-shadow-[0_10px_22px_rgba(0,0,0,0.95)]">

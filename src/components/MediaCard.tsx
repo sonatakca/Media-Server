@@ -25,7 +25,7 @@ import {
   getLogoLayout,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
 } from "../lib/logoLayout";
 import { useLanguage } from "../i18n/LanguageContext";
 import type { TranslationKey } from "../i18n/translations";
@@ -295,7 +295,7 @@ export function MediaCard({
   );
 
   const logoLayout = getLogoLayout(item);
-  const logoShadowFilter = getLogoShadowFilter(
+  const logoShadowFrame = getLogoShadowFrameStyle(
     logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
   );
   const logoShadowBackdropStyle = logoLayout
@@ -584,25 +584,34 @@ export function MediaCard({
                 className="absolute inset-[6%] rounded-[45%]"
               />
             ) : null}
+            <div
+              data-logo-shadow="true"
+              style={logoShadowFrame}
+              className="relative z-10"
+            >
+              <img
+                src={logoUrl}
+                alt={displayTitle}
+                className="block h-auto w-full object-contain"
+              />
+            </div>
+          </div>
+        ) : logoUrl ? (
+          // Nothing sits behind the logo any more — no gradient, no tags — so
+          // its own shadow is the only thing separating it from the artwork.
+          // The frame spans the card; the logo is centred on its foot, and
+          // its height follows its width so the aspect ratio is preserved.
+          <div
+            data-logo-shadow="true"
+            style={logoShadowFrame}
+            className="pointer-events-none absolute inset-x-0 bottom-4 z-20 flex items-end justify-center"
+          >
             <img
               src={logoUrl}
               alt={displayTitle}
-              style={
-                logoShadowFilter ? { filter: logoShadowFilter } : undefined
-              }
-              className="relative z-10 block h-auto w-full object-contain"
+              className="h-auto max-h-16 w-auto max-w-[80%] object-contain sm:max-h-24"
             />
           </div>
-        ) : logoUrl ? (
-          <img
-            src={logoUrl}
-            alt={displayTitle}
-            style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
-            // Nothing sits behind the logo any more — no gradient, no tags — so
-            // its own shadow is the only thing separating it from the artwork.
-            // Height follows width so the aspect ratio is preserved.
-            className="pointer-events-none absolute inset-x-0 bottom-4 z-20 mx-auto h-auto max-h-16 w-auto max-w-[80%] object-contain sm:max-h-24"
-          />
         ) : (
           // A card with neither logo nor title would be unidentifiable, so the
           // title stands in — carrying its own shadow for the same reason.

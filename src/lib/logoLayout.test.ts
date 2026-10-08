@@ -9,6 +9,8 @@ import {
   getLogoLayout,
   getLogoShadowBackdropStyle,
   getLogoShadowFilter,
+  getLogoShadowFrameStyle,
+  getDropShadowReach,
   getLogoLayoutStyle,
   moveLogoLayout,
   resizeLogoLayout,
@@ -109,6 +111,23 @@ describe("shadow", () => {
     expect(strongBackdrop?.background).toContain("rgba(0, 0, 0, 0.76) 0%");
     // iOS Safari clips a blurred element to its box and drew a hard rectangle.
     expect(strongBackdrop).not.toHaveProperty("filter");
+  });
+
+  it("puts the shadow on a frame that already holds all of it", () => {
+    // iOS WebKit can redraw a filtered element clipped to its own box, which
+    // cut the shadow into a hard-edged rectangle when the box was the image's.
+    expect(getLogoShadowFrameStyle(0)).toBeUndefined();
+    expect(getDropShadowReach(getLogoShadowFilter(1)!)).toBe(
+      14 + 1.5 * 34 + 1.5 * 18,
+    );
+    // The strongest setting adds two tight shadows to the chain.
+    expect(getDropShadowReach(getLogoShadowFilter(2)!)).toBe(
+      1.5 * 2 + 1.5 * 6 + 14 + 1.5 * 34 + 1.5 * 18,
+    );
+    const frame = getLogoShadowFrameStyle(1, 0.75);
+    expect(frame?.filter).toBe(getLogoShadowFilter(1, 0.75));
+    expect(frame?.padding).toBe("71px");
+    expect(frame?.margin).toBe("-71px");
   });
 
   it("falls back to the default when the strength is not a number", () => {

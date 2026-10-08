@@ -6,7 +6,7 @@ import {
   LOGO_SHADOW_REFERENCE_WIDTH,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
 } from "../../lib/logoLayout";
 
 /**
@@ -40,7 +40,7 @@ export function TitlePoster({
     showCover && artwork.logoTag !== null && failedLogo !== artwork.logoTag;
   const layout = artwork.logoLayout;
   const scale = width / LOGO_SHADOW_REFERENCE_WIDTH;
-  const shadowFilter = getLogoShadowFilter(
+  const shadowFrame = getLogoShadowFrameStyle(
     layout?.shadow ?? DEFAULT_LOGO_SHADOW,
     scale,
   );
@@ -50,24 +50,38 @@ export function TitlePoster({
   // Poster and logo requests sized for a sharp image at this width.
   const request = Math.max(80, Math.round(width * 2.5));
 
+  const height = Math.round(width * 1.5);
+
+  // The frame carries the shadow (see getLogoShadowFrameStyle). Unplaced, it
+  // spans the foot of the poster and centres the logo in it.
   const logo = showLogo ? (
-    <img
-      src={getLogoImageUrl(itemId, artwork.logoTag ?? undefined, request)}
-      alt=""
-      style={shadowFilter ? { filter: shadowFilter } : undefined}
-      onError={() => setFailedLogo(artwork.logoTag)}
+    <div
+      data-logo-shadow="true"
+      style={shadowFrame}
       className={
         layout
-          ? "relative z-10 block h-auto w-full object-contain"
-          : "pointer-events-none absolute inset-x-0 bottom-[6%] z-10 mx-auto h-auto max-h-[22%] w-auto max-w-[80%] object-contain"
+          ? "relative z-10"
+          : "pointer-events-none absolute inset-x-0 bottom-[6%] z-10 flex items-end justify-center"
       }
-    />
+    >
+      <img
+        src={getLogoImageUrl(itemId, artwork.logoTag ?? undefined, request)}
+        alt=""
+        onError={() => setFailedLogo(artwork.logoTag)}
+        style={layout ? undefined : { maxHeight: height * 0.22 }}
+        className={
+          layout
+            ? "block h-auto w-full object-contain"
+            : "h-auto w-auto max-w-[80%] object-contain"
+        }
+      />
+    </div>
   ) : null;
 
   return (
     <div
       className={`relative shrink-0 overflow-hidden bg-white/[0.04] ${className}`}
-      style={{ width, height: Math.round(width * 1.5) }}
+      style={{ width, height }}
       aria-hidden="true"
       data-title={title}
     >

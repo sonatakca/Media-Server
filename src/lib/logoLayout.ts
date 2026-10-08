@@ -213,6 +213,44 @@ export function getLogoShadowFilter(
 }
 
 /**
+ * The logo's drop-shadows, on a frame wide enough to hold all of them.
+ *
+ * The filter goes on an element around the logo, padded out by the shadow's
+ * full reach and pulled back by the same negative margin, so its content box
+ * is exactly where the logo was and nothing moves. Never on the `<img>`
+ * itself: after an iPad had been in use for a while, iOS WebKit redrew the
+ * filtered image clipped to the image's own box, and the shadow showed as a
+ * tinted rectangle with straight edges. This box already holds every pixel of
+ * the shadow, so clipping to it cuts nothing.
+ */
+export function getLogoShadowFrameStyle(
+  shadow: number,
+  sizeScale = 1,
+): { filter: string; padding: string; margin: string } | undefined {
+  const filter = getLogoShadowFilter(shadow, sizeScale);
+  if (!filter) return undefined;
+  const reach = Math.ceil(getDropShadowReach(filter));
+  return { filter, padding: `${reach}px`, margin: `-${reach}px` };
+}
+
+/**
+ * How far a chain of `drop-shadow()`s can paint past the shape casting it.
+ * Each one casts from the output of the one before, so their reaches add up.
+ * A blur of radius r fades out by about 1.4r in WebKit and Chromium; 1.5r
+ * leaves a margin.
+ */
+export function getDropShadowReach(filter: string): number {
+  let reach = 0;
+  for (const [, x, y, blur] of filter.matchAll(
+    /drop-shadow\(\s*(-?[\d.]+)(?:px)?\s+(-?[\d.]+)(?:px)?\s+([\d.]+)px/g,
+  )) {
+    reach += Math.max(Math.abs(Number(x)), Math.abs(Number(y)));
+    reach += 1.5 * Number(blur);
+  }
+  return reach;
+}
+
+/**
  * A soft field behind the complete logo image.
  *
  * `drop-shadow()` follows transparent pixels, which is ideal for provider

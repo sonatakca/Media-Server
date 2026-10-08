@@ -18,7 +18,7 @@ import {
   getLogoLayout,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
 } from "../../lib/logoLayout";
 import { getMediaArtwork } from "../../lib/mediaArtwork";
 import { getLatestMediaItems, searchItems } from "../../lib/mediaApi";
@@ -75,21 +75,26 @@ function getResultSubtitle(item: MediaItem): string {
  */
 function ResultLogo({ item, logoUrl }: { item: MediaItem; logoUrl: string }) {
   const logoLayout = getLogoLayout(item);
-  const logoShadowFilter = getLogoShadowFilter(
+  const logoShadowFrame = getLogoShadowFrameStyle(
     logoLayout?.shadow ?? DEFAULT_LOGO_SHADOW,
   );
 
   if (!logoLayout) {
     // Never adjusted, so it sits where an untouched card draws it.
     return (
-      <img
-        src={logoUrl}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
-        className="pointer-events-none absolute inset-x-0 bottom-1.5 mx-auto h-auto max-h-[42%] w-auto max-w-[82%] object-contain"
-      />
+      <span
+        data-logo-shadow="true"
+        style={logoShadowFrame}
+        className="pointer-events-none absolute inset-0 flex items-end justify-center"
+      >
+        <img
+          src={logoUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          className="mb-1.5 h-auto max-h-[42%] w-auto max-w-[82%] object-contain"
+        />
+      </span>
     );
   }
 
@@ -109,14 +114,19 @@ function ResultLogo({ item, logoUrl }: { item: MediaItem; logoUrl: string }) {
           className="absolute inset-[6%] rounded-[45%]"
         />
       ) : null}
-      <img
-        src={logoUrl}
-        alt=""
-        aria-hidden="true"
-        loading="lazy"
-        style={logoShadowFilter ? { filter: logoShadowFilter } : undefined}
-        className="relative block h-auto w-full object-contain"
-      />
+      <span
+        data-logo-shadow="true"
+        style={logoShadowFrame}
+        className="relative block"
+      >
+        <img
+          src={logoUrl}
+          alt=""
+          aria-hidden="true"
+          loading="lazy"
+          className="block h-auto w-full object-contain"
+        />
+      </span>
     </span>
   );
 }

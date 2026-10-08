@@ -195,8 +195,11 @@ it("carries a saved placement to the list thumbnail at once", async () => {
   // Shadow 0: the thumbnail's logo has no filter any more.
   await waitFor(() =>
     expect(
-      (row.querySelector('[data-logo-layout="true"] img') as HTMLElement)?.style
-        .filter,
+      (
+        row.querySelector(
+          '[data-logo-layout="true"] [data-logo-shadow="true"]',
+        ) as HTMLElement
+      )?.style.filter,
     ).toBe(""),
   );
 });

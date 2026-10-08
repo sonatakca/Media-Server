@@ -72,6 +72,13 @@ function logo(): HTMLImageElement {
   return found[0] as HTMLImageElement;
 }
 
+/** The element the shadow is drawn on: around the logo, never the image. */
+function logoShadow(): HTMLElement {
+  const frame = logo().closest('[data-logo-shadow="true"]');
+  expect(frame).not.toBeNull();
+  return frame as HTMLElement;
+}
+
 function logoLayout(): HTMLElement {
   const layout = logo().closest('[data-logo-layout="true"]');
   expect(layout).not.toBeNull();
@@ -82,7 +89,7 @@ describe("media card logo layout", () => {
   it("centres an unadjusted logo near the foot of the card", () => {
     renderCard(movie());
 
-    expect(logo().className).toContain("bottom-4");
+    expect(logoShadow().className).toContain("bottom-4");
     // Nothing else is drawn on the card: no gradient, no year, no rating.
     expect(screen.queryByText("2021")).toBeNull();
   });
@@ -105,17 +112,23 @@ describe("media card logo layout", () => {
 
   it("shadows the logo, since nothing else separates it from the artwork", () => {
     renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 1 }));
-    expect(logo().style.filter).toContain("drop-shadow");
+    expect(logoShadow().style.filter).toContain("drop-shadow");
+    // iOS WebKit can clip a filtered image to the image's own box, which drew
+    // the shadow as a hard-edged rectangle. The frame is padded by the
+    // shadow's reach and pulled back by as much, so it holds all of it.
+    expect(logo().style.filter).toBe("");
+    expect(logoShadow().style.padding).toBe("92px");
+    expect(logoShadow().style.margin).toBe("-92px");
   });
 
   it("draws no shadow at all when it is turned off", () => {
     renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 0 }));
-    expect(logo().style.filter).toBe("");
+    expect(logoShadow().style.filter).toBe("");
   });
 
   it("deepens the shadow as the strength rises", () => {
     renderCard(movie({ x: 0.5, y: 0.2, width: 0.5, shadow: 2 }));
-    expect(logo().style.filter).toContain(
+    expect(logoShadow().style.filter).toContain(
       "drop-shadow(0 0 2px rgba(0, 0, 0, 0.90))",
     );
     const backdrop = logoLayout().querySelector<HTMLElement>(

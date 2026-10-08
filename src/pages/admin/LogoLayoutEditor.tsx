@@ -4,7 +4,7 @@ import {
   clampLogoLayout,
   getLogoLayoutStyle,
   getLogoShadowBackdropStyle,
-  getLogoShadowFilter,
+  getLogoShadowFrameStyle,
   moveLogoLayout,
   resizeLogoLayout,
   type LogoLayout,
@@ -64,7 +64,7 @@ export function LogoLayoutEditor({
     "move" | ResizeCorner | null
   >(null);
   const guidesVisible = showGuides || activeGesture !== null;
-  const shadowFilter = getLogoShadowFilter(layout.shadow);
+  const shadowFrame = getLogoShadowFrameStyle(layout.shadow);
   const shadowBackdropStyle = getLogoShadowBackdropStyle(layout.shadow);
 
   /**
@@ -213,13 +213,18 @@ export function LogoLayoutEditor({
           />
         ) : null}
 
-        <img
-          src={logoUrl}
-          alt={title}
-          draggable={false}
-          style={shadowFilter ? { filter: shadowFilter } : undefined}
-          className="pointer-events-none relative z-10 block h-auto w-full object-contain"
-        />
+        <div
+          data-logo-shadow="true"
+          style={shadowFrame}
+          className="pointer-events-none relative z-10"
+        >
+          <img
+            src={logoUrl}
+            alt={title}
+            draggable={false}
+            className="block h-auto w-full object-contain"
+          />
+        </div>
 
         {!disabled
           ? CORNERS.map((corner) => (
