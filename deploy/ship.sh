@@ -35,7 +35,7 @@ log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
 die() { log "STOPPED: $*"; exit 1; }
 since() { echo $(($(date +%s) - $1)); }
 live_commit() {
-  curl -fsS --max-time 10 "https://$1/version.json?probe=$RANDOM" 2>/dev/null |
+  curl -fsSL --max-time 10 "https://$1/version.json?probe=$RANDOM" 2>/dev/null |
     sed -nE 's/.*"commit": *"([0-9a-f]{40})".*/\1/p'
 }
 
