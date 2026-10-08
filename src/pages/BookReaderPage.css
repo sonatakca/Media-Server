@@ -1524,6 +1524,41 @@ body:has(.seyirlik-reader-shell) {
     linear-gradient(90deg, transparent 96%, rgba(0, 0, 0, 0.14));
 }
 
+/* A jump to a chapter not yet on the page: the book has faded out while it
+   loads, so the wait shows as loading, not as an empty page. It comes in late
+   enough that a quick jump never flashes it, and leaves at once. */
+.rd-jumping {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.12s var(--rd-sine);
+}
+
+.rd-jumping[data-on] {
+  opacity: 1;
+  transition: opacity 0.3s var(--rd-sine) 0.18s;
+}
+
+.rd-jumping-ring {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  border: 2.5px solid color-mix(in srgb, var(--rd-ink) 14%, transparent);
+  border-top-color: color-mix(in srgb, var(--rd-ink) 78%, transparent);
+  animation: rd-spin 0.9s linear infinite;
+}
+
+@keyframes rd-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
 .rd-preparing p {
   margin: 0;
   font-size: 0.6875rem;
@@ -1647,6 +1682,7 @@ body:has(.seyirlik-reader-shell) {
   .rd-ruler,
   .rd-timeleft,
   .rd-preparing .rd-book,
+  .rd-jumping-ring,
   .rd-drawer-progress[data-pending],
   .rd-pending-bit,
   .rd-chapter-len[data-pending],

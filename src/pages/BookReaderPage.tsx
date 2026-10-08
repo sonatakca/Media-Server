@@ -562,6 +562,8 @@ export function BookReaderPage() {
   const [currentCfi, setCurrentCfi] = useState<string | null>(null);
   const [currentHref, setCurrentHref] = useState<string | null>(null);
   const [epubReady, setEpubReady] = useState(false);
+  // The book faded out while a chapter not yet on the page loads for a jump.
+  const [jumping, setJumping] = useState(false);
   const [epubProgress, setEpubProgress] = useState(0);
   const [readerError, setReaderError] = useState<string | null>(null);
   const [textContent, setTextContent] = useState<string | null>(null);
@@ -1672,11 +1674,13 @@ export function BookReaderPage() {
           blocksOf.has(content.document),
       );
       if (!rendered) {
+        setJumping(true);
         await veilTo(0, 140);
         if (!isMounted) {
           return;
         }
         if (!(await displayWithin(href))) {
+          setJumping(false);
           await veilTo(1, 220);
           veil?.cancel();
           return;
@@ -1689,6 +1693,7 @@ export function BookReaderPage() {
         .map((content) => blocksOf.get(content.document))[0];
       const scroller = host.querySelector<HTMLElement>(".epub-container");
       if (!blocks || !scroller || !isMounted) {
+        setJumping(false);
         await veilTo(1, 220);
         veil?.cancel();
         return;
@@ -1718,6 +1723,7 @@ export function BookReaderPage() {
       backToPlace(place);
       scheduleFrame();
       if (!rendered) {
+        setJumping(false);
         await veilTo(1, 240);
         veil?.cancel();
         if (!isMounted) {
@@ -2655,6 +2661,9 @@ export function BookReaderPage() {
             ref={epubHostRef}
             className={`h-full w-full ${epubReady ? "seyirlik-reader-fade-in" : "opacity-0"}`}
           />
+          <div className="rd-jumping" data-on={jumping || undefined}>
+            <span className="rd-jumping-ring" />
+          </div>
         </div>
       );
     }
