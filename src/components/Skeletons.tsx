@@ -601,7 +601,8 @@ function MobileDetailsSkeleton({
   kind: "movie" | "show";
   item?: MediaItem;
 }) {
-  // A phone keeps its own title hero; a tablet gets the desktop's.
+  // A phone or an upright tablet has the phone's title hero; a tablet on its
+  // side gets the desktop's.
   const isPhone = useIsPhoneView();
   return (
     <div className="layout-no-offset min-w-0 pb-7">

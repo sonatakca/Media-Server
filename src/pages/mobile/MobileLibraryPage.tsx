@@ -533,8 +533,9 @@ export function MobileLibraryPage({
               className="fixed left-4 top-[calc(4.5rem+env(safe-area-inset-top))] z-[80]"
             />
 
-            {/* A phone keeps its own title hero. A tablet gets the desktop's,
-                on a stage its own shape: the same poster-or-backdrop
+            {/* A phone, and a tablet held upright, have the phone's title
+                hero: the whole backdrop, the copy beneath it. A tablet on its
+                side gets the desktop's, on a stage its own shape: the same
                 composition, copy and actions as the home hero, with nothing
                 queued. */}
             <div className="full-bleed relative">
