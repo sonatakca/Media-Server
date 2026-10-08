@@ -202,9 +202,9 @@ const OVERVIEW_SHADE_ROOM_PX = 24;
 const OVERVIEW_SHADE_FOOT_PX = 12;
 
 /**
- * How much shade the copy under the title needs, 0–1, from the brightness of
- * the artwork behind its facts line: a trace over a dark picture, full over
- * a white sky. It starts in the middle, so nothing flashes unreadable while
+ * How bright the copy under the title needs to be, 0–1, from the brightness
+ * of the artwork behind its facts line: resting over a dark picture, full
+ * over a white sky. It starts in the middle, so nothing flashes unreadable while
  * the artwork is measured.
  */
 function useCopyShade(
@@ -238,18 +238,27 @@ function useCopyShade(
 }
 
 /**
- * White copy set straight on the artwork: brighter, and on a darker cloud of
- * its own shape, the more the picture behind it needs. The cloud follows the
- * letters, so it shades the words and nothing around them. It is a filter,
- * not a text shadow, because a filter is drawn after the text is truncated
- * and clamped: a text shadow is clipped with the text, and ends in a
- * rectangle.
+ * White copy set straight on the artwork, brighter the more the picture
+ * behind it needs, always on a black cloud of its own shape. The cloud is at
+ * full strength whatever was measured: black vanishes into a dark picture, so
+ * it costs nothing there, and an average brightness says little about busy
+ * art (a dark sky crossed by fire averages out to "middling" while the words
+ * sit on the fire). The cloud follows the letters, so it shades the words and
+ * nothing around them. It is a filter, not a text shadow, because a filter is
+ * drawn after the text is truncated and clamped: a text shadow is clipped
+ * with the text, and ends in a rectangle. A one-pixel black edge comes first,
+ * because a small line of facts has too little ink for a soft blur alone to
+ * darken a white sky behind it. The widest blur is the 16px the overview's
+ * room (OVERVIEW_SHADE_ROOM_PX) was sized for.
  */
+const COPY_SHADOW =
+  "drop-shadow(0 0 1px rgba(0,0,0,0.95)) drop-shadow(0 1px 3px rgba(0,0,0,0.9)) drop-shadow(0 0 8px rgba(0,0,0,0.8)) drop-shadow(0 0 16px rgba(0,0,0,0.6))";
+
 function copyTextStyle(shade: number, restingAlpha: number): CSSProperties {
   const a = (value: number) => value.toFixed(3);
   return {
     color: `rgba(255,255,255,${a(restingAlpha + (0.97 - restingAlpha) * shade)})`,
-    filter: `drop-shadow(0 1px 1px rgba(0,0,0,${a(0.3 + 0.45 * shade)})) drop-shadow(0 0 7px rgba(0,0,0,${a(0.55 * shade)})) drop-shadow(0 0 16px rgba(0,0,0,${a(0.4 * shade)}))`,
+    filter: COPY_SHADOW,
   };
 }
 
