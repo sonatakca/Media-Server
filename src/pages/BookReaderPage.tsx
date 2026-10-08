@@ -1649,8 +1649,8 @@ export function BookReaderPage() {
 
     /**
      * Opens the book at a search hit: its section, then the block it starts
-     * in, at the top of the screen where a chapter's first line would stand,
-     * and the reader's colour runs through the passage once so the eye
+     * in, its first line on the reading line, where the light falls, and the
+     * reader's colour runs through the passage once so the eye
      * finds it (searchShimmer.ts).
      *
      * The server counted the blocks the way this page does, but the page is
@@ -1699,17 +1699,17 @@ export function BookReaderPage() {
         ? hit.block
         : blocks.findIndex((_, index) => holds(index));
       const block = found >= 0 ? found : Math.min(hit.block, blocks.length - 1);
-      // The section's own top margin: the passage begins where a chapter's
-      // text does, clear of the bar.
-      const body = blocks[block]?.ownerDocument.body;
-      const margin = body
-        ? Number.parseFloat(getComputedStyle(body).paddingTop)
+      // The passage's first line centred on the reading line, so the light
+      // falls on the passage itself.
+      const lineHeight = blocks[block]
+        ? Number.parseFloat(getComputedStyle(blocks[block]).lineHeight)
         : Number.NaN;
       const place = {
         section: hit.section,
         block,
         offset: -Math.round(
-          Number.isFinite(margin) ? margin : scroller.clientHeight * 0.25,
+          scroller.clientHeight * READING_LINE -
+            (Number.isFinite(lineHeight) ? lineHeight / 2 : 0),
         ),
       };
 
